@@ -8,9 +8,16 @@
  */
 
 import { closeDatabase } from '../src/client.js';
+import { seedGeography } from '../src/seed/geography.js';
 import { seedOrganizations } from '../src/seed/index.js';
 
 try {
+  const geography = await seedGeography();
+  console.log(
+    `db:seed — ${geography.divisions} divisions, ${geography.districts} districts, ` +
+      `${geography.thanas} thanas (${geography.source}).`,
+  );
+
   const result = await seedOrganizations();
   console.log(
     `db:seed — ${result.organizations} organizations, ` +

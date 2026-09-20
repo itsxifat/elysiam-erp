@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withAnalytics, withOrg, withSystem } from '../client.js';
 import { GLOBAL_TABLES, TENANT_SCHEMAS } from '../rls.js';
 import { branches, settings } from '../schema/org/index.js';
+import { EXPECTED_GEOGRAPHY } from '../seed/geography.js';
 import { SEED_ORG_IDS, seedOrganizations } from '../seed/index.js';
 import { startTestDatabase, stopSharedContainer, type TestDatabase } from './harness.js';
 
@@ -408,6 +409,74 @@ describe('check 5: the guard — every tenant table is isolated', () => {
         await tx.execute(sql`drop table if exists org.unguarded_probe`);
       });
     }
+  });
+});
+
+describe('reference geography is global and intact', () => {
+  it('matches the vendored dataset exactly', async () => {
+    const rows = await withOrg({ orgId: ORG_A }, async (tx) =>
+      tx.execute<{ divisions: string; districts: string; thanas: string }>(sql`
+        select
+          (select count(*) from ref.divisions) as divisions,
+          (select count(*) from ref.districts) as districts,
+          (select count(*) from ref.thanas) as thanas
+      `),
+    );
+
+    expect({
+      divisions: Number(rows[0]?.divisions),
+      districts: Number(rows[0]?.districts),
+      thanas: Number(rows[0]?.thanas),
+    }).toEqual(EXPECTED_GEOGRAPHY);
+  });
+
+  it('is visible to every org, because a district belongs to nobody', async () => {
+    // Reference data is global (§5 exception 5). If it were accidentally
+    // tenant-scoped, addresses would stop resolving for four of the five orgs.
+    for (const orgId of [ORG_A, ORG_B]) {
+      const rows = await withOrg({ orgId }, async (tx) =>
+        tx.execute<{ count: string }>(sql`select count(*) as count from ref.districts`),
+      );
+      expect(Number(rows[0]?.count)).toBe(EXPECTED_GEOGRAPHY.districts);
+    }
+  });
+
+  it('carries both an English and a Bangla name for every row', async () => {
+    // Customer-facing output is Bangla (D-036), so a missing bn name would
+    // surface as a blank district on an address label.
+    const rows = await withOrg({ orgId: ORG_A }, async (tx) =>
+      tx.execute<{ count: string }>(sql`
+        select
+          (select count(*) from ref.divisions where name_en = '' or name_bn = '')
+          + (select count(*) from ref.districts where name_en = '' or name_bn = '')
+          + (select count(*) from ref.thanas where name_en = '' or name_bn = '') as count
+      `),
+    );
+    expect(Number(rows[0]?.count)).toBe(0);
+  });
+
+  it('has no orphaned districts or thanas', async () => {
+    const rows = await withOrg({ orgId: ORG_A }, async (tx) =>
+      tx.execute<{ orphans: string }>(sql`
+        select
+          (select count(*) from ref.districts d
+             where not exists (select 1 from ref.divisions v where v.id = d.division_id))
+          + (select count(*) from ref.thanas t
+             where not exists (select 1 from ref.districts d where d.id = t.district_id)) as orphans
+      `),
+    );
+    expect(Number(rows[0]?.orphans)).toBe(0);
+  });
+
+  it('cannot be written by the app role', async () => {
+    await expectRefused(
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        await tx.execute(
+          sql`insert into ref.divisions (id, name_en, name_bn) values (99, 'x', 'x')`,
+        );
+      }),
+      /permission denied/i,
+    );
   });
 });
 

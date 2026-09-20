@@ -8,6 +8,8 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 
 import { closeDatabase, configureDatabase, withSystem } from '../client.js';
+import { databaseConfig, loadDatabaseEnv, parseUrl } from '../config.js';
+import { seedGeography } from '../seed/geography.js';
 import { seedOrganizations } from '../seed/index.js';
 
 /**
@@ -31,11 +33,39 @@ const MIGRATIONS_FOLDER = path.resolve(
   '../../migrations',
 );
 
-const ROLE_PASSWORDS = {
-  erp_owner: 'test_owner_password',
-  erp_app: 'test_app_password',
-  erp_analytics: 'test_analytics_password',
-} as const;
+/**
+ * Role passwords, taken from the ambient configuration when there is one.
+ *
+ * The harness has to be able to log in as each role, so it sets their
+ * passwords. When `TEST_DATABASE_URL` points at a server that already has these
+ * roles — the shared compose database, say — overwriting their passwords with
+ * harness values would break every other connection to that server. Reusing
+ * the configured ones makes the ALTER a no-op instead.
+ */
+function rolePasswords(): Record<'erp_owner' | 'erp_app' | 'erp_analytics', string> {
+  const fallback = {
+    erp_owner: 'harness_owner_password',
+    erp_app: 'harness_app_password',
+    erp_analytics: 'harness_analytics_password',
+  };
+
+  try {
+    loadDatabaseEnv();
+    const config = databaseConfig();
+    return {
+      erp_owner: config.DATABASE_OWNER_URL
+        ? parseUrl(config.DATABASE_OWNER_URL).password || fallback.erp_owner
+        : fallback.erp_owner,
+      erp_app: parseUrl(config.DATABASE_URL).password || fallback.erp_app,
+      erp_analytics: config.DATABASE_ANALYTICS_URL
+        ? parseUrl(config.DATABASE_ANALYTICS_URL).password || fallback.erp_analytics
+        : fallback.erp_analytics,
+    };
+  } catch {
+    // No ambient configuration, e.g. a bare CI job with only TEST_DATABASE_URL.
+    return fallback;
+  }
+}
 
 export interface TestDatabase {
   readonly adminUrl: string;
@@ -81,10 +111,11 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
     .toString(36)
     .slice(2, 6)}`;
 
+  const passwords = rolePasswords();
   const admin = postgres(adminUrl, { max: 1, onnotice: () => {} });
 
   try {
-    for (const [role, password] of Object.entries(ROLE_PASSWORDS)) {
+    for (const [role, password] of Object.entries(passwords)) {
       await admin.unsafe(`
         do $$
         begin
@@ -104,13 +135,13 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
     await admin.end();
   }
 
-  const ownerUrl = withDatabase(adminUrl, databaseName, 'erp_owner', ROLE_PASSWORDS.erp_owner);
-  const appUrl = withDatabase(adminUrl, databaseName, 'erp_app', ROLE_PASSWORDS.erp_app);
+  const ownerUrl = withDatabase(adminUrl, databaseName, 'erp_owner', passwords.erp_owner);
+  const appUrl = withDatabase(adminUrl, databaseName, 'erp_app', passwords.erp_app);
   const analyticsUrl = withDatabase(
     adminUrl,
     databaseName,
     'erp_analytics',
-    ROLE_PASSWORDS.erp_analytics,
+    passwords.erp_analytics,
   );
 
   const owner = postgres(ownerUrl, { max: 1, onnotice: () => {} });
@@ -140,6 +171,7 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
     DATABASE_ADMIN_URL: adminUrl,
   });
 
+  await seedGeography();
   await seedOrganizations();
 
   return {
