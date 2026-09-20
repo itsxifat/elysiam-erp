@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Elysium library (packages/*)",
+  "extends": "./base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "verbatimModuleSyntax": true,
+    "composite": true,
+    "outDir": "dist",
+
+    // Be explicit rather than relying on ambient @types discovery, which is
+    // fragile once tsconfigs are extended across a pnpm workspace.
+    "types": ["node"],
+    "rootDir": "src",
+
+    // Libraries hold the money, posting and state-machine logic, so they take
+    // the strictest option we have. `{ a: undefined }` is not the same value as
+    // `{}` when the difference decides whether a journal line is written.
+    "exactOptionalPropertyTypes": true,
+  },
+  "include": ["src/**/*"],
+}

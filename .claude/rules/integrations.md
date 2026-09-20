@@ -1,13 +1,15 @@
 ---
 paths:
-  - "packages/integrations/**"
-  - "apps/server/src/modules/delivery/**"
-  - "apps/server/src/modules/fraud/**"
-  - "apps/server/src/modules/notify/**"
-  - "apps/server/src/modules/marketing/**"
-  - "apps/server/src/modules/messaging/**"
+  - 'packages/integrations/**'
+  - 'apps/server/src/modules/delivery/**'
+  - 'apps/server/src/modules/fraud/**'
+  - 'apps/server/src/modules/notify/**'
+  - 'apps/server/src/modules/marketing/**'
+  - 'apps/server/src/modules/messaging/**'
 ---
+
 # Integration rules
+
 - Before writing or changing an adapter, read the provider's current official docs with web fetch.
 - Never guess endpoints, auth schemes, field names or status values.
 - If docs or credentials are missing:

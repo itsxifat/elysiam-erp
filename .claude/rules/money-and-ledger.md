@@ -1,12 +1,14 @@
 ---
 paths:
-  - "packages/domain/src/money/**"
-  - "packages/domain/src/posting/**"
-  - "apps/server/src/modules/ledger/**"
-  - "apps/server/src/modules/**/posting/**"
-  - "packages/db/src/schema/ledger/**"
+  - 'packages/domain/src/money/**'
+  - 'packages/domain/src/posting/**'
+  - 'apps/server/src/modules/ledger/**'
+  - 'apps/server/src/modules/**/posting/**'
+  - 'packages/db/src/schema/ledger/**'
 ---
+
 # Money and ledger rules
+
 - Amounts are integer poisha.
 - Every percentage, split and rounding goes through the money helpers. They round half away from zero, and they allocate remainders so the parts always sum to the whole.
 - Each business event has exactly one posting-rule function in `packages/domain/src/posting`.

@@ -1,0 +1,18 @@
+# Normalize every text file to LF in the repository, whatever the checkout OS.
+# Without this, a Windows checkout writes CRLF and `prettier --check` fails on a
+# tree that is byte-identical on Linux.
+* text=auto eol=lf
+
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+
+pnpm-lock.yaml linguist-generated=true -diff

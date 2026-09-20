@@ -1,10 +1,12 @@
 ---
 paths:
-  - "apps/server/src/**"
-  - "packages/db/**"
-  - "packages/contracts/src/permissions/**"
+  - 'apps/server/src/**'
+  - 'packages/db/**'
+  - 'packages/contracts/src/permissions/**'
 ---
+
 # Tenancy and permission rules
+
 - Every new tenant table needs:
   - `org_id NOT NULL` with an FK and an index
   - RLS set to ENABLE and FORCE, with the standard isolation policy

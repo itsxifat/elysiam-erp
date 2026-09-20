@@ -1,0 +1,16 @@
+/*
+ * Typography (architecture §24).
+ *
+ * Inter carries Latin text and every numeral. Hind Siliguri carries Bangla.
+ * `size-adjust` on the Bangla face matches its x-height to Inter's, so a mixed
+ * bn/en string — which this product is full of — sits on one optical baseline
+ * instead of looking ragged.
+ *
+ * The size-adjust value is computed by `pnpm fonts:fetch`, which reads each
+ * font's unitsPerEm and OS/2 sxHeight and prints the derivation. Do not hand-
+ * tune it; re-run the script if either font is updated.
+ *
+ * Files are vendored under ../assets/fonts so a build never depends on a CDN.
+ */
+
+/* @fonts:size-adjust-marker */

@@ -1,0 +1,169 @@
+/*
+ * Elysium design tokens (architecture §24, D-033).
+ *
+ * Every colour, radius, shadow and duration in this product resolves here. No
+ * component hard-codes a value, and no app reaches for a raw Tailwind palette
+ * class — the ESLint rule in packages/config enforces that.
+ *
+ * Colour is OKLCH so lightness is perceptually even. That is what lets the
+ * per-org brand accent (D-034) be one hue and one chroma, with every derived
+ * shade computed from them and its contrast intact.
+ *
+ * The section markers below are load-bearing: src/tokens/parse.ts reads them,
+ * and the test suite asserts that light and dark define exactly the same roles
+ * and that every foreground/background pair meets WCAG AA.
+ *
+ * Dark mode is applied by adding `.dark` to <html>. The values live in exactly
+ * one place; the app decides when to apply them from the OS preference and the
+ * user's choice.
+ */
+
+/* @tokens:static */
+:root {
+  /* Shape. One radius, everything else derived. Softly rounded, never pill. */
+  --radius: 0.5rem;
+
+  /* Density (architecture §24). 36px rows: an operator wants more rows, not
+     more air. Compactness comes from the type scale, not from cutting padding. */
+  --row-height: 2.25rem;
+  --control-height: 2.25rem;
+  --control-height-sm: 2rem;
+  --control-height-lg: 2.5rem;
+
+  /* Type. Inter carries Latin and every numeral; Hind Siliguri carries Bangla.
+     See fonts.css for the size-adjust that puts them on one baseline. */
+  --font-sans: 'Inter', 'Hind Siliguri', ui-sans-serif, system-ui, sans-serif;
+  --font-bangla: 'Hind Siliguri', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+
+  /* Motion. Short, purposeful, ease-out. Anything longer reads as lag in a
+     tool someone drives all day. */
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --duration-slow: 200ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Depth. Regions separate with a 1px hairline; shadows belong only to layers
+     that genuinely float above the page. */
+  --shadow-popover: 0 4px 12px -2px oklch(0 0 0 / 0.08), 0 2px 4px -2px oklch(0 0 0 / 0.06);
+  --shadow-dialog: 0 16px 48px -12px oklch(0 0 0 / 0.18), 0 4px 12px -6px oklch(0 0 0 / 0.1);
+}
+
+/* @tokens:theme light */
+:root {
+  /* The brand triple. Per-org theming (D-034) overrides --brand-h and
+     --brand-c at runtime from org.organizations.brand; every shade below
+     follows automatically. --brand-l is fixed per theme because it is what
+     holds the contrast against the surface. */
+  --brand-h: 259;
+  --brand-c: 0.17;
+  --brand-l: 0.52;
+
+  --background: oklch(1 0 264);
+  --foreground: oklch(0.21 0.006 264);
+
+  --card: oklch(1 0 264);
+  --card-foreground: oklch(0.21 0.006 264);
+
+  --popover: oklch(1 0 264);
+  --popover-foreground: oklch(0.21 0.006 264);
+
+  --muted: oklch(0.968 0.003 264);
+  --muted-foreground: oklch(0.52 0.011 264);
+
+  --secondary: oklch(0.968 0.003 264);
+  --secondary-foreground: oklch(0.28 0.008 264);
+
+  /* "accent" is the hover/active surface, not the brand. The brand is --primary. */
+  --accent: oklch(0.962 0.004 264);
+  --accent-foreground: oklch(0.28 0.008 264);
+
+  --border: oklch(0.905 0.005 264);
+  --input: oklch(0.905 0.005 264);
+
+  --primary: oklch(var(--brand-l) var(--brand-c) var(--brand-h));
+  --primary-foreground: oklch(0.985 0.002 264);
+  /* On white, a filled button deepens as you press it. */
+  --primary-hover: oklch(calc(var(--brand-l) - 0.04) var(--brand-c) var(--brand-h));
+  --primary-active: oklch(calc(var(--brand-l) - 0.08) var(--brand-c) var(--brand-h));
+  --ring: oklch(calc(var(--brand-l) + 0.06) var(--brand-c) var(--brand-h));
+
+  --destructive: oklch(0.53 0.21 27);
+  --destructive-foreground: oklch(0.985 0.002 264);
+  --success: oklch(0.5 0.13 152);
+  --success-foreground: oklch(0.985 0.002 264);
+  --warning: oklch(0.72 0.16 75);
+  --warning-foreground: oklch(0.24 0.04 75);
+  --info: oklch(0.52 0.16 255);
+  --info-foreground: oklch(0.985 0.002 264);
+
+  /* Subtle fills carry status badges, where colour is paired with a label and
+     never used alone (architecture §24 accessibility floor). */
+  --destructive-subtle: oklch(0.95 0.03 27);
+  --destructive-subtle-foreground: oklch(0.45 0.18 27);
+  --success-subtle: oklch(0.95 0.035 152);
+  --success-subtle-foreground: oklch(0.4 0.11 152);
+  --warning-subtle: oklch(0.96 0.045 85);
+  --warning-subtle-foreground: oklch(0.42 0.1 70);
+  --info-subtle: oklch(0.95 0.03 255);
+  --info-subtle-foreground: oklch(0.44 0.15 255);
+}
+
+/* @tokens:theme dark */
+.dark {
+  --brand-h: 259;
+  --brand-c: 0.17;
+  /* Bright enough to read against a dark surface, with headroom left so the
+     hover state can lift without pushing the white label under AA. */
+  --brand-l: 0.51;
+
+  /* Never pure black. Borders vanish against #000 and it smears on OLED. */
+  --background: oklch(0.165 0.006 264);
+  --foreground: oklch(0.96 0.003 264);
+
+  --card: oklch(0.203 0.007 264);
+  --card-foreground: oklch(0.96 0.003 264);
+
+  --popover: oklch(0.225 0.008 264);
+  --popover-foreground: oklch(0.96 0.003 264);
+
+  --muted: oklch(0.245 0.008 264);
+  --muted-foreground: oklch(0.715 0.012 264);
+
+  --secondary: oklch(0.245 0.008 264);
+  --secondary-foreground: oklch(0.93 0.004 264);
+
+  --accent: oklch(0.262 0.009 264);
+  --accent-foreground: oklch(0.93 0.004 264);
+
+  --border: oklch(0.285 0.01 264);
+  --input: oklch(0.32 0.011 264);
+
+  --primary: oklch(var(--brand-l) var(--brand-c) var(--brand-h));
+  --primary-foreground: oklch(0.98 0.002 264);
+  /* Hover lifts, press sinks. Lifting further would brighten the fill past the
+     point where a white label still clears AA, so press goes the other way —
+     which is also how a pressed control should read. */
+  --primary-hover: oklch(calc(var(--brand-l) + 0.04) var(--brand-c) var(--brand-h));
+  --primary-active: oklch(calc(var(--brand-l) - 0.04) var(--brand-c) var(--brand-h));
+  --ring: oklch(calc(var(--brand-l) + 0.06) var(--brand-c) var(--brand-h));
+
+  --destructive: oklch(0.56 0.2 27);
+  --destructive-foreground: oklch(0.98 0.002 264);
+  --success: oklch(0.6 0.14 152);
+  --success-foreground: oklch(0.165 0.006 264);
+  --warning: oklch(0.76 0.15 75);
+  --warning-foreground: oklch(0.2 0.035 75);
+  --info: oklch(0.62 0.15 255);
+  --info-foreground: oklch(0.165 0.006 264);
+
+  --destructive-subtle: oklch(0.28 0.07 27);
+  --destructive-subtle-foreground: oklch(0.8 0.11 27);
+  --success-subtle: oklch(0.27 0.055 152);
+  --success-subtle-foreground: oklch(0.81 0.13 152);
+  --warning-subtle: oklch(0.28 0.055 80);
+  --warning-subtle-foreground: oklch(0.85 0.13 85);
+  --info-subtle: oklch(0.28 0.06 255);
+  --info-subtle-foreground: oklch(0.81 0.1 255);
+}

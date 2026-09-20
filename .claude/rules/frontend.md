@@ -1,16 +1,19 @@
 ---
 paths:
-  - "apps/console/**"
-  - "apps/portal/**"
-  - "apps/pos/**"
-  - "apps/sites/**"
-  - "packages/ui/**"
-  - "packages/landing-blocks/**"
+  - 'apps/console/**'
+  - 'apps/portal/**'
+  - 'apps/pos/**'
+  - 'apps/sites/**'
+  - 'packages/ui/**'
+  - 'packages/landing-blocks/**'
 ---
+
 # Frontend rules
 
 ## Design (architecture §24, D-033)
+
 The bar is a tool people trust and operate for eight hours: restrained, dense, fast. Not decorated.
+
 - Every colour, radius, shadow, duration and font size comes from the tokens in `packages/ui/src/styles/tokens.css`. Never hard-code one, and never reach for a raw Tailwind palette colour (`bg-blue-500`) in app code — use the semantic token (`bg-primary`, `text-muted-foreground`, `border-border`).
 - Neutral chrome, one accent. Colour means status, money direction or danger, never decoration.
 - Density: 36 px table rows and a tight type scale. Compactness comes from the scale, not from cutting the padding around the content region.
@@ -23,6 +26,7 @@ The bar is a tool people trust and operate for eight hours: restrained, dense, f
 - Per-org branding (D-034) is data: accent, logo and login branding read from `org.organizations.brand`. Never fork a component per brand.
 
 ## Stack
+
 - Styling: shadcn/ui components and Tailwind utility classes only. No CSS modules, styled-components or inline style objects. Re-tune a shadcn component to the tokens when you adopt it; don't leave it at library defaults.
 - Icons: lucide-react only, at a consistent stroke width and size. Never use emojis as UI elements.
 - Text: every user-facing string goes through `packages/i18n` keys, with values in both bn and en. The staff console defaults to en; customer-facing output is bn (D-036).

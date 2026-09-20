@@ -3,12 +3,14 @@
 This kit lets Claude Code build the ERP one milestone at a time, and each milestone proves itself with tests before you merge it.
 
 Claude writes the code. You own four things it can't do:
+
 - get decisions from the client
 - create accounts and credentials
 - review the code that handles money and security
 - test with real people during the pilot
 
 ## What's in the kit
+
 ```
 CLAUDE.md                          Always-loaded project memory: stack, invariants, workflow
 docs/architecture.md               Engineering spec (source of truth), read section by section
@@ -24,6 +26,7 @@ docs/client-spec/                  The client's original Bangla spec (PDF)
 ```
 
 ## One-time setup
+
 1. **Machine.** Use a development machine or a dedicated dev VM, not a server that runs production services. Don't give Claude Code production credentials.
 2. **Install:** Node LTS, pnpm, Docker, git and Claude Code. Run `claude update`; Opus 5 needs Claude Code v2.1.219 or later.
 3. **Repo.** Create an empty repo called `elysium-erp` and copy the kit's contents, including the hidden `.claude/` folder, into its root. Then:
@@ -33,6 +36,7 @@ docs/client-spec/                  The client's original Bangla spec (PDF)
 4. **First launch.** Run `claude` in the repo, trust the folder, and run `/context`. CLAUDE.md should appear under Memory files.
 
 ## Model and effort
+
 - **Default launch:**
   ```
   claude --model opus --effort xhigh
@@ -45,6 +49,7 @@ docs/client-spec/                  The client's original Bangla spec (PDF)
 - Keep auto mode (the default permission mode), so `/goal` can run turn after turn without waiting on you.
 
 ## Session 1: kickoff prompt (paste as-is)
+
 ```
 You're the lead engineer on the Elysium Mother ERP. This repository holds only the build kit so far: CLAUDE.md, docs/, and .claude/ (a /milestone skill, two auditor subagents, path-scoped rules). We'll build the whole system milestone by milestone over many sessions. This first session is orientation, then M00.
 
@@ -64,6 +69,7 @@ Don't write code yet. After I answer, apply the agreed doc changes in one commit
 ```
 
 ## Every later session: the loop
+
 1. Merge the previous milestone and start clean:
    ```
    git checkout main && git pull
@@ -85,16 +91,21 @@ Don't write code yet. After I answer, apply the agreed doc changes in one commit
 7. **New milestone, new session.** Run `/clear` or exit. Fresh context per milestone keeps quality high.
 
 ## Parallel tracks (after M14b and the pilot start)
+
 Track A (M15 → M16 → M17) and Track B (M18 → M19 → M20) touch different modules, so they can run side by side in separate git worktrees:
+
 ```
 git worktree add ../erp-track-b -b track-b main
 cd ../erp-track-b && pnpm i && claude --model opus --effort xhigh
 ```
+
 Merge Track A first. Then rebase Track B onto main, run `pnpm verify`, and merge it. The same pattern works later:
+
 - M21–M22 alongside M23
 - M25–M26 alongside M27–M29
 
 ## Recovery prompts
+
 - **Session ended mid-milestone** (context or usage limit):
   ```
   claude --continue
@@ -119,25 +130,27 @@ Merge Track A first. Then rebase Track B onto main, run `pnpm verify`, and merge
   ```
 
 ## Gates only you can clear
-| Gate | Before | Prepare |
-|---|---|---|
-| G0 | M00 | Dev machine, tools installed, empty repo, Claude Code updated |
-| G1 | M12 | Primary courier API credentials (sandbox if offered) and 2–3 real settlement export files |
-| G2 | M13 | The `fraudjs` package (path or npm name) and any courier access it needs |
-| G3 | M14a / M14b | Staging and production infrastructure:<br>- managed Postgres (Singapore)<br>- 2 VMs<br>- a Cloudflare zone and R2 buckets<br>- Sentry<br>- a secrets manager<br><br>Real data exports:<br>- products<br>- counted stock with unit costs<br>- supplier dues<br>- wallet balances<br>- customer order history<br><br>Also:<br>- choose the pilot brand<br>- have the client's accountant review the chart of accounts |
-| G4 | After M14b | Pilot: one brand live for 2–3 weeks; log issues as follow-ups |
-| G5 | M15, M16 | Other couriers' credentials; an SMS gateway account (apply early for a branded sender ID) |
-| G6 | M18 | Meta business verification, ad account access, system-user tokens, dataset/pixel IDs per brand |
-| G7 | M19 | Payroll rules (components, deductions) and a sample export from the biometric attendance software |
-| G8 | M21 | Client answers to D-015–D-018: reseller delivery charge, return fee, payout timing, slabs |
-| G9 | M25 | Investor profit-share method (D-019) and sample agreements |
-| G10 | M27 | A Chatwoot host on the same parent domain as the console; WhatsApp numbers; a TikTok business account and developer app; Telegram bots; a decision on "Google" (D-021) |
-| G11 | M28 | A signed staff monitoring policy (D-022) and managed Chrome on office PCs |
-| G12 | M29 | Landing page domains, hosting account, Turnstile keys |
+
+| Gate | Before      | Prepare                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G0   | M00         | Dev machine, tools installed, empty repo, Claude Code updated                                                                                                                                                                                                                                                                                                                                                       |
+| G1   | M12         | Primary courier API credentials (sandbox if offered) and 2–3 real settlement export files                                                                                                                                                                                                                                                                                                                           |
+| G2   | M13         | The `fraudjs` package (path or npm name) and any courier access it needs                                                                                                                                                                                                                                                                                                                                            |
+| G3   | M14a / M14b | Staging and production infrastructure:<br>- managed Postgres (Singapore)<br>- 2 VMs<br>- a Cloudflare zone and R2 buckets<br>- Sentry<br>- a secrets manager<br><br>Real data exports:<br>- products<br>- counted stock with unit costs<br>- supplier dues<br>- wallet balances<br>- customer order history<br><br>Also:<br>- choose the pilot brand<br>- have the client's accountant review the chart of accounts |
+| G4   | After M14b  | Pilot: one brand live for 2–3 weeks; log issues as follow-ups                                                                                                                                                                                                                                                                                                                                                       |
+| G5   | M15, M16    | Other couriers' credentials; an SMS gateway account (apply early for a branded sender ID)                                                                                                                                                                                                                                                                                                                           |
+| G6   | M18         | Meta business verification, ad account access, system-user tokens, dataset/pixel IDs per brand                                                                                                                                                                                                                                                                                                                      |
+| G7   | M19         | Payroll rules (components, deductions) and a sample export from the biometric attendance software                                                                                                                                                                                                                                                                                                                   |
+| G8   | M21         | Client answers to D-015–D-018: reseller delivery charge, return fee, payout timing, slabs                                                                                                                                                                                                                                                                                                                           |
+| G9   | M25         | Investor profit-share method (D-019) and sample agreements                                                                                                                                                                                                                                                                                                                                                          |
+| G10  | M27         | A Chatwoot host on the same parent domain as the console; WhatsApp numbers; a TikTok business account and developer app; Telegram bots; a decision on "Google" (D-021)                                                                                                                                                                                                                                              |
+| G11  | M28         | A signed staff monitoring policy (D-022) and managed Chrome on office PCs                                                                                                                                                                                                                                                                                                                                           |
+| G12  | M29         | Landing page domains, hosting account, Turnstile keys                                                                                                                                                                                                                                                                                                                                                               |
 
 Start the slow external items early. Meta business verification, WhatsApp numbers and SMS sender IDs can take weeks, so apply for them during Phase 1.
 
 ## Your review checklist
+
 - **Money and stock milestones:**
   - read the posting-rule tests
   - verify one golden-books scenario by hand, once

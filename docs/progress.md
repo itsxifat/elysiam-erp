@@ -3,6 +3,7 @@
 Add one entry per session, with the newest at the bottom. Keep entries short; git history holds the detail.
 
 ## Entry template
+
 ```
 ### <YYYY-MM-DD> · <Milestone ID> · <title> · <done | partial | blocked>
 - Delivered: <what now works, in user terms>
@@ -18,10 +19,12 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
 ---
 
 ### Kit installed · pre-M00 · done
+
 - Delivered: the build kit (CLAUDE.md, docs/, .claude/). No code yet.
 - Next: kickoff session, then M00.
 
 ### 2026-09-20 · kickoff · Orientation and doc adjustments · done
+
 - Delivered: read the full architecture, milestones, decisions and the client's 9-page Bangla spec; compared them; adjusted the docs. Repo initialized (`main`), kit committed, pnpm 12.5.1 installed. No product code yet.
 - Environment: node v24.21.0, pnpm 12.5.1, git 2.55.0, Claude Code 2.1.278. **Docker is missing** and so are WSL2, Hyper-V and podman — gate G0 is not clear.
 - Gaps found vs the client spec: no per-org branding anywhere in the architecture (five brands, identical invoices); no branded per-org login though the client asked for "আলাদা লগইন"; no stated default UI language; §7 back-dating and §9 settlement import did not reconcile.
