@@ -56,3 +56,22 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
   - CI has never executed: `git remote -v` is empty, nothing has been pushed. The workflow is actionlint-clean and its install step is now fixed, but it is unproven until the repo has a remote (owner: human).
   - Hind Siliguri ships four Bangla weights at ~72 KB each (286 KB total). `unicode-range` means they load only when Bangla renders and only for the weights used, but Bangladesh is a 4G market — trim to 400/600 in M05 if the type scale does not need four (owner: claude, M05).
 - Next: M01, once Docker is available.
+
+### 2026-09-21 · M01 · Database core and multi-org isolation · done
+
+- Delivered: one brand cannot see another brand's data, proved by 33 adversarial tests against real PostgreSQL. Three database roles, the `org` and `ref` schemas, RLS with ENABLE and FORCE on every tenant table, `withOrg`/`withAnalytics`/`withSystem`, a Testcontainers harness, and an idempotent seed of the five brands plus Bangladesh geography.
+- **Two things in the architecture did not hold as written, and I found both by probing the running database before designing around it.**
+  - `erp_owner` was the dev container's superuser, and a superuser bypasses `FORCE ROW LEVEL SECURITY` entirely. Verified live: an insert the policy should have rejected succeeded, and a select that should have returned 0 rows returned 1. **Every isolation test written against that role would have passed while proving nothing.** Fixed by making `postgres` the container superuser and creating erp_owner NOSUPERUSER (D-042).
+  - §5's policy SQL raised `invalid input syntax for type uuid: ""` instead of returning zero rows on any reused connection, because a transaction-local `set_config` reverts to the empty string rather than to unset. That is every pooled connection in production after its first request. Fixed with `nullif`, and §5 corrected (D-043).
+- The tests are written adversarially, not confirmatively. Every isolation assertion is a negative — "org A sees nothing of org B's" — and a negative passes just as happily when the query is broken or the table is empty. So the suite builds a table whose policy is deliberately weakened to match every row, and another with RLS off, and asserts the same method observes the leak. Rejections are matched against PostgreSQL's own error through the `.cause` chain, not Drizzle's "Failed query" wrapper, which would have passed for a typo.
+- Verification: `pnpm verify` exit 0 (48 s, 127 tests). Acceptance checks 1–6 all PASS; see the Verification Report. Database tests run in ~6 s on a Testcontainer or ~2 s against the compose server.
+- Auditors: ledger-auditor run on the tenancy diff; acceptance-auditor run for M01.
+- Decisions/assumptions: D-041 (`ref` schema), D-042 (erp_owner not a superuser, four connection URLs), D-043 (`nullif` in the policy), D-044 (`TEST_DATABASE_URL` or Testcontainers), D-045 (vendored Bangladesh geography with provenance), D-046 (`org.locations`, not `inventory.locations`).
+- New dependencies, with reasons: `@testcontainers/postgresql` — real Postgres for tests, since RLS is a database behaviour a mock cannot have. `fast-check` — property testing, required by the architecture's test strategy for later milestones. `tsx` — runs the db CLI entrypoints without a build step, which matters because `db:bootstrap` has to run before anything is built.
+- Deviations from the milestone spec: none in scope. Two architecture corrections (D-043, D-046) and one infra change (D-042) were necessary to make the stated acceptance checks actually testable.
+- Follow-ups:
+  - The harness reset shared role passwords when pointed at a live server, breaking the dev database mid-session. Fixed to reuse ambient passwords — but worth remembering that anything which ALTERs a role affects the whole server, not one database (owner: claude, done).
+  - Branch-level scoping (`branch_id` filtering) is not enforced anywhere yet. The column exists; enforcing it is a permissions concern for M02b (owner: claude, M02b).
+  - `ref.thanas` carries 494 upazilas from the official portals, but a courier's own coverage list is the authority for where it will actually deliver. M12 reconciles the two (owner: claude, M12).
+  - CI still has never executed — the repo has no remote (owner: human).
+- Next: M02a, identity, auth and request context.
