@@ -1,10 +1,12 @@
 ---
 paths:
-  - "apps/server/src/modules/inventory/**"
-  - "packages/domain/src/inventory/**"
-  - "packages/db/src/schema/inventory/**"
+  - 'apps/server/src/modules/inventory/**'
+  - 'packages/domain/src/inventory/**'
+  - 'packages/db/src/schema/inventory/**'
 ---
+
 # Inventory rules
+
 - Every stock change does two things in the same transaction: inserts a `stock_movements` row and updates `stock_levels`.
 - Reserve stock with the conditional UPDATE (`on_hand - reserved >= qty`).
   - Zero rows updated means `STOCK_INSUFFICIENT`.

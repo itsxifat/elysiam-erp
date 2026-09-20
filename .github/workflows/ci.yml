@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # `pnpm verify` is the single gate for main (CLAUDE.md). CI runs exactly that
+  # command so a green local run means a green CI run.
+  NODE_ENV: test
+  DATABASE_URL: postgres://erp_owner:erp_dev_password@localhost:5432/elysium_test
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_USER: erp_owner
+          POSTGRES_PASSWORD: erp_dev_password
+          POSTGRES_DB: elysium_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U erp_owner -d elysium_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+      valkey:
+        image: valkey/valkey:8.1-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+
+      gotenberg:
+        image: gotenberg/gotenberg:8.37
+        ports:
+          - 3030:3000
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # check-migrations compares against main, so it needs that history.
+          fetch-depth: 0
+
+      - name: Make origin/main available
+        run: git fetch --no-tags --depth=1 origin main || true
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Create .env files from the examples
+        run: pnpm run setup:env
+
+      - run: pnpm run verify
+
+  workflows:
+    name: lint workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      # Keeps acceptance check 4 reproducible. Verified locally with actionlint
+      # v1.7.12; pinning the version here means a later session gets the same
+      # answer rather than whatever is current that day.
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run setup:env
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @elysium/console exec playwright install --with-deps chromium
+
+      - run: pnpm run e2e
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: apps/console/playwright-report/
+          retention-days: 7

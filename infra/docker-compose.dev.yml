@@ -1,0 +1,78 @@
+# Local development services (architecture §28).
+#
+# Start with:  docker compose -f infra/docker-compose.dev.yml up -d
+#
+# Every service carries a healthcheck so `up --wait` and CI both know when the
+# stack is genuinely ready, rather than merely started. Chatwoot joins in Phase 5.
+#
+# Image tags are pinned to a minor version. M14b pins production images by
+# digest as part of the deploy configuration.
+
+name: elysium-dev
+
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    restart: unless-stopped
+    environment:
+      # Development credentials only. Production secrets come from the secret
+      # manager and never from a file in the repo (architecture §25).
+      POSTGRES_USER: erp_owner
+      POSTGRES_PASSWORD: erp_dev_password
+      POSTGRES_DB: elysium_dev
+      # Deterministic collation, so ORDER BY in a test matches production.
+      POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=en-US --encoding=UTF8'
+    command:
+      - postgres
+      # M01 needs row-level security and M07 needs real concurrency, so the dev
+      # database is configured close enough to production to surface both.
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - log_statement=none
+      - -c
+      - log_min_duration_statement=500
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U erp_owner -d elysium_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  valkey:
+    image: valkey/valkey:8.1-alpine
+    restart: unless-stopped
+    command: ['valkey-server', '--save', '', '--appendonly', 'no']
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  gotenberg:
+    image: gotenberg/gotenberg:8.37
+    restart: unless-stopped
+    command:
+      - gotenberg
+      - --chromium-disable-javascript=true
+      - --chromium-allow-list=file:///tmp/.*
+    ports:
+      - '3030:3000'
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', '--silent', 'http://localhost:3000/health']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+volumes:
+  postgres-data:

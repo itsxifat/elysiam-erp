@@ -3,6 +3,7 @@
 This file is the source of truth for how the system is built. Read the sections your milestone cites; you don't need the whole file every session.
 
 When sources conflict, this is the order of precedence:
+
 1. A RESOLVED row in `docs/decisions.md`
 2. This file
 3. The client's original spec in `docs/client-spec/`
@@ -11,6 +12,7 @@ When sources conflict, this is the order of precedence:
 When you assume something, add a row to `docs/decisions.md`.
 
 ## Contents
+
 1. Product scope (client spec in English)
 2. Glossary
 3. System architecture
@@ -46,6 +48,7 @@ When you assume something, add a row to `docs/decisions.md`.
 ## 1. Product scope (client spec in English)
 
 The client runs five fashion brands in Bangladesh, called sister orgs: Elysium Lifestyle BD, Oura Lifestyle, Orvo, Wear X Clothing and Beownz. They want one "mother ERP" that runs three things together:
+
 - full e-commerce operations (mostly COD orders from Facebook, WhatsApp and landing pages)
 - showroom accounting
 - a reseller platform for Beownz
@@ -55,23 +58,25 @@ Each sister org operates as its own unit.
 The client's release approach puts every module in the development scope but releases them in phases, so Phase 1 can run live while later phases are developed in parallel.
 
 ### Role matrix (client)
-| Role | Access |
-|---|---|
-| Super Admin | Every module in every org; full overview |
-| Sales | Own orders, own performance, targets, to-dos |
-| Accounts | All accounts, wallets, payments, tasks |
-| Marketing | Own campaign performance, leads, to-dos |
-| HR | Employees, salary, attendance, loans, targets |
-| Branch Manager | Own showroom's income, expenses and performance |
+
+| Role             | Access                                                                    |
+| ---------------- | ------------------------------------------------------------------------- |
+| Super Admin      | Every module in every org; full overview                                  |
+| Sales            | Own orders, own performance, targets, to-dos                              |
+| Accounts         | All accounts, wallets, payments, tasks                                    |
+| Marketing        | Own campaign performance, leads, to-dos                                   |
+| HR               | Employees, salary, attendance, loans, targets                             |
+| Branch Manager   | Own showroom's income, expenses and performance                           |
 | Sister Org Admin | Own org's full dashboard, plus a leaderboard comparing it with other orgs |
-| Reseller | Products and stock quantity only; enters own orders |
-| Investor | Own investment, profit share, documents |
+| Reseller         | Products and stock quantity only; enters own orders                       |
+| Investor         | Own investment, profit share, documents                                   |
 
 We add a `warehouse` role for packing, dispatch, returns receiving and stock counts (decision D-004).
 
 ### Modules by client phase
 
 **Phase 1: Core operations (MVP)**
+
 1. Products / Catalog
    - Add a product with name, description, selling price and images. The purchase price is **not** entered here.
    - Manage categories and attributes (size, colour, variants).
@@ -93,12 +98,13 @@ We add a `warehouse` role for packing, dispatch, returns receiving and stock cou
 
 The client notes that these four modules are the data foundation for everything else. Correct tracking of inventory movement, order flow and cash flow matters most.
 
-**Phase 2: Buyer intelligence and delivery**
-5. Delivery
-   - A confirmed order is entered with the courier automatically.
-   - Status updates automatically when payment is received (via courier API or webhook where possible).
-   - Stock updates automatically when a return is received.
-   - Live tracking view.
+**Phase 2: Buyer intelligence and delivery** 5. Delivery
+
+- A confirmed order is entered with the courier automatically.
+- Status updates automatically when payment is received (via courier API or webhook where possible).
+- Stock updates automatically when a return is received.
+- Live tracking view.
+
 6. Buyer profile
    - Purchase history: what, when, how much, how often.
    - Automatic birthday and anniversary reminders that trigger discount offers.
@@ -107,45 +113,23 @@ The client notes that these four modules are the data foundation for everything 
    - Return and cancel history by phone number and address.
    - Later: integration with the couriers' shared blacklist database.
 
-**Phase 3: Marketing and HR**
-8. Marketing
-   - Record ad cost per campaign.
-   - Analytics: cost vs sales vs order count, cost per order, ROAS.
-   - Leads: segment reports by product, size, age and profession.
+**Phase 3: Marketing and HR** 8. Marketing
+
+- Record ad cost per campaign.
+- Analytics: cost vs sales vs order count, cost per order, ROAS.
+- Leads: segment reports by product, size, age and profession.
+
 9. HR
    - Employees, salary, employees' personal loans, attendance.
    - Targets: a monthly target splits automatically into weekly targets; bonus rules can be configured.
    - Productivity: order pickup time (from notification to action) and orders handled per hour or minute.
 
-**Phase 4: Scale**
-10. Beownz reseller engine
-    - Resellers see only products and stock quantity.
-    - Pricing: reseller price = product price + wholesale margin, calculated automatically.
-    - Charge slab per order by number of pieces (1, 2, 3).
-    - Resellers enter their own orders, and the invoice is issued in the reseller's own name.
-    - Payout: selling price − reseller price − charge = reseller income, calculated automatically.
-    - Reseller performance report: pieces and taka ordered by each reseller.
-11. Branch / showroom
-    - Each showroom is a separate unit with its own income and expenses, stock and staff performance.
-12. Sister-org multi-login
-    - Each org (Oura, Orvo, Wear X, …) has its own login and performance dashboard.
-    - Cross-org leaderboard showing who is ahead, with suggestions for how to improve.
+**Phase 4: Scale** 10. Beownz reseller engine - Resellers see only products and stock quantity. - Pricing: reseller price = product price + wholesale margin, calculated automatically. - Charge slab per order by number of pieces (1, 2, 3). - Resellers enter their own orders, and the invoice is issued in the reseller's own name. - Payout: selling price − reseller price − charge = reseller income, calculated automatically. - Reseller performance report: pieces and taka ordered by each reseller. 11. Branch / showroom - Each showroom is a separate unit with its own income and expenses, stock and staff performance. 12. Sister-org multi-login - Each org (Oura, Orvo, Wear X, …) has its own login and performance dashboard. - Cross-org leaderboard showing who is ahead, with suggestions for how to improve.
 
-**Phase 5: Investors, loans, communication and growth**
-13. Investors
-    - Investment records and uploaded legal documents.
-    - Profit-share payment history.
-    - Withdrawal requests and their processing.
-14. Company loans
-    - Personal and bank loans, instalment schedules, payment reminders.
-15. Message Hub
-    - Unified inbox for Facebook, WhatsApp, Instagram, Telegram, TikTok and Google.
-    - Agent activity tracking: time spent on the assigned platform, with visits to other sites logged in reports.
-16. Promotion and landing page builder
-    - Drag-and-drop landing page builder.
-    - Promo codes and offers managed per campaign.
+**Phase 5: Investors, loans, communication and growth** 13. Investors - Investment records and uploaded legal documents. - Profit-share payment history. - Withdrawal requests and their processing. 14. Company loans - Personal and bank loans, instalment schedules, payment reminders. 15. Message Hub - Unified inbox for Facebook, WhatsApp, Instagram, Telegram, TikTok and Google. - Agent activity tracking: time spent on the assigned platform, with visits to other sites logged in reports. 16. Promotion and landing page builder - Drag-and-drop landing page builder. - Promo codes and offers managed per campaign.
 
 ### Binding data rules from the client
+
 - **Product → Supplier → Inventory:** purchase price comes only from supply entries. It is never visible in the product master and is hidden from Sales.
 - **Order → Delivery → Accounts:** these three modules stay in tight sync.
   - Confirming an order reduces inventory and creates the courier entry.
@@ -154,7 +138,9 @@ The client notes that these four modules are the data foundation for everything 
 - **Multi-org isolation:** each org's data is isolated. Only Super Admin and the leaderboard aggregation read across orgs.
 
 ### Deliberate deviations from the client's suggestions
+
 Explain these to the client. Each is logged in decisions.md.
+
 - We build a custom system rather than on ERPNext or Odoo (D-001).
 - Org isolation uses PostgreSQL row-level security in one schema per module, not a schema per org (D-002).
 - Revenue is recognized on delivery (D-003).
@@ -166,6 +152,7 @@ Explain these to the client. Each is logged in decisions.md.
 ---
 
 ## 2. Glossary
+
 - **Org:** a sister company (tenant).
 - **Branch:** a showroom or warehouse unit of an org.
 - **Location:** a place that holds stock, usually one per branch, plus `damaged` and `in_transit` locations.
@@ -177,7 +164,7 @@ Explain these to the client. Each is logged in decisions.md.
 - **WAC:** weighted average cost per SKU per org.
 - **Business date:** the calendar date in Asia/Dhaka (UTC+6, no daylight saving).
 - **Party:** the counterparty on a ledger line: supplier, courier, reseller, investor, employee or lender.
-- **Maker-checker:** an action one user requests and a *different* user approves.
+- **Maker-checker:** an action one user requests and a _different_ user approves.
 - **Trust score:** 0–100, where higher means a safer customer.
 
 ---
@@ -185,7 +172,9 @@ Explain these to the client. Each is logged in decisions.md.
 ## 3. System architecture
 
 ### Shape
+
 The system is a TypeScript modular monolith: one codebase and one PostgreSQL database, deployed as separate processes.
+
 - **`api`** (NestJS on Fastify): REST + OpenAPI, authentication, and the Socket.IO realtime gateway.
 - **`worker`** (same codebase, different entrypoint): pg-boss consumers and cron schedules. It owns **all** outbound integration calls.
 - **Frontends:**
@@ -200,12 +189,14 @@ The system is a TypeScript modular monolith: one codebase and one PostgreSQL dat
   - Chatwoot: Message Hub, from Phase 5
 
 ### Why this shape
+
 - **ERPNext would cover only the simplest modules well.** It handles the standard ERP modules, but for this client those are the simplest ones. The differentiating modules would all be custom anyway, built inside Frappe's conventions and permission model.
 - **Tight sync needs one database.** The Order → Delivery → Accounts requirement is about transactional consistency, and one database with atomic transactions is the cheapest way to guarantee it.
 
 See D-001 and D-002.
 
 ### Module rules
+
 - Each domain module lives in `apps/server/src/modules/<module>/` and owns exactly one Postgres schema.
 - Modules call each other only through the other module's exported interface, `<module>.api.ts`. Never import another module's repository or tables.
 - When changes must be atomic, the calling service passes its transaction to the callee's transactional API (`fn(tx, …)`). Examples:
@@ -219,37 +210,39 @@ See D-001 and D-002.
   - The outbox doubles as the domain event log that productivity metrics are computed from.
 
 ### Module → schema map
-| Module | Schema | Owns |
-|---|---|---|
-| org | org | organizations, branches, locations, settings, feature flags, per-org branding |
-| iam | iam | Better Auth tables, memberships, API keys, devices |
-| audit | audit | audit log |
-| approvals | approvals | maker-checker requests |
-| events | events | outbox and event log |
-| files | files | file objects |
-| catalog | catalog | categories, attributes, products, SKUs, prices, images |
-| inventory | inventory | movements, levels, reservations, costs, counts |
-| supply | supply | suppliers, supply entries, supplier returns, supplier payments |
-| ledger | ledger | accounts, journals, lines, periods |
-| sales | sales | customers (org-scoped), orders, order lines, delivery zones |
-| delivery | delivery | courier accounts, consignments, status events, settlements |
-| fraud | fraud | phone signals, provider checks, rules; **cross-org by design** (§5) |
-| crm | crm | buyer stats, segments, occasions |
-| notify | notify | templates, messages, opt-outs |
-| promo | promo | promo codes, redemptions |
-| marketing | marketing | campaigns, ad spend, leads |
-| hr | hr | employees, attendance, payroll, employee loans, targets, bonus rules |
-| reseller | reseller | resellers, margin rules, slabs, earnings, payouts |
-| pos | pos | registers, shifts, POS sync |
-| investor | investor | investors, investments, distributions, withdrawals |
-| loan | loan | company loans, schedules, payments |
-| messaging | messaging | Chatwoot links, conversation stats, activity heartbeats |
-| landing | landing | pages, versions, domains |
-| analytics | analytics | rollups, leaderboard snapshots, insights |
+
+| Module    | Schema    | Owns                                                                          |
+| --------- | --------- | ----------------------------------------------------------------------------- |
+| org       | org       | organizations, branches, locations, settings, feature flags, per-org branding |
+| iam       | iam       | Better Auth tables, memberships, API keys, devices                            |
+| audit     | audit     | audit log                                                                     |
+| approvals | approvals | maker-checker requests                                                        |
+| events    | events    | outbox and event log                                                          |
+| files     | files     | file objects                                                                  |
+| catalog   | catalog   | categories, attributes, products, SKUs, prices, images                        |
+| inventory | inventory | movements, levels, reservations, costs, counts                                |
+| supply    | supply    | suppliers, supply entries, supplier returns, supplier payments                |
+| ledger    | ledger    | accounts, journals, lines, periods                                            |
+| sales     | sales     | customers (org-scoped), orders, order lines, delivery zones                   |
+| delivery  | delivery  | courier accounts, consignments, status events, settlements                    |
+| fraud     | fraud     | phone signals, provider checks, rules; **cross-org by design** (§5)           |
+| crm       | crm       | buyer stats, segments, occasions                                              |
+| notify    | notify    | templates, messages, opt-outs                                                 |
+| promo     | promo     | promo codes, redemptions                                                      |
+| marketing | marketing | campaigns, ad spend, leads                                                    |
+| hr        | hr        | employees, attendance, payroll, employee loans, targets, bonus rules          |
+| reseller  | reseller  | resellers, margin rules, slabs, earnings, payouts                             |
+| pos       | pos       | registers, shifts, POS sync                                                   |
+| investor  | investor  | investors, investments, distributions, withdrawals                            |
+| loan      | loan      | company loans, schedules, payments                                            |
+| messaging | messaging | Chatwoot links, conversation stats, activity heartbeats                       |
+| landing   | landing   | pages, versions, domains                                                      |
+| analytics | analytics | rollups, leaderboard snapshots, insights                                      |
 
 ---
 
 ## 4. Repository layout
+
 ```
 apps/
   server/          NestJS: src/main.api.ts, src/main.worker.ts, src/modules/*, src/platform/*
@@ -282,8 +275,10 @@ Rule: anything with arithmetic, rules or state lives in `packages/domain` as a p
 ## 5. Multi-org tenancy and data access
 
 ### Tenant tables
+
 - Every tenant table has `org_id uuid not null` (FK to `org.organizations`, indexed). Many also have `branch_id uuid null`.
 - Every tenant table gets RLS:
+
 ```sql
 alter table <schema>.<table> enable row level security;
 alter table <schema>.<table> force row level security;
@@ -291,16 +286,19 @@ create policy org_isolation on <schema>.<table>
   using (org_id = current_setting('app.org_id', true)::uuid)
   with check (org_id = current_setting('app.org_id', true)::uuid);
 ```
+
 - If `app.org_id` is unset, `current_setting(..., true)` returns NULL and the policy returns **zero rows**. Never write a policy that returns all rows when the setting is missing.
 
 ### Database roles
-| Role | Used by | Rights |
-|---|---|---|
-| `erp_owner` | Migrations only; the app never connects as it | Owns all objects |
-| `erp_app` | The running app | No BYPASSRLS. INSERT/SELECT only on append-only tables (ledger, stock movements, audit, outbox). |
-| `erp_analytics` | Only the analytics module and super-admin consolidated reads, through a separate pool | SELECT only, with policies that allow all orgs |
+
+| Role            | Used by                                                                               | Rights                                                                                           |
+| --------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `erp_owner`     | Migrations only; the app never connects as it                                         | Owns all objects                                                                                 |
+| `erp_app`       | The running app                                                                       | No BYPASSRLS. INSERT/SELECT only on append-only tables (ledger, stock movements, audit, outbox). |
+| `erp_analytics` | Only the analytics module and super-admin consolidated reads, through a separate pool | SELECT only, with policies that allow all orgs                                                   |
 
 ### Access helpers
+
 - `withOrg(ctx, fn)`:
   - opens a transaction on the `erp_app` pool
   - runs `select set_config('app.org_id', $1, true), set_config('app.user_id', $2, true), set_config('app.request_id', $3, true)`
@@ -310,6 +308,7 @@ create policy org_isolation on <schema>.<table>
 - `withSystem(fn)`: owner access, for migrations and seeds only.
 
 ### Cross-org by design (the only exceptions)
+
 1. `fraud.phone_signals` and `fraud.provider_checks`: aggregated counts keyed by an HMAC of the normalized phone number. Every org can read them. They contain no order details, names or addresses.
 2. `analytics.*` rollups, read through `erp_analytics`.
 3. Super Admin consolidated views (wallet totals, P&L across orgs) through `erp_analytics`. These are read-only; **every write is scoped to exactly one org**.
@@ -317,6 +316,7 @@ create policy org_isolation on <schema>.<table>
 5. The org list and reference data (districts and thanas) are global.
 
 ### Required tests (M01, extended by every later milestone)
+
 - A guard test lists every table in the tenant schemas and fails if any lacks `org_id`, RLS enabled or FORCE RLS.
 - In an org A context, neither the ORM nor raw SQL can read or write org B rows.
 - With no context set, tenant tables return 0 rows.
@@ -328,12 +328,15 @@ create policy org_isolation on <schema>.<table>
 ## 6. Identity, roles and permissions
 
 ### Authentication
+
 Authentication uses Better Auth:
+
 - email or phone plus password
 - TOTP two-factor authentication
 - phone OTP through the SMS adapter, for resellers
 
 Sessions:
+
 - live in httpOnly, Secure, SameSite=Lax cookies
 - are scoped to the parent domain, so the console works inside the Chatwoot iframe
 
@@ -342,11 +345,13 @@ Sessions:
 **Branded login (D-035).** The client asked for a separate login per sister org. One identity with several memberships is the right model underneath, so we meet the intent at the surface: when the login route or hostname identifies an org, that org is preselected and the screen carries its branding (§24). Users with one membership never see a switcher; multi-org users still get one after login.
 
 ### Request context
+
 - After login the user picks an active org with the org switcher, unless the login route already identified one (D-035). The choice is stored in the session.
 - Every request resolves `membership(user, org)` into roles plus branch scope.
 - Membership roles: `super_admin` (global), `org_admin`, `sales`, `accounts`, `marketing`, `hr`, `branch_manager`, `warehouse`, `reseller`, `investor`.
 
 ### Authorization
+
 - CASL abilities come from one declarative matrix in `packages/contracts/src/permissions/`.
 - The server enforces them with a guard plus `serializeFor(ability, subject, data)`, which removes any field the ability can't read.
 - The UI uses the same definitions only to hide controls.
@@ -356,6 +361,7 @@ Sessions:
   - `org`: the whole active org
 
 ### Protected fields
+
 - **COST fields** are readable only with `read:cost` (super_admin, org_admin, accounts):
   - `unit_cost_poisha`, `wac_poisha`, `cogs_poisha`, `gross_profit_poisha`, `stock_value_poisha`
   - supply line prices
@@ -364,37 +370,40 @@ Sessions:
 - **Investors** only ever see rows where `investor_id` is their own.
 
 ### Permission matrix
+
 This summary is authoritative until M02b writes the code matrix. After that, the code is authoritative and any change needs a decision row.
 
-| Capability | super_admin | org_admin | sales | accounts | marketing | hr | branch_manager | warehouse | reseller | investor |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Catalog read (no cost) | all | org | org | org | org | — | org | org | limited fields | — |
-| Catalog write, prices | all | org | — | — | — | — | — | — | — | — |
-| Cost, WAC, stock value, margins | all | org | — | org | — | — | — | — | — | — |
-| Stock availability | all | org | org | org | org | — | org | org | Beownz only | — |
-| Stock adjust / transfer / count | all | org + approve | — | read | — | — | request (branch) | request | — | — |
-| Supply entries, suppliers | all | org | — | org | — | — | — | qty-only drafts | — | — |
-| Orders | all | org | own + unassigned queue | read | read | — | branch | pack, ship, returns | own (portal) | — |
-| Customers, buyer history | all | org | customers of own orders | read | org | — | branch | — | own end customers | — |
-| Buyer list export | all | org | — | — | org | — | — | — | — | — |
-| Fraud trust badge and reasons | all | org | yes | read | — | — | branch | — | badge on own orders | — |
-| Fraud block override | all | org | — | — | — | — | — | — | — | — |
-| Wallets, cash entries, petty cash | all | org | — | org | — | — | own branch wallets | — | — | — |
-| Ledger reports, P&L, balance sheet | all + consolidated | org | — | org | — | — | branch P&L without cost detail | — | — | — |
-| Courier settlements | all | org | — | org | — | — | — | — | — | — |
-| Campaigns, ad spend, leads | all | org | — | spend entry | org | — | — | — | — | — |
-| Landing pages, promo codes | all | org | apply codes | — | org | — | apply at POS | — | — | — |
-| Employees, attendance, payroll | all | org | own | payroll posting and payment | own | org | branch staff | own | — | — |
-| Targets and bonus rules | all | org | own progress | — | own progress | org | branch progress | — | — | — |
-| Reseller admin, payouts | all | Beownz org | — | Beownz org | — | — | — | — | own | — |
-| Investors | all | org (read) | — | org | — | — | — | — | — | own |
-| Company loans | all | org | — | org | — | — | — | — | — | — |
-| Approvals (as checker) | all | org | — | payments | — | payroll | branch items under threshold | — | — | — |
-| Leaderboard | all | all orgs (normalized metrics only) | — | — | — | — | — | — | — | — |
-| Users, roles, settings | all | org | — | — | — | — | — | — | — | — |
+| Capability                         | super_admin        | org_admin                          | sales                   | accounts                    | marketing    | hr      | branch_manager                 | warehouse           | reseller            | investor |
+| ---------------------------------- | ------------------ | ---------------------------------- | ----------------------- | --------------------------- | ------------ | ------- | ------------------------------ | ------------------- | ------------------- | -------- |
+| Catalog read (no cost)             | all                | org                                | org                     | org                         | org          | —       | org                            | org                 | limited fields      | —        |
+| Catalog write, prices              | all                | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Cost, WAC, stock value, margins    | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Stock availability                 | all                | org                                | org                     | org                         | org          | —       | org                            | org                 | Beownz only         | —        |
+| Stock adjust / transfer / count    | all                | org + approve                      | —                       | read                        | —            | —       | request (branch)               | request             | —                   | —        |
+| Supply entries, suppliers          | all                | org                                | —                       | org                         | —            | —       | —                              | qty-only drafts     | —                   | —        |
+| Orders                             | all                | org                                | own + unassigned queue  | read                        | read         | —       | branch                         | pack, ship, returns | own (portal)        | —        |
+| Customers, buyer history           | all                | org                                | customers of own orders | read                        | org          | —       | branch                         | —                   | own end customers   | —        |
+| Buyer list export                  | all                | org                                | —                       | —                           | org          | —       | —                              | —                   | —                   | —        |
+| Fraud trust badge and reasons      | all                | org                                | yes                     | read                        | —            | —       | branch                         | —                   | badge on own orders | —        |
+| Fraud block override               | all                | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Wallets, cash entries, petty cash  | all                | org                                | —                       | org                         | —            | —       | own branch wallets             | —                   | —                   | —        |
+| Ledger reports, P&L, balance sheet | all + consolidated | org                                | —                       | org                         | —            | —       | branch P&L without cost detail | —                   | —                   | —        |
+| Courier settlements                | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Campaigns, ad spend, leads         | all                | org                                | —                       | spend entry                 | org          | —       | —                              | —                   | —                   | —        |
+| Landing pages, promo codes         | all                | org                                | apply codes             | —                           | org          | —       | apply at POS                   | —                   | —                   | —        |
+| Employees, attendance, payroll     | all                | org                                | own                     | payroll posting and payment | own          | org     | branch staff                   | own                 | —                   | —        |
+| Targets and bonus rules            | all                | org                                | own progress            | —                           | own progress | org     | branch progress                | —                   | —                   | —        |
+| Reseller admin, payouts            | all                | Beownz org                         | —                       | Beownz org                  | —            | —       | —                              | —                   | own                 | —        |
+| Investors                          | all                | org (read)                         | —                       | org                         | —            | —       | —                              | —                   | —                   | own      |
+| Company loans                      | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Approvals (as checker)             | all                | org                                | —                       | payments                    | —            | payroll | branch items under threshold   | —                   | —                   | —        |
+| Leaderboard                        | all                | all orgs (normalized metrics only) | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Users, roles, settings             | all                | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
 
 ### Maker-checker actions
+
 Each org configures its own thresholds. These actions go through approvals:
+
 - wallet adjustments
 - stock write-offs and gains
 - supplier payments above the threshold
@@ -414,6 +423,7 @@ The database enforces that the requester can never approve their own request.
 ## 7. Money and the ledger
 
 ### Money
+
 - Columns are `bigint`, named `*_poisha`. TypeScript uses a branded integer `Poisha`, which is safe up to 9e15.
 - `packages/domain/src/money` provides:
   - `add`, `sub`, `sum`
@@ -424,19 +434,21 @@ The database enforces that the requester can never approve their own request.
 - Currency is BDT only (D-028).
 
 ### Chart of accounts
+
 Each org gets a chart seeded from a template in `packages/db/seed/coa-template.ts`. Accounts have stable `code`s and `subtype`s. Orgs can add accounts but can't delete system accounts.
 
 System subtypes:
 
-| Class | Subtypes |
-|---|---|
-| Assets | `wallet_cash` (per branch)<br>`wallet_bank`<br>`wallet_bkash`<br>`wallet_mfs_other` (optional, e.g. Nagad)<br>`courier_receivable` (party: courier)<br>`inventory`<br>`goods_in_transit`<br>`supplier_advance` (party: supplier)<br>`employee_loan_receivable` (party: employee)<br>`other_receivable` |
-| Liabilities | `supplier_payable` (party: supplier)<br>`reseller_payable` (party: reseller)<br>`salary_payable`<br>`investor_payable` (party: investor)<br>`loan_payable` (party: lender)<br>`customer_advance`<br>`other_payable` |
-| Equity | `owner_capital`<br>`investor_capital` (party: investor)<br>`retained_earnings`<br>`profit_distribution` |
-| Income | `sales_revenue`<br>`sales_discounts` (contra-revenue)<br>`delivery_charge_income`<br>`other_income`<br>`inventory_adjustment_gain` |
-| Expenses | `cogs`<br>`courier_charges`<br>`return_charges`<br>`ad_spend`<br>`salary_expense`<br>`bonus_expense`<br>`interest_expense`<br>`inventory_writeoff`<br>`purchase_price_variance`<br>`cash_over_short`<br>`bank_charges`<br>operating categories (rent, utilities, packaging, transport, misc), used by petty cash and cash out |
+| Class       | Subtypes                                                                                                                                                                                                                                                                                                                      |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Assets      | `wallet_cash` (per branch)<br>`wallet_bank`<br>`wallet_bkash`<br>`wallet_mfs_other` (optional, e.g. Nagad)<br>`courier_receivable` (party: courier)<br>`inventory`<br>`goods_in_transit`<br>`supplier_advance` (party: supplier)<br>`employee_loan_receivable` (party: employee)<br>`other_receivable`                        |
+| Liabilities | `supplier_payable` (party: supplier)<br>`reseller_payable` (party: reseller)<br>`salary_payable`<br>`investor_payable` (party: investor)<br>`loan_payable` (party: lender)<br>`customer_advance`<br>`other_payable`                                                                                                           |
+| Equity      | `owner_capital`<br>`investor_capital` (party: investor)<br>`retained_earnings`<br>`profit_distribution`                                                                                                                                                                                                                       |
+| Income      | `sales_revenue`<br>`sales_discounts` (contra-revenue)<br>`delivery_charge_income`<br>`other_income`<br>`inventory_adjustment_gain`                                                                                                                                                                                            |
+| Expenses    | `cogs`<br>`courier_charges`<br>`return_charges`<br>`ad_spend`<br>`salary_expense`<br>`bonus_expense`<br>`interest_expense`<br>`inventory_writeoff`<br>`purchase_price_variance`<br>`cash_over_short`<br>`bank_charges`<br>operating categories (rent, utilities, packaging, transport, misc), used by petty cash and cash out |
 
 ### Journal model
+
 - `ledger.journals`:
   - `id, org_id, business_date, source_type, source_id, idempotency_key`
   - `memo, reverses_journal_id, created_by, created_at`
@@ -457,49 +469,53 @@ System subtypes:
 - Reversals create a new journal with `reverses_journal_id` set.
 
 ### Posting rules (canonical)
+
 W = the wallet account used.
 
-| Business event | Journal |
-|---|---|
-| Supply received (qty × unit cost) | Dr Inventory / Cr Supplier payable (supplier) |
-| Supplier advance paid | Dr Supplier advance / Cr W |
-| Advance applied to a supply | Dr Supplier payable / Cr Supplier advance |
-| Supplier paid | Dr Supplier payable / Cr W |
-| Supplier return | Dr Supplier payable (qty × original unit cost)<br>Cr Inventory (qty × current WAC)<br>Dr or Cr Purchase price variance (the difference) |
-| Order handed to courier | Dr Goods in transit / Cr Inventory (qty × WAC at handover; this value is recorded on the movement) |
-| Delivered (full) | Dr Courier receivable (COD collected) + Dr Customer advance (if an advance was taken)<br>Cr Sales revenue (net item value) + Cr Delivery charge income<br>and Dr COGS / Cr Goods in transit |
-| Partially delivered | Delivered lines post as above. Any difference between the courier-reported collection and the computed value posts to Sales discounts, with a reason. Undelivered lines follow the return path. |
-| Return received (sellable or damaged) | Dr Inventory / Cr Goods in transit (at dispatch value). Damaged units go to the `damaged` location; writing them off is a separate step that needs approval. |
-| Courier charges (from settlement) | Dr Courier charges and Dr Return charges / Cr Courier receivable |
-| COD settlement received | Dr W (bank or bKash) / Cr Courier receivable (net) |
-| Advance received before delivery | Dr W / Cr Customer advance |
-| Advance refunded on cancel | Dr Customer advance / Cr W (or Cr Other income, per org policy) |
-| POS sale | Dr W (branch) / Cr Sales revenue, and Dr COGS / Cr Inventory |
-| Cash in (category) | Dr W / Cr income account |
-| Cash out / petty cash (category) | Dr expense account / Cr W (receipt required) |
-| Wallet transfer | Dr W2 (+ Dr Bank charges) / Cr W1 |
-| Daily closing variance | Dr or Cr Cash over/short against W (approval required) |
-| Ad spend recorded | Dr Ad spend / Cr W or Cr Other payable |
-| Payroll posted | Dr Salary expense + Dr Bonus expense<br>Cr Salary payable + Cr Employee loan receivable (deductions) |
-| Salary paid | Dr Salary payable / Cr W |
-| Employee loan disbursed | Dr Employee loan receivable / Cr W |
-| Reseller order delivered | Dr Courier receivable (Σ customer selling price + delivery charge)<br>Cr Sales revenue (Σ reseller price + slab charge)<br>Cr Delivery charge income<br>Cr Reseller payable (reseller income)<br>and Dr COGS / Cr Goods in transit |
-| Reseller order returned | No income accrues. Any return fee is charged to the reseller per policy (D-016): Dr Reseller payable / Cr Other income. |
-| Reseller payout | Dr Reseller payable / Cr W |
-| Investor capital received | Dr W / Cr Investor capital (investor) |
-| Profit distribution declared | Dr Profit distribution / Cr Investor payable |
-| Distribution or withdrawal paid | Dr Investor payable (or Investor capital) / Cr W |
-| Company loan received | Dr W / Cr Loan payable (lender) |
-| Loan instalment paid | Dr Loan payable (principal) + Dr Interest expense / Cr W |
-| Stock write-off / count loss | Dr Inventory write-off / Cr Inventory (approval required) |
-| Stock gain | Dr Inventory / Cr Inventory adjustment gain (approval required) |
+| Business event                        | Journal                                                                                                                                                                                                                            |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Supply received (qty × unit cost)     | Dr Inventory / Cr Supplier payable (supplier)                                                                                                                                                                                      |
+| Supplier advance paid                 | Dr Supplier advance / Cr W                                                                                                                                                                                                         |
+| Advance applied to a supply           | Dr Supplier payable / Cr Supplier advance                                                                                                                                                                                          |
+| Supplier paid                         | Dr Supplier payable / Cr W                                                                                                                                                                                                         |
+| Supplier return                       | Dr Supplier payable (qty × original unit cost)<br>Cr Inventory (qty × current WAC)<br>Dr or Cr Purchase price variance (the difference)                                                                                            |
+| Order handed to courier               | Dr Goods in transit / Cr Inventory (qty × WAC at handover; this value is recorded on the movement)                                                                                                                                 |
+| Delivered (full)                      | Dr Courier receivable (COD collected) + Dr Customer advance (if an advance was taken)<br>Cr Sales revenue (net item value) + Cr Delivery charge income<br>and Dr COGS / Cr Goods in transit                                        |
+| Partially delivered                   | Delivered lines post as above. Any difference between the courier-reported collection and the computed value posts to Sales discounts, with a reason. Undelivered lines follow the return path.                                    |
+| Return received (sellable or damaged) | Dr Inventory / Cr Goods in transit (at dispatch value). Damaged units go to the `damaged` location; writing them off is a separate step that needs approval.                                                                       |
+| Courier charges (from settlement)     | Dr Courier charges and Dr Return charges / Cr Courier receivable                                                                                                                                                                   |
+| COD settlement received               | Dr W (bank or bKash) / Cr Courier receivable (net)                                                                                                                                                                                 |
+| Advance received before delivery      | Dr W / Cr Customer advance                                                                                                                                                                                                         |
+| Advance refunded on cancel            | Dr Customer advance / Cr W (or Cr Other income, per org policy)                                                                                                                                                                    |
+| POS sale                              | Dr W (branch) / Cr Sales revenue, and Dr COGS / Cr Inventory                                                                                                                                                                       |
+| Cash in (category)                    | Dr W / Cr income account                                                                                                                                                                                                           |
+| Cash out / petty cash (category)      | Dr expense account / Cr W (receipt required)                                                                                                                                                                                       |
+| Wallet transfer                       | Dr W2 (+ Dr Bank charges) / Cr W1                                                                                                                                                                                                  |
+| Daily closing variance                | Dr or Cr Cash over/short against W (approval required)                                                                                                                                                                             |
+| Ad spend recorded                     | Dr Ad spend / Cr W or Cr Other payable                                                                                                                                                                                             |
+| Payroll posted                        | Dr Salary expense + Dr Bonus expense<br>Cr Salary payable + Cr Employee loan receivable (deductions)                                                                                                                               |
+| Salary paid                           | Dr Salary payable / Cr W                                                                                                                                                                                                           |
+| Employee loan disbursed               | Dr Employee loan receivable / Cr W                                                                                                                                                                                                 |
+| Reseller order delivered              | Dr Courier receivable (Σ customer selling price + delivery charge)<br>Cr Sales revenue (Σ reseller price + slab charge)<br>Cr Delivery charge income<br>Cr Reseller payable (reseller income)<br>and Dr COGS / Cr Goods in transit |
+| Reseller order returned               | No income accrues. Any return fee is charged to the reseller per policy (D-016): Dr Reseller payable / Cr Other income.                                                                                                            |
+| Reseller payout                       | Dr Reseller payable / Cr W                                                                                                                                                                                                         |
+| Investor capital received             | Dr W / Cr Investor capital (investor)                                                                                                                                                                                              |
+| Profit distribution declared          | Dr Profit distribution / Cr Investor payable                                                                                                                                                                                       |
+| Distribution or withdrawal paid       | Dr Investor payable (or Investor capital) / Cr W                                                                                                                                                                                   |
+| Company loan received                 | Dr W / Cr Loan payable (lender)                                                                                                                                                                                                    |
+| Loan instalment paid                  | Dr Loan payable (principal) + Dr Interest expense / Cr W                                                                                                                                                                           |
+| Stock write-off / count loss          | Dr Inventory write-off / Cr Inventory (approval required)                                                                                                                                                                          |
+| Stock gain                            | Dr Inventory / Cr Inventory adjustment gain (approval required)                                                                                                                                                                    |
 
 Accounting policies:
+
 - Revenue is recognized **on delivery** (D-003).
 - Sales are recorded net of discounts. The discount amount is kept on the order for reporting.
 
 ### Reports
+
 All reports filter by org, branch and a range of business dates:
+
 - day book
 - cash book per wallet
 - wallet balances, plus a consolidated view for super_admin
@@ -513,6 +529,7 @@ All reports filter by org, branch and a range of business dates:
 - COD reconciliation: delivered vs settled vs outstanding, by courier
 
 ### Periods and dates
+
 - Periods close monthly. `org_admin` or `accounts` closes them; reopening needs super_admin approval.
 - `business_date = (occurred_at at time zone 'Asia/Dhaka')::date`, computed in the domain layer.
 - Back-dating is allowed only into open periods. Anything earlier than yesterday needs approval (configurable).
@@ -522,6 +539,7 @@ All reports filter by org, branch and a range of business dates:
 ## 8. Inventory and costing
 
 ### Tables
+
 - `inventory.locations`: `org_id, branch_id, kind` (`warehouse | showroom | damaged | in_transit`), name.
 - `inventory.stock_levels`:
   - `(org_id, sku_id, location_id)` is the primary key
@@ -537,12 +555,15 @@ All reports filter by org, branch and a range of business dates:
   - `status`: `active | consumed | released`
 
 ### Rules
+
 - Every movement updates `stock_levels` in the same transaction. A nightly job recomputes levels from movements and alerts on any drift.
 - Reserve with one conditional statement. Zero rows updated means `STOCK_INSUFFICIENT`. Never SELECT and then UPDATE.
+
 ```sql
 update inventory.stock_levels set reserved = reserved + $qty
 where org_id = $org and sku_id = $sku and location_id = $loc and on_hand - reserved >= $qty;
 ```
+
 - Fulfilment location:
   - orders use the org's default fulfilment location, which can be overridden per order
   - POS uses its branch location
@@ -569,6 +590,7 @@ where org_id = $org and sku_id = $sku and location_id = $loc and on_hand - reser
 ## 9. Orders, delivery and couriers
 
 ### Customers (`sales.customers`)
+
 - Org-scoped buyer records, keyed by phone normalized to E.164 with libphonenumber-js.
 - Validation accepts Bangla digits (০-৯), spaces, dashes and the prefixes +880, 880 and 0.
 - Fields:
@@ -579,57 +601,62 @@ where org_id = $org and sku_id = $sku and location_id = $loc and on_hand - reser
 - The same person appears as separate rows in different orgs. The only cross-org link is the fraud phone hash (D-032).
 
 ### Orders (`sales.orders`)
-| Group | Fields |
-|---|---|
-| Identity | `org_id, branch_id`, `order_no` (per-org sequence, e.g. `OUR-2609-00042`) |
-| Channel | `channel` (`facebook, whatsapp, instagram, tiktok, landing_page, website, phone, walk_in, reseller`) |
-| Source | `source` jsonb: page id, campaign id, ad id, UTMs, landing page id, Chatwoot conversation id |
-| Customer and address | `customer_id`, shipping address snapshot, `delivery_zone_id` |
-| Amounts | `delivery_charge_poisha, discount_poisha, promo_code_id, advance_paid_poisha, cod_amount_poisha` |
-| Status | `status, hold_reason` |
-| Fraud | `trust_score, fraud_decision` |
-| People | `assigned_to, created_by` |
-| Timestamps | `confirmed_by/at, packed_at, handed_over_at, delivered_at, returned_at, cancelled_at, cancel_reason` |
-| Reseller | `reseller_id` |
-| Links | `exchange_of_order_id` |
-| Other | `notes` |
+
+| Group                | Fields                                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------- |
+| Identity             | `org_id, branch_id`, `order_no` (per-org sequence, e.g. `OUR-2609-00042`)                            |
+| Channel              | `channel` (`facebook, whatsapp, instagram, tiktok, landing_page, website, phone, walk_in, reseller`) |
+| Source               | `source` jsonb: page id, campaign id, ad id, UTMs, landing page id, Chatwoot conversation id         |
+| Customer and address | `customer_id`, shipping address snapshot, `delivery_zone_id`                                         |
+| Amounts              | `delivery_charge_poisha, discount_poisha, promo_code_id, advance_paid_poisha, cod_amount_poisha`     |
+| Status               | `status, hold_reason`                                                                                |
+| Fraud                | `trust_score, fraud_decision`                                                                        |
+| People               | `assigned_to, created_by`                                                                            |
+| Timestamps           | `confirmed_by/at, packed_at, handed_over_at, delivered_at, returned_at, cancelled_at, cancel_reason` |
+| Reseller             | `reseller_id`                                                                                        |
+| Links                | `exchange_of_order_id`                                                                               |
+| Other                | `notes`                                                                                              |
 
 - **Order lines:** `sku_id, qty, unit_price_poisha` (the selling price, or the reseller's customer price), `discount_poisha, delivered_qty, returned_qty`. Reseller lines also carry `reseller_price_poisha`.
 - **Totals** are computed in the domain layer: `COD = items − discount + delivery − advance`. The domain rejects a negative COD.
 
 ### State machine (`packages/domain/src/orders/state.ts`)
+
 Implement this as an exhaustive, tested transition table:
 
-| From | To | Trigger | Effects |
-|---|---|---|---|
-| pending | confirmed | Agent confirms. The fraud decision must allow it, or an override with a reason is given. | Reserve stock. If the org setting is `on_confirm`, enqueue courier booking. |
-| pending | cancelled | Agent | None |
-| confirmed | on_hold | Agent or fraud rule | Keep the reservation |
-| on_hold | confirmed | Agent | None |
-| confirmed | packed | Warehouse | If the setting is `on_pack`, enqueue booking |
-| confirmed, packed | cancelled | Agent or admin | Release the reservation. Enqueue a courier cancel if the order was booked. |
-| confirmed, packed | shipped | Handover to courier | Consume the reservation, create the dispatch movement, post goods in transit |
-| shipped | delivered | Courier status | Post revenue, delivery income and COGS; update customer stats |
-| shipped | partially_delivered | Courier status plus delivered lines | Post the delivered part; the rest follows the return path |
-| shipped | return_in_transit | Courier status | None |
-| return_in_transit, partially_delivered | returned | Warehouse receives and inspects | Stock back to sellable or damaged; post the return |
-| delivered | exchange | Agent creates a linked order | A new order with `exchange_of_order_id` set |
+| From                                   | To                  | Trigger                                                                                  | Effects                                                                      |
+| -------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| pending                                | confirmed           | Agent confirms. The fraud decision must allow it, or an override with a reason is given. | Reserve stock. If the org setting is `on_confirm`, enqueue courier booking.  |
+| pending                                | cancelled           | Agent                                                                                    | None                                                                         |
+| confirmed                              | on_hold             | Agent or fraud rule                                                                      | Keep the reservation                                                         |
+| on_hold                                | confirmed           | Agent                                                                                    | None                                                                         |
+| confirmed                              | packed              | Warehouse                                                                                | If the setting is `on_pack`, enqueue booking                                 |
+| confirmed, packed                      | cancelled           | Agent or admin                                                                           | Release the reservation. Enqueue a courier cancel if the order was booked.   |
+| confirmed, packed                      | shipped             | Handover to courier                                                                      | Consume the reservation, create the dispatch movement, post goods in transit |
+| shipped                                | delivered           | Courier status                                                                           | Post revenue, delivery income and COGS; update customer stats                |
+| shipped                                | partially_delivered | Courier status plus delivered lines                                                      | Post the delivered part; the rest follows the return path                    |
+| shipped                                | return_in_transit   | Courier status                                                                           | None                                                                         |
+| return_in_transit, partially_delivered | returned            | Warehouse receives and inspects                                                          | Stock back to sellable or damaged; post the return                           |
+| delivered                              | exchange            | Agent creates a linked order                                                             | A new order with `exchange_of_order_id` set                                  |
 
 Notes:
+
 - Once an order is shipped it can't be cancelled; it becomes a return.
 - Every transition writes an outbox event and an audit row.
 - Until courier sync covers a status, staff can set `delivered`, `partially_delivered` and `returned` manually, with a reason. The postings are the same.
 
 ### Delivery zones and charges
+
 - Each org defines its own zones, each with a charge and a default courier.
 - Example zones: Inside Dhaka, Dhaka suburbs, Outside Dhaka (seed placeholders, D-009).
 - District/thana → zone mapping is seeded and editable.
 
 ### Couriers (`packages/integrations/couriers`)
+
 ```ts
 interface CourierAdapter {
-  code: string;                                              // 'steadfast' | 'pathao' | 'redx' | …
-  createParcel(input: ParcelInput): Promise<ParcelResult>;   // idempotent on our order id
+  code: string; // 'steadfast' | 'pathao' | 'redx' | …
+  createParcel(input: ParcelInput): Promise<ParcelResult>; // idempotent on our order id
   cancelParcel?(ref: ParcelRef): Promise<void>;
   getStatus(ref: ParcelRef): Promise<NormalizedStatus>;
   parseWebhook?(req: RawRequest): Promise<NormalizedEvent[]>; // must verify authenticity
@@ -637,6 +664,7 @@ interface CourierAdapter {
   parseSettlementFile?(file: Buffer, name: string): Promise<SettlementBatch>;
 }
 ```
+
 - Normalized statuses: `booked, pickup_pending, picked_up, in_transit, out_for_delivery, hold, delivered, partial_delivered, return_in_transit, returned_to_merchant, cancelled, unknown`. For `unknown`, keep the raw status.
 - Build every adapter from the courier's **official docs**, using credentials the user provides. If the docs are missing, work from recorded fixtures and mark the adapter UNVERIFIED in decisions.md.
 - **Webhooks:**
@@ -652,6 +680,7 @@ interface CourierAdapter {
 ## 10. Customers, fraud, notifications and promotions
 
 ### Fraud
+
 - `fraud.phone_signals` (cross-org):
   - key: `phone_hash`, where `phone_hash = HMAC-SHA256(server_secret, e164)`
   - columns: `orders_total, delivered, returned, cancelled, last_incident_at, manual_flags jsonb, updated_at`
@@ -672,6 +701,7 @@ interface CourierAdapter {
 - **UX:** the order desk shows the badge within 300 ms from cache and refreshes stale data in the background.
 
 ### CRM (Phase 2)
+
 - Buyer stats: orders, delivered, LTV, AOV, first and last order, favourite categories and sizes.
 - RFM segments recomputed nightly.
 - Occasions (birthday, anniversary):
@@ -680,6 +710,7 @@ interface CourierAdapter {
 - Re-engagement lists (no purchase in N days, plus filters) export to CSV, and from Phase 3 to a Meta custom audience using hashed phones.
 
 ### Notifications (`notify`)
+
 - Channels: `sms` (BD gateway adapter), `whatsapp_template` (Phase 5), `in_app`.
 - Templates in bn and en with variables.
 - Opt-out list.
@@ -688,6 +719,7 @@ interface CourierAdapter {
 - Quiet hours 21:00–09:00 Asia/Dhaka for everything except OTPs.
 
 ### Promotions (`promo`)
+
 - Codes are `percent | flat | free_delivery` and support:
   - minimum order and maximum discount
   - usage limits, total and per customer
@@ -702,6 +734,7 @@ interface CourierAdapter {
 ---
 
 ## 11. Marketing
+
 - Entities:
   - campaigns: platform, external ids, products, dates
   - daily ad spend: manual entry or Meta Marketing API import
@@ -730,6 +763,7 @@ interface CourierAdapter {
 ---
 
 ## 12. HR, payroll, targets and productivity
+
 - **Employees:**
   - org, branch, user link, designation, join date, salary structure
   - payout details (bank or bKash) encrypted at application level
@@ -750,11 +784,17 @@ interface CourierAdapter {
   - split into weeks by the working days in each week, using largest remainder so the weeks sum exactly
   - progress comes from rollups
 - **Bonus rules:** versioned JSON, evaluated by a pure function, with a preview and an approval before they feed payroll. Example:
+
 ```json
-{ "metric": "delivered_orders",
-  "tiers": [ { "gte_pct": 100, "amount_poisha": 200000 },
-             { "gte_pct": 120, "per_unit_above_target_poisha": 5000 } ] }
+{
+  "metric": "delivered_orders",
+  "tiers": [
+    { "gte_pct": 100, "amount_poisha": 200000 },
+    { "gte_pct": 120, "per_unit_above_target_poisha": 5000 }
+  ]
+}
 ```
+
 - **Productivity:**
   - pickup time = first agent action (claim, confirm or cancel) − the time the order was created or assigned
   - for each agent: median and p90 pickup time, and orders handled per active hour
@@ -763,6 +803,7 @@ interface CourierAdapter {
 ---
 
 ## 13. Reseller engine (Beownz)
+
 - **Reseller** (org = Beownz):
   - business name (printed on invoices), contact, phone (used for login)
   - payout method, encrypted: bKash or bank
@@ -792,6 +833,7 @@ interface CourierAdapter {
 ---
 
 ## 14. Branches and showroom POS
+
 - A branch is a showroom unit with its own location, wallets (hand cash, bKash), staff and P&L. Branch managers don't see cost detail (D-014).
 - **POS PWA:**
   - open a register or shift with opening cash; close with a cash count
@@ -810,6 +852,7 @@ interface CourierAdapter {
 ## 15. Investors and company loans
 
 ### Investors
+
 - Investor profile with KYC documents.
 - Investments per org: amount, date, terms (D-019), lock-in, private documents.
 - Distributions are declared per period per org, approved, then paid.
@@ -818,6 +861,7 @@ interface CourierAdapter {
 - 2FA is mandatory.
 
 ### Company loans
+
 - A loan has a lender (bank or person), principal, rate, method (`flat | reducing`, D-020), tenure and start date.
 - A pure function generates the schedule. Principal sums exactly to the loan amount.
 - Reminders go out N days before each due date, in-app and via SMS, exactly once per instalment.
@@ -829,6 +873,7 @@ interface CourierAdapter {
 ## 16. Message Hub and agent activity
 
 ### Message Hub
+
 Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 
 - **Inboxes per org:** Facebook, Instagram, WhatsApp (Cloud API), Telegram, website chat and TikTok.
@@ -845,6 +890,7 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 - Check Chatwoot's current API and webhook docs before building.
 
 ### Agent activity
+
 - A Chrome MV3 extension (built with WXT), force-installed by Chrome policy on office PCs. Each device is enrolled to one employee with a one-time code.
 - Heartbeats record the active tab's **domain only**, idle/active state and window focus. They are taken every 30 s and sent in batches every 2 min, with an offline buffer.
 - The server aggregates time on assigned platforms (an allowlist per role: Chatwoot, the ERP console, Meta Business Suite, courier portals, …) against other domains, and reports per agent per day.
@@ -854,6 +900,7 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 ---
 
 ## 17. Landing pages
+
 - **Editor:** Puck in the console.
 - **Blocks** (`packages/landing-blocks`): Hero, ProductShowcase (live price and stock), VariantPicker + OrderForm, Countdown, Benefits, Testimonials, FAQ, TrustBadges, VideoEmbed, StickyOrderBar.
 - **Storage:**
@@ -866,6 +913,7 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 ---
 
 ## 18. Analytics and leaderboard
+
 - **Rollups:** `analytics.daily_org`, `daily_branch`, `daily_channel`, `daily_campaign`, `daily_agent`. Workers upsert them from events, and a nightly job recomputes the last 7 days.
 - **Org dashboard:**
   - orders: placed, confirmed, delivered, returned
@@ -887,10 +935,12 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 ## 19. Realtime event catalog
 
 ### Transport and authorization
+
 - Socket.IO namespace `/rt` on the API, with the Valkey adapter so it works across multiple instances.
 - The handshake authenticates with the session cookie. The **server** puts the socket in rooms based on the user's memberships; clients never choose rooms.
 
 ### Rooms
+
 - `user:{userId}`
 - `org:{orgId}:role:{role}`
 - `org:{orgId}:branch:{branchId}`
@@ -898,6 +948,7 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 - `super`
 
 ### Rules
+
 - Emit only after commit, from the outbox dispatcher.
 - Payloads contain ids plus only those display fields every recipient role is allowed to see: never cost, never full addresses.
 - Clients refetch details over REST, where authorization is enforced.
@@ -905,72 +956,77 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 - Every event type has a Zod schema in `packages/contracts/src/events.ts`.
 
 ### Catalog
-| Event | Rooms | Payload | Purpose |
-|---|---|---|---|
-| `order.created` | `org:role:sales`, `org:role:org_admin` | id, order_no, channel, total, created_at | New-order alert; starts the pickup timer |
-| `order.assigned` / `order.claimed` | `org:role:sales`, `user:{assignee}` | id, assignee | Queue ownership |
-| `order.status_changed` | `org:role:sales`, `org:role:warehouse`<br>`org:role:accounts` (delivered and returned only)<br>`reseller:{id}` (reseller orders)<br>`org:branch:{b}` (POS orders) | id, from, to, at | Live lists and dashboards |
-| `order.fraud_flagged` | `org:role:sales`, `org:role:org_admin` | id, trust_score, decision | Review queue |
-| `delivery.updated` | `org:role:sales`, `reseller:{id}` | order id, normalized status, at | Tracking view |
-| `delivery.booking_failed` | `org:role:sales`, `org:role:org_admin` | order id, courier, error code | Fix and retry |
-| `settlement.imported` | `org:role:accounts` | batch id, totals, exception count | Reconciliation |
-| `stock.available_changed` | `org:role:sales`, `org:role:warehouse`; Beownz resellers for Beownz SKUs (throttled) | sku id, location id, available | Live availability |
-| `stock.low` | `org:role:org_admin`, `org:role:warehouse` | sku id, location, available, reorder level | Replenishment |
-| `wallet.balance_changed` | `org:role:accounts`, `org:branch:{b}` (branch wallets) | account id, balance | Cash position |
-| `approval.requested` | `user:{each eligible checker}` | request id, type, amount | Approvals inbox |
-| `approval.decided` | `user:{requester}` | request id, decision | Status |
-| `target.progress` | `user:{employee}`, `org:role:hr` | target id, achieved, pct | Progress widgets |
-| `leaderboard.updated` | `org:role:org_admin` (all orgs), `super` | snapshot id | Leaderboard refresh |
-| `payout.updated` | `reseller:{id}`, `org:role:accounts` | payout id, status | Reseller portal |
-| `investor.withdrawal.updated` | `user:{investor user}` | request id, status | Investor portal |
-| `pos.sale_synced` / `pos.sync_conflict` | `org:branch:{b}` | sale id / conflict id | POS status |
-| `notification.created` | `user:{id}` | notification id, title key | In-app inbox |
-| `job.failed` | `org:role:org_admin`, `super` | job type, ref, error code | Operations |
+
+| Event                                   | Rooms                                                                                                                                                             | Payload                                    | Purpose                                  |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------- |
+| `order.created`                         | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, order_no, channel, total, created_at   | New-order alert; starts the pickup timer |
+| `order.assigned` / `order.claimed`      | `org:role:sales`, `user:{assignee}`                                                                                                                               | id, assignee                               | Queue ownership                          |
+| `order.status_changed`                  | `org:role:sales`, `org:role:warehouse`<br>`org:role:accounts` (delivered and returned only)<br>`reseller:{id}` (reseller orders)<br>`org:branch:{b}` (POS orders) | id, from, to, at                           | Live lists and dashboards                |
+| `order.fraud_flagged`                   | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, trust_score, decision                  | Review queue                             |
+| `delivery.updated`                      | `org:role:sales`, `reseller:{id}`                                                                                                                                 | order id, normalized status, at            | Tracking view                            |
+| `delivery.booking_failed`               | `org:role:sales`, `org:role:org_admin`                                                                                                                            | order id, courier, error code              | Fix and retry                            |
+| `settlement.imported`                   | `org:role:accounts`                                                                                                                                               | batch id, totals, exception count          | Reconciliation                           |
+| `stock.available_changed`               | `org:role:sales`, `org:role:warehouse`; Beownz resellers for Beownz SKUs (throttled)                                                                              | sku id, location id, available             | Live availability                        |
+| `stock.low`                             | `org:role:org_admin`, `org:role:warehouse`                                                                                                                        | sku id, location, available, reorder level | Replenishment                            |
+| `wallet.balance_changed`                | `org:role:accounts`, `org:branch:{b}` (branch wallets)                                                                                                            | account id, balance                        | Cash position                            |
+| `approval.requested`                    | `user:{each eligible checker}`                                                                                                                                    | request id, type, amount                   | Approvals inbox                          |
+| `approval.decided`                      | `user:{requester}`                                                                                                                                                | request id, decision                       | Status                                   |
+| `target.progress`                       | `user:{employee}`, `org:role:hr`                                                                                                                                  | target id, achieved, pct                   | Progress widgets                         |
+| `leaderboard.updated`                   | `org:role:org_admin` (all orgs), `super`                                                                                                                          | snapshot id                                | Leaderboard refresh                      |
+| `payout.updated`                        | `reseller:{id}`, `org:role:accounts`                                                                                                                              | payout id, status                          | Reseller portal                          |
+| `investor.withdrawal.updated`           | `user:{investor user}`                                                                                                                                            | request id, status                         | Investor portal                          |
+| `pos.sale_synced` / `pos.sync_conflict` | `org:branch:{b}`                                                                                                                                                  | sale id / conflict id                      | POS status                               |
+| `notification.created`                  | `user:{id}`                                                                                                                                                       | notification id, title key                 | In-app inbox                             |
+| `job.failed`                            | `org:role:org_admin`, `super`                                                                                                                                     | job type, ref, error code                  | Operations                               |
 
 ---
 
 ## 20. Background jobs
+
 Jobs run on pg-boss, with queues named `module.action`.
+
 - Every job is idempotent, retries with exponential backoff and has a dead-letter queue.
 - A job that lands in the dead-letter queue emits `job.failed`.
 - Cron schedules run in Asia/Dhaka time.
 
-| Queue / cron | When | Notes |
-|---|---|---|
-| `delivery.book_parcel` | On event | 5 retries, then dead-letter → booking_failed |
-| `delivery.process_webhook` | On receipt | Raw payload is stored before processing |
-| `delivery.poll_status` | Every 30 min for stale active parcels | Respects courier rate limits |
-| `delivery.import_settlement` | On upload or API fetch | Needs approval before posting |
-| `fraud.refresh_provider` | On demand, and when the TTL expires | Throttled per provider |
-| `inventory.reconcile_levels` | Nightly 02:00 | Drift alert |
-| `crm.rfm` | Nightly 03:00 | |
-| `crm.occasions` | Daily 09:00 | |
-| `marketing.import_meta_spend` | Daily 06:00, plus manual | Yesterday plus today so far |
-| `marketing.capi_delivered` | On delivery | |
-| `analytics.rollup` | On events, plus a nightly recompute of the last 7 days | |
-| `hr.target_progress` | Hourly | |
-| `loan.reminders` | Daily 10:00 | |
-| `notify.send` | On demand | Respects quiet hours |
-| `files.process_image` | On upload | sharp variants, EXIF stripped |
-| `ops.backup_verify` | Weekly (staging) | Restore to a scratch database and verify |
+| Queue / cron                  | When                                                   | Notes                                        |
+| ----------------------------- | ------------------------------------------------------ | -------------------------------------------- |
+| `delivery.book_parcel`        | On event                                               | 5 retries, then dead-letter → booking_failed |
+| `delivery.process_webhook`    | On receipt                                             | Raw payload is stored before processing      |
+| `delivery.poll_status`        | Every 30 min for stale active parcels                  | Respects courier rate limits                 |
+| `delivery.import_settlement`  | On upload or API fetch                                 | Needs approval before posting                |
+| `fraud.refresh_provider`      | On demand, and when the TTL expires                    | Throttled per provider                       |
+| `inventory.reconcile_levels`  | Nightly 02:00                                          | Drift alert                                  |
+| `crm.rfm`                     | Nightly 03:00                                          |                                              |
+| `crm.occasions`               | Daily 09:00                                            |                                              |
+| `marketing.import_meta_spend` | Daily 06:00, plus manual                               | Yesterday plus today so far                  |
+| `marketing.capi_delivered`    | On delivery                                            |                                              |
+| `analytics.rollup`            | On events, plus a nightly recompute of the last 7 days |                                              |
+| `hr.target_progress`          | Hourly                                                 |                                              |
+| `loan.reminders`              | Daily 10:00                                            |                                              |
+| `notify.send`                 | On demand                                              | Respects quiet hours                         |
+| `files.process_image`         | On upload                                              | sharp variants, EXIF stripped                |
+| `ops.backup_verify`           | Weekly (staging)                                       | Restore to a scratch database and verify     |
 
 ---
 
 ## 21. Integrations
-| Integration | Phase | Interface | Notes |
-|---|---|---|---|
-| Couriers (Steadfast, Pathao, RedX; others later) | 1–2 | CourierAdapter | Official docs and user credentials only |
-| Fraud providers (Steadfast via fraudjs; others) | 1–2 | FraudSignalProvider | Cached, throttled |
-| Cloudflare Turnstile, R2 | 1 | — | |
-| BD SMS gateway | 2 | SmsProvider | Branded sender IDs need approval, so apply early (D-012) |
-| Advance payment gateway (bKash or aggregator) | 2, optional | PaymentProvider | Only if the client wants online collection (D-013) |
-| Meta Marketing API, Conversions API | 3 | MetaAdsProvider, CapiProvider | System-user tokens per org |
-| Biometric attendance | 3 | AttendanceImporter | CSV first |
-| LLM for insight narratives | 4, optional | InsightNarrator | Metrics only, feature-flagged |
-| Chatwoot | 5 | ChatwootClient | Webhooks plus the Dashboard App |
-| WhatsApp Cloud API templates | 5 | WhatsAppProvider | For templated notifications if Chatwoot doesn't cover them |
+
+| Integration                                      | Phase       | Interface                     | Notes                                                      |
+| ------------------------------------------------ | ----------- | ----------------------------- | ---------------------------------------------------------- |
+| Couriers (Steadfast, Pathao, RedX; others later) | 1–2         | CourierAdapter                | Official docs and user credentials only                    |
+| Fraud providers (Steadfast via fraudjs; others)  | 1–2         | FraudSignalProvider           | Cached, throttled                                          |
+| Cloudflare Turnstile, R2                         | 1           | —                             |                                                            |
+| BD SMS gateway                                   | 2           | SmsProvider                   | Branded sender IDs need approval, so apply early (D-012)   |
+| Advance payment gateway (bKash or aggregator)    | 2, optional | PaymentProvider               | Only if the client wants online collection (D-013)         |
+| Meta Marketing API, Conversions API              | 3           | MetaAdsProvider, CapiProvider | System-user tokens per org                                 |
+| Biometric attendance                             | 3           | AttendanceImporter            | CSV first                                                  |
+| LLM for insight narratives                       | 4, optional | InsightNarrator               | Metrics only, feature-flagged                              |
+| Chatwoot                                         | 5           | ChatwootClient                | Webhooks plus the Dashboard App                            |
+| WhatsApp Cloud API templates                     | 5           | WhatsAppProvider              | For templated notifications if Chatwoot doesn't cover them |
 
 Rules for every integration:
+
 - Every adapter has a fake implementation for tests and local development.
 - Secrets come from config.
 - Outbound calls run only in workers. The exceptions are synchronous fraud cache reads and Turnstile verification.
@@ -979,6 +1035,7 @@ Rules for every integration:
 ---
 
 ## 22. Files and documents
+
 - **Storage driver:** an interface with a `local` driver (development and tests) and an `r2` driver (staging and production).
   - Private bucket (receipts, invoices, legal documents, KYC, payslips): served only through short-lived signed URLs after an authorization check.
   - Public bucket (product images, landing page assets): served through the CDN.
@@ -995,6 +1052,7 @@ Rules for every integration:
 ---
 
 ## 23. API conventions
+
 - **Resources:** REST under `/v1` with plural kebab-case resources.
 - **Lists:**
   - cursor pagination: `?cursor=&limit=50`, maximum 200
@@ -1016,6 +1074,7 @@ Rules for every integration:
 ## 24. Frontend conventions
 
 ### Core stack
+
 - React + TypeScript on Vite
 - TanStack Router: typed routes, with filters kept in URL search params
 - TanStack Query for server state
@@ -1023,6 +1082,7 @@ Rules for every integration:
 - TanStack Table for grids
 
 ### Design principles (D-033)
+
 Staff operate this product for eight hours a day, so "premium" here means confidence and calm, not decoration. Five rules settle every visual question:
 
 1. **Restraint.** Neutral chrome, one accent. Colour carries meaning -- status, money direction, destructive -- and is never decoration. A rainbow ERP reads cheap and makes status colours meaningless.
@@ -1032,9 +1092,10 @@ Staff operate this product for eight hours a day, so "premium" here means confid
 5. **Every state is designed.** Loading, empty, error and permission-denied are screens, not afterthoughts. Skeletons are shaped like the content they replace; a bare spinner is a last resort.
 
 ### Design tokens
+
 Tokens live in `packages/ui/src/styles/tokens.css` and reach components through the Tailwind preset. No component hard-codes a colour, radius, shadow or duration.
 
-- **Colour is OKLCH**, as CSS custom properties. Every semantic role (`--background`, `--foreground`, `--muted`, `--border`, `--ring`, `--primary`, `--destructive`, `--success`, `--warning`) has a light and a dark value. Accent shades are *derived* from one hue and chroma pair, so changing an org's brand hue re-derives hover, active, subtle background, ring and foreground-on-accent with their contrast intact. This is what makes five brands cost one design system instead of five.
+- **Colour is OKLCH**, as CSS custom properties. Every semantic role (`--background`, `--foreground`, `--muted`, `--border`, `--ring`, `--primary`, `--destructive`, `--success`, `--warning`) has a light and a dark value. Accent shades are _derived_ from one hue and chroma pair, so changing an org's brand hue re-derives hover, active, subtle background, ring and foreground-on-accent with their contrast intact. This is what makes five brands cost one design system instead of five.
 - **Type:** Inter for Latin and all numerals, Hind Siliguri for Bangla. Both self-hosted as subset woff2 with `font-display: swap`. The `@font-face` rules carry `size-adjust` so a mixed bn/en string sits on one optical baseline. Without it, mixed text looks ragged, which is the fastest way for a Bangla product to look unfinished.
 - **Numerals:** `font-variant-numeric: tabular-nums` on every money value, quantity, metric tile and numeric table column. Money columns are right-aligned.
 - **Radius:** one `--radius` (8 px) with derived `sm`/`md`/`lg`. **Spacing:** a 4 px base scale.
@@ -1042,7 +1103,9 @@ Tokens live in `packages/ui/src/styles/tokens.css` and reach components through 
 - **Themes:** light and dark are both first-class and maintained together. Dark is a designed theme, not an inversion. Theme follows the OS by default and is overridable per user.
 
 ### Accessibility floor
+
 Enforced in CI wherever it is testable.
+
 - Text meets WCAG AA contrast (4.5:1 body, 3:1 large text and UI boundaries) in both themes.
 - Every interactive element is reachable and operable by keyboard, with a visible focus ring.
 - Dialogs trap focus and restore it on close. Icon-only buttons carry accessible names.
@@ -1050,12 +1113,15 @@ Enforced in CI wherever it is testable.
 - Colour is never the only signal: a status badge pairs its colour with a label.
 
 ### UI rules
+
 - shadcn/ui and Tailwind only: no CSS modules, no inline style objects. shadcn components are re-tuned to these tokens when adopted, never left at library defaults.
 - Icons from lucide-react only, at a consistent stroke width and size scale.
 - Never use emojis as UI elements.
 
 ### Per-org branding (D-034)
+
 `org.organizations.brand` (jsonb) holds `logo_file_id`, `logo_dark_file_id`, `accent` (OKLCH hue and chroma), `legal_name`, `address`, `vat_no` and `invoice_footer`. It drives:
+
 - the console, portal and POS accent and logo for the active org
 - the login screen when the org is known from the route or hostname (§6)
 - every document template in §22: invoice, packing slip, label, reseller invoice, payslip, statements
@@ -1063,30 +1129,37 @@ Enforced in CI wherever it is testable.
 Chrome stays neutral in every org. The brand shows in the accent, the logo and the documents. Brand values are data, so adding a sixth brand is a row, not a release.
 
 ### Language (D-036)
+
 - Every string goes through `packages/i18n` (bn, en). A key missing in either language fails CI.
 - **The staff console defaults to English. Everything customer-facing is Bangla:** invoices, labels, payslips, SMS, notifications, the reseller portal and landing pages. Any user can switch their own console language.
 - Latin digits by default, with a per-user option for Bangla digits.
 
 ### Formatting
+
 - Money always renders through `<Money>` / `formatMoney`
 - Dates display in Asia/Dhaka
 
 ### Permissions
+
 The UI uses the shared CASL definitions to hide or disable controls. Security never depends on the UI.
 
 ### Order desk
+
 - Keyboard-first, with shortcuts shown in the app
 - Target: a trained agent enters an order in under 30 seconds
 
 ### Every screen
+
 Handles loading, empty, error and permission-denied states. Routes are code-split.
 
 ### PWAs (portal, pos)
+
 Installable, with an offline shell and web push (Android first).
 
 ---
 
 ## 25. Security
+
 - **Authentication and sessions:**
   - as in §6
   - CSRF protection for cookie-authenticated mutations (Origin checks plus a double-submit token)
@@ -1113,6 +1186,7 @@ Installable, with an offline shell and web push (Android first).
 ---
 
 ## 26. Observability and operations
+
 - **Logging:** pino structured logs carrying request id, org id and user id, with redaction.
 - **Errors:** Sentry on the server and all apps.
 - **Tracing:** OpenTelemetry traces and metrics.
@@ -1127,21 +1201,23 @@ Installable, with an offline shell and web push (Android first).
 ---
 
 ## 27. Testing strategy
-| Layer | Tooling | What it covers |
-|---|---|---|
-| Unit | Vitest | Everything in `packages/domain` |
-| Property | fast-check | Money allocation, posting balance, WAC, reservations, schedules, target splits |
-| Integration | Vitest + Testcontainers Postgres | RLS, grants, triggers, repositories and services with real transactions and concurrency |
-| API | Role-matrix tests generated from the permission matrix | `assertNoCostFields` on every catalog, order and stock response for non-cost roles |
-| E2E | Playwright | Each milestone's critical flows; the PWAs are also tested offline |
-| Adapters | Contract tests with recorded fixtures | Live sandbox tests run behind env flags and are skipped (with a note) when credentials are missing |
-| Golden books | Scripted business days | Supply → orders → deliveries → returns → settlements → payroll, asserting exact trial-balance, stock and P&L numbers |
+
+| Layer        | Tooling                                                | What it covers                                                                                                       |
+| ------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Unit         | Vitest                                                 | Everything in `packages/domain`                                                                                      |
+| Property     | fast-check                                             | Money allocation, posting balance, WAC, reservations, schedules, target splits                                       |
+| Integration  | Vitest + Testcontainers Postgres                       | RLS, grants, triggers, repositories and services with real transactions and concurrency                              |
+| API          | Role-matrix tests generated from the permission matrix | `assertNoCostFields` on every catalog, order and stock response for non-cost roles                                   |
+| E2E          | Playwright                                             | Each milestone's critical flows; the PWAs are also tested offline                                                    |
+| Adapters     | Contract tests with recorded fixtures                  | Live sandbox tests run behind env flags and are skipped (with a note) when credentials are missing                   |
+| Golden books | Scripted business days                                 | Supply → orders → deliveries → returns → settlements → payroll, asserting exact trial-balance, stock and P&L numbers |
 
 `pnpm verify` runs format check, lint, typecheck, unit and integration tests, build and the migration-immutability check. It must pass before anything merges to main.
 
 ---
 
 ## 28. Environments and deployment
+
 - **Local:**
   - Docker Compose runs Postgres 17, Valkey and Gotenberg (Chatwoot optional from Phase 5)
   - `pnpm dev` starts every app
@@ -1159,11 +1235,12 @@ Installable, with an offline shell and web push (Android first).
 ---
 
 ## 29. Performance targets
-| Operation | Target |
-|---|---|
-| Order desk customer lookup + fraud badge (cache hit) | p95 < 300 ms |
-| SKU search | p95 < 200 ms on 20k SKUs |
-| Order save | p95 < 400 ms |
-| Public intake API | p95 < 500 ms at 20 req/s sustained |
-| Reports over 12 months of one org | p95 < 3 s (use rollups) |
-| Console first load | < 2.5 s on 4G; initial route bundle ≤ 250 KB gzipped |
+
+| Operation                                            | Target                                               |
+| ---------------------------------------------------- | ---------------------------------------------------- |
+| Order desk customer lookup + fraud badge (cache hit) | p95 < 300 ms                                         |
+| SKU search                                           | p95 < 200 ms on 20k SKUs                             |
+| Order save                                           | p95 < 400 ms                                         |
+| Public intake API                                    | p95 < 500 ms at 20 req/s sustained                   |
+| Reports over 12 months of one org                    | p95 < 3 s (use rollups)                              |
+| Console first load                                   | < 2.5 s on 4G; initial route bundle ≤ 250 KB gzipped |

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Elysium node service (apps/server)",
+  "extends": "./base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    // verbatimModuleSyntax must stay OFF here. It forces `import type` on
+    // type-only imports, and a class imported as `import type` emits `Object`
+    // for its decorator metadata, which silently breaks NestJS constructor
+    // injection. Libraries keep it on; the DI container lives only here.
+    "verbatimModuleSyntax": false,
+
+    "outDir": "dist",
+
+    // Be explicit rather than relying on ambient @types discovery, which is
+    // fragile once tsconfigs are extended across a pnpm workspace.
+    "types": ["node"],
+    "rootDir": "src"
+  },
+  "include": ["src/**/*"]
+}

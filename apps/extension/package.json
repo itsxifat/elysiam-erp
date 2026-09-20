@@ -1,0 +1,22 @@
+{
+  "name": "@elysium/extension",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "postinstall": "wxt prepare",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "clean": "node -e \"require('node:fs').rmSync('.output',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "@elysium/config": "workspace:*",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "wxt": "catalog:"
+  }
+}

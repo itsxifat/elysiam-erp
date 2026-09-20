@@ -1,0 +1,46 @@
+{
+  "name": "elysium-erp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.5.1",
+  "engines": {
+    "node": ">=24.13.0 <25.0.0",
+    "pnpm": ">=12.5.1"
+  },
+  "scripts": {
+    "api:client": "pnpm --filter @elysium/api-client run generate",
+    "bench": "node scripts/bench.mjs",
+    "build": "turbo run build",
+    "check:migrations": "node scripts/check-migrations.mjs",
+    "clean": "turbo run clean",
+    "db:generate": "pnpm --filter @elysium/db run db:generate",
+    "db:migrate": "pnpm --filter @elysium/db run db:migrate",
+    "db:seed": "pnpm --filter @elysium/db run db:seed",
+    "dev": "turbo run dev",
+    "e2e": "pnpm --filter @elysium/console run e2e",
+    "fonts:fetch": "node scripts/fetch-fonts.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "turbo run lint && eslint .",
+    "lint:fix": "turbo run lint -- --fix && eslint . --fix",
+    "setup:env": "node scripts/setup-env.mjs",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "typecheck": "turbo run typecheck",
+    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:migrations"
+  },
+  "devDependencies": {
+    "@elysium/config": "workspace:*",
+    "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "eslint": "catalog:",
+    "happy-dom": "catalog:",
+    "prettier": "catalog:",
+    "prettier-plugin-tailwindcss": "catalog:",
+    "turbo": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

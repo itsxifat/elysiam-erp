@@ -1,7 +1,7 @@
 ---
 name: milestone
 description: Runs one Elysium ERP milestone from docs/milestones.md end to end. Covers loading context, planning, building with tests, verifying against the acceptance checks, updating the docs and committing. Use whenever the user types /milestone <ID>, or asks to start, resume or finish a milestone or "the next milestone".
-argument-hint: "[milestone-id, e.g. M07]"
+argument-hint: '[milestone-id, e.g. M07]'
 ---
 
 # Milestone $ARGUMENTS
@@ -9,6 +9,7 @@ argument-hint: "[milestone-id, e.g. M07]"
 Work only on milestone $ARGUMENTS.
 
 If no ID was given:
+
 1. Read docs/progress.md.
 2. Pick the first milestone in docs/milestones.md whose dependencies are all done.
 3. Ask the user to confirm it before continuing.
@@ -16,6 +17,7 @@ If no ID was given:
 This workflow exists so every session leaves the repo in a verified, documented state that the next session can trust. The steps below are ordered for that reason.
 
 ## 1. Load context
+
 1. Run `git status --short` and `git log --oneline -10`. If the tree has uncommitted work that doesn't belong to $ARGUMENTS, stop and ask.
 2. Read the last two entries in docs/progress.md.
 3. Read the rest of the milestone's context:
@@ -30,7 +32,9 @@ This workflow exists so every session leaves the repo in a verified, documented 
 6. If a dependency milestone isn't done, or one of its open follow-ups blocks this work, say so and stop.
 
 ## 2. Plan, then wait for approval
+
 Write docs/plans/$ARGUMENTS.md. It must cover:
+
 - the scope in your own words, including what is explicitly out of scope
 - data model changes: tables, columns, RLS, grants, migrations
 - domain functions, and which invariants get property or integration tests
@@ -41,6 +45,7 @@ Write docs/plans/$ARGUMENTS.md. It must cover:
 Show the user a short summary. Wait for approval or edits, and don't touch product code until you have it.
 
 ## 3. Build
+
 - Create or switch to the branch `mNN-<slug>` (lower-case ID).
 - Work in vertical slices, in this order:
   1. schema and migration
@@ -50,6 +55,7 @@ Show the user a short summary. Wait for approval or edits, and don't touch produ
   5. e2e tests
 
   After each slice, run the relevant tests and fix any failures before moving on.
+
 - Follow the CLAUDE.md invariants and the path rules in .claude/rules/. If a rule conflicts with the plan, the rule wins; note the change in the plan.
 - If a credential is missing or a decision is OPEN:
   - implement the documented default behind configuration
@@ -59,6 +65,7 @@ Show the user a short summary. Wait for approval or edits, and don't touch produ
 - Commit at every green slice using Conventional Commits (`feat(mNN): …`, `test(mNN): …`).
 
 ## 4. Verify
+
 1. Run `pnpm verify` and fix everything until it exits 0.
 2. Run every acceptance check for $ARGUMENTS, plus `pnpm e2e` for any flows you touched.
 3. If the diff touches any of these, run the `ledger-auditor` subagent on it and fix every CRITICAL finding:
@@ -80,6 +87,7 @@ Skipped/unverified ........ <none | what and why>
 ```
 
 ## 5. Close out
+
 - Add an entry to docs/progress.md using the template at the top of that file.
 - Update docs/decisions.md with any new assumptions or unverified integrations.
 - If the design changed, update docs/architecture.md and add a decision row.

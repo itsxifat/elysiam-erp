@@ -1,6 +1,7 @@
 # Milestones: one per Claude Code session
 
 ## How to use this file
+
 - Run each milestone with `/milestone <ID>`.
 - A milestone is done only when every acceptance check passes and appears in the session's Verification Report.
 - **Effort:**
@@ -10,50 +11,52 @@
 - If a milestone runs out of context, resume it in a new session. Don't split it yourself.
 - **Parallel tracks:** after M14b, Track A (M15→M17) and Track B (M18→M20) can run at the same time in separate git worktrees.
 
-| ID | Title | Phase | Effort | Depends on |
-|---|---|---|---|---|
-| M00 | Repo bootstrap and toolchain | 0 | XHIGH | — |
-| M01 | Database core and multi-org isolation | 0 | MAX | M00 |
-| M02a | Identity, auth and request context | 0 | MAX | M01 |
-| M02b | Permissions, audit and approvals | 0 | MAX | M02a |
-| M03 | Ledger core | 0 | MAX | M02b |
-| M04 | Platform services | 0 | XHIGH | M02b |
-| M05 | Console shell and UI kit | 0 | XHIGH | M02b, M04 |
-| M06 | Catalog | 1 | XHIGH | M05 |
-| M07 | Stock ledger, locations and costing | 1 | MAX | M03, M06 |
-| M08 | Accounts and wallets | 1 | MAX | M03, M05 |
-| M09 | Suppliers and purchasing | 1 | MAX | M07, M08 |
-| M10 | Order core | 1 | MAX | M07, M08 |
-| M11 | Order desk UI, buyer list, public order intake | 1 | XHIGH | M10 |
-| M12 | Courier v1 and COD reconciliation | 1 | MAX | M11 |
-| M13 | Fraud check v1 | 1 | XHIGH | M10 |
-| M14a | Data migration and opening balances | 1 | MAX | M06–M13 |
-| M14b | Deployment, observability, go-live kit | 1 | XHIGH | M14a |
-| M15 | Multi-courier, webhooks, tracking | 2 (A) | XHIGH | M12 |
-| M16 | Buyer profiles, notifications, basic promo codes | 2 (A) | XHIGH | M11 |
-| M17 | Fraud v2 and advance-payment rules | 2 (A) | XHIGH | M13, M16 |
-| M18 | Marketing | 3 (B) | XHIGH | M11 |
-| M19 | HR core, attendance, payroll | 3 (B) | MAX | M08 |
-| M20 | Targets, bonus rules, productivity | 3 (B) | XHIGH | M19, M11 |
-| M21 | Reseller engine | 4 | MAX | M10, M12 |
-| M22 | Partner portal (reseller) | 4 | XHIGH | M21, M16 |
-| M23 | Branches and showroom POS | 4 | MAX | M08, M10 |
-| M24 | Analytics, dashboards, leaderboard | 4 | XHIGH | M12, M18, M20, M23 |
-| M25 | Investors | 5 | MAX | M08 |
-| M26 | Company loans | 5 | XHIGH | M08, M16 |
-| M27 | Message Hub (Chatwoot) | 5 | XHIGH | M11, M13, M16 |
-| M28 | Agent activity extension | 5 | XHIGH | M20 |
-| M29 | Landing page builder and promotions | 5 | XHIGH | M11, M16 |
-| M30 | Hardening and launch readiness | Launch | MAX | all |
+| ID   | Title                                            | Phase  | Effort | Depends on         |
+| ---- | ------------------------------------------------ | ------ | ------ | ------------------ |
+| M00  | Repo bootstrap and toolchain                     | 0      | XHIGH  | —                  |
+| M01  | Database core and multi-org isolation            | 0      | MAX    | M00                |
+| M02a | Identity, auth and request context               | 0      | MAX    | M01                |
+| M02b | Permissions, audit and approvals                 | 0      | MAX    | M02a               |
+| M03  | Ledger core                                      | 0      | MAX    | M02b               |
+| M04  | Platform services                                | 0      | XHIGH  | M02b               |
+| M05  | Console shell and UI kit                         | 0      | XHIGH  | M02b, M04          |
+| M06  | Catalog                                          | 1      | XHIGH  | M05                |
+| M07  | Stock ledger, locations and costing              | 1      | MAX    | M03, M06           |
+| M08  | Accounts and wallets                             | 1      | MAX    | M03, M05           |
+| M09  | Suppliers and purchasing                         | 1      | MAX    | M07, M08           |
+| M10  | Order core                                       | 1      | MAX    | M07, M08           |
+| M11  | Order desk UI, buyer list, public order intake   | 1      | XHIGH  | M10                |
+| M12  | Courier v1 and COD reconciliation                | 1      | MAX    | M11                |
+| M13  | Fraud check v1                                   | 1      | XHIGH  | M10                |
+| M14a | Data migration and opening balances              | 1      | MAX    | M06–M13            |
+| M14b | Deployment, observability, go-live kit           | 1      | XHIGH  | M14a               |
+| M15  | Multi-courier, webhooks, tracking                | 2 (A)  | XHIGH  | M12                |
+| M16  | Buyer profiles, notifications, basic promo codes | 2 (A)  | XHIGH  | M11                |
+| M17  | Fraud v2 and advance-payment rules               | 2 (A)  | XHIGH  | M13, M16           |
+| M18  | Marketing                                        | 3 (B)  | XHIGH  | M11                |
+| M19  | HR core, attendance, payroll                     | 3 (B)  | MAX    | M08                |
+| M20  | Targets, bonus rules, productivity               | 3 (B)  | XHIGH  | M19, M11           |
+| M21  | Reseller engine                                  | 4      | MAX    | M10, M12           |
+| M22  | Partner portal (reseller)                        | 4      | XHIGH  | M21, M16           |
+| M23  | Branches and showroom POS                        | 4      | MAX    | M08, M10           |
+| M24  | Analytics, dashboards, leaderboard               | 4      | XHIGH  | M12, M18, M20, M23 |
+| M25  | Investors                                        | 5      | MAX    | M08                |
+| M26  | Company loans                                    | 5      | XHIGH  | M08, M16           |
+| M27  | Message Hub (Chatwoot)                           | 5      | XHIGH  | M11, M13, M16      |
+| M28  | Agent activity extension                         | 5      | XHIGH  | M20                |
+| M29  | Landing page builder and promotions              | 5      | XHIGH  | M11, M16           |
+| M30  | Hardening and launch readiness                   | Launch | MAX    | all                |
 
 ---
 
 ## M00: Repo bootstrap and toolchain
+
 Phase 0 · Effort XHIGH · Depends on: — · Gate: G0 · Architecture: §3, §4, §27, §28
 
 **Goal:** a clean monorepo where `pnpm verify` is the single gate for every later milestone.
 
 **Build**
+
 - pnpm workspace + Turborepo containing every app and package from architecture §4, each as a minimal skeleton that compiles:
   - `server`, with `main.api.ts` serving `/health/live` and `main.worker.ts` logging "ready"
   - Vite placeholders for `console`, `portal` and `pos`
@@ -77,7 +80,8 @@ Phase 0 · Effort XHIGH · Depends on: — · Gate: G0 · Architecture: §3, §4
 - Pin exact versions and use the latest stable releases.
 
 **Acceptance checks**
-1. A fresh clone passes this sequence with exit code 0: `pnpm i`, then compose up, then `pnpm verify`.
+
+1. A fresh clone passes this sequence with exit code 0: `pnpm i`, `pnpm setup:env`, compose up, then `pnpm verify`. (`setup:env` belongs in the sequence: config is Zod-validated and fails fast, so the app builds have nothing to read without it.)
 2. `pnpm dev` starts everything:
    - the API answers `GET /health/live` with 200
    - the worker logs "ready"
@@ -93,11 +97,13 @@ Phase 0 · Effort XHIGH · Depends on: — · Gate: G0 · Architecture: §3, §4
 ---
 
 ## M01: Database core and multi-org isolation
+
 Phase 0 · Effort MAX · Depends on: M00 · Architecture: §3, §5
 
 **Goal:** prove with tests that one org can never see another org's data.
 
 **Build**
+
 - `packages/db`:
   - Drizzle config with one folder per module schema
   - the generate, migrate and seed scripts
@@ -110,6 +116,7 @@ Phase 0 · Effort MAX · Depends on: M00 · Architecture: §3, §5
 - Seed data: the five orgs, each with an HQ branch and a warehouse location. The seed is idempotent.
 
 **Acceptance checks**
+
 1. In an org A context, both Drizzle and raw SQL select/insert/update/delete on org B rows affect 0 rows or raise an error.
 2. With no org context, tenant tables return 0 rows.
 3. `erp_app` cannot SET ROLE, disable RLS or bypass policies. The test asserts each of these errors.
@@ -120,11 +127,13 @@ Phase 0 · Effort MAX · Depends on: M00 · Architecture: §3, §5
 ---
 
 ## M02a: Identity, auth and request context
+
 Phase 0 · Effort MAX · Depends on: M01 · Architecture: §6, §25
 
 **Goal:** every request knows who the user is, which org they are acting in, and which roles they hold there.
 
 **Build**
+
 - Better Auth:
   - email or phone plus password; cookie sessions scoped to the parent domain
   - TOTP 2FA, enforced for super_admin, org_admin, accounts and investor, with recovery codes
@@ -141,6 +150,7 @@ Phase 0 · Effort MAX · Depends on: M01 · Architecture: §6, §25
 - The test utility `asUser(user, org)`, which produces a request context for later milestones.
 
 **Acceptance checks**
+
 1. Once 2FA is enrolled, a privileged role cannot complete a login without it. Enrolment and recovery codes are both tested.
 2. Switching org changes the visible rows (RLS) and the effective roles in the request context.
 3. A login at an org-scoped route or hostname preselects that org and carries its branding; an unknown host falls back to the generic login.
@@ -153,11 +163,13 @@ Phase 0 · Effort MAX · Depends on: M01 · Architecture: §6, §25
 ---
 
 ## M02b: Permissions, audit and approvals
+
 Phase 0 · Effort MAX · Depends on: M02a · Architecture: §6, §25
 
 **Goal:** cost fields cannot leak, every mutation is recorded, and money-moving actions need a second person.
 
 **Build**
+
 - The CASL matrix in `packages/contracts/src/permissions/`, taken from architecture §6, plus:
   - a NestJS guard and decorators
   - `serializeFor()`
@@ -173,6 +185,7 @@ Phase 0 · Effort MAX · Depends on: M02a · Architecture: §6, §25
 - A demo resource carrying cost fields, for the matrix suite to exercise.
 
 **Acceptance checks**
+
 1. A role-matrix suite, generated from the matrix, asserts allowed or forbidden for every role × capability on the demo resource.
 2. The demo resource returns cost fields to accounts, and `assertNoCostFields` passes for sales, marketing, warehouse and reseller.
 3. Every mutation in the tests writes an audit row, with sensitive fields redacted.
@@ -184,11 +197,13 @@ Phase 0 · Effort MAX · Depends on: M02a · Architecture: §6, §25
 ---
 
 ## M03: Ledger core
+
 Phase 0 · Effort MAX · Depends on: M02b · Architecture: §7, §27
 
 **Goal:** a double-entry ledger that the database itself refuses to corrupt.
 
 **Build**
+
 - `packages/domain/src/money`:
   - the `Poisha` type
   - `add`, `sub`, `sum`, `mulQty`, `percentOf` (basis points, half away from zero)
@@ -211,6 +226,7 @@ Phase 0 · Effort MAX · Depends on: M02b · Architecture: §7, §27
 - `JournalDraft` validation, plus one example posting rule (cash in) to prove the whole pipeline works.
 
 **Acceptance checks**
+
 1. fast-check: random sequences of valid drafts always leave the trial balance at zero, and every journal balances.
 2. An unbalanced journal inserted with raw SQL fails at commit.
 3. UPDATE and DELETE on journals and lines fail for `erp_app`.
@@ -224,11 +240,13 @@ Phase 0 · Effort MAX · Depends on: M02b · Architecture: §7, §27
 ---
 
 ## M04: Platform services
+
 Phase 0 · Effort XHIGH · Depends on: M02b · Architecture: §3, §19, §20, §22, §23
 
 **Goal:** the shared plumbing every module reuses: jobs, events, realtime, files, PDFs, i18n and the typed client.
 
 **Build**
+
 - pg-boss:
   - queue registration per module
   - `enqueue(tx, queue, payload, opts)` inside an existing transaction
@@ -263,6 +281,7 @@ Phase 0 · Effort XHIGH · Depends on: M02b · Architecture: §3, §19, §20, §
 - Feature flags: `org.feature_flags` plus a helper (D-031).
 
 **Acceptance checks**
+
 1. A job enqueued inside a transaction that rolls back never runs. After a commit it runs exactly once.
 2. A job that keeps failing retries with backoff, lands in the dead-letter queue and emits `job.failed`.
 3. Realtime rooms are enforced:
@@ -276,11 +295,13 @@ Phase 0 · Effort XHIGH · Depends on: M02b · Architecture: §3, §19, §20, §
 ---
 
 ## M05: Console shell and UI kit
+
 Phase 0 · Effort XHIGH · Depends on: M02b, M04 · Architecture: §24
 
 **Goal:** the staff app frame that every module's screens plug into.
 
 **Build**
+
 - Console:
   - Vite + React + TanStack Router (file routes) + TanStack Query
   - login and 2FA screens
@@ -299,6 +320,7 @@ Phase 0 · Effort XHIGH · Depends on: M02b, M04 · Architecture: §24
 - `scripts/screenshot-review.mjs`, which renders the review screenshot set into `docs/review/M05/`.
 
 **Acceptance checks**
+
 1. Navigation follows role and org (Playwright):
    - a sales user sees Orders and Customers but not Accounts
    - accounts sees Accounts
@@ -316,11 +338,13 @@ Phase 0 · Effort XHIGH · Depends on: M02b, M04 · Architecture: §24
 ---
 
 ## M06: Catalog
+
 Phase 1 · Effort XHIGH · Depends on: M05 · Architecture: §6, §8, §22
 
 **Goal:** a catalog anyone can search in seconds, with no purchase cost anywhere in it.
 
 **Build**
+
 - `catalog` schema:
   - a category tree
   - attributes and their values (size, colour, custom)
@@ -340,6 +364,7 @@ Phase 1 · Effort XHIGH · Depends on: M05 · Architecture: §6, §8, §22
 - CSV import in two steps: a dry-run report, then an atomic commit.
 
 **Acceptance checks**
+
 1. A 3-colour × 5-size matrix creates 15 unique SKUs. Adding a size later creates only the new SKUs.
 2. SKU search stays under 200 ms p95 on 20k seeded SKUs, measured by `scripts/bench.mjs` so the method matches every other latency check. The sample count and numbers go in the progress entry.
 3. No catalog table or endpoint has any cost column, and `assertNoCostFields` passes for every role.
@@ -349,11 +374,13 @@ Phase 1 · Effort XHIGH · Depends on: M05 · Architecture: §6, §8, §22
 ---
 
 ## M07: Stock ledger, locations and costing
+
 Phase 1 · Effort MAX · Depends on: M03, M06 · Architecture: §5, §7, §8
 
 **Goal:** every unit is traceable and stock can never go negative, even under concurrent orders.
 
 **Build**
+
 - Locations management, including the `damaged` and `in_transit` kinds.
 - Movements, levels, reservations and WAC, exactly as in §8. Movements and levels are append-only where specified.
 - An internal reservation API for later modules.
@@ -366,6 +393,7 @@ Phase 1 · Effort MAX · Depends on: M03, M06 · Architecture: §5, §7, §8
   - cost and stock value only for cost roles
 
 **Acceptance checks**
+
 1. 50 parallel reservations for the last 10 units, run against real Postgres, produce exactly 10 successes.
 2. Property test: random sequences of movements never leave `on_hand` negative, and levels always equal Σ movements.
 3. The worked WAC example in §8 reproduces to the exact poisha, including the purchase price variance on the supplier return.
@@ -376,11 +404,13 @@ Phase 1 · Effort MAX · Depends on: M03, M06 · Architecture: §5, §7, §8
 ---
 
 ## M08: Accounts and wallets
+
 Phase 1 · Effort MAX · Depends on: M03, M05 · Architecture: §6, §7
 
 **Goal:** the client's daily cash picture is correct per wallet, per branch and per org.
 
 **Build**
+
 - Wallet setup per org and branch: hand cash, bank, bKash, and optional other mobile wallets.
 - Cash in/out entries by category.
 - Wallet transfers, with optional bank charges.
@@ -395,6 +425,7 @@ Phase 1 · Effort MAX · Depends on: M03, M05 · Architecture: §6, §7
 - Console screens for all of the above.
 
 **Acceptance checks**
+
 1. A scripted day of entries leaves every cash book closing balance equal to its ledger balance, and the trial balance at zero.
 2. Petty cash without a receipt is rejected. The receipt is private and needs permission to view.
 3. The super-admin consolidated wallet total equals the sum of the orgs' totals (3-org test).
@@ -408,11 +439,13 @@ Phase 1 · Effort MAX · Depends on: M03, M05 · Architecture: §6, §7
 ---
 
 ## M09: Suppliers and purchasing
+
 Phase 1 · Effort MAX · Depends on: M07, M08 · Gate: — · Architecture: §7, §8
 
 **Goal:** purchase cost enters the system in exactly one place, and supplier balances tie to the ledger.
 
 **Build**
+
 - Suppliers: profile, contacts, notes, documents.
 - Supply entries: a header (supplier, date, location, invoice number, attachment) and lines (SKU, qty, unit cost). One transaction:
   - creates the movements
@@ -424,6 +457,7 @@ Phase 1 · Effort MAX · Depends on: M07, M08 · Gate: — · Architecture: §7,
 - Supplier statement and list with due and advance balances.
 
 **Acceptance checks**
+
 1. Fault injection: making the journal step fail leaves no stock, cost or supplier change behind.
 2. Supplier statement closing balances equal ledger party balances (scenario test).
 3. The supplier return in the §8 example posts the variance correctly.
@@ -436,11 +470,13 @@ Phase 1 · Effort MAX · Depends on: M07, M08 · Gate: — · Architecture: §7,
 ---
 
 ## M10: Order core
+
 Phase 1 · Effort MAX · Depends on: M07, M08 · Architecture: §7, §9
 
 **Goal:** orders move through a proven state machine, and every step keeps stock and books in sync.
 
 **Build**
+
 - Customers:
   - phone normalization, including Bangla digits
   - addresses using district/thana reference data
@@ -459,6 +495,7 @@ Phase 1 · Effort MAX · Depends on: M07, M08 · Architecture: §7, §9
 - Exchange orders: `delivered → exchange` creates a linked order, returns the original units to stock at their dispatch cost and dispatches the replacement, posting any price difference.
 
 **Acceptance checks**
+
 1. Every (from, to) pair in the transition table is asserted allowed or forbidden.
 2. Concurrent confirms on scarce stock never oversell.
 3. Property test: COD = items − discount + delivery − advance, and a negative result is rejected.
@@ -470,11 +507,13 @@ Phase 1 · Effort MAX · Depends on: M07, M08 · Architecture: §7, §9
 ---
 
 ## M11: Order desk UI, buyer list, public order intake
+
 Phase 1 · Effort XHIGH · Depends on: M10 · Architecture: §9, §19, §23, §24
 
 **Goal:** an agent can take an order from a Facebook or WhatsApp chat in under 30 seconds, and landing pages can post orders safely.
 
 **Build**
+
 - Order desk, keyboard-first:
   - phone → customer and history
   - address autocomplete
@@ -495,6 +534,7 @@ Phase 1 · Effort XHIGH · Depends on: M10 · Architecture: §9, §19, §23, §2
 - Realtime updates in the queue and lists.
 
 **Acceptance checks**
+
 1. E2E, keyboard only: phone to confirmed order. The scripted run reports its time as a server-plus-render latency budget and stays under 30 s. It measures the app, not an operator, so a human-timed run happens at the pilot and its number goes in the progress log.
 2. Buyer list export counts match a direct SQL count for the same filters.
 3. Public API behaviour:
@@ -508,11 +548,13 @@ Phase 1 · Effort XHIGH · Depends on: M10 · Architecture: §9, §19, §23, §2
 ---
 
 ## M12: Courier v1 and COD reconciliation
+
 Phase 1 · Effort MAX · Depends on: M11 · Gate: G1 · Architecture: §7, §9, §20, §21
 
 **Goal:** cash held by the courier is tracked from booking through settlement into the right wallet.
 
 **Build**
+
 - Courier accounts per org, with encrypted credentials.
 - The `CourierAdapter` interface, a fake adapter, and the primary courier's adapter (D-006), built from the courier's official docs.
 - A booking job (on_confirm or on_pack) with retries, a dead-letter queue and the `delivery.booking_failed` alert.
@@ -529,6 +571,7 @@ Phase 1 · Effort MAX · Depends on: M11 · Gate: G1 · Architecture: §7, §9, 
 - Courier receivable aging and the COD reconciliation report.
 
 **Acceptance checks**
+
 1. Adapter contract tests pass against recorded fixtures. A live sandbox smoke test runs if credentials exist; otherwise it is skipped and noted in the report.
 2. Every provider status is covered by a mapping test.
 3. Duplicate webhooks or polls never double-transition or double-post.
@@ -539,11 +582,13 @@ Phase 1 · Effort MAX · Depends on: M11 · Gate: G1 · Architecture: §7, §9, 
 ---
 
 ## M13: Fraud check v1
+
 Phase 1 · Effort XHIGH · Depends on: M10 · Gate: G2 · Architecture: §5, §10
 
 **Goal:** an agent sees how trustworthy a phone number is, across all five brands, before confirming.
 
 **Build**
+
 - Phone hashing with HMAC.
 - Cross-org `phone_signals`, maintained from order events.
 - The `FraudSignalProvider` interface and a Steadfast provider (wrapping `fraudjs` if the user provides it, D-010), with a TTL cache and throttling.
@@ -553,6 +598,7 @@ Phase 1 · Effort XHIGH · Depends on: M10 · Gate: G2 · Architecture: §5, §1
 - The `order.fraud_flagged` event.
 
 **Acceptance checks**
+
 1. Table-driven score tests: a new customer, 10/10 delivered, 3/5 returned, a provider-only result, a manual flag.
 2. Returns in org A lower the trust score in org B, and org B sees counts only: no org A order data (API test).
 3. When the provider times out, the badge falls back to an internal-only score marked "provider unavailable", and the order desk keeps working.
@@ -562,11 +608,13 @@ Phase 1 · Effort XHIGH · Depends on: M10 · Gate: G2 · Architecture: §5, §1
 ---
 
 ## M14a: Data migration and opening balances
+
 Phase 1 · Effort MAX · Depends on: M06–M13 · Gate: G3 · Architecture: §7, §8, §25
 
 **Goal:** the pilot brand starts with books and stock its accountant will sign.
 
 **Build**
+
 - Importers, each with a dry run and an atomic commit:
   - SKUs
   - opening stock per location with unit cost
@@ -579,6 +627,7 @@ Phase 1 · Effort MAX · Depends on: M06–M13 · Gate: G3 · Architecture: §7,
 - A demo org for training, seeded from anonymized data.
 
 **Acceptance checks**
+
 1. A dry-run import of the sample data shows a balanced opening trial balance, and stock value = Σ(qty × cost).
 2. A bad row anywhere in an importer leaves no partial state: the commit is all-or-nothing.
 3. Re-running an importer with the same file is idempotent and creates no duplicates.
@@ -588,11 +637,13 @@ Phase 1 · Effort MAX · Depends on: M06–M13 · Gate: G3 · Architecture: §7,
 ---
 
 ## M14b: Deployment, observability, go-live kit
+
 Phase 1 · Effort XHIGH · Depends on: M14a · Gate: G3 · Architecture: §25, §26, §28
 
 **Goal:** Phase 1 can run in production, and there is a way back that someone has actually walked.
 
 **Build**
+
 - Deployment:
   - production Dockerfiles
   - Kamal config for api, worker, Valkey and Gotenberg
@@ -604,6 +655,7 @@ Phase 1 · Effort XHIGH · Depends on: M14a · Gate: G3 · Architecture: §25, �
 - Runbooks in `docs/runbooks/`.
 
 **Acceptance checks**
+
 1. The staging deploy has green health endpoints. The human confirms the URL.
 2. The restore drill has been executed on staging and documented with timings.
 3. A rollback to the previous release has been executed on staging and documented.
@@ -615,9 +667,11 @@ Phase 1 · Effort XHIGH · Depends on: M14a · Gate: G3 · Architecture: §25, �
 ---
 
 ## M15: Multi-courier, webhooks, tracking (Track A)
+
 Phase 2 · Effort XHIGH · Depends on: M12 · Gate: G5 · Architecture: §9, §21
 
 **Build**
+
 - Adapters for the remaining couriers (D-006).
 - Zone → courier rules.
 - Bulk booking and label printing.
@@ -627,6 +681,7 @@ Phase 2 · Effort XHIGH · Depends on: M12 · Gate: G5 · Architecture: §9, §2
 - A stuck-parcel queue: active consignments with no status change in N days, with bulk re-poll, an escalation note and a courier-ready export. This is where COD cash actually goes missing.
 
 **Acceptance checks**
+
 1. Contract tests and complete mapping tables for each adapter.
 2. Courier selection rule tests.
 3. The tracking page leaks nothing without the correct phone digits.
@@ -636,9 +691,11 @@ Phase 2 · Effort XHIGH · Depends on: M12 · Gate: G5 · Architecture: §9, §2
 ---
 
 ## M16: Buyer profiles, notifications, basic promo codes (Track A)
+
 Phase 2 · Effort XHIGH · Depends on: M11 · Gate: G5 · Architecture: §10
 
 **Build**
+
 - Buyer stats and a profile page.
 - The RFM job.
 - Birthday and anniversary capture, and the daily occasions job.
@@ -650,6 +707,7 @@ Phase 2 · Effort XHIGH · Depends on: M11 · Gate: G5 · Architecture: §10
 - A re-engagement list builder with export.
 
 **Acceptance checks**
+
 1. RFM segment tests.
 2. The occasions job is idempotent: one code and one message per customer per occasion per year.
 3. Table-driven promo validation tests: expired, limit reached, minimum order not met, wrong channel.
@@ -659,9 +717,11 @@ Phase 2 · Effort XHIGH · Depends on: M11 · Gate: G5 · Architecture: §10
 ---
 
 ## M17: Fraud v2 and advance-payment rules (Track A)
+
 Phase 2 · Effort XHIGH · Depends on: M13, M16 · Architecture: §7, §10
 
 **Build**
+
 - More fraud providers, where available.
 - Address signals using trigram similarity.
 - A per-org rule engine. Conditions include zone, COD amount, trust band and first-time buyer; decisions include `require_advance`.
@@ -670,6 +730,7 @@ Phase 2 · Effort XHIGH · Depends on: M13, M16 · Architecture: §7, §10
 - Return-reason capture and analytics.
 
 **Acceptance checks**
+
 1. Rule evaluation tests.
 2. `require_advance` blocks confirm until a verified advance exists.
 3. Advance scenario (golden books): the advance is applied on delivery and refunded on cancel, per policy.
@@ -678,9 +739,11 @@ Phase 2 · Effort XHIGH · Depends on: M13, M16 · Architecture: §7, §10
 ---
 
 ## M18: Marketing (Track B)
+
 Phase 3 · Effort XHIGH · Depends on: M11 · Gate: G6 · Architecture: §11
 
 **Build**
+
 - Campaigns and manual spend entry.
 - A Meta spend import job, with a token per org.
 - Attribution resolution (priority order in §11).
@@ -690,6 +753,7 @@ Phase 3 · Effort XHIGH · Depends on: M11 · Gate: G6 · Architecture: §11
 - Hashed custom-audience export.
 
 **Acceptance checks**
+
 1. The metric functions reproduce hand-computed values on a fixture dataset.
 2. Spend import is idempotent per (campaign, date).
 3. A snapshot test of the CAPI payload shows no plaintext PII and a stable event_id.
@@ -698,9 +762,11 @@ Phase 3 · Effort XHIGH · Depends on: M11 · Gate: G6 · Architecture: §11
 ---
 
 ## M19: HR core, attendance, payroll (Track B)
+
 Phase 3 · Effort MAX · Depends on: M08 · Gate: G7 · Architecture: §7, §12
 
 **Build**
+
 - Employees, with encrypted fields.
 - Attendance: manual entry plus CSV import mapping.
 - A working-day calendar.
@@ -711,6 +777,7 @@ Phase 3 · Effort MAX · Depends on: M08 · Gate: G7 · Architecture: §7, §12
 - All postings.
 
 **Acceptance checks**
+
 1. Scenario: 3 employees, 1 loan and some absences produce exact net pay and journals.
 2. A payroll run cannot be posted twice.
 3. Encrypted fields are unreadable in a raw database query.
@@ -719,9 +786,11 @@ Phase 3 · Effort MAX · Depends on: M08 · Gate: G7 · Architecture: §7, §12
 ---
 
 ## M20: Targets, bonus rules, productivity (Track B)
+
 Phase 3 · Effort XHIGH · Depends on: M19, M11 · Architecture: §12, §19
 
 **Build**
+
 - Targets.
 - The weekly split, weighted by working days using largest remainder.
 - A progress rollup and the `target.progress` event.
@@ -730,6 +799,7 @@ Phase 3 · Effort XHIGH · Depends on: M19, M11 · Architecture: §12, §19
 - An agent dashboard and HR reports.
 
 **Acceptance checks**
+
 1. Property test: the weekly split sums exactly for random months and targets.
 2. Table-driven bonus evaluator tests.
 3. Pickup time is correct on seeded event streams, including reassignment.
@@ -738,9 +808,11 @@ Phase 3 · Effort XHIGH · Depends on: M19, M11 · Architecture: §12, §19
 ---
 
 ## M21: Reseller engine
+
 Phase 4 · Effort MAX · Depends on: M10, M12 · Gate: G8 · Architecture: §7, §13
 
 **Build**
+
 - Reseller accounts and onboarding approval.
 - Margin rules resolved by specificity.
 - Charge slabs.
@@ -752,6 +824,7 @@ Phase 4 · Effort MAX · Depends on: M10, M12 · Gate: G8 · Architecture: §7, 
 - The performance report.
 
 **Acceptance checks**
+
 1. Pricing resolution tests: specificity order, and rounding for percent vs fixed margins.
 2. Property test: income = Σ(selling − reseller price) − slab − policy charges.
 3. Scenario: a delivered, a returned and a partially delivered reseller order leave the reseller balance equal to the ledger's reseller payable.
@@ -760,9 +833,11 @@ Phase 4 · Effort MAX · Depends on: M10, M12 · Gate: G8 · Architecture: §7, 
 ---
 
 ## M22: Partner portal (reseller)
+
 Phase 4 · Effort XHIGH · Depends on: M21, M16 · Architecture: §13, §19, §24
 
 **Build**
+
 - The `portal` PWA:
   - phone OTP login, using the real SMS adapter
   - catalog with reseller-visible fields only and live availability
@@ -773,6 +848,7 @@ Phase 4 · Effort XHIGH · Depends on: M21, M16 · Architecture: §13, §19, §2
 - Installable, with web push.
 
 **Acceptance checks**
+
 1. Mobile-viewport E2E: log in → place an order → receive the pushed status update.
 2. A Playwright network assertion shows no cost or foreign fields in any response.
 3. The PWA meets installability criteria: an audit confirms the manifest, icons, start URL, display mode and a registered service worker, with the tool and version recorded.
@@ -780,9 +856,11 @@ Phase 4 · Effort XHIGH · Depends on: M21, M16 · Architecture: §13, §19, §2
 ---
 
 ## M23: Branches and showroom POS
+
 Phase 4 · Effort MAX · Depends on: M08, M10 · Architecture: §7, §14
 
 **Build**
+
 - Branch dashboards (D-014).
 - The `pos` PWA:
   - shifts
@@ -796,6 +874,7 @@ Phase 4 · Effort MAX · Depends on: M08, M10 · Architecture: §7, §14
 - Branch daily closing.
 
 **Acceptance checks**
+
 1. Offline E2E:
    - three sales made offline sync exactly once after reconnecting
    - stock and wallets are correct afterwards
@@ -806,9 +885,11 @@ Phase 4 · Effort MAX · Depends on: M08, M10 · Architecture: §7, §14
 ---
 
 ## M24: Analytics, dashboards, leaderboard
+
 Phase 4 · Effort XHIGH · Depends on: M12, M18, M20, M23 · Architecture: §18, §19
 
 **Build**
+
 - Rollups and their jobs.
 - The org admin dashboard and the super-admin consolidated dashboard.
 - The leaderboard: normalized metrics, a composite score with configurable weights, visibility per D-023.
@@ -817,6 +898,7 @@ Phase 4 · Effort XHIGH · Depends on: M12, M18, M20, M23 · Architecture: §18,
 - Exports.
 
 **Acceptance checks**
+
 1. Rollups equal direct queries on seeded data.
 2. Leaderboard visibility follows D-023.
 3. Unit tests for the insight rules.
@@ -825,9 +907,11 @@ Phase 4 · Effort XHIGH · Depends on: M12, M18, M20, M23 · Architecture: §18,
 ---
 
 ## M25: Investors
+
 Phase 5 · Effort MAX · Depends on: M08 · Gate: G9 · Architecture: §7, §15
 
 **Build**
+
 - Investors, investments per org, documents.
 - Distributions (D-019).
 - Withdrawals with maker-checker.
@@ -836,6 +920,7 @@ Phase 5 · Effort MAX · Depends on: M08 · Gate: G9 · Architecture: §7, §15
 - Statements.
 
 **Acceptance checks**
+
 1. An investor sees only their own data (API and E2E).
 2. The withdrawal flow posts correctly through approval.
 3. Documents are available only through signed URLs.
@@ -843,9 +928,11 @@ Phase 5 · Effort MAX · Depends on: M08 · Gate: G9 · Architecture: §7, §15
 ---
 
 ## M26: Company loans
+
 Phase 5 · Effort XHIGH · Depends on: M08, M16 · Architecture: §7, §15
 
 **Build**
+
 - Loans.
 - Flat and reducing-balance schedules.
 - The reminders job.
@@ -853,6 +940,7 @@ Phase 5 · Effort XHIGH · Depends on: M08, M16 · Architecture: §7, §15
 - Statements.
 
 **Acceptance checks**
+
 1. Property test: Σ principal = the loan amount.
 2. A reducing-balance example matches a hand-computed table.
 3. Each reminder fires once per instalment.
@@ -861,9 +949,11 @@ Phase 5 · Effort XHIGH · Depends on: M08, M16 · Architecture: §7, §15
 ---
 
 ## M27: Message Hub (Chatwoot)
+
 Phase 5 · Effort XHIGH · Depends on: M11, M13, M16 · Gate: G10 · Architecture: §16
 
 **Build**
+
 - Chatwoot compose file, and a runbook for per-org inbox setup.
 - The ERP side panel at `/embed/chatwoot`: customer profile and history, fraud badge, recent orders, prefilled create-order form.
 - A webhook receiver that links conversations to customers and computes response-time stats.
@@ -871,6 +961,7 @@ Phase 5 · Effort XHIGH · Depends on: M11, M13, M16 · Gate: G10 · Architectur
 - Build against Chatwoot's current docs.
 
 **Acceptance checks**
+
 1. Inside the Chatwoot iframe on the same parent domain, the panel loads with the ERP session and creates an order linked to the conversation.
 2. Webhook verification and idempotency tests.
 3. Response-time metrics match a fixture.
@@ -878,9 +969,11 @@ Phase 5 · Effort XHIGH · Depends on: M11, M13, M16 · Gate: G10 · Architectur
 ---
 
 ## M28: Agent activity extension
+
 Phase 5 · Effort XHIGH · Depends on: M20 · Gate: G11 · Architecture: §16
 
 **Build**
+
 - The WXT extension:
   - enrolment with a one-time code
   - domain-only heartbeats with idle/active state and focus
@@ -891,6 +984,7 @@ Phase 5 · Effort XHIGH · Depends on: M20 · Gate: G11 · Architecture: §16
 - A guide for force-installing through Chrome policy.
 
 **Acceptance checks**
+
 1. Domain extraction strips paths and queries (unit tests).
 2. Unenrolled devices are rejected.
 3. Reports match seeded heartbeats.
@@ -899,9 +993,11 @@ Phase 5 · Effort XHIGH · Depends on: M20 · Gate: G11 · Architecture: §16
 ---
 
 ## M29: Landing page builder and promotions
+
 Phase 5 · Effort XHIGH · Depends on: M11, M16 · Gate: G12 · Architecture: §17, §10
 
 **Build**
+
 - `packages/landing-blocks`.
 - The Puck editor in the console, with preview.
 - Page versions and publishing.
@@ -912,6 +1008,7 @@ Phase 5 · Effort XHIGH · Depends on: M11, M16 · Gate: G12 · Architecture: §
 - Landing analytics.
 
 **Acceptance checks**
+
 1. E2E:
    - build a page in the editor and publish it
    - the page is served on a test domain
@@ -922,9 +1019,11 @@ Phase 5 · Effort XHIGH · Depends on: M11, M16 · Gate: G12 · Architecture: §
 ---
 
 ## M30: Hardening and launch readiness
+
 Launch · Effort MAX · Depends on: all · Architecture: §25–§29
 
 **Build**
+
 - `/security-review`, plus `/code-review` on high-risk modules, with fixes.
 - k6 load tests for the order desk APIs and public intake.
 - A confirmation run of the `check-route-matrix` gate from M02b, plus a report listing every route with its ability and test.
@@ -934,6 +1033,7 @@ Launch · Effort MAX · Depends on: all · Architecture: §25–§29
 - Training guides and a go-live checklist.
 
 **Acceptance checks**
+
 1. The §29 targets are met, or each gap is documented with a plan.
 2. No open high-severity findings.
 3. The `check-route-matrix` gate, in `pnpm verify` since M02b, is green, and the route report is attached.

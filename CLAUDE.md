@@ -1,6 +1,7 @@
 # Elysium Mother ERP
 
 One ERP for five sister fashion brands in Bangladesh (Elysium Lifestyle BD, Oura Lifestyle, Orvo, Wear X Clothing, Beownz). It covers:
+
 - COD e-commerce order operations and courier sync
 - showroom accounting and POS
 - a reseller platform (Beownz)
@@ -11,6 +12,7 @@ One ERP for five sister fashion brands in Bangladesh (Elysium Lifestyle BD, Oura
 Each brand is an isolated org. Super Admin sees everything.
 
 ## Where things are
+
 - `docs/architecture.md` is the engineering spec and source of truth. Read only the sections your milestone cites.
 - `docs/milestones.md` is the build plan: one milestone per session, each with acceptance checks.
 - `docs/decisions.md` holds resolved decisions, assumed defaults and open client questions. It overrides architecture.md.
@@ -20,6 +22,7 @@ Each brand is an isolated org. Super Admin sees everything.
 - Start every milestone with `/milestone <ID>`.
 
 ## Stack
+
 - Language and repo: TypeScript everywhere, pnpm + Turborepo.
 - Server: NestJS (Fastify) with separate API and worker processes.
 - Data: PostgreSQL 17 with row-level security, Drizzle ORM, pg-boss for jobs.
@@ -30,6 +33,7 @@ Each brand is an isolated org. Super Admin sees everything.
 - Tests: Vitest, fast-check, Testcontainers, Playwright.
 
 ## Layout
+
 ```
 apps/      server (api + worker entrypoints, src/modules/*), console, portal, pos, sites, extension
 packages/  db, domain, contracts, api-client, ui, i18n, integrations, landing-blocks, config
@@ -38,16 +42,19 @@ scripts/   verify helpers
 docs/      spec, milestones, decisions, progress, plans, runbooks
 ```
 
-## Commands (created in M00; keep this list true)
-- `pnpm i` and `docker compose -f infra/docker-compose.dev.yml up -d`
-- `pnpm dev` runs every app. Filter with `pnpm --filter <app> dev`.
-- `pnpm db:generate` creates a migration from schema changes.
-- `pnpm db:migrate` and `pnpm db:seed`
+## Commands (keep this list true)
+
+- Setup: `pnpm i`, then `pnpm setup:env`, then `docker compose -f infra/docker-compose.dev.yml up -d --wait`
+- `pnpm dev` runs every app. Filter with `pnpm --filter @elysium/<app> dev`.
+- `pnpm db:generate` creates a migration from schema changes. `pnpm db:migrate` and `pnpm db:seed` run them. All three are live from M01; until then each exits with a message saying so.
 - `pnpm test` runs unit + integration tests. `pnpm e2e` runs Playwright.
 - `pnpm verify` runs format check, lint, typecheck, tests, build and the migration-immutability check. It is the gate for every commit to main.
-- `pnpm api:client` regenerates the typed OpenAPI client.
+- `pnpm api:client` regenerates the typed OpenAPI client. Live from M04.
+- `pnpm bench` is the shared benchmark harness; every latency acceptance check measures through it.
+- `pnpm fonts:fetch` re-vendors Inter and Hind Siliguri and recomputes the Bangla `size-adjust`.
 
 ## Invariants: never break these
+
 1. Money is integer poisha: `bigint` columns named `*_poisha`, `Poisha` in TypeScript. No floats. Round only through `packages/domain/src/money`.
 2. Journals always balance and never change after posting.
    - Post only via `ledger.post()`, using a posting-rule function and a deterministic idempotency key.
@@ -70,6 +77,7 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
 12. Modules talk only through each other's `*.api.ts` service interfaces or events, never directly through each other's tables.
 
 ## Conventions
+
 - Naming:
   - files are kebab-case
   - types are PascalCase
@@ -91,6 +99,7 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
 - Prefer plain, explicit code. Every new dependency gets a one-line justification in your progress entry.
 
 ## Workflow
+
 - One milestone per session: plan, wait for approval, then build. Stay inside the milestone's scope and log extra ideas as follow-ups.
 - Blocked by a missing credential or an OPEN decision:
   - implement the ASSUMED default behind configuration
@@ -109,6 +118,7 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
   - merge to main only when verify is green
 
 ## Definition of done (every milestone)
+
 - Every acceptance check in docs/milestones.md passes and appears in the Verification Report with evidence.
 - `pnpm verify` exits 0, and e2e tests pass for any flows touched.
 - No TODO without a follow-up entry, and no skipped test without a stated reason.
