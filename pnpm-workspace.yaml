@@ -11,6 +11,14 @@ packages:
 # clone and in CI.
 allowBuilds:
   esbuild: true
+  # Transitive dependencies of testcontainers, via dockerode -> ssh2. All three
+  # build scripts compile optional native addons that only speed up SSH
+  # transport and protobuf decoding; testcontainers talks to Docker over a local
+  # socket and works without them. Declining keeps a C++ toolchain off every
+  # developer machine and out of CI.
+  cpu-features: false
+  protobufjs: false
+  ssh2: false
 
 catalog:
   # --- language and build -------------------------------------------------
@@ -54,6 +62,8 @@ catalog:
 
   # --- data ---------------------------------------------------------------
   drizzle-orm: 0.45.2
+  '@testcontainers/postgresql': 12.1.0
+  fast-check: 4.10.2
   drizzle-kit: 0.31.10
   postgres: 3.4.9
   zod: 4.6.5
@@ -77,3 +87,7 @@ catalog:
   # --- extension ----------------------------------------------------------
   wxt: 0.21.4
   '@wxt-dev/module-react': 1.2.2
+
+minimumReleaseAgeExclude:
+  - fast-check@4.10.2
+  - tsx@4.23.15
