@@ -26,7 +26,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "incremental": true,
-    "pretty": true,
+    "pretty": true
   },
-  "exclude": ["node_modules", "dist", "build", ".next", ".output", ".wxt"],
+  "exclude": ["node_modules", "dist", "build", ".next", ".output", ".wxt"]
 }

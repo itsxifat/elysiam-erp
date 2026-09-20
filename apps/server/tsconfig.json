@@ -2,21 +2,21 @@
   "extends": "@elysium/config/tsconfig/node.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist",
+    "outDir": "dist"
   },
   "include": ["src/**/*"],
   "references": [
     {
-      "path": "../../packages/config",
+      "path": "../../packages/config"
     },
     {
-      "path": "../../packages/contracts",
+      "path": "../../packages/contracts"
     },
     {
-      "path": "../../packages/db",
+      "path": "../../packages/db"
     },
     {
-      "path": "../../packages/domain",
-    },
-  ],
+      "path": "../../packages/domain"
+    }
+  ]
 }

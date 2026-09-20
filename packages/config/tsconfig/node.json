@@ -20,7 +20,7 @@
     // Be explicit rather than relying on ambient @types discovery, which is
     // fragile once tsconfigs are extended across a pnpm workspace.
     "types": ["node"],
-    "rootDir": "src",
+    "rootDir": "src"
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*"]
 }

@@ -17,7 +17,7 @@
     // Libraries hold the money, posting and state-machine logic, so they take
     // the strictest option we have. `{ a: undefined }` is not the same value as
     // `{}` when the difference decides whether a journal line is written.
-    "exactOptionalPropertyTypes": true,
+    "exactOptionalPropertyTypes": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*"]
 }

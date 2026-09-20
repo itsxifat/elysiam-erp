@@ -10,7 +10,9 @@ import { z } from 'zod';
 export function createEnv<TSchema extends z.ZodType>(
   appName: string,
   schema: TSchema,
-  source: Record<string, string | undefined> = process.env,
+  // Evaluated even when a caller always passes its own source, and the
+  // browser has no `process`, so this guards rather than assumes.
+  source: Record<string, string | undefined> = typeof process === 'undefined' ? {} : process.env,
 ): z.infer<TSchema> {
   const result = schema.safeParse(source);
 

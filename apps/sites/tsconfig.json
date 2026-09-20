@@ -5,14 +5,14 @@
     "allowJs": true,
     "plugins": [
       {
-        "name": "next",
-      },
+        "name": "next"
+      }
     ],
     "paths": {
-      "@/*": ["./src/*"],
+      "@/*": ["./src/*"]
     },
-    "types": ["node"],
+    "types": ["node"]
   },
   "include": ["next-env.d.ts", "src/**/*", "next.config.ts", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"],
+  "exclude": ["node_modules"]
 }

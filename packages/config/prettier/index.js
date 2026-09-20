@@ -22,7 +22,9 @@ export default {
       // The tsconfig presets carry comments explaining the strict options, so
       // they need the JSONC parser rather than the strict JSON one.
       files: ['**/tsconfig*.json', '**/tsconfig/*.json', '**/*.jsonc'],
-      options: { parser: 'jsonc' },
+      // JSONC allows trailing commas and `trailingComma: 'all'` adds them, which
+      // then breaks every plain JSON reader that touches a tsconfig.
+      options: { parser: 'jsonc', trailingComma: 'none' },
     },
     {
       files: ['**/*.md'],

@@ -15,15 +15,16 @@
   },
   "dependencies": {
     "@elysium/api-client": "workspace:*",
+    "@elysium/config": "workspace:*",
     "@elysium/contracts": "workspace:*",
     "@elysium/i18n": "workspace:*",
     "@elysium/ui": "workspace:*",
     "lucide-react": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@elysium/config": "workspace:*",
     "@playwright/test": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",

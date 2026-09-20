@@ -1,4 +1,9 @@
 {
   "extends": "@elysium/config/tsconfig/react.json",
   "include": ["src/**/*", "vite.config.ts", "e2e/**/*", "playwright.config.ts"],
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
 }
