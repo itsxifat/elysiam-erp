@@ -5,6 +5,9 @@ packages:
 # Every third-party version is pinned exactly, in one place. Packages reference
 # them as "catalog:" so a bump is a single-line change that cannot drift between
 # workspace members.
+allowBuilds:
+  esbuild: set this to true or false
+
 catalog:
   # --- language and build -------------------------------------------------
   # TypeScript is pinned to 6.0.3, NOT 7.x, on purpose (D-039). TypeScript 7 is

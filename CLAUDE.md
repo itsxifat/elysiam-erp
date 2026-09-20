@@ -42,15 +42,17 @@ scripts/   verify helpers
 docs/      spec, milestones, decisions, progress, plans, runbooks
 ```
 
-## Commands (created in M00; keep this list true)
+## Commands (keep this list true)
 
-- `pnpm i` and `docker compose -f infra/docker-compose.dev.yml up -d`
-- `pnpm dev` runs every app. Filter with `pnpm --filter <app> dev`.
+- Setup: `pnpm i`, then `pnpm setup:env`, then `docker compose -f infra/docker-compose.dev.yml up -d --wait`
+- `pnpm dev` runs every app. Filter with `pnpm --filter @elysium/<app> dev`.
 - `pnpm db:generate` creates a migration from schema changes.
 - `pnpm db:migrate` and `pnpm db:seed`
 - `pnpm test` runs unit + integration tests. `pnpm e2e` runs Playwright.
 - `pnpm verify` runs format check, lint, typecheck, tests, build and the migration-immutability check. It is the gate for every commit to main.
 - `pnpm api:client` regenerates the typed OpenAPI client.
+- `pnpm bench` is the shared benchmark harness; every latency acceptance check measures through it.
+- `pnpm fonts:fetch` re-vendors Inter and Hind Siliguri and recomputes the Bangla `size-adjust`.
 
 ## Invariants: never break these
 

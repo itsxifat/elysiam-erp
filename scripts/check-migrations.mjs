@@ -1,0 +1,144 @@
+#!/usr/bin/env node
+/**
+ * Committed migrations are immutable (CLAUDE.md invariant 9).
+ *
+ * Editing a migration that has already run somewhere leaves every database in a
+ * different state from the one the file describes, and nothing detects the
+ * drift until a query fails months later. The fix for a bad migration is always
+ * a new migration.
+ *
+ * This fails the build if a migration file that exists on the base branch has
+ * been modified, deleted or renamed — whether the change is committed or still
+ * sitting in the working tree.
+ *
+ * Usage:
+ *   node scripts/check-migrations.mjs               # compare against origin/main, then main
+ *   node scripts/check-migrations.mjs --base <ref>  # compare against an explicit ref
+ */
+
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const MIGRATIONS_DIR = 'packages/db/migrations';
+
+function git(args, { allowFailure = false } = {}) {
+  try {
+    return execFileSync('git', args, {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch (error) {
+    if (allowFailure) return null;
+    throw error;
+  }
+}
+
+function parseArgs(argv) {
+  const baseIndex = argv.indexOf('--base');
+  return { base: baseIndex === -1 ? null : (argv[baseIndex + 1] ?? null) };
+}
+
+function resolveBase(explicit) {
+  if (explicit) {
+    if (git(['rev-parse', '--verify', '--quiet', explicit], { allowFailure: true }) === null) {
+      return { ref: null, reason: `the ref "${explicit}" does not exist` };
+    }
+    return { ref: explicit, reason: null };
+  }
+
+  for (const candidate of ['origin/main', 'main']) {
+    if (git(['rev-parse', '--verify', '--quiet', candidate], { allowFailure: true }) !== null) {
+      return { ref: candidate, reason: null };
+    }
+  }
+
+  return { ref: null, reason: 'neither origin/main nor main exists yet' };
+}
+
+/** Files under the migrations directory that the base ref already contains. */
+function migrationsOnBase(base) {
+  const listing = git(['ls-tree', '-r', '--name-only', base, '--', MIGRATIONS_DIR], {
+    allowFailure: true,
+  });
+  return new Set(listing ? listing.split('\n').filter(Boolean) : []);
+}
+
+/**
+ * Every change to the migrations directory, committed or not, as
+ * `{ status, file }`. Working-tree state is included deliberately: the point is
+ * to catch the edit before it becomes a commit.
+ */
+function changesSince(base) {
+  const changes = new Map();
+
+  const add = (raw) => {
+    for (const line of raw.split('\n').filter(Boolean)) {
+      const [status, ...files] = line.split('\t');
+      const file = files.at(-1);
+      if (status && file) changes.set(file, status[0]);
+    }
+  };
+
+  const mergeBase = git(['merge-base', base, 'HEAD'], { allowFailure: true });
+  add(git(['diff', '--name-status', mergeBase ?? base, '--', MIGRATIONS_DIR]) ?? '');
+  add(git(['diff', '--name-status', '--cached', mergeBase ?? base, '--', MIGRATIONS_DIR]) ?? '');
+
+  return changes;
+}
+
+function main() {
+  const { base: explicitBase } = parseArgs(process.argv.slice(2));
+
+  if (git(['rev-parse', '--git-dir'], { allowFailure: true }) === null) {
+    console.log('check-migrations: not a git repository, nothing to compare. SKIP');
+    return 0;
+  }
+
+  const { ref: base, reason } = resolveBase(explicitBase);
+  if (base === null) {
+    console.log(`check-migrations: ${reason}, so there is no committed history to protect. SKIP`);
+    return 0;
+  }
+
+  if (!existsSync(path.join(REPO_ROOT, MIGRATIONS_DIR))) {
+    console.log(`check-migrations: ${MIGRATIONS_DIR} does not exist yet. PASS`);
+    return 0;
+  }
+
+  const protectedFiles = migrationsOnBase(base);
+  if (protectedFiles.size === 0) {
+    console.log(`check-migrations: no migrations on ${base} yet. PASS`);
+    return 0;
+  }
+
+  const violations = [];
+  for (const [file, status] of changesSince(base)) {
+    if (!protectedFiles.has(file)) continue;
+
+    if (status === 'M') violations.push({ file, what: 'modified' });
+    else if (status === 'D') violations.push({ file, what: 'deleted' });
+    else if (status === 'R') violations.push({ file, what: 'renamed' });
+  }
+
+  if (violations.length > 0) {
+    console.error(`check-migrations: FAIL — ${violations.length} committed migration(s) changed\n`);
+    for (const { file, what } of violations) console.error(`  ${what}: ${file}`);
+    console.error(
+      `\nA migration on ${base} has already run against other databases, so editing it\n` +
+        `leaves them describing a schema they do not have. Add a new migration instead\n` +
+        `(CLAUDE.md invariant 9).`,
+    );
+    return 1;
+  }
+
+  console.log(
+    `check-migrations: ${protectedFiles.size} migration(s) on ${base} are unchanged. PASS`,
+  );
+  return 0;
+}
+
+process.exit(main());

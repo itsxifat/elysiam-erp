@@ -14,12 +14,16 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "db:generate": "node -e \"console.error('db:generate \u2014 no schema yet. M01 adds packages/db/src/schema.'); process.exit(1)\"",
+    "db:migrate": "node -e \"console.error('db:migrate \u2014 no migrations yet. M01 adds them.'); process.exit(1)\"",
+    "db:seed": "node -e \"console.error('db:seed \u2014 no seed yet. M01 adds the five orgs and reference data.'); process.exit(1)\"",
     "lint": "eslint .",
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+    "typecheck": "tsc -b"
   },
   "devDependencies": {
     "@elysium/config": "workspace:*",
+    "drizzle-kit": "catalog:",
     "eslint": "catalog:",
     "typescript": "catalog:"
   },
