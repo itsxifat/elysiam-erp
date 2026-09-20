@@ -2,10 +2,16 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { withAnalytics, withOrg, withSystem } from '../client.js';
-import { GLOBAL_TABLES, TENANT_SCHEMAS } from '../rls.js';
+import { GLOBAL_TABLES, tenantTableSql } from '../rls.js';
 import { branches, settings } from '../schema/org/index.js';
 import { EXPECTED_GEOGRAPHY } from '../seed/geography.js';
 import { SEED_ORG_IDS, seedOrganizations } from '../seed/index.js';
+import {
+  findCrossOrgForeignKeys,
+  findDefaultPrivileges,
+  findPrivilegeProblems,
+  findTenancyOffenders,
+} from './guard.js';
 import { startTestDatabase, stopSharedContainer, type TestDatabase } from './harness.js';
 
 /**
@@ -333,82 +339,208 @@ describe('check 4: erp_analytics reads every org and writes nothing', () => {
 });
 
 describe('check 5: the guard — every tenant table is isolated', () => {
-  it('finds no table in a tenant schema without org_id, RLS and FORCE', async () => {
-    const rows = await withSystem(async (tx) =>
-      tx.execute<{
-        schemaname: string;
-        tablename: string;
-        has_org_id: boolean;
-        rls_enabled: boolean;
-        rls_forced: boolean;
-        policy_count: string;
-      }>(sql`
-        select
-          n.nspname as schemaname,
-          c.relname as tablename,
-          exists (
-            select 1 from pg_attribute a
-            where a.attrelid = c.oid and a.attname = 'org_id' and a.attnum > 0 and not a.attisdropped
-          ) as has_org_id,
-          c.relrowsecurity as rls_enabled,
-          c.relforcerowsecurity as rls_forced,
-          (select count(*) from pg_policies p
-             where p.schemaname = n.nspname and p.tablename = c.relname) as policy_count
-        from pg_class c
-        join pg_namespace n on n.oid = c.relnamespace
-        where c.relkind = 'r'
-        order by n.nspname, c.relname
-      `),
-    );
-
-    const inTenantSchemas = [...rows].filter((row) => TENANT_SCHEMAS.includes(row.schemaname));
-    expect(inTenantSchemas.length, 'the guard should actually find tables').toBeGreaterThan(0);
-
-    const offenders = inTenantSchemas
-      .filter((row) => !GLOBAL_TABLES.includes(`${row.schemaname}.${row.tablename}`))
-      .filter(
-        (row) =>
-          !row.has_org_id || !row.rls_enabled || !row.rls_forced || Number(row.policy_count) === 0,
-      )
-      .map(
-        (row) =>
-          `${row.schemaname}.${row.tablename} ` +
-          `(org_id: ${row.has_org_id}, rls: ${row.rls_enabled}, ` +
-          `force: ${row.rls_forced}, policies: ${row.policy_count})`,
-      );
+  it('finds no table in a tenant schema without org_id, RLS, FORCE and the real policy', async () => {
+    const offenders = await findTenancyOffenders();
 
     expect(
-      offenders,
-      'Every table in a tenant schema needs org_id, RLS enabled, RLS forced and a ' +
-        'policy. Use tenantTableSql() in a migration, or add the table to ' +
-        'GLOBAL_TABLES with a decision row explaining why one org may see another ' +
-        "org's rows in it.",
+      offenders.map((o) => `${o.schema}.${o.table}: ${o.reasons.join('; ')}`),
+      'Every table outside a declared global schema needs org_id, RLS enabled, RLS ' +
+        'forced, and the generated org policy on both USING and WITH CHECK. Use ' +
+        'tenantTableSql() in a migration, or declare the schema global in ' +
+        'GLOBAL_SCHEMAS / GLOBAL_TABLES with a decision row saying why one org may ' +
+        "see another org's rows there.",
     ).toEqual([]);
   });
 
-  it('catches a table that skipped the helper', async () => {
-    // Proves the guard above is load-bearing rather than vacuously true: a
-    // table created without the isolation block must be reported.
+  it('examines schemas it has never been told about', async () => {
+    // The guard used to read an allowlist containing only 'org', so every
+    // future module schema — sales, inventory, ledger — would have been
+    // unguarded until somebody remembered to append a string to it. The
+    // failure was silent and the first symptom would be one brand reading
+    // another's revenue. It is now opt-out (D-048).
     await withSystem(async (tx) => {
+      await tx.execute(sql`create schema if not exists probe_module`);
       await tx.execute(
-        sql`create table org.unguarded_probe (id uuid primary key, org_id uuid not null)`,
+        sql`create table probe_module.orders (id uuid primary key default gen_random_uuid(), org_id uuid not null)`,
       );
     });
 
     try {
-      const rows = await withSystem(async (tx) =>
-        tx.execute<{ rls_enabled: boolean; rls_forced: boolean }>(sql`
-          select c.relrowsecurity as rls_enabled, c.relforcerowsecurity as rls_forced
-          from pg_class c join pg_namespace n on n.oid = c.relnamespace
-          where n.nspname = 'org' and c.relname = 'unguarded_probe'
-        `),
-      );
+      const offenders = await findTenancyOffenders();
+      const found = offenders.find((o) => o.schema === 'probe_module' && o.table === 'orders');
 
-      expect(rows[0]?.rls_enabled, 'an unguarded table has no RLS').toBe(false);
-      expect(rows[0]?.rls_forced).toBe(false);
+      expect(found, 'a table in a brand-new schema must be caught').toBeDefined();
+      expect(found?.reasons).toContain('row-level security is not enabled');
     } finally {
       await withSystem(async (tx) => {
-        await tx.execute(sql`drop table if exists org.unguarded_probe`);
+        await tx.execute(sql`drop schema if exists probe_module cascade`);
+      });
+    }
+  });
+
+  it('rejects a policy that has been weakened to match every row', async () => {
+    // Counting policies is not enough: `using (true)` is a policy. This is the
+    // exact failure the generator exists to prevent, so the guard has to check
+    // the expression rather than its existence (D-048).
+    await withSystem(async (tx) => {
+      await tx.execute(
+        sql`create table org.weak_guard_probe (id uuid primary key default gen_random_uuid(), org_id uuid not null)`,
+      );
+      await tx.execute(sql`alter table org.weak_guard_probe enable row level security`);
+      await tx.execute(sql`alter table org.weak_guard_probe force row level security`);
+      await tx.execute(
+        sql`create policy weak_guard_probe_org_isolation on org.weak_guard_probe using (true) with check (true)`,
+      );
+    });
+
+    try {
+      const offenders = await findTenancyOffenders();
+      const found = offenders.find((o) => o.table === 'weak_guard_probe');
+
+      expect(found, 'a policy of `using (true)` must be reported').toBeDefined();
+      expect(found?.reasons.join(' ')).toMatch(/USING is .*not the generated org policy/);
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`drop table if exists org.weak_guard_probe`);
+      });
+    }
+  });
+
+  it('rejects a policy missing its WITH CHECK, which would leave writes unconstrained', async () => {
+    await withSystem(async (tx) => {
+      await tx.execute(
+        sql`create table org.readonly_policy_probe (id uuid primary key default gen_random_uuid(), org_id uuid not null)`,
+      );
+      await tx.execute(sql`alter table org.readonly_policy_probe enable row level security`);
+      await tx.execute(sql`alter table org.readonly_policy_probe force row level security`);
+      await tx.execute(sql`create policy readonly_policy_probe_org_isolation
+        on org.readonly_policy_probe for select
+        using (org_id = nullif(current_setting('app.org_id', true), '')::uuid)`);
+    });
+
+    try {
+      const offenders = await findTenancyOffenders();
+      const found = offenders.find((o) => o.table === 'readonly_policy_probe');
+      expect(found?.reasons.join(' ')).toMatch(/covers only SELECT|no WITH CHECK/);
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`drop table if exists org.readonly_policy_probe`);
+      });
+    }
+  });
+
+  it('finds no foreign key between tenant tables that omits org_id', async () => {
+    // PostgreSQL runs referential-integrity checks with row security bypassed,
+    // so a plain `branch_id references branches(id)` lets one org reference a
+    // row it cannot see (D-047). Verified live before the fix: org A inserted
+    // a location pointing at org B's branch.
+    const offenders = await findCrossOrgForeignKeys();
+
+    expect(
+      offenders.map((o) => `${o.constraint}: ${o.from} -> ${o.to}`),
+      'A foreign key between two tenant tables must carry org_id, or it can be ' +
+        "satisfied by another org's row. Use a composite reference against a " +
+        '(org_id, id) unique constraint.',
+    ).toEqual([]);
+  });
+
+  it('catches a foreign key that omits org_id', async () => {
+    await withSystem(async (tx) => {
+      await tx.execute(sql`create table org.fk_probe (
+        id uuid primary key default gen_random_uuid(),
+        org_id uuid not null,
+        branch_id uuid references org.branches (id)
+      )`);
+    });
+
+    try {
+      const offenders = await findCrossOrgForeignKeys();
+      expect(offenders.some((o) => o.from === 'org.fk_probe')).toBe(true);
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`drop table if exists org.fk_probe`);
+      });
+    }
+  });
+
+  it('grants nothing that would let a role step around a policy', async () => {
+    // erp_analytics must be unable to write even outside withAnalytics's
+    // read-only transaction, and erp_app must never hold TRUNCATE, which is not
+    // subject to row-level security at all.
+    const problems = await findPrivilegeProblems();
+
+    expect(
+      problems.map((p) => `${p.role} has ${p.privilege} on ${p.table}`),
+      'These privileges survive a read-only transaction and bypass RLS.',
+    ).toEqual([]);
+
+    // A default privilege would silently grant a future table to a role.
+    expect(await findDefaultPrivileges()).toBe(0);
+  });
+});
+
+describe('the harness reproduces the real role setup', () => {
+  it('applies bootstrap.sql, not an approximation of it', async () => {
+    // The harness used to hand-roll `create role` and skip bootstrap.sql's two
+    // revokes, so every test ran against a permissions shape that differed
+    // from production. This is the observable difference: after the real
+    // bootstrap, erp_app cannot create temporary tables.
+    await expectRefused(
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        await tx.execute(sql`create temp table escape_hatch (id int)`);
+      }),
+      /permission denied/i,
+    );
+  });
+
+  it('leaves nobody able to create objects in public', async () => {
+    await expectRefused(
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        await tx.execute(sql`create table public.loose (id int)`);
+      }),
+      /permission denied/i,
+    );
+  });
+});
+
+describe('the analytics cross-org policy behaves as designed', () => {
+  it('lets erp_analytics read every org through a table that opts in', async () => {
+    // `analyticsReadsAllOrgs` has no caller until M24, and its semantics rest
+    // on PostgreSQL OR-ing permissive policies. Pinned here rather than
+    // discovered later.
+    await withSystem(async (tx) => {
+      await tx.execute(
+        sql`create table org.rollup_probe (id uuid primary key default gen_random_uuid(), org_id uuid not null)`,
+      );
+      await tx.execute(
+        sql.raw(
+          tenantTableSql({ schema: 'org', table: 'rollup_probe', analyticsReadsAllOrgs: true }),
+        ),
+      );
+    });
+
+    try {
+      for (const orgId of [ORG_A, ORG_B]) {
+        await withOrg({ orgId }, async (tx) => {
+          await tx.execute(sql`insert into org.rollup_probe (org_id) values (${orgId})`);
+        });
+      }
+
+      const seen = await withAnalytics(async (tx) =>
+        tx.execute<{ org_id: string }>(sql`select org_id from org.rollup_probe`),
+      );
+      expect([...new Set([...seen].map((r) => r.org_id))].sort()).toEqual([ORG_A, ORG_B].sort());
+
+      // Opting in to cross-org reads must not also grant writes.
+      await expectRefused(
+        withAnalytics(async (tx) => {
+          await tx.execute(sql`insert into org.rollup_probe (org_id) values (${ORG_A})`);
+        }),
+        /read-only|permission denied/i,
+      );
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`drop table if exists org.rollup_probe`);
       });
     }
   });
@@ -425,11 +557,17 @@ describe('reference geography is global and intact', () => {
       `),
     );
 
+    // Literals, not EXPECTED_GEOGRAPHY, which is derived from the same file the
+    // seed loads and would therefore agree with a dataset that silently lost
+    // rows. These are the numbers D-045 commits to: 8 divisions, 64 districts.
     expect({
       divisions: Number(rows[0]?.divisions),
       districts: Number(rows[0]?.districts),
       thanas: Number(rows[0]?.thanas),
-    }).toEqual(EXPECTED_GEOGRAPHY);
+    }).toEqual({ divisions: 8, districts: 64, thanas: 494 });
+
+    // And the vendored file must still be the thing that was loaded.
+    expect(EXPECTED_GEOGRAPHY).toEqual({ divisions: 8, districts: 64, thanas: 494 });
   });
 
   it('is visible to every org, because a district belongs to nobody', async () => {

@@ -18,7 +18,10 @@ declare
   role_password text;
 begin
   foreach role_name in array array['erp_owner', 'erp_app', 'erp_analytics'] loop
-    role_password := current_setting('bootstrap.' || replace(role_name, 'erp_', '') || '_password');
+    -- Two-argument form: the single-argument one raises 42704 when the
+    -- setting is absent, which made the friendly message below unreachable.
+    role_password := current_setting(
+      'bootstrap.' || replace(role_name, 'erp_', '') || '_password', true);
 
     if role_password is null or role_password = '' then
       raise exception 'bootstrap: no password supplied for %', role_name;

@@ -73,6 +73,9 @@ export function tenantTableSql(options: TenantTableOptions): string {
   const qualified = `${quote(schema)}.${quote(table)}`;
   const policyName = quote(`${table}_org_isolation`);
 
+  // Note: the org_id index is declared in the Drizzle schema, not here, so
+  // `pnpm db:generate` can see it. Emitting it from both places produced two
+  // byte-identical indexes on every tenant table, each maintained on every write.
   const statements = [
     `alter table ${qualified} enable row level security;`,
     `alter table ${qualified} force row level security;`,
@@ -80,7 +83,6 @@ export function tenantTableSql(options: TenantTableOptions): string {
     `create policy ${policyName} on ${qualified}`,
     `  using (org_id = ${ORG_CONTEXT_SQL})`,
     `  with check (org_id = ${ORG_CONTEXT_SQL});`,
-    `create index if not exists ${quote(`${table}_org_id_idx`)} on ${qualified} (org_id);`,
     `grant usage on schema ${quote(schema)} to "erp_app", "erp_analytics";`,
     `grant ${appPrivileges.join(', ')} on ${qualified} to "erp_app";`,
   ];

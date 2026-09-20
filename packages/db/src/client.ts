@@ -91,9 +91,14 @@ async function applyContext(tx: Tx, context: OrgContext): Promise<void> {
   // the next borrower of a pooled connection. It reverts to the empty string
   // rather than to unset, which is precisely why the RLS policy wraps it in
   // `nullif` (D-043).
-  await tx.execute(sql`select set_config('app.org_id', ${context.orgId}, true)`);
-  await tx.execute(sql`select set_config('app.user_id', ${context.userId ?? ''}, true)`);
-  await tx.execute(sql`select set_config('app.request_id', ${context.requestId ?? ''}, true)`);
+  // One statement, as architecture §5 specifies. Three round trips would have
+  // been three network hops on every tenant request, against the §29 budgets.
+  await tx.execute(sql`
+    select
+      set_config('app.org_id', ${context.orgId}, true),
+      set_config('app.user_id', ${context.userId ?? ''}, true),
+      set_config('app.request_id', ${context.requestId ?? ''}, true)
+  `);
 }
 
 function assertUuid(value: string, caller: string): void {
@@ -145,7 +150,12 @@ export async function withSystem<T>(
   context?: { readonly orgId?: string },
 ): Promise<T> {
   return database('owner').transaction(async (tx) => {
-    if (context?.orgId !== undefined) {
+    if (context?.orgId === undefined) {
+      // Cleared explicitly rather than relied upon to be absent, so a value
+      // arriving through a connection-string `options=-c app.org_id=...`
+      // cannot grant an uncontexted transaction someone else's rows.
+      await tx.execute(sql`select set_config('app.org_id', '', true)`);
+    } else {
       assertUuid(context.orgId, 'withSystem()');
       await tx.execute(sql`select set_config('app.org_id', ${context.orgId}, true)`);
     }

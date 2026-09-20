@@ -44,14 +44,20 @@ async function main(): Promise<void> {
   const sql = postgres(ownerUrl, { max: 1, onnotice: silenceNotices });
 
   try {
-    const superuser = await sql<{ rolsuper: boolean }[]>`
-      select rolsuper from pg_roles where rolname = current_user
+    const [attributes] = await sql<{ rolsuper: boolean; rolbypassrls: boolean }[]>`
+      select rolsuper, rolbypassrls from pg_roles where rolname = current_user
     `;
-    if (superuser[0]?.rolsuper === true) {
+    // Both, not just rolsuper. On managed Postgres — RDS, Cloud SQL, Neon —
+    // you cannot create a true superuser, and BYPASSRLS is exactly the
+    // attribute a DBA grants instead when a migration looks blocked. An owner
+    // with NOSUPERUSER BYPASSRLS would pass a rolsuper-only check and then
+    // apply migrations to a database where FORCE RLS does not bind it.
+    if (attributes?.rolsuper === true || attributes?.rolbypassrls === true) {
       throw new Error(
-        'erp_owner is a superuser in this database. A superuser bypasses FORCE ROW ' +
-          'LEVEL SECURITY, so every tenant isolation policy would silently not apply ' +
-          'to it. Re-create the database and run `pnpm db:bootstrap` (D-042).',
+        'erp_owner can bypass row-level security in this database ' +
+          `(rolsuper=${String(attributes.rolsuper)}, rolbypassrls=${String(attributes.rolbypassrls)}). ` +
+          'Every tenant isolation policy would silently not apply to it. ' +
+          'Fix the role and re-run `pnpm db:bootstrap` (D-042).',
       );
     }
 

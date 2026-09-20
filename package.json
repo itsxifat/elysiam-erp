@@ -14,6 +14,7 @@
     "build": "turbo run build",
     "check:migrations": "node scripts/check-migrations.mjs",
     "clean": "turbo run clean",
+    "db:bootstrap": "pnpm --filter @elysium/db run db:bootstrap",
     "db:generate": "pnpm --filter @elysium/db run db:generate",
     "db:migrate": "pnpm --filter @elysium/db run db:migrate",
     "db:seed": "pnpm --filter @elysium/db run db:seed",

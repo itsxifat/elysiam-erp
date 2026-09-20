@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,10 +35,9 @@ const silenceNotices = (): void => undefined;
  * test run never touches development data.
  */
 
-const MIGRATIONS_FOLDER = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../migrations',
-);
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_FOLDER = path.resolve(HERE, '../../migrations');
+const BOOTSTRAP_SQL = path.resolve(HERE, '../bootstrap.sql');
 
 /**
  * Role passwords, taken from the ambient configuration when there is one.
@@ -121,24 +121,43 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
   const admin = postgres(adminUrl, { max: 1, onnotice: silenceNotices });
 
   try {
-    for (const [role, password] of Object.entries(passwords)) {
-      await admin.unsafe(`
-        do $$
-        begin
-          if exists (select 1 from pg_roles where rolname = '${role}') then
-            alter role "${role}" with login password '${password}';
-          else
-            create role "${role}" with login password '${password}';
-          end if;
-          alter role "${role}" with nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
-        end $$;
-      `);
-    }
+    // Run the real bootstrap.sql, not an approximation of it. Hand-rolling the
+    // role setup here meant `revoke all on database ... from public` and
+    // `revoke create on schema public from public` were never exercised, so
+    // every test ran against a permissions shape that differed from production
+    // — observably: erp_app could create temp tables in the harness and cannot
+    // after the real bootstrap.
+    const script = await readFile(BOOTSTRAP_SQL, 'utf8');
+    await admin.begin(async (tx) => {
+      // As settings, quoted by format('%L') inside the script. Interpolating
+      // them into DDL would put production-shaped credentials into the query
+      // log of any server running with log_statement=all (invariant 10).
+      await tx`select set_config('bootstrap.owner_password', ${passwords.erp_owner}, true)`;
+      await tx`select set_config('bootstrap.app_password', ${passwords.erp_app}, true)`;
+      await tx`select set_config('bootstrap.analytics_password', ${passwords.erp_analytics}, true)`;
+      await tx.unsafe(script);
+    });
 
     await admin.unsafe(`create database "${databaseName}" owner "erp_owner"`);
     await admin.unsafe(`grant connect on database "${databaseName}" to "erp_app", "erp_analytics"`);
   } finally {
     await admin.end();
+  }
+
+  // bootstrap.sql revokes on the database it is connected to, so the new
+  // database needs the same treatment.
+  const fresh = postgres(
+    withDatabase(adminUrl, databaseName, parseUrl(adminUrl).user, parseUrl(adminUrl).password),
+    {
+      max: 1,
+      onnotice: silenceNotices,
+    },
+  );
+  try {
+    await fresh.unsafe('revoke create on schema public from public');
+    await fresh.unsafe(`revoke all on database "${databaseName}" from public`);
+  } finally {
+    await fresh.end();
   }
 
   const ownerUrl = withDatabase(adminUrl, databaseName, 'erp_owner', passwords.erp_owner);

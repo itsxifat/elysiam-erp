@@ -15,6 +15,9 @@ env:
   # command so a green local run means a green CI run.
   NODE_ENV: test
   DATABASE_ADMIN_URL: postgres://postgres:postgres_dev_password@localhost:5432/elysium_test
+  # Without this the harness ignores the service container below and starts
+  # its own Testcontainer, which is slower and leaves the service unused.
+  TEST_DATABASE_URL: postgres://postgres:postgres_dev_password@localhost:5432/elysium_test
 
 jobs:
   verify:
