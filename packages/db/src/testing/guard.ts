@@ -87,7 +87,12 @@ export async function findTenancyOffenders(): Promise<Offender[]> {
         on p.schemaname = n.nspname
        and p.tablename = c.relname
        and p.policyname = c.relname || '_org_isolation'
-      where c.relkind = 'r'
+      -- 'p' as well as 'r': a partitioned parent needs its own ENABLE/FORCE,
+      -- because the policies that apply when querying through it are the
+      -- parent's. M02b's audit log and M03's journals are the obvious
+      -- candidates for partitioning, and a parent skipped here would be
+      -- invisible to the guard while every leaf looked fine.
+      where c.relkind in ('r', 'p')
         and n.nspname not in ${SYSTEM_SCHEMAS}
         and n.nspname not like 'pg\\_temp%'
         and n.nspname not in ${[...GLOBAL_SCHEMAS]}
@@ -161,7 +166,7 @@ export async function findCrossOrgForeignKeys(): Promise<ForeignKeyOffender[]> {
         select c.oid, n.nspname, c.relname
         from pg_class c
         join pg_namespace n on n.oid = c.relnamespace
-        where c.relkind = 'r'
+        where c.relkind in ('r', 'p')
           and exists (
             select 1 from pg_attribute a
             where a.attrelid = c.oid and a.attname = 'org_id'
@@ -219,7 +224,7 @@ export async function findPrivilegeProblems(): Promise<PrivilegeOffender[]> {
         select n.nspname || '.' || c.relname as table_name
         from pg_class c
         join pg_namespace n on n.oid = c.relnamespace
-        where c.relkind = 'r'
+        where c.relkind in ('r', 'p')
           and n.nspname not in ${SYSTEM_SCHEMAS}
           and n.nspname not like 'pg\\_temp%'
       ),

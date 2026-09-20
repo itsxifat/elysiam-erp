@@ -12,7 +12,12 @@ import {
   findPrivilegeProblems,
   findTenancyOffenders,
 } from './guard.js';
-import { startTestDatabase, stopSharedContainer, type TestDatabase } from './harness.js';
+import {
+  resetTenantData,
+  startTestDatabase,
+  stopSharedContainer,
+  type TestDatabase,
+} from './harness.js';
 
 /**
  * Tenant isolation (architecture §5, M01 acceptance checks 1-6).
@@ -70,6 +75,32 @@ async function expectRefused(work: Promise<unknown>, pattern: RegExp): Promise<v
   }
 
   expect(messages.join(' | ')).toMatch(pattern);
+}
+
+/** Insert into one tenant table, inside whatever transaction the caller holds. */
+async function insertForAsOrg(
+  tx: Parameters<Parameters<typeof withOrg>[1]>[0],
+  table: string,
+  orgId: string,
+  tag: string,
+): Promise<void> {
+  switch (table) {
+    case 'branches':
+      await tx.execute(sql`insert into org.branches (org_id, code, name, kind)
+        values (${orgId}, ${tag}, 'probe', 'showroom')`);
+      break;
+    case 'locations':
+      await tx.execute(sql`insert into org.locations (org_id, code, name, kind)
+        values (${orgId}, ${tag}, 'probe', 'warehouse')`);
+      break;
+    case 'settings':
+      await tx.execute(sql`insert into org.settings (org_id, key, value)
+        values (${orgId}, ${tag}, '{}'::jsonb)`);
+      break;
+    default:
+      await tx.execute(sql`insert into org.feature_flags (org_id, key, enabled)
+        values (${orgId}, ${tag}, false)`);
+  }
 }
 
 /** Insert a row belonging to `orgId` and return its id. */
@@ -221,6 +252,83 @@ describe('check 1: org A cannot reach org B rows, by any route', () => {
   });
 });
 
+describe('check 1, across every tenant table rather than a representative one', () => {
+  /** Insert a row for `orgId` into each tenant table, shaped for that table. */
+  async function insertFor(table: string, orgId: string, tag: string): Promise<void> {
+    await withSystem(
+      async (tx) => {
+        switch (table) {
+          case 'branches':
+            await tx.execute(sql`insert into org.branches (org_id, code, name, kind)
+              values (${orgId}, ${`ALL-${tag}`}, 'probe', 'showroom')`);
+            break;
+          case 'locations':
+            await tx.execute(sql`insert into org.locations (org_id, code, name, kind)
+              values (${orgId}, ${`ALL-${tag}`}, 'probe', 'warehouse')`);
+            break;
+          case 'settings':
+            await tx.execute(sql`insert into org.settings (org_id, key, value)
+              values (${orgId}, ${`all-${tag}`}, '{}'::jsonb)`);
+            break;
+          default:
+            await tx.execute(sql`insert into org.feature_flags (org_id, key, enabled)
+              values (${orgId}, ${`all-${tag}`}, false)`);
+        }
+      },
+      { orgId },
+    );
+  }
+
+  const TENANT_TABLES = ['branches', 'locations', 'settings', 'feature_flags'] as const;
+
+  it.each(TENANT_TABLES)("org A sees none of org B's rows in org.%s", async (table) => {
+    await insertFor(table, ORG_B, table);
+
+    const rows = await withOrg({ orgId: ORG_A }, async (tx) =>
+      tx.execute<{ org_id: string }>(sql.raw(`select org_id from org.${table}`)),
+    );
+
+    expect([...rows].filter((row) => row.org_id === ORG_B)).toEqual([]);
+  });
+
+  it.each(TENANT_TABLES)('org A cannot write an org B row into org.%s', async (table) => {
+    await expectRefused(
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        await insertForAsOrg(tx, table, ORG_B, `write-${table}`);
+      }),
+      /row-level security/i,
+    );
+  });
+
+  it.each(TENANT_TABLES)('org A cannot update or delete org B rows in org.%s', async (table) => {
+    await insertFor(table, ORG_B, `mut-${table}`);
+
+    const before = await withSystem(
+      async (tx) =>
+        tx.execute<{ count: string }>(sql.raw(`select count(*) as count from org.${table}`)),
+      { orgId: ORG_B },
+    );
+
+    await withOrg({ orgId: ORG_A }, async (tx) => {
+      // Explicitly org B's rows. A bare DELETE would also sweep org A's own,
+      // and trip their on-delete-restrict foreign keys, which is a different
+      // thing entirely.
+      await tx.execute(sql.raw(`delete from org.${table} where org_id = '${ORG_B}'`));
+      await tx.execute(
+        sql.raw(`update org.${table} set org_id = org_id where org_id = '${ORG_B}'`),
+      );
+    });
+
+    const after = await withSystem(
+      async (tx) =>
+        tx.execute<{ count: string }>(sql.raw(`select count(*) as count from org.${table}`)),
+      { orgId: ORG_B },
+    );
+
+    expect(Number(after[0]?.count)).toBe(Number(before[0]?.count));
+  });
+});
+
 describe('check 2: with no org context, tenant tables return zero rows', () => {
   it('returns nothing on a connection that never set a context', async () => {
     await seedBranch(ORG_A, 'A-NOCTX');
@@ -338,6 +446,98 @@ describe('check 4: erp_analytics reads every org and writes nothing', () => {
   });
 });
 
+describe('check 4 addendum: analytics access is opt-in per table (D-049)', () => {
+  it('holds no read grant on a tenant table that has not opted in', async () => {
+    // Worth stating plainly, because the check reads as though analytics can
+    // already read every org's rows. It cannot. `tenantTableSql` grants
+    // erp_analytics nothing unless a table passes analyticsReadsAllOrgs, and
+    // no shipped table does until M24 adds the rollups. What check 4 proves
+    // today is the global org list plus the mechanism; the cross-org read of
+    // real tenant data starts existing at M24.
+    for (const table of ['branches', 'locations', 'settings', 'feature_flags']) {
+      const [row] = await withSystem(async (tx) =>
+        tx.execute<{ granted: boolean }>(
+          sql`select has_table_privilege('erp_analytics', ${`org.${table}`}, 'SELECT') as granted`,
+        ),
+      );
+      expect(row?.granted, `erp_analytics should not read org.${table} yet`).toBe(false);
+    }
+  });
+
+  it('reads the global tables it is granted, across every org', async () => {
+    const rows = await withAnalytics(async (tx) =>
+      tx.execute<{ slug: string }>(sql`select slug from org.organizations order by slug`),
+    );
+    expect([...rows].map((r) => r.slug)).toContain('oura-lifestyle');
+    expect([...rows].map((r) => r.slug)).toContain('elysium-lifestyle-bd');
+  });
+});
+
+describe('D-047 regression: the foreign-key exploit, behaviourally', () => {
+  it("refuses a location pointing at another org's branch", async () => {
+    // The structural guard catches a reverted constraint. This catches the
+    // thing that was actually reproduced as a live exploit, which is worth
+    // asserting directly rather than only in terms of constraint shape.
+    const [branchB] = await withSystem(
+      async (tx) => tx.execute<{ id: string }>(sql`select id from org.branches limit 1`),
+      { orgId: ORG_B },
+    );
+    expect(branchB?.id).toBeDefined();
+
+    await expectRefused(
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        await tx.execute(sql`insert into org.locations (org_id, branch_id, code, name, kind)
+          values (${ORG_A}, ${branchB?.id ?? ''}, 'EXPLOIT', 'probe', 'warehouse')`);
+      }),
+      /foreign key constraint/i,
+    );
+  });
+
+  it('gives the same error for a foreign branch as for one that does not exist', async () => {
+    // If the two differed, org A would still have an existence oracle on any
+    // uuid in any org, which was one of the three consequences of the bug.
+    const [branchB] = await withSystem(
+      async (tx) => tx.execute<{ id: string }>(sql`select id from org.branches limit 1`),
+      { orgId: ORG_B },
+    );
+
+    const messageFor = async (branchId: string): Promise<string> => {
+      try {
+        await withOrg({ orgId: ORG_A }, async (tx) => {
+          await tx.execute(sql`insert into org.locations (org_id, branch_id, code, name, kind)
+            values (${ORG_A}, ${branchId}, ${`ORACLE-${branchId.slice(0, 8)}`}, 'probe', 'warehouse')`);
+        });
+        return 'no error';
+      } catch (error) {
+        let message = '';
+        for (let current: unknown = error; current instanceof Error; current = current.cause) {
+          message = current.message;
+        }
+        return message;
+      }
+    };
+
+    const foreign = await messageFor(branchB?.id ?? '');
+    const missing = await messageFor('00000000-0000-4000-8000-000000000000');
+
+    expect(foreign).toMatch(/foreign key constraint/i);
+    expect(foreign).toBe(missing);
+  });
+
+  it("still allows a location pointing at the org's own branch", async () => {
+    const [branchA] = await withSystem(
+      async (tx) => tx.execute<{ id: string }>(sql`select id from org.branches limit 1`),
+      { orgId: ORG_A },
+    );
+
+    await withOrg({ orgId: ORG_A }, async (tx) => {
+      await tx.execute(sql`insert into org.locations (org_id, branch_id, code, name, kind)
+        values (${ORG_A}, ${branchA?.id ?? ''}, 'OWN-BRANCH', 'probe', 'warehouse')`);
+      await tx.execute(sql`delete from org.locations where code = 'OWN-BRANCH'`);
+    });
+  });
+});
+
 describe('check 5: the guard — every tenant table is isolated', () => {
   it('finds no table in a tenant schema without org_id, RLS, FORCE and the real policy', async () => {
     const offenders = await findTenancyOffenders();
@@ -425,6 +625,36 @@ describe('check 5: the guard — every tenant table is isolated', () => {
     } finally {
       await withSystem(async (tx) => {
         await tx.execute(sql`drop table if exists org.readonly_policy_probe`);
+      });
+    }
+  });
+
+  it('sees a partitioned parent, not only its leaves', async () => {
+    // relkind 'p' as well as 'r'. A partitioned parent carries the policies
+    // that apply when querying through it, so a guard that skipped parents
+    // would report every leaf as clean while the parent had no RLS at all.
+    // M02b's audit log and M03's journals are the obvious partition candidates.
+    await withSystem(async (tx) => {
+      await tx.execute(sql`create table org.part_probe (
+        id uuid not null default gen_random_uuid(),
+        org_id uuid not null,
+        created_at timestamptz not null default now()
+      ) partition by range (created_at)`);
+      await tx.execute(
+        sql`create table org.part_probe_2026 partition of org.part_probe
+            for values from ('2026-01-01') to ('2027-01-01')`,
+      );
+    });
+
+    try {
+      const offenders = await findTenancyOffenders();
+      expect(
+        offenders.some((o) => o.table === 'part_probe'),
+        'the partitioned parent must be reported, not just the leaf',
+      ).toBe(true);
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`drop table if exists org.part_probe cascade`);
       });
     }
   });
@@ -686,6 +916,31 @@ describe('these tests would catch a weakened policy', () => {
   });
 });
 
+describe('the harness reset works', () => {
+  it('empties tenant tables and restores the seed', async () => {
+    // The Build list asks for "a fast reset between tests". It existed but
+    // nothing called it, so nothing proved it worked. It runs last because it
+    // truncates the rows the other tests rely on.
+    await withOrg({ orgId: ORG_A }, async (tx) => {
+      await tx.execute(sql`insert into org.settings (org_id, key, value)
+        values (${ORG_A}, 'reset-probe', '{}'::jsonb)`);
+    });
+
+    await resetTenantData();
+
+    const settingsAfter = await withOrg({ orgId: ORG_A }, async (tx) =>
+      tx.execute<{ count: string }>(sql`select count(*) as count from org.settings`),
+    );
+    expect(Number(settingsAfter[0]?.count), 'truncate should have emptied settings').toBe(0);
+
+    // And the seed is back, so a following test still has its fixtures.
+    const branchesAfter = await withOrg({ orgId: ORG_A }, async (tx) =>
+      tx.execute<{ code: string }>(sql`select code from org.branches`),
+    );
+    expect([...branchesAfter].map((r) => r.code)).toContain('HQ');
+  });
+});
+
 describe('check 6: migrate and seed are idempotent', () => {
   it('re-seeding changes no row counts', async () => {
     const count = async () =>
@@ -755,6 +1010,7 @@ describe('concurrency: contexts do not bleed between overlapping transactions', 
         tx.execute<{ key: string }>(sql`select key from org.settings order by key`),
       );
       const keys = [...rows]
+        .filter((row) => row.key.startsWith('concurrent-'))
         .map((row) => Number(row.key.replace('concurrent-', '')))
         .sort((a, b) => a - b);
       expect(keys).toEqual([...expectedKeys]);
