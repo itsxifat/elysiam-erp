@@ -7,6 +7,10 @@ import { defineConfig } from 'wxt';
  * behind a signed staff policy (D-022).
  */
 export default defineConfig({
+  // WXT's dev server defaults to 3000, which is the API's port. Left alone,
+  // `pnpm dev` binds both and `http://localhost:3000` resolves to whichever
+  // won the race — so every VITE_API_URL would point at the extension.
+  dev: { server: { port: 3010 } },
   manifest: {
     name: 'Elysium Agent Activity',
     description: 'Records which work platform an agent is active on, by domain only.',

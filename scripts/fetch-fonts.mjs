@@ -19,6 +19,7 @@
  */
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -165,8 +166,21 @@ async function main() {
   const reference = results.find((entry) => entry.family.reference);
   if (reference === undefined) throw new Error('no reference family is marked');
 
-  writeFileSync(CSS_FILE, renderCss(results, reference), 'utf8');
-  console.log(`\nWrote ${path.relative(REPO_ROOT, CSS_FILE)}`);
+  // Format with the repo's own Prettier config before writing. The
+  // `unicode-range` lines are long enough that raw output fails
+  // `prettier --check`, so regenerating the fonts would otherwise break
+  // `pnpm verify` until somebody noticed.
+  const require = createRequire(import.meta.url);
+  const prettier = require(require.resolve('prettier', { paths: [REPO_ROOT] }));
+  const config = await prettier.resolveConfig(CSS_FILE);
+  const formatted = await prettier.format(renderCss(results, reference), {
+    ...config,
+    filepath: CSS_FILE,
+  });
+
+  writeFileSync(CSS_FILE, formatted, 'utf8');
+  console.log(`
+Wrote ${path.relative(REPO_ROOT, CSS_FILE)} (Prettier-formatted)`);
 }
 
 function renderCss(results, reference) {

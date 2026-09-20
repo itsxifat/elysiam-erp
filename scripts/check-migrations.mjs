@@ -17,11 +17,27 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+/**
+ * The repository containing the current working directory, not the one this
+ * script happens to live in. `pnpm verify` runs it from the root either way,
+ * but resolving from cwd means it also works on a worktree, from a
+ * subdirectory, and under test against a throwaway repository.
+ */
+function findRepoRoot() {
+  try {
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  }
+}
+
+const REPO_ROOT = findRepoRoot();
 const MIGRATIONS_DIR = 'packages/db/migrations';
 
 function git(args, { allowFailure = false } = {}) {
@@ -104,14 +120,9 @@ function main() {
     return 0;
   }
 
-  if (!existsSync(path.join(REPO_ROOT, MIGRATIONS_DIR))) {
-    console.log(`check-migrations: ${MIGRATIONS_DIR} does not exist yet. PASS`);
-    return 0;
-  }
-
   const protectedFiles = migrationsOnBase(base);
   if (protectedFiles.size === 0) {
-    console.log(`check-migrations: no migrations on ${base} yet. PASS`);
+    console.log(`check-migrations: ${base} has no migrations to protect yet. PASS`);
     return 0;
   }
 

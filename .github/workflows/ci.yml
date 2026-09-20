@@ -75,6 +75,21 @@ jobs:
 
       - run: pnpm run verify
 
+  workflows:
+    name: lint workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      # Keeps acceptance check 4 reproducible. Verified locally with actionlint
+      # v1.7.12; pinning the version here means a later session gets the same
+      # answer rather than whatever is current that day.
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+
   e2e:
     name: e2e
     runs-on: ubuntu-latest

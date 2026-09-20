@@ -38,6 +38,7 @@ pnpm dev
 | portal          | http://localhost:5174 | Reseller and investor PWA                |
 | pos             | http://localhost:5175 | Showroom PWA                             |
 | sites           | http://localhost:3001 | Public landing pages (Next.js)           |
+| extension       | http://localhost:3010 | WXT dev server for the Chrome extension  |
 
 Filter to one app with `pnpm --filter @elysium/console dev`.
 

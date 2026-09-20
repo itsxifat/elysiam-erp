@@ -81,7 +81,7 @@ Phase 0 · Effort XHIGH · Depends on: — · Gate: G0 · Architecture: §3, §4
 
 **Acceptance checks**
 
-1. A fresh clone passes this sequence with exit code 0: `pnpm i`, then compose up, then `pnpm verify`.
+1. A fresh clone passes this sequence with exit code 0: `pnpm i`, `pnpm setup:env`, compose up, then `pnpm verify`. (`setup:env` belongs in the sequence: config is Zod-validated and fails fast, so the app builds have nothing to read without it.)
 2. `pnpm dev` starts everything:
    - the API answers `GET /health/live` with 200
    - the worker logs "ready"

@@ -5,8 +5,12 @@ packages:
 # Every third-party version is pinned exactly, in one place. Packages reference
 # them as "catalog:" so a bump is a single-line change that cannot drift between
 # workspace members.
+# pnpm asks about packages with install scripts. esbuild's postinstall places
+# its platform binary, which tsx and the Vite config loader need, so it is
+# allowed. Leaving this unanswered makes `pnpm install` exit 1 on a fresh
+# clone and in CI.
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
 
 catalog:
   # --- language and build -------------------------------------------------

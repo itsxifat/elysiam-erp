@@ -14,6 +14,31 @@ import {
   type TokenScope,
 } from './parse.js';
 
+/**
+ * The semantic roles architecture §24 names explicitly.
+ *
+ * Parity and preset coverage are both derived from whatever the light theme
+ * happens to contain, so without this list a role deleted from *both* themes
+ * would pass every check. This is the floor: adding roles is free, removing one
+ * of these is a decision that has to be argued for.
+ */
+export const REQUIRED_ROLES: readonly string[] = [
+  '--background',
+  '--foreground',
+  '--muted',
+  '--muted-foreground',
+  '--border',
+  '--ring',
+  '--primary',
+  '--primary-foreground',
+  '--destructive',
+  '--destructive-foreground',
+  '--success',
+  '--success-foreground',
+  '--warning',
+  '--warning-foreground',
+];
+
 export interface ContrastPair {
   /** The token painted on top. */
   readonly foreground: string;

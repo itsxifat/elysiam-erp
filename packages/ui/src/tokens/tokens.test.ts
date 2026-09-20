@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { auditContrast, parseTokenFile, themeRoles } from './audit.js';
+import { REQUIRED_ROLES, auditContrast, parseTokenFile, themeRoles } from './audit.js';
 import { contrastRatio, resolveBrandAccent } from './contrast.js';
 import { parseOklch, resolveToken } from './parse.js';
 
@@ -15,6 +15,13 @@ describe('design tokens (architecture §24, D-033)', () => {
     expect(tokens.light.size).toBeGreaterThan(20);
     expect(tokens.dark.size).toBeGreaterThan(20);
     expect(tokens.static.size).toBeGreaterThan(5);
+  });
+
+  it('defines every role architecture §24 names, in both themes', () => {
+    for (const theme of ['light', 'dark'] as const) {
+      const missing = REQUIRED_ROLES.filter((role) => !tokens[theme].has(role));
+      expect(missing, `${theme} theme is missing §24 roles`).toEqual([]);
+    }
   });
 
   it('light and dark define exactly the same roles', () => {
