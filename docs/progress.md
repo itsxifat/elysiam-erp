@@ -33,3 +33,20 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
 - Deviations from the milestone spec: none — the kit's own kickoff flow.
 - Follow-ups: install Docker Desktop + WSL2 (owner: human, blocks M01); explain D-001 and D-002 to the client, since the spec recommended ERPNext/Odoo and schema-per-tenant (owner: human); collect the five brands' logos and accent colours for D-034 (owner: human, needed by M05).
 - Next: M00.
+
+### 2026-09-20 · M00 · Repo bootstrap and toolchain · partial (Docker blocked)
+
+- Delivered: a pnpm + Turborepo monorepo where `pnpm verify` is the single gate. Six apps and nine packages compile; the API answers `/health/live`, the worker logs `ready`, and all four front ends serve. `pnpm verify` runs format check, lint, typecheck, 81 tests, build and the migration-immutability check, and exits 0 in ~25 s.
+- The design token foundation (D-033) landed here rather than in M05, so no screen in this repo's history was ever written against a hard-coded colour. OKLCH semantic roles in light and dark, per-org brand accent derived from a hue/chroma pair (D-034), 36 px rows, hairline borders, motion at 120–200 ms, and Inter + Hind Siliguri vendored with a computed `size-adjust: 108.1%` so mixed bn/en strings share one baseline.
+- Verification: `pnpm verify` exit 0; acceptance checks 2–7 PASS with evidence in the Verification Report; check 1 is PASS except its `compose up` step, which is BLOCKED on Docker. e2e: 3 Playwright specs (mount and token paint, theme repaint, keyboard reachability).
+- Auditors: ledger-auditor n/a (M00 touches no money, stock, tenancy or permission code); acceptance-auditor run, gaps closed.
+- Decisions/assumptions: D-039 (TypeScript pinned to 6.0.3, not 7.x), D-040 (packages compiled via project references, tests aliased to source).
+- New dependencies, with reasons: `concurrently` — the server dev script runs `tsc -b --watch` alongside two `node --watch` processes, and tsx/esbuild cannot emit the decorator metadata NestJS DI needs. `@eslint/js` — the flat-config base ruleset. `happy-dom` — the DOM environment for the Vitest `dom` project. Everything else is named in architecture §3.
+- Deviations from the milestone spec: TypeScript is pinned to 6.0.3 rather than the latest stable 7.0.2 (D-039) — TypeScript 7 removed the classic compiler API, so type-aware linting would stop working. The token test also asserts WCAG contrast, slightly beyond check 5's wording, because the OKLCH values are M00's deliverable and picking them by eye would not be verifiable; it found three real failures in the first draft.
+- Follow-ups:
+  - Install Docker Desktop + WSL2 (owner: human). **Blocks M01 entirely** and the `compose up` step of M00 check 1.
+  - Chart and dataviz tokens deliberately omitted; M24 picks them with the `dataviz` skill rather than inheriting unvalidated placeholders (owner: claude, M24).
+  - A lint rule banning `toFixed` / `parseFloat` outside `packages/domain/src/money` (owner: claude, M03, once that module exists to scope it against).
+  - Production sourcemaps are off in the Vite builds; M14b turns them back on wired to Sentry upload (owner: claude, M14b).
+  - The three SPA placeholder pages are scaffolding; M05 replaces them with the real console shell (owner: claude, M05).
+- Next: M01, once Docker is available.
