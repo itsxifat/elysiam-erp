@@ -13,6 +13,12 @@ import { seedGeography } from '../seed/geography.js';
 import { seedOrganizations } from '../seed/index.js';
 
 /**
+ * Postgres notices are dropped: they can echo row values, and for this
+ * product that means phone numbers reaching the logs (§25).
+ */
+const silenceNotices = (): void => undefined;
+
+/**
  * A real PostgreSQL to test against.
  *
  * Row-level security is a database behaviour. A mock cannot have it, so these
@@ -112,7 +118,7 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
     .slice(2, 6)}`;
 
   const passwords = rolePasswords();
-  const admin = postgres(adminUrl, { max: 1, onnotice: () => {} });
+  const admin = postgres(adminUrl, { max: 1, onnotice: silenceNotices });
 
   try {
     for (const [role, password] of Object.entries(passwords)) {
@@ -144,7 +150,7 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
     passwords.erp_analytics,
   );
 
-  const owner = postgres(ownerUrl, { max: 1, onnotice: () => {} });
+  const owner = postgres(ownerUrl, { max: 1, onnotice: silenceNotices });
   try {
     // The property the whole milestone rests on. Asserted in the harness so a
     // misconfigured server fails here, loudly, instead of quietly turning every
@@ -183,7 +189,7 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
     async stop() {
       await closeDatabase();
 
-      const cleanup = postgres(adminUrl, { max: 1, onnotice: () => {} });
+      const cleanup = postgres(adminUrl, { max: 1, onnotice: silenceNotices });
       try {
         await cleanup.unsafe(`drop database if exists "${databaseName}" with (force)`);
       } finally {

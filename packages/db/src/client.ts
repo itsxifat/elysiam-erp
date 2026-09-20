@@ -6,6 +6,12 @@ import { databaseConfig, loadDatabaseEnv, requireUrl, type DatabaseConfig } from
 import * as schema from './schema/index.js';
 
 /**
+ * Postgres notices are dropped: they can echo row values, and for this
+ * product that means phone numbers reaching the logs (§25).
+ */
+const silenceNotices = (): void => undefined;
+
+/**
  * The three ways into the database (architecture §5).
  *
  * `withOrg` is the only one application code should reach for. The other two
@@ -71,7 +77,7 @@ function database(kind: PoolKind): Database {
     idle_timeout: 30,
     // The driver's default notice handler is chatty, and notices can echo row
     // values — which for this product means phone numbers (§25).
-    onnotice: () => {},
+    onnotice: silenceNotices,
   });
 
   const db = drizzle(driver, { schema });

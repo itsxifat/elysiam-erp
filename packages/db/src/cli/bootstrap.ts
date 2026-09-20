@@ -14,9 +14,9 @@ import { fileURLToPath } from 'node:url';
 
 import postgres from 'postgres';
 
-import { databaseConfig, loadDatabaseEnv, parseUrl, requireUrl } from '../src/config.js';
+import { databaseConfig, loadDatabaseEnv, parseUrl, requireUrl } from '../config.js';
 
-const SQL_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/bootstrap.sql');
+const SQL_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../bootstrap.sql');
 
 async function main(): Promise<void> {
   loadDatabaseEnv();

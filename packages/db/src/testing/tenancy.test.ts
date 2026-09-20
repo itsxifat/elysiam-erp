@@ -244,7 +244,9 @@ describe('check 2: with no org context, tenant tables return zero rows', () => {
 
   it('refuses a non-uuid org id before it reaches the policy', async () => {
     await expectRefused(
-      withOrg({ orgId: "' or '1'='1" }, async () => undefined),
+      // The callback never runs: withOrg rejects the id before opening a
+      // transaction, which is the point of the assertion.
+      withOrg({ orgId: "' or '1'='1" }, () => Promise.resolve(undefined)),
       /uuid org id/i,
     );
   });

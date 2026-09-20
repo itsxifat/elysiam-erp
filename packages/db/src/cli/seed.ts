@@ -7,9 +7,9 @@
  *   pnpm db:seed
  */
 
-import { closeDatabase } from '../src/client.js';
-import { seedGeography } from '../src/seed/geography.js';
-import { seedOrganizations } from '../src/seed/index.js';
+import { closeDatabase } from '../client.js';
+import { seedGeography } from '../seed/geography.js';
+import { seedOrganizations } from '../seed/index.js';
 
 try {
   const geography = await seedGeography();

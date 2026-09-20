@@ -14,11 +14,17 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 
-import { databaseConfig, loadDatabaseEnv, parseUrl, requireUrl } from '../src/config.js';
+import { databaseConfig, loadDatabaseEnv, parseUrl, requireUrl } from '../config.js';
+
+/**
+ * Postgres notices are dropped: they can echo row values, and for this
+ * product that means phone numbers reaching the logs (§25).
+ */
+const silenceNotices = (): void => undefined;
 
 const MIGRATIONS_FOLDER = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  '../migrations',
+  '../../migrations',
 );
 
 async function main(): Promise<void> {
@@ -35,7 +41,7 @@ async function main(): Promise<void> {
   }
 
   // max: 1 because migrations are sequential and a pool would interleave them.
-  const sql = postgres(ownerUrl, { max: 1, onnotice: () => {} });
+  const sql = postgres(ownerUrl, { max: 1, onnotice: silenceNotices });
 
   try {
     const superuser = await sql<{ rolsuper: boolean }[]>`
