@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789928432956,
+      "tag": "0000_org_and_ref_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789928433796,
+      "tag": "0001_tenant_isolation_policies",
+      "breakpoints": true
+    }
+  ]
+}
