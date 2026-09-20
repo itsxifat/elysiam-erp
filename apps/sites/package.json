@@ -1,0 +1,31 @@
+{
+  "name": "@elysium/sites",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start --port 3001",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "clean": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@elysium/landing-blocks": "workspace:*",
+    "@elysium/ui": "workspace:*",
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@elysium/config": "workspace:*",
+    "@tailwindcss/postcss": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "eslint": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:"
+  }
+}

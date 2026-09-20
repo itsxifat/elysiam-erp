@@ -17,14 +17,11 @@
     },
     "typecheck": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "*.tsbuildinfo"]
+      "outputs": []
     },
     "lint": {
       "dependsOn": ["^build"],
       "outputs": []
-    },
-    "test": {
-      "outputs": ["coverage/**"]
     },
     "dev": {
       "dependsOn": ["^build"],

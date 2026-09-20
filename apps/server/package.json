@@ -1,0 +1,38 @@
+{
+  "name": "@elysium/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "dev": "tsc -b && concurrently -n tsc,api,worker -c blue,green,magenta \"tsc -b --watch --preserveWatchOutput\" \"node --watch --env-file-if-exists=.env --enable-source-maps dist/main.api.js\" \"node --watch --env-file-if-exists=.env --enable-source-maps dist/main.worker.js\"",
+    "start:api": "node --env-file-if-exists=.env dist/main.api.js",
+    "start:worker": "node --env-file-if-exists=.env dist/main.worker.js",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@elysium/config": "workspace:*",
+    "@elysium/contracts": "workspace:*",
+    "@elysium/db": "workspace:*",
+    "@elysium/domain": "workspace:*",
+    "@nestjs/common": "catalog:",
+    "@nestjs/core": "catalog:",
+    "@nestjs/platform-fastify": "catalog:",
+    "fastify": "catalog:",
+    "pino": "catalog:",
+    "reflect-metadata": "catalog:",
+    "rxjs": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "catalog:",
+    "@types/node": "catalog:",
+    "concurrently": "catalog:",
+    "eslint": "catalog:",
+    "pino-pretty": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
