@@ -1,0 +1,554 @@
+import { sql } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { withAnalytics, withOrg, withSystem } from '../client.js';
+import { GLOBAL_TABLES, TENANT_SCHEMAS } from '../rls.js';
+import { branches, settings } from '../schema/org/index.js';
+import { SEED_ORG_IDS, seedOrganizations } from '../seed/index.js';
+import { startTestDatabase, stopSharedContainer, type TestDatabase } from './harness.js';
+
+/**
+ * Tenant isolation (architecture §5, M01 acceptance checks 1-6).
+ *
+ * These run against real PostgreSQL because row-level security is a database
+ * behaviour — a mock cannot have it, and a test against a mock would pass while
+ * proving nothing.
+ *
+ * They are written adversarially rather than confirmatively. The question is
+ * not "can org A read its own rows", which any broken policy also answers yes
+ * to. It is "given a determined attempt, can org A reach org B's rows by any
+ * route the application exposes" — through the ORM, through raw SQL, with no
+ * context set, on a reused connection, and concurrently.
+ */
+
+const ORG_A = SEED_ORG_IDS['elysium-lifestyle-bd'] ?? '';
+const ORG_B = SEED_ORG_IDS['oura-lifestyle'] ?? '';
+
+let database: TestDatabase;
+
+beforeAll(async () => {
+  database = await startTestDatabase('tenancy');
+  expect(ORG_A, 'seed org A').not.toBe('');
+  expect(ORG_B, 'seed org B').not.toBe('');
+  expect(ORG_A).not.toBe(ORG_B);
+}, 180_000);
+
+afterAll(async () => {
+  await database?.stop();
+  await stopSharedContainer();
+}, 60_000);
+
+/**
+ * Assert that a statement was refused by PostgreSQL, matching the *database's*
+ * message rather than Drizzle's wrapper.
+ *
+ * Drizzle raises `DrizzleQueryError: Failed query: ...` and hangs the real
+ * error off `.cause`. Matching the wrapper would pass for any failure at all,
+ * including a typo in the SQL — which is exactly the false confidence these
+ * tests exist to avoid.
+ */
+async function expectRefused(work: Promise<unknown>, pattern: RegExp): Promise<void> {
+  let caught: unknown;
+  try {
+    await work;
+  } catch (error) {
+    caught = error;
+  }
+
+  expect(caught, 'expected PostgreSQL to refuse this statement').toBeDefined();
+
+  const messages: string[] = [];
+  for (let error = caught; error instanceof Error; error = error.cause) {
+    messages.push(error.message);
+  }
+
+  expect(messages.join(' | ')).toMatch(pattern);
+}
+
+/** Insert a row belonging to `orgId` and return its id. */
+async function seedBranch(orgId: string, code: string): Promise<string> {
+  return withSystem(
+    async (tx) => {
+      const [row] = await tx
+        .insert(branches)
+        .values({ orgId, code, name: `Branch ${code}`, kind: 'showroom' })
+        .returning({ id: branches.id });
+      if (row === undefined) throw new Error('insert returned nothing');
+      return row.id;
+    },
+    { orgId },
+  );
+}
+
+describe('the test database is actually capable of isolating anything', () => {
+  it('runs as a role that cannot bypass row-level security', async () => {
+    // If this fails, every other assertion in this file is meaningless.
+    for (const [role, expected] of [
+      ['erp_app', false],
+      ['erp_owner', false],
+      ['erp_analytics', false],
+    ] as const) {
+      const rows = await withSystem(async (tx) =>
+        tx.execute<{ rolsuper: boolean; rolbypassrls: boolean }>(
+          sql`select rolsuper, rolbypassrls from pg_roles where rolname = ${role}`,
+        ),
+      );
+      expect(rows[0]?.rolsuper, `${role} rolsuper`).toBe(expected);
+      expect(rows[0]?.rolbypassrls, `${role} rolbypassrls`).toBe(expected);
+    }
+  });
+
+  it('forces row-level security on every tenant table, including for the owner', async () => {
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{ relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }>(sql`
+        select c.relname, c.relrowsecurity, c.relforcerowsecurity
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'org' and c.relkind = 'r'
+        order by c.relname
+      `),
+    );
+
+    for (const row of rows) {
+      if (GLOBAL_TABLES.includes(`org.${row.relname}`)) continue;
+      expect(row.relrowsecurity, `${row.relname} RLS enabled`).toBe(true);
+      // Without FORCE, erp_owner - which runs migrations and seeds - is exempt.
+      expect(row.relforcerowsecurity, `${row.relname} RLS forced`).toBe(true);
+    }
+  });
+});
+
+describe('check 1: org A cannot reach org B rows, by any route', () => {
+  it('cannot SELECT them through the ORM', async () => {
+    const branchB = await seedBranch(ORG_B, 'B-SEL');
+
+    const visible = await withOrg({ orgId: ORG_A }, async (tx) =>
+      tx
+        .select()
+        .from(branches)
+        .where(sql`${branches.id} = ${branchB}`),
+    );
+
+    expect(visible).toEqual([]);
+  });
+
+  it('cannot SELECT them through raw SQL either', async () => {
+    const branchB = await seedBranch(ORG_B, 'B-RAW');
+
+    const rows = await withOrg({ orgId: ORG_A }, async (tx) =>
+      tx.execute<{ id: string }>(sql`select id from org.branches where id = ${branchB}`),
+    );
+
+    // The ORM is not the boundary. If it were, one repository writing raw SQL
+    // would undo the whole design.
+    expect([...rows]).toEqual([]);
+  });
+
+  it('cannot UPDATE them — the statement affects zero rows', async () => {
+    const branchB = await seedBranch(ORG_B, 'B-UPD');
+
+    await withOrg({ orgId: ORG_A }, async (tx) => {
+      await tx.execute(sql`update org.branches set name = 'taken over' where id = ${branchB}`);
+    });
+
+    const [row] = await withSystem(
+      async (tx) =>
+        tx.execute<{ name: string }>(sql`select name from org.branches where id = ${branchB}`),
+      { orgId: ORG_B },
+    );
+    expect(row?.name).toBe('Branch B-UPD');
+  });
+
+  it('cannot DELETE them — the statement affects zero rows', async () => {
+    const branchB = await seedBranch(ORG_B, 'B-DEL');
+
+    await withOrg({ orgId: ORG_A }, async (tx) => {
+      await tx.execute(sql`delete from org.branches where id = ${branchB}`);
+    });
+
+    const survivors = await withSystem(
+      async (tx) =>
+        tx.execute<{ id: string }>(sql`select id from org.branches where id = ${branchB}`),
+      { orgId: ORG_B },
+    );
+    expect([...survivors]).toHaveLength(1);
+  });
+
+  it('cannot INSERT a row labelled as belonging to org B', async () => {
+    // The WITH CHECK half of the policy. Without it, org A could write rows
+    // into org B's data even while being unable to read them.
+    await expectRefused(
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        await tx.insert(branches).values({
+          orgId: ORG_B,
+          code: 'SMUGGLED',
+          name: 'Planted by org A',
+          kind: 'showroom',
+        });
+      }),
+      /row-level security/i,
+    );
+  });
+
+  it('cannot relabel its own row as belonging to org B', async () => {
+    const branchA = await seedBranch(ORG_A, 'A-MOVE');
+
+    await expectRefused(
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        await tx.execute(sql`update org.branches set org_id = ${ORG_B} where id = ${branchA}`);
+      }),
+      /row-level security/i,
+    );
+  });
+
+  it('sees only its own rows when it lists a whole table', async () => {
+    await seedBranch(ORG_A, 'A-LIST');
+    await seedBranch(ORG_B, 'B-LIST');
+
+    const fromA = await withOrg({ orgId: ORG_A }, async (tx) =>
+      tx.execute<{ org_id: string }>(sql`select org_id from org.branches`),
+    );
+
+    expect([...fromA].length).toBeGreaterThan(0);
+    expect([...new Set([...fromA].map((row) => row.org_id))]).toEqual([ORG_A]);
+  });
+});
+
+describe('check 2: with no org context, tenant tables return zero rows', () => {
+  it('returns nothing on a connection that never set a context', async () => {
+    await seedBranch(ORG_A, 'A-NOCTX');
+
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{ count: string }>(sql`select count(*) as count from org.branches`),
+    );
+
+    expect(Number(rows[0]?.count)).toBe(0);
+  });
+
+  it('returns zero rows rather than erroring after a context has been set and reset', async () => {
+    // The case the original §5 policy got wrong. set_config(..., true) reverts
+    // to the empty string, not to unset, so `''::uuid` raised
+    // "invalid input syntax for type uuid" on every reused pooled connection.
+    // `nullif` is what makes this zero rows instead of an exception (D-043).
+    await withOrg({ orgId: ORG_A }, async (tx) => {
+      await tx.execute<{ count: string }>(sql`select count(*) as count from org.branches`);
+    });
+
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{ count: string }>(sql`select count(*) as count from org.branches`),
+    );
+
+    expect(Number(rows[0]?.count)).toBe(0);
+  });
+
+  it('refuses a non-uuid org id before it reaches the policy', async () => {
+    await expectRefused(
+      withOrg({ orgId: "' or '1'='1" }, async () => undefined),
+      /uuid org id/i,
+    );
+  });
+});
+
+describe('check 3: erp_app cannot escape its own privileges', () => {
+  it('cannot SET ROLE to the owner', async () => {
+    await expectRefused(
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        await tx.execute(sql`set role erp_owner`);
+      }),
+      /permission denied/i,
+    );
+  });
+
+  it('cannot disable row-level security on a table it does not own', async () => {
+    await expectRefused(
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        await tx.execute(sql`alter table org.branches disable row level security`);
+      }),
+      /must be owner|permission denied/i,
+    );
+  });
+
+  it('cannot drop the isolation policy', async () => {
+    await expectRefused(
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        await tx.execute(sql`drop policy branches_org_isolation on org.branches`);
+      }),
+      /must be owner|permission denied/i,
+    );
+  });
+
+  it('cannot grant itself the bypass attribute', async () => {
+    await expectRefused(
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        await tx.execute(sql`alter role erp_app with bypassrls`);
+      }),
+      /permission denied|must be superuser/i,
+    );
+  });
+
+  it('cannot create a table of its own, which would arrive with no policy', async () => {
+    await expectRefused(
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        await tx.execute(sql`create table org.backdoor (id uuid primary key, org_id uuid)`);
+      }),
+      /permission denied/i,
+    );
+  });
+});
+
+describe('check 4: erp_analytics reads every org and writes nothing', () => {
+  it('reads the global org list', async () => {
+    const rows = await withAnalytics(async (tx) =>
+      tx.execute<{ count: string }>(sql`select count(*) as count from org.organizations`),
+    );
+    expect(Number(rows[0]?.count)).toBeGreaterThanOrEqual(5);
+  });
+
+  it('cannot write, even to a table it can read', async () => {
+    await expectRefused(
+      withAnalytics(async (tx) => {
+        await tx.execute(sql`insert into org.organizations (slug, legal_name, display_name)
+          values ('analytics-should-not-write', 'x', 'x')`);
+      }),
+      /read-only|permission denied/i,
+    );
+  });
+
+  it('cannot update or delete', async () => {
+    for (const statement of [
+      sql`update org.organizations set display_name = 'x'`,
+      sql`delete from org.organizations`,
+    ]) {
+      await expectRefused(
+        withAnalytics(async (tx) => {
+          await tx.execute(statement);
+        }),
+        /read-only|permission denied/i,
+      );
+    }
+  });
+});
+
+describe('check 5: the guard — every tenant table is isolated', () => {
+  it('finds no table in a tenant schema without org_id, RLS and FORCE', async () => {
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{
+        schemaname: string;
+        tablename: string;
+        has_org_id: boolean;
+        rls_enabled: boolean;
+        rls_forced: boolean;
+        policy_count: string;
+      }>(sql`
+        select
+          n.nspname as schemaname,
+          c.relname as tablename,
+          exists (
+            select 1 from pg_attribute a
+            where a.attrelid = c.oid and a.attname = 'org_id' and a.attnum > 0 and not a.attisdropped
+          ) as has_org_id,
+          c.relrowsecurity as rls_enabled,
+          c.relforcerowsecurity as rls_forced,
+          (select count(*) from pg_policies p
+             where p.schemaname = n.nspname and p.tablename = c.relname) as policy_count
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        where c.relkind = 'r'
+        order by n.nspname, c.relname
+      `),
+    );
+
+    const inTenantSchemas = [...rows].filter((row) => TENANT_SCHEMAS.includes(row.schemaname));
+    expect(inTenantSchemas.length, 'the guard should actually find tables').toBeGreaterThan(0);
+
+    const offenders = inTenantSchemas
+      .filter((row) => !GLOBAL_TABLES.includes(`${row.schemaname}.${row.tablename}`))
+      .filter(
+        (row) =>
+          !row.has_org_id || !row.rls_enabled || !row.rls_forced || Number(row.policy_count) === 0,
+      )
+      .map(
+        (row) =>
+          `${row.schemaname}.${row.tablename} ` +
+          `(org_id: ${row.has_org_id}, rls: ${row.rls_enabled}, ` +
+          `force: ${row.rls_forced}, policies: ${row.policy_count})`,
+      );
+
+    expect(
+      offenders,
+      'Every table in a tenant schema needs org_id, RLS enabled, RLS forced and a ' +
+        'policy. Use tenantTableSql() in a migration, or add the table to ' +
+        'GLOBAL_TABLES with a decision row explaining why one org may see another ' +
+        "org's rows in it.",
+    ).toEqual([]);
+  });
+
+  it('catches a table that skipped the helper', async () => {
+    // Proves the guard above is load-bearing rather than vacuously true: a
+    // table created without the isolation block must be reported.
+    await withSystem(async (tx) => {
+      await tx.execute(
+        sql`create table org.unguarded_probe (id uuid primary key, org_id uuid not null)`,
+      );
+    });
+
+    try {
+      const rows = await withSystem(async (tx) =>
+        tx.execute<{ rls_enabled: boolean; rls_forced: boolean }>(sql`
+          select c.relrowsecurity as rls_enabled, c.relforcerowsecurity as rls_forced
+          from pg_class c join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname = 'org' and c.relname = 'unguarded_probe'
+        `),
+      );
+
+      expect(rows[0]?.rls_enabled, 'an unguarded table has no RLS').toBe(false);
+      expect(rows[0]?.rls_forced).toBe(false);
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`drop table if exists org.unguarded_probe`);
+      });
+    }
+  });
+});
+
+describe('these tests would catch a weakened policy', () => {
+  it('detects isolation that has been broken to `using (true)`', async () => {
+    // Every assertion above is a negative: "org A sees nothing of org B's".
+    // A negative passes just as happily when the query is broken, the table is
+    // empty, or the harness silently did nothing. So: build a table with a
+    // deliberately weak policy, and prove the same method reports a leak.
+    await withSystem(async (tx) => {
+      await tx.execute(sql`
+        create table org.weak_probe (
+          id uuid primary key default gen_random_uuid(),
+          org_id uuid not null,
+          note text not null
+        )
+      `);
+      await tx.execute(sql`alter table org.weak_probe enable row level security`);
+      await tx.execute(sql`alter table org.weak_probe force row level security`);
+      // The bug being simulated: a policy that matches every row.
+      await tx.execute(sql`create policy weak on org.weak_probe using (true) with check (true)`);
+      await tx.execute(sql`grant select, insert on org.weak_probe to erp_app`);
+      await tx.execute(
+        sql`insert into org.weak_probe (org_id, note) values (${ORG_B}, 'org B secret')`,
+      );
+    });
+
+    try {
+      const leaked = await withOrg({ orgId: ORG_A }, async (tx) =>
+        tx.execute<{ note: string }>(sql`select note from org.weak_probe`),
+      );
+
+      // If this came back empty, the method above could not tell a working
+      // policy from a broken one, and every passing test would be worthless.
+      expect(
+        [...leaked],
+        'a policy of `using (true)` must be observable as a leak, or these tests prove nothing',
+      ).toHaveLength(1);
+      expect(leaked[0]?.note).toBe('org B secret');
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`drop table if exists org.weak_probe`);
+      });
+    }
+  });
+
+  it('detects a table whose RLS was switched off entirely', async () => {
+    await withSystem(async (tx) => {
+      await tx.execute(
+        sql`create table org.unprotected_probe (id uuid primary key default gen_random_uuid(), org_id uuid not null)`,
+      );
+      await tx.execute(sql`grant select, insert on org.unprotected_probe to erp_app`);
+      await tx.execute(sql`insert into org.unprotected_probe (org_id) values (${ORG_B})`);
+    });
+
+    try {
+      const leaked = await withOrg({ orgId: ORG_A }, async (tx) =>
+        tx.execute<{ org_id: string }>(sql`select org_id from org.unprotected_probe`),
+      );
+      expect([...leaked]).toHaveLength(1);
+      expect(leaked[0]?.org_id).toBe(ORG_B);
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`drop table if exists org.unprotected_probe`);
+      });
+    }
+  });
+});
+
+describe('check 6: migrate and seed are idempotent', () => {
+  it('re-seeding changes no row counts', async () => {
+    const count = async () =>
+      withSystem(async (tx) => {
+        const rows = await tx.execute<{ orgs: string }>(
+          sql`select count(*) as orgs from org.organizations`,
+        );
+        return Number(rows[0]?.orgs ?? 0);
+      });
+
+    const before = await count();
+    await seedOrganizations();
+    await seedOrganizations();
+    const after = await count();
+
+    expect(after).toBe(before);
+  });
+
+  it('keeps derived ids stable across runs', async () => {
+    // The seed is idempotent because ids come from the slug, not from a
+    // generator. If that ever changes, every fixture and bookmarked URL breaks.
+    const [row] = await withSystem(async (tx) =>
+      tx.execute<{ id: string }>(
+        sql`select id from org.organizations where slug = 'elysium-lifestyle-bd'`,
+      ),
+    );
+    expect(row?.id).toBe(ORG_A);
+  });
+});
+
+describe('concurrency: contexts do not bleed between overlapping transactions', () => {
+  it('keeps each org seeing only its own rows under parallel load', async () => {
+    await Promise.all([seedBranch(ORG_A, 'A-PAR'), seedBranch(ORG_B, 'B-PAR')]);
+
+    // Interleaved on a shared pool: if the context were session-scoped rather
+    // than transaction-scoped, these would contaminate each other.
+    const results = await Promise.all(
+      Array.from({ length: 24 }, (_, index) => {
+        const orgId = index % 2 === 0 ? ORG_A : ORG_B;
+        return withOrg({ orgId }, async (tx) => {
+          const rows = await tx.execute<{ org_id: string }>(sql`select org_id from org.branches`);
+          return { orgId, seen: [...new Set([...rows].map((row) => row.org_id))] };
+        });
+      }),
+    );
+
+    for (const result of results) {
+      expect(result.seen, `context ${result.orgId} saw foreign rows`).toEqual([result.orgId]);
+    }
+  });
+
+  it('writes land in the org that wrote them', async () => {
+    await Promise.all(
+      Array.from({ length: 10 }, (_, index) => {
+        const orgId = index % 2 === 0 ? ORG_A : ORG_B;
+        return withOrg({ orgId }, async (tx) => {
+          await tx.insert(settings).values({ orgId, key: `concurrent-${index}`, value: { index } });
+        });
+      }),
+    );
+
+    for (const [orgId, expectedKeys] of [
+      [ORG_A, [0, 2, 4, 6, 8]],
+      [ORG_B, [1, 3, 5, 7, 9]],
+    ] as const) {
+      const rows = await withOrg({ orgId }, async (tx) =>
+        tx.execute<{ key: string }>(sql`select key from org.settings order by key`),
+      );
+      const keys = [...rows]
+        .map((row) => Number(row.key.replace('concurrent-', '')))
+        .sort((a, b) => a - b);
+      expect(keys).toEqual([...expectedKeys]);
+    }
+  });
+});
