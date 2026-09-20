@@ -1,0 +1,32 @@
+---
+paths:
+  - "packages/integrations/**"
+  - "apps/server/src/modules/delivery/**"
+  - "apps/server/src/modules/fraud/**"
+  - "apps/server/src/modules/notify/**"
+  - "apps/server/src/modules/marketing/**"
+  - "apps/server/src/modules/messaging/**"
+---
+# Integration rules
+- Before writing or changing an adapter, read the provider's current official docs with web fetch.
+- Never guess endpoints, auth schemes, field names or status values.
+- If docs or credentials are missing:
+  - build against recorded fixtures
+  - list the adapter under "Unverified integrations" in decisions.md
+  - tell the user
+- Every adapter has three parts:
+  - an interface
+  - a real implementation
+  - a fake for tests and local development
+- Outbound calls run only in workers, with:
+  - timeouts
+  - retries with exponential backoff
+  - per-provider rate limits
+  - a dead-letter queue
+- Webhooks:
+  - verify authenticity the way the provider specifies
+  - store the raw payload first
+  - process in a job
+  - make every transition idempotent
+- Credentials come from per-org configuration and are stored encrypted. Never log secrets, tokens or full phone numbers.
+- Map each provider's statuses to our normalized enum in a single table per provider, with a test for every entry.

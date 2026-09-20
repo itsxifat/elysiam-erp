@@ -1,0 +1,22 @@
+---
+paths:
+  - "packages/domain/src/money/**"
+  - "packages/domain/src/posting/**"
+  - "apps/server/src/modules/ledger/**"
+  - "apps/server/src/modules/**/posting/**"
+  - "packages/db/src/schema/ledger/**"
+---
+# Money and ledger rules
+- Amounts are integer poisha.
+- Every percentage, split and rounding goes through the money helpers. They round half away from zero, and they allocate remainders so the parts always sum to the whole.
+- Each business event has exactly one posting-rule function in `packages/domain/src/posting`.
+  - It returns a `JournalDraft`.
+  - It has a fast-check test proving debits equal credits for random inputs.
+  - It has a worked-example test with hand-computed numbers.
+- `ledger.post(tx, draft)` is the only writer of journals.
+- Idempotency keys look like `<source_type>:<source_id>:<event>`, e.g. `order:<uuid>:delivered`.
+- Journals and lines are never updated or deleted. A correction is a reversal journal that points to the original.
+- A journal's business date is the Asia/Dhaka date of the business event, not the date the code runs.
+- Adding an account subtype or posting rule requires two doc updates:
+  - the table in architecture §7
+  - a row in decisions.md
