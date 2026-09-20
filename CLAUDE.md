@@ -77,11 +77,14 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
   - API paths are `/v1/kebab-case`
 - Errors: throw typed domain errors with codes from `packages/contracts/src/errors.ts`. The API returns problem+json.
 - Validate at the edge with the shared Zod schemas in `packages/contracts`.
-- UI rules:
+- UI rules (architecture §24, D-033):
+  - modern, premium and restrained: neutral chrome, one accent, 1px hairlines, designed light and dark themes
+  - every colour, radius, shadow and duration comes from the tokens in `packages/ui`; never hard-code one
   - use shadcn/ui + Tailwind, and lucide-react icons only
   - never use emojis as UI elements
-  - every string goes through i18n (bn + en)
-  - money is always shown with `<Money>`
+  - every string goes through i18n (bn + en); the console defaults to en and customer-facing output is bn
+  - money is always shown with `<Money>`, in tabular numerals
+  - WCAG AA contrast in both themes; every interactive element is keyboard-reachable with a visible focus ring
 - Integrations:
   - build only against official docs and real credentials; never invent endpoints or fields
   - mark unverified adapters in decisions.md

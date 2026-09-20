@@ -12,7 +12,7 @@ Changing a RESOLVED row needs the human's approval. When you add a row, put the 
 | D-001 | Platform | RESOLVED | Custom TypeScript modular monolith, not ERPNext/Odoo | — | See the note below the table |
 | D-002 | Tenant isolation | RESOLVED | One database; one Postgres schema per module; `org_id` + RLS on every tenant table. No schema per org. | — | Meets the client's isolation intent. Consolidation and the cross-org features stay simple. |
 | D-003 | Revenue recognition | RESOLVED | On delivery. Goods in transit sit between dispatch and delivery. | — | Avoids overstated mid-month P&L caused by COD returns |
-| D-004 | Warehouse role | ASSUMED | Add a `warehouse` role: pack, ship, receive returns, stock counts, qty-only receipt drafts | M02 | Not in the client's role matrix |
+| D-004 | Warehouse role | ASSUMED | Add a `warehouse` role: pack, ship, receive returns, stock counts, qty-only receipt drafts | M02a | Not in the client's role matrix |
 | D-005 | Who enters supply cost | ASSUMED | accounts or org_admin enter supplies with cost. Warehouse can create qty-only drafts that accounts completes. | M09 | |
 | D-006 | Couriers | OPEN | Phase 1 primary = Steadfast. Pathao and RedX follow in M15. | M12, M15 | Confirm each brand's couriers and volumes |
 | D-007 | Courier booking trigger | ASSUMED | Per org: `on_confirm` (default) or `on_pack` | M12 | |
@@ -35,19 +35,27 @@ Changing a RESOLVED row needs the human's approval. When you add a row, put the 
 | D-024 | Existing brand websites | OPEN | Keep them. Website orders come in through the public intake API, or a connector if the platform supports webhooks. | M11, M15 | e.g. oura-lifestyle.com |
 | D-025 | VAT (Mushak) invoices at showrooms | OPEN | Out of scope. The invoice template has placeholders for the VAT registration number. | M23 | |
 | D-026 | Landing sites hosting | ASSUMED | Vercel; can switch to self-hosting behind Cloudflare | M29 | |
-| D-027 | Chart of accounts | OPEN | Seed the template in architecture §7. The client's accountant reviews it before go-live. | M14 | |
+| D-027 | Chart of accounts | OPEN | Seed the template in architecture §7. The client's accountant reviews it before go-live. | M14a | |
 | D-028 | Currency | RESOLVED | BDT only | — | |
 | D-029 | Payroll components | OPEN | Basic + allowances + bonus − loan instalment − absence deduction, all configurable | M19 | |
 | D-030 | Leave management | OPEN | Out of scope, because the client spec doesn't include it | M19 | |
 | D-031 | Feature flags | ASSUMED | `org.feature_flags` table plus per-environment overrides | M04 | |
 | D-032 | Customer identity across orgs | RESOLVED | Separate customer rows per org. The only cross-org link is the fraud phone hash. | — | |
+| D-033 | Design system | RESOLVED | Operator-dense neutral chrome with one accent. OKLCH design tokens in `packages/ui`, light and dark both first-class, shadcn re-tuned to the tokens. Architecture §24. | M00, M05 | Kickoff. Human chose this over airy/colour-coded and brand-forward chrome |
+| D-034 | Per-org branding | ASSUMED | `org.organizations.brand` jsonb: logo, dark logo, accent (OKLCH hue + chroma), legal name, address, VAT no, invoice footer. Drives the app accent and every §22 document. Neutral placeholders until the client supplies assets. | M01, M05 | Kickoff. The client's "each org is its own unit" had no branding anywhere in the architecture |
+| D-035 | Branded per-org login | ASSUMED | A login route or hostname per org preselects that org and shows its branding. One identity underneath; the org switcher is unchanged for multi-org users. | M02a, M05 | Kickoff. Client asked for "আলাদা লগইন" per sister org |
+| D-036 | UI default language | RESOLVED | The staff console defaults to `en`. All customer-facing output (invoice, label, payslip, SMS, notification, reseller portal, landing pages) is `bn`. Per-user override everywhere. | M04, M05 | Kickoff. ERP terms are used in English in Bangla ops speech; translated jargon slows staff down |
+| D-037 | Settlement into a closed period | ASSUMED | A settlement posts on its own business date. If that period is closed it posts to the earliest open period and keeps the original settlement date as a reference field. Never silently back-dated. | M12 | Kickoff. §7 back-dating and §9 settlement import did not reconcile |
+| D-038 | Milestone split | RESOLVED | M02 → M02a (auth, iam, request context) + M02b (CASL, serializeFor, audit, approvals). M14 → M14a (importers, opening balances; MAX) + M14b (deploy, observability, runbooks). | — | Kickoff. Both held 2–3 sessions of work; M14 is where a mistake is permanent |
 
 Note on D-001: most modules are custom F-commerce workflows. Building on ERPNext would add Frappe overhead to every one of them in exchange for savings only on the simplest modules. Its permission model is also enforced at the application level, and raw SQL bypasses it.
 
 ## Assumptions log (append during sessions)
 Format: `- <date> · <milestone> · D-0xx · <assumption> · <why this default> · <how to change it>`
 
-- (none yet)
+- 2026-09-20 · kickoff · D-034 · Each org carries a `brand` jsonb; neutral placeholder logo and a single shared accent hue until the client supplies real assets · Five brands were described as separate units but the architecture had no branding anywhere, so every invoice and every console would have looked identical · Replace the placeholder values per org; no code change, the values are data.
+- 2026-09-20 · kickoff · D-035 · Branded login resolves the org from the route or hostname and preselects it · The client asked for a separate login per sister org; one identity with memberships is the correct model, so we meet the intent at the surface instead of forking accounts · Drop the org-resolution middleware and always show the switcher.
+- 2026-09-20 · kickoff · D-037 · A settlement dated in a closed period posts to the earliest open period, keeping its own date as a reference · Courier settlement files routinely arrive after month-end close; the alternative is reopening a closed period every month · Change the resolver in the settlement posting rule; the reference field already records the true date.
 
 ## Unverified integrations
 List every adapter built from fixtures because official docs or credentials were missing.

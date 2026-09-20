@@ -12,7 +12,7 @@ Claude writes the code. You own four things it can't do:
 ```
 CLAUDE.md                          Always-loaded project memory: stack, invariants, workflow
 docs/architecture.md               Engineering spec (source of truth), read section by section
-docs/milestones.md                 31 session-sized milestones with acceptance checks
+docs/milestones.md                 33 session-sized milestones with acceptance checks
 docs/decisions.md                  Resolved decisions, assumed defaults, open client questions
 docs/progress.md                   Session log (Claude appends one entry per session)
 docs/plans/                        Claude writes each milestone's plan here for your approval
@@ -84,7 +84,7 @@ Don't write code yet. After I answer, apply the agreed doc changes in one commit
 6. **Review before merging.** Read the Verification Report and the "review by hand" list, click through the UI for UI milestones, then merge.
 7. **New milestone, new session.** Run `/clear` or exit. Fresh context per milestone keeps quality high.
 
-## Parallel tracks (after M14 and the pilot start)
+## Parallel tracks (after M14b and the pilot start)
 Track A (M15 → M16 → M17) and Track B (M18 → M19 → M20) touch different modules, so they can run side by side in separate git worktrees:
 ```
 git worktree add ../erp-track-b -b track-b main
@@ -124,8 +124,8 @@ Merge Track A first. Then rebase Track B onto main, run `pnpm verify`, and merge
 | G0 | M00 | Dev machine, tools installed, empty repo, Claude Code updated |
 | G1 | M12 | Primary courier API credentials (sandbox if offered) and 2–3 real settlement export files |
 | G2 | M13 | The `fraudjs` package (path or npm name) and any courier access it needs |
-| G3 | M14 | Staging and production infrastructure:<br>- managed Postgres (Singapore)<br>- 2 VMs<br>- a Cloudflare zone and R2 buckets<br>- Sentry<br>- a secrets manager<br><br>Real data exports:<br>- products<br>- counted stock with unit costs<br>- supplier dues<br>- wallet balances<br>- customer order history<br><br>Also:<br>- choose the pilot brand<br>- have the client's accountant review the chart of accounts |
-| G4 | After M14 | Pilot: one brand live for 2–3 weeks; log issues as follow-ups |
+| G3 | M14a / M14b | Staging and production infrastructure:<br>- managed Postgres (Singapore)<br>- 2 VMs<br>- a Cloudflare zone and R2 buckets<br>- Sentry<br>- a secrets manager<br><br>Real data exports:<br>- products<br>- counted stock with unit costs<br>- supplier dues<br>- wallet balances<br>- customer order history<br><br>Also:<br>- choose the pilot brand<br>- have the client's accountant review the chart of accounts |
+| G4 | After M14b | Pilot: one brand live for 2–3 weeks; log issues as follow-ups |
 | G5 | M15, M16 | Other couriers' credentials; an SMS gateway account (apply early for a branded sender ID) |
 | G6 | M18 | Meta business verification, ad account access, system-user tokens, dataset/pixel IDs per brand |
 | G7 | M19 | Payroll rules (components, deductions) and a sample export from the biometric attendance software |

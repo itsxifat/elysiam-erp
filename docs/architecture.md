@@ -221,7 +221,7 @@ See D-001 and D-002.
 ### Module → schema map
 | Module | Schema | Owns |
 |---|---|---|
-| org | org | organizations, branches, locations, settings, feature flags |
+| org | org | organizations, branches, locations, settings, feature flags, per-org branding |
 | iam | iam | Better Auth tables, memberships, API keys, devices |
 | audit | audit | audit log |
 | approvals | approvals | maker-checker requests |
@@ -339,8 +339,10 @@ Sessions:
 
 2FA is **required** for `super_admin`, `org_admin`, `accounts` and `investor`.
 
+**Branded login (D-035).** The client asked for a separate login per sister org. One identity with several memberships is the right model underneath, so we meet the intent at the surface: when the login route or hostname identifies an org, that org is preselected and the screen carries its branding (§24). Users with one membership never see a switcher; multi-org users still get one after login.
+
 ### Request context
-- After login the user picks an active org with the org switcher. The choice is stored in the session.
+- After login the user picks an active org with the org switcher, unless the login route already identified one (D-035). The choice is stored in the session.
 - Every request resolves `membership(user, org)` into roles plus branch scope.
 - Membership roles: `super_admin` (global), `org_admin`, `sales`, `accounts`, `marketing`, `hr`, `branch_manager`, `warehouse`, `reseller`, `investor`.
 
@@ -362,7 +364,7 @@ Sessions:
 - **Investors** only ever see rows where `investor_id` is their own.
 
 ### Permission matrix
-This summary is authoritative until M02 writes the code matrix. After that, the code is authoritative and any change needs a decision row.
+This summary is authoritative until M02b writes the code matrix. After that, the code is authoritative and any change needs a decision row.
 
 | Capability | super_admin | org_admin | sales | accounts | marketing | hr | branch_manager | warehouse | reseller | investor |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -988,6 +990,7 @@ Rules for every integration:
   - HTML templates are rendered on the server and converted by **Gotenberg** (headless Chromium), so Bangla conjuncts shape correctly
   - embed Noto Sans Bengali or Hind Siliguri
   - templates: invoice, packing slip, courier label, reseller invoice, payslip, statements
+  - every template takes the active org's `brand` block (§24) for logo, legal name, address, VAT number and footer. The reseller invoice substitutes the reseller's business name (§13).
 
 ---
 
@@ -1011,29 +1014,75 @@ Rules for every integration:
 ---
 
 ## 24. Frontend conventions
-- **Core stack:**
-  - React + TypeScript on Vite
-  - TanStack Router: typed routes, with filters kept in URL search params
-  - TanStack Query for server state
-  - React Hook Form with the shared Zod schemas
-  - TanStack Table for grids
-- **UI:**
-  - shadcn/ui and Tailwind only: no CSS modules, no inline style objects
-  - icons from lucide-react only
-  - never use emojis as UI elements
-  - fonts: Hind Siliguri or Noto Sans Bengali, plus Inter
-- **Language:** every string goes through `packages/i18n` (bn, en).
-  - Language is set per user.
-  - Latin digits by default, with an option for Bangla digits.
-- **Formatting:**
-  - money always renders through `<Money>` / `formatMoney`
-  - dates display in Asia/Dhaka
-- **Permissions:** the UI uses the shared CASL definitions to hide or disable controls. Security never depends on the UI.
-- **Order desk:**
-  - keyboard-first, with shortcuts shown in the app
-  - target: an order entered in under 30 seconds
-- **Every screen** handles loading, empty, error and permission-denied states. Routes are code-split.
-- **PWAs** (portal, pos): installable, with an offline shell and web push (Android first).
+
+### Core stack
+- React + TypeScript on Vite
+- TanStack Router: typed routes, with filters kept in URL search params
+- TanStack Query for server state
+- React Hook Form with the shared Zod schemas
+- TanStack Table for grids
+
+### Design principles (D-033)
+Staff operate this product for eight hours a day, so "premium" here means confidence and calm, not decoration. Five rules settle every visual question:
+
+1. **Restraint.** Neutral chrome, one accent. Colour carries meaning -- status, money direction, destructive -- and is never decoration. A rainbow ERP reads cheap and makes status colours meaningless.
+2. **Density that respects the operator.** Table rows are 36 px, not 64. Compactness comes from a tight type scale and line height, never from removing breathing room around the content region. More rows on screen is a feature, not a compromise.
+3. **Depth by hairline, not shadow.** 1 px low-contrast borders separate regions. Shadows appear only on floating layers: popover, dialog, command palette, toast.
+4. **The keyboard is the premium feature.** A command palette, visible shortcut hints and a focus ring you can actually see. The order desk's 30-second target depends on this, not on decoration.
+5. **Every state is designed.** Loading, empty, error and permission-denied are screens, not afterthoughts. Skeletons are shaped like the content they replace; a bare spinner is a last resort.
+
+### Design tokens
+Tokens live in `packages/ui/src/styles/tokens.css` and reach components through the Tailwind preset. No component hard-codes a colour, radius, shadow or duration.
+
+- **Colour is OKLCH**, as CSS custom properties. Every semantic role (`--background`, `--foreground`, `--muted`, `--border`, `--ring`, `--primary`, `--destructive`, `--success`, `--warning`) has a light and a dark value. Accent shades are *derived* from one hue and chroma pair, so changing an org's brand hue re-derives hover, active, subtle background, ring and foreground-on-accent with their contrast intact. This is what makes five brands cost one design system instead of five.
+- **Type:** Inter for Latin and all numerals, Hind Siliguri for Bangla. Both self-hosted as subset woff2 with `font-display: swap`. The `@font-face` rules carry `size-adjust` so a mixed bn/en string sits on one optical baseline. Without it, mixed text looks ragged, which is the fastest way for a Bangla product to look unfinished.
+- **Numerals:** `font-variant-numeric: tabular-nums` on every money value, quantity, metric tile and numeric table column. Money columns are right-aligned.
+- **Radius:** one `--radius` (8 px) with derived `sm`/`md`/`lg`. **Spacing:** a 4 px base scale.
+- **Motion:** 120-200 ms, ease-out, on enter, exit and state change only. Everything honours `prefers-reduced-motion`.
+- **Themes:** light and dark are both first-class and maintained together. Dark is a designed theme, not an inversion. Theme follows the OS by default and is overridable per user.
+
+### Accessibility floor
+Enforced in CI wherever it is testable.
+- Text meets WCAG AA contrast (4.5:1 body, 3:1 large text and UI boundaries) in both themes.
+- Every interactive element is reachable and operable by keyboard, with a visible focus ring.
+- Dialogs trap focus and restore it on close. Icon-only buttons carry accessible names.
+- Hit targets are at least 40 px in the POS and portal (touch) and at least 28 px in the console (pointer).
+- Colour is never the only signal: a status badge pairs its colour with a label.
+
+### UI rules
+- shadcn/ui and Tailwind only: no CSS modules, no inline style objects. shadcn components are re-tuned to these tokens when adopted, never left at library defaults.
+- Icons from lucide-react only, at a consistent stroke width and size scale.
+- Never use emojis as UI elements.
+
+### Per-org branding (D-034)
+`org.organizations.brand` (jsonb) holds `logo_file_id`, `logo_dark_file_id`, `accent` (OKLCH hue and chroma), `legal_name`, `address`, `vat_no` and `invoice_footer`. It drives:
+- the console, portal and POS accent and logo for the active org
+- the login screen when the org is known from the route or hostname (§6)
+- every document template in §22: invoice, packing slip, label, reseller invoice, payslip, statements
+
+Chrome stays neutral in every org. The brand shows in the accent, the logo and the documents. Brand values are data, so adding a sixth brand is a row, not a release.
+
+### Language (D-036)
+- Every string goes through `packages/i18n` (bn, en). A key missing in either language fails CI.
+- **The staff console defaults to English. Everything customer-facing is Bangla:** invoices, labels, payslips, SMS, notifications, the reseller portal and landing pages. Any user can switch their own console language.
+- Latin digits by default, with a per-user option for Bangla digits.
+
+### Formatting
+- Money always renders through `<Money>` / `formatMoney`
+- Dates display in Asia/Dhaka
+
+### Permissions
+The UI uses the shared CASL definitions to hide or disable controls. Security never depends on the UI.
+
+### Order desk
+- Keyboard-first, with shortcuts shown in the app
+- Target: a trained agent enters an order in under 30 seconds
+
+### Every screen
+Handles loading, empty, error and permission-denied states. Routes are code-split.
+
+### PWAs (portal, pos)
+Installable, with an offline shell and web push (Android first).
 
 ---
 
@@ -1052,7 +1101,7 @@ Rules for every integration:
 - **Controls:** maker-checker (§6) and period locks (§7).
 - **Reviews:**
   - CI scans dependencies
-  - Claude Code's `/security-review` runs at M02, M03, M14 and M30
+  - Claude Code's `/security-review` runs at M02a, M02b, M03, M14b and M30
 - **Backups:**
   - managed point-in-time recovery, plus a nightly logical dump to a second provider
   - the restore drill must be documented and actually performed before go-live

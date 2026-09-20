@@ -8,16 +8,17 @@
   - **XHIGH** means `--effort xhigh`.
 - **Gate** means something the human must supply first. The gates are listed in START-HERE.md.
 - If a milestone runs out of context, resume it in a new session. Don't split it yourself.
-- **Parallel tracks:** after M14, Track A (M15→M17) and Track B (M18→M20) can run at the same time in separate git worktrees.
+- **Parallel tracks:** after M14b, Track A (M15→M17) and Track B (M18→M20) can run at the same time in separate git worktrees.
 
 | ID | Title | Phase | Effort | Depends on |
 |---|---|---|---|---|
 | M00 | Repo bootstrap and toolchain | 0 | XHIGH | — |
 | M01 | Database core and multi-org isolation | 0 | MAX | M00 |
-| M02 | Identity, roles, field-level permissions, audit, approvals | 0 | MAX | M01 |
-| M03 | Ledger core | 0 | MAX | M02 |
-| M04 | Platform services | 0 | XHIGH | M02 |
-| M05 | Console shell and UI kit | 0 | XHIGH | M02, M04 |
+| M02a | Identity, auth and request context | 0 | MAX | M01 |
+| M02b | Permissions, audit and approvals | 0 | MAX | M02a |
+| M03 | Ledger core | 0 | MAX | M02b |
+| M04 | Platform services | 0 | XHIGH | M02b |
+| M05 | Console shell and UI kit | 0 | XHIGH | M02b, M04 |
 | M06 | Catalog | 1 | XHIGH | M05 |
 | M07 | Stock ledger, locations and costing | 1 | MAX | M03, M06 |
 | M08 | Accounts and wallets | 1 | MAX | M03, M05 |
@@ -26,7 +27,8 @@
 | M11 | Order desk UI, buyer list, public order intake | 1 | XHIGH | M10 |
 | M12 | Courier v1 and COD reconciliation | 1 | MAX | M11 |
 | M13 | Fraud check v1 | 1 | XHIGH | M10 |
-| M14 | Data migration, deployment, go-live kit | 1 | XHIGH | M06–M13 |
+| M14a | Data migration and opening balances | 1 | MAX | M06–M13 |
+| M14b | Deployment, observability, go-live kit | 1 | XHIGH | M14a |
 | M15 | Multi-courier, webhooks, tracking | 2 (A) | XHIGH | M12 |
 | M16 | Buyer profiles, notifications, basic promo codes | 2 (A) | XHIGH | M11 |
 | M17 | Fraud v2 and advance-payment rules | 2 (A) | XHIGH | M13, M16 |
@@ -68,6 +70,9 @@ Phase 0 · Effort XHIGH · Depends on: — · Gate: G0 · Architecture: §3, §4
 - `pnpm verify`: format check, lint, typecheck, test, build, check-migrations.
 - GitHub Actions CI that runs `pnpm verify` against service containers.
 - A lint check that forbids emoji characters in UI source and `style={{` in apps.
+- `.gitattributes` normalizing the tree to LF (`* text=auto eol=lf`), so Windows checkouts don't fight Prettier.
+- The design token foundation in `packages/ui` (D-033, architecture §24): `src/styles/tokens.css` with an OKLCH value for every semantic role in both light and dark, the Tailwind preset that exposes them, the Inter + Hind Siliguri `@font-face` block with `size-adjust`, and a tabular-numeral utility. Tokens only; M05 builds the components on top.
+- `scripts/bench.mjs`: a benchmark harness with one fixed method (warmup, fixed sample count, p50/p95/p99, machine and commit recorded), so every later latency acceptance check is measured the same way and comparable across sessions.
 - A "Local setup" section in the README. Replace CLAUDE.md's Commands section with the real commands.
 - Pin exact versions and use the latest stable releases.
 
@@ -79,6 +84,9 @@ Phase 0 · Effort XHIGH · Depends on: — · Gate: G0 · Architecture: §3, §4
    - the console, portal, pos and sites dev servers respond
 3. check-migrations fails when a committed migration is edited. Demonstrate this on a scratch branch, then delete the branch.
 4. The CI workflow passes `actionlint`.
+5. `packages/ui` defines a token for every semantic role in architecture §24 in both light and dark. A unit test fails if a role exists in one theme and not the other, and the Tailwind preset resolves every one of them.
+6. `.gitattributes` normalizes line endings: a file staged with CRLF is stored as LF, and `pnpm format:check` passes on a fresh clone on Windows.
+7. `scripts/bench.mjs` runs a trivial workload and prints p50/p95/p99 with its sample count, the commit and the machine.
 
 **Out of scope:** domain tables and authentication.
 
@@ -111,47 +119,72 @@ Phase 0 · Effort MAX · Depends on: M00 · Architecture: §3, §5
 
 ---
 
-## M02: Identity, roles, field-level permissions, audit, approvals
+## M02a: Identity, auth and request context
 Phase 0 · Effort MAX · Depends on: M01 · Architecture: §6, §25
 
-**Goal:** every request knows the user, the org and the role, and cost fields cannot leak.
+**Goal:** every request knows who the user is, which org they are acting in, and which roles they hold there.
 
 **Build**
 - Better Auth:
-  - email or phone plus password; cookie sessions
-  - TOTP 2FA, enforced for super_admin, org_admin, accounts and investor
+  - email or phone plus password; cookie sessions scoped to the parent domain
+  - TOTP 2FA, enforced for super_admin, org_admin, accounts and investor, with recovery codes
   - phone OTP through a fake SMS provider; the real one arrives in M16
+  - rate limits on login and OTP (§25)
 - `iam`:
   - memberships linking user, org, role and branch scope
   - the super_admin flag
   - an org-switch endpoint
-  - request context built from the session
+  - a request context built from the session: user, active org, roles, branch scope, request id
+- Branded login (D-035): the login route or hostname resolves an org, which is then preselected and themed. A user with one membership never sees a switcher.
+- A user admin API: org_admin creates or invites users and assigns roles and branch scope.
+- CSRF protection for cookie-authenticated mutations: an Origin check plus a double-submit token.
+- The test utility `asUser(user, org)`, which produces a request context for later milestones.
+
+**Acceptance checks**
+1. Once 2FA is enrolled, a privileged role cannot complete a login without it. Enrolment and recovery codes are both tested.
+2. Switching org changes the visible rows (RLS) and the effective roles in the request context.
+3. A login at an org-scoped route or hostname preselects that org and carries its branding; an unknown host falls back to the generic login.
+4. The session cookie is httpOnly, Secure and SameSite=Lax, and is scoped to the parent domain so the console works inside an iframe.
+5. Login and OTP rate limits return 429 past the configured threshold, per IP and per identifier.
+6. A cookie-authenticated mutation without a valid CSRF token is rejected.
+
+**Out of scope:** the permission matrix, audit and approvals (M02b).
+
+---
+
+## M02b: Permissions, audit and approvals
+Phase 0 · Effort MAX · Depends on: M02a · Architecture: §6, §25
+
+**Goal:** cost fields cannot leak, every mutation is recorded, and money-moving actions need a second person.
+
+**Build**
 - The CASL matrix in `packages/contracts/src/permissions/`, taken from architecture §6, plus:
   - a NestJS guard and decorators
   - `serializeFor()`
   - the lists `COST_FIELDS` and `RESELLER_VISIBLE_FIELDS`
 - Test utilities: `asRole(role, org)` and `assertNoCostFields(json)`.
+- A route-coverage gate, `scripts/check-route-matrix.mjs`: it enumerates every registered route and fails if one lacks a declared ability or a matrix test. It joins `pnpm verify`, so coverage is continuous from here instead of being discovered at M30.
 - An audit module and interceptor that redacts sensitive fields.
 - An approvals module:
   - request and decide APIs
   - a database constraint that the requester ≠ approver
   - per-org thresholds
-  - events on request and decision
-- A user admin API: org_admin creates or invites users and assigns roles.
+  - events on request and on decision
+- A demo resource carrying cost fields, for the matrix suite to exercise.
 
 **Acceptance checks**
-1. A role-matrix suite, generated from the matrix, asserts allowed or forbidden for every role × capability on a demo resource.
-2. A demo resource with cost fields returns them to accounts, and `assertNoCostFields` passes for sales, marketing, warehouse and reseller.
-3. Once 2FA is enrolled, privileged roles can't complete a login without it. The enrolment flow is tested.
-4. Switching org changes both the visible rows (RLS) and the effective role.
-5. Every mutation in the tests writes an audit row, with sensitive fields redacted.
-6. A requester approving their own request fails at the database level.
+1. A role-matrix suite, generated from the matrix, asserts allowed or forbidden for every role × capability on the demo resource.
+2. The demo resource returns cost fields to accounts, and `assertNoCostFields` passes for sales, marketing, warehouse and reseller.
+3. Every mutation in the tests writes an audit row, with sensitive fields redacted.
+4. A requester approving their own request fails at the database level, not only in the service.
+5. Requests below and above an org's threshold behave differently, and both emit their events.
+6. `check-route-matrix` fails on a route added without an ability declaration. Demonstrate it, then revert.
 7. `/security-review` has been run on the diff, and every high-severity finding is resolved.
 
 ---
 
 ## M03: Ledger core
-Phase 0 · Effort MAX · Depends on: M02 · Architecture: §7, §27
+Phase 0 · Effort MAX · Depends on: M02b · Architecture: §7, §27
 
 **Goal:** a double-entry ledger that the database itself refuses to corrupt.
 
@@ -191,7 +224,7 @@ Phase 0 · Effort MAX · Depends on: M02 · Architecture: §7, §27
 ---
 
 ## M04: Platform services
-Phase 0 · Effort XHIGH · Depends on: M02 · Architecture: §3, §19, §20, §22, §23
+Phase 0 · Effort XHIGH · Depends on: M02b · Architecture: §3, §19, §20, §22, §23
 
 **Goal:** the shared plumbing every module reuses: jobs, events, realtime, files, PDFs, i18n and the typed client.
 
@@ -243,7 +276,7 @@ Phase 0 · Effort XHIGH · Depends on: M02 · Architecture: §3, §19, §20, §2
 ---
 
 ## M05: Console shell and UI kit
-Phase 0 · Effort XHIGH · Depends on: M02, M04 · Architecture: §24
+Phase 0 · Effort XHIGH · Depends on: M02b, M04 · Architecture: §24
 
 **Goal:** the staff app frame that every module's screens plug into.
 
@@ -261,6 +294,9 @@ Phase 0 · Effort XHIGH · Depends on: M02, M04 · Architecture: §24
   - form kit (React Hook Form + Zod) with fields for phone, money, date, select and async combobox
   - Money, DateTime, StatusBadge, FileUpload (presigned), EmptyState, ErrorState, PermissionGate, ConfirmDialog
 - A realtime client hook, the notifications inbox shell, and an approvals inbox page.
+- The design system from architecture §24 realized on the M00 tokens: type scale, density, motion, focus treatment, and designed loading / empty / error / permission-denied states. shadcn components are re-tuned to the tokens, not left at library defaults.
+- Per-org theming (D-034): the accent, logo and login branding follow the active org, read from `org.organizations.brand`.
+- `scripts/screenshot-review.mjs`, which renders the review screenshot set into `docs/review/M05/`.
 
 **Acceptance checks**
 1. Navigation follows role and org (Playwright):
@@ -271,6 +307,11 @@ Phase 0 · Effort XHIGH · Depends on: M02, M04 · Architecture: §24
 3. Every UI string key exists in both bn and en (CI check).
 4. The lint check passes: no inline styles and no emoji characters in UI source.
 5. The initial route bundle size is reported in the progress entry, against a target of ≤ 250 KB gzipped.
+6. Contrast: an automated pass over the token set asserts WCAG AA for every foreground/background pair in both themes, and an axe scan of the shell, login, a DataTable page and a form reports zero serious or critical violations.
+7. Keyboard: a Playwright run reaches every primary action on the shell, login and a DataTable page using the keyboard alone, with a visible focus ring at each stop. The command palette opens by shortcut and navigates.
+8. Theme parity: a test asserts that no component resolves a colour outside the token set, so light and dark stay in step by construction.
+9. Typography: a mixed bn/en string renders on one optical baseline (`size-adjust` applied), and every money value uses tabular numerals.
+10. The review screenshot set — shell, login, DataTable, form, empty, error and command palette, in both themes — is written to `docs/review/M05/` for the human to judge by eye.
 
 ---
 
@@ -300,7 +341,7 @@ Phase 1 · Effort XHIGH · Depends on: M05 · Architecture: §6, §8, §22
 
 **Acceptance checks**
 1. A 3-colour × 5-size matrix creates 15 unique SKUs. Adding a size later creates only the new SKUs.
-2. SKU search stays under 200 ms p95 on 20k seeded SKUs, measured by a benchmark script.
+2. SKU search stays under 200 ms p95 on 20k seeded SKUs, measured by `scripts/bench.mjs` so the method matches every other latency check. The sample count and numbers go in the progress entry.
 3. No catalog table or endpoint has any cost column, and `assertNoCostFields` passes for every role.
 4. The CSV dry-run reports row-level errors, and the commit is all-or-nothing.
 5. E2E: a product created with variants and images appears in the list and in search.
@@ -415,6 +456,7 @@ Phase 1 · Effort MAX · Depends on: M07, M08 · Architecture: §7, §9
 - Invoice and packing slip PDFs in Bangla.
 - An availability read API for order entry.
 - Manual transitions to shipped, delivered, partially delivered and returned (with reason), each making the correct movements and postings. These are the fallback until M12.
+- Exchange orders: `delivered → exchange` creates a linked order, returns the original units to stock at their dispatch cost and dispatches the replacement, posting any price difference.
 
 **Acceptance checks**
 1. Every (from, to) pair in the transition table is asserted allowed or forbidden.
@@ -423,6 +465,7 @@ Phase 1 · Effort MAX · Depends on: M07, M08 · Architecture: §7, §9
 4. Golden books: supply → 3 orders → ship all → 2 delivered, 1 returned. The trial balance, stock and P&L (revenue, delivery income, COGS, gross profit) all match hand-computed numbers.
 5. Partial delivery posts only the delivered lines, and a collection difference posts to Sales discounts.
 6. 10 phone formats normalize correctly, including `+8801…`, `01…`, spaced and dashed forms and Bangla digits. Invalid numbers are rejected.
+7. Exchange: a delivered order exchanged for a different SKU returns the original units at dispatch cost, dispatches the replacement, posts the price difference and leaves the trial balance at zero.
 
 ---
 
@@ -444,6 +487,7 @@ Phase 1 · Effort XHIGH · Depends on: M10 · Architecture: §9, §19, §23, §2
 - Order detail with a timeline (status history plus audit).
 - Bulk confirm and bulk print of invoices and labels.
 - Duplicate warning for the same phone and SKU within 24 hours.
+- A fraud badge slot in the order desk, rendering an "unavailable" state until M13 fills it, so M13 adds a provider rather than reworking the desk.
 - Buyer list filtered by product, SKU, size, date and channel, exported as CSV or XLSX.
 - Public intake API (§23):
   - site API keys, HMAC, Turnstile, rate limits, idempotency
@@ -451,7 +495,7 @@ Phase 1 · Effort XHIGH · Depends on: M10 · Architecture: §9, §19, §23, §2
 - Realtime updates in the queue and lists.
 
 **Acceptance checks**
-1. E2E, keyboard only: phone to confirmed order. The scripted run reports its time, which is under 30 s.
+1. E2E, keyboard only: phone to confirmed order. The scripted run reports its time as a server-plus-render latency budget and stays under 30 s. It measures the app, not an operator, so a human-timed run happens at the pilot and its number goes in the progress log.
 2. Buyer list export counts match a direct SQL count for the same filters.
 3. Public API behaviour:
    - a signed request creates a pending `landing_page` order with UTMs
@@ -481,13 +525,14 @@ Phase 1 · Effort MAX · Depends on: M11 · Gate: G1 · Architecture: §7, §9, 
   - exceptions report
   - approval
   - postings for charges and the net amount to the wallet
+  - business dates per D-037: a settlement posts on its own date, and if that period is closed it posts to the earliest open period while keeping the original date as a reference field
 - Courier receivable aging and the COD reconciliation report.
 
 **Acceptance checks**
 1. Adapter contract tests pass against recorded fixtures. A live sandbox smoke test runs if credentials exist; otherwise it is skipped and noted in the report.
 2. Every provider status is covered by a mapping test.
 3. Duplicate webhooks or polls never double-transition or double-post.
-4. Importing a sample settlement file gives matched totals equal to the file totals and lists every mismatch. Posting happens only after approval.
+4. Importing a sample settlement file gives matched totals equal to the file totals and lists every mismatch. Posting happens only after approval. A settlement dated inside a closed period posts to the earliest open period and keeps its original date (D-037).
 5. E2E scenario: book → deliver → settle leaves that consignment's courier receivable at zero, and the P&L shows the courier charges.
 6. A booking that fails after all retries raises `delivery.booking_failed` and flags the order.
 
@@ -511,18 +556,18 @@ Phase 1 · Effort XHIGH · Depends on: M10 · Gate: G2 · Architecture: §5, §1
 1. Table-driven score tests: a new customer, 10/10 delivered, 3/5 returned, a provider-only result, a manual flag.
 2. Returns in org A lower the trust score in org B, and org B sees counts only: no org A order data (API test).
 3. When the provider times out, the badge falls back to an internal-only score marked "provider unavailable", and the order desk keeps working.
-4. A cached lookup stays under 300 ms p95 (benchmark).
+4. A cached lookup stays under 300 ms p95, measured by `scripts/bench.mjs` with its sample count recorded.
 5. A block override needs org_admin and records the reason in the audit log.
 
 ---
 
-## M14: Data migration, deployment, go-live kit
-Phase 1 · Effort XHIGH · Depends on: M06–M13 · Gate: G3 · Architecture: §25, §26, §28
+## M14a: Data migration and opening balances
+Phase 1 · Effort MAX · Depends on: M06–M13 · Gate: G3 · Architecture: §7, §8, §25
 
-**Goal:** Phase 1 can go live for one pilot brand, with correct opening balances and a tested way back.
+**Goal:** the pilot brand starts with books and stock its accountant will sign.
 
 **Build**
-- Importers, each with a dry run and a commit:
+- Importers, each with a dry run and an atomic commit:
   - SKUs
   - opening stock per location with unit cost
   - supplier dues and advances
@@ -531,6 +576,23 @@ Phase 1 · Effort XHIGH · Depends on: M06–M13 · Gate: G3 · Architecture: §
   - customers, with historical order outcomes to seed fraud signals
 - An opening-balance journal dated the evening before go-live.
 - A reconciliation report for the accountant to sign off.
+- A demo org for training, seeded from anonymized data.
+
+**Acceptance checks**
+1. A dry-run import of the sample data shows a balanced opening trial balance, and stock value = Σ(qty × cost).
+2. A bad row anywhere in an importer leaves no partial state: the commit is all-or-nothing.
+3. Re-running an importer with the same file is idempotent and creates no duplicates.
+4. The opening-balance journal's trial balance is zero, and its inventory total equals the inventory module's stock valuation to the poisha.
+5. The reconciliation report is generated and reviewed. **Human:** the client's accountant signs it off before go-live.
+
+---
+
+## M14b: Deployment, observability, go-live kit
+Phase 1 · Effort XHIGH · Depends on: M14a · Gate: G3 · Architecture: §25, §26, §28
+
+**Goal:** Phase 1 can run in production, and there is a way back that someone has actually walked.
+
+**Build**
 - Deployment:
   - production Dockerfiles
   - Kamal config for api, worker, Valkey and Gotenberg
@@ -539,17 +601,16 @@ Phase 1 · Effort XHIGH · Depends on: M06–M13 · Gate: G3 · Architecture: §
   - migrations run as a release step
 - Observability: Sentry, OpenTelemetry, pino redaction, health checks, uptime checks.
 - Backup and restore runbook, with a drill executed on staging.
-- A demo org for training.
 - Runbooks in `docs/runbooks/`.
 
 **Acceptance checks**
-1. A dry-run import of the sample data shows a balanced opening trial balance, and stock value = Σ(qty × cost).
-2. The staging deploy has green health endpoints. The human confirms the URL.
-3. The restore drill has been executed on staging and documented with timings.
+1. The staging deploy has green health endpoints. The human confirms the URL.
+2. The restore drill has been executed on staging and documented with timings.
+3. A rollback to the previous release has been executed on staging and documented.
 4. `/security-review` has been run with no open high-severity findings.
 5. The runbooks exist: deploy, rollback, restore, secret rotation, courier outage, month-end close.
 
-**After M14 (human):** pilot one brand for 2–3 weeks. Log issues as follow-ups and run fix sessions before moving on.
+**After M14b (human):** pilot one brand for 2–3 weeks. Log issues as follow-ups and run fix sessions before moving on.
 
 ---
 
@@ -563,12 +624,14 @@ Phase 2 · Effort XHIGH · Depends on: M12 · Gate: G5 · Architecture: §9, §2
 - A public tracking page in the portal app: order number plus the last 4 digits of the phone.
 - Automatic settlement fetch where the courier's API supports it.
 - Courier performance report: delivery rate, average days and return rate, by zone.
+- A stuck-parcel queue: active consignments with no status change in N days, with bulk re-poll, an escalation note and a courier-ready export. This is where COD cash actually goes missing.
 
 **Acceptance checks**
 1. Contract tests and complete mapping tables for each adapter.
 2. Courier selection rule tests.
 3. The tracking page leaks nothing without the correct phone digits.
 4. Settlement fetch is idempotent.
+5. Seeded consignments past the staleness threshold appear in the stuck-parcel queue, and fresh ones do not.
 
 ---
 
@@ -712,7 +775,7 @@ Phase 4 · Effort XHIGH · Depends on: M21, M16 · Architecture: §13, §19, §2
 **Acceptance checks**
 1. Mobile-viewport E2E: log in → place an order → receive the pushed status update.
 2. A Playwright network assertion shows no cost or foreign fields in any response.
-3. The PWA meets installability criteria.
+3. The PWA meets installability criteria: an audit confirms the manifest, icons, start URL, display mode and a registered service worker, with the tool and version recorded.
 
 ---
 
@@ -854,7 +917,7 @@ Phase 5 · Effort XHIGH · Depends on: M11, M16 · Gate: G12 · Architecture: §
    - the page is served on a test domain
    - an order submitted from it appears with the `landing_page` channel and its campaign
 2. Drafts are never publicly accessible.
-3. A sample page scores Lighthouse mobile performance ≥ 90.
+3. A sample page scores Lighthouse mobile performance ≥ 90, with the Lighthouse version and throttling preset pinned in the script and recorded in the report.
 
 ---
 
@@ -864,7 +927,7 @@ Launch · Effort MAX · Depends on: all · Architecture: §25–§29
 **Build**
 - `/security-review`, plus `/code-review` on high-risk modules, with fixes.
 - k6 load tests for the order desk APIs and public intake.
-- A script that proves every route has a role-matrix test.
+- A confirmation run of the `check-route-matrix` gate from M02b, plus a report listing every route with its ability and test.
 - A production-like restore drill.
 - Alert rules and retention policies.
 - An accessibility pass.
@@ -873,6 +936,6 @@ Launch · Effort MAX · Depends on: all · Architecture: §25–§29
 **Acceptance checks**
 1. The §29 targets are met, or each gap is documented with a plan.
 2. No open high-severity findings.
-3. Every route has a matrix test.
+3. The `check-route-matrix` gate, in `pnpm verify` since M02b, is green, and the route report is attached.
 4. The restore drill's timing is documented.
 5. The go-live checklist is signed off by the human.
