@@ -36,7 +36,7 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
 
 ### 2026-09-20 · M00 · Repo bootstrap and toolchain · partial (Docker blocked)
 
-- Delivered: a pnpm + Turborepo monorepo where `pnpm verify` is the single gate. Six apps and nine packages compile; the API answers `/health/live`, the worker logs `ready`, and all four front ends serve. `pnpm verify` runs format check, lint, typecheck, 81 tests, build and the migration-immutability check, and exits 0 in ~25 s.
+- Delivered: a pnpm + Turborepo monorepo where `pnpm verify` is the single gate. Six apps and nine packages compile; the API answers `/health/live`, the worker logs `ready`, and all four front ends serve. `pnpm verify` runs format check, lint, typecheck, 78 tests, build and the migration-immutability check, and exits 0 in ~25 s.
 - The design token foundation (D-033) landed here rather than in M05, so no screen in this repo's history was ever written against a hard-coded colour. OKLCH semantic roles in light and dark, per-org brand accent derived from a hue/chroma pair (D-034), 36 px rows, hairline borders, motion at 120–200 ms, and Inter + Hind Siliguri vendored with a computed `size-adjust: 108.1%` so mixed bn/en strings share one baseline.
 - Verification: `pnpm verify` exit 0; acceptance checks 2–7 PASS with evidence in the Verification Report; check 1 is PASS except its `compose up` step, which is BLOCKED on Docker. e2e: 3 Playwright specs (mount and token paint, theme repaint, keyboard reachability).
 - Auditors: ledger-auditor n/a (M00 touches no money, stock, tenancy or permission code); acceptance-auditor run, gaps closed.
