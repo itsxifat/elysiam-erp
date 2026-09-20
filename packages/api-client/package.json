@@ -14,9 +14,10 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "generate": "node -e \"console.error('api:client - nothing to generate yet. M04 emits OpenAPI from packages/contracts and regenerates this client, with a CI drift check.'); process.exit(1)\"",
     "lint": "eslint .",
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+    "typecheck": "tsc -b"
   },
   "devDependencies": {
     "@elysium/config": "workspace:*",

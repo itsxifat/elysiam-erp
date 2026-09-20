@@ -46,11 +46,10 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
 
 - Setup: `pnpm i`, then `pnpm setup:env`, then `docker compose -f infra/docker-compose.dev.yml up -d --wait`
 - `pnpm dev` runs every app. Filter with `pnpm --filter @elysium/<app> dev`.
-- `pnpm db:generate` creates a migration from schema changes.
-- `pnpm db:migrate` and `pnpm db:seed`
+- `pnpm db:generate` creates a migration from schema changes. `pnpm db:migrate` and `pnpm db:seed` run them. All three are live from M01; until then each exits with a message saying so.
 - `pnpm test` runs unit + integration tests. `pnpm e2e` runs Playwright.
 - `pnpm verify` runs format check, lint, typecheck, tests, build and the migration-immutability check. It is the gate for every commit to main.
-- `pnpm api:client` regenerates the typed OpenAPI client.
+- `pnpm api:client` regenerates the typed OpenAPI client. Live from M04.
 - `pnpm bench` is the shared benchmark harness; every latency acceptance check measures through it.
 - `pnpm fonts:fetch` re-vendors Inter and Hind Siliguri and recomputes the Bangla `size-adjust`.
 
