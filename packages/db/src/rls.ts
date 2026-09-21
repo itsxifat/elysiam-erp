@@ -129,6 +129,34 @@ export const GLOBAL_SCHEMAS: readonly string[] = ['ref', 'drizzle'];
 
 export const GLOBAL_TABLES: readonly string[] = [
   // The org list itself. Which orgs a user may see is a membership question,
-  // answered in `iam` from M02a, not a row-level one (§5 exception 5).
+  // answered by iam.memberships, not a row-level one (§5 exception 5).
   'org.organizations',
+
+  // Identity (§5 exception 4, D-050). A person is not an org's property: one
+  // user works for three of the five brands with a different role in each, so
+  // an org_id on these tables would make that impossible to express.
+  //
+  // Access to them is by identity, not by row: a session belongs to exactly
+  // one user, and iam.memberships — which IS tenant-scoped — is what decides
+  // which orgs that user may enter.
+  'iam.users',
+  'iam.sessions',
+  'iam.accounts',
+  'iam.verifications',
+  'iam.two_factors',
 ];
+
+/**
+ * The self-access policy for `iam.memberships` (D-050).
+ *
+ * Tenant tables answer "what is in this org". Memberships must also answer
+ * "which orgs may I enter", which is asked before an org is chosen and so
+ * cannot be scoped by `app.org_id`. PostgreSQL ORs permissive policies, so
+ * this sits alongside the standard org policy: a user sees their own
+ * memberships anywhere, plus everyone's memberships in the org they are
+ * currently acting in.
+ *
+ * Scoped to `app.user_id` exactly. Widen it and it becomes "any authenticated
+ * user reads every membership in every org".
+ */
+export const USER_CONTEXT_SQL = `nullif(current_setting('app.user_id', true), '')`;

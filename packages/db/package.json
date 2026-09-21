@@ -38,6 +38,7 @@
     "vitest": "catalog:"
   },
   "dependencies": {
+    "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
     "postgres": "catalog:",
     "zod": "catalog:"

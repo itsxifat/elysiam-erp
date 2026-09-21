@@ -19,7 +19,7 @@ export default defineConfig({
   schema: './src/schema/**/index.ts',
   out: './migrations',
   dbCredentials: { url: process.env.DATABASE_OWNER_URL ?? '' },
-  schemaFilter: ['org', 'ref'],
+  schemaFilter: ['iam', 'org', 'ref'],
   strict: true,
   verbose: true,
 });
