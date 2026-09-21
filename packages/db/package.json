@@ -7,28 +7,39 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && node copy-sql-assets.mjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "db:generate": "node -e \"console.error('db:generate \u2014 no schema yet. M01 adds packages/db/src/schema.'); process.exit(1)\"",
-    "db:migrate": "node -e \"console.error('db:migrate \u2014 no migrations yet. M01 adds them.'); process.exit(1)\"",
-    "db:seed": "node -e \"console.error('db:seed \u2014 no seed yet. M01 adds the five orgs and reference data.'); process.exit(1)\"",
+    "db:bootstrap": "tsx src/cli/bootstrap.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/cli/migrate.ts",
+    "db:seed": "tsx src/cli/seed.ts",
     "lint": "eslint .",
     "typecheck": "tsc -b"
   },
   "devDependencies": {
     "@elysium/config": "workspace:*",
+    "@testcontainers/postgresql": "catalog:",
+    "@types/node": "catalog:",
     "drizzle-kit": "catalog:",
     "eslint": "catalog:",
-    "typescript": "catalog:"
+    "fast-check": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
-    "postgres": "catalog:"
+    "postgres": "catalog:",
+    "zod": "catalog:"
   }
 }

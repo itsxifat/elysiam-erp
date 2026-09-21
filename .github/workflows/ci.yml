@@ -14,7 +14,10 @@ env:
   # `pnpm verify` is the single gate for main (CLAUDE.md). CI runs exactly that
   # command so a green local run means a green CI run.
   NODE_ENV: test
-  DATABASE_URL: postgres://erp_owner:erp_dev_password@localhost:5432/elysium_test
+  DATABASE_ADMIN_URL: postgres://postgres:postgres_dev_password@localhost:5432/elysium_test
+  # Without this the harness ignores the service container below and starts
+  # its own Testcontainer, which is slower and leaves the service unused.
+  TEST_DATABASE_URL: postgres://postgres:postgres_dev_password@localhost:5432/elysium_test
 
 jobs:
   verify:
@@ -26,13 +29,13 @@ jobs:
       postgres:
         image: postgres:17.11-alpine
         env:
-          POSTGRES_USER: erp_owner
-          POSTGRES_PASSWORD: erp_dev_password
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_dev_password
           POSTGRES_DB: elysium_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U erp_owner -d elysium_test"
+          --health-cmd "pg_isready -U postgres -d elysium_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12

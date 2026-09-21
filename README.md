@@ -24,9 +24,20 @@ pnpm setup:env
 # 3. Postgres 17, Valkey and Gotenberg
 docker compose -f infra/docker-compose.dev.yml up -d --wait
 
-# 4. Everything at once
+# 4. Database roles, schema and seed data
+pnpm db:bootstrap   # once per database; the only step needing a superuser
+pnpm db:migrate
+pnpm db:seed
+
+# 5. Everything at once
 pnpm dev
 ```
+
+The database uses four roles, one per privilege level (architecture §5). `erp_owner` owns the objects but is deliberately **not** a superuser, because a superuser bypasses `FORCE ROW LEVEL SECURITY` and with it every tenant isolation policy. The app connects as `erp_app` and is subject to all of them.
+
+> Upgrading a checkout from before M01: `POSTGRES_USER` changed, and that only takes effect at `initdb`. Run `docker compose -f infra/docker-compose.dev.yml down -v` to recreate the volume — which destroys local data.
+
+Database tests need a real PostgreSQL, because row-level security is a database behaviour a mock cannot have. Set `TEST_DATABASE_URL` to use the compose server (fast), or leave it unset and the harness starts a throwaway container.
 
 `pnpm dev` starts:
 

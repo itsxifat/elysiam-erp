@@ -17,8 +17,14 @@ services:
     environment:
       # Development credentials only. Production secrets come from the secret
       # manager and never from a file in the repo (architecture §25).
-      POSTGRES_USER: erp_owner
-      POSTGRES_PASSWORD: erp_dev_password
+      #
+      # The container superuser is `postgres`, NOT erp_owner. A superuser
+      # bypasses FORCE ROW LEVEL SECURITY entirely, so if erp_owner were the
+      # superuser the tenant isolation in §5 would silently not apply in dev
+      # while applying in production. `pnpm db:bootstrap` creates erp_owner,
+      # erp_app and erp_analytics as ordinary roles (D-042).
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_dev_password
       POSTGRES_DB: elysium_dev
       # Deterministic collation, so ORDER BY in a test matches production.
       POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=en-US --encoding=UTF8'
@@ -39,7 +45,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U erp_owner -d elysium_dev']
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d elysium_dev']
       interval: 5s
       timeout: 5s
       retries: 12

@@ -44,9 +44,10 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
 
 ## Commands (keep this list true)
 
-- Setup: `pnpm i`, then `pnpm setup:env`, then `docker compose -f infra/docker-compose.dev.yml up -d --wait`
+- Setup: `pnpm i`, `pnpm setup:env`, `docker compose -f infra/docker-compose.dev.yml up -d --wait`, then `pnpm db:bootstrap && pnpm db:migrate && pnpm db:seed`
+- `pnpm db:bootstrap` creates the three database roles. Once per database, and the only step needing a superuser.
 - `pnpm dev` runs every app. Filter with `pnpm --filter @elysium/<app> dev`.
-- `pnpm db:generate` creates a migration from schema changes. `pnpm db:migrate` and `pnpm db:seed` run them. All three are live from M01; until then each exits with a message saying so.
+- `pnpm db:generate` creates a migration from schema changes. `pnpm db:migrate` applies them as `erp_owner`, `pnpm db:seed` loads geography and the five orgs. The seed is idempotent.
 - `pnpm test` runs unit + integration tests. `pnpm e2e` runs Playwright.
 - `pnpm verify` runs format check, lint, typecheck, tests, build and the migration-immutability check. It is the gate for every commit to main.
 - `pnpm api:client` regenerates the typed OpenAPI client. Live from M04.
