@@ -124,6 +124,35 @@ export async function withOrg<T>(context: OrgContext, fn: (tx: Tx) => Promise<T>
 }
 
 /**
+ * Run `fn` as the application role, identified but not yet in an org.
+ *
+ * This is the narrow window between signing in and choosing an org: the user
+ * is known, `app.org_id` is not set, and the only thing they may read is their
+ * own memberships, through the self policy on `iam.memberships` (D-050).
+ *
+ * `app.org_id` is cleared explicitly rather than left alone. On a pooled
+ * connection the previous borrower's value has reverted to the empty string,
+ * which the policy already treats as no org — but relying on that would make
+ * this correct by accident.
+ */
+export async function withUser<T>(
+  context: { readonly userId: string; readonly requestId?: string | undefined },
+  fn: (tx: Tx) => Promise<T>,
+): Promise<T> {
+  if (context.userId === '') throw new Error('withUser() needs a user id.');
+
+  return database('app').transaction(async (tx) => {
+    await tx.execute(sql`
+      select
+        set_config('app.org_id', '', true),
+        set_config('app.user_id', ${context.userId}, true),
+        set_config('app.request_id', ${context.requestId ?? ''}, true)
+    `);
+    return fn(tx);
+  });
+}
+
+/**
  * Read across every org, through the read-only analytics role.
  *
  * Only the analytics module and super-admin consolidated reads (§5 exceptions
@@ -161,6 +190,18 @@ export async function withSystem<T>(
     }
     return fn(tx);
   });
+}
+
+/**
+ * The configuration the pools are actually using.
+ *
+ * Anything that opens its own connection — Better Auth does, because it owns
+ * its session mechanics — must read this rather than the environment, or it
+ * will quietly talk to a different database than the rest of the application
+ * whenever `configureDatabase()` has repointed things. Which is every test run.
+ */
+export function currentDatabaseConfig(): DatabaseConfig {
+  return resolvedConfig();
 }
 
 /** Close every pool. Call on shutdown, and at the end of a test run. */
