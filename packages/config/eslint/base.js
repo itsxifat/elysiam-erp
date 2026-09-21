@@ -24,6 +24,8 @@ const TOOLING_FILES = [
   '**/*.config.{js,mjs,cjs,ts,mts}',
   '**/*.cjs',
   'scripts/**/*.mjs',
+  // Build and verify helpers run before or outside any tsconfig project.
+  '**/*.mjs',
   'eslint.config.js',
   'prettier.config.js',
 ];

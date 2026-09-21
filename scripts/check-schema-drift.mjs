@@ -45,7 +45,8 @@ function main() {
   const backup = mkdtempSync(path.join(tmpdir(), 'elysium-migrations-'));
   cpSync(MIGRATIONS, backup, { recursive: true });
 
-  let generated = [];
+  /** @type {string[]} */
+  let generated;
   try {
     // `shell: true` because the Windows binstub is a .cmd, which execFileSync
     // cannot launch directly.
