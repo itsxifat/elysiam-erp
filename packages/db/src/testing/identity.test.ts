@@ -1,7 +1,15 @@
+import { randomUUID } from 'node:crypto';
+
+import { base32 } from '@better-auth/utils/base32';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { createAuth, RecordingSmsProvider, requiresTwoFactor } from '../auth/index.js';
+import {
+  createAuth,
+  mustEnrolTwoFactor,
+  RecordingSmsProvider,
+  requiresTwoFactor,
+} from '../auth/index.js';
 import { withOrg, withSystem, withUser } from '../client.js';
 import { GENERIC_LOGIN, resolveLoginBranding, slugFromHost } from '../iam/branding.js';
 import { availableOrgs, canEnterOrg, resolveContext } from '../iam/context.js';
@@ -69,6 +77,80 @@ async function authRequest(
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
     }),
   );
+}
+
+const PASSWORD = 'correct-horse-battery';
+
+/** Better Auth's session cookie, with the __Secure- prefix it adds over https. */
+const SESSION_COOKIE = 'better-auth.session_token';
+
+function setCookies(response: Response): string[] {
+  return response.headers.getSetCookie();
+}
+
+function hasSessionCookie(response: Response): boolean {
+  return setCookies(response).some(
+    (cookie) => cookie.includes(SESSION_COOKIE) && !cookie.includes(`${SESSION_COOKIE}=;`),
+  );
+}
+
+/**
+ * The smallest cookie jar that is still honest.
+ *
+ * The 2FA flow spans four requests and three different cookies (session,
+ * two-factor challenge, dont-remember), and asserting on the wrong one would
+ * make the test pass for the wrong reason. So carry them all, the way a browser
+ * would, rather than hand-picking one.
+ */
+class CookieJar {
+  private readonly cookies = new Map<string, string>();
+
+  absorb(response: Response): void {
+    for (const raw of setCookies(response)) {
+      const pair = raw.split(';')[0] ?? '';
+      const index = pair.indexOf('=');
+      if (index <= 0) continue;
+      const name = pair.slice(0, index);
+      const value = pair.slice(index + 1);
+      if (value === '') this.cookies.delete(name);
+      else this.cookies.set(name, value);
+    }
+  }
+
+  header(): string {
+    return [...this.cookies].map(([name, value]) => `${name}=${value}`).join('; ');
+  }
+}
+
+async function userIdFor(email: string): Promise<string> {
+  const id = await withSystem(async (tx) => {
+    const rows = await tx.execute<{ id: string }>(
+      sql`select id from iam.users where email = ${email}`,
+    );
+    return rows[0]?.id ?? '';
+  });
+  if (id === '') throw new Error(`no user with email ${email}`);
+  return id;
+}
+
+/**
+ * A current TOTP code for an enrolment URI.
+ *
+ * Through Better Auth's own server-only generator rather than a hand-rolled
+ * RFC 6238 implementation: a reimplementation would only prove that my code and
+ * my test agree with each other.
+ */
+async function totpCode(totpURI: string): Promise<string> {
+  const encoded = new URL(totpURI).searchParams.get('secret') ?? '';
+  if (encoded === '') throw new Error('no secret in the TOTP URI');
+
+  // The URI carries base32, because that is what an authenticator app reads;
+  // the server-side generator wants the raw secret behind it. Decoding with
+  // Better Auth's own base32 rather than a hand-rolled one keeps this test an
+  // authenticator app, not a second implementation of the algorithm.
+  const secret = new TextDecoder().decode(base32.decode(encoded));
+  const { code } = await authHandle.auth.api.generateTOTP({ body: { secret } });
+  return code;
 }
 
 describe('the iam schema keeps M01 honest', () => {
@@ -321,75 +403,205 @@ describe('check 1: 2FA is required for privileged roles', () => {
     expect(signIn.headers.get('set-cookie')).toBeTruthy();
   });
 
-  it('refuses a session to a privileged role that has not enrolled', async () => {
+  it('lets a privileged role hold a session, but walls it until enrolment', async () => {
+    // This used to be "refuses the session outright", and that deadlocked the
+    // product: enrolling TOTP runs behind Better Auth's sessionMiddleware, so
+    // a brand-new org_admin could never enrol and therefore never sign in.
+    //
+    // Section 6 is enforced instead as a wall on the request path. The session
+    // is real; it is simply good for nothing but enrolling.
     const email = `accounts_${Date.now()}@example.invalid`;
     await authRequest('/sign-up/email', {
-      body: { email, password: 'correct-horse-battery', name: 'Accounts User' },
+      body: { email, password: PASSWORD, name: 'Accounts User' },
     });
 
-    const userId = await withSystem(async (tx) => {
-      const rows = await tx.execute<{ id: string }>(
-        sql`select id from iam.users where email = ${email}`,
-      );
-      return rows[0]?.id ?? '';
-    });
+    const userId = await userIdFor(email);
     await grantMembership({ userId, orgId: ORG_A, role: 'accounts' });
 
-    const signIn = await authRequest('/sign-in/email', {
-      body: { email, password: 'correct-horse-battery' },
-    });
+    const signIn = await authRequest('/sign-in/email', { body: { email, password: PASSWORD } });
+    expect(signIn.status, 'the enrolment session must be issuable').toBeLessThan(400);
 
-    expect(signIn.status, 'accounts must not get a session without 2FA').toBeGreaterThanOrEqual(
-      400,
-    );
+    expect(
+      await mustEnrolTwoFactor(userId),
+      'accounts must be walled until a second factor exists',
+    ).toBe(true);
   });
 });
 
-describe('check 1 addendum: the 2FA gate must not fail open', () => {
-  it('refuses a super admin without a second factor, who holds no membership at all', async () => {
-    // The gate used to read memberships on a connection with no RLS context,
-    // so it saw zero rows and concluded "not privileged" for everyone — a
+describe('check 1 addendum: the wall must not fail open', () => {
+  it('walls a super admin who holds no membership at all', async () => {
+    // The check used to read memberships on a connection with no RLS context,
+    // so it saw zero rows and concluded "not privileged" for everyone - a
     // security control failing open. A super admin has no membership row by
-    // design, so this is the case that would still pass even if the
-    // membership lookup silently returned nothing.
+    // design, so this is the case that would still pass even if the membership
+    // lookup silently returned nothing.
     const email = `root_${Date.now()}@example.invalid`;
     await authRequest('/sign-up/email', {
-      body: { email, password: 'correct-horse-battery', name: 'Root User' },
+      body: { email, password: PASSWORD, name: 'Root User' },
     });
 
+    const userId = await userIdFor(email);
     await withSystem(async (tx) => {
-      await tx.execute(sql`update iam.users set is_super_admin = true where email = ${email}`);
+      await tx.execute(sql`update iam.users set is_super_admin = true where id = ${userId}`);
     });
 
-    const signIn = await authRequest('/sign-in/email', {
-      body: { email, password: 'correct-horse-battery' },
-    });
-
-    expect(
-      signIn.status,
-      'a super admin must not hold a session without 2FA',
-    ).toBeGreaterThanOrEqual(400);
+    expect(await mustEnrolTwoFactor(userId)).toBe(true);
   });
 
-  it('still lets an unprivileged user in, so the gate is not simply refusing everyone', async () => {
+  it('does not wall an unprivileged user, so it is not simply refusing everyone', async () => {
     const email = `warehouse_${Date.now()}@example.invalid`;
     await authRequest('/sign-up/email', {
-      body: { email, password: 'correct-horse-battery', name: 'Warehouse User' },
+      body: { email, password: PASSWORD, name: 'Warehouse User' },
     });
 
-    const userId = await withSystem(async (tx) => {
-      const rows = await tx.execute<{ id: string }>(
-        sql`select id from iam.users where email = ${email}`,
-      );
-      return rows[0]?.id ?? '';
-    });
+    const userId = await userIdFor(email);
     await grantMembership({ userId, orgId: ORG_A, role: 'warehouse' });
 
-    const signIn = await authRequest('/sign-in/email', {
-      body: { email, password: 'correct-horse-battery' },
-    });
+    expect(await mustEnrolTwoFactor(userId)).toBe(false);
+
+    const signIn = await authRequest('/sign-in/email', { body: { email, password: PASSWORD } });
     expect(signIn.status).toBeLessThan(400);
   });
+
+  it('walls a user the moment a privileged role is granted, not at next sign-in', async () => {
+    const email = `promoted_${Date.now()}@example.invalid`;
+    await authRequest('/sign-up/email', {
+      body: { email, password: PASSWORD, name: 'Promoted User' },
+    });
+
+    const userId = await userIdFor(email);
+    await grantMembership({ userId, orgId: ORG_A, role: 'sales' });
+    expect(await mustEnrolTwoFactor(userId)).toBe(false);
+
+    await grantMembership({ userId, orgId: ORG_B, role: 'org_admin' });
+    expect(await mustEnrolTwoFactor(userId), 'the wall reads live, not cached').toBe(true);
+  });
+
+  it('stops counting a revoked privileged role', async () => {
+    const email = `demoted_${Date.now()}@example.invalid`;
+    await authRequest('/sign-up/email', {
+      body: { email, password: PASSWORD, name: 'Demoted User' },
+    });
+
+    const userId = await userIdFor(email);
+    await grantMembership({ userId, orgId: ORG_A, role: 'sales' });
+    const investor = await grantMembership({ userId, orgId: ORG_B, role: 'investor' });
+    expect(await mustEnrolTwoFactor(userId)).toBe(true);
+
+    await revokeMembership(investor, ORG_B);
+    expect(await mustEnrolTwoFactor(userId)).toBe(false);
+  });
+
+  it('fails closed on an unknown user id', async () => {
+    expect(await mustEnrolTwoFactor(`usr_${randomUUID()}`)).toBe(true);
+  });
+});
+
+describe('check 1: enrolment and recovery codes', () => {
+  /**
+   * The whole second-factor lifecycle, end to end, for a role that requires it.
+   *
+   * Written as one test on purpose: every step depends on the state the
+   * previous one left behind - a secret, a set of codes, a session - and
+   * splitting it would mean either re-running the whole flow four times or
+   * sharing mutable state between tests that vitest may reorder.
+   */
+  it('enrols TOTP, then demands it at sign-in, then accepts a recovery code once', async () => {
+    const email = `twofactor_${Date.now()}@example.invalid`;
+
+    await authRequest('/sign-up/email', {
+      body: { email, password: PASSWORD, name: 'Admin User' },
+    });
+    const userId = await userIdFor(email);
+    await grantMembership({ userId, orgId: ORG_A, role: 'org_admin' });
+
+    expect(await mustEnrolTwoFactor(userId), 'walled before enrolment').toBe(true);
+
+    // 1. The enrolment session.
+    const jar = new CookieJar();
+    const signIn = await authRequest('/sign-in/email', { body: { email, password: PASSWORD } });
+    jar.absorb(signIn);
+    expect(jar.header(), 'enrolment needs a session cookie').not.toHaveLength(0);
+
+    // 2. Enrol. Returns the secret as a URI plus the recovery codes, which are
+    //    shown exactly once - this response is the only time they exist in
+    //    plaintext.
+    const enable = await authRequest('/two-factor/enable', {
+      body: { password: PASSWORD, method: 'totp' },
+      headers: { cookie: jar.header() },
+    });
+    expect(enable.status, await enable.clone().text()).toBeLessThan(400);
+    const enrolment = (await enable.json()) as { totpURI: string; backupCodes: string[] };
+    jar.absorb(enable);
+
+    expect(enrolment.backupCodes, 'ten recovery codes, per createAuth()').toHaveLength(10);
+    expect(new Set(enrolment.backupCodes).size, 'and all distinct').toBe(10);
+
+    // 3. Still walled: a secret nobody has proved they hold is not a factor.
+    expect(
+      await mustEnrolTwoFactor(userId),
+      'enable alone must not lift the wall - verification does',
+    ).toBe(true);
+
+    // 4. Prove possession. `generateTOTP` is Better Auth's own server-side code
+    //    generator, so this asserts against the library's algorithm rather than
+    //    a reimplementation of it that could agree with a bug.
+    const verify = await authRequest('/two-factor/verify-totp', {
+      body: { code: await totpCode(enrolment.totpURI) },
+      headers: { cookie: jar.header() },
+    });
+    expect(verify.status, await verify.clone().text()).toBeLessThan(400);
+    jar.absorb(verify);
+
+    expect(await mustEnrolTwoFactor(userId), 'the wall lifts once verified').toBe(false);
+
+    // 5. Now the factor is demanded. A correct password alone yields no
+    //    session, only a redirect to the second step.
+    const secondLogin = await authRequest('/sign-in/email', {
+      body: { email, password: PASSWORD },
+    });
+    expect(secondLogin.status).toBeLessThan(400);
+    const redirect = (await secondLogin.clone().json()) as { twoFactorRedirect?: boolean };
+    expect(redirect.twoFactorRedirect, 'password alone must not be enough').toBe(true);
+    expect(hasSessionCookie(secondLogin), 'no session cookie before the second factor').toBe(false);
+
+    // 6. The second factor completes it.
+    const pending = new CookieJar();
+    pending.absorb(secondLogin);
+    const totpLogin = await authRequest('/two-factor/verify-totp', {
+      body: { code: await totpCode(enrolment.totpURI) },
+      headers: { cookie: pending.header() },
+    });
+    expect(totpLogin.status, await totpLogin.clone().text()).toBeLessThan(400);
+    expect(hasSessionCookie(totpLogin), 'a verified second factor issues the session').toBe(true);
+
+    // 7. Recovery: a lost authenticator must not mean a lost account.
+    const thirdLogin = await authRequest('/sign-in/email', { body: { email, password: PASSWORD } });
+    const recovery = new CookieJar();
+    recovery.absorb(thirdLogin);
+
+    const code = enrolment.backupCodes[0] ?? '';
+    const used = await authRequest('/two-factor/verify-backup-code', {
+      body: { code },
+      headers: { cookie: recovery.header() },
+    });
+    expect(used.status, await used.clone().text()).toBeLessThan(400);
+    expect(hasSessionCookie(used), 'a recovery code issues the session').toBe(true);
+
+    // 8. And exactly once. A reusable recovery code is a password that never
+    //    expires and is written on a piece of paper.
+    const fourthLogin = await authRequest('/sign-in/email', {
+      body: { email, password: PASSWORD },
+    });
+    const replay = new CookieJar();
+    replay.absorb(fourthLogin);
+
+    const reused = await authRequest('/two-factor/verify-backup-code', {
+      body: { code },
+      headers: { cookie: replay.header() },
+    });
+    expect(reused.status, 'a recovery code must be single use').toBeGreaterThanOrEqual(400);
+  }, 60_000);
 });
 
 describe('check 4: the session cookie is scoped correctly', () => {

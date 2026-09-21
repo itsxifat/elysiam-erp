@@ -22,3 +22,12 @@ export {
   type Offender,
   type PrivilegeOffender,
 } from './guard.js';
+
+export {
+  asUser,
+  createTestUser,
+  grantMembership,
+  revokeMembership,
+  type CreateUserInput,
+  type TestUser,
+} from '../iam/fixtures.js';

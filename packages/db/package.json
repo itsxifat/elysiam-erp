@@ -27,6 +27,7 @@
     "typecheck": "tsc -b"
   },
   "devDependencies": {
+    "@better-auth/utils": "catalog:",
     "@elysium/config": "workspace:*",
     "@testcontainers/postgresql": "catalog:",
     "@types/node": "catalog:",

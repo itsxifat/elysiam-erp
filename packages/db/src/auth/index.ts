@@ -1,11 +1,11 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { phoneNumber, twoFactor } from 'better-auth/plugins';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import { currentDatabaseConfig, withUser } from '../client.js';
+import { currentDatabaseConfig, withSystem, withUser } from '../client.js';
 import { requireUrl } from '../config.js';
 import * as schema from '../schema/index.js';
 import {
@@ -29,8 +29,9 @@ import {
  * Two things here are ours rather than the library's, and both matter:
  *
  * - **2FA is required, not offered**, for super_admin, org_admin, accounts and
- *   investor (§6). Enforced when a session is issued, so a privileged user who
- *   has not enrolled cannot get a usable session at all.
+ *   investor (§6). Enforced as an enrolment wall on the request path
+ *   (`mustEnrolTwoFactor`), not at session issue: enrolling needs a session, so
+ *   refusing the session would leave a privileged user with no way in at all.
  * - **Rate limits are per identifier as well as per IP** (§25). Per-IP alone is
  *   close to useless against a botnet, and actively harmful in Bangladesh where
  *   most mobile traffic shares a handful of carrier NAT addresses — one
@@ -177,55 +178,26 @@ export function createAuth(options: AuthOptions) {
       session: {
         create: {
           /**
-           * Refuse a session to a privileged user who has not enrolled 2FA.
+           * Deliberately NOT a refusal.
            *
-           * Enforced here rather than at the login route because this is the
-           * one place every path to a session passes through — email, phone,
-           * and anything added later.
+           * The obvious enforcement — "throw if a privileged user has no
+           * second factor" — was here, and it deadlocked the product:
+           * enrolling TOTP needs a session (Better Auth's
+           * `/two-factor/enable` runs behind `sessionMiddleware`), so an
+           * org_admin created by another org_admin could never enrol, and so
+           * could never sign in. A control nobody can satisfy is a control
+           * nobody ships with.
+           *
+           * §6 is therefore enforced one step later, as an *enrolment wall*:
+           * the session exists, but `mustEnrolTwoFactor()` blocks every route
+           * except the enrolment endpoints until the factor is real. See
+           * `apps/server/src/platform/http/auth-plugin.ts`.
+           *
+           * Once enrolled, the second factor is enforced by the plugin itself:
+           * sign-in returns `twoFactorRedirect` and no session at all, and the
+           * session is created only by verify-totp / verify-backup-code.
            */
-          before: async (session) => {
-            const [user] = await db
-              .select({
-                twoFactorEnabled: users.twoFactorEnabled,
-                isSuperAdmin: users.isSuperAdmin,
-              })
-              .from(users)
-              .where(eq(users.id, session.userId));
-
-            if (user?.twoFactorEnabled === true) return { data: session };
-
-            // Through `withUser`, not this module's own connection.
-            //
-            // `iam.memberships` is RLS-protected, and a connection with no
-            // context sees zero rows — so this check silently returned "not
-            // privileged" for everyone and issued the session anyway. A
-            // security control that fails open is worse than none, because it
-            // reads like protection.
-            //
-            // The self policy (D-050) is exactly the right lens here: "does
-            // this user hold a privileged role anywhere" is a question about
-            // their own memberships, across orgs, before any org is chosen.
-            const held = await withUser({ userId: session.userId }, async (tx) =>
-              tx
-                .select({ role: memberships.role })
-                .from(memberships)
-                .where(eq(memberships.userId, session.userId)),
-            );
-
-            const privileged =
-              user?.isSuperAdmin === true ||
-              held.some((row) =>
-                (TWO_FACTOR_REQUIRED_ROLES as readonly string[]).includes(row.role),
-              );
-
-            if (privileged) {
-              throw new Error(
-                'TWO_FACTOR_REQUIRED: this role cannot hold a session without a second factor.',
-              );
-            }
-
-            return { data: session };
-          },
+          before: (session) => Promise.resolve({ data: session }),
         },
       },
     },
@@ -241,6 +213,51 @@ export function createAuth(options: AuthOptions) {
 }
 
 export type Auth = ReturnType<typeof createAuth>['auth'];
+
+/**
+ * Must this user enrol a second factor before they may act? (§6)
+ *
+ * The enrolment wall. Read per request rather than cached on the session,
+ * because the answer changes the moment a role is granted — and the direction
+ * that matters (unprivileged becoming privileged) must take effect at once, not
+ * at next sign-in.
+ *
+ * Short-circuits on `two_factor_enabled`, so the membership read only happens
+ * for users who have not enrolled — which is exactly the set being walled.
+ */
+export async function mustEnrolTwoFactor(userId: string): Promise<boolean> {
+  const [user] = await withSystem(async (tx) =>
+    tx.execute<{ two_factor_enabled: boolean; is_super_admin: boolean }>(
+      sql`select two_factor_enabled, is_super_admin from iam.users where id = ${userId}`,
+    ),
+  );
+
+  // No such user is not "no second factor needed" — it is a caller bug. Fail
+  // closed rather than wave an unknown id through.
+  if (user === undefined) return true;
+  if (user.two_factor_enabled) return false;
+  if (user.is_super_admin) return true;
+
+  // Through `withUser`, not this module's own connection. `iam.memberships` is
+  // RLS-protected, and a connection with no context sees zero rows — which
+  // would read as "not privileged" for everyone. A security control that fails
+  // open is worse than none, because it looks like protection.
+  //
+  // The self policy (D-050) is the right lens: "does this user hold a
+  // privileged role anywhere" is a question about their own memberships,
+  // across orgs, before any org is chosen.
+  const held = await withUser({ userId }, async (tx) =>
+    tx
+      .select({ role: memberships.role })
+      .from(memberships)
+      .where(and(eq(memberships.userId, userId), eq(memberships.isActive, true))),
+  );
+
+  return requiresTwoFactor(
+    held.map((row) => row.role),
+    false,
+  );
+}
 
 /** Whether a set of roles requires a second factor (§6). */
 export function requiresTwoFactor(roles: readonly string[], isSuperAdmin: boolean): boolean {
