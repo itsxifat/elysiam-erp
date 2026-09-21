@@ -19,7 +19,7 @@
     {
       "idx": 2,
       "version": "7",
-      "when": 1789941759552,
+      "when": 1789960497307,
       "tag": "0002_composite_tenant_foreign_keys",
       "breakpoints": true
     }

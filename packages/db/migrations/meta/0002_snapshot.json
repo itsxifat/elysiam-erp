@@ -1,5 +1,5 @@
 {
-  "id": "fca117d8-cefb-47c5-b6e3-d43171be1ecf",
+  "id": "bc97d6d4-df33-427c-966a-976da77ab3ef",
   "prevId": "f0e39ec7-2df3-4be1-89d3-336858db02c4",
   "version": "7",
   "dialect": "postgresql",
@@ -104,9 +104,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "branches_org_idx": {
           "name": "branches_org_idx",
@@ -119,45 +119,51 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "branches_org_id_organizations_id_fk": {
           "name": "branches_org_id_organizations_id_fk",
           "tableFrom": "branches",
-          "columnsFrom": ["org_id"],
           "tableTo": "organizations",
           "schemaTo": "org",
+          "columnsFrom": ["org_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "branches_district_id_districts_id_fk": {
           "name": "branches_district_id_districts_id_fk",
           "tableFrom": "branches",
-          "columnsFrom": ["district_id"],
           "tableTo": "districts",
           "schemaTo": "ref",
+          "columnsFrom": ["district_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "branches_thana_id_thanas_id_fk": {
           "name": "branches_thana_id_thanas_id_fk",
           "tableFrom": "branches",
-          "columnsFrom": ["thana_id"],
           "tableTo": "thanas",
           "schemaTo": "ref",
+          "columnsFrom": ["thana_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "branches_org_id_id_key": {
+          "name": "branches_org_id_id_key",
+          "nullsNotDistinct": false,
+          "columns": ["org_id", "id"]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -231,9 +237,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "feature_flags_org_idx": {
           "name": "feature_flags_org_idx",
@@ -246,21 +252,21 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "feature_flags_org_id_organizations_id_fk": {
           "name": "feature_flags_org_id_organizations_id_fk",
           "tableFrom": "feature_flags",
-          "columnsFrom": ["org_id"],
           "tableTo": "organizations",
           "schemaTo": "org",
+          "columnsFrom": ["org_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -351,9 +357,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "locations_org_idx": {
           "name": "locations_org_idx",
@@ -366,9 +372,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "locations_branch_idx": {
           "name": "locations_branch_idx",
@@ -381,31 +387,31 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "locations_org_id_organizations_id_fk": {
           "name": "locations_org_id_organizations_id_fk",
           "tableFrom": "locations",
-          "columnsFrom": ["org_id"],
           "tableTo": "organizations",
           "schemaTo": "org",
+          "columnsFrom": ["org_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
-        "locations_branch_id_branches_id_fk": {
-          "name": "locations_branch_id_branches_id_fk",
+        "locations_org_id_branch_id_fk": {
+          "name": "locations_org_id_branch_id_fk",
           "tableFrom": "locations",
-          "columnsFrom": ["branch_id"],
           "tableTo": "branches",
           "schemaTo": "org",
-          "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "columnsFrom": ["org_id", "branch_id"],
+          "columnsTo": ["org_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -485,8 +491,8 @@
       "uniqueConstraints": {
         "organizations_slug_unique": {
           "name": "organizations_slug_unique",
-          "columns": ["slug"],
-          "nullsNotDistinct": false
+          "nullsNotDistinct": false,
+          "columns": ["slug"]
         }
       },
       "policies": {},
@@ -555,9 +561,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "settings_org_idx": {
           "name": "settings_org_idx",
@@ -570,21 +576,21 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "settings_org_id_organizations_id_fk": {
           "name": "settings_org_id_organizations_id_fk",
           "tableFrom": "settings",
-          "columnsFrom": ["org_id"],
           "tableTo": "organizations",
           "schemaTo": "org",
+          "columnsFrom": ["org_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -640,21 +646,21 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "districts_division_id_divisions_id_fk": {
           "name": "districts_division_id_divisions_id_fk",
           "tableFrom": "districts",
-          "columnsFrom": ["division_id"],
           "tableTo": "divisions",
           "schemaTo": "ref",
+          "columnsFrom": ["division_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -741,21 +747,21 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "thanas_district_id_districts_id_fk": {
           "name": "thanas_district_id_districts_id_fk",
           "tableFrom": "thanas",
-          "columnsFrom": ["district_id"],
           "tableTo": "districts",
           "schemaTo": "ref",
+          "columnsFrom": ["district_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -781,10 +787,10 @@
     "org": "org",
     "ref": "ref"
   },
-  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
+  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

@@ -1,10 +1,12 @@
 import {
   boolean,
+  foreignKey,
   index,
   integer,
   jsonb,
   pgSchema,
   text,
+  unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -18,7 +20,7 @@ import { primaryId, timestamps } from '../columns.js';
  *
  * Everything here except `organizations` is tenant-scoped: `org_id NOT NULL`,
  * an index on it, and RLS with ENABLE and FORCE. The policies are not written
- * in this file — Drizzle cannot express them — but in the migration, generated
+ * in this file � Drizzle cannot express them � but in the migration, generated
  * by `tenantTableSql()` so every table gets an identical one.
  */
 export const org = pgSchema('org');
@@ -77,6 +79,10 @@ export const branches = org.table(
   (table) => [
     uniqueIndex('branches_org_code_idx').on(table.orgId, table.code),
     index('branches_org_idx').on(table.orgId),
+    // The target of every intra-tenant reference to a branch. A foreign key
+    // needs a unique constraint to point at, and this one carries org_id so
+    // the reference can only be satisfied from within the same org (D-047).
+    unique('branches_org_id_id_key').on(table.orgId, table.id),
   ],
 );
 
@@ -94,7 +100,20 @@ export const locations = org.table(
     orgId: uuid('org_id')
       .notNull()
       .references(() => organizations.id, { onDelete: 'restrict' }),
-    branchId: uuid('branch_id').references(() => branches.id, { onDelete: 'restrict' }),
+    /**
+     * Deliberately NOT `.references(() => branches.id)`.
+     *
+     * PostgreSQL runs referential-integrity checks with row security bypassed,
+     * so a single-column reference can be satisfied by another org's branch �
+     * one org ends up owning a location attached to another company's branch,
+     * that org can then never delete its own branch, and the differing error
+     * messages give away whether any uuid exists in any org. All three were
+     * reproduced against a running database (D-047).
+     *
+     * The composite foreign key below carries org_id through the reference, so
+     * it can only ever be satisfied from within the same org.
+     */
+    branchId: uuid('branch_id'),
     code: text('code').notNull(),
     name: text('name').notNull(),
     kind: locationKind('kind').notNull(),
@@ -105,6 +124,11 @@ export const locations = org.table(
     uniqueIndex('locations_org_code_idx').on(table.orgId, table.code),
     index('locations_org_idx').on(table.orgId),
     index('locations_branch_idx').on(table.branchId),
+    foreignKey({
+      name: 'locations_org_id_branch_id_fk',
+      columns: [table.orgId, table.branchId],
+      foreignColumns: [branches.orgId, branches.id],
+    }).onDelete('restrict'),
   ],
 );
 

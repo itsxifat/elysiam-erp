@@ -119,14 +119,12 @@ export function globalTableSql(schema: string, table: string, readOnly = true): 
 }
 
 /**
- * Schemas whose tables must all be tenant-isolated, and the handful of tables
+ * Schemas that are globally readable, and the handful of individual tables
  * inside them that are legitimately global.
  *
  * The guard test reads both. Keep the exception list short: every entry is a
  * table that one org can see another org's rows in, by design.
  */
-export const TENANT_SCHEMAS: readonly string[] = ['org'];
-
 export const GLOBAL_SCHEMAS: readonly string[] = ['ref', 'drizzle'];
 
 export const GLOBAL_TABLES: readonly string[] = [

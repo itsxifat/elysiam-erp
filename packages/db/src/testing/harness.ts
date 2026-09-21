@@ -118,17 +118,41 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
     .slice(2, 6)}`;
 
   const passwords = rolePasswords();
+
+  // Create the throwaway database first, and do nothing else on the admin
+  // connection.
+  //
+  // bootstrap.sql operates on `current_database()`, so running it on the admin
+  // connection would permanently revoke PUBLIC privileges on whatever
+  // TEST_DATABASE_URL points at. Harmless for a container, but the documented
+  // fast local loop points it at the dev stack — and a developer running
+  // `pnpm test` should not have their development database quietly
+  // reconfigured underneath a running app.
   const admin = postgres(adminUrl, { max: 1, onnotice: silenceNotices });
+  try {
+    await admin.unsafe(`create database "${databaseName}"`);
+  } finally {
+    await admin.end();
+  }
+
+  // Everything else happens inside the throwaway database. Role creation is
+  // cluster-scoped so it still works from here, and every database-scoped
+  // grant and revoke now lands on the disposable one.
+  const adminOnFresh = parseUrl(adminUrl);
+  const setup = postgres(
+    withDatabase(adminUrl, databaseName, adminOnFresh.user, adminOnFresh.password),
+    { max: 1, onnotice: silenceNotices },
+  );
 
   try {
-    // Run the real bootstrap.sql, not an approximation of it. Hand-rolling the
-    // role setup here meant `revoke all on database ... from public` and
-    // `revoke create on schema public from public` were never exercised, so
-    // every test ran against a permissions shape that differed from production
-    // — observably: erp_app could create temp tables in the harness and cannot
-    // after the real bootstrap.
+    // The real bootstrap.sql, not an approximation. Hand-rolling the role setup
+    // meant `revoke all on database ... from public` and `revoke create on
+    // schema public from public` were never exercised, so every test ran
+    // against a permissions shape that differed from production — observably,
+    // erp_app could create temp tables in the harness and cannot after the
+    // real bootstrap.
     const script = await readFile(BOOTSTRAP_SQL, 'utf8');
-    await admin.begin(async (tx) => {
+    await setup.begin(async (tx) => {
       // As settings, quoted by format('%L') inside the script. Interpolating
       // them into DDL would put production-shaped credentials into the query
       // log of any server running with log_statement=all (invariant 10).
@@ -137,27 +161,8 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
       await tx`select set_config('bootstrap.analytics_password', ${passwords.erp_analytics}, true)`;
       await tx.unsafe(script);
     });
-
-    await admin.unsafe(`create database "${databaseName}" owner "erp_owner"`);
-    await admin.unsafe(`grant connect on database "${databaseName}" to "erp_app", "erp_analytics"`);
   } finally {
-    await admin.end();
-  }
-
-  // bootstrap.sql revokes on the database it is connected to, so the new
-  // database needs the same treatment.
-  const fresh = postgres(
-    withDatabase(adminUrl, databaseName, parseUrl(adminUrl).user, parseUrl(adminUrl).password),
-    {
-      max: 1,
-      onnotice: silenceNotices,
-    },
-  );
-  try {
-    await fresh.unsafe('revoke create on schema public from public');
-    await fresh.unsafe(`revoke all on database "${databaseName}" from public`);
-  } finally {
-    await fresh.end();
+    await setup.end();
   }
 
   const ownerUrl = withDatabase(adminUrl, databaseName, 'erp_owner', passwords.erp_owner);

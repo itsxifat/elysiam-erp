@@ -181,13 +181,22 @@ export async function findCrossOrgForeignKeys(): Promise<ForeignKeyOffender[]> {
       join tenant_tables child on child.oid = con.conrelid
       join tenant_tables parent on parent.oid = con.confrelid
       where con.contype = 'f'
-        -- The referencing side must include this table's own org_id column.
+        -- Both sides must include org_id, at the *same position*, so the
+        -- reference genuinely ties the two orgs together. Checking only the
+        -- referencing side would accept
+        --   (org_id, branch_id) references branches (id, org_id)
+        -- which type-checks and isolates nothing.
         and not exists (
           select 1
-          from unnest(con.conkey) as k(attnum)
-          join pg_attribute a
-            on a.attrelid = con.conrelid and a.attnum = k.attnum
-          where a.attname = 'org_id'
+          from generate_subscripts(con.conkey, 1) as i
+          join pg_attribute child_col
+            on child_col.attrelid = con.conrelid
+           and child_col.attnum = con.conkey[i]
+          join pg_attribute parent_col
+            on parent_col.attrelid = con.confrelid
+           and parent_col.attnum = con.confkey[i]
+          where child_col.attname = 'org_id'
+            and parent_col.attname = 'org_id'
         )
       order by 1
     `),

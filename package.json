@@ -13,6 +13,7 @@
     "bench": "node scripts/bench.mjs",
     "build": "turbo run build",
     "check:migrations": "node scripts/check-migrations.mjs",
+    "check:schema": "node scripts/check-schema-drift.mjs",
     "clean": "turbo run clean",
     "db:bootstrap": "pnpm --filter @elysium/db run db:bootstrap",
     "db:generate": "pnpm --filter @elysium/db run db:generate",
@@ -30,7 +31,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:migrations"
+    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:migrations && pnpm run check:schema"
   },
   "devDependencies": {
     "@elysium/config": "workspace:*",

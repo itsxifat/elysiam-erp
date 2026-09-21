@@ -17,7 +17,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && node copy-sql-assets.mjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "db:bootstrap": "tsx src/cli/bootstrap.ts",
     "db:generate": "drizzle-kit generate",
