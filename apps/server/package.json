@@ -18,6 +18,7 @@
     "@elysium/db": "workspace:*",
     "@elysium/domain": "workspace:*",
     "@fastify/cookie": "catalog:",
+    "@fastify/cors": "catalog:",
     "@nestjs/common": "catalog:",
     "@nestjs/core": "catalog:",
     "@nestjs/platform-fastify": "catalog:",

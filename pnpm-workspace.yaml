@@ -72,6 +72,7 @@ catalog:
   '@better-auth/utils': 0.4.2
   better-auth: 1.7.5
   '@fastify/cookie': 11.1.2
+  '@fastify/cors': 11.3.0
   '@testcontainers/postgresql': 12.1.0
   fast-check: 4.10.2
   drizzle-kit: 0.31.10
@@ -90,6 +91,8 @@ catalog:
   '@tailwindcss/postcss': 4.3.3
   next: 16.3.5
   lucide-react: 1.47.0
+  react-hook-form: 7.66.1
+  '@hookform/resolvers': 5.2.2
   clsx: 2.1.1
   tailwind-merge: 3.7.0
   class-variance-authority: 0.7.1

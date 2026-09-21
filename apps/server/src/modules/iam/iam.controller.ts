@@ -38,12 +38,22 @@ export class IamController {
    * therefore returns only what a login page may show — display name, accent,
    * logo — and never anything that would make it an org enumeration oracle
    * beyond the brand names, which are public.
+   *
+   * `host` is the *caller's* hostname, not this server's. The console is served
+   * from `oura-lifestyle.<domain>` while the API answers on `api.<domain>`, so
+   * reading our own Host header would resolve every branded login to the org
+   * called "api". Accepting it from the client is no wider a door than the
+   * `slug` parameter beside it, and both return only public brand facts.
    */
   @Get('auth/login-branding')
-  async loginBranding(@Req() request: FastifyRequest, @Query('slug') slug?: string) {
+  async loginBranding(
+    @Req() request: FastifyRequest,
+    @Query('slug') slug?: string,
+    @Query('host') host?: string,
+  ) {
     const env = serverEnv();
     return resolveLoginBranding({
-      host: request.headers.host,
+      host: host ?? request.headers.host,
       slug,
       appDomain: env.APP_DOMAIN,
     });

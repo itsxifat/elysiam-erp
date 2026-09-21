@@ -1,7 +1,18 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = 5173;
-const BASE_URL = `http://127.0.0.1:${PORT}`;
+
+/*
+ * `localhost`, not `127.0.0.1`, and this matters.
+ *
+ * The CSRF double-submit token is a cookie the console reads with script and
+ * echoes back as a header. Cookies are scoped by host and ignore the port, so
+ * the console and the API can only share one when they share a registrable
+ * domain — `.erp.example.com` in production, plain `localhost` in development.
+ * Pointing the browser at 127.0.0.1 while VITE_API_URL says localhost makes
+ * them two different hosts, and the token becomes unreadable.
+ */
+const BASE_URL = `http://localhost:${PORT}`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -17,7 +28,7 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: `pnpm run dev --host 127.0.0.1`,
+    command: `pnpm run dev --host localhost`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 90_000,

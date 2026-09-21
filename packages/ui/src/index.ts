@@ -18,8 +18,11 @@ export {
   oklchToRgb8,
   pickAccessibleForeground,
   relativeLuminance,
+  resolveBrandAccent,
   toHex,
   FOREGROUND_CANDIDATES,
+  type BrandAccent,
+  type BrandAccentInput,
   type Oklch,
   type Rgb8,
 } from './tokens/contrast.js';

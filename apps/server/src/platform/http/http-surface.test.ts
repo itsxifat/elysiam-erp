@@ -388,6 +388,25 @@ describe('check 3: branded login resolves an org from the hostname', () => {
     });
   });
 
+  it('prefers the caller-supplied hostname over its own', async () => {
+    // The console is served from `<org>.<domain>` while this API answers on
+    // `api.<domain>`. Reading our own Host header would resolve every branded
+    // login to an org called "api", so the caller says which host it is on.
+    const client = new Client();
+    const response = await client.request('GET', '/v1/auth/login-branding', {
+      headers: { host: `api.${APP_DOMAIN}` },
+      csrf: false,
+    });
+    expect(JSON.parse(response.body)).toMatchObject({ generic: true });
+
+    const branded = await client.request(
+      'GET',
+      `/v1/auth/login-branding?host=${encodeURIComponent(`oura-lifestyle.${APP_DOMAIN}`)}`,
+      { headers: { host: `api.${APP_DOMAIN}` }, csrf: false },
+    );
+    expect(JSON.parse(branded.body)).toMatchObject({ slug: 'oura-lifestyle', generic: false });
+  });
+
   it('falls back to the generic login for an unknown host', async () => {
     const client = new Client();
     const response = await client.request('GET', '/v1/auth/login-branding', {
