@@ -25,6 +25,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../../app.module.js';
 import { AbilityGuard } from '../../platform/auth/abilities.js';
 import { registerAuth } from '../../platform/http/auth-plugin.js';
+import { AuditInterceptor } from '../../platform/audit/audit.interceptor.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
 import { SerializeInterceptor } from '../../platform/http/serialize.interceptor.js';
 import { CSRF_COOKIE, CSRF_HEADER } from '../../platform/http/csrf.js';
 import { MemoryRateLimiter } from '../../platform/http/rate-limit.js';
@@ -88,7 +90,10 @@ beforeAll(async () => {
   // this suite would still pass, so the route-coverage gate is what catches
   // that — and this asserts the guard itself behaves.
   app.useGlobalGuards(new AbilityGuard(app.get(Reflector)));
-  app.useGlobalInterceptors(new SerializeInterceptor(app.get(Reflector)));
+  app.useGlobalInterceptors(
+    new SerializeInterceptor(app.get(Reflector)),
+    new AuditInterceptor(app.get(Reflector), new AuditService()),
+  );
 
   server = app.getHttpAdapter().getInstance();
   await server.register(fastifyCookie as never);
@@ -389,6 +394,59 @@ describe('check 3: every mutation writes a redacted audit row', () => {
     );
 
     expect(JSON.stringify(rows)).not.toContain('sk_live_must_not_appear');
+  });
+
+  it('catches a mutation on a route that instruments nothing itself', async () => {
+    // The net. `POST /v1/demo/costed-items` writes no audit entry of its own —
+    // it is the kind of route that ships instrumented-later — and the
+    // interceptor is what stops that being an unrecorded change.
+    const { client } = await asRole(['org_admin']);
+    const sku = `AUDITED-${String(Date.now())}`;
+
+    const created = await client.request('POST', '/v1/demo/costed-items', {
+      body: { sku, name: 'Audited' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const { id } = JSON.parse(created.body) as { id: string };
+
+    // The interceptor writes after the response, so give it a moment.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const rows = await withSystem(
+      async (tx) =>
+        tx.execute<{ action: string; entity_type: string }>(sql`
+          select action, entity_type from audit.audit_log where entity_id = ${id}
+        `),
+      { orgId: ORG_A },
+    );
+
+    expect(rows.length, 'the interceptor recorded nothing').toBeGreaterThan(0);
+    expect(rows[0]?.entity_type).toBe('CostedItem');
+    expect(rows[0]?.action).toContain('POST');
+  });
+
+  it('does not write the entry twice when a service already did', async () => {
+    // `markAudited` is what keeps the net from duplicating the better,
+    // in-transaction entry the approvals service writes.
+    const { client } = await asRole(['sales']);
+
+    const created = await client.request('POST', '/v1/approvals', {
+      body: { type: 'stock_write_off', amountPoisha: '100' },
+    });
+    const { id } = JSON.parse(created.body) as { id: string };
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const rows = await withSystem(
+      async (tx) =>
+        tx.execute<{ action: string }>(
+          sql`select action from audit.audit_log where entity_id = ${id}`,
+        ),
+      { orgId: ORG_A },
+    );
+
+    expect(rows.length, 'the mutation was audited twice').toBe(1);
+    expect(rows[0]?.action).toContain('approval.requested');
   });
 
   it('cannot be updated or deleted, because the log is append-only', async () => {

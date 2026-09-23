@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Get, Param, Post, Req } from '@n
 import { approvalDecisionSchema, approvalRequestSchema } from '@elysium/contracts';
 import type { FastifyRequest } from 'fastify';
 
+import { markAudited } from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { ApprovalsService } from './approvals.service.js';
@@ -22,6 +23,10 @@ export class ApprovalsController {
   async request(@Req() request: FastifyRequest, @Body() body: unknown) {
     const parsed = approvalRequestSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message);
+
+    // The service writes its own entry inside the mutation's transaction,
+    // which the interceptor cannot do. Marked so the net does not duplicate it.
+    markAudited(request);
 
     return this.approvals.request(requireContext(request), {
       type: parsed.data.type,
@@ -44,6 +49,8 @@ export class ApprovalsController {
   async decide(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
     const parsed = approvalDecisionSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message);
+
+    markAudited(request);
 
     return this.approvals.decide(requireContext(request), {
       id,

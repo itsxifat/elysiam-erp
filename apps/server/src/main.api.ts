@@ -8,6 +8,8 @@ import { activeOrgSlugs, createAuth, RecordingSmsProvider } from '@elysium/db';
 
 import { AppModule } from './app.module.js';
 import { AbilityGuard } from './platform/auth/abilities.js';
+import { AuditInterceptor } from './platform/audit/audit.interceptor.js';
+import { AuditService } from './platform/audit/audit.service.js';
 import { SerializeInterceptor } from './platform/http/serialize.interceptor.js';
 import { PasswordTokenStore } from './modules/iam/iam.service.js';
 import { serverEnv } from './platform/config/env.js';
@@ -91,7 +93,13 @@ async function bootstrap(): Promise<void> {
    * Responses are the one place the failure is silent in both directions —
    * nobody reports a bug about seeing more than they should.
    */
-  app.useGlobalInterceptors(new SerializeInterceptor(app.get(Reflector)));
+  app.useGlobalInterceptors(
+    new SerializeInterceptor(app.get(Reflector)),
+    // The audit net (§25). Services that write their own entry inside the
+    // mutation's transaction mark the request, so this only catches routes
+    // nobody has instrumented — see audit.interceptor.ts for why both exist.
+    new AuditInterceptor(app.get(Reflector), new AuditService()),
+  );
 
   const fastify = app.getHttpAdapter().getInstance();
   // Cast: @fastify/cookie augments FastifyInstance, and its declared plugin
