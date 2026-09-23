@@ -9,6 +9,7 @@ import { SEED_ORG_IDS, seedOrganizations } from '../seed/index.js';
 import {
   findCrossOrgForeignKeys,
   findDefaultPrivileges,
+  findAnalyticsReadProblems,
   findPrivilegeProblems,
   findTenancyOffenders,
 } from './guard.js';
@@ -706,6 +707,42 @@ describe('check 5: the guard — every tenant table is isolated', () => {
 
     // A default privilege would silently grant a future table to a role.
     expect(await findDefaultPrivileges()).toBe(0);
+  });
+
+  it('grants erp_analytics no read that nobody opted in to (D-049)', async () => {
+    // The write check above was not enough, and the gap was real:
+    // `globalTableSql` granted analytics SELECT unconditionally, so every
+    // global table became analytics-readable — including iam.accounts, which
+    // holds password hashes, and iam.two_factors, which holds TOTP secrets and
+    // backup codes. Verified against the running database before it was fixed.
+    //
+    // Reads are now enumerated the way writes are, so a new global table
+    // cannot widen the analytics role by accident.
+    expect(
+      await findAnalyticsReadProblems(),
+      'erp_analytics can read tables outside ANALYTICS_READABLE.',
+    ).toEqual([]);
+  });
+
+  it('would notice if a credential table were granted back', async () => {
+    // The guard is only worth having if it fails on the thing it exists to
+    // catch, so grant exactly the privilege that was wrong and prove it shows
+    // up — then put it back.
+    await withSystem(async (tx) => {
+      await tx.execute(sql`grant usage on schema "iam" to "erp_analytics"`);
+      await tx.execute(sql`grant select on "iam"."accounts" to "erp_analytics"`);
+    });
+
+    try {
+      expect(await findAnalyticsReadProblems()).toContain('iam.accounts');
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`revoke select on "iam"."accounts" from "erp_analytics"`);
+        await tx.execute(sql`revoke usage on schema "iam" from "erp_analytics"`);
+      });
+    }
+
+    expect(await findAnalyticsReadProblems()).toEqual([]);
   });
 });
 

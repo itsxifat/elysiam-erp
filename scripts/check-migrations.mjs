@@ -17,6 +17,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -106,6 +107,42 @@ function changesSince(base) {
   return changes;
 }
 
+/**
+ * The journal may only gain entries.
+ *
+ * Rewriting an existing one would re-point a tag at different SQL, or renumber
+ * a migration that has already run — the same corruption as editing the file
+ * itself, one level of indirection away.
+ */
+function journalViolations(base) {
+  const file = `${MIGRATIONS_DIR}/meta/_journal.json`;
+  const committed = git(['show', `${base}:${file}`], { allowFailure: true });
+  if (committed === null) return [];
+
+  let before;
+  let after;
+  try {
+    before = JSON.parse(committed).entries ?? [];
+    after = JSON.parse(readFileSync(path.join(REPO_ROOT, file), 'utf8')).entries ?? [];
+  } catch {
+    return [{ file, what: 'is not readable as JSON' }];
+  }
+
+  if (after.length < before.length) {
+    return [{ file, what: `lost ${before.length - after.length} entr(ies)` }];
+  }
+
+  const changed = before
+    .map((entry, index) => ({ entry, current: after[index] }))
+    .filter(
+      ({ entry, current }) =>
+        current === undefined || current.idx !== entry.idx || current.tag !== entry.tag,
+    )
+    .map(({ entry }) => ({ file, what: `re-pointed entry ${entry.idx} (${entry.tag})` }));
+
+  return changed;
+}
+
 function main() {
   const { base: explicitBase } = parseArgs(process.argv.slice(2));
 
@@ -130,10 +167,18 @@ function main() {
   for (const [file, status] of changesSince(base)) {
     if (!protectedFiles.has(file)) continue;
 
+    // `meta/_journal.json` necessarily changes when a migration is added: it
+    // is the index, not a migration. Its existing entries are checked for
+    // tampering separately below, because rewriting one would silently
+    // re-point a tag at different SQL.
+    if (file.endsWith('meta/_journal.json')) continue;
+
     if (status === 'M') violations.push({ file, what: 'modified' });
     else if (status === 'D') violations.push({ file, what: 'deleted' });
     else if (status === 'R') violations.push({ file, what: 'renamed' });
   }
+
+  violations.push(...journalViolations(base));
 
   if (violations.length > 0) {
     console.error(`check-migrations: FAIL — ${violations.length} committed migration(s) changed\n`);

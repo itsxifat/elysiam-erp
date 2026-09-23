@@ -9,5 +9,6 @@
  * Names must therefore stay unique across modules. That is a feature — two
  * modules with a table of the same name would be ambiguous in a join anyway.
  */
+export * from './iam/index.js';
 export * from './org/index.js';
 export * from './ref/index.js';

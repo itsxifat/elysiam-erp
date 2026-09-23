@@ -17,9 +17,12 @@
     "@elysium/contracts": "workspace:*",
     "@elysium/db": "workspace:*",
     "@elysium/domain": "workspace:*",
+    "@fastify/cookie": "catalog:",
+    "@fastify/cors": "catalog:",
     "@nestjs/common": "catalog:",
     "@nestjs/core": "catalog:",
     "@nestjs/platform-fastify": "catalog:",
+    "drizzle-orm": "catalog:",
     "fastify": "catalog:",
     "pino": "catalog:",
     "reflect-metadata": "catalog:",
@@ -27,6 +30,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@better-auth/utils": "catalog:",
     "@nestjs/testing": "catalog:",
     "@types/node": "catalog:",
     "concurrently": "catalog:",

@@ -124,6 +124,76 @@ export async function withOrg<T>(context: OrgContext, fn: (tx: Tx) => Promise<T>
 }
 
 /**
+ * Run `fn` as the application role, identified but not yet in an org.
+ *
+ * This is the narrow window between signing in and choosing an org: the user
+ * is known, `app.org_id` is not set, and the only thing they may read is their
+ * own memberships, through the self policy on `iam.memberships` (D-050).
+ *
+ * `app.org_id` is cleared explicitly rather than left alone. On a pooled
+ * connection the previous borrower's value has reverted to the empty string,
+ * which the policy already treats as no org — but relying on that would make
+ * this correct by accident.
+ */
+export async function withUser<T>(
+  context: { readonly userId: string; readonly requestId?: string | undefined },
+  fn: (tx: Tx) => Promise<T>,
+): Promise<T> {
+  if (context.userId === '') throw new Error('withUser() needs a user id.');
+
+  return database('app').transaction(async (tx) => {
+    await tx.execute(sql`
+      select
+        set_config('app.org_id', '', true),
+        set_config('app.user_id', ${context.userId}, true),
+        set_config('app.request_id', ${context.requestId ?? ''}, true)
+    `);
+    return fn(tx);
+  });
+}
+
+/**
+ * Application access to a global table, with no org chosen.
+ *
+ * `iam.users`, `iam.sessions`, `iam.accounts`, `iam.verifications` and
+ * `iam.two_factors` are global by design (§5 exception 4): a person is not an
+ * org's property. They carry no org policy, so reaching them needs no org
+ * context — but it does need to be the *application* role that reaches them.
+ *
+ * This exists because the request path was using `withSystem()`, which connects
+ * as `erp_owner`: the role that owns every table and can execute DDL. Resolving
+ * a session, reading a user, writing an active org — all of it ran as the owner
+ * on every request, when `erp_app` already holds exactly the grants each needs.
+ * That is a needless escalation on the hottest path in the system, and it made
+ * `DATABASE_OWNER_URL` a runtime requirement of the API process rather than a
+ * migration-time one.
+ *
+ * Both `app.org_id` and `app.user_id` are cleared rather than left alone. On a
+ * pooled connection the previous borrower's values have reverted to the empty
+ * string, which the policies already treat as no org and no user — but relying
+ * on that would make this correct by accident, and `app.user_id` in particular
+ * drives the D-050 self policy on `iam.memberships`. A value arriving through a
+ * connection-string `options=-c app.user_id=...` would otherwise hand an
+ * uncontexted transaction somebody's memberships. Any tenant table touched in
+ * here therefore returns nothing, which is the failure mode you want if this is
+ * ever used by mistake.
+ */
+export async function withGlobal<T>(
+  fn: (tx: Tx) => Promise<T>,
+  context?: { readonly requestId?: string | undefined },
+): Promise<T> {
+  return database('app').transaction(async (tx) => {
+    await tx.execute(sql`
+      select
+        set_config('app.org_id', '', true),
+        set_config('app.user_id', '', true),
+        set_config('app.request_id', ${context?.requestId ?? ''}, true)
+    `);
+    return fn(tx);
+  });
+}
+
+/**
  * Read across every org, through the read-only analytics role.
  *
  * Only the analytics module and super-admin consolidated reads (§5 exceptions
@@ -161,6 +231,18 @@ export async function withSystem<T>(
     }
     return fn(tx);
   });
+}
+
+/**
+ * The configuration the pools are actually using.
+ *
+ * Anything that opens its own connection — Better Auth does, because it owns
+ * its session mechanics — must read this rather than the environment, or it
+ * will quietly talk to a different database than the rest of the application
+ * whenever `configureDatabase()` has repointed things. Which is every test run.
+ */
+export function currentDatabaseConfig(): DatabaseConfig {
+  return resolvedConfig();
 }
 
 /** Close every pool. Call on shutdown, and at the end of a test run. */

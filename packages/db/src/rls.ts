@@ -109,14 +109,51 @@ export function tenantTableSql(options: TenantTableOptions): string {
  * guard test treats anything else in a tenant schema as a mistake. Adding to
  * that list is a decision, not a convenience.
  */
-export function globalTableSql(schema: string, table: string, readOnly = true): string {
+export interface GlobalTableOptions {
+  readonly readOnly?: boolean;
+  /**
+   * Whether `erp_analytics` may read this table.
+   *
+   * Defaults to **false**, like `analyticsReadsAllOrgs` on tenant tables and for
+   * the same reason (D-049): analytics reads are opt-in per table. This used to
+   * be unconditional, which quietly granted the analytics role SELECT on
+   * `iam.accounts` — password hashes — and `iam.two_factors` — TOTP secrets and
+   * backup codes. Nothing needed either, and a read-only role is still a role
+   * that can read.
+   */
+  readonly analyticsReads?: boolean;
+}
+
+export function globalTableSql(
+  schema: string,
+  table: string,
+  options: GlobalTableOptions = {},
+): string {
+  const { readOnly = true, analyticsReads = false } = options;
   const qualified = `${quote(schema)}.${quote(table)}`;
+  const readers = analyticsReads ? '"erp_app", "erp_analytics"' : '"erp_app"';
+
   return [
     `grant usage on schema ${quote(schema)} to "erp_app", "erp_analytics";`,
-    `grant select on ${qualified} to "erp_app", "erp_analytics";`,
+    `grant select on ${qualified} to ${readers};`,
     ...(readOnly ? [] : [`grant insert, update, delete on ${qualified} to "erp_app";`]),
   ].join('\n');
 }
+
+/**
+ * Every table `erp_analytics` is allowed to read, qualified.
+ *
+ * The guard test fails on anything it can SELECT that is not listed here, so
+ * adding a global table does not silently widen the analytics role. Entries are
+ * deliberate and each one is a decision: `org.organizations` is the brand list
+ * every consolidated report labels its rows with, and the `ref` schema is public
+ * Bangladesh geography. Nothing in `iam` is here — identity is not analytics
+ * data, and the credential tables least of all.
+ */
+export const ANALYTICS_READABLE: readonly string[] = ['org.organizations'];
+
+/** Schemas `erp_analytics` may read wholesale. Reference data only. */
+export const ANALYTICS_READABLE_SCHEMAS: readonly string[] = ['ref'];
 
 /**
  * Schemas that are globally readable, and the handful of individual tables
@@ -129,6 +166,34 @@ export const GLOBAL_SCHEMAS: readonly string[] = ['ref', 'drizzle'];
 
 export const GLOBAL_TABLES: readonly string[] = [
   // The org list itself. Which orgs a user may see is a membership question,
-  // answered in `iam` from M02a, not a row-level one (§5 exception 5).
+  // answered by iam.memberships, not a row-level one (§5 exception 5).
   'org.organizations',
+
+  // Identity (§5 exception 4, D-050). A person is not an org's property: one
+  // user works for three of the five brands with a different role in each, so
+  // an org_id on these tables would make that impossible to express.
+  //
+  // Access to them is by identity, not by row: a session belongs to exactly
+  // one user, and iam.memberships — which IS tenant-scoped — is what decides
+  // which orgs that user may enter.
+  'iam.users',
+  'iam.sessions',
+  'iam.accounts',
+  'iam.verifications',
+  'iam.two_factors',
 ];
+
+/**
+ * The self-access policy for `iam.memberships` (D-050).
+ *
+ * Tenant tables answer "what is in this org". Memberships must also answer
+ * "which orgs may I enter", which is asked before an org is chosen and so
+ * cannot be scoped by `app.org_id`. PostgreSQL ORs permissive policies, so
+ * this sits alongside the standard org policy: a user sees their own
+ * memberships anywhere, plus everyone's memberships in the org they are
+ * currently acting in.
+ *
+ * Scoped to `app.user_id` exactly. Widen it and it becomes "any authenticated
+ * user reads every membership in every org".
+ */
+export const USER_CONTEXT_SQL = `nullif(current_setting('app.user_id', true), '')`;

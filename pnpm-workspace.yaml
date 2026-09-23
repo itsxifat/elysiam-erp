@@ -20,6 +20,13 @@ allowBuilds:
   protobufjs: false
   ssh2: false
 
+# @nestjs/platform-fastify pulls its own fastify, so two copies resolved. Their
+# FastifyInstance types are structurally distinct, which made the
+# @fastify/cookie augmentation invisible on the instance Nest hands back — and
+# would have meant two plugin registries and two route tables at runtime.
+overrides:
+  fastify: 5.12.5
+
 catalog:
   # --- language and build -------------------------------------------------
   # TypeScript is pinned to 6.0.3, NOT 7.x, on purpose (D-039). TypeScript 7 is
@@ -62,6 +69,10 @@ catalog:
 
   # --- data ---------------------------------------------------------------
   drizzle-orm: 0.45.2
+  '@better-auth/utils': 0.4.2
+  better-auth: 1.7.5
+  '@fastify/cookie': 11.1.2
+  '@fastify/cors': 11.3.0
   '@testcontainers/postgresql': 12.1.0
   fast-check: 4.10.2
   drizzle-kit: 0.31.10
@@ -80,6 +91,8 @@ catalog:
   '@tailwindcss/postcss': 4.3.3
   next: 16.3.5
   lucide-react: 1.47.0
+  react-hook-form: 7.66.1
+  '@hookform/resolvers': 5.2.2
   clsx: 2.1.1
   tailwind-merge: 3.7.0
   class-variance-authority: 0.7.1
