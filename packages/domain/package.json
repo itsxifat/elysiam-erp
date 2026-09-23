@@ -19,6 +19,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "devDependencies": {
+    "fast-check": "catalog:",
     "@elysium/config": "workspace:*",
     "eslint": "catalog:",
     "typescript": "catalog:"

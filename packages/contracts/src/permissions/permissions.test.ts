@@ -6,7 +6,14 @@ import { MEMBERSHIP_ROLES, type MembershipRole } from '../iam.js';
 import { canReadCost, defineAbilityFor, effectiveScope } from './ability.js';
 import { COST_READING_ROLES, MATRIX } from './matrix.js';
 import { assertNoCostFields, findCostFields, serializeFor } from './serialize.js';
-import { ACTIONS, COST_FIELDS, RESELLER_VISIBLE_FIELDS, SUBJECTS } from './subjects.js';
+import {
+  ACTIONS,
+  COST_FIELDS,
+  RESELLER_VISIBLE_FIELDS,
+  SUBJECTS,
+  type Action,
+  type Subject,
+} from './subjects.js';
 
 /**
  * The permission matrix (architecture §6, invariant 5).
@@ -60,15 +67,14 @@ describe('the matrix is well formed', () => {
 describe('check 1: every role × capability, as the matrix declares it', () => {
   // The generated suite the milestone asks for: one assertion per cell, built
   // from the matrix rather than written out, so the test cannot drift from it.
-  const cells = MEMBERSHIP_ROLES.flatMap((role) =>
-    SUBJECTS.flatMap((subj) =>
-      ACTIONS.map((action) => ({
-        role,
-        subject: subj,
-        action,
-        expected: effectiveScope([role], action, subj) !== null,
-      })),
-    ),
+  interface Cell {
+    readonly role: MembershipRole;
+    readonly subject: Subject;
+    readonly action: Action;
+  }
+
+  const cells: Cell[] = MEMBERSHIP_ROLES.flatMap((role) =>
+    SUBJECTS.flatMap((subj) => ACTIONS.map((action) => ({ role, subject: subj, action }))),
   );
 
   it('asserts allowed or forbidden for all of them', () => {
@@ -116,7 +122,7 @@ describe('check 1: every role × capability, as the matrix declares it', () => {
   });
 
   it('gives a user with no roles nothing at all', () => {
-    const nobody = abilityFor([]);
+    const nobody = abilityFor([] as MembershipRole[]);
     for (const subj of SUBJECTS) {
       for (const action of ACTIONS) {
         expect(nobody.can(action, subj), `a roleless user could ${action} ${subj}`).toBe(false);

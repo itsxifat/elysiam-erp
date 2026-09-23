@@ -2,11 +2,12 @@ import 'reflect-metadata';
 
 import { fastifyCookie } from '@fastify/cookie';
 import { fastifyCors } from '@fastify/cors';
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { activeOrgSlugs, createAuth, RecordingSmsProvider } from '@elysium/db';
 
 import { AppModule } from './app.module.js';
+import { AbilityGuard } from './platform/auth/abilities.js';
 import { PasswordTokenStore } from './modules/iam/iam.service.js';
 import { serverEnv } from './platform/config/env.js';
 import { createLogger } from './platform/logging/logger.js';
@@ -69,6 +70,17 @@ async function bootstrap(): Promise<void> {
       logger: false,
     },
   );
+
+  /*
+   * The ability guard, globally (architecture §6).
+   *
+   * Global rather than per-controller on purpose: a guard you have to remember
+   * to add is a guard that is missing from the route somebody wrote in a hurry.
+   * It denies anything that has not declared what it needs, and
+   * `check-route-matrix` fails the build for the same omission, so the two
+   * agree about what "undeclared" means.
+   */
+  app.useGlobalGuards(new AbilityGuard(app.get(Reflector)));
 
   const fastify = app.getHttpAdapter().getInstance();
   // Cast: @fastify/cookie augments FastifyInstance, and its declared plugin

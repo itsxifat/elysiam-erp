@@ -27,4 +27,5 @@ export {
   type TotpCode,
 } from './iam.js';
 
+export * from './approvals.js';
 export * from './permissions/index.js';

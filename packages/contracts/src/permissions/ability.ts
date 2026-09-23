@@ -1,6 +1,7 @@
 import {
   AbilityBuilder,
   createMongoAbility,
+  type ForcedSubject,
   type MongoAbility,
   type MongoQuery,
 } from '@casl/ability';
@@ -22,7 +23,17 @@ import { SCOPE_RANK, type Action, type Scope, type Subject } from './subjects.js
  * are deliberately not in `ACTIONS` or `SUBJECTS`, so no rule can be written
  * against them by accident.
  */
-export type AppAbility = MongoAbility<[Action | 'manage', Subject | 'all']>;
+/**
+ * A row tagged with its subject, as `subject('Order', row)` produces.
+ *
+ * Needed in the union so `ability.can('read', subject('Order', row))` type
+ * checks — which is the call that actually evaluates a scoped rule. Without
+ * it only the bare-string form compiles, and the bare form ignores conditions,
+ * so every `own` and `branch` rule would look like it denied everything.
+ */
+type TaggedSubject = ForcedSubject<Subject>;
+
+export type AppAbility = MongoAbility<[Action | 'manage', Subject | 'all' | TaggedSubject]>;
 
 /**
  * Conditions, as CASL wants them.
@@ -111,7 +122,10 @@ export function defineAbilityFor(context: AbilityContext): AppAbility {
   for (const role of context.roles) {
     for (const rule of MATRIX[role] ?? []) {
       const conditions = conditionsFor(rule.scope, context);
-      const actions = Array.isArray(rule.action) ? rule.action : [rule.action];
+      // Annotated because `Array.isArray` on a `readonly Action[] | Action`
+      // widens the element type to `any` — which would then flow into `grant`
+      // unchecked, and a typo'd action silently denies rather than failing.
+      const actions: readonly Action[] = Array.isArray(rule.action) ? rule.action : [rule.action];
 
       for (const action of actions) grant(action, rule.subject, conditions);
     }
