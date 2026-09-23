@@ -11,6 +11,7 @@ import {
 import {
   withGlobal,
   withOrg,
+  withUser,
   type Auth,
   type MembershipRole,
   type RequestContext,
@@ -50,6 +51,20 @@ export class PasswordTokenStore {
     this.byEmail.delete(key);
     return token;
   }
+}
+
+/**
+ * Is this a foreign-key violation? (SQLSTATE 23503)
+ *
+ * Drizzle wraps the driver error, so the code lives down the `cause` chain
+ * rather than on the error it throws.
+ */
+function isForeignKeyViolation(cause: unknown): boolean {
+  for (let error = cause; error !== null && error !== undefined;) {
+    if (typeof error === 'object' && 'code' in error && error.code === '23503') return true;
+    error = (error as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 @Injectable()
@@ -179,7 +194,11 @@ export class IamService {
               values (${input.orgId}, ${id}, ${branchId})
               on conflict (membership_id, branch_id) do nothing
             `);
-          } catch {
+          } catch (cause) {
+            // Only the constraint violation becomes a 400. A deadlock or a lost
+            // connection is not the caller's input being wrong, and blaming it
+            // on them would send someone hunting a branch id that is fine.
+            if (!isForeignKeyViolation(cause)) throw cause;
             throw new BadRequestException(`Branch ${branchId} is not in this organisation.`);
           }
         }
@@ -207,22 +226,39 @@ export class IamService {
    * already has.
    */
   private async refuseUnclaimedAccount(userId: string): Promise<void> {
+    // `iam.accounts` is global, so `withGlobal` is right for it.
     const [row] = await withGlobal(async (tx) =>
-      tx.execute<{ credentials: number; memberships: number }>(sql`
-        select
-          (select count(*) from iam.accounts where user_id = ${userId})     as credentials,
-          (select count(*) from iam.memberships where user_id = ${userId})  as memberships
-      `),
+      tx.execute<{ credentials: number }>(
+        sql`select count(*) as credentials from iam.accounts where user_id = ${userId}`,
+      ),
     );
 
     const credentials = Number(row?.credentials ?? 0);
-    const memberships = Number(row?.memberships ?? 0);
+    if (credentials === 0) return;
 
-    if (credentials > 0 && memberships === 0) {
-      throw new ConflictException(
-        'That address already has an account that belongs to no organisation. Have it removed before inviting it.',
-      );
-    }
+    // `iam.memberships` is NOT global, and this is the whole point of the
+    // check: "does this person belong to any org" is a question about their own
+    // memberships, across orgs, with none chosen. That is exactly the D-050
+    // self policy, reached through `withUser` — the same lens
+    // `mustEnrolTwoFactor` uses for the same shape of question.
+    //
+    // It was `withGlobal` here, which clears `app.user_id` as well as
+    // `app.org_id`, so both policies evaluated `col = NULL` and the count came
+    // back 0 for everyone. The guard collapsed to "refuse anyone who has a
+    // password", and a colleague joining a second brand — the case §5
+    // exception 4 exists for — was rejected outright. Verified against the
+    // database: a user with two memberships counted as zero.
+    const memberships = await withUser({ userId }, async (tx) =>
+      tx.execute<{ count: number }>(
+        sql`select count(*) as count from iam.memberships where user_id = ${userId}`,
+      ),
+    );
+
+    if (Number(memberships[0]?.count ?? 0) > 0) return;
+
+    throw new ConflictException(
+      'That address already has an account that belongs to no organisation. Have it removed before inviting it.',
+    );
   }
 
   /**

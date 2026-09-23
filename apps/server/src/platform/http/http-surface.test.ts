@@ -470,6 +470,20 @@ describe('the 2FA enrolment wall (§6)', () => {
     }
   });
 
+  it('does not let a walled role use the rest of Better Auth', async () => {
+    // The hatch used to be the whole `/api/auth` prefix, so a walled org_admin
+    // could still call update-user and everything else the library exposes.
+    // It is an allow-list now, and this is what stops it being re-widened.
+    const { client } = await signedIn('org_admin', ORG_A);
+
+    const response = await client.request('POST', '/api/auth/update-user', {
+      body: { name: 'Renamed While Walled' },
+    });
+
+    expect(response.statusCode, response.body).toBe(403);
+    expect(response.body).toContain('TWO_FACTOR_ENROLMENT_REQUIRED');
+  });
+
   it('still lets that role reach the enrolment endpoint it needs', async () => {
     const { client } = await signedIn('accounts', ORG_A);
     const response = await client.request('POST', '/api/auth/two-factor/enable', {
@@ -718,6 +732,40 @@ describe('the user admin API', () => {
       body: { email, password: PASSWORD },
     });
     expect(signIn.statusCode, signIn.body).toBeLessThan(400);
+  });
+
+  it('lets a colleague who already has a password join a second brand', async () => {
+    // The regression the test below could not catch, because it invites twice
+    // before the invitee ever redeems. Once credentials exist, the
+    // unclaimed-account guard runs for real — and it read `iam.memberships`
+    // inside `withGlobal`, where RLS filters every row, so the count was always
+    // zero and every colleague with a password was refused from their second
+    // brand. That is the case §5 exception 4 and D-050 exist for.
+    const { client } = await asOrgAdmin(ORG_A);
+    const email = `colleague_${Date.now()}@example.invalid`;
+
+    const first = await client.request('POST', '/v1/users', {
+      body: { email, name: 'Colleague', role: 'warehouse', branchIds: [] },
+    });
+    expect(first.statusCode, first.body).toBe(201);
+    const { inviteToken } = JSON.parse(first.body) as { inviteToken: string };
+
+    // They redeem it, so from here they hold a credential.
+    const colleague = new Client(freshIp());
+    await colleague.request('GET', '/v1/auth/login-branding');
+    const redeemed = await colleague.request('POST', '/api/auth/reset-password', {
+      body: { newPassword: PASSWORD, token: inviteToken },
+    });
+    expect(redeemed.statusCode, redeemed.body).toBeLessThan(400);
+
+    // Now a second brand invites the same person.
+    const { client: otherAdmin } = await asOrgAdmin(ORG_B);
+    const second = await otherAdmin.request('POST', '/v1/users', {
+      body: { email, name: 'Colleague', role: 'sales', branchIds: [] },
+    });
+
+    expect(second.statusCode, second.body).toBe(201);
+    expect(JSON.parse(second.body)).toMatchObject({ created: false });
   });
 
   it('reuses an identity when the same person joins a second brand', async () => {
