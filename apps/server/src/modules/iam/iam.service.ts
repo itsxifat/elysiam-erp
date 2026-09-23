@@ -248,6 +248,10 @@ export class IamService {
     // password", and a colleague joining a second brand — the case §5
     // exception 4 exists for — was rejected outright. Verified against the
     // database: a user with two memberships counted as zero.
+    // Deliberately not filtered on `is_active`: a revoked membership still
+    // means this person was one of ours. Someone re-hired, or moving between
+    // sister brands after leaving one, should have their identity reused rather
+    // than be treated as a squatter on their own address.
     const memberships = await withUser({ userId }, async (tx) =>
       tx.execute<{ count: number }>(
         sql`select count(*) as count from iam.memberships where user_id = ${userId}`,

@@ -74,6 +74,7 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
   - The harness reset shared role passwords when pointed at a live server, breaking the dev database mid-session. Fixed to reuse ambient passwords — but worth remembering that anything which ALTERs a role affects the whole server, not one database (owner: claude, done).
   - Branch-level scoping (`branch_id` filtering) is not enforced anywhere yet. The column exists; enforcing it is a permissions concern for M02b (owner: claude, M02b).
   - `ref.thanas` carries 494 upazilas from the official portals, but a courier's own coverage list is the authority for where it will actually deliver. M12 reconciles the two (owner: claude, M12).
+  - Pin the assumption that `/api/auth/sign-in/email/` 404s. The rate-limit rules match exact paths, and they are safe today only because better-call rejects a trailing-slash mismatch outright — a Better Auth upgrade, or anyone setting `skipTrailingSlashes`, makes them bypassable overnight (owner: claude, M02b).
   - CI still has never executed — the repo has no remote (owner: human).
 - Next: M02a, identity, auth and request context.
 
