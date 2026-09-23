@@ -1,5 +1,4 @@
 import { Body, Controller, Get, Post, Req } from '@nestjs/common';
-import { serializeFor } from '@elysium/contracts';
 import { withOrg } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
@@ -51,15 +50,12 @@ export class DemoController {
       availableQty: row.available_qty,
     }));
 
-    // The one line invariant 5 is about. Without it every field the query
-    // selected reaches every role that may call this route.
-    return {
-      items: serializeFor(
-        { roles: context.roles, isSuperAdmin: context.isSuperAdmin },
-        'CostedItem',
-        items,
-      ),
-    };
+    // Returned raw on purpose. `SerializeInterceptor` strips what this caller
+    // may not read, using the subject from this route's own @RequireAbility —
+    // so the protection is a property of the application rather than something
+    // each handler remembers. A handler that called `serializeFor` itself would
+    // pass its own test and prove nothing about the next handler.
+    return { items };
   }
 
   @RequireAbility('create', 'CostedItem')

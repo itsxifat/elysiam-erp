@@ -268,6 +268,28 @@ describe('a reseller sees an allow-list, not a deny-list', () => {
     expect(out).not.toHaveProperty('supplierName');
   });
 
+  it('keeps the envelope a response is wrapped in', () => {
+    // The bug the interceptor found: a naive allow-list deletes `items`,
+    // because `items` is not a field of the entity — and the reseller gets an
+    // empty object rather than a filtered catalog.
+    const response = { items: [{ sku: 'A', name: 'Kurti', unitCostPoisha: 1n, note: 'internal' }] };
+    const out = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'CostedItem', response);
+
+    expect(out.items).toHaveLength(1);
+    expect(out.items[0]).toMatchObject({ sku: 'A', name: 'Kurti' });
+    expect(out.items[0]).not.toHaveProperty('unitCostPoisha');
+    expect(out.items[0]).not.toHaveProperty('note');
+  });
+
+  it('keeps a container name but never its disallowed contents', () => {
+    const out = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'CostedItem', {
+      // `name` would be kept — it is on the allow-list. These are not.
+      supplierDetails: { landedCost: 1, supplierPhone: '01712345689' },
+    });
+
+    expect(out.supplierDetails).toEqual({});
+  });
+
   it('keeps every field the allow-list names', () => {
     const full = Object.fromEntries(RESELLER_VISIBLE_FIELDS.map((field) => [field, 'x']));
     const out = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'Catalog', full);

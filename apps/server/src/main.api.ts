@@ -8,6 +8,7 @@ import { activeOrgSlugs, createAuth, RecordingSmsProvider } from '@elysium/db';
 
 import { AppModule } from './app.module.js';
 import { AbilityGuard } from './platform/auth/abilities.js';
+import { SerializeInterceptor } from './platform/http/serialize.interceptor.js';
 import { PasswordTokenStore } from './modules/iam/iam.service.js';
 import { serverEnv } from './platform/config/env.js';
 import { createLogger } from './platform/logging/logger.js';
@@ -81,6 +82,16 @@ async function bootstrap(): Promise<void> {
    * agree about what "undeclared" means.
    */
   app.useGlobalGuards(new AbilityGuard(app.get(Reflector)));
+
+  /*
+   * And the serializer, on the way out (invariant 5).
+   *
+   * Global for the same reason the guard is: a handler that forgets
+   * `serializeFor` returns cost to a reseller and nothing anywhere says so.
+   * Responses are the one place the failure is silent in both directions —
+   * nobody reports a bug about seeing more than they should.
+   */
+  app.useGlobalInterceptors(new SerializeInterceptor(app.get(Reflector)));
 
   const fastify = app.getHttpAdapter().getInstance();
   // Cast: @fastify/cookie augments FastifyInstance, and its declared plugin

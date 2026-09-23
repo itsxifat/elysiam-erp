@@ -25,6 +25,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../../app.module.js';
 import { AbilityGuard } from '../../platform/auth/abilities.js';
 import { registerAuth } from '../../platform/http/auth-plugin.js';
+import { SerializeInterceptor } from '../../platform/http/serialize.interceptor.js';
 import { CSRF_COOKIE, CSRF_HEADER } from '../../platform/http/csrf.js';
 import { MemoryRateLimiter } from '../../platform/http/rate-limit.js';
 import { PasswordTokenStore } from '../iam/iam.service.js';
@@ -87,6 +88,7 @@ beforeAll(async () => {
   // this suite would still pass, so the route-coverage gate is what catches
   // that — and this asserts the guard itself behaves.
   app.useGlobalGuards(new AbilityGuard(app.get(Reflector)));
+  app.useGlobalInterceptors(new SerializeInterceptor(app.get(Reflector)));
 
   server = app.getHttpAdapter().getInstance();
   await server.register(fastifyCookie as never);

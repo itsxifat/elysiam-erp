@@ -44,16 +44,36 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * rather than walked, because turning a Date into `{}` is a data-loss bug that
  * looks like a serialization quirk.
  */
-function prune(value: unknown, keep: (key: string) => boolean): unknown {
+function prune(value: unknown, keep: (key: string, value: unknown) => boolean): unknown {
   if (Array.isArray(value)) return value.map((entry) => prune(entry, keep));
   if (!isPlainObject(value)) return value;
 
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (!keep(key)) continue;
+    if (!keep(key, entry)) continue;
     result[key] = prune(entry, keep);
   }
   return result;
+}
+
+/**
+ * Is this value a container we should look inside rather than a leaf?
+ *
+ * The allow-list has to answer a question the deny-list does not: a response is
+ * usually an envelope — `{ items: [...] }`, `{ order: { lines: [...] } }` — and
+ * `items` is not a field of the entity, so a naive allow-list deletes the
+ * envelope and returns `{}`. That is exactly what happened when the serializer
+ * moved into an interceptor: the reseller got an empty object instead of a
+ * filtered catalog.
+ *
+ * So containers are descended into and leaves are allow-listed. Nothing leaks:
+ * a scalar not on the list is dropped wherever it sits, and keeping a container
+ * key only keeps its *name*, whose contents are pruned by the same rule one
+ * level down. `{ supplierDetails: { cost: 1 } }` survives as
+ * `{ supplierDetails: {} }` — ugly, and empty, which is the safe direction.
+ */
+function isContainer(value: unknown): boolean {
+  return Array.isArray(value) || isPlainObject(value);
 }
 
 export function serializeFor<T>(context: SerializeContext, subject: Subject, data: T): T {
@@ -62,7 +82,7 @@ export function serializeFor<T>(context: SerializeContext, subject: Subject, dat
   // the wrong default for a partner who is not staff.
   if (context.roles.includes('reseller') && !context.isSuperAdmin) {
     if (RESELLER_ALLOWLISTED.has(subject)) {
-      return prune(data, (key) => RESELLER_FIELD_SET.has(key)) as T;
+      return prune(data, (key, value) => RESELLER_FIELD_SET.has(key) || isContainer(value)) as T;
     }
   }
 
