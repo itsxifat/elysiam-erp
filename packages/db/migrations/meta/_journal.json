@@ -50,6 +50,20 @@
       "when": 1790000000000,
       "tag": "0006_revoke_analytics_identity_reads",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790171562975,
+      "tag": "0007_audit_approvals_demo",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790171563975,
+      "tag": "0008_audit_approvals_policies",
+      "breakpoints": true
     }
   ]
 }

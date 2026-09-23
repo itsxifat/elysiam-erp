@@ -26,3 +26,5 @@ export {
   type SwitchOrg,
   type TotpCode,
 } from './iam.js';
+
+export * from './permissions/index.js';
