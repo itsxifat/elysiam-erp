@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 
-import { withSystem } from '../client.js';
+import { withGlobal } from '../client.js';
 import { organizations } from '../schema/org/index.js';
 
 /**
@@ -67,7 +67,9 @@ export async function resolveLoginBranding(input: {
 
   // `organizations` is global (§5 exception 5), so this needs no org context —
   // which is just as well, since it runs before anyone has chosen one.
-  const [org] = await withSystem(async (tx) =>
+  // `org.organizations` is global (§5 exception 5), so this needs no org
+  // context — and no owner role either: erp_app holds the read grant.
+  const [org] = await withGlobal(async (tx) =>
     tx
       .select({
         id: organizations.id,
@@ -89,4 +91,23 @@ export async function resolveLoginBranding(input: {
     brand: org.brand as Record<string, unknown>,
     generic: false,
   };
+}
+
+/**
+ * The slugs of every active org, for the trusted-origin list (D-035, D-054).
+ *
+ * Branded login gives each brand its own hostname, and each hostname is an
+ * origin CORS, CSRF and Better Auth must all trust. They are enumerated from
+ * here at boot rather than matched with a wildcard — see
+ * `apps/server/src/platform/http/origins.ts` for why a wildcard was wrong.
+ */
+export async function activeOrgSlugs(): Promise<string[]> {
+  const rows = await withGlobal(async (tx) =>
+    tx
+      .select({ slug: organizations.slug })
+      .from(organizations)
+      .where(eq(organizations.isActive, true)),
+  );
+
+  return rows.map((row) => row.slug);
 }

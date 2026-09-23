@@ -14,6 +14,7 @@
 export {
   currentDatabaseConfig,
   withAnalytics,
+  withGlobal,
   withOrg,
   withSystem,
   withUser,
@@ -23,6 +24,8 @@ export {
 } from './client.js';
 
 export {
+  ANALYTICS_READABLE,
+  ANALYTICS_READABLE_SCHEMAS,
   APPEND_ONLY,
   GLOBAL_SCHEMAS,
   GLOBAL_TABLES,
@@ -31,6 +34,7 @@ export {
   USER_CONTEXT_SQL,
   globalTableSql,
   tenantTableSql,
+  type GlobalTableOptions,
   type TablePrivilege,
   type TenantTableOptions,
 } from './rls.js';
@@ -49,6 +53,7 @@ export {
 } from './iam/context.js';
 
 export {
+  activeOrgSlugs,
   GENERIC_LOGIN,
   resolveLoginBranding,
   slugFromHost,

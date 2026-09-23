@@ -9,6 +9,7 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
+import { createUserSchema, switchOrgSchema } from '@elysium/contracts';
 import {
   availableOrgs,
   canEnterOrg,
@@ -84,13 +85,14 @@ export class IamController {
    * it changes which rows the database will return.
    */
   @Post('me/active-org')
-  async switchOrg(@Req() request: FastifyRequest, @Body() body: { orgId?: string }) {
+  async switchOrg(@Req() request: FastifyRequest, @Body() body: unknown) {
     const userId = this.iam.requireUserId(request);
-    const orgId = body.orgId;
 
-    if (typeof orgId !== 'string' || orgId === '') {
-      throw new BadRequestException('orgId is required.');
-    }
+    // The shared schema, not a hand-rolled check: the console validates against
+    // this same object, so the two cannot drift apart (packages/contracts).
+    const parsed = switchOrgSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('orgId must be a uuid.');
+    const { orgId } = parsed.data;
 
     if (!(await canEnterOrg(userId, orgId))) {
       // Deliberately the same error whether the org does not exist or the user
@@ -111,35 +113,32 @@ export class IamController {
   }
 
   /**
-   * Create a user and grant them a role.
+   * Create a user, grant them a role, and return the invite they redeem.
    *
-   * Guarded by nothing but membership today; M02b adds the ability check that
-   * limits this to org_admin. Until then it is registered so the shape is
-   * settled, and the route-matrix gate M02b introduces will fail loudly if it
-   * is still unguarded then.
+   * org_admin only — the service enforces it, because "who may call this" is a
+   * fact about the operation rather than about the transport. It shipped
+   * unguarded with a comment deferring the check to M02b, and an audit
+   * reproduced a `sales` user granting themselves org_admin in one request.
    */
   @Post('users')
-  async createUser(
-    @Req() request: FastifyRequest,
-    @Body()
-    body: {
-      email?: string;
-      name?: string;
-      role?: string;
-      branchIds?: string[];
-    },
-  ) {
+  async createUser(@Req() request: FastifyRequest, @Body() body: unknown) {
     const context = (request as FastifyRequest & { context?: RequestContext }).context;
     if (context?.orgId == null) {
       throw new UnauthorizedException('No active organization.');
     }
+    const orgId = context.orgId;
+
+    const parsed = createUserSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(
+        parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; '),
+      );
+    }
 
     return this.iam.createUserWithMembership({
-      orgId: context.orgId,
-      email: body.email ?? '',
-      name: body.name ?? '',
-      role: body.role ?? '',
-      branchIds: body.branchIds ?? [],
+      caller: context,
+      orgId,
+      ...parsed.data,
     });
   }
 }

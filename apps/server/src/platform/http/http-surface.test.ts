@@ -5,6 +5,7 @@ import {
   createAuth,
   RecordingSmsProvider,
   SEED_ORG_IDS,
+  withGlobal,
   withSystem,
   type MembershipRole,
 } from '@elysium/db';
@@ -15,13 +16,18 @@ import {
   stopSharedContainer,
   type TestDatabase,
 } from '@elysium/db/testing';
+import { randomUUID } from 'node:crypto';
+
+import { base32 } from '@better-auth/utils/base32';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { AppModule } from '../../app.module.js';
+import { PasswordTokenStore } from '../../modules/iam/iam.service.js';
 import { registerAuth } from './auth-plugin.js';
 import { CSRF_COOKIE, CSRF_HEADER } from './csrf.js';
+import { MemoryRateLimiter } from './rate-limit.js';
 
 /**
  * The HTTP surface (architecture §6, §25 — M02a checks 2, 4 and 6).
@@ -44,6 +50,17 @@ let app: NestFastifyApplication;
 let server: FastifyInstance;
 let authHandle: ReturnType<typeof createAuth>;
 
+/**
+ * Shared with the app so the rate-limit tests can clear it.
+ *
+ * Every other test in this file creates and signs in a user, which would
+ * otherwise consume the very allowance check 5 is trying to measure.
+ */
+const limiter = new MemoryRateLimiter();
+
+/** Where invite tokens land, since there is no email adapter until M16. */
+const tokens = new PasswordTokenStore();
+
 beforeAll(async () => {
   database = await startTestDatabase('http-surface');
 
@@ -51,6 +68,7 @@ beforeAll(async () => {
   // controller reads APP_DOMAIN off it.
   process.env.DATABASE_URL = database.appUrl;
   process.env.APP_DOMAIN = APP_DOMAIN;
+  process.env.API_PUBLIC_URL = ORIGIN;
   process.env.AUTH_SECRET = 'test-secret-that-is-at-least-32-characters-long';
   process.env.TRUSTED_ORIGINS = ORIGIN;
 
@@ -60,21 +78,31 @@ beforeAll(async () => {
     trustedOrigins: [ORIGIN],
     cookieDomain: `.${APP_DOMAIN}`,
     sms: new RecordingSmsProvider(),
+    onPasswordToken: ({ email, token }) => {
+      tokens.put(email, token);
+      return Promise.resolve();
+    },
     // The suite drives dozens of sign-ins; throttling them would make every
     // assertion here flaky for a reason it is not testing. Rate limiting has
     // its own check in packages/db.
     rateLimitEnabled: false,
   });
 
-  app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), {
-    logger: false,
-  });
+  app = await NestFactory.create<NestFastifyApplication>(
+    AppModule.register({ auth: authHandle.auth, tokens }),
+    // `trustProxy` so `x-forwarded-for` decides `request.ip`, which is the only
+    // way a test can vary the client address — and check 5 is precisely about
+    // varying it independently of the identifier.
+    new FastifyAdapter({ trustProxy: true }),
+    { logger: false },
+  );
 
   server = app.getHttpAdapter().getInstance();
   await server.register(fastifyCookie as never);
 
   registerAuth(server, {
     auth: authHandle.auth,
+    limiter,
     trustedOrigins: [ORIGIN],
     cookieDomain: `.${APP_DOMAIN}`,
     // `inject()` speaks http, and a Secure cookie would be dropped by a real
@@ -96,6 +124,8 @@ afterAll(async () => {
 /** Everything a browser would carry between requests. */
 class Client {
   private readonly cookies = new Map<string, string>();
+
+  constructor(private readonly defaultIp?: string) {}
 
   absorb(headers: Record<string, unknown>): void {
     const raw = headers['set-cookie'];
@@ -122,11 +152,19 @@ class Client {
   async request(
     method: string,
     url: string,
-    options: { body?: unknown; headers?: Record<string, string>; csrf?: boolean } = {},
+    options: {
+      body?: unknown;
+      headers?: Record<string, string>;
+      csrf?: boolean;
+      ip?: string;
+    } = {},
   ) {
+    const clientIp = options.ip ?? this.defaultIp;
     const headers: Record<string, string> = {
       host: APP_DOMAIN,
       origin: ORIGIN,
+      // The app is built with trustProxy, so this is what `request.ip` becomes.
+      ...(clientIp === undefined ? {} : { 'x-forwarded-for': clientIp }),
       ...options.headers,
     };
 
@@ -149,27 +187,99 @@ class Client {
   }
 }
 
-/** A signed-in browser for a fresh user holding `role` in `orgId`. */
+/**
+ * A distinct client address per simulated user.
+ *
+ * Real users are not all behind one IP, and the rate limiter is real now: every
+ * test sharing one address would exhaust the per-IP allowance and start failing
+ * for a reason none of them is testing.
+ */
+let nextClientIp = 0;
+function freshIp(): string {
+  nextClientIp += 1;
+  return `10.${String(Math.floor(nextClientIp / 65_536) % 256)}.${String(Math.floor(nextClientIp / 256) % 256)}.${String(nextClientIp % 256)}`;
+}
+
+/**
+ * A signed-in browser for a fresh user holding `role` in `orgId`.
+ *
+ * Self-service registration is closed (`disableSignUp`), so this creates the
+ * user and then redeems an invite for its credential — the way the product now
+ * works — rather than through a public sign-up that no longer exists.
+ */
 async function signedIn(
   role: MembershipRole,
   orgId: string,
 ): Promise<{ client: Client; userId: string; email: string }> {
-  const client = new Client();
+  const client = new Client(freshIp());
   const email = `${role}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}@example.invalid`;
 
-  // A browser's first move: pick the CSRF token up off a safe request, exactly
-  // as the console does before it posts the login form.
-  await client.request('GET', '/v1/auth/login-branding');
-
-  const signUp = await client.request('POST', '/api/auth/sign-up/email', {
-    body: { email, password: PASSWORD, name: `${role} user` },
-  });
-  expect(signUp.statusCode, signUp.body).toBeLessThan(400);
-
-  const userId = await userIdFor(email);
+  const userId = await createUserRow(email, `${role} user`);
   await grantMembership({ userId, orgId, role });
+  await setPassword(client, email);
+
+  const signIn = await client.request('POST', '/api/auth/sign-in/email', {
+    body: { email, password: PASSWORD },
+  });
+  expect(signIn.statusCode, signIn.body).toBeLessThan(400);
 
   return { client, userId, email };
+}
+
+/** Create the global user row directly, standing in for an org_admin's invite. */
+async function createUserRow(email: string, name: string): Promise<string> {
+  const id = `usr_${randomUUID()}`;
+  await withGlobal(async (tx) => {
+    await tx.execute(sql`
+      insert into iam.users (id, email, name, email_verified)
+      values (${id}, ${email}, ${name}, true)
+    `);
+  });
+  return id;
+}
+
+/** Redeem an invite, which is how a created user first gets a password. */
+async function setPassword(client: Client, email: string): Promise<void> {
+  await client.request('GET', '/v1/auth/login-branding');
+  const requested = await client.request('POST', '/api/auth/request-password-reset', {
+    body: { email, redirectTo: '/accept-invite' },
+  });
+  expect(requested.statusCode, requested.body).toBeLessThan(400);
+
+  const token = tokens.take(email);
+  expect(token, `no invite token was issued for ${email}`).toBeDefined();
+
+  const reset = await client.request('POST', '/api/auth/reset-password', {
+    body: { newPassword: PASSWORD, token },
+  });
+  expect(reset.statusCode, reset.body).toBeLessThan(400);
+}
+
+/** Clear the 2FA wall for a privileged role, the way the console does. */
+async function enrolTwoFactor(client: Client): Promise<void> {
+  const enabled = await client.request('POST', '/api/auth/two-factor/enable', {
+    body: { password: PASSWORD, method: 'totp' },
+  });
+  expect(enabled.statusCode, enabled.body).toBeLessThan(400);
+
+  const { totpURI } = JSON.parse(enabled.body) as { totpURI: string };
+  const encoded = new URL(totpURI).searchParams.get('secret') ?? '';
+  const secret = new TextDecoder().decode(base32.decode(encoded));
+  const { code } = await authHandle.auth.api.generateTOTP({ body: { secret } });
+
+  const verified = await client.request('POST', '/api/auth/two-factor/verify-totp', {
+    body: { code },
+  });
+  expect(verified.statusCode, verified.body).toBeLessThan(400);
+}
+
+/** The branch ids of an org, read as the owner so a test can cross orgs. */
+async function branchesOf(orgId: string): Promise<string[]> {
+  const rows = await withSystem(
+    async (tx) => tx.execute<{ id: string }>(sql`select id from org.branches`),
+    { orgId },
+  );
+  return [...rows].map((row) => row.id);
 }
 
 async function userIdFor(email: string): Promise<string> {
@@ -331,7 +441,8 @@ describe('check 2: switching org changes the effective roles on the request', ()
     const client = new Client();
     await client.request('GET', '/health/live');
     const response = await client.request('GET', '/v1/me/orgs');
-    expect(response.statusCode).toBe(400);
+    // 401, not 400: the request is well formed, the caller is just nobody.
+    expect(response.statusCode).toBe(401);
   });
 });
 
@@ -369,6 +480,117 @@ describe('the 2FA enrolment wall (§6)', () => {
     const body = JSON.parse(response.body) as { totpURI?: string; backupCodes?: string[] };
     expect(body.totpURI).toBeTruthy();
     expect(body.backupCodes).toHaveLength(10);
+  });
+});
+
+describe('check 5: login and OTP are rate limited, per IP and per identifier', () => {
+  beforeEach(() => {
+    // Otherwise the sign-ins every other test performs would have already spent
+    // the allowance being measured here.
+    limiter.reset();
+  });
+
+  /** Post `attempts` requests, with control over which axis varies. */
+  async function hammer(options: {
+    attempts: number;
+    email: (attempt: number) => string;
+    ip: (attempt: number) => string;
+    path?: string;
+    body?: (attempt: number) => Record<string, unknown>;
+  }): Promise<number[]> {
+    const client = new Client();
+    await client.request('GET', '/health/live');
+
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < options.attempts; attempt += 1) {
+      const response = await client.request('POST', options.path ?? '/api/auth/sign-in/email', {
+        body: options.body?.(attempt) ?? {
+          email: options.email(attempt),
+          password: 'not-the-password',
+        },
+        ip: options.ip(attempt),
+      });
+      statuses.push(response.statusCode);
+    }
+    return statuses;
+  }
+
+  it('returns 429 for one account attacked from many addresses', async () => {
+    // The attack a per-IP limiter cannot see, and the half the old test never
+    // proved: every attempt comes from a fresh address, so only the identifier
+    // bucket can stop it.
+    const statuses = await hammer({
+      attempts: 9,
+      email: () => 'victim@example.invalid',
+      ip: (attempt) => `203.0.113.${String(attempt + 1)}`,
+    });
+
+    expect(statuses, `saw ${statuses.join(',')}`).toContain(429);
+    expect(statuses.slice(0, 5).every((status) => status !== 429)).toBe(true);
+  });
+
+  it('returns 429 for one address walking many accounts', async () => {
+    // The other axis: every identifier is fresh, so only the IP bucket applies.
+    const statuses = await hammer({
+      attempts: 24,
+      email: (attempt) => `user${String(attempt)}@example.invalid`,
+      ip: () => '198.51.100.20',
+    });
+
+    expect(statuses, `saw ${statuses.join(',')}`).toContain(429);
+  });
+
+  it('does not lock out a neighbour behind the same address', async () => {
+    // Most of Bangladesh's mobile traffic shares a handful of carrier NAT
+    // addresses. One user burning their own attempts must not take the others
+    // down with them — which is exactly what a per-IP-only limiter does.
+    const shared = '198.51.100.77';
+
+    await hammer({ attempts: 8, email: () => 'noisy@example.invalid', ip: () => shared });
+
+    const client = new Client();
+    await client.request('GET', '/health/live');
+    const neighbour = await client.request('POST', '/api/auth/sign-in/email', {
+      body: { email: 'quiet@example.invalid', password: 'not-the-password' },
+      ip: shared,
+    });
+
+    expect(neighbour.statusCode, 'a neighbour must still be able to try').not.toBe(429);
+  });
+
+  it('rate limits OTP requests too, which are the cheaper thing to abuse', async () => {
+    const statuses = await hammer({
+      attempts: 6,
+      path: '/api/auth/phone-number/send-otp',
+      email: () => '',
+      ip: (attempt) => `203.0.113.${String(attempt + 100)}`,
+      body: () => ({ phoneNumber: '+8801700000000' }),
+    });
+
+    expect(statuses, `saw ${statuses.join(',')}`).toContain(429);
+  });
+
+  it('says nothing about which bucket tripped', async () => {
+    // "Too many attempts for this account" would confirm the account exists,
+    // turning the limiter into the enumeration oracle login avoids being.
+    const statuses = await hammer({
+      attempts: 9,
+      email: () => 'victim2@example.invalid',
+      ip: (attempt) => `203.0.113.${String(attempt + 40)}`,
+    });
+    expect(statuses).toContain(429);
+
+    const client = new Client();
+    await client.request('GET', '/health/live');
+    const rejected = await client.request('POST', '/api/auth/sign-in/email', {
+      body: { email: 'victim2@example.invalid', password: 'not-the-password' },
+      ip: '203.0.113.99',
+    });
+
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.body).not.toContain('identifier');
+    expect(rejected.body).not.toContain('victim2');
+    expect(rejected.headers['retry-after']).toBeDefined();
   });
 });
 
@@ -414,40 +636,102 @@ describe('check 3: branded login resolves an org from the hostname', () => {
       csrf: false,
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode, response.body).toBe(200);
     expect(JSON.parse(response.body)).toMatchObject({ slug: null, generic: true });
   });
 });
 
 describe('the user admin API', () => {
-  it('creates a user and a membership in the caller org', async () => {
-    const { client } = await signedIn('sales', ORG_A);
+  /** An org_admin who has already cleared the 2FA wall. */
+  async function asOrgAdmin(orgId: string) {
+    const { client, userId } = await signedIn('sales', orgId);
+    await grantMembership({ userId, orgId, role: 'org_admin' });
+    await enrolTwoFactor(client);
+    await client.request('POST', '/v1/me/active-org', { body: { orgId } });
+    return { client, userId };
+  }
+
+  it('refuses a caller who is not an org admin', async () => {
+    // The attack an audit reproduced against the unguarded route: a `sales`
+    // user posts their own address with role org_admin, the existing-identity
+    // branch reuses their row, and they hold full org admin in one request.
+    const { client, email } = await signedIn('sales', ORG_A);
     await client.request('POST', '/v1/me/active-org', { body: { orgId: ORG_A } });
+
+    const response = await client.request('POST', '/v1/users', {
+      body: { email, name: 'Self Promotion', role: 'org_admin', branchIds: [] },
+    });
+
+    expect(response.statusCode, response.body).toBe(403);
+  });
+
+  it('refuses a warehouse caller too, so it is not just about org_admin', async () => {
+    const { client } = await signedIn('warehouse', ORG_A);
+    await client.request('POST', '/v1/me/active-org', { body: { orgId: ORG_A } });
+
+    const response = await client.request('POST', '/v1/users', {
+      body: { email: `x_${Date.now()}@example.invalid`, name: 'X', role: 'sales', branchIds: [] },
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('creates a user and a membership for an org admin, with an invite', async () => {
+    const { client } = await asOrgAdmin(ORG_A);
 
     const email = `made_${Date.now()}@example.invalid`;
     const response = await client.request('POST', '/v1/users', {
-      body: { email, name: 'Made User', role: 'warehouse' },
+      body: { email, name: 'Made User', role: 'warehouse', branchIds: [] },
     });
 
     expect(response.statusCode, response.body).toBe(201);
-    const body = JSON.parse(response.body) as { userId: string; created: boolean };
+    const body = JSON.parse(response.body) as {
+      userId: string;
+      created: boolean;
+      inviteToken?: string;
+    };
     expect(body.created).toBe(true);
     expect(await userIdFor(email)).toBe(body.userId);
+
+    // Without this the created account has no credential and can never sign in,
+    // which is exactly what the route used to produce.
+    expect(body.inviteToken, 'a created user needs a way to set a password').toBeTruthy();
+  });
+
+  it('gives the invited user a working sign-in', async () => {
+    const { client } = await asOrgAdmin(ORG_A);
+    const email = `invited_${Date.now()}@example.invalid`;
+
+    const created = await client.request('POST', '/v1/users', {
+      body: { email, name: 'Invited User', role: 'warehouse', branchIds: [] },
+    });
+    const { inviteToken } = JSON.parse(created.body) as { inviteToken: string };
+
+    const invitee = new Client(freshIp());
+    await invitee.request('GET', '/v1/auth/login-branding');
+    const redeemed = await invitee.request('POST', '/api/auth/reset-password', {
+      body: { newPassword: PASSWORD, token: inviteToken },
+    });
+    expect(redeemed.statusCode, redeemed.body).toBeLessThan(400);
+
+    const signIn = await invitee.request('POST', '/api/auth/sign-in/email', {
+      body: { email, password: PASSWORD },
+    });
+    expect(signIn.statusCode, signIn.body).toBeLessThan(400);
   });
 
   it('reuses an identity when the same person joins a second brand', async () => {
     // The deliberate asymmetry of §6: users are global, memberships are not.
     // A duplicate account per brand would break the switcher and split the
     // person's audit trail in two.
-    const { client } = await signedIn('sales', ORG_A);
-    await client.request('POST', '/v1/me/active-org', { body: { orgId: ORG_A } });
+    const { client } = await asOrgAdmin(ORG_A);
 
     const email = `shared_${Date.now()}@example.invalid`;
     const first = await client.request('POST', '/v1/users', {
-      body: { email, name: 'Shared User', role: 'warehouse' },
+      body: { email, name: 'Shared User', role: 'warehouse', branchIds: [] },
     });
     const second = await client.request('POST', '/v1/users', {
-      body: { email, name: 'Shared User', role: 'marketing' },
+      body: { email, name: 'Shared User', role: 'marketing', branchIds: [] },
     });
 
     const a = JSON.parse(first.body) as { userId: string; created: boolean };
@@ -458,34 +742,103 @@ describe('the user admin API', () => {
     expect(b.created).toBe(false);
   });
 
-  it('refuses a role it does not recognise', async () => {
-    const { client } = await signedIn('sales', ORG_A);
-    await client.request('POST', '/v1/me/active-org', { body: { orgId: ORG_A } });
+  it('refuses to adopt an account that belongs to no organisation', async () => {
+    // Account pre-hijacking: someone registers the address of a person about to
+    // be hired, and the invite attaches the role to their password. Self-service
+    // registration is closed, so this is belt and braces — but a credentialed,
+    // org-less row is never a colleague joining a second brand.
+    const { client } = await asOrgAdmin(ORG_A);
+    const email = `squatter_${Date.now()}@example.invalid`;
+
+    const squatter = new Client(freshIp());
+    await createUserRow(email, 'Squatter');
+    await setPassword(squatter, email);
 
     const response = await client.request('POST', '/v1/users', {
-      body: { email: `bad_${Date.now()}@example.invalid`, name: 'X', role: 'superuser' },
+      body: { email, name: 'New Hire', role: 'accounts', branchIds: [] },
+    });
+
+    expect(response.statusCode, response.body).toBe(409);
+  });
+
+  it('refuses a role it does not recognise', async () => {
+    const { client } = await asOrgAdmin(ORG_A);
+
+    const response = await client.request('POST', '/v1/users', {
+      body: {
+        email: `bad_${Date.now()}@example.invalid`,
+        name: 'X',
+        role: 'superuser',
+        branchIds: [],
+      },
     });
 
     expect(response.statusCode).toBe(400);
   });
 
   it('refuses a malformed email before it reaches the database', async () => {
-    const { client } = await signedIn('sales', ORG_A);
-    await client.request('POST', '/v1/me/active-org', { body: { orgId: ORG_A } });
+    const { client } = await asOrgAdmin(ORG_A);
 
     const response = await client.request('POST', '/v1/users', {
-      body: { email: 'not-an-email', name: 'X', role: 'warehouse' },
+      body: { email: 'not-an-email', name: 'X', role: 'warehouse', branchIds: [] },
     });
 
     expect(response.statusCode).toBe(400);
   });
 
+  it('refuses a branch belonging to another org, as a 400 rather than a 500', async () => {
+    // The composite foreign key (D-047) rejects it at the database. What this
+    // asserts is that the rejection surfaces as a typed client error instead of
+    // the unhandled constraint violation it used to be.
+    const { client } = await asOrgAdmin(ORG_A);
+
+    const [foreign] = await branchesOf(ORG_B);
+    expect(foreign, 'the seed should have given ORG_B a branch').toBeDefined();
+
+    const response = await client.request('POST', '/v1/users', {
+      body: {
+        email: `crossorg_${Date.now()}@example.invalid`,
+        name: 'X',
+        role: 'warehouse',
+        branchIds: [foreign],
+      },
+    });
+
+    expect(response.statusCode, response.body).toBe(400);
+  });
+
   it('refuses to create anyone when no org is active', async () => {
     const { client } = await signedIn('sales', ORG_A);
     const response = await client.request('POST', '/v1/users', {
-      body: { email: `orphan_${Date.now()}@example.invalid`, name: 'X', role: 'warehouse' },
+      body: {
+        email: `orphan_${Date.now()}@example.invalid`,
+        name: 'X',
+        role: 'warehouse',
+        branchIds: [],
+      },
     });
 
     expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('self-service registration is closed', () => {
+  it('refuses an anonymous sign-up', async () => {
+    // This is a staff ERP: there is no member of the public who should be able
+    // to create an account in it. It was open — an anonymous POST returned 200
+    // and wrote rows into iam.users and iam.accounts — and that was the
+    // enabling half of the account pre-hijacking above.
+    const client = new Client(freshIp());
+    await client.request('GET', '/v1/auth/login-branding');
+
+    const response = await client.request('POST', '/api/auth/sign-up/email', {
+      body: {
+        email: `outsider_${Date.now()}@example.invalid`,
+        password: PASSWORD,
+        name: 'Outsider',
+      },
+    });
+
+    expect(response.statusCode, response.body).toBeGreaterThanOrEqual(400);
   });
 });

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { eq } from 'drizzle-orm';
 
-import { withOrg, withSystem } from '../client.js';
+import { withGlobal, withOrg } from '../client.js';
 import { memberships, membershipBranches, users } from '../schema/iam/index.js';
 import { resolveContext, type MembershipRole, type RequestContext } from './context.js';
 
@@ -41,7 +41,7 @@ export async function createTestUser(input: CreateUserInput = {}): Promise<TestU
   const email = input.email ?? `${id}@example.invalid`;
   const name = input.name ?? 'Test User';
 
-  await withSystem(async (tx) => {
+  await withGlobal(async (tx) => {
     await tx.insert(users).values({
       id,
       email,

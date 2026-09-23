@@ -30,6 +30,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@better-auth/utils": "catalog:",
     "@nestjs/testing": "catalog:",
     "@types/node": "catalog:",
     "concurrently": "catalog:",

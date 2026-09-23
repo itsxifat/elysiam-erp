@@ -5,7 +5,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import { currentDatabaseConfig, withSystem, withUser } from '../client.js';
+import { currentDatabaseConfig, withGlobal, withUser } from '../client.js';
 import { requireUrl } from '../config.js';
 import * as schema from '../schema/index.js';
 import {
@@ -81,6 +81,17 @@ export interface AuthOptions {
   readonly sms: SmsProvider;
   /** Off only in tests that need to drive many logins. */
   readonly rateLimitEnabled?: boolean;
+  /**
+   * Called with a freshly minted password-set token (invite or reset).
+   *
+   * A port, like `SmsProvider`: M16 makes it send an email, and until then the
+   * server keeps the token so `POST /v1/users` can hand it to the admin.
+   */
+  readonly onPasswordToken?: (issued: {
+    userId: string;
+    email: string;
+    token: string;
+  }) => Promise<void>;
 }
 
 /**
@@ -118,10 +129,48 @@ export function createAuth(options: AuthOptions) {
 
     emailAndPassword: {
       enabled: true,
-      // Verification is an M16 concern (it needs the real SMS/email adapters);
-      // until then an org_admin creates users directly.
+
+      /**
+       * No self-service registration.
+       *
+       * This is a staff ERP: there is no such thing as a member of the public
+       * who should be able to create an account in it. Better Auth defaults
+       * `disableSignUp` to false, so `/api/auth/sign-up/email` was open to the
+       * internet — verified, an anonymous POST returned 200 and wrote rows into
+       * `iam.users` and `iam.accounts`.
+       *
+       * Worse than the unbounded writes was what it enabled: an attacker could
+       * register the address of someone about to be hired, and when an admin
+       * later invited that address, `createUserWithMembership` reused the
+       * existing row and attached the role to the attacker's password. Account
+       * pre-hijacking, reproduced end to end.
+       *
+       * Users are created by an org_admin through `POST /v1/users`, which
+       * issues an invite the recipient redeems to set their own password.
+       */
+      disableSignUp: true,
+
+      // Verification is an M16 concern (it needs the real email adapter). Until
+      // then the invite token is the proof of address: it is handed to the
+      // admin who requested it and redeemed once.
       requireEmailVerification: false,
       minPasswordLength: 12,
+
+      /**
+       * Where an invite or reset token goes.
+       *
+       * M16 replaces this with the real email adapter (D-012). Until then the
+       * token is handed back to the admin who created the user, which is how
+       * onboarding works in a business that has not wired email yet: the admin
+       * passes it on out of band.
+       */
+      sendResetPassword: async (data) => {
+        await options.onPasswordToken?.({
+          userId: data.user.id,
+          email: data.user.email,
+          token: data.token,
+        });
+      },
     },
 
     session: {
@@ -226,7 +275,7 @@ export type Auth = ReturnType<typeof createAuth>['auth'];
  * for users who have not enrolled — which is exactly the set being walled.
  */
 export async function mustEnrolTwoFactor(userId: string): Promise<boolean> {
-  const [user] = await withSystem(async (tx) =>
+  const [user] = await withGlobal(async (tx) =>
     tx.execute<{ two_factor_enabled: boolean; is_super_admin: boolean }>(
       sql`select two_factor_enabled, is_super_admin from iam.users where id = ${userId}`,
     ),

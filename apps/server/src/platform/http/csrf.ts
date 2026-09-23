@@ -2,6 +2,8 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import { isTrustedOrigin } from './origins.js';
+
 /**
  * CSRF for cookie-authenticated mutations (architecture §25).
  *
@@ -29,6 +31,7 @@ export const CSRF_HEADER = 'x-elysium-csrf';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export interface CsrfOptions {
+  /** Exact origins, brand hostnames already expanded (see origins.ts). */
   readonly trustedOrigins: readonly string[];
   /** Scoped to the parent domain, like the session cookie (§6). */
   readonly cookieDomain?: string | undefined;
@@ -93,7 +96,9 @@ export function checkCsrf(request: FastifyRequest, options: CsrfOptions): CsrfRe
 
   const origin = request.headers.origin;
   if (typeof origin === 'string' && origin !== '') {
-    if (!options.trustedOrigins.includes(origin)) {
+    // Through the shared matcher, so CORS, Better Auth and this check cannot
+    // disagree about which origins are ours (origins.ts).
+    if (!isTrustedOrigin(origin, options)) {
       return { ok: false, reason: `origin ${origin} is not trusted` };
     }
   }

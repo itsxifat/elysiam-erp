@@ -10,7 +10,7 @@ import {
   RecordingSmsProvider,
   requiresTwoFactor,
 } from '../auth/index.js';
-import { withOrg, withSystem, withUser } from '../client.js';
+import { withGlobal, withOrg, withSystem, withUser } from '../client.js';
 import { GENERIC_LOGIN, resolveLoginBranding, slugFromHost } from '../iam/branding.js';
 import { availableOrgs, canEnterOrg, resolveContext } from '../iam/context.js';
 import { asUser, createTestUser, grantMembership, revokeMembership } from '../iam/fixtures.js';
@@ -37,6 +37,9 @@ let database: TestDatabase;
 let sms: RecordingSmsProvider;
 let authHandle: ReturnType<typeof createAuth>;
 
+/** Invite and reset tokens, since there is no email adapter until M16. */
+const issuedTokens = new Map<string, string>();
+
 beforeAll(async () => {
   database = await startTestDatabase('identity');
   // After the harness, so createAuth picks up the throwaway database.
@@ -47,6 +50,10 @@ beforeAll(async () => {
     trustedOrigins: [`https://${APP_DOMAIN}`, `https://oura.${APP_DOMAIN}`],
     cookieDomain: `.${APP_DOMAIN}`,
     sms,
+    onPasswordToken: ({ email, token }) => {
+      issuedTokens.set(email.toLowerCase(), token);
+      return Promise.resolve();
+    },
     // Off for the shared instance: the suite drives dozens of sign-ins, and
     // throttling them would make every other test flaky for a reason that has
     // nothing to do with what it asserts. Check 5 builds its own instance with
@@ -122,14 +129,38 @@ class CookieJar {
   }
 }
 
-async function userIdFor(email: string): Promise<string> {
-  const id = await withSystem(async (tx) => {
-    const rows = await tx.execute<{ id: string }>(
-      sql`select id from iam.users where email = ${email}`,
-    );
-    return rows[0]?.id ?? '';
+/**
+ * Create a user with a usable password, the way the product now does.
+ *
+ * Self-service registration is closed (`disableSignUp`), because this is a
+ * staff ERP and an open sign-up was the enabling half of an account
+ * pre-hijacking attack. So a user is created directly and its credential comes
+ * from redeeming the invite token Better Auth mints — the same two steps
+ * `POST /v1/users` performs.
+ */
+async function createSignInableUser(email: string): Promise<string> {
+  const id = `usr_${randomUUID()}`;
+
+  await withGlobal(async (tx) => {
+    await tx.execute(sql`
+      insert into iam.users (id, email, name, email_verified)
+      values (${id}, ${email}, ${email}, true)
+    `);
   });
-  if (id === '') throw new Error(`no user with email ${email}`);
+
+  const requested = await authRequest('/request-password-reset', {
+    body: { email, redirectTo: '/accept-invite' },
+  });
+  expect(requested.status, await requested.clone().text()).toBeLessThan(400);
+
+  const token = issuedTokens.get(email.toLowerCase());
+  expect(token, `no invite token was issued for ${email}`).toBeDefined();
+
+  const reset = await authRequest('/reset-password', {
+    body: { newPassword: PASSWORD, token },
+  });
+  expect(reset.status, await reset.clone().text()).toBeLessThan(400);
+
   return id;
 }
 
@@ -382,18 +413,7 @@ describe('check 1: 2FA is required for privileged roles', () => {
     // The positive control. "Cannot sign in without 2FA" would pass just as
     // happily if sign-in were broken outright, so prove it works first.
     const email = `sales_${Date.now()}@example.invalid`;
-    const signUp = await authRequest('/sign-up/email', {
-      body: { email, password: 'correct-horse-battery', name: 'Sales User' },
-    });
-    expect(signUp.status, await signUp.text().catch(() => '')).toBeLessThan(400);
-
-    const userId = await withSystem(async (tx) => {
-      const rows = await tx.execute<{ id: string }>(
-        sql`select id from iam.users where email = ${email}`,
-      );
-      return rows[0]?.id ?? '';
-    });
-    expect(userId).not.toBe('');
+    const userId = await createSignInableUser(email);
     await grantMembership({ userId, orgId: ORG_A, role: 'sales' });
 
     const signIn = await authRequest('/sign-in/email', {
@@ -411,11 +431,7 @@ describe('check 1: 2FA is required for privileged roles', () => {
     // Section 6 is enforced instead as a wall on the request path. The session
     // is real; it is simply good for nothing but enrolling.
     const email = `accounts_${Date.now()}@example.invalid`;
-    await authRequest('/sign-up/email', {
-      body: { email, password: PASSWORD, name: 'Accounts User' },
-    });
-
-    const userId = await userIdFor(email);
+    const userId = await createSignInableUser(email);
     await grantMembership({ userId, orgId: ORG_A, role: 'accounts' });
 
     const signIn = await authRequest('/sign-in/email', { body: { email, password: PASSWORD } });
@@ -436,11 +452,7 @@ describe('check 1 addendum: the wall must not fail open', () => {
     // design, so this is the case that would still pass even if the membership
     // lookup silently returned nothing.
     const email = `root_${Date.now()}@example.invalid`;
-    await authRequest('/sign-up/email', {
-      body: { email, password: PASSWORD, name: 'Root User' },
-    });
-
-    const userId = await userIdFor(email);
+    const userId = await createSignInableUser(email);
     await withSystem(async (tx) => {
       await tx.execute(sql`update iam.users set is_super_admin = true where id = ${userId}`);
     });
@@ -450,11 +462,7 @@ describe('check 1 addendum: the wall must not fail open', () => {
 
   it('does not wall an unprivileged user, so it is not simply refusing everyone', async () => {
     const email = `warehouse_${Date.now()}@example.invalid`;
-    await authRequest('/sign-up/email', {
-      body: { email, password: PASSWORD, name: 'Warehouse User' },
-    });
-
-    const userId = await userIdFor(email);
+    const userId = await createSignInableUser(email);
     await grantMembership({ userId, orgId: ORG_A, role: 'warehouse' });
 
     expect(await mustEnrolTwoFactor(userId)).toBe(false);
@@ -465,11 +473,7 @@ describe('check 1 addendum: the wall must not fail open', () => {
 
   it('walls a user the moment a privileged role is granted, not at next sign-in', async () => {
     const email = `promoted_${Date.now()}@example.invalid`;
-    await authRequest('/sign-up/email', {
-      body: { email, password: PASSWORD, name: 'Promoted User' },
-    });
-
-    const userId = await userIdFor(email);
+    const userId = await createSignInableUser(email);
     await grantMembership({ userId, orgId: ORG_A, role: 'sales' });
     expect(await mustEnrolTwoFactor(userId)).toBe(false);
 
@@ -479,11 +483,7 @@ describe('check 1 addendum: the wall must not fail open', () => {
 
   it('stops counting a revoked privileged role', async () => {
     const email = `demoted_${Date.now()}@example.invalid`;
-    await authRequest('/sign-up/email', {
-      body: { email, password: PASSWORD, name: 'Demoted User' },
-    });
-
-    const userId = await userIdFor(email);
+    const userId = await createSignInableUser(email);
     await grantMembership({ userId, orgId: ORG_A, role: 'sales' });
     const investor = await grantMembership({ userId, orgId: ORG_B, role: 'investor' });
     expect(await mustEnrolTwoFactor(userId)).toBe(true);
@@ -509,10 +509,7 @@ describe('check 1: enrolment and recovery codes', () => {
   it('enrols TOTP, then demands it at sign-in, then accepts a recovery code once', async () => {
     const email = `twofactor_${Date.now()}@example.invalid`;
 
-    await authRequest('/sign-up/email', {
-      body: { email, password: PASSWORD, name: 'Admin User' },
-    });
-    const userId = await userIdFor(email);
+    const userId = await createSignInableUser(email);
     await grantMembership({ userId, orgId: ORG_A, role: 'org_admin' });
 
     expect(await mustEnrolTwoFactor(userId), 'walled before enrolment').toBe(true);
@@ -604,18 +601,82 @@ describe('check 1: enrolment and recovery codes', () => {
   }, 60_000);
 });
 
+describe('self-service registration is closed', () => {
+  it('refuses an anonymous sign-up', async () => {
+    // This is a staff ERP: nobody outside it should be able to create an
+    // account. It was open, and that was the enabling half of an account
+    // pre-hijacking attack — register the address of a person about to be
+    // hired, and the invite attaches their role to your password.
+    const response = await authRequest('/sign-up/email', {
+      body: {
+        email: `outsider_${Date.now()}@example.invalid`,
+        password: PASSWORD,
+        name: 'Outsider',
+      },
+    });
+
+    expect(response.status, await response.clone().text()).toBeGreaterThanOrEqual(400);
+  });
+});
+
+describe('phone OTP goes through the SMS provider (D-012)', () => {
+  it('sends a code, and the code verifies', async () => {
+    // The fake provider had no functional test at all: nothing asserted a code
+    // was ever issued, was the configured length, or could be verified. The
+    // only test touching the OTP path was the rate-limit hammer, and the
+    // limiter runs before the handler — so it would have passed just as well
+    // if sending threw on every call.
+    const phoneNumber = `+88017${String(Date.now()).slice(-8)}`;
+    const email = `otp_${Date.now()}@example.invalid`;
+    const userId = await createSignInableUser(email);
+
+    await withGlobal(async (tx) => {
+      await tx.execute(
+        sql`update iam.users set phone_number = ${phoneNumber}, phone_number_verified = true where id = ${userId}`,
+      );
+    });
+    sms.clear();
+
+    const sent = await authRequest('/phone-number/send-otp', { body: { phoneNumber } });
+    expect(sent.status, await sent.clone().text()).toBeLessThan(400);
+
+    const code = sms.lastCodeFor(phoneNumber);
+    expect(code, 'no OTP reached the provider').toBeDefined();
+    expect(code).toMatch(/^\d{6}$/);
+
+    const verified = await authRequest('/phone-number/verify', {
+      body: { phoneNumber, code },
+    });
+    expect(verified.status, await verified.clone().text()).toBeLessThan(400);
+  });
+
+  it('never logs the code beside the number it belongs to (invariant 10)', async () => {
+    // A one-time code next to the phone it was sent to is exactly the pair
+    // that must not reach a log. The provider records the message, and the
+    // number, but never writes them out together.
+    const phoneNumber = '+8801700000001';
+    sms.clear();
+    await sms.send(phoneNumber, 'Your Elysium verification code is 123456');
+
+    expect(sms.lastCodeFor(phoneNumber)).toBe('123456');
+    expect(sms.sent.some((entry) => entry.message.includes(phoneNumber))).toBe(false);
+  });
+});
+
 describe('check 4: the session cookie is scoped correctly', () => {
   it('is httpOnly, Secure, SameSite=Lax and on the parent domain', async () => {
     const email = `cookie_${Date.now()}@example.invalid`;
-    await authRequest('/sign-up/email', {
-      body: { email, password: 'correct-horse-battery', name: 'Cookie User' },
-    });
+    await createSignInableUser(email);
     const response = await authRequest('/sign-in/email', {
-      body: { email, password: 'correct-horse-battery' },
+      body: { email, password: PASSWORD },
     });
 
-    const cookie = response.headers.get('set-cookie') ?? '';
-    expect(cookie).not.toBe('');
+    // The session cookie specifically, picked out of `getSetCookie()`.
+    // `headers.get('set-cookie')` joins every Set-Cookie header into one
+    // string, so four independent `toMatch`es over the concatenation would
+    // pass with HttpOnly coming from one cookie and Domain from another.
+    const cookie = setCookies(response).find((entry) => entry.includes(SESSION_COOKIE)) ?? '';
+    expect(cookie, 'no session cookie was set').not.toBe('');
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/Secure/i);
     // Lax rather than Strict: the console runs inside a Chatwoot iframe on the
@@ -625,7 +686,20 @@ describe('check 4: the session cookie is scoped correctly', () => {
   });
 });
 
-describe('check 5: login and OTP are rate limited', () => {
+describe("check 5 (library half): Better Auth's own limiter is still on", () => {
+  /*
+   * This proves only that *a* bucket fills. It cannot prove the per-identifier
+   * half, because Better Auth keys on `${ip}|${path}` and, under vitest, its
+   * `getIP` returns 127.0.0.1 for every request — so all of these land in one
+   * bucket and the assertion would pass identically against a single global
+   * counter.
+   *
+   * The real check 5 lives in apps/server: `rate-limit.test.ts` for the two
+   * buckets in isolation, and `http-surface.test.ts` for the 429 over HTTP with
+   * the address and the identifier varied independently. What is left here is
+   * the statement that the library's limiter has not been switched off
+   * underneath ours.
+   */
   /** Its own instance, with limits on, so the rest of the suite is unthrottled. */
   function limitedAuth() {
     return createAuth({
@@ -634,6 +708,10 @@ describe('check 5: login and OTP are rate limited', () => {
       trustedOrigins: [`https://${APP_DOMAIN}`],
       cookieDomain: `.${APP_DOMAIN}`,
       sms,
+      onPasswordToken: ({ email, token }) => {
+        issuedTokens.set(email.toLowerCase(), token);
+        return Promise.resolve();
+      },
       rateLimitEnabled: true,
     });
   }

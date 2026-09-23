@@ -109,14 +109,51 @@ export function tenantTableSql(options: TenantTableOptions): string {
  * guard test treats anything else in a tenant schema as a mistake. Adding to
  * that list is a decision, not a convenience.
  */
-export function globalTableSql(schema: string, table: string, readOnly = true): string {
+export interface GlobalTableOptions {
+  readonly readOnly?: boolean;
+  /**
+   * Whether `erp_analytics` may read this table.
+   *
+   * Defaults to **false**, like `analyticsReadsAllOrgs` on tenant tables and for
+   * the same reason (D-049): analytics reads are opt-in per table. This used to
+   * be unconditional, which quietly granted the analytics role SELECT on
+   * `iam.accounts` — password hashes — and `iam.two_factors` — TOTP secrets and
+   * backup codes. Nothing needed either, and a read-only role is still a role
+   * that can read.
+   */
+  readonly analyticsReads?: boolean;
+}
+
+export function globalTableSql(
+  schema: string,
+  table: string,
+  options: GlobalTableOptions = {},
+): string {
+  const { readOnly = true, analyticsReads = false } = options;
   const qualified = `${quote(schema)}.${quote(table)}`;
+  const readers = analyticsReads ? '"erp_app", "erp_analytics"' : '"erp_app"';
+
   return [
     `grant usage on schema ${quote(schema)} to "erp_app", "erp_analytics";`,
-    `grant select on ${qualified} to "erp_app", "erp_analytics";`,
+    `grant select on ${qualified} to ${readers};`,
     ...(readOnly ? [] : [`grant insert, update, delete on ${qualified} to "erp_app";`]),
   ].join('\n');
 }
+
+/**
+ * Every table `erp_analytics` is allowed to read, qualified.
+ *
+ * The guard test fails on anything it can SELECT that is not listed here, so
+ * adding a global table does not silently widen the analytics role. Entries are
+ * deliberate and each one is a decision: `org.organizations` is the brand list
+ * every consolidated report labels its rows with, and the `ref` schema is public
+ * Bangladesh geography. Nothing in `iam` is here — identity is not analytics
+ * data, and the credential tables least of all.
+ */
+export const ANALYTICS_READABLE: readonly string[] = ['org.organizations'];
+
+/** Schemas `erp_analytics` may read wholesale. Reference data only. */
+export const ANALYTICS_READABLE_SCHEMAS: readonly string[] = ['ref'];
 
 /**
  * Schemas that are globally readable, and the handful of individual tables

@@ -344,12 +344,31 @@ Sessions:
 
 2FA is **required** for `super_admin`, `org_admin`, `accounts` and `investor`.
 
+It is enforced as an **enrolment wall on the request path**, not by refusing the session (D-051). A privileged user who has not enrolled receives a session, but `mustEnrolTwoFactor()` refuses every route outside `/api/auth` with `403 TWO_FACTOR_ENROLMENT_REQUIRED`, and no request context is built, so a route that forgot its own guard still sees no org. The reason is mechanical: enrolling TOTP runs behind Better Auth's session middleware, so refusing the session would leave an org_admin created by another org_admin with no way in at all. The check reads live rather than caching on the session, so granting a privileged role walls that user on their next request rather than at their next sign-in, and it fails closed on an unknown user id.
+
+Once enrolled, the second factor is enforced by the plugin itself: sign-in returns `twoFactorRedirect` and **no session**, and the session is created only by `verify-totp` or `verify-backup-code`. Ten recovery codes are issued at enrolment, shown exactly once, and each is single use.
+
+**Registration is closed (D-057).** There is no self-service sign-up: this is a staff ERP, and an open sign-up was also the enabling half of an account pre-hijacking attack. An `org_admin` — and only an `org_admin` (D-058) — creates a user through `POST /v1/users`, which returns a one-time invite token. The recipient redeems it to set their own password. An existing identity is reused when a colleague joins a second brand, but never when the row holds credentials and belongs to no org.
+
+**Rate limits are per identifier as well as per IP (D-056).** Both buckets are counted on the credential endpoints and either can reject. Per-IP alone is close to useless against a botnet — credential stuffing gets the full allowance per address — and actively harmful in Bangladesh, where most mobile traffic shares a handful of carrier NAT addresses, so one attacker would lock out a whole network. The per-identifier bucket makes attacking one account expensive however many addresses the attacker has; the per-IP bucket stops one address walking a list of accounts. The store is in memory per process until M04 moves it to Valkey.
+
+**Browser origins (D-053, D-054).** The console, portal and POS are served from their own origins and talk to this API cross-origin with cookies. Two consequences are load-bearing rather than incidental:
+
+- Every browser app must sit on the **same registrable domain** as the API. The CSRF double-submit token is a cookie the client reads with script and echoes as a header; cookies are scoped by host and ignore ports, so an app on another registrable domain cannot read it.
+- CORS echoes the origin exactly, with `credentials: true`. `*` is rejected by the browser once credentials are involved, and without credentials the session cookie is never sent and every request looks anonymous. The same list serves CORS, CSRF and Better Auth, so "which origins are ours" has one answer.
+- That list is **enumerated, never patterned** (D-054): `TRUSTED_ORIGINS` plus one origin per active brand hostname, resolved at boot. A `*.<domain>` wildcard is not equivalent and was rejected — the parent-domain CSRF cookie already lets a sibling host read the token, and CORS is the control that stops it using the token. The hosts under this domain are not all ours: landing sites on Vercel (D-026) and Chatwoot (§16) both live there.
+
 **Branded login (D-035).** The client asked for a separate login per sister org. One identity with several memberships is the right model underneath, so we meet the intent at the surface: when the login route or hostname identifies an org, that org is preselected and the screen carries its branding (§24). Users with one membership never see a switcher; multi-org users still get one after login.
+
+The hostname comes from the **caller**, not from the API's own `Host` header (D-052): the console is served from `<org>.<domain>` while the API answers on `api.<domain>`, so reading our own header would resolve every branded login to an org named "api". The endpoint is unauthenticated by necessity — it runs before anyone has signed in — and returns only what a login page may show: display name, accent, logo. An unknown host falls back to the generic login rather than failing, because a misconfigured DNS record must not mean nobody can sign in.
 
 ### Request context
 
-- After login the user picks an active org with the org switcher, unless the login route already identified one (D-035). The choice is stored in the session.
-- Every request resolves `membership(user, org)` into roles plus branch scope.
+- After login the user picks an active org with the org switcher, unless the login route already identified one (D-035). The choice is stored **on the session row**, not in a client-readable cookie: a client-controlled org id would make every RLS policy in the system advisory. The switch endpoint re-checks membership rather than trusting the request, and answers the same error whether the org does not exist or the user simply has no membership in it, so it cannot be used as a membership oracle.
+- Nothing on the request path connects as `erp_owner` (D-059). The global `iam` tables are reached with `withGlobal()`, which is `erp_app` with no org chosen; `withSystem()` is for migrations, seeds and the guard.
+- The context is rebuilt from the session on **every** request rather than cached. A session outlives a membership change, and this is the only place that notices: a revoked membership stops being honoured on the next request.
+- Every request resolves `membership(user, org)` into roles plus branch scope. Empty branch scope means the whole org, not "no branches".
+- Listing the orgs a user may enter happens **before** any org is chosen, which is why `iam.memberships` carries a second, SELECT-only policy scoped to `app.user_id` (D-050). It is the §5 exception 4 identity carve-out and nothing wider: a user reads their own memberships across orgs and nobody else's.
 - Membership roles: `super_admin` (global), `org_admin`, `sales`, `accounts`, `marketing`, `hr`, `branch_manager`, `warehouse`, `reseller`, `investor`.
 
 ### Authorization

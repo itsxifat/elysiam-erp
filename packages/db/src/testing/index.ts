@@ -14,6 +14,7 @@ export {
   type TestDatabase,
 } from './harness.js';
 export {
+  findAnalyticsReadProblems,
   findCrossOrgForeignKeys,
   findDefaultPrivileges,
   findPrivilegeProblems,

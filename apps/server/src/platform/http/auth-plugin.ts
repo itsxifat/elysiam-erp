@@ -1,11 +1,17 @@
 import { randomUUID } from 'node:crypto';
 
-import { mustEnrolTwoFactor, resolveContext, withSystem } from '@elysium/db';
+import { mustEnrolTwoFactor, resolveContext, withGlobal } from '@elysium/db';
 import type { createAuth, RequestContext } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { checkCsrf, ensureCsrfToken, type CsrfOptions } from './csrf.js';
+import {
+  checkRateLimit,
+  MemoryRateLimiter,
+  sendRateLimited,
+  type RateLimitOptions,
+} from './rate-limit.js';
 
 /**
  * Mount authentication and build the request context (architecture §6, §25).
@@ -13,9 +19,12 @@ import { checkCsrf, ensureCsrfToken, type CsrfOptions } from './csrf.js';
  * Order matters and is the whole point of this file:
  *
  *   1. CSRF, before anything reads a cookie for authority.
- *   2. Better Auth's own handler on /api/auth/*, which owns sign-in, 2FA and
+ *   2. Rate limiting on the credential endpoints, after the body is parsed —
+ *      it has to read the identifier being attempted — and before the handler
+ *      that would check it.
+ *   3. Better Auth's own handler on /api/auth/*, which owns sign-in, 2FA and
  *      OTP.
- *   3. Session resolution, then the 2FA enrolment wall, then the context.
+ *   4. Session resolution, then the 2FA enrolment wall, then the context.
  *
  * Step 2 sits above step 3 on purpose: /api/auth is the one prefix the wall
  * must not cover, because enrolling the missing second factor happens there.
@@ -25,6 +34,9 @@ import { checkCsrf, ensureCsrfToken, type CsrfOptions } from './csrf.js';
  */
 export interface AuthPluginOptions extends CsrfOptions {
   readonly auth: ReturnType<typeof createAuth>['auth'];
+  /** Shared so a test can drive the clock or switch it off. */
+  readonly limiter?: MemoryRateLimiter;
+  readonly rateLimitEnabled?: boolean;
 }
 
 export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): void {
@@ -49,6 +61,76 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
     // able to pick one up.
     ensureCsrfToken(request, reply, options);
     done();
+  });
+
+  /*
+   * Rate limiting (§25).
+   *
+   * `preHandler` rather than `onRequest`, because the identifier being
+   * attempted lives in the body and the body is not parsed yet at onRequest.
+   * Registered before the session hook below, so hooks run in this order.
+   */
+  const rateLimit: RateLimitOptions = {
+    limiter: options.limiter ?? new MemoryRateLimiter(),
+    ...(options.rateLimitEnabled === undefined ? {} : { enabled: options.rateLimitEnabled }),
+  };
+
+  app.addHook('preHandler', (request: FastifyRequest, reply: FastifyReply, done) => {
+    const decision = checkRateLimit(request, rateLimit);
+    if (!decision.allowed) {
+      request.log.warn(
+        { path: request.url.split('?')[0], bucket: decision.bucket },
+        'rate limited',
+      );
+      sendRateLimited(reply, decision);
+      return;
+    }
+    done();
+  });
+
+  /*
+   * The 2FA enrolment hatch, kept as narrow as enrolment actually needs (§6).
+   *
+   * The wall below skips the whole `/api/auth` prefix, because that is where
+   * enrolling happens. Left at that, a walled org_admin could still call
+   * `update-user`, `phone-number/*` and everything else Better Auth exposes —
+   * verified: `POST /api/auth/update-user` returned 200 for a walled user. So
+   * the prefix is re-walled here with an allow-list of the endpoints the
+   * enrolment journey genuinely uses.
+   */
+  const ENROLMENT_PATHS = new Set([
+    '/api/auth/two-factor/enable',
+    '/api/auth/two-factor/verify-totp',
+    '/api/auth/two-factor/verify-backup-code',
+    '/api/auth/two-factor/get-totp-uri',
+    '/api/auth/two-factor/generate-backup-codes',
+    '/api/auth/get-session',
+    '/api/auth/sign-out',
+  ]);
+
+  app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
+    const path = request.url.split('?')[0] ?? '';
+    if (!path.startsWith('/api/auth/')) return;
+    if (ENROLMENT_PATHS.has(path)) return;
+
+    // Sign-in and sign-up have no session yet, so there is nothing to wall.
+    const headers = new Headers();
+    const cookie = request.headers.cookie;
+    if (typeof cookie === 'string') headers.set('cookie', cookie);
+
+    const session = await options.auth.api.getSession({ headers });
+    if (session === null) return;
+
+    if (await mustEnrolTwoFactor(session.user.id)) {
+      return reply.status(403).send({
+        type: 'about:blank',
+        title: 'Two-factor enrolment required',
+        status: 403,
+        code: 'TWO_FACTOR_ENROLMENT_REQUIRED',
+        detail:
+          'This role requires a second factor. Enrol at /api/auth/two-factor/enable, then verify it, before using the API.',
+      });
+    }
   });
 
   // Better Auth speaks Fetch Request/Response; Fastify speaks its own. This is
@@ -81,9 +163,16 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
     return reply.send(await response.text());
   });
 
-  /** Resolve the session, then the context, for everything that is not /api/auth. */
+  /** Resolve the session, then the context, for everything Better Auth does not own. */
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
-    if (request.url.startsWith('/api/auth')) return;
+    const path = request.url.split('?')[0] ?? '';
+    if (path === '/api/auth' || path.startsWith('/api/auth/')) {
+      // Better Auth owns its own endpoints: it authenticates each one itself,
+      // and the enrolment wall below must not cover the routes enrolment needs.
+      // Exact segment match rather than a raw prefix, so `/api/authxyz` is a
+      // normal route rather than an unguarded one.
+      return;
+    }
 
     const headers = new Headers();
     const cookie = request.headers.cookie;
@@ -107,9 +196,8 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
     typed.authSessionId = session.session.id;
 
     // The enrolment wall (§6). A privileged role holds a session but may do
-    // nothing with it until a second factor exists — everything outside
-    // /api/auth, which this hook already skipped, is refused. No context is
-    // built either, so even a route that forgot its guard sees no org.
+    // nothing with it until a second factor exists. No context is built either,
+    // so even a route that forgot its guard sees no org.
     if (await mustEnrolTwoFactor(session.user.id)) {
       return reply.status(403).send({
         type: 'about:blank',
@@ -121,7 +209,7 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       });
     }
 
-    const [row] = await withSystem(async (tx) =>
+    const [row] = await withGlobal(async (tx) =>
       tx.execute<{ active_org_id: string | null }>(
         sql`select active_org_id from iam.sessions where id = ${session.session.id}`,
       ),

@@ -36,6 +36,9 @@ const en = {
   'auth.signOut': 'Sign out',
   'auth.failed': 'That email and password do not match.',
   'auth.unreachable': 'Cannot reach the server. Check your connection and try again.',
+  'auth.tooMany': 'Too many attempts. Wait a minute and try again.',
+  'auth.rejected':
+    'The server rejected that request. Reload the page and try again — your sign-in details are probably fine.',
 
   'auth.twoFactor.title': 'Two-step verification',
   'auth.twoFactor.subtitle': 'Enter the 6-digit code from your authenticator app.',
@@ -108,6 +111,9 @@ const bn: Record<MessageKey, string> = {
   'auth.signOut': 'সাইন আউট',
   'auth.failed': 'ইমেইল বা পাসওয়ার্ড মিলছে না।',
   'auth.unreachable': 'সার্ভারে পৌঁছানো যাচ্ছে না। সংযোগ দেখে আবার চেষ্টা করুন।',
+  'auth.tooMany': 'অনেকবার চেষ্টা হয়েছে। এক মিনিট পরে আবার চেষ্টা করুন।',
+  'auth.rejected':
+    'সার্ভার অনুরোধটি ফিরিয়ে দিয়েছে। পাতা রিলোড করে আবার চেষ্টা করুন — আপনার তথ্য সম্ভবত ঠিকই আছে।',
 
   'auth.twoFactor.title': 'দুই ধাপের যাচাই',
   'auth.twoFactor.subtitle': 'আপনার অ্যাপে দেখানো ৬ সংখ্যার কোড দিন।',

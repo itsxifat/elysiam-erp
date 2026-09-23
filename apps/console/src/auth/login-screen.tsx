@@ -133,8 +133,26 @@ async function finish(
   }
 }
 
+/**
+ * Say what actually went wrong.
+ *
+ * Everything used to collapse into "that email and password do not match",
+ * which is the most damaging thing to say when it is untrue: a rate-limited or
+ * CSRF-rejected user goes and resets a password that was never wrong. Only 401
+ * and 400 are actually about the credentials.
+ */
 function messageFor(cause: unknown, fallback: string): string {
   if (cause instanceof NetworkError) return t('auth.unreachable');
+
+  if (cause instanceof ApiError) {
+    if (cause.status === 429) return t('auth.tooMany');
+    // 403 here is the CSRF or origin check, not a permission decision — the
+    // user has not been identified yet, so there is nothing to forbid.
+    if (cause.status === 403 && cause.code !== 'TWO_FACTOR_ENROLMENT_REQUIRED') {
+      return t('auth.rejected');
+    }
+  }
+
   return fallback;
 }
 
@@ -400,19 +418,21 @@ function EnrolStep({
             </li>
           ))}
         </ul>
-        <div className="mt-2 flex items-center justify-between gap-3">
+        {/* Stacked, not side by side: at the card's width the two controls
+            collided and the checkbox label wrapped across the button. */}
+        <div className="mt-3 space-y-3">
           <Button variant="link" onClick={() => downloadCodes(enrolment.backupCodes)}>
             <Download className="size-4" aria-hidden="true" />
             {t('auth.enrol.download')}
           </Button>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <label className="flex cursor-pointer items-start gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
               checked={acknowledged}
               onChange={(event) => setAcknowledged(event.target.checked)}
-              className="size-4 rounded-sm border-input accent-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              className="mt-px size-4 shrink-0 rounded-sm border-input accent-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             />
-            {t('auth.enrol.acknowledge')}
+            <span>{t('auth.enrol.acknowledge')}</span>
           </label>
         </div>
       </Step>

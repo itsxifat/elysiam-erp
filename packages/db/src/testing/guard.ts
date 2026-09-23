@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 
 import { withSystem } from '../client.js';
+import { ANALYTICS_READABLE, ANALYTICS_READABLE_SCHEMAS } from '../rls.js';
 import { GLOBAL_SCHEMAS, GLOBAL_TABLES, ORG_CONTEXT_SQL } from '../rls.js';
 
 /**
@@ -256,6 +257,38 @@ export async function findPrivilegeProblems(): Promise<PrivilegeOffender[]> {
     table: row.table_name,
     privilege: row.privilege,
   }));
+}
+
+/**
+ * Tables `erp_analytics` can read that nobody opted in (D-049).
+ *
+ * The write check above was not enough. `globalTableSql` granted analytics
+ * SELECT unconditionally, so every global table became analytics-readable —
+ * including `iam.accounts` (password hashes) and `iam.two_factors` (TOTP
+ * secrets and backup codes). A read-only role is still a role that can read,
+ * and nothing in analytics ever needed either table.
+ *
+ * So reads are enumerated the same way writes are: anything SELECT-able that is
+ * not on the allowlist is an offender, and adding a table cannot widen the
+ * analytics role by accident.
+ */
+export async function findAnalyticsReadProblems(): Promise<string[]> {
+  const rows = await withSystem(async (tx) =>
+    tx.execute<{ table_name: string }>(sql`
+      select n.nspname || '.' || c.relname as table_name
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      where c.relkind in ('r', 'p')
+        and n.nspname not in ${SYSTEM_SCHEMAS}
+        and n.nspname not like 'pg\\_temp%'
+        and n.nspname <> all (${sql.param(ANALYTICS_READABLE_SCHEMAS as string[])}::text[])
+        and (n.nspname || '.' || c.relname) <> all (${sql.param(ANALYTICS_READABLE as string[])}::text[])
+        and has_table_privilege('erp_analytics', c.oid, 'SELECT')
+      order by 1
+    `),
+  );
+
+  return [...rows].map((row) => row.table_name);
 }
 
 /** Default privileges that would silently grant a future table to a role. */
