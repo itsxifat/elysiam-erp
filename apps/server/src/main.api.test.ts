@@ -209,12 +209,16 @@ describe('every route the gate lists actually answers', () => {
     expect(answered.length, 'every GET route refused; nothing was exercised').toBeGreaterThan(3);
   });
 
-  it('GET /v1/approvals returns a list rather than a 500', async () => {
+  it('GET /v1/approvals returns a page rather than a 500', async () => {
     const client = adminClient;
 
     const response = await client.request('GET', '/v1/approvals');
     expect(response.statusCode, response.body).toBe(200);
-    expect(Array.isArray(JSON.parse(response.body))).toBe(true);
+
+    // §23's shape: rows plus a cursor, not a bare array.
+    const body = JSON.parse(response.body) as { rows?: unknown; nextCursor?: unknown };
+    expect(Array.isArray(body.rows)).toBe(true);
+    expect(body).toHaveProperty('nextCursor');
   });
 
   it('GET /v1/me answers once an org is chosen', async () => {

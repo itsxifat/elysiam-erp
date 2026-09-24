@@ -74,13 +74,29 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
     // §6 puts fraud block override in org_admin's column and nobody else's.
     'fraud_override',
   ],
-  // §6: payments. Investor withdrawals and distributions are money leaving the
-  // company, which is the same kind of thing as a supplier payment.
+  /*
+   * §6's cell is one word: **"payments"**. Every entry here has to be money
+   * leaving the company, and the list is the whole of the interpretation.
+   *
+   * `closing_variance` was here and should not have been. A daily closing
+   * variance is a till reconciliation — §6's maker-checker list names it
+   * separately from "supplier payments above the threshold" — and it is
+   * `branch_manager` (capped) and `org_admin` who hold it. Two things followed
+   * from the extra entry, and the second is the one that matters:
+   *
+   *   1. The team that books the cash entry also approved the till shortfall.
+   *      `accounts` holds create and update on `Wallet` at org scope, so
+   *      maker-checker was reduced to "a different person in the same
+   *      function", at any amount.
+   *   2. `isLimitedChecker` uncaps a caller who holds *any* non-limited role
+   *      for the type. So `['branch_manager','accounts']` came out uncapped on
+   *      closing variances — and the branch is the till. Probed: `limited`
+   *      answered false.
+   */
   accounts: [
     'supplier_payment',
     'settlement_posting',
     'reseller_payout_batch',
-    'closing_variance',
     'investor_withdrawal',
     'investor_distribution',
   ],
@@ -129,6 +145,50 @@ export function canDecideType(
  * `requiresApproval` already takes.
  */
 export const LIMITED_CHECKER_ROLES: readonly MembershipRole[] = ['branch_manager'];
+
+/**
+ * The ability you must already hold to *raise* each kind of approval.
+ *
+ * Without this, `request ApprovalRequest` was a single capability covering all
+ * fourteen types, and `sales` and `warehouse` both hold it. So a sales agent
+ * could raise an `investor_withdrawal` for ৫০ lakh, which lands in the
+ * accounts queue looking exactly like a legitimate pending payout — or a
+ * `stock_write_off` with `amountPoisha: '0'` and a payload of ten thousand
+ * units, which needs no checker at all because zero is under every threshold,
+ * and which M07's executor would read the *payload* of.
+ *
+ * The rule is the obvious one and it is the only one that does not need a new
+ * policy: **you may ask for a second signature on something you could
+ * otherwise do yourself.** Every entry here is the action the approval
+ * authorises, taken from §6's own rows, so nothing is invented — `wallet_adjustment`
+ * needs `update Wallet`, `payroll_run` needs `update Payroll`, and so on.
+ *
+ * `period_reopen` maps to `Settings`, which only `org_admin` holds: §7 reserves
+ * *approving* it for super_admin, and this is about who may raise it.
+ *
+ * It does not make the *amount* trustworthy — that stays caller-supplied until
+ * each module computes it, which is why `ApprovalsService.request` says so on
+ * its own signature. It does mean the caller must already be someone the
+ * matrix trusts with that class of action.
+ */
+export const REQUESTER_ABILITY: Readonly<
+  Record<string, { readonly action: Action; readonly subject: Subject }>
+> = {
+  wallet_adjustment: { action: 'update', subject: 'Wallet' },
+  stock_write_off: { action: 'request', subject: 'StockAdjustment' },
+  stock_gain: { action: 'request', subject: 'StockAdjustment' },
+  supplier_payment: { action: 'update', subject: 'Supply' },
+  settlement_posting: { action: 'update', subject: 'CourierSettlement' },
+  closing_variance: { action: 'update', subject: 'Wallet' },
+  back_dated_entry: { action: 'read', subject: 'LedgerReport' },
+  payroll_run: { action: 'update', subject: 'Payroll' },
+  bonus_rule: { action: 'update', subject: 'Target' },
+  reseller_payout_batch: { action: 'update', subject: 'ResellerAdmin' },
+  investor_withdrawal: { action: 'update', subject: 'Investor' },
+  investor_distribution: { action: 'update', subject: 'Investor' },
+  fraud_override: { action: 'update', subject: 'FraudOverride' },
+  period_reopen: { action: 'update', subject: 'Settings' },
+};
 
 /**
  * Is every checker role this caller holds an amount-limited one?

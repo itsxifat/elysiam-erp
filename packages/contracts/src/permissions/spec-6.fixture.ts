@@ -343,12 +343,32 @@ export const SPEC_6_GRANTS: readonly string[] = [
  *
  * The row gives each role a *subset of types*, and branch_manager an amount
  * limit on top. `limited: true` means "branch items **under threshold**".
+ *
+ * **This half is weaker evidence than `SPEC_6_GRANTS`, and the weakness is
+ * worth naming.** Those grants are a transcription: §6 writes "org" or "own"
+ * in a cell and the fixture says the same thing in another notation, so a
+ * reviewer can check one against the other. Here §6 writes a single word —
+ * "payments", "payroll" — and the list below is an *interpretation* of it. A
+ * test comparing this to `CHECKER_TYPES` therefore compares two readings of
+ * the same word, which is the tautology D-061 exists to replace.
+ *
+ * It caught nothing when `closing_variance` sat in the accounts list: §6 says
+ * "payments", a till reconciliation is not one, and both sides agreed anyway.
+ *
+ * So each entry carries §6's cell verbatim in `cell`, and the test prints it
+ * on failure. That does not make the comparison independent — nothing can,
+ * short of the client answering which types finance may check — but it puts
+ * the spec's own words next to the list a reader has to judge.
  */
 export const SPEC_6_CHECKERS: Readonly<
-  Record<string, { readonly types: readonly string[]; readonly limited: boolean }>
+  Record<
+    string,
+    { readonly cell: string; readonly types: readonly string[]; readonly limited: boolean }
+  >
 > = {
   // "org": every type §6 lists as maker-checker, except the one it reserves.
   org_admin: {
+    cell: 'org',
     types: [
       'wallet_adjustment',
       'stock_write_off',
@@ -366,30 +386,36 @@ export const SPEC_6_CHECKERS: Readonly<
     ],
     limited: false,
   },
-  // "payments": money leaving the company, in any of its forms.
+  /*
+   * "payments": money leaving the company, in any of its forms.
+   *
+   * Not `closing_variance`. §6's maker-checker list names "daily closing
+   * variances" separately from "supplier payments above the threshold", and a
+   * till reconciliation is not a payment. It was in this list, and in
+   * `CHECKER_TYPES`, and the comparison between them passed.
+   */
   accounts: {
+    cell: 'payments',
     types: [
       'supplier_payment',
       'settlement_posting',
       'reseller_payout_batch',
-      'closing_variance',
       'investor_withdrawal',
       'investor_distribution',
     ],
     limited: false,
   },
-  // "payroll".
-  hr: { types: ['payroll_run', 'bonus_rule'], limited: false },
-  // "branch items under threshold".
+  hr: { cell: 'payroll', types: ['payroll_run', 'bonus_rule'], limited: false },
   branch_manager: {
+    cell: 'branch items under threshold',
     types: ['stock_write_off', 'stock_gain', 'closing_variance'],
     limited: true,
   },
-  sales: { types: [], limited: false },
-  marketing: { types: [], limited: false },
-  warehouse: { types: [], limited: false },
-  reseller: { types: [], limited: false },
-  investor: { types: [], limited: false },
+  sales: { cell: '\u2014', types: [], limited: false },
+  marketing: { cell: '\u2014', types: [], limited: false },
+  warehouse: { cell: '\u2014', types: [], limited: false },
+  reseller: { cell: '\u2014', types: [], limited: false },
+  investor: { cell: '\u2014', types: [], limited: false },
 };
 
 /**

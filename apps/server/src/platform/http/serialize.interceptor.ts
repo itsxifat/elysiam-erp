@@ -1,6 +1,6 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { findCostFields, serializeFor, type Subject } from '@elysium/contracts';
+import { canReadCost, findCostFields, serializeFor, type Subject } from '@elysium/contracts';
 import type { RequestContext } from '@elysium/db';
 import type { FastifyRequest } from 'fastify';
 import { map, type Observable } from 'rxjs';
@@ -48,26 +48,77 @@ export class SerializeInterceptor implements NestInterceptor {
         const subject = declaration?.subject;
         if (subject === undefined) return this.assertNoLeak(body);
 
-        return serializeFor(
+        const serialized = serializeFor(
           { roles: requestContext.roles, isSuperAdmin: requestContext.isSuperAdmin },
           subject,
           body,
         );
+
+        /*
+         * Check the serializer's own output, on the path that has a subject.
+         *
+         * This used to run only where there was no subject to serialize
+         * against — and `serializeFor` has a documented blind spot that the
+         * detector next to it does not share. `pruneDenied` returns anything
+         * that is not a plain object untouched, deliberately, because walking
+         * a Buffer turns a PDF into `{"0":80,"1":68}`. A class instance is not
+         * a plain object. So:
+         *
+         *   class ItemDto { id = '1'; wacPoisha = '120000' }
+         *   serializeFor(salesContext, 'CostedItem', { items: [new ItemDto()] })
+         *     -> { items: [ { id: '1', wacPoisha: '120000' } ] }
+         *
+         * Reproduced against the built package. The cost reached a `sales`
+         * caller, and `findCostFields` on that same output found it. No route
+         * returns a DTO instance today — every handler builds object literals
+         * over `tx.execute` rows — but M06's catalog and M22's documents are
+         * the two the serializer's own comments name, and invariant 5 is the
+         * one this milestone exists to hold.
+         */
+        return this.assertNoLeak(serialized, requestContext, subject);
       }),
     );
   }
 
   /**
-   * A last check on the paths the serializer cannot reason about.
+   * A last check, on every path out.
    *
-   * If a route with no declared subject returns something with a cost field in
-   * it, that is a bug — either a missing declaration or a leak — and the
-   * response is the wrong place to discover it quietly. Throwing would turn a
-   * data-shape mistake into an outage, so this strips and leaves the evidence
-   * in the payload's absence; the matrix suite is what makes it loud.
+   * Two cases reach this. A route with no declared subject returning something
+   * with a cost field in it is a bug — a missing declaration, or a leak. And a
+   * route *with* a subject whose serialized output still carries cost has hit
+   * the pruner's blind spot: it skips anything that is not a plain object, on
+   * purpose, so a class instance passes through whole.
+   *
+   * Throwing would turn a data-shape mistake into an outage, so this strips
+   * instead. The strip goes through JSON first, because the reason the value
+   * survived is that it was not a plain object — pruning it again the same way
+   * would return it again unchanged. `JSON.parse(JSON.stringify(x))` is what
+   * the response was about to become anyway, and it is exactly the step that
+   * turns a DTO into something the pruner can walk.
+   *
+   * And it is logged, loudly. A response that silently lost a field is how a
+   * leak becomes a mystery instead of a bug report.
    */
-  private assertNoLeak(body: unknown): unknown {
-    if (findCostFields(body).length === 0) return body;
-    return serializeFor({ roles: [], isSuperAdmin: false }, 'Cost', body);
+  private assertNoLeak(body: unknown, requestContext?: RequestContext, subject?: Subject): unknown {
+    const found = findCostFields(body);
+    if (found.length === 0) return body;
+
+    const context =
+      requestContext === undefined
+        ? { roles: [] as const, isSuperAdmin: false }
+        : { roles: requestContext.roles, isSuperAdmin: requestContext.isSuperAdmin };
+
+    // A role that may read cost is not leaking by holding it.
+    if (canReadCost(context.roles, context.isSuperAdmin)) return body;
+
+    let plain: unknown = body;
+    try {
+      plain = JSON.parse(JSON.stringify(body));
+    } catch {
+      // Circular, or something JSON cannot represent. Fall through: pruning
+      // the original is still better than returning it.
+    }
+
+    return serializeFor(context, subject ?? 'Cost', plain);
   }
 }

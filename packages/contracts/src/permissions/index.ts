@@ -28,6 +28,7 @@ export {
   isLimitedChecker,
   LIMITED_CHECKER_ROLES,
   MATRIX,
+  REQUESTER_ABILITY,
   type Rule,
 } from './matrix.js';
 

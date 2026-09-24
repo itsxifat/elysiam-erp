@@ -47,20 +47,54 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * A reference that is already on the path we are walking.
+ *
+ * Every walker here recurses, and a cycle turns that into a stack overflow —
+ * which is a 500 on every response of that shape, from the one component whose
+ * job is to make responses safe. Found by a test written for something else:
+ * `{ sku, self: <itself> }` through `serializeFor` was `RangeError: Maximum
+ * call stack size exceeded`, not a leak but an outage.
+ *
+ * Tracked per *path* rather than per walk, so a value that legitimately
+ * appears twice in a response — the same nested object under two keys, which
+ * an ORM with relations produces routinely — is serialized both times. Only a
+ * reference that contains itself is dropped, which is what `JSON.stringify`
+ * would refuse to do anything with anyway.
+ */
+type Seen = Set<object>;
+
+function isCycle(value: unknown, seen: Seen): value is object {
+  return typeof value === 'object' && value !== null && seen.has(value);
+}
+
+/**
  * Prune with a deny-list: keep everything except the named fields.
  *
  * Recurses through arrays and objects alike, because a cost field nested in
  * `order.lines[3]` is exactly as exposed as one at the top level.
  */
-function pruneDenied(value: unknown, denied: ReadonlySet<string>): unknown {
-  if (Array.isArray(value)) return value.map((entry) => pruneDenied(entry, denied));
+function pruneDenied(value: unknown, denied: ReadonlySet<string>, seen: Seen = new Set()): unknown {
+  if (isCycle(value, seen)) return undefined;
+
+  if (Array.isArray(value)) {
+    seen.add(value);
+    const mapped = value.map((entry) => pruneDenied(entry, denied, seen));
+    seen.delete(value);
+    return mapped;
+  }
+
   if (!isPlainObject(value)) return value;
 
+  seen.add(value);
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (denied.has(key)) continue;
-    result[key] = pruneDenied(entry, denied);
+    const pruned = pruneDenied(entry, denied, seen);
+    // A dropped cycle leaves the key out rather than setting it to undefined,
+    // so the response shape matches what JSON would have produced.
+    if (pruned !== undefined || entry === undefined) result[key] = pruned;
   }
+  seen.delete(value);
   return result;
 }
 
@@ -91,9 +125,18 @@ function pruneDenied(value: unknown, denied: ReadonlySet<string>): unknown {
  *   envelope survives, and `{ costTiers: ['120000'] }` becomes
  *   `{ costTiers: [] }` — empty, which is the safe direction.
  */
-function pruneAllowed(value: unknown, allowed: ReadonlySet<string>, exposed: boolean): unknown {
+function pruneAllowed(
+  value: unknown,
+  allowed: ReadonlySet<string>,
+  exposed: boolean,
+  seen: Seen = new Set(),
+): unknown {
+  if (isCycle(value, seen)) return undefined;
+
   if (Array.isArray(value)) {
-    const entries = value.map((entry) => pruneAllowed(entry, allowed, exposed));
+    seen.add(value);
+    const entries = value.map((entry) => pruneAllowed(entry, allowed, exposed, seen));
+    seen.delete(value);
     // Scalars in an array under a key nobody allowed carry data with no name
     // to filter them by, so they go.
     return exposed ? entries : entries.filter((entry) => isPlainObject(entry));
@@ -102,16 +145,21 @@ function pruneAllowed(value: unknown, allowed: ReadonlySet<string>, exposed: boo
   if (!isPlainObject(value)) return value;
   if (exposed) return value;
 
+  seen.add(value);
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (allowed.has(key)) {
-      result[key] = entry;
+      // An allow-listed key exposes its subtree, so a cycle inside one is
+      // still a cycle — checked rather than copied by reference.
+      result[key] = isCycle(entry, seen) ? undefined : entry;
       continue;
     }
     if (Array.isArray(entry) || isPlainObject(entry)) {
-      result[key] = pruneAllowed(entry, allowed, false);
+      const pruned = pruneAllowed(entry, allowed, false, seen);
+      if (pruned !== undefined) result[key] = pruned;
     }
   }
+  seen.delete(value);
   return result;
 }
 
@@ -155,9 +203,19 @@ export function serializeFor<T>(context: SerializeContext, subject: Subject, dat
  * it walks the whole structure and reports the path, because "no cost fields"
  * asserted only at the top level is the exact bug it exists to catch.
  */
-export function findCostFields(data: unknown, path = '$'): string[] {
+export function findCostFields(data: unknown, path = '$', seen: Seen = new Set()): string[] {
+  // The detector recurses too, so it overflows on exactly the input the
+  // pruners do. A cycle cannot hide a cost field the first pass did not
+  // already see, so stopping is free.
+  if (isCycle(data, seen)) return [];
+
   if (Array.isArray(data)) {
-    return data.flatMap((entry, index) => findCostFields(entry, `${path}[${String(index)}]`));
+    seen.add(data);
+    const found = data.flatMap((entry, index) =>
+      findCostFields(entry, `${path}[${String(index)}]`, seen),
+    );
+    seen.delete(data);
+    return found;
   }
 
   /*
@@ -173,11 +231,13 @@ export function findCostFields(data: unknown, path = '$'): string[] {
   if (typeof data !== 'object' || data === null) return [];
   if (data instanceof Date || ArrayBuffer.isView(data)) return [];
 
+  seen.add(data);
   const found: string[] = [];
   for (const [key, value] of Object.entries(data)) {
     if (COST_FIELD_SET.has(key)) found.push(`${path}.${key}`);
-    found.push(...findCostFields(value, `${path}.${key}`));
+    found.push(...findCostFields(value, `${path}.${key}`, seen));
   }
+  seen.delete(data);
   return found;
 }
 

@@ -68,6 +68,23 @@ export class AuditInterceptor implements NestInterceptor {
       [ALREADY_AUDITED]?: boolean;
     };
 
+    /*
+     * This records the response **before** `SerializeInterceptor` strips it.
+     *
+     * `useGlobalInterceptors(SerializeInterceptor, AuditInterceptor)` makes the
+     * serializer outermost, so on the way out the value reaches this one first.
+     * That is deliberate: the audit log should hold what happened, not a
+     * role-shaped view of it, and a forensic question asked a year later is
+     * asked by someone who needs the number. Audit rows therefore carry cost
+     * fields.
+     *
+     * Which is safe only as long as reading them is. `read AuditLog` is
+     * org_admin's alone, and org_admin holds `read:cost` — so no role can
+     * reach a cost field here that it could not reach directly. **A read route
+     * for the audit log must declare `AuditLog` as its subject** so the
+     * serializer runs on it; the route-coverage gate enforces the declaration
+     * and the matrix suite covers the cell.
+     */
     return next.handle().pipe(
       tap({
         next: (body: unknown) => {

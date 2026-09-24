@@ -319,7 +319,9 @@ describe('check 2: cost reaches accounts and nobody else, through the API', () =
 
 describe('check 3: every mutation writes a redacted audit row', () => {
   it('records the approval request that caused it', async () => {
-    const { client, userId } = await asRole(['sales']);
+    // `accounts`, not `sales`: raising a wallet adjustment needs `update
+    // Wallet`, which §6 gives accounts and does not give a sales agent.
+    const { client, userId } = await asRole(['accounts']);
 
     const created = await client.request('POST', '/v1/approvals', {
       body: { type: 'wallet_adjustment', amountPoisha: '750000', reason: 'till short' },
@@ -343,7 +345,8 @@ describe('check 3: every mutation writes a redacted audit row', () => {
   });
 
   it('redacts a sensitive field rather than logging it', async () => {
-    const { client } = await asRole(['sales']);
+    // A supplier payment needs `update Supply`, which is accounts' row in §6.
+    const { client } = await asRole(['accounts']);
 
     const created = await client.request('POST', '/v1/approvals', {
       body: {
@@ -412,7 +415,10 @@ describe('check 3: every mutation writes a redacted audit row', () => {
   it('does not write the entry twice when a service already did', async () => {
     // `markAudited` is what keeps the net from duplicating the better,
     // in-transaction entry the approvals service writes.
-    const { client } = await asRole(['sales']);
+    //
+    // `warehouse`, because raising a stock write-off needs `request
+    // StockAdjustment` — §6 gives that to warehouse and not to sales.
+    const { client } = await asRole(['warehouse']);
 
     const created = await client.request('POST', '/v1/approvals', {
       body: { type: 'stock_write_off', amountPoisha: '100' },
@@ -661,7 +667,7 @@ describe('checks 4 and 5: maker-checker', () => {
   });
 
   it('refuses a role that may not approve at all', async () => {
-    const { client: maker } = await asRole(['sales']);
+    const { client: maker } = await asRole(['accounts']);
     const { client: warehouse } = await asRole(['warehouse']);
 
     const { id } = await requestApproval(maker, '900000');
@@ -773,7 +779,7 @@ describe('a decision is final, and the database is what makes it so', () => {
     // The gap 0009 left: while the row is still pending, `old.status` is
     // 'pending', which was the branch that allowed anything — so one UPDATE
     // could move pending -> approved *and* move the amount.
-    const { client } = await asRole(['sales']);
+    const { client } = await asRole(['accounts']);
     const created = await client.request('POST', '/v1/approvals', {
       body: { type: 'supplier_payment', amountPoisha: '50000' },
     });
@@ -865,8 +871,29 @@ describe('§6: a checker decides its own types, and only up to its own limit', (
     );
   }
 
+  /**
+   * Raise a request as a role that may actually raise that type.
+   *
+   * Every one of these used to be `sales`, which holds `request
+   * ApprovalRequest` and therefore — before `REQUESTER_ABILITY` — could raise
+   * an investor withdrawal. The mapping here is the same one the service
+   * enforces, written out so the test says which role §6 puts behind each.
+   */
+  const RAISER: Readonly<Record<string, MembershipRole>> = {
+    stock_write_off: 'warehouse', // request StockAdjustment
+    stock_gain: 'warehouse', // request StockAdjustment
+    payroll_run: 'hr', // update Payroll
+    bonus_rule: 'hr', // update Target
+    supplier_payment: 'accounts', // update Supply
+    wallet_adjustment: 'accounts', // update Wallet
+    period_reopen: 'org_admin', // update Settings
+  };
+
   async function raise(type: string, amountPoisha: string): Promise<string> {
-    const { client } = await asRole(['sales']);
+    const role = RAISER[type];
+    expect(role, `no raiser role written for ${type}`).toBeDefined();
+
+    const { client } = await asRole([role ?? 'org_admin']);
     const created = await client.request('POST', '/v1/approvals', {
       body: { type, amountPoisha },
     });
@@ -1006,25 +1033,33 @@ describe('the approvals list shows a caller only what is theirs to see', () => {
    * here. The narrowing is done in the service, and this is what holds it to
    * it. It also covers the 500 that shipped when the query was rewritten.
    */
-  it('returns a list rather than failing, for a role that may decide nothing', async () => {
+  /** The rows of a page, for the assertions that only care about membership. */
+  async function listedBy(client: TestClient, query = ''): Promise<{ id: string }[]> {
+    const response = await client.request('GET', `/v1/approvals${query}`);
+    expect(response.statusCode, response.body).toBe(200);
+    return (JSON.parse(response.body) as { rows: { id: string }[] }).rows;
+  }
+
+  it('returns a page rather than failing, for a role that may decide nothing', async () => {
     const { client } = await asRole(['warehouse']);
     const response = await client.request('GET', '/v1/approvals');
 
     expect(response.statusCode, response.body).toBe(200);
-    expect(Array.isArray(JSON.parse(response.body))).toBe(true);
+    const body = JSON.parse(response.body) as { rows: unknown; nextCursor: unknown };
+    expect(Array.isArray(body.rows)).toBe(true);
+    expect(body).toHaveProperty('nextCursor');
   });
 
   it('shows a requester their own request even when they may decide nothing', async () => {
+    // Warehouse holds `request StockAdjustment`, so it may raise this and may
+    // decide nothing — which is the case this test is about.
     const { client } = await asRole(['warehouse']);
     const created = await client.request('POST', '/v1/approvals', {
       body: { type: 'stock_write_off', amountPoisha: '900000' },
     });
     const { id } = JSON.parse(created.body) as { id: string };
 
-    const listed = JSON.parse((await client.request('GET', '/v1/approvals')).body) as {
-      id: string;
-    }[];
-    expect(listed.map((row) => row.id)).toContain(id);
+    expect((await listedBy(client)).map((row) => row.id)).toContain(id);
   });
 
   it('hides a payroll run from a branch manager, who may not decide one', async () => {
@@ -1035,21 +1070,113 @@ describe('the approvals list shows a caller only what is theirs to see', () => {
     const { id } = JSON.parse(created.body) as { id: string };
 
     const { client: manager } = await asRole(['branch_manager']);
-    const listed = JSON.parse((await manager.request('GET', '/v1/approvals')).body) as {
-      id: string;
-    }[];
-
-    expect(listed.map((row) => row.id)).not.toContain(id);
+    expect((await listedBy(manager)).map((row) => row.id)).not.toContain(id);
 
     // The positive control: a type they *can* decide does show up, so the
     // absence above is the filter rather than an empty list.
-    const stock = await hr.request('POST', '/v1/approvals', {
+    // Raised by warehouse: hr holds no stock ability, which is exactly the
+    // rule `REQUESTER_ABILITY` now enforces.
+    const { client: warehouse } = await asRole(['warehouse']);
+    const stock = await warehouse.request('POST', '/v1/approvals', {
       body: { type: 'stock_write_off', amountPoisha: '1000' },
     });
-    const visible = JSON.parse((await manager.request('GET', '/v1/approvals')).body) as {
-      id: string;
-    }[];
-    expect(visible.map((row) => row.id)).toContain((JSON.parse(stock.body) as { id: string }).id);
+    expect((await listedBy(manager)).map((row) => row.id)).toContain(
+      (JSON.parse(stock.body) as { id: string }).id,
+    );
+  });
+
+  it('pages with a cursor instead of silently stopping at a limit', async () => {
+    /*
+     * §23 asks for `?cursor=&limit=50`, maximum 200. The list returned the
+     * newest 100 rows and stopped — no cursor, no filter, no way to reach an
+     * older row. An org raising a hundred approvals in a week, routine across
+     * five showrooms, pushed an older *pending* supplier payment off the end
+     * of the only endpoint that lists them, and its id is discoverable
+     * nowhere else. The checker could not find the request they were there to
+     * decide.
+     */
+    const { client } = await asRole(['accounts']);
+    for (let i = 0; i < 5; i += 1) {
+      await client.request('POST', '/v1/approvals', {
+        body: { type: 'supplier_payment', amountPoisha: String(1000 + i) },
+      });
+    }
+
+    const firstResponse = await client.request('GET', '/v1/approvals?limit=2');
+    expect(firstResponse.statusCode, firstResponse.body).toBe(200);
+    const first = JSON.parse(firstResponse.body) as {
+      rows: { id: string }[];
+      nextCursor: string | null;
+    };
+
+    expect(first.rows, firstResponse.body).toHaveLength(2);
+    expect(first.nextCursor, 'there are more rows, so there must be a cursor').not.toBeNull();
+
+    const second = JSON.parse(
+      (
+        await client.request(
+          'GET',
+          `/v1/approvals?limit=2&cursor=${encodeURIComponent(first.nextCursor ?? '')}`,
+        )
+      ).body,
+    ) as { rows: { id: string }[]; nextCursor: string | null };
+
+    expect(second.rows).toHaveLength(2);
+    // The pages must not overlap. A boundary inside a same-millisecond group
+    // is exactly where an offset-based page repeats or drops a row, which is
+    // why the cursor is the composite `created_at,id`.
+    const firstIds = new Set(first.rows.map((row) => row.id));
+    for (const row of second.rows) {
+      expect(firstIds.has(row.id), `${row.id} appeared on both pages`).toBe(false);
+    }
+  });
+
+  it('stops offering a cursor once the last page is reached', async () => {
+    const { client } = await asRole(['accounts']);
+    const page = JSON.parse((await client.request('GET', '/v1/approvals?limit=200')).body) as {
+      nextCursor: string | null;
+    };
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('filters by status, so a checker can ask for what is still open', async () => {
+    const { client: maker } = await asRole(['accounts']);
+    const { client: checker } = await asRole(['accounts']);
+
+    const created = await maker.request('POST', '/v1/approvals', {
+      body: { type: 'supplier_payment', amountPoisha: '900000' },
+    });
+    const { id } = JSON.parse(created.body) as { id: string };
+    await checker.request('POST', `/v1/approvals/${id}/decide`, { body: { decision: 'approved' } });
+
+    const pending = await listedBy(checker, '?status=pending');
+    expect(pending.map((row) => row.id)).not.toContain(id);
+
+    // The positive control: it is findable under the status it now has.
+    const approved = await listedBy(checker, '?status=approved');
+    expect(approved.map((row) => row.id)).toContain(id);
+  });
+
+  it('filters by type', async () => {
+    const { client } = await asRole(['accounts']);
+    const created = await client.request('POST', '/v1/approvals', {
+      body: { type: 'settlement_posting', amountPoisha: '4200' },
+    });
+    const { id } = JSON.parse(created.body) as { id: string };
+
+    expect((await listedBy(client, '?type=settlement_posting')).map((row) => row.id)).toContain(id);
+    expect((await listedBy(client, '?type=supplier_payment')).map((row) => row.id)).not.toContain(
+      id,
+    );
+  });
+
+  it('refuses a limit outside §23\u2019s bounds and a malformed cursor', async () => {
+    const { client } = await asRole(['accounts']);
+
+    for (const query of ['?limit=0', '?limit=201', '?limit=abc', '?cursor=nonsense']) {
+      const response = await client.request('GET', `/v1/approvals${query}`);
+      expect(response.statusCode, `${query}: ${response.body}`).toBe(400);
+    }
   });
 });
 

@@ -168,6 +168,8 @@ describe('the redaction list is a list, and its contents are the control', () =>
     'apikey',
     'api_key',
     'authorization',
+    'bankaccount',
+    'bank_account',
     'backupcode',
     'backup_code',
     'bearer',
@@ -186,11 +188,15 @@ describe('the redaction list is a list, and its contents are the control', () =>
     'otp',
     'password',
     'pin',
+    'passport',
     'privatekey',
     'private_key',
+    'routingnumber',
+    'routing_number',
     'salt',
     'secret',
     'signature',
+    'tin',
     'token',
     'totp',
     'twofactor',
@@ -217,6 +223,8 @@ describe('the redaction list is a list, and its contents are the control', () =>
       api_key: 'x-api-key',
       authorization: 'Authorization',
       backupcode: 'backupCodes',
+      bankaccount: 'bankAccount',
+      bank_account: 'bank_account_id',
       backup_code: 'backup_codes',
       bearer: 'bearerToken',
       bkash: 'bkashNumber',
@@ -232,13 +240,17 @@ describe('the redaction list is a list, and its contents are the control', () =>
       national_id: 'national_id_number',
       nid: 'nidNumber',
       otp: 'otp',
+      passport: 'passportNumber',
       password: 'passwordHash',
       pin: 'pinCode',
       privatekey: 'privateKey',
       private_key: 'private-key',
+      routingnumber: 'routingNumber',
+      routing_number: 'routing_number',
       salt: 'saltValue',
       secret: 'totpSecret',
       signature: 'signatureHeader',
+      tin: 'tinCertificate',
       token: 'refreshToken',
       totp: 'totpUri',
       twofactor: 'twoFactorSecret',
@@ -388,15 +400,24 @@ describe('check 3: redaction', () => {
     expect(out.Authorization).toBe(REDACTED);
   });
 
-  it('diffs redacted values, not raw ones', () => {
-    // Diffing raw rows and redacting afterwards leaks through the comparison:
-    // "passwordHash changed" is only knowable if you compared the real values.
+  it('reports a secret changing, without reporting what it changed to', () => {
+    /*
+     * It returns names, never values, so "the password changed" is the whole
+     * disclosure — and §25 wants that recorded rather than hidden.
+     *
+     * The earlier version redacted both sides before comparing, which made a
+     * password rotation invisible: two different secrets both became
+     * `[redacted]` and the diff was empty.
+     */
     const changed = changedFields(
       { name: 'A', passwordHash: 'old' },
       { name: 'B', passwordHash: 'new' },
     );
 
-    expect(changed).toEqual(['name']);
+    expect(changed).toEqual(['name', 'passwordHash']);
+    // And no value of either appears in what it returns.
+    expect(JSON.stringify(changed)).not.toContain('old');
+    expect(JSON.stringify(changed)).not.toContain('new');
   });
 
   it('reports a field that appeared or disappeared', () => {
@@ -406,12 +427,17 @@ describe('check 3: redaction', () => {
     expect(changedFields({ a: 1 }, null)).toEqual(['a']);
   });
 
-  it('sees a phone change only where masking left digits visible', () => {
-    // Masking keeps the first three and last two digits, so a change confined
-    // to the middle is invisible to the diff. That is the trade invariant 10
-    // asks for, and it is asserted here rather than left to be discovered.
+  it('sees a phone change in the middle digits, which masking would have hidden', () => {
+    /*
+     * The reason the comparison is raw. `01712345689` and `01799999689` both
+     * mask to `017******89`, so redacting before diffing reported a changed
+     * delivery number as "nothing changed" — a standard COD fraud pattern, and
+     * one of the things the audit trail exists to catch.
+     */
     expect(changedFields({ phone: '01712345689' }, { phone: '01812345689' })).toEqual(['phone']);
-    expect(changedFields({ phone: '01712345689' }, { phone: '01799999689' })).toEqual([]);
+    expect(changedFields({ phone: '01712345689' }, { phone: '01799999689' })).toEqual(['phone']);
+    // Unchanged is still unchanged.
+    expect(changedFields({ phone: '01712345689' }, { phone: '01712345689' })).toEqual([]);
   });
 });
 

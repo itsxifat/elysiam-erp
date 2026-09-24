@@ -9,7 +9,9 @@ import {
   APPROVAL_TYPES,
   canDecideType,
   CHECKER_TYPES,
+  defineAbilityFor,
   isLimitedChecker,
+  REQUESTER_ABILITY,
   type ApprovalType as ContractApprovalType,
 } from '@elysium/contracts';
 import { canDecide, requiresApproval, withinCheckerLimit, type Threshold } from '@elysium/domain';
@@ -55,6 +57,14 @@ export interface ApprovalRequestRow {
   readonly decidedBy: string | null;
 }
 
+/**
+ * How many events the in-memory stand-in keeps.
+ *
+ * Small enough that a process running for weeks cannot grow into it, large
+ * enough that a test asserting on a handful of events never races the cap.
+ */
+const EMITTED_WINDOW = 500;
+
 /** What the outbox will carry once M04 exists (§27). */
 export interface DomainEvent {
   readonly name: 'approval.requested' | 'approval.decided';
@@ -62,9 +72,30 @@ export interface DomainEvent {
   readonly payload: Record<string, unknown>;
 }
 
+/**
+ * The org context every query here runs in.
+ *
+ * `requestId` included, which several of these were quietly dropping: §26 sets
+ * `app.request_id` inside the transaction so a slow query in a log can be
+ * traced back to the request that caused it, and a transaction that omits it
+ * is one nobody can trace.
+ */
+function orgContext(context: ActiveContext) {
+  return { orgId: context.orgId, userId: context.userId, requestId: context.requestId };
+}
+
 @Injectable()
 export class ApprovalsService {
-  /** Collected in memory until M04's outbox. See `emit` below. */
+  /**
+   * Collected in memory until M04's outbox. See `emit` below.
+   *
+   * Capped, because this is a default-scoped Nest provider — one instance per
+   * process, for the weeks an API process runs — and an uncapped array here
+   * accumulates every `approval.requested` and `approval.decided` from all
+   * five orgs until the heap gives out. A ring of the last few hundred is
+   * enough for the tests that read it and enough for a human asking "did that
+   * fire", which is all it is for until the outbox exists.
+   */
   readonly emitted: DomainEvent[] = [];
 
   constructor(private readonly audit: AuditService) {}
@@ -80,6 +111,11 @@ export class ApprovalsService {
    */
   private emit(event: DomainEvent): void {
     this.emitted.push(event);
+    // Oldest out, rather than "stop recording once full": a stale window that
+    // never updates is worse than a short one, because it looks live.
+    if (this.emitted.length > EMITTED_WINDOW) {
+      this.emitted.splice(0, this.emitted.length - EMITTED_WINDOW);
+    }
   }
 
   private async thresholdsFor(tx: Tx, orgId: string): Promise<Threshold[]> {
@@ -104,7 +140,7 @@ export class ApprovalsService {
     context: ActiveContext,
     input: { type: ApprovalType; amountPoisha: bigint | null },
   ): Promise<boolean> {
-    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
+    return withOrg({ ...orgContext(context) }, async (tx) =>
       requiresApproval({
         type: input.type,
         amountPoisha: input.amountPoisha,
@@ -113,6 +149,27 @@ export class ApprovalsService {
     );
   }
 
+  /**
+   * Raise a request for a second signature.
+   *
+   * **`amountPoisha` is trusted, and the caller is responsible for it.** This
+   * is the module API later milestones call (invariant 12), and the amount it
+   * is given decides two things: whether a second person is needed at all, and
+   * whether an amount-limited checker may sign it. A caller that passes an
+   * amount taken from an HTTP body rather than computed from the thing being
+   * approved has defeated both — `{ amountPoisha: '0', payload: { qty: 10000 }}`
+   * needs no checker, and an executor that reads the payload writes off ten
+   * thousand units against an audit row showing an honest approval of zero.
+   *
+   * So: compute the amount from the same data the executor will act on. M07
+   * and M14b own the first two callers and this note is aimed at them.
+   *
+   * What *is* enforced here is who may ask: `REQUESTER_ABILITY` requires the
+   * caller to already hold the ability the approval authorises. `request
+   * ApprovalRequest` alone covered all fourteen types, and `sales` holds it —
+   * so a sales agent could raise an investor withdrawal that lands in the
+   * accounts queue looking entirely legitimate.
+   */
   async request(
     context: ActiveContext,
     input: {
@@ -123,7 +180,29 @@ export class ApprovalsService {
       request?: AuditableRequest;
     },
   ): Promise<{ id: string; required: boolean; status: string }> {
-    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+    const needed = REQUESTER_ABILITY[input.type];
+    if (needed === undefined) {
+      throw new BadRequestException(`${input.type} is not an approvable action.`);
+    }
+
+    if (!context.isSuperAdmin) {
+      const ability = defineAbilityFor({
+        roles: context.roles,
+        isSuperAdmin: context.isSuperAdmin,
+        userId: context.userId,
+        branchIds: context.branchIds,
+      });
+
+      if (!ability.can(needed.action, needed.subject)) {
+        // Says what is missing rather than what they hold, like the guard:
+        // listing their roles back turns a denial into a probe.
+        throw new ForbiddenException(
+          `Raising a ${input.type} needs ${needed.action} ${needed.subject} in this organization.`,
+        );
+      }
+    }
+
+    return withOrg(orgContext(context), async (tx) => {
       const thresholds = await this.thresholdsFor(tx, context.orgId);
       const required = requiresApproval({
         type: input.type,
@@ -193,7 +272,7 @@ export class ApprovalsService {
       request?: AuditableRequest;
     },
   ): Promise<{ id: string; status: string }> {
-    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+    return withOrg(orgContext(context), async (tx) => {
       const rows = await tx.execute<{
         id: string;
         status: string;
@@ -333,8 +412,18 @@ export class ApprovalsService {
    * sees what they raised. That is a smaller answer than the matrix implies,
    * which is the safe direction to be wrong in.
    */
-  async list(context: ActiveContext): Promise<ApprovalRequestRow[]> {
-    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+  async list(
+    context: ActiveContext,
+    query: {
+      status?: string;
+      type?: string;
+      limit?: number;
+      cursor?: string;
+    } = {},
+  ): Promise<{ rows: ApprovalRequestRow[]; nextCursor: string | null }> {
+    const limit = query.limit ?? 50;
+
+    return withOrg(orgContext(context), async (tx) => {
       const decidable = context.isSuperAdmin
         ? [...APPROVAL_TYPES]
         : [...new Set(context.roles.flatMap((role) => [...(CHECKER_TYPES[role] ?? [])]))];
@@ -364,6 +453,34 @@ export class ApprovalsService {
               sql`, `,
             )})`;
 
+      /*
+       * Filters and a keyset cursor (§23).
+       *
+       * Keyset rather than OFFSET: rows arrive constantly, and an offset page
+       * two shifts under the reader — which on this endpoint means a pending
+       * payment can be skipped entirely between two clicks. The cursor is the
+       * composite `created_at,id`, because `created_at` alone is not unique
+       * and a boundary inside a same-millisecond group repeats or drops a row.
+       */
+      const filters = [visible];
+      if (query.status !== undefined) {
+        filters.push(sql`status::text = ${query.status}`);
+      }
+      if (query.type !== undefined) {
+        filters.push(sql`type::text = ${query.type}`);
+      }
+      if (query.cursor !== undefined) {
+        const [createdAt, id] = query.cursor.split(',');
+        filters.push(sql`(created_at, id) < (${createdAt ?? ''}::timestamptz, ${id ?? ''}::uuid)`);
+      }
+
+      const where = sql.join(
+        filters.map((clause) => sql`(${clause})`),
+        sql` and `,
+      );
+
+      // One more than asked for, so "is there another page" is an observation
+      // rather than a guess. A count(*) would race the insert that follows it.
       const rows = await tx.execute<{
         id: string;
         type: ApprovalType;
@@ -371,22 +488,36 @@ export class ApprovalsService {
         requested_by: string;
         amount_poisha: string | null;
         decided_by: string | null;
+        // postgres.js hands timestamptz back as a Date, but `tx.execute` is a
+        // raw path with no schema to parse against, so a string is possible
+        // and was what a 500 in the first page request turned out to be.
+        created_at: Date | string;
       }>(sql`
-        select id, type, status, requested_by, amount_poisha, decided_by
+        select id, type, status, requested_by, amount_poisha, decided_by, created_at
         from approvals.approval_requests
-        where ${visible}
-        order by created_at desc
-        limit 100
+        where ${where}
+        order by created_at desc, id desc
+        limit ${limit + 1}
       `);
 
-      return [...rows].map((row) => ({
-        id: row.id,
-        type: row.type,
-        status: row.status,
-        requestedBy: row.requested_by,
-        amountPoisha: row.amount_poisha,
-        decidedBy: row.decided_by,
-      }));
+      const page = [...rows].slice(0, limit);
+      const last = page.at(-1);
+      const nextCursor =
+        rows.length > limit && last !== undefined
+          ? `${new Date(last.created_at).toISOString()},${last.id}`
+          : null;
+
+      return {
+        rows: page.map((row) => ({
+          id: row.id,
+          type: row.type,
+          status: row.status,
+          requestedBy: row.requested_by,
+          amountPoisha: row.amount_poisha,
+          decidedBy: row.decided_by,
+        })),
+        nextCursor,
+      };
     });
   }
 
@@ -402,7 +533,7 @@ export class ApprovalsService {
   async listThresholds(
     context: ActiveContext,
   ): Promise<{ type: string; thresholdPoisha: string }[]> {
-    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+    return withOrg(orgContext(context), async (tx) => {
       const rows = await this.thresholdsFor(tx, context.orgId);
       return rows
         .map((row) => ({ type: row.type, thresholdPoisha: row.thresholdPoisha.toString() }))
@@ -410,22 +541,65 @@ export class ApprovalsService {
     });
   }
 
-  /** Set an org's threshold for one action type. */
+  /**
+   * Set an org's threshold for one action type.
+   *
+   * **This number does two jobs, and only one of them is obvious.** It decides
+   * when a second person is needed (`requiresApproval`), and since D-063 it is
+   * also the ceiling on an amount-limited checker's authority
+   * (`withinCheckerLimit`). So raising `stock_write_off` from ৫,০০০ to ৫০
+   * লাখ both stops write-offs under ৫০ লাখ needing a checker *and* lets every
+   * branch manager in the org single-handedly approve a ৪৯ লাখ one. One
+   * org_admin, acting alone, moves both.
+   *
+   * It is not itself a maker-checker action — §6's list does not include
+   * settings changes — so what this does instead is leave an unambiguous
+   * trail: its own audit row, in the same transaction as the write, keyed on
+   * the *type* rather than the route, with the old value in `before`. The
+   * interceptor's net would key every threshold change in every org on the
+   * same path string, so "what happened to this setting" could not be asked.
+   */
   async setThreshold(
     context: ActiveContext,
-    input: { type: ApprovalType; thresholdPoisha: bigint },
+    input: { type: ApprovalType; thresholdPoisha: bigint; request?: AuditableRequest },
   ): Promise<void> {
     if (input.thresholdPoisha < 0n) {
       throw new BadRequestException('A threshold cannot be negative.');
     }
 
-    await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+    await withOrg(orgContext(context), async (tx) => {
+      const existing = await tx.execute<{ threshold_poisha: string }>(sql`
+        select threshold_poisha from approvals.approval_thresholds
+        where org_id = ${context.orgId} and type = ${input.type}::approvals.approval_type
+      `);
+
       await tx.execute(sql`
         insert into approvals.approval_thresholds (org_id, type, threshold_poisha)
         values (${context.orgId}, ${input.type}::approvals.approval_type, ${input.thresholdPoisha.toString()})
         on conflict (org_id, type) do update
           set threshold_poisha = excluded.threshold_poisha, updated_at = now()
       `);
+
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'update',
+        action: `approvals.threshold_changed:${input.type}`,
+        entityType: 'Settings',
+        // The type, not the route. Keyed on the path, every threshold change
+        // in every org shared one `entity_id` and the entity index could not
+        // separate them.
+        entityId: input.type,
+        before: { thresholdPoisha: existing[0]?.threshold_poisha ?? null },
+        after: {
+          thresholdPoisha: input.thresholdPoisha.toString(),
+          // Named explicitly, because it is the effect nobody expects: the
+          // same number caps a branch checker (D-063).
+          branchCheckerCeilingPoisha: input.thresholdPoisha.toString(),
+        },
+        requestId: context.requestId,
+        ...(input.request === undefined ? {} : { request: input.request }),
+      });
     });
   }
 }

@@ -55,6 +55,34 @@ export const approvalDecisionSchema = z.object({
 });
 export type ApprovalDecisionInput = z.infer<typeof approvalDecisionSchema>;
 
+/**
+ * List filters and the cursor (§23).
+ *
+ * §23 asks for `?cursor=&limit=50`, maximum 200. The list had neither: it
+ * returned the newest 100 rows and stopped, with no way to page and no way to
+ * filter. An org raising a hundred approvals in a week — routine across five
+ * showrooms — pushed an older *pending* supplier payment off the end of the
+ * only endpoint that lists them, and the id is discoverable nowhere else. The
+ * checker could not find the request they were there to decide.
+ *
+ * The cursor is the composite `created_at,id` of the last row seen, because
+ * `created_at` alone is not unique and a page boundary landing inside a
+ * same-millisecond group either repeats a row or skips one.
+ */
+export const approvalListSchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected', 'cancelled']).optional(),
+  type: approvalTypeSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z
+    .string()
+    .regex(
+      /^\d{4}-\d{2}-\d{2}T[\d:.]+Z,[0-9a-f-]{36}$/,
+      'A cursor is the `createdAt,id` of the last row you saw.',
+    )
+    .optional(),
+});
+export type ApprovalListInput = z.infer<typeof approvalListSchema>;
+
 export const thresholdSchema = z.object({
   type: approvalTypeSchema,
   thresholdPoisha: poishaString.regex(/^\d+$/, 'A threshold cannot be negative.'),

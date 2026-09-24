@@ -97,10 +97,43 @@ describe('the matrix says what §6 says', () => {
 
   it('matches §6 on which approval types each role may decide', () => {
     for (const [role, expected] of Object.entries(SPEC_6_CHECKERS)) {
-      expect([...(CHECKER_TYPES[role as MembershipRole] ?? [])].sort(), role).toEqual(
-        [...expected.types].sort(),
-      );
+      expect(
+        [...(CHECKER_TYPES[role as MembershipRole] ?? [])].sort(),
+        // §6's own word for this cell, printed on failure — because unlike the
+        // grants above, both sides of this comparison are readings of it.
+        `${role}: §6 says "${expected.cell}"`,
+      ).toEqual([...expected.types].sort());
     }
+  });
+
+  it('gives no role a checker type outside §6\u2019s maker-checker list', () => {
+    // Membership in the list is one question; being a type at all is another.
+    // A typo here is a grant nobody can exercise, which is harmless — but a
+    // *real* type appearing in a role that §6 does not give it is the shape
+    // `closing_variance` had under `accounts`, and it is the reason this
+    // comparison alone was not enough.
+    for (const [role, types] of Object.entries(CHECKER_TYPES)) {
+      for (const type of types) {
+        expect(APPROVAL_TYPES, `${role} may decide unknown type ${type}`).toContain(type);
+      }
+    }
+  });
+
+  it('keeps a till reconciliation out of the payments column', () => {
+    /*
+     * Pinned by name, because the generic comparison above could not see it.
+     *
+     * §6's maker-checker list names "daily closing variances" separately from
+     * "supplier payments above the threshold". With it in the accounts list,
+     * the team that books the cash entry also approved the till shortfall —
+     * `accounts` holds create and update on `Wallet` at org scope — and
+     * `isLimitedChecker` uncapped any branch manager who also held `accounts`,
+     * on the one type where the branch *is* the till.
+     */
+    expect(canDecideType(['accounts'], 'closing_variance', false)).toBe(false);
+    expect(isLimitedChecker(['branch_manager', 'accounts'], 'closing_variance', false)).toBe(true);
+    // The positive control: accounts still checks what §6 does give them.
+    expect(canDecideType(['accounts'], 'supplier_payment', false)).toBe(true);
   });
 
   it('caps a role whose only route to a type is a limited one', () => {
@@ -681,6 +714,102 @@ describe('a reseller sees an allow-list, not a deny-list', () => {
     const full = Object.fromEntries(RESELLER_VISIBLE_FIELDS.map((field) => [field, 'x']));
     const out = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'Catalog', full);
     expect(Object.keys(out as object).sort()).toEqual([...RESELLER_VISIBLE_FIELDS].sort());
+  });
+});
+
+describe('a structure that contains itself', () => {
+  /*
+   * A cycle turned every walker here into a stack overflow — `RangeError:
+   * Maximum call stack size exceeded` from `pruneDenied`, which is a 500 on
+   * every response of that shape, produced by the one component whose job is
+   * to make responses safe. Found by a test written for something else.
+   *
+   * Not exotic: an ORM with relations hands back parents holding children
+   * holding the parent, and a hand-built response object that references its
+   * own envelope does the same. `JSON.stringify` refuses such a value outright,
+   * so dropping the back-reference costs nothing a response could have carried.
+   */
+  it('does not overflow the stack', () => {
+    const node: Record<string, unknown> = { sku: 'A', wacPoisha: '120000' };
+    node.self = node;
+
+    expect(() =>
+      serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', node),
+    ).not.toThrow();
+  });
+
+  it('still strips the cost that was next to the cycle', () => {
+    // The cycle must not become a way to smuggle a field past the pruner.
+    const node: Record<string, unknown> = { sku: 'A', wacPoisha: '120000' };
+    node.self = node;
+
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', node);
+    expect(findCostFields(out)).toEqual([]);
+    expect(out).toMatchObject({ sku: 'A' });
+  });
+
+  it('drops only the back-reference, not the whole branch', () => {
+    const child: Record<string, unknown> = { sku: 'B' };
+    const parent: Record<string, unknown> = { sku: 'A', child };
+    child.parent = parent;
+
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', parent) as Record<
+      string,
+      Record<string, unknown>
+    >;
+
+    expect(out.sku).toBe('A');
+    expect(out.child?.sku).toBe('B');
+    expect(out.child).not.toHaveProperty('parent');
+  });
+
+  it('keeps a value that appears twice without being circular', () => {
+    /*
+     * The distinction that makes the fix worth more than a visited-set.
+     *
+     * Tracking every object ever seen would drop the *second* appearance of a
+     * shared child — which an ORM produces constantly, and which is perfectly
+     * serializable. Only a reference on the current path is a cycle.
+     */
+    const shared = { sku: 'SHARED', name: 'Kurti' };
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', {
+      first: shared,
+      second: shared,
+    }) as Record<string, unknown>;
+
+    expect(out.first).toEqual({ sku: 'SHARED', name: 'Kurti' });
+    expect(out.second, 'the second appearance was dropped as if it were a cycle').toEqual({
+      sku: 'SHARED',
+      name: 'Kurti',
+    });
+  });
+
+  it('survives one on the reseller allow-list path too', () => {
+    const node: Record<string, unknown> = { sku: 'A', attributes: { colour: 'red' } };
+    node.self = node;
+
+    const out = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'Catalog', node);
+    expect(findCostFields(out)).toEqual([]);
+    expect(out).toMatchObject({ sku: 'A' });
+  });
+
+  it('does not overflow the detector either', () => {
+    // `findCostFields` recurses the same way, so it overflowed on the same
+    // input — and it is what every "no cost leaked" assertion runs through.
+    const node: Record<string, unknown> = { wacPoisha: '1' };
+    node.self = node;
+
+    expect(findCostFields(node)).toEqual(['$.wacPoisha']);
+  });
+
+  it('survives a cycle through an array', () => {
+    const list: unknown[] = [{ sku: 'A' }];
+    list.push(list);
+
+    expect(() =>
+      serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', { list }),
+    ).not.toThrow();
+    expect(findCostFields({ list })).toEqual([]);
   });
 });
 

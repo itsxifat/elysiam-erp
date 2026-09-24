@@ -6,17 +6,27 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  NotFoundException,
   Post,
   Put,
+  Query,
   Req,
 } from '@nestjs/common';
-import { approvalDecisionSchema, approvalRequestSchema, thresholdSchema } from '@elysium/contracts';
+import {
+  approvalDecisionSchema,
+  approvalListSchema,
+  approvalRequestSchema,
+  thresholdSchema,
+} from '@elysium/contracts';
 import type { FastifyRequest } from 'fastify';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { ApprovalsService } from './approvals.service.js';
+
+/** A uuid, so a malformed path parameter never reaches a uuid column. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Maker-checker over HTTP (architecture §6). */
 @Controller('v1/approvals')
@@ -25,8 +35,14 @@ export class ApprovalsController {
 
   @RequireAbility('read', 'ApprovalRequest')
   @Get()
-  async list(@Req() request: FastifyRequest) {
-    return this.approvals.list(requireContext(request));
+  async list(@Req() request: FastifyRequest, @Query() query: unknown) {
+    // §23: cursor pagination and Zod-validated filters. The list used to
+    // return the newest 100 and stop, so an older pending payment fell off the
+    // end of the only endpoint that lists them.
+    const parsed = approvalListSchema.safeParse(query ?? {});
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message);
+
+    return this.approvals.list(requireContext(request), parsed.data);
   }
 
   /*
@@ -52,6 +68,7 @@ export class ApprovalsController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message);
 
     await this.approvals.setThreshold(requireContext(request), {
+      request: request as unknown as AuditableRequest,
       type: parsed.data.type,
       thresholdPoisha: BigInt(parsed.data.thresholdPoisha),
     });
@@ -91,6 +108,12 @@ export class ApprovalsController {
   @HttpCode(HttpStatus.OK)
   @Post(':id/decide')
   async decide(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    // §23 wants problem+json, and `where id = 'nonsense'` against a uuid column
+    // is a Postgres error and a 500. Refused here as a 404, which is also the
+    // answer a request in another org gets — so this cannot become a way to
+    // tell a malformed id from one that exists elsewhere.
+    if (!UUID.test(id)) throw new NotFoundException('No such approval request.');
+
     const parsed = approvalDecisionSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message);
 

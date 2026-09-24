@@ -48,6 +48,17 @@ export const REDACTED_FIELD_PATTERNS: readonly string[] = [
   'kyc',
   'accountnumber',
   'account_number',
+  // The adjacent spellings a later module reaches for. `accountNumber` and
+  // `bkash` were here; `bankAccount`, `routingNumber`, `passport` and `tin`
+  // are the same class of identifier and were not, and a pattern that is
+  // missing when the module lands is a pattern nobody adds afterwards —
+  // the log is append-only.
+  'bankaccount',
+  'bank_account',
+  'routingnumber',
+  'routing_number',
+  'passport',
+  'tin',
   'bkash',
   'iban',
   'cvv',
@@ -181,16 +192,28 @@ export function redact(value: unknown): unknown {
  * The fields that actually changed, so the log records a diff rather than two
  * copies of a row.
  *
- * Both sides are redacted first: a naive implementation that diffs raw rows and
- * redacts afterwards leaks through the comparison itself, since a changed
- * password produces two different `[redacted]` values only if you redact first.
+ * **Compares the raw values and returns only field names.** An earlier version
+ * redacted both sides first, on the reasoning that diffing raw rows leaks
+ * through the comparison — but it returns names, never values, so "the
+ * password changed" is the entire disclosure, and that is a thing §25 wants
+ * recorded rather than hidden.
+ *
+ * Redacting first actively lost information. Masking keeps a phone's first
+ * three and last two digits, so `01712345689` and `01799999689` are both
+ * `017******89`: a customer's delivery number being changed — a standard COD
+ * fraud pattern, and one of the things an audit trail exists to catch — came
+ * back as "nothing changed". A password rotated to another password of any
+ * value did the same.
+ *
+ * The values themselves still go through `redact` on their way into `before`
+ * and `after`. This only decides which names are listed.
  */
 export function changedFields(
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,
 ): string[] {
-  const left = before === null ? {} : (redact(before) as Record<string, unknown>);
-  const right = after === null ? {} : (redact(after) as Record<string, unknown>);
+  const left = before ?? {};
+  const right = after ?? {};
 
   const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
   const changed: string[] = [];
