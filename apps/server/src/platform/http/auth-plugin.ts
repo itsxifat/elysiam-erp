@@ -75,6 +75,52 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
     ...(options.rateLimitEnabled === undefined ? {} : { enabled: options.rateLimitEnabled }),
   };
 
+  /*
+   * Keep the session token in the cookie, and out of every response body.
+   *
+   * The session cookie is `httpOnly` for one reason: page script must not be
+   * able to read it, so an XSS bug costs an attacker a request-at-a-time
+   * foothold rather than a portable credential. A response body is readable by
+   * script by definition, so a token echoed into one hands back exactly what
+   * `httpOnly` was protecting — and a stolen session token replays from any
+   * machine, for the life of the session.
+   *
+   * Better Auth returns it in three places, and all three were reachable here:
+   *
+   *   GET  /api/auth/get-session          -> { session: { token, … }, user }
+   *   POST /api/auth/sign-in/email        -> { token, user }
+   *   POST /api/auth/two-factor/verify-*  -> { token, user }
+   *
+   * Verified against the running application before writing this: the value of
+   * the `session_token` cookie appeared verbatim in the `get-session` body.
+   *
+   * Nothing of ours reads it. The console authenticates with the cookie, the
+   * invite token arrives through `onPasswordToken` rather than a response, and
+   * the bearer plugin — which is what would make this field meaningful — is not
+   * enabled. So it is removed rather than made configurable: a field nobody
+   * uses and everybody can read is not a trade-off.
+   */
+  app.addHook('onSend', (request: FastifyRequest, _reply: FastifyReply, payload: unknown, done) => {
+    const path = request.url.split('?')[0] ?? '';
+    if (!path.startsWith('/api/auth/') || typeof payload !== 'string' || payload === '') {
+      done(null, payload);
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      // Not JSON — a redirect body or an empty response. Pass it through
+      // untouched rather than guessing at its shape.
+      done(null, payload);
+      return;
+    }
+
+    const stripped = withoutSessionTokens(parsed);
+    done(null, stripped === parsed ? payload : JSON.stringify(stripped));
+  });
+
   app.addHook('preHandler', (request: FastifyRequest, reply: FastifyReply, done) => {
     const decision = checkRateLimit(request, rateLimit);
     if (!decision.allowed) {
@@ -227,4 +273,47 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       if (context !== null) typed.context = context;
     }
   });
+}
+
+/**
+ * Remove a session token wherever Better Auth puts one.
+ *
+ * Deliberately narrow: a bare `token` on the object it was handed, a
+ * `session.token` one level down, and the same on each element of an array of
+ * sessions. Those are the three shapes, and a blanket "delete every key called
+ * token at any depth" would also eat an invite token or a push token that a
+ * later milestone legitimately returns.
+ *
+ * Returns the input unchanged when there was nothing to remove, so the caller
+ * can skip re-serializing — which also means the common case costs one parse
+ * and no allocation.
+ */
+function withoutSessionTokens(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    let changed = false;
+    const mapped = value.map((entry) => {
+      const next = withoutSessionTokens(entry);
+      if (next !== entry) changed = true;
+      return next;
+    });
+    return changed ? mapped : value;
+  }
+
+  if (typeof value !== 'object' || value === null) return value;
+
+  const record = value as Record<string, unknown>;
+  const hasOwnToken = typeof record.token === 'string';
+  const session = record.session;
+  const sessionHasToken =
+    typeof session === 'object' &&
+    session !== null &&
+    typeof (session as Record<string, unknown>).token === 'string';
+
+  if (!hasOwnToken && !sessionHasToken) return value;
+
+  const { token: _token, ...rest } = record;
+  if (!sessionHasToken) return rest;
+
+  const { token: _sessionToken, ...sessionRest } = session as Record<string, unknown>;
+  return { ...rest, session: sessionRest };
 }

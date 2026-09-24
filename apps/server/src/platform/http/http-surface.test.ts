@@ -150,6 +150,14 @@ class Client {
     return this.cookies.get(CSRF_COOKIE) ?? '';
   }
 
+  /** The session cookie's value — the thing httpOnly exists to keep private. */
+  sessionToken(): string {
+    for (const [name, value] of this.cookies) {
+      if (name.includes('session_token')) return value;
+    }
+    return '';
+  }
+
   async request(
     method: string,
     url: string,
@@ -440,6 +448,102 @@ describe('check 6: a cookie-authenticated mutation needs a valid CSRF token', ()
     });
 
     expect(response.statusCode, response.body).toBe(201);
+  });
+});
+
+describe('a session cookie stays a cookie', () => {
+  /*
+   * An M02a follow-up: "`GET /api/auth/get-session` returns the raw session
+   * token in the body. The auditor could not confirm it is replayable and
+   * neither could I; worth settling."
+   *
+   * Settling it matters because the session cookie is `httpOnly` precisely so
+   * that page script cannot read it — that is the property that makes an XSS
+   * bug expensive rather than total. A response body is readable by script by
+   * definition, so a token echoed there hands back exactly what `httpOnly`
+   * was protecting, and every later "the session cookie is httpOnly" claim
+   * becomes false.
+   *
+   * So this asserts the property rather than reading the library: whatever the
+   * endpoint returns, the value in the session cookie must not be in it. If a
+   * Better Auth upgrade starts returning it, this fails on the upgrade rather
+   * than in an incident.
+   */
+  it('does not echo the session token into a body script can read', async () => {
+    const { client } = await signedIn('sales', ORG_A);
+
+    const sessionCookie = client.sessionToken();
+    expect(sessionCookie, 'no session cookie, so this would prove nothing').not.toBe('');
+
+    const response = await client.request('GET', '/api/auth/get-session');
+    expect(response.statusCode, response.body).toBe(200);
+
+    // The positive control first: the endpoint answered with a real session,
+    // so the absence below is about the token and not about an empty body.
+    const parsed = JSON.parse(response.body) as { user?: { id?: string } } | null;
+    expect(parsed?.user?.id, 'get-session returned no user').toBeDefined();
+
+    expect(response.body).not.toContain(sessionCookie);
+    // Better Auth signs the cookie as `<token>.<signature>`, so the raw token
+    // is the part before the dot — checked separately, because the full cookie
+    // value not appearing is a weaker statement than the token not appearing.
+    const rawToken = sessionCookie.split('.')[0] ?? '';
+    expect(rawToken.length).toBeGreaterThan(8);
+    expect(response.body).not.toContain(rawToken);
+  });
+
+  it('does not echo it from sign-in either, which is where it starts', async () => {
+    // Better Auth returns `{ token, user }` from sign-in. The same argument
+    // applies: the cookie is set by the same response, so the body copy is
+    // pure exposure.
+    const email = `probe_${Math.random().toString(36).slice(2, 10)}@example.invalid`;
+    const userId = `usr_${randomUUID()}`;
+
+    await withGlobal(async (tx) => {
+      await tx.execute(sql`
+        insert into iam.users (id, email, name, email_verified)
+        values (${userId}, ${email}, 'probe', true)
+      `);
+    });
+    await grantMembership({ userId, orgId: ORG_A, role: 'sales' });
+
+    const client = new Client();
+    await client.request('GET', '/v1/auth/login-branding');
+    await client.request('POST', '/api/auth/request-password-reset', {
+      body: { email, redirectTo: '/accept-invite' },
+    });
+    await client.request('POST', '/api/auth/reset-password', {
+      body: { newPassword: 'correct-horse-battery', token: tokens.take(email) },
+    });
+
+    const signIn = await client.request('POST', '/api/auth/sign-in/email', {
+      body: { email, password: 'correct-horse-battery' },
+    });
+
+    expect(signIn.statusCode, signIn.body).toBe(200);
+    // The positive control: sign-in really did succeed and set a cookie, so
+    // the absence below is the strip rather than a failed sign-in.
+    expect(client.sessionToken()).not.toBe('');
+    expect(JSON.parse(signIn.body)).not.toHaveProperty('token');
+    expect(signIn.body).not.toContain(client.sessionToken().split('.')[0] ?? 'unreachable');
+  });
+
+  it('leaves everything else in the body alone', async () => {
+    // The strip is narrow on purpose — a blanket "delete every key called
+    // token" would also eat an invite token a later milestone returns. So the
+    // rest of what get-session says must survive.
+    const { client } = await signedIn('sales', ORG_A);
+    const response = await client.request('GET', '/api/auth/get-session');
+    const parsed = JSON.parse(response.body) as {
+      session?: Record<string, unknown>;
+      user?: Record<string, unknown>;
+    };
+
+    expect(parsed.session).toBeDefined();
+    expect(parsed.session).toHaveProperty('expiresAt');
+    expect(parsed.session).toHaveProperty('userId');
+    expect(parsed.session).not.toHaveProperty('token');
+    expect(parsed.user).toHaveProperty('email');
   });
 });
 
