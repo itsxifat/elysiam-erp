@@ -380,7 +380,7 @@ The hostname comes from the **caller**, not from the API's own `Host` header (D-
   - `own`: `created_by` or `assigned_to` is the user
   - `branch`: `branch_id` is within the user's branch scope
   - `org`: the whole active org
-- **Row scope is mandatory (D-061).** The guard can only answer "may this caller act on _some_ row of this subject". It therefore hands the caller's scope filter (`scopeFilterFor`, unioned across roles) to the handler, which applies it with `scopeWhere(request, columns)` for a query or `assertInScope(request, row)` for one row. `ScopeInterceptor` refuses to send a scoped caller's response if the handler applied neither. Every module maps its table's `created_by` / `assigned_to` / `branch_id` columns once and passes them in.
+- **Row scope is mandatory (D-061).** The guard can only answer "may this caller act on _some_ row of this subject". It therefore hands the caller's scope filter (`scopeFilterFor`, unioned across roles) to the handler, which applies it with `scopeWhere(request, columns)` for a query or `assertInScope(request, row)` for one row. `ScopeInterceptor` refuses to send a scoped caller's response if the handler applied neither — including for a `create`, whose handler asserts the row it inserts. Branch scope is per membership role, never merged across roles (D-075). Every module maps its table's `created_by` / `assigned_to` / `branch_id` columns once and passes them in.
 - **Route coverage (D-070).** Every route declares `@RequireAbility`, `@AuthenticatedOnly` or `@Public` (never two that contradict), and every non-public route is listed in `route-matrix.manifest.ts` with a fixture in the generated route-matrix suite. `check-route-matrix` fails the build otherwise.
 
 ### Protected fields
@@ -443,10 +443,13 @@ The database enforces that the requester can never approve their own request, an
 
 How thresholds behave (D-062, D-065, D-068):
 
-- Only `org_admin` sets a threshold (`PUT /v1/approvals/thresholds`, subject `ApprovalThreshold`).
-- **Under** the threshold, a request is recorded `auto_approved`: audited, both events emitted, no checker. **At or above** it, with no threshold configured, or with no amount, it is `pending`. Amounts are compared by magnitude.
+- Only `org_admin` sets a threshold (`PUT /v1/approvals/thresholds`, subject `ApprovalThreshold`). Lowering one applies at once; raising one, or setting the first, is a `threshold_change` request another org admin must approve (D-073). Each request records the threshold in force when it was raised.
+- **Under** the threshold, a request is recorded `auto_approved`: audited, both events emitted, no checker. **At or above** it, with no threshold configured, it is `pending`. Amounts are compared by magnitude.
+- Never auto-approved, whatever the threshold (D-071): reopening a period, bonus rules, threshold changes and back-dated entries. The database refuses a threshold for them and an auto-approved row of them. A request's terms are fixed from the moment it is raised.
+- Who may raise is per type (`REQUESTER_TYPES`, D-072). A type whose amount the owning module derives (stock write-offs and gains, settlements, closing variances, payroll, payout batches) is always held when its amount was typed by a person.
 - Who may check is per type (`CHECKER_TYPES`): accounts decides payments, hr decides payroll and bonuses, branch_manager decides branch items (stock write-offs and gains, closing variances), org_admin decides everything except reopening a period, which only super_admin decides.
-- A branch manager is a branch-tier checker: only requests carrying a `branch_id` in their scope, and only under the configured threshold for the type.
+- A branch manager is a branch-tier checker: only requests carrying a `branch_id` in the branch manager membership's own scope (D-075), and only under both the captured and the current threshold for the type.
+- A WAC-valued amount (stock write-off or gain) is withheld from roles without `read:cost` (D-074).
 
 ---
 
