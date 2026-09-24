@@ -11,41 +11,41 @@
 - If a milestone runs out of context, resume it in a new session. Don't split it yourself.
 - **Parallel tracks:** after M14b, Track A (M15→M17) and Track B (M18→M20) can run at the same time in separate git worktrees.
 
-| ID   | Title                                            | Phase  | Effort | Depends on         |
-| ---- | ------------------------------------------------ | ------ | ------ | ------------------ |
-| M00  | Repo bootstrap and toolchain                     | 0      | XHIGH  | —                  |
-| M01  | Database core and multi-org isolation            | 0      | MAX    | M00                |
-| M02a | Identity, auth and request context               | 0      | MAX    | M01                |
-| M02b | Permissions, audit and approvals                 | 0      | MAX    | M02a               |
-| M03  | Ledger core                                      | 0      | MAX    | M02b               |
-| M04  | Platform services                                | 0      | XHIGH  | M02b               |
-| M05  | Console shell and UI kit                         | 0      | XHIGH  | M02b, M04          |
-| M06  | Catalog                                          | 1      | XHIGH  | M05                |
-| M07  | Stock ledger, locations and costing              | 1      | MAX    | M03, M06           |
-| M08  | Accounts and wallets                             | 1      | MAX    | M03, M05           |
-| M09  | Suppliers and purchasing                         | 1      | MAX    | M07, M08           |
-| M10  | Order core                                       | 1      | MAX    | M07, M08           |
-| M11  | Order desk UI, buyer list, public order intake   | 1      | XHIGH  | M10                |
-| M12  | Courier v1 and COD reconciliation                | 1      | MAX    | M11                |
-| M13  | Fraud check v1                                   | 1      | XHIGH  | M10                |
-| M14a | Data migration and opening balances              | 1      | MAX    | M06–M13            |
-| M14b | Deployment, observability, go-live kit           | 1      | XHIGH  | M14a               |
-| M15  | Multi-courier, webhooks, tracking                | 2 (A)  | XHIGH  | M12                |
-| M16  | Buyer profiles, notifications, basic promo codes | 2 (A)  | XHIGH  | M11                |
-| M17  | Fraud v2 and advance-payment rules               | 2 (A)  | XHIGH  | M13, M16           |
-| M18  | Marketing                                        | 3 (B)  | XHIGH  | M11                |
-| M19  | HR core, attendance, payroll                     | 3 (B)  | MAX    | M08                |
-| M20  | Targets, bonus rules, productivity               | 3 (B)  | XHIGH  | M19, M11           |
-| M21  | Reseller engine                                  | 4      | MAX    | M10, M12           |
-| M22  | Partner portal (reseller)                        | 4      | XHIGH  | M21, M16           |
-| M23  | Branches and showroom POS                        | 4      | MAX    | M08, M10           |
-| M24  | Analytics, dashboards, leaderboard               | 4      | XHIGH  | M12, M18, M20, M23 |
-| M25  | Investors                                        | 5      | MAX    | M08                |
-| M26  | Company loans                                    | 5      | XHIGH  | M08, M16           |
-| M27  | Message Hub (Chatwoot)                           | 5      | XHIGH  | M11, M13, M16      |
-| M28  | Agent activity extension                         | 5      | XHIGH  | M20                |
-| M29  | Landing page builder and promotions              | 5      | XHIGH  | M11, M16           |
-| M30  | Hardening and launch readiness                   | Launch | MAX    | all                |
+| ID      | Title                                            | Phase  | Effort | Depends on         |
+| ------- | ------------------------------------------------ | ------ | ------ | ------------------ |
+| M00     | Repo bootstrap and toolchain                     | 0      | XHIGH  | —                  |
+| M01     | Database core and multi-org isolation            | 0      | MAX    | M00                |
+| M02a    | Identity, auth and request context               | 0      | MAX    | M01                |
+| M02b    | Permissions, audit and approvals                 | 0      | MAX    | M02a               |
+| M03     | Ledger core                                      | 0      | MAX    | M02b               |
+| M04     | Platform services                                | 0      | XHIGH  | M02b               |
+| M05     | Console shell and UI kit                         | 0      | XHIGH  | M02b, M04          |
+| M06     | Catalog                                          | 1      | XHIGH  | M05                |
+| M07     | Stock ledger, locations and costing              | 1      | MAX    | M03, M06           |
+| M08     | Accounts and wallets                             | 1      | MAX    | M03, M05           |
+| M09     | Suppliers and purchasing                         | 1      | MAX    | M07, M08           |
+| M10     | Order core                                       | 1      | MAX    | M07, M08           |
+| M11     | Order desk UI, buyer list, public order intake   | 1      | XHIGH  | M10                |
+| M12     | Courier v1 and COD reconciliation                | 1      | MAX    | M11                |
+| M13     | Fraud check v1                                   | 1      | XHIGH  | M10                |
+| M14a    | Data migration and opening balances              | 1      | MAX    | M06–M13            |
+| M14b    | Deployment, observability, go-live kit           | 1      | XHIGH  | M14a               |
+| M15     | Multi-courier, webhooks, tracking                | 2 (A)  | XHIGH  | M12                |
+| M16     | Buyer profiles, notifications, basic promo codes | 2 (A)  | XHIGH  | M11                |
+| M17     | Fraud v2 and advance-payment rules               | 2 (A)  | XHIGH  | M13, M16           |
+| M18     | Marketing                                        | 3 (B)  | XHIGH  | M11                |
+| M19     | HR core, attendance, payroll                     | 3 (B)  | MAX    | M08                |
+| M20     | Targets, bonus rules, productivity               | 3 (B)  | XHIGH  | M19, M11           |
+| ~~M21~~ | ~~Reseller engine~~ — **DROPPED** (D-075)        | —      | —      | —                  |
+| ~~M22~~ | ~~Partner portal (reseller)~~ — **DROPPED**      | —      | —      | —                  |
+| M23     | Branches and showroom POS                        | 4      | MAX    | M08, M10           |
+| M24     | Analytics, dashboards, leaderboard               | 4      | XHIGH  | M12, M18, M20, M23 |
+| M25     | Investors                                        | 5      | MAX    | M08                |
+| M26     | Company loans                                    | 5      | XHIGH  | M08, M16           |
+| M27     | Message Hub (Chatwoot)                           | 5      | XHIGH  | M11, M13, M16      |
+| M28     | Agent activity extension                         | 5      | XHIGH  | M20                |
+| M29     | Landing page builder and promotions              | 5      | XHIGH  | M11, M16           |
+| M30     | Hardening and launch readiness                   | Launch | MAX    | all                |
 
 ---
 
@@ -807,7 +807,27 @@ Phase 3 · Effort XHIGH · Depends on: M19, M11 · Architecture: §12, §19
 
 ---
 
-## M21: Reseller engine
+## M21: Reseller engine — DROPPED
+
+**Not being built (D-075).** The client asked for the Beownz reseller platform
+to be left out; the five brands run their own sales, and what they need from
+this system is that every taka is accounted for. Nothing else depends on M21 or
+M22, so the cut costs no other milestone: `M24` (analytics) depends on M12, M18,
+M20 and M23, and no milestone lists either of these.
+
+**The permission scaffolding stays**, deliberately, and is the whole of what
+remains: the `reseller` membership role, `RESELLER_VISIBLE_FIELDS` and its
+allow-list path in `serializeFor`, the `ResellerAdmin` subject and the
+`reseller_payout_batch` approval type. All of it is built, tested and inert —
+no route serves a reseller, so the role is one an org admin simply never
+creates. Keeping it costs nothing and means picking this up later is a matter
+of building the two milestones rather than reopening §6, the permission matrix,
+a database enum and the serializer.
+
+The original plan follows, unbuilt, so that reversing this decision starts from
+a specification rather than from memory.
+
+---
 
 Phase 4 · Effort MAX · Depends on: M10, M12 · Gate: G8 · Architecture: §7, §13
 
@@ -832,7 +852,15 @@ Phase 4 · Effort MAX · Depends on: M10, M12 · Gate: G8 · Architecture: §7, 
 
 ---
 
-## M22: Partner portal (reseller)
+## M22: Partner portal (reseller) — DROPPED
+
+**Not being built (D-075).** See M21. The `portal` app skeleton stays in the
+workspace because `pnpm verify` builds it and M00's layout declares it; it
+serves nothing.
+
+The original plan follows, unbuilt.
+
+---
 
 Phase 4 · Effort XHIGH · Depends on: M21, M16 · Architecture: §13, §19, §24
 

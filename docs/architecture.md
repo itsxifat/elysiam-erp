@@ -842,7 +842,9 @@ interface CourierAdapter {
 
 ---
 
-## 13. Reseller engine (Beownz)
+## 13. Reseller engine (Beownz) — NOT BUILT (D-075)
+
+> Dropped at the client's request. This section is kept as the specification it always was, so that picking the work up later starts from a design rather than from memory. What exists in code is the permission scaffolding only — the `reseller` role, `RESELLER_VISIBLE_FIELDS`, the `ResellerAdmin` subject and the `reseller_payout_batch` approval type — and no route serves it.
 
 - **Reseller** (org = Beownz):
   - business name (printed on invoices), contact, phone (used for login)
