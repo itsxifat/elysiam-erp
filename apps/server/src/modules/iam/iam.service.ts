@@ -19,11 +19,16 @@ import {
 import { sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
+
 /** What the auth plugin hangs off the request once a session is resolved. */
 export interface AuthenticatedRequest extends FastifyRequest {
   authUser?: { id: string; email: string };
   authSessionId?: string;
   requestId?: string;
+  /** The org this request was resolved in — the one being *left* on a switch. */
+  context?: RequestContext;
 }
 
 /** What the auth module hands the service: the live Better Auth instance. */
@@ -72,6 +77,7 @@ export class IamService {
   constructor(
     @Inject(AUTH) private readonly auth: Auth,
     @Inject(PASSWORD_TOKENS) private readonly tokens: PasswordTokenStore,
+    private readonly audit: AuditService,
   ) {}
 
   requireUserId(request: FastifyRequest): string {
@@ -88,21 +94,52 @@ export class IamService {
   }
 
   /**
-   * Record the chosen org on the session row.
+   * Record the chosen org on the session row, and say so in the audit log.
    *
    * On the session rather than in a cookie, so the client cannot change which
    * org it is acting in without a round trip that re-checks membership. A
    * client-controlled org id would make every RLS policy in the system
    * advisory.
+   *
+   * **Audited here rather than by the interceptor**, and it has to be: the
+   * interceptor reads `request.context`, which was built from the session at
+   * the start of this request and therefore names the org being *left* — or
+   * names none at all, on the first switch after signing in, in which case the
+   * interceptor returns without writing anything. So the single action that
+   * decides which tenant every later request in this session reads was the one
+   * mutation with no trail.
+   *
+   * `withOrg` on the org being entered, which puts the session update and the
+   * audit row in one transaction: `iam.sessions` is global and carries no
+   * policy, so setting `app.org_id` does not hide it. The row lands in the org
+   * that is being entered, which is where someone asking "who was acting here"
+   * will look.
    */
   async setActiveOrg(request: FastifyRequest, orgId: string): Promise<void> {
-    const sessionId = (request as AuthenticatedRequest).authSessionId;
+    const typed = request as AuthenticatedRequest;
+    const sessionId = typed.authSessionId;
     if (sessionId === undefined) throw new BadRequestException('No session.');
 
-    await withGlobal(async (tx) => {
+    const userId = this.requireUserId(request);
+    const previous = typed.context?.orgId ?? null;
+
+    await withOrg({ orgId, userId, requestId: this.requestId(request) }, async (tx) => {
       await tx.execute(
         sql`update iam.sessions set active_org_id = ${orgId}, updated_at = now() where id = ${sessionId}`,
       );
+
+      await this.audit.record(tx, {
+        orgId,
+        actorUserId: userId,
+        operation: 'update',
+        action: 'iam.active_org_changed',
+        entityType: 'User',
+        entityId: userId,
+        before: { orgId: previous },
+        after: { orgId },
+        requestId: this.requestId(request),
+        request: request as unknown as AuditableRequest,
+      });
     });
   }
 

@@ -1,6 +1,7 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import type { Auth } from '@elysium/db';
 
+import { AuditService } from '../../platform/audit/audit.service.js';
 import { IamController } from './iam.controller.js';
 import { AUTH, IamService, PASSWORD_TOKENS, PasswordTokenStore } from './iam.service.js';
 
@@ -23,6 +24,10 @@ export class IamModule {
       controllers: [IamController],
       providers: [
         IamService,
+        // The org switch writes its own audit row, in the same transaction as
+        // the session update. The interceptor cannot: it reads the context
+        // this request was resolved in, which names the org being left.
+        AuditService,
         { provide: AUTH, useValue: dependencies.auth },
         { provide: PASSWORD_TOKENS, useValue: dependencies.tokens },
       ],

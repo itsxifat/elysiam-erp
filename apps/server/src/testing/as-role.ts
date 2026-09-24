@@ -121,7 +121,8 @@ export interface SignedIn {
 /** §6 requires a second factor for these, and the wall blocks everything else. */
 const TWO_FACTOR_ROLES: readonly MembershipRole[] = ['org_admin', 'accounts', 'investor'];
 
-const PASSWORD = 'correct-horse-battery';
+/** The password every test user gets, exported so a suite can sign in again. */
+export const TEST_PASSWORD = 'correct-horse-battery';
 
 /**
  * Build an `asRole` bound to one running application.
@@ -144,7 +145,7 @@ export function createRoleFactory(harness: RoleHarness) {
     orgId: string,
     options: { password?: string } = {},
   ): Promise<SignedIn> {
-    const password = options.password ?? PASSWORD;
+    const password = options.password ?? TEST_PASSWORD;
     const client = new TestClient(harness, nextIp());
     const suffix = randomUUID().slice(0, 8);
     const email = `${roles.join('_')}_${suffix}@example.invalid`;

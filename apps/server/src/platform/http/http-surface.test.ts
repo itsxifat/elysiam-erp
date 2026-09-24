@@ -108,6 +108,7 @@ beforeAll(async () => {
     // `inject()` speaks http, and a Secure cookie would be dropped by a real
     // browser on it. The production path sets this from NODE_ENV.
     secure: false,
+    secret: process.env.AUTH_SECRET,
   });
 
   await app.init();
@@ -352,6 +353,93 @@ describe('check 6: a cookie-authenticated mutation needs a valid CSRF token', ()
     const client = new Client();
     const response = await client.request('GET', '/v1/auth/login-branding', { csrf: false });
     expect(response.statusCode).toBe(200);
+  });
+
+  it('refuses a token this server did not issue, however self-consistent', async () => {
+    /*
+     * The attack plain double-submit does not stop on this domain.
+     *
+     * Cookies are scoped by domain and ignore ports, so any host under
+     * `<APP_DOMAIN>` can write `elysium_csrf` for the parent — and "same-site"
+     * includes subdomains, so `SameSite=Lax` still sends the session cookie on
+     * a form POST from one. CORS does not help, because a form POST is not a
+     * CORS request. The hosts under this domain are not all ours: D-026 puts
+     * landing sites on Vercel and §16 puts Chatwoot on the parent, so a
+     * dangling CNAME is the whole chain.
+     *
+     * The planted cookie and the planted header agree perfectly, which is why
+     * the signature is checked *before* they are compared.
+     */
+    const { client } = await signedIn('sales', ORG_A);
+    const forged =
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    const response = await client.request('POST', '/v1/me/active-org', {
+      body: { orgId: ORG_A },
+      csrf: false,
+      headers: {
+        cookie: `${CSRF_COOKIE}=${forged}`,
+        [CSRF_HEADER]: forged,
+      },
+    });
+
+    // 403 is all this asserts: the client also carries its own real cookie,
+    // and the comparison refuses the pair before the signature is considered.
+    // Which branch fired is asserted exactly in `csrf.test.ts`.
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('issues a token that carries its own signature', async () => {
+    // The positive control for the check above: a real token has the shape the
+    // verifier expects, so the 403 is about authenticity rather than about
+    // every token being rejected.
+    const client = new Client();
+    await client.request('GET', '/health/live');
+
+    const token = client.csrfToken();
+    expect(token).toContain('.');
+    expect(token.split('.')).toHaveLength(2);
+    expect(token.split('.')[1]?.length ?? 0).toBeGreaterThan(20);
+  });
+
+  it('refuses a cross-site request even when the Origin header is absent', async () => {
+    /*
+     * The gap a missing `Origin` leaves: the origin check is skipped entirely
+     * when the header is absent, and a form navigation is one of the cases a
+     * browser may omit it in. `Sec-Fetch-Site` is sent instead, and page
+     * script can set neither — both are forbidden header names.
+     */
+    const { client } = await signedIn('sales', ORG_A);
+    const response = await client.request('POST', '/v1/me/active-org', {
+      body: { orgId: ORG_A },
+      headers: { origin: '', 'sec-fetch-site': 'cross-site' },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.body).toContain('cross-site');
+  });
+
+  it('lets a same-site request through, so the check is not simply refusing everything', async () => {
+    const { client } = await signedIn('sales', ORG_A);
+    const response = await client.request('POST', '/v1/me/active-org', {
+      body: { orgId: ORG_A },
+      headers: { 'sec-fetch-site': 'same-origin' },
+    });
+
+    expect(response.statusCode, response.body).toBe(201);
+  });
+
+  it('still accepts an older client that sends neither header', async () => {
+    // `none` and an absent header both mean "not an attack": a typed URL, a
+    // bookmark, or a browser too old to send it. The signed double-submit is
+    // what covers those.
+    const { client } = await signedIn('sales', ORG_A);
+    const response = await client.request('POST', '/v1/me/active-org', {
+      body: { orgId: ORG_A },
+      headers: { origin: '' },
+    });
+
+    expect(response.statusCode, response.body).toBe(201);
   });
 });
 

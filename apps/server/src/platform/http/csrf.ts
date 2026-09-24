@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
@@ -22,6 +22,20 @@ import { isTrustedOrigin } from './origins.js';
  * This is the layer underneath, for when that assumption fails: a browser bug,
  * a `<form>` navigation that Lax permits, or a future need to relax SameSite
  * for the Chatwoot iframe.
+ *
+ * **The token is signed, and that is not decoration.** Plain double-submit
+ * assumes an attacker cannot set our cookie — and on this domain that
+ * assumption does not hold. Cookies ignore ports and are scoped by *domain*,
+ * so any host under `<APP_DOMAIN>` can write a `elysium_csrf` cookie for the
+ * parent, and "same-site" includes subdomains, so `SameSite=Lax` still sends
+ * the session cookie on a form POST from one. That is the exact threat D-054
+ * describes — landing sites on Vercel (D-026), Chatwoot on the parent (§16),
+ * and a dangling CNAME turning a subdomain takeover into an ERP takeover. CORS
+ * does not help here, because a form POST is not a CORS request.
+ *
+ * Signing closes it: an attacker can plant a cookie and echo it in a header,
+ * but cannot produce `HMAC(AUTH_SECRET, value)`, so the pair is rejected
+ * before the two are even compared.
  */
 
 export const CSRF_COOKIE = 'elysium_csrf';
@@ -36,6 +50,35 @@ export interface CsrfOptions {
   /** Scoped to the parent domain, like the session cookie (§6). */
   readonly cookieDomain?: string | undefined;
   readonly secure?: boolean;
+  /**
+   * The key the token is signed with — `AUTH_SECRET`.
+   *
+   * Required. An optional signing key is one that is absent in the environment
+   * that matters, and "unsigned" is indistinguishable from "signed" at a
+   * glance in a log or a test.
+   */
+  readonly secret: string;
+}
+
+/** `<random>.<hmac>`; both halves base64url, neither of use without the other. */
+function sign(value: string, secret: string): string {
+  return createHmac('sha256', secret).update(value).digest('base64url');
+}
+
+/**
+ * Is this a token we issued?
+ *
+ * Checked before the cookie and header are compared, because a planted cookie
+ * matches a planted header perfectly — the comparison is only meaningful once
+ * both are known to be ours.
+ */
+function isSigned(token: string, secret: string): boolean {
+  const separator = token.lastIndexOf('.');
+  if (separator <= 0) return false;
+
+  const value = token.slice(0, separator);
+  const signature = token.slice(separator + 1);
+  return tokensMatch(signature, sign(value, secret));
 }
 
 /**
@@ -62,7 +105,8 @@ export function ensureCsrfToken(
 }
 
 export function issueCsrfToken(reply: FastifyReply, options: CsrfOptions): string {
-  const token = randomBytes(32).toString('base64url');
+  const value = randomBytes(32).toString('base64url');
+  const token = `${value}.${sign(value, options.secret)}`;
 
   reply.setCookie(CSRF_COOKIE, token, {
     // Readable by the client on purpose: the whole double-submit mechanism
@@ -103,6 +147,24 @@ export function checkCsrf(request: FastifyRequest, options: CsrfOptions): CsrfRe
     }
   }
 
+  /*
+   * `Sec-Fetch-Site`, which closes the gap a missing `Origin` leaves.
+   *
+   * The origin check above is skipped entirely when the header is absent, and
+   * a form navigation is one of the cases where a browser may omit it. Every
+   * browser that omits it in that case sends this one instead, and page script
+   * cannot set either — both are forbidden header names.
+   *
+   * Only `cross-site` is refused. `same-origin` and `same-site` are ours by
+   * definition, and `none` means the user typed the URL or used a bookmark,
+   * which is not an attack. An absent header means an older client, and the
+   * signed double-submit below still applies.
+   */
+  const fetchSite = request.headers['sec-fetch-site'];
+  if (fetchSite === 'cross-site') {
+    return { ok: false, reason: 'cross-site request' };
+  }
+
   const cookies = (request as FastifyRequest & { cookies?: Record<string, string | undefined> })
     .cookies;
   const cookieToken = cookies?.[CSRF_COOKIE];
@@ -114,6 +176,14 @@ export function checkCsrf(request: FastifyRequest, options: CsrfOptions): CsrfRe
   if (typeof headerToken !== 'string' || headerToken === '') {
     return { ok: false, reason: `no ${CSRF_HEADER} header` };
   }
+
+  // Ours, before equal. A cookie planted by a sibling host under this domain
+  // matches a header the same page set perfectly, so comparing first and
+  // authenticating second would accept the pair.
+  if (!isSigned(cookieToken, options.secret)) {
+    return { ok: false, reason: 'CSRF cookie was not issued by this server' };
+  }
+
   if (!tokensMatch(cookieToken, headerToken)) {
     return { ok: false, reason: 'CSRF token mismatch' };
   }

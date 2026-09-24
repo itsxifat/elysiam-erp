@@ -174,6 +174,10 @@ export async function buildApp(): Promise<{
     ...originPolicy,
     cookieDomain: env.APP_DOMAIN === 'localhost' ? undefined : `.${env.APP_DOMAIN}`,
     secure: env.NODE_ENV === 'production',
+    // The CSRF token is signed with the same key Better Auth signs its own
+    // cookies with, so a token this server did not issue is refused before it
+    // is compared to anything.
+    secret: env.AUTH_SECRET,
   });
 
   await app.init();

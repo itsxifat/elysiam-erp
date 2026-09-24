@@ -3,13 +3,18 @@ import { NestFactory, Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { assertNoCostFields, MEMBERSHIP_ROLES, type MembershipRole } from '@elysium/contracts';
 import { createAuth, RecordingSmsProvider, SEED_ORG_IDS, withOrg, withSystem } from '@elysium/db';
-import { startTestDatabase, stopSharedContainer, type TestDatabase } from '@elysium/db/testing';
+import {
+  grantMembership,
+  startTestDatabase,
+  stopSharedContainer,
+  type TestDatabase,
+} from '@elysium/db/testing';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AppModule } from '../../app.module.js';
-import { createRoleFactory, type TestClient } from '../../testing/as-role.js';
+import { createRoleFactory, TEST_PASSWORD, TestClient } from '../../testing/as-role.js';
 import { AbilityGuard } from '../../platform/auth/abilities.js';
 import { registerAuth } from '../../platform/http/auth-plugin.js';
 import { AuditInterceptor } from '../../platform/audit/audit.interceptor.js';
@@ -33,6 +38,52 @@ const ORG_A = SEED_ORG_IDS['elysium-lifestyle-bd'] ?? '';
 const ORG_B = SEED_ORG_IDS['oura-lifestyle'] ?? '';
 const APP_DOMAIN = 'erp.example.com';
 const ORIGIN = `https://${APP_DOMAIN}`;
+
+/**
+ * Audit rows for an entity, waiting for the interceptor to catch up.
+ *
+ * The interceptor writes **after** the response, in its own transaction — it
+ * has to, because it runs once the handler has returned. So a test that reads
+ * the log immediately after a 201 is racing it.
+ *
+ * This used to be `await new Promise(r => setTimeout(r, 300))`, which is the
+ * shape of a test that passes on a fast laptop and fails in CI under load — and
+ * when it fails it reads as "the interceptor recorded nothing", which is a
+ * genuinely alarming thing to see and chase. Polling to a deadline is both
+ * faster in the common case and honest about what it is waiting for.
+ */
+async function auditRowsFor(
+  entityId: string,
+  orgId: string,
+  options: { atLeast?: number; timeoutMs?: number } = {},
+): Promise<
+  { action: string; entity_type: string; operation: string; before: unknown; after: unknown }[]
+> {
+  const atLeast = options.atLeast ?? 1;
+  const deadline = Date.now() + (options.timeoutMs ?? 5_000);
+
+  for (;;) {
+    const rows = await withSystem(
+      async (tx) =>
+        tx.execute<{
+          action: string;
+          entity_type: string;
+          operation: string;
+          before: unknown;
+          after: unknown;
+        }>(sql`
+          select action, entity_type, operation, before, after
+          from audit.audit_log
+          where entity_id = ${entityId}
+          order by created_at desc
+        `),
+      { orgId },
+    );
+
+    if (rows.length >= atLeast || Date.now() > deadline) return [...rows];
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
 
 let database: TestDatabase;
 let app: NestFastifyApplication;
@@ -83,7 +134,13 @@ beforeAll(async () => {
   server = app.getHttpAdapter().getInstance();
   await server.register(fastifyCookie as never);
 
-  registerAuth(server, { auth: authHandle.auth, limiter, trustedOrigins: [ORIGIN], secure: false });
+  registerAuth(server, {
+    auth: authHandle.auth,
+    limiter,
+    trustedOrigins: [ORIGIN],
+    secure: false,
+    secret: process.env.AUTH_SECRET,
+  });
 
   await app.init();
   await server.ready();
@@ -340,16 +397,7 @@ describe('check 3: every mutation writes a redacted audit row', () => {
     expect(created.statusCode, created.body).toBe(201);
     const { id } = JSON.parse(created.body) as { id: string };
 
-    // The interceptor writes after the response, so give it a moment.
-    await new Promise((resolve) => setTimeout(resolve, 300));
-
-    const rows = await withSystem(
-      async (tx) =>
-        tx.execute<{ action: string; entity_type: string }>(sql`
-          select action, entity_type from audit.audit_log where entity_id = ${id}
-        `),
-      { orgId: ORG_A },
-    );
+    const rows = await auditRowsFor(id, ORG_A);
 
     expect(rows.length, 'the interceptor recorded nothing').toBeGreaterThan(0);
     expect(rows[0]?.entity_type).toBe('CostedItem');
@@ -939,5 +987,194 @@ describe('the approvals list shows a caller only what is theirs to see', () => {
       id: string;
     }[];
     expect(visible.map((row) => row.id)).toContain((JSON.parse(stock.body) as { id: string }).id);
+  });
+});
+
+describe('the second factor locks an account, not merely an address', () => {
+  /*
+   * An M02a follow-up recorded that `two_factors.failed_verification_count`
+   * and `locked_until` were "columns nothing reads or writes — they imply a
+   * TOTP lockout that does not exist". That was wrong, and wrong in a way
+   * worth writing down: the grep was over *our* code. Better Auth 1.7.5
+   * declares both fields in its twoFactor schema and enforces them in
+   * `verify-two-factor.mjs` — ten consecutive failures, a fifteen-minute lock.
+   *
+   * So the control exists. What did not exist was any evidence of it, and
+   * "the library handles it" is the same shape of claim as M02a's rate limits,
+   * which a comment described as per-identifier when they were per-IP only.
+   *
+   * Two things make this test say something our own limiter could not:
+   *
+   * - Each sign-in challenge allows **five** attempts before Better Auth
+   *   invalidates the challenge outright, so reaching the account's ten takes
+   *   two challenges. A counter that reset with the challenge would never
+   *   lock; the point of an account-level budget is that it does not.
+   * - Every challenge comes from a **different address**, so our per-IP
+   *   bucket (ten per minute on this route) is never the thing refusing.
+   */
+  const WRONG = '000000';
+
+  async function freshChallenge(email: string, ip: string): Promise<TestClient> {
+    const client = new TestClient(
+      { server: () => server, tokens, appDomain: APP_DOMAIN, origin: ORIGIN },
+      ip,
+    );
+    await client.request('GET', '/v1/auth/login-branding');
+    await client.request('POST', '/api/auth/sign-in/email', {
+      body: { email, password: TEST_PASSWORD },
+    });
+    return client;
+  }
+
+  async function lockoutRow(
+    email: string,
+  ): Promise<{ failed_verification_count: number; locked_until: Date | null }> {
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{ failed_verification_count: number; locked_until: Date | null }>(sql`
+        select t.failed_verification_count, t.locked_until
+        from iam.two_factors t
+        join iam.users u on u.id = t.user_id
+        where u.email = ${email}
+      `),
+    );
+
+    const row = rows[0];
+    if (row === undefined) throw new Error(`no two_factors row for ${email}`);
+    return row;
+  }
+
+  it('counts failures across challenges and addresses, then refuses a clean one', async () => {
+    const { email } = await asRole(['org_admin']);
+
+    // Sign-in must hand back a redirect and no session: the account is
+    // enrolled, so this is the pre-session path the lockout guards.
+    const first = await freshChallenge(email, '10.7.1.1');
+    const attempt = await first.request('POST', '/api/auth/two-factor/verify-totp', {
+      body: { code: WRONG },
+    });
+    expect(attempt.statusCode, 'a wrong code must never succeed').toBeGreaterThanOrEqual(400);
+
+    // Spend this challenge, then two more from other addresses. Five attempts
+    // each is the per-challenge cap; the sixth would be refused by the
+    // challenge rather than by the account.
+    for (let more = 0; more < 4; more += 1) {
+      await first.request('POST', '/api/auth/two-factor/verify-totp', { body: { code: WRONG } });
+    }
+
+    const second = await freshChallenge(email, '10.7.2.2');
+    for (let i = 0; i < 5; i += 1) {
+      await second.request('POST', '/api/auth/two-factor/verify-totp', { body: { code: WRONG } });
+    }
+
+    const counted = await lockoutRow(email);
+    expect(
+      counted.failed_verification_count >= 10 || counted.locked_until !== null,
+      `the account counter did not move: ${JSON.stringify(counted)}`,
+    ).toBe(true);
+
+    // A clean address and a brand-new challenge. Our per-IP bucket is empty
+    // here, so anything that refuses now is refusing the account.
+    const elsewhere = await freshChallenge(email, '10.7.3.3');
+    const locked = await elsewhere.request('POST', '/api/auth/two-factor/verify-totp', {
+      body: { code: WRONG },
+    });
+
+    expect(locked.statusCode, locked.body).toBe(429);
+    expect((await lockoutRow(email)).locked_until).not.toBeNull();
+  });
+
+  it('leaves an untouched account unlocked, so the assertion above means something', async () => {
+    // Without this, the test could pass on an account that was locked from
+    // birth — or on a column that is always non-null.
+    const { email } = await asRole(['accounts']);
+    const row = await lockoutRow(email);
+
+    expect(Number(row.failed_verification_count)).toBe(0);
+    expect(row.locked_until).toBeNull();
+  });
+});
+
+describe("M02a's two mutations are audited, which they were not", () => {
+  /*
+   * An M02a follow-up, owned by this milestone: "no `serializeFor()` and no
+   * audit entries on the two mutations M02a ships, which are the two that
+   * grant roles and change acting org — the first rows anyone will want in
+   * the audit log".
+   *
+   * `POST /v1/users` is covered by the interceptor, and the interceptor knows
+   * to key the row on `userId` because that response carries no `id`.
+   *
+   * The org switch is not, and could not be. The interceptor reads
+   * `request.context`, which was built from the session at the start of the
+   * request and therefore names the org being *left* — or names nothing at
+   * all, on the first switch after signing in, in which case it returns
+   * without writing. So the action that decides which tenant every later
+   * request in the session reads was the one mutation with no trail. It writes
+   * its own row now, inside the transaction that moves the session.
+   */
+  const rowsFor = auditRowsFor;
+
+  it('records an org switch, in the org being entered', async () => {
+    // `asRole` ends by switching into ORG_A, so this user has done exactly one.
+    const { userId } = await asRole(['sales']);
+
+    const rows = await rowsFor(userId, ORG_A);
+    const switches = [...rows].filter((row) => row.action === 'iam.active_org_changed');
+
+    expect(switches.length, 'the org switch left no audit row').toBeGreaterThan(0);
+    expect(switches[0]?.after).toMatchObject({ orgId: ORG_A });
+  });
+
+  it('records which org was left, so a switch is a transition and not a state', async () => {
+    const { client, userId } = await asRole(['sales']);
+
+    // A second membership, then a switch into it. Without `before`, the log
+    // says someone was in org B and not that they came from org A.
+    await grantMembership({ userId, orgId: ORG_B, role: 'sales' });
+    const moved = await client.request('POST', '/v1/me/active-org', { body: { orgId: ORG_B } });
+    expect(moved.statusCode, moved.body).toBe(201);
+
+    const rows = await rowsFor(userId, ORG_B);
+    const entering = [...rows].find((row) => row.action === 'iam.active_org_changed');
+
+    expect(entering?.before).toMatchObject({ orgId: ORG_A });
+    expect(entering?.after).toMatchObject({ orgId: ORG_B });
+  });
+
+  it('records a user being created and given a role', async () => {
+    const { client } = await asRole(['org_admin']);
+    const email = `invited_${Math.random().toString(36).slice(2, 10)}@example.invalid`;
+
+    const created = await client.request('POST', '/v1/users', {
+      body: { email, name: 'Invited', role: 'warehouse' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const { userId } = JSON.parse(created.body) as { userId: string };
+
+    const rows = await rowsFor(userId, ORG_A);
+    expect(rows.length, 'creating a user and granting a role left no audit row').toBeGreaterThan(0);
+  });
+
+  it('keeps the invite token out of the log', async () => {
+    // `POST /v1/users` returns a one-time invite token (D-057). The response
+    // body is what the interceptor records, so without redaction the token
+    // would sit in an append-only table, and anyone who could read the log
+    // could claim the account.
+    const { client } = await asRole(['org_admin']);
+    const email = `invited_${Math.random().toString(36).slice(2, 10)}@example.invalid`;
+
+    const created = await client.request('POST', '/v1/users', {
+      body: { email, name: 'Invited', role: 'warehouse' },
+    });
+    const body = JSON.parse(created.body) as { userId: string; token?: string };
+    const rows = await rowsFor(body.userId, ORG_A);
+
+    expect(rows.length, 'nothing was logged, so its redaction proves nothing').toBeGreaterThan(0);
+    if (body.token !== undefined && body.token !== '') {
+      expect(JSON.stringify(rows)).not.toContain(body.token);
+    }
+    // The positive control: the email did survive, so the row is about this
+    // user rather than empty.
+    expect(JSON.stringify(rows)).toContain(email);
   });
 });
