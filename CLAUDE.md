@@ -47,7 +47,7 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
 - Setup: `pnpm i`, `pnpm setup:env`, `docker compose -f infra/docker-compose.dev.yml up -d --wait`, then `pnpm db:bootstrap && pnpm db:migrate && pnpm db:seed`
 - `pnpm db:bootstrap` creates the three database roles. Once per database, and the only step needing a superuser.
 - `pnpm dev` runs every app. Filter with `pnpm --filter @elysium/<app> dev`.
-- `pnpm db:generate` creates a migration from schema changes. `pnpm db:migrate` applies them as `erp_owner`, `pnpm db:seed` loads geography and the five orgs. The seed is idempotent.
+- `pnpm db:generate` creates a migration from schema changes. `pnpm db:migrate` applies them as `erp_owner`, `pnpm db:seed` loads geography, the five orgs and each org's chart of accounts (with a hand-cash wallet per branch). The seed is idempotent.
 - `pnpm test` runs unit + integration tests. `pnpm e2e` runs Playwright.
 - `pnpm verify` runs format check, lint, typecheck, tests, build, the migration-immutability check, the schema-drift check and the route-matrix gate. It is the gate for every commit to main.
 - `pnpm check:routes` is the route-matrix gate on its own: every route declares an ability (or `@AuthenticatedOnly` / `@Public`), and every non-public route is in `apps/server/src/platform/auth/route-matrix.manifest.ts` with a fixture in the generated route-matrix suite. Needs a build first.
