@@ -92,6 +92,20 @@
       "when": 1790261441663,
       "tag": "0012_approval_lineage",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790263208114,
+      "tag": "0013_ledger_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790263217110,
+      "tag": "0014_ledger_integrity",
+      "breakpoints": true
     }
   ]
 }

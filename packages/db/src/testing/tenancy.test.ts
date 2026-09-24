@@ -1080,6 +1080,42 @@ describe('check 6: migrate and seed are idempotent', () => {
     expect(after).toBe(before);
   });
 
+  it('seeds the chart of accounts once per org, with a hand-cash wallet per branch (M03)', async () => {
+    const snapshot = async () =>
+      withSystem(
+        async (tx) =>
+          tx.execute<{ code: string; id: string; subtype: string; branch_id: string | null }>(
+            sql`select code, id, subtype::text as subtype, branch_id from ledger.accounts order by code`,
+          ),
+        { orgId: ORG_A },
+      );
+
+    const before = [...(await snapshot())];
+    const first = await seedOrganizations();
+    await seedOrganizations();
+    const after = [...(await snapshot())];
+
+    // Same rows, same ids, nothing duplicated.
+    expect(after).toEqual(before);
+    // 40 template accounts plus one wallet for the seeded HQ branch, per org.
+    expect(before).toHaveLength(41);
+    expect(first.accounts).toBe(41 * 5);
+
+    const wallets = before.filter((row) => row.subtype === 'wallet_cash');
+    expect(wallets.map((row) => row.code)).toEqual(['1010-HQ']);
+    expect(wallets[0]?.branch_id).not.toBeNull();
+
+    // A branch added later gets its wallet on the next seed, and only one.
+    const branchId = await seedBranch(ORG_A, 'SR-DHK');
+    await seedOrganizations();
+    await seedOrganizations();
+    const again = [...(await snapshot())].filter((row) => row.subtype === 'wallet_cash');
+    expect(again.map((row) => [row.code, row.branch_id])).toEqual([
+      ['1010-HQ', wallets[0]?.branch_id],
+      ['1010-SR-DHK', branchId],
+    ]);
+  });
+
   it('keeps derived ids stable across runs', async () => {
     // The seed is idempotent because ids come from the slug, not from a
     // generator. If that ever changes, every fixture and bookmarked URL breaks.

@@ -1,5 +1,6 @@
 /**
- * Seed the five orgs, their HQ branches and warehouse locations.
+ * Seed the five orgs, their HQ branches, warehouse locations and charts of
+ * accounts.
  *
  * Safe to run repeatedly: every insert is an upsert on a natural key and the
  * ids are derived, so a second run changes nothing.
@@ -21,7 +22,7 @@ try {
   const result = await seedOrganizations();
   console.log(
     `db:seed — ${result.organizations} organizations, ` +
-      `${result.branches} branches, ${result.locations} locations.`,
+      `${result.branches} branches, ${result.locations} locations, ${result.accounts} accounts.`,
   );
 } finally {
   await closeDatabase();

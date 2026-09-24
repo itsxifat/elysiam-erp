@@ -162,7 +162,24 @@ export const ANALYTICS_READABLE: readonly string[] = ['org.organizations'];
  * green — and M03's journals and M07's stock movements are both append-only by
  * invariant 2 and 3.
  */
-export const APPEND_ONLY_TABLES: readonly string[] = ['audit.audit_log'];
+export const APPEND_ONLY_TABLES: readonly string[] = [
+  'audit.audit_log',
+  // Invariant 2: journals never change after posting (M03).
+  'ledger.journals',
+  'ledger.journal_lines',
+];
+
+/**
+ * Tables `erp_app` may update but never delete from, enumerated for the same
+ * reason. A maker-checker record is evidence (0009); deleting a closed
+ * period's row would reopen it without an approval; deleting an account would
+ * orphan the lines posted to it.
+ */
+export const NO_DELETE_TABLES: readonly string[] = [
+  'approvals.approval_requests',
+  'ledger.accounts',
+  'ledger.periods',
+];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */
 export const ANALYTICS_READABLE_SCHEMAS: readonly string[] = ['ref'];

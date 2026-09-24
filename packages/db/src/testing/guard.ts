@@ -6,6 +6,7 @@ import {
   ANALYTICS_READABLE_SCHEMAS,
   APPEND_ONLY_TABLES,
   DECLARED_POLICIES,
+  NO_DELETE_TABLES,
 } from '../rls.js';
 import { GLOBAL_SCHEMAS, GLOBAL_TABLES, ORG_CONTEXT_SQL } from '../rls.js';
 
@@ -387,6 +388,15 @@ export async function findAppendOnlyProblems(): Promise<string[]> {
     const row = rows[0];
     if (row?.can_update === true) offenders.push(`${table}: erp_app has UPDATE`);
     if (row?.can_delete === true) offenders.push(`${table}: erp_app has DELETE`);
+  }
+
+  for (const table of NO_DELETE_TABLES) {
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{ can_delete: boolean }>(sql`
+        select has_table_privilege('erp_app', ${table}, 'DELETE') as can_delete
+      `),
+    );
+    if (rows[0]?.can_delete === true) offenders.push(`${table}: erp_app has DELETE`);
   }
 
   return offenders;

@@ -2,10 +2,12 @@ import { sql } from 'drizzle-orm';
 
 import { withSystem } from '../client.js';
 import { branches, locations, organizations } from '../schema/org/index.js';
+import { seedChartOfAccounts } from './ledger.js';
 import { deterministicUuid, SEED_ORGS, seedOrgId } from './orgs.js';
 
 /**
- * Seed the five orgs, each with an HQ branch and a warehouse location.
+ * Seed the five orgs, each with an HQ branch, a warehouse location and its
+ * chart of accounts (M03).
  *
  * Idempotent by construction: ids are derived from natural keys and every
  * insert is an upsert, so running it twice changes nothing. That matters more
@@ -27,6 +29,8 @@ export interface SeedResult {
   readonly organizations: number;
   readonly branches: number;
   readonly locations: number;
+  /** Ledger accounts across every org: the template plus one hand-cash wallet per branch. */
+  readonly accounts: number;
 }
 
 export async function seedOrganizations(): Promise<SeedResult> {
@@ -104,7 +108,12 @@ export async function seedOrganizations(): Promise<SeedResult> {
   // global so it counts directly, but branches and locations have to be counted
   // inside each org's context — an uncontexted count returns 0, because
   // erp_owner is subject to FORCE RLS exactly like the application is.
-  const totals = { organizations: 0, branches: 0, locations: 0 };
+  const totals = { organizations: 0, branches: 0, locations: 0, accounts: 0 };
+
+  // The chart of accounts, after the branches it keeps a wallet for (§7).
+  for (const org of SEED_ORGS) {
+    totals.accounts += await seedChartOfAccounts(seedOrgId(org.slug));
+  }
 
   totals.organizations = await withSystem(async (tx) => {
     const rows = await tx.execute<{ count: string }>(
@@ -137,3 +146,5 @@ export async function seedOrganizations(): Promise<SeedResult> {
 }
 
 export { SEED_ORGS, SEED_ORG_IDS, seedOrgId, deterministicUuid } from './orgs.js';
+export { ensureBranchWallets, seedAccountId, seedChartOfAccounts } from './ledger.js';
+export { branchCashCode, COA_TEMPLATE, type TemplateAccount } from './coa-template.js';

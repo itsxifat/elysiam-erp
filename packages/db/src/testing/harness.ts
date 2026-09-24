@@ -254,7 +254,10 @@ export async function stopSharedContainer(): Promise<void> {
 export async function resetTenantData(): Promise<void> {
   await withSystem(async (tx) => {
     await tx.execute(
-      sql`truncate org.feature_flags, org.settings, org.locations, org.branches restart identity cascade`,
+      // Ledger tables first and by name: journals reference nothing that
+      // cascades from branches, and would otherwise outlive their lines.
+      sql`truncate ledger.journal_lines, ledger.journals, ledger.periods, ledger.accounts,
+        org.feature_flags, org.settings, org.locations, org.branches restart identity cascade`,
     );
   });
   await seedOrganizations();
