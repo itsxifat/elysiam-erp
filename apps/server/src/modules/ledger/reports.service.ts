@@ -127,7 +127,7 @@ export class ReportsService {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const [account] = await repo.accountsByIds(tx, context.orgId, [accountId]);
       if (account === undefined || this.hidden(context, account.subtype)) {
-        throw ledgerHttpError('LEDGER_ACCOUNT_INVALID', 'No such account.');
+        throw ledgerHttpError('LEDGER_ACCOUNT_NOT_FOUND', 'No such account.');
       }
       // A branch-level account outside the caller's branches does not exist
       // for them, rather than existing with nothing on it.
@@ -184,7 +184,7 @@ export class ReportsService {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const [account] = await repo.accountsByIds(tx, context.orgId, [walletId]);
       if (account?.subtype.startsWith('wallet_') !== true) {
-        throw ledgerHttpError('LEDGER_ACCOUNT_INVALID', 'No such wallet.');
+        throw ledgerHttpError('LEDGER_ACCOUNT_NOT_FOUND', 'No such wallet.');
       }
       // Wallet scope is by the wallet's own branch: a branch manager sees
       // their branch's wallets, and an org-level wallet is not theirs.

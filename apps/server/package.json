@@ -36,6 +36,7 @@
     "@types/node": "catalog:",
     "concurrently": "catalog:",
     "eslint": "catalog:",
+    "fast-check": "catalog:",
     "pino-pretty": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

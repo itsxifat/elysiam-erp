@@ -52,7 +52,7 @@ export class CashService {
       // The same answer for another org's wallet as for one that does not
       // exist: RLS has already made them the same thing.
       if (wallet === undefined || !isAccountSubtype(wallet.subtype)) {
-        throw ledgerHttpError('LEDGER_ACCOUNT_INVALID', 'No such wallet.');
+        throw ledgerHttpError('LEDGER_ACCOUNT_NOT_FOUND', 'No such wallet.');
       }
       // `update Wallet` is branch-scoped for a branch manager: their own
       // branch's wallets and nothing else (§6), checked before anything is
@@ -60,7 +60,7 @@ export class CashService {
       assertInScope(input.request, { branchId: wallet.branch_id });
 
       if (income === undefined || !isAccountSubtype(income.subtype)) {
-        throw ledgerHttpError('LEDGER_ACCOUNT_INVALID', 'No such income category.');
+        throw ledgerHttpError('LEDGER_ACCOUNT_NOT_FOUND', 'No such income category.');
       }
 
       // A retry of an entry already posted — possibly after Dhaka midnight,
