@@ -198,6 +198,11 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'marketing|read|Campaign|org',
   'marketing|create|Campaign|org',
   'marketing|update|Campaign|org',
+  // The cell is `org` for the whole row, ad spend included. Splitting the
+  // subject for the accounts cell must not narrow this one.
+  'marketing|read|CampaignSpend|org',
+  'marketing|create|CampaignSpend|org',
+  'marketing|update|CampaignSpend|org',
   'org_admin|read|CampaignSpend|org',
   'org_admin|create|CampaignSpend|org',
   'org_admin|update|CampaignSpend|org',

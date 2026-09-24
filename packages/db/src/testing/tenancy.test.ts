@@ -734,6 +734,93 @@ describe('check 5: the guard — every tenant table is isolated', () => {
     expect(await findAppendOnlyProblems()).toEqual([]);
   });
 
+  it('would notice a second permissive policy sitting beside a correct one', async () => {
+    /*
+     * The shape neither existing negative control could see.
+     *
+     * Both of those build a table with a *single* weak policy: one names it
+     * `<table>_org_isolation` so it lands on the joined row and the expression
+     * check fires, the other gives the table no isolation policy at all. The
+     * configuration in between — a byte-perfect isolation policy **plus** an
+     * extra permissive one — passed clean, and PostgreSQL ORs permissive
+     * policies, so the extra one decides.
+     *
+     * The route is not exotic. `tenantTableSql` emits a second policy itself
+     * when `analyticsReadsAllOrgs` is set, and a later migration copying that
+     * block while dropping its `for select to "erp_analytics"` line is one
+     * line away from this.
+     */
+    await withSystem(async (tx) => {
+      await tx.execute(sql`create schema if not exists probe`);
+      await tx.execute(sql`
+        create table if not exists probe.two_policies (
+          id uuid primary key default gen_random_uuid(),
+          org_id uuid not null references org.organizations(id)
+        )
+      `);
+      await tx.execute(sql`alter table probe.two_policies enable row level security`);
+      await tx.execute(sql`alter table probe.two_policies force row level security`);
+      // The good one, generated exactly as every tenant table gets it.
+      await tx.execute(sql`
+        create policy two_policies_org_isolation on probe.two_policies
+          using (org_id = nullif(current_setting('app.org_id', true), '')::uuid)
+          with check (org_id = nullif(current_setting('app.org_id', true), '')::uuid)
+      `);
+      // And the slip.
+      await tx.execute(sql`create policy two_policies_oops on probe.two_policies using (true)`);
+    });
+
+    try {
+      const offenders = await findTenancyOffenders();
+      const probe = offenders.find((entry) => entry.table === 'two_policies');
+
+      expect(probe, 'the guard cannot see a policy ORed beside the isolation policy').toBeDefined();
+      expect(probe?.reasons.join(' ')).toContain('extra permissive policy two_policies_oops');
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`drop table if exists probe.two_policies cascade`);
+      });
+    }
+
+    expect(await findTenancyOffenders()).toEqual([]);
+  });
+
+  it('accepts the analytics read tenantTableSql emits, which is the legitimate second policy', async () => {
+    // The positive control: the check must not flag the one companion policy
+    // the generator itself produces, or every table using
+    // `analyticsReadsAllOrgs` becomes an offender and the guard gets disabled.
+    await withSystem(async (tx) => {
+      await tx.execute(sql`create schema if not exists probe`);
+      await tx.execute(sql`
+        create table if not exists probe.with_analytics (
+          id uuid primary key default gen_random_uuid(),
+          org_id uuid not null references org.organizations(id)
+        )
+      `);
+      await tx.execute(sql`alter table probe.with_analytics enable row level security`);
+      await tx.execute(sql`alter table probe.with_analytics force row level security`);
+      await tx.execute(sql`
+        create policy with_analytics_org_isolation on probe.with_analytics
+          using (org_id = nullif(current_setting('app.org_id', true), '')::uuid)
+          with check (org_id = nullif(current_setting('app.org_id', true), '')::uuid)
+      `);
+      await tx.execute(sql`
+        create policy with_analytics_analytics_all_orgs on probe.with_analytics
+          for select to "erp_analytics"
+          using (true)
+      `);
+    });
+
+    try {
+      const offenders = await findTenancyOffenders();
+      expect(offenders.find((entry) => entry.table === 'with_analytics')).toBeUndefined();
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`drop table if exists probe.with_analytics cascade`);
+      });
+    }
+  });
+
   it('would notice if an append-only table were granted update', async () => {
     await withSystem(async (tx) => {
       await tx.execute(sql`grant update on "audit"."audit_log" to "erp_app"`);

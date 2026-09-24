@@ -111,25 +111,89 @@ describe('the application production runs actually starts', () => {
     expect(response.statusCode, response.body).toBe(200);
   });
 
-  it('has a working request logger, so the audit failure path is not silent', () => {
-    // `request.log.error` being a no-op is what made "a silently missing audit
-    // trail is the worst of both worlds" untrue in the code that said it.
-    const logger = (server as unknown as { log?: { error?: unknown } }).log;
-    expect(typeof logger?.error).toBe('function');
+  it('has a real logger, not the no-op one that also answers to .error', () => {
+    /*
+     * `typeof log.error === 'function'` was the old assertion, and it passes
+     * with the logger removed entirely: Fastify's abstract logger — what you
+     * get from `logger: false` — exposes `.error` as a no-op precisely so
+     * calling code need not check. So the test could not fail for the thing it
+     * was named after, which matters because `AuditInterceptor` reports a
+     * failed audit write through `request.log.error` and nothing else.
+     *
+     * `levels` is pino's own, and the abstract logger has no such property.
+     */
+    const logger = server.log as unknown as {
+      error?: unknown;
+      levels?: { values?: Record<string, number> };
+    };
+
+    expect(typeof logger.error).toBe('function');
+    expect(logger.levels?.values, 'this is the no-op logger, not pino').toBeDefined();
   });
 });
 
 describe('the global wiring is mounted in production, not only in tests', () => {
-  it('denies an unauthenticated caller on a guarded route', async () => {
-    // If `useGlobalGuards` were removed from buildApp, this would be a 200 and
-    // every other suite would still pass, because they mount the guard
-    // themselves.
-    const response = await anonymous().request('GET', '/v1/demo/costed-items');
-    expect(response.statusCode, response.body).toBeGreaterThanOrEqual(400);
+  it('denies a signed-in caller whose role has no rule for the route', async () => {
+    /*
+     * A *signed-in* caller, and a role the matrix denies — because the
+     * unauthenticated version of this test could not fail.
+     *
+     * With `useGlobalGuards` removed from `buildApp`, an anonymous request
+     * still reaches `requireContext`, which throws 401, and the old assertion
+     * (`>= 400`) held. The guard was the thing being tested and its absence
+     * was invisible.
+     *
+     * `hr` has a session and an active org, so `requireContext` succeeds. The
+     * matrix gives them no rule for `CostedItem`. Only the guard can produce
+     * this 403; without it the handler runs and answers 200 with the items.
+     */
+    const { client } = await asRole(['hr'], ORG_A);
+    const response = await client.request('GET', '/v1/demo/costed-items');
+
+    expect(response.statusCode, response.body).toBe(403);
+  });
+
+  it('records a mutation nobody instrumented, which only the interceptor does', async () => {
+    /*
+     * The audit interceptor's own presence check, and it had none.
+     *
+     * `POST /v1/demo/costed-items` writes no audit entry of its own — it is
+     * the kind of route that ships instrumented-later — so the row can only
+     * come from the global interceptor. Remove it from `buildApp` and every
+     * other suite still passes, because they mount their own.
+     */
+    const client = adminClient;
+    const sku = `BOOT-AUDIT-${randomUUID().slice(0, 8)}`;
+
+    const created = await client.request('POST', '/v1/demo/costed-items', {
+      body: { sku, name: 'Boot audited' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const { id } = JSON.parse(created.body) as { id: string };
+
+    // The interceptor writes after the response, so poll rather than sleep.
+    const deadline = Date.now() + 5_000;
+    let rows: { action: string }[];
+    for (;;) {
+      rows = [
+        ...(await withSystem(
+          async (tx) =>
+            tx.execute<{ action: string }>(
+              sql`select action from audit.audit_log where entity_id = ${id}`,
+            ),
+          { orgId: ORG_A },
+        )),
+      ];
+      if (rows.length > 0 || Date.now() > deadline) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    expect(rows.length, 'the audit interceptor is not mounted in buildApp').toBeGreaterThan(0);
+    expect(rows[0]?.action).toContain('POST');
   });
 
   it('leaves a @Public route reachable', async () => {
-    // The positive control: the 4xx above must be the guard, not the app being
+    // The positive control: the 403 above must be the guard, not the app being
     // broken.
     const response = await anonymous().request('GET', '/v1/auth/login-branding');
     expect(response.statusCode, response.body).toBe(200);

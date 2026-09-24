@@ -380,6 +380,23 @@ describe('check 3: redaction', () => {
       mapping: 'a->b',
       spinnerDelay: 300,
       description: 'a token of appreciation',
+      /*
+       * Every one of these was redacted by a three-letter pattern added in
+       * good faith. `tin` — a taxpayer id, and a reasonable thing to protect —
+       * matched all of them as a substring, so an append-only table would have
+       * recorded `[redacted]` where M03's ledger entries say when they posted.
+       *
+       * Listed by name rather than left to the frozen-list test, because that
+       * test only checks *membership*: `tin` was correctly in the list and
+       * correctly matched `tinCertificate`, and was still wrong.
+       */
+      postingDate: '2026-09-25',
+      settlementPosting: 'batch-7',
+      accountingPeriod: '2026-09',
+      settings: { theme: 'dark' },
+      routingKey: 'orders.created',
+      printing: 'queued',
+      meeting: 'standup',
     };
 
     const out = redact(innocent) as Record<string, unknown>;

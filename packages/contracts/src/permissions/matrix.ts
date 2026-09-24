@@ -180,7 +180,21 @@ export const REQUESTER_ABILITY: Readonly<
   supplier_payment: { action: 'update', subject: 'Supply' },
   settlement_posting: { action: 'update', subject: 'CourierSettlement' },
   closing_variance: { action: 'update', subject: 'Wallet' },
-  back_dated_entry: { action: 'read', subject: 'LedgerReport' },
+  /*
+   * `update Wallet`, not `read LedgerReport`.
+   *
+   * A back-dated entry rewrites a closed period's books, and gating it on a
+   * *read* let `branch_manager` raise one — §6 gives them a branch P&L to
+   * look at and no ledger write anywhere. Reading a report is not authority to
+   * post against it.
+   *
+   * `update Wallet` is the nearest thing the matrix has to "may post a cash
+   * movement" until M03 introduces the ledger's own subject, and it resolves
+   * to org_admin, accounts and branch_manager-within-branch — the three §7
+   * expects to be posting at all. M03 should move this to the journal subject
+   * it adds.
+   */
+  back_dated_entry: { action: 'update', subject: 'Wallet' },
   payroll_run: { action: 'update', subject: 'Payroll' },
   bonus_rule: { action: 'update', subject: 'Target' },
   reseller_payout_batch: { action: 'update', subject: 'ResellerAdmin' },
@@ -326,6 +340,18 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'update'], subject: 'Customer', scope: 'org' },
     { action: 'export', subject: 'BuyerExport', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Campaign', scope: 'org' },
+    /*
+     * Marketing keeps ad spend, and splitting the row nearly took it away.
+     *
+     * §6's cell is `org` for the *whole* row — "Campaigns, ad spend, leads" —
+     * so marketing owns the spend figure as much as the campaign. D-064 split
+     * `CampaignSpend` out because the **accounts** cell is narrower than its
+     * row ("spend entry"), and the split silently narrowed marketing's too.
+     * §11 defines CPO, CPDO and ROAS from this number and puts it in
+     * Marketing's own entity list, so the team that owns those metrics could
+     * not have read the input to them.
+     */
+    { action: ['read', 'create', 'update'], subject: 'CampaignSpend', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'LandingPage', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'read', subject: 'Target', scope: 'own' },

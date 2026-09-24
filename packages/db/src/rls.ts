@@ -177,6 +177,30 @@ export const APPEND_ONLY_TABLES: readonly string[] = ['audit.audit_log'];
  */
 export const NO_DELETE_TABLES: readonly string[] = ['approvals.approval_requests'];
 
+/**
+ * Permissive policies that may sit *beside* a table's isolation policy.
+ *
+ * PostgreSQL ORs permissive policies, so a second one is a second independent
+ * door into the table — the isolation policy next to it stops mattering. The
+ * guard reports every one it finds, and this is the opt-out, listed by name
+ * per table for the same reason `GLOBAL_TABLES` is: an omission should fail
+ * the build, and an addition should be a visible decision somebody signed.
+ *
+ * The analytics read `tenantTableSql` emits is not listed because it is
+ * recognised structurally — `for select to erp_analytics`, a role that cannot
+ * write (§5 exception 2, D-049). Anything else needs a row here and a row in
+ * decisions.md.
+ */
+export const ALLOWED_COMPANION_POLICIES: Readonly<Record<string, readonly string[]>> = {
+  /*
+   * §5 exception 4 and D-050: a user reads their own memberships across orgs,
+   * before any org has been chosen, so that the org switcher can list what
+   * they may enter. Scoped to `app.user_id` and SELECT-only — it widens the
+   * table by exactly one row set, the caller's own.
+   */
+  'iam.memberships': ['memberships_own_rows'],
+};
+
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */
 export const ANALYTICS_READABLE_SCHEMAS: readonly string[] = ['ref'];
 

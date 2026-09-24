@@ -63,6 +63,36 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  */
 type Seen = Set<object>;
 
+/**
+ * Set a key without letting `__proto__` mean what it usually means.
+ *
+ * `result[key] = value` invokes the `Object.prototype.__proto__` setter when
+ * the key is that string, so it *replaces the result's prototype* instead of
+ * adding a property. `isPlainObject` then answers false for that object, and
+ * every later pass returns it untouched — which is how a `__proto__` key in a
+ * payload switched the cost deny-list off for an entire response:
+ *
+ *   serializeFor(resellerContext, 'Catalog',
+ *     JSON.parse('{"__proto__":{},"sku":{"skuCode":"A","wacPoisha":"120000"}}'))
+ *   -> { sku: { skuCode: 'A', wacPoisha: '120000' } }
+ *
+ * Reproduced against the built package: the allow-list kept the `sku` subtree,
+ * as it is meant to, and the deny-list that removes cost from inside it never
+ * ran. `attributes` is a supplier-fed jsonb blob in M06's catalog, so this is
+ * reachable by a value a partner controls rather than only by our own code.
+ *
+ * `defineProperty` creates an own data property for any key, including that
+ * one, so the field survives as data and no prototype moves.
+ */
+function assign(target: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
 function isCycle(value: unknown, seen: Seen): value is object {
   return typeof value === 'object' && value !== null && seen.has(value);
 }
@@ -92,7 +122,7 @@ function pruneDenied(value: unknown, denied: ReadonlySet<string>, seen: Seen = n
     const pruned = pruneDenied(entry, denied, seen);
     // A dropped cycle leaves the key out rather than setting it to undefined,
     // so the response shape matches what JSON would have produced.
-    if (pruned !== undefined || entry === undefined) result[key] = pruned;
+    if (pruned !== undefined || entry === undefined) assign(result, key, pruned);
   }
   seen.delete(value);
   return result;
@@ -151,12 +181,12 @@ function pruneAllowed(
     if (allowed.has(key)) {
       // An allow-listed key exposes its subtree, so a cycle inside one is
       // still a cycle — checked rather than copied by reference.
-      result[key] = isCycle(entry, seen) ? undefined : entry;
+      assign(result, key, isCycle(entry, seen) ? undefined : entry);
       continue;
     }
     if (Array.isArray(entry) || isPlainObject(entry)) {
       const pruned = pruneAllowed(entry, allowed, false, seen);
-      if (pruned !== undefined) result[key] = pruned;
+      if (pruned !== undefined) assign(result, key, pruned);
     }
   }
   seen.delete(value);

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 
 import { withSystem } from '../client.js';
 import {
+  ALLOWED_COMPANION_POLICIES,
   ANALYTICS_READABLE,
   ANALYTICS_READABLE_SCHEMAS,
   APPEND_ONLY_TABLES,
@@ -54,6 +55,7 @@ interface TableRow extends Record<string, unknown> {
   qual: string | null;
   with_check: string | null;
   policy_count: string;
+  other_policies: string | null;
   permissive: string | null;
   cmd: string | null;
   roles: string | null;
@@ -86,7 +88,37 @@ export async function findTenancyOffenders(): Promise<Offender[]> {
         p.cmd,
         p.roles::text as roles,
         (select count(*) from pg_policies q
-           where q.schemaname = n.nspname and q.tablename = c.relname) as policy_count
+           where q.schemaname = n.nspname and q.tablename = c.relname) as policy_count,
+        -- Every OTHER policy on the table, described.
+        --
+        -- The guard used to join one policy by name and count the rest, so a
+        -- second permissive policy was invisible. PostgreSQL ORs permissive
+        -- policies, so one extra "using (true)" for PUBLIC makes the
+        -- byte-perfect isolation policy beside it irrelevant: the table still
+        -- has org_id, ENABLE, FORCE and a correct _org_isolation policy, and
+        -- findTenancyOffenders returns nothing.
+        --
+        -- Not hypothetical. tenantTableSql itself emits a second policy when
+        -- analyticsReadsAllOrgs is set, and iam.memberships has carried two
+        -- since migration 0004. A later migration copying that block and
+        -- dropping its "for select to erp_analytics" line is a one-line slip
+        -- that opens every org's rows to everyone.
+        --
+        -- Both negative controls in the tenancy suite build a table with a
+        -- SINGLE weak policy, which lands on the joined row. The one shape
+        -- they could not see is a correct policy with a bad one beside it.
+        (select coalesce(
+           json_agg(json_build_object(
+             'name', q.policyname,
+             'permissive', q.permissive,
+             'roles', q.roles::text,
+             'cmd', q.cmd,
+             'qual', q.qual
+           ) order by q.policyname)::text, '[]')
+         from pg_policies q
+         where q.schemaname = n.nspname
+           and q.tablename = c.relname
+           and q.policyname <> c.relname || '_org_isolation') as other_policies
       from pg_class c
       join pg_namespace n on n.oid = c.relnamespace
       left join pg_policies p
@@ -144,11 +176,67 @@ export async function findTenancyOffenders(): Promise<Offender[]> {
       if (row.roles !== '{public}') reasons.push(`policy applies only to ${row.roles}`);
     }
 
+    reasons.push(
+      ...companionPolicyProblems(row.other_policies, ALLOWED_COMPANION_POLICIES[qualified] ?? []),
+    );
+
     if (reasons.length > 0)
       offenders.push({ schema: row.schemaname, table: row.tablename, reasons });
   }
 
   return offenders;
+}
+
+/**
+ * Policies sitting *beside* the isolation policy, and whether each is allowed.
+ *
+ * PostgreSQL ORs permissive policies, so any additional permissive policy is a
+ * second, independent door into the table. Exactly one shape is legitimate
+ * here, and it is the one `tenantTableSql` emits: the analytics read, which is
+ * `for select` and scoped `to erp_analytics` — a role that cannot write and
+ * that only the analytics module and super-admin consolidated reads use (§5
+ * exception 2, D-049).
+ *
+ * Anything else is reported. A RESTRICTIVE policy is an extra *condition*
+ * rather than an extra door, so it is left alone.
+ */
+function companionPolicyProblems(raw: string | null, allowed: readonly string[]): string[] {
+  if (raw === null || raw === '') return [];
+
+  let policies: {
+    name?: string;
+    permissive?: string;
+    roles?: string;
+    cmd?: string;
+    qual?: string | null;
+  }[];
+  try {
+    policies = JSON.parse(raw) as typeof policies;
+  } catch {
+    return ['could not read the table\u2019s other policies'];
+  }
+
+  const problems: string[] = [];
+
+  for (const policy of policies) {
+    if (policy.permissive !== 'PERMISSIVE') continue;
+
+    const name = policy.name ?? '(unnamed)';
+    const isAnalyticsRead =
+      policy.cmd === 'SELECT' && (policy.roles ?? '').replace(/[{}"]/g, '') === 'erp_analytics';
+
+    if (isAnalyticsRead) continue;
+    // Declared, reviewed and tied to a decision row. See
+    // ALLOWED_COMPANION_POLICIES.
+    if (allowed.includes(name)) continue;
+
+    problems.push(
+      `extra permissive policy ${name} (${policy.cmd ?? '?'} to ${policy.roles ?? '?'}) ` +
+        `is ORed with the isolation policy, using (${policy.qual ?? 'true'})`,
+    );
+  }
+
+  return problems;
 }
 
 export interface ForeignKeyOffender {

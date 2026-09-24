@@ -1,7 +1,12 @@
 import { fastifyCookie } from '@fastify/cookie';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { assertNoCostFields, MEMBERSHIP_ROLES, type MembershipRole } from '@elysium/contracts';
+import {
+  APPROVAL_TYPES,
+  assertNoCostFields,
+  MEMBERSHIP_ROLES,
+  type MembershipRole,
+} from '@elysium/contracts';
 import { createAuth, RecordingSmsProvider, SEED_ORG_IDS, withOrg, withSystem } from '@elysium/db';
 import {
   grantMembership,
@@ -255,15 +260,19 @@ describe('check 1: the guard honours the matrix over HTTP', () => {
     expect(response.statusCode, response.body).toBe(201);
   });
 
-  it('refuses a route that declares nothing at all', async () => {
-    // The guard's default. `check-route-matrix` stops one shipping, and this is
-    // what happens if one ever does.
-    const { client } = await asRole(['org_admin']);
-    const response = await client.request('GET', '/v1/demo/costed-items', {
-      headers: { 'x-nonexistent': '1' },
-    });
-    expect(response.statusCode).not.toBe(500);
-  });
+  /*
+   * The guard's default-deny is asserted in
+   * `apps/server/src/platform/auth/abilities.test.ts`, against a controller
+   * that really does have an undeclared handler.
+   *
+   * There was a test here claiming to cover it. It requested
+   * `/v1/demo/costed-items` — a fully declared route — with a made-up header,
+   * and asserted `not.toBe(500)`. Nothing about it involved an undeclared
+   * route, and it would have passed against any application that returns any
+   * status at all. Removed rather than repaired, because the real version
+   * needs a module with a broken route in it, and that belongs in a throwaway
+   * app rather than in the suite that runs against the real one.
+   */
 });
 
 describe('check 2: cost reaches accounts and nobody else, through the API', () => {
@@ -1366,6 +1375,65 @@ describe("M02a's two mutations are audited, which they were not", () => {
     // The positive control: the email did survive, so the row is about this
     // user rather than empty.
     expect(JSON.stringify(rows)).toContain(email);
+  });
+});
+
+describe('the approval type exists in three places, which must agree', () => {
+  /*
+   * `APPROVAL_TYPES` in @elysium/contracts, `approvalType` in the Drizzle
+   * schema, and `approvals.approval_type` in the database are three
+   * independent lists. D-069 and architecture §6 both claim a test asserts
+   * they agree; the one that existed compared the contract to the *checker
+   * table* — a fourth list — and never looked at the database at all.
+   *
+   * A value in the contract and not in the enum is a 500 from `request()`:
+   * `'investor_withdrawal'::approvals.approval_type` is an invalid input
+   * value. A value in the enum and not in the contract is a row nobody can
+   * raise and no role can decide. Both are silent until someone tries.
+   */
+  it('matches the database enum to the contract, exactly', async () => {
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{ label: string }>(sql`
+        select e.enumlabel as label
+        from pg_enum e
+        join pg_type t on t.oid = e.enumtypid
+        join pg_namespace n on n.oid = t.typnamespace
+        where n.nspname = 'approvals' and t.typname = 'approval_type'
+        order by e.enumsortorder
+      `),
+    );
+
+    expect([...rows].map((row) => row.label).sort()).toEqual([...APPROVAL_TYPES].sort());
+  });
+
+  it('accepts every type the contract declares, over the real API', async () => {
+    /*
+     * Membership is not usability. The enum and the contract can agree while a
+     * type still fails: `REQUESTER_ABILITY` has to name it, the cast has to
+     * work, and some role has to be able to raise it. A type nobody can raise
+     * is one M10 or M18 discovers at the wall.
+     */
+    // Two roles between them, because no single role holds every ability
+    // `REQUESTER_ABILITY` maps to — §6 gives org_admin only *read* on
+    // Investors, so investor payouts are accounts' to raise. That is the rule
+    // working, not a gap: it is what stops a sales agent raising one.
+    const { client: admin } = await asRole(['org_admin']);
+    const { client: accounts } = await asRole(['accounts']);
+
+    const unraisable: string[] = [];
+    for (const type of APPROVAL_TYPES) {
+      const responses = await Promise.all(
+        [admin, accounts].map((client) =>
+          client.request('POST', '/v1/approvals', { body: { type, amountPoisha: '1000' } }),
+        ),
+      );
+
+      if (!responses.some((response) => response.statusCode === 201)) {
+        unraisable.push(`${type}: ${responses.map((r) => r.body).join(' | ')}`);
+      }
+    }
+
+    expect(unraisable, unraisable.join(' ;; ')).toEqual([]);
   });
 });
 

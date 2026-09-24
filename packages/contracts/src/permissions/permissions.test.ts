@@ -886,6 +886,26 @@ describe('serializeFor, over arbitrary payloads', () => {
 });
 
 describe('canReadCost matches the matrix', () => {
+  it('derives the same roles the matrix grants `read Cost`', () => {
+    /*
+     * The suite was named for this and never did it: it compared `canReadCost`
+     * to `COST_READING_ROLES`, which is what `canReadCost` reads. Both sides
+     * of every assertion came from one constant, and that constant is a second
+     * copy of §6's cost row — untied to `MATRIX`, and the *sole* gate in
+     * `serializeFor`. Adding `{ action: 'read', subject: 'Cost' }` to a role
+     * in the matrix without adding it here grants the row and withholds the
+     * fields; removing it here without touching the matrix does the reverse.
+     */
+    const fromMatrix = MEMBERSHIP_ROLES.filter((role) =>
+      (MATRIX[role] ?? []).some((rule) => {
+        const actions = Array.isArray(rule.action) ? rule.action : [rule.action];
+        return rule.subject === 'Cost' && actions.includes('read');
+      }),
+    );
+
+    expect([...COST_READING_ROLES].sort()).toEqual([...fromMatrix].sort());
+  });
+
   it.each(MEMBERSHIP_ROLES)('agrees with COST_READING_ROLES for %s', (role) => {
     expect(canReadCost([role], false)).toBe(COST_READING_ROLES.includes(role));
   });
