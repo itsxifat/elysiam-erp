@@ -57,6 +57,27 @@ export const SUBJECTS = [
   'ResellerAdmin',
   'Investor',
   'CompanyLoan',
+  /**
+   * Ad spend, which is not a campaign.
+   *
+   * §6 gives accounts "spend entry" on the campaigns row and gives marketing
+   * the row itself. Transcribed as one subject, that became `accounts may
+   * create Campaign` — the finance team able to launch a brand's campaigns.
+   * Two subjects is what the cell actually says.
+   */
+  'CampaignSpend',
+  /**
+   * Payroll, which is not an employee record.
+   *
+   * Same shape of error: §6's employees row gives accounts "payroll posting
+   * and payment", and collapsing the row into `Employee` gave accounts create
+   * and update on staff records. HR owns the people; accounts posts the money.
+   */
+  'Payroll',
+  /** §6's "Users, roles, settings" row. Org configuration, thresholds included. */
+  'Settings',
+  /** §18's cross-org normalized ranking. See the `all` scope note below. */
+  'Leaderboard',
 ] as const;
 
 export type Subject = (typeof SUBJECTS)[number];
@@ -64,21 +85,32 @@ export type Subject = (typeof SUBJECTS)[number];
 /**
  * How far a permission reaches.
  *
- * - `own`     — rows where `created_by` or `assigned_to` is the user
- * - `branch`  — rows whose `branch_id` is in the user's branch scope
- * - `org`     — the whole active org
- * - `all`     — every org. super_admin only (§5 exception 3).
+ * - `own`               — rows where `created_by` or `assigned_to` is the user
+ * - `own_or_unassigned` — the above, plus rows nobody has been assigned yet
+ * - `branch`            — rows whose `branch_id` is in the user's branch scope
+ * - `org`               — the whole active org
+ * - `all`               — every org. super_admin, plus §18's leaderboard.
  *
  * Ordered weakest to strongest, and `SCOPE_RANK` below depends on that order.
+ *
+ * `own_or_unassigned` exists because §6's orders cell for sales reads "own +
+ * unassigned queue", and that queue is the COD workflow: orders arrive with no
+ * agent on them and an agent claims one. Transcribed as plain `own` it made
+ * the queue invisible, so the only way to work it would have been to widen the
+ * rule to `org` — which hands every agent every other agent's orders. It is a
+ * scope rather than a flag on the rule because `effectiveScope` has to be able
+ * to rank it, and it sits exactly where it belongs: wider than `own`, and
+ * narrower than a branch.
  */
-export const SCOPES = ['own', 'branch', 'org', 'all'] as const;
+export const SCOPES = ['own', 'own_or_unassigned', 'branch', 'org', 'all'] as const;
 export type Scope = (typeof SCOPES)[number];
 
 export const SCOPE_RANK: Readonly<Record<Scope, number>> = {
   own: 0,
-  branch: 1,
-  org: 2,
-  all: 3,
+  own_or_unassigned: 1,
+  branch: 2,
+  org: 3,
+  all: 4,
 };
 
 /**

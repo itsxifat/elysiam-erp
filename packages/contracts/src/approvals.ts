@@ -20,6 +20,16 @@ export const APPROVAL_TYPES = [
   'payroll_run',
   'bonus_rule',
   'reseller_payout_batch',
+  /*
+   * §6's maker-checker list names "investor withdrawals and distributions" and
+   * "fraud block overrides", and neither was here. The consequence is not that
+   * they were unapproved — it is that they could not be routed through
+   * approvals at all, because the enum has no value for them, so M15 and M10
+   * would each have arrived at a wall and invented something.
+   */
+  'investor_withdrawal',
+  'investor_distribution',
+  'fraud_override',
   'period_reopen',
 ] as const;
 

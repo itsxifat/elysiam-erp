@@ -1,7 +1,12 @@
 import { sql } from 'drizzle-orm';
 
 import { withSystem } from '../client.js';
-import { ANALYTICS_READABLE, ANALYTICS_READABLE_SCHEMAS, APPEND_ONLY_TABLES } from '../rls.js';
+import {
+  ANALYTICS_READABLE,
+  ANALYTICS_READABLE_SCHEMAS,
+  APPEND_ONLY_TABLES,
+  NO_DELETE_TABLES,
+} from '../rls.js';
 import { GLOBAL_SCHEMAS, GLOBAL_TABLES, ORG_CONTEXT_SQL } from '../rls.js';
 
 /**
@@ -314,6 +319,27 @@ export async function findAppendOnlyProblems(): Promise<string[]> {
     const row = rows[0];
     if (row?.can_update === true) offenders.push(`${table}: erp_app has UPDATE`);
     if (row?.can_delete === true) offenders.push(`${table}: erp_app has DELETE`);
+  }
+
+  /*
+   * And the weaker rule: changeable once, erasable never.
+   *
+   * An approval record is evidence in the same sense the audit log is — it is
+   * what says a payment was authorised — but it must be updatable, because
+   * deciding it *is* an update. So DELETE alone is checked, and it is checked
+   * structurally rather than only by the one end-to-end test that tries it:
+   * `grant all on all tables in schema approvals to erp_app` is an entirely
+   * plausible line for a later migration, and it would hand the grant back
+   * without mentioning this table at all.
+   */
+  for (const table of NO_DELETE_TABLES) {
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{ can_delete: boolean }>(sql`
+        select has_table_privilege('erp_app', ${table}, 'DELETE') as can_delete
+      `),
+    );
+
+    if (rows[0]?.can_delete === true) offenders.push(`${table}: erp_app has DELETE`);
   }
 
   return offenders;

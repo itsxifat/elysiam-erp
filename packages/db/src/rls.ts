@@ -164,6 +164,19 @@ export const ANALYTICS_READABLE: readonly string[] = ['org.organizations'];
  */
 export const APPEND_ONLY_TABLES: readonly string[] = ['audit.audit_log'];
 
+/**
+ * Tables `erp_app` may UPDATE but must never DELETE.
+ *
+ * Weaker than append-only and load-bearing for the same reason. A maker-checker
+ * record has to change once — that is what taking a decision is — but erasing
+ * one leaves a payment with no trail at all, so 0009 revoked DELETE and a
+ * trigger froze the terms afterwards. Enumerated here because a revoke is
+ * invisible: nothing in a later migration has to mention this table to hand
+ * the grant back, and `grant all on all tables in schema approvals to erp_app`
+ * is a plausible line for a future milestone to write.
+ */
+export const NO_DELETE_TABLES: readonly string[] = ['approvals.approval_requests'];
+
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */
 export const ANALYTICS_READABLE_SCHEMAS: readonly string[] = ['ref'];
 

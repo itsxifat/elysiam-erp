@@ -42,6 +42,11 @@ export const approvalType = approvals.enum('approval_type', [
   'payroll_run',
   'bonus_rule',
   'reseller_payout_batch',
+  // §6's list also names investor withdrawals and distributions, and fraud
+  // block overrides. Added to the live type by 0011.
+  'investor_withdrawal',
+  'investor_distribution',
+  'fraud_override',
   'period_reopen',
 ]);
 

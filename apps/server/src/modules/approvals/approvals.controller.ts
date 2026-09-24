@@ -1,5 +1,16 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
-import { approvalDecisionSchema, approvalRequestSchema } from '@elysium/contracts';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Put,
+  Req,
+} from '@nestjs/common';
+import { approvalDecisionSchema, approvalRequestSchema, thresholdSchema } from '@elysium/contracts';
 import type { FastifyRequest } from 'fastify';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -16,6 +27,35 @@ export class ApprovalsController {
   @Get()
   async list(@Req() request: FastifyRequest) {
     return this.approvals.list(requireContext(request));
+  }
+
+  /*
+   * Thresholds, declared before `:id/decide` and read under `Settings`.
+   *
+   * §6's last row is "Users, roles, **settings**", and until `Settings`
+   * existed as a subject these numbers were governed by no rule anyone could
+   * name — `setThreshold` had no route at all, which is one way of being safe
+   * and not a very useful one. They decide when maker-checker applies and how
+   * far a branch checker's authority runs, so they belong to the same role
+   * that manages users, and nobody else.
+   */
+  @RequireAbility('read', 'Settings')
+  @Get('thresholds')
+  async thresholds(@Req() request: FastifyRequest) {
+    return this.approvals.listThresholds(requireContext(request));
+  }
+
+  @RequireAbility('update', 'Settings')
+  @Put('thresholds')
+  async setThreshold(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const parsed = thresholdSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message);
+
+    await this.approvals.setThreshold(requireContext(request), {
+      type: parsed.data.type,
+      thresholdPoisha: BigInt(parsed.data.thresholdPoisha),
+    });
+    return { type: parsed.data.type, thresholdPoisha: parsed.data.thresholdPoisha };
   }
 
   @RequireAbility('request', 'ApprovalRequest')
@@ -45,6 +85,10 @@ export class ApprovalsController {
    * everybody can approve their own.
    */
   @RequireAbility('approve', 'ApprovalRequest')
+  // 200, not Nest's default 201 for a POST. Deciding creates nothing — it
+  // changes the state of a request that already exists — and a client reading
+  // 201 Created has been told something untrue about what just happened.
+  @HttpCode(HttpStatus.OK)
   @Post(':id/decide')
   async decide(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
     const parsed = approvalDecisionSchema.safeParse(body);

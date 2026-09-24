@@ -10,6 +10,7 @@ import {
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 
+import { describeRoutes } from './platform/auth/route-map.js';
 import type { buildApp } from './main.api.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -179,9 +180,54 @@ describe('the global wiring is mounted in production, not only in tests', () => 
 });
 
 describe('every route the gate lists actually answers', () => {
-  // The route-coverage gate reads metadata; it never calls a handler. A route
-  // can be declared, pass the gate, and 500 on every request — which is exactly
-  // what `GET /v1/approvals` did after its query was rewritten.
+  /*
+   * The route-coverage gate reads metadata; it never calls a handler. A route
+   * can be declared, pass the gate, and 500 on every request — which is
+   * exactly what `GET /v1/approvals` did after its query was rewritten, with
+   * `pnpm verify` green and `check-route-matrix` printing PASS.
+   *
+   * Naming three routes by hand only ever catches the three. This walks the
+   * gate's own list, so a route added in a later milestone is covered the day
+   * it is declared rather than the day someone remembers to add a case here.
+   */
+  it('answers every parameterless GET without a server error', async () => {
+    const routes = describeRoutes(built.app).filter(
+      (route) => route.method === 'GET' && !route.path.includes(':'),
+    );
+
+    expect(routes.length, 'the gate listed no GET routes at all').toBeGreaterThan(3);
+
+    const broken: string[] = [];
+    for (const route of routes) {
+      // The org admin holds the widest ordinary role, so a 403 here means the
+      // route is genuinely not theirs rather than that nobody could reach it.
+      const response = await adminClient.request('GET', route.path);
+      if (response.statusCode >= 500) {
+        broken.push(
+          `${route.path} -> ${String(response.statusCode)} ${response.body.slice(0, 200)}`,
+        );
+      }
+    }
+
+    expect(broken, broken.join('\n')).toEqual([]);
+  });
+
+  it('serves them as more than a blanket 403, so the sweep above means something', async () => {
+    // The positive control. A guard that refused everything would make the
+    // sweep pass while proving nothing ran.
+    const routes = describeRoutes(built.app).filter(
+      (route) => route.method === 'GET' && !route.path.includes(':'),
+    );
+
+    const answered: string[] = [];
+    for (const route of routes) {
+      const response = await adminClient.request('GET', route.path);
+      if (response.statusCode < 300) answered.push(route.path);
+    }
+
+    expect(answered.length, 'every GET route refused; nothing was exercised').toBeGreaterThan(3);
+  });
+
   it('GET /v1/approvals returns a list rather than a 500', async () => {
     const client = adminClient;
 

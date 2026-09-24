@@ -5,8 +5,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { APPROVAL_TYPES, canDecideType, CHECKER_TYPES } from '@elysium/contracts';
-import { canDecide, requiresApproval, type Threshold } from '@elysium/domain';
+import {
+  APPROVAL_TYPES,
+  canDecideType,
+  CHECKER_TYPES,
+  isLimitedChecker,
+  type ApprovalType as ContractApprovalType,
+} from '@elysium/contracts';
+import { canDecide, requiresApproval, withinCheckerLimit, type Threshold } from '@elysium/domain';
 import { withOrg, type Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 
@@ -30,18 +36,15 @@ import type { ActiveContext } from '../../platform/http/context.js';
  * rare and legible rather than a raw constraint violation in a log.
  */
 
-export type ApprovalType =
-  | 'wallet_adjustment'
-  | 'stock_write_off'
-  | 'stock_gain'
-  | 'supplier_payment'
-  | 'settlement_posting'
-  | 'closing_variance'
-  | 'back_dated_entry'
-  | 'payroll_run'
-  | 'bonus_rule'
-  | 'reseller_payout_batch'
-  | 'period_reopen';
+/**
+ * Re-exported rather than restated.
+ *
+ * This was a second, hand-written copy of the union, and it had already
+ * drifted: §6's investor withdrawals, distributions and fraud overrides were
+ * missing from both, and a copy is how that stays true after one of them is
+ * fixed.
+ */
+export type ApprovalType = ContractApprovalType;
 
 export interface ApprovalRequestRow {
   readonly id: string;
@@ -196,8 +199,9 @@ export class ApprovalsService {
         status: string;
         requested_by: string;
         type: string;
+        amount_poisha: string | null;
       }>(sql`
-        select id, status, requested_by, type
+        select id, status, requested_by, type, amount_poisha
         from approvals.approval_requests
         where id = ${input.id}
         for update
@@ -222,6 +226,27 @@ export class ApprovalsService {
         throw new ForbiddenException(
           `Your role cannot decide a ${row.type} request in this organization.`,
         );
+      }
+
+      /*
+       * How much, as distinct from which type (§6).
+       *
+       * §6 gives branch_manager "branch items **under threshold**", and the
+       * last two words are the whole limit: without them a showroom manager
+       * could approve a stock write-off of any size — the cheapest way to make
+       * inventory disappear in a company where the branch is also the till.
+       *
+       * Only a caller whose *sole* route to this type is a limited role is
+       * capped, because roles are additive and the wider one is what applies.
+       */
+      if (isLimitedChecker(context.roles, row.type, context.isSuperAdmin)) {
+        const thresholds = await this.thresholdsFor(tx, context.orgId);
+        const configured = thresholds.find((entry) => entry.type === row.type);
+        const limit = withinCheckerLimit({
+          amountPoisha: row.amount_poisha === null ? null : BigInt(row.amount_poisha),
+          thresholdPoisha: configured?.thresholdPoisha ?? null,
+        });
+        if (!limit.ok) throw new ForbiddenException(limit.reason);
       }
 
       const verdict = canDecide({
@@ -343,6 +368,26 @@ export class ApprovalsService {
         amountPoisha: row.amount_poisha,
         decidedBy: row.decided_by,
       }));
+    });
+  }
+
+  /**
+   * The thresholds this org has configured.
+   *
+   * Worth being able to read, and not only because a console needs it: an
+   * unconfigured threshold means `requiresApproval` returns true for every
+   * amount and a branch checker may decide nothing. Both are the fail-closed
+   * direction, and both look like a bug from the outside unless the numbers
+   * are visible somewhere.
+   */
+  async listThresholds(
+    context: ActiveContext,
+  ): Promise<{ type: string; thresholdPoisha: string }[]> {
+    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const rows = await this.thresholdsFor(tx, context.orgId);
+      return rows
+        .map((row) => ({ type: row.type, thresholdPoisha: row.thresholdPoisha.toString() }))
+        .sort((a, b) => a.type.localeCompare(b.type));
     });
   }
 

@@ -82,6 +82,32 @@ function conditionsFor(scope: Scope, context: AbilityContext): Conditions[] {
     return [{ createdBy: context.userId }, { assignedTo: context.userId }];
   }
 
+  /*
+   * §6's "own + unassigned queue" for a sales agent's orders.
+   *
+   * The third rule is `assignedTo: null` — an order nobody has claimed. It is
+   * a separate rule rather than a third clause for the same reason the two
+   * above are separate: CASL unions its own rules and silently denies a
+   * top-level `$or`.
+   */
+  if (scope === 'own_or_unassigned') {
+    return [
+      { createdBy: context.userId },
+      { assignedTo: context.userId },
+      /*
+       * `$exists` is load-bearing, not belt-and-braces.
+       *
+       * A bare `{ assignedTo: null }` also matches a row that simply has no
+       * `assignedTo` key, which is every partial projection and every object
+       * a caller builds by hand — so any Order-shaped value that had dropped
+       * the column read as "unassigned" and every sales agent could read it.
+       * Verified against @casl/ability 7: with `$exists` a row missing the
+       * key answers false, and `{ assignedTo: null }` still answers true.
+       */
+      { assignedTo: { $exists: true, $eq: null } },
+    ];
+  }
+
   if (scope === 'branch' && context.branchIds.length > 0) {
     return [{ branchId: { $in: [...context.branchIds] } }];
   }

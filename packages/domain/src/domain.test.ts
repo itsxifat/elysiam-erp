@@ -1,8 +1,19 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { changedFields, maskPhone, REDACTED, redact } from './audit/index.js';
-import { canDecide, requiresApproval, type Threshold } from './approvals/index.js';
+import {
+  changedFields,
+  maskPhone,
+  REDACTED,
+  REDACTED_FIELD_PATTERNS,
+  redact,
+} from './audit/index.js';
+import {
+  canDecide,
+  requiresApproval,
+  withinCheckerLimit,
+  type Threshold,
+} from './approvals/index.js';
 
 /**
  * The pure rules behind maker-checker and the audit log (invariant 11).
@@ -189,18 +200,80 @@ describe('check 3: redaction', () => {
     }
   });
 
-  it('never lets a value named like a secret through, for any payload', () => {
+  it('redacts every pattern it declares, in every spelling a caller might use', () => {
+    /*
+     * Drawn from `REDACTED_FIELD_PATTERNS` rather than from four names picked
+     * by hand, and then respelled.
+     *
+     * The old version sampled `constantFrom('password','token','secret','apiKey')`
+     * — its own happy path — so it could not have failed for any of the
+     * patterns that were actually broken. `x-api-key` and `private-key` both
+     * went into an append-only table verbatim while it passed, because the
+     * matcher compared substrings against the raw key and
+     * `'api-key'.includes('apikey')` is false.
+     */
+    const respellings = (pattern: string): string[] => {
+      const bare = pattern.replace(/[-_]/g, '');
+      return [
+        pattern,
+        bare,
+        bare.toUpperCase(),
+        `${bare}Hash`,
+        `new_${pattern}`,
+        `x-${pattern}`,
+        `user${bare.charAt(0).toUpperCase()}${bare.slice(1)}`,
+      ];
+    };
+
     fc.assert(
       fc.property(
         fc.string({ minLength: 1 }),
-        fc.constantFrom('password', 'token', 'secret', 'apiKey'),
-        (value, key) => {
+        fc.constantFrom(...REDACTED_FIELD_PATTERNS),
+        fc.integer({ min: 0, max: 6 }),
+        (value, pattern, variant) => {
+          const key = respellings(pattern)[variant] ?? pattern;
           const out = redact({ outer: { [key]: value } }) as { outer: Record<string, unknown> };
-          expect(out.outer[key]).toBe(REDACTED);
+          expect(out.outer[key], `${key} survived redaction`).toBe(REDACTED);
         },
       ),
-      { numRuns: 200 },
+      { numRuns: 500 },
     );
+  });
+
+  it('leaves alone a field that merely contains a short pattern as a substring', () => {
+    /*
+     * The other half, and the one over-redaction hides in.
+     *
+     * `'shipping'.includes('pin')` is true, so a plain substring rule redacted
+     * `shippingAddress` and `shippingMethod` — and an audit trail that has
+     * lost the delivery address is not much of an audit trail. Without this
+     * test the fix could be reverted and every assertion above would still
+     * pass, because over-redaction never shows up as a failing negative.
+     */
+    const innocent = {
+      shippingAddress: '12 Gulshan Ave',
+      shippingMethod: 'pathao',
+      mapping: 'a->b',
+      spinnerDelay: 300,
+      description: 'a token of appreciation',
+    };
+
+    const out = redact(innocent) as Record<string, unknown>;
+    for (const [key, value] of Object.entries(innocent)) {
+      expect(out[key], `${key} was redacted and should not have been`).toEqual(value);
+    }
+  });
+
+  it('redacts a hyphenated secret name, which substring matching missed', () => {
+    const out = redact({
+      'x-api-key': 'sk_live_1',
+      'private-key': '-----BEGIN',
+      Authorization: 'Bearer abc',
+    }) as Record<string, unknown>;
+
+    expect(out['x-api-key']).toBe(REDACTED);
+    expect(out['private-key']).toBe(REDACTED);
+    expect(out.Authorization).toBe(REDACTED);
   });
 
   it('diffs redacted values, not raw ones', () => {
@@ -219,5 +292,146 @@ describe('check 3: redaction', () => {
     expect(changedFields({ a: 1, b: 2 }, { a: 1 })).toEqual(['b']);
     expect(changedFields(null, { a: 1 })).toEqual(['a']);
     expect(changedFields({ a: 1 }, null)).toEqual(['a']);
+  });
+
+  it('sees a phone change only where masking left digits visible', () => {
+    // Masking keeps the first three and last two digits, so a change confined
+    // to the middle is invisible to the diff. That is the trade invariant 10
+    // asks for, and it is asserted here rather than left to be discovered.
+    expect(changedFields({ phone: '01712345689' }, { phone: '01812345689' })).toEqual(['phone']);
+    expect(changedFields({ phone: '01712345689' }, { phone: '01799999689' })).toEqual([]);
+  });
+});
+
+describe('a phone is masked wherever it sits and whatever its type', () => {
+  /*
+   * Invariant 10 says mask phone numbers in logs, and the audit log is the
+   * append-only copy of every other table — anything that lands there unmasked
+   * stays. Every shape below reached that table verbatim at some point, and
+   * none of them had a test.
+   */
+  it('masks a string under a phone-named key', () => {
+    const out = redact({ customerPhone: '01712345689' }) as Record<string, string>;
+    expect(out.customerPhone).toBe('017******89');
+  });
+
+  it('masks a number, which a JSON client will happily send', () => {
+    const out = redact({ phone: 1712345689 }) as Record<string, string>;
+    expect(out.phone).toBe('171*****89');
+  });
+
+  it('masks a bigint, which is what a bigint column deserializes to', () => {
+    const out = redact({ phone: 1712345689n }) as Record<string, string>;
+    expect(out.phone).toBe('171*****89');
+  });
+
+  it('masks every entry of a list of numbers', () => {
+    const out = redact({ phones: ['01712345611', '01812345622'] }) as { phones: string[] };
+    expect(out.phones).toEqual(['017******11', '018******22']);
+    expect(out.phones.join()).not.toContain('2345');
+  });
+
+  it('masks a number nested under a phone-named object', () => {
+    const out = redact({ phone: { number: '01712345689', verified: true } }) as {
+      phone: Record<string, unknown>;
+    };
+    expect(out.phone.number).toBe('017******89');
+    // Everything under a phone-named key is masked rather than dropped:
+    // guessing which leaf holds the number is how one slips through.
+    expect(out.phone.verified).toBeDefined();
+  });
+
+  it('matches mobile and msisdn, the other names the same value arrives under', () => {
+    const out = redact({ mobileNumber: '01712345689', msisdn: '8801712345689' }) as Record<
+      string,
+      string
+    >;
+    expect(out.mobileNumber).not.toContain('2345');
+    expect(out.msisdn).not.toContain('2345');
+  });
+
+  it('blanks a value too short to mask instead of returning it', () => {
+    // A five-digit value under a phone-named key is not a phone, and handing
+    // it back unchanged returns whatever it actually was — PIN-shaped.
+    expect(maskPhone('12345')).toBe('*****');
+    expect(maskPhone('')).toBe('*');
+  });
+
+  it('leaves the length legible but never the middle', () => {
+    fc.assert(
+      fc.property(fc.stringMatching(/^01[3-9][0-9]{8}$/), (number) => {
+        const masked = maskPhone(number);
+        expect(masked.slice(0, 3)).toBe(number.slice(0, 3));
+        expect(masked.slice(-2)).toBe(number.slice(-2));
+        expect(masked.slice(3, -2)).toMatch(/^\*+$/);
+      }),
+      { numRuns: 200 },
+    );
+  });
+});
+
+describe('an amount-limited checker: §6 branch items under threshold', () => {
+  /*
+   * Without this rule a showroom manager could approve a stock write-off of
+   * any size — the cheapest way to make inventory disappear in a company where
+   * the branch is also the till. Both edge cases fail closed, which costs a
+   * branch manager an approval they could have made and never costs the
+   * company an unapproved one.
+   */
+  it('allows an amount below the threshold', () => {
+    expect(withinCheckerLimit({ amountPoisha: 499_999n, thresholdPoisha: 500_000n }).ok).toBe(true);
+  });
+
+  it('refuses the threshold itself, so the boundary is on the safe side', () => {
+    expect(withinCheckerLimit({ amountPoisha: 500_000n, thresholdPoisha: 500_000n }).ok).toBe(
+      false,
+    );
+  });
+
+  it('refuses an amount above it', () => {
+    expect(withinCheckerLimit({ amountPoisha: 900_000n, thresholdPoisha: 500_000n }).ok).toBe(
+      false,
+    );
+  });
+
+  it('compares magnitude, so a negative write-off is not waved through', () => {
+    expect(withinCheckerLimit({ amountPoisha: -900_000n, thresholdPoisha: 500_000n }).ok).toBe(
+      false,
+    );
+    expect(withinCheckerLimit({ amountPoisha: -1n, thresholdPoisha: 500_000n }).ok).toBe(true);
+  });
+
+  it('refuses when no threshold is configured, rather than assuming one', () => {
+    const verdict = withinCheckerLimit({ amountPoisha: 1n, thresholdPoisha: null });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toContain('threshold');
+  });
+
+  it('refuses a request with no amount at all', () => {
+    // A period reopen or a bonus rule has no number to be under.
+    expect(withinCheckerLimit({ amountPoisha: null, thresholdPoisha: 500_000n }).ok).toBe(false);
+  });
+
+  it('agrees with requiresApproval about where the line falls', () => {
+    // The two read the same number from opposite sides: anything
+    // `requiresApproval` says needs a second person is, by construction,
+    // outside a limited checker's authority. If they ever disagreed there
+    // would be a band of amounts a branch manager could clear alone.
+    const thresholds: Threshold[] = [{ type: 'stock_write_off', thresholdPoisha: 500_000n }];
+    fc.assert(
+      fc.property(fc.bigInt({ min: -2_000_000n, max: 2_000_000n }), (amount) => {
+        const needsSecond = requiresApproval({
+          type: 'stock_write_off',
+          amountPoisha: amount,
+          thresholds,
+        });
+        const branchMayDecide = withinCheckerLimit({
+          amountPoisha: amount,
+          thresholdPoisha: 500_000n,
+        }).ok;
+        expect(needsSecond).toBe(!branchMayDecide);
+      }),
+      { numRuns: 300 },
+    );
   });
 });

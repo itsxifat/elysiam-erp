@@ -69,12 +69,25 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
     'payroll_run',
     'bonus_rule',
     'reseller_payout_batch',
+    'investor_withdrawal',
+    'investor_distribution',
+    // §6 puts fraud block override in org_admin's column and nobody else's.
+    'fraud_override',
   ],
-  // §6: payments.
-  accounts: ['supplier_payment', 'settlement_posting', 'reseller_payout_batch', 'closing_variance'],
+  // §6: payments. Investor withdrawals and distributions are money leaving the
+  // company, which is the same kind of thing as a supplier payment.
+  accounts: [
+    'supplier_payment',
+    'settlement_posting',
+    'reseller_payout_batch',
+    'closing_variance',
+    'investor_withdrawal',
+    'investor_distribution',
+  ],
   // §6: payroll.
   hr: ['payroll_run', 'bonus_rule'],
-  // §6: branch items. Stock and till, not money leaving the company.
+  // §6: branch items. Stock and till, not money leaving the company — and only
+  // under the org's threshold for the type. See LIMITED_CHECKER_ROLES.
   branch_manager: ['stock_write_off', 'stock_gain', 'closing_variance'],
   sales: [],
   marketing: [],
@@ -98,12 +111,59 @@ export function canDecideType(
   return roles.some((role) => (CHECKER_TYPES[role] ?? []).includes(type));
 }
 
+/**
+ * Checkers whose authority is capped by an amount (architecture §6).
+ *
+ * §6's checker cell for branch_manager is not "branch items" but "branch items
+ * **under threshold**", and the three words at the end were not transcribed:
+ * a showroom manager could approve a stock write-off of any size, including
+ * one they had a colleague raise. `CHECKER_TYPES` answers *which* types; this
+ * answers *how much*, and `withinCheckerLimit` in the domain does the
+ * comparison, because that is where arithmetic lives (invariant 11).
+ *
+ * The limit is the org's own approval threshold for the type — the same number
+ * that decides whether a second person is needed at all. So a request under it
+ * may be raised voluntarily and decided in the branch, and anything at or above
+ * it goes to an org-level checker. With no threshold configured the branch
+ * checker may decide nothing, which is the same fail-closed direction
+ * `requiresApproval` already takes.
+ */
+export const LIMITED_CHECKER_ROLES: readonly MembershipRole[] = ['branch_manager'];
+
+/**
+ * Is every checker role this caller holds an amount-limited one?
+ *
+ * Roles are additive, so someone who is both `branch_manager` and `accounts`
+ * is not limited — the wider role is what applies, exactly as `effectiveScope`
+ * treats scope. Only a caller whose *sole* route to this type is a limited role
+ * is capped.
+ */
+export function isLimitedChecker(
+  roles: readonly MembershipRole[],
+  type: string,
+  isSuperAdmin: boolean,
+): boolean {
+  if (isSuperAdmin) return false;
+  const deciding = roles.filter((role) => (CHECKER_TYPES[role] ?? []).includes(type));
+  if (deciding.length === 0) return false;
+  return deciding.every((role) => LIMITED_CHECKER_ROLES.includes(role));
+}
+
 export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
   org_admin: [
     { action: ['read', 'create', 'update', 'delete'], subject: 'Catalog', scope: 'org' },
     { action: 'read', subject: 'Cost', scope: 'org' },
     { action: ['read', 'create', 'update', 'delete'], subject: 'CostedItem', scope: 'org' },
-    { action: ['read', 'update'], subject: 'Stock', scope: 'org' },
+    /*
+     * Read only, and no `update Stock` for anybody.
+     *
+     * §6's stock row is "Stock availability" — a read. Changing stock is the
+     * next row down, and it is `StockAdjustment`. A bare `update Stock` grant
+     * contradicts invariant 3, which says stock changes only through inventory
+     * movements: the permission would have described a path that must not
+     * exist, and M07 would have found a rule inviting it to build one.
+     */
+    { action: 'read', subject: 'Stock', scope: 'org' },
     { action: ['read', 'request', 'approve'], subject: 'StockAdjustment', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Supply', scope: 'org' },
     { action: ['read', 'create', 'update', 'delete'], subject: 'Order', scope: 'org' },
@@ -111,12 +171,14 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'export', subject: 'BuyerExport', scope: 'org' },
     { action: 'read', subject: 'FraudSignal', scope: 'org' },
     { action: 'update', subject: 'FraudOverride', scope: 'org' },
-    { action: ['read', 'update'], subject: 'Wallet', scope: 'org' },
+    { action: ['read', 'create', 'update'], subject: 'Wallet', scope: 'org' },
     { action: 'read', subject: 'LedgerReport', scope: 'org' },
-    { action: ['read', 'update'], subject: 'CourierSettlement', scope: 'org' },
+    { action: ['read', 'create', 'update'], subject: 'CourierSettlement', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Campaign', scope: 'org' },
+    { action: ['read', 'create', 'update'], subject: 'CampaignSpend', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'LandingPage', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Employee', scope: 'org' },
+    { action: ['read', 'create', 'update'], subject: 'Payroll', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Target', scope: 'org' },
     { action: ['read', 'update'], subject: 'ResellerAdmin', scope: 'org' },
     { action: 'read', subject: 'Investor', scope: 'org' },
@@ -124,6 +186,20 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'create', 'update', 'delete'], subject: 'User', scope: 'org' },
     { action: ['read', 'request', 'approve'], subject: 'ApprovalRequest', scope: 'org' },
     { action: 'read', subject: 'AuditLog', scope: 'org' },
+    // §6's row is "Users, roles, settings". Settings was never transcribed, so
+    // approval thresholds — the numbers that decide when maker-checker applies
+    // at all — were governed by no rule anybody could name.
+    { action: ['read', 'update'], subject: 'Settings', scope: 'org' },
+    /*
+     * The one cross-org grant an ordinary role holds, and §18 is explicit about
+     * why it is not a tenancy hole: org admins see other orgs' **normalized
+     * metrics and ranks only**, never raw financials (D-023). It is read
+     * through `erp_analytics` (§5 exception 2), never through a tenant query,
+     * and it carries no money at all — growth percentages, rates and ranks.
+     *
+     * The matrix test allows exactly this cell and fails on any other `all`.
+     */
+    { action: 'read', subject: 'Leaderboard', scope: 'all' },
   ],
 
   accounts: [
@@ -139,8 +215,13 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'create', 'update'], subject: 'Wallet', scope: 'org' },
     { action: 'read', subject: 'LedgerReport', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'CourierSettlement', scope: 'org' },
-    { action: 'create', subject: 'Campaign', scope: 'org' },
-    { action: ['read', 'create', 'update'], subject: 'Employee', scope: 'org' },
+    // §6's cell is "spend entry", not the campaigns row. Transcribed as
+    // `create Campaign`, it let the finance team launch a brand's campaigns.
+    { action: ['read', 'create', 'update'], subject: 'CampaignSpend', scope: 'org' },
+    // §6 gives accounts "payroll posting and payment" on the employees row —
+    // not the employees. Create and update on staff records is HR's.
+    { action: 'read', subject: 'Employee', scope: 'org' },
+    { action: ['read', 'update'], subject: 'Payroll', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'ResellerAdmin', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Investor', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'CompanyLoan', scope: 'org' },
@@ -152,7 +233,9 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'Catalog', scope: 'org' },
     { action: 'read', subject: 'CostedItem', scope: 'org' },
     { action: 'read', subject: 'Stock', scope: 'org' },
-    { action: ['read', 'create', 'update'], subject: 'Order', scope: 'own' },
+    // §6: "own + unassigned queue". Plain `own` hid the queue the whole COD
+    // workflow runs on, and the obvious repair for that is `org`.
+    { action: ['read', 'create', 'update'], subject: 'Order', scope: 'own_or_unassigned' },
     { action: ['read', 'create', 'update'], subject: 'Customer', scope: 'own' },
     { action: 'read', subject: 'FraudSignal', scope: 'org' },
     // §6 says "apply codes", not edit pages. `update LandingPage` would have let
@@ -161,7 +244,18 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'LandingPage', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'read', subject: 'Target', scope: 'own' },
-    { action: 'request', subject: 'ApprovalRequest', scope: 'org' },
+    /*
+     * Read *own*, alongside request.
+     *
+     * §6's approvals row is about being a checker, and it gives sales nothing
+     * — correctly. But the maker-checker list lets anyone raise a request, and
+     * with `request` alone a sales agent who raised one got 403 on
+     * `GET /v1/approvals` and could never find out what happened to it. The
+     * service already narrowed the list to "what you raised, plus what you may
+     * decide"; that first clause was unreachable for exactly the roles it was
+     * written for.
+     */
+    { action: ['read', 'request'], subject: 'ApprovalRequest', scope: 'own' },
   ],
 
   marketing: [
@@ -179,6 +273,7 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
 
   hr: [
     { action: ['read', 'create', 'update'], subject: 'Employee', scope: 'org' },
+    { action: ['read', 'create', 'update'], subject: 'Payroll', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Target', scope: 'org' },
     // §6 makes hr the checker for payroll. CHECKER_TYPES is what narrows this
     // to payroll and bonuses; without the ability hr could check nothing at all,
@@ -188,8 +283,12 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
 
   branch_manager: [
     { action: 'read', subject: 'Catalog', scope: 'org' },
-    { action: 'read', subject: 'CostedItem', scope: 'branch' },
-    { action: 'read', subject: 'Stock', scope: 'branch' },
+    // §6's catalog and stock-availability rows both say `org` for a branch
+    // manager, and the reason is operational: a showroom needs to see that
+    // another branch holds the size before it offers a transfer. Cost is kept
+    // out by `serializeFor`, not by the scope.
+    { action: 'read', subject: 'CostedItem', scope: 'org' },
+    { action: 'read', subject: 'Stock', scope: 'org' },
     { action: ['read', 'request'], subject: 'StockAdjustment', scope: 'branch' },
     { action: ['read', 'create', 'update'], subject: 'Order', scope: 'branch' },
     { action: ['read', 'update'], subject: 'Customer', scope: 'branch' },
@@ -214,7 +313,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['create', 'update'], subject: 'Supply', scope: 'org' },
     { action: ['read', 'update'], subject: 'Order', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
-    { action: 'request', subject: 'ApprovalRequest', scope: 'org' },
+    // Same as sales: raising a request you cannot then see is not a workflow.
+    { action: ['read', 'request'], subject: 'ApprovalRequest', scope: 'own' },
   ],
 
   reseller: [

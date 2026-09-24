@@ -21,7 +21,15 @@ export {
   type Subject,
 } from './subjects.js';
 
-export { canDecideType, CHECKER_TYPES, COST_READING_ROLES, MATRIX, type Rule } from './matrix.js';
+export {
+  canDecideType,
+  CHECKER_TYPES,
+  COST_READING_ROLES,
+  isLimitedChecker,
+  LIMITED_CHECKER_ROLES,
+  MATRIX,
+  type Rule,
+} from './matrix.js';
 
 export {
   canReadCost,

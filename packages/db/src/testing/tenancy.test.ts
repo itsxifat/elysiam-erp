@@ -372,7 +372,7 @@ describe('check 3: erp_app cannot escape its own privileges', () => {
   it('cannot SET ROLE to the owner', async () => {
     await expectRefused(
       withOrg({ orgId: ORG_A }, async (tx) => {
-        await tx.execute(sql`set role erp_owner`);
+        await tx.execute(sql`set local role erp_owner`);
       }),
       /permission denied/i,
     );
@@ -748,6 +748,46 @@ describe('check 5: the guard — every tenant table is isolated', () => {
     }
 
     expect(await findAppendOnlyProblems()).toEqual([]);
+  });
+
+  it('would notice if delete came back on a maker-checker record', async () => {
+    /*
+     * The weaker rule, and the one that had no structural guard at all.
+     *
+     * An approval record must be updatable — taking a decision *is* an update
+     * — so it is not append-only, and it fell outside the check above. What it
+     * must never be is erasable: a deleted approval leaves a payment with no
+     * trail. 0009 revoked the grant, and nothing but one end-to-end test
+     * noticed it was gone, so `grant all on all tables in schema approvals to
+     * erp_app` in a later milestone would have handed it back silently.
+     */
+    await withSystem(async (tx) => {
+      await tx.execute(sql`grant delete on "approvals"."approval_requests" to "erp_app"`);
+    });
+
+    try {
+      expect(await findAppendOnlyProblems()).toContain(
+        'approvals.approval_requests: erp_app has DELETE',
+      );
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`revoke delete on "approvals"."approval_requests" from "erp_app"`);
+      });
+    }
+
+    expect(await findAppendOnlyProblems()).toEqual([]);
+  });
+
+  it('still lets erp_app update a maker-checker record, which is how one is decided', async () => {
+    // The positive control for the rule above: revoking too much would make
+    // the whole approvals module a 500 and every negative here would still
+    // pass.
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{ can_update: boolean }>(sql`
+        select has_table_privilege('erp_app', 'approvals.approval_requests', 'UPDATE') as can_update
+      `),
+    );
+    expect(rows[0]?.can_update).toBe(true);
   });
 
   it('would notice if a credential table were granted back', async () => {

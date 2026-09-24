@@ -78,6 +78,13 @@
       "when": 1790171565975,
       "tag": "0010_approval_insert_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790269660678,
+      "tag": "0011_approval_types_from_spec",
+      "breakpoints": true
     }
   ]
 }

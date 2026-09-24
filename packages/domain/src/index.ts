@@ -15,6 +15,7 @@ export const PACKAGE_NAME = '@elysium/domain' as const;
 export {
   canDecide,
   requiresApproval,
+  withinCheckerLimit,
   type ApprovalDecisionInput,
   type Poisha,
   type Threshold,
