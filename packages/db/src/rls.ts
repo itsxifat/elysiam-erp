@@ -209,3 +209,42 @@ export const GLOBAL_TABLES: readonly string[] = [
  * user reads every membership in every org".
  */
 export const USER_CONTEXT_SQL = `nullif(current_setting('app.user_id', true), '')`;
+
+/**
+ * A policy on a tenant table other than its generated `<table>_org_isolation`.
+ *
+ * PostgreSQL ORs permissive policies, so a second permissive policy can only
+ * ever *widen* what a table shows — and the guard used to check the one policy
+ * it expected by name and merely count the rest. `iam.memberships` was the
+ * first table with two; a later `using (true)` beside it would have passed.
+ * Now every policy the guard finds must be the org policy, the generated
+ * analytics policy on a table that opted in (D-049), or declared here with its
+ * exact expression (M02a follow-up, D-089).
+ */
+export interface DeclaredPolicy {
+  /** `schema.table`. */
+  readonly table: string;
+  readonly name: string;
+  readonly permissive: 'PERMISSIVE' | 'RESTRICTIVE';
+  /** `ALL`, `SELECT`, `INSERT`, `UPDATE` or `DELETE`, as `pg_policies.cmd` reports it. */
+  readonly cmd: string;
+  /** As `pg_policies.roles` renders it, e.g. `{public}`. */
+  readonly roles: string;
+  readonly using: string | null;
+  readonly withCheck: string | null;
+  /** Why this table needs more than the org policy. */
+  readonly reason: string;
+}
+
+export const DECLARED_POLICIES: readonly DeclaredPolicy[] = [
+  {
+    table: 'iam.memberships',
+    name: 'memberships_own_rows',
+    permissive: 'PERMISSIVE',
+    cmd: 'SELECT',
+    roles: '{public}',
+    using: `user_id = ${USER_CONTEXT_SQL}`,
+    withCheck: null,
+    reason: 'D-050: a user lists their own memberships before choosing an org.',
+  },
+];

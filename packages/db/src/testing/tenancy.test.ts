@@ -608,6 +608,64 @@ describe('check 5: the guard — every tenant table is isolated', () => {
     }
   });
 
+  it('rejects a second policy that widens a table beside a correct org policy (D-089)', async () => {
+    // The M02a follow-up. The guard used to find the org policy by name and
+    // only count the rest, so this table — whose org policy is perfect — was
+    // reported clean while `using (true)` beside it handed every org's rows to
+    // everyone. Permissive policies OR together; one stray one is enough.
+    await withSystem(async (tx) => {
+      await tx.execute(
+        sql`create table org.extra_policy_probe (id uuid primary key default gen_random_uuid(), org_id uuid not null)`,
+      );
+      await tx.execute(sql.raw(tenantTableSql({ schema: 'org', table: 'extra_policy_probe' })));
+      await tx.execute(
+        sql`create policy extra_policy_probe_everyone on org.extra_policy_probe for select using (true)`,
+      );
+      // And an analytics policy on a table that never opted in (D-049).
+      await tx.execute(sql`create policy extra_policy_probe_analytics_all_orgs
+        on org.extra_policy_probe for select to erp_analytics using (true)`);
+    });
+
+    try {
+      const offenders = await findTenancyOffenders();
+      const found = offenders.find((o) => o.table === 'extra_policy_probe');
+      expect(found, 'a widening second policy must be reported').toBeDefined();
+      const reasons = found?.reasons.join(' | ') ?? '';
+      expect(reasons).toMatch(/undeclared policy "extra_policy_probe_everyone"/);
+      expect(reasons).toMatch(/analytics policy .* not in ANALYTICS_READABLE/);
+      // The org policy itself is fine, so nothing is said about it.
+      expect(reasons).not.toMatch(/not the generated org policy/);
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`drop table if exists org.extra_policy_probe`);
+      });
+    }
+  });
+
+  it('rejects a declared extra policy whose expression has drifted (D-089)', async () => {
+    // iam.memberships' self policy is declared. Widen it and it must fail.
+    await withSystem(async (tx) => {
+      await tx.execute(sql`alter policy memberships_own_rows on iam.memberships using (true)`);
+    });
+
+    try {
+      const offenders = await findTenancyOffenders();
+      const found = offenders.find((o) => o.schema === 'iam' && o.table === 'memberships');
+      expect(found?.reasons.join(' ')).toMatch(
+        /memberships_own_rows" differs from its declaration/,
+      );
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`alter policy memberships_own_rows on iam.memberships
+          using (user_id = nullif(current_setting('app.user_id', true), ''))`);
+      });
+    }
+
+    // Restored exactly: the guard is clean again.
+    const after = await findTenancyOffenders();
+    expect(after.find((o) => o.table === 'memberships')).toBeUndefined();
+  });
+
   it('rejects a policy missing its WITH CHECK, which would leave writes unconstrained', async () => {
     await withSystem(async (tx) => {
       await tx.execute(
