@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
+
 import { defineAbilityFor, MEMBERSHIP_ROLES, type MembershipRole } from '@elysium/contracts';
-import { withSystem } from '@elysium/db';
+import { seedAccountId, withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -37,6 +39,17 @@ beforeAll(async () => {
 afterAll(async () => {
   await harness?.close();
 }, 60_000);
+
+const BANK = seedAccountId(ORG_A, '1100');
+const OTHER_INCOME = seedAccountId(ORG_A, '4300');
+
+let monthSeq = 0;
+/** A distinct, long-past month per call: 2001-01, 2001-02, … */
+function freshMonth(): string {
+  const index = monthSeq;
+  monthSeq += 1;
+  return `${String(2001 + Math.floor(index / 12))}-${String((index % 12) + 1).padStart(2, '0')}`;
+}
 
 interface Call {
   readonly url: string;
@@ -84,6 +97,45 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
     url: '/v1/demo/costed-items',
     body: { sku: `RM-${String(Date.now())}-${Math.random().toString(36).slice(2, 7)}`, name: 'x' },
   }),
+  'GET /v1/ledger/accounts': () => ({ url: '/v1/ledger/accounts' }),
+  'GET /v1/ledger/accounts/:id/ledger': () => ({
+    url: `/v1/ledger/accounts/${BANK}/ledger?to=2030-12-31`,
+  }),
+  'GET /v1/ledger/day-book': () => ({ url: '/v1/ledger/day-book?from=2026-09-01&to=2026-09-30' }),
+  'GET /v1/ledger/party-balances': () => ({ url: '/v1/ledger/party-balances?asOf=2030-12-31' }),
+  'GET /v1/ledger/periods': () => ({ url: '/v1/ledger/periods' }),
+  'GET /v1/ledger/trial-balance': () => ({ url: '/v1/ledger/trial-balance?asOf=2030-12-31' }),
+  'GET /v1/ledger/wallets': () => ({ url: '/v1/ledger/wallets' }),
+  'GET /v1/ledger/wallets/:id/cash-book': () => ({
+    url: `/v1/ledger/wallets/${BANK}/cash-book?to=2030-12-31`,
+  }),
+  'POST /v1/ledger/cash-in': () => ({
+    url: '/v1/ledger/cash-in',
+    body: {
+      entryId: randomUUID(),
+      walletAccountId: BANK,
+      incomeAccountId: OTHER_INCOME,
+      amountPoisha: '1000',
+    },
+  }),
+  // A month no other call has closed, so every admitted role succeeds.
+  'POST /v1/ledger/periods/close': () => ({
+    url: '/v1/ledger/periods/close',
+    body: { month: freshMonth() },
+  }),
+  'POST /v1/ledger/periods/reopen': async () => {
+    const month = freshMonth();
+    await withSystem(
+      async (tx) =>
+        tx.execute(sql`
+          insert into ledger.periods (org_id, starts_on, ends_on, status, closed_at, closed_by)
+          values (${ORG_A}, ${`${month}-01`}, (${`${month}-01`}::date + interval '1 month' - interval '1 day')::date,
+                  'closed', now(), 'usr_route_matrix')
+        `),
+      { orgId: ORG_A },
+    );
+    return { url: '/v1/ledger/periods/reopen', body: { month, reason: 'route matrix' } };
+  },
   'GET /v1/me': () => ({ url: '/v1/me' }),
   'POST /v1/me/active-org': () => ({ url: '/v1/me/active-org', body: { orgId: ORG_A } }),
   'GET /v1/me/orgs': () => ({ url: '/v1/me/orgs' }),

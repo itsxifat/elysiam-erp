@@ -51,6 +51,8 @@ export const SUBJECTS = [
   'FraudOverride',
   'Wallet',
   'LedgerReport',
+  /** Closing and reopening monthly periods (§7): org_admin and accounts (D-083). */
+  'LedgerPeriod',
   'CourierSettlement',
   'Campaign',
   'LandingPage',

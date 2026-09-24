@@ -115,6 +115,40 @@ function thresholdChangeTerms(
   return { targetType: target, fromPoisha: typeof from === 'string' ? from : null, toPoisha: to };
 }
 
+/**
+ * What an approved request does, run by the module that owns its type.
+ *
+ * Called inside the transaction that approved it — the decision and its
+ * effect commit together or not at all, as a threshold change already did
+ * (D-073). The executor reads `amountPoisha` and nothing else for money
+ * (D-078), and validates the frozen payload with its own schema.
+ */
+export interface ApprovedRequest {
+  readonly id: string;
+  readonly type: ApprovalType;
+  readonly requestedBy: string;
+  readonly branchId: string | null;
+  readonly amountPoisha: bigint | null;
+  readonly payload: Record<string, unknown>;
+}
+
+export type ApprovalExecutor = (
+  tx: Tx,
+  input: {
+    readonly context: ActiveContext;
+    readonly approval: ApprovedRequest;
+    readonly request: AuditableRequest | undefined;
+  },
+) => Promise<void>;
+
+/**
+ * Types whose approval means nothing without an executor. Approving one with
+ * no executor registered is refused rather than recorded as done: a period
+ * reopen that says "approved" while the period stays closed is worse than an
+ * error (M03).
+ */
+const EXECUTOR_REQUIRED_TYPES: readonly ApprovalType[] = ['period_reopen'];
+
 function magnitude(amount: bigint): bigint {
   return amount < 0n ? -amount : amount;
 }
@@ -124,7 +158,37 @@ export class ApprovalsService {
   /** Collected in memory until M04's outbox (D-067). See `publish` below. */
   readonly emitted: DomainEvent[] = [];
 
+  private readonly executors = new Map<ApprovalType, ApprovalExecutor>();
+
   constructor(private readonly audit: AuditService) {}
+
+  /**
+   * Register what approving a type does. One executor per type, registered
+   * by the owning module when it starts (the ledger registers
+   * `period_reopen`); a second registration is a wiring mistake.
+   */
+  registerExecutor(type: ApprovalType, executor: ApprovalExecutor): void {
+    if (this.executors.has(type)) {
+      throw new Error(`An executor for ${type} is already registered.`);
+    }
+    this.executors.set(type, executor);
+  }
+
+  private async execute(
+    tx: Tx,
+    context: ActiveContext,
+    approval: ApprovedRequest,
+    request: AuditableRequest | undefined,
+  ): Promise<void> {
+    const executor = this.executors.get(approval.type);
+    if (executor === undefined) {
+      if (EXECUTOR_REQUIRED_TYPES.includes(approval.type)) {
+        throw new ConflictException(`Nothing is set up to carry out a ${approval.type} yet.`);
+      }
+      return;
+    }
+    await executor(tx, { context, approval, request });
+  }
 
   /**
    * Events, held rather than published (D-067).
@@ -308,6 +372,24 @@ export class ApprovalsService {
             status,
           },
         });
+
+        // Below the threshold the request is decided the moment it exists, and
+        // what it authorises happens in the same transaction.
+        if (!required) {
+          await this.execute(
+            tx,
+            context,
+            {
+              id,
+              type: input.type,
+              requestedBy: context.userId,
+              branchId,
+              amountPoisha: input.amountPoisha,
+              payload: input.payload ?? {},
+            },
+            input.request,
+          );
+        }
 
         // Below the threshold the request is decided the moment it exists, so
         // the requester hears about it exactly as they would from a checker.
@@ -501,6 +583,22 @@ export class ApprovalsService {
       if (row.type === 'threshold_change' && input.decision === 'approved') {
         await this.assertThresholdUnchanged(tx, context, row.payload);
         await this.applyThreshold(tx, context, row.payload, input.id);
+      }
+
+      if (input.decision === 'approved') {
+        await this.execute(
+          tx,
+          context,
+          {
+            id: input.id,
+            type: row.type,
+            requestedBy: row.requested_by,
+            branchId: row.branch_id,
+            amountPoisha: row.amount_poisha === null ? null : BigInt(row.amount_poisha),
+            payload: row.payload,
+          },
+          input.request,
+        );
       }
 
       // §19: `approval.decided` goes back to the requester.

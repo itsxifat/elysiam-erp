@@ -5,6 +5,7 @@ import { ApprovalsModule } from './modules/approvals/approvals.module.js';
 import { DemoModule } from './modules/demo/demo.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { IamModule } from './modules/iam/iam.module.js';
+import { LedgerModule } from './modules/ledger/ledger.module.js';
 import type { PasswordTokenStore } from './modules/iam/iam.service.js';
 
 /**
@@ -20,7 +21,13 @@ export class AppModule {
   }): DynamicModule {
     return {
       module: AppModule,
-      imports: [HealthModule, IamModule.register(dependencies), ApprovalsModule, DemoModule],
+      imports: [
+        HealthModule,
+        IamModule.register(dependencies),
+        ApprovalsModule,
+        LedgerModule,
+        DemoModule,
+      ],
     };
   }
 }

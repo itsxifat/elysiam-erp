@@ -210,6 +210,9 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'update', subject: 'FraudOverride', scope: 'org' },
     { action: ['read', 'update'], subject: 'Wallet', scope: 'org' },
     { action: 'read', subject: 'LedgerReport', scope: 'org' },
+    // §7: org_admin or accounts closes a period; reopening goes through a
+    // period_reopen request only super_admin decides (D-083).
+    { action: ['read', 'update'], subject: 'LedgerPeriod', scope: 'org' },
     { action: ['read', 'update'], subject: 'CourierSettlement', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Campaign', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'LandingPage', scope: 'org' },
@@ -239,6 +242,7 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'FraudSignal', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Wallet', scope: 'org' },
     { action: 'read', subject: 'LedgerReport', scope: 'org' },
+    { action: ['read', 'update'], subject: 'LedgerPeriod', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'CourierSettlement', scope: 'org' },
     { action: 'create', subject: 'Campaign', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Employee', scope: 'org' },
