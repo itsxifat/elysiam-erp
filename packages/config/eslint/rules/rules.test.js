@@ -2,6 +2,7 @@ import { RuleTester } from 'eslint';
 import { afterAll, describe, it } from 'vitest';
 
 import { noEmoji } from './no-emoji.js';
+import { noFloatMoney } from './no-float-money.js';
 import { noInlineStyle } from './no-inline-style.js';
 
 RuleTester.afterAll = afterAll;
@@ -77,5 +78,26 @@ ruleTester.run('no-inline-style', noInlineStyle, {
       code: `const a = <div style={{ [key]: value }} />;`,
       errors: [{ messageId: 'dynamicStyle' }],
     },
+  ],
+});
+
+// M00 follow-up, closed in M03: floats never touch money outside the money module.
+ruleTester.run('no-float-money', noFloatMoney, {
+  valid: [
+    { code: `const text = formatMoney(total);` },
+    { code: `const amount = parseTaka(input);` },
+    { code: `const n = Number.parseInt(value, 10);` },
+    { code: `const fixed = 'toFixed';` },
+    { code: `const obj = { parseFloatLike: 1 };` },
+    { code: `const messages = { parseFloat: 'Use parseTaka' };` },
+  ],
+  invalid: [
+    { code: `const s = (x / 100).toFixed(2);`, errors: [{ messageId: 'toFixed' }] },
+    { code: `const s = amount['toFixed'](2);`, errors: [{ messageId: 'toFixed' }] },
+    { code: `const n = parseFloat(input);`, errors: [{ messageId: 'parseFloat' }] },
+    { code: `const n = Number.parseFloat(input);`, errors: [{ messageId: 'parseFloat' }] },
+    { code: `const n = Number['parseFloat'](input);`, errors: [{ messageId: 'parseFloat' }] },
+    { code: `const list = inputs.map(parseFloat);`, errors: [{ messageId: 'parseFloat' }] },
+    { code: `const f = parseFloat;`, errors: [{ messageId: 'parseFloat' }] },
   ],
 });

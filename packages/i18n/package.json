@@ -21,6 +21,7 @@
   "devDependencies": {
     "@elysium/config": "workspace:*",
     "eslint": "catalog:",
+    "fast-check": "catalog:",
     "typescript": "catalog:"
   }
 }

@@ -12,11 +12,12 @@
  */
 export const PACKAGE_NAME = '@elysium/domain' as const;
 
+export * from './money/index.js';
+
 export {
   canDecide,
   requiresApproval,
   type ApprovalDecisionInput,
-  type Poisha,
   type Threshold,
 } from './approvals/index.js';
 

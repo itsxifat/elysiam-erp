@@ -7,18 +7,23 @@
  * and the direction they disagree in is always the expensive one.
  */
 
-export type Poisha = bigint;
+/**
+ * Plain `bigint` poisha: thresholds and request amounts arrive from the
+ * database and the wire already validated, and are only compared, never
+ * computed with. Arithmetic goes through the branded `Poisha` in `../money`.
+ */
+type Amount = bigint;
 
 /** A threshold, per org per action type. Absent means "not configured". */
 export interface Threshold {
   readonly type: string;
-  readonly thresholdPoisha: Poisha;
+  readonly thresholdPoisha: Amount;
 }
 
 export interface ApprovalDecisionInput {
   readonly type: string;
   /** Null for an action with no money attached — a period reopen, say. */
-  readonly amountPoisha: Poisha | null;
+  readonly amountPoisha: Amount | null;
   readonly thresholds: readonly Threshold[];
   /**
    * True when no threshold may exempt this request: a control type (D-071), or

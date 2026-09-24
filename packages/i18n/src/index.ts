@@ -16,6 +16,8 @@
  * that says `auth.sign_in` to a user in production.
  */
 
+export { formatMoney, type FormatMoneyOptions } from './money.js';
+
 export const LOCALES = ['en', 'bn'] as const;
 export type Locale = (typeof LOCALES)[number];
 
