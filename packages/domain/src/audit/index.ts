@@ -60,9 +60,47 @@ export const REDACTED = '[redacted]';
 /** Field names holding a phone number, which is masked rather than removed. */
 const PHONE_PATTERNS: readonly string[] = ['phone', 'mobile', 'msisdn'];
 
+/**
+ * Short patterns that must match a whole word rather than a substring.
+ *
+ * `'shipping'.includes('pin')` is true, so a plain substring rule redacted
+ * `shippingAddress` and `shippingMethod`. Over-redaction is not a leak, but an
+ * audit trail that has lost the delivery address is not much of an audit trail
+ * either — and the same rule ate `mapping` and `spinner`.
+ */
+const WORD_PATTERNS: readonly string[] = ['pin', 'otp', 'jwt', 'salt', 'nid', 'cvv', 'kyc'];
+
+/** `apiKeyV2` -> ['api','key','v2']; `x-api-key` -> ['x','api','key']. */
+function wordsOf(key: string): string[] {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word !== '');
+}
+
+/**
+ * Match a field name against the patterns, however it is spelled.
+ *
+ * Separators are stripped before comparing, because the same secret arrives as
+ * `apiKey`, `api_key`, `api-key` or `API KEY` depending on who wrote the caller.
+ * Substring matching on the raw name missed every hyphenated form —
+ * `'api-key'.includes('apikey')` is false — so `x-api-key` and `private-key`
+ * went into an append-only table verbatim.
+ *
+ * Short patterns go through `wordsOf` instead, so `pin` catches `pinCode` and
+ * `user_pin` without also catching `shippingAddress`.
+ */
 function matches(key: string, patterns: readonly string[]): boolean {
-  const lower = key.toLowerCase();
-  return patterns.some((pattern) => lower.includes(pattern));
+  const normalised = key.toLowerCase().replace(/[-_\s.]/g, '');
+  const words = wordsOf(key);
+
+  return patterns.some((pattern) => {
+    if (WORD_PATTERNS.includes(pattern)) {
+      return words.some((word) => word === pattern || word.startsWith(pattern));
+    }
+    return normalised.includes(pattern.replace(/[-_]/g, ''));
+  });
 }
 
 /**
@@ -76,16 +114,25 @@ function matches(key: string, patterns: readonly string[]): boolean {
  */
 export function maskPhone(value: string): string {
   const digits = value.replace(/\D/g, '');
-  if (digits.length < 6) return '*'.repeat(value.length);
+  // Too short to mask usefully, and returning it unchanged would hand back a
+  // PIN-shaped value that happened to sit under a phone-named key.
+  if (digits.length < 6) return '*'.repeat(Math.max(value.length, 1));
 
   const head = digits.slice(0, 3);
   const tail = digits.slice(-2);
   return `${head}${'*'.repeat(Math.max(0, digits.length - 5))}${tail}`;
 }
 
-/** Mask every string inside a value that sits under a phone-named key. */
+/**
+ * Mask every phone-shaped value under a phone-named key, whatever its type.
+ *
+ * Numbers included: `{ phone: 1712345689 }` is an ordinary thing for a JSON
+ * client to send, and it used to fall past the string check and land in an
+ * append-only table unmasked.
+ */
 function maskPhonesIn(value: unknown): unknown {
   if (typeof value === 'string') return maskPhone(value);
+  if (typeof value === 'number' || typeof value === 'bigint') return maskPhone(String(value));
   if (Array.isArray(value)) return value.map((entry) => maskPhonesIn(entry));
   if (!isPlainObject(value)) return value;
 

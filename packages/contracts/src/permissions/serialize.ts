@@ -116,12 +116,30 @@ function pruneAllowed(value: unknown, allowed: ReadonlySet<string>, exposed: boo
 }
 
 export function serializeFor<T>(context: SerializeContext, subject: Subject, data: T): T {
-  // A reseller gets an allow-list, and it is checked first: the deny-list would
-  // also hide cost, but "everything except the fields we remembered to hide" is
-  // the wrong default for a partner who is not staff.
+  /*
+   * A reseller gets the allow-list **and then the deny-list**, in that order.
+   *
+   * Running only the allow-list was a hole, and an adversarial pass found it
+   * after the allow-list itself had been fixed twice. "An allow-listed key
+   * exposes its whole subtree" is right for `attributes` and `images` — but a
+   * subtree is not a leaf, and cost can sit inside one. With `sku` on the list,
+   * `{ sku: { skuCode, wacPoisha } }` handed a reseller the weighted average
+   * cost, and `attributes` carrying a supplier-fed `cogsPoisha` did the same.
+   *
+   * Reproduced against the built package, same payload, same route:
+   *   reseller -> $.items[0].sku.wacPoisha, $.items[0].attributes.cogsPoisha
+   *   sales    -> (nothing)
+   *
+   * The least trusted principal in the system was receiving strictly more cost
+   * than a staff role, because the reseller branch returned before the deny-list
+   * ever ran. Invariant 5 is not "resellers see an allow-list"; it is "roles
+   * without read:cost never receive cost fields", and that has to hold on every
+   * path, including the narrower one.
+   */
   if (context.roles.includes('reseller') && !context.isSuperAdmin) {
     if (RESELLER_ALLOWLISTED.has(subject)) {
-      return pruneAllowed(data, RESELLER_FIELD_SET, false) as T;
+      const visible = pruneAllowed(data, RESELLER_FIELD_SET, false);
+      return pruneDenied(visible, COST_FIELD_SET) as T;
     }
   }
 
@@ -141,7 +159,19 @@ export function findCostFields(data: unknown, path = '$'): string[] {
   if (Array.isArray(data)) {
     return data.flatMap((entry, index) => findCostFields(entry, `${path}[${String(index)}]`));
   }
-  if (!isPlainObject(data)) return [];
+
+  /*
+   * Deliberately looser than `isPlainObject`.
+   *
+   * The pruners skip anything that is not a plain object, on purpose: walking a
+   * Buffer turns a PDF into `{"0":80,"1":68}`. But a *detector* that shares that
+   * blind spot cannot see what the pruner cannot prune, which would leave the
+   * two controls blind in the same place. This only reads, so it can look
+   * everywhere, and `assertNoCostFields` stays able to fail on a class instance
+   * carrying cost even though `serializeFor` would pass it through.
+   */
+  if (typeof data !== 'object' || data === null) return [];
+  if (data instanceof Date || ArrayBuffer.isView(data)) return [];
 
   const found: string[] = [];
   for (const [key, value] of Object.entries(data)) {

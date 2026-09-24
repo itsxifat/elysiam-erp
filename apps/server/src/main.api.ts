@@ -18,7 +18,25 @@ import { registerAuth } from './platform/http/auth-plugin.js';
 import { CSRF_HEADER } from './platform/http/csrf.js';
 import { isTrustedOrigin, withBrandOrigins } from './platform/http/origins.js';
 
-async function bootstrap(): Promise<void> {
+/**
+ * Build the application exactly as production runs it, without listening.
+ *
+ * Split out so a test can assert the *real* wiring. Everything here used to be
+ * inline in `bootstrap()`, which meant nothing could reach it: the e2e suites
+ * construct their own Nest app and mount the guard and interceptors themselves,
+ * so `pnpm verify` stayed green while this function was broken. Twice, in one
+ * sitting — a logger passed under the wrong option name stopped the API booting
+ * at all, and a bad array binding made `GET /v1/approvals` a 500 for every
+ * caller. Both were found by hand against a running server, which is not a
+ * process that scales.
+ *
+ * `main.api.test.ts` now boots this and drives it.
+ */
+export async function buildApp(): Promise<{
+  app: NestFastifyApplication;
+  tokens: PasswordTokenStore;
+  close: () => Promise<void>;
+}> {
   const env = serverEnv();
   const logger = createLogger('api');
 
@@ -44,7 +62,7 @@ async function bootstrap(): Promise<void> {
   // OTPs are recorded rather than sent, and an invite token is handed back to
   // the admin who created the user instead of being emailed to them.
   const tokens = new PasswordTokenStore();
-  const { auth } = createAuth({
+  const authHandle = createAuth({
     baseUrl: env.API_PUBLIC_URL,
     secret: env.AUTH_SECRET,
     trustedOrigins: originPolicy.trustedOrigins,
@@ -55,6 +73,8 @@ async function bootstrap(): Promise<void> {
       return Promise.resolve();
     },
   });
+
+  const { auth } = authHandle;
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule.register({ auth, tokens }),
@@ -74,11 +94,15 @@ async function bootstrap(): Promise<void> {
        * is a no-op that writes nowhere. The audit interceptor's failure path
        * says "it must be loud, though: a silently missing audit trail is the
        * worst of both worlds" and was, in fact, completely silent — verified.
-       * Handing pino to the adapter is what makes that sentence true, and it
-       * also puts request logging on the same redaction rules as everything
-       * else rather than on Fastify's defaults.
+       *
+       * `loggerInstance`, not `logger`. Fastify 5 split them: `logger` takes a
+       * *configuration object* and builds its own pino, and passing an instance
+       * there throws `FST_ERR_LOG_INVALID_LOGGER_CONFIG` at boot. The first
+       * attempt at this fix did exactly that and stopped the API starting at
+       * all — and `pnpm verify` stayed green, because no test boots the real
+       * bootstrap. `main.api.test.ts` now does.
        */
-      logger,
+      loggerInstance: logger,
     }),
     {
       // Nest's own bootstrap chatter would bypass pino's redaction.
@@ -152,6 +176,24 @@ async function bootstrap(): Promise<void> {
     secure: env.NODE_ENV === 'production',
   });
 
+  await app.init();
+
+  return {
+    app,
+    tokens,
+    close: async () => {
+      await app.close();
+      await authHandle.close();
+    },
+  };
+}
+
+async function bootstrap(): Promise<void> {
+  const env = serverEnv();
+  const logger = createLogger('api');
+
+  const { app } = await buildApp();
+
   await app.listen({ port: env.API_PORT, host: env.API_HOST });
   logger.info({ port: env.API_PORT, host: env.API_HOST }, 'api listening');
 
@@ -163,9 +205,18 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-bootstrap().catch((error: unknown) => {
-  // The logger needs valid config, and the most likely failure here is invalid
-  // config, so this one path writes to stderr directly.
-  process.stderr.write(`api failed to start: ${String(error)}\n`);
-  process.exit(1);
-});
+/*
+ * Only when run as the entrypoint.
+ *
+ * `main.api.test.ts` imports `buildApp` from this module; without this guard the
+ * import would also bind port 3000 and exit the test process.
+ */
+if (process.argv[1]?.includes('main.api') === true) {
+  bootstrap().catch((error) => {
+    // The logger needs valid config, and the most likely failure here is invalid
+    // config, so this one path writes to stderr directly.
+    process.stderr.write(`api failed to start: ${String(error)}
+`);
+    process.exit(1);
+  });
+}

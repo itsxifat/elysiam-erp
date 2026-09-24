@@ -293,7 +293,32 @@ export class ApprovalsService {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const decidable = context.isSuperAdmin
         ? [...APPROVAL_TYPES]
-        : context.roles.flatMap((role) => [...(CHECKER_TYPES[role] ?? [])]);
+        : [...new Set(context.roles.flatMap((role) => [...(CHECKER_TYPES[role] ?? [])]))];
+
+      /*
+       * One bound parameter per type, compared as text.
+       *
+       * The first attempt passed the array as a single parameter and cast it
+       * (`= any(${decidable}::text[]::approvals.approval_type[])`). That is a
+       * 500 for every caller: the driver does not bind a JS array into a
+       * double-cast enum array the way the literal form suggests. It shipped
+       * green because nothing tested this route — verified by hand against the
+       * running API, `GET /v1/approvals` returned 500.
+       *
+       * `type::text in (…)` sidesteps the enum cast entirely, and each value is
+       * still a separate bound parameter, so it is injection-safe even though
+       * the list is built in JavaScript. A role that may decide nothing gets
+       * only the `requested_by` clause — `in ()` is a syntax error, not an
+       * empty set.
+       */
+      const mine = sql`requested_by = ${context.userId}`;
+      const visible =
+        decidable.length === 0
+          ? mine
+          : sql`${mine} or type::text in (${sql.join(
+              decidable.map((type) => sql`${type}`),
+              sql`, `,
+            )})`;
 
       const rows = await tx.execute<{
         id: string;
@@ -305,8 +330,7 @@ export class ApprovalsService {
       }>(sql`
         select id, type, status, requested_by, amount_poisha, decided_by
         from approvals.approval_requests
-        where requested_by = ${context.userId}
-           or type = any(${decidable}::text[]::approvals.approval_type[])
+        where ${visible}
         order by created_at desc
         limit 100
       `);

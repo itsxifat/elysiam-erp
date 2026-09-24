@@ -70,53 +70,46 @@ export class AbilityGuard implements CanActivate {
     const handler = context.getHandler();
     const controller = context.getClass();
 
-    // The handler's own declaration first, always.
-    const declaration = this.reflector.getAllAndOverride<Declaration | undefined>(ABILITY_KEY, [
-      handler,
-      controller,
-    ]);
+    /*
+     * Resolve both declarations at both levels, then decide once.
+     *
+     * The earlier version resolved `@Public` first and returned before the auth
+     * check, so a controller-level `@Public` silently discarded a handler's
+     * `@RequireAbility` — an ordinary refactor would have opened every route on
+     * that controller, and `check-route-matrix` agreed with it and printed PASS.
+     * The repair for that still allowed the narrower case: both decorators on
+     * the *same* handler also resolved to public.
+     *
+     * So there is one rule now, and it does not depend on where either
+     * declaration came from: **a route that declares an ability is never
+     * public.** The combination is a contradiction nobody means, so it is
+     * refused rather than resolved — silently picking either reading is how the
+     * first two bugs happened.
+     */
+    const handlerAbility = this.reflector.get<Declaration | undefined>(ABILITY_KEY, handler);
+    const handlerPublic = this.reflector.get<string | undefined>(PUBLIC_KEY, handler);
+    const classAbility = this.reflector.get<Declaration | undefined>(ABILITY_KEY, controller);
+    const classPublic = this.reflector.get<string | undefined>(PUBLIC_KEY, controller);
 
-    const publicReason = this.reflector.getAllAndOverride<string | undefined>(PUBLIC_KEY, [
-      handler,
-      controller,
-    ]);
+    const declaration = handlerAbility ?? classAbility;
+    const isPublic = handlerPublic ?? classPublic;
+
+    if (declaration !== undefined && isPublic !== undefined) {
+      throw new ForbiddenException(
+        'This route declares both an ability and @Public. Remove one — they contradict.',
+      );
+    }
+
+    if (isPublic !== undefined) return true;
 
     /*
-     * A handler that declares an ability is never public (§6).
+     * Undeclared means denied.
      *
-     * `@Public` used to be resolved first, across handler *and* controller, and
-     * returned true before anything else ran. So moving `@Public('runs before
-     * anyone has signed in')` from one handler to the top of its controller — an
-     * entirely ordinary refactor — silently discarded every sibling handler's
-     * `@RequireAbility`, including `POST /v1/users`. Reproduced: an anonymous
-     * caller was allowed through.
-     *
-     * Worse, `check-route-matrix` resolved it the same way and printed
-     * `public:<reason>`, so the gate reported PASS. Two controls agreeing on the
-     * wrong answer is exactly what having two controls is meant to rule out.
-     *
-     * Contradictory declarations are refused rather than silently resolved,
-     * because there is no reading of "public and also requires create:User"
-     * that anybody meant.
+     * The alternative makes a forgotten decorator invisible: the only evidence
+     * would be the absence of something, which review is worst at catching.
+     * `check-route-matrix` fails the build for the same omission, so this is the
+     * runtime half of a control that also has a build-time half.
      */
-    if (declaration !== undefined && publicReason !== undefined) {
-      const handlerIsPublic = this.reflector.get<string | undefined>(PUBLIC_KEY, handler);
-      const handlerHasAbility = this.reflector.get<Declaration | undefined>(ABILITY_KEY, handler);
-
-      if (handlerHasAbility !== undefined && handlerIsPublic === undefined) {
-        throw new ForbiddenException(
-          'This route declares an ability and inherits @Public from its controller. Remove one.',
-        );
-      }
-    }
-
-    if (publicReason !== undefined && declaration === undefined) return true;
-    if (publicReason !== undefined && this.reflector.get(PUBLIC_KEY, handler) !== undefined) {
-      return true;
-    }
-
-    // Undeclared means denied. See the note at the top of this file: the
-    // alternative makes a forgotten decorator invisible.
     if (declaration === undefined) {
       throw new ForbiddenException(
         'This route declares no ability. Add @RequireAbility, @AuthenticatedOnly or @Public.',

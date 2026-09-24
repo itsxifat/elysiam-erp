@@ -67,35 +67,31 @@ export function describeRoutes(app: INestApplication): RouteDeclaration[] {
 
         const suffix = Reflect.getMetadata(PATH_METADATA, handler) as unknown;
 
-        // Handler metadata wins over controller metadata, which is the same
-        // precedence `getAllAndOverride` applies in the guard. If these two
-        // disagreed, the gate would bless a route the guard then refuses.
-        const publicReason =
-          (Reflect.getMetadata(PUBLIC_KEY, handler) as string | undefined) ??
-          (Reflect.getMetadata(PUBLIC_KEY, controllerType) as string | undefined);
-
-        const ability =
-          (Reflect.getMetadata(ABILITY_KEY, handler) as
-            { action: string; subject?: string } | undefined) ??
-          (Reflect.getMetadata(ABILITY_KEY, controllerType) as
-            { action: string; subject?: string } | undefined);
-
-        // The same contradiction the guard refuses: a handler that declares an
-        // ability while inheriting @Public from its controller. Reported rather
-        // than resolved, so the gate cannot bless what the guard will reject.
+        /*
+         * The same rule the guard applies, resolved the same way.
+         *
+         * Both levels are read, and a route that declares an ability while also
+         * being public is reported as undeclared — because that is what the
+         * guard does with it (it throws). If these two ever disagreed, the gate
+         * would bless a route the guard refuses, or print PASS for one it lets
+         * through by accident. Both have happened.
+         */
         const handlerAbility = Reflect.getMetadata(ABILITY_KEY, handler) as
           { action: string; subject?: string } | undefined;
         const handlerPublic = Reflect.getMetadata(PUBLIC_KEY, handler) as string | undefined;
+        const classAbility = Reflect.getMetadata(ABILITY_KEY, controllerType) as
+          { action: string; subject?: string } | undefined;
+        const classPublic = Reflect.getMetadata(PUBLIC_KEY, controllerType) as string | undefined;
+
+        const ability = handlerAbility ?? classAbility;
+        const publicReason = handlerPublic ?? classPublic;
 
         let declared: string | null = null;
-        if (
-          handlerAbility !== undefined &&
-          handlerPublic === undefined &&
-          publicReason !== undefined
-        ) {
+        if (ability !== undefined && publicReason !== undefined) {
           declared = null;
-        } else if (publicReason !== undefined) declared = `public:${publicReason}`;
-        else if (ability !== undefined) {
+        } else if (publicReason !== undefined) {
+          declared = `public:${publicReason}`;
+        } else if (ability !== undefined) {
           declared =
             ability.action === AUTHENTICATED_ONLY
               ? AUTHENTICATED_ONLY

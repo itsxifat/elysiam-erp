@@ -305,6 +305,32 @@ describe('a reseller sees an allow-list, not a deny-list', () => {
     expect(out.sku, 'the positive control').toBe('A');
   });
 
+  it('never exposes cost inside an allow-listed subtree', () => {
+    const out = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'Catalog', {
+      sku: { skuCode: 'LIVE-1', wacPoisha: '120000' },
+      attributes: { colour: 'red', cogsPoisha: '120000' },
+    });
+
+    expect(() => {
+      assertNoCostFields(out);
+    }).not.toThrow();
+    // The positive control: the non-cost parts of those subtrees survive.
+    expect(out.sku).toEqual({ skuCode: 'LIVE-1' });
+    expect(out.attributes).toEqual({ colour: 'red' });
+  });
+
+  it('gives a reseller no more than a staff role gets', () => {
+    // The shape of the bug: the narrower path returned early, so the least
+    // trusted principal received strictly more than `sales` did.
+    const row = { sku: { skuCode: 'A', wacPoisha: '1' }, attributes: { cogsPoisha: '2' } };
+
+    const reseller = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'Catalog', row);
+    const sales = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Catalog', row);
+
+    expect(findCostFields(reseller)).toEqual([]);
+    expect(findCostFields(sales)).toEqual([]);
+  });
+
   it('keeps the whole subtree of a field the allow-list names', () => {
     // The other direction the same bug broke: `attributes` is on the list and
     // §6 says a reseller may see it, but keeping the container name kept only
@@ -363,6 +389,21 @@ describe('serializeFor, over arbitrary payloads', () => {
     );
   });
 
+  it('leaves no cost field for a RESELLER either, on the allow-list path', () => {
+    // The generator only ever ran `sales` and `accounts` on subject `Order`, so
+    // it could not see the reseller branch at all — and that branch returned
+    // before the deny-list ran. An allow-listed key exposes its subtree, and a
+    // subtree can contain cost: `{ sku: { skuCode, wacPoisha } }` handed the
+    // least trusted principal in the system more cost than `sales` got.
+    fc.assert(
+      fc.property(payload, (data) => {
+        const out = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'Catalog', data);
+        expect(findCostFields(out)).toEqual([]);
+      }),
+      { numRuns: 300 },
+    );
+  });
+
   it('changes nothing for a role that may read cost', () => {
     fc.assert(
       fc.property(payload, (data) => {
@@ -371,6 +412,17 @@ describe('serializeFor, over arbitrary payloads', () => {
       }),
       { numRuns: 300 },
     );
+  });
+
+  it('sees cost inside a class instance, even though the pruner skips one', () => {
+    // The pruners skip non-plain objects on purpose — walking a Buffer corrupts
+    // it. A detector that shared that blind spot would leave both controls
+    // blind in the same place, so this one looks everywhere.
+    class Row {
+      id = 'p1';
+      wacPoisha = '120000';
+    }
+    expect(findCostFields({ lines: [new Row()] })).toEqual(['$.lines[0].wacPoisha']);
   });
 
   it('would notice a cost field that slipped through', () => {
