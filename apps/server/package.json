@@ -13,6 +13,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@casl/ability": "catalog:",
     "@elysium/config": "workspace:*",
     "@elysium/contracts": "workspace:*",
     "@elysium/db": "workspace:*",
@@ -35,6 +36,7 @@
     "@types/node": "catalog:",
     "concurrently": "catalog:",
     "eslint": "catalog:",
+    "fast-check": "catalog:",
     "pino-pretty": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

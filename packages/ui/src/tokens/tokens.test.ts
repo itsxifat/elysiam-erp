@@ -1,3 +1,4 @@
+/* eslint-disable elysium/no-float-money -- contrast ratios in failure messages, never money. */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 

@@ -10,6 +10,7 @@ import {
   findCrossOrgForeignKeys,
   findDefaultPrivileges,
   findAnalyticsReadProblems,
+  findAppendOnlyProblems,
   findPrivilegeProblems,
   findTenancyOffenders,
 } from './guard.js';
@@ -607,6 +608,64 @@ describe('check 5: the guard — every tenant table is isolated', () => {
     }
   });
 
+  it('rejects a second policy that widens a table beside a correct org policy (D-089)', async () => {
+    // The M02a follow-up. The guard used to find the org policy by name and
+    // only count the rest, so this table — whose org policy is perfect — was
+    // reported clean while `using (true)` beside it handed every org's rows to
+    // everyone. Permissive policies OR together; one stray one is enough.
+    await withSystem(async (tx) => {
+      await tx.execute(
+        sql`create table org.extra_policy_probe (id uuid primary key default gen_random_uuid(), org_id uuid not null)`,
+      );
+      await tx.execute(sql.raw(tenantTableSql({ schema: 'org', table: 'extra_policy_probe' })));
+      await tx.execute(
+        sql`create policy extra_policy_probe_everyone on org.extra_policy_probe for select using (true)`,
+      );
+      // And an analytics policy on a table that never opted in (D-049).
+      await tx.execute(sql`create policy extra_policy_probe_analytics_all_orgs
+        on org.extra_policy_probe for select to erp_analytics using (true)`);
+    });
+
+    try {
+      const offenders = await findTenancyOffenders();
+      const found = offenders.find((o) => o.table === 'extra_policy_probe');
+      expect(found, 'a widening second policy must be reported').toBeDefined();
+      const reasons = found?.reasons.join(' | ') ?? '';
+      expect(reasons).toMatch(/undeclared policy "extra_policy_probe_everyone"/);
+      expect(reasons).toMatch(/analytics policy .* not in ANALYTICS_READABLE/);
+      // The org policy itself is fine, so nothing is said about it.
+      expect(reasons).not.toMatch(/not the generated org policy/);
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`drop table if exists org.extra_policy_probe`);
+      });
+    }
+  });
+
+  it('rejects a declared extra policy whose expression has drifted (D-089)', async () => {
+    // iam.memberships' self policy is declared. Widen it and it must fail.
+    await withSystem(async (tx) => {
+      await tx.execute(sql`alter policy memberships_own_rows on iam.memberships using (true)`);
+    });
+
+    try {
+      const offenders = await findTenancyOffenders();
+      const found = offenders.find((o) => o.schema === 'iam' && o.table === 'memberships');
+      expect(found?.reasons.join(' ')).toMatch(
+        /memberships_own_rows" differs from its declaration/,
+      );
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`alter policy memberships_own_rows on iam.memberships
+          using (user_id = nullif(current_setting('app.user_id', true), ''))`);
+      });
+    }
+
+    // Restored exactly: the guard is clean again.
+    const after = await findTenancyOffenders();
+    expect(after.find((o) => o.table === 'memberships')).toBeUndefined();
+  });
+
   it('rejects a policy missing its WITH CHECK, which would leave writes unconstrained', async () => {
     await withSystem(async (tx) => {
       await tx.execute(
@@ -722,6 +781,31 @@ describe('check 5: the guard — every tenant table is isolated', () => {
       await findAnalyticsReadProblems(),
       'erp_analytics can read tables outside ANALYTICS_READABLE.',
     ).toEqual([]);
+  });
+
+  it('grants erp_app no way to change an append-only table', async () => {
+    // The grant is the control. `findPrivilegeProblems` only checked that
+    // analytics cannot write and that erp_app has no TRUNCATE, so an
+    // append-only table declared READ_WRITE by mistake would have shipped
+    // green — and M03's journals and M07's stock movements are both
+    // append-only by invariant.
+    expect(await findAppendOnlyProblems()).toEqual([]);
+  });
+
+  it('would notice if an append-only table were granted update', async () => {
+    await withSystem(async (tx) => {
+      await tx.execute(sql`grant update on "audit"."audit_log" to "erp_app"`);
+    });
+
+    try {
+      expect(await findAppendOnlyProblems()).toContain('audit.audit_log: erp_app has UPDATE');
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`revoke update on "audit"."audit_log" from "erp_app"`);
+      });
+    }
+
+    expect(await findAppendOnlyProblems()).toEqual([]);
   });
 
   it('would notice if a credential table were granted back', async () => {
@@ -994,6 +1078,42 @@ describe('check 6: migrate and seed are idempotent', () => {
     const after = await count();
 
     expect(after).toBe(before);
+  });
+
+  it('seeds the chart of accounts once per org, with a hand-cash wallet per branch (M03)', async () => {
+    const snapshot = async () =>
+      withSystem(
+        async (tx) =>
+          tx.execute<{ code: string; id: string; subtype: string; branch_id: string | null }>(
+            sql`select code, id, subtype::text as subtype, branch_id from ledger.accounts order by code`,
+          ),
+        { orgId: ORG_A },
+      );
+
+    const before = [...(await snapshot())];
+    const first = await seedOrganizations();
+    await seedOrganizations();
+    const after = [...(await snapshot())];
+
+    // Same rows, same ids, nothing duplicated.
+    expect(after).toEqual(before);
+    // 40 template accounts plus one wallet for the seeded HQ branch, per org.
+    expect(before).toHaveLength(41);
+    expect(first.accounts).toBe(41 * 5);
+
+    const wallets = before.filter((row) => row.subtype === 'wallet_cash');
+    expect(wallets.map((row) => row.code)).toEqual(['1010-HQ']);
+    expect(wallets[0]?.branch_id).not.toBeNull();
+
+    // A branch added later gets its wallet on the next seed, and only one.
+    const branchId = await seedBranch(ORG_A, 'SR-DHK');
+    await seedOrganizations();
+    await seedOrganizations();
+    const again = [...(await snapshot())].filter((row) => row.subtype === 'wallet_cash');
+    expect(again.map((row) => [row.code, row.branch_id])).toEqual([
+      ['1010-HQ', wallets[0]?.branch_id],
+      ['1010-SR-DHK', branchId],
+    ]);
   });
 
   it('keeps derived ids stable across runs', async () => {

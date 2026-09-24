@@ -111,6 +111,9 @@ async function adminConnectionUrl(): Promise<string> {
  * The roles are created once per server and reused; the database is per run,
  * so parallel suites cannot see each other's rows.
  */
+/** An arbitrary constant: "only one test-database bootstrap at a time". */
+const BOOTSTRAP_LOCK_KEY = 720_240_001;
+
 export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
   const adminUrl = await adminConnectionUrl();
   const databaseName = `elysium_${label}_${Date.now().toString(36)}${Math.random()
@@ -131,8 +134,16 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
   const admin = postgres(adminUrl, { max: 1, onnotice: silenceNotices });
   try {
     await admin.unsafe(`create database "${databaseName}"`);
-  } finally {
+    // Serialise the bootstrap across concurrently starting suites. Roles are
+    // cluster-wide, so two suites bootstrapping at once both ALTER the same
+    // `pg_authid` rows and one fails with "tuple concurrently updated". An
+    // advisory lock is scoped to the database it is taken in, so it is taken
+    // here, on the shared admin database, and held until the bootstrap below
+    // has committed.
+    await admin`select pg_advisory_lock(${BOOTSTRAP_LOCK_KEY})`;
+  } catch (error) {
     await admin.end();
+    throw error;
   }
 
   // Everything else happens inside the throwaway database. Role creation is
@@ -163,6 +174,8 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
     });
   } finally {
     await setup.end();
+    // Ending the admin session releases the advisory lock with it.
+    await admin.end();
   }
 
   const ownerUrl = withDatabase(adminUrl, databaseName, 'erp_owner', passwords.erp_owner);
@@ -241,7 +254,10 @@ export async function stopSharedContainer(): Promise<void> {
 export async function resetTenantData(): Promise<void> {
   await withSystem(async (tx) => {
     await tx.execute(
-      sql`truncate org.feature_flags, org.settings, org.locations, org.branches restart identity cascade`,
+      // Ledger tables first and by name: journals reference nothing that
+      // cascades from branches, and would otherwise outlive their lines.
+      sql`truncate ledger.journal_lines, ledger.journals, ledger.periods, ledger.accounts,
+        org.feature_flags, org.settings, org.locations, org.branches restart identity cascade`,
     );
   });
   await seedOrganizations();

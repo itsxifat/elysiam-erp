@@ -19,6 +19,7 @@ import {
 } from '@elysium/db';
 import type { FastifyRequest } from 'fastify';
 
+import { AuthenticatedOnly, Public, RequireAbility } from '../../platform/auth/abilities.js';
 import { serverEnv } from '../../platform/config/env.js';
 import { IamService } from './iam.service.js';
 
@@ -46,6 +47,7 @@ export class IamController {
    * called "api". Accepting it from the client is no wider a door than the
    * `slug` parameter beside it, and both return only public brand facts.
    */
+  @Public('Runs before anyone has signed in, and returns only public brand facts.')
   @Get('auth/login-branding')
   async loginBranding(
     @Req() request: FastifyRequest,
@@ -61,6 +63,7 @@ export class IamController {
   }
 
   /** The orgs this user may enter, for the switcher. */
+  @AuthenticatedOnly('Answers which orgs you may enter, which is prior to being in one.')
   @Get('me/orgs')
   async myOrgs(@Req() request: FastifyRequest) {
     const userId = this.iam.requireUserId(request);
@@ -68,6 +71,7 @@ export class IamController {
   }
 
   /** Who the caller is, right now, in the org they are acting in. */
+  @AuthenticatedOnly('Answers who the caller is. There is no other subject it could be about.')
   @Get('me')
   me(@Req() request: FastifyRequest): RequestContext {
     const context = (request as FastifyRequest & { context?: RequestContext }).context;
@@ -84,6 +88,7 @@ export class IamController {
    * session outlives a membership, and the whole point of the switcher is that
    * it changes which rows the database will return.
    */
+  @AuthenticatedOnly('Changes which org you are in. Membership is the check, not an ability.')
   @Post('me/active-org')
   async switchOrg(@Req() request: FastifyRequest, @Body() body: unknown) {
     const userId = this.iam.requireUserId(request);
@@ -120,6 +125,7 @@ export class IamController {
    * unguarded with a comment deferring the check to M02b, and an audit
    * reproduced a `sales` user granting themselves org_admin in one request.
    */
+  @RequireAbility('create', 'User')
   @Post('users')
   async createUser(@Req() request: FastifyRequest, @Body() body: unknown) {
     const context = (request as FastifyRequest & { context?: RequestContext }).context;

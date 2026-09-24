@@ -1,10 +1,34 @@
 /**
  * @elysium/domain
  *
- * Pure business logic: money, posting rules, state machines, pricing, payouts,
- * costing, schedules, scoring and target splits (architecture §4).
+ * Pure business logic: money arithmetic, the order state machine, posting
+ * rules, approval thresholds and audit redaction (architecture §4,
+ * invariant 11).
  *
- * Skeleton only (M00). M03 adds the money primitives and the first posting rule. Everything here
- * stays a pure, exhaustively tested function.
+ * Everything here is a function of its arguments. That is what lets the same
+ * rule answer identically in the API, in a worker, in a preview screen and in
+ * a test — and it is why `requiresApproval` lives here rather than inside the
+ * approvals service, where the preview and the enforcement could drift apart.
  */
 export const PACKAGE_NAME = '@elysium/domain' as const;
+
+export * from './money/index.js';
+export * from './dates/index.js';
+export * from './ledger/index.js';
+export * from './posting/index.js';
+
+export {
+  canDecide,
+  requiresApproval,
+  type ApprovalDecisionInput,
+  type Threshold,
+} from './approvals/index.js';
+
+export {
+  changedFields,
+  maskPhone,
+  maskPhonesInText,
+  redact,
+  REDACTED,
+  REDACTED_FIELD_PATTERNS,
+} from './audit/index.js';

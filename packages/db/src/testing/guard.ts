@@ -1,7 +1,13 @@
 import { sql } from 'drizzle-orm';
 
 import { withSystem } from '../client.js';
-import { ANALYTICS_READABLE, ANALYTICS_READABLE_SCHEMAS } from '../rls.js';
+import {
+  ANALYTICS_READABLE,
+  ANALYTICS_READABLE_SCHEMAS,
+  APPEND_ONLY_TABLES,
+  DECLARED_POLICIES,
+  NO_DELETE_TABLES,
+} from '../rls.js';
 import { GLOBAL_SCHEMAS, GLOBAL_TABLES, ORG_CONTEXT_SQL } from '../rls.js';
 
 /**
@@ -46,12 +52,92 @@ interface TableRow extends Record<string, unknown> {
   has_org_id: boolean;
   rls_enabled: boolean;
   rls_forced: boolean;
+}
+
+interface PolicyRow extends Record<string, unknown> {
+  schemaname: string;
+  tablename: string;
+  policyname: string;
+  permissive: string;
+  cmd: string;
+  roles: string;
   qual: string | null;
   with_check: string | null;
-  policy_count: string;
-  permissive: string | null;
-  cmd: string | null;
-  roles: string | null;
+}
+
+function sameExpression(actual: string | null, expected: string | null): boolean {
+  if (actual === null || expected === null) return actual === expected;
+  return normalizeExpression(actual) === normalizeExpression(expected);
+}
+
+/**
+ * Why one policy on a tenant table is not acceptable, or null when it is.
+ *
+ * Three kinds are allowed, and nothing else (D-048, D-089):
+ *
+ * 1. `<table>_org_isolation`, which must be exactly the generated org policy.
+ * 2. `<table>_analytics_all_orgs`, the generated cross-org read for
+ *    `erp_analytics`, only on a table that opted in (ANALYTICS_READABLE).
+ * 3. A policy declared in `DECLARED_POLICIES`, which must match its
+ *    declaration exactly — name, kind, command, roles and both expressions.
+ */
+function policyProblems(qualified: string, table: string, policy: PolicyRow): string[] {
+  if (policy.policyname === `${table}_org_isolation`) {
+    const reasons: string[] = [];
+    // The check that catches `using (true)`: the expression itself, not the
+    // fact that some policy exists.
+    if (policy.qual === null || normalizeExpression(policy.qual) !== EXPECTED_POLICY) {
+      reasons.push(`USING is "${String(policy.qual)}", not the generated org policy`);
+    }
+    if (policy.with_check === null) {
+      reasons.push('policy has no WITH CHECK, so writes are unconstrained');
+    } else if (normalizeExpression(policy.with_check) !== EXPECTED_POLICY) {
+      reasons.push(`WITH CHECK is "${policy.with_check}", not the generated org policy`);
+    }
+    if (policy.permissive !== 'PERMISSIVE') reasons.push(`policy is ${policy.permissive}`);
+    if (policy.cmd !== 'ALL') reasons.push(`policy covers only ${policy.cmd}`);
+    if (policy.roles !== '{public}') reasons.push(`policy applies only to ${policy.roles}`);
+    return reasons;
+  }
+
+  if (policy.policyname === `${table}_analytics_all_orgs`) {
+    if (!ANALYTICS_READABLE.includes(qualified)) {
+      return [
+        `analytics policy ${policy.policyname} on a table that is not in ANALYTICS_READABLE (D-049)`,
+      ];
+    }
+    const matches =
+      policy.permissive === 'PERMISSIVE' &&
+      policy.cmd === 'SELECT' &&
+      policy.roles === '{erp_analytics}' &&
+      sameExpression(policy.qual, 'true') &&
+      policy.with_check === null;
+    return matches ? [] : [`analytics policy ${policy.policyname} is not the generated one`];
+  }
+
+  const declared = DECLARED_POLICIES.find(
+    (entry) => entry.table === qualified && entry.name === policy.policyname,
+  );
+  if (declared === undefined) {
+    return [
+      `undeclared policy "${policy.policyname}" (${policy.permissive} ${policy.cmd} to ` +
+        `${policy.roles} using ${String(policy.qual)}); declare it in DECLARED_POLICIES or drop it`,
+    ];
+  }
+
+  const matches =
+    policy.permissive === declared.permissive &&
+    policy.cmd === declared.cmd &&
+    policy.roles === declared.roles &&
+    sameExpression(policy.qual, declared.using) &&
+    sameExpression(policy.with_check, declared.withCheck);
+  return matches
+    ? []
+    : [
+        `policy "${policy.policyname}" differs from its declaration (${policy.permissive} ` +
+          `${policy.cmd} to ${policy.roles} using ${String(policy.qual)} with check ` +
+          `${String(policy.with_check)})`,
+      ];
 }
 
 /**
@@ -61,10 +147,14 @@ interface TableRow extends Record<string, unknown> {
  * or has been declared global. A new module schema — `sales` in M10,
  * `inventory` in M07, `ledger` in M03 — is therefore guarded the moment it
  * exists, rather than when somebody remembers to add it to a list.
+ *
+ * And every *policy* on each table is examined, not only the one the guard
+ * expects: permissive policies OR together, so one stray policy is enough to
+ * undo the org policy entirely (M02a follow-up, D-089).
  */
 export async function findTenancyOffenders(): Promise<Offender[]> {
-  const rows = await withSystem(async (tx) =>
-    tx.execute<TableRow>(sql`
+  const [rows, policies] = await withSystem(async (tx) => {
+    const tables = await tx.execute<TableRow>(sql`
       select
         n.nspname as schemaname,
         c.relname as tablename,
@@ -74,25 +164,13 @@ export async function findTenancyOffenders(): Promise<Offender[]> {
             and a.attnum > 0 and not a.attisdropped
         ) as has_org_id,
         c.relrowsecurity as rls_enabled,
-        c.relforcerowsecurity as rls_forced,
-        p.qual::text as qual,
-        p.with_check::text as with_check,
-        p.permissive,
-        p.cmd,
-        p.roles::text as roles,
-        (select count(*) from pg_policies q
-           where q.schemaname = n.nspname and q.tablename = c.relname) as policy_count
+        c.relforcerowsecurity as rls_forced
       from pg_class c
       join pg_namespace n on n.oid = c.relnamespace
-      left join pg_policies p
-        on p.schemaname = n.nspname
-       and p.tablename = c.relname
-       and p.policyname = c.relname || '_org_isolation'
       -- 'p' as well as 'r': a partitioned parent needs its own ENABLE/FORCE,
       -- because the policies that apply when querying through it are the
-      -- parent's. M02b's audit log and M03's journals are the obvious
-      -- candidates for partitioning, and a parent skipped here would be
-      -- invisible to the guard while every leaf looked fine.
+      -- parent's. A parent skipped here would be invisible to the guard while
+      -- every leaf looked fine.
       where c.relkind in ('r', 'p')
         and n.nspname not in ${SYSTEM_SCHEMAS}
         and n.nspname not like 'pg\\_temp%'
@@ -103,8 +181,15 @@ export async function findTenancyOffenders(): Promise<Offender[]> {
           where d.objid = c.oid and d.deptype = 'e'
         )
       order by n.nspname, c.relname
-    `),
-  );
+    `);
+    const all = await tx.execute<PolicyRow>(sql`
+      select schemaname, tablename, policyname, permissive, cmd, roles::text as roles,
+             qual::text as qual, with_check::text as with_check
+      from pg_policies
+      order by schemaname, tablename, policyname
+    `);
+    return [tables, all] as const;
+  });
 
   const offenders: Offender[] = [];
 
@@ -117,27 +202,16 @@ export async function findTenancyOffenders(): Promise<Offender[]> {
     if (!row.rls_enabled) reasons.push('row-level security is not enabled');
     // Without FORCE, erp_owner — which runs migrations and seeds — is exempt.
     if (!row.rls_forced) reasons.push('row-level security is not FORCEd');
-    if (Number(row.policy_count) === 0) reasons.push('no policy at all');
 
-    if (row.qual === null) {
-      if (Number(row.policy_count) > 0) {
-        reasons.push(`no policy named ${row.tablename}_org_isolation`);
-      }
-    } else {
-      // The check that catches `using (true)`: the expression itself, not the
-      // fact that some policy exists.
-      if (normalizeExpression(row.qual) !== EXPECTED_POLICY) {
-        reasons.push(`USING is "${row.qual}", not the generated org policy`);
-      }
-      if (row.with_check === null) {
-        reasons.push('policy has no WITH CHECK, so writes are unconstrained');
-      } else if (normalizeExpression(row.with_check) !== EXPECTED_POLICY) {
-        reasons.push(`WITH CHECK is "${row.with_check}", not the generated org policy`);
-      }
-      if (row.permissive !== 'PERMISSIVE') reasons.push(`policy is ${row.permissive}`);
-      if (row.cmd !== 'ALL') reasons.push(`policy covers only ${row.cmd}`);
-      if (row.roles !== '{public}') reasons.push(`policy applies only to ${row.roles}`);
+    const onTable = [...policies].filter(
+      (policy) => policy.schemaname === row.schemaname && policy.tablename === row.tablename,
+    );
+    if (onTable.length === 0) reasons.push('no policy at all');
+    else if (!onTable.some((policy) => policy.policyname === `${row.tablename}_org_isolation`)) {
+      reasons.push(`no policy named ${row.tablename}_org_isolation`);
     }
+
+    for (const policy of onTable) reasons.push(...policyProblems(qualified, row.tablename, policy));
 
     if (reasons.length > 0)
       offenders.push({ schema: row.schemaname, table: row.tablename, reasons });
@@ -289,6 +363,43 @@ export async function findAnalyticsReadProblems(): Promise<string[]> {
   );
 
   return [...rows].map((row) => row.table_name);
+}
+
+/**
+ * Append-only tables `erp_app` can nonetheless change.
+ *
+ * A log whose rows can be edited is not evidence of anything, and the only
+ * thing that makes "append-only" true rather than intended is the absence of
+ * the grant. Enumerated for the same reason analytics reads are: so a table
+ * declared READ_WRITE by mistake fails the build rather than shipping green.
+ */
+export async function findAppendOnlyProblems(): Promise<string[]> {
+  const offenders: string[] = [];
+
+  for (const table of APPEND_ONLY_TABLES) {
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{ can_update: boolean; can_delete: boolean }>(sql`
+        select
+          has_table_privilege('erp_app', ${table}, 'UPDATE') as can_update,
+          has_table_privilege('erp_app', ${table}, 'DELETE') as can_delete
+      `),
+    );
+
+    const row = rows[0];
+    if (row?.can_update === true) offenders.push(`${table}: erp_app has UPDATE`);
+    if (row?.can_delete === true) offenders.push(`${table}: erp_app has DELETE`);
+  }
+
+  for (const table of NO_DELETE_TABLES) {
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{ can_delete: boolean }>(sql`
+        select has_table_privilege('erp_app', ${table}, 'DELETE') as can_delete
+      `),
+    );
+    if (rows[0]?.can_delete === true) offenders.push(`${table}: erp_app has DELETE`);
+  }
+
+  return offenders;
 }
 
 /** Default privileges that would silently grant a future table to a role. */

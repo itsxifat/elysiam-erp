@@ -35,6 +35,13 @@ export interface RequestContext {
    * *not* "no branches". M02b enforces it; M02a only records it.
    */
   readonly branchIds: readonly string[];
+  /**
+   * The same scope, kept per role (D-075). Each membership's branches bound
+   * that membership's role and no other: merging them let `warehouse` at
+   * branch B widen `branch_manager` at branch A to both. A role with no
+   * branches maps to `[]` — the whole org, as above.
+   */
+  readonly branchIdsByRole: Readonly<Partial<Record<MembershipRole, readonly string[]>>>;
   readonly requestId: string;
 }
 
@@ -139,6 +146,7 @@ export async function resolveContext(input: {
       orgId: input.orgId,
       roles: ['org_admin'],
       branchIds: [],
+      branchIdsByRole: { org_admin: [] },
       requestId: input.requestId,
     };
   }
@@ -172,9 +180,21 @@ export async function resolveContext(input: {
 
       const membershipIds = held.map((row) => row.id);
       const scopes = await tx
-        .select({ branchId: membershipBranches.branchId })
+        .select({
+          membershipId: membershipBranches.membershipId,
+          branchId: membershipBranches.branchId,
+        })
         .from(membershipBranches)
         .where(inArray(membershipBranches.membershipId, membershipIds));
+
+      // Per role, from the membership that granted it (D-075).
+      const branchIdsByRole: Partial<Record<MembershipRole, string[]>> = {};
+      for (const membership of held) {
+        const own = scopes
+          .filter((scope) => scope.membershipId === membership.id)
+          .map((scope) => scope.branchId);
+        branchIdsByRole[membership.role] = [...(branchIdsByRole[membership.role] ?? []), ...own];
+      }
 
       return {
         userId: input.userId,
@@ -182,6 +202,7 @@ export async function resolveContext(input: {
         orgId: input.orgId,
         roles: held.map((row) => row.role),
         branchIds: scopes.map((row) => row.branchId),
+        branchIdsByRole,
         requestId: input.requestId,
       };
     },

@@ -15,6 +15,7 @@ export {
 } from './harness.js';
 export {
   findAnalyticsReadProblems,
+  findAppendOnlyProblems,
   findCrossOrgForeignKeys,
   findDefaultPrivileges,
   findPrivilegeProblems,

@@ -186,6 +186,13 @@ export const memberships = iam.table(
       .references(() => users.id, { onDelete: 'cascade' }),
     role: membershipRole('role').notNull(),
     isActive: boolean('is_active').notNull().default(true),
+    /**
+     * Who granted this membership, when a person did (D-077). Null for a seed
+     * or a fixture. Read by maker-checker: whoever granted a checker role —
+     * and, until M16 emails invites, received that user's invite token —
+     * may never be approved by them, directly or down the chain.
+     */
+    grantedBy: text('granted_by'),
     ...timestamps,
   },
   (table) => [

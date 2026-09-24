@@ -26,3 +26,9 @@ export {
   type SwitchOrg,
   type TotpCode,
 } from './iam.js';
+
+export * from './approvals.js';
+export * from './approvals-list.js';
+export * from './errors.js';
+export * from './ledger.js';
+export * from './permissions/index.js';

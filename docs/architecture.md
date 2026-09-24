@@ -380,6 +380,8 @@ The hostname comes from the **caller**, not from the API's own `Host` header (D-
   - `own`: `created_by` or `assigned_to` is the user
   - `branch`: `branch_id` is within the user's branch scope
   - `org`: the whole active org
+- **Row scope is mandatory (D-061).** The guard can only answer "may this caller act on _some_ row of this subject". It therefore hands the caller's scope filter (`scopeFilterFor`, unioned across roles) to the handler, which applies it with `scopeWhere(request, columns)` for a query or `assertInScope(request, row)` for one row. `ScopeInterceptor` refuses to send a scoped caller's response if the handler applied neither — including for a `create`, whose handler asserts the row it inserts. Branch scope is per membership role, never merged across roles (D-075). Every module maps its table's `created_by` / `assigned_to` / `branch_id` columns once and passes them in.
+- **Route coverage (D-070).** Every route declares `@RequireAbility`, `@AuthenticatedOnly` or `@Public` (never two that contradict), and every non-public route is listed in `route-matrix.manifest.ts` with a fixture in the generated route-matrix suite. `check-route-matrix` fails the build otherwise.
 
 ### Protected fields
 
@@ -409,6 +411,7 @@ This summary is authoritative until M02b writes the code matrix. After that, the
 | Fraud block override               | all                | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
 | Wallets, cash entries, petty cash  | all                | org                                | —                       | org                         | —            | —       | own branch wallets             | —                   | —                   | —        |
 | Ledger reports, P&L, balance sheet | all + consolidated | org                                | —                       | org                         | —            | —       | branch P&L without cost detail | —                   | —                   | —        |
+| Period close, reopen request       | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
 | Courier settlements                | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
 | Campaigns, ad spend, leads         | all                | org                                | —                       | spend entry                 | org          | —       | —                              | —                   | —                   | —        |
 | Landing pages, promo codes         | all                | org                                | apply codes             | —                           | org          | —       | apply at POS                   | —                   | —                   | —        |
@@ -437,7 +440,20 @@ Each org configures its own thresholds. These actions go through approvals:
 - fraud block overrides
 - reopening a closed period (super_admin only)
 
-The database enforces that the requester can never approve their own request.
+The database enforces that the requester can never approve their own request, and a trigger freezes a decided request's terms and decision.
+
+How thresholds behave (D-062, D-065, D-068):
+
+- Only `org_admin` sets a threshold (`PUT /v1/approvals/thresholds`, subject `ApprovalThreshold`). Lowering one applies at once; raising one, or setting the first, is a `threshold_change` request another org admin must approve (D-073). Each request records the threshold in force when it was raised.
+- **Under** the threshold, a request is recorded `auto_approved`: audited, both events emitted, no checker. **At or above** it, with no threshold configured, it is `pending`. Amounts are compared by magnitude.
+- Never auto-approved, whatever the threshold (D-071): reopening a period, bonus rules, threshold changes and back-dated entries. The database refuses a threshold for them and an auto-approved row of them. A request's terms are fixed from the moment it is raised.
+- Who may raise is per type (`REQUESTER_TYPES`, D-072). A type whose amount the owning module derives (stock write-offs and gains, settlements, closing variances, payroll, payout batches) is always held when its amount was typed by a person.
+- Who may check is per type (`CHECKER_TYPES`): accounts decides payments, hr decides payroll and bonuses, branch_manager decides branch items (stock write-offs and gains, closing variances), org_admin decides everything except reopening a period, which only super_admin decides.
+- A branch manager is a branch-tier checker: only branch items (never auto-approved, D-076) whose amount the owning module derived, carrying a `branch_id` in the branch manager membership's own scope (D-075), and only under both the captured and the current threshold for the type.
+- A requester's type rights and branch scope come from the same role: a type may be raised only for the branches of the roles allowed to raise it.
+- Nobody decides a request raised by whoever granted them their role, directly or down the grant chain (D-077).
+- An executor acts on `amount_poisha` and nothing else; a payload may not carry its own amount (D-078).
+- A WAC-valued amount (stock write-off or gain) is withheld from roles without `read:cost` (D-074).
 
 ---
 
@@ -445,47 +461,52 @@ The database enforces that the requester can never approve their own request.
 
 ### Money
 
-- Columns are `bigint`, named `*_poisha`. TypeScript uses a branded integer `Poisha`, which is safe up to 9e15.
+- Columns are `bigint`, named `*_poisha`. TypeScript uses `Poisha`, a branded `bigint` built only through `poisha()`, which refuses fractions and anything beyond ±9e15 (D-079).
 - `packages/domain/src/money` provides:
   - `add`, `sub`, `sum`
   - `mulQty`
   - `percentOf(amount, basisPoints)`, rounding half away from zero to whole poisha
   - `allocate(total, weights)`, largest-remainder, so the parts always sum exactly
+  - `parseTaka` (lakh/crore grouping, ৳, Bangla digits; at most two decimals) and `parsePoisha`
+- `toFixed` and `parseFloat` are lint errors outside this module (`elysium/no-float-money`, D-090).
 - Formatting lives in `packages/i18n`: ৳ with lakh/crore grouping, e.g. `৳1,23,456.78`.
 - Currency is BDT only (D-028).
 
 ### Chart of accounts
 
-Each org gets a chart seeded from a template in `packages/db/seed/coa-template.ts`. Accounts have stable `code`s and `subtype`s. Orgs can add accounts but can't delete system accounts.
+Each org gets a chart seeded from a template in `packages/db/src/seed/coa-template.ts` (D-084): 40 system accounts with stable codes (1xxx assets, 2xxx liabilities, 3xxx equity, 4xxx income, 5xxx expenses) plus hand cash `1010-<branch code>` for every branch. Accounts have stable `code`s and `subtype`s. Orgs can add accounts but can't delete any (`erp_app` holds no DELETE), and an account can be renamed or deactivated but never change its class, subtype, branch or party type. Subtypes marked as party subtypes below require a party of that type on every line, and a branch-level account requires its branch on every line.
 
 System subtypes:
 
-| Class       | Subtypes                                                                                                                                                                                                                                                                                                                      |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Assets      | `wallet_cash` (per branch)<br>`wallet_bank`<br>`wallet_bkash`<br>`wallet_mfs_other` (optional, e.g. Nagad)<br>`courier_receivable` (party: courier)<br>`inventory`<br>`goods_in_transit`<br>`supplier_advance` (party: supplier)<br>`employee_loan_receivable` (party: employee)<br>`other_receivable`                        |
-| Liabilities | `supplier_payable` (party: supplier)<br>`reseller_payable` (party: reseller)<br>`salary_payable`<br>`investor_payable` (party: investor)<br>`loan_payable` (party: lender)<br>`customer_advance`<br>`other_payable`                                                                                                           |
-| Equity      | `owner_capital`<br>`investor_capital` (party: investor)<br>`retained_earnings`<br>`profit_distribution`                                                                                                                                                                                                                       |
-| Income      | `sales_revenue`<br>`sales_discounts` (contra-revenue)<br>`delivery_charge_income`<br>`other_income`<br>`inventory_adjustment_gain`                                                                                                                                                                                            |
-| Expenses    | `cogs`<br>`courier_charges`<br>`return_charges`<br>`ad_spend`<br>`salary_expense`<br>`bonus_expense`<br>`interest_expense`<br>`inventory_writeoff`<br>`purchase_price_variance`<br>`cash_over_short`<br>`bank_charges`<br>operating categories (rent, utilities, packaging, transport, misc), used by petty cash and cash out |
+| Class       | Subtypes                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Assets      | `wallet_cash` (per branch)<br>`wallet_bank`<br>`wallet_bkash`<br>`wallet_mfs_other` (optional, e.g. Nagad)<br>`courier_receivable` (party: courier)<br>`inventory`<br>`goods_in_transit`<br>`supplier_advance` (party: supplier)<br>`employee_loan_receivable` (party: employee)<br>`other_receivable`                                                                             |
+| Liabilities | `supplier_payable` (party: supplier)<br>`reseller_payable` (party: reseller)<br>`salary_payable`<br>`investor_payable` (party: investor)<br>`loan_payable` (party: lender)<br>`customer_advance`<br>`other_payable`                                                                                                                                                                |
+| Equity      | `owner_capital`<br>`investor_capital` (party: investor)<br>`retained_earnings`<br>`profit_distribution`                                                                                                                                                                                                                                                                            |
+| Income      | `sales_revenue`<br>`sales_discounts` (contra-revenue)<br>`delivery_charge_income`<br>`other_income`<br>`inventory_adjustment_gain`                                                                                                                                                                                                                                                 |
+| Expenses    | `cogs`<br>`courier_charges`<br>`return_charges`<br>`ad_spend`<br>`salary_expense`<br>`bonus_expense`<br>`interest_expense`<br>`inventory_writeoff`<br>`purchase_price_variance`<br>`cash_over_short`<br>`bank_charges`<br>`operating_expense`: the operating categories (rent, utilities, packaging, transport, misc) as one account each, used by petty cash and cash out (D-084) |
 
 ### Journal model
 
 - `ledger.journals`:
   - `id, org_id, business_date, source_type, source_id, idempotency_key`
-  - `memo, reverses_journal_id, created_by, created_at`
-  - unique `(org_id, idempotency_key)`
+  - `memo, reverses_journal_id, content_hash, created_by, created_txid, created_at`
+  - unique `(org_id, idempotency_key)`; unique `(org_id, reverses_journal_id)` so a journal is reversed at most once
 - `ledger.journal_lines`:
-  - `id, journal_id, org_id, account_id, branch_id`
+  - `id, journal_id, org_id, line_no, account_id, branch_id`
   - `party_type, party_id`
   - `debit_poisha >= 0, credit_poisha >= 0`, with a CHECK that exactly one of them is > 0
   - `memo`
-- The database enforces:
+- The database enforces (migration 0014, D-080):
   - A deferred constraint trigger: each journal has ≥ 2 lines and total debits equal total credits.
-  - No UPDATE or DELETE for `erp_app`, via REVOKE plus a trigger that raises.
-  - A period-lock trigger: journals dated in a closed period are rejected.
+  - No UPDATE or DELETE for `erp_app`, via REVOKE plus a trigger that raises for every role.
+  - Lines are added only by the transaction that created their journal (`created_txid`), so a posted journal cannot grow a balanced pair of lines later; each line must match its account's party type, branch and active flag.
+  - A period-lock trigger: a journal dated in or before any closed month is rejected (D-093), under a per-org advisory lock that posts take shared and closes and reopens take exclusively. Posting requires READ COMMITTED.
+  - Approval rows are born pending with database-stamped times, and a reopen rests only on an approval decided by an acting platform super admin (migration 0015, D-094).
 - `ledger.post(tx, draft)` is the only writer.
   - Drafts come from pure posting-rule functions in `packages/domain/src/posting/`, one file per business event.
-  - Posting an existing idempotency key returns the existing journal and writes nothing.
+  - Posting an existing idempotency key returns the existing journal and writes nothing. The same key with different content is refused with `IDEMPOTENCY_CONFLICT` (`content_hash`, D-082).
+  - Other modules post through `LedgerApi` (`apps/server/src/modules/ledger/ledger.api.ts`). No HTTP route posts or reverses an arbitrary journal (D-088).
   - Key format: `<source_type>:<source_id>:<event>`, e.g. `order:<uuid>:delivered`.
 - Reversals create a new journal with `reverses_journal_id` set.
 
@@ -535,7 +556,7 @@ Accounting policies:
 
 ### Reports
 
-All reports filter by org, branch and a range of business dates:
+All reports filter by org, branch and a range of business dates. They apply the caller's row scope to each line's `branch_id`, and a caller without `read:cost` gets no rows for cost-bearing subtypes (inventory, goods in transit, supplier advance and payable, COGS, write-off, price variance, adjustment gain) and no supplier balances, with `costWithheld: true` (D-085). M03 serves the account ledger, trial balance, party balances, day book, wallet balances and cash book per wallet (`/v1/ledger/*`):
 
 - day book
 - cash book per wallet
@@ -551,7 +572,10 @@ All reports filter by org, branch and a range of business dates:
 
 ### Periods and dates
 
-- Periods close monthly. `org_admin` or `accounts` closes them; reopening needs super_admin approval.
+- Periods close monthly. `org_admin` or `accounts` closes them (`update LedgerPeriod`, D-083), once the month has ended in Asia/Dhaka; reopening needs super_admin approval.
+  - A `ledger.periods` row appears when a month is first closed; a month without one is open.
+  - Closing a month locks every date before it; reopening is latest-first, one month at a time (D-093).
+  - Reopening is a `period_reopen` approval request, raised only through `POST /v1/ledger/periods/reopen`. Its approval reopens the period in the same transaction, through the executor the ledger registers with the approvals module. The database refuses closed → open unless an approved `period_reopen` for that period, raised and decided after the close, is named (D-081).
 - `business_date = (occurred_at at time zone 'Asia/Dhaka')::date`, computed in the domain layer.
 - Back-dating is allowed only into open periods. Anything earlier than yesterday needs approval (configurable).
 
@@ -1079,7 +1103,7 @@ Rules for every integration:
   - cursor pagination: `?cursor=&limit=50`, maximum 200
   - Zod-validated filters
   - a whitelist of sortable fields
-- **Errors:** RFC 9457 problem+json, with stable `code`s from `packages/contracts/src/errors.ts`, e.g. `STOCK_INSUFFICIENT`, `ORDER_TRANSITION_INVALID`, `PERIOD_CLOSED`, `APPROVAL_REQUIRED`.
+- **Errors:** RFC 9457 problem+json, with stable `code`s from `packages/contracts/src/errors.ts`, e.g. `STOCK_INSUFFICIENT`, `ORDER_TRANSITION_INVALID`, `PERIOD_CLOSED`, `APPROVAL_REQUIRED`. Until M04, error bodies carry `{ code, message }` (D-087).
 - **Idempotency:** mutations accept an `Idempotency-Key` header, stored for 24 hours per user and route.
 - **Typed client:** OpenAPI is generated from the contracts, and `packages/api-client` is regenerated from it. CI fails on drift. Frontends use only the generated client.
 - **Public API** (`/public/v1/*`):
@@ -1192,6 +1216,9 @@ Installable, with an offline shell and web push (Android first).
   - investor KYC fields
 - **Secrets** are never committed. `.env.example` lists names only.
 - **Audit log:** every mutation records actor, org, action, entity, before/after (with sensitive fields redacted), IP and user agent.
+  - Services write their entry inside the mutation's transaction (`AuditService.record(tx, …)`); the interceptor is a net for routes that do not, and strips cost fields before writing (D-064).
+  - Redaction removes credential-named fields and masks phone numbers both under phone-named keys and anywhere in free text.
+  - Switching org is audited into the org being entered. Better Auth's credential events (sign-in, second factor, 2FA changes, password set or changed, sign-out) are audited into every org the user belongs to, without the request body (D-066).
 - **Controls:** maker-checker (§6) and period locks (§7).
 - **Reviews:**
   - CI scans dependencies
@@ -1233,7 +1260,7 @@ Installable, with an offline shell and web push (Android first).
 | Adapters     | Contract tests with recorded fixtures                  | Live sandbox tests run behind env flags and are skipped (with a note) when credentials are missing                   |
 | Golden books | Scripted business days                                 | Supply → orders → deliveries → returns → settlements → payroll, asserting exact trial-balance, stock and P&L numbers |
 
-`pnpm verify` runs format check, lint, typecheck, unit and integration tests, build and the migration-immutability check. It must pass before anything merges to main.
+`pnpm verify` runs format check, lint, typecheck, unit and integration tests, build, the migration-immutability check, the schema-drift check and the route-matrix gate. It must pass before anything merges to main.
 
 ---
 

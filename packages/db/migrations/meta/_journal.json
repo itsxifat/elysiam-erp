@@ -50,6 +50,76 @@
       "when": 1790000000000,
       "tag": "0006_revoke_analytics_identity_reads",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790171562975,
+      "tag": "0007_audit_approvals_demo",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790171563975,
+      "tag": "0008_audit_approvals_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790171564975,
+      "tag": "0009_approval_immutability",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790257364900,
+      "tag": "0010_approvals_branch_and_auto_approval",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790259762105,
+      "tag": "0011_approval_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790261441663,
+      "tag": "0012_approval_lineage",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790263208114,
+      "tag": "0013_ledger_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790263217110,
+      "tag": "0014_ledger_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790265829137,
+      "tag": "0015_ledger_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790265911610,
+      "tag": "0016_journal_reversal_shape",
+      "breakpoints": true
     }
   ]
 }

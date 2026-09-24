@@ -78,6 +78,7 @@ catalog:
   drizzle-kit: 0.31.10
   postgres: 3.4.9
   zod: 4.6.5
+  '@casl/ability': 7.0.1
 
   # --- frontend -----------------------------------------------------------
   react: 19.3.0

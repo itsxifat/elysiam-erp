@@ -1,0 +1,245 @@
+/**
+ * Money (architecture §7, invariant 1).
+ *
+ * Every amount in the system is an integer number of poisha (1 taka = 100
+ * poisha). This module is the only place allowed to round, divide or parse
+ * money; the `elysium/no-float-money` lint rule bans `toFixed` and
+ * `parseFloat` everywhere else.
+ *
+ * `Poisha` is a branded `bigint`, not a `number` (D-079). §7 describes "a
+ * branded integer, safe up to 9e15"; a `number` is exact only up to 2^53, and
+ * a sum across five brands' trial balances is exactly where an inexact
+ * integer would be silent. A bigint is exact at every size, so the limit
+ * below is a sanity bound rather than a precision one — it matches §7's 9e15
+ * and sits comfortably inside PostgreSQL's `bigint`.
+ */
+
+declare const POISHA_BRAND: unique symbol;
+
+/** An integer amount of poisha. Construct with `poisha()`; never cast. */
+export type Poisha = bigint & { readonly [POISHA_BRAND]: true };
+
+/** ±9e15 poisha (90 trillion taka). Beyond this, something is wrong upstream. */
+export const MAX_POISHA = 9_000_000_000_000_000n;
+
+export const ZERO = 0n as Poisha;
+
+/** Thrown for any amount that is not a safe integer number of poisha. */
+export class MoneyError extends Error {
+  constructor(
+    message: string,
+    readonly code: 'MONEY_INVALID' | 'MONEY_OVERFLOW' = 'MONEY_INVALID',
+  ) {
+    super(message);
+    this.name = 'MoneyError';
+  }
+}
+
+function checked(value: bigint): Poisha {
+  if (value > MAX_POISHA || value < -MAX_POISHA) {
+    throw new MoneyError(
+      `${value.toString()} poisha is outside ±${MAX_POISHA.toString()}.`,
+      'MONEY_OVERFLOW',
+    );
+  }
+  return value as Poisha;
+}
+
+const INTEGER_STRING = /^-?\d{1,19}$/;
+
+/**
+ * An amount of poisha from a bigint, a safe-integer number, or an integer
+ * string (which is how amounts cross the wire, D-078's schemas).
+ *
+ * A fractional number, `NaN`, or a number beyond 2^53 is refused rather than
+ * rounded: whoever produced it has already lost precision, and rounding here
+ * would hide where.
+ */
+export function poisha(value: bigint | number | string): Poisha {
+  if (typeof value === 'bigint') return checked(value);
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value)) {
+      throw new MoneyError(`${String(value)} is not a whole, safe number of poisha.`);
+    }
+    return checked(BigInt(value));
+  }
+  if (!INTEGER_STRING.test(value)) {
+    throw new MoneyError(`"${value}" is not an integer number of poisha.`);
+  }
+  return checked(BigInt(value));
+}
+
+export function isPoisha(value: unknown): value is Poisha {
+  return typeof value === 'bigint' && value <= MAX_POISHA && value >= -MAX_POISHA;
+}
+
+export function add(a: Poisha, b: Poisha): Poisha {
+  return checked(a + b);
+}
+
+export function sub(a: Poisha, b: Poisha): Poisha {
+  return checked(a - b);
+}
+
+export function negate(a: Poisha): Poisha {
+  return checked(0n - a);
+}
+
+export function abs(a: Poisha): Poisha {
+  return a < 0n ? checked(0n - a) : a;
+}
+
+export function sum(values: Iterable<Poisha>): Poisha {
+  let total = 0n;
+  for (const value of values) {
+    total += value;
+    // Checked as it goes, so an intermediate overflow cannot be cancelled out
+    // by a later negative and slip past.
+    checked(total);
+  }
+  return total as Poisha;
+}
+
+export function compare(a: Poisha, b: Poisha): -1 | 0 | 1 {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function toBigInt(value: bigint | number, what: string): bigint {
+  if (typeof value === 'bigint') return value;
+  if (!Number.isSafeInteger(value)) throw new MoneyError(`${what} must be a whole number.`);
+  return BigInt(value);
+}
+
+/** Unit price × quantity. Quantities are whole units (§8). */
+export function mulQty(unit: Poisha, quantity: bigint | number): Poisha {
+  return checked(unit * toBigInt(quantity, 'A quantity'));
+}
+
+/**
+ * `numerator / denominator`, rounded half away from zero.
+ *
+ * The single rounding primitive: `percentOf` and anything later that needs a
+ * ratio goes through here, so there is exactly one rounding rule in the
+ * system. Half away from zero means 2.5 → 3 and −2.5 → −3: a refund rounds
+ * the same way as the charge it refunds.
+ */
+export function divideRounded(numerator: bigint, denominator: bigint): bigint {
+  if (denominator === 0n) throw new MoneyError('Division by zero.');
+  const negative = numerator < 0n !== denominator < 0n;
+  const n = numerator < 0n ? -numerator : numerator;
+  const d = denominator < 0n ? -denominator : denominator;
+  const quotient = n / d;
+  const remainder = n % d;
+  const rounded = remainder * 2n >= d ? quotient + 1n : quotient;
+  return negative ? -rounded : rounded;
+}
+
+/** 10,000 basis points = 100%. */
+export const BASIS_POINTS = 10_000n;
+
+/**
+ * `basisPoints` / 10,000 of an amount, half away from zero, in whole poisha.
+ *
+ * Basis points rather than a percentage so that 2.5% is the integer 250 and
+ * no caller ever writes `0.025`.
+ */
+export function percentOf(amount: Poisha, basisPoints: bigint | number): Poisha {
+  return checked(divideRounded(amount * toBigInt(basisPoints, 'Basis points'), BASIS_POINTS));
+}
+
+/**
+ * Split `total` in proportion to `weights`, so the parts sum to `total`
+ * exactly (largest-remainder method).
+ *
+ * Each part first gets the floor of its exact share. The poisha left over go,
+ * one each, to the parts with the largest fractional remainders; ties go to
+ * the earlier part, so the result is deterministic. A negative total is split
+ * as its magnitude and negated, so a refund splits exactly like the charge.
+ */
+export function allocate(total: Poisha, weights: readonly (bigint | number)[]): Poisha[] {
+  if (weights.length === 0) throw new MoneyError('Cannot allocate across zero parts.');
+  const w = weights.map((weight) => {
+    const value = toBigInt(weight, 'A weight');
+    if (value < 0n) throw new MoneyError('Weights cannot be negative.');
+    return value;
+  });
+  const weightSum = w.reduce((acc, value) => acc + value, 0n);
+  if (weightSum === 0n) throw new MoneyError('Weights must not all be zero.');
+
+  const negative = total < 0n;
+  const magnitude = negative ? 0n - total : total;
+
+  const parts = w.map((weight) => (magnitude * weight) / weightSum);
+  const remainders = w.map((weight, index) => ({
+    index,
+    remainder: (magnitude * weight) % weightSum,
+  }));
+
+  let leftover = magnitude - parts.reduce((acc, value) => acc + value, 0n);
+  remainders.sort((a, b) =>
+    a.remainder === b.remainder ? a.index - b.index : a.remainder > b.remainder ? -1 : 1,
+  );
+  for (const { index } of remainders) {
+    if (leftover === 0n) break;
+    parts[index] = (parts[index] ?? 0n) + 1n;
+    leftover -= 1n;
+  }
+
+  return parts.map((part) => checked(negative ? -part : part));
+}
+
+const BANGLA_DIGITS = '০১২৩৪৫৬৭৮৯';
+
+/** Bangla digits to ASCII, so `৳১,২৩৪.৫০` parses like `৳1,234.50`. */
+function asciiDigits(input: string): string {
+  let result = '';
+  for (const char of input) {
+    const index = BANGLA_DIGITS.indexOf(char);
+    result += index >= 0 ? String(index) : char;
+  }
+  return result;
+}
+
+/**
+ * Optional minus, optional currency mark, then whole taka written plainly
+ * (`123456`), in lakh/crore groups (`1,23,456`) or in thousands (`123,456`),
+ * then up to two decimals.
+ */
+const TAKA_PATTERN =
+  /^(-)?(?:৳|tk\.?|bdt)?\s*(\d{1,2}(?:,\d{2})*,\d{3}|\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?$/i;
+
+/**
+ * Parse a taka amount a person typed: `1234.5`, `1,23,456.78`, `৳500`,
+ * `Tk 20`, `-৳3.25`, Bangla digits too. Returns poisha.
+ *
+ * Refuses more than two decimals rather than rounding — `12.345` taka is a
+ * typo or a computation that already went through a float, and either way the
+ * right answer is to ask, not to guess.
+ */
+export function parseTaka(input: string): Poisha {
+  const trimmed = asciiDigits(input.trim()).replace(/\s+/g, ' ');
+  const match = TAKA_PATTERN.exec(trimmed);
+  if (match === null) throw new MoneyError(`"${input}" is not a taka amount.`);
+
+  const [, sign, whole = '0', fraction = ''] = match;
+  const wholeDigits = whole.replace(/,/g, '');
+  const poishaDigits = `${wholeDigits}${fraction.padEnd(2, '0')}`;
+  const value = BigInt(poishaDigits);
+  return checked(sign === '-' ? -value : value);
+}
+
+/** Parse an integer poisha string from the API (`"12345678"`). */
+export function parsePoisha(input: string): Poisha {
+  return poisha(input);
+}
+
+/** Split into sign, whole taka and poisha, for formatters. */
+export function takaParts(amount: Poisha): {
+  readonly negative: boolean;
+  readonly taka: bigint;
+  readonly poisha: bigint;
+} {
+  const negative = amount < 0n;
+  const magnitude = negative ? 0n - amount : amount;
+  return { negative, taka: magnitude / 100n, poisha: magnitude % 100n };
+}

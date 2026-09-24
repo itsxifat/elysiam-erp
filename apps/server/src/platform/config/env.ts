@@ -51,6 +51,17 @@ const schema = z.object({
    */
   TRUSTED_PROXY_COUNT: z.coerce.number().int().min(0).max(10).default(0),
 
+  /**
+   * The largest single cash-in, in poisha (D-092). Default ৳1 crore. A cash
+   * entry is posted without a second person, so its size is bounded here
+   * rather than trusted to whoever types it (M03 security review M2).
+   */
+  LEDGER_CASH_IN_MAX_POISHA: z
+    .string()
+    .regex(/^[1-9]\d{0,15}$/)
+    .default('1000000000')
+    .transform((value) => BigInt(value)),
+
   /** Comma-separated. Anything not listed is refused by CSRF and by Better Auth. */
   TRUSTED_ORIGINS: z
     .string()

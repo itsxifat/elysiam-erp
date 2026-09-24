@@ -149,6 +149,14 @@ class Client {
     return this.cookies.get(CSRF_COOKIE) ?? '';
   }
 
+  /** The session cookie's value — the thing httpOnly exists to keep private. */
+  sessionToken(): string {
+    for (const [name, value] of this.cookies) {
+      if (name.includes('session_token')) return value;
+    }
+    return '';
+  }
+
   async request(
     method: string,
     url: string,
@@ -352,6 +360,105 @@ describe('check 6: a cookie-authenticated mutation needs a valid CSRF token', ()
     const client = new Client();
     const response = await client.request('GET', '/v1/auth/login-branding', { csrf: false });
     expect(response.statusCode).toBe(200);
+  });
+
+  it('rejects a browser request marked cross-site, whatever else it carries', async () => {
+    // Fetch metadata cannot be set by page script. D-053 keeps every app of
+    // ours on the API's registrable domain, so none of ours is ever cross-site
+    // — and this holds even when the Origin header is missing entirely.
+    const { client } = await signedIn('sales', ORG_A);
+    const response = await client.request('POST', '/v1/me/active-org', {
+      body: { orgId: ORG_A },
+      headers: { 'sec-fetch-site': 'cross-site', origin: '' },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.body).toContain('cross-site');
+  });
+
+  it('accepts same-site fetch metadata, which is what the console sends', async () => {
+    const { client } = await signedIn('sales', ORG_A);
+    const response = await client.request('POST', '/v1/me/active-org', {
+      body: { orgId: ORG_A },
+      headers: { 'sec-fetch-site': 'same-site' },
+    });
+
+    expect(response.statusCode, response.body).toBe(201);
+  });
+});
+
+describe('the credential rate limits cannot be sidestepped with a trailing slash', () => {
+  it('does not route /api/auth/sign-in/email/ to sign-in at all', async () => {
+    // The rate-limit rules match exact paths. They are safe only because
+    // Better Auth's router rejects the trailing-slash spelling outright — so
+    // that is pinned here. If an upgrade (or `skipTrailingSlashes`) ever makes
+    // it answer 401 "wrong password" instead, this fails before the bypass
+    // ships (M02a follow-up).
+    const client = new Client(freshIp());
+    await client.request('GET', '/health/live');
+
+    const response = await client.request('POST', '/api/auth/sign-in/email/', {
+      body: { email: 'nobody@example.invalid', password: 'not-the-password' },
+    });
+
+    expect(response.statusCode, response.body).toBe(404);
+  });
+});
+
+describe('a session cookie stays a cookie', () => {
+  /*
+   * `GET /api/auth/get-session` returned the raw session token in its body.
+   * Verified against the running application: the value of the `session_token`
+   * cookie appeared verbatim.
+   *
+   * That gives back the one property the httpOnly flag buys. The cookie is
+   * httpOnly so page script cannot read it, which makes an XSS bug cost an
+   * attacker a foothold inside the victim's browser rather than a credential
+   * they can carry away and replay from any machine for the life of the
+   * session. A response body is readable by script by definition.
+   *
+   * These assert the property rather than reading the library, so a Better
+   * Auth upgrade that starts returning it fails here rather than in an
+   * incident.
+   */
+  it('does not echo the session token into a body script can read', async () => {
+    const { client } = await signedIn('sales', ORG_A);
+
+    const cookie = client.sessionToken();
+    expect(cookie, 'no session cookie, so this would prove nothing').not.toBe('');
+
+    const response = await client.request('GET', '/api/auth/get-session');
+    expect(response.statusCode, response.body).toBe(200);
+
+    // The positive control first: a real session came back, so the absence
+    // below is about the token and not about an empty body.
+    const parsed = JSON.parse(response.body) as { user?: { id?: string } } | null;
+    expect(parsed?.user?.id, 'get-session returned no user').toBeDefined();
+
+    expect(response.body).not.toContain(cookie);
+    // Better Auth signs the cookie as `<token>.<signature>`, so the raw token
+    // is the part before the dot — checked separately, because "the full
+    // cookie value is absent" is a weaker statement than "the token is".
+    const rawToken = cookie.split('.')[0] ?? '';
+    expect(rawToken.length).toBeGreaterThan(8);
+    expect(response.body).not.toContain(rawToken);
+  });
+
+  it('leaves everything else in the body alone', async () => {
+    // The strip is narrow on purpose: a blanket "delete every key called token"
+    // would also eat the invite token `POST /v1/users` returns.
+    const { client } = await signedIn('sales', ORG_A);
+    const response = await client.request('GET', '/api/auth/get-session');
+    const parsed = JSON.parse(response.body) as {
+      session?: Record<string, unknown>;
+      user?: Record<string, unknown>;
+    };
+
+    expect(parsed.session).toBeDefined();
+    expect(parsed.session).toHaveProperty('expiresAt');
+    expect(parsed.session).toHaveProperty('userId');
+    expect(parsed.session).not.toHaveProperty('token');
+    expect(parsed.user).toHaveProperty('email');
   });
 });
 

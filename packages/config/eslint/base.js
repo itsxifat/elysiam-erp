@@ -53,6 +53,8 @@ export function base({ tsconfigRootDir }) {
       plugins: { elysium: elysiumPlugin },
       rules: {
         'elysium/no-emoji': 'error',
+        // Invariant 1. Switched off only in packages/domain/src/money.
+        'elysium/no-float-money': 'error',
 
         '@typescript-eslint/no-explicit-any': 'error',
         '@typescript-eslint/no-floating-promises': 'error',
@@ -85,7 +87,8 @@ export function base({ tsconfigRootDir }) {
     {
       files: TOOLING_FILES,
       languageOptions: { globals: { ...globals.node } },
-      rules: { 'no-console': 'off' },
+      // Tooling prints timings and ratios, never money.
+      rules: { 'no-console': 'off', 'elysium/no-float-money': 'off' },
     },
     prettier,
   );
