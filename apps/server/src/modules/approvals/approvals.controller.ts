@@ -1,7 +1,18 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Put, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+} from '@nestjs/common';
 import {
   approvalDecisionSchema,
   approvalIdSchema,
+  approvalListSchema,
   approvalRequestSchema,
   thresholdSchema,
 } from '@elysium/contracts';
@@ -19,8 +30,14 @@ export class ApprovalsController {
 
   @RequireAbility('read', 'ApprovalRequest')
   @Get()
-  async list(@Req() request: FastifyRequest) {
-    return this.approvals.list(requireContext(request), request);
+  async list(@Req() request: FastifyRequest, @Query() query: unknown) {
+    // §23: cursor pagination and Zod-validated filters. The list used to
+    // return the newest hundred and stop, so an older pending payment fell off
+    // the end of the only endpoint that lists them.
+    const parsed = approvalListSchema.safeParse(query ?? {});
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message);
+
+    return this.approvals.list(requireContext(request), request, parsed.data);
   }
 
   /**

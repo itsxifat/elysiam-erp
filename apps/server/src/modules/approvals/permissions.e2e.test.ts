@@ -70,6 +70,16 @@ function parse<T>(body: string): T {
   return JSON.parse(body) as T;
 }
 
+/**
+ * The rows of a page of `GET /v1/approvals`.
+ *
+ * The endpoint returns `{ rows, nextCursor }` per §23 rather than a bare
+ * array; this keeps the assertions about membership rather than about shape.
+ */
+function pageRows<T>(body: string): T[] {
+  return (JSON.parse(body) as { rows: T[] }).rows;
+}
+
 async function skusSeenBy(client: Client): Promise<string[]> {
   const response = await client.request('GET', '/v1/demo/costed-items');
   expect(response.statusCode, response.body).toBe(200);
@@ -915,7 +925,7 @@ describe('the branch-tier checker (§6 "branch items under threshold", M1, D-076
 
     const response = await client.request('GET', '/v1/approvals');
     expect(response.statusCode, response.body).toBe(200);
-    const ids = parse<{ id: string }[]>(response.body).map((row) => row.id);
+    const ids = pageRows<{ id: string }>(response.body).map((row) => row.id);
     expect(ids).toContain(inA.id);
     expect(ids).not.toContain(inB.id);
   });
@@ -1044,7 +1054,7 @@ describe('threshold changes, as a checker sees and decides them (final pass W1, 
     const { approvalId } = parse<{ approvalId: string }>(proposed.body);
 
     const { client: checker } = await asRole('org_admin');
-    const listed = parse<{ id: string; thresholdChange: unknown }[]>(
+    const listed = pageRows<{ id: string; thresholdChange: unknown }>(
       (await checker.request('GET', '/v1/approvals')).body,
     ).find((row) => row.id === approvalId);
     const terms = { targetType: 'supplier_payment', fromPoisha: '1000', toPoisha: '5000' };
@@ -1203,14 +1213,14 @@ describe('the maker side has per-type authority (W5, D-072)', () => {
     const { id } = await requestApproval(maker, 'stock_write_off', '4242', { branchId: branchA });
 
     const { client: manager } = await asRole('branch_manager', ORG_A, { branchIds: [branchA] });
-    const seen = parse<{ id: string; amountPoisha: string | null; amountWithheld: boolean }[]>(
+    const seen = pageRows<{ id: string; amountPoisha: string | null; amountWithheld: boolean }>(
       (await manager.request('GET', '/v1/approvals')).body,
     ).find((row) => row.id === id);
     expect(seen).toMatchObject({ amountPoisha: null, amountWithheld: true });
 
     // The positive control: a cost reader sees it.
     const { client: admin } = await asRole('org_admin');
-    const full = parse<{ id: string; amountPoisha: string | null }[]>(
+    const full = pageRows<{ id: string; amountPoisha: string | null }>(
       (await admin.request('GET', '/v1/approvals')).body,
     ).find((row) => row.id === id);
     expect(full?.amountPoisha).toBe('4242');
@@ -1296,7 +1306,7 @@ describe('GET /v1/approvals', () => {
     const { client } = await asRole('accounts');
     const response = await client.request('GET', '/v1/approvals');
     expect(response.statusCode, response.body).toBe(200);
-    expect(parse<{ id: string }[]>(response.body).map((row) => row.id)).toContain(id);
+    expect(pageRows<{ id: string }>(response.body).map((row) => row.id)).toContain(id);
   });
 
   it('shows a branch manager their branch’s requests and not another’s', async () => {
@@ -1307,7 +1317,7 @@ describe('GET /v1/approvals', () => {
     const { client } = await asRole('branch_manager', ORG_A, { branchIds: [branchA] });
     const response = await client.request('GET', '/v1/approvals');
     expect(response.statusCode, response.body).toBe(200);
-    const ids = parse<{ id: string }[]>(response.body).map((row) => row.id);
+    const ids = pageRows<{ id: string }>(response.body).map((row) => row.id);
 
     expect(ids).toContain(inA.id);
     expect(ids).not.toContain(inB.id);
@@ -1320,7 +1330,114 @@ describe('GET /v1/approvals', () => {
     const { client } = await asRole('hr');
     const response = await client.request('GET', '/v1/approvals');
     expect(response.statusCode, response.body).toBe(200);
-    expect(parse<{ id: string }[]>(response.body).map((row) => row.id)).not.toContain(id);
+    expect(pageRows<{ id: string }>(response.body).map((row) => row.id)).not.toContain(id);
+  });
+});
+
+describe('GET /v1/approvals pages, filters and bounds (§23)', () => {
+  /*
+   * §23 asks for cursor pagination — `?cursor=&limit=50`, maximum 200 — and
+   * Zod-validated filters on every list. This one had `limit 100` and nothing
+   * else, which is a silent truncation: the hundred-and-first request pushed an
+   * older *pending* supplier payment off the end of the only endpoint that
+   * lists them, its id is discoverable nowhere else, and the list looked
+   * perfectly healthy while the checker could not find what they were there to
+   * decide.
+   */
+  it('pages with a cursor instead of stopping at a limit', async () => {
+    const { client } = await asRole('accounts');
+    for (let i = 0; i < 5; i += 1) {
+      await requestApproval(client, 'supplier_payment', String(900000000 + i));
+    }
+
+    const firstResponse = await client.request('GET', '/v1/approvals?limit=2');
+    expect(firstResponse.statusCode, firstResponse.body).toBe(200);
+    const first = parse<{ rows: { id: string }[]; nextCursor: string | null }>(firstResponse.body);
+
+    expect(first.rows).toHaveLength(2);
+    expect(first.nextCursor, 'there are more rows, so there must be a cursor').not.toBeNull();
+
+    const second = parse<{ rows: { id: string }[]; nextCursor: string | null }>(
+      (
+        await client.request(
+          'GET',
+          `/v1/approvals?limit=2&cursor=${encodeURIComponent(first.nextCursor ?? '')}`,
+        )
+      ).body,
+    );
+
+    expect(second.rows).toHaveLength(2);
+    // The pages must not overlap. A boundary inside a same-millisecond group is
+    // exactly where an offset page repeats or drops a row, which is why the
+    // cursor is the composite `created_at,id`.
+    const firstIds = new Set(first.rows.map((row) => row.id));
+    for (const row of second.rows) {
+      expect(firstIds.has(row.id), `${row.id} appeared on both pages`).toBe(false);
+    }
+  });
+
+  it('stops offering a cursor on the last page', async () => {
+    const { client } = await asRole('accounts');
+    const page = parse<{ nextCursor: string | null }>(
+      (await client.request('GET', '/v1/approvals?limit=200')).body,
+    );
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('filters by status, so a checker can ask for what is still open', async () => {
+    const { client: maker } = await asRole('accounts');
+    const { id } = await requestApproval(maker, 'supplier_payment', '900000000');
+
+    const { client: checker } = await asRole('accounts');
+    const decided = await checker.request('POST', `/v1/approvals/${id}/decide`, {
+      body: { decision: 'approved' },
+    });
+    expect(decided.statusCode, decided.body).toBeLessThan(400);
+
+    const pending = pageRows<{ id: string }>(
+      (await checker.request('GET', '/v1/approvals?status=pending')).body,
+    ).map((row) => row.id);
+    expect(pending).not.toContain(id);
+
+    // The positive control: findable under the status it now has, so the
+    // absence above is the filter rather than the row having vanished.
+    const approved = pageRows<{ id: string }>(
+      (await checker.request('GET', '/v1/approvals?status=approved')).body,
+    ).map((row) => row.id);
+    expect(approved).toContain(id);
+  });
+
+  it('filters by type', async () => {
+    const { client } = await asRole('accounts');
+    const { id } = await requestApproval(client, 'settlement_posting', '4200');
+
+    const same = pageRows<{ id: string }>(
+      (await client.request('GET', '/v1/approvals?type=settlement_posting')).body,
+    ).map((row) => row.id);
+    const other = pageRows<{ id: string }>(
+      (await client.request('GET', '/v1/approvals?type=supplier_payment')).body,
+    ).map((row) => row.id);
+
+    expect(same).toContain(id);
+    expect(other).not.toContain(id);
+  });
+
+  it('refuses a limit outside §23’s bounds and a cursor Postgres could not cast', async () => {
+    const { client } = await asRole('accounts');
+
+    for (const query of [
+      '?limit=0',
+      '?limit=201',
+      '?limit=abc',
+      '?cursor=nonsense',
+      // Shape-valid and uncastable: the regex that only checked shape turned
+      // this into a 500 rather than the 400 it existed to produce.
+      '?cursor=9999-99-99T99:99:99Z,------------------------------------',
+      '?status=not_a_status',
+    ]) {
+      const response = await client.request('GET', `/v1/approvals${query}`);
+      expect(response.statusCode, `${query}: ${response.body}`).toBe(400);
+    }
   });
 });
 

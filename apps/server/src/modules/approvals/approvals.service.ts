@@ -878,7 +878,13 @@ export class ApprovalsService {
    * A cost-valued amount — a write-off at WAC — is withheld from a caller who
    * cannot read cost (D-074, invariant 5).
    */
-  async list(context: ActiveContext, request: object): Promise<ApprovalRequestRow[]> {
+  async list(
+    context: ActiveContext,
+    request: object,
+    query: { status?: string; type?: string; limit?: number; cursor?: string } = {},
+  ): Promise<{ rows: ApprovalRequestRow[]; nextCursor: string | null }> {
+    const limit = query.limit ?? 50;
+
     const scope = scopeWhere(request, {
       createdBy: sql`requested_by`,
       branchId: sql`branch_id`,
@@ -901,7 +907,31 @@ export class ApprovalsService {
 
     const seesCost = canReadCost(context.roles, context.isSuperAdmin);
 
+    /*
+     * Filters and a keyset cursor (§23).
+     *
+     * The `limit 100` this replaced was a silent truncation: the hundred-and-
+     * first request pushed an older *pending* supplier payment off the end of
+     * the only endpoint that lists them, and its id is discoverable nowhere
+     * else. The checker could not find the request they were there to decide,
+     * and the list looked healthy.
+     */
+    const filters = [scope, sql`(requested_by = ${context.userId} or ${relevant})`];
+    if (query.status !== undefined) filters.push(sql`status::text = ${query.status}`);
+    if (query.type !== undefined) filters.push(sql`type::text = ${query.type}`);
+    if (query.cursor !== undefined) {
+      const [createdAt, id] = query.cursor.split(',');
+      filters.push(sql`(created_at, id) < (${createdAt ?? ''}::timestamptz, ${id ?? ''}::uuid)`);
+    }
+
+    const where = sql.join(
+      filters.map((clause) => sql`(${clause})`),
+      sql` and `,
+    );
+
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      // One more than asked for, so "is there another page" is an observation
+      // rather than a guess — a count(*) would race the next insert.
       const rows = await tx.execute<{
         id: string;
         type: ApprovalType;
@@ -911,18 +941,28 @@ export class ApprovalsService {
         amount_poisha: string | null;
         decided_by: string | null;
         payload: Record<string, unknown>;
+        // postgres.js hands timestamptz back as a Date, but `tx.execute` is a
+        // raw path with no schema to parse against, so a string is possible —
+        // and was what a 500 on the first cursor page turned out to be.
+        created_at: Date | string;
       }>(sql`
-        select id, type, status, requested_by, branch_id, amount_poisha, decided_by,
+        select id, type, status, requested_by, branch_id, amount_poisha, decided_by, created_at,
                case when type::text = 'threshold_change' then payload else '{}'::jsonb end
                  as payload
         from approvals.approval_requests
-        where ${scope}
-          and (requested_by = ${context.userId} or ${relevant})
-        order by created_at desc
-        limit 100
+        where ${where}
+        order by created_at desc, id desc
+        limit ${limit + 1}
       `);
 
-      return [...rows].map((row) => {
+      const page = [...rows].slice(0, limit);
+      const last = page.at(-1);
+      const nextCursor =
+        rows.length > limit && last !== undefined
+          ? `${new Date(last.created_at).toISOString()},${last.id}`
+          : null;
+
+      const mapped = page.map((row) => {
         const withheld = !seesCost && COST_VALUED_APPROVAL_TYPES.includes(row.type);
         return {
           id: row.id,
@@ -936,6 +976,8 @@ export class ApprovalsService {
           decidedBy: row.decided_by,
         };
       });
+
+      return { rows: mapped, nextCursor };
     });
   }
 
