@@ -64,6 +64,13 @@
       "when": 1790171563975,
       "tag": "0008_audit_approvals_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790171564975,
+      "tag": "0009_approval_immutability",
+      "breakpoints": true
     }
   ]
 }

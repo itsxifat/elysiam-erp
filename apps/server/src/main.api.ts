@@ -67,6 +67,18 @@ async function bootstrap(): Promise<void> {
     new FastifyAdapter({
       trustProxy:
         env.TRUSTED_PROXY_COUNT === 0 ? false : (env.TRUSTED_PROXY_COUNT as unknown as boolean),
+      /*
+       * The logger Fastify hands to `request.log` (§26).
+       *
+       * Without it Fastify defaults to `logger: false`, and `request.log.error`
+       * is a no-op that writes nowhere. The audit interceptor's failure path
+       * says "it must be loud, though: a silently missing audit trail is the
+       * worst of both worlds" and was, in fact, completely silent — verified.
+       * Handing pino to the adapter is what makes that sentence true, and it
+       * also puts request logging on the same redaction rules as everything
+       * else rather than on Fastify's defaults.
+       */
+      logger,
     }),
     {
       // Nest's own bootstrap chatter would bypass pino's redaction.

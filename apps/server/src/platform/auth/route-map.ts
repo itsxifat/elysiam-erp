@@ -80,8 +80,21 @@ export function describeRoutes(app: INestApplication): RouteDeclaration[] {
           (Reflect.getMetadata(ABILITY_KEY, controllerType) as
             { action: string; subject?: string } | undefined);
 
+        // The same contradiction the guard refuses: a handler that declares an
+        // ability while inheriting @Public from its controller. Reported rather
+        // than resolved, so the gate cannot bless what the guard will reject.
+        const handlerAbility = Reflect.getMetadata(ABILITY_KEY, handler) as
+          { action: string; subject?: string } | undefined;
+        const handlerPublic = Reflect.getMetadata(PUBLIC_KEY, handler) as string | undefined;
+
         let declared: string | null = null;
-        if (publicReason !== undefined) declared = `public:${publicReason}`;
+        if (
+          handlerAbility !== undefined &&
+          handlerPublic === undefined &&
+          publicReason !== undefined
+        ) {
+          declared = null;
+        } else if (publicReason !== undefined) declared = `public:${publicReason}`;
         else if (ability !== undefined) {
           declared =
             ability.action === AUTHENTICATED_ONLY

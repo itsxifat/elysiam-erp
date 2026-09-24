@@ -152,6 +152,18 @@ export function globalTableSql(
  */
 export const ANALYTICS_READABLE: readonly string[] = ['org.organizations'];
 
+/**
+ * Tables `erp_app` must never be able to UPDATE or DELETE.
+ *
+ * The grant is the control, and the guard enumerates it the way it already
+ * enumerates analytics reads (D-049, D-060). `findPrivilegeProblems` only
+ * checked "analytics must not write" and "erp_app must not TRUNCATE", so an
+ * append-only table declared with READ_WRITE by mistake would have shipped
+ * green — and M03's journals and M07's stock movements are both append-only by
+ * invariant 2 and 3.
+ */
+export const APPEND_ONLY_TABLES: readonly string[] = ['audit.audit_log'];
+
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */
 export const ANALYTICS_READABLE_SCHEMAS: readonly string[] = ['ref'];
 

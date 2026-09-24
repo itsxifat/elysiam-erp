@@ -6,7 +6,7 @@ import type { FastifyRequest } from 'fastify';
 import { tap, type Observable } from 'rxjs';
 
 import { ABILITY_KEY } from '../auth/abilities.js';
-import { AuditService } from './audit.service.js';
+import type { AuditService } from './audit.service.js';
 
 /**
  * The catch-all audit write (architecture §25).
@@ -30,12 +30,25 @@ import { AuditService } from './audit.service.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-/** Set by a service that has already written its own, better, entry. */
+/**
+ * Set when a service has written its own, better, entry.
+ *
+ * Set by `AuditService.record`, not by the controller. It used to be an
+ * exported free function a handler called before doing the work, which meant
+ * "marked" and "recorded" were two different claims — any handler could mark
+ * itself and then write nothing, and the mutation would be unaudited while
+ * `.claude/rules`' "never bypass the interceptor" read as satisfied. Now the
+ * only thing that can set it is an entry actually being written.
+ */
 export const ALREADY_AUDITED = Symbol('elysium:already-audited');
 
-export function markAudited(request: FastifyRequest): void {
-  (request as FastifyRequest & { [ALREADY_AUDITED]?: boolean })[ALREADY_AUDITED] = true;
-}
+/**
+ * Any object the flag can be hung on. A Fastify request, in practice — typed
+ * loosely so a service does not have to import Fastify to write an audit entry.
+ */
+export type AuditableRequest = Record<PropertyKey, unknown> & {
+  [ALREADY_AUDITED]?: boolean;
+};
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -90,12 +103,22 @@ export class AuditInterceptor implements NestInterceptor {
     const entityType = declaration?.subject ?? 'Unknown';
     const path = request.url.split('?')[0] ?? request.url;
 
+    // From the method, not hardcoded. Every caught mutation used to land as
+    // `update`, so a create and a delete were indistinguishable in a table that
+    // cannot be corrected afterwards.
+    const operation =
+      request.method.toUpperCase() === 'POST'
+        ? 'create'
+        : request.method.toUpperCase() === 'DELETE'
+          ? 'delete'
+          : 'update';
+
     try {
       await withOrg({ orgId, userId: requestContext.userId }, async (tx) => {
         await this.audit.record(tx, {
           orgId,
           actorUserId: requestContext.userId,
-          operation: 'update',
+          operation,
           action: `http:${request.method} ${path}`,
           entityType,
           entityId: entityIdFrom(body) ?? path,
@@ -116,9 +139,23 @@ export class AuditInterceptor implements NestInterceptor {
   }
 }
 
-/** Best effort: most creates return `{ id }`. */
+/**
+ * The id of whatever was just created or changed.
+ *
+ * `body.id` covers most creates, but not all of them: `POST /v1/users` returns
+ * `{ userId, membershipId, created }` and no `id`, so the audit row for the
+ * single most security-sensitive mutation in the system — an org_admin creating
+ * a user and granting them a role — was keyed on the URL and unanswerable to
+ * "what happened to this user". The candidates are ordered most- to
+ * least-specific.
+ */
 function entityIdFrom(body: unknown): string | null {
   if (typeof body !== 'object' || body === null) return null;
-  const id = (body as { id?: unknown }).id;
-  return typeof id === 'string' ? id : null;
+  const record = body as Record<string, unknown>;
+
+  for (const key of ['id', 'userId', 'membershipId', 'requestId']) {
+    const value = record[key];
+    if (typeof value === 'string' && value !== '') return value;
+  }
+  return null;
 }

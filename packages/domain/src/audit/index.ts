@@ -28,6 +28,17 @@ export const REDACTED_FIELD_PATTERNS: readonly string[] = [
   'salt',
   'backupcode',
   'backup_code',
+  // `otp` rather than only `totp`: `'otp'.includes('totp')` is false, so the
+  // plain `otp` field — §6's reseller phone-OTP flow — was passing through
+  // untouched into an append-only table. Verified.
+  'otp',
+  'pin',
+  'credential',
+  'privatekey',
+  'private_key',
+  'signature',
+  'jwt',
+  'bearer',
   'totp',
   'twofactor',
   'two_factor',
@@ -72,6 +83,17 @@ export function maskPhone(value: string): string {
   return `${head}${'*'.repeat(Math.max(0, digits.length - 5))}${tail}`;
 }
 
+/** Mask every string inside a value that sits under a phone-named key. */
+function maskPhonesIn(value: unknown): unknown {
+  if (typeof value === 'string') return maskPhone(value);
+  if (Array.isArray(value)) return value.map((entry) => maskPhonesIn(entry));
+  if (!isPlainObject(value)) return value;
+
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) result[key] = maskPhonesIn(entry);
+  return result;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return (
     typeof value === 'object' && value !== null && !Array.isArray(value) && !(value instanceof Date)
@@ -95,8 +117,12 @@ export function redact(value: unknown): unknown {
       result[key] = REDACTED;
       continue;
     }
-    if (matches(key, PHONE_PATTERNS) && typeof entry === 'string') {
-      result[key] = maskPhone(entry);
+    if (matches(key, PHONE_PATTERNS)) {
+      // Under a phone-named key, mask whatever shape it arrives in. The string
+      // case is the common one, but `{ phones: ['017…','018…'] }` and
+      // `{ phone: { number: '017…' } }` were both written out verbatim — and
+      // the audit log is append-only, so anything that lands there is permanent.
+      result[key] = maskPhonesIn(entry);
       continue;
     }
     result[key] = redact(entry);

@@ -10,6 +10,7 @@ import {
   findCrossOrgForeignKeys,
   findDefaultPrivileges,
   findAnalyticsReadProblems,
+  findAppendOnlyProblems,
   findPrivilegeProblems,
   findTenancyOffenders,
 } from './guard.js';
@@ -722,6 +723,31 @@ describe('check 5: the guard — every tenant table is isolated', () => {
       await findAnalyticsReadProblems(),
       'erp_analytics can read tables outside ANALYTICS_READABLE.',
     ).toEqual([]);
+  });
+
+  it('grants erp_app no way to change an append-only table', async () => {
+    // The grant is the control. `findPrivilegeProblems` only checked that
+    // analytics cannot write and that erp_app has no TRUNCATE, so an
+    // append-only table declared READ_WRITE by mistake would have shipped
+    // green — and M03's journals and M07's stock movements are both
+    // append-only by invariant.
+    expect(await findAppendOnlyProblems()).toEqual([]);
+  });
+
+  it('would notice if an append-only table were granted update', async () => {
+    await withSystem(async (tx) => {
+      await tx.execute(sql`grant update on "audit"."audit_log" to "erp_app"`);
+    });
+
+    try {
+      expect(await findAppendOnlyProblems()).toContain('audit.audit_log: erp_app has UPDATE');
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`revoke update on "audit"."audit_log" from "erp_app"`);
+      });
+    }
+
+    expect(await findAppendOnlyProblems()).toEqual([]);
   });
 
   it('would notice if a credential table were granted back', async () => {

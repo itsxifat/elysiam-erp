@@ -290,6 +290,45 @@ describe('a reseller sees an allow-list, not a deny-list', () => {
     expect(out.supplierDetails).toEqual({});
   });
 
+  it('drops an array of scalars under a key nobody allowed', () => {
+    // An audit reproduced this: `prune` applied its predicate to object keys
+    // only, so every scalar inside an array survived. Arrays are exactly the
+    // shape a catalog has — images, tags, attribute lists, cost tiers.
+    const out = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'Catalog', {
+      wholesaleCostTiers: ['120000', '115000'],
+      supplierPhones: ['01712345689'],
+      sku: 'A',
+    });
+
+    expect(out.wholesaleCostTiers).toEqual([]);
+    expect(out.supplierPhones).toEqual([]);
+    expect(out.sku, 'the positive control').toBe('A');
+  });
+
+  it('keeps the whole subtree of a field the allow-list names', () => {
+    // The other direction the same bug broke: `attributes` is on the list and
+    // §6 says a reseller may see it, but keeping the container name kept only
+    // the name and emptied the contents.
+    const out = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'Catalog', {
+      attributes: { colour: 'red', size: 'M' },
+      images: ['a.jpg', 'b.jpg'],
+    });
+
+    expect(out.attributes).toEqual({ colour: 'red', size: 'M' });
+    expect(out.images).toEqual(['a.jpg', 'b.jpg']);
+  });
+
+  it('is not fooled by a Buffer or a Map on the way out', () => {
+    // `typeof x === 'object'` is true of both, and walking a Buffer with
+    // Object.entries turns a PDF into {"0":80,"1":68}. M22 returns Gotenberg
+    // PDFs on this path.
+    const pdf = Buffer.from('PDF');
+    expect(serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', pdf)).toBe(pdf);
+
+    const map = new Map([['a', 1]]);
+    expect(serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', map)).toBe(map);
+  });
+
   it('keeps every field the allow-list names', () => {
     const full = Object.fromEntries(RESELLER_VISIBLE_FIELDS.map((field) => [field, 'x']));
     const out = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'Catalog', full);

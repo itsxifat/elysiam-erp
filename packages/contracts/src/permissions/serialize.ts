@@ -31,49 +31,88 @@ const RESELLER_FIELD_SET: ReadonlySet<string> = new Set(RESELLER_VISIBLE_FIELDS)
 /** Subjects a reseller sees through the allow-list rather than the deny-list. */
 const RESELLER_ALLOWLISTED: ReadonlySet<Subject> = new Set<Subject>(['Catalog', 'CostedItem']);
 
+/**
+ * A plain object, and nothing that merely resembles one.
+ *
+ * The prototype check is load-bearing. `typeof x === 'object'` is true of a
+ * Buffer, a Map, a Set and every class instance, and walking one with
+ * `Object.entries` corrupts it silently: a `Buffer.from('PDF')` response came
+ * back as `{"0":80,"1":68,"2":70}`, and a Map came back as `{}`. M22 returns
+ * Gotenberg PDFs on exactly this path.
+ */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === 'object' && value !== null && !Array.isArray(value) && !(value instanceof Date)
-  );
+  if (typeof value !== 'object' || value === null) return false;
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
 }
 
 /**
- * Walk anything: object, array, or a scalar that is neither.
+ * Prune with a deny-list: keep everything except the named fields.
  *
- * `keep` decides each key. Dates and other class instances are returned as-is
- * rather than walked, because turning a Date into `{}` is a data-loss bug that
- * looks like a serialization quirk.
+ * Recurses through arrays and objects alike, because a cost field nested in
+ * `order.lines[3]` is exactly as exposed as one at the top level.
  */
-function prune(value: unknown, keep: (key: string, value: unknown) => boolean): unknown {
-  if (Array.isArray(value)) return value.map((entry) => prune(entry, keep));
+function pruneDenied(value: unknown, denied: ReadonlySet<string>): unknown {
+  if (Array.isArray(value)) return value.map((entry) => pruneDenied(entry, denied));
   if (!isPlainObject(value)) return value;
 
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (!keep(key, entry)) continue;
-    result[key] = prune(entry, keep);
+    if (denied.has(key)) continue;
+    result[key] = pruneDenied(entry, denied);
   }
   return result;
 }
 
 /**
- * Is this value a container we should look inside rather than a leaf?
+ * Prune with an allow-list, which is a genuinely different problem.
  *
- * The allow-list has to answer a question the deny-list does not: a response is
- * usually an envelope — `{ items: [...] }`, `{ order: { lines: [...] } }` — and
- * `items` is not a field of the entity, so a naive allow-list deletes the
- * envelope and returns `{}`. That is exactly what happened when the serializer
- * moved into an interceptor: the reseller got an empty object instead of a
- * filtered catalog.
+ * The obvious implementation — drop any key not on the list — deletes the
+ * envelope a response comes in (`{ items: [...] }`), because `items` is not a
+ * field of the entity. The obvious repair — keep any key whose value is a
+ * container — was worse, and an audit reproduced it failing in **both**
+ * directions:
  *
- * So containers are descended into and leaves are allow-listed. Nothing leaks:
- * a scalar not on the list is dropped wherever it sits, and keeping a container
- * key only keeps its *name*, whose contents are pruned by the same rule one
- * level down. `{ supplierDetails: { cost: 1 } }` survives as
- * `{ supplierDetails: {} }` — ugly, and empty, which is the safe direction.
+ *   `{ wholesaleCostTiers: ['120000','115000'] }`  survived intact, because
+ *   `prune` applied the predicate to object keys only and returned scalars
+ *   inside an array untouched. Arrays are precisely the shape a catalog has.
+ *
+ *   `{ attributes: { colour: 'red' } }`            was emptied to `{}`, even
+ *   though `attributes` is on the allow-list and §6 says a reseller may see it
+ *   — keeping the container name kept only the name.
+ *
+ * So the decision is pushed down rather than taken at the key:
+ *
+ * - an **allow-listed key exposes its whole subtree**. `attributes` is a blob
+ *   of product attributes and `images` a list of urls; that is what listing
+ *   them means.
+ * - a key that is *not* allow-listed is descended into only to look for
+ *   allow-listed keys deeper, and every scalar under it is dropped. So an
+ *   envelope survives, and `{ costTiers: ['120000'] }` becomes
+ *   `{ costTiers: [] }` — empty, which is the safe direction.
  */
-function isContainer(value: unknown): boolean {
-  return Array.isArray(value) || isPlainObject(value);
+function pruneAllowed(value: unknown, allowed: ReadonlySet<string>, exposed: boolean): unknown {
+  if (Array.isArray(value)) {
+    const entries = value.map((entry) => pruneAllowed(entry, allowed, exposed));
+    // Scalars in an array under a key nobody allowed carry data with no name
+    // to filter them by, so they go.
+    return exposed ? entries : entries.filter((entry) => isPlainObject(entry));
+  }
+
+  if (!isPlainObject(value)) return value;
+  if (exposed) return value;
+
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (allowed.has(key)) {
+      result[key] = entry;
+      continue;
+    }
+    if (Array.isArray(entry) || isPlainObject(entry)) {
+      result[key] = pruneAllowed(entry, allowed, false);
+    }
+  }
+  return result;
 }
 
 export function serializeFor<T>(context: SerializeContext, subject: Subject, data: T): T {
@@ -82,13 +121,13 @@ export function serializeFor<T>(context: SerializeContext, subject: Subject, dat
   // the wrong default for a partner who is not staff.
   if (context.roles.includes('reseller') && !context.isSuperAdmin) {
     if (RESELLER_ALLOWLISTED.has(subject)) {
-      return prune(data, (key, value) => RESELLER_FIELD_SET.has(key) || isContainer(value)) as T;
+      return pruneAllowed(data, RESELLER_FIELD_SET, false) as T;
     }
   }
 
   if (canReadCost(context.roles, context.isSuperAdmin)) return data;
 
-  return prune(data, (key) => !COST_FIELD_SET.has(key)) as T;
+  return pruneDenied(data, COST_FIELD_SET) as T;
 }
 
 /**

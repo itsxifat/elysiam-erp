@@ -70,16 +70,50 @@ export class AbilityGuard implements CanActivate {
     const handler = context.getHandler();
     const controller = context.getClass();
 
-    const publicReason = this.reflector.getAllAndOverride<string | undefined>(PUBLIC_KEY, [
-      handler,
-      controller,
-    ]);
-    if (publicReason !== undefined) return true;
-
+    // The handler's own declaration first, always.
     const declaration = this.reflector.getAllAndOverride<Declaration | undefined>(ABILITY_KEY, [
       handler,
       controller,
     ]);
+
+    const publicReason = this.reflector.getAllAndOverride<string | undefined>(PUBLIC_KEY, [
+      handler,
+      controller,
+    ]);
+
+    /*
+     * A handler that declares an ability is never public (§6).
+     *
+     * `@Public` used to be resolved first, across handler *and* controller, and
+     * returned true before anything else ran. So moving `@Public('runs before
+     * anyone has signed in')` from one handler to the top of its controller — an
+     * entirely ordinary refactor — silently discarded every sibling handler's
+     * `@RequireAbility`, including `POST /v1/users`. Reproduced: an anonymous
+     * caller was allowed through.
+     *
+     * Worse, `check-route-matrix` resolved it the same way and printed
+     * `public:<reason>`, so the gate reported PASS. Two controls agreeing on the
+     * wrong answer is exactly what having two controls is meant to rule out.
+     *
+     * Contradictory declarations are refused rather than silently resolved,
+     * because there is no reading of "public and also requires create:User"
+     * that anybody meant.
+     */
+    if (declaration !== undefined && publicReason !== undefined) {
+      const handlerIsPublic = this.reflector.get<string | undefined>(PUBLIC_KEY, handler);
+      const handlerHasAbility = this.reflector.get<Declaration | undefined>(ABILITY_KEY, handler);
+
+      if (handlerHasAbility !== undefined && handlerIsPublic === undefined) {
+        throw new ForbiddenException(
+          'This route declares an ability and inherits @Public from its controller. Remove one.',
+        );
+      }
+    }
+
+    if (publicReason !== undefined && declaration === undefined) return true;
+    if (publicReason !== undefined && this.reflector.get(PUBLIC_KEY, handler) !== undefined) {
+      return true;
+    }
 
     // Undeclared means denied. See the note at the top of this file: the
     // alternative makes a forgotten decorator invisible.

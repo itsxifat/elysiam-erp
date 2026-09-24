@@ -5,10 +5,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { APPROVAL_TYPES, canDecideType, CHECKER_TYPES } from '@elysium/contracts';
 import { canDecide, requiresApproval, type Threshold } from '@elysium/domain';
 import { withOrg, type Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 
@@ -115,6 +117,7 @@ export class ApprovalsService {
       amountPoisha: bigint | null;
       payload?: Record<string, unknown>;
       reason?: string;
+      request?: AuditableRequest;
     },
   ): Promise<{ id: string; required: boolean; status: string }> {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
@@ -152,8 +155,14 @@ export class ApprovalsService {
           type: input.type,
           amountPoisha: input.amountPoisha?.toString() ?? null,
           required,
+          // The payload is the *intent* — what will be executed once this is
+          // approved — so the log is not much use without it. `AuditService`
+          // redacts on the way in, which is why this can be passed through
+          // rather than each caller remembering to scrub it.
+          payload: input.payload ?? {},
         },
         requestId: context.requestId,
+        ...(input.request === undefined ? {} : { request: input.request }),
       });
 
       // §27: `approval.requested` goes to every eligible checker.
@@ -174,7 +183,12 @@ export class ApprovalsService {
 
   async decide(
     context: ActiveContext,
-    input: { id: string; decision: 'approved' | 'rejected'; note?: string },
+    input: {
+      id: string;
+      decision: 'approved' | 'rejected';
+      note?: string;
+      request?: AuditableRequest;
+    },
   ): Promise<{ id: string; status: string }> {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const rows = await tx.execute<{
@@ -193,6 +207,22 @@ export class ApprovalsService {
       // RLS already scoped this to the active org, so "not found" and "another
       // org's request" are the same answer — which is what we want it to be.
       if (row === undefined) throw new NotFoundException('No such approval request.');
+
+      /*
+       * What you may check, as distinct from whether you are a checker (§6).
+       *
+       * The ability gets you to this method; this decides whether this *type*
+       * is yours to decide. Without it, one `approve ApprovalRequest` grant let
+       * a branch_manager approve a payroll run, a reseller payout batch or a
+       * period reopen — reproduced, 201. Checked before the maker≠checker rule
+       * so a checker who may not touch this type is told that, rather than
+       * being told they raised it.
+       */
+      if (!canDecideType(context.roles, row.type, context.isSuperAdmin)) {
+        throw new ForbiddenException(
+          `Your role cannot decide a ${row.type} request in this organization.`,
+        );
+      }
 
       const verdict = canDecide({
         requestedBy: row.requested_by,
@@ -230,6 +260,7 @@ export class ApprovalsService {
         before: { status: row.status },
         after: { status: input.decision, decidedBy: context.userId },
         requestId: context.requestId,
+        ...(input.request === undefined ? {} : { request: input.request }),
       });
 
       // §27: `approval.decided` goes back to the requester.
@@ -243,8 +274,27 @@ export class ApprovalsService {
     });
   }
 
+  /**
+   * The requests this caller may see.
+   *
+   * Scope is declared in the matrix and, today, enforced nowhere on the request
+   * path: `ability.can(action, 'ApprovalRequest')` with a bare subject string
+   * returns true for a conditional rule, because CASL is being asked about the
+   * *type* rather than a row. So a `branch_manager`, whose matrix scope is
+   * `branch`, could read every pending supplier payment and payroll run in the
+   * org, with amounts.
+   *
+   * Until a general scope filter exists (M03 follow-up), the narrowing is done
+   * here, explicitly: a checker sees what they may decide, and everyone else
+   * sees what they raised. That is a smaller answer than the matrix implies,
+   * which is the safe direction to be wrong in.
+   */
   async list(context: ActiveContext): Promise<ApprovalRequestRow[]> {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const decidable = context.isSuperAdmin
+        ? [...APPROVAL_TYPES]
+        : context.roles.flatMap((role) => [...(CHECKER_TYPES[role] ?? [])]);
+
       const rows = await tx.execute<{
         id: string;
         type: ApprovalType;
@@ -255,6 +305,8 @@ export class ApprovalsService {
       }>(sql`
         select id, type, status, requested_by, amount_poisha, decided_by
         from approvals.approval_requests
+        where requested_by = ${context.userId}
+           or type = any(${decidable}::text[]::approvals.approval_type[])
         order by created_at desc
         limit 100
       `);

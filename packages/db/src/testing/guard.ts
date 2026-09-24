@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 
 import { withSystem } from '../client.js';
-import { ANALYTICS_READABLE, ANALYTICS_READABLE_SCHEMAS } from '../rls.js';
+import { ANALYTICS_READABLE, ANALYTICS_READABLE_SCHEMAS, APPEND_ONLY_TABLES } from '../rls.js';
 import { GLOBAL_SCHEMAS, GLOBAL_TABLES, ORG_CONTEXT_SQL } from '../rls.js';
 
 /**
@@ -289,6 +289,34 @@ export async function findAnalyticsReadProblems(): Promise<string[]> {
   );
 
   return [...rows].map((row) => row.table_name);
+}
+
+/**
+ * Append-only tables `erp_app` can nonetheless change.
+ *
+ * A log whose rows can be edited is not evidence of anything, and the only
+ * thing that makes "append-only" true rather than intended is the absence of
+ * the grant. Enumerated for the same reason analytics reads are: so a table
+ * declared READ_WRITE by mistake fails the build rather than shipping green.
+ */
+export async function findAppendOnlyProblems(): Promise<string[]> {
+  const offenders: string[] = [];
+
+  for (const table of APPEND_ONLY_TABLES) {
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{ can_update: boolean; can_delete: boolean }>(sql`
+        select
+          has_table_privilege('erp_app', ${table}, 'UPDATE') as can_update,
+          has_table_privilege('erp_app', ${table}, 'DELETE') as can_delete
+      `),
+    );
+
+    const row = rows[0];
+    if (row?.can_update === true) offenders.push(`${table}: erp_app has UPDATE`);
+    if (row?.can_delete === true) offenders.push(`${table}: erp_app has DELETE`);
+  }
+
+  return offenders;
 }
 
 /** Default privileges that would silently grant a future table to a role. */

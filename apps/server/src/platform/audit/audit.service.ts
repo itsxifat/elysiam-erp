@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { changedFields, redact } from '@elysium/domain';
 import type { Tx } from '@elysium/db';
+
+import { ALREADY_AUDITED, type AuditableRequest } from './audit.interceptor.js';
 import { sql } from 'drizzle-orm';
 
 /**
@@ -36,6 +38,13 @@ export interface AuditEntry {
   readonly ip?: string | null;
   readonly userAgent?: string | null;
   readonly requestId?: string | null;
+  /**
+   * The request this entry belongs to, if there is one.
+   *
+   * Passing it is what tells the interceptor's net to stand down — and it can
+   * only be set by a write that actually happened, which is the point.
+   */
+  readonly request?: AuditableRequest;
 }
 
 @Injectable()
@@ -71,6 +80,9 @@ export class AuditService {
         ${entry.requestId ?? null}
       )
     `);
+
+    // Only now, after the insert. See ALREADY_AUDITED.
+    if (entry.request !== undefined) entry.request[ALREADY_AUDITED] = true;
   }
 
   /** Which fields changed, both sides already redacted (see the domain). */

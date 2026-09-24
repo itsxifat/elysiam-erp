@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Get, Param, Post, Req } from '@n
 import { approvalDecisionSchema, approvalRequestSchema } from '@elysium/contracts';
 import type { FastifyRequest } from 'fastify';
 
-import { markAudited } from '../../platform/audit/audit.interceptor.js';
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { ApprovalsService } from './approvals.service.js';
@@ -24,11 +24,11 @@ export class ApprovalsController {
     const parsed = approvalRequestSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message);
 
-    // The service writes its own entry inside the mutation's transaction,
-    // which the interceptor cannot do. Marked so the net does not duplicate it.
-    markAudited(request);
-
+    // The service writes its own entry inside the mutation's transaction, which
+    // the interceptor cannot do; passing `request` is how the net learns that a
+    // write actually happened and stands down.
     return this.approvals.request(requireContext(request), {
+      request: request as unknown as AuditableRequest,
       type: parsed.data.type,
       amountPoisha: parsed.data.amountPoisha === null ? null : BigInt(parsed.data.amountPoisha),
       payload: parsed.data.payload,
@@ -50,9 +50,8 @@ export class ApprovalsController {
     const parsed = approvalDecisionSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message);
 
-    markAudited(request);
-
     return this.approvals.decide(requireContext(request), {
+      request: request as unknown as AuditableRequest,
       id,
       decision: parsed.data.decision,
       ...(parsed.data.note === undefined ? {} : { note: parsed.data.note }),
