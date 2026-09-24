@@ -223,9 +223,15 @@ export class IamService {
       { orgId: input.orgId, userId: input.caller.userId },
       async (tx) => {
         const inserted = await tx.execute<{ id: string }>(sql`
-          insert into iam.memberships (org_id, user_id, role)
-          values (${input.orgId}, ${resolvedUserId}, ${input.role}::iam.membership_role)
-          on conflict (org_id, user_id, role) do update set is_active = true
+          insert into iam.memberships (org_id, user_id, role, granted_by)
+          values (
+            ${input.orgId}, ${resolvedUserId}, ${input.role}::iam.membership_role,
+            ${input.caller.userId}
+          )
+          -- Reactivating is granting again, so the granter is recorded again:
+          -- maker-checker reads it (D-077).
+          on conflict (org_id, user_id, role) do update
+            set is_active = true, granted_by = excluded.granted_by
           returning id
         `);
 

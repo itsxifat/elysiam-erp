@@ -39,6 +39,7 @@ export {
   effectiveScope,
   rowInScope,
   scopeFilterFor,
+  uniformBranchScope,
   type AbilityContext,
   type AppAbility,
   type ScopeCondition,

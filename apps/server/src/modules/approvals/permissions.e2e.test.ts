@@ -1,6 +1,6 @@
 import { assertNoCostFields, MEMBERSHIP_ROLES, NEVER_AUTO_APPROVE_TYPES } from '@elysium/contracts';
 import { withOrg, withSystem } from '@elysium/db';
-import { grantMembership } from '@elysium/db/testing';
+import { asUser, grantMembership } from '@elysium/db/testing';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -15,6 +15,7 @@ import {
   type Client,
   type HttpHarness,
 } from '../../testing/http-harness.js';
+import type { ActiveContext } from '../../platform/http/context.js';
 import { ApprovalsService } from './approvals.service.js';
 
 /**
@@ -550,6 +551,8 @@ describe('check 4: maker-checker', () => {
         () => sql`status = 'pending', decided_by = null, decided_at = null`,
       ],
       ['its decider', () => sql`decided_by = 'someone-else'`],
+      ['its decision note', () => sql`decision_note = 'rewritten'`],
+      ['its reason', () => sql`reason = 'rewritten'`],
     ])('refuses changing %s with integrity_constraint_violation', async (_what, assignment) => {
       const { id, checkerId } = await decidedRequest();
 
@@ -577,6 +580,9 @@ describe('check 4: maker-checker', () => {
       ['its payload', () => sql`payload = '{"to":"someone else"}'::jsonb`],
       ['its branch', () => sql`branch_id = ${branchA}::uuid`],
       ['its captured threshold', () => sql`threshold_poisha = 999999999999`],
+      ['its amount source', () => sql`amount_derived_by_server = true`],
+      ['its reason', () => sql`reason = 'rewritten'`],
+      ['its creation time', () => sql`created_at = now() - interval '1 day'`],
     ])('refuses changing a pending request’s %s (migration 0011)', async (_what, assignment) => {
       const { client: maker, userId } = await asRole('org_admin');
       const { id } = await requestApproval(maker, 'wallet_adjustment', '900000');
@@ -779,18 +785,22 @@ describe('check 5: below and above the threshold behave differently', () => {
   });
 });
 
-describe('the branch-tier checker (§6 "branch items under threshold", M1)', () => {
-  // `stock_gain` is branch-checkable and server-derived, so through the
-  // generic route it is always held (D-072) — which is exactly what makes the
-  // branch-tier checker reachable: a held branch item under the threshold.
-  async function heldBranchRequest(branchId: string | null, amount: string): Promise<string> {
-    const { client: maker } = await asRole('org_admin');
-    const held = await requestApproval(
-      maker,
-      'stock_gain',
-      amount,
-      branchId === null ? {} : { branchId },
-    );
+describe('the branch-tier checker (§6 "branch items under threshold", M1, D-076)', () => {
+  /**
+   * A branch item the way the owning module will raise it: amount derived by
+   * the system (M07's WAC valuation), through the service rather than the
+   * generic route — which can only ever send a typed amount.
+   */
+  async function derivedBranchRequest(branchId: string | null, amount: string): Promise<string> {
+    const { userId } = await asRole('org_admin');
+    const context = (await asUser(userId, ORG_A)) as ActiveContext;
+    const held = await harness.app.get(ApprovalsService).request(context, {
+      type: 'stock_gain',
+      amountPoisha: BigInt(amount),
+      amountDerivedByServer: true,
+      ...(branchId === null ? {} : { branchId }),
+    });
+    // Branch items are never auto-approved, even under the threshold.
     expect(held.status).toBe('pending');
     return held.id;
   }
@@ -803,16 +813,28 @@ describe('the branch-tier checker (§6 "branch items under threshold", M1)', () 
 
   it('lets a branch manager decide their own branch’s item under the threshold', async () => {
     await setThreshold('stock_gain', '10000000');
-    const id = await heldBranchRequest(branchA, '5000');
+    const id = await derivedBranchRequest(branchA, '5000');
 
     const { client } = await asRole('branch_manager', ORG_A, { branchIds: [branchA] });
     const decided = await decideAs(client, id);
     expect(decided.statusCode, decided.body).toBe(201);
   });
 
+  it('refuses the same item when its amount was typed by a person (final pass W3)', async () => {
+    await setThreshold('stock_gain', '10000000');
+    const { client: maker } = await asRole('org_admin');
+    const typed = await requestApproval(maker, 'stock_gain', '5000', { branchId: branchA });
+    expect(typed.status).toBe('pending');
+
+    const { client } = await asRole('branch_manager', ORG_A, { branchIds: [branchA] });
+    const attempt = await decideAs(client, typed.id);
+    expect(attempt.statusCode, attempt.body).toBe(403);
+    expect(attempt.body).toMatch(/derived/);
+  });
+
   it('refuses another branch’s item, as not found', async () => {
     await setThreshold('stock_gain', '10000000');
-    const id = await heldBranchRequest(branchB, '5000');
+    const id = await derivedBranchRequest(branchB, '5000');
 
     const { client } = await asRole('branch_manager', ORG_A, { branchIds: [branchA] });
     const attempt = await decideAs(client, id);
@@ -820,11 +842,8 @@ describe('the branch-tier checker (§6 "branch items under threshold", M1)', () 
   });
 
   it('judges the branch on the branch-tier role alone, not the union with hr (C2)', async () => {
-    // hr's org-wide `approve` made the unioned scope `all`, and the branch
-    // check then passed for branch B — which hr may not check at all and the
-    // branch manager may not check outside A.
     await setThreshold('stock_gain', '10000000');
-    const id = await heldBranchRequest(branchB, '5000');
+    const id = await derivedBranchRequest(branchB, '5000');
 
     const { client } = await asRole(['hr', 'branch_manager'], ORG_A, { branchIds: [branchA] });
     const attempt = await decideAs(client, id);
@@ -832,13 +851,13 @@ describe('the branch-tier checker (§6 "branch items under threshold", M1)', () 
     expect(attempt.body).toMatch(/own branches/);
 
     // The positive control: the same person may decide their own branch's.
-    const own = await heldBranchRequest(branchA, '5000');
+    const own = await derivedBranchRequest(branchA, '5000');
     expect((await decideAs(client, own)).statusCode).toBe(201);
   });
 
   it('refuses an item at or above the threshold', async () => {
     await setThreshold('stock_gain', '10000000');
-    const id = await heldBranchRequest(branchA, '10000000');
+    const id = await derivedBranchRequest(branchA, '10000000');
 
     const { client } = await asRole('branch_manager', ORG_A, { branchIds: [branchA] });
     const attempt = await decideAs(client, id);
@@ -847,8 +866,7 @@ describe('the branch-tier checker (§6 "branch items under threshold", M1)', () 
   });
 
   it('refuses when no threshold was configured when the request was raised', async () => {
-    const id = await withNoThreshold('stock_gain', () => heldBranchRequest(branchA, '1'));
-    // A threshold exists again now; the one captured at request time did not.
+    const id = await withNoThreshold('stock_gain', () => derivedBranchRequest(branchA, '1'));
     expect(await currentThreshold('stock_gain')).not.toBeNull();
 
     const { client } = await asRole('branch_manager', ORG_A, { branchIds: [branchA] });
@@ -858,7 +876,7 @@ describe('the branch-tier checker (§6 "branch items under threshold", M1)', () 
 
   it('refuses an org-level item with no branch', async () => {
     await setThreshold('stock_gain', '10000000');
-    const id = await heldBranchRequest(null, '5');
+    const id = await derivedBranchRequest(null, '5');
 
     const { client } = await asRole('branch_manager');
     const attempt = await decideAs(client, id);
@@ -900,6 +918,193 @@ describe('the branch-tier checker (§6 "branch items under threshold", M1)', () 
     const ids = parse<{ id: string }[]>(response.body).map((row) => row.id);
     expect(ids).toContain(inA.id);
     expect(ids).not.toContain(inB.id);
+  });
+});
+
+describe('a type right and its branch scope come from the same role (C-1)', () => {
+  async function raise(client: Client, branchId?: string) {
+    return client.request('POST', '/v1/approvals', {
+      body: {
+        type: 'wallet_adjustment',
+        amountPoisha: '499999',
+        ...(branchId === undefined ? {} : { branchId }),
+      },
+    });
+  }
+
+  it('refuses branch_manager@A + warehouse raising a wallet adjustment for B, or for no branch', async () => {
+    await setThreshold('wallet_adjustment', '500000');
+    const { client, userId } = await asRole('branch_manager', ORG_A, { branchIds: [branchA] });
+    // warehouse is org-wide for `request`, but may not raise a wallet adjustment.
+    await grantMembership({ userId, orgId: ORG_A, role: 'warehouse' });
+
+    expect((await raise(client, branchB)).statusCode).toBe(403);
+
+    // No branch: branch_manager's only branch is inferred, so name none and
+    // hold two roles — the inference comes from the wallet-capable role alone.
+    const inferred = await raise(client);
+    expect(inferred.statusCode, inferred.body).toBe(201);
+    const { id } = parse<{ id: string }>(inferred.body);
+    const [row] = await withSystem(
+      async (tx) =>
+        tx.execute<{ branch_id: string | null }>(
+          sql`select branch_id from approvals.approval_requests where id = ${id}`,
+        ),
+      { orgId: ORG_A },
+    );
+    expect(row?.branch_id, 'never an org-level request').toBe(branchA);
+  });
+
+  it('refuses a branch manager with two branches naming none', async () => {
+    const { client } = await asRole('branch_manager', ORG_A, { branchIds: [branchA, branchB] });
+    const attempt = await raise(client);
+    expect(attempt.statusCode, attempt.body).toBe(403);
+  });
+
+  it('refuses hr + branch_manager@A raising a wallet adjustment for B', async () => {
+    const { client } = await asRole(['hr', 'branch_manager'], ORG_A, { branchIds: [branchA] });
+    expect((await raise(client, branchB)).statusCode).toBe(403);
+  });
+
+  it('lets the same caller raise it for their own branch (the positive control)', async () => {
+    const { client } = await asRole(['hr', 'branch_manager'], ORG_A, { branchIds: [branchA] });
+    const own = await raise(client, branchA);
+    expect(own.statusCode, own.body).toBe(201);
+  });
+});
+
+describe('nobody approves for whoever granted them their role (final pass W4, D-077)', () => {
+  async function grantedBy(userId: string, granter: string): Promise<void> {
+    await withSystem(
+      async (tx) => {
+        await tx.execute(sql`
+          update iam.memberships set granted_by = ${granter}
+          where user_id = ${userId} and org_id = ${ORG_A}
+        `);
+      },
+      { orgId: ORG_A },
+    );
+  }
+
+  it('refuses a checker granted by the requester, and one granted down that chain', async () => {
+    const { client: x, userId: xId } = await asRole('org_admin');
+    const { client: y, userId: yId } = await asRole('org_admin');
+    const { client: z, userId: zId } = await asRole('org_admin');
+    await grantedBy(yId, xId);
+    await grantedBy(zId, yId);
+
+    const { id } = await requestApproval(x, 'wallet_adjustment', '900000000');
+
+    const byY = await y.request('POST', `/v1/approvals/${id}/decide`, {
+      body: { decision: 'approved' },
+    });
+    expect(byY.statusCode, byY.body).toBe(403);
+    expect(byY.body).toMatch(/granted you/);
+
+    const byZ = await z.request('POST', `/v1/approvals/${id}/decide`, {
+      body: { decision: 'approved' },
+    });
+    expect(byZ.statusCode, byZ.body).toBe(403);
+
+    // The positive control: an admin outside that lineage may decide it.
+    const { client: other } = await asRole('org_admin');
+    const byOther = await other.request('POST', `/v1/approvals/${id}/decide`, {
+      body: { decision: 'approved' },
+    });
+    expect(byOther.statusCode, byOther.body).toBe(201);
+  });
+
+  it('records who granted a membership created through the API', async () => {
+    const { client, userId } = await asRole('org_admin');
+    const email = `granted_${String(Date.now())}@example.invalid`;
+    const created = await client.request('POST', '/v1/users', {
+      body: { email, name: 'Granted', role: 'accounts', branchIds: [] },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const { userId: newUser } = parse<{ userId: string }>(created.body);
+
+    const [row] = await withSystem(
+      async (tx) =>
+        tx.execute<{ granted_by: string | null }>(sql`
+          select granted_by from iam.memberships where user_id = ${newUser} and org_id = ${ORG_A}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(row?.granted_by).toBe(userId);
+  });
+});
+
+describe('threshold changes, as a checker sees and decides them (final pass W1, W2)', () => {
+  it('shows the terms of a threshold change in the list and the decide view', async () => {
+    await setThreshold('supplier_payment', '1000');
+    const { client: admin } = await asRole('org_admin');
+    const proposed = await admin.request('PUT', '/v1/approvals/thresholds', {
+      body: { type: 'supplier_payment', thresholdPoisha: '5000' },
+    });
+    const { approvalId } = parse<{ approvalId: string }>(proposed.body);
+
+    const { client: checker } = await asRole('org_admin');
+    const listed = parse<{ id: string; thresholdChange: unknown }[]>(
+      (await checker.request('GET', '/v1/approvals')).body,
+    ).find((row) => row.id === approvalId);
+    const terms = { targetType: 'supplier_payment', fromPoisha: '1000', toPoisha: '5000' };
+    expect(listed?.thresholdChange).toEqual(terms);
+
+    const view = await checker.request('GET', `/v1/approvals/${approvalId}`);
+    expect(view.statusCode, view.body).toBe(200);
+    expect(parse(view.body)).toMatchObject({ type: 'threshold_change', thresholdChange: terms });
+  });
+
+  it('refuses to apply a raise over a threshold that was lowered in the meantime', async () => {
+    await setThreshold('supplier_payment', '1000');
+    const { client: admin } = await asRole('org_admin');
+    const proposed = await admin.request('PUT', '/v1/approvals/thresholds', {
+      body: { type: 'supplier_payment', thresholdPoisha: '9000' },
+    });
+    const { approvalId } = parse<{ approvalId: string }>(proposed.body);
+
+    const lowered = await admin.request('PUT', '/v1/approvals/thresholds', {
+      body: { type: 'supplier_payment', thresholdPoisha: '500' },
+    });
+    expect(parse(lowered.body)).toMatchObject({ status: 'applied' });
+
+    const { client: checker } = await asRole('org_admin');
+    const approved = await checker.request('POST', `/v1/approvals/${approvalId}/decide`, {
+      body: { decision: 'approved' },
+    });
+    expect(approved.statusCode, approved.body).toBe(409);
+    expect(await currentThreshold('supplier_payment'), 'the lowering stands').toBe('500');
+  });
+
+  it('withholds a WAC-valued amount in the decide view too (D-074)', async () => {
+    const { client: maker } = await asRole('warehouse');
+    const { id } = await requestApproval(maker, 'stock_write_off', '4343', { branchId: branchA });
+
+    const { client } = await asRole('branch_manager', ORG_A, { branchIds: [branchA] });
+    const view = await client.request('GET', `/v1/approvals/${id}`);
+    expect(view.statusCode, view.body).toBe(200);
+    expect(parse(view.body)).toMatchObject({ amountPoisha: null, amountWithheld: true });
+    expect(view.body).not.toContain('4343');
+  });
+
+  it('answers a request the caller may not see with 404', async () => {
+    const { client: maker } = await asRole('accounts');
+    const { id } = await requestApproval(maker, 'supplier_payment', '900000000');
+
+    const { client } = await asRole('hr');
+    expect((await client.request('GET', `/v1/approvals/${id}`)).statusCode).toBe(404);
+  });
+});
+
+describe('the payload carries no second amount (D-078)', () => {
+  it('refuses a payload that names an amount, at any depth', async () => {
+    const { client } = await asRole('accounts');
+    for (const payload of [{ amountPoisha: '1' }, { lines: [{ total_poisha: 5 }] }]) {
+      const attempt = await client.request('POST', '/v1/approvals', {
+        body: { type: 'supplier_payment', amountPoisha: '100', payload },
+      });
+      expect(attempt.statusCode, attempt.body).toBe(400);
+    }
   });
 });
 

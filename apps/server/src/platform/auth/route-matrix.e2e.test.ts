@@ -49,6 +49,15 @@ interface Call {
  */
 const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   'GET /v1/approvals': () => ({ url: '/v1/approvals' }),
+  'GET /v1/approvals/:id': async () => {
+    // A request any checker of closing variances may view.
+    const maker = await harness.asRole('org_admin', ORG_A);
+    const created = await maker.client.request('POST', '/v1/approvals', {
+      body: { type: 'closing_variance', amountPoisha: '900000' },
+    });
+    const { id } = JSON.parse(created.body) as { id: string };
+    return { url: `/v1/approvals/${id}` };
+  },
   'POST /v1/approvals': () => ({
     url: '/v1/approvals',
     body: { type: 'wallet_adjustment', amountPoisha: '900000' },
@@ -135,6 +144,7 @@ describe('every route × every role: the guard admits exactly what the matrix gr
                 isSuperAdmin: false,
                 userId: actor.userId,
                 branchIds: [],
+                branchIdsByRole: { [role]: [] },
               }).can(route.ability.action, route.ability.subject);
 
         const call = await fixture();

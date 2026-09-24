@@ -1,5 +1,6 @@
 import {
   bigint,
+  boolean,
   check,
   foreignKey,
   index,
@@ -54,8 +55,30 @@ export const approvalType = approvals.enum('approval_type', [
  * Compared as text: 0011 adds `threshold_change` to the enum in the same
  * transaction, and a new enum value cannot be used as a literal before commit.
  */
+export const NEVER_AUTO_APPROVE_TYPE_NAMES = [
+  'period_reopen',
+  'bonus_rule',
+  'threshold_change',
+  'back_dated_entry',
+] as const;
+
 export const NEVER_AUTO_APPROVE_SQL = sql.raw(
-  `('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry')`,
+  `(${NEVER_AUTO_APPROVE_TYPE_NAMES.map((name) => `'${name}'`).join(', ')})`,
+);
+
+/**
+ * Branch items (D-076): held for a branch-tier checker under the threshold
+ * rather than auto-approved. Kept in step with CHECKER_TYPES.branch_manager in
+ * @elysium/contracts by a test.
+ */
+export const BRANCH_ITEM_TYPE_NAMES = [
+  'stock_write_off',
+  'stock_gain',
+  'closing_variance',
+] as const;
+
+const BRANCH_ITEM_SQL = sql.raw(
+  `(${BRANCH_ITEM_TYPE_NAMES.map((name) => `'${name}'`).join(', ')})`,
 );
 
 /**
@@ -99,6 +122,12 @@ export const approvalRequests = approvals.table(
      * why a request was or was not held.
      */
     thresholdPoisha: bigint('threshold_poisha', { mode: 'bigint' }),
+    /**
+     * Whether the owning module computed the amount (true) or a person typed
+     * it (false). Only a derived amount may be judged by a branch-tier checker
+     * or relaxed by a threshold for server-derived types (D-072, D-076).
+     */
+    amountDerivedByServer: boolean('amount_derived_by_server').notNull().default(false),
     /** What to do once approved. The requesting module owns its shape. */
     payload: jsonb('payload').notNull().default({}),
     reason: text('reason'),
@@ -159,6 +188,12 @@ export const approvalRequests = approvals.table(
     check(
       'approval_requests_never_auto_approved',
       sql`${table.status}::text <> 'auto_approved' or ${table.type}::text not in ${NEVER_AUTO_APPROVE_SQL}`,
+    ),
+
+    /** D-076: branch items go to a branch-tier checker, never auto-approved. */
+    check(
+      'approval_requests_branch_items_never_auto_approved',
+      sql`${table.status}::text <> 'auto_approved' or ${table.type}::text not in ${BRANCH_ITEM_SQL}`,
     ),
   ],
 );

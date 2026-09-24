@@ -110,8 +110,10 @@ export function scopeWhere(request: object, columns: ScopeColumns): SQL {
       );
     }
     if (condition.field === 'branchId') {
-      // One bound parameter per id; the list is never empty (an empty branch
-      // scope means the whole org and never reaches here).
+      // An empty list is the fail-closed case (a role with no scope entry,
+      // D-075): it matches nothing. `in ()` is not valid SQL, so say so.
+      if (condition.in.length === 0) return sql`false`;
+      // One bound parameter per id.
       return sql`${column} in (${sql.join(
         condition.in.map((id) => sql`${id}::uuid`),
         sql`, `,

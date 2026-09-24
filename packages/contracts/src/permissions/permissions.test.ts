@@ -6,10 +6,12 @@ import { approvalRequestSchema, NEVER_AUTO_APPROVE_TYPES, thresholdSchema } from
 import { MEMBERSHIP_ROLES, type MembershipRole } from '../iam.js';
 import {
   canReadCost,
-  defineAbilityFor,
+  defineAbilityFor as defineAbilityForStrict,
   effectiveScope,
   rowInScope,
-  scopeFilterFor,
+  scopeFilterFor as scopeFilterForStrict,
+  uniformBranchScope,
+  type AbilityContext,
 } from './ability.js';
 import {
   canDecideType,
@@ -39,6 +41,27 @@ import {
  * is empty, or the field was never there. So each one is paired with a
  * positive control that would fail if the mechanism stopped working at all.
  */
+
+/**
+ * Most tests here give every role the same branches, so they build contexts
+ * without a per-role map and this fills it in. The per-role and fail-closed
+ * cases pass their own map explicitly (D-075).
+ */
+type LooseContext = Omit<AbilityContext, 'branchIdsByRole'> & {
+  branchIdsByRole?: AbilityContext['branchIdsByRole'];
+};
+
+function full(context: LooseContext): AbilityContext {
+  return {
+    ...context,
+    branchIdsByRole:
+      context.branchIdsByRole ?? uniformBranchScope(context.roles, context.branchIds),
+  };
+}
+
+const defineAbilityFor = (context: LooseContext) => defineAbilityForStrict(full(context));
+const scopeFilterFor = (context: LooseContext, action: Action, subj: Subject) =>
+  scopeFilterForStrict(full(context), action, subj);
 
 const CONTEXT = { userId: 'usr_1', branchIds: [] as string[], isSuperAdmin: false };
 
@@ -625,6 +648,29 @@ describe('branch scope belongs to the membership that granted it (W7, D-075)', (
     const ability = defineAbilityFor(context);
     expect(ability.can('read', tag('Wallet', { branchId: 'branch-a' }))).toBe(true);
     expect(ability.can('read', tag('Wallet', { branchId: 'branch-b' }))).toBe(false);
+  });
+});
+
+describe('a role with no scope entry reaches no branch (fail closed, D-075)', () => {
+  it('denies every branch row, in CASL and in the list filter', () => {
+    const context = {
+      userId: 'usr_1',
+      isSuperAdmin: false,
+      roles: ['branch_manager'] as MembershipRole[],
+      branchIds: [],
+      branchIdsByRole: {},
+    };
+
+    const filter = scopeFilterFor(context, 'read', 'Wallet');
+    expect(filter).toEqual({ kind: 'some', anyOf: [{ field: 'branchId', in: [] }] });
+    expect(rowInScope(filter, { branchId: 'branch-a' })).toBe(false);
+    expect(defineAbilityFor(context).can('read', tag('Wallet', { branchId: 'branch-a' }))).toBe(
+      false,
+    );
+
+    // The positive control: mapped to [] it is the whole org (§6).
+    const whole = { ...context, branchIdsByRole: { branch_manager: [] } };
+    expect(scopeFilterFor(whole, 'read', 'Wallet')).toEqual({ kind: 'all' });
   });
 });
 

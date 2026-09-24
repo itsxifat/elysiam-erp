@@ -23,6 +23,18 @@ export class ApprovalsController {
     return this.approvals.list(requireContext(request), request);
   }
 
+  /**
+   * One request as a checker decides it: its frozen terms, including what a
+   * threshold change would do. Same scope and relevance as the list.
+   */
+  @RequireAbility('read', 'ApprovalRequest')
+  @Get(':id')
+  async get(@Req() request: FastifyRequest, @Param('id') id: string) {
+    const parsedId = approvalIdSchema.safeParse(id);
+    if (!parsedId.success) throw new BadRequestException(parsedId.error.issues[0]?.message);
+    return this.approvals.get(requireContext(request), request, parsedId.data);
+  }
+
   @RequireAbility('request', 'ApprovalRequest')
   @Post()
   async request(@Req() request: FastifyRequest, @Body() body: unknown) {

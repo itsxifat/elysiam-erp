@@ -157,6 +157,12 @@ beforeAll(async () => {
         orgId: '00000000-0000-0000-0000-000000000001',
         roles: roles === '' ? [] : (roles.split(',') as MembershipRole[]),
         branchIds: ['00000000-0000-0000-0000-00000000000a'],
+        branchIdsByRole: Object.fromEntries(
+          (roles === '' ? [] : roles.split(',')).map((role) => [
+            role,
+            ['00000000-0000-0000-0000-00000000000a'],
+          ]),
+        ),
         isSuperAdmin: false,
         requestId: 'req_1',
       };

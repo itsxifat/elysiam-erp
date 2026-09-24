@@ -20,6 +20,7 @@
  */
 export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/approvals',
+  'GET /v1/approvals/:id',
   'POST /v1/approvals',
   'POST /v1/approvals/:id/decide',
   'PUT /v1/approvals/thresholds',

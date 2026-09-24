@@ -49,24 +49,37 @@ export interface AbilityContext {
   readonly roles: readonly MembershipRole[];
   readonly isSuperAdmin: boolean;
   readonly userId: string;
-  /** Empty means the whole org, not "no branches" (§6). */
+  /** The union of every membership's branches. For display only; never scopes. */
   readonly branchIds: readonly string[];
   /**
-   * Branch scope per role, when the caller holds several memberships with
-   * different branches (D-075). A role listed here uses its own list; a role
-   * absent from it falls back to `branchIds`.
+   * Branch scope per role — the only thing that scopes a `branch` rule
+   * (D-075). A role mapped to `[]` reaches the whole org (§6: empty means the
+   * whole org, not "no branches"). A role **absent** from the map reaches no
+   * branch at all: fail closed.
    *
-   * Merging them was a privilege escalation: `warehouse` limited to branch B
-   * plus `branch_manager` limited to branch A merged to `[A, B]`, and the
-   * branch manager's rules then reached B. Scope belongs to the membership
-   * that granted it, not to the person.
+   * Merging memberships was a privilege escalation: `warehouse` limited to
+   * branch B plus `branch_manager` limited to branch A merged to `[A, B]`, and
+   * the branch manager's rules then reached B. Required rather than optional,
+   * because an optional field that falls back to the union is the same bug
+   * waiting for the first caller that forgets to pass it.
    */
-  readonly branchIdsByRole?: Readonly<Partial<Record<MembershipRole, readonly string[]>>>;
+  readonly branchIdsByRole: Readonly<Partial<Record<MembershipRole, readonly string[]>>>;
 }
 
-/** The branch list that bounds one role's `branch` rules. */
-function branchIdsFor(context: AbilityContext, role: MembershipRole): readonly string[] {
-  return context.branchIdsByRole?.[role] ?? context.branchIds;
+/**
+ * The branch list that bounds one role's `branch` rules, or null when the
+ * context says nothing about that role — which reaches no branch.
+ */
+function branchIdsFor(context: AbilityContext, role: MembershipRole): readonly string[] | null {
+  return context.branchIdsByRole[role] ?? null;
+}
+
+/** An `AbilityContext` scope map for roles that each reach the given branches. */
+export function uniformBranchScope(
+  roles: readonly MembershipRole[],
+  branchIds: readonly string[],
+): Partial<Record<MembershipRole, readonly string[]>> {
+  return Object.fromEntries(roles.map((role) => [role, [...branchIds]]));
 }
 
 /**
@@ -131,9 +144,12 @@ function scopeConditions(
     ];
   }
 
-  const branchIds = branchIdsFor(context, role);
-  if (scope === 'branch' && branchIds.length > 0) {
-    return [{ field: 'branchId', in: [...branchIds] }];
+  if (scope === 'branch') {
+    const branchIds = branchIdsFor(context, role);
+    // No entry for this role: an empty `in` list, which matches no row in
+    // CASL, in `rowInScope`, or in the SQL `scopeWhere` renders (`false`).
+    if (branchIds === null) return [{ field: 'branchId', in: [] }];
+    if (branchIds.length > 0) return [{ field: 'branchId', in: [...branchIds] }];
   }
 
   return 'all';

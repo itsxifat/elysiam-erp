@@ -83,6 +83,46 @@ export const COST_VALUED_APPROVAL_TYPES: readonly ApprovalType[] = [
   'stock_gain',
 ];
 
+/**
+ * Branch items (D-076): §6's "branch items under threshold" for a branch
+ * manager. Never auto-approved; under the threshold, with an amount the owning
+ * module derived, a branch manager of that branch may decide them. Equal to
+ * `CHECKER_TYPES.branch_manager`, which a test asserts.
+ */
+export const BRANCH_ITEM_APPROVAL_TYPES: readonly ApprovalType[] = [
+  'stock_write_off',
+  'stock_gain',
+  'closing_variance',
+];
+
+/**
+ * No money in the payload (D-078).
+ *
+ * `amount_poisha` is the amount a checker saw and approved; an executor must
+ * read that and nothing else. A payload carrying its own `amountPoisha` or
+ * `total_poisha` is a second amount that can differ from the approved one, and
+ * the executor that reads the wrong field pays it. So a payload may not name
+ * one, at any depth. Owning modules add their own per-type payload schema.
+ */
+const MONEY_KEY = /poisha|amount/i;
+
+function moneyKeyIn(value: unknown, path: string): string | null {
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      const found = moneyKeyIn(entry, `${path}[${String(index)}]`);
+      if (found !== null) return found;
+    }
+    return null;
+  }
+  if (typeof value !== 'object' || value === null) return null;
+  for (const [key, entry] of Object.entries(value)) {
+    if (MONEY_KEY.test(key)) return `${path}.${key}`;
+    const found = moneyKeyIn(entry, `${path}.${key}`);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
 /** The range of a PostgreSQL `bigint`, which is where every `*_poisha` lands. */
 const BIGINT_MIN = -(2n ** 63n);
 const BIGINT_MAX = 2n ** 63n - 1n;
@@ -135,6 +175,17 @@ export const approvalRequestSchema = z
         path: ['amountPoisha'],
         message: `A ${value.type} request needs an amount.`,
       });
+    }
+    const moneyKey = moneyKeyIn(value.payload, 'payload');
+    if (moneyKey !== null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['payload'],
+        message: `${moneyKey}: the amount belongs in amountPoisha, not in the payload.`,
+      });
+    }
+    if (JSON.stringify(value.payload).length > 8_000) {
+      context.addIssue({ code: 'custom', path: ['payload'], message: 'The payload is too large.' });
     }
   });
 export type ApprovalRequestInput = z.infer<typeof approvalRequestSchema>;

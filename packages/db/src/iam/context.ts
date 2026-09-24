@@ -41,7 +41,7 @@ export interface RequestContext {
    * branch B widen `branch_manager` at branch A to both. A role with no
    * branches maps to `[]` — the whole org, as above.
    */
-  readonly branchIdsByRole?: Readonly<Partial<Record<MembershipRole, readonly string[]>>>;
+  readonly branchIdsByRole: Readonly<Partial<Record<MembershipRole, readonly string[]>>>;
   readonly requestId: string;
 }
 
@@ -146,6 +146,7 @@ export async function resolveContext(input: {
       orgId: input.orgId,
       roles: ['org_admin'],
       branchIds: [],
+      branchIdsByRole: { org_admin: [] },
       requestId: input.requestId,
     };
   }

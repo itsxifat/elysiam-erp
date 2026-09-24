@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   APPROVAL_TYPES,
+  BRANCH_ITEM_APPROVAL_TYPES,
   BRANCH_TIER_CHECKERS,
   canDecideType,
   canReadCost,
@@ -16,9 +17,12 @@ import {
   COST_VALUED_APPROVAL_TYPES,
   NEVER_AUTO_APPROVE_TYPES,
   NO_AMOUNT_APPROVAL_TYPES,
+  REQUESTER_TYPES,
   rowInScope,
   scopeFilterFor,
   SERVER_DERIVED_AMOUNT_TYPES,
+  type ScopeCondition,
+  type ScopeFilter,
 } from '@elysium/contracts';
 import { canDecide, requiresApproval, type Threshold } from '@elysium/domain';
 import { withOrg, type Tx } from '@elysium/db';
@@ -26,7 +30,7 @@ import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
-import { assertInScope, scopeOf, scopeWhere } from '../../platform/auth/scope.js';
+import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 
 /**
@@ -65,6 +69,8 @@ export interface ApprovalRequestRow {
   readonly amountPoisha: string | null;
   /** True when this caller may not see a cost-valued amount (invariant 5). */
   readonly amountWithheld: boolean;
+  /** For a `threshold_change`: which type, from what, to what (final pass W2). */
+  readonly thresholdChange: ThresholdChangeTerms | null;
   readonly decidedBy: string | null;
 }
 
@@ -85,6 +91,28 @@ function pgCode(error: unknown): string | undefined {
     if (typeof code === 'string') return code;
   }
   return undefined;
+}
+
+/**
+ * What a `threshold_change` would do, for the checker deciding it (final pass
+ * W2). The row has no amount, so without this the checker approved blind.
+ */
+export interface ThresholdChangeTerms {
+  readonly targetType: string;
+  readonly fromPoisha: string | null;
+  readonly toPoisha: string;
+}
+
+function thresholdChangeTerms(
+  type: ApprovalType,
+  payload: Record<string, unknown>,
+): ThresholdChangeTerms | null {
+  if (type !== 'threshold_change') return null;
+  const target = payload.type;
+  const to = payload.thresholdPoisha;
+  const from = payload.previousPoisha;
+  if (typeof target !== 'string' || typeof to !== 'string') return null;
+  return { targetType: target, fromPoisha: typeof from === 'string' ? from : null, toPoisha: to };
 }
 
 function magnitude(amount: bigint): bigint {
@@ -134,6 +162,8 @@ export class ApprovalsService {
    */
   private alwaysRequired(type: ApprovalType, amountDerivedByServer: boolean): boolean {
     if (NEVER_AUTO_APPROVE_TYPES.includes(type)) return true;
+    // Branch items go to a branch-tier checker, never auto-approved (D-076).
+    if (BRANCH_ITEM_APPROVAL_TYPES.includes(type)) return true;
     return SERVER_DERIVED_AMOUNT_TYPES.includes(type) && !amountDerivedByServer;
   }
 
@@ -201,7 +231,7 @@ export class ApprovalsService {
       );
     }
 
-    const branchId = this.branchForRequest(input.request, input.branchId, context.userId);
+    const branchId = this.requesterBranch(context, input.type, input.branchId, input.request);
     const events: DomainEvent[] = [];
 
     try {
@@ -219,7 +249,7 @@ export class ApprovalsService {
         const rows = await tx.execute<{ id: string }>(sql`
             insert into approvals.approval_requests
               (org_id, type, status, requested_by, branch_id, amount_poisha, threshold_poisha,
-               payload, reason, decided_at)
+               amount_derived_by_server, payload, reason, decided_at)
             values (
               ${context.orgId},
               ${input.type}::approvals.approval_type,
@@ -228,6 +258,7 @@ export class ApprovalsService {
               ${branchId}::uuid,
               ${input.amountPoisha === null ? null : input.amountPoisha.toString()},
               ${threshold === undefined ? null : threshold.thresholdPoisha.toString()},
+              ${input.amountDerivedByServer ?? false},
               ${JSON.stringify(input.payload ?? {})}::jsonb,
               ${input.reason ?? null},
               ${required ? null : sql`now()`}
@@ -253,6 +284,8 @@ export class ApprovalsService {
             amountPoisha: input.amountPoisha?.toString() ?? null,
             // What decided "needs a second person", as it stood (D-073).
             thresholdPoisha: threshold?.thresholdPoisha.toString() ?? null,
+            // Typed by a person, or computed by the owning module (D-072).
+            amountDerivedByServer: input.amountDerivedByServer ?? false,
             required,
             reason: input.reason ?? null,
             // The payload is the *intent* — what will be executed once this
@@ -300,24 +333,55 @@ export class ApprovalsService {
   }
 
   /**
-   * The branch a request is about, checked against the requester's scope.
+   * The branches this caller may raise *this type* for (C-1, final ledger pass).
    *
-   * A branch-scoped requester (a branch manager with branches assigned) may
-   * only raise requests for their own branches, and when they name none and
-   * hold exactly one, it is theirs. An org-wide requester may name any branch
-   * in the org, or none for an org-level action. The composite foreign key is
-   * what stops a branch from another org being named at all (D-047).
-   *
-   * No HTTP request means a system caller — a job — which has no role scope.
+   * Type rights and branch scope must come from the **same** role. The route's
+   * scope is the union over all the caller's roles, so a branch manager at A
+   * who is also warehouse (org-wide `request`) could raise a wallet
+   * adjustment — a branch manager's type — for branch B or for no branch at
+   * all, and have it auto-approved. So the filter here is the union, over only
+   * the roles whose REQUESTER_TYPES include this type, of each role's own
+   * `request ApprovalRequest` scope.
    */
-  private branchForRequest(
-    request: AuditableRequest | undefined,
-    requested: string | undefined,
-    userId: string,
-  ): string | null {
-    if (request === undefined) return requested ?? null;
+  private requesterFilter(context: ActiveContext, type: ApprovalType): ScopeFilter {
+    if (context.isSuperAdmin) return { kind: 'all' };
 
-    const filter = scopeOf(request);
+    const anyOf: ScopeCondition[] = [];
+    for (const role of context.roles) {
+      if (!(REQUESTER_TYPES[role] ?? []).includes(type)) continue;
+      const filter = scopeFilterFor(
+        {
+          roles: [role],
+          isSuperAdmin: false,
+          userId: context.userId,
+          branchIds: context.branchIds,
+          branchIdsByRole: context.branchIdsByRole,
+        },
+        'request',
+        'ApprovalRequest',
+      );
+      if (filter.kind === 'all') return filter;
+      if (filter.kind === 'some') anyOf.push(...filter.anyOf);
+    }
+    return anyOf.length === 0 ? { kind: 'none' } : { kind: 'some', anyOf };
+  }
+
+  /**
+   * The branch a request is about, checked against `requesterFilter`.
+   *
+   * A branch-scoped requester may only raise this type for their own branches
+   * — never for no branch, which would make it an org-level request — and when
+   * they name none and hold exactly one, it is theirs. An org-wide requester
+   * may name any branch in the org, or none. The composite foreign key stops a
+   * branch from another org being named at all (D-047).
+   */
+  private requesterBranch(
+    context: ActiveContext,
+    type: ApprovalType,
+    requested: string | undefined,
+    request: AuditableRequest | undefined,
+  ): string | null {
+    const filter = this.requesterFilter(context, type);
     let branchId = requested ?? null;
 
     if (branchId === null && filter.kind === 'some') {
@@ -327,15 +391,15 @@ export class ApprovalsService {
       if (branches.length === 1) branchId = branches[0] ?? null;
     }
 
-    // A request is always the requester's own, so `createdBy` is them; the
-    // branch is what a branch-scoped requester can get wrong.
-    try {
-      assertInScope(request, { branchId, createdBy: userId });
-    } catch {
+    if (!rowInScope(filter, { branchId, createdBy: context.userId })) {
       throw new ForbiddenException(
-        'You can only raise requests for your own branches. Name one of them as branchId.',
+        'You can only raise this request for your own branches. Name one of them as branchId.',
       );
     }
+
+    // The route's own scope is a superset, so this cannot refuse; it records
+    // that the handler applied row scope (D-061).
+    if (request !== undefined) assertInScope(request, { branchId, createdBy: context.userId });
     return branchId;
   }
 
@@ -359,9 +423,11 @@ export class ApprovalsService {
         type: ApprovalType;
         amount_poisha: string | null;
         threshold_poisha: string | null;
+        amount_derived_by_server: boolean;
         payload: Record<string, unknown>;
       }>(sql`
-        select id, status, requested_by, branch_id, type, amount_poisha, threshold_poisha, payload
+        select id, status, requested_by, branch_id, type, amount_poisha, threshold_poisha,
+               amount_derived_by_server, payload
         from approvals.approval_requests
         where id = ${input.id}
         for update
@@ -389,6 +455,8 @@ export class ApprovalsService {
       }
 
       if (tier === 'branch') await this.assertBranchTier(tx, context, row);
+
+      if (!context.isSuperAdmin) await this.assertNotGrantedByRequester(tx, context, row);
 
       const verdict = canDecide({
         requestedBy: row.requested_by,
@@ -431,6 +499,7 @@ export class ApprovalsService {
       // An approved threshold relaxation takes effect now, in the same
       // transaction as the decision that authorised it (D-073).
       if (row.type === 'threshold_change' && input.decision === 'approved') {
+        await this.assertThresholdUnchanged(tx, context, row.payload);
         await this.applyThreshold(tx, context, row.payload, input.id);
       }
 
@@ -470,8 +539,17 @@ export class ApprovalsService {
       readonly branch_id: string | null;
       readonly amount_poisha: string | null;
       readonly threshold_poisha: string | null;
+      readonly amount_derived_by_server: boolean;
     },
   ): Promise<void> {
+    // A typed amount cannot pick the checker (final pass W3, D-076): only an
+    // amount the owning module computed is trusted to say "under threshold".
+    if (!row.amount_derived_by_server) {
+      throw new ForbiddenException(
+        'A branch manager can only decide a request whose amount the system derived. This one needs an org-level checker.',
+      );
+    }
+
     const branchTierRoles = context.roles.filter((role) => BRANCH_TIER_CHECKERS.includes(role));
     const filter = scopeFilterFor(
       {
@@ -479,9 +557,7 @@ export class ApprovalsService {
         isSuperAdmin: false,
         userId: context.userId,
         branchIds: context.branchIds,
-        ...(context.branchIdsByRole === undefined
-          ? {}
-          : { branchIdsByRole: context.branchIdsByRole }),
+        branchIdsByRole: context.branchIdsByRole,
       },
       'approve',
       'ApprovalRequest',
@@ -511,6 +587,139 @@ export class ApprovalsService {
         'This request is at or above the threshold a branch manager may approve. It needs an org-level checker.',
       );
     }
+  }
+
+  /**
+   * Nobody approves for whoever granted them the power to (D-077).
+   *
+   * Until M16 emails invites, `POST /v1/users` hands the new user's invite
+   * token to the admin who created them — who can therefore set that user's
+   * password and act as them. An org admin who mints a second "org admin" has
+   * minted a puppet checker. So a checker may not decide a request raised by
+   * anyone in the grant lineage of their memberships in this org: whoever
+   * granted them, whoever granted that person, and so on. Transitive, because
+   * X → Y → Z is the same puppet one step removed.
+   */
+  private async assertNotGrantedByRequester(
+    tx: Tx,
+    context: ActiveContext,
+    row: { readonly requested_by: string },
+  ): Promise<void> {
+    const found = await tx.execute<{ hit: number }>(sql`
+      with recursive lineage (user_id, depth) as (
+        select granted_by, 1
+        from iam.memberships
+        where org_id = ${context.orgId} and user_id = ${context.userId}
+          and is_active and granted_by is not null
+        union
+        select m.granted_by, l.depth + 1
+        from iam.memberships m
+        join lineage l on m.user_id = l.user_id
+        where m.org_id = ${context.orgId} and m.granted_by is not null and l.depth < 16
+      )
+      select 1 as hit from lineage where user_id = ${row.requested_by} limit 1
+    `);
+
+    if (found.length > 0) {
+      throw new ForbiddenException(
+        'You cannot decide a request raised by the person who granted you your role, directly or through someone they granted.',
+      );
+    }
+  }
+
+  /**
+   * An approved threshold change applies only over the value it was proposed
+   * against (final pass W1).
+   *
+   * Otherwise: raise to X is proposed, the threshold is lowered meanwhile, and
+   * approving the raise silently reverts the lowering. The row is locked so a
+   * concurrent change waits, and a mismatch is a 409 — propose again.
+   */
+  private async assertThresholdUnchanged(
+    tx: Tx,
+    context: ActiveContext,
+    change: Record<string, unknown>,
+  ): Promise<void> {
+    const type = change.type;
+    if (typeof type !== 'string') {
+      throw new ConflictException('This threshold change is malformed and cannot be applied.');
+    }
+    const [current] = await tx.execute<{ threshold_poisha: string }>(sql`
+      select threshold_poisha::text as threshold_poisha from approvals.approval_thresholds
+      where org_id = ${context.orgId} and type = ${type}::approvals.approval_type
+      for update
+    `);
+    const proposedOver = change.previousPoisha ?? null;
+    if ((current?.threshold_poisha ?? null) !== proposedOver) {
+      throw new ConflictException(
+        'The threshold has changed since this was proposed. Propose the change again.',
+      );
+    }
+  }
+
+  /**
+   * One request, as a checker decides it (final pass W2): its frozen terms,
+   * including what a threshold change would do. Scoped and filtered by
+   * relevance exactly like the list, and a WAC-valued amount is withheld from
+   * a caller who cannot read cost (D-074).
+   */
+  async get(context: ActiveContext, request: object, id: string) {
+    const scope = scopeWhere(request, {
+      createdBy: sql`requested_by`,
+      branchId: sql`branch_id`,
+    });
+
+    const rows = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
+      tx.execute<{
+        id: string;
+        type: ApprovalType;
+        status: ApprovalStatus;
+        requested_by: string;
+        branch_id: string | null;
+        amount_poisha: string | null;
+        amount_derived_by_server: boolean;
+        threshold_poisha: string | null;
+        payload: Record<string, unknown>;
+        reason: string | null;
+        decided_by: string | null;
+        decision_note: string | null;
+      }>(sql`
+        select id, type, status, requested_by, branch_id, amount_poisha, amount_derived_by_server,
+               threshold_poisha, payload, reason, decided_by, decision_note
+        from approvals.approval_requests
+        where id = ${id} and ${scope}
+      `),
+    );
+
+    const row = rows[0];
+    const relevant =
+      row !== undefined &&
+      (row.requested_by === context.userId ||
+        context.isSuperAdmin ||
+        context.roles.some((role) => (CHECKER_TYPES[role] ?? []).includes(row.type)));
+    if (row === undefined || !relevant) throw new NotFoundException('No such approval request.');
+
+    const withheld =
+      !canReadCost(context.roles, context.isSuperAdmin) &&
+      COST_VALUED_APPROVAL_TYPES.includes(row.type);
+
+    return {
+      id: row.id,
+      type: row.type,
+      status: row.status,
+      requestedBy: row.requested_by,
+      branchId: row.branch_id,
+      amountPoisha: withheld ? null : row.amount_poisha,
+      amountWithheld: withheld,
+      amountDerivedByServer: row.amount_derived_by_server,
+      thresholdPoisha: withheld ? null : row.threshold_poisha,
+      thresholdChange: thresholdChangeTerms(row.type, row.payload),
+      // The serializer strips any cost-named field in here for a non-cost role.
+      payload: row.type === 'threshold_change' ? {} : row.payload,
+      reason: row.reason,
+      decidedBy: row.decided_by,
+      decisionNote: row.decision_note,
+    };
   }
 
   /**
@@ -559,8 +768,11 @@ export class ApprovalsService {
         branch_id: string | null;
         amount_poisha: string | null;
         decided_by: string | null;
+        payload: Record<string, unknown>;
       }>(sql`
-        select id, type, status, requested_by, branch_id, amount_poisha, decided_by
+        select id, type, status, requested_by, branch_id, amount_poisha, decided_by,
+               case when type::text = 'threshold_change' then payload else '{}'::jsonb end
+                 as payload
         from approvals.approval_requests
         where ${scope}
           and (requested_by = ${context.userId} or ${relevant})
@@ -578,6 +790,7 @@ export class ApprovalsService {
           branchId: row.branch_id,
           amountPoisha: withheld ? null : row.amount_poisha,
           amountWithheld: withheld,
+          thresholdChange: thresholdChangeTerms(row.type, row.payload),
           decidedBy: row.decided_by,
         };
       });
@@ -617,9 +830,17 @@ export class ApprovalsService {
     const events: DomainEvent[] = [];
 
     const result = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-      const previous = (await this.thresholdsFor(tx, context.orgId)).find(
-        (entry) => entry.type === input.type,
-      );
+      // Locked, so a concurrent change to the same type waits rather than
+      // deciding "lower" or "raise" against a value that is about to change
+      // (final pass note 2). A first threshold has no row to lock; it is a
+      // relaxation and goes through approval, which re-checks under a lock.
+      const [locked] = await tx.execute<{ threshold_poisha: string }>(sql`
+        select threshold_poisha::text as threshold_poisha from approvals.approval_thresholds
+        where org_id = ${context.orgId} and type = ${input.type}::approvals.approval_type
+        for update
+      `);
+      const previous =
+        locked === undefined ? undefined : { thresholdPoisha: BigInt(locked.threshold_poisha) };
 
       if (previous !== undefined && input.thresholdPoisha <= previous.thresholdPoisha) {
         await this.applyThreshold(

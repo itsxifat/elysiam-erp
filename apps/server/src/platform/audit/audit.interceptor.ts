@@ -83,8 +83,11 @@ export class AuditInterceptor implements NestInterceptor {
           // The one failure that is still a change: the scope backstop fires
           // after the handler has committed (D-061). The write happened, so it
           // is recorded — flagged, with no response body to record.
+          // Written even when the service already audited the mutation: that
+          // entry says what changed, this one says the change escaped its
+          // scope check, and the second fact is the one an investigator needs.
           if (error instanceof ScopeNotAppliedError) {
-            void this.write(typed, context, { scopeNotApplied: true });
+            void this.write(typed, context, { scopeNotApplied: true }, true);
           }
         },
       }),
@@ -99,8 +102,9 @@ export class AuditInterceptor implements NestInterceptor {
     },
     context: ExecutionContext,
     body: unknown,
+    evenIfAudited = false,
   ): Promise<void> {
-    if (request[ALREADY_AUDITED] === true) return;
+    if (request[ALREADY_AUDITED] === true && !evenIfAudited) return;
 
     const requestContext = request.context;
     const orgId = requestContext?.orgId;

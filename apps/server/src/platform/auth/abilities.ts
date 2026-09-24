@@ -192,9 +192,7 @@ export class AbilityGuard implements CanActivate {
       userId: requestContext.userId,
       branchIds: requestContext.branchIds,
       // Per role, never merged (D-075).
-      ...(requestContext.branchIdsByRole === undefined
-        ? {}
-        : { branchIdsByRole: requestContext.branchIdsByRole }),
+      branchIdsByRole: requestContext.branchIdsByRole,
     };
     const ability = defineAbilityFor(abilityContext);
 
