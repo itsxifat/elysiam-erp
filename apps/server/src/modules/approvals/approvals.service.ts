@@ -5,7 +5,21 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { APPROVAL_TYPES, canDecideType, CHECKER_TYPES, checkerTier } from '@elysium/contracts';
+import {
+  APPROVAL_TYPES,
+  BRANCH_TIER_CHECKERS,
+  canDecideType,
+  canReadCost,
+  canRequestType,
+  CHECKER_TYPES,
+  checkerTier,
+  COST_VALUED_APPROVAL_TYPES,
+  NEVER_AUTO_APPROVE_TYPES,
+  NO_AMOUNT_APPROVAL_TYPES,
+  rowInScope,
+  scopeFilterFor,
+  SERVER_DERIVED_AMOUNT_TYPES,
+} from '@elysium/contracts';
 import { canDecide, requiresApproval, type Threshold } from '@elysium/domain';
 import { withOrg, type Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
@@ -22,22 +36,19 @@ import type { ActiveContext } from '../../platform/http/context.js';
  * in three places on purpose, weakest to strongest:
  *
  * 1. Here, so the API can explain itself.
- * 2. The `approval_requests_maker_is_not_checker` CHECK constraint, which is
- *    what actually holds. A service can be refactored, called from a job, or
- *    bypassed by the next module; a constraint cannot.
- * 3. The permission matrix, which decides who may `approve` at all.
+ * 2. The database: `approval_requests_maker_is_not_checker`, the
+ *    never-auto-approved CHECK, and the trigger that fixes a request's terms
+ *    from the moment it is raised (migrations 0009–0011). A service can be
+ *    refactored, called from a job, or bypassed by the next module; those
+ *    cannot.
+ * 3. The permission matrix plus the per-type lists (`REQUESTER_TYPES`,
+ *    `CHECKER_TYPES`), which decide who may raise and who may decide what.
  *
- * Only the second is load-bearing. The other two exist so that hitting it is
- * rare and legible rather than a raw constraint violation in a log.
- *
- * **Below the threshold is auto-approved (D-068).** §6 routes "supplier
- * payments *above* the threshold" through approvals, and `requiresApproval`
- * already answered "no" below it — but the request used to be stored `pending`
- * anyway, so below and above differed only in a boolean nobody acted on. Now a
- * below-threshold request is written `auto_approved`: recorded, audited, both
- * events emitted, final the moment it is written, and never in a checker's
- * queue. At or above — or with no threshold configured, which fails closed —
- * it waits for a second person.
+ * **Below the threshold is auto-approved (D-068)**, but only where the
+ * threshold can be trusted to mean something: never for a control type
+ * (D-071), never for an amount the requester typed that the owning module
+ * should have derived (D-072), and only against a threshold that a second org
+ * admin agreed to if it was ever relaxed (D-073).
  */
 
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
@@ -50,7 +61,10 @@ export interface ApprovalRequestRow {
   readonly status: ApprovalStatus;
   readonly requestedBy: string;
   readonly branchId: string | null;
+  /** Null when the type has no amount, or when it is withheld (D-074). */
   readonly amountPoisha: string | null;
+  /** True when this caller may not see a cost-valued amount (invariant 5). */
+  readonly amountWithheld: boolean;
   readonly decidedBy: string | null;
 }
 
@@ -61,6 +75,9 @@ export interface DomainEvent {
   readonly payload: Record<string, unknown>;
 }
 
+/** How many events are kept in memory until M04 replaces this (D-067). */
+const RETAINED_EVENTS = 500;
+
 /** The PostgreSQL error a row fails with, found through Drizzle's wrapper. */
 function pgCode(error: unknown): string | undefined {
   for (let current = error; current instanceof Error; current = current.cause) {
@@ -70,9 +87,13 @@ function pgCode(error: unknown): string | undefined {
   return undefined;
 }
 
+function magnitude(amount: bigint): bigint {
+  return amount < 0n ? -amount : amount;
+}
+
 @Injectable()
 export class ApprovalsService {
-  /** Collected in memory until M04's outbox (D-067). See `emit` below. */
+  /** Collected in memory until M04's outbox (D-067). See `publish` below. */
   readonly emitted: DomainEvent[] = [];
 
   constructor(private readonly audit: AuditService) {}
@@ -80,15 +101,17 @@ export class ApprovalsService {
   /**
    * Events, held rather than published (D-067).
    *
-   * M04 adds the transactional outbox and Socket.IO; until then a request
-   * emitting an event that nothing delivers would be a lie in the code. This
-   * records them so §19's contract — `approval.requested` and
-   * `approval.decided` — is exercised and asserted now, and M04 replaces the
-   * body rather than adding the call sites. Emitted inside the transaction
-   * callback, after the writes, which is where `enqueue(tx, …)` will go.
+   * Each method collects its events in a local list and hands them here only
+   * after its transaction has committed, so a rolled-back request announces
+   * nothing — the property the M04 outbox gets from `enqueue(tx, …)`. Bounded,
+   * because a list that only ever grows is a memory leak in a long-lived API
+   * process. M04 replaces this body, not the call sites.
    */
-  private emit(event: DomainEvent): void {
-    this.emitted.push(event);
+  private publish(events: readonly DomainEvent[]): void {
+    this.emitted.push(...events);
+    if (this.emitted.length > RETAINED_EVENTS) {
+      this.emitted.splice(0, this.emitted.length - RETAINED_EVENTS);
+    }
   }
 
   private async thresholdsFor(tx: Tx, orgId: string): Promise<Threshold[]> {
@@ -103,6 +126,18 @@ export class ApprovalsService {
   }
 
   /**
+   * Does no threshold apply to this request, whatever it says?
+   *
+   * Control types never (D-071), and a server-derived amount typed by the
+   * requester never (D-072) — only the owning module, passing
+   * `amountDerivedByServer`, lets the threshold decide for those.
+   */
+  private alwaysRequired(type: ApprovalType, amountDerivedByServer: boolean): boolean {
+    if (NEVER_AUTO_APPROVE_TYPES.includes(type)) return true;
+    return SERVER_DERIVED_AMOUNT_TYPES.includes(type) && !amountDerivedByServer;
+  }
+
+  /**
    * Would this action need a second person?
    *
    * Exposed so a caller can ask before doing the work — the preview and the
@@ -111,15 +146,24 @@ export class ApprovalsService {
    */
   async isRequired(
     context: ActiveContext,
-    input: { type: ApprovalType; amountPoisha: bigint | null },
+    input: { type: ApprovalType; amountPoisha: bigint | null; amountDerivedByServer?: boolean },
   ): Promise<boolean> {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
       requiresApproval({
         type: input.type,
         amountPoisha: input.amountPoisha,
         thresholds: await this.thresholdsFor(tx, context.orgId),
+        alwaysRequired: this.alwaysRequired(input.type, input.amountDerivedByServer ?? false),
       }),
     );
+  }
+
+  /** An event payload every recipient may see: no cost-valued amount (D-074). */
+  private eventAmount(type: ApprovalType, amount: bigint | null): Record<string, unknown> {
+    if (COST_VALUED_APPROVAL_TYPES.includes(type)) {
+      return { amountPoisha: null, amountWithheld: true };
+    }
+    return { amountPoisha: amount?.toString() ?? null };
   }
 
   async request(
@@ -130,38 +174,66 @@ export class ApprovalsService {
       payload?: Record<string, unknown>;
       reason?: string;
       branchId?: string;
+      /**
+       * Set only by the module that owns the type and computed the amount
+       * itself (M07 WAC, M19 payroll…). The generic HTTP route never sets it.
+       */
+      amountDerivedByServer?: boolean;
       /** The HTTP request: carries the caller's scope, and tells the audit net to stand down. */
       request?: AuditableRequest;
     },
   ): Promise<{ id: string; required: boolean; status: ApprovalStatus }> {
+    // Who may raise what (D-072). `threshold_change` is never raised here.
+    if (!canRequestType(context.roles, input.type, context.isSuperAdmin)) {
+      throw new ForbiddenException(
+        `Your role cannot raise a ${input.type} request in this organization.`,
+      );
+    }
+
+    // The schema checks this at the edge; a job calling the service directly
+    // does not pass through the edge.
+    const amountless = NO_AMOUNT_APPROVAL_TYPES.includes(input.type);
+    if (amountless !== (input.amountPoisha === null)) {
+      throw new BadRequestException(
+        amountless
+          ? `A ${input.type} request carries no amount.`
+          : `A ${input.type} request needs an amount.`,
+      );
+    }
+
     const branchId = this.branchForRequest(input.request, input.branchId, context.userId);
+    const events: DomainEvent[] = [];
 
     try {
-      return await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const result = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const thresholds = await this.thresholdsFor(tx, context.orgId);
+        const threshold = thresholds.find((entry) => entry.type === input.type);
         const required = requiresApproval({
           type: input.type,
           amountPoisha: input.amountPoisha,
           thresholds,
+          alwaysRequired: this.alwaysRequired(input.type, input.amountDerivedByServer ?? false),
         });
         const status: ApprovalStatus = required ? 'pending' : 'auto_approved';
 
         const rows = await tx.execute<{ id: string }>(sql`
-          insert into approvals.approval_requests
-            (org_id, type, status, requested_by, branch_id, amount_poisha, payload, reason, decided_at)
-          values (
-            ${context.orgId},
-            ${input.type}::approvals.approval_type,
-            ${status}::approvals.approval_status,
-            ${context.userId},
-            ${branchId}::uuid,
-            ${input.amountPoisha === null ? null : input.amountPoisha.toString()},
-            ${JSON.stringify(input.payload ?? {})}::jsonb,
-            ${input.reason ?? null},
-            ${required ? null : sql`now()`}
-          )
-          returning id
-        `);
+            insert into approvals.approval_requests
+              (org_id, type, status, requested_by, branch_id, amount_poisha, threshold_poisha,
+               payload, reason, decided_at)
+            values (
+              ${context.orgId},
+              ${input.type}::approvals.approval_type,
+              ${status}::approvals.approval_status,
+              ${context.userId},
+              ${branchId}::uuid,
+              ${input.amountPoisha === null ? null : input.amountPoisha.toString()},
+              ${threshold === undefined ? null : threshold.thresholdPoisha.toString()},
+              ${JSON.stringify(input.payload ?? {})}::jsonb,
+              ${input.reason ?? null},
+              ${required ? null : sql`now()`}
+            )
+            returning id
+          `);
 
         const id = rows[0]?.id;
         if (id === undefined) throw new ConflictException('Could not record the request.');
@@ -179,37 +251,35 @@ export class ApprovalsService {
             status,
             branchId,
             amountPoisha: input.amountPoisha?.toString() ?? null,
+            // What decided "needs a second person", as it stood (D-073).
+            thresholdPoisha: threshold?.thresholdPoisha.toString() ?? null,
             required,
             reason: input.reason ?? null,
-            // The payload is the *intent* — what will be executed once this is
-            // approved — so the log is not much use without it. `AuditService`
-            // redacts on the way in, which is why this can be passed through
-            // rather than each caller remembering to scrub it.
+            // The payload is the *intent* — what will be executed once this
+            // is approved. `AuditService` redacts on the way in.
             payload: input.payload ?? {},
           },
           requestId: context.requestId,
           ...(input.request === undefined ? {} : { request: input.request }),
         });
 
-        // §19: `approval.requested` goes to every eligible checker. Ids and
-        // non-sensitive fields only; the amount is visible to every checker.
-        this.emit({
+        // §19: `approval.requested` goes to every eligible checker.
+        events.push({
           name: 'approval.requested',
           orgId: context.orgId,
           payload: {
             id,
             type: input.type,
-            amountPoisha: input.amountPoisha?.toString() ?? null,
+            ...this.eventAmount(input.type, input.amountPoisha),
             required,
             status,
           },
         });
 
         // Below the threshold the request is decided the moment it exists, so
-        // the requester hears about the decision exactly as they would from a
-        // checker — the client does not need a second code path.
+        // the requester hears about it exactly as they would from a checker.
         if (!required) {
-          this.emit({
+          events.push({
             name: 'approval.decided',
             orgId: context.orgId,
             payload: { id, decision: 'auto_approved', requestedBy: context.userId },
@@ -218,6 +288,9 @@ export class ApprovalsService {
 
         return { id, required, status };
       });
+
+      this.publish(events);
+      return result;
     } catch (error) {
       // The composite FK: a branch that does not exist in this org. The same
       // answer whether it exists elsewhere or nowhere, so it is not an oracle.
@@ -275,7 +348,9 @@ export class ApprovalsService {
       request: AuditableRequest;
     },
   ): Promise<{ id: string; status: ApprovalStatus }> {
-    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+    const events: DomainEvent[] = [];
+
+    const result = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const rows = await tx.execute<{
         id: string;
         status: ApprovalStatus;
@@ -283,8 +358,10 @@ export class ApprovalsService {
         branch_id: string | null;
         type: ApprovalType;
         amount_poisha: string | null;
+        threshold_poisha: string | null;
+        payload: Record<string, unknown>;
       }>(sql`
-        select id, status, requested_by, branch_id, type, amount_poisha
+        select id, status, requested_by, branch_id, type, amount_poisha, threshold_poisha, payload
         from approvals.approval_requests
         where id = ${input.id}
         for update
@@ -301,13 +378,8 @@ export class ApprovalsService {
 
       /*
        * What you may check, as distinct from whether you are a checker (§6).
-       *
-       * The ability gets you to this method; this decides whether this *type*
-       * is yours to decide. Without it, one `approve ApprovalRequest` grant let
-       * a branch_manager approve a payroll run, a reseller payout batch or a
-       * period reopen — reproduced, 201. Checked before the maker≠checker rule
-       * so a checker who may not touch this type is told that, rather than
-       * being told they raised it.
+       * Checked before maker≠checker so a checker who may not touch this type
+       * is told that, rather than being told they raised it.
        */
       const tier = checkerTier(context.roles, row.type, context.isSuperAdmin);
       if (tier === null || !canDecideType(context.roles, row.type, context.isSuperAdmin)) {
@@ -316,35 +388,7 @@ export class ApprovalsService {
         );
       }
 
-      /*
-       * §6: a branch manager checks "branch items **under threshold**".
-       *
-       * So a checker whose only qualifying role is branch-tier may decide a
-       * request only when it is about a branch, and only when its amount is
-       * under the org's configured threshold for its type. No threshold, or no
-       * amount, means nothing is "under" it — fail closed, and the request
-       * waits for an org-level checker. Without this a showroom manager could
-       * approve any amount for any branch in the org.
-       */
-      if (tier === 'branch') {
-        if (row.branch_id === null) {
-          throw new ForbiddenException('A branch manager can only decide a branch request.');
-        }
-        const threshold = (await this.thresholdsFor(tx, context.orgId)).find(
-          (entry) => entry.type === row.type,
-        );
-        const amount = row.amount_poisha === null ? null : BigInt(row.amount_poisha);
-        const magnitude = amount === null ? null : amount < 0n ? -amount : amount;
-        if (
-          threshold === undefined ||
-          magnitude === null ||
-          magnitude >= threshold.thresholdPoisha
-        ) {
-          throw new ForbiddenException(
-            'This request is at or above the threshold a branch manager may approve. It needs an org-level checker.',
-          );
-        }
-      }
+      if (tier === 'branch') await this.assertBranchTier(tx, context, row);
 
       const verdict = canDecide({
         requestedBy: row.requested_by,
@@ -354,8 +398,7 @@ export class ApprovalsService {
 
       if (!verdict.ok) {
         // 403 for self-approval, 409 for an already-decided request: one is a
-        // permission answer and the other is a state answer, and a client that
-        // cannot tell them apart retries the wrong one.
+        // permission answer and the other is a state answer.
         if (row.requested_by === context.userId) {
           throw new ForbiddenException(verdict.reason);
         }
@@ -385,8 +428,14 @@ export class ApprovalsService {
         request: input.request,
       });
 
+      // An approved threshold relaxation takes effect now, in the same
+      // transaction as the decision that authorised it (D-073).
+      if (row.type === 'threshold_change' && input.decision === 'approved') {
+        await this.applyThreshold(tx, context, row.payload, input.id);
+      }
+
       // §19: `approval.decided` goes back to the requester.
-      this.emit({
+      events.push({
         name: 'approval.decided',
         orgId: context.orgId,
         payload: { id: input.id, decision: input.decision, requestedBy: row.requested_by },
@@ -394,6 +443,74 @@ export class ApprovalsService {
 
       return { id: input.id, status: input.decision };
     });
+
+    this.publish(events);
+    return result;
+  }
+
+  /**
+   * §6: a branch manager checks "branch items **under threshold**".
+   *
+   * Two conditions, both judged on the branch-tier roles alone:
+   *
+   * 1. **The branch is theirs.** Not the caller's scope unioned across roles:
+   *    `hr` + `branch_manager@A` has org-wide `approve` through hr, so the
+   *    union let them approve branch B's write-off — which hr may not check at
+   *    all and branch_manager may not check outside A (re-audit C2).
+   * 2. **The amount is under the threshold** — both the one captured when the
+   *    request was raised and the one configured now, so neither a stale nor a
+   *    freshly raised threshold widens it. No threshold, or no amount, means
+   *    nothing is "under": fail closed, wait for an org-level checker.
+   */
+  private async assertBranchTier(
+    tx: Tx,
+    context: ActiveContext,
+    row: {
+      readonly type: ApprovalType;
+      readonly branch_id: string | null;
+      readonly amount_poisha: string | null;
+      readonly threshold_poisha: string | null;
+    },
+  ): Promise<void> {
+    const branchTierRoles = context.roles.filter((role) => BRANCH_TIER_CHECKERS.includes(role));
+    const filter = scopeFilterFor(
+      {
+        roles: branchTierRoles,
+        isSuperAdmin: false,
+        userId: context.userId,
+        branchIds: context.branchIds,
+        ...(context.branchIdsByRole === undefined
+          ? {}
+          : { branchIdsByRole: context.branchIdsByRole }),
+      },
+      'approve',
+      'ApprovalRequest',
+    );
+
+    if (row.branch_id === null || !rowInScope(filter, { branchId: row.branch_id })) {
+      throw new ForbiddenException(
+        'A branch manager can only decide requests about their own branches.',
+      );
+    }
+
+    const current = (await this.thresholdsFor(tx, context.orgId)).find(
+      (entry) => entry.type === row.type,
+    );
+    const captured = row.threshold_poisha === null ? null : BigInt(row.threshold_poisha);
+    const amount = row.amount_poisha === null ? null : magnitude(BigInt(row.amount_poisha));
+
+    const under =
+      current !== undefined &&
+      captured !== null &&
+      amount !== null &&
+      amount < current.thresholdPoisha &&
+      amount < captured;
+
+    if (!under) {
+      throw new ForbiddenException(
+        'This request is at or above the threshold a branch manager may approve. It needs an org-level checker.',
+      );
+    }
   }
 
   /**
@@ -405,9 +522,10 @@ export class ApprovalsService {
    *    `read ApprovalRequest` — the whole org for org_admin, accounts and hr,
    *    their own branches for a branch manager.
    * 2. **Relevance**: within that, a checker sees what they may decide, and
-   *    everyone sees what they raised. Accounts does not need hr's payroll
-   *    runs in their queue, and hr has no business reading supplier payments
-   *    with amounts.
+   *    everyone sees what they raised (D-063).
+   *
+   * A cost-valued amount — a write-off at WAC — is withheld from a caller who
+   * cannot read cost (D-074, invariant 5).
    */
   async list(context: ActiveContext, request: object): Promise<ApprovalRequestRow[]> {
     const scope = scopeWhere(request, {
@@ -430,6 +548,8 @@ export class ApprovalsService {
             sql`, `,
           )})`;
 
+    const seesCost = canReadCost(context.roles, context.isSuperAdmin);
+
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const rows = await tx.execute<{
         id: string;
@@ -448,64 +568,176 @@ export class ApprovalsService {
         limit 100
       `);
 
-      return [...rows].map((row) => ({
-        id: row.id,
-        type: row.type,
-        status: row.status,
-        requestedBy: row.requested_by,
-        branchId: row.branch_id,
-        amountPoisha: row.amount_poisha,
-        decidedBy: row.decided_by,
-      }));
+      return [...rows].map((row) => {
+        const withheld = !seesCost && COST_VALUED_APPROVAL_TYPES.includes(row.type);
+        return {
+          id: row.id,
+          type: row.type,
+          status: row.status,
+          requestedBy: row.requested_by,
+          branchId: row.branch_id,
+          amountPoisha: withheld ? null : row.amount_poisha,
+          amountWithheld: withheld,
+          decidedBy: row.decided_by,
+        };
+      });
     });
   }
 
   /**
-   * Set an org's threshold for one action type.
+   * Set an org's threshold for one approval type (D-065, D-073).
    *
-   * Behind `update ApprovalThreshold`, which only org_admin holds (§6
-   * "settings"). A threshold decides whether maker-checker applies at all, so
-   * whoever sets it can exempt requests from a second person — which is why it
-   * is audited in the same transaction, with the old value alongside the new.
+   * **Tightening applies at once; relaxing needs a second org admin.** A
+   * threshold decides which requests skip the second person, so an org admin
+   * who could raise it could raise it, auto-approve their own request, and
+   * lower it again — maker-checker bypassed by the maker alone. So a raise —
+   * including the first threshold for a type, which relaxes "always checked"
+   * into "checked above X" — becomes a `threshold_change` request that another
+   * org admin (or super admin) must approve, and only takes effect then.
+   * Lowering one only ever asks for *more* checking, and applies immediately.
    */
   async setThreshold(
     context: ActiveContext,
     input: { type: ApprovalType; thresholdPoisha: bigint; request?: AuditableRequest },
-  ): Promise<{ type: ApprovalType; thresholdPoisha: string }> {
+  ): Promise<{
+    type: ApprovalType;
+    thresholdPoisha: string;
+    status: 'applied' | 'pending_approval';
+    approvalId?: string;
+  }> {
     if (input.thresholdPoisha < 0n) {
       throw new BadRequestException('A threshold cannot be negative.');
     }
+    if (NEVER_AUTO_APPROVE_TYPES.includes(input.type)) {
+      throw new BadRequestException(
+        'That approval type always needs a second person; it cannot have a threshold.',
+      );
+    }
 
-    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+    const events: DomainEvent[] = [];
+
+    const result = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const previous = (await this.thresholdsFor(tx, context.orgId)).find(
         (entry) => entry.type === input.type,
       );
 
+      if (previous !== undefined && input.thresholdPoisha <= previous.thresholdPoisha) {
+        await this.applyThreshold(
+          tx,
+          context,
+          { type: input.type, thresholdPoisha: input.thresholdPoisha.toString() },
+          null,
+          input.request,
+        );
+        return {
+          type: input.type,
+          thresholdPoisha: input.thresholdPoisha.toString(),
+          status: 'applied' as const,
+        };
+      }
+
+      const payload = {
+        type: input.type,
+        thresholdPoisha: input.thresholdPoisha.toString(),
+        previousPoisha: previous?.thresholdPoisha.toString() ?? null,
+      };
+
       const rows = await tx.execute<{ id: string }>(sql`
-        insert into approvals.approval_thresholds (org_id, type, threshold_poisha)
-        values (${context.orgId}, ${input.type}::approvals.approval_type, ${input.thresholdPoisha.toString()})
-        on conflict (org_id, type) do update
-          set threshold_poisha = excluded.threshold_poisha, updated_at = now()
+        insert into approvals.approval_requests (org_id, type, requested_by, payload, reason)
+        values (
+          ${context.orgId},
+          'threshold_change'::approvals.approval_type,
+          ${context.userId},
+          ${JSON.stringify(payload)}::jsonb,
+          ${`Relax the ${input.type} threshold`}
+        )
         returning id
       `);
+      const id = rows[0]?.id;
+      if (id === undefined) throw new ConflictException('Could not record the request.');
 
       await this.audit.record(tx, {
         orgId: context.orgId,
         actorUserId: context.userId,
-        operation: previous === undefined ? 'create' : 'update',
-        action: `approval.threshold_set:${input.type}`,
-        entityType: 'ApprovalThreshold',
-        entityId: rows[0]?.id ?? input.type,
-        before:
-          previous === undefined
-            ? null
-            : { type: input.type, thresholdPoisha: previous.thresholdPoisha.toString() },
-        after: { type: input.type, thresholdPoisha: input.thresholdPoisha.toString() },
+        operation: 'create',
+        action: 'approval.requested:threshold_change',
+        entityType: 'ApprovalRequest',
+        entityId: id,
+        before: null,
+        after: { status: 'pending', required: true, payload },
         requestId: context.requestId,
         ...(input.request === undefined ? {} : { request: input.request }),
       });
 
-      return { type: input.type, thresholdPoisha: input.thresholdPoisha.toString() };
+      events.push({
+        name: 'approval.requested',
+        orgId: context.orgId,
+        payload: {
+          id,
+          type: 'threshold_change',
+          amountPoisha: null,
+          required: true,
+          status: 'pending',
+        },
+      });
+
+      return {
+        type: input.type,
+        thresholdPoisha: input.thresholdPoisha.toString(),
+        status: 'pending_approval' as const,
+        approvalId: id,
+      };
+    });
+
+    this.publish(events);
+    return result;
+  }
+
+  /** Write a threshold and its audit row, in the caller's transaction. */
+  private async applyThreshold(
+    tx: Tx,
+    context: ActiveContext,
+    change: Record<string, unknown>,
+    approvalId: string | null,
+    request?: AuditableRequest,
+  ): Promise<void> {
+    const type = change.type;
+    const value = change.thresholdPoisha;
+    if (typeof type !== 'string' || typeof value !== 'string' || !/^\d+$/.test(value)) {
+      throw new ConflictException('This threshold change is malformed and cannot be applied.');
+    }
+
+    const previous = (await this.thresholdsFor(tx, context.orgId)).find(
+      (entry) => entry.type === type,
+    );
+
+    const rows = await tx.execute<{ id: string }>(sql`
+      insert into approvals.approval_thresholds (org_id, type, threshold_poisha)
+      values (${context.orgId}, ${type}::approvals.approval_type, ${value})
+      on conflict (org_id, type) do update
+        set threshold_poisha = excluded.threshold_poisha, updated_at = now()
+      returning id
+    `);
+
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: previous === undefined ? 'create' : 'update',
+      action: `approval.threshold_set:${type}`,
+      entityType: 'ApprovalThreshold',
+      entityId: rows[0]?.id ?? type,
+      before:
+        previous === undefined
+          ? null
+          : { type, thresholdPoisha: previous.thresholdPoisha.toString() },
+      after: {
+        type,
+        thresholdPoisha: value,
+        approvedBy: approvalId === null ? null : context.userId,
+        approvalId,
+      },
+      requestId: context.requestId,
+      ...(request === undefined ? {} : { request }),
     });
   }
 }

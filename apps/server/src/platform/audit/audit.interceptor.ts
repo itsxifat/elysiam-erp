@@ -7,6 +7,8 @@ import type { FastifyRequest } from 'fastify';
 import { tap, type Observable } from 'rxjs';
 
 import { ABILITY_KEY } from '../auth/abilities.js';
+import { ScopeNotAppliedError } from '../auth/scope.js';
+import { safeUrl } from '../logging/logger.js';
 import type { AuditService } from './audit.service.js';
 
 /**
@@ -77,6 +79,14 @@ export class AuditInterceptor implements NestInterceptor {
           // mixing the two makes "what happened to this row" unanswerable.
           void this.write(typed, context, body);
         },
+        error: (error: unknown) => {
+          // The one failure that is still a change: the scope backstop fires
+          // after the handler has committed (D-061). The write happened, so it
+          // is recorded — flagged, with no response body to record.
+          if (error instanceof ScopeNotAppliedError) {
+            void this.write(typed, context, { scopeNotApplied: true });
+          }
+        },
       }),
     );
   }
@@ -102,7 +112,7 @@ export class AuditInterceptor implements NestInterceptor {
       // it switches *to*. So this is a bug report, not a normal path, and it
       // says so rather than returning quietly.
       request.log.error(
-        { path: request.url.split('?')[0], method: request.method },
+        { path: safeUrl(request.url), method: request.method },
         'audit interceptor: a mutation completed with no org and no audit entry of its own',
       );
       return;
@@ -114,7 +124,9 @@ export class AuditInterceptor implements NestInterceptor {
     );
 
     const entityType = declaration?.subject ?? 'Unknown';
-    const path = request.url.split('?')[0] ?? request.url;
+    // Query dropped and phone numbers in the path masked, like every log line:
+    // this string lands in an append-only table.
+    const path = safeUrl(request.url);
 
     // From the method, not hardcoded. Every caught mutation used to land as
     // `update`, so a create and a delete were indistinguishable in a table that

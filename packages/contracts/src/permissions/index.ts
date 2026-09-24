@@ -24,7 +24,9 @@ export {
 export {
   BRANCH_TIER_CHECKERS,
   canDecideType,
+  canRequestType,
   CHECKER_TYPES,
+  REQUESTER_TYPES,
   checkerTier,
   COST_READING_ROLES,
   MATRIX,

@@ -44,7 +44,19 @@ export const approvalType = approvals.enum('approval_type', [
   'bonus_rule',
   'reseller_payout_batch',
   'period_reopen',
+  // D-073: relaxing a threshold is itself maker-checker.
+  'threshold_change',
 ]);
+
+/**
+ * Types no threshold may exempt (D-071), as SQL for the CHECKs below. Kept in
+ * step with `NEVER_AUTO_APPROVE_TYPES` in @elysium/contracts by a test.
+ * Compared as text: 0011 adds `threshold_change` to the enum in the same
+ * transaction, and a new enum value cannot be used as a literal before commit.
+ */
+export const NEVER_AUTO_APPROVE_SQL = sql.raw(
+  `('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry')`,
+);
 
 /**
  * `auto_approved` is a request below its org's threshold (§6 "above the
@@ -80,6 +92,13 @@ export const approvalRequests = approvals.table(
     branchId: uuid('branch_id'),
     /** Money is integer poisha (invariant 1). Null where the action has no amount. */
     amountPoisha: bigint('amount_poisha', { mode: 'bigint' }),
+    /**
+     * The org's threshold for this type at the moment of the request, or null
+     * when none was configured (D-073). What decided "needs a second person"
+     * is part of the record, so a threshold changed afterwards cannot rewrite
+     * why a request was or was not held.
+     */
+    thresholdPoisha: bigint('threshold_poisha', { mode: 'bigint' }),
     /** What to do once approved. The requesting module owns its shape. */
     payload: jsonb('payload').notNull().default({}),
     reason: text('reason'),
@@ -135,6 +154,12 @@ export const approvalRequests = approvals.table(
           or (${table.status}::text = 'auto_approved' and ${table.decidedBy} is null and ${table.decidedAt} is not null)
           or (${table.status} in ('approved', 'rejected') and ${table.decidedBy} is not null and ${table.decidedAt} is not null)`,
     ),
+
+    /** D-071: these types are never auto-approved, whatever a threshold says. */
+    check(
+      'approval_requests_never_auto_approved',
+      sql`${table.status}::text <> 'auto_approved' or ${table.type}::text not in ${NEVER_AUTO_APPROVE_SQL}`,
+    ),
   ],
 );
 
@@ -162,5 +187,11 @@ export const approvalThresholds = approvals.table(
   (table) => [
     uniqueIndex('approval_thresholds_org_type_idx').on(table.orgId, table.type),
     index('approval_thresholds_org_idx').on(table.orgId),
+    /** D-071: a type that must always be checked cannot have a threshold. */
+    check(
+      'approval_thresholds_never_for_controls',
+      sql`${table.type}::text not in ${NEVER_AUTO_APPROVE_SQL}`,
+    ),
+    check('approval_thresholds_not_negative', sql`${table.thresholdPoisha} >= 0`),
   ],
 );

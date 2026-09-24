@@ -7,12 +7,13 @@ import type { MembershipRole } from '@elysium/contracts';
 import { sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { AuditInterceptor } from '../audit/audit.interceptor.js';
 import { applyGlobalPipeline } from '../http/pipeline.js';
 import { AuthenticatedOnly, Public, RequireAbility } from './abilities.js';
 import { describeRoutes } from './route-map.js';
-import { scopeWhere } from './scope.js';
+import { assertInScope, scopeWhere } from './scope.js';
 
 /**
  * The guard, the gate's view of the same declarations, and the scope backstop —
@@ -92,11 +93,41 @@ class OrdersController {
   me() {
     return { ok: true };
   }
+
+  /** A create that never checks which branch it is writing into (W6). */
+  @RequireAbility('create', 'Order')
+  @Post('create-anywhere')
+  createAnywhere() {
+    return { id: 'order-1' };
+  }
+
+  /** The same create, asserting the row it is about to insert. */
+  @RequireAbility('create', 'Order')
+  @Post('create-in-branch')
+  createInBranch(@Req() request: FastifyRequest) {
+    const branchId = request.headers['x-branch'];
+    assertInScope(request, {
+      branchId: typeof branchId === 'string' ? branchId : null,
+      createdBy: 'usr_1',
+    });
+    return { id: 'order-2' };
+  }
 }
+
+/** Audit writes recorded instead of sent to a database this suite does not have. */
+const auditWrites: unknown[] = [];
 
 let app: NestFastifyApplication;
 
 beforeAll(async () => {
+  vi.spyOn(
+    AuditInterceptor.prototype as unknown as { write: (...args: unknown[]) => Promise<void> },
+    'write',
+  ).mockImplementation((_request: unknown, _context: unknown, body: unknown) => {
+    auditWrites.push(body);
+    return Promise.resolve();
+  });
+
   app = await NestFactory.create<NestFastifyApplication>(
     {
       module: class TestModule {},
@@ -233,5 +264,43 @@ describe('row scope is mandatory for a scoped caller (M2)', () => {
       where: { sql: string };
     };
     expect(all.where.sql).toBe('true');
+  });
+});
+
+describe('a create is scoped too (W6)', () => {
+  async function create(url: string, roles: string, branch?: string) {
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      headers: { 'x-roles': roles, ...(branch === undefined ? {} : { 'x-branch': branch }) },
+    });
+    return response.statusCode;
+  }
+
+  const OWN_BRANCH = '00000000-0000-0000-0000-00000000000a';
+  const OTHER_BRANCH = '00000000-0000-0000-0000-00000000000b';
+
+  it('refuses a branch-scoped create whose handler never checked the branch', async () => {
+    // `create` used to be exempt, so a branch manager could create in any
+    // branch through a handler that forgot to look.
+    expect(await create('/t/orders/create-anywhere', 'branch_manager')).toBe(500);
+  });
+
+  it('lets a create through once the handler asserts the row, and only in scope', async () => {
+    expect(await create('/t/orders/create-in-branch', 'branch_manager', OWN_BRANCH)).toBe(201);
+    expect(await create('/t/orders/create-in-branch', 'branch_manager', OTHER_BRANCH)).toBe(404);
+  });
+
+  it('still leaves an org-wide create alone', async () => {
+    expect(await create('/t/orders/create-anywhere', 'org_admin')).toBe(201);
+  });
+
+  it('still audits a mutation the backstop rejected after it ran', async () => {
+    // The handler has already written by the time the backstop fires, so the
+    // audit net records it rather than losing it with the 500.
+    auditWrites.length = 0;
+    expect(await create('/t/orders/create-anywhere', 'branch_manager')).toBe(500);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(auditWrites).toContainEqual({ scopeNotApplied: true });
   });
 });

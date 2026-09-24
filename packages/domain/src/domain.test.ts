@@ -36,6 +36,22 @@ describe('check 5: requests below and above a threshold behave differently', () 
     ).toBe(true);
   });
 
+  it('ignores every threshold when the caller says it is always required', () => {
+    fc.assert(
+      fc.property(fc.bigInt({ min: 0n, max: 10n ** 12n }), (amount) => {
+        expect(
+          requiresApproval({
+            type: 'wallet_adjustment',
+            amountPoisha: amount,
+            thresholds: [{ type: 'wallet_adjustment', thresholdPoisha: 10n ** 13n }],
+            alwaysRequired: true,
+          }),
+        ).toBe(true);
+      }),
+      { numRuns: 100 },
+    );
+  });
+
   it('does not below it', () => {
     expect(
       requiresApproval({

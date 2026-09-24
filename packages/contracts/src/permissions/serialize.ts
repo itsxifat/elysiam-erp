@@ -166,7 +166,11 @@ export function serializeFor<T>(context: SerializeContext, subject: Subject, dat
   // the wrong default for a partner who is not staff.
   if (context.roles.includes('reseller') && !context.isSuperAdmin) {
     if (RESELLER_ALLOWLISTED.has(subject)) {
-      return pruneAllowed(data, RESELLER_FIELD_SET, false) as T;
+      // Then the cost deny-list over what survived. An allow-listed key exposes
+      // its whole subtree, and `attributes: { wacPoisha }` walked straight out
+      // through it. A reseller never holds read:cost, so there is no reading of
+      // the allow-list under which cost belongs in its output.
+      return pruneDenied(pruneAllowed(data, RESELLER_FIELD_SET, false), COST_FIELD_SET) as T;
     }
   }
 

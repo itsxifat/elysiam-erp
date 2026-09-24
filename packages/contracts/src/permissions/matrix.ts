@@ -69,6 +69,8 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
     'payroll_run',
     'bonus_rule',
     'reseller_payout_batch',
+    // D-073: a relaxed threshold needs a second org admin.
+    'threshold_change',
   ],
   // §6: payments.
   accounts: ['supplier_payment', 'settlement_posting', 'reseller_payout_batch', 'closing_variance'],
@@ -96,6 +98,69 @@ export function canDecideType(
 ): boolean {
   if (isSuperAdmin) return true;
   return roles.some((role) => (CHECKER_TYPES[role] ?? []).includes(type));
+}
+
+/**
+ * Which approval types each role may *raise* (D-072).
+ *
+ * The maker side needed the same narrowing the checker side got. With only
+ * `request ApprovalRequest`, any requester could raise any type — a sales
+ * agent a payroll run, a warehouse hand a supplier payment — and choose its
+ * amount. Read from §6's capability rows:
+ *
+ * - accounts: payments, settlements, wallets, payroll posting, closing
+ *   variances, back-dated entries, and asking to reopen a period (§7).
+ * - hr: payroll and bonuses.
+ * - branch_manager: stock adjustments (request, branch), own branch wallets,
+ *   closing variances.
+ * - warehouse: stock adjustments (request).
+ * - org_admin: all of the above.
+ *
+ * `threshold_change` is in nobody's list: it is raised only by
+ * `PUT /v1/approvals/thresholds`, never through the generic route.
+ */
+export const REQUESTER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> = {
+  org_admin: [
+    'wallet_adjustment',
+    'stock_write_off',
+    'stock_gain',
+    'supplier_payment',
+    'settlement_posting',
+    'closing_variance',
+    'back_dated_entry',
+    'payroll_run',
+    'bonus_rule',
+    'reseller_payout_batch',
+    'period_reopen',
+  ],
+  accounts: [
+    'wallet_adjustment',
+    'supplier_payment',
+    'settlement_posting',
+    'closing_variance',
+    'back_dated_entry',
+    'payroll_run',
+    'reseller_payout_batch',
+    'period_reopen',
+  ],
+  hr: ['payroll_run', 'bonus_rule'],
+  branch_manager: ['stock_write_off', 'stock_gain', 'closing_variance', 'wallet_adjustment'],
+  warehouse: ['stock_write_off', 'stock_gain'],
+  sales: [],
+  marketing: [],
+  reseller: [],
+  investor: [],
+};
+
+/** May these roles raise a request of this type through the generic route? */
+export function canRequestType(
+  roles: readonly MembershipRole[],
+  type: string,
+  isSuperAdmin: boolean,
+): boolean {
+  if (type === 'threshold_change') return false;
+  if (isSuperAdmin) return true;
+  return roles.some((role) => (REQUESTER_TYPES[role] ?? []).includes(type));
 }
 
 /**
@@ -197,7 +262,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'LandingPage', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'read', subject: 'Target', scope: 'own' },
-    { action: 'request', subject: 'ApprovalRequest', scope: 'org' },
+    // No `request ApprovalRequest`: §6 gives sales no action that goes through
+    // maker-checker, and REQUESTER_TYPES lists none (D-072).
   ],
 
   marketing: [

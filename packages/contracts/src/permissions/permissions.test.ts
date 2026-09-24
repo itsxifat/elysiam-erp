@@ -2,6 +2,7 @@ import { AbilityBuilder, createMongoAbility, subject as tag } from '@casl/abilit
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
+import { approvalRequestSchema, NEVER_AUTO_APPROVE_TYPES, thresholdSchema } from '../approvals.js';
 import { MEMBERSHIP_ROLES, type MembershipRole } from '../iam.js';
 import {
   canReadCost,
@@ -10,7 +11,15 @@ import {
   rowInScope,
   scopeFilterFor,
 } from './ability.js';
-import { canDecideType, CHECKER_TYPES, checkerTier, COST_READING_ROLES, MATRIX } from './matrix.js';
+import {
+  canDecideType,
+  canRequestType,
+  CHECKER_TYPES,
+  checkerTier,
+  COST_READING_ROLES,
+  MATRIX,
+  REQUESTER_TYPES,
+} from './matrix.js';
 import { assertNoCostFields, findCostFields, serializeFor } from './serialize.js';
 import {
   ACTIONS,
@@ -484,6 +493,16 @@ describe('a reseller sees an allow-list, not a deny-list', () => {
     expect(serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', map)).toBe(map);
   });
 
+  it('strips cost nested inside an allow-listed field (W8)', () => {
+    // `attributes` exposes its subtree, and cost used to ride out inside it.
+    const out = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'CostedItem', {
+      items: [{ sku: 'A', attributes: { colour: 'red', wacPoisha: '120000' } }],
+    });
+
+    expect(findCostFields(out)).toEqual([]);
+    expect(out.items[0]?.attributes, 'the positive control').toEqual({ colour: 'red' });
+  });
+
   it('walks a class instance rather than waving it through', () => {
     // It used to skip anything that was not a plain object, and JSON emits a
     // class instance's own fields — so a DTO class carried cost to sales.
@@ -583,5 +602,77 @@ describe('canReadCost matches the matrix', () => {
 
   it('is true for a super admin with no roles at all', () => {
     expect(canReadCost([], true)).toBe(true);
+  });
+});
+
+describe('branch scope belongs to the membership that granted it (W7, D-075)', () => {
+  it('does not let a warehouse branch widen a branch manager’s reach', () => {
+    // warehouse@B + branch_manager@A merged to [A, B], and the branch
+    // manager's rules then reached B.
+    const context = {
+      userId: 'usr_1',
+      isSuperAdmin: false,
+      roles: ['warehouse', 'branch_manager'] as MembershipRole[],
+      branchIds: ['branch-a', 'branch-b'],
+      branchIdsByRole: { warehouse: ['branch-b'], branch_manager: ['branch-a'] },
+    };
+
+    // Wallet: branch_manager at branch scope, warehouse has no rule.
+    const filter = scopeFilterFor(context, 'read', 'Wallet');
+    expect(rowInScope(filter, { branchId: 'branch-a' })).toBe(true);
+    expect(rowInScope(filter, { branchId: 'branch-b' })).toBe(false);
+
+    const ability = defineAbilityFor(context);
+    expect(ability.can('read', tag('Wallet', { branchId: 'branch-a' }))).toBe(true);
+    expect(ability.can('read', tag('Wallet', { branchId: 'branch-b' }))).toBe(false);
+  });
+});
+
+describe('who may raise which request (W5, D-072)', () => {
+  it('keeps payroll and payments away from roles §6 does not give them', () => {
+    expect(canRequestType(['sales'], 'wallet_adjustment', false)).toBe(false);
+    expect(canRequestType(['warehouse'], 'supplier_payment', false)).toBe(false);
+    expect(canRequestType(['branch_manager'], 'payroll_run', false)).toBe(false);
+    expect(canRequestType(['hr'], 'payroll_run', false)).toBe(true);
+    expect(canRequestType(['warehouse'], 'stock_write_off', false)).toBe(true);
+    expect(canRequestType(['accounts'], 'period_reopen', false)).toBe(true);
+  });
+
+  it('never lets anyone raise a threshold change through the generic route', () => {
+    for (const role of MEMBERSHIP_ROLES) {
+      expect(canRequestType([role], 'threshold_change', false)).toBe(false);
+    }
+    expect(canRequestType([], 'threshold_change', true)).toBe(false);
+  });
+
+  it('gives request ApprovalRequest to exactly the roles that can raise something', () => {
+    for (const role of MEMBERSHIP_ROLES) {
+      const listed = (REQUESTER_TYPES[role] ?? []).length > 0;
+      expect(abilityFor([role]).can('request', 'ApprovalRequest'), role).toBe(listed);
+    }
+  });
+});
+
+describe('approval request and threshold schemas (C1, D-071)', () => {
+  it('refuses a threshold on a type that must never be auto-approved', () => {
+    for (const type of NEVER_AUTO_APPROVE_TYPES) {
+      expect(thresholdSchema.safeParse({ type, thresholdPoisha: '1' }).success, type).toBe(false);
+    }
+    expect(
+      thresholdSchema.safeParse({ type: 'wallet_adjustment', thresholdPoisha: '1' }).success,
+    ).toBe(true);
+  });
+
+  it('refuses an amount on an amountless type, and a missing one elsewhere', () => {
+    expect(
+      approvalRequestSchema.safeParse({ type: 'period_reopen', amountPoisha: '0' }).success,
+    ).toBe(false);
+    expect(
+      approvalRequestSchema.safeParse({ type: 'period_reopen', amountPoisha: null }).success,
+    ).toBe(true);
+    expect(approvalRequestSchema.safeParse({ type: 'wallet_adjustment' }).success).toBe(false);
+    expect(
+      approvalRequestSchema.safeParse({ type: 'wallet_adjustment', amountPoisha: '5' }).success,
+    ).toBe(true);
   });
 });

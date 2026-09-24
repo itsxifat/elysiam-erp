@@ -20,6 +20,12 @@ export interface ApprovalDecisionInput {
   /** Null for an action with no money attached — a period reopen, say. */
   readonly amountPoisha: Poisha | null;
   readonly thresholds: readonly Threshold[];
+  /**
+   * True when no threshold may exempt this request: a control type (D-071), or
+   * an amount the requester typed where the owning module should have derived
+   * it (D-072). The caller decides which; this only obeys.
+   */
+  readonly alwaysRequired?: boolean;
 }
 
 /**
@@ -40,6 +46,7 @@ export interface ApprovalDecisionInput {
  * compare, and every amount-less type in §6's list is a control action.
  */
 export function requiresApproval(input: ApprovalDecisionInput): boolean {
+  if (input.alwaysRequired === true) return true;
   const threshold = input.thresholds.find((entry) => entry.type === input.type);
   if (threshold === undefined) return true;
   if (input.amountPoisha === null) return true;

@@ -60,9 +60,11 @@ export function attachScope(
   subject: Subject,
   filter: ScopeFilter,
 ): void {
-  // Nothing to narrow when the caller reaches the whole org, and nothing to
-  // read when the action creates a row that does not exist yet.
-  const applied = filter.kind === 'all' || action === 'create';
+  // Nothing to narrow when the caller reaches the whole org. A `create` is
+  // *not* exempt (W6, D-061): a branch manager allowed to create in branch A
+  // must not create in branch B, so the handler asserts the row it is about to
+  // insert with `assertInScope` before writing it.
+  const applied = filter.kind === 'all';
   (request as ScopedRequest)[SCOPE_STATE] = { action, subject, filter, applied };
 }
 
@@ -140,6 +142,20 @@ export function scopeOf(request: object): ScopeFilter {
 }
 
 /**
+ * The backstop fired. Its own class so the audit interceptor can tell it from
+ * any other 500: for a mutation it fires *after* the handler committed, so the
+ * write happened, and it must still leave an audit row saying so.
+ */
+export class ScopeNotAppliedError extends InternalServerErrorException {
+  constructor(
+    readonly action: Action,
+    readonly subject: Subject,
+  ) {
+    super(`This route returned ${action}:${subject} without applying the caller's scope.`);
+  }
+}
+
+/**
  * The backstop: a scoped caller's response is not sent unless the handler
  * applied the scope.
  *
@@ -156,9 +172,7 @@ export class ScopeInterceptor implements NestInterceptor {
       map((body: unknown) => {
         const state = (request as ScopedRequest)[SCOPE_STATE];
         if (state !== undefined && !state.applied) {
-          throw new InternalServerErrorException(
-            `This route returned ${state.action}:${state.subject} without applying the caller's scope.`,
-          );
+          throw new ScopeNotAppliedError(state.action, state.subject);
         }
         return body;
       }),

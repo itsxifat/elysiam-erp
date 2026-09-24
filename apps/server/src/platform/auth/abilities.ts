@@ -191,6 +191,10 @@ export class AbilityGuard implements CanActivate {
       isSuperAdmin: requestContext.isSuperAdmin,
       userId: requestContext.userId,
       branchIds: requestContext.branchIds,
+      // Per role, never merged (D-075).
+      ...(requestContext.branchIdsByRole === undefined
+        ? {}
+        : { branchIdsByRole: requestContext.branchIdsByRole }),
     };
     const ability = defineAbilityFor(abilityContext);
 

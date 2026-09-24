@@ -65,7 +65,10 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   },
   'PUT /v1/approvals/thresholds': () => ({
     url: '/v1/approvals/thresholds',
-    body: { type: 'bonus_rule', thresholdPoisha: '100000' },
+    // A type that may have a threshold (bonus_rule may not, D-071). The first
+    // one is a relaxation, so it comes back pending a second org admin — still
+    // a successful, audited mutation.
+    body: { type: 'supplier_payment', thresholdPoisha: '100000' },
   }),
   'GET /v1/demo/costed-items': () => ({ url: '/v1/demo/costed-items' }),
   'POST /v1/demo/costed-items': () => ({

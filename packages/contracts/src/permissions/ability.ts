@@ -51,6 +51,22 @@ export interface AbilityContext {
   readonly userId: string;
   /** Empty means the whole org, not "no branches" (§6). */
   readonly branchIds: readonly string[];
+  /**
+   * Branch scope per role, when the caller holds several memberships with
+   * different branches (D-075). A role listed here uses its own list; a role
+   * absent from it falls back to `branchIds`.
+   *
+   * Merging them was a privilege escalation: `warehouse` limited to branch B
+   * plus `branch_manager` limited to branch A merged to `[A, B]`, and the
+   * branch manager's rules then reached B. Scope belongs to the membership
+   * that granted it, not to the person.
+   */
+  readonly branchIdsByRole?: Readonly<Partial<Record<MembershipRole, readonly string[]>>>;
+}
+
+/** The branch list that bounds one role's `branch` rules. */
+function branchIdsFor(context: AbilityContext, role: MembershipRole): readonly string[] {
+  return context.branchIdsByRole?.[role] ?? context.branchIds;
 }
 
 /**
@@ -103,7 +119,11 @@ export type ScopeFilter =
  * no condition at all rather than `branch_id in ()`, which would match nothing
  * and silently hide every row from a branch manager with no branches assigned.
  */
-function scopeConditions(scope: Scope, context: AbilityContext): ScopeCondition[] | 'all' {
+function scopeConditions(
+  scope: Scope,
+  context: AbilityContext,
+  role: MembershipRole,
+): ScopeCondition[] | 'all' {
   if (scope === 'own') {
     return [
       { field: 'createdBy', equals: context.userId },
@@ -111,8 +131,9 @@ function scopeConditions(scope: Scope, context: AbilityContext): ScopeCondition[
     ];
   }
 
-  if (scope === 'branch' && context.branchIds.length > 0) {
-    return [{ field: 'branchId', in: [...context.branchIds] }];
+  const branchIds = branchIdsFor(context, role);
+  if (scope === 'branch' && branchIds.length > 0) {
+    return [{ field: 'branchId', in: [...branchIds] }];
   }
 
   return 'all';
@@ -123,18 +144,22 @@ function toCasl(condition: ScopeCondition): Conditions {
   return { [condition.field]: condition.equals };
 }
 
-function conditionsFor(scope: Scope, context: AbilityContext): Conditions[] {
-  const conditions = scopeConditions(scope, context);
+function conditionsFor(scope: Scope, context: AbilityContext, role: MembershipRole): Conditions[] {
+  const conditions = scopeConditions(scope, context, role);
   return conditions === 'all' ? [] : conditions.map(toCasl);
 }
 
-function rulesGranting(roles: readonly MembershipRole[], action: Action, subject: Subject): Rule[] {
-  const found: Rule[] = [];
+function rulesGranting(
+  roles: readonly MembershipRole[],
+  action: Action,
+  subject: Subject,
+): { rule: Rule; role: MembershipRole }[] {
+  const found: { rule: Rule; role: MembershipRole }[] = [];
   for (const role of roles) {
     for (const rule of MATRIX[role] ?? []) {
       if (rule.subject !== subject) continue;
       const actions: readonly Action[] = Array.isArray(rule.action) ? rule.action : [rule.action];
-      if (actions.includes(action)) found.push(rule);
+      if (actions.includes(action)) found.push({ rule, role });
     }
   }
   return found;
@@ -163,8 +188,8 @@ export function scopeFilterFor(
   if (rules.length === 0) return { kind: 'none' };
 
   const anyOf: ScopeCondition[] = [];
-  for (const rule of rules) {
-    const conditions = scopeConditions(rule.scope, context);
+  for (const { rule, role } of rules) {
+    const conditions = scopeConditions(rule.scope, context, role);
     if (conditions === 'all') return { kind: 'all' };
     anyOf.push(...conditions);
   }
@@ -231,7 +256,7 @@ export function defineAbilityFor(context: AbilityContext): AppAbility {
 
   for (const role of context.roles) {
     for (const rule of MATRIX[role] ?? []) {
-      const conditions = conditionsFor(rule.scope, context);
+      const conditions = conditionsFor(rule.scope, context, role);
       // Annotated because `Array.isArray` on a `readonly Action[] | Action`
       // widens the element type to `any` — which would then flow into `grant`
       // unchecked, and a typo'd action silently denies rather than failing.
