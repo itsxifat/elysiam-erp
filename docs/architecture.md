@@ -380,6 +380,8 @@ The hostname comes from the **caller**, not from the API's own `Host` header (D-
   - `own`: `created_by` or `assigned_to` is the user
   - `branch`: `branch_id` is within the user's branch scope
   - `org`: the whole active org
+- **Row scope is mandatory (D-061).** The guard can only answer "may this caller act on _some_ row of this subject". It therefore hands the caller's scope filter (`scopeFilterFor`, unioned across roles) to the handler, which applies it with `scopeWhere(request, columns)` for a query or `assertInScope(request, row)` for one row. `ScopeInterceptor` refuses to send a scoped caller's response if the handler applied neither. Every module maps its table's `created_by` / `assigned_to` / `branch_id` columns once and passes them in.
+- **Route coverage (D-070).** Every route declares `@RequireAbility`, `@AuthenticatedOnly` or `@Public` (never two that contradict), and every non-public route is listed in `route-matrix.manifest.ts` with a fixture in the generated route-matrix suite. `check-route-matrix` fails the build otherwise.
 
 ### Protected fields
 
@@ -437,7 +439,14 @@ Each org configures its own thresholds. These actions go through approvals:
 - fraud block overrides
 - reopening a closed period (super_admin only)
 
-The database enforces that the requester can never approve their own request.
+The database enforces that the requester can never approve their own request, and a trigger freezes a decided request's terms and decision.
+
+How thresholds behave (D-062, D-065, D-068):
+
+- Only `org_admin` sets a threshold (`PUT /v1/approvals/thresholds`, subject `ApprovalThreshold`).
+- **Under** the threshold, a request is recorded `auto_approved`: audited, both events emitted, no checker. **At or above** it, with no threshold configured, or with no amount, it is `pending`. Amounts are compared by magnitude.
+- Who may check is per type (`CHECKER_TYPES`): accounts decides payments, hr decides payroll and bonuses, branch_manager decides branch items (stock write-offs and gains, closing variances), org_admin decides everything except reopening a period, which only super_admin decides.
+- A branch manager is a branch-tier checker: only requests carrying a `branch_id` in their scope, and only under the configured threshold for the type.
 
 ---
 
@@ -1192,6 +1201,9 @@ Installable, with an offline shell and web push (Android first).
   - investor KYC fields
 - **Secrets** are never committed. `.env.example` lists names only.
 - **Audit log:** every mutation records actor, org, action, entity, before/after (with sensitive fields redacted), IP and user agent.
+  - Services write their entry inside the mutation's transaction (`AuditService.record(tx, …)`); the interceptor is a net for routes that do not, and strips cost fields before writing (D-064).
+  - Redaction removes credential-named fields and masks phone numbers both under phone-named keys and anywhere in free text.
+  - Switching org is audited into the org being entered. Better Auth's credential events (sign-in, second factor, 2FA changes, password set or changed, sign-out) are audited into every org the user belongs to, without the request body (D-066).
 - **Controls:** maker-checker (§6) and period locks (§7).
 - **Reviews:**
   - CI scans dependencies
@@ -1233,7 +1245,7 @@ Installable, with an offline shell and web push (Android first).
 | Adapters     | Contract tests with recorded fixtures                  | Live sandbox tests run behind env flags and are skipped (with a note) when credentials are missing                   |
 | Golden books | Scripted business days                                 | Supply → orders → deliveries → returns → settlements → payroll, asserting exact trial-balance, stock and P&L numbers |
 
-`pnpm verify` runs format check, lint, typecheck, unit and integration tests, build and the migration-immutability check. It must pass before anything merges to main.
+`pnpm verify` runs format check, lint, typecheck, unit and integration tests, build, the migration-immutability check, the schema-drift check and the route-matrix gate. It must pass before anything merges to main.
 
 ---
 
