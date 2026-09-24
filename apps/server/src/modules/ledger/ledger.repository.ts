@@ -84,9 +84,12 @@ export async function journalIdByKey(
 }
 
 export async function closedPeriodFor(tx: Tx, orgId: string, startsOn: string): Promise<boolean> {
+  // A closed month locks every date before it too (D-093).
   const rows = await tx.execute<{ closed: boolean }>(sql`
-    select status = 'closed' as closed from ledger.periods
-    where org_id = ${orgId} and starts_on = ${startsOn}
+    select exists (
+      select 1 from ledger.periods
+      where org_id = ${orgId} and status = 'closed' and starts_on >= ${startsOn}
+    ) as closed
   `);
   return rows[0]?.closed === true;
 }
@@ -346,6 +349,7 @@ export async function counterAccounts(
   orgId: string,
   journalIds: readonly string[],
   excludeAccountId: string,
+  hiddenSubtypes: readonly string[],
 ): Promise<Map<string, { code: string; name: string }[]>> {
   const result = new Map<string, { code: string; name: string }[]>();
   if (journalIds.length === 0) return result;
@@ -356,6 +360,7 @@ export async function counterAccounts(
     where l.org_id = ${orgId}
       and l.journal_id = any (${sql.param([...journalIds])}::uuid[])
       and l.account_id <> ${excludeAccountId}
+      and ${excludeSubtypes(sql`a.subtype`, hiddenSubtypes)}
     order by l.journal_id, a.code
   `);
   for (const row of rows) {
@@ -488,6 +493,24 @@ export async function periodById(
     select ${PERIOD_COLUMNS} from ledger.periods where org_id = ${orgId} and id = ${id} for update
   `);
   return rows[0];
+}
+
+/** The latest closed month after `startsOn`, as `YYYY-MM`, if any. */
+export async function closedAfter(
+  tx: Tx,
+  orgId: string,
+  startsOn: string,
+): Promise<string | undefined> {
+  const rows = await tx.execute<{ month: string | null }>(sql`
+    select to_char(max(starts_on), 'YYYY-MM') as month from ledger.periods
+    where org_id = ${orgId} and status = 'closed' and starts_on > ${startsOn}
+  `);
+  return rows[0]?.month ?? undefined;
+}
+
+/** The org's period lock, exclusive, as closing and reopening take it (0015). */
+export async function lockPeriods(tx: Tx, orgId: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(ledger.org_period_lock_key(${orgId}::uuid))`);
 }
 
 /** Close a month: create its row, or move an existing open row to closed. */

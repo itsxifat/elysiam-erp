@@ -120,8 +120,22 @@ export function validateJournalDraft(draft: JournalDraft): void {
       `Idempotency key "${draft.idempotencyKey}" should be "${expectedKey}".`,
     );
   }
-  if (draft.reversesJournalId !== null && !isUuid(draft.reversesJournalId)) {
-    throw new LedgerError('JOURNAL_KEY_INVALID', 'The reversed journal id is not a uuid.');
+  if (draft.reversesJournalId !== null) {
+    if (!isUuid(draft.reversesJournalId)) {
+      throw new LedgerError('JOURNAL_KEY_INVALID', 'The reversed journal id is not a uuid.');
+    }
+    // Only `reverseDraft` builds a reversal: keyed on the journal it reverses,
+    // so nothing else can take that journal's one reversal slot.
+    if (
+      draft.sourceType !== 'journal' ||
+      draft.sourceId.toLowerCase() !== draft.reversesJournalId.toLowerCase() ||
+      draft.event !== 'reversed'
+    ) {
+      throw new LedgerError(
+        'JOURNAL_KEY_INVALID',
+        'A reversal is keyed journal:<reversed id>:reversed. Build it with reverseDraft.',
+      );
+    }
   }
   if (draft.memo !== null && draft.memo.length > MAX_MEMO) {
     throw new LedgerError(

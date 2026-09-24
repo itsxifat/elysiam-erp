@@ -163,12 +163,7 @@ export const PARTY_SUBTYPES = ACCOUNT_SUBTYPE_NAMES.filter(
 );
 
 /**
- * A balance expressed on the account's normal side: positive means the
- * account holds what it normally holds (cash in a wallet, money owed on a
- * payable), negative means it has gone the other way.
- */
-/**
- * The same, for report aggregates: plain `bigint`, with no ±9e15 bound.
+ * `normalBalanceOf` for report aggregates: plain `bigint`, with no ±9e15 bound.
  *
  * `Poisha` refuses anything past 9e15 as a sanity check on a single amount.
  * A *sum* of stored, balanced journals is not an amount anyone typed, and a
@@ -183,6 +178,11 @@ export function aggregateBalanceOf(
   return normalBalance === 'debit' ? debitPoisha - creditPoisha : creditPoisha - debitPoisha;
 }
 
+/**
+ * A balance expressed on the account's normal side: positive means the
+ * account holds what it normally holds (cash in a wallet, money owed on a
+ * payable), negative means it has gone the other way.
+ */
 export function normalBalanceOf(
   normalBalance: NormalBalance,
   debitPoisha: Poisha,

@@ -180,6 +180,12 @@ describe('validateJournalDraft refuses every malformed journal', () => {
     );
   });
 
+  it('refuses a reversal that is not keyed on the journal it reverses', () => {
+    expect(
+      code(() => validateJournalDraft({ ...good, reversesJournalId: ACCOUNTS[0] ?? '' })),
+    ).toBe('JOURNAL_KEY_INVALID');
+  });
+
   it('refuses an impossible business date', () => {
     expect(
       code(() =>

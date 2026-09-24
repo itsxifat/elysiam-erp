@@ -8,6 +8,10 @@ import type { JournalDraft } from '@elysium/domain';
  * posts through this and never touches `ledger.*` tables itself. The call
  * joins the caller's own `withOrg()` transaction, so the business change and
  * its journal commit together or not at all.
+ *
+ * `post` and `reverse` write no audit row: the caller writes one, in the same
+ * transaction, for the business event it posted (`AuditService.record`). Cash
+ * in, period close and reopen do; every future caller must too (audit N9).
  */
 
 /** Who is posting, for `created_by` and the audit trail. */

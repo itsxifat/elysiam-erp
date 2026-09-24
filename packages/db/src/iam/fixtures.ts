@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { eq } from 'drizzle-orm';
 
-import { withGlobal, withOrg } from '../client.js';
+import { withGlobal, withOrg, withSystem } from '../client.js';
 import { memberships, membershipBranches, users } from '../schema/iam/index.js';
 import { resolveContext, type MembershipRole, type RequestContext } from './context.js';
 
@@ -41,18 +41,28 @@ export async function createTestUser(input: CreateUserInput = {}): Promise<TestU
   const email = input.email ?? `${id}@example.invalid`;
   const name = input.name ?? 'Test User';
 
-  await withGlobal(async (tx) => {
-    await tx.insert(users).values({
-      id,
-      email,
-      name,
-      emailVerified: true,
-      phoneNumber: input.phoneNumber ?? null,
-      phoneNumberVerified: input.phoneNumber !== undefined,
-      twoFactorEnabled: input.twoFactorEnabled ?? false,
-      isSuperAdmin: input.isSuperAdmin ?? false,
+  const values = {
+    id,
+    email,
+    name,
+    emailVerified: true,
+    phoneNumber: input.phoneNumber ?? null,
+    phoneNumberVerified: input.phoneNumber !== undefined,
+    twoFactorEnabled: input.twoFactorEnabled ?? false,
+    isSuperAdmin: input.isSuperAdmin ?? false,
+  };
+
+  // Only the owner role may create a super admin (0015, D-094), so that one
+  // case is written as the owner; everyone else goes through the app role.
+  if (values.isSuperAdmin) {
+    await withSystem(async (tx) => {
+      await tx.insert(users).values(values);
     });
-  });
+  } else {
+    await withGlobal(async (tx) => {
+      await tx.insert(users).values(values);
+    });
+  }
 
   return { id, email, name };
 }

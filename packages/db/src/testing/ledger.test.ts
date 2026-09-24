@@ -357,9 +357,28 @@ describe('idempotency at the database', () => {
   });
 });
 
-/** Close a month directly, as the periods service will. */
+/** A platform super admin, and an ordinary user, for the reopen rule (0015). */
+const SUPER = 'usr_ledger_super_admin';
+const PLAIN = 'usr_ledger_plain_admin';
+
+beforeAll(async () => {
+  // As the owner: since 0015 `erp_app` cannot make anyone a super admin.
+  await withSystem(async (tx) => {
+    await tx.execute(sql`
+      insert into iam.users (id, email, name, email_verified, is_super_admin)
+      values (${SUPER}, 'ledger-super@example.invalid', 'Super', true, true),
+             (${PLAIN}, 'ledger-plain@example.invalid', 'Plain', true, false)
+      on conflict (id) do nothing
+    `);
+  });
+});
+
+const asUser = <T>(userId: string, fn: (tx: Tx) => Promise<T>): Promise<T> =>
+  withOrg({ orgId: ORG_A, userId }, fn);
+
+/** Close a month directly, as the periods service does. */
 async function closeMonth(startsOn: string, endsOn: string): Promise<string> {
-  return asApp(async (tx) => {
+  return asUser('usr_closer', async (tx) => {
     const rows = await tx.execute<{ id: string }>(sql`
       insert into ledger.periods (org_id, starts_on, ends_on, status, closed_at, closed_by)
       values (${ORG_A}, ${startsOn}, ${endsOn}, 'closed', now(), 'usr_closer')
@@ -371,29 +390,38 @@ async function closeMonth(startsOn: string, endsOn: string): Promise<string> {
   });
 }
 
-/** A period_reopen request, decided by a second person. */
-async function approvedReopen(periodId: string, status: 'approved' | 'pending' = 'approved') {
+/** A pending period_reopen, raised by a maker. */
+async function raiseReopen(periodId: string): Promise<string> {
   const id = randomUUID();
-  await asApp(async (tx) =>
+  await asUser('usr_maker', async (tx) =>
     tx.execute(sql`
       insert into approvals.approval_requests (id, org_id, type, status, requested_by, payload)
       values (${id}, ${ORG_A}, 'period_reopen', 'pending', 'usr_maker', ${JSON.stringify({ periodId })}::jsonb)
     `),
   );
-  if (status === 'approved') {
-    await asApp(async (tx) =>
-      tx.execute(sql`
-        update approvals.approval_requests
-        set status = 'approved', decided_by = 'usr_super', decided_at = now()
-        where id = ${id}
-      `),
-    );
-  }
   return id;
 }
 
-async function reopen(periodId: string, approvalId: string): Promise<unknown> {
-  return asApp(async (tx) =>
+/** Decide a request, acting as the decider. */
+async function decide(id: string, decider: string): Promise<void> {
+  await asUser(decider, async (tx) =>
+    tx.execute(sql`
+      update approvals.approval_requests
+      set status = 'approved', decided_by = ${decider}, decided_at = now()
+      where id = ${id}
+    `),
+  );
+}
+
+async function approvedReopen(periodId: string, decider = SUPER): Promise<string> {
+  const id = await raiseReopen(periodId);
+  await decide(id, decider);
+  return id;
+}
+
+/** Reopen, acting as `actor` — the super admin, in the decision's transaction. */
+async function reopen(periodId: string, approvalId: string, actor = SUPER): Promise<unknown> {
+  return asUser(actor, async (tx) =>
     tx.execute(sql`
       update ledger.periods
       set status = 'open', reopened_at = now(), reopen_approval_id = ${approvalId}, updated_at = now()
@@ -402,22 +430,40 @@ async function reopen(periodId: string, approvalId: string): Promise<unknown> {
   );
 }
 
+async function periodRow(id: string) {
+  const [row] = await withSystem(
+    async (tx) =>
+      tx.execute<{ status: string; closed_at: string; reopened_at: string | null }>(sql`
+        select status::text, closed_at::text, reopened_at::text from ledger.periods where id = ${id}
+      `),
+    { orgId: ORG_A },
+  );
+  return row;
+}
+
 describe('check 4 (database): the period lock and the reopen rule', () => {
-  it('refuses a journal dated in a closed period, and accepts one either side', async () => {
-    await closeMonth('2026-05-01', '2026-05-31');
+  // Months ascend through this block: a closed month locks every date before
+  // it (D-093), so each test works in a month later than the last one's.
 
-    const result = await refusal(postBalanced(1_000n, '2026-05-31'));
-    expect(result.message).toMatch(/PERIOD_CLOSED: 2026-05-31 falls in 2026-05, which is closed/);
+  it('refuses a journal dated in or before a closed month, and accepts one after', async () => {
+    await closeMonth('2025-01-01', '2025-01-31');
 
-    await expect(postBalanced(1_000n, '2026-04-30')).resolves.toBeTypeOf('string');
-    await expect(postBalanced(1_000n, '2026-06-01')).resolves.toBeTypeOf('string');
+    const inMonth = await refusal(postBalanced(1_000n, '2025-01-31'));
+    expect(inMonth.message).toMatch(/PERIOD_CLOSED: 2025-01-31 falls on or before 2025-01/);
+
+    // Balances are cumulative: a date before the closed month would change its
+    // closing figures just as surely (audit W3).
+    const before = await refusal(postBalanced(1_000n, '2024-12-31'));
+    expect(before.message).toMatch(/PERIOD_CLOSED: 2024-12-31 falls on or before 2025-01/);
+
+    await expect(postBalanced(1_000n, '2025-02-01')).resolves.toBeTypeOf('string');
   });
 
   it('refuses reopening by a plain UPDATE, a pending approval, or the wrong approval', async () => {
-    const periodId = await closeMonth('2026-04-01', '2026-04-30');
+    const periodId = await closeMonth('2025-02-01', '2025-02-28');
 
     const bare = await refusal(
-      asApp(async (tx) =>
+      asUser(SUPER, async (tx) =>
         tx.execute(
           sql`update ledger.periods set status = 'open', reopened_at = now() where id = ${periodId}`,
         ),
@@ -425,15 +471,15 @@ describe('check 4 (database): the period lock and the reopen rule', () => {
     );
     expect(bare.message).toMatch(/PERIOD_REOPEN_UNAUTHORISED/);
 
-    const pending = await approvedReopen(periodId, 'pending');
+    const pending = await raiseReopen(periodId);
     expect((await refusal(reopen(periodId, pending))).message).toMatch(
       /PERIOD_REOPEN_UNAUTHORISED/,
     );
 
-    const otherPeriod = await closeMonth('2026-03-01', '2026-03-31');
+    const otherPeriod = await closeMonth('2025-03-01', '2025-03-31');
     const forOther = await approvedReopen(otherPeriod);
     expect((await refusal(reopen(periodId, forOther))).message).toMatch(
-      /PERIOD_REOPEN_UNAUTHORISED: approval .* does not authorise reopening 2026-04/,
+      /PERIOD_REOPEN_UNAUTHORISED: approval .* does not authorise reopening 2025-02/,
     );
 
     // Deleting the row would reopen it with no approval at all.
@@ -446,48 +492,110 @@ describe('check 4 (database): the period lock and the reopen rule', () => {
     const createdOpen = await refusal(
       asApp(async (tx) =>
         tx.execute(sql`insert into ledger.periods (org_id, starts_on, ends_on, status)
-          values (${ORG_A}, '2025-01-01', '2025-01-31', 'open')`),
+          values (${ORG_A}, '2024-01-01', '2024-01-31', 'open')`),
       ),
     );
     expect(createdOpen.message).toMatch(/PERIOD_INVALID/);
     const moved = await refusal(
       asApp(async (tx) =>
-        tx.execute(sql`update ledger.periods set starts_on = '2026-02-01', ends_on = '2026-02-28'
+        tx.execute(sql`update ledger.periods set starts_on = '2024-02-01', ends_on = '2024-02-29'
           where id = ${periodId}`),
       ),
     );
     expect(moved.message).toMatch(/PERIOD_INVALID|periods_whole_month/);
   });
 
+  it('refuses a forged approval: born approved, decided by someone else, or not by a super admin (audit W1)', async () => {
+    const periodId = await closeMonth('2025-04-01', '2025-04-30');
+
+    // The two-statement forgery the audit reproduced: a row born approved.
+    const born = await refusal(
+      asUser(SUPER, async (tx) =>
+        tx.execute(sql`
+          insert into approvals.approval_requests
+            (org_id, type, status, requested_by, decided_by, decided_at, payload)
+          values (${ORG_A}, 'period_reopen', 'approved', 'usr_maker', ${SUPER}, now(),
+                  ${JSON.stringify({ periodId })}::jsonb)
+        `),
+      ),
+    );
+    expect(born.message).toMatch(/APPROVAL_INVALID: a request is raised pending/);
+
+    // Decided "by" someone other than the user the transaction is acting as.
+    const pending = await raiseReopen(periodId);
+    const impersonated = await refusal(
+      asUser(PLAIN, async (tx) =>
+        tx.execute(sql`update approvals.approval_requests
+          set status = 'approved', decided_by = ${SUPER}, decided_at = now() where id = ${pending}`),
+      ),
+    );
+    expect(impersonated.message).toMatch(/decided_by must be the acting user/);
+
+    // Genuinely decided, but by someone who is not a super admin.
+    const byPlain = await approvedReopen(periodId, PLAIN);
+    expect((await refusal(reopen(periodId, byPlain, PLAIN))).message).toMatch(
+      /PERIOD_REOPEN_UNAUTHORISED/,
+    );
+
+    // A super admin's approval, applied by someone else's transaction.
+    const bySuper = await approvedReopen(periodId);
+    expect((await refusal(reopen(periodId, bySuper, PLAIN))).message).toMatch(
+      /PERIOD_REOPEN_UNAUTHORISED/,
+    );
+
+    // And the app role cannot make anyone a super admin (D-094).
+    const promoted = await refusal(
+      asApp(async (tx) =>
+        tx.execute(sql`update iam.users set is_super_admin = true where id = ${PLAIN}`),
+      ),
+    );
+    expect(promoted.message).toMatch(/only the owner role grants super admin/);
+
+    // The legitimate path still works.
+    await reopen(periodId, bySuper);
+    expect((await periodRow(periodId))?.status).toBe('open');
+  });
+
   it('reopens with an approved period_reopen, and that approval cannot reopen it again', async () => {
-    const periodId = await closeMonth('2026-02-01', '2026-02-28');
+    const periodId = await closeMonth('2025-05-01', '2025-05-31');
     const approval = await approvedReopen(periodId);
     await reopen(periodId, approval);
 
-    await expect(postBalanced(500n, '2026-02-10')).resolves.toBeTypeOf('string');
+    await expect(postBalanced(500n, '2025-05-10')).resolves.toBeTypeOf('string');
 
-    // Closed again: the same approval is spent.
-    await closeMonth('2026-02-01', '2026-02-28');
+    // Closed again by a raw UPDATE that tries to keep the old closed_at: the
+    // database stamps its own time, so the old approval is spent (audit W2).
+    await asUser('usr_closer', async (tx) =>
+      tx.execute(sql`update ledger.periods set status = 'closed', closed_at = '2000-01-01T00:00:00Z'
+        where id = ${periodId}`),
+    );
+    const row = await periodRow(periodId);
+    expect(row?.status).toBe('closed');
+    expect(new Date(row?.closed_at ?? 0).getTime()).toBeGreaterThanOrEqual(
+      new Date(row?.reopened_at ?? 0).getTime(),
+    );
+
     expect((await refusal(reopen(periodId, approval))).message).toMatch(
       /PERIOD_REOPEN_UNAUTHORISED/,
     );
-    expect((await refusal(postBalanced(500n, '2026-02-11'))).message).toMatch(/PERIOD_CLOSED/);
+    expect((await refusal(postBalanced(500n, '2025-05-11'))).message).toMatch(/PERIOD_CLOSED/);
   });
 
-  it('refuses an approval raised before the close it would undo', async () => {
-    const periodId = await closeMonth('2026-01-01', '2026-01-31');
-    const early = await approvedReopen(periodId);
-    await reopen(periodId, early);
-    const stale = await approvedReopen(periodId);
-    // `stale` was approved while the period was open; the next close outdates it.
-    await closeMonth('2026-01-01', '2026-01-31');
-    expect((await refusal(reopen(periodId, stale))).message).toMatch(
+  it('refuses an approval raised during an earlier closure (audit W2)', async () => {
+    const periodId = await closeMonth('2025-06-01', '2025-06-30');
+    // Two requests during the first closure; one is used.
+    const first = await approvedReopen(periodId);
+    const second = await approvedReopen(periodId);
+    await reopen(periodId, second);
+    await closeMonth('2025-06-01', '2025-06-30');
+
+    expect((await refusal(reopen(periodId, first))).message).toMatch(
       /PERIOD_REOPEN_UNAUTHORISED: approval .* does not authorise/,
     );
   });
 
   it('makes a close wait for an in-flight post, and a post wait for an in-flight close', async () => {
-    // A post holds the month's lock shared until it commits.
+    // A post holds the org's period lock shared until it commits.
     let releasePost: () => void = () => undefined;
     const postHeld = new Promise<void>((resolve) => {
       releasePost = resolve;
@@ -532,7 +640,7 @@ describe('check 4 (database): the period lock and the reopen rule', () => {
     const secondClose = asApp(async (tx) => {
       await tx.execute(sql`
         insert into ledger.periods (org_id, starts_on, ends_on, status, closed_at, closed_by)
-        values (${ORG_A}, '2025-10-01', '2025-10-31', 'closed', now(), 'usr_closer')
+        values (${ORG_A}, '2025-12-01', '2025-12-31', 'closed', now(), 'usr_closer')
       `);
       closeWritten();
       await closeHeld;
@@ -540,7 +648,7 @@ describe('check 4 (database): the period lock and the reopen rule', () => {
     await closeStarted;
 
     let postSettled = false;
-    const blockedPost = postBalanced(300n, '2025-10-15').finally(() => {
+    const blockedPost = postBalanced(300n, '2025-12-15').finally(() => {
       postSettled = true;
     });
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -573,6 +681,63 @@ describe('check 4 (database): the period lock and the reopen rule', () => {
     } finally {
       await client.end();
     }
+  });
+});
+
+describe('accounts and reversals (0015)', () => {
+  it("never changes an account's id, and refuses an account whose shape contradicts its subtype", async () => {
+    const moved = await refusal(
+      asApp(async (tx) =>
+        tx.execute(sql`update ledger.accounts set id = gen_random_uuid() where id = ${BANK_A}`),
+      ),
+    );
+    expect(moved.message).toMatch(/can be renamed or deactivated, nothing else/);
+
+    for (const [subtype, cls, normal, party] of [
+      ['supplier_payable', 'liability', 'credit', null],
+      ['inventory', 'income', 'debit', null],
+      ['wallet_bank', 'asset', 'credit', null],
+    ] as const) {
+      const result = await refusal(
+        asApp(async (tx) =>
+          tx.execute(sql`insert into ledger.accounts (org_id, code, name, class, subtype, normal_balance, party_type)
+            values (${ORG_A}, ${`X-${subtype.toUpperCase().replace(/_/g, '-')}`}, 'bad', ${cls}::ledger.account_class,
+                    ${subtype}::ledger.account_subtype, ${normal}::ledger.normal_balance,
+                    ${party}::ledger.party_type)`),
+        ),
+      );
+      expect(result.message, subtype).toMatch(/LEDGER_ACCOUNT_INVALID: a .* account is/);
+    }
+  });
+
+  it('refuses a reversal that does not mirror the journal it reverses (audit N3)', async () => {
+    const original = await postBalanced(1_000n);
+    const reversal = (
+      debit: bigint,
+      key = `journal:${original}:reversed`,
+      sourceType = 'journal',
+    ) =>
+      asApp(async (tx) => {
+        const rows = await tx.execute<{ id: string }>(sql`
+          insert into ledger.journals
+            (org_id, business_date, source_type, source_id, idempotency_key, reverses_journal_id,
+             content_hash, created_by, created_txid)
+          values (${ORG_A}, '2026-07-16', ${sourceType}, ${original}, ${key}, ${original}, 'h', 'u', '1'::xid8)
+          returning id
+        `);
+        const id = rows[0]?.id ?? '';
+        await insertLine(tx, id, 1, BANK_A, 0n, debit);
+        await insertLine(tx, id, 2, INCOME_A, debit, 0n);
+      });
+
+    // Balanced, but not the mirror image.
+    expect((await refusal(reversal(999n))).message).toMatch(/does not mirror journal/);
+    // Not keyed on what it reverses.
+    expect((await refusal(reversal(1_000n, `test:${original}:reversed`, 'test'))).message).toMatch(
+      /journals_reversal_shape/,
+    );
+    // The true mirror commits.
+    await expect(reversal(1_000n)).resolves.toBeUndefined();
   });
 });
 

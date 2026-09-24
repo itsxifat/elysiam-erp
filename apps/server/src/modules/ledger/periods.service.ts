@@ -7,7 +7,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { AuditService } from '../../platform/audit/audit.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { ApprovalsService, type ApprovalExecutor } from '../approvals/approvals.service.js';
-import { ledgerHttpError } from './ledger.errors.js';
+import { ledgerHttpError, mapLedgerErrors } from './ledger.errors.js';
 import * as repo from './ledger.repository.js';
 
 /**
@@ -130,11 +130,35 @@ export class PeriodsService implements OnModuleInit {
     request: AuditableRequest,
   ): Promise<{ approvalId: string; status: string; periodId: string }> {
     const period = periodForMonth(input.month);
-    const existing = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
-      repo.periodByStart(tx, context.orgId, period.startsOn),
+    const { existing, laterClosed } = await withOrg(
+      { orgId: context.orgId, userId: context.userId },
+      async (tx) => ({
+        existing: await repo.periodByStart(tx, context.orgId, period.startsOn),
+        laterClosed: await repo.closedAfter(tx, context.orgId, period.startsOn),
+      }),
     );
     if (existing?.status !== 'closed') {
       throw ledgerHttpError('PERIOD_NOT_CLOSED', `${input.month} is not closed.`);
+    }
+    // A closed month locks every date before it (D-093), so reopening this one
+    // alone would change nothing. Later months are reopened first.
+    if (laterClosed !== undefined) {
+      throw ledgerHttpError(
+        'PERIOD_LATER_CLOSED',
+        `${laterClosed} is closed too. Reopen the later months first, latest first.`,
+      );
+    }
+    if (
+      await this.approvals.hasPending(context, {
+        type: 'period_reopen',
+        payloadKey: 'periodId',
+        value: existing.id,
+      })
+    ) {
+      throw ledgerHttpError(
+        'PERIOD_REOPEN_PENDING',
+        `A request to reopen ${input.month} is already waiting for a decision.`,
+      );
     }
 
     // The approvals service checks the caller may raise this type (D-072),
@@ -166,7 +190,8 @@ export class PeriodsService implements OnModuleInit {
       );
     }
 
-    await this.reopenLocked(tx, context, parsed.data, approval.id, request);
+    // Refusals from the database surface as ledger errors, not 500s (audit N4).
+    await mapLedgerErrors(() => this.reopenLocked(tx, context, parsed.data, approval.id, request));
   };
 
   private async reopenLocked(
@@ -177,6 +202,9 @@ export class PeriodsService implements OnModuleInit {
     request: AuditableRequest | undefined,
   ): Promise<void> {
     const { periodId } = target;
+    // The org's period lock before the row lock, in the same order a close
+    // takes them, so the two cannot deadlock (audit N5).
+    await repo.lockPeriods(tx, context.orgId);
     const period = await repo.periodById(tx, context.orgId, periodId);
     if (period?.status !== 'closed') {
       throw ledgerHttpError(

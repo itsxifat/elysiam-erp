@@ -61,7 +61,11 @@ function daysBetween(from: string, to: string): number {
 export class ReportsService {
   /** The chart of accounts, as far as the caller may see it. */
   async accounts(context: ActiveContext, request: object) {
-    const scope = scopeWhere(request, { branchId: sql`a.branch_id` });
+    // A branch-scoped caller sees their branch's accounts plus the org-level
+    // other-income categories they post cash in against (audit N7). Names of
+    // income categories are not scoped data.
+    const scope = sql`(${scopeWhere(request, { branchId: sql`a.branch_id` })}
+      or (a.branch_id is null and a.subtype = 'other_income'))`;
     const withheld = hiddenSubtypes(context);
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const rows = await repo.listAccounts(tx, context.orgId, { scope, excludeSubtypes: withheld });
@@ -197,13 +201,15 @@ export class ReportsService {
         context.orgId,
         statement.items.map((item) => item.journalId),
         account.id,
+        hiddenSubtypes(context),
       );
       return {
         ...statement,
         items: statement.items.map((item) => ({
           ...item,
-          // Names only, never amounts. A cost account's *name* says no more
-          // than "a supplier was paid", which the cash movement already does.
+          // Names only, never amounts, and never a cost account's name for a
+          // caller without read:cost: "against 1300 Inventory" beside the
+          // cash amount is a purchase cost (audit N6, D-085).
           against: (against.get(item.journalId) ?? []).map((entry) => ({
             code: entry.code,
             name: entry.name,

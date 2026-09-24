@@ -202,6 +202,14 @@ export const journals = ledger.table(
     check('journals_source_type_format', sql`${table.sourceType} ~ '^[a-z][a-z0-9_]{0,39}$'`),
     check('journals_memo_length', sql`${table.memo} is null or length(${table.memo}) <= 500`),
     check('journals_not_self_reversal', sql`${table.reversesJournalId} <> ${table.id}`),
+    // A reversal is keyed on what it reverses (`journal:<id>:reversed`), so a
+    // mis-built draft cannot take a journal's one reversal slot (audit N3).
+    check(
+      'journals_reversal_shape',
+      sql`${table.reversesJournalId} is null or (${table.sourceType} = 'journal'
+          and ${table.sourceId} = ${table.reversesJournalId}
+          and split_part(${table.idempotencyKey}, ':', 3) = 'reversed')`,
+    ),
   ],
 );
 

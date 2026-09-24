@@ -245,6 +245,29 @@ export class ApprovalsService {
    * enforcement read the same pure function (`requiresApproval`), which is why
    * it lives in the domain rather than here.
    */
+  /**
+   * Is a request of this type already pending whose payload names this value
+   * under this key? Lets an owning module refuse a duplicate (a second reopen
+   * of the same period) without reading this module's tables (invariant 12).
+   */
+  async hasPending(
+    context: ActiveContext,
+    input: { type: ApprovalType; payloadKey: string; value: string },
+  ): Promise<boolean> {
+    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const rows = await tx.execute<{ found: boolean }>(sql`
+        select exists (
+          select 1 from approvals.approval_requests
+          where org_id = ${context.orgId}
+            and type = ${input.type}::approvals.approval_type
+            and status = 'pending'
+            and payload ->> ${input.payloadKey} = ${input.value}
+        ) as found
+      `);
+      return rows[0]?.found === true;
+    });
+  }
+
   async isRequired(
     context: ActiveContext,
     input: { type: ApprovalType; amountPoisha: bigint | null; amountDerivedByServer?: boolean },

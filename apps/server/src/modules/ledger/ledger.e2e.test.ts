@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { seedAccountId, SEED_ORG_IDS, withOrg, withSystem, ensureBranchWallets } from '@elysium/db';
 import {
+  ACCOUNT_SUBTYPE_NAMES,
+  ACCOUNT_SUBTYPES,
   allocate,
   businessDate,
   idempotencyKey,
@@ -445,6 +447,54 @@ describe('check 4: posting into a closed period fails; reopening goes through ap
     expect(parse<{ code: string }>(notClosed.body).code).toBe('PERIOD_NOT_CLOSED');
   });
 
+  it('refuses a duplicate reopen request, and reopening a month while a later one is closed', async () => {
+    const accounts = await harness.asRole('accounts', ORG_A);
+    const superAdmin = await asSuperAdmin();
+    await accounts.client.request('POST', '/v1/ledger/periods/close', {
+      body: { month: '2025-08' },
+    });
+
+    const first = await accounts.client.request('POST', '/v1/ledger/periods/reopen', {
+      body: { month: '2025-08', reason: 'first' },
+    });
+    expect(first.statusCode, first.body).toBe(201);
+    const duplicate = await accounts.client.request('POST', '/v1/ledger/periods/reopen', {
+      body: { month: '2025-08', reason: 'again' },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(parse<{ code: string }>(duplicate.body).code).toBe('PERIOD_REOPEN_PENDING');
+
+    // A closed month locks every date before it (D-093): reopening March
+    // while August is closed would change nothing, so it is refused.
+    const earlier = await accounts.client.request('POST', '/v1/ledger/periods/reopen', {
+      body: { month: '2025-03', reason: 'late invoice' },
+    });
+    expect(earlier.statusCode).toBe(409);
+    expect(parse<{ code: string }>(earlier.body).code).toBe('PERIOD_LATER_CLOSED');
+
+    // And the lock is real: April sits between two closed months.
+    expect(
+      (
+        await failure(
+          post(
+            ORG_A,
+            draft(
+              [line(account(ORG_A, '1100'), 5n, 0n), line(account(ORG_A, '4300'), 0n, 5n)],
+              '2025-04-15',
+            ),
+          ),
+        )
+      ).code,
+    ).toBe('PERIOD_CLOSED');
+
+    // Leave August reopened for the tests after this one.
+    const { approvalId } = parse<{ approvalId: string }>(first.body);
+    const approved = await superAdmin.request('POST', `/v1/approvals/${approvalId}/decide`, {
+      body: { decision: 'approved' },
+    });
+    expect(approved.statusCode, approved.body).toBe(201);
+  });
+
   it('leaves the period closed when the request is rejected', async () => {
     const accounts = await harness.asRole('accounts', ORG_A);
     const superAdmin = await asSuperAdmin();
@@ -755,6 +805,33 @@ describe('row scope and cost: a branch manager sees their branch, and no cost', 
     expect([...bodies]).toHaveLength(1);
   });
 
+  it('lists the org-level income categories cash in needs, and no cost account', async () => {
+    const accounts = parse<{ items: { code: string; subtype: string }[] }>(
+      (await manager.client.request('GET', '/v1/ledger/accounts')).body,
+    ).items;
+    expect(accounts.map((row) => row.code)).toContain('4300');
+    expect(accounts.map((row) => row.code)).toContain('1010-SR-SCOPE');
+    expect(accounts.map((row) => row.code)).not.toContain('1010-HQ');
+    expect(accounts.map((row) => row.subtype)).not.toContain('inventory');
+  });
+
+  it('never names a cost account in the cash book for a branch manager (audit N6)', async () => {
+    interface Book {
+      items: { against: { code: string }[] }[];
+    }
+    const url = `/v1/ledger/wallets/${branchWallet}/cash-book?to=2030-01-01`;
+    const managerCodes = parse<Book>((await manager.client.request('GET', url)).body).items.flatMap(
+      (item) => item.against.map((entry) => entry.code),
+    );
+    expect(managerCodes).not.toContain('1300');
+
+    const accounts = await harness.asRole('accounts', ORG_A);
+    const accountsCodes = parse<Book>(
+      (await accounts.client.request('GET', url)).body,
+    ).items.flatMap((item) => item.against.map((entry) => entry.code));
+    expect(accountsCodes).toContain('1300');
+  });
+
   it('lists only their wallet, and 404s another branch’s cash book', async () => {
     const wallets = await manager.client.request('GET', '/v1/ledger/wallets');
     expect(
@@ -926,6 +1003,33 @@ describe('large amounts (security review M2)', () => {
     ]) {
       const response = await actor.client.request('GET', url);
       expect(response.statusCode, `${url} ${response.body}`).toBe(200);
+    }
+  });
+});
+
+describe('the database knows each subtype as the domain does (0015)', () => {
+  it('ledger.subtype_shape agrees with ACCOUNT_SUBTYPES for every subtype', async () => {
+    const rows = await withSystem(async (tx) =>
+      tx.execute<{
+        subtype: string;
+        class: string;
+        normal_balance: string;
+        party_type: string | null;
+      }>(
+        sql`select s.subtype::text as subtype, shape.class::text as class,
+                   shape.normal_balance::text as normal_balance, shape.party_type::text as party_type
+            from unnest(enum_range(null::ledger.account_subtype)) as s(subtype)
+            cross join lateral ledger.subtype_shape(s.subtype) as shape`,
+      ),
+    );
+    expect(rows.length).toBe(ACCOUNT_SUBTYPE_NAMES.length);
+    for (const row of rows) {
+      const info = ACCOUNT_SUBTYPES[row.subtype as keyof typeof ACCOUNT_SUBTYPES];
+      expect([row.class, row.normal_balance, row.party_type], row.subtype).toEqual([
+        info.class,
+        info.normalBalance,
+        info.party,
+      ]);
     }
   });
 });

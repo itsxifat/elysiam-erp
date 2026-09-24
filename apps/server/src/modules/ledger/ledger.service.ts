@@ -44,7 +44,7 @@ export class LedgerService implements LedgerApi {
     if (await repo.closedPeriodFor(tx, actor.orgId, period.startsOn)) {
       throw ledgerHttpError(
         'PERIOD_CLOSED',
-        `${draft.businessDate} falls in ${period.month}, which is closed.`,
+        `${draft.businessDate} falls in or before a closed month (from ${period.month} on).`,
       );
     }
 

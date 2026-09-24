@@ -501,7 +501,8 @@ System subtypes:
   - A deferred constraint trigger: each journal has ≥ 2 lines and total debits equal total credits.
   - No UPDATE or DELETE for `erp_app`, via REVOKE plus a trigger that raises for every role.
   - Lines are added only by the transaction that created their journal (`created_txid`), so a posted journal cannot grow a balanced pair of lines later; each line must match its account's party type, branch and active flag.
-  - A period-lock trigger: journals dated in a closed period are rejected, under a shared per-(org, month) advisory lock that a close takes exclusively. Posting requires READ COMMITTED.
+  - A period-lock trigger: a journal dated in or before any closed month is rejected (D-093), under a per-org advisory lock that posts take shared and closes and reopens take exclusively. Posting requires READ COMMITTED.
+  - Approval rows are born pending with database-stamped times, and a reopen rests only on an approval decided by an acting platform super admin (migration 0015, D-094).
 - `ledger.post(tx, draft)` is the only writer.
   - Drafts come from pure posting-rule functions in `packages/domain/src/posting/`, one file per business event.
   - Posting an existing idempotency key returns the existing journal and writes nothing. The same key with different content is refused with `IDEMPOTENCY_CONFLICT` (`content_hash`, D-082).
@@ -573,7 +574,8 @@ All reports filter by org, branch and a range of business dates. They apply the 
 
 - Periods close monthly. `org_admin` or `accounts` closes them (`update LedgerPeriod`, D-083), once the month has ended in Asia/Dhaka; reopening needs super_admin approval.
   - A `ledger.periods` row appears when a month is first closed; a month without one is open.
-  - Reopening is a `period_reopen` approval request. Its approval reopens the period in the same transaction, through the executor the ledger registers with the approvals module. The database refuses closed → open unless an approved `period_reopen` for that period, raised and decided after the close, is named (D-081).
+  - Closing a month locks every date before it; reopening is latest-first, one month at a time (D-093).
+  - Reopening is a `period_reopen` approval request, raised only through `POST /v1/ledger/periods/reopen`. Its approval reopens the period in the same transaction, through the executor the ledger registers with the approvals module. The database refuses closed → open unless an approved `period_reopen` for that period, raised and decided after the close, is named (D-081).
 - `business_date = (occurred_at at time zone 'Asia/Dhaka')::date`, computed in the domain layer.
 - Back-dating is allowed only into open periods. Anything earlier than yesterday needs approval (configurable).
 

@@ -106,6 +106,20 @@
       "when": 1790263217110,
       "tag": "0014_ledger_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790265829137,
+      "tag": "0015_ledger_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790265911610,
+      "tag": "0016_journal_reversal_shape",
+      "breakpoints": true
     }
   ]
 }
