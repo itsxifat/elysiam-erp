@@ -448,7 +448,10 @@ How thresholds behave (D-062, D-065, D-068):
 - Never auto-approved, whatever the threshold (D-071): reopening a period, bonus rules, threshold changes and back-dated entries. The database refuses a threshold for them and an auto-approved row of them. A request's terms are fixed from the moment it is raised.
 - Who may raise is per type (`REQUESTER_TYPES`, D-072). A type whose amount the owning module derives (stock write-offs and gains, settlements, closing variances, payroll, payout batches) is always held when its amount was typed by a person.
 - Who may check is per type (`CHECKER_TYPES`): accounts decides payments, hr decides payroll and bonuses, branch_manager decides branch items (stock write-offs and gains, closing variances), org_admin decides everything except reopening a period, which only super_admin decides.
-- A branch manager is a branch-tier checker: only requests carrying a `branch_id` in the branch manager membership's own scope (D-075), and only under both the captured and the current threshold for the type.
+- A branch manager is a branch-tier checker: only branch items (never auto-approved, D-076) whose amount the owning module derived, carrying a `branch_id` in the branch manager membership's own scope (D-075), and only under both the captured and the current threshold for the type.
+- A requester's type rights and branch scope come from the same role: a type may be raised only for the branches of the roles allowed to raise it.
+- Nobody decides a request raised by whoever granted them their role, directly or down the grant chain (D-077).
+- An executor acts on `amount_poisha` and nothing else; a payload may not carry its own amount (D-078).
 - A WAC-valued amount (stock write-off or gain) is withheld from roles without `read:cost` (D-074).
 
 ---

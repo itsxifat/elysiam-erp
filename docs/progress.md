@@ -106,3 +106,66 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
   - CI still has never executed — the repo has no remote (owner: human).
 - **The re-audit found one more, and it was mine from the fix commit.** `refuseUnclaimedAccount` — the guard that stops an invite adopting a squatter's account — read `iam.memberships` inside `withGlobal()`, which clears `app.user_id` as well as `app.org_id`. Both policies then evaluate `col = NULL`, so the membership count came back zero for everyone and the guard collapsed to "refuse anyone who has a password". A colleague joining a second brand was rejected outright — the exact case §5 exception 4 and D-050 exist for, and the reason `iam.users` is global at all. Confirmed against the database: a user with two memberships counted as zero. It reads through `withUser` now, the same lens `mustEnrolTwoFactor` already used for the same shape of question. The test written alongside the original fix could not see it, because it invited twice before the invitee ever redeemed; the new one redeems first and fails with the old code. `withGlobal`'s own doc comment warns about this exact failure mode, which I wrote in the same commit that tripped over it.
 - Next: M02b, permissions, audit and approvals.
+
+### 2026-09-24 · M02b · Permissions, audit and approvals · done
+
+- Delivered:
+  - **Permissions:** one declarative CASL matrix, a global guard that refuses anything undeclared, and a mandatory row scope for `own` and `branch` rules.
+  - **Cost protection:** `serializeFor` runs on every response through an interceptor, so cost fields cannot leave the process for a role without `read:cost`.
+  - **Audit:** every mutation writes a redacted audit row. That includes the org switch and Better Auth's credential events.
+  - **Maker-checker:** the database refuses self-approval, freezes a request's terms from the moment it is raised, and refuses to auto-approve a control action. It also has per-org thresholds, per-type rights on both the maker and the checker side, and the `approval.requested` and `approval.decided` events.
+  - **Route gate:** `check-route-matrix` in `pnpm verify` fails any route without a declared ability, and any non-public route missing from the generated route-matrix suite.
+- **Maker-checker took five audit rounds, and the auditors were right every time.** Each round found a way to get a second person's approval without a second person. The fixes are in commits 6acbf3a, 36590a8, d9cda15 and the final commit.
+  - An approved request could be edited afterwards: approve 500 taka, then update `amount_poisha` to 5 crore.
+  - A showroom branch manager could approve a payroll run.
+  - An org admin could set a threshold of 1 on `period_reopen` and have the reopen auto-approved.
+  - A pending request could be re-attributed to someone else and then approved by its real maker.
+  - An org admin could raise a threshold, auto-approve their own request, then lower it again.
+  - A caller holding `hr` plus `branch_manager@A` could approve branch B's write-off. Their scopes were unioned across roles.
+  - A caller holding `branch_manager@A` plus `warehouse` could raise a branch B wallet adjustment. That too was scopes unioned across roles, on the maker side.
+  - An org admin could create a second "org admin", receive that user's invite token, and approve their own requests through the new account.
+
+  The lesson generalises: every permission question has to be answered by the _same_ role and the same membership. That covers type right, branch scope and who granted it. A union across roles is a privilege escalation waiting for its first two-role user.
+
+- **The first version of row scope did nothing at all.** The guard asks CASL "may this caller read ApprovalRequest", which for a scoped rule means "on _some_ row". So every `own` and `branch` rule was org-wide on the request path, and a branch manager could read every branch's approvals with amounts.
+  - The fix: one typed `ScopeCondition` feeds both CASL (for single rows) and the SQL filter (for lists). A property test checks they agree on 2,000 random rows.
+  - `ScopeInterceptor` refuses to send a scoped response when the handler never applied the scope. This is detection rather than prevention for mutations, and D-061 says so.
+- Verification:
+  - `pnpm verify` exits 0: 18 test files and 505 tests, plus format, lint, typecheck, build, migrations, schema drift and the route-matrix gate, with 13 routes, 11 of them matrix-tested and 2 public.
+  - Acceptance checks 1–7 are in the Verification Report.
+  - The generated route-matrix suite drives every non-public route as every role. It asserts the guard admits exactly what the matrix grants, and that every successful mutation leaves an audit row for its actor.
+  - Check 6 was demonstrated by removing a route from the manifest. The gate failed with "has no matrix test" and passed again after the revert.
+- Auditors:
+  - **acceptance-auditor:** NOT READY on the first pass with eight gaps. The real ones were the check 1 loop asserting only `org` and `null` cells, and the first org switch not being audited at all. It was READY on re-audit.
+  - **`/security-review` (check 7):** no HIGH findings. Two MEDIUMs and five LOWs, all fixed. The MEDIUMs were that branch scope was never enforced and that a branch manager could decide at any amount. Two LOWs were cost recorded in the audit log before the serializer ran, and `GET /v1/approvals` returning 500 for every caller.
+  - **ledger-auditor round 1:** 4 critical, all fixed in 6acbf3a.
+  - **ledger-auditor round 2:** 2 critical and 6 warnings, all fixed in d9cda15.
+  - **ledger-auditor final pass:** confirmed all eight of round 2's fixes were real, and found 1 critical, 4 warnings and 8 notes. All are fixed in the final commit, with tests.
+- Decisions/assumptions: D-061 to D-078.
+  - **Row scope and per-role branch scope:** D-061 makes row scope mandatory. D-075 keeps branch scope per role; it is required on every context and fails closed.
+  - **Checker and maker authority:** D-062 gives checkers per-type rights and a branch tier. D-072 does the same for makers, and typed amounts no longer decide anything. D-077 stops anyone approving for whoever granted them their role.
+  - **Approvals list and amounts:** D-063 narrows the list by relevance. D-074 withholds WAC-valued amounts from roles without `read:cost`.
+  - **Audit:** D-064 records where audit rows are written and which of them are atomic. D-066 audits credential events into each of the user's orgs.
+  - **Thresholds:** D-065 makes them org_admin-only. D-068 auto-approves below the threshold. D-073 makes relaxing a threshold maker-checker.
+  - **Events and hardening:** D-067 holds events in memory until M04. D-069 strips the session token and refuses cross-site fetches.
+  - **Route gate:** D-070 defines what it enforces.
+  - **Approval safeguards:** D-071 never auto-approves the four control types. D-076 holds branch items for a branch-tier checker. D-078 says executors act on the approved amount and nothing else.
+- New dependencies:
+  - `@casl/ability`: the matrix engine architecture §6 names.
+  - `fast-check`, now used by `contracts` and `domain`: the property tests for scope agreement, redaction and thresholds.
+- Deviations from the milestone spec:
+  - **Check 5:** "below and above behave differently" became auto-approval below the threshold (D-068), with more exceptions than the spec implies. The four control types, branch items and typed server-derived amounts are always held.
+  - **Sales lost `request ApprovalRequest`.** §6 gives sales nothing that goes through maker-checker (D-072). This is a matrix change.
+  - **The route gate goes beyond the Build item:** it also fails contradictory declarations and stale manifest entries.
+- Follow-ups:
+  - Two CHECK constraints were added `NOT VALID` so a database already holding bad rows can still migrate: `approval_requests_never_auto_approved` (0011) and `approval_requests_branch_items_never_auto_approved` (0012). Before go-live, review any rows that violate them, then run `alter table approvals.approval_requests validate constraint …` for each (owner: human, M14b).
+  - **Client question (D-068, D-076):** may small branch items skip the branch manager entirely? Today they may not, and every branch item waits for a checker (owner: human).
+  - Events are held in memory. M04 replaces `ApprovalsService.publish` with `enqueue(tx, …)` and the outbox (owner: claude, M04).
+  - The M02a rate limiter moves to Valkey, as already planned (owner: claude, M04).
+  - M02a follow-ups closed here: session token stripped, `Sec-Fetch-Site` refused, trailing-slash sign-in pinned, branch scoping enforced, and both M02a mutations audited.
+  - M02a follow-ups moved to M04: the unused `two_factors.failed_verification_count` / `locked_until` columns (wire them with Valkey or drop them), and binding the CSRF token to the session with an HMAC (owner: claude, M04).
+  - The owning modules must raise their approval types with a derived amount and a per-type payload schema. M07 covers stock write-offs and gains, M12 settlements, M19 payroll, M21 payout batches and M23 closing variances (owner: claude, those milestones).
+  - D-077's grant-lineage rule exists because the admin receives the invite token. Revisit it once M16 emails invites directly to the invitee (owner: claude, M16).
+  - Delete the `demo` schema and move the matrix suite onto the real catalog (owner: claude, M06).
+  - D-066 audits sign-ins into each of the user's orgs. A global security-event log, if the client wants one, belongs with M04 (owner: claude, M04).
+- Next: M03, ledger core.
