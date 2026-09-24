@@ -19,6 +19,9 @@ import {
 import { sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
+
 /** What the auth plugin hangs off the request once a session is resolved. */
 export interface AuthenticatedRequest extends FastifyRequest {
   authUser?: { id: string; email: string };
@@ -72,6 +75,7 @@ export class IamService {
   constructor(
     @Inject(AUTH) private readonly auth: Auth,
     @Inject(PASSWORD_TOKENS) private readonly tokens: PasswordTokenStore,
+    private readonly audit: AuditService,
   ) {}
 
   requireUserId(request: FastifyRequest): string {
@@ -96,13 +100,57 @@ export class IamService {
    * advisory.
    */
   async setActiveOrg(request: FastifyRequest, orgId: string): Promise<void> {
-    const sessionId = (request as AuthenticatedRequest).authSessionId;
-    if (sessionId === undefined) throw new BadRequestException('No session.');
+    const typed = request as AuthenticatedRequest;
+    const sessionId = typed.authSessionId;
+    const userId = typed.authUser?.id;
+    if (sessionId === undefined || userId === undefined) {
+      throw new BadRequestException('No session.');
+    }
 
-    await withGlobal(async (tx) => {
+    const previous = await withGlobal(async (tx) => {
+      const [row] = await tx.execute<{ active_org_id: string | null }>(
+        sql`select active_org_id from iam.sessions where id = ${sessionId} for update`,
+      );
       await tx.execute(
         sql`update iam.sessions set active_org_id = ${orgId}, updated_at = now() where id = ${sessionId}`,
       );
+      return row?.active_org_id ?? null;
+    });
+
+    /*
+     * Audited into the org being *entered* (§25).
+     *
+     * The interceptor could not do this: it writes into `request.context.orgId`,
+     * which on a first switch does not exist — no context is built until a
+     * session has an org — and on a later switch is the org being left. So the
+     * one mutation that changes which rows the database returns was either
+     * unaudited or recorded in the wrong brand's log. The org admin who needs to
+     * see "who started acting in my org, and when" is the target's.
+     *
+     * The previous org is recorded only as "none", "this" or "another": the
+     * target's admin learning *which* sister brand the user came from would be
+     * a small cross-tenant disclosure for no audit benefit.
+     *
+     * Not in the same transaction as the switch: the session row is global and
+     * the log is tenant-scoped, reached through different connection settings.
+     * Written straight after, so a failure here surfaces as a 500 on a switch
+     * that did happen — loud, which is the right direction for an audit gap.
+     */
+    await withOrg({ orgId, userId }, async (tx) => {
+      await this.audit.record(tx, {
+        orgId,
+        actorUserId: userId,
+        operation: 'update',
+        action: 'iam.active_org_switched',
+        entityType: 'Session',
+        entityId: sessionId,
+        before: { activeOrg: previous === null ? 'none' : previous === orgId ? 'this' : 'another' },
+        after: { activeOrgId: orgId },
+        ip: request.ip,
+        userAgent: request.headers['user-agent'] ?? null,
+        requestId: typed.requestId ?? null,
+        request: request as unknown as AuditableRequest,
+      });
     });
   }
 

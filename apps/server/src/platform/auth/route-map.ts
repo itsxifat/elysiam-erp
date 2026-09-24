@@ -3,7 +3,7 @@ import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { RequestMethod } from '@nestjs/common';
 import type { INestApplication } from '@nestjs/common';
 
-import { ABILITY_KEY, AUTHENTICATED_ONLY, PUBLIC_KEY } from './abilities.js';
+import { AUTHENTICATED_ONLY, declarationOf, type AbilityRequirement } from './abilities.js';
 
 /**
  * Every route the application registers, with what it declared.
@@ -20,8 +20,15 @@ export interface RouteDeclaration {
   readonly handler: string;
   readonly method: string;
   readonly path: string;
-  /** `read:Order`, `authenticated`, `public:<reason>`, or null when undeclared. */
+  /**
+   * `read:Order`, `authenticated`, `public:<reason>`, or null when undeclared
+   * or contradictory.
+   */
   readonly declared: string | null;
+  /** The (action, subject) the guard checks, when the route declares one. */
+  readonly ability: AbilityRequirement | null;
+  /** Why the declarations contradict each other, when they do. */
+  readonly problem: string | null;
 }
 
 const METHOD_NAMES: Readonly<Record<number, string>> = {
@@ -67,39 +74,27 @@ export function describeRoutes(app: INestApplication): RouteDeclaration[] {
 
         const suffix = Reflect.getMetadata(PATH_METADATA, handler) as unknown;
 
-        // Handler metadata wins over controller metadata, which is the same
-        // precedence `getAllAndOverride` applies in the guard. If these two
-        // disagreed, the gate would bless a route the guard then refuses.
-        const publicReason =
-          (Reflect.getMetadata(PUBLIC_KEY, handler) as string | undefined) ??
-          (Reflect.getMetadata(PUBLIC_KEY, controllerType) as string | undefined);
-
-        const ability =
-          (Reflect.getMetadata(ABILITY_KEY, handler) as
-            { action: string; subject?: string } | undefined) ??
-          (Reflect.getMetadata(ABILITY_KEY, controllerType) as
-            { action: string; subject?: string } | undefined);
-
-        // The same contradiction the guard refuses: a handler that declares an
-        // ability while inheriting @Public from its controller. Reported rather
-        // than resolved, so the gate cannot bless what the guard will reject.
-        const handlerAbility = Reflect.getMetadata(ABILITY_KEY, handler) as
-          { action: string; subject?: string } | undefined;
-        const handlerPublic = Reflect.getMetadata(PUBLIC_KEY, handler) as string | undefined;
+        // Resolved by the very function the guard calls, so the gate cannot
+        // bless a route the guard then refuses, or the other way round.
+        const resolved = declarationOf(
+          (key, target) => Reflect.getMetadata(key, target) as unknown,
+          handler,
+          controllerType,
+        );
 
         let declared: string | null = null;
-        if (
-          handlerAbility !== undefined &&
-          handlerPublic === undefined &&
-          publicReason !== undefined
-        ) {
-          declared = null;
-        } else if (publicReason !== undefined) declared = `public:${publicReason}`;
-        else if (ability !== undefined) {
-          declared =
-            ability.action === AUTHENTICATED_ONLY
-              ? AUTHENTICATED_ONLY
-              : `${ability.action}:${ability.subject ?? '?'}`;
+        let ability: AbilityRequirement | null = null;
+        let problem: string | null = null;
+
+        if (resolved.kind === 'contradictory') problem = resolved.why;
+        else if (resolved.kind === 'public') declared = `public:${resolved.reason}`;
+        else if (resolved.kind === 'declared') {
+          const declaration = resolved.declaration;
+          if (declaration.action === AUTHENTICATED_ONLY) declared = AUTHENTICATED_ONLY;
+          else {
+            ability = declaration;
+            declared = `${ability.action}:${ability.subject}`;
+          }
         }
 
         routes.push({
@@ -108,6 +103,8 @@ export function describeRoutes(app: INestApplication): RouteDeclaration[] {
           method: METHOD_NAMES[methodCode] ?? String(methodCode),
           path: joinPath(prefix, suffix),
           declared,
+          ability,
+          problem,
         });
       }
     }

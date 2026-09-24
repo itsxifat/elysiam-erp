@@ -1,6 +1,7 @@
 import {
   bigint,
   check,
+  foreignKey,
   index,
   jsonb,
   pgSchema,
@@ -12,7 +13,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-import { organizations } from '../org/index.js';
+import { branches, organizations } from '../org/index.js';
 import { primaryId, timestamps } from '../columns.js';
 
 /**
@@ -45,11 +46,18 @@ export const approvalType = approvals.enum('approval_type', [
   'period_reopen',
 ]);
 
+/**
+ * `auto_approved` is a request below its org's threshold (§6 "above the
+ * threshold"): recorded, audited and announced like any other, but with no
+ * checker, because the org decided that amount does not need one. It is final
+ * the moment it is written, exactly like a human decision (migration 0009).
+ */
 export const approvalStatus = approvals.enum('approval_status', [
   'pending',
   'approved',
   'rejected',
   'cancelled',
+  'auto_approved',
 ]);
 
 export const approvalRequests = approvals.table(
@@ -64,6 +72,12 @@ export const approvalRequests = approvals.table(
     status: approvalStatus('status').notNull().default('pending'),
 
     requestedBy: text('requested_by').notNull(),
+    /**
+     * The branch this request is about, for §6's branch-tier checker. Null for
+     * an org-level action. Composite reference, never `.references(branches.id)`
+     * — a single-column FK is satisfiable by another org's branch (D-047).
+     */
+    branchId: uuid('branch_id'),
     /** Money is integer poisha (invariant 1). Null where the action has no amount. */
     amountPoisha: bigint('amount_poisha', { mode: 'bigint' }),
     /** What to do once approved. The requesting module owns its shape. */
@@ -80,7 +94,13 @@ export const approvalRequests = approvals.table(
     index('approval_requests_org_idx').on(table.orgId),
     index('approval_requests_pending_idx').on(table.orgId, table.status, table.type),
     index('approval_requests_requester_idx').on(table.orgId, table.requestedBy),
+    index('approval_requests_branch_idx').on(table.orgId, table.branchId),
     unique('approval_requests_org_id_id_key').on(table.orgId, table.id),
+    foreignKey({
+      name: 'approval_requests_org_id_branch_id_fk',
+      columns: [table.orgId, table.branchId],
+      foreignColumns: [branches.orgId, branches.id],
+    }).onDelete('restrict'),
 
     /**
      * Maker ≠ checker, at the database.
@@ -102,11 +122,17 @@ export const approvalRequests = approvals.table(
      * decider while still `pending` — states nothing would ever produce on
      * purpose but which a partial update produces easily, and which the
      * maker≠checker constraint above does not catch because NULL passes it.
+     *
+     * `auto_approved` has a time and no decider — the threshold decided, not a
+     * person. Compared as text because migration 0010 adds the enum value in
+     * the same transaction, and PostgreSQL refuses to use a new enum value as
+     * a literal before it commits.
      */
     check(
       'approval_requests_decision_is_complete',
       sql`(${table.status} = 'pending' and ${table.decidedBy} is null and ${table.decidedAt} is null)
           or (${table.status} = 'cancelled' and ${table.decidedBy} is null)
+          or (${table.status}::text = 'auto_approved' and ${table.decidedBy} is null and ${table.decidedAt} is not null)
           or (${table.status} in ('approved', 'rejected') and ${table.decidedBy} is not null and ${table.decidedAt} is not null)`,
     ),
   ],

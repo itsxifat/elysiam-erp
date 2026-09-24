@@ -1,6 +1,7 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import type { Auth } from '@elysium/db';
 
+import { AuditService } from '../../platform/audit/audit.service.js';
 import { IamController } from './iam.controller.js';
 import { AUTH, IamService, PASSWORD_TOKENS, PasswordTokenStore } from './iam.service.js';
 
@@ -23,6 +24,7 @@ export class IamModule {
       controllers: [IamController],
       providers: [
         IamService,
+        AuditService,
         { provide: AUTH, useValue: dependencies.auth },
         { provide: PASSWORD_TOKENS, useValue: dependencies.tokens },
       ],

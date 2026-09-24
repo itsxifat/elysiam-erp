@@ -5,6 +5,7 @@ import type { createAuth, RequestContext } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
+import { AUDITED_AUTH_PATHS, recordAuthEvent, resetTokenOwner } from '../audit/auth-audit.js';
 import { checkCsrf, ensureCsrfToken, type CsrfOptions } from './csrf.js';
 import {
   checkRateLimit,
@@ -37,6 +38,41 @@ export interface AuthPluginOptions extends CsrfOptions {
   /** Shared so a test can drive the clock or switch it off. */
   readonly limiter?: MemoryRateLimiter;
   readonly rateLimitEnabled?: boolean;
+}
+
+/**
+ * Remove the raw session token from a Better Auth JSON response (M02a
+ * follow-up).
+ *
+ * `get-session` returns `session.token` and sign-in returns a top-level
+ * `token`. The session lives in an httpOnly cookie precisely so page script
+ * cannot read it; echoing it in a JSON body hands it to any script that can
+ * call the endpoint, which is the XSS case httpOnly exists for. Nothing in our
+ * clients reads it — they are cookie-authenticated — so it goes. Anything that
+ * is not JSON is passed through untouched.
+ */
+export function withoutSessionToken(body: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return body;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return body;
+
+  const record = { ...(parsed as Record<string, unknown>) };
+  let changed = false;
+  if ('token' in record) {
+    delete record.token;
+    changed = true;
+  }
+  const session = record.session;
+  if (typeof session === 'object' && session !== null && 'token' in session) {
+    const { token: _token, ...rest } = session as Record<string, unknown>;
+    record.session = rest;
+    changed = true;
+  }
+  return changed ? JSON.stringify(record) : body;
 }
 
 export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): void {
@@ -146,6 +182,24 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       else if (Array.isArray(value)) headers.set(key, value.join(', '));
     }
 
+    // Who this call is about, captured before Better Auth acts: a sign-out ends
+    // the session and a reset consumes the token, so afterwards the answer is
+    // gone. Only for the endpoints that get an audit row (auth-audit.ts).
+    const path = url.pathname;
+    let knownUserId: string | null = null;
+    if (request.method === 'POST' && AUDITED_AUTH_PATHS[path] !== undefined) {
+      if (path === '/api/auth/reset-password') {
+        knownUserId = await resetTokenOwner((request.body as { token?: unknown } | null)?.token);
+      } else if (!path.startsWith('/api/auth/sign-in/')) {
+        const sessionHeaders = new Headers();
+        if (typeof request.headers.cookie === 'string') {
+          sessionHeaders.set('cookie', request.headers.cookie);
+        }
+        const session = await options.auth.api.getSession({ headers: sessionHeaders });
+        knownUserId = session?.user.id ?? null;
+      }
+    }
+
     const response = await options.auth.handler(
       new Request(url, {
         method: request.method,
@@ -156,11 +210,22 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       }),
     );
 
+    const text = await response.text();
+    await recordAuthEvent({
+      request,
+      path,
+      status: response.status,
+      responseBody: text,
+      knownUserId,
+    });
+
     void reply.status(response.status);
     response.headers.forEach((value, key) => {
+      // The body is rewritten below, so its old length would be wrong.
+      if (key.toLowerCase() === 'content-length') return;
       void reply.header(key, value);
     });
-    return reply.send(await response.text());
+    return reply.send(withoutSessionToken(text));
   });
 
   /** Resolve the session, then the context, for everything Better Auth does not own. */

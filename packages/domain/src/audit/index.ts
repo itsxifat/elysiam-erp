@@ -94,6 +94,27 @@ function maskPhonesIn(value: unknown): unknown {
   return result;
 }
 
+/**
+ * A Bangladeshi mobile number anywhere in free text (invariant 10).
+ *
+ * `+8801XXXXXXXXX`, `8801XXXXXXXXX` or `01XXXXXXXXX`, operator digit 3–9. Not
+ * inside a longer run of digits, so an order number or a uuid segment that
+ * happens to contain eleven digits is left alone.
+ *
+ * Masking by key name alone missed every phone that arrived as a value: a
+ * reason of "customer 01712345689 refused" or a note field was written into
+ * the append-only log verbatim. Keys decide where a phone *probably* is; this
+ * catches where one actually is.
+ */
+const PHONE_IN_TEXT = /(?<![0-9])(?:\+?880|0)1[3-9][0-9]{8}(?![0-9])/g;
+
+export function maskPhonesInText(text: string): string {
+  return text.replace(PHONE_IN_TEXT, (match) => {
+    const prefix = match.startsWith('+') ? '+' : '';
+    return `${prefix}${maskPhone(match)}`;
+  });
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return (
     typeof value === 'object' && value !== null && !Array.isArray(value) && !(value instanceof Date)
@@ -108,6 +129,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * since it is usually on its way somewhere else too.
  */
 export function redact(value: unknown): unknown {
+  if (typeof value === 'string') return maskPhonesInText(value);
   if (Array.isArray(value)) return value.map((entry) => redact(entry));
   if (!isPlainObject(value)) return value;
 

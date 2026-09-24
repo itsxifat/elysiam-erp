@@ -2,15 +2,12 @@ import 'reflect-metadata';
 
 import { fastifyCookie } from '@fastify/cookie';
 import { fastifyCors } from '@fastify/cors';
-import { NestFactory, Reflector } from '@nestjs/core';
+import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { activeOrgSlugs, createAuth, RecordingSmsProvider } from '@elysium/db';
 
 import { AppModule } from './app.module.js';
-import { AbilityGuard } from './platform/auth/abilities.js';
-import { AuditInterceptor } from './platform/audit/audit.interceptor.js';
-import { AuditService } from './platform/audit/audit.service.js';
-import { SerializeInterceptor } from './platform/http/serialize.interceptor.js';
+import { applyGlobalPipeline } from './platform/http/pipeline.js';
 import { PasswordTokenStore } from './modules/iam/iam.service.js';
 import { serverEnv } from './platform/config/env.js';
 import { createLogger } from './platform/logging/logger.js';
@@ -87,31 +84,11 @@ async function bootstrap(): Promise<void> {
   );
 
   /*
-   * The ability guard, globally (architecture §6).
-   *
-   * Global rather than per-controller on purpose: a guard you have to remember
-   * to add is a guard that is missing from the route somebody wrote in a hurry.
-   * It denies anything that has not declared what it needs, and
-   * `check-route-matrix` fails the build for the same omission, so the two
-   * agree about what "undeclared" means.
+   * The ability guard, the row-scope backstop, the serializer and the audit
+   * net (architecture §6, §25, invariant 5), in the one order that is correct —
+   * see pipeline.ts. Shared with the HTTP test suites so they cannot drift.
    */
-  app.useGlobalGuards(new AbilityGuard(app.get(Reflector)));
-
-  /*
-   * And the serializer, on the way out (invariant 5).
-   *
-   * Global for the same reason the guard is: a handler that forgets
-   * `serializeFor` returns cost to a reseller and nothing anywhere says so.
-   * Responses are the one place the failure is silent in both directions —
-   * nobody reports a bug about seeing more than they should.
-   */
-  app.useGlobalInterceptors(
-    new SerializeInterceptor(app.get(Reflector)),
-    // The audit net (§25). Services that write their own entry inside the
-    // mutation's transaction mark the request, so this only catches routes
-    // nobody has instrumented — see audit.interceptor.ts for why both exist.
-    new AuditInterceptor(app.get(Reflector), new AuditService()),
-  );
+  applyGlobalPipeline(app);
 
   const fastify = app.getHttpAdapter().getInstance();
   // Cast: @fastify/cookie augments FastifyInstance, and its declared plugin

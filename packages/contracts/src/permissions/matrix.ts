@@ -98,6 +98,38 @@ export function canDecideType(
   return roles.some((role) => (CHECKER_TYPES[role] ?? []).includes(type));
 }
 
+/**
+ * Roles whose checker authority is branch-tier: §6 gives branch_manager "branch
+ * items **under threshold**", which is narrower than the type list alone.
+ */
+export const BRANCH_TIER_CHECKERS: readonly MembershipRole[] = ['branch_manager'];
+
+/**
+ * At what tier may these roles decide a request of this type?
+ *
+ * - `org`    — some role that is not branch-tier may decide it (or super admin),
+ *              at any amount and for any branch in the org.
+ * - `branch` — only a branch-tier role may. The service then also requires the
+ *              request to belong to one of the checker's branches and to sit
+ *              under the org's configured threshold for its type (§6).
+ * - `null`   — nobody holding these roles may decide it.
+ */
+export function checkerTier(
+  roles: readonly MembershipRole[],
+  type: string,
+  isSuperAdmin: boolean,
+): 'org' | 'branch' | null {
+  if (isSuperAdmin) return 'org';
+
+  let tier: 'org' | 'branch' | null = null;
+  for (const role of roles) {
+    if (!(CHECKER_TYPES[role] ?? []).includes(type)) continue;
+    if (!BRANCH_TIER_CHECKERS.includes(role)) return 'org';
+    tier = 'branch';
+  }
+  return tier;
+}
+
 export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
   org_admin: [
     { action: ['read', 'create', 'update', 'delete'], subject: 'Catalog', scope: 'org' },
@@ -123,6 +155,10 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'create', 'update'], subject: 'CompanyLoan', scope: 'org' },
     { action: ['read', 'create', 'update', 'delete'], subject: 'User', scope: 'org' },
     { action: ['read', 'request', 'approve'], subject: 'ApprovalRequest', scope: 'org' },
+    // §6 "users, roles, settings": org_admin only. A threshold is the setting
+    // that decides whether maker-checker applies at all, so a checker who could
+    // raise it could exempt their own team's requests.
+    { action: ['read', 'update'], subject: 'ApprovalThreshold', scope: 'org' },
     { action: 'read', subject: 'AuditLog', scope: 'org' },
   ],
 

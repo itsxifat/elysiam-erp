@@ -1,6 +1,15 @@
-import { bigint, index, integer, pgSchema, text, unique, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  foreignKey,
+  index,
+  integer,
+  pgSchema,
+  text,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
-import { organizations } from '../org/index.js';
+import { branches, organizations } from '../org/index.js';
 import { primaryId, timestamps } from '../columns.js';
 
 /**
@@ -36,11 +45,23 @@ export const costedItems = demo.table(
     /** Readable by everyone, including resellers. */
     sellPricePoisha: bigint('sell_price_poisha', { mode: 'bigint' }).notNull(),
     availableQty: integer('available_qty').notNull().default(0),
+    /**
+     * Which branch holds it, so `branch`-scoped reads have something to be
+     * scoped by. branch_manager reads CostedItem at `branch` scope (§6), and a
+     * scope asserted against a table with no branch column proves nothing.
+     */
+    branchId: uuid('branch_id'),
 
     ...timestamps,
   },
   (table) => [
     unique('costed_items_org_sku_key').on(table.orgId, table.sku),
     index('costed_items_org_idx').on(table.orgId),
+    // Composite, per D-047: a single-column FK is satisfiable across orgs.
+    foreignKey({
+      name: 'costed_items_org_id_branch_id_fk',
+      columns: [table.orgId, table.branchId],
+      foreignColumns: [branches.orgId, branches.id],
+    }).onDelete('restrict'),
   ],
 );

@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 
 import { RequireAbility } from '../../platform/auth/abilities.js';
+import { scopeWhere } from '../../platform/auth/scope.js';
 import { requireContext } from '../../platform/http/context.js';
 
 /**
@@ -26,17 +27,26 @@ export class DemoController {
   async list(@Req() request: FastifyRequest) {
     const context = requireContext(request);
 
+    // The caller's row scope, from this route's own declaration (§6). For a
+    // branch manager with branches assigned that is `branch_id in (...)`; for
+    // everyone else here it is the whole org. Leaving it out is not an option:
+    // ScopeInterceptor refuses to send a scoped caller's response unless the
+    // handler applied it.
+    const scope = scopeWhere(request, { branchId: sql`branch_id` });
+
     const rows = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
       tx.execute<{
         id: string;
         sku: string;
         name: string;
+        branch_id: string | null;
         unit_cost_poisha: string;
         sell_price_poisha: string;
         available_qty: number;
       }>(sql`
-        select id, sku, name, unit_cost_poisha, sell_price_poisha, available_qty
+        select id, sku, name, branch_id, unit_cost_poisha, sell_price_poisha, available_qty
         from demo.costed_items
+        where ${scope}
         order by sku
       `),
     );
@@ -45,6 +55,7 @@ export class DemoController {
       id: row.id,
       sku: row.sku,
       name: row.name,
+      branchId: row.branch_id,
       unitCostPoisha: row.unit_cost_poisha,
       sellPricePoisha: row.sell_price_poisha,
       availableQty: row.available_qty,

@@ -71,6 +71,13 @@
       "when": 1790171564975,
       "tag": "0009_approval_immutability",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790257364900,
+      "tag": "0010_approvals_branch_and_auto_approval",
+      "breakpoints": true
     }
   ]
 }

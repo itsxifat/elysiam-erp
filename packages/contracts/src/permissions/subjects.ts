@@ -32,6 +32,8 @@ export type Action = (typeof ACTIONS)[number];
 export const SUBJECTS = [
   // M02b
   'ApprovalRequest',
+  /** Per-org approval thresholds: §6 "settings", org_admin only. */
+  'ApprovalThreshold',
   'AuditLog',
   'User',
   'CostedItem',

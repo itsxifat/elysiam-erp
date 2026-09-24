@@ -1,3 +1,4 @@
+import { maskPhonesInText } from '@elysium/domain';
 import { pino, type Logger } from 'pino';
 
 import { serverEnv } from '../config/env.js';
@@ -17,6 +18,30 @@ const REDACT_PATHS = [
   '*.refreshToken',
 ];
 
+/**
+ * A request URL fit for a log line: the path, never the query string.
+ *
+ * Fastify's default request serializer logs `req.url` whole, and the query is
+ * exactly where tokens end up — a reset link's `?token=`, an OAuth `code`, a
+ * `?phone=` lookup. Pino's path redaction cannot reach inside a string, so the
+ * query is dropped wholesale and its presence noted. Phone numbers in the path
+ * itself (`/v1/customers/01712345689`) are masked the same way the audit log
+ * masks them.
+ */
+export function safeUrl(url: string | undefined): string {
+  if (url === undefined) return '';
+  const index = url.indexOf('?');
+  const path = index === -1 ? url : url.slice(0, index);
+  return maskPhonesInText(path) + (index === -1 ? '' : '?[redacted]');
+}
+
+interface LoggableRequest {
+  readonly method?: string;
+  readonly url?: string;
+  readonly host?: string;
+  readonly ip?: string;
+}
+
 export function createLogger(name: string): Logger {
   const env = serverEnv();
 
@@ -24,6 +49,16 @@ export function createLogger(name: string): Logger {
     name,
     level: env.LOG_LEVEL,
     redact: { paths: REDACT_PATHS, censor: '[redacted]' },
+    // Fastify merges these over its own defaults, so this replaces its `req`
+    // serializer on every request log line (fastify/lib/logger-pino.js).
+    serializers: {
+      req: (req: LoggableRequest) => ({
+        method: req.method,
+        url: safeUrl(req.url),
+        host: req.host,
+        remoteAddress: req.ip,
+      }),
+    },
     ...(env.NODE_ENV === 'development'
       ? {
           transport: {

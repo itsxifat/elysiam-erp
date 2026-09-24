@@ -214,6 +214,70 @@ describe('check 3: redaction', () => {
     expect(changed).toEqual(['name']);
   });
 
+  describe('masks a phone that arrives as a value, not only under a phone key', () => {
+    /** A Bangladeshi mobile in any of the three shapes the regex accepts. */
+    const bdPhone = fc
+      .tuple(
+        fc.constantFrom('0', '880', '+880'),
+        fc.integer({ min: 3, max: 9 }),
+        fc.array(fc.integer({ min: 0, max: 9 }), { minLength: 8, maxLength: 8 }),
+      )
+      .map(([prefix, operator, rest]) => `${prefix}1${String(operator)}${rest.join('')}`);
+
+    /** Text that cannot glue extra digits onto the phone. */
+    const words = fc.string({ maxLength: 20 }).map((text) => text.replace(/[0-9+]/g, 'x'));
+
+    it('in free text, at any depth, under any key', () => {
+      fc.assert(
+        fc.property(
+          bdPhone,
+          words,
+          words,
+          fc.string({ minLength: 1 }),
+          (phone, before, after, key) => {
+            const text = `${before} ${phone} ${after}`;
+            const out = redact({ note: text, nested: [{ [`k${key}`]: text }] });
+            const json = JSON.stringify(out);
+
+            // The personal part — the middle digits — must not survive anywhere.
+            expect(json).not.toContain(phone.slice(-11));
+            // The positive control: masked, not deleted. The prefix and the last
+            // two digits are what keep an audit row about a COD customer useful.
+            expect((out as { note: string }).note).toContain(phone.slice(-2));
+            expect((out as { note: string }).note).toContain(before);
+          },
+        ),
+        { numRuns: 300 },
+      );
+    });
+
+    it('is idempotent, so a row redacted twice reads the same', () => {
+      fc.assert(
+        fc.property(bdPhone, words, (phone, text) => {
+          const once = redact({ note: `${text}${phone}` });
+          expect(redact(once)).toEqual(once);
+        }),
+        { numRuns: 200 },
+      );
+    });
+
+    it('leaves a longer run of digits alone', () => {
+      // An order number or a uuid segment is not a phone, and masking it would
+      // make the row unanswerable to "which order was this".
+      const out = redact({ orderNo: 'ORD-201712345689', id: '018712345678901' }) as Record<
+        string,
+        string
+      >;
+      expect(out.orderNo).toBe('ORD-201712345689');
+      expect(out.id).toBe('018712345678901');
+    });
+
+    it('masks the example the security review used', () => {
+      const out = redact({ reason: 'customer 01712345689 refused' }) as { reason: string };
+      expect(out.reason).toBe('customer 017******89 refused');
+    });
+  });
+
   it('reports a field that appeared or disappeared', () => {
     expect(changedFields({ a: 1 }, { a: 1, b: 2 })).toEqual(['b']);
     expect(changedFields({ a: 1, b: 2 }, { a: 1 })).toEqual(['b']);

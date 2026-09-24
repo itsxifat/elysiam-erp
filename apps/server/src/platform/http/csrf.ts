@@ -94,6 +94,22 @@ export interface CsrfResult {
 export function checkCsrf(request: FastifyRequest, options: CsrfOptions): CsrfResult {
   if (SAFE_METHODS.has(request.method.toUpperCase())) return { ok: true };
 
+  /*
+   * Fetch metadata (M02a follow-up).
+   *
+   * A browser marks every request with `Sec-Fetch-Site`, and page script
+   * cannot set it. `cross-site` means another registrable domain started this
+   * request — and D-053 already requires every app of ours to share the API's
+   * registrable domain, so none of ours is ever cross-site. It closes the case
+   * the Origin check below cannot see: a browser request that arrives with no
+   * Origin header at all. Absent (curl, a server, an old browser) falls through
+   * to the checks below, which still hold.
+   */
+  const fetchSite = request.headers['sec-fetch-site'];
+  if (fetchSite === 'cross-site') {
+    return { ok: false, reason: 'cross-site request' };
+  }
+
   const origin = request.headers.origin;
   if (typeof origin === 'string' && origin !== '') {
     // Through the shared matcher, so CORS, Better Auth and this check cannot

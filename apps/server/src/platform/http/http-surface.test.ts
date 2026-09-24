@@ -353,6 +353,48 @@ describe('check 6: a cookie-authenticated mutation needs a valid CSRF token', ()
     const response = await client.request('GET', '/v1/auth/login-branding', { csrf: false });
     expect(response.statusCode).toBe(200);
   });
+
+  it('rejects a browser request marked cross-site, whatever else it carries', async () => {
+    // Fetch metadata cannot be set by page script. D-053 keeps every app of
+    // ours on the API's registrable domain, so none of ours is ever cross-site
+    // — and this holds even when the Origin header is missing entirely.
+    const { client } = await signedIn('sales', ORG_A);
+    const response = await client.request('POST', '/v1/me/active-org', {
+      body: { orgId: ORG_A },
+      headers: { 'sec-fetch-site': 'cross-site', origin: '' },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.body).toContain('cross-site');
+  });
+
+  it('accepts same-site fetch metadata, which is what the console sends', async () => {
+    const { client } = await signedIn('sales', ORG_A);
+    const response = await client.request('POST', '/v1/me/active-org', {
+      body: { orgId: ORG_A },
+      headers: { 'sec-fetch-site': 'same-site' },
+    });
+
+    expect(response.statusCode, response.body).toBe(201);
+  });
+});
+
+describe('the credential rate limits cannot be sidestepped with a trailing slash', () => {
+  it('does not route /api/auth/sign-in/email/ to sign-in at all', async () => {
+    // The rate-limit rules match exact paths. They are safe only because
+    // Better Auth's router rejects the trailing-slash spelling outright — so
+    // that is pinned here. If an upgrade (or `skipTrailingSlashes`) ever makes
+    // it answer 401 "wrong password" instead, this fails before the bypass
+    // ships (M02a follow-up).
+    const client = new Client(freshIp());
+    await client.request('GET', '/health/live');
+
+    const response = await client.request('POST', '/api/auth/sign-in/email/', {
+      body: { email: 'nobody@example.invalid', password: 'not-the-password' },
+    });
+
+    expect(response.statusCode, response.body).toBe(404);
+  });
 });
 
 describe('check 2: switching org changes the effective roles on the request', () => {

@@ -1,5 +1,10 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
-import { approvalDecisionSchema, approvalRequestSchema } from '@elysium/contracts';
+import { BadRequestException, Body, Controller, Get, Param, Post, Put, Req } from '@nestjs/common';
+import {
+  approvalDecisionSchema,
+  approvalIdSchema,
+  approvalRequestSchema,
+  thresholdSchema,
+} from '@elysium/contracts';
 import type { FastifyRequest } from 'fastify';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -15,7 +20,7 @@ export class ApprovalsController {
   @RequireAbility('read', 'ApprovalRequest')
   @Get()
   async list(@Req() request: FastifyRequest) {
-    return this.approvals.list(requireContext(request));
+    return this.approvals.list(requireContext(request), request);
   }
 
   @RequireAbility('request', 'ApprovalRequest')
@@ -33,6 +38,26 @@ export class ApprovalsController {
       amountPoisha: parsed.data.amountPoisha === null ? null : BigInt(parsed.data.amountPoisha),
       payload: parsed.data.payload,
       ...(parsed.data.reason === undefined ? {} : { reason: parsed.data.reason }),
+      ...(parsed.data.branchId === undefined ? {} : { branchId: parsed.data.branchId }),
+    });
+  }
+
+  /**
+   * Set this org's threshold for one approval type.
+   *
+   * org_admin only, through the matrix (`update ApprovalThreshold`): whoever
+   * sets a threshold decides which requests skip the second person.
+   */
+  @RequireAbility('update', 'ApprovalThreshold')
+  @Put('thresholds')
+  async setThreshold(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const parsed = thresholdSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message);
+
+    return this.approvals.setThreshold(requireContext(request), {
+      request: request as unknown as AuditableRequest,
+      type: parsed.data.type,
+      thresholdPoisha: BigInt(parsed.data.thresholdPoisha),
     });
   }
 
@@ -47,12 +72,16 @@ export class ApprovalsController {
   @RequireAbility('approve', 'ApprovalRequest')
   @Post(':id/decide')
   async decide(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    // A malformed id reached PostgreSQL's uuid parser and came back as a 500.
+    const parsedId = approvalIdSchema.safeParse(id);
+    if (!parsedId.success) throw new BadRequestException(parsedId.error.issues[0]?.message);
+
     const parsed = approvalDecisionSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message);
 
     return this.approvals.decide(requireContext(request), {
       request: request as unknown as AuditableRequest,
-      id,
+      id: parsedId.data,
       decision: parsed.data.decision,
       ...(parsed.data.note === undefined ? {} : { note: parsed.data.note }),
     });

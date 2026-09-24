@@ -3,8 +3,14 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { MEMBERSHIP_ROLES, type MembershipRole } from '../iam.js';
-import { canReadCost, defineAbilityFor, effectiveScope } from './ability.js';
-import { COST_READING_ROLES, MATRIX } from './matrix.js';
+import {
+  canReadCost,
+  defineAbilityFor,
+  effectiveScope,
+  rowInScope,
+  scopeFilterFor,
+} from './ability.js';
+import { canDecideType, CHECKER_TYPES, checkerTier, COST_READING_ROLES, MATRIX } from './matrix.js';
 import { assertNoCostFields, findCostFields, serializeFor } from './serialize.js';
 import {
   ACTIONS,
@@ -100,6 +106,59 @@ describe('check 1: every role × capability, as the matrix declares it', () => {
     expect(wrong, wrong.slice(0, 10).join('\n')).toEqual([]);
   });
 
+  it('asserts in-scope allowed and out-of-scope forbidden for every own and branch cell', () => {
+    // The loop above can only speak to `org` and `null` cells: a scoped rule
+    // answers false for a bare subject, so it compared scoped cells against
+    // nothing at all. Here every such cell is tried against a row inside the
+    // scope (must be allowed) and a row just outside it (must be denied) —
+    // which is the whole meaning of `own` and `branch`.
+    const scoped = cells.filter((cell) => {
+      const scope = effectiveScope([cell.role], cell.action, cell.subject);
+      return scope === 'own' || scope === 'branch';
+    });
+    // Not vacuous: §6 has plenty of both.
+    expect(
+      scoped.filter((c) => effectiveScope([c.role], c.action, c.subject) === 'own').length,
+    ).toBeGreaterThan(5);
+    expect(
+      scoped.filter((c) => effectiveScope([c.role], c.action, c.subject) === 'branch').length,
+    ).toBeGreaterThan(5);
+
+    const wrong: string[] = [];
+    for (const cell of scoped) {
+      const ability = defineAbilityFor({
+        userId: 'usr_1',
+        branchIds: ['branch-a'],
+        isSuperAdmin: false,
+        roles: [cell.role],
+      });
+      const scope = effectiveScope([cell.role], cell.action, cell.subject);
+      const label = `${cell.role} ${cell.action} ${cell.subject} (${String(scope)})`;
+
+      const inside =
+        scope === 'own'
+          ? [{ createdBy: 'usr_1' }, { assignedTo: 'usr_1' }]
+          : [{ branchId: 'branch-a' }];
+      const outside =
+        scope === 'own'
+          ? [{ createdBy: 'usr_2' }, { assignedTo: 'usr_2' }, {}]
+          : [{ branchId: 'branch-b' }, { branchId: null }, {}];
+
+      for (const row of inside) {
+        if (!ability.can(cell.action, tag(cell.subject, row))) {
+          wrong.push(`${label} should allow ${JSON.stringify(row)}`);
+        }
+      }
+      for (const row of outside) {
+        if (ability.can(cell.action, tag(cell.subject, row))) {
+          wrong.push(`${label} should deny ${JSON.stringify(row)}`);
+        }
+      }
+    }
+
+    expect(wrong, wrong.slice(0, 10).join('\n')).toEqual([]);
+  });
+
   it('is not vacuous: the roles differ from each other', () => {
     // If every cell answered the same way the suite above would pass and prove
     // nothing. These are the distinctions §6 actually makes.
@@ -179,6 +238,102 @@ describe('scope is enforced, not merely recorded', () => {
     expect(effectiveScope(['sales'], 'read', 'Order')).toBe('own');
     expect(effectiveScope(['sales', 'branch_manager'], 'read', 'Order')).toBe('branch');
     expect(effectiveScope(['sales', 'org_admin'], 'read', 'Order')).toBe('org');
+  });
+});
+
+describe('scopeFilterFor: the list-query half of scope', () => {
+  const base = { userId: 'usr_1', branchIds: ['branch-a'], isSuperAdmin: false };
+
+  it('is the whole org for an org-scoped role, and nothing for no grant', () => {
+    expect(scopeFilterFor({ ...base, roles: ['org_admin'] }, 'read', 'ApprovalRequest')).toEqual({
+      kind: 'all',
+    });
+    expect(scopeFilterFor({ ...base, roles: ['investor'] }, 'read', 'ApprovalRequest')).toEqual({
+      kind: 'none',
+    });
+    expect(scopeFilterFor({ ...base, roles: [], isSuperAdmin: true }, 'read', 'Order')).toEqual({
+      kind: 'all',
+    });
+  });
+
+  it('narrows a branch manager to their branches, and an agent to their own rows', () => {
+    expect(
+      scopeFilterFor({ ...base, roles: ['branch_manager'] }, 'read', 'ApprovalRequest'),
+    ).toEqual({ kind: 'some', anyOf: [{ field: 'branchId', in: ['branch-a'] }] });
+
+    const own = scopeFilterFor({ ...base, roles: ['sales'] }, 'read', 'Order');
+    expect(own).toEqual({
+      kind: 'some',
+      anyOf: [
+        { field: 'createdBy', equals: 'usr_1' },
+        { field: 'assignedTo', equals: 'usr_1' },
+      ],
+    });
+  });
+
+  it('unions own and branch rather than taking the widest, which is wrong both ways', () => {
+    // `effectiveScope` says "branch" for sales + branch_manager. A branch filter
+    // alone would hide the agent's own orders in other branches; this keeps
+    // both halves.
+    const filter = scopeFilterFor({ ...base, roles: ['sales', 'branch_manager'] }, 'read', 'Order');
+    expect(rowInScope(filter, { createdBy: 'usr_1', branchId: 'branch-z' })).toBe(true);
+    expect(rowInScope(filter, { createdBy: 'usr_2', branchId: 'branch-a' })).toBe(true);
+    expect(rowInScope(filter, { createdBy: 'usr_2', branchId: 'branch-z' })).toBe(false);
+  });
+
+  it('treats an empty branch scope as the whole org, as the ability does', () => {
+    expect(
+      scopeFilterFor({ ...base, branchIds: [], roles: ['branch_manager'] }, 'read', 'Stock'),
+    ).toEqual({ kind: 'all' });
+  });
+
+  it('agrees with CASL on every row, for every role, action and subject', () => {
+    // One definition feeds both the per-row check (CASL) and the list query
+    // (this filter, rendered as SQL on the server). If the two ever disagreed a
+    // row could be listable but not readable, or the reverse.
+    const ids = fc.constantFrom('usr_1', 'usr_2', null);
+    const branches = fc.constantFrom('branch-a', 'branch-b', null);
+
+    fc.assert(
+      fc.property(
+        fc.subarray([...MEMBERSHIP_ROLES], { maxLength: 3 }),
+        fc.constantFrom(...ACTIONS),
+        fc.constantFrom(...SUBJECTS),
+        fc.constantFrom<readonly string[]>([], ['branch-a'], ['branch-a', 'branch-b']),
+        fc.record({ createdBy: ids, assignedTo: ids, branchId: branches }),
+        (roles, action, subj, branchIds, row) => {
+          const context = { userId: 'usr_1', branchIds, isSuperAdmin: false, roles };
+          const casl = defineAbilityFor(context).can(action, tag(subj, { ...row }));
+          expect(rowInScope(scopeFilterFor(context, action, subj), row)).toBe(casl);
+        },
+      ),
+      { numRuns: 2_000 },
+    );
+  });
+});
+
+describe('checker tiers (§6 "branch items under threshold")', () => {
+  it('puts a lone branch manager on the branch tier and anyone else on the org tier', () => {
+    expect(checkerTier(['branch_manager'], 'stock_write_off', false)).toBe('branch');
+    expect(checkerTier(['branch_manager', 'org_admin'], 'stock_write_off', false)).toBe('org');
+    expect(checkerTier(['accounts'], 'supplier_payment', false)).toBe('org');
+    expect(checkerTier(['branch_manager'], 'payroll_run', false)).toBeNull();
+    expect(checkerTier([], 'period_reopen', true)).toBe('org');
+    expect(checkerTier(['org_admin'], 'period_reopen', false)).toBeNull();
+  });
+
+  it('agrees with canDecideType about who may decide at all', () => {
+    for (const role of MEMBERSHIP_ROLES) {
+      for (const type of Object.values(CHECKER_TYPES).flat()) {
+        expect(checkerTier([role], type, false) !== null).toBe(canDecideType([role], type, false));
+      }
+    }
+  });
+});
+
+describe('ApprovalThreshold is org_admin only', () => {
+  it.each(MEMBERSHIP_ROLES)('%s', (role) => {
+    expect(abilityFor([role]).can('update', 'ApprovalThreshold')).toBe(role === 'org_admin');
   });
 });
 
@@ -327,6 +482,45 @@ describe('a reseller sees an allow-list, not a deny-list', () => {
 
     const map = new Map([['a', 1]]);
     expect(serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', map)).toBe(map);
+  });
+
+  it('walks a class instance rather than waving it through', () => {
+    // It used to skip anything that was not a plain object, and JSON emits a
+    // class instance's own fields — so a DTO class carried cost to sales.
+    class ItemDto {
+      constructor(
+        readonly sku: string,
+        readonly unitCostPoisha: bigint,
+      ) {}
+    }
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'CostedItem', {
+      items: [new ItemDto('A', 1n)],
+    });
+
+    expect(findCostFields(out)).toEqual([]);
+    expect(out.items[0]).toMatchObject({ sku: 'A' });
+    // And the detector sees through one too, or the assertion above is hollow.
+    expect(findCostFields({ items: [new ItemDto('A', 1n)] })).toEqual([
+      '$.items[0].unitCostPoisha',
+    ]);
+  });
+
+  it('judges an object by its toJSON, since that is what goes on the wire', () => {
+    const wrapped = { toJSON: () => ({ sku: 'A', wacPoisha: 5n }) };
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', { row: wrapped });
+
+    expect(findCostFields(out)).toEqual([]);
+    expect(JSON.stringify(out, (_k, v: unknown) => (typeof v === 'bigint' ? String(v) : v))).toBe(
+      '{"row":{"sku":"A"}}',
+    );
+  });
+
+  it('passes a Date and a typed array through untouched', () => {
+    const when = new Date(0);
+    const bytes = new Uint8Array([1, 2]);
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', { when, bytes });
+    expect(out.when).toBe(when);
+    expect(out.bytes).toBe(bytes);
   });
 
   it('keeps every field the allow-list names', () => {

@@ -21,14 +21,27 @@ export {
   type Subject,
 } from './subjects.js';
 
-export { canDecideType, CHECKER_TYPES, COST_READING_ROLES, MATRIX, type Rule } from './matrix.js';
+export {
+  BRANCH_TIER_CHECKERS,
+  canDecideType,
+  CHECKER_TYPES,
+  checkerTier,
+  COST_READING_ROLES,
+  MATRIX,
+  type Rule,
+} from './matrix.js';
 
 export {
   canReadCost,
   defineAbilityFor,
   effectiveScope,
+  rowInScope,
+  scopeFilterFor,
   type AbilityContext,
   type AppAbility,
+  type ScopeCondition,
+  type ScopedRow,
+  type ScopeFilter,
 } from './ability.js';
 
 export {

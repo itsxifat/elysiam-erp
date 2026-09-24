@@ -7,7 +7,7 @@ import {
 } from '@casl/ability';
 
 import type { MembershipRole } from '../iam.js';
-import { COST_READING_ROLES, MATRIX } from './matrix.js';
+import { COST_READING_ROLES, MATRIX, type Rule } from './matrix.js';
 import { SCOPE_RANK, type Action, type Scope, type Subject } from './subjects.js';
 
 /**
@@ -54,11 +54,37 @@ export interface AbilityContext {
 }
 
 /**
- * The conditions a scope implies, as one rule each.
+ * One way a row can fall inside a scope (architecture §6).
  *
- * `own` and `branch` become CASL conditions, which is what makes them real
- * rather than advisory: `ability.can('read', subject(...))` on a row from
- * another branch answers false, and the same rule generates the SQL filter.
+ * The typed form of the conditions an `own` or `branch` rule carries. It is the
+ * single source for both halves of enforcement: `defineAbilityFor` turns it
+ * into CASL conditions for per-row checks, and `scopeFilterFor` hands it to the
+ * server, which renders it as SQL for list queries. One definition, so "may
+ * this caller see this row" cannot have two answers depending on whether it
+ * was asked of one row or of a table.
+ */
+export type ScopeCondition =
+  | { readonly field: 'createdBy' | 'assignedTo'; readonly equals: string }
+  | { readonly field: 'branchId'; readonly in: readonly string[] };
+
+/**
+ * How far a caller reaches for one (action, subject), across all their roles.
+ *
+ * - `all`  — the whole active org. RLS still confines it to that org.
+ * - `none` — no role grants it. Fail closed: a list returns nothing.
+ * - `some` — only rows matching at least one condition.
+ */
+export type ScopeFilter =
+  | { readonly kind: 'all' }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'some'; readonly anyOf: readonly ScopeCondition[] };
+
+/**
+ * The conditions a scope implies, as one rule each — or `'all'` for none.
+ *
+ * `own` and `branch` become conditions, which is what makes them real rather
+ * than advisory: `ability.can('read', subject(...))` on a row from another
+ * branch answers false, and the same conditions generate the SQL filter.
  *
  * **A list, not a single `$or` query, and this is load-bearing.** CASL's
  * default matcher does not implement a top-level `$or`, and it does not throw
@@ -77,16 +103,100 @@ export interface AbilityContext {
  * no condition at all rather than `branch_id in ()`, which would match nothing
  * and silently hide every row from a branch manager with no branches assigned.
  */
-function conditionsFor(scope: Scope, context: AbilityContext): Conditions[] {
+function scopeConditions(scope: Scope, context: AbilityContext): ScopeCondition[] | 'all' {
   if (scope === 'own') {
-    return [{ createdBy: context.userId }, { assignedTo: context.userId }];
+    return [
+      { field: 'createdBy', equals: context.userId },
+      { field: 'assignedTo', equals: context.userId },
+    ];
   }
 
   if (scope === 'branch' && context.branchIds.length > 0) {
-    return [{ branchId: { $in: [...context.branchIds] } }];
+    return [{ field: 'branchId', in: [...context.branchIds] }];
   }
 
-  return [];
+  return 'all';
+}
+
+function toCasl(condition: ScopeCondition): Conditions {
+  if (condition.field === 'branchId') return { branchId: { $in: [...condition.in] } };
+  return { [condition.field]: condition.equals };
+}
+
+function conditionsFor(scope: Scope, context: AbilityContext): Conditions[] {
+  const conditions = scopeConditions(scope, context);
+  return conditions === 'all' ? [] : conditions.map(toCasl);
+}
+
+function rulesGranting(roles: readonly MembershipRole[], action: Action, subject: Subject): Rule[] {
+  const found: Rule[] = [];
+  for (const role of roles) {
+    for (const rule of MATRIX[role] ?? []) {
+      if (rule.subject !== subject) continue;
+      const actions: readonly Action[] = Array.isArray(rule.action) ? rule.action : [rule.action];
+      if (actions.includes(action)) found.push(rule);
+    }
+  }
+  return found;
+}
+
+/**
+ * The rows a caller may reach for one (action, subject) — the scope helper
+ * every list query and every per-row check goes through (§6).
+ *
+ * The guard answers "may this caller do this at all", which for a scoped rule
+ * means "on *some* row". That is the right question for a route and the wrong
+ * one for a query: a branch manager may read `ApprovalRequest`, but only their
+ * branch's. This answers the second question, and it unions across roles the
+ * way the ability does — `sales` (own) plus `branch_manager` (branch) reaches
+ * their own rows *and* their branch's rows, which the widest single scope would
+ * get wrong in both directions.
+ */
+export function scopeFilterFor(
+  context: AbilityContext,
+  action: Action,
+  subject: Subject,
+): ScopeFilter {
+  if (context.isSuperAdmin) return { kind: 'all' };
+
+  const rules = rulesGranting(context.roles, action, subject);
+  if (rules.length === 0) return { kind: 'none' };
+
+  const anyOf: ScopeCondition[] = [];
+  for (const rule of rules) {
+    const conditions = scopeConditions(rule.scope, context);
+    if (conditions === 'all') return { kind: 'all' };
+    anyOf.push(...conditions);
+  }
+
+  return { kind: 'some', anyOf };
+}
+
+/** The fields a per-row scope check reads. Absent means "this row has none". */
+export interface ScopedRow {
+  readonly createdBy?: string | null;
+  readonly assignedTo?: string | null;
+  readonly branchId?: string | null;
+}
+
+/**
+ * Does one row fall inside a filter?
+ *
+ * The in-memory twin of the SQL the server renders from the same filter, and
+ * property-tested against CASL's own answer so the two cannot drift. A null or
+ * missing field never matches: a row with no branch is in nobody's branch.
+ */
+export function rowInScope(filter: ScopeFilter, row: ScopedRow): boolean {
+  if (filter.kind === 'all') return true;
+  if (filter.kind === 'none') return false;
+
+  return filter.anyOf.some((condition) => {
+    if (condition.field === 'branchId') {
+      return row.branchId != null && condition.in.includes(row.branchId);
+    }
+    const value = row[condition.field];
+    return value != null && value === condition.equals;
+  });
 }
 
 export function defineAbilityFor(context: AbilityContext): AppAbility {

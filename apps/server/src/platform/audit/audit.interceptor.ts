@@ -1,5 +1,6 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { serializeFor } from '@elysium/contracts';
 import { redact } from '@elysium/domain';
 import { withOrg, type RequestContext } from '@elysium/db';
 import type { FastifyRequest } from 'fastify';
@@ -93,7 +94,19 @@ export class AuditInterceptor implements NestInterceptor {
 
     const requestContext = request.context;
     const orgId = requestContext?.orgId;
-    if (requestContext === undefined || orgId == null) return;
+    if (requestContext === undefined || orgId == null) {
+      // No org means no tenant log to write into: `audit.audit_log` is
+      // tenant-scoped and `org_id` is NOT NULL. A mutation that reaches here
+      // without having audited itself is a route that should have — the org
+      // switch is the one that exists, and it writes its own row into the org
+      // it switches *to*. So this is a bug report, not a normal path, and it
+      // says so rather than returning quietly.
+      request.log.error(
+        { path: request.url.split('?')[0], method: request.method },
+        'audit interceptor: a mutation completed with no org and no audit entry of its own',
+      );
+      return;
+    }
 
     const declaration = this.reflector.getAllAndOverride<{ subject?: string } | undefined>(
       ABILITY_KEY,
@@ -123,8 +136,13 @@ export class AuditInterceptor implements NestInterceptor {
           entityType,
           entityId: entityIdFrom(body) ?? path,
           // The request body, redacted. It is the only record of intent when
-          // the handler wrote nothing itself.
-          after: { request: redact(request.body), response: redact(body) },
+          // the handler wrote nothing itself. Cost is stripped first: the log
+          // is read by roles that may not read cost, and invariant 5 keeps
+          // purchase cost in supply, inventory and the ledger only.
+          after: {
+            request: redact(withoutCost(request.body)),
+            response: redact(withoutCost(body)),
+          },
           ip: request.ip,
           userAgent: request.headers['user-agent'] ?? null,
           requestId: request.requestId ?? null,
@@ -137,6 +155,11 @@ export class AuditInterceptor implements NestInterceptor {
       request.log.error({ err: error }, 'audit interceptor failed to record a mutation');
     }
   }
+}
+
+/** A payload with every COST_FIELDS entry removed, at any depth. */
+function withoutCost(value: unknown): unknown {
+  return serializeFor({ roles: [], isSuperAdmin: false }, 'Cost', value);
 }
 
 /**

@@ -38,7 +38,8 @@ const RESELLER_ALLOWLISTED: ReadonlySet<Subject> = new Set<Subject>(['Catalog', 
  * Buffer, a Map, a Set and every class instance, and walking one with
  * `Object.entries` corrupts it silently: a `Buffer.from('PDF')` response came
  * back as `{"0":80,"1":68,"2":70}`, and a Map came back as `{}`. M22 returns
- * Gotenberg PDFs on exactly this path.
+ * Gotenberg PDFs on exactly this path. Callers `normalise` first, so by the
+ * time this runs a class instance has already become a plain object.
  */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null) return false;
@@ -47,12 +48,54 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Binary, collections and dates: opaque on purpose, and passed through.
+ *
+ * None can carry a named field on the wire — JSON renders a Map or a Set as
+ * `{}`, a Date as a string, a Buffer as bytes — so passing them through leaks
+ * nothing, and walking them would corrupt them.
+ */
+function isOpaque(value: object): boolean {
+  return (
+    ArrayBuffer.isView(value) ||
+    value instanceof ArrayBuffer ||
+    value instanceof Map ||
+    value instanceof Set ||
+    value instanceof Date
+  );
+}
+
+/**
+ * Turn any other object into what JSON will make of it, so it can be judged.
+ *
+ * **Fail closed.** This used to walk plain objects only and return everything
+ * else untouched, so a class instance — a row mapped into a DTO class, anything
+ * with a prototype — carried `unitCostPoisha` straight past the serializer,
+ * because `JSON.stringify` happily emits a class instance's own fields. Now an
+ * object is judged as what goes on the wire: its `toJSON()` if it has one,
+ * otherwise its own enumerable fields.
+ */
+function normalise(value: unknown, depth = 0): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  if (isOpaque(value)) return value;
+
+  // Before the plain-object test: `{ toJSON() {…} }` is a plain object whose
+  // own keys say nothing about what it serializes to.
+  const toJSON = (value as { toJSON?: unknown }).toJSON;
+  if (typeof toJSON === 'function' && depth < 8) {
+    return normalise((toJSON as () => unknown).call(value), depth + 1);
+  }
+  if (isPlainObject(value)) return value;
+  return Object.fromEntries(Object.entries(value));
+}
+
+/**
  * Prune with a deny-list: keep everything except the named fields.
  *
  * Recurses through arrays and objects alike, because a cost field nested in
  * `order.lines[3]` is exactly as exposed as one at the top level.
  */
-function pruneDenied(value: unknown, denied: ReadonlySet<string>): unknown {
+function pruneDenied(input: unknown, denied: ReadonlySet<string>): unknown {
+  const value = normalise(input);
   if (Array.isArray(value)) return value.map((entry) => pruneDenied(entry, denied));
   if (!isPlainObject(value)) return value;
 
@@ -91,7 +134,8 @@ function pruneDenied(value: unknown, denied: ReadonlySet<string>): unknown {
  *   envelope survives, and `{ costTiers: ['120000'] }` becomes
  *   `{ costTiers: [] }` — empty, which is the safe direction.
  */
-function pruneAllowed(value: unknown, allowed: ReadonlySet<string>, exposed: boolean): unknown {
+function pruneAllowed(input: unknown, allowed: ReadonlySet<string>, exposed: boolean): unknown {
+  const value = exposed ? input : normalise(input);
   if (Array.isArray(value)) {
     const entries = value.map((entry) => pruneAllowed(entry, allowed, exposed));
     // Scalars in an array under a key nobody allowed carry data with no name
@@ -108,8 +152,9 @@ function pruneAllowed(value: unknown, allowed: ReadonlySet<string>, exposed: boo
       result[key] = entry;
       continue;
     }
-    if (Array.isArray(entry) || isPlainObject(entry)) {
-      result[key] = pruneAllowed(entry, allowed, false);
+    const inner = normalise(entry);
+    if (Array.isArray(inner) || isPlainObject(inner)) {
+      result[key] = pruneAllowed(inner, allowed, false);
     }
   }
   return result;
@@ -137,7 +182,8 @@ export function serializeFor<T>(context: SerializeContext, subject: Subject, dat
  * it walks the whole structure and reports the path, because "no cost fields"
  * asserted only at the top level is the exact bug it exists to catch.
  */
-export function findCostFields(data: unknown, path = '$'): string[] {
+export function findCostFields(input: unknown, path = '$'): string[] {
+  const data = normalise(input);
   if (Array.isArray(data)) {
     return data.flatMap((entry, index) => findCostFields(entry, `${path}[${String(index)}]`));
   }

@@ -23,6 +23,7 @@ export {
 export {
   changedFields,
   maskPhone,
+  maskPhonesInText,
   redact,
   REDACTED,
   REDACTED_FIELD_PATTERNS,
