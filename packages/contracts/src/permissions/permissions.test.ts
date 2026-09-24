@@ -722,3 +722,122 @@ describe('approval request and threshold schemas (C1, D-071)', () => {
     ).toBe(true);
   });
 });
+
+describe('a structure that contains itself', () => {
+  /*
+   * A cycle turned every walker in `serialize.ts` into `RangeError: Maximum
+   * call stack size exceeded` — a 500 on every response of that shape, from
+   * the one component whose job is to make responses safe. Reproduced against
+   * the built package before fixing it.
+   *
+   * Not exotic: an ORM with relations hands back parents holding children
+   * holding the parent, and M07's movements and M09's supply lines are both
+   * shaped that way. `JSON.stringify` refuses such a value outright, so
+   * dropping the back-reference costs nothing a response could have carried.
+   */
+  it('does not overflow the stack', () => {
+    const node: Record<string, unknown> = { sku: 'A', wacPoisha: '120000' };
+    node.self = node;
+
+    expect(() =>
+      serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', node),
+    ).not.toThrow();
+  });
+
+  it('still strips the cost sitting next to the cycle', () => {
+    const node: Record<string, unknown> = { sku: 'A', wacPoisha: '120000' };
+    node.self = node;
+
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', node);
+    expect(findCostFields(out)).toEqual([]);
+    expect(out).toMatchObject({ sku: 'A' });
+  });
+
+  it('drops the back-reference and keeps the branch', () => {
+    const child: Record<string, unknown> = { sku: 'B' };
+    const parent: Record<string, unknown> = { sku: 'A', child };
+    child.parent = parent;
+
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', parent) as Record<
+      string,
+      Record<string, unknown>
+    >;
+
+    expect(out.sku).toBe('A');
+    expect(out.child?.sku).toBe('B');
+    expect(out.child).not.toHaveProperty('parent');
+  });
+
+  it('keeps a value that appears twice without being circular', () => {
+    /*
+     * The distinction that makes this worth more than a visited-set: tracking
+     * every object ever seen would drop the *second* appearance of a shared
+     * child, which an ORM produces constantly and which serializes fine. Only
+     * a reference on the current path is a cycle.
+     */
+    const shared = { sku: 'SHARED', name: 'Kurti' };
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', {
+      first: shared,
+      second: shared,
+    }) as Record<string, unknown>;
+
+    expect(out.first).toEqual({ sku: 'SHARED', name: 'Kurti' });
+    expect(out.second, 'the second appearance was dropped as if it were a cycle').toEqual({
+      sku: 'SHARED',
+      name: 'Kurti',
+    });
+  });
+
+  it('survives one on the reseller allow-list path', () => {
+    const node: Record<string, unknown> = { sku: 'A', attributes: { colour: 'red' } };
+    node.self = node;
+
+    const out = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'Catalog', node);
+    expect(findCostFields(out)).toEqual([]);
+    expect(out).toMatchObject({ sku: 'A' });
+  });
+
+  it('does not overflow the detector either', () => {
+    // `findCostFields` recurses the same way, and it is what every "no cost
+    // leaked" assertion in this repo runs through.
+    const node: Record<string, unknown> = { wacPoisha: '1' };
+    node.self = node;
+
+    expect(findCostFields(node)).toEqual(['$.wacPoisha']);
+  });
+
+  it('survives a cycle through an array', () => {
+    const list: unknown[] = [{ sku: 'A' }];
+    list.push(list);
+
+    expect(() =>
+      serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', { list }),
+    ).not.toThrow();
+    expect(findCostFields({ list })).toEqual([]);
+  });
+
+  it('is not defeated by a __proto__ key in the payload', () => {
+    /*
+     * `result[key] = value` for that one key replaces the result's prototype
+     * instead of adding a property, which would make `isPlainObject` refuse to
+     * look at the object and switch the deny-list off for the whole response.
+     *
+     * `normalise` happens to undo the damage by rebuilding a non-plain object
+     * from its own entries, so this never leaked here — but that is an
+     * accident of ordering, and `attributes` is a supplier-fed jsonb blob in
+     * M06's catalog. Assignment now goes through `defineProperty`, and this
+     * pins the outcome either way.
+     */
+    const payload = JSON.parse(
+      '{"__proto__":{"x":1},"sku":{"skuCode":"A","wacPoisha":"120000"},"attributes":{"cogsPoisha":"99"}}',
+    ) as Record<string, unknown>;
+
+    const reseller = serializeFor({ roles: ['reseller'], isSuperAdmin: false }, 'Catalog', payload);
+    const sales = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', payload);
+
+    expect(findCostFields(reseller)).toEqual([]);
+    expect(findCostFields(sales)).toEqual([]);
+    // The positive control: the rest of the payload survived both paths.
+    expect(JSON.stringify(reseller)).toContain('skuCode');
+  });
+});

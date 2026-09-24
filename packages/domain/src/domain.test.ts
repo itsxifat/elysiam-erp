@@ -301,3 +301,49 @@ describe('check 3: redaction', () => {
     expect(changedFields({ a: 1 }, null)).toEqual(['a']);
   });
 });
+
+describe('a row that points back at itself', () => {
+  /*
+   * `redact` recurses, and a back-reference raised `RangeError: Maximum call
+   * stack size exceeded`. That is worse here than in the serializer: the audit
+   * write happens *after* the response has been sent, so the visible result is
+   * a mutation that silently went unrecorded — the one outcome §25's
+   * append-only log exists to make impossible.
+   */
+  it('does not overflow the stack', () => {
+    const node: Record<string, unknown> = { passwordHash: 'argon2id$x' };
+    node.self = node;
+
+    expect(() => redact(node)).not.toThrow();
+  });
+
+  it('still redacts the secret sitting next to the cycle', () => {
+    const node: Record<string, unknown> = { passwordHash: 'argon2id$x', phone: '01712345689' };
+    node.self = node;
+
+    const out = redact(node) as Record<string, unknown>;
+    expect(out.passwordHash).toBe(REDACTED);
+    expect(out.phone).toBe('017******89');
+    expect(out.self, 'a back-reference is a fact about the row, so it is recorded').toBe(
+      '[circular]',
+    );
+  });
+
+  it('keeps a value that appears twice without being circular', () => {
+    const shared = { note: 'hi' };
+    const out = redact({ a: shared, b: shared }) as Record<string, unknown>;
+
+    expect(out.a).toEqual({ note: 'hi' });
+    expect(out.b, 'the second appearance was dropped as if it were a cycle').toEqual({
+      note: 'hi',
+    });
+  });
+
+  it('survives a cycle through an array', () => {
+    const list: unknown[] = [{ apiKey: 'sk_live_1' }];
+    list.push(list);
+
+    const out = redact({ list }) as { list: unknown[] };
+    expect(JSON.stringify(out)).not.toContain('sk_live_1');
+  });
+});

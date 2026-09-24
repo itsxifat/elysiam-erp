@@ -84,13 +84,48 @@ export function maskPhone(value: string): string {
 }
 
 /** Mask every string inside a value that sits under a phone-named key. */
-function maskPhonesIn(value: unknown): unknown {
+/**
+ * References already on the path being walked.
+ *
+ * `redact` recurses, and a row holding a back-reference — which an ORM with
+ * relations produces routinely — raised `RangeError: Maximum call stack size
+ * exceeded`. That is worse here than in the serializer: the audit write
+ * happens *after* the response has been sent, so the visible result is a
+ * mutation that silently went unrecorded, which is exactly the outcome §25's
+ * append-only log exists to make impossible.
+ *
+ * Per path, not per walk, so the same nested object under two keys is still
+ * redacted under both.
+ */
+type Seen = Set<object>;
+
+/**
+ * Set a key without `__proto__` replacing the prototype.
+ *
+ * `result[key] = value` for that one key invokes a setter rather than creating
+ * a property, so the redacted copy ends up with a caller-supplied prototype —
+ * and `isPlainObject` then refuses to look at it, which for a *redactor* means
+ * the fields underneath are never examined at all.
+ */
+function assign(target: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+function maskPhonesIn(value: unknown, seen: Seen = new Set()): unknown {
   if (typeof value === 'string') return maskPhone(value);
   if (Array.isArray(value)) return value.map((entry) => maskPhonesIn(entry));
   if (!isPlainObject(value)) return value;
 
   const result: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value)) result[key] = maskPhonesIn(entry);
+  if (seen.has(value)) return '[circular]';
+  seen.add(value);
+  for (const [key, entry] of Object.entries(value)) assign(result, key, maskPhonesIn(entry, seen));
+  seen.delete(value);
   return result;
 }
 
@@ -128,15 +163,26 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * as one at the top. Returns a new structure; the caller's row is untouched,
  * since it is usually on its way somewhere else too.
  */
-export function redact(value: unknown): unknown {
+export function redact(value: unknown, seen: Seen = new Set()): unknown {
   if (typeof value === 'string') return maskPhonesInText(value);
-  if (Array.isArray(value)) return value.map((entry) => redact(entry));
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return '[circular]';
+    seen.add(value);
+    const mapped = value.map((entry) => redact(entry, seen));
+    seen.delete(value);
+    return mapped;
+  }
   if (!isPlainObject(value)) return value;
+
+  // Recorded as a back-reference rather than dropped: the audit log is
+  // evidence, and "this pointed at its own parent" is a fact about the row.
+  if (seen.has(value)) return '[circular]';
+  seen.add(value);
 
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (matches(key, REDACTED_FIELD_PATTERNS)) {
-      result[key] = REDACTED;
+      assign(result, key, REDACTED);
       continue;
     }
     if (matches(key, PHONE_PATTERNS)) {
@@ -144,11 +190,12 @@ export function redact(value: unknown): unknown {
       // case is the common one, but `{ phones: ['017…','018…'] }` and
       // `{ phone: { number: '017…' } }` were both written out verbatim — and
       // the audit log is append-only, so anything that lands there is permanent.
-      result[key] = maskPhonesIn(entry);
+      assign(result, key, maskPhonesIn(entry, seen));
       continue;
     }
-    result[key] = redact(entry);
+    assign(result, key, redact(entry, seen));
   }
+  seen.delete(value);
   return result;
 }
 

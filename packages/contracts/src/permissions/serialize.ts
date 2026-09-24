@@ -89,21 +89,77 @@ function normalise(value: unknown, depth = 0): unknown {
 }
 
 /**
+ * A reference already on the path being walked.
+ *
+ * Every walker in this file recurses, and a structure containing itself turned
+ * that into `RangeError: Maximum call stack size exceeded` — a 500 on every
+ * response of that shape, produced by the one component whose job is to make
+ * responses safe. Reproduced against the built package with
+ * `{ sku: 'A', wacPoisha: '1', self: <itself> }`.
+ *
+ * Not exotic: an ORM with relations hands back parents holding children
+ * holding the parent, and M07's stock movements and M09's supply lines are
+ * both shaped that way. `JSON.stringify` refuses such a value outright, so
+ * dropping the back-reference costs nothing a response could have carried.
+ *
+ * Tracked per **path**, not per walk: a value that legitimately appears twice
+ * — the same nested object under two keys, which an ORM produces constantly —
+ * is serialized both times. Only a reference that contains itself is dropped.
+ */
+type Seen = Set<object>;
+
+function isCycle(value: unknown, seen: Seen): boolean {
+  return typeof value === 'object' && value !== null && seen.has(value);
+}
+
+/**
+ * Set a key without `__proto__` meaning what it usually means.
+ *
+ * `result[key] = value` for that one key invokes the `Object.prototype.__proto__`
+ * setter and replaces the result's prototype instead of adding a property.
+ * `normalise` happens to undo the damage today — it rebuilds a non-plain object
+ * from its own entries — but that is an accident of ordering, and the accident
+ * is the only thing standing between a `__proto__` key in a supplier-fed
+ * `attributes` blob and a serializer that returns objects its own shape checks
+ * refuse to look at. `defineProperty` creates an own property for any key.
+ */
+function assign(target: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+/**
  * Prune with a deny-list: keep everything except the named fields.
  *
  * Recurses through arrays and objects alike, because a cost field nested in
  * `order.lines[3]` is exactly as exposed as one at the top level.
  */
-function pruneDenied(input: unknown, denied: ReadonlySet<string>): unknown {
+function pruneDenied(input: unknown, denied: ReadonlySet<string>, seen: Seen = new Set()): unknown {
+  if (isCycle(input, seen)) return undefined;
+
   const value = normalise(input);
-  if (Array.isArray(value)) return value.map((entry) => pruneDenied(entry, denied));
+  if (Array.isArray(value)) {
+    seen.add(value);
+    const mapped = value.map((entry) => pruneDenied(entry, denied, seen));
+    seen.delete(value);
+    return mapped;
+  }
   if (!isPlainObject(value)) return value;
 
+  seen.add(value);
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (denied.has(key)) continue;
-    result[key] = pruneDenied(entry, denied);
+    const pruned = pruneDenied(entry, denied, seen);
+    // A dropped cycle leaves the key out rather than setting it undefined, so
+    // the response matches what JSON would have produced.
+    if (pruned !== undefined || entry === undefined) assign(result, key, pruned);
   }
+  seen.delete(value);
   return result;
 }
 
@@ -134,10 +190,19 @@ function pruneDenied(input: unknown, denied: ReadonlySet<string>): unknown {
  *   envelope survives, and `{ costTiers: ['120000'] }` becomes
  *   `{ costTiers: [] }` — empty, which is the safe direction.
  */
-function pruneAllowed(input: unknown, allowed: ReadonlySet<string>, exposed: boolean): unknown {
+function pruneAllowed(
+  input: unknown,
+  allowed: ReadonlySet<string>,
+  exposed: boolean,
+  seen: Seen = new Set(),
+): unknown {
+  if (isCycle(input, seen)) return undefined;
+
   const value = exposed ? input : normalise(input);
   if (Array.isArray(value)) {
-    const entries = value.map((entry) => pruneAllowed(entry, allowed, exposed));
+    seen.add(value);
+    const entries = value.map((entry) => pruneAllowed(entry, allowed, exposed, seen));
+    seen.delete(value);
     // Scalars in an array under a key nobody allowed carry data with no name
     // to filter them by, so they go.
     return exposed ? entries : entries.filter((entry) => isPlainObject(entry));
@@ -146,17 +211,22 @@ function pruneAllowed(input: unknown, allowed: ReadonlySet<string>, exposed: boo
   if (!isPlainObject(value)) return value;
   if (exposed) return value;
 
+  seen.add(value);
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (allowed.has(key)) {
-      result[key] = entry;
+      // An allow-listed key exposes its whole subtree, so a cycle inside one
+      // is still a cycle — checked rather than copied by reference.
+      assign(result, key, isCycle(entry, seen) ? undefined : entry);
       continue;
     }
     const inner = normalise(entry);
     if (Array.isArray(inner) || isPlainObject(inner)) {
-      result[key] = pruneAllowed(inner, allowed, false);
+      const pruned = pruneAllowed(inner, allowed, false, seen);
+      if (pruned !== undefined) assign(result, key, pruned);
     }
   }
+  seen.delete(value);
   return result;
 }
 
@@ -186,18 +256,31 @@ export function serializeFor<T>(context: SerializeContext, subject: Subject, dat
  * it walks the whole structure and reports the path, because "no cost fields"
  * asserted only at the top level is the exact bug it exists to catch.
  */
-export function findCostFields(input: unknown, path = '$'): string[] {
+export function findCostFields(input: unknown, path = '$', seen: Seen = new Set()): string[] {
+  // The detector recurses too, so it overflowed on exactly the input the
+  // pruners did — and it is what every "no cost leaked" assertion runs
+  // through. A cycle cannot hide a field the first pass has not already seen,
+  // so stopping costs nothing.
+  if (isCycle(input, seen)) return [];
+
   const data = normalise(input);
   if (Array.isArray(data)) {
-    return data.flatMap((entry, index) => findCostFields(entry, `${path}[${String(index)}]`));
+    seen.add(data);
+    const found = data.flatMap((entry, index) =>
+      findCostFields(entry, `${path}[${String(index)}]`, seen),
+    );
+    seen.delete(data);
+    return found;
   }
   if (!isPlainObject(data)) return [];
 
+  seen.add(data);
   const found: string[] = [];
   for (const [key, value] of Object.entries(data)) {
     if (COST_FIELD_SET.has(key)) found.push(`${path}.${key}`);
-    found.push(...findCostFields(value, `${path}.${key}`));
+    found.push(...findCostFields(value, `${path}.${key}`, seen));
   }
+  seen.delete(data);
   return found;
 }
 
