@@ -99,6 +99,33 @@ export function maskPhone(value: string): string {
  */
 type Seen = Set<object>;
 
+/** What a cycle is recorded as. A back-reference is a fact about the row. */
+const CIRCULAR = '[circular]';
+
+/** What a subtree past `MAX_DEPTH` is recorded as. */
+const TOO_DEEP = '[too deep]';
+
+/**
+ * How far down these walkers go before they stop.
+ *
+ * Recursion with no bound is a denial-of-service on the *audit trail*, which
+ * is worse than one on the endpoint. A JSON body nested about five thousand
+ * levels deep — thirty kilobytes, far inside Fastify's one-megabyte limit —
+ * raised `RangeError: Maximum call stack size exceeded` inside `redact`. The
+ * audit interceptor runs that inside `withOrg`, catches the throw and logs it,
+ * so the mutation committed and **no audit row existed**:
+ *
+ *   POST /v1/users { email, name, role: 'org_admin', z: <5000-deep object> }
+ *
+ * created a user and granted them org admin, silently. `createUserSchema` is
+ * non-strict, so unknown keys are stripped from the parsed data and kept on
+ * `request.body`, which is what the interceptor records.
+ *
+ * Thirty-two is far past anything a real row or request body reaches, and a
+ * truncated subtree still leaves a row saying what happened.
+ */
+const MAX_DEPTH = 32;
+
 /**
  * Set a key without `__proto__` replacing the prototype.
  *
@@ -116,15 +143,59 @@ function assign(target: Record<string, unknown>, key: string, value: unknown): v
   });
 }
 
-function maskPhonesIn(value: unknown, seen: Seen = new Set()): unknown {
+/**
+ * Mask phone-shaped values under a phone-named key — **without turning off the
+ * secret list for everything beneath it.**
+ *
+ * `redact` routes a key matching `phone`, `mobile` or `msisdn` down here and
+ * never consults `REDACTED_FIELD_PATTERNS` again for that subtree. Because the
+ * match is a case-insensitive substring, `phoneVerification`, `customerMobile`
+ * and `msisdnRecord` all qualify — and `maskPhone` keeps the first three and
+ * last two digits, so a short secret survives almost intact:
+ *
+ *   { phoneVerification: { otp: '483920' } }    -> { otp: '483*20' }
+ *   { customerMobile: { backupCodes: [...] } }  -> '123***78'
+ *   { phone: { nid: '1994785321456' } }         -> '199********56'
+ *
+ * A six-digit OTP written as `483*20` has ten possibilities left; an
+ * eight-digit recovery code as `123***78` has a thousand. §6 issues ten
+ * single-use recovery codes shown once, and `audit.audit_log` is append-only,
+ * so anything that lands there is permanent.
+ *
+ * This is the same class of bug the `otp` pattern was added for — recorded in
+ * the comment on that entry — reopened one level down. So the key
+ * classification runs here too: a secret name is redacted outright, and only
+ * what is left gets masked.
+ */
+function maskPhonesIn(value: unknown, seen: Seen = new Set(), depth = 0): unknown {
   if (typeof value === 'string') return maskPhone(value);
-  if (Array.isArray(value)) return value.map((entry) => maskPhonesIn(entry));
+  if (depth > MAX_DEPTH) return TOO_DEEP;
+
+  if (Array.isArray(value)) {
+    // `seen` threaded here too. It was not, and a cycle through an array under
+    // a phone-named key raised the very RangeError the guard was added to
+    // remove — which in the audit path means a mutation silently unrecorded.
+    if (seen.has(value)) return CIRCULAR;
+    seen.add(value);
+    const mapped = value.map((entry) => maskPhonesIn(entry, seen, depth + 1));
+    seen.delete(value);
+    return mapped;
+  }
+
   if (!isPlainObject(value)) return value;
 
-  const result: Record<string, unknown> = {};
-  if (seen.has(value)) return '[circular]';
+  if (seen.has(value)) return CIRCULAR;
   seen.add(value);
-  for (const [key, entry] of Object.entries(value)) assign(result, key, maskPhonesIn(entry, seen));
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    // The secret list first. Being under a phone-named key is not a reason to
+    // publish a password with its length intact.
+    if (matches(key, REDACTED_FIELD_PATTERNS)) {
+      assign(result, key, REDACTED);
+      continue;
+    }
+    assign(result, key, maskPhonesIn(entry, seen, depth + 1));
+  }
   seen.delete(value);
   return result;
 }
@@ -163,12 +234,16 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * as one at the top. Returns a new structure; the caller's row is untouched,
  * since it is usually on its way somewhere else too.
  */
-export function redact(value: unknown, seen: Seen = new Set()): unknown {
+export function redact(value: unknown, seen: Seen = new Set(), depth = 0): unknown {
   if (typeof value === 'string') return maskPhonesInText(value);
+  // Bounded, because an unbounded walk here is a denial of service on the
+  // audit trail rather than on the endpoint. See MAX_DEPTH.
+  if (depth > MAX_DEPTH) return TOO_DEEP;
+
   if (Array.isArray(value)) {
-    if (seen.has(value)) return '[circular]';
+    if (seen.has(value)) return CIRCULAR;
     seen.add(value);
-    const mapped = value.map((entry) => redact(entry, seen));
+    const mapped = value.map((entry) => redact(entry, seen, depth + 1));
     seen.delete(value);
     return mapped;
   }
@@ -176,7 +251,7 @@ export function redact(value: unknown, seen: Seen = new Set()): unknown {
 
   // Recorded as a back-reference rather than dropped: the audit log is
   // evidence, and "this pointed at its own parent" is a fact about the row.
-  if (seen.has(value)) return '[circular]';
+  if (seen.has(value)) return CIRCULAR;
   seen.add(value);
 
   const result: Record<string, unknown> = {};
@@ -190,10 +265,10 @@ export function redact(value: unknown, seen: Seen = new Set()): unknown {
       // case is the common one, but `{ phones: ['017…','018…'] }` and
       // `{ phone: { number: '017…' } }` were both written out verbatim — and
       // the audit log is append-only, so anything that lands there is permanent.
-      assign(result, key, maskPhonesIn(entry, seen));
+      assign(result, key, maskPhonesIn(entry, seen, depth + 1));
       continue;
     }
-    assign(result, key, redact(entry, seen));
+    assign(result, key, redact(entry, seen, depth + 1));
   }
   seen.delete(value);
   return result;

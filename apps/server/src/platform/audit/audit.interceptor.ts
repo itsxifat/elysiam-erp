@@ -142,6 +142,35 @@ export class AuditInterceptor implements NestInterceptor {
           ? 'delete'
           : 'update';
 
+    /*
+     * Redaction is attempted, and its failure is never allowed to become a
+     * failure to record.
+     *
+     * `redact` and `withoutCost` both walk the payload, and an unbounded walk
+     * over a hostile body used to throw — which landed in the catch below, and
+     * the mutation committed with no audit row at all. The walkers are bounded
+     * now, but the shape of that bug is worth designing against rather than
+     * only fixing: whatever goes wrong while *describing* what happened, the
+     * fact that it happened still gets written.
+     */
+    let after: Record<string, unknown>;
+    try {
+      // The request body, redacted. It is the only record of intent when the
+      // handler wrote nothing itself. Cost is stripped first: the log is read
+      // by roles that may not read cost, and invariant 5 keeps purchase cost
+      // in supply, inventory and the ledger only.
+      after = {
+        request: redact(withoutCost(request.body)),
+        response: redact(withoutCost(body)),
+      };
+    } catch (error) {
+      request.log.error({ err: error }, 'audit interceptor could not redact a payload');
+      // A row that says "this happened and we could not safely describe it" is
+      // worth far more than no row. It must not carry the raw payload: the
+      // reason it is here is that redaction did not finish.
+      after = { redactionFailed: true };
+    }
+
     try {
       await withOrg({ orgId, userId: requestContext.userId }, async (tx) => {
         await this.audit.record(tx, {
@@ -151,14 +180,7 @@ export class AuditInterceptor implements NestInterceptor {
           action: `http:${request.method} ${path}`,
           entityType,
           entityId: entityIdFrom(body) ?? path,
-          // The request body, redacted. It is the only record of intent when
-          // the handler wrote nothing itself. Cost is stripped first: the log
-          // is read by roles that may not read cost, and invariant 5 keeps
-          // purchase cost in supply, inventory and the ledger only.
-          after: {
-            request: redact(withoutCost(request.body)),
-            response: redact(withoutCost(body)),
-          },
+          after,
           ip: request.ip,
           userAgent: request.headers['user-agent'] ?? null,
           requestId: request.requestId ?? null,

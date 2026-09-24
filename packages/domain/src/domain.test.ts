@@ -347,3 +347,99 @@ describe('a row that points back at itself', () => {
     expect(JSON.stringify(out)).not.toContain('sk_live_1');
   });
 });
+
+describe('a phone-named key does not switch the secret list off beneath it', () => {
+  /*
+   * `redact` routes any key matching `phone`, `mobile` or `msisdn` into the
+   * masker and never consulted `REDACTED_FIELD_PATTERNS` again for that
+   * subtree. The match is a case-insensitive substring, so
+   * `phoneVerification`, `customerMobile` and `msisdnRecord` all qualified —
+   * and `maskPhone` keeps the first three digits and the last two, so a short
+   * secret came out nearly intact:
+   *
+   *   { phoneVerification: { otp: '483920' } }   ->  '483*20'
+   *   { customerMobile: { backupCodes: [...] } } ->  '123***78'
+   *
+   * A six-digit OTP with four digits shown has ten possibilities left. §6
+   * issues ten single-use recovery codes, shown once, and `audit.audit_log` is
+   * append-only, so anything that lands there is permanent.
+   *
+   * It is the same bug the `otp` pattern was added for, one level down.
+   */
+  it('redacts a secret nested under a phone-named key', () => {
+    const cases: [Record<string, unknown>, string][] = [
+      [{ phoneVerification: { otp: '483920' } }, 'otp'],
+      [{ customerMobile: { backupCodes: '12345678' } }, 'backupCodes'],
+      [{ phone: { nid: '1994785321456' } }, 'nid'],
+      [{ msisdnRecord: { apiKey: 'sk-live-99887766' } }, 'apiKey'],
+      [{ mobileLogin: { password: 'Winter2026!' } }, 'password'],
+    ];
+
+    for (const [payload, secret] of cases) {
+      const outer = Object.keys(payload)[0] ?? '';
+      const out = redact(payload) as Record<string, Record<string, unknown>>;
+      expect(out[outer]?.[secret], `${outer}.${secret} survived`).toBe(REDACTED);
+    }
+  });
+
+  it('leaks no digits of the secret, not even a masked prefix', () => {
+    // The old behaviour did not fail this by returning the value — it failed
+    // by returning most of it.
+    const out = JSON.stringify(redact({ phoneVerification: { otp: '483920' } }));
+    expect(out).not.toContain('483');
+    expect(out).not.toContain('920');
+  });
+
+  it('still masks the phone number itself, which is the point of the branch', () => {
+    const out = redact({ customerPhone: '01712345689', phone: { number: '01812345622' } }) as {
+      customerPhone: string;
+      phone: { number: string };
+    };
+
+    expect(out.customerPhone).toBe('017******89');
+    expect(out.phone.number).toBe('018******22');
+  });
+
+  it('survives a cycle through an array under a phone-named key', () => {
+    // The array branch of `maskPhonesIn` dropped the `seen` set, so a cycle
+    // there raised the RangeError the guard exists to prevent — and in the
+    // audit path that is a mutation silently unrecorded.
+    const list: unknown[] = [{ password: 'hunter2' }];
+    list.push(list);
+
+    const out = redact({ phones: list }) as { phones: unknown[] };
+    expect(JSON.stringify(out)).not.toContain('hunter2');
+    expect(JSON.stringify(out)).toContain('[circular]');
+  });
+});
+
+describe('a walker that never returns is a missing audit row', () => {
+  /*
+   * A JSON body nested about five thousand levels — thirty kilobytes, well
+   * inside Fastify's one-megabyte limit — raised `RangeError: Maximum call
+   * stack size exceeded` inside `redact`. The audit interceptor runs that
+   * inside `withOrg`, catches the throw and logs it, so the mutation committed
+   * and no audit row existed at all. `POST /v1/users` creating an org admin is
+   * the route that matters.
+   */
+  const deep = (levels: number): unknown =>
+    JSON.parse('{"a":'.repeat(levels) + '1' + '}'.repeat(levels));
+
+  it('does not overflow on a body deep enough to fit in a request', () => {
+    expect(() => redact(deep(5_000))).not.toThrow();
+  });
+
+  it('truncates past the bound rather than silently dropping the row', () => {
+    expect(JSON.stringify(redact(deep(5_000)))).toContain('[too deep]');
+  });
+
+  it('leaves an ordinary row untouched, so the bound is not in the way', () => {
+    expect(JSON.stringify(redact(deep(20)))).not.toContain('[too deep]');
+  });
+
+  it('still redacts what it reaches before the bound', () => {
+    const out = redact({ a: { b: { c: { passwordHash: 'x', deep: deep(5_000) } } } });
+    expect(JSON.stringify(out)).toContain(REDACTED);
+    expect(JSON.stringify(out)).not.toContain('"x"');
+  });
+});

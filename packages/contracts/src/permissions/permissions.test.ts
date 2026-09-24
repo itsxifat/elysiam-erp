@@ -910,3 +910,70 @@ describe('a structure that contains itself', () => {
     expect(JSON.stringify(reseller)).toContain('skuCode');
   });
 });
+
+describe('a value that redefines how it serializes', () => {
+  /*
+   * `serializeFor` returned an object that *looked* pruned and serialized to
+   * something else entirely.
+   *
+   * `normalise` follows a `toJSON` chain eight deep and then gave up by
+   * returning the object **with its `toJSON` still attached**. The pruners
+   * copied that method into their output; `JSON.stringify` calls it; whatever
+   * it returns replaces the pruned object wholesale. So a nine-deep chain, or
+   * the classic `obj.toJSON = () => obj`, put every denied cost field back on
+   * the wire — invisibly, because every assertion that inspects own keys sees
+   * a correctly pruned object.
+   *
+   * These assert on `JSON.parse(JSON.stringify(...))` for that reason: what
+   * the caller gets is not what the wire gets.
+   */
+  function onTheWire(value: unknown): unknown {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  it('does not let a deep toJSON chain put cost back on the wire', () => {
+    let node: unknown = { sku: 'L', wacPoisha: '123456', cogsPoisha: '7' };
+    for (let i = 0; i < 9; i += 1) {
+      const inner = node;
+      node = { toJSON: () => inner };
+    }
+
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'CostedItem', {
+      row: node,
+    });
+    expect(findCostFields(onTheWire(out))).toEqual([]);
+  });
+
+  it('does not let a self-returning toJSON put cost back on the wire', () => {
+    const selfish: Record<string, unknown> = { sku: 'H', wacPoisha: '3' };
+    selfish.toJSON = () => selfish;
+
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'CostedItem', { selfish });
+    expect(findCostFields(onTheWire(out))).toEqual([]);
+  });
+
+  it('still prunes a chain short enough to follow, rather than dropping it', () => {
+    // The positive control: failing closed must not mean discarding every
+    // value that happens to define `toJSON`, which is what a Date does.
+    let node: unknown = { sku: 'K', wacPoisha: '9' };
+    for (let i = 0; i < 3; i += 1) {
+      const inner = node;
+      node = { toJSON: () => inner };
+    }
+
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'CostedItem', {
+      row: node,
+    });
+    expect(onTheWire(out)).toEqual({ row: { sku: 'K' } });
+  });
+
+  it('leaves a Date alone, which is the everyday toJSON', () => {
+    const when = new Date('2026-09-25T00:00:00.000Z');
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', {
+      sku: 'A',
+      createdAt: when,
+    }) as Record<string, unknown>;
+
+    expect(onTheWire(out)).toEqual({ sku: 'A', createdAt: '2026-09-25T00:00:00.000Z' });
+  });
+});

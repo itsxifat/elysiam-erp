@@ -81,7 +81,21 @@ function normalise(value: unknown, depth = 0): unknown {
   // Before the plain-object test: `{ toJSON() {…} }` is a plain object whose
   // own keys say nothing about what it serializes to.
   const toJSON = (value as { toJSON?: unknown }).toJSON;
-  if (typeof toJSON === 'function' && depth < 8) {
+  if (typeof toJSON === 'function') {
+    /*
+     * **Fail closed when the chain is exhausted.** This used to return the
+     * object *with* its `toJSON` still attached once `depth` hit 8, and the
+     * pruners then copied that method into their output. Fastify's
+     * `JSON.stringify` calls it, and whatever it returns replaces the pruned
+     * object wholesale — so a nine-deep chain, or the classic self-returning
+     * `obj.toJSON = () => obj`, put every denied cost field back on the wire
+     * while the returned object still looked pruned to anything inspecting its
+     * own keys. Reproduced both ways.
+     *
+     * A value whose serializer we cannot reach the end of is a value we cannot
+     * judge, and invariant 5 does not have a "probably fine" case.
+     */
+    if (depth >= 8) return undefined;
     return normalise((toJSON as () => unknown).call(value), depth + 1);
   }
   if (isPlainObject(value)) return value;
@@ -154,6 +168,11 @@ function pruneDenied(input: unknown, denied: ReadonlySet<string>, seen: Seen = n
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (denied.has(key)) continue;
+    // A function is never serialized by `JSON.stringify` — except `toJSON`,
+    // which it *calls*, handing the caller a value this pruner never saw.
+    // Dropping all of them is the general form of that fix and costs nothing:
+    // none of them could have reached the wire as data anyway.
+    if (typeof entry === 'function') continue;
     const pruned = pruneDenied(entry, denied, seen);
     // A dropped cycle leaves the key out rather than setting it undefined, so
     // the response matches what JSON would have produced.
@@ -214,6 +233,7 @@ function pruneAllowed(
   seen.add(value);
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === 'function') continue;
     if (allowed.has(key)) {
       // An allow-listed key exposes its whole subtree, so a cycle inside one
       // is still a cycle — checked rather than copied by reference.
