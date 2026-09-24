@@ -297,8 +297,13 @@ describe('check 2: cost reaches accounts and nobody else, through the API', () =
     const body = JSON.parse(response.body) as { items: Record<string, unknown>[] };
 
     expect(body.items.length).toBeGreaterThan(0);
+    // The whole payload, not two field names: naming them asserts nothing
+    // about `grossProfitPoisha` or any other entry that is on the cost list
+    // and not on this line.
+    expect(() => {
+      assertNoCostFields(body);
+    }).not.toThrow();
     expect(body.items[0]).not.toHaveProperty('sellPricePoisha');
-    expect(body.items[0]).not.toHaveProperty('unitCostPoisha');
     expect(body.items[0]).toHaveProperty('sku');
   });
 
@@ -515,6 +520,61 @@ describe('checks 4 and 5: maker-checker', () => {
     // 200: a decision changes a request, it does not create one.
     expect(decided.statusCode, decided.body).toBe(200);
     expect(JSON.parse(decided.body)).toMatchObject({ status: 'approved' });
+  });
+
+  it('check 4: writes the decision to the audit log, not merely the request', async () => {
+    /*
+     * The request's audit row was asserted; the *decision's* was not — only
+     * the in-memory event name. Deleting `audit.record` from `decide()` broke
+     * nothing: the interceptor net would still write an `http:POST …/decide`
+     * row, but with `operation: 'create'` instead of `'approve'`, no `before`,
+     * and outside the transaction that took the decision.
+     *
+     * That is the difference between "somebody called an endpoint" and "this
+     * person approved this request, and here is what it was before". For the
+     * one table that says a payment was authorised, it is the whole point.
+     */
+    const { client: maker } = await asRole(['org_admin']);
+    const { client: checker, userId: checkerId } = await asRole(['org_admin']);
+
+    const { id } = await requestApproval(maker, '900000');
+    const decided = await checker.request('POST', `/v1/approvals/${id}/decide`, {
+      body: { decision: 'approved' },
+    });
+    expect(decided.statusCode, decided.body).toBe(200);
+
+    const rows = await auditRowsFor(id, ORG_A, { atLeast: 2 });
+    const decision = rows.find((row) => row.action.startsWith('approval.decided'));
+
+    expect(
+      decision,
+      `no decision row among ${JSON.stringify(rows.map((r) => r.action))}`,
+    ).toBeDefined();
+    // `approve`, not `create`: the operation is what makes a decision
+    // distinguishable from the request that preceded it in an append-only
+    // table nobody can correct afterwards.
+    expect(decision?.operation).toBe('approve');
+    expect(decision?.action).toBe('approval.decided:wallet_adjustment');
+    expect(decision?.before).toMatchObject({ status: 'pending' });
+    expect(decision?.after).toMatchObject({ status: 'approved', decidedBy: checkerId });
+  });
+
+  it('check 4: records a rejection as a rejection', async () => {
+    // The other half of the operation: a rejected request and an approved one
+    // must not read the same in the log.
+    const { client: maker } = await asRole(['org_admin']);
+    const { client: checker } = await asRole(['org_admin']);
+
+    const { id } = await requestApproval(maker, '900000');
+    await checker.request('POST', `/v1/approvals/${id}/decide`, {
+      body: { decision: 'rejected', note: 'not this quarter' },
+    });
+
+    const rows = await auditRowsFor(id, ORG_A, { atLeast: 2 });
+    const decision = rows.find((row) => row.action.startsWith('approval.decided'));
+
+    expect(decision?.operation).toBe('reject');
+    expect(decision?.after).toMatchObject({ status: 'rejected' });
   });
 
   it('check 4: refuses a second decision on a decided request', async () => {
@@ -749,7 +809,10 @@ describe('a decision is final, and the database is what makes it so', () => {
     const id = await decidedRequest();
     await expectRefused(
       asApp(sql`delete from approvals.approval_requests where id = ${id}`),
-      /permission denied/i,
+      // Named to the table, not the loose `/permission denied/i`. That looser
+      // form is exactly what let the audit log's append-only test pass on its
+      // own setup step for as long as it existed.
+      /permission denied for table approval_requests/i,
     );
   });
 
@@ -1176,5 +1239,140 @@ describe("M02a's two mutations are audited, which they were not", () => {
     // The positive control: the email did survive, so the row is about this
     // user rather than empty.
     expect(JSON.stringify(rows)).toContain(email);
+  });
+});
+
+describe('per-org thresholds are set through the API, not only through SQL', () => {
+  /*
+   * "Per-org thresholds" is a Build item and the route existed, declared
+   * `update:Settings` — but every test set a threshold with raw SQL through
+   * `withSystem`, which bypasses the route, the Zod schema and the permission
+   * check alike. `setThreshold` and `listThresholds` had no test callers at
+   * all: making `setThreshold` return without writing would have broken
+   * nothing.
+   *
+   * These numbers decide when maker-checker applies and how far a branch
+   * checker's authority runs (D-063, D-065), so who may move them matters as
+   * much as the mechanism.
+   */
+  it('lets an org admin set one and read it back', async () => {
+    const { client } = await asRole(['org_admin']);
+
+    const written = await client.request('PUT', '/v1/approvals/thresholds', {
+      body: { type: 'back_dated_entry', thresholdPoisha: '250000' },
+    });
+    expect(written.statusCode, written.body).toBe(200);
+
+    const listed = await client.request('GET', '/v1/approvals/thresholds');
+    expect(listed.statusCode, listed.body).toBe(200);
+
+    const rows = JSON.parse(listed.body) as { type: string; thresholdPoisha: string }[];
+    expect(rows.find((row) => row.type === 'back_dated_entry')?.thresholdPoisha).toBe('250000');
+  });
+
+  it('changes what maker-checker asks for, which is the point of the number', async () => {
+    // The route is only worth having if the value it writes is the one
+    // `requiresApproval` reads. Set it high, raise a request under it, and the
+    // answer must change.
+    const { client } = await asRole(['org_admin']);
+
+    await client.request('PUT', '/v1/approvals/thresholds', {
+      body: { type: 'bonus_rule', thresholdPoisha: '1000000' },
+    });
+
+    const under = await client.request('POST', '/v1/approvals', {
+      body: { type: 'bonus_rule', amountPoisha: '999999' },
+    });
+    expect(JSON.parse(under.body)).toMatchObject({ required: false });
+
+    await client.request('PUT', '/v1/approvals/thresholds', {
+      body: { type: 'bonus_rule', thresholdPoisha: '100' },
+    });
+
+    const over = await client.request('POST', '/v1/approvals', {
+      body: { type: 'bonus_rule', amountPoisha: '999999' },
+    });
+    expect(JSON.parse(over.body)).toMatchObject({ required: true });
+  });
+
+  it('refuses a role that does not manage settings', async () => {
+    // §6 puts settings in the same cell as users and roles: org_admin only.
+    for (const role of ['accounts', 'hr', 'branch_manager', 'sales'] as const) {
+      const { client } = await asRole([role]);
+      const response = await client.request('PUT', '/v1/approvals/thresholds', {
+        body: { type: 'back_dated_entry', thresholdPoisha: '1' },
+      });
+      expect(response.statusCode, `${role}: ${response.body}`).toBe(403);
+    }
+  });
+
+  it('refuses to read them either, so the numbers are not a side channel', async () => {
+    const { client } = await asRole(['accounts']);
+    const response = await client.request('GET', '/v1/approvals/thresholds');
+    expect(response.statusCode, response.body).toBe(403);
+  });
+
+  it('validates through the shared schema rather than by hand', async () => {
+    const { client } = await asRole(['org_admin']);
+
+    // A float, a negative, and a type that is not in the enum. Each is a 400
+    // rather than a 500 or a silently coerced value.
+    for (const body of [
+      { type: 'back_dated_entry', thresholdPoisha: '1.5' },
+      { type: 'back_dated_entry', thresholdPoisha: '-1' },
+      { type: 'not_a_real_type', thresholdPoisha: '1' },
+      { type: 'back_dated_entry', thresholdPoisha: 250000 },
+    ]) {
+      const response = await client.request('PUT', '/v1/approvals/thresholds', { body });
+      expect(response.statusCode, JSON.stringify(body)).toBe(400);
+    }
+  });
+
+  it('keeps one org\u2019s thresholds out of another\u2019s', async () => {
+    const { client: a } = await asRole(['org_admin'], ORG_A);
+    const { client: b } = await asRole(['org_admin'], ORG_B);
+
+    await a.request('PUT', '/v1/approvals/thresholds', {
+      body: { type: 'closing_variance', thresholdPoisha: '111' },
+    });
+    await b.request('PUT', '/v1/approvals/thresholds', {
+      body: { type: 'closing_variance', thresholdPoisha: '222' },
+    });
+
+    const inA = JSON.parse((await a.request('GET', '/v1/approvals/thresholds')).body) as {
+      type: string;
+      thresholdPoisha: string;
+    }[];
+    const inB = JSON.parse((await b.request('GET', '/v1/approvals/thresholds')).body) as {
+      type: string;
+      thresholdPoisha: string;
+    }[];
+
+    expect(inA.find((row) => row.type === 'closing_variance')?.thresholdPoisha).toBe('111');
+    expect(inB.find((row) => row.type === 'closing_variance')?.thresholdPoisha).toBe('222');
+  });
+
+  it('carries the amount as a string, because poisha does not fit in a JSON number', async () => {
+    // Invariant 1. A threshold at crore scale is above 2^53, and a JSON number
+    // would round it silently — which is the exact failure the integer-poisha
+    // rule exists to prevent.
+    const { client } = await asRole(['org_admin']);
+    const huge = '90071992547409910';
+
+    await client.request('PUT', '/v1/approvals/thresholds', {
+      body: { type: 'period_reopen', thresholdPoisha: huge },
+    });
+
+    const rows = JSON.parse((await client.request('GET', '/v1/approvals/thresholds')).body) as {
+      type: string;
+      thresholdPoisha: string;
+    }[];
+    const stored = rows.find((row) => row.type === 'period_reopen')?.thresholdPoisha;
+
+    expect(stored).toBe(huge);
+    expect(typeof stored).toBe('string');
+    expect(Number(huge).toString(), 'the control: a JSON number would have lost this').not.toBe(
+      huge,
+    );
   });
 });

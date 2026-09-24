@@ -421,6 +421,89 @@ describe('scope is enforced, not merely recorded', () => {
   });
 });
 
+describe('the protected-field lists are lists, and their contents are the control', () => {
+  /*
+   * Invariant 5 rests entirely on `COST_FIELDS`, and nothing asserted what was
+   * in it. The tests below hardcode `unitCostPoisha`, `wacPoisha` and
+   * `cogsPoisha` — so deleting `grossProfitPoisha`, `stockValuePoisha`,
+   * `supplyLinePricePoisha` or `supplierBalancePoisha`, or any of their
+   * snake_case twins, fails nothing and quietly hands margin to every role in
+   * the system. The property test cannot see it either: its generator draws
+   * key names from `COST_FIELDS`, so a removed entry stops being sampled
+   * rather than starting to fail.
+   *
+   * §6 names five cost concepts plus supply line prices and supplier balances.
+   * Both spellings of each, because raw SQL returns snake_case and the ORM
+   * returns camelCase, and a response can carry either.
+   */
+  const EXPECTED_COST_FIELDS = [
+    'unitCostPoisha',
+    'unit_cost_poisha',
+    'wacPoisha',
+    'wac_poisha',
+    'cogsPoisha',
+    'cogs_poisha',
+    'grossProfitPoisha',
+    'gross_profit_poisha',
+    'stockValuePoisha',
+    'stock_value_poisha',
+    'supplyLinePricePoisha',
+    'supply_line_price_poisha',
+    'supplierBalancePoisha',
+    'supplier_balance_poisha',
+  ];
+
+  it('protects exactly the cost fields §6 names, in both spellings', () => {
+    expect([...COST_FIELDS].sort()).toEqual([...EXPECTED_COST_FIELDS].sort());
+  });
+
+  it('strips every one of them, so membership is not merely declarative', () => {
+    // A field can be on the list and still survive if the pruner never reaches
+    // its shape. One payload with all of them, nested, through a role with no
+    // `read:cost`.
+    const row = Object.fromEntries(COST_FIELDS.map((field) => [field, '1']));
+    const out = serializeFor({ roles: ['sales'], isSuperAdmin: false }, 'Order', {
+      items: [{ sku: 'A', ...row }],
+    });
+
+    expect(findCostFields(out)).toEqual([]);
+    // The positive control: the payload was not simply emptied.
+    expect(JSON.stringify(out)).toContain('"sku":"A"');
+  });
+
+  it('has a snake_case twin for every camelCase name, and the reverse', () => {
+    // The pairing is the rule, and a single-spelling entry is the bug: raw SQL
+    // returns snake_case and the ORM returns camelCase, so a response can
+    // carry either and half a pair protects half the responses.
+    const toSnake = (field: string) => field.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+    const listed = new Set<string>(COST_FIELDS);
+
+    for (const field of COST_FIELDS) {
+      expect(listed.has(toSnake(field)), `${field} has no snake_case twin`).toBe(true);
+    }
+  });
+
+  it('lets a reseller see exactly the fields §6 allows, and no more', () => {
+    // The same argument for the allow-list: §6 names SKU id, SKU code, product
+    // name, images, attributes, reseller price and available quantity. An
+    // entry added here widens what the least trusted principal sees, which is
+    // the one list where a silent addition is worse than a silent removal.
+    expect([...RESELLER_VISIBLE_FIELDS].sort()).toEqual(
+      [
+        'attributes',
+        'availableQty',
+        'id',
+        'images',
+        'name',
+        'resellerPricePoisha',
+        'sku',
+        'skuCode',
+        'skuId',
+      ].sort(),
+    );
+  });
+});
+
 describe('check 2: cost fields reach accounts and nobody else', () => {
   const row = {
     id: 'item-1',

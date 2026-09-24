@@ -143,6 +143,118 @@ describe('check 4: the requester cannot be the approver', () => {
   });
 });
 
+describe('the redaction list is a list, and its contents are the control', () => {
+  /*
+   * Every other assertion in this file is about the *matcher*. None of them is
+   * about the **list**, and the list is where the security actually lives.
+   *
+   * The property test below draws its patterns from `REDACTED_FIELD_PATTERNS`
+   * itself, so removing an entry does not fail it — it simply stops sampling
+   * that entry. The hand-written spelling test pins seven names. So deleting
+   * `'otp'` from `packages/domain/src/audit/index.ts` writes reseller phone
+   * OTPs verbatim into an append-only table with a fully green suite, and the
+   * same is true of `pin`, `nid`, `kyc`, `cvv`, `iban`, `cardnumber`,
+   * `accountnumber`, `credential`, `privatekey`, `signature`, `jwt`, `cookie`
+   * and `twofactor`.
+   *
+   * So the list is frozen here. Adding a pattern is a two-line edit; removing
+   * one is a failing test and a conversation, which is the asymmetry this
+   * table deserves — the audit log is append-only, so anything that reaches it
+   * stays.
+   */
+  const EXPECTED_PATTERNS = [
+    'accountnumber',
+    'account_number',
+    'apikey',
+    'api_key',
+    'authorization',
+    'backupcode',
+    'backup_code',
+    'bearer',
+    'bkash',
+    'cardnumber',
+    'card_number',
+    'cookie',
+    'credential',
+    'cvv',
+    'iban',
+    'jwt',
+    'kyc',
+    'nationalid',
+    'national_id',
+    'nid',
+    'otp',
+    'password',
+    'pin',
+    'privatekey',
+    'private_key',
+    'salt',
+    'secret',
+    'signature',
+    'token',
+    'totp',
+    'twofactor',
+    'two_factor',
+  ];
+
+  it('contains exactly the patterns it is meant to', () => {
+    expect([...REDACTED_FIELD_PATTERNS].sort()).toEqual([...EXPECTED_PATTERNS].sort());
+  });
+
+  it('redacts a realistic field name for every single one of them', () => {
+    /*
+     * Membership is not enough on its own: a pattern can be in the list and
+     * still not match anything, which is how `otp` behaved before — the rule
+     * was `'otp'.includes('totp')`, which is false, so the plain `otp` field
+     * passed through untouched while `totp` was listed and looked fine.
+     *
+     * One concrete field name per pattern, written as a caller would spell it.
+     */
+    const FIELDS: Readonly<Record<string, string>> = {
+      accountnumber: 'accountNumber',
+      account_number: 'bank_account_number',
+      apikey: 'apiKey',
+      api_key: 'x-api-key',
+      authorization: 'Authorization',
+      backupcode: 'backupCodes',
+      backup_code: 'backup_codes',
+      bearer: 'bearerToken',
+      bkash: 'bkashNumber',
+      cardnumber: 'cardNumber',
+      card_number: 'card_number',
+      cookie: 'cookieHeader',
+      credential: 'credentials',
+      cvv: 'cvv',
+      iban: 'ibanNumber',
+      jwt: 'jwtAssertion',
+      kyc: 'kycDocument',
+      nationalid: 'nationalId',
+      national_id: 'national_id_number',
+      nid: 'nidNumber',
+      otp: 'otp',
+      password: 'passwordHash',
+      pin: 'pinCode',
+      privatekey: 'privateKey',
+      private_key: 'private-key',
+      salt: 'saltValue',
+      secret: 'totpSecret',
+      signature: 'signatureHeader',
+      token: 'refreshToken',
+      totp: 'totpUri',
+      twofactor: 'twoFactorSecret',
+      two_factor: 'two_factor_backup',
+    };
+
+    for (const pattern of REDACTED_FIELD_PATTERNS) {
+      const field = FIELDS[pattern];
+      expect(field, `no example field written for the pattern "${pattern}"`).toBeDefined();
+
+      const out = redact({ [field ?? '']: 'sensitive-value' }) as Record<string, unknown>;
+      expect(out[field ?? ''], `${pattern}: "${field ?? ''}" was not redacted`).toBe(REDACTED);
+    }
+  });
+});
+
 describe('check 3: redaction', () => {
   it('removes a credential wherever it sits', () => {
     const row = {
