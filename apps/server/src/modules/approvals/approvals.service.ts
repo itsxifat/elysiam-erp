@@ -229,6 +229,25 @@ export class ApprovalsService {
       }
 
       /*
+       * What this does NOT check, and cannot yet: which branch.
+       *
+       * §6 scopes a branch_manager's approvals to `branch`, and
+       * `approvals.approval_requests` carries no `branch_id` — there is
+       * nothing to compare. So a manager of one showroom can decide a
+       * stock write-off raised in another, as long as it is under the
+       * threshold and of a type they hold. That is narrower than "any
+       * amount anywhere", which is where this started, and wider than §6.
+       *
+       * The column belongs with the module that knows what a branch-scoped
+       * request is, which is M07 (stock) and M14b (till). Adding it here
+       * would mean inventing the semantics of a nullable branch on a table
+       * whose rows are raised by six different modules. Logged as a
+       * follow-up rather than left silent, because the next person to read
+       * `scope: 'branch'` in the matrix will reasonably assume it is
+       * enforced.
+       */
+
+      /*
        * How much, as distinct from which type (§6).
        *
        * §6 gives branch_manager "branch items **under threshold**", and the

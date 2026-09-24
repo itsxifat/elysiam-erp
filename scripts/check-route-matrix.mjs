@@ -2,7 +2,8 @@
 /**
  * Route coverage (M02b check 6).
  *
- * Fails the build when a route ships without declaring what it needs.
+ * Fails the build when a route ships without declaring what it needs, or when
+ * what it declares is not something the role-matrix suite covers.
  *
  * This exists because "every route declares its ability" is not enforceable by
  * review. The failure is an *absence* — a missing decorator on a new handler —
@@ -125,10 +126,11 @@ async function main() {
     load('@nestjs/platform-fastify'),
   ]);
 
-  const [{ AppModule }, { describeRoutes }, { PasswordTokenStore }] = await Promise.all([
+  const [{ AppModule }, { describeRoutes }, { PasswordTokenStore }, contracts] = await Promise.all([
     import(new URL('apps/server/dist/app.module.js', root).href),
     import(new URL('apps/server/dist/platform/auth/route-map.js', root).href),
     import(new URL('apps/server/dist/modules/iam/iam.service.js', root).href),
+    load('@elysium/contracts'),
   ]);
 
   // A stand-in for Better Auth. The gate reads metadata, never calls a handler,
@@ -158,9 +160,54 @@ async function main() {
 
   const undeclared = routes.filter((route) => route.declared === null);
 
+  /*
+   * The second half of what the milestone asks of this gate: "fails if one
+   * lacks a declared ability **or a matrix test**".
+   *
+   * "Has a matrix test" is not a thing that can be grepped for, but it does not
+   * need to be. The role-matrix suite is *generated* — it walks every role in
+   * MEMBERSHIP_ROLES against every action in ACTIONS against every subject in
+   * SUBJECTS — so a cell is covered exactly when its action and subject are in
+   * those two lists. A route declaring anything else has no test by
+   * construction, and no rule in the matrix either, so the guard would deny it
+   * at runtime while this printed PASS.
+   *
+   * The typed decorator makes that a compile error in ordinary code. This is
+   * the check for the cases where types are not in play: a route registered by
+   * a dynamic module, a mixin, or a library, which is exactly the kind the
+   * gate exists to see.
+   */
+  const actions = new Set(contracts.ACTIONS);
+  const subjects = new Set(contracts.SUBJECTS);
+
+  const uncovered = routes.filter((route) => {
+    if (route.declared === null) return false;
+    if (route.declared === 'authenticated' || route.declared.startsWith('public:')) return false;
+    const [action, subject] = route.declared.split(':');
+    return !actions.has(action) || !subjects.has(subject);
+  });
+
   for (const route of routes) {
-    const mark = route.declared === null ? 'MISSING' : route.declared;
+    const mark =
+      route.declared === null
+        ? 'MISSING'
+        : uncovered.includes(route)
+          ? `${route.declared}  NOT IN THE MATRIX`
+          : route.declared;
     console.log(`  ${route.method.padEnd(6)} ${route.path.padEnd(32)} ${mark}`);
+  }
+
+  if (uncovered.length > 0) {
+    console.error(
+      `\ncheck-route-matrix: ${String(uncovered.length)} route(s) declare an ability the matrix does not define.\n` +
+        uncovered
+          .map((route) => `  ${route.method} ${route.path}  declares ${route.declared ?? ''}`)
+          .join('\n') +
+        '\n\nThe role-matrix suite is generated from ACTIONS x SUBJECTS in\n' +
+        '@elysium/contracts, so an action or subject outside those lists has no\n' +
+        'test and no rule — the guard denies it at runtime and nothing says why.\n',
+    );
+    process.exit(1);
   }
 
   if (undeclared.length > 0) {
@@ -178,9 +225,10 @@ async function main() {
   }
 
   const publicRoutes = routes.filter((route) => route.declared?.startsWith('public:'));
+  const covered = routes.length - publicRoutes.length;
   console.log(
     `\ncheck-route-matrix: ${String(routes.length)} route(s), all declared. ` +
-      `${String(publicRoutes.length)} public. PASS`,
+      `${String(publicRoutes.length)} public, ${String(covered)} covered by the matrix suite. PASS`,
   );
 }
 
