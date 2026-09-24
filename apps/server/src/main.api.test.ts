@@ -1,16 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { SEED_ORG_IDS, withGlobal, withSystem } from '@elysium/db';
-import {
-  grantMembership,
-  startTestDatabase,
-  stopSharedContainer,
-  type TestDatabase,
-} from '@elysium/db/testing';
+import { SEED_ORG_IDS, withSystem } from '@elysium/db';
+import { startTestDatabase, stopSharedContainer, type TestDatabase } from '@elysium/db/testing';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 
 import { describeRoutes } from './platform/auth/route-map.js';
+import { createRoleFactory, TestClient } from './testing/as-role.js';
 import type { buildApp } from './main.api.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -50,8 +46,8 @@ let server: FastifyInstance;
  * failures look like auth bugs. Sharing them also keeps the suite about the
  * wiring rather than about sign-up.
  */
-let salesClient: Client;
-let adminClient: Client;
+let salesClient: TestClient;
+let adminClient: TestClient;
 
 beforeAll(async () => {
   database = await startTestDatabase('bootstrap');
@@ -69,8 +65,8 @@ beforeAll(async () => {
   server = built.app.getHttpAdapter().getInstance();
   await server.ready();
 
-  salesClient = (await signedIn('sales')).client;
-  adminClient = (await signedIn('org_admin', { clearWall: true })).client;
+  salesClient = (await asRole(['sales'], ORG_A)).client;
+  adminClient = (await asRole(['org_admin'], ORG_A)).client;
 }, 180_000);
 
 afterAll(async () => {
@@ -79,44 +75,29 @@ afterAll(async () => {
   await stopSharedContainer();
 }, 60_000);
 
-/** Everything a browser carries, against the real app. */
-class Client {
-  private readonly cookies = new Map<string, string>();
-
-  private absorb(headers: Record<string, unknown>): void {
-    const raw = headers['set-cookie'];
-    const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
-    for (const entry of list) {
-      const pair = String(entry).split(';')[0] ?? '';
-      const index = pair.indexOf('=');
-      if (index <= 0) continue;
-      const name = pair.slice(0, index);
-      const value = pair.slice(index + 1);
-      if (value === '') this.cookies.delete(name);
-      else this.cookies.set(name, value);
-    }
-  }
-
-  async request(method: string, url: string, body?: unknown) {
-    const cookie = [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
-    const headers: Record<string, string> = { host: APP_DOMAIN, origin: ORIGIN };
-    if (cookie !== '') headers.cookie = cookie;
-
-    const token = this.cookies.get('elysium_csrf');
-    if (token !== undefined) headers['x-elysium-csrf'] = token;
-    if (body !== undefined) headers['content-type'] = 'application/json';
-
-    const response = await server.inject({
-      method: method as 'GET',
-      url,
-      headers,
-      ...(body === undefined ? {} : { payload: JSON.stringify(body) }),
-    });
-
-    this.absorb(response.headers);
-    return response;
-  }
+/**
+ * Clients through the shared `asRole`, not a second copy of it.
+ *
+ * This file used to carry its own cookie jar and its own sign-in flow, which
+ * had already drifted from the one in `permissions.e2e.test.ts` — the two
+ * disagreed about how the 2FA enrolment wall is cleared. A boot test that
+ * signs in differently from every other suite is testing a path production
+ * does not have.
+ */
+/** A client that has never signed in. */
+function anonymous(): TestClient {
+  return new TestClient(
+    { server: () => server, tokens: built.tokens, appDomain: APP_DOMAIN, origin: ORIGIN },
+    '10.9.0.1',
+  );
 }
+
+const asRole = createRoleFactory({
+  server: () => server,
+  tokens: { take: (email: string) => built.tokens.take(email) },
+  appDomain: APP_DOMAIN,
+  origin: ORIGIN,
+});
 
 describe('the application production runs actually starts', () => {
   it('boots', () => {
@@ -126,7 +107,7 @@ describe('the application production runs actually starts', () => {
   });
 
   it('serves its liveness probe', async () => {
-    const response = await new Client().request('GET', '/health/live');
+    const response = await anonymous().request('GET', '/health/live');
     expect(response.statusCode, response.body).toBe(200);
   });
 
@@ -143,14 +124,14 @@ describe('the global wiring is mounted in production, not only in tests', () => 
     // If `useGlobalGuards` were removed from buildApp, this would be a 200 and
     // every other suite would still pass, because they mount the guard
     // themselves.
-    const response = await new Client().request('GET', '/v1/demo/costed-items');
+    const response = await anonymous().request('GET', '/v1/demo/costed-items');
     expect(response.statusCode, response.body).toBeGreaterThanOrEqual(400);
   });
 
   it('leaves a @Public route reachable', async () => {
     // The positive control: the 4xx above must be the guard, not the app being
     // broken.
-    const response = await new Client().request('GET', '/v1/auth/login-branding');
+    const response = await anonymous().request('GET', '/v1/auth/login-branding');
     expect(response.statusCode, response.body).toBe(200);
   });
 
@@ -248,52 +229,3 @@ describe('every route the gate lists actually answers', () => {
     expect(response.statusCode, response.body).toBe(200);
   });
 });
-
-const PASSWORD = 'correct-horse-battery';
-
-/** A signed-in client, through the real app's own auth routes. */
-async function signedIn(
-  role: 'sales' | 'org_admin',
-  options: { clearWall?: boolean } = {},
-): Promise<{ client: Client; userId: string }> {
-  const client = new Client();
-  const email = `${role}_${randomUUID().slice(0, 8)}@example.invalid`;
-  const userId = `usr_${randomUUID()}`;
-
-  await withGlobal(async (tx) => {
-    await tx.execute(sql`
-      insert into iam.users (id, email, name, email_verified)
-      values (${userId}, ${email}, ${role}, true)
-    `);
-  });
-  await grantMembership({ userId, orgId: ORG_A, role });
-
-  await client.request('GET', '/v1/auth/login-branding');
-  await client.request('POST', '/api/auth/request-password-reset', {
-    email,
-    redirectTo: '/accept-invite',
-  });
-
-  const token = built.tokens.take(email);
-  expect(token, `no invite token for ${email}`).toBeDefined();
-  await client.request('POST', '/api/auth/reset-password', { newPassword: PASSWORD, token });
-  await client.request('POST', '/api/auth/sign-in/email', { email, password: PASSWORD });
-
-  if (options.clearWall === true) {
-    const enabled = await client.request('POST', '/api/auth/two-factor/enable', {
-      password: PASSWORD,
-      method: 'totp',
-    });
-    const { totpURI } = JSON.parse(enabled.body) as { totpURI: string };
-    const { base32 } = await import('@better-auth/utils/base32');
-    const secret = new TextDecoder().decode(
-      base32.decode(new URL(totpURI).searchParams.get('secret') ?? ''),
-    );
-    const { createOTP } = await import('@better-auth/utils/otp');
-    const code = await createOTP(secret, { digits: 6, period: 30 }).totp();
-    await client.request('POST', '/api/auth/two-factor/verify-totp', { code });
-  }
-
-  await client.request('POST', '/v1/me/active-org', { orgId: ORG_A });
-  return { client, userId };
-}

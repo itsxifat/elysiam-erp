@@ -15,13 +15,77 @@
  * It boots the real application — without listening — and reads the routes out
  * of Nest's own container, so a route registered by a dynamic module or a
  * library counts exactly like one written by hand.
+ *
+ * **It boots the *built* application**, which is the one thing about it that
+ * can lie. `pnpm verify` runs `build` immediately before this, so there it is
+ * always current — but run on its own against a stale `dist`, it reports the
+ * routes of the last build and prints PASS for a handler that was added since.
+ * Demonstrating check 6 is exactly when someone runs it on its own, and that
+ * is exactly when it printed PASS for the undeclared route it was being asked
+ * to catch. So it now refuses to answer rather than answering about the wrong
+ * code.
  */
 
 import process from 'node:process';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { readdirSync, statSync } from 'node:fs';
+import path from 'node:path';
 
 const root = new URL('..', import.meta.url);
+
+/** The newest mtime under a directory, or 0 if it does not exist. */
+function newestMtime(dir) {
+  let newest = 0;
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      newest = Math.max(newest, newestMtime(full));
+      continue;
+    }
+    // `.map` and `.d.ts` files are emitted too, so restricting to code keeps
+    // the comparison about what actually changed.
+    if (!/\.(ts|mts|js|mjs)$/.test(entry.name)) continue;
+    newest = Math.max(newest, statSync(full).mtimeMs);
+  }
+  return newest;
+}
+
+/**
+ * Refuse to run against a build older than the source it came from.
+ *
+ * Exits non-zero rather than warning: a gate that prints a warning and then
+ * PASS is a gate whose warning nobody reads.
+ */
+function assertBuildIsCurrent() {
+  const server = path.join(root.pathname.replace(/^\/([A-Za-z]:)/, '$1'), 'apps/server');
+  const src = newestMtime(path.join(server, 'src'));
+  const dist = newestMtime(path.join(server, 'dist'));
+
+  if (dist === 0) {
+    console.error('check-route-matrix: apps/server/dist is missing. Run `pnpm build` first.');
+    process.exit(1);
+  }
+
+  if (src > dist) {
+    console.error(
+      'check-route-matrix: apps/server/src is newer than apps/server/dist.\n' +
+        '  This gate reads the built application, so it would be answering about stale code —\n' +
+        '  which means printing PASS for a route that has not been compiled yet.\n' +
+        '  Run `pnpm build` (or `pnpm verify`, which builds first) and try again.',
+    );
+    process.exit(1);
+  }
+}
+
+assertBuildIsCurrent();
 
 /**
  * Config the app needs to construct. Deliberately fake and deliberately local:

@@ -378,8 +378,10 @@ The hostname comes from the **caller**, not from the API's own `Host` header (D-
 - The UI uses the same definitions only to hide controls.
 - Scope qualifiers:
   - `own`: `created_by` or `assigned_to` is the user
+  - `own_or_unassigned`: the above, plus rows where `assigned_to` is present and null (D-062). This is the orders cell for `sales` — the unassigned queue is the COD workflow, and read as plain `own` it is invisible, which leaves `org` as the only apparent repair.
   - `branch`: `branch_id` is within the user's branch scope
   - `org`: the whole active org
+  - `all`: every org. `super_admin`, plus one enumerated exception — `org_admin` reads the cross-org leaderboard (§18, D-023, D-066). The matrix test allows that single cell by name and fails on any other.
 
 ### Protected fields
 
@@ -392,7 +394,18 @@ The hostname comes from the **caller**, not from the API's own `Host` header (D-
 
 ### Permission matrix
 
-This summary is authoritative until M02b writes the code matrix. After that, the code is authoritative and any change needs a decision row.
+This summary was authoritative until M02b. **The code is now authoritative**: `packages/contracts/src/permissions/matrix.ts`, and any change to it needs a decision row.
+
+The grid below is also transcribed by hand into `packages/contracts/src/permissions/spec-6.fixture.ts`, one line per grant with each cell's wording quoted beside it, and a test asserts the two agree in both directions (D-061). That exists because the generated role-matrix suite reads `MATRIX` on both sides of its assertions — it proves CASL agrees with the matrix and says nothing about whether the matrix matches this table. Six deviations passed it green, including `accounts` holding create and update on staff records where the cell says "payroll posting and payment".
+
+Four subjects below do not appear as rows here, because four cells are narrower than the rows they sit in (D-064, D-065, D-067):
+
+- `Payroll`, split from `Employee`, so accounts can post and pay a payroll run without gaining write access to staff records.
+- `CampaignSpend`, split from `Campaign`, so accounts can enter spend without being able to launch a campaign.
+- `Settings`, for the "settings" in the last row. Approval thresholds live here, which is what makes them governable at all.
+- `Leaderboard`, for §18's cross-org ranking.
+
+And one grant deliberately does not exist: there is no `update Stock` for any role. "Stock availability" is a read; changing stock is the row below it, and invariant 3 says stock changes only through inventory movements.
 
 | Capability                         | super_admin        | org_admin                          | sales                   | accounts                    | marketing    | hr      | branch_manager                 | warehouse           | reseller            | investor |
 | ---------------------------------- | ------------------ | ---------------------------------- | ----------------------- | --------------------------- | ------------ | ------- | ------------------------------ | ------------------- | ------------------- | -------- |
@@ -437,7 +450,13 @@ Each org configures its own thresholds. These actions go through approvals:
 - fraud block overrides
 - reopening a closed period (super_admin only)
 
-The database enforces that the requester can never approve their own request.
+Every one of these is a value of `approvals.approval_type` (D-069). The enum and `APPROVAL_TYPES` are asserted equal to the checker table, so a type in this list that no role can decide fails the build rather than becoming a request nobody can answer.
+
+**Who may check what** is two questions, not one. The `approve ApprovalRequest` ability gets a role to the endpoint; `CHECKER_TYPES` decides which _types_ are theirs — accounts gets payments, hr gets payroll, branch_manager gets stock and till. Collapsing the two let a showroom branch_manager approve a payroll run or a reseller payout batch (reproduced against the real API, 201).
+
+**How much** is a third. "branch items under threshold" caps a `branch_manager` at amounts strictly below the org's configured threshold for the type (D-063); a request with no amount, or a type with no threshold configured, needs an org-level checker. Roles are additive, so someone who is also `accounts` or `org_admin` is not capped.
+
+The database enforces that the requester can never approve their own request, that a decided request's terms can never change, that a decision can never be re-taken, and that a row cannot be inserted already decided. Triggers rather than CHECK constraints, because each rule is about the transition rather than the row: `pending -> approved` in the same statement as an amount change passed a constraint that only compared the new row.
 
 ---
 

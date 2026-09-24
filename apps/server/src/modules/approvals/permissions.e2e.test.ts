@@ -1,35 +1,20 @@
-import { randomUUID } from 'node:crypto';
-
-import { base32 } from '@better-auth/utils/base32';
 import { fastifyCookie } from '@fastify/cookie';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { assertNoCostFields, MEMBERSHIP_ROLES, type MembershipRole } from '@elysium/contracts';
-import {
-  createAuth,
-  RecordingSmsProvider,
-  SEED_ORG_IDS,
-  withGlobal,
-  withOrg,
-  withSystem,
-} from '@elysium/db';
-import {
-  grantMembership,
-  startTestDatabase,
-  stopSharedContainer,
-  type TestDatabase,
-} from '@elysium/db/testing';
+import { createAuth, RecordingSmsProvider, SEED_ORG_IDS, withOrg, withSystem } from '@elysium/db';
+import { startTestDatabase, stopSharedContainer, type TestDatabase } from '@elysium/db/testing';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AppModule } from '../../app.module.js';
+import { createRoleFactory, type TestClient } from '../../testing/as-role.js';
 import { AbilityGuard } from '../../platform/auth/abilities.js';
 import { registerAuth } from '../../platform/http/auth-plugin.js';
 import { AuditInterceptor } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { SerializeInterceptor } from '../../platform/http/serialize.interceptor.js';
-import { CSRF_COOKIE, CSRF_HEADER } from '../../platform/http/csrf.js';
 import { MemoryRateLimiter } from '../../platform/http/rate-limit.js';
 import { PasswordTokenStore } from '../iam/iam.service.js';
 
@@ -48,7 +33,6 @@ const ORG_A = SEED_ORG_IDS['elysium-lifestyle-bd'] ?? '';
 const ORG_B = SEED_ORG_IDS['oura-lifestyle'] ?? '';
 const APP_DOMAIN = 'erp.example.com';
 const ORIGIN = `https://${APP_DOMAIN}`;
-const PASSWORD = 'correct-horse-battery';
 
 let database: TestDatabase;
 let app: NestFastifyApplication;
@@ -156,104 +140,29 @@ async function expectRefused(work: Promise<unknown>, pattern: RegExp): Promise<v
   expect(messages.join(' | ')).toMatch(pattern);
 }
 
-let nextIp = 0;
-function freshIp(): string {
-  nextIp += 1;
-  return `10.2.${String(Math.floor(nextIp / 256) % 256)}.${String(nextIp % 256)}`;
-}
+/**
+ * The signed-in clients this suite runs on, through the shared `asRole`.
+ *
+ * This used to be ninety lines of cookie jar and sign-in flow local to this
+ * file — which meant `main.api.test.ts` grew a second copy that disagreed with
+ * it about the 2FA wall. M02b's Build list asks for `asRole(role, org)` as a
+ * test utility, and a utility that lives inside one suite is not one.
+ */
+const asRoleIn = createRoleFactory({
+  server: () => server,
+  tokens,
+  appDomain: APP_DOMAIN,
+  origin: ORIGIN,
+});
 
-class Client {
-  private readonly cookies = new Map<string, string>();
-  constructor(private readonly ip: string) {}
-
-  absorb(headers: Record<string, unknown>): void {
-    const raw = headers['set-cookie'];
-    const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
-    for (const entry of list) {
-      const pair = String(entry).split(';')[0] ?? '';
-      const index = pair.indexOf('=');
-      if (index <= 0) continue;
-      const name = pair.slice(0, index);
-      const value = pair.slice(index + 1);
-      if (value === '') this.cookies.delete(name);
-      else this.cookies.set(name, value);
-    }
-  }
-
-  async request(
-    method: string,
-    url: string,
-    options: { body?: unknown; headers?: Record<string, string> } = {},
-  ) {
-    const cookie = [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
-    const headers: Record<string, string> = {
-      host: APP_DOMAIN,
-      origin: ORIGIN,
-      'x-forwarded-for': this.ip,
-      ...options.headers,
-    };
-    if (cookie !== '') headers.cookie = cookie;
-    const token = this.cookies.get(CSRF_COOKIE);
-    if (token !== undefined) headers[CSRF_HEADER] = token;
-    if (options.body !== undefined) headers['content-type'] = 'application/json';
-
-    const response = await server.inject({
-      method: method as 'GET',
-      url,
-      headers,
-      ...(options.body === undefined ? {} : { payload: JSON.stringify(options.body) }),
-    });
-
-    this.absorb(response.headers);
-    return response;
-  }
-}
-
-/** A signed-in client holding `roles`, already in `orgId`. */
 async function asRole(
   roles: readonly MembershipRole[],
   orgId: string = ORG_A,
-): Promise<{ client: Client; userId: string; email: string }> {
-  const client = new Client(freshIp());
-  const email = `${roles.join('_')}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}@example.invalid`;
-  const userId = `usr_${randomUUID()}`;
-
-  await withGlobal(async (tx) => {
-    await tx.execute(sql`
-      insert into iam.users (id, email, name, email_verified)
-      values (${userId}, ${email}, ${roles.join(', ')}, true)
-    `);
-  });
-
-  for (const role of roles) await grantMembership({ userId, orgId, role });
-
-  await client.request('GET', '/v1/auth/login-branding');
-  await client.request('POST', '/api/auth/request-password-reset', {
-    body: { email, redirectTo: '/accept-invite' },
-  });
-  const token = tokens.take(email);
-  await client.request('POST', '/api/auth/reset-password', {
-    body: { newPassword: PASSWORD, token },
-  });
-  await client.request('POST', '/api/auth/sign-in/email', { body: { email, password: PASSWORD } });
-
-  // §6 requires a second factor for these, and the wall blocks everything else
-  // until it exists.
-  if (roles.some((role) => role === 'org_admin' || role === 'accounts' || role === 'investor')) {
-    const enabled = await client.request('POST', '/api/auth/two-factor/enable', {
-      body: { password: PASSWORD, method: 'totp' },
-    });
-    const { totpURI } = JSON.parse(enabled.body) as { totpURI: string };
-    const secret = new TextDecoder().decode(
-      base32.decode(new URL(totpURI).searchParams.get('secret') ?? ''),
-    );
-    const { code } = await authHandle.auth.api.generateTOTP({ body: { secret } });
-    await client.request('POST', '/api/auth/two-factor/verify-totp', { body: { code } });
-  }
-
-  await client.request('POST', '/v1/me/active-org', { body: { orgId } });
-  return { client, userId, email };
+): Promise<{ client: TestClient; userId: string; email: string }> {
+  return asRoleIn(roles, orgId);
 }
+
+type Client = TestClient;
 
 describe('check 1: the guard honours the matrix over HTTP', () => {
   it.each(['org_admin', 'accounts', 'sales', 'marketing', 'warehouse', 'branch_manager'] as const)(
