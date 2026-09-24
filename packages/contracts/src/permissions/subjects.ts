@@ -55,9 +55,35 @@ export const SUBJECTS = [
   'LedgerPeriod',
   'CourierSettlement',
   'Campaign',
+  /**
+   * Ad spend, which is not a campaign.
+   *
+   * §6 gives accounts "spend entry" on the campaigns row and gives marketing
+   * the row itself. Transcribed as one subject that became `accounts may
+   * create Campaign` — the finance team able to launch a brand's campaigns.
+   * Two subjects is what the cell actually says. §11 defines CPO, CPDO and
+   * ROAS from this number, so marketing keeps it too: their cell is `org` for
+   * the whole row.
+   */
+  'CampaignSpend',
   'LandingPage',
   'Employee',
+  /**
+   * Payroll, which is not an employee record.
+   *
+   * Same shape of error: §6's employees row gives accounts "payroll posting
+   * and payment", and collapsing the row into `Employee` handed finance create
+   * and update over staff records. HR owns the people; accounts posts the
+   * money.
+   */
+  'Payroll',
   'Target',
+  /**
+   * §18's cross-org ranking. The one `all`-scope grant an ordinary role holds,
+   * bounded by D-023: normalized metrics and ranks only, never raw financials,
+   * read through `erp_analytics` (§5 exception 2).
+   */
+  'Leaderboard',
   'ResellerAdmin',
   'Investor',
   'CompanyLoan',

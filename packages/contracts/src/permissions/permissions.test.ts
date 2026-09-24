@@ -23,6 +23,7 @@ import {
   REQUESTER_TYPES,
 } from './matrix.js';
 import { assertNoCostFields, findCostFields, serializeFor } from './serialize.js';
+import { SPEC_6_GRANTS } from './spec-6.fixture.js';
 import {
   ACTIONS,
   COST_FIELDS,
@@ -69,6 +70,57 @@ function abilityFor(roles: readonly MembershipRole[], isSuperAdmin = false) {
   return defineAbilityFor({ ...CONTEXT, roles, isSuperAdmin });
 }
 
+/** `MATRIX` flattened to one `role|action|subject|scope` line per grant. */
+function grantsOf(): string[] {
+  const grants: string[] = [];
+  for (const [role, rules] of Object.entries(MATRIX)) {
+    for (const rule of rules) {
+      const actions = Array.isArray(rule.action) ? rule.action : [rule.action];
+      for (const action of actions) grants.push(`${role}|${action}|${rule.subject}|${rule.scope}`);
+    }
+  }
+  return grants.sort();
+}
+
+describe('the matrix says what §6 says', () => {
+  /*
+   * The one suite here that is not a tautology.
+   *
+   * Everything else asks whether CASL agrees with `MATRIX`, which is worth
+   * asking and says nothing about whether `MATRIX` is right. Seven real
+   * deviations passed that question green: accounts holding write on staff
+   * records, accounts able to check a till reconciliation (and a branch
+   * manager who also held accounts losing their amount cap on it), a bare
+   * `update Stock` that invariant 3 forbids, stock availability scoped to a
+   * branch where §6 says org, and three cells with no subject at all. So this
+   * compares the code against a frozen grid grouped under §6's own rows, with
+   * each cell's wording quoted beside it.
+   */
+  it('grants exactly what the §6 freeze lists, no more and no less', () => {
+    const actual = grantsOf();
+    const expected = [...SPEC_6_GRANTS].sort();
+
+    const extra = actual.filter((grant) => !expected.includes(grant));
+    const missing = expected.filter((grant) => !actual.includes(grant));
+
+    expect(extra, `granted but not in §6: ${extra.join(', ')}`).toEqual([]);
+    expect(missing, `in §6 but not granted: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  it('has a freeze with no duplicate lines, which would hide a missing one', () => {
+    expect(new Set(SPEC_6_GRANTS).size).toBe(SPEC_6_GRANTS.length);
+  });
+
+  it('would notice a widened rule', () => {
+    // The control. If the comparison above were vacuous — comparing a list to
+    // itself, or to nothing — this would still pass, so it runs against a
+    // deliberately corrupted copy rather than against the real one.
+    const widened = grantsOf().filter((grant) => grant !== 'sales|read|Customer|own');
+    widened.push('sales|read|Customer|org');
+    expect(widened.filter((g) => !SPEC_6_GRANTS.includes(g))).toEqual(['sales|read|Customer|org']);
+  });
+});
+
 describe('the matrix is well formed', () => {
   it('names only actions and subjects that exist', () => {
     // A typo'd action reads as "this role cannot do that" and denies silently;
@@ -91,14 +143,29 @@ describe('the matrix is well formed', () => {
     }
   });
 
-  it('never grants `all` scope to an ordinary role', () => {
-    // Cross-org reach is §5 exception 3 and belongs to super_admin alone. A
-    // rule with scope `all` in this table would hand it to a tenant role.
+  it('grants `all` scope for one documented cell and nothing else', () => {
+    /*
+     * Cross-org reach is §5 exception 3 and belongs to super_admin. §18 makes
+     * exactly one carve-out: an org admin sees other orgs' **normalized
+     * metrics and ranks only**, never their raw financials (D-023), read
+     * through `erp_analytics` rather than through a tenant query.
+     *
+     * So this is an allow-list of one rather than a blanket refusal. Written
+     * as `not.toBe('all')` it would have had to be deleted to add the
+     * leaderboard, and deleting it takes the check with it.
+     */
+    const ALLOWED_CROSS_ORG = ['org_admin|read|Leaderboard'];
+
+    const crossOrg: string[] = [];
     for (const [role, rules] of Object.entries(MATRIX)) {
       for (const rule of rules) {
-        expect(rule.scope, `${role} has cross-org scope on ${rule.subject}`).not.toBe('all');
+        if (rule.scope !== 'all') continue;
+        const actions = Array.isArray(rule.action) ? rule.action : [rule.action];
+        for (const action of actions) crossOrg.push(`${role}|${action}|${rule.subject}`);
       }
     }
+
+    expect(crossOrg.sort()).toEqual(ALLOWED_CROSS_ORG);
   });
 });
 
@@ -252,8 +319,10 @@ describe('scope is enforced, not merely recorded', () => {
       branchIds: ['branch-a'],
     });
 
-    expect(ability.can('read', tag('Stock', { branchId: 'branch-a' }))).toBe(true);
-    expect(ability.can('read', tag('Stock', { branchId: 'branch-b' }))).toBe(false);
+    // `Order`, not `Stock`: §6 gives a branch manager stock availability
+    // org-wide, so `Stock` would assert nothing about scope here.
+    expect(ability.can('read', tag('Order', { branchId: 'branch-a' }))).toBe(true);
+    expect(ability.can('read', tag('Order', { branchId: 'branch-b' }))).toBe(false);
   });
 
   it('treats an empty branch scope as the whole org, not as no branches', () => {
@@ -262,8 +331,8 @@ describe('scope is enforced, not merely recorded', () => {
     // permissions bug and gets "fixed" by widening the rule.
     const ability = defineAbilityFor({ ...CONTEXT, roles: ['branch_manager'], branchIds: [] });
 
-    expect(ability.can('read', tag('Stock', { branchId: 'branch-a' }))).toBe(true);
-    expect(ability.can('read', tag('Stock', { branchId: 'branch-z' }))).toBe(true);
+    expect(ability.can('read', tag('Order', { branchId: 'branch-a' }))).toBe(true);
+    expect(ability.can('read', tag('Order', { branchId: 'branch-z' }))).toBe(true);
   });
 
   it('unions the scopes of several roles rather than taking the first', () => {

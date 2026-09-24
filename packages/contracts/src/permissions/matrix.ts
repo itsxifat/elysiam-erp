@@ -73,7 +73,20 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
     'threshold_change',
   ],
   // §6: payments.
-  accounts: ['supplier_payment', 'settlement_posting', 'reseller_payout_batch', 'closing_variance'],
+  /*
+   * §6's cell is one word: **"payments"**. Every entry has to be money leaving
+   * the company, and this list is the whole of the interpretation.
+   *
+   * `closing_variance` was here and should not have been. A daily closing
+   * variance is a till reconciliation — §6's maker-checker list names it
+   * separately from "supplier payments above the threshold" — and it belongs
+   * to org_admin and to the branch checker under threshold. Two things
+   * followed, and the second is worse: `accounts` holds create and update on
+   * `Wallet` at org scope, so the team booking the cash entry also approved the
+   * shortfall at any amount; and a caller holding `branch_manager` *and*
+   * `accounts` came out uncapped on the one type where the branch is the till.
+   */
+  accounts: ['supplier_payment', 'settlement_posting', 'reseller_payout_batch'],
   // §6: payroll.
   hr: ['payroll_run', 'bonus_rule'],
   // §6: branch items. Stock and till, not money leaving the company.
@@ -200,7 +213,16 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'create', 'update', 'delete'], subject: 'Catalog', scope: 'org' },
     { action: 'read', subject: 'Cost', scope: 'org' },
     { action: ['read', 'create', 'update', 'delete'], subject: 'CostedItem', scope: 'org' },
-    { action: ['read', 'update'], subject: 'Stock', scope: 'org' },
+    /*
+     * Read only, and no `update Stock` for anybody.
+     *
+     * §6's row is "Stock availability" — a read. Changing stock is the next
+     * row down, and it is `StockAdjustment`. A bare `update Stock` grant
+     * contradicts invariant 3, which says stock changes only through inventory
+     * movements: the permission described a path that must not exist, and M07
+     * would have found a rule inviting it to build one.
+     */
+    { action: 'read', subject: 'Stock', scope: 'org' },
     { action: ['read', 'request', 'approve'], subject: 'StockAdjustment', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Supply', scope: 'org' },
     { action: ['read', 'create', 'update', 'delete'], subject: 'Order', scope: 'org' },
@@ -215,8 +237,10 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'update'], subject: 'LedgerPeriod', scope: 'org' },
     { action: ['read', 'update'], subject: 'CourierSettlement', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Campaign', scope: 'org' },
+    { action: ['read', 'create', 'update'], subject: 'CampaignSpend', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'LandingPage', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Employee', scope: 'org' },
+    { action: ['read', 'create', 'update'], subject: 'Payroll', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Target', scope: 'org' },
     { action: ['read', 'update'], subject: 'ResellerAdmin', scope: 'org' },
     { action: 'read', subject: 'Investor', scope: 'org' },
@@ -228,6 +252,15 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     // raise it could exempt their own team's requests.
     { action: ['read', 'update'], subject: 'ApprovalThreshold', scope: 'org' },
     { action: 'read', subject: 'AuditLog', scope: 'org' },
+    /*
+     * The one cross-org grant an ordinary role holds, and §18 is explicit
+     * about why it is not a tenancy hole: org admins see other orgs'
+     * **normalized metrics and ranks only**, never raw financials (D-023),
+     * read through `erp_analytics` (§5 exception 2), carrying no money at all.
+     * The matrix test allows exactly this cell by name and fails on any other
+     * `all` scope.
+     */
+    { action: 'read', subject: 'Leaderboard', scope: 'all' },
   ],
 
   accounts: [
@@ -244,8 +277,13 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'LedgerReport', scope: 'org' },
     { action: ['read', 'update'], subject: 'LedgerPeriod', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'CourierSettlement', scope: 'org' },
-    { action: 'create', subject: 'Campaign', scope: 'org' },
-    { action: ['read', 'create', 'update'], subject: 'Employee', scope: 'org' },
+    // §6's cell is "spend entry", not the campaigns row. As `create Campaign`
+    // it let the finance team launch a brand's campaigns.
+    { action: ['read', 'create', 'update'], subject: 'CampaignSpend', scope: 'org' },
+    // §6 gives accounts "payroll posting and payment" on the employees row —
+    // not the employees. Create and update on staff records is HR's.
+    { action: 'read', subject: 'Employee', scope: 'org' },
+    { action: ['read', 'update'], subject: 'Payroll', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'ResellerAdmin', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Investor', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'CompanyLoan', scope: 'org' },
@@ -278,6 +316,16 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'update'], subject: 'Customer', scope: 'org' },
     { action: 'export', subject: 'BuyerExport', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Campaign', scope: 'org' },
+    /*
+     * Marketing keeps ad spend, and splitting the subject nearly took it away.
+     *
+     * §6's cell is `org` for the *whole* row — "Campaigns, ad spend, leads" —
+     * so marketing owns the spend figure as much as the campaign. The split
+     * exists because the **accounts** cell is narrower than its row ("spend
+     * entry"); narrowing marketing's too would leave the team that owns CPO,
+     * CPDO and ROAS (§11) unable to read the input to them.
+     */
+    { action: ['read', 'create', 'update'], subject: 'CampaignSpend', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'LandingPage', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'read', subject: 'Target', scope: 'own' },
@@ -285,6 +333,7 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
 
   hr: [
     { action: ['read', 'create', 'update'], subject: 'Employee', scope: 'org' },
+    { action: ['read', 'create', 'update'], subject: 'Payroll', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Target', scope: 'org' },
     // §6 makes hr the checker for payroll. CHECKER_TYPES is what narrows this
     // to payroll and bonuses; without the ability hr could check nothing at all,
@@ -295,7 +344,13 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
   branch_manager: [
     { action: 'read', subject: 'Catalog', scope: 'org' },
     { action: 'read', subject: 'CostedItem', scope: 'branch' },
-    { action: 'read', subject: 'Stock', scope: 'branch' },
+    /*
+     * §6's catalog and stock-availability rows both say `org` for a branch
+     * manager, and the reason is operational: a showroom needs to see that
+     * another branch holds the size before it offers a transfer. Cost is kept
+     * out by `serializeFor`, not by the scope.
+     */
+    { action: 'read', subject: 'Stock', scope: 'org' },
     { action: ['read', 'request'], subject: 'StockAdjustment', scope: 'branch' },
     { action: ['read', 'create', 'update'], subject: 'Order', scope: 'branch' },
     { action: ['read', 'update'], subject: 'Customer', scope: 'branch' },
