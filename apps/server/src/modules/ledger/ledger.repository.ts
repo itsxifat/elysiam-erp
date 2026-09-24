@@ -218,7 +218,11 @@ export async function linesOfJournals(
   tx: Tx,
   orgId: string,
   journalIds: readonly string[],
-  filters: { readonly scope: SQL; readonly excludeSubtypes: readonly string[] } = {
+  filters: {
+    readonly scope: SQL;
+    readonly excludeSubtypes: readonly string[];
+    readonly limit?: number;
+  } = {
     scope: sql`true`,
     excludeSubtypes: [],
   },
@@ -232,7 +236,8 @@ export async function linesOfJournals(
       and l.journal_id = any (${sql.param([...journalIds])}::uuid[])
       and ${filters.scope}
       and ${excludeSubtypes(sql`a.subtype`, filters.excludeSubtypes)}
-    order by l.journal_id, l.line_no
+    order by array_position(${sql.param([...journalIds])}::uuid[], l.journal_id), l.line_no
+    ${filters.limit === undefined ? sql`` : sql`limit ${filters.limit}`}
   `);
   return [...rows];
 }
@@ -361,12 +366,15 @@ export async function counterAccounts(
   return result;
 }
 
-/** Journals with a business date in the range that have a line in scope, capped. */
+/**
+ * Journals with a business date in the range that have a line the caller may
+ * see — in scope, and not on a withheld subtype — capped.
+ */
 export async function journalsInRange(
   tx: Tx,
   orgId: string,
   range: { readonly from: string; readonly to: string },
-  lineScope: SQL,
+  filters: { readonly lineScope: SQL; readonly excludeSubtypes: readonly string[] },
   limit: number,
 ): Promise<JournalRow[]> {
   const rows = await tx.execute<JournalRow>(sql`
@@ -376,7 +384,9 @@ export async function journalsInRange(
       and j.business_date between ${range.from} and ${range.to}
       and exists (
         select 1 from ledger.journal_lines l
-        where l.org_id = j.org_id and l.journal_id = j.id and ${lineScope}
+        join ledger.accounts a on a.org_id = l.org_id and a.id = l.account_id
+        where l.org_id = j.org_id and l.journal_id = j.id and ${filters.lineScope}
+          and ${excludeSubtypes(sql`a.subtype`, filters.excludeSubtypes)}
       )
     order by j.business_date, j.created_at, j.id
     limit ${limit}

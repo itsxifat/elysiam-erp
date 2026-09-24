@@ -8,7 +8,7 @@ import { z } from 'zod';
  * months are `YYYY-MM`.
  */
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATE = /^2\d{3}-\d{2}-\d{2}$/;
 
 function realDate(value: string): boolean {
   if (!ISO_DATE.test(value)) return false;
@@ -21,9 +21,12 @@ function realDate(value: string): boolean {
 
 export const businessDateSchema = z
   .string()
-  .refine(realDate, 'Dates are YYYY-MM-DD calendar dates.');
+  .refine(realDate, 'Dates are YYYY-MM-DD calendar dates, from 2000.');
 
-export const monthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Months are YYYY-MM.');
+/** Years 2000-2999: `Date.UTC` maps 0000-0099 into the 1900s (review L3). */
+export const monthSchema = z
+  .string()
+  .regex(/^2\d{3}-(0[1-9]|1[0-2])$/, 'Months are YYYY-MM, from 2000.');
 
 /** A strictly positive integer-poisha string that fits §7's ±9e15 bound. */
 export const positivePoishaSchema = z

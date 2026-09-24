@@ -149,6 +149,13 @@ export type ApprovalExecutor = (
  */
 const EXECUTOR_REQUIRED_TYPES: readonly ApprovalType[] = ['period_reopen'];
 
+/**
+ * Types only their owning module may raise, because the module writes the
+ * payload the executor acts on: `period_reopen` through
+ * `POST /v1/ledger/periods/reopen` (D-081).
+ */
+export const MODULE_RAISED_TYPES: readonly ApprovalType[] = ['period_reopen'];
+
 function magnitude(amount: bigint): bigint {
   return amount < 0n ? -amount : amount;
 }
@@ -273,10 +280,24 @@ export class ApprovalsService {
        * itself (M07 WAC, M19 payroll…). The generic HTTP route never sets it.
        */
       amountDerivedByServer?: boolean;
+      /**
+       * Set only by the module that owns a type in MODULE_RAISED_TYPES, which
+       * builds and validates the payload itself (M03 security review M1).
+       */
+      raisedByModule?: boolean;
       /** The HTTP request: carries the caller's scope, and tells the audit net to stand down. */
       request?: AuditableRequest;
     },
   ): Promise<{ id: string; required: boolean; status: ApprovalStatus }> {
+    // A type whose payload decides what gets executed is raised only by its
+    // owning module. A period_reopen with a hand-written payload could name one
+    // month in its label and another in its periodId (security review M1).
+    if (MODULE_RAISED_TYPES.includes(input.type) && input.raisedByModule !== true) {
+      throw new BadRequestException(
+        `A ${input.type} request is raised through its own endpoint, not this one.`,
+      );
+    }
+
     // Who may raise what (D-072). `threshold_change` is never raised here.
     if (!canRequestType(context.roles, input.type, context.isSuperAdmin)) {
       throw new ForbiddenException(

@@ -47,6 +47,9 @@ describe('calendar helpers', () => {
     expect(isIsoDate('2026-02-29')).toBe(false);
     expect(isIsoDate('2026-13-01')).toBe(false);
     expect(isIsoDate('2026-9-1')).toBe(false);
+    // Date.UTC maps years 0-99 into the 1900s; those are typos, not dates.
+    expect(isIsoDate('0026-05-01')).toBe(false);
+    expect(() => periodForMonth('0026-05')).toThrow(RangeError);
     expect(() => toIsoDate('2026-02-30')).toThrow(RangeError);
   });
 

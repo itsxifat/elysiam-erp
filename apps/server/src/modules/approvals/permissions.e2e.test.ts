@@ -1148,17 +1148,20 @@ describe('control types are never auto-approved (C1, D-071)', () => {
     }
   });
 
-  it('refuses an amount on period_reopen, and holds it with none', async () => {
+  it('refuses period_reopen here, with an amount or without', async () => {
     const { client } = await asRole('accounts');
     const withAmount = await client.request('POST', '/v1/approvals', {
       body: { type: 'period_reopen', amountPoisha: '0' },
     });
     expect(withAmount.statusCode, withAmount.body).toBe(400);
 
-    expect(await requestApproval(client, 'period_reopen', null)).toMatchObject({
-      required: true,
-      status: 'pending',
+    // And without one it is still refused here: only the ledger raises it,
+    // with a payload it wrote (M03, D-081). The ledger suite proves it is held.
+    const generic = await client.request('POST', '/v1/approvals', {
+      body: { type: 'period_reopen', amountPoisha: null },
     });
+    expect(generic.statusCode, generic.body).toBe(400);
+    expect(generic.body).toMatch(/raised through its own endpoint/);
   });
 
   it('holds a back-dated entry however small', async () => {

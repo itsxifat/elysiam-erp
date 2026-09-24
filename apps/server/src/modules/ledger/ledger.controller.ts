@@ -59,7 +59,7 @@ export class LedgerController {
   @RequireAbility('read', 'LedgerReport')
   @Get('accounts')
   async accounts(@Req() request: FastifyRequest) {
-    return this.reports.accounts(requireContext(request), request);
+    return mapLedgerErrors(() => this.reports.accounts(requireContext(request), request));
   }
 
   @RequireAbility('read', 'LedgerReport')
@@ -83,14 +83,16 @@ export class LedgerController {
   @Get('trial-balance')
   async trialBalance(@Req() request: FastifyRequest, @Query() query: unknown) {
     const { asOf } = parse(trialBalanceQuerySchema, query);
-    return this.reports.trialBalance(requireContext(request), request, asOf);
+    return mapLedgerErrors(() => this.reports.trialBalance(requireContext(request), request, asOf));
   }
 
   @RequireAbility('read', 'LedgerReport')
   @Get('party-balances')
   async partyBalances(@Req() request: FastifyRequest, @Query() query: unknown) {
     const parsed = parse(partyBalanceQuerySchema, query);
-    return this.reports.partyBalances(requireContext(request), request, parsed);
+    return mapLedgerErrors(() =>
+      this.reports.partyBalances(requireContext(request), request, parsed),
+    );
   }
 
   @RequireAbility('read', 'LedgerReport')
@@ -103,7 +105,9 @@ export class LedgerController {
   @RequireAbility('read', 'Wallet')
   @Get('wallets')
   async wallets(@Req() request: FastifyRequest) {
-    return this.reports.wallets(requireContext(request), request, businessDate(new Date()));
+    return mapLedgerErrors(() =>
+      this.reports.wallets(requireContext(request), request, businessDate(new Date())),
+    );
   }
 
   @RequireAbility('read', 'Wallet')

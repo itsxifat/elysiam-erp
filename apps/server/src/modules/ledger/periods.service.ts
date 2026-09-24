@@ -25,7 +25,9 @@ import * as repo from './ledger.repository.js';
  */
 
 /** What a `period_reopen` payload must say; the executor trusts nothing else. */
-const reopenPayloadSchema = z.object({ periodId: z.string().uuid() }).passthrough();
+const reopenPayloadSchema = z
+  .object({ periodId: z.string().uuid(), month: z.string().regex(/^\d{4}-\d{2}$/) })
+  .strict();
 
 export interface PeriodView {
   readonly id: string;
@@ -144,6 +146,8 @@ export class PeriodsService implements OnModuleInit {
       payload: { periodId: existing.id, month: input.month },
       reason: input.reason,
       request,
+      // Only the ledger may raise this type: it wrote the payload (D-081).
+      raisedByModule: true,
     });
 
     return { approvalId: raised.id, status: raised.status, periodId: existing.id };
@@ -162,21 +166,29 @@ export class PeriodsService implements OnModuleInit {
       );
     }
 
-    await this.reopenLocked(tx, context, parsed.data.periodId, approval.id, request);
+    await this.reopenLocked(tx, context, parsed.data, approval.id, request);
   };
 
   private async reopenLocked(
     tx: Tx,
     context: ActiveContext,
-    periodId: string,
+    target: { periodId: string; month: string },
     approvalId: string,
     request: AuditableRequest | undefined,
   ): Promise<void> {
+    const { periodId } = target;
     const period = await repo.periodById(tx, context.orgId, periodId);
     if (period?.status !== 'closed') {
       throw ledgerHttpError(
         'PERIOD_NOT_CLOSED',
         'That period is not closed any more. Reject this request.',
+      );
+    }
+    // The month the checker read must be the month that reopens.
+    if (period.starts_on.slice(0, 7) !== target.month) {
+      throw ledgerHttpError(
+        'PERIOD_REOPEN_UNAUTHORISED',
+        'This request names a different month than the period it would reopen. Reject it.',
       );
     }
 

@@ -17,7 +17,8 @@ export const BUSINESS_TIME_ZONE = 'Asia/Dhaka';
 /** `YYYY-MM-DD`. A calendar date with no time and no zone. */
 export type IsoDate = string & { readonly __isoDate: true };
 
-const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+/** Years 2000-2999 only: `Date.UTC` silently maps 0000-0099 into the 1900s. */
+const ISO_DATE = /^(2\d{3})-(\d{2})-(\d{2})$/;
 
 const formatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: BUSINESS_TIME_ZONE,
@@ -67,7 +68,7 @@ export interface Period {
   readonly endsOn: IsoDate;
 }
 
-const MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
+const MONTH = /^(2\d{3})-(0[1-9]|1[0-2])$/;
 
 /** The period `YYYY-MM`. */
 export function periodForMonth(month: string): Period {

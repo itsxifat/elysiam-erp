@@ -27,6 +27,7 @@ import {
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { attachScope } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { ApprovalsService } from '../approvals/approvals.service.js';
 import { CashService } from './cash.service.js';
 import { LedgerService } from './ledger.service.js';
 
@@ -464,29 +465,65 @@ describe('check 4: posting into a closed period fails; reopening goes through ap
     ).toBe('PERIOD_CLOSED');
   });
 
-  it('refuses a period_reopen approval whose payload names no closed period', async () => {
+  it('refuses period_reopen through the generic route, and a payload that misleads (review M1)', async () => {
     const accounts = await harness.asRole('accounts', ORG_A);
     const superAdmin = await asSuperAdmin();
-    // Raised through the generic route, with a payload the ledger did not write.
-    const raised = await accounts.client.request('POST', '/v1/approvals', {
+
+    // A hand-written payload could label one month and name another period.
+    const generic = await accounts.client.request('POST', '/v1/approvals', {
       body: { type: 'period_reopen', amountPoisha: null, payload: { periodId: randomUUID() } },
     });
-    const { id } = parse<{ id: string }>(raised.body);
-    const decided = await superAdmin.request('POST', `/v1/approvals/${id}/decide`, {
-      body: { decision: 'approved' },
-    });
-    expect(decided.statusCode).toBe(409);
-    expect(parse<{ code: string }>(decided.body).code).toBe('PERIOD_NOT_CLOSED');
+    expect(generic.statusCode, generic.body).toBe(400);
 
-    // The decision rolled back with the executor: still pending.
-    const [row] = await withSystem(
-      async (tx) =>
-        tx.execute<{ status: string }>(
-          sql`select status::text as status from approvals.approval_requests where id = ${id}`,
+    // And if such a request existed anyway (raised by a buggy module), the
+    // executor refuses it: the label must be the period's own month, and the
+    // period must be closed. The decision rolls back with it.
+    await accounts.client.request('POST', '/v1/ledger/periods/close', {
+      body: { month: '2025-07' },
+    });
+    const periods = parse<{ items: { id: string; month: string }[] }>(
+      (await accounts.client.request('GET', '/v1/ledger/periods')).body,
+    ).items;
+    const july = periods.find((item) => item.month === '2025-07')?.id ?? '';
+    const approvals = harness.app.get(ApprovalsService);
+    const context = contextFor('accounts', ORG_A);
+
+    const cases: [Record<string, unknown>, string][] = [
+      [{ periodId: july, month: '2025-08' }, 'PERIOD_REOPEN_UNAUTHORISED'],
+      [{ periodId: randomUUID(), month: '2025-07' }, 'PERIOD_NOT_CLOSED'],
+      [{ periodId: july, month: '2025-07', extra: 'x' }, 'PERIOD_REOPEN_UNAUTHORISED'],
+    ];
+    for (const [payload, code] of cases) {
+      const { id } = await approvals.request(context, {
+        type: 'period_reopen',
+        amountPoisha: null,
+        payload,
+        raisedByModule: true,
+      });
+      const decided = await superAdmin.request('POST', `/v1/approvals/${id}/decide`, {
+        body: { decision: 'approved' },
+      });
+      expect(parse<{ code: string }>(decided.body).code, JSON.stringify(payload)).toBe(code);
+
+      const [row] = await withSystem(
+        async (tx) =>
+          tx.execute<{ status: string }>(
+            sql`select status::text as status from approvals.approval_requests where id = ${id}`,
+          ),
+        { orgId: ORG_A },
+      );
+      expect(row?.status).toBe('pending');
+    }
+    const refused = await failure(
+      post(
+        ORG_A,
+        draft(
+          [line(account(ORG_A, '1100'), 5n, 0n), line(account(ORG_A, '4300'), 0n, 5n)],
+          '2025-07-10',
         ),
-      { orgId: ORG_A },
+      ),
     );
-    expect(row?.status).toBe('pending');
+    expect(refused.code).toBe('PERIOD_CLOSED');
   });
 
   it('does not let sales, marketing or a branch manager close a period', async () => {
@@ -700,7 +737,10 @@ describe('row scope and cost: a branch manager sees their branch, and no cost', 
     });
     expect(own.statusCode, own.body).toBe(201);
 
-    for (const wallet of [hq, bank]) {
+    // Another branch's wallet, an org-level wallet and a uuid that is nothing
+    // at all get the same answer, body included (review L1).
+    const bodies = new Set<string>();
+    for (const wallet of [hq, bank, randomUUID()]) {
       const other = await manager.client.request('POST', '/v1/ledger/cash-in', {
         body: {
           entryId: randomUUID(),
@@ -710,7 +750,9 @@ describe('row scope and cost: a branch manager sees their branch, and no cost', 
         },
       });
       expect(other.statusCode, other.body).toBe(404);
+      bodies.add(other.body);
     }
+    expect([...bodies]).toHaveLength(1);
   });
 
   it('lists only their wallet, and 404s another branch’s cash book', async () => {
@@ -837,5 +879,53 @@ describe("tenancy: one org never reaches another org's ledger", () => {
       ),
     );
     expect(refused.code).toBe('LEDGER_ACCOUNT_INVALID');
+  });
+});
+
+describe('large amounts (security review M2)', () => {
+  it('caps a single cash-in, and still serves reports over balances past 9e15', async () => {
+    const actor = await harness.asRole('accounts', ORG_D);
+    const tooBig = await actor.client.request('POST', '/v1/ledger/cash-in', {
+      body: {
+        entryId: randomUUID(),
+        walletAccountId: account(ORG_D, '1110'),
+        incomeAccountId: account(ORG_D, '4300'),
+        // One poisha over the default ৳1 crore cap.
+        amountPoisha: '1000000001',
+      },
+    });
+    expect(tooBig.statusCode).toBe(400);
+    expect(parse<{ code: string }>(tooBig.body).code).toBe('POSTING_INPUT_INVALID');
+
+    // Two maximal journals: each is a legal amount, their sum is not a Poisha.
+    for (let i = 0; i < 2; i += 1) {
+      await post(
+        ORG_D,
+        draft(
+          [
+            line(account(ORG_D, '1110'), 9_000_000_000_000_000n, 0n),
+            line(account(ORG_D, '3100'), 0n, 9_000_000_000_000_000n),
+          ],
+          '2026-06-15',
+        ),
+      );
+    }
+    const trial = await actor.client.request('GET', '/v1/ledger/trial-balance?asOf=2030-01-01');
+    expect(trial.statusCode, trial.body).toBe(200);
+    const body = parse<{
+      items: { code: string; balancePoisha: string }[];
+      differencePoisha: string;
+    }>(trial.body);
+    expect(body.differencePoisha).toBe('0');
+    expect(body.items.find((row) => row.code === '1110')?.balancePoisha).toBe('18000000000000000');
+
+    for (const url of [
+      '/v1/ledger/wallets',
+      `/v1/ledger/wallets/${account(ORG_D, '1110')}/cash-book?to=2030-01-01`,
+      `/v1/ledger/accounts/${account(ORG_D, '3100')}/ledger?to=2030-01-01`,
+    ]) {
+      const response = await actor.client.request('GET', url);
+      expect(response.statusCode, `${url} ${response.body}`).toBe(200);
+    }
   });
 });

@@ -1,22 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { canReadCost } from '@elysium/contracts';
 import { withOrg, type Tx } from '@elysium/db';
-import {
-  add,
-  COST_SUBTYPES,
-  isAccountSubtype,
-  normalBalanceOf,
-  poisha,
-  sub,
-  sum,
-  ZERO,
-  type Poisha,
-} from '@elysium/domain';
+import { aggregateBalanceOf, COST_SUBTYPES, isAccountSubtype } from '@elysium/domain';
 import { sql, type SQL } from 'drizzle-orm';
 
-import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
+import { scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { ledgerHttpError } from './ledger.errors.js';
+import { assertAccountInScope } from './ledger.scope.js';
 import * as repo from './ledger.repository.js';
 
 /**
@@ -36,11 +27,19 @@ import * as repo from './ledger.repository.js';
  */
 
 /** Amounts are integer-poisha strings on the wire (JSON has no bigint). */
-const money = (value: Poisha | bigint): string => value.toString();
+const money = (value: bigint): string => value.toString();
+
+/**
+ * Report arithmetic is plain `bigint` (`aggregateBalanceOf`, D-079): a total
+ * of stored journals is never refused, however large.
+ */
+const total = (values: readonly string[]): bigint =>
+  values.reduce((acc, value) => acc + BigInt(value), 0n);
 
 const MAX_LINES = 5_000;
 const MAX_DAY_BOOK_JOURNALS = 2_000;
 const MAX_DAY_BOOK_DAYS = 31;
+const MAX_DAY_BOOK_LINES = 20_000;
 
 function costBlind(context: ActiveContext): boolean {
   return !canReadCost(context.roles, context.isSuperAdmin);
@@ -50,8 +49,8 @@ function hiddenSubtypes(context: ActiveContext): readonly string[] {
   return costBlind(context) ? COST_SUBTYPES : [];
 }
 
-function normalSide(normal: 'debit' | 'credit', debit: string, credit: string): Poisha {
-  return normalBalanceOf(normal, poisha(debit), poisha(credit));
+function normalSide(normal: 'debit' | 'credit', debit: string, credit: string): bigint {
+  return aggregateBalanceOf(normal, BigInt(debit), BigInt(credit));
 }
 
 function daysBetween(from: string, to: string): number {
@@ -93,8 +92,8 @@ export class ReportsService {
         lineScope,
         excludeSubtypes: withheld,
       });
-      const totalDebit = sum(rows.map((row) => poisha(row.debit_poisha)));
-      const totalCredit = sum(rows.map((row) => poisha(row.credit_poisha)));
+      const totalDebit = total(rows.map((row) => row.debit_poisha));
+      const totalCredit = total(rows.map((row) => row.credit_poisha));
       return {
         asOf,
         items: rows.map((row) => ({
@@ -110,7 +109,7 @@ export class ReportsService {
         })),
         totalDebitPoisha: money(totalDebit),
         totalCreditPoisha: money(totalCredit),
-        differencePoisha: money(sub(totalDebit, totalCredit)),
+        differencePoisha: money(totalDebit - totalCredit),
         costWithheld: withheld.length > 0,
       };
     });
@@ -131,7 +130,9 @@ export class ReportsService {
       }
       // A branch-level account outside the caller's branches does not exist
       // for them, rather than existing with nothing on it.
-      if (account.branch_id !== null) assertInScope(request, { branchId: account.branch_id });
+      if (account.branch_id !== null) {
+        assertAccountInScope(request, { branchId: account.branch_id }, 'No such account.');
+      }
 
       return this.statement(tx, context.orgId, account, range, lineScope);
     });
@@ -166,7 +167,7 @@ export class ReportsService {
             branchId: account.branch_id,
             isActive: account.is_active,
             balancePoisha: money(
-              row === undefined ? ZERO : normalSide('debit', row.debit_poisha, row.credit_poisha),
+              row === undefined ? 0n : normalSide('debit', row.debit_poisha, row.credit_poisha),
             ),
           };
         }),
@@ -188,7 +189,7 @@ export class ReportsService {
       }
       // Wallet scope is by the wallet's own branch: a branch manager sees
       // their branch's wallets, and an org-level wallet is not theirs.
-      assertInScope(request, { branchId: account.branch_id });
+      assertAccountInScope(request, { branchId: account.branch_id }, 'No such wallet.');
 
       const statement = await this.statement(tx, context.orgId, account, range, sql`true`);
       const against = await repo.counterAccounts(
@@ -227,17 +228,26 @@ export class ReportsService {
         tx,
         context.orgId,
         range,
-        lineScope,
+        { lineScope, excludeSubtypes: withheld },
         MAX_DAY_BOOK_JOURNALS + 1,
       );
-      const truncated = journals.length > MAX_DAY_BOOK_JOURNALS;
-      const shown = journals.slice(0, MAX_DAY_BOOK_JOURNALS);
       const lines = await repo.linesOfJournals(
         tx,
         context.orgId,
-        shown.map((journal) => journal.id),
-        { scope: lineScope, excludeSubtypes: withheld },
+        journals.slice(0, MAX_DAY_BOOK_JOURNALS).map((journal) => journal.id),
+        { scope: lineScope, excludeSubtypes: withheld, limit: MAX_DAY_BOOK_LINES + 1 },
       );
+      // Bounded by lines as well as journals: 2,000 journals of 500 lines each
+      // would be a million rows in one response (review L4). Stop at the last
+      // journal whose lines all fit, and say so.
+      let shown = journals.slice(0, MAX_DAY_BOOK_JOURNALS);
+      let truncated = journals.length > MAX_DAY_BOOK_JOURNALS;
+      if (lines.length > MAX_DAY_BOOK_LINES) {
+        const cut = lines[MAX_DAY_BOOK_LINES]?.journal_id;
+        const index = shown.findIndex((journal) => journal.id === cut);
+        shown = shown.slice(0, Math.max(index, 0));
+        truncated = true;
+      }
       const byJournal = new Map<string, repo.LineRow[]>();
       for (const line of lines) {
         const list = byJournal.get(line.journal_id) ?? [];
@@ -329,21 +339,21 @@ export class ReportsService {
     const truncated = rows.length > MAX_LINES;
     const shown = rows.slice(0, MAX_LINES);
 
-    const openingBalance = normalBalanceOf(
+    const openingBalance = aggregateBalanceOf(
       account.normal_balance,
-      poisha(opening.debit),
-      poisha(opening.credit),
+      opening.debit,
+      opening.credit,
     );
     let running = openingBalance;
-    let debits = ZERO;
-    let credits = ZERO;
+    let debits = 0n;
+    let credits = 0n;
 
     const items = shown.map((row) => {
-      const debit = poisha(row.debit_poisha);
-      const credit = poisha(row.credit_poisha);
-      debits = add(debits, debit);
-      credits = add(credits, credit);
-      running = add(running, normalBalanceOf(account.normal_balance, debit, credit));
+      const debit = BigInt(row.debit_poisha);
+      const credit = BigInt(row.credit_poisha);
+      debits += debit;
+      credits += credit;
+      running += aggregateBalanceOf(account.normal_balance, debit, credit);
       return {
         journalId: row.journal_id,
         lineNo: row.line_no,

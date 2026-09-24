@@ -4,10 +4,11 @@ import { cashInDraft, idempotencyKey, isAccountSubtype, poisha } from '@elysium/
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
-import { assertInScope } from '../../platform/auth/scope.js';
+import { serverEnv } from '../../platform/config/env.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { LEDGER_API, type LedgerApi } from './ledger.api.js';
 import { ledgerHttpError } from './ledger.errors.js';
+import { assertAccountInScope } from './ledger.scope.js';
 import * as repo from './ledger.repository.js';
 
 /**
@@ -40,6 +41,13 @@ export class CashService {
     now: Date = new Date(),
   ) {
     const amount = poisha(input.amountPoisha);
+    const limit = serverEnv().LEDGER_CASH_IN_MAX_POISHA;
+    if (amount > limit) {
+      throw ledgerHttpError(
+        'POSTING_INPUT_INVALID',
+        `A single cash-in is at most ${limit.toString()} poisha in this deployment.`,
+      );
+    }
 
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const accounts = await repo.accountsByIds(tx, context.orgId, [
@@ -57,7 +65,7 @@ export class CashService {
       // `update Wallet` is branch-scoped for a branch manager: their own
       // branch's wallets and nothing else (§6), checked before anything is
       // written.
-      assertInScope(input.request, { branchId: wallet.branch_id });
+      assertAccountInScope(input.request, { branchId: wallet.branch_id }, 'No such wallet.');
 
       if (income === undefined || !isAccountSubtype(income.subtype)) {
         throw ledgerHttpError('LEDGER_ACCOUNT_NOT_FOUND', 'No such income category.');
