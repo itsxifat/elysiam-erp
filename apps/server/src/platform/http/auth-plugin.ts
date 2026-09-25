@@ -7,11 +7,13 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { AUDITED_AUTH_PATHS, recordAuthEvent, resetTokenOwner } from '../audit/auth-audit.js';
 import { checkCsrf, ensureCsrfToken, type CsrfOptions } from './csrf.js';
+import { instanceOf, problemFor, PROBLEM_CONTENT_TYPE } from './problem.js';
 import {
   checkRateLimit,
   MemoryRateLimiter,
   sendRateLimited,
   type RateLimitOptions,
+  type RateLimitStore,
 } from './rate-limit.js';
 
 /**
@@ -35,8 +37,12 @@ import {
  */
 export interface AuthPluginOptions extends CsrfOptions {
   readonly auth: ReturnType<typeof createAuth>['auth'];
-  /** Shared so a test can drive the clock or switch it off. */
-  readonly limiter?: MemoryRateLimiter;
+  /**
+   * Where the counters live. `ValkeyRateLimiter` in production so the limits are
+   * global across replicas (D-056); a `MemoryRateLimiter` in tests, which can
+   * drive the clock and needs no Valkey running.
+   */
+  readonly limiter?: RateLimitStore;
   readonly rateLimitEnabled?: boolean;
 }
 
@@ -75,6 +81,80 @@ export function withoutSessionToken(body: string): string {
   return changed ? JSON.stringify(record) : body;
 }
 
+/** The identity fields every surface hangs off a request or a socket. */
+export interface AuthUser {
+  readonly id: string;
+  readonly email: string;
+}
+
+/**
+ * What a cookie header entitles its bearer to, before any route is consulted.
+ *
+ * Three outcomes rather than a nullable context, because the middle one is a
+ * real state with its own response: a privileged role holds a valid session and
+ * may do nothing with it until a second factor exists (§6). Collapsing it into
+ * "anonymous" would let a walled org_admin through as a guest on any route that
+ * is open to guests.
+ */
+export type ResolvedIdentity =
+  | { readonly kind: 'anonymous' }
+  | { readonly kind: 'enrolment_required'; readonly user: AuthUser; readonly sessionId: string }
+  | {
+      readonly kind: 'authenticated';
+      readonly user: AuthUser;
+      readonly sessionId: string;
+      /** The session's `active_org_id`. Null until the user has chosen an org. */
+      readonly orgId: string | null;
+      /** Null when the membership behind `orgId` has since been revoked. */
+      readonly context: RequestContext | null;
+    };
+
+/**
+ * Resolve a session, the 2FA wall and the request context from a cookie header.
+ *
+ * Extracted from the session hook below so the realtime gateway (§19) can
+ * authenticate its handshake with *this* code instead of a second copy. A
+ * handshake has no Fastify request — it arrives as raw upgrade headers — so what
+ * the two surfaces share is exactly the part that only ever needed the cookie.
+ *
+ * Two copies would drift, and the copy that drifts is the one where a revoked
+ * membership keeps working: everything here is re-read per call for that reason.
+ * A session carries an `active_org_id`, but entitlement to that org lives in
+ * `iam.memberships`, and a session outlives a membership change.
+ */
+export async function resolveIdentity(input: {
+  readonly auth: AuthPluginOptions['auth'];
+  readonly cookie: string | undefined;
+  readonly requestId: string;
+}): Promise<ResolvedIdentity> {
+  const headers = new Headers();
+  if (typeof input.cookie === 'string') headers.set('cookie', input.cookie);
+
+  const session = await input.auth.api.getSession({ headers });
+  if (session === null) return { kind: 'anonymous' };
+
+  const user: AuthUser = { id: session.user.id, email: session.user.email };
+  const sessionId = session.session.id;
+
+  if (await mustEnrolTwoFactor(session.user.id)) {
+    return { kind: 'enrolment_required', user, sessionId };
+  }
+
+  const [row] = await withGlobal(async (tx) =>
+    tx.execute<{ active_org_id: string | null }>(
+      sql`select active_org_id from iam.sessions where id = ${sessionId}`,
+    ),
+  );
+
+  const orgId = row?.active_org_id ?? null;
+  const context =
+    orgId === null
+      ? null
+      : await resolveContext({ userId: session.user.id, orgId, requestId: input.requestId });
+
+  return { kind: 'authenticated', user, sessionId, orgId, context };
+}
+
 export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): void {
   app.addHook('onRequest', (request: FastifyRequest, reply: FastifyReply, done) => {
     // One id per request, carried into the database as app.request_id so a
@@ -83,12 +163,21 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
 
     const csrf = checkCsrf(request, options);
     if (!csrf.ok) {
-      void reply.status(403).send({
-        type: 'about:blank',
-        title: 'Forbidden',
-        status: 403,
-        detail: `CSRF check failed: ${csrf.reason ?? 'unknown'}`,
-      });
+      // Through `problemFor` like every other error (§23, D-087). This hook runs
+      // before Nest, so `ProblemFilter` never sees it, which is how this body
+      // came to carry no `code` at all while every other 403 did — leaving a
+      // client unable to tell a stale CSRF token from a missing ability.
+      void reply
+        .status(403)
+        .header('content-type', PROBLEM_CONTENT_TYPE)
+        .send(
+          problemFor({
+            status: 403,
+            code: 'FORBIDDEN',
+            detail: `CSRF check failed: ${csrf.reason ?? 'unknown'}`,
+            instance: instanceOf(request.url),
+          }),
+        );
       return;
     }
 
@@ -157,17 +246,19 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
     ...(options.rateLimitEnabled === undefined ? {} : { enabled: options.rateLimitEnabled }),
   };
 
-  app.addHook('preHandler', (request: FastifyRequest, reply: FastifyReply, done) => {
-    const decision = checkRateLimit(request, rateLimit);
+  // `async` rather than `done`, because the counters live in Valkey from M04
+  // (D-056's exit) and a network round trip cannot be pretended away. An async
+  // Fastify hook that returns without replying continues the chain, so there is
+  // no `done()` to forget.
+  app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
+    const decision = await checkRateLimit(request, rateLimit);
     if (!decision.allowed) {
       request.log.warn(
         { path: request.url.split('?')[0], bucket: decision.bucket },
         'rate limited',
       );
       sendRateLimited(reply, decision);
-      return;
     }
-    done();
   });
 
   /*
@@ -285,17 +376,6 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       return;
     }
 
-    const headers = new Headers();
-    const cookie = request.headers.cookie;
-    if (typeof cookie === 'string') headers.set('cookie', cookie);
-
-    const session = await options.auth.api.getSession({ headers });
-    if (session === null) {
-      // Unauthenticated is not an error here: the login-branding and health
-      // routes are deliberately open. The route decides.
-      return;
-    }
-
     const typed = request as FastifyRequest & {
       authUser?: { id: string; email: string };
       authSessionId?: string;
@@ -303,13 +383,25 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       requestId?: string;
     };
 
-    typed.authUser = { id: session.user.id, email: session.user.email };
-    typed.authSessionId = session.session.id;
+    const identity = await resolveIdentity({
+      auth: options.auth,
+      cookie: request.headers.cookie,
+      requestId: typed.requestId ?? randomUUID(),
+    });
+
+    if (identity.kind === 'anonymous') {
+      // Unauthenticated is not an error here: the login-branding and health
+      // routes are deliberately open. The route decides.
+      return;
+    }
+
+    typed.authUser = identity.user;
+    typed.authSessionId = identity.sessionId;
 
     // The enrolment wall (§6). A privileged role holds a session but may do
     // nothing with it until a second factor exists. No context is built either,
     // so even a route that forgot its guard sees no org.
-    if (await mustEnrolTwoFactor(session.user.id)) {
+    if (identity.kind === 'enrolment_required') {
       return reply.status(403).send({
         type: 'about:blank',
         title: 'Two-factor enrolment required',
@@ -320,23 +412,7 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       });
     }
 
-    const [row] = await withGlobal(async (tx) =>
-      tx.execute<{ active_org_id: string | null }>(
-        sql`select active_org_id from iam.sessions where id = ${session.session.id}`,
-      ),
-    );
-
-    const orgId = row?.active_org_id ?? null;
-    if (orgId !== null) {
-      // Re-read per request. A session outlives a membership change, and this
-      // is the only place that notices.
-      const context = await resolveContext({
-        userId: session.user.id,
-        orgId,
-        requestId: typed.requestId ?? randomUUID(),
-      });
-      if (context !== null) typed.context = context;
-    }
+    if (identity.context !== null) typed.context = identity.context;
   });
 }
 

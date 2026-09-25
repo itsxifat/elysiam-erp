@@ -13,6 +13,8 @@ export * from './approvals/index.js';
 export * from './audit/index.js';
 export * from './demo/index.js';
 export * from './events/index.js';
+export * from './files/index.js';
+export * from './http/index.js';
 export * from './iam/index.js';
 export * from './ledger/index.js';
 export * from './org/index.js';

@@ -18,16 +18,22 @@
     "@elysium/contracts": "workspace:*",
     "@elysium/db": "workspace:*",
     "@elysium/domain": "workspace:*",
+    "@elysium/integrations": "workspace:*",
     "@fastify/cookie": "catalog:",
     "@fastify/cors": "catalog:",
     "@nestjs/common": "catalog:",
     "@nestjs/core": "catalog:",
     "@nestjs/platform-fastify": "catalog:",
+    "@socket.io/redis-adapter": "catalog:",
     "drizzle-orm": "catalog:",
     "fastify": "catalog:",
+    "ioredis": "catalog:",
+    "pg-boss": "catalog:",
     "pino": "catalog:",
     "reflect-metadata": "catalog:",
     "rxjs": "catalog:",
+    "sharp": "catalog:",
+    "socket.io": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
@@ -38,6 +44,7 @@
     "eslint": "catalog:",
     "fast-check": "catalog:",
     "pino-pretty": "catalog:",
+    "socket.io-client": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

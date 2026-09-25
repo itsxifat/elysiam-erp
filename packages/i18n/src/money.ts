@@ -1,4 +1,5 @@
-import type { Locale } from './index.js';
+import { groupSouthAsian, localiseDigits } from './digits.js';
+import type { Locale } from './locale.js';
 
 /**
  * Money for people to read (architecture §7, §24).
@@ -19,8 +20,6 @@ export interface FormatMoneyOptions {
   readonly symbol?: boolean;
 }
 
-const BANGLA_DIGITS = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'] as const;
-
 function toPoisha(value: bigint | number | string): bigint {
   if (typeof value === 'bigint') return value;
   if (typeof value === 'number') {
@@ -33,25 +32,6 @@ function toPoisha(value: bigint | number | string): bigint {
     throw new RangeError(`formatMoney needs whole poisha, received "${value}".`);
   }
   return BigInt(value);
-}
-
-/** Lakh/crore grouping of a string of digits. */
-function groupSouthAsian(digits: string): string {
-  if (digits.length <= 3) return digits;
-  const lastThree = digits.slice(-3);
-  let rest = digits.slice(0, -3);
-  const pairs: string[] = [];
-  while (rest.length > 2) {
-    pairs.unshift(rest.slice(-2));
-    rest = rest.slice(0, -2);
-  }
-  if (rest.length > 0) pairs.unshift(rest);
-  return `${pairs.join(',')},${lastThree}`;
-}
-
-function localiseDigits(text: string, locale: Locale): string {
-  if (locale !== 'bn') return text;
-  return text.replace(/\d/g, (digit) => BANGLA_DIGITS[Number(digit)] ?? digit);
 }
 
 /**

@@ -261,6 +261,18 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
      * `all` scope.
      */
     { action: 'read', subject: 'Leaderboard', scope: 'all' },
+    /*
+     * §22's files. The grant is coarse and the row check is not (D-115).
+     *
+     * Everyone with a desk uploads and downloads something, so withholding the
+     * ability would break ordinary work; granting it at `org` would, on its
+     * own, hand every staff role every payslip in the brand. What actually
+     * bounds a download is the file's `purpose`, which the files service maps
+     * back onto the subject the document is about — a payslip needs
+     * `read Payroll`, a KYC scan `read Employee`, an invoice `read
+     * LedgerReport`. This rule only opens the door.
+     */
+    { action: ['read', 'create', 'update', 'delete'], subject: 'FileObject', scope: 'org' },
   ],
 
   accounts: [
@@ -289,6 +301,18 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'create', 'update'], subject: 'CompanyLoan', scope: 'org' },
     // §6's matrix gives accounts approvals over payments specifically.
     { action: ['read', 'request', 'approve'], subject: 'ApprovalRequest', scope: 'org' },
+    /*
+     * §22's files. The grant is coarse and the row check is not (D-115).
+     *
+     * Everyone with a desk uploads and downloads something, so withholding the
+     * ability would break ordinary work; granting it at `org` would, on its
+     * own, hand every staff role every payslip in the brand. What actually
+     * bounds a download is the file's `purpose`, which the files service maps
+     * back onto the subject the document is about — a payslip needs
+     * `read Payroll`, a KYC scan `read Employee`, an invoice `read
+     * LedgerReport`. This rule only opens the door.
+     */
+    { action: ['read', 'create'], subject: 'FileObject', scope: 'org' },
   ],
 
   sales: [
@@ -306,6 +330,18 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'Target', scope: 'own' },
     // No `request ApprovalRequest`: §6 gives sales no action that goes through
     // maker-checker, and REQUESTER_TYPES lists none (D-072).
+    /*
+     * §22's files. The grant is coarse and the row check is not (D-115).
+     *
+     * Everyone with a desk uploads and downloads something — an order desk
+     * agent attaches the customer's bKash screenshot — so withholding the
+     * ability would break ordinary work; granting it at `org` would, on its
+     * own, hand every staff role every payslip in the brand. What actually
+     * bounds a download is the file's `purpose`, which the files service maps
+     * back onto the subject the document is about. This rule only opens the
+     * door.
+     */
+    { action: ['read', 'create'], subject: 'FileObject', scope: 'org' },
   ],
 
   marketing: [
@@ -329,6 +365,18 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'create', 'update'], subject: 'LandingPage', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'read', subject: 'Target', scope: 'own' },
+    /*
+     * §22's files. The grant is coarse and the row check is not (D-115).
+     *
+     * Everyone with a desk uploads and downloads something, so withholding the
+     * ability would break ordinary work; granting it at `org` would, on its
+     * own, hand every staff role every payslip in the brand. What actually
+     * bounds a download is the file's `purpose`, which the files service maps
+     * back onto the subject the document is about — a payslip needs
+     * `read Payroll`, a KYC scan `read Employee`, an invoice `read
+     * LedgerReport`. This rule only opens the door.
+     */
+    { action: ['read', 'create'], subject: 'FileObject', scope: 'org' },
   ],
 
   hr: [
@@ -339,6 +387,18 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     // to payroll and bonuses; without the ability hr could check nothing at all,
     // and nobody but org_admin could approve a payroll run.
     { action: ['read', 'request', 'approve'], subject: 'ApprovalRequest', scope: 'org' },
+    /*
+     * §22's files. The grant is coarse and the row check is not (D-115).
+     *
+     * Everyone with a desk uploads and downloads something, so withholding the
+     * ability would break ordinary work; granting it at `org` would, on its
+     * own, hand every staff role every payslip in the brand. What actually
+     * bounds a download is the file's `purpose`, which the files service maps
+     * back onto the subject the document is about — a payslip needs
+     * `read Payroll`, a KYC scan `read Employee`, an invoice `read
+     * LedgerReport`. This rule only opens the door.
+     */
+    { action: ['read', 'create'], subject: 'FileObject', scope: 'org' },
   ],
 
   branch_manager: [
@@ -364,6 +424,18 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'create', 'update'], subject: 'Employee', scope: 'branch' },
     { action: 'read', subject: 'Target', scope: 'branch' },
     { action: ['read', 'request', 'approve'], subject: 'ApprovalRequest', scope: 'branch' },
+    /*
+     * §22's files. The grant is coarse and the row check is not (D-115).
+     *
+     * Everyone with a desk uploads and downloads something, so withholding the
+     * ability would break ordinary work; granting it at `org` would, on its
+     * own, hand every staff role every payslip in the brand. What actually
+     * bounds a download is the file's `purpose`, which the files service maps
+     * back onto the subject the document is about — a payslip needs
+     * `read Payroll`, a KYC scan `read Employee`, an invoice `read
+     * LedgerReport`. This rule only opens the door.
+     */
+    { action: ['read', 'create'], subject: 'FileObject', scope: 'org' },
   ],
 
   warehouse: [
@@ -376,6 +448,18 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'update'], subject: 'Order', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'request', subject: 'ApprovalRequest', scope: 'org' },
+    /*
+     * §22's files. The grant is coarse and the row check is not (D-115).
+     *
+     * Everyone with a desk uploads and downloads something, so withholding the
+     * ability would break ordinary work; granting it at `org` would, on its
+     * own, hand every staff role every payslip in the brand. What actually
+     * bounds a download is the file's `purpose`, which the files service maps
+     * back onto the subject the document is about — a payslip needs
+     * `read Payroll`, a KYC scan `read Employee`, an invoice `read
+     * LedgerReport`. This rule only opens the door.
+     */
+    { action: ['read', 'create'], subject: 'FileObject', scope: 'org' },
   ],
 
   reseller: [
@@ -388,7 +472,23 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'Customer', scope: 'own' },
     { action: 'read', subject: 'FraudSignal', scope: 'own' },
     { action: 'read', subject: 'ResellerAdmin', scope: 'own' },
+    /*
+     * `own`, not `org`. A reseller uploads their trade licence and their
+     * NID and downloads their own commission statements; there is nothing
+     * in the brand's file store they have any business reading. The scope
+     * is applied by the handler as `owner_user_id = me`, so it is a WHERE
+     * clause rather than a promise (D-115).
+     */
+    { action: ['read', 'create'], subject: 'FileObject', scope: 'own' },
   ],
 
-  investor: [{ action: 'read', subject: 'Investor', scope: 'own' }],
+  investor: [
+    { action: 'read', subject: 'Investor', scope: 'own' },
+    /*
+     * Read-only and `own`: §15 gives an investor their own statements and
+     * nothing else, and they upload nothing. No `create`, so the upload
+     * route refuses them at the guard rather than at the row.
+     */
+    { action: 'read', subject: 'FileObject', scope: 'own' },
+  ],
 };

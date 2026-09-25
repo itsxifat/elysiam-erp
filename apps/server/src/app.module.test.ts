@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { Auth } from '@elysium/db';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { AppModule } from './app.module.js';
 import { PasswordTokenStore } from './modules/iam/iam.service.js';
@@ -23,6 +23,24 @@ import { describeRoutes } from './platform/auth/route-map.js';
 
 /** Shaped right rather than working; nothing here reaches Better Auth. */
 const auth = { api: {} } as unknown as Auth;
+
+/*
+ * Enough environment to construct the module graph.
+ *
+ * M04's modules read `serverEnv()` when they are constructed — the storage
+ * driver needs to know which bucket it is, the flags helper needs its cache TTL
+ * — so building the graph now requires a valid environment even though nothing
+ * here opens a connection. Deliberately minimal and obviously fake: if a value
+ * below ever has to be real, something in the graph is doing I/O at
+ * construction time, which is the thing to fix rather than the value.
+ */
+beforeAll(() => {
+  process.env.DATABASE_URL ??= 'postgres://erp_app:x@127.0.0.1:5432/unused';
+  process.env.APP_DOMAIN ??= 'localhost';
+  process.env.API_PUBLIC_URL ??= 'http://127.0.0.1:3000';
+  process.env.AUTH_SECRET ??= 'app-module-test-secret-at-least-32-chars';
+  process.env.TRUSTED_ORIGINS ??= 'http://localhost:5173';
+});
 
 async function routesOf(demo?: boolean): Promise<string[]> {
   const app = await NestFactory.create<NestFastifyApplication>(

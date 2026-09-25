@@ -525,7 +525,11 @@ describe('check 2: switching org changes the effective roles on the request', ()
     expect(denied.statusCode).toBe(403);
     expect(missing.statusCode).toBe(403);
     // Identical, or the endpoint is a membership oracle.
-    const reason = (body: string) => (JSON.parse(body) as { message?: string }).message;
+    // `detail`, not `message`: every error is RFC 9457 problem details from M04
+    // (§23, D-087), and reading a member that is now always absent would make
+    // this comparison pass vacuously — on the one assertion that stops this
+    // endpoint being a membership oracle.
+    const reason = (body: string) => (JSON.parse(body) as { detail?: string }).detail;
     expect(reason(denied.body)).toBe(reason(missing.body));
   });
 

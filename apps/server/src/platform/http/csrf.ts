@@ -30,6 +30,32 @@ export const CSRF_HEADER = 'x-elysium-csrf';
 /** Methods that cannot change state, so cannot be the target of CSRF. */
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+/**
+ * Routes whose authority is a signed token rather than a cookie (§22, M04).
+ *
+ * CSRF exists to stop *the session cookie* being used as authority by a page
+ * the user did not intend to be acting for them. A route that never reads a
+ * cookie has nothing for it to protect: `/v1/files/content` is reached with a
+ * short-lived token the server minted for one storage key and one method, and
+ * it acts as the bearer of that token, not as whoever happens to be signed in.
+ * Requiring a CSRF header there would mean a presigned PUT — the request a
+ * browser makes straight to object storage — could not be served by the local
+ * driver at all, so development and tests would exercise a different upload
+ * flow from the one production runs. That is the failure this list prevents.
+ *
+ * Keep it short, and keep the bar exact: a route belongs here only if it takes
+ * no authority whatsoever from cookies. The moment one reads a session, it
+ * needs the check back.
+ */
+const BEARER_TOKEN_PATHS: readonly string[] = ['/v1/files/content'];
+
+function isBearerTokenRoute(url: string): boolean {
+  // Compared against the path alone: the token travels in the query string,
+  // and `startsWith` on the raw URL would let `/v1/files/contentious` through.
+  const path = url.split('?')[0] ?? '';
+  return BEARER_TOKEN_PATHS.includes(path);
+}
+
 export interface CsrfOptions {
   /** Exact origins, brand hostnames already expanded (see origins.ts). */
   readonly trustedOrigins: readonly string[];
@@ -93,6 +119,7 @@ export interface CsrfResult {
 
 export function checkCsrf(request: FastifyRequest, options: CsrfOptions): CsrfResult {
   if (SAFE_METHODS.has(request.method.toUpperCase())) return { ok: true };
+  if (isBearerTokenRoute(request.url)) return { ok: true };
 
   /*
    * Fetch metadata (M02a follow-up).

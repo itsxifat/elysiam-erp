@@ -3,9 +3,11 @@ import type { Auth } from '@elysium/db';
 
 import { ApprovalsModule } from './modules/approvals/approvals.module.js';
 import { DemoModule } from './modules/demo/demo.module.js';
+import { FilesModule } from './modules/files/files.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { IamModule } from './modules/iam/iam.module.js';
 import { LedgerModule } from './modules/ledger/ledger.module.js';
+import { JobsModule } from './platform/jobs/jobs.module.js';
 import type { PasswordTokenStore } from './modules/iam/iam.service.js';
 
 /**
@@ -42,6 +44,10 @@ export class AppModule {
         HealthModule,
         IamModule.register(dependencies),
         ApprovalsModule,
+        // A platform module rather than a domain one, and mounted here because
+        // its one route is the only part of §20 that is served over HTTP.
+        JobsModule,
+        FilesModule,
         LedgerModule,
         ...(withDemo ? [DemoModule] : []),
       ],

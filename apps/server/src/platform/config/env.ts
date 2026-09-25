@@ -62,6 +62,31 @@ const schema = z.object({
     .default('1000000000')
     .transform((value) => BigInt(value)),
 
+  /**
+   * Valkey, for the Socket.IO adapter and the rate limiter (architecture §19).
+   *
+   * Defaulted rather than required, because the two things that read it both
+   * degrade to something correct-but-single-process without it and because the
+   * route-coverage gate boots the app with no infrastructure at all. The
+   * default is the dev compose service (infra/docker-compose.dev.yml), so a
+   * developer who has run `docker compose up` needs no entry in .env.
+   *
+   * `redis://` is the scheme: Valkey speaks RESP and every client uses that
+   * URL scheme for it. A `valkey://` URL would be refused by ioredis.
+   */
+  VALKEY_URL: z.string().url().startsWith('redis').default('redis://127.0.0.1:6379'),
+
+  /**
+   * Namespace for the Socket.IO Valkey adapter's pub/sub channels (§19).
+   *
+   * Every API instance sharing this prefix shares one realtime fan-out, which
+   * is the point. It is configurable because the *reverse* also bites: two
+   * environments pointed at one Valkey with the same prefix deliver each
+   * other's events, and a test suite that shares a prefix with a parallel suite
+   * receives its rooms' traffic. The integration suites override it per run.
+   */
+  REALTIME_ADAPTER_KEY: z.string().min(1).default('elysium:rt'),
+
   /** Comma-separated. Anything not listed is refused by CSRF and by Better Auth. */
   TRUSTED_ORIGINS: z
     .string()

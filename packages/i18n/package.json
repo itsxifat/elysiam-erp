@@ -18,6 +18,9 @@
     "lint": "eslint .",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
+  "dependencies": {
+    "@elysium/domain": "workspace:*"
+  },
   "devDependencies": {
     "@elysium/config": "workspace:*",
     "eslint": "catalog:",

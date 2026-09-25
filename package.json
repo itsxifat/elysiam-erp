@@ -12,6 +12,8 @@
     "api:client": "pnpm --filter @elysium/api-client run generate",
     "bench": "node scripts/bench.mjs",
     "build": "turbo run build",
+    "check:api-client": "node scripts/check-api-client.mjs",
+    "check:i18n": "node scripts/check-i18n.mjs",
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:routes": "node scripts/check-route-matrix.mjs",
     "check:schema": "node scripts/check-schema-drift.mjs",
@@ -32,7 +34,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:migrations && pnpm run check:schema && pnpm run check:routes"
+    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:migrations && pnpm run check:schema && pnpm run check:routes && pnpm run check:i18n && pnpm run check:api-client"
   },
   "devDependencies": {
     "@elysium/config": "workspace:*",

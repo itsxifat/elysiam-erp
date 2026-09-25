@@ -38,6 +38,25 @@ export const SUBJECTS = [
   'User',
   'CostedItem',
 
+  // M04
+  /**
+   * A stored file (§22): its row, not its bytes.
+   *
+   * Not a row in §6's grid, because §6 describes what people do and nobody's
+   * job is "files" — they attach a payment screenshot to an order, upload a
+   * trade licence, download a payslip. So the ability here is coarse on
+   * purpose: it says whether a caller may use the file endpoints at all, and
+   * *what* they may see is decided per row by the file's `purpose`, which maps
+   * back onto the subject the document is really about (a payslip is Payroll, a
+   * KYC scan is Employee, an invoice is LedgerReport).
+   *
+   * Collapsing the two into one grant is what would be wrong: a single
+   * `read FileObject` at org scope would hand every staff role every payslip in
+   * the brand, and every role legitimately needs to download *something*
+   * (D-115).
+   */
+  'FileObject',
+
   // Named by §6's matrix; owned by later milestones.
   'Catalog',
   'Cost',

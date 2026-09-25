@@ -42,17 +42,21 @@ function request(options: { ip: string; url?: string; body?: unknown }): Fastify
 }
 
 describe('the identifier bucket', () => {
-  it('stops stuffing one account however many addresses it comes from', () => {
+  it('stops stuffing one account however many addresses it comes from', async () => {
     // The attack the per-IP limiter cannot see: one victim, a fresh IP each
     // time. Better Auth's built-in limiter allows this indefinitely.
     const limiter = new MemoryRateLimiter(fakeClock().now);
     const victim = { email: 'victim@example.invalid' };
 
-    const statuses = Array.from({ length: 8 }, (_, attempt) =>
-      checkRateLimit(request({ ip: `203.0.113.${String(attempt)}`, body: victim }), {
-        limiter,
-        rules: RULES,
-      }),
+    const statuses = await Promise.all(
+      Array.from(
+        { length: 8 },
+        async (_, attempt) =>
+          await checkRateLimit(request({ ip: `203.0.113.${String(attempt)}`, body: victim }), {
+            limiter,
+            rules: RULES,
+          }),
+      ),
     );
 
     expect(statuses.slice(0, 5).every((d) => d.allowed)).toBe(true);
@@ -60,7 +64,7 @@ describe('the identifier bucket', () => {
     expect(statuses[5]?.bucket).toBe('identifier');
   });
 
-  it('does not punish a different account on the same address', () => {
+  it('does not punish a different account on the same address', async () => {
     // The other half of the same coin: a shared NAT address is most of
     // Bangladesh's mobile traffic, so one user exhausting their own attempts
     // must not lock out their neighbour.
@@ -68,21 +72,24 @@ describe('the identifier bucket', () => {
     const ip = '203.0.113.9';
 
     for (let attempt = 0; attempt < 6; attempt += 1) {
-      checkRateLimit(request({ ip, body: { email: 'noisy@example.invalid' } }), {
+      await checkRateLimit(request({ ip, body: { email: 'noisy@example.invalid' } }), {
         limiter,
         rules: RULES,
       });
     }
 
-    const neighbour = checkRateLimit(request({ ip, body: { email: 'quiet@example.invalid' } }), {
-      limiter,
-      rules: RULES,
-    });
+    const neighbour = await checkRateLimit(
+      request({ ip, body: { email: 'quiet@example.invalid' } }),
+      {
+        limiter,
+        rules: RULES,
+      },
+    );
 
     expect(neighbour.allowed).toBe(true);
   });
 
-  it('treats the same address in different cases as one account', () => {
+  it('treats the same address in different cases as one account', async () => {
     const limiter = new MemoryRateLimiter(fakeClock().now);
 
     for (const email of [
@@ -92,10 +99,13 @@ describe('the identifier bucket', () => {
       'victim@example.invalid',
       'Victim@example.invalid',
     ]) {
-      checkRateLimit(request({ ip: '203.0.113.1', body: { email } }), { limiter, rules: RULES });
+      await checkRateLimit(request({ ip: '203.0.113.1', body: { email } }), {
+        limiter,
+        rules: RULES,
+      });
     }
 
-    const sixth = checkRateLimit(
+    const sixth = await checkRateLimit(
       request({ ip: '203.0.113.2', body: { email: 'VICTIM@example.invalid' } }),
       { limiter, rules: RULES },
     );
@@ -105,15 +115,22 @@ describe('the identifier bucket', () => {
 });
 
 describe('the IP bucket', () => {
-  it('stops one address walking a list of accounts', () => {
+  it('stops one address walking a list of accounts', async () => {
     const limiter = new MemoryRateLimiter(fakeClock().now);
     const ip = '198.51.100.4';
 
-    const statuses = Array.from({ length: 22 }, (_, attempt) =>
-      checkRateLimit(request({ ip, body: { email: `user${String(attempt)}@example.invalid` } }), {
-        limiter,
-        rules: RULES,
-      }),
+    const statuses = await Promise.all(
+      Array.from(
+        { length: 22 },
+        async (_, attempt) =>
+          await checkRateLimit(
+            request({ ip, body: { email: `user${String(attempt)}@example.invalid` } }),
+            {
+              limiter,
+              rules: RULES,
+            },
+          ),
+      ),
     );
 
     // Each identifier is fresh, so only the IP bucket can catch this.
@@ -122,16 +139,20 @@ describe('the IP bucket', () => {
     expect(statuses[20]?.bucket).toBe('ip');
   });
 
-  it('applies where there is no identifier to count', () => {
+  it('applies where there is no identifier to count', async () => {
     // verify-totp names its user with a signed cookie, not the body.
     const limiter = new MemoryRateLimiter(fakeClock().now);
     const url = '/api/auth/two-factor/verify-totp';
 
-    const statuses = Array.from({ length: 12 }, () =>
-      checkRateLimit(request({ ip: '198.51.100.5', url, body: { code: '000000' } }), {
-        limiter,
-        rules: RULES,
-      }),
+    const statuses = await Promise.all(
+      Array.from(
+        { length: 12 },
+        async () =>
+          await checkRateLimit(request({ ip: '198.51.100.5', url, body: { code: '000000' } }), {
+            limiter,
+            rules: RULES,
+          }),
+      ),
     );
 
     expect(statuses[9]?.allowed).toBe(true);
@@ -140,35 +161,37 @@ describe('the IP bucket', () => {
 });
 
 describe('the window', () => {
-  it('lets the attempts back after it passes', () => {
+  it('lets the attempts back after it passes', async () => {
     const clock = fakeClock();
     const limiter = new MemoryRateLimiter(clock.now);
     const body = { email: 'victim@example.invalid' };
 
     for (let attempt = 0; attempt < 6; attempt += 1) {
-      checkRateLimit(request({ ip: '203.0.113.1', body }), { limiter, rules: RULES });
+      await checkRateLimit(request({ ip: '203.0.113.1', body }), { limiter, rules: RULES });
     }
     expect(
-      checkRateLimit(request({ ip: '203.0.113.1', body }), { limiter, rules: RULES }).allowed,
+      (await checkRateLimit(request({ ip: '203.0.113.1', body }), { limiter, rules: RULES }))
+        .allowed,
     ).toBe(false);
 
     clock.advance(61);
     expect(
-      checkRateLimit(request({ ip: '203.0.113.1', body }), { limiter, rules: RULES }).allowed,
+      (await checkRateLimit(request({ ip: '203.0.113.1', body }), { limiter, rules: RULES }))
+        .allowed,
     ).toBe(true);
   });
 
-  it('reports a retry-after inside the window', () => {
+  it('reports a retry-after inside the window', async () => {
     const clock = fakeClock();
     const limiter = new MemoryRateLimiter(clock.now);
     const body = { email: 'victim@example.invalid' };
 
     for (let attempt = 0; attempt < 6; attempt += 1) {
-      checkRateLimit(request({ ip: '203.0.113.1', body }), { limiter, rules: RULES });
+      await checkRateLimit(request({ ip: '203.0.113.1', body }), { limiter, rules: RULES });
     }
 
     clock.advance(20);
-    const decision = checkRateLimit(request({ ip: '203.0.113.1', body }), {
+    const decision = await checkRateLimit(request({ ip: '203.0.113.1', body }), {
       limiter,
       rules: RULES,
     });
@@ -177,14 +200,14 @@ describe('the window', () => {
     expect(decision.retryAfterSeconds).toBeLessThanOrEqual(60);
   });
 
-  it('does not grow without bound as identifiers accumulate', () => {
+  it('does not grow without bound as identifiers accumulate', async () => {
     // An unbounded map keyed by attacker-supplied email is a memory-exhaustion
     // vector handed to the very attacker the limiter exists to stop.
     const clock = fakeClock();
     const limiter = new MemoryRateLimiter(clock.now);
 
     for (let attempt = 0; attempt < 500; attempt += 1) {
-      checkRateLimit(
+      await checkRateLimit(
         request({ ip: '203.0.113.1', body: { email: `u${String(attempt)}@example.invalid` } }),
         { limiter, rules: RULES },
       );
@@ -197,11 +220,11 @@ describe('the window', () => {
 });
 
 describe('what is not limited', () => {
-  it('leaves an unlisted route alone', () => {
+  it('leaves an unlisted route alone', async () => {
     const limiter = new MemoryRateLimiter(fakeClock().now);
 
     for (let attempt = 0; attempt < 100; attempt += 1) {
-      const decision = checkRateLimit(request({ ip: '203.0.113.1', url: '/v1/orders' }), {
+      const decision = await checkRateLimit(request({ ip: '203.0.113.1', url: '/v1/orders' }), {
         limiter,
         rules: RULES,
       });
@@ -209,30 +232,30 @@ describe('what is not limited', () => {
     }
   });
 
-  it('is not fooled by a query string on a limited route', () => {
+  it('is not fooled by a query string on a limited route', async () => {
     const limiter = new MemoryRateLimiter(fakeClock().now);
     const body = { email: 'victim@example.invalid' };
 
     for (let attempt = 0; attempt < 6; attempt += 1) {
-      checkRateLimit(
+      await checkRateLimit(
         request({ ip: '203.0.113.1', url: `/api/auth/sign-in/email?x=${String(attempt)}`, body }),
         { limiter, rules: RULES },
       );
     }
 
-    const next = checkRateLimit(
+    const next = await checkRateLimit(
       request({ ip: '203.0.113.1', url: '/api/auth/sign-in/email?x=99', body }),
       { limiter, rules: RULES },
     );
     expect(next.allowed).toBe(false);
   });
 
-  it('can be switched off wholesale for tests that drive many logins', () => {
+  it('can be switched off wholesale for tests that drive many logins', async () => {
     const limiter = new MemoryRateLimiter(fakeClock().now);
     const body = { email: 'victim@example.invalid' };
 
     for (let attempt = 0; attempt < 50; attempt += 1) {
-      const decision = checkRateLimit(request({ ip: '203.0.113.1', body }), {
+      const decision = await checkRateLimit(request({ ip: '203.0.113.1', body }), {
         limiter,
         rules: RULES,
         enabled: false,

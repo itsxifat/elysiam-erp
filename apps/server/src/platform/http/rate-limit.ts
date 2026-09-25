@@ -1,5 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import { instanceOf, problemFor, PROBLEM_CONTENT_TYPE } from './problem.js';
+
 /**
  * Rate limiting for the credential endpoints (architecture §25).
  *
@@ -67,15 +69,45 @@ interface Counter {
 }
 
 /**
+ * Where the counters live.
+ *
+ * An interface because D-056 said the in-memory store was temporary and named
+ * Valkey as its exit, and M04 takes it: `ValkeyRateLimiter` in
+ * `rate-limit.valkey.ts` makes the limits global across replicas, while this
+ * file's `MemoryRateLimiter` stays as the test store and as the fallback for
+ * when Valkey is unreachable.
+ *
+ * `hit` may return a promise, which is the one thing that could not stay the
+ * same: a network round trip cannot be pretended away, so `checkRateLimit` is
+ * async. Everything else — the two buckets, the rules, the 429 — is untouched.
+ */
+export interface RateLimitStore {
+  hit(
+    key: string,
+    limit: number,
+    windowSeconds: number,
+  ): RateLimitDecision | Promise<RateLimitDecision>;
+}
+
+/**
  * A fixed-window counter.
  *
  * In memory, which means per process: with several API replicas the effective
- * threshold multiplies by the replica count. That is a real limitation and it is
- * why the store is an interface — M04 moves it to Valkey, which is already in
- * the stack, and the limits become global (D-056). Until then a fixed window in
- * memory is still far better than the per-IP-only limiter it replaces.
+ * threshold multiplies by the replica count. That is why the store became an
+ * interface, and M04 took D-056's stated exit — `ValkeyRateLimiter` is the
+ * production store and the limits are global across replicas.
+ *
+ * This one stays, for two jobs rather than one:
+ *
+ * - the test store, because a suite that drives dozens of logins should not need
+ *   Valkey running to do it;
+ * - the **fallback** when Valkey is unreachable. Failing closed there would take
+ *   sign-in down for everyone whenever the cache blinks; failing open would hand
+ *   an attacker an unlimited window at exactly the moment nobody is watching.
+ *   Degrading to a per-process limit is worse than global and far better than
+ *   either.
  */
-export class MemoryRateLimiter {
+export class MemoryRateLimiter implements RateLimitStore {
   private readonly counters = new Map<string, Counter>();
   private lastSweep = 0;
 
@@ -149,7 +181,7 @@ export function identifierFrom(body: unknown): string | null {
 }
 
 export interface RateLimitOptions {
-  readonly limiter: MemoryRateLimiter;
+  readonly limiter: RateLimitStore;
   readonly rules?: Readonly<Record<string, RateLimitRule>>;
   /** Off only in tests that need to drive many logins. */
   readonly enabled?: boolean;
@@ -162,10 +194,10 @@ export interface RateLimitOptions {
  * only until the first rejection would let an attacker keep one bucket cold by
  * making sure the other always trips first.
  */
-export function checkRateLimit(
+export async function checkRateLimit(
   request: FastifyRequest,
   options: RateLimitOptions,
-): RateLimitDecision {
+): Promise<RateLimitDecision> {
   if (options.enabled === false) return { allowed: true };
 
   const rules = options.rules ?? CREDENTIAL_RULES;
@@ -175,17 +207,17 @@ export function checkRateLimit(
   const rule = rules[path];
   if (rule === undefined) return { allowed: true };
 
-  const ipDecision = options.limiter.hit(
-    `ip:${path}:${request.ip}`,
-    rule.perIp,
-    rule.windowSeconds,
-  );
-
   const identifier = rule.perIdentifier === undefined ? null : identifierFrom(request.body);
-  const identifierDecision =
+
+  // Concurrently, so a Valkey-backed store costs one round trip's latency rather
+  // than two on the login path — and so both buckets are still counted whatever
+  // either answers, which is the rule this function exists to enforce.
+  const [ipDecision, identifierDecision] = await Promise.all([
+    options.limiter.hit(`ip:${path}:${request.ip}`, rule.perIp, rule.windowSeconds),
     identifier === null || rule.perIdentifier === undefined
-      ? { allowed: true }
-      : options.limiter.hit(`id:${path}:${identifier}`, rule.perIdentifier, rule.windowSeconds);
+      ? Promise.resolve<RateLimitDecision>({ allowed: true })
+      : options.limiter.hit(`id:${path}:${identifier}`, rule.perIdentifier, rule.windowSeconds),
+  ]);
 
   if (!identifierDecision.allowed) {
     return { ...identifierDecision, bucket: 'identifier' };
@@ -203,14 +235,26 @@ export function checkRateLimit(
  * enumeration oracle the login endpoint is careful not to be.
  */
 export function sendRateLimited(reply: FastifyReply, decision: RateLimitDecision): void {
+  /*
+   * Built by `problemFor`, not by hand.
+   *
+   * This runs in a Fastify hook, before Nest exists, so `ProblemFilter` will
+   * never see it — and that is exactly how the body drifted: it was
+   * `{ type: 'about:blank', title: 'Too Many Requests', … }` while every other
+   * error carried `/problems/<code>` and a code from `errors.ts`. A client then
+   * had to know which layer refused it before it could read why. The document is
+   * the same shape whichever layer answers.
+   */
   void reply
     .status(429)
     .header('retry-after', String(decision.retryAfterSeconds ?? 60))
-    .send({
-      type: 'about:blank',
-      title: 'Too Many Requests',
-      status: 429,
-      code: 'RATE_LIMITED',
-      detail: 'Too many attempts. Wait a minute and try again.',
-    });
+    .header('content-type', PROBLEM_CONTENT_TYPE)
+    .send(
+      problemFor({
+        status: 429,
+        code: 'RATE_LIMITED',
+        detail: 'Too many attempts. Wait a minute and try again.',
+        instance: instanceOf(reply.request.url),
+      }),
+    );
 }

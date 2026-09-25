@@ -97,6 +97,10 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
     url: '/v1/demo/costed-items',
     body: { sku: `RM-${String(Date.now())}-${Math.random().toString(36).slice(2, 7)}`, name: 'x' },
   }),
+  // pg-boss installs its schema on worker boot, which no HTTP suite does, so
+  // this answers with an empty list here. That is the behaviour under test in
+  // `jobs.test.ts`; what the matrix needs from it is only who gets past the guard.
+  'GET /v1/jobs/failed': () => ({ url: '/v1/jobs/failed' }),
   'GET /v1/ledger/accounts': () => ({ url: '/v1/ledger/accounts' }),
   'GET /v1/ledger/accounts/:id/ledger': () => ({
     url: `/v1/ledger/accounts/${BANK}/ledger?to=2030-12-31`,
@@ -135,6 +139,42 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
       { orgId: ORG_A },
     );
     return { url: '/v1/ledger/periods/reopen', body: { month, reason: 'route matrix' } };
+  },
+  /*
+   * §22's files. `product-image` is the one purpose every role that holds
+   * `read FileObject` may also read — its rule is `read Catalog` — so the
+   * matrix assertion here is about the FileObject grant itself rather than
+   * about the per-purpose gate. That gate has its own suite, in
+   * modules/files/files.e2e.test.ts, where a payslip is refused to a role
+   * holding `read FileObject`.
+   */
+  'POST /v1/files': () => ({
+    url: '/v1/files',
+    body: {
+      purpose: 'product-image',
+      contentType: 'image/png',
+      sizeBytes: 1024,
+      originalName: 'sample.png',
+    },
+  }),
+  'POST /v1/files/:id/finalize': async () => {
+    // A row nobody has uploaded bytes for: finalize answers 404 for the roles
+    // the guard admits, which is still an admission and is what this suite
+    // measures. Creating it as org_admin keeps the actor under test out of it.
+    const owner = await harness.asRole('org_admin', ORG_A);
+    const created = await owner.client.request('POST', '/v1/files', {
+      body: { purpose: 'product-image', contentType: 'image/png', sizeBytes: 1024 },
+    });
+    const { fileId } = JSON.parse(created.body) as { fileId: string };
+    return { url: `/v1/files/${fileId}/finalize` };
+  },
+  'GET /v1/files/:id/download': async () => {
+    const owner = await harness.asRole('org_admin', ORG_A);
+    const created = await owner.client.request('POST', '/v1/files', {
+      body: { purpose: 'product-image', contentType: 'image/png', sizeBytes: 1024 },
+    });
+    const { fileId } = JSON.parse(created.body) as { fileId: string };
+    return { url: `/v1/files/${fileId}/download` };
   },
   'GET /v1/me': () => ({ url: '/v1/me' }),
   'POST /v1/me/active-org': () => ({ url: '/v1/me/active-org', body: { orgId: ORG_A } }),

@@ -327,4 +327,39 @@ export const SPEC_6_GRANTS: readonly string[] = [
 
   // | (not a row in the grid) | §25 requires an audit trail and someone able to read it |
   'org_admin|read|AuditLog|org',
+
+  /*
+   * | (not a row in the grid) | §22's files |
+   *
+   * §6 has no files row, because nobody's job is "files": people attach a
+   * payment screenshot to an order, upload a trade licence, download a
+   * payslip. So this grant is deliberately coarse — it says who may use the
+   * file endpoints at all — and the document-level question is answered
+   * elsewhere, by mapping the file's `purpose` onto the subject it is really
+   * about (a payslip needs `read Payroll`, a KYC scan `read Employee`). Both
+   * halves are needed; either alone is wrong (D-115).
+   *
+   * `investor` gets read and no create: §15 gives them their own statements
+   * and they upload nothing. `reseller` and `investor` are `own`, applied as
+   * `owner_user_id = me`.
+   */
+  'accounts|create|FileObject|org',
+  'accounts|read|FileObject|org',
+  'branch_manager|create|FileObject|org',
+  'branch_manager|read|FileObject|org',
+  'hr|create|FileObject|org',
+  'hr|read|FileObject|org',
+  'investor|read|FileObject|own',
+  'marketing|create|FileObject|org',
+  'marketing|read|FileObject|org',
+  'org_admin|create|FileObject|org',
+  'org_admin|delete|FileObject|org',
+  'org_admin|read|FileObject|org',
+  'org_admin|update|FileObject|org',
+  'reseller|create|FileObject|own',
+  'reseller|read|FileObject|own',
+  'sales|create|FileObject|org',
+  'sales|read|FileObject|org',
+  'warehouse|create|FileObject|org',
+  'warehouse|read|FileObject|org',
 ];

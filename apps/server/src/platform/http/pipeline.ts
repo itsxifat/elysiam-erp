@@ -5,6 +5,8 @@ import { AuditInterceptor } from '../audit/audit.interceptor.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AbilityGuard } from '../auth/abilities.js';
 import { ScopeInterceptor } from '../auth/scope.js';
+import { IdempotencyInterceptor } from './idempotency.interceptor.js';
+import { ProblemFilter } from './problem.filter.js';
 import { SerializeInterceptor } from './serialize.interceptor.js';
 
 /**
@@ -21,12 +23,22 @@ import { SerializeInterceptor } from './serialize.interceptor.js';
  * 1. `ScopeInterceptor` (innermost): refuses a scoped caller's response if the
  *    handler never applied the row scope.
  * 2. `SerializeInterceptor`: strips what the caller may not read.
- * 3. `AuditInterceptor` (outermost): records what actually left the process.
+ * 3. `AuditInterceptor`: records what actually left the process.
  *    It used to sit *inside* the serializer and so recorded the response before
  *    cost was stripped — cost from a sales user's request landing in the audit
  *    log, which is exactly where invariant 5 says it may not live. It strips
  *    cost itself as well, since a cost-reading caller's response is still not
  *    something the log should keep.
+ * 4. `IdempotencyInterceptor` (outermost, M04 §23): replays a stored answer for
+ *    a repeated `Idempotency-Key`. Outside the audit net in both directions — a
+ *    replay must not write a second audit row for a mutation that did not
+ *    happen, and what it stores must be the body the serializer already
+ *    stripped, so a replay cannot disclose more than the first answer did.
+ *
+ * The global filter turns every error into RFC 9457 problem+json (§23, D-087).
+ * A filter, not a helper each controller calls, because the failure mode of
+ * "remember to shape your errors" is a response nobody looks at until a client
+ * has already hard-coded around it.
  */
 export function applyGlobalPipeline(app: INestApplication): void {
   const reflector = app.get(Reflector);
@@ -36,8 +48,11 @@ export function applyGlobalPipeline(app: INestApplication): void {
   app.useGlobalGuards(new AbilityGuard(reflector));
 
   app.useGlobalInterceptors(
+    new IdempotencyInterceptor(),
     new AuditInterceptor(reflector, new AuditService()),
     new SerializeInterceptor(reflector),
     new ScopeInterceptor(),
   );
+
+  app.useGlobalFilters(new ProblemFilter());
 }

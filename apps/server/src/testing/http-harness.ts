@@ -87,6 +87,19 @@ export class Client {
     }
   }
 
+  /**
+   * The jar as a `Cookie` header, for a request this class cannot make itself.
+   *
+   * The realtime suite needs it: a Socket.IO handshake is a WebSocket upgrade on
+   * a real listening port, not a `server.inject()`, so it has to carry the
+   * session cookie by hand. Exposed rather than duplicating the sign-in flow,
+   * because a second sign-in path in the tests is a second thing that can
+   * disagree with production about what a session is.
+   */
+  cookieHeader(): string {
+    return [...this.cookies].map(([name, value]) => `${name}=${value}`).join('; ');
+  }
+
   async request(
     method: string,
     url: string,
