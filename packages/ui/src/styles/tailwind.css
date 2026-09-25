@@ -72,6 +72,11 @@
 
   --spacing-row: var(--row-height);
   --spacing-control: var(--control-height);
+  /* The two other control heights the kit needs. Republished here rather than
+     written as arbitrary values at each call site, so `h-control-sm` is the
+     only spelling and a size cannot drift a pixel per component. */
+  --spacing-control-sm: var(--control-height-sm);
+  --spacing-control-lg: var(--control-height-lg);
 
   --shadow-popover: var(--shadow-popover);
   --shadow-dialog: var(--shadow-dialog);
