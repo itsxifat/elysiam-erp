@@ -120,6 +120,20 @@
       "when": 1790265911610,
       "tag": "0016_journal_reversal_shape",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790314153578,
+      "tag": "0017_events_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790314154578,
+      "tag": "0018_events_outbox_policies",
+      "breakpoints": true
     }
   ]
 }

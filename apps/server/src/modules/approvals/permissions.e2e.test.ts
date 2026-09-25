@@ -718,20 +718,16 @@ describe('check 5: below and above the threshold behave differently', () => {
 
   it('auto-approves below the threshold and holds at it, each emitting its events', async () => {
     await setThreshold('wallet_adjustment', '500000');
-    const approvals = harness.app.get(ApprovalsService);
-
     const { client: maker } = await asRole('accounts');
 
-    approvals.emitted.length = 0;
     const below = await requestApproval(maker, 'wallet_adjustment', '499999');
-    const belowEvents = approvals.emitted.map((event) => [
+    const belowEvents = (await outboxFor(below.id)).map((event) => [
       event.name,
       event.payload.status ?? event.payload.decision,
     ]);
 
-    approvals.emitted.length = 0;
     const at = await requestApproval(maker, 'wallet_adjustment', '500000');
-    const atEvents = approvals.emitted.map((event) => [
+    const atEvents = (await outboxFor(at.id)).map((event) => [
       event.name,
       event.payload.status ?? event.payload.decision,
     ]);
@@ -779,19 +775,16 @@ describe('check 5: below and above the threshold behave differently', () => {
   });
 
   it('emits approval.decided when a checker decides a held request', async () => {
-    const approvals = harness.app.get(ApprovalsService);
     const { client: maker } = await asRole('org_admin');
     const { client: checker } = await asRole('org_admin');
 
     const { id } = await requestApproval(maker, 'wallet_adjustment', '900000');
-    approvals.emitted.length = 0;
     await checker.request('POST', `/v1/approvals/${id}/decide`, { body: { decision: 'approved' } });
 
-    expect(approvals.emitted).toHaveLength(1);
-    expect(approvals.emitted[0]).toMatchObject({
-      name: 'approval.decided',
-      payload: { id, decision: 'approved' },
-    });
+    const events = await outboxFor(id);
+    // Both events, in order: the request that was held, then the decision.
+    expect(events.map((event) => event.name)).toEqual(['approval.requested', 'approval.decided']);
+    expect(events[1]?.payload).toMatchObject({ id, decision: 'approved' });
   });
 });
 
@@ -1283,20 +1276,74 @@ describe('relaxing a threshold needs a second org admin (W4, D-073)', () => {
   });
 });
 
-describe('events', () => {
+describe('events go through the outbox, in the caller’s transaction (§19, check 1)', () => {
+  /** Undelivered rows across the whole org, for a before/after comparison. */
+  async function outboxCount(): Promise<number> {
+    const rows = await withSystem(
+      async (tx) => tx.execute<{ count: string }>(sql`select count(*) as count from events.outbox`),
+      { orgId: ORG_A },
+    );
+    return Number(rows[0]?.count ?? 0);
+  }
+
   it('announces nothing for a request whose transaction rolled back', async () => {
-    const approvals = harness.app.get(ApprovalsService);
-    approvals.emitted.length = 0;
+    /*
+     * Check 1 of this milestone: a job enqueued inside a transaction that rolls
+     * back never runs.
+     *
+     * This used to assert on an in-memory array, which made it a test about
+     * whether a method had been called after commit. Now the event is a row
+     * written *inside* the transaction, so the rollback story belongs to
+     * PostgreSQL rather than to our ordering — which is the whole reason
+     * invariant 6 asks for an outbox instead of a post-commit callback.
+     */
+    const before = await outboxCount();
 
     const { client } = await asRole('org_admin');
-    // An unknown branch fails the composite FK after the insert was attempted.
+    // An unknown branch fails the composite FK after the insert was attempted,
+    // so the row and its event are both already written when it fails.
     const attempt = await client.request('POST', '/v1/approvals', {
       body: { type: 'wallet_adjustment', amountPoisha: '1', branchId: crypto.randomUUID() },
     });
+
     expect(attempt.statusCode, attempt.body).toBe(400);
-    expect(approvals.emitted).toEqual([]);
+    expect(await outboxCount(), 'a rolled-back request left an event behind').toBe(before);
+  });
+
+  it('writes one for a request that commits', async () => {
+    // The positive control. Without it the assertion above passes just as well
+    // on a system that never writes events at all.
+    const before = await outboxCount();
+    const { client } = await asRole('accounts');
+    await requestApproval(client, 'supplier_payment', '900000000');
+
+    expect(await outboxCount()).toBeGreaterThan(before);
   });
 });
+
+/**
+ * The outbox rows one approval produced, newest last.
+ *
+ * Reads `events.outbox` rather than a field on the service. The service used to
+ * keep its events in an in-memory ring and these tests read that — which
+ * asserted that a method had been called, not that anything had been recorded.
+ * A replica would never have seen those events and a restart would have lost
+ * them, and `.claude/rules` says events go only through the outbox.
+ */
+async function outboxFor(
+  approvalId: string,
+): Promise<{ name: string; payload: Record<string, unknown> }[]> {
+  const rows = await withSystem(
+    async (tx) =>
+      tx.execute<{ name: string; payload: Record<string, unknown> }>(sql`
+        select name, payload from events.outbox
+        where payload->>'id' = ${approvalId}
+        order by created_at
+      `),
+    { orgId: ORG_A },
+  );
+  return [...rows];
+}
 
 describe('GET /v1/approvals', () => {
   it('lists for an org-wide checker (it was a 500 for everyone)', async () => {

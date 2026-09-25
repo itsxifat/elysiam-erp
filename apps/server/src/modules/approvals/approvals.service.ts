@@ -28,6 +28,7 @@ import { canDecide, requiresApproval, type Threshold } from '@elysium/domain';
 import { withOrg, type Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 
+import { emit } from '../../platform/events/outbox.js';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
@@ -74,15 +75,12 @@ export interface ApprovalRequestRow {
   readonly decidedBy: string | null;
 }
 
-/** What the outbox will carry once M04 exists (§19, §27). */
+/** One row for `events.outbox`, named from the §19 catalog. */
 export interface DomainEvent {
   readonly name: 'approval.requested' | 'approval.decided';
   readonly orgId: string;
   readonly payload: Record<string, unknown>;
 }
-
-/** How many events are kept in memory until M04 replaces this (D-067). */
-const RETAINED_EVENTS = 500;
 
 /** The PostgreSQL error a row fails with, found through Drizzle's wrapper. */
 function pgCode(error: unknown): string | undefined {
@@ -162,9 +160,6 @@ function magnitude(amount: bigint): bigint {
 
 @Injectable()
 export class ApprovalsService {
-  /** Collected in memory until M04's outbox (D-067). See `publish` below. */
-  readonly emitted: DomainEvent[] = [];
-
   private readonly executors = new Map<ApprovalType, ApprovalExecutor>();
 
   constructor(private readonly audit: AuditService) {}
@@ -198,18 +193,21 @@ export class ApprovalsService {
   }
 
   /**
-   * Events, held rather than published (D-067).
+   * Events, written to the outbox **inside the caller's transaction** (§19).
    *
-   * Each method collects its events in a local list and hands them here only
-   * after its transaction has committed, so a rolled-back request announces
-   * nothing — the property the M04 outbox gets from `enqueue(tx, …)`. Bounded,
-   * because a list that only ever grows is a memory leak in a long-lived API
-   * process. M04 replaces this body, not the call sites.
+   * They used to be collected in a local list and handed to an in-memory ring
+   * after commit. That got the rollback property right — a rolled-back request
+   * announced nothing — and got everything else wrong: the events lived in one
+   * process's heap, so a replica never saw them, a restart lost them, and
+   * `.claude/rules`' "realtime events go only through the outbox" was not true.
+   *
+   * Now the row commits with the change that caused it. The dispatcher reads it
+   * afterwards, which is what makes §19's "emit only after commit" structural:
+   * there is no code path from here to a socket.
    */
-  private publish(events: readonly DomainEvent[]): void {
-    this.emitted.push(...events);
-    if (this.emitted.length > RETAINED_EVENTS) {
-      this.emitted.splice(0, this.emitted.length - RETAINED_EVENTS);
+  private async writeEvents(tx: Tx, orgId: string, events: readonly DomainEvent[]): Promise<void> {
+    for (const event of events) {
+      await emit(tx, event.name, event.payload as never, { orgId });
     }
   }
 
@@ -445,10 +443,10 @@ export class ApprovalsService {
           });
         }
 
+        await this.writeEvents(tx, context.orgId, events);
         return { id, required, status };
       });
 
-      this.publish(events);
       return result;
     } catch (error) {
       // The composite FK: a branch that does not exist in this org. The same
@@ -652,10 +650,10 @@ export class ApprovalsService {
         payload: { id: input.id, decision: input.decision, requestedBy: row.requested_by },
       });
 
+      await this.writeEvents(tx, context.orgId, events);
       return { id: input.id, status: input.decision };
     });
 
-    this.publish(events);
     return result;
   }
 
@@ -1086,6 +1084,7 @@ export class ApprovalsService {
         },
       });
 
+      await this.writeEvents(tx, context.orgId, events);
       return {
         type: input.type,
         thresholdPoisha: input.thresholdPoisha.toString(),
@@ -1094,7 +1093,6 @@ export class ApprovalsService {
       };
     });
 
-    this.publish(events);
     return result;
   }
 

@@ -179,6 +179,14 @@ export const NO_DELETE_TABLES: readonly string[] = [
   'approvals.approval_requests',
   'ledger.accounts',
   'ledger.periods',
+  /*
+   * The outbox is append-then-mark (§19). The dispatcher needs UPDATE to stamp
+   * `dispatched_at`, bump `attempts` and record `last_error`; it must never be
+   * able to remove a row. Deleting on dispatch would make "did this event ever
+   * fire" unanswerable, and that is the question asked exactly when something
+   * has gone wrong.
+   */
+  'events.outbox',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */
