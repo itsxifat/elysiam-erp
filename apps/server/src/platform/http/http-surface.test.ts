@@ -402,6 +402,30 @@ describe('the credential rate limits cannot be sidestepped with a trailing slash
   });
 });
 
+describe('signing out', () => {
+  /*
+   * Sent exactly as the console sends it: a POST with no body, and therefore no
+   * content-type. The auth plugin used to forward that to Better Auth as a JSON
+   * body with no content-type header, which Better Auth refused with 415 — and the
+   * console's `.finally(reload)` then reloaded into a session that was still live.
+   * On a shared showroom till that is the next cashier inheriting the last one's
+   * login. Found by driving the console in a browser; nothing here sent a bodiless
+   * auth POST before.
+   */
+  it('ends the session when the console sends no body', async () => {
+    const { client } = await signedIn('sales', ORG_A);
+
+    const before = await client.request('GET', '/v1/me/orgs');
+    expect(before.statusCode, 'not signed in to begin with').toBe(200);
+
+    const signedOut = await client.request('POST', '/api/auth/sign-out');
+    expect(signedOut.statusCode, signedOut.body).toBeLessThan(400);
+
+    const after = await client.request('GET', '/v1/me/orgs');
+    expect(after.statusCode, 'the session outlived sign-out').toBe(401);
+  });
+});
+
 describe('a session cookie stays a cookie', () => {
   /*
    * `GET /api/auth/get-session` returned the raw session token in its body.

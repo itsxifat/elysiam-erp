@@ -24,7 +24,8 @@
     "db:migrate": "tsx src/cli/migrate.ts",
     "db:seed": "tsx src/cli/seed.ts",
     "lint": "eslint .",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "db:dev-users": "tsx src/cli/dev-users.ts"
   },
   "devDependencies": {
     "@better-auth/utils": "catalog:",

@@ -34,7 +34,8 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:migrations && pnpm run check:schema && pnpm run check:routes && pnpm run check:i18n && pnpm run check:api-client"
+    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:migrations && pnpm run check:schema && pnpm run check:routes && pnpm run check:i18n && pnpm run check:api-client",
+    "db:dev-users": "pnpm --filter @elysium/db run db:dev-users"
   },
   "devDependencies": {
     "@elysium/config": "workspace:*",

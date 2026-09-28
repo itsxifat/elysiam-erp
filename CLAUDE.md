@@ -48,6 +48,7 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
 - `pnpm db:bootstrap` creates the three database roles. Once per database, and the only step needing a superuser.
 - `pnpm dev` runs every app. Filter with `pnpm --filter @elysium/<app> dev`.
 - `pnpm db:generate` creates a migration from schema changes. `pnpm db:migrate` applies them as `erp_owner`, `pnpm db:seed` loads geography, the five orgs and each org's chart of accounts (with a hand-cash wallet per branch). The seed is idempotent.
+- `pnpm db:dev-users` creates local sign-in users (hr, warehouse, branch_manager, sales — the roles with no 2FA wall) through the real invite flow. Local databases only; the password is random per run and written only to the gitignored `packages/db/.dev-users.local.json`.
 - `pnpm test` runs unit + integration tests. `pnpm e2e` runs Playwright.
 - `pnpm verify` runs format check, lint, typecheck, tests, build, the migration-immutability check, the schema-drift check and the route-matrix gate. It is the gate for every commit to main.
 - `pnpm check:routes` is the route-matrix gate on its own: every route declares an ability (or `@AuthenticatedOnly` / `@Public`), and every non-public route is in `apps/server/src/platform/auth/route-matrix.manifest.ts` with a fixture in the generated route-matrix suite. Needs a build first.

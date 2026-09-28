@@ -337,13 +337,28 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       }
     }
 
+    const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
+    if (hasBody) {
+      /*
+       * The body below is always JSON, because this line makes it JSON — so it
+       * has to be labelled JSON whatever the browser sent.
+       *
+       * Copying the browser's headers verbatim broke every bodiless POST: the
+       * console signs out with `POST /api/auth/sign-out` and no body, so there is
+       * no `content-type` to copy, and Better Auth refused a JSON body labelled
+       * as nothing with 415. The console then reloaded anyway, and the user was
+       * still signed in — on a shared showroom till, the next cashier inherited
+       * the session. Found by driving the console in a browser; no test sent a
+       * bodiless auth POST.
+       */
+      headers.set('content-type', 'application/json');
+    }
+
     const response = await options.auth.handler(
       new Request(url, {
         method: request.method,
         headers,
-        ...(request.method === 'GET' || request.method === 'HEAD'
-          ? {}
-          : { body: JSON.stringify(request.body ?? {}) }),
+        ...(hasBody ? { body: JSON.stringify(request.body ?? {}) } : {}),
       }),
     );
 
