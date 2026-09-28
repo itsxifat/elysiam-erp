@@ -27,6 +27,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-hook-form": "catalog:",
+    "socket.io-client": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

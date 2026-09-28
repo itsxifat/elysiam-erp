@@ -460,6 +460,9 @@ importers:
       react-hook-form:
         specifier: 'catalog:'
         version: 7.66.1(react@19.3.0)
+      socket.io-client:
+        specifier: 'catalog:'
+        version: 4.8.3(supports-color@10.2.2)
       zod:
         specifier: 'catalog:'
         version: 4.6.5
@@ -1013,6 +1016,9 @@ importers:
       lucide-react:
         specifier: 'catalog:'
         version: 1.47.0(react@19.3.0)
+      react-hook-form:
+        specifier: 'catalog:'
+        version: 7.66.1(react@19.3.0)
       tailwind-merge:
         specifier: 'catalog:'
         version: 3.7.0
