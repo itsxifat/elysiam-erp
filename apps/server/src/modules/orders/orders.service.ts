@@ -1,0 +1,1746 @@
+import { Inject, Injectable } from '@nestjs/common';
+import { withOrg, type Tx } from '@elysium/db';
+import {
+  applicableAdvance,
+  businessDate,
+  computeExchangeReturn,
+  computeOrderTotals,
+  customerAdvanceDraft,
+  formatOrderNo,
+  normalizeBdPhone,
+  orderExchangeDraft,
+  orderPeriodFor,
+  orderPrefixFor,
+  poisha,
+  withinPostingWindow,
+  type AccountSubtype,
+  type OrderStatus,
+  type OrderTrigger,
+} from '@elysium/domain';
+import { sql, type SQL } from 'drizzle-orm';
+
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
+import { emit } from '../../platform/events/outbox.js';
+import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
+import type { ActiveContext } from '../../platform/http/context.js';
+import { CATALOG_API, type CatalogApi, type CatalogSku } from '../catalog/catalog.api.js';
+import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
+import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
+import { CustomersService } from './customers.service.js';
+import { FRAUD_GATE, type FraudGate } from './ports/fraud-gate.port.js';
+import { TransitionsService, type MoveOptions } from './transitions.service.js';
+import * as repo from './orders.repository.js';
+import { mapOrderErrors, OrdersError } from './orders.errors.js';
+import type {
+  AvailabilityQuery,
+  CreateOrderInput,
+  ExchangeOrderInput,
+  OrderQuery,
+  RecordAdvanceInput,
+  UpdateOrderInput,
+} from './orders.schemas.js';
+
+/**
+ * Orders (architecture §9, invariants 1, 5, 6, 7, 11 and 12).
+ *
+ * This file takes orders, edits them and hands every status change to
+ * `TransitionsService`. It owns none of the arithmetic and none of the journals: totals
+ * come from `computeOrderTotals`, the transition table from `transition()`, the journals
+ * from `packages/domain/src/posting`, the stock from `INVENTORY_API` and the posting
+ * itself from `LEDGER_API`. What is left here is the part that is genuinely about
+ * orders — resolving a buyer, a zone, a price and a number, and deciding who may see
+ * which row.
+ *
+ * Four decisions worth reading before the code.
+ *
+ * ## Everything happens in one `withOrg` transaction
+ *
+ * An order, its lines, its reservation, its journal, its outbox row and its audit row
+ * commit together or not at all. That is not tidiness: the failure it prevents is an
+ * order sitting `confirmed` with nothing reserved, which nothing reports and which the
+ * warehouse discovers when it cannot pick it. No external call is made inside any of
+ * these transactions (invariant 6) — the courier and the SMS gateway are reached by
+ * jobs the outbox row starts, after the commit.
+ *
+ * ## The scope is a predicate, not a filter
+ *
+ * §6's sales cell is "own orders **plus** the unassigned queue". A filter applied after
+ * the read cannot express that, so every path resolves its order through
+ * `repo.lockOrderInScope` with the caller's scope as SQL. `orderScope()` below is where
+ * the queue is added, and it is added **only for a caller holding `sales`** — the same
+ * `read Order|own` grant is held by `reseller`, and widening it there would hand a
+ * reseller every unassigned staff order in the brand.
+ *
+ * ## No cost enters or leaves
+ *
+ * The request schemas have no cost field and the views below have none: `unit_price` is
+ * a selling price, and `dispatch_unit_cost_poisha` — which the ship transition writes on
+ * each line — is deliberately absent from `OrderLineView`. Invariant 5's
+ * `serializeFor()` is the backstop, not the mechanism; the mechanism is that the number
+ * is never put in a response object.
+ *
+ * ## The fraud gate is a port, not an import
+ *
+ * `FRAUD_GATE` is declared in `ports/fraud-gate.port.ts` and defaults to permissive, so
+ * orders work before M13 exists. See that file for why the dependency points this way.
+ */
+
+// --- what the endpoints return -------------------------------------------------
+
+export interface OrderLineView {
+  readonly id: string;
+  readonly skuId: string;
+  readonly skuCode: string;
+  readonly productName: string;
+  readonly qty: number;
+  readonly unitPricePoisha: string;
+  readonly discountPoisha: string;
+  readonly deliveredQty: number;
+  readonly returnedQty: number;
+  readonly position: number;
+}
+
+export interface OrderView {
+  readonly id: string;
+  readonly orderNo: string;
+  readonly status: string;
+  readonly channel: string;
+  readonly source: unknown;
+  readonly branchId: string | null;
+  readonly customer: { readonly id: string; readonly name: string; readonly phone: string };
+  readonly shipTo: {
+    readonly name: string;
+    readonly phone: string;
+    readonly districtId: number;
+    readonly thanaId: number;
+    readonly area: string | null;
+    readonly addressLine: string;
+  };
+  readonly deliveryZoneId: string | null;
+  readonly courierId: string | null;
+  readonly locationId: string | null;
+  readonly amounts: {
+    readonly itemsPoisha: string;
+    readonly discountPoisha: string;
+    readonly deliveryChargePoisha: string;
+    readonly advancePaidPoisha: string;
+    readonly codAmountPoisha: string;
+  };
+  readonly holdReason: string | null;
+  readonly cancelReason: string | null;
+  readonly trustScore: number | null;
+  readonly fraudDecision: string | null;
+  readonly assignedTo: string | null;
+  readonly createdBy: string;
+  readonly exchangeOfOrderId: string | null;
+  readonly notes: string | null;
+  readonly timestamps: {
+    readonly createdAt: string;
+    readonly confirmedAt: string | null;
+    readonly packedAt: string | null;
+    readonly handedOverAt: string | null;
+    readonly deliveredAt: string | null;
+    readonly returnedAt: string | null;
+    readonly cancelledAt: string | null;
+  };
+}
+
+/**
+ * A timestamp as §23 wants it: ISO 8601, or null.
+ *
+ * The driver hands `timestamptz` back as text in its own format
+ * (`2026-09-25 16:07:02.039+00`), which is a perfectly good timestamp and not what a client
+ * parses. Normalised here rather than in the repository, because the repository's job is to
+ * return what the row says and this is a decision about the wire (see `OrderRow`).
+ */
+function isoOf(value: string | null): string | null {
+  return value === null ? null : new Date(value).toISOString();
+}
+
+function toLineView(row: repo.OrderLineRow): OrderLineView {
+  return {
+    id: row.id,
+    skuId: row.sku_id,
+    skuCode: row.sku_code,
+    productName: row.product_name,
+    qty: row.qty,
+    unitPricePoisha: String(row.unit_price_poisha),
+    discountPoisha: String(row.discount_poisha),
+    deliveredQty: row.delivered_qty,
+    returnedQty: row.returned_qty,
+    position: row.position,
+    // `dispatch_unit_cost_poisha` is on the row and is not on the view (invariant 5).
+    // It is what the handover journal posted, and nobody outside the ledger needs it.
+  };
+}
+
+function toOrderView(row: repo.OrderRow): OrderView {
+  return {
+    id: row.id,
+    orderNo: row.order_no,
+    status: row.status,
+    channel: row.channel,
+    source: row.source,
+    branchId: row.branch_id,
+    customer: { id: row.customer_id, name: row.customer_name, phone: row.customer_phone },
+    shipTo: {
+      name: row.ship_name,
+      phone: row.ship_phone_e164,
+      districtId: row.ship_district_id,
+      thanaId: row.ship_thana_id,
+      area: row.ship_area,
+      addressLine: row.ship_address_line,
+    },
+    deliveryZoneId: row.delivery_zone_id,
+    courierId: row.courier_id,
+    locationId: row.location_id,
+    amounts: {
+      itemsPoisha: String(row.items_poisha),
+      discountPoisha: String(row.discount_poisha),
+      deliveryChargePoisha: String(row.delivery_charge_poisha),
+      advancePaidPoisha: String(row.advance_paid_poisha),
+      codAmountPoisha: String(row.cod_amount_poisha),
+    },
+    holdReason: row.hold_reason,
+    cancelReason: row.cancel_reason,
+    trustScore: row.trust_score,
+    fraudDecision: row.fraud_decision,
+    assignedTo: row.assigned_to,
+    createdBy: row.created_by,
+    exchangeOfOrderId: row.exchange_of_order_id,
+    notes: row.notes,
+    timestamps: {
+      createdAt: new Date(row.created_at).toISOString(),
+      confirmedAt: isoOf(row.confirmed_at),
+      packedAt: isoOf(row.packed_at),
+      handedOverAt: isoOf(row.handed_over_at),
+      deliveredAt: isoOf(row.delivered_at),
+      returnedAt: isoOf(row.returned_at),
+      cancelledAt: isoOf(row.cancelled_at),
+    },
+  };
+}
+
+/** A shipping address, however the caller expressed it. */
+interface ShipTo {
+  readonly name: string;
+  readonly phoneE164: string;
+  readonly districtId: number;
+  readonly thanaId: number;
+  readonly area: string | null;
+  readonly addressLine: string;
+}
+
+/** A priced line, ready to insert. */
+interface PricedLine {
+  readonly skuId: string;
+  readonly skuCode: string;
+  readonly productName: string;
+  readonly qty: number;
+  readonly unitPricePoisha: bigint;
+  readonly discountPoisha: bigint;
+}
+
+/** What `createIn` needs beyond the request body. */
+export interface CreateOrderOptions {
+  /** The original order, when this is an exchange's replacement (§9). */
+  readonly exchangeOfOrderId?: string | null;
+  /** A credit to absorb as an advance, capped by `applicableAdvance`. */
+  readonly creditPoisha?: bigint;
+  /** Fall back to this address when the body names none: the original order's. */
+  readonly fallbackShipTo?: ShipTo;
+  /** The zone and charge to inherit when the body names none. */
+  readonly fallbackDeliveryZoneId?: string | null;
+  readonly fallbackDeliveryChargePoisha?: bigint;
+}
+
+export interface CreatedOrder {
+  readonly id: string;
+  readonly orderNo: string;
+  readonly status: OrderStatus;
+  readonly codAmountPoisha: string;
+  readonly advancePaidPoisha: string;
+}
+
+/**
+ * §6's scope for orders, as SQL.
+ *
+ * The sales cell reads "own + unassigned queue", and the queue is added **only** for a
+ * caller who actually holds `sales`. `reseller` holds the same `read Order|own` grant and
+ * must not gain the queue with it: a reseller seeing every unassigned staff order is a
+ * cross-tenant-shaped leak inside one org.
+ *
+ * Exported because the document endpoints answer the same question — an invoice is the
+ * whole order in a form that can be forwarded — and two definitions of "may this caller
+ * see this order" is one definition too many.
+ */
+export function orderScopeSql(context: ActiveContext, request: object): SQL {
+  const base = scopeWhere(request, {
+    createdBy: sql`o.created_by`,
+    assignedTo: sql`o.assigned_to`,
+    branchId: sql`o.branch_id`,
+  });
+  return context.roles.includes('sales') ? sql`(${base} or o.assigned_to is null)` : base;
+}
+
+@Injectable()
+export class OrdersService {
+  constructor(
+    @Inject(CATALOG_API) private readonly catalog: CatalogApi,
+    @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
+    @Inject(LEDGER_API) private readonly ledger: LedgerApi,
+    @Inject(FRAUD_GATE) private readonly fraud: FraudGate,
+    private readonly customers: CustomersService,
+    private readonly transitions: TransitionsService,
+    private readonly audit: AuditService,
+  ) {}
+
+  // --- reads --------------------------------------------------------------------
+
+  async list(context: ActiveContext, request: object, query: OrderQuery) {
+    const scope = orderScopeSql(context, request);
+    /*
+     * The queue filters narrow the scope; they never widen it.
+     *
+     * `unassigned` is `assigned_to is null` **and** the scope, not instead of it, so a
+     * role whose cell does not include the queue sees only the unassigned orders it
+     * could already see. `mine` is the caller's own name on the row, which is what the
+     * order desk's "my orders" tab means.
+     */
+    const queued =
+      query.queue === 'unassigned'
+        ? sql`(${scope} and o.assigned_to is null)`
+        : query.queue === 'mine'
+          ? sql`(${scope} and o.assigned_to = ${context.userId})`
+          : scope;
+
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const rows = await repo.listOrders(tx, context.orgId, {
+          scope: queued,
+          status: query.status,
+          customerId: query.customerId,
+          q: query.q,
+          from: query.from,
+          to: query.to,
+          limit: query.limit,
+          offset: query.offset,
+        });
+        return { items: rows.map(toOrderView) };
+      }),
+    );
+  }
+
+  async get(context: ActiveContext, request: object, id: string) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const order = await this.readInScope(tx, context, request, id);
+        const [lines, events] = await Promise.all([
+          repo.orderLines(tx, context.orgId, order.id),
+          repo.orderEvents(tx, context.orgId, order.id),
+        ]);
+        return {
+          ...toOrderView(order),
+          lines: lines.map(toLineView),
+          history: events.map((event) => ({
+            id: event.id,
+            from: event.from_status,
+            to: event.to_status,
+            trigger: event.trigger,
+            reason: event.reason,
+            actorUserId: event.actor_user_id,
+            occurredAt: new Date(event.occurred_at).toISOString(),
+          })),
+        };
+      }),
+    );
+  }
+
+  /**
+   * What the order desk needs to know before it promises a size (M10 Build list).
+   *
+   * On hand minus reserved, per SKU, at the location the order will ship from — read
+   * through `INVENTORY_API.availability` rather than by joining `inventory.stock_levels`
+   * (invariant 12). The selling price comes with it because the same screen prices the
+   * line, and one round trip beats two.
+   */
+  async availability(context: ActiveContext, query: AvailabilityQuery) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const locationId = query.locationId ?? (await this.defaultLocation(tx, context, null));
+        const [skus, available] = await Promise.all([
+          this.catalog.skusByIds(tx, context.orgId, query.skuIds),
+          this.inventory.availability(tx, context.orgId, locationId, query.skuIds),
+        ]);
+        const bySku = new Map(skus.map((sku) => [sku.id, sku]));
+        return {
+          locationId,
+          items: query.skuIds.map((skuId) => {
+            const sku = bySku.get(skuId);
+            return {
+              skuId,
+              skuCode: sku?.code ?? null,
+              productName: sku?.productName ?? null,
+              status: sku?.status ?? null,
+              pricePoisha: sku === undefined ? null : sku.pricePoisha.toString(),
+              // Zero for a SKU the org has never stocked at this location, which is the
+              // same answer as one that has run out — see `InventoryApi.reserve`.
+              availableQty: available.get(skuId) ?? 0,
+            };
+          }),
+        };
+      }),
+    );
+  }
+
+  async zones(context: ActiveContext) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const [zones, couriers] = await Promise.all([
+          repo.listZones(tx, context.orgId),
+          repo.listCouriers(tx, context.orgId),
+        ]);
+        return {
+          zones: zones.map((zone) => ({
+            id: zone.id,
+            code: zone.code,
+            nameEn: zone.name_en,
+            nameBn: zone.name_bn,
+            chargePoisha: String(zone.charge_poisha),
+            defaultCourierId: zone.default_courier_id,
+            position: zone.position,
+            isActive: zone.is_active,
+          })),
+          couriers: couriers.map((courier) => ({
+            id: courier.id,
+            code: courier.code,
+            name: courier.name,
+            isActive: courier.is_active,
+          })),
+        };
+      }),
+    );
+  }
+
+  /** The zone and charge that apply to one address (§9), for the order form. */
+  async zoneFor(context: ActiveContext, query: { districtId: number; thanaId?: number }) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const zone = await repo.zoneForArea(
+          tx,
+          context.orgId,
+          query.districtId,
+          query.thanaId ?? null,
+        );
+        if (zone === undefined) {
+          throw new OrdersError(
+            'DELIVERY_ZONE_NOT_FOUND',
+            'No delivery zone covers that district; map it to a zone first.',
+          );
+        }
+        return {
+          id: zone.id,
+          code: zone.code,
+          nameEn: zone.name_en,
+          nameBn: zone.name_bn,
+          chargePoisha: String(zone.charge_poisha),
+          defaultCourierId: zone.default_courier_id,
+        };
+      }),
+    );
+  }
+
+  async upsertZone(
+    context: ActiveContext,
+    request: AuditableRequest,
+    input: {
+      code: string;
+      nameEn: string;
+      nameBn: string;
+      chargePoisha: string;
+      defaultCourierId?: string;
+      position?: number;
+      isActive?: boolean;
+    },
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const id = await repo.upsertZone(tx, {
+          orgId: context.orgId,
+          code: input.code,
+          nameEn: input.nameEn,
+          nameBn: input.nameBn,
+          chargePoisha: BigInt(input.chargePoisha),
+          defaultCourierId: input.defaultCourierId ?? null,
+          position: input.position ?? 0,
+          isActive: input.isActive ?? true,
+        });
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'update',
+          action: 'delivery_zone.saved',
+          entityType: 'delivery_zone',
+          entityId: id,
+          after: { code: input.code, chargePoisha: input.chargePoisha },
+          request,
+        });
+        return { id, code: input.code };
+      }),
+    );
+  }
+
+  // --- create and edit ----------------------------------------------------------
+
+  async create(context: ActiveContext, request: AuditableRequest, input: CreateOrderInput) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        /*
+         * The caller's `create` scope is asserted before anything is written.
+         *
+         * D-061: a `create` has nothing to filter, so the scope is checked against the
+         * row about to exist. A branch manager granted `create Order|branch` must not
+         * enter an order for another branch, and this is the only place that can say so
+         * — the guard only knows they may create *some* order.
+         */
+        this.assertCreatable(request, context, input.branchId ?? null, input.assignedTo ?? null);
+        if (input.customerId !== undefined) {
+          /*
+           * A named buyer has to be one this caller may already see.
+           *
+           * Taking an order *reads* the buyer — their name and number come back on the
+           * order, which is then `own` — so an unchecked id was a way to learn a buyer §6
+           * does not give you by guessing a uuid inside your own org. Applied here rather
+           * than in `createIn`, because `OrdersApi`'s callers are workers with no request
+           * to scope against and their own edge to apply §6 at.
+           */
+          await this.customers.assertReachable(tx, context, request, input.customerId);
+        }
+        const created = await this.createIn(tx, context, request, input, {});
+        return created;
+      }),
+    );
+  }
+
+  /**
+   * Create an order inside a caller's transaction.
+   *
+   * Public because three callers need it and they are not all HTTP: this service's own
+   * `create`, the exchange flow (which creates the replacement in the same transaction
+   * as the original's credit), and `OrdersApi` for M21's reseller orders and M23's POS.
+   * It applies no permission scope — the caller does, because a worker has no request to
+   * scope against.
+   */
+  async createIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    input: CreateOrderInput,
+    options: CreateOrderOptions,
+  ): Promise<CreatedOrder> {
+    const at = new Date();
+    const buyer = await this.resolveBuyer(tx, context, input);
+    const shipTo = await this.resolveShipTo(tx, context, input, buyer, options);
+    const zone = await this.resolveZone(tx, context, input, shipTo, options);
+    const lines = await this.priceLines(tx, context, input.lines);
+
+    const deliveryChargePoisha =
+      input.deliveryChargePoisha !== undefined
+        ? BigInt(input.deliveryChargePoisha)
+        : (zone?.chargePoisha ?? options.fallbackDeliveryChargePoisha ?? 0n);
+    const orderDiscountPoisha =
+      input.discountPoisha === undefined ? 0n : BigInt(input.discountPoisha);
+
+    /*
+     * Totals twice, because a credit cannot be capped before the order is priced.
+     *
+     * §9 rejects a negative COD, so an exchange credit larger than the replacement is
+     * worth is applied up to the payable and the remainder stays in `customer_advance`
+     * as a store credit (`applicableAdvance`). The first pass exists only to learn the
+     * payable; nothing is written from it.
+     */
+    const withoutAdvance = computeOrderTotals({
+      lines: lines.map((line) => ({
+        qty: line.qty,
+        unitPricePoisha: poisha(line.unitPricePoisha),
+        lineDiscountPoisha: poisha(line.discountPoisha),
+      })),
+      orderDiscountPoisha: poisha(orderDiscountPoisha),
+      deliveryChargePoisha: poisha(deliveryChargePoisha),
+    });
+
+    const advancePaidPoisha =
+      options.creditPoisha !== undefined
+        ? BigInt(
+            applicableAdvance({
+              netItemsPoisha: withoutAdvance.netItemsPoisha,
+              deliveryChargePoisha: withoutAdvance.deliveryChargePoisha,
+              creditPoisha: poisha(options.creditPoisha),
+            }).appliedPoisha,
+          )
+        : input.advancePaidPoisha === undefined
+          ? 0n
+          : BigInt(input.advancePaidPoisha);
+
+    const totals = computeOrderTotals({
+      lines: lines.map((line) => ({
+        qty: line.qty,
+        unitPricePoisha: poisha(line.unitPricePoisha),
+        lineDiscountPoisha: poisha(line.discountPoisha),
+      })),
+      orderDiscountPoisha: poisha(orderDiscountPoisha),
+      deliveryChargePoisha: poisha(deliveryChargePoisha),
+      advancePaidPoisha: poisha(advancePaidPoisha),
+    });
+
+    if (input.locationId !== undefined) {
+      // Checked at creation as well as at every transition, so the refusal arrives while
+      // the agent is still on the phone rather than at the confirm that reserves stock.
+      await this.assertShippableLocation(tx, context, input.locationId);
+    }
+
+    const orderNo = await this.nextOrderNo(tx, context, at);
+    const orderId = await repo.insertOrder(tx, {
+      orgId: context.orgId,
+      branchId: input.branchId ?? null,
+      orderNo,
+      channel: input.channel,
+      source: input.source ?? {},
+      customerId: buyer.id,
+      shipName: shipTo.name,
+      shipPhoneE164: shipTo.phoneE164,
+      shipDistrictId: shipTo.districtId,
+      shipThanaId: shipTo.thanaId,
+      shipArea: shipTo.area,
+      shipAddressLine: shipTo.addressLine,
+      deliveryZoneId: zone?.id ?? options.fallbackDeliveryZoneId ?? null,
+      courierId: input.courierId ?? zone?.defaultCourierId ?? null,
+      locationId: input.locationId ?? null,
+      itemsPoisha: BigInt(totals.itemsPoisha),
+      discountPoisha: BigInt(totals.discountPoisha),
+      deliveryChargePoisha: BigInt(totals.deliveryChargePoisha),
+      advancePaidPoisha: BigInt(totals.advancePaidPoisha),
+      codAmountPoisha: BigInt(totals.codAmountPoisha),
+      promoCodeId: input.promoCodeId ?? null,
+      assignedTo: input.assignedTo ?? null,
+      createdBy: context.userId,
+      notes: input.notes ?? null,
+      exchangeOfOrderId: options.exchangeOfOrderId ?? null,
+    });
+
+    for (const [index, line] of lines.entries()) {
+      await repo.insertOrderLine(tx, {
+        orgId: context.orgId,
+        orderId,
+        skuId: line.skuId,
+        skuCode: line.skuCode,
+        productName: line.productName,
+        qty: line.qty,
+        unitPricePoisha: line.unitPricePoisha,
+        discountPoisha: line.discountPoisha,
+        position: index,
+      });
+    }
+
+    /*
+     * The order's own history starts here, with no `from`.
+     *
+     * §9: "every transition writes an outbox event and an audit row". Creation is not a
+     * transition, and the row still has to exist — otherwise the first entry in an
+     * order's history is whatever happened to it next, and "who entered this and when"
+     * is answerable only from `created_by` and `created_at`, which a later edit could
+     * make misleading.
+     */
+    await repo.insertOrderEvent(tx, {
+      orgId: context.orgId,
+      orderId,
+      fromStatus: null,
+      toStatus: 'pending',
+      trigger: 'create',
+      reason: null,
+      actorUserId: context.userId,
+      businessDate: businessDate(at),
+      occurredAt: at,
+    });
+
+    await this.customers.applyStats(tx, context.orgId, buyer.id, { orders: 1, orderedAt: at });
+
+    await emit(
+      tx,
+      'order.created',
+      {
+        id: orderId,
+        orderNo,
+        channel: input.channel,
+        codAmountPoisha: BigInt(totals.codAmountPoisha).toString(),
+        assignedTo: input.assignedTo ?? null,
+        createdAt: at.toISOString(),
+      },
+      { orgId: context.orgId },
+    );
+
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'create',
+      action: 'order.created',
+      entityType: 'order',
+      entityId: orderId,
+      // Named `phone` so the audit redactor masks it (invariant 10), and no cost field
+      // exists to leak: the lines carry selling prices only.
+      after: {
+        orderNo,
+        channel: input.channel,
+        phone: shipTo.phoneE164,
+        codAmountPoisha: BigInt(totals.codAmountPoisha).toString(),
+        lines: lines.length,
+        exchangeOfOrderId: options.exchangeOfOrderId ?? null,
+      },
+      request,
+    });
+
+    return {
+      id: orderId,
+      orderNo,
+      status: 'pending',
+      codAmountPoisha: BigInt(totals.codAmountPoisha).toString(),
+      advancePaidPoisha: BigInt(totals.advancePaidPoisha).toString(),
+    };
+  }
+
+  /**
+   * Change an order that has not gone out yet (§24's order desk).
+   *
+   * Line changes on a `confirmed` or `on_hold` order release the reservation and reserve
+   * the new set, in that order and in this transaction. Not a diff: releasing first and
+   * reserving after means the units the order already held are available to it, so
+   * dropping one unit of a scarce SKU cannot fail because the order is competing with
+   * itself. If the new set cannot be held, the whole edit rolls back and the *old*
+   * reservation stands — which is why the release is not a separate request.
+   */
+  async edit(
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+    patch: UpdateOrderInput,
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const order = await this.readInScope(tx, context, request, id);
+        const editable: readonly string[] = ['pending', 'confirmed', 'on_hold'];
+        if (!editable.includes(order.status)) {
+          throw new OrdersError(
+            'ORDER_IMMUTABLE',
+            `An order that is ${order.status} can no longer be edited; its terms are already on an invoice.`,
+          );
+        }
+
+        const existing = await repo.orderLines(tx, context.orgId, order.id);
+        const lines =
+          patch.lines === undefined
+            ? existing.map((line) => ({
+                skuId: line.sku_id,
+                skuCode: line.sku_code,
+                productName: line.product_name,
+                qty: line.qty,
+                unitPricePoisha: BigInt(line.unit_price_poisha),
+                discountPoisha: BigInt(line.discount_poisha),
+              }))
+            : await this.priceLines(tx, context, patch.lines);
+
+        /*
+         * The order-level discount, derived rather than stored.
+         *
+         * `orders.discount_poisha` is the total §9 names and the COD CHECK re-derives
+         * from, so the order-level part is what is left after the lines' own discounts.
+         * The same derivation as `TransitionsService.orderLevelDiscount`, for the same
+         * reason: two columns holding one number is two numbers that must agree.
+         */
+        const existingLineDiscounts = existing.reduce(
+          (total, line) => total + BigInt(line.discount_poisha),
+          0n,
+        );
+        const orderDiscountPoisha =
+          patch.discountPoisha !== undefined
+            ? BigInt(patch.discountPoisha)
+            : bigintMax(BigInt(order.discount_poisha) - existingLineDiscounts, 0n);
+
+        const deliveryChargePoisha =
+          patch.deliveryChargePoisha === undefined
+            ? BigInt(order.delivery_charge_poisha)
+            : BigInt(patch.deliveryChargePoisha);
+
+        const totals = computeOrderTotals({
+          lines: lines.map((line) => ({
+            qty: line.qty,
+            unitPricePoisha: poisha(line.unitPricePoisha),
+            lineDiscountPoisha: poisha(line.discountPoisha),
+          })),
+          orderDiscountPoisha: poisha(orderDiscountPoisha),
+          deliveryChargePoisha: poisha(deliveryChargePoisha),
+          // An advance is a posted journal, so the edit carries it across untouched.
+          advancePaidPoisha: poisha(BigInt(order.advance_paid_poisha)),
+        });
+
+        const shipTo: ShipTo =
+          patch.shipTo === undefined
+            ? {
+                name: order.ship_name,
+                phoneE164: order.ship_phone_e164,
+                districtId: order.ship_district_id,
+                thanaId: order.ship_thana_id,
+                area: order.ship_area,
+                addressLine: order.ship_address_line,
+              }
+            : {
+                name: patch.shipTo.name ?? order.ship_name,
+                phoneE164: order.ship_phone_e164,
+                districtId: patch.shipTo.districtId,
+                thanaId: patch.shipTo.thanaId,
+                area: patch.shipTo.area ?? null,
+                addressLine: patch.shipTo.addressLine,
+              };
+
+        const linesChanged = patch.lines !== undefined && !sameLines(existing, lines);
+        const nextLocationId = patch.locationId ?? order.location_id;
+        const locationChanged = nextLocationId !== order.location_id;
+        const holdsStock = order.status === 'confirmed' || order.status === 'on_hold';
+        /*
+         * A moved fulfilment location needs the hold moved with it.
+         *
+         * `inventory.reservations` is keyed on `(sku, location)`, so an edit that changed
+         * only `location_id` would leave the units held at the warehouse the order is no
+         * longer shipping from — reserved where nobody will pick them, and unavailable to
+         * the orders that will. So the reservation is rewritten for a location change as
+         * well as for a line change.
+         */
+        const rewriteReservation = holdsStock && (linesChanged || locationChanged);
+        if (rewriteReservation) {
+          await this.inventory.release(
+            tx,
+            { orgId: context.orgId, userId: context.userId },
+            { refType: 'order', refId: order.id },
+          );
+        }
+        if (linesChanged) {
+          await repo.deleteOrderLines(tx, context.orgId, order.id);
+          for (const [index, line] of lines.entries()) {
+            await repo.insertOrderLine(tx, {
+              orgId: context.orgId,
+              orderId: order.id,
+              skuId: line.skuId,
+              skuCode: line.skuCode,
+              productName: line.productName,
+              qty: line.qty,
+              unitPricePoisha: line.unitPricePoisha,
+              discountPoisha: line.discountPoisha,
+              position: index,
+            });
+          }
+        }
+
+        const moved = await repo.updateOrderCommercials(tx, {
+          orgId: context.orgId,
+          orderId: order.id,
+          itemsPoisha: BigInt(totals.itemsPoisha),
+          discountPoisha: BigInt(totals.discountPoisha),
+          deliveryChargePoisha: BigInt(totals.deliveryChargePoisha),
+          advancePaidPoisha: BigInt(totals.advancePaidPoisha),
+          codAmountPoisha: BigInt(totals.codAmountPoisha),
+          shipName: shipTo.name,
+          shipPhoneE164: shipTo.phoneE164,
+          shipDistrictId: shipTo.districtId,
+          shipThanaId: shipTo.thanaId,
+          shipArea: shipTo.area,
+          shipAddressLine: shipTo.addressLine,
+          deliveryZoneId: patch.deliveryZoneId ?? order.delivery_zone_id,
+          courierId: patch.courierId ?? order.courier_id,
+          locationId: nextLocationId,
+          notes: patch.notes ?? order.notes,
+        });
+        if (!moved) {
+          // The order was dispatched between the lock and here, which the lock should
+          // have made impossible — so this is the backstop for a caller that reached
+          // `edit` without one.
+          throw new OrdersError(
+            'ORDER_IMMUTABLE',
+            'This order moved while the edit was in flight; reload and try again.',
+          );
+        }
+
+        if (rewriteReservation) {
+          // Resolved from the order *as edited*, not as read: passing the old row here
+          // would hold the new lines at the old location, which is the bug the release
+          // above exists to avoid. It goes through the kind check too, so an edit cannot
+          // move an order onto a shelf it may not ship from.
+          const locationId = await this.fulfilmentLocation(
+            tx,
+            context,
+            { ...order, location_id: nextLocationId },
+            nextLocationId ?? undefined,
+          );
+          await this.inventory.reserve(
+            tx,
+            { orgId: context.orgId, userId: context.userId },
+            {
+              refType: 'order',
+              refId: order.id,
+              lines: lines.map((line) => ({ skuId: line.skuId, locationId, qty: line.qty })),
+            },
+          );
+        }
+
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'update',
+          action: 'order.edited',
+          entityType: 'order',
+          entityId: order.id,
+          before: {
+            codAmountPoisha: String(order.cod_amount_poisha),
+            lines: existing.length,
+          },
+          after: {
+            codAmountPoisha: BigInt(totals.codAmountPoisha).toString(),
+            lines: lines.length,
+            linesChanged,
+          },
+          request,
+        });
+
+        const after = await repo.orderById(tx, context.orgId, order.id);
+        return after === undefined ? { id: order.id } : toOrderView(after);
+      }),
+    );
+  }
+
+  // --- transitions --------------------------------------------------------------
+
+  /**
+   * Confirm, which is the one transition with a gate in front of it.
+   *
+   * The order is locked, §10's live gate is asked, and only then does the domain machine
+   * run and reserve the stock. That order matters: a gate consulted *after* the
+   * reservation would hold units for an order it is about to refuse, and the rollback
+   * would be the only thing releasing them.
+   */
+  async confirm(
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+    input: { fraudOverrideReason?: string },
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const order = await this.readInScope(tx, context, request, id);
+
+        const verdict = await this.fraud.assertConfirmAllowed(tx, {
+          orgId: context.orgId,
+          orderId: order.id,
+          phone: order.customer_phone,
+          // The caller's own ability context, so §6 decides who may override a block. A
+          // `canOverride` boolean here would let any caller assert its way past the matrix.
+          actor: {
+            roles: context.roles,
+            isSuperAdmin: context.isSuperAdmin,
+            userId: context.userId,
+            branchIds: context.branchIds,
+            branchIdsByRole: context.branchIdsByRole,
+          },
+          overrideReason: input.fraudOverrideReason ?? null,
+          request,
+        });
+
+        /*
+         * The verdict is written to the order *before* the machine is asked.
+         *
+         * §9's `transition()` reads `fraudDecision` off the row it was given, and the row
+         * this request read may be hours old — a buyer blocked since the order was taken
+         * would otherwise confirm on a stale `allow`. So the columns are updated, and the
+         * row handed to the machine carries the fresh decision rather than the one the
+         * desk saw.
+         */
+        await repo.recordFraudAssessment(tx, {
+          orgId: context.orgId,
+          orderId: order.id,
+          trustScore: verdict.trustScore,
+          decision: verdict.decision,
+        });
+        const assessed: repo.OrderRow = {
+          ...order,
+          trust_score: verdict.trustScore,
+          fraud_decision: verdict.decision,
+        };
+
+        const moved = await this.transitions.move(tx, context, request, assessed, 'confirm', {
+          fraudOverrideReason: input.fraudOverrideReason ?? null,
+        });
+        return toOrderView(moved.order);
+      }),
+    );
+  }
+
+  /** Every other transition, which differ only in what they carry (§9). */
+  async transition(
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+    trigger: OrderTrigger,
+    options: MoveOptions = {},
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const order = await this.readInScope(tx, context, request, id);
+        // Every transition that posts reads its date from here, so §7's window is checked
+        // once rather than in each of the five endpoints that accept one.
+        const occurredAt = this.postingInstant(options.occurredAt);
+        if (trigger === 'ship' && options.courierId != null) {
+          // Recorded before the handover posts, because §7's receivable is per courier
+          // and the delivery journal reads the column.
+          await repo.setOrderCourier(tx, {
+            orgId: context.orgId,
+            orderId: order.id,
+            courierId: options.courierId,
+          });
+        }
+        const moved = await this.transitions.move(tx, context, request, order, trigger, {
+          ...options,
+          occurredAt,
+        });
+        return toOrderView(moved.order);
+      }),
+    );
+  }
+
+  /** The same, for a caller that already holds the transaction (`OrdersApi`). */
+  async transitionIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    orderId: string,
+    trigger: OrderTrigger,
+    options: MoveOptions = {},
+  ): Promise<{ from: OrderStatus; to: OrderStatus }> {
+    const order = await repo.orderForUpdate(tx, context.orgId, orderId);
+    if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
+    const moved = await this.transitions.move(tx, context, request, order, trigger, options);
+    return { from: moved.result.from, to: moved.result.to };
+  }
+
+  // --- the queue ----------------------------------------------------------------
+
+  async assign(context: ActiveContext, request: AuditableRequest, id: string, assignedTo: string) {
+    return this.reassign(context, request, id, assignedTo, false);
+  }
+
+  /**
+   * Take an unassigned order out of §6's queue.
+   *
+   * `onlyIfUnassigned` is the whole of the concurrency control: two agents pressing
+   * "claim" at the same moment both pass the read, and the second one's UPDATE matches
+   * nothing because `assigned_to` is no longer null. Reported as
+   * `ORDER_ALREADY_CLAIMED` rather than silently reassigning, because the agent who
+   * lost needs to know to pick another one.
+   */
+  async claim(context: ActiveContext, request: AuditableRequest, id: string) {
+    return this.reassign(context, request, id, context.userId, true);
+  }
+
+  private async reassign(
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+    assignedTo: string,
+    onlyIfUnassigned: boolean,
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const order = await this.readInScope(tx, context, request, id);
+        const taken = await repo.assignOrder(tx, {
+          orgId: context.orgId,
+          orderId: order.id,
+          assignedTo,
+          onlyIfUnassigned,
+        });
+        if (!taken) {
+          throw new OrdersError(
+            'ORDER_ALREADY_CLAIMED',
+            'Somebody else took this order out of the queue first.',
+          );
+        }
+
+        await emit(
+          tx,
+          onlyIfUnassigned ? 'order.claimed' : 'order.assigned',
+          { id: order.id, orderNo: order.order_no, assignedTo },
+          { orgId: context.orgId },
+        );
+
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'update',
+          action: onlyIfUnassigned ? 'order.claimed' : 'order.assigned',
+          entityType: 'order',
+          entityId: order.id,
+          before: { assignedTo: order.assigned_to },
+          after: { assignedTo },
+          request,
+        });
+
+        const after = await repo.orderById(tx, context.orgId, order.id);
+        return after === undefined ? { id: order.id, assignedTo } : toOrderView(after);
+      }),
+    );
+  }
+
+  // --- money the buyer paid before the parcel moved -----------------------------
+
+  /**
+   * An advance received against an order (§7, §10's `require_advance`).
+   *
+   * Two writes in one transaction: the journal that makes the money a liability, and the
+   * order's own advance and COD. Doing only the first would leave the rider collecting
+   * the full amount from a buyer who has already paid part of it; doing only the second
+   * would mean money in a wallet that the books do not know about.
+   */
+  async recordAdvance(
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+    input: RecordAdvanceInput,
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const order = await this.readInScope(tx, context, request, id);
+        const occurredAt = this.postingInstant(
+          input.occurredAt === undefined ? undefined : new Date(input.occurredAt),
+        );
+        const amountPoisha = BigInt(input.amountPoisha);
+
+        const wallet = await repo.accountById(tx, context.orgId, input.walletAccountId);
+        if (wallet === undefined) {
+          throw new OrdersError(
+            'LEDGER_ACCOUNT_NOT_FOUND',
+            'That wallet does not exist in this brand.',
+          );
+        }
+        const advance = await repo.accountBySubtype(tx, context.orgId, 'customer_advance');
+        if (advance === undefined) {
+          throw new OrdersError(
+            'LEDGER_ACCOUNT_NOT_FOUND',
+            'This organization has no customer advance account.',
+          );
+        }
+
+        const applied = await repo.applyAdvance(tx, {
+          orgId: context.orgId,
+          orderId: order.id,
+          amountPoisha,
+        });
+        if (!applied) {
+          // §9 rejects a negative COD. The buyer has offered more than the order is
+          // worth, and the fix is a smaller advance — the excess is a store credit,
+          // which is the exchange flow's business, not this one's.
+          throw new OrdersError(
+            'ORDER_TOTAL_INVALID',
+            'That advance is more than this order will collect, or the parcel has already gone out.',
+          );
+        }
+
+        const posted = await this.ledger.post(
+          tx,
+          { orgId: context.orgId, userId: context.userId },
+          customerAdvanceDraft({
+            orderId: order.id,
+            occurredAt,
+            direction: 'received',
+            wallet: {
+              accountId: wallet.id,
+              // The subtype comes back as text; `customerAdvanceDraft` refuses anything
+              // that is not a `wallet_*` account, so the cast cannot widen what posts.
+              subtype: wallet.subtype as AccountSubtype,
+              branchId: wallet.branch_id,
+            },
+            customerAdvance: {
+              accountId: advance.id,
+              subtype: 'customer_advance',
+              branchId: advance.branch_id,
+            },
+            amountPoisha: poisha(amountPoisha),
+            branchId: order.branch_id,
+            memo: input.memo ?? `Order ${order.order_no} advance`,
+          }),
+        );
+
+        if (!posted.created) {
+          /*
+           * A second advance on one order would double the column and post nothing.
+           *
+           * `customerAdvanceDraft`'s idempotency key is `order:<id>:advance_received`, so a
+           * second advance of the *same* amount returns the first journal with
+           * `created: false` and no error — and `applyAdvance` above has already increased
+           * the order's advance. Left alone, that is an order whose COD is lower than the
+           * ledger says was received: the exact divergence invariant 2's idempotency is
+           * meant to prevent, arriving through the one path where the caller's write is not
+           * itself keyed.
+           *
+           * Refused rather than silently absorbed, and the throw rolls the column back with
+           * it. A follow-up gives the key a per-advance sequence so a buyer can pay twice.
+           */
+          throw new OrdersError(
+            'IDEMPOTENCY_CONFLICT',
+            'An advance is already recorded against this order; a second payment needs its own entry.',
+          );
+        }
+
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'create',
+          action: 'order.advance_received',
+          entityType: 'order',
+          entityId: order.id,
+          after: { amountPoisha: input.amountPoisha, journalId: posted.journalId },
+          request,
+        });
+
+        const after = await repo.orderById(tx, context.orgId, order.id);
+        return {
+          journalId: posted.journalId,
+          order: after === undefined ? { id: order.id } : toOrderView(after),
+        };
+      }),
+    );
+  }
+
+  // --- exchange -----------------------------------------------------------------
+
+  /**
+   * Exchange a delivered order for a replacement (§9's last transition row, check 7).
+   *
+   * Four things in one transaction, in this order and for these reasons:
+   *
+   * 1. **The units come back at their dispatch cost**, through
+   *    `INVENTORY_API.receiveCustomerReturn`. Today's average would let a price rise
+   *    between delivery and exchange create inventory value out of a swap.
+   * 2. **The journal** `orderExchangeDraft` undoes the sale of those units against the
+   *    accounts that received it: Dr Inventory / Cr COGS and Dr Sales revenue / Cr
+   *    Customer advance. The buyer's money becomes a credit, not a refund.
+   * 3. **The original moves to `exchange`** through the domain machine, with
+   *    `callerHandlesExchange` set — the machine declares the `create_exchange_order`
+   *    effect and this method is the one performing it, which the flag makes explicit
+   *    rather than assumed.
+   * 4. **The replacement is a new order** with `exchange_of_order_id` set and the credit
+   *    applied as its advance. It is `pending`, and it confirms, ships and delivers
+   *    through the ordinary path — which is what makes its revenue, its COGS and its
+   *    collection post by rules that already exist. The price difference is not a
+   *    journal at all: it is the replacement's COD, `items − discount + delivery −
+   *    advance`, and whatever the credit does not cover stays on the balance sheet.
+   *
+   * The lines' `delivered_qty` is reduced as `returned_qty` grows, because
+   * `order_lines_fulfilled_within_qty` keeps their sum within the quantity ordered — a
+   * fully delivered line that gained a returned unit without losing a delivered one is a
+   * row the database refuses, and rightly: it would claim more units left than existed.
+   */
+  async exchange(
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+    input: ExchangeOrderInput,
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const order = await this.readInScope(tx, context, request, id);
+        const occurredAt = this.postingInstant(
+          input.occurredAt === undefined ? undefined : new Date(input.occurredAt),
+        );
+        const lines = await repo.orderLines(tx, context.orgId, order.id);
+
+        /*
+         * The domain aggregates the request by SKU before it checks anything.
+         *
+         * A body naming one SKU twice used to pass a per-entry "is this more than was
+         * delivered" test twice over, and the journal then credited COGS with twice the
+         * cost while inventory's dedupe key wrote the movement once — a balanced journal,
+         * a trial balance still at zero, and a replacement order free of charge. See
+         * `computeExchangeReturn`.
+         */
+        const returned = computeExchangeReturn({
+          returning: input.returnLines,
+          lines: lines.map((line) => ({
+            skuId: line.sku_id,
+            qty: line.qty,
+            deliveredQty: line.delivered_qty,
+            returnedQty: line.returned_qty,
+            unitPricePoisha: poisha(BigInt(line.unit_price_poisha)),
+            lineDiscountPoisha: poisha(BigInt(line.discount_poisha)),
+            dispatchUnitCostPoisha: poisha(BigInt(line.dispatch_unit_cost_poisha ?? '0')),
+          })),
+        });
+
+        const locationId = await this.fulfilmentLocation(tx, context, order, input.locationId);
+
+        const received = await this.inventory.receiveCustomerReturn(
+          tx,
+          { orgId: context.orgId, userId: context.userId },
+          {
+            orderId: order.id,
+            locationId,
+            occurredAt,
+            lines: returned.lines.map((entry) => ({
+              skuId: entry.skuId,
+              qty: entry.qty,
+              dispatchUnitCostPoisha: entry.dispatchUnitCostPoisha,
+            })),
+            memo: `Order ${order.order_no} exchange`,
+          },
+        );
+
+        /*
+         * Movements first, and the journal relieves what they actually wrote.
+         *
+         * `receiveCustomerReturn` is idempotent on `order:<id>:return:<sku>:<location>`, so
+         * a replay writes nothing and still reports a value. Zero created movements with a
+         * value to post therefore means these units are already back on the shelf for this
+         * order — and posting the journal anyway would put cost into inventory a second
+         * time. Refused as retryable rather than absorbed, the way `dispatch` refuses a
+         * moved average.
+         */
+        const returnedValue = BigInt(received.valuePoisha);
+        if (returnedValue > 0n && received.movementIds.length === 0) {
+          throw new OrdersError(
+            'ORDER_COST_MOVED',
+            'Those units are already back in stock for this order, so the exchange cannot be recorded again.',
+          );
+        }
+
+        const accounts = await this.transitions.accountsFor(tx, context.orgId, [
+          'inventory',
+          'cogs',
+          'sales_revenue',
+          'customer_advance',
+        ]);
+        const pick = (subtype: 'inventory' | 'cogs' | 'sales_revenue' | 'customer_advance') => {
+          const account = accounts.get(subtype);
+          if (account === undefined) {
+            throw new OrdersError(
+              'LEDGER_ACCOUNT_NOT_FOUND',
+              `This organization has no ${subtype} account.`,
+            );
+          }
+          return account;
+        };
+
+        await this.ledger.post(
+          tx,
+          { orgId: context.orgId, userId: context.userId },
+          orderExchangeDraft({
+            orderId: order.id,
+            occurredAt,
+            inventory: pick('inventory'),
+            cogs: pick('cogs'),
+            salesRevenue: pick('sales_revenue'),
+            customerAdvance: pick('customer_advance'),
+            // The value the movements recorded, not the value the request implied: the two
+            // agree by construction, and taking the movements' figure is what keeps them
+            // unable to disagree if that construction ever changes.
+            returnedCostPoisha: poisha(returnedValue),
+            returnedNetItemsPoisha: returned.netItemsPoisha,
+            branchId: order.branch_id,
+            memo: `Order ${order.order_no} exchange`,
+          }),
+        );
+
+        await this.transitions.move(tx, context, request, order, 'exchange', {
+          reason: input.reason,
+          occurredAt,
+          callerHandlesExchange: true,
+        });
+
+        for (const entry of returned.lines) {
+          await repo.setLineFulfilment(tx, {
+            orgId: context.orgId,
+            orderId: order.id,
+            skuId: entry.skuId,
+            deliveredQty: entry.deliveredQty,
+            returnedQty: entry.returnedQty,
+          });
+        }
+
+        const replacement = await this.createIn(
+          tx,
+          context,
+          request,
+          {
+            channel: order.channel as CreateOrderInput['channel'],
+            customerId: order.customer_id,
+            lines: input.lines,
+            ...(input.deliveryChargePoisha === undefined
+              ? {}
+              : { deliveryChargePoisha: input.deliveryChargePoisha }),
+            ...(order.location_id === null ? {} : { locationId: order.location_id }),
+            ...(order.branch_id === null ? {} : { branchId: order.branch_id }),
+            ...(order.assigned_to === null ? {} : { assignedTo: order.assigned_to }),
+            notes: `Exchange of ${order.order_no}: ${input.reason}`,
+          },
+          {
+            exchangeOfOrderId: order.id,
+            creditPoisha: BigInt(returned.netItemsPoisha),
+            fallbackShipTo: {
+              name: order.ship_name,
+              phoneE164: order.ship_phone_e164,
+              districtId: order.ship_district_id,
+              thanaId: order.ship_thana_id,
+              area: order.ship_area,
+              addressLine: order.ship_address_line,
+            },
+            fallbackDeliveryZoneId: order.delivery_zone_id,
+            fallbackDeliveryChargePoisha: BigInt(order.delivery_charge_poisha),
+          },
+        );
+
+        return {
+          originalOrderId: order.id,
+          replacement,
+          creditPoisha: BigInt(returned.netItemsPoisha).toString(),
+          creditAppliedPoisha: replacement.advancePaidPoisha,
+        };
+      }),
+    );
+  }
+
+  // --- the pieces the flows are built from --------------------------------------
+
+  /** The order, locked, or a 404-shaped refusal that reveals nothing. */
+  private async readInScope(
+    tx: Tx,
+    context: ActiveContext,
+    request: object,
+    id: string,
+  ): Promise<repo.OrderRow> {
+    const order = await repo.lockOrderInScope(
+      tx,
+      context.orgId,
+      id,
+      orderScopeSql(context, request),
+    );
+    if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
+    return order;
+  }
+
+  /**
+   * The `create` scope check (D-061).
+   *
+   * `scopeWhere` cannot help: there is no row to filter yet. So the caller's filter is
+   * evaluated against the row about to be written, which is what stops a branch manager
+   * entering an order for a branch they do not hold. `assertInScope` is the shared
+   * helper for exactly this and it also marks the scope applied, which
+   * `ScopeInterceptor` refuses a response without.
+   */
+  private assertCreatable(
+    request: object,
+    context: ActiveContext,
+    branchId: string | null,
+    assignedTo: string | null,
+  ): void {
+    assertInScope(request, { createdBy: context.userId, assignedTo, branchId });
+  }
+
+  private async resolveBuyer(
+    tx: Tx,
+    context: ActiveContext,
+    input: CreateOrderInput,
+  ): Promise<{ id: string; name: string; phoneE164: string }> {
+    if (input.customerId !== undefined) {
+      const row = await this.customers.require(tx, context.orgId, input.customerId);
+      return { id: row.id, name: row.name, phoneE164: row.phone_e164 };
+    }
+
+    if (input.customer === undefined) {
+      throw new OrdersError(
+        'CUSTOMER_NOT_FOUND',
+        'An order needs a buyer: name an existing customer or supply one.',
+      );
+    }
+    const upserted = await this.customers.upsert(tx, context, input.customer);
+    return { id: upserted.id, name: upserted.name, phoneE164: upserted.phoneE164 };
+  }
+
+  /**
+   * The address snapshot the parcel is labelled with.
+   *
+   * A snapshot, not a reference: a buyer who moves house must not retroactively change
+   * where an already-shipped parcel was sent, and a courier dispute six weeks later is
+   * argued from what was printed. `sales.orders` therefore carries the address columns
+   * and `sales.customer_addresses` is only where the form gets its default.
+   */
+  private async resolveShipTo(
+    tx: Tx,
+    context: ActiveContext,
+    input: CreateOrderInput,
+    buyer: { id: string; name: string; phoneE164: string },
+    options: CreateOrderOptions,
+  ): Promise<ShipTo> {
+    if (input.shipTo !== undefined) {
+      return {
+        name: input.shipTo.name ?? buyer.name,
+        phoneE164: normalizeBdPhone(buyer.phoneE164),
+        districtId: input.shipTo.districtId,
+        thanaId: input.shipTo.thanaId,
+        area: input.shipTo.area ?? null,
+        addressLine: input.shipTo.addressLine,
+      };
+    }
+
+    const addresses = await repo.listAddresses(tx, context.orgId, buyer.id);
+    const preferred = addresses.find((address) => address.is_default) ?? addresses[0];
+    if (preferred !== undefined) {
+      return {
+        name: buyer.name,
+        phoneE164: normalizeBdPhone(buyer.phoneE164),
+        districtId: preferred.district_id,
+        thanaId: preferred.thana_id,
+        area: preferred.area,
+        addressLine: preferred.address_line,
+      };
+    }
+    if (options.fallbackShipTo !== undefined) return options.fallbackShipTo;
+
+    throw new OrdersError(
+      'VALIDATION_FAILED',
+      'This order has no delivery address: send one, or save a default address for the buyer.',
+    );
+  }
+
+  private async resolveZone(
+    tx: Tx,
+    context: ActiveContext,
+    input: CreateOrderInput,
+    shipTo: ShipTo,
+    options: CreateOrderOptions,
+  ): Promise<{ id: string; chargePoisha: bigint; defaultCourierId: string | null } | undefined> {
+    if (input.deliveryZoneId !== undefined) {
+      const named = await repo.zoneById(tx, context.orgId, input.deliveryZoneId);
+      if (named === undefined) {
+        throw new OrdersError('DELIVERY_ZONE_NOT_FOUND', 'No such delivery zone in this brand.');
+      }
+      return {
+        id: named.id,
+        chargePoisha: BigInt(named.charge_poisha),
+        defaultCourierId: named.default_courier_id,
+      };
+    }
+
+    /*
+     * The zone the address falls in (D-009's seeded mapping), or none.
+     *
+     * A missing mapping is not an error here. §9 lets an org set a charge per order, and
+     * an org that has not finished mapping its districts still has to be able to take
+     * an order — refusing would make an incomplete reference table into an outage. The
+     * charge then comes from the body, or from the order being exchanged, or is zero,
+     * and `GET /v1/delivery-zones/for-area` is where a desk finds out there is no zone.
+     */
+    const found = await repo.zoneForArea(tx, context.orgId, shipTo.districtId, shipTo.thanaId);
+    if (found !== undefined) {
+      return {
+        id: found.id,
+        chargePoisha: BigInt(found.charge_poisha),
+        defaultCourierId: found.default_courier_id,
+      };
+    }
+    if (options.fallbackDeliveryZoneId != null) {
+      const inherited = await repo.zoneById(tx, context.orgId, options.fallbackDeliveryZoneId);
+      if (inherited !== undefined) {
+        return {
+          id: inherited.id,
+          chargePoisha: BigInt(inherited.charge_poisha),
+          defaultCourierId: inherited.default_courier_id,
+        };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Price the lines from the catalog, and never from the body alone.
+   *
+   * `unitPricePoisha` in the body is honoured because an agent negotiating on a phone
+   * call is the ordinary case in this business (see `createOrderLineSchema`). What is
+   * *not* taken from the body is the SKU's code or its product name: those are
+   * snapshotted from the catalog so the invoice cannot be made to describe a different
+   * item than the one that will be picked.
+   */
+  private async priceLines(
+    tx: Tx,
+    context: ActiveContext,
+    input: readonly {
+      skuId: string;
+      qty: number;
+      unitPricePoisha?: string;
+      discountPoisha?: string;
+    }[],
+  ): Promise<PricedLine[]> {
+    const ids = input.map((line) => line.skuId);
+    if (new Set(ids).size !== ids.length) {
+      // `order_lines_org_order_sku_idx` would refuse the second row with a message about
+      // an index; saying it here names the fix instead.
+      throw new OrdersError(
+        'ORDER_LINES_INVALID',
+        'A SKU appears twice on this order; combine them into one line.',
+      );
+    }
+
+    const skus = await this.catalog.skusByIds(tx, context.orgId, ids);
+    const bySku = new Map<string, CatalogSku>(skus.map((sku) => [sku.id, sku]));
+
+    return input.map((line) => {
+      const sku = bySku.get(line.skuId);
+      if (sku === undefined) {
+        throw new OrdersError('ORDER_LINES_INVALID', 'One of those SKUs is not in this brand.');
+      }
+      if (sku.status === 'archived') {
+        throw new OrdersError(
+          'ORDER_LINES_INVALID',
+          `${sku.code} is archived and cannot be sold; choose the replacement SKU.`,
+        );
+      }
+      return {
+        skuId: sku.id,
+        skuCode: sku.code,
+        productName: sku.productName,
+        qty: line.qty,
+        unitPricePoisha:
+          line.unitPricePoisha === undefined ? sku.pricePoisha : BigInt(line.unitPricePoisha),
+        discountPoisha: line.discountPoisha === undefined ? 0n : BigInt(line.discountPoisha),
+      };
+    });
+  }
+
+  /**
+   * The next order number, from the counter's atomic upsert (§9).
+   *
+   * The Asia/Dhaka business date decides the period (invariant 8): an order confirmed at
+   * half past midnight in Dhaka is that day's order, and reading UTC would file it in
+   * the previous month — where the ledger period may already be closed.
+   */
+  private async nextOrderNo(tx: Tx, context: ActiveContext, at: Date): Promise<string> {
+    const period = orderPeriodFor(businessDate(at));
+    const [slug, configured] = await Promise.all([
+      repo.orgSlug(tx, context.orgId),
+      repo.orderNumberPrefix(tx, context.orgId),
+    ]);
+    const sequence = await repo.nextOrderNumber(tx, context.orgId, period);
+    return formatOrderNo({ prefix: orderPrefixFor({ slug, configured }), period, sequence });
+  }
+
+  /**
+   * Where an order ships from: the caller's location if it is one goods leave by.
+   *
+   * §8 has four kinds of location and only `warehouse` and `showroom` are places an order
+   * goes out from. `damaged` and `in_transit` are refused here rather than at the schema,
+   * because the schema cannot know which ids are which — and an order that could dispatch
+   * off the damaged shelf is a way to sell written-off stock without the approval the
+   * write-off needs. `defaultFulfilmentLocation` already filters by kind, so this is only
+   * about an id a caller named.
+   */
+  private async fulfilmentLocation(
+    tx: Tx,
+    context: ActiveContext,
+    order: repo.OrderRow,
+    named?: string,
+  ): Promise<string> {
+    const candidate = named ?? order.location_id;
+    if (candidate === null || candidate === undefined) {
+      // No id anywhere: the org's first active warehouse, which
+      // `defaultFulfilmentLocation` already filters by kind.
+      return this.transitions.locationFor(tx, context, order);
+    }
+    await this.assertShippableLocation(tx, context, candidate);
+    return candidate;
+  }
+
+  /** The kind check on its own, for a caller that has an id and no order yet. */
+  private async assertShippableLocation(
+    tx: Tx,
+    context: ActiveContext,
+    locationId: string,
+  ): Promise<void> {
+    const place = await repo.locationKind(tx, context.orgId, locationId);
+    if (place === undefined) {
+      throw new OrdersError('STOCK_LOCATION_INVALID', 'No such active location in this brand.');
+    }
+    if (place.kind !== 'warehouse' && place.kind !== 'showroom') {
+      throw new OrdersError(
+        'STOCK_LOCATION_INVALID',
+        'An order ships from a warehouse or a showroom, not from that location.',
+      );
+    }
+  }
+
+  /**
+   * The instant an event is posted on, refused if §7 would need an approval for it.
+   *
+   * Every endpoint that accepts an `occurredAt` — deliver, partial delivery, receive
+   * return, exchange, advance — posts a journal dated from it, and §7 allows only today
+   * and yesterday without a `back_dated_entry` approval. There is no approval type wired
+   * into this module, so the honest answer is to refuse rather than to post quietly: an
+   * order marked delivered with last month's date lands revenue in a period that may be
+   * closed, and one dated next year lands it where no close can reach.
+   *
+   * M12's courier settlements are the case that will need the approval route (D-037); when
+   * they arrive, this is the check they replace with one.
+   */
+  private postingInstant(named: Date | undefined): Date {
+    const at = named ?? new Date();
+    if (Number.isNaN(at.getTime())) {
+      throw new OrdersError('VALIDATION_FAILED', 'That is not a usable timestamp.');
+    }
+    if (!withinPostingWindow(at)) {
+      throw new OrdersError(
+        'APPROVAL_REQUIRED',
+        'An order event can only be dated today or yesterday; anything else needs a back-dated entry approval (§7).',
+      );
+    }
+    return at;
+  }
+
+  private async defaultLocation(
+    tx: Tx,
+    context: ActiveContext,
+    branchId: string | null,
+  ): Promise<string> {
+    const found = await repo.defaultFulfilmentLocation(tx, context.orgId, branchId);
+    if (found === undefined) {
+      throw new OrdersError(
+        'STOCK_LOCATION_INVALID',
+        'This brand has no warehouse to fulfil from; create one first.',
+      );
+    }
+    return found.id;
+  }
+}
+
+// --- small helpers ------------------------------------------------------------
+
+function bigintMax(left: bigint, right: bigint): bigint {
+  return left > right ? left : right;
+}
+
+/** Whether an edit actually changed the lines, so a reservation is left alone if not. */
+function sameLines(existing: readonly repo.OrderLineRow[], next: readonly PricedLine[]): boolean {
+  if (existing.length !== next.length) return false;
+  const before = new Map(
+    existing.map((line) => [
+      line.sku_id,
+      `${String(line.qty)}:${String(line.unit_price_poisha)}:${String(line.discount_poisha)}`,
+    ]),
+  );
+  return next.every(
+    (line) =>
+      before.get(line.skuId) ===
+      `${String(line.qty)}:${line.unitPricePoisha.toString()}:${line.discountPoisha.toString()}`,
+  );
+}

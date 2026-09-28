@@ -60,6 +60,25 @@ export function addDays(date: IsoDate, days: number): IsoDate {
   return next.toISOString().slice(0, 10) as IsoDate;
 }
 
+/**
+ * Whether an event may be posted on its own date without an approval (§7).
+ *
+ * §7: "anything earlier than yesterday needs approval", and §6 lists back-dated entries
+ * under maker-checker. Both halves matter and the second is the one that gets forgotten:
+ * there is no upper bound in the sentence, and a delivery dated next year posts revenue
+ * into a period no month-end close can ever reach — the figure simply sits in the future
+ * and then appears, unexplained, when the calendar catches up.
+ *
+ * Compared as Asia/Dhaka calendar dates (invariant 8) and lexicographically, which for
+ * `YYYY-MM-DD` is chronological. A caller outside the window either routes the entry
+ * through `back_dated_entry` or refuses it; this function only answers which it is.
+ */
+export function withinPostingWindow(at: Date, now: Date = new Date()): boolean {
+  const today = businessDate(now);
+  const event = businessDate(at);
+  return event <= today && event >= addDays(today, -1);
+}
+
 /** A monthly accounting period (§7: periods close monthly). */
 export interface Period {
   /** `YYYY-MM`. */

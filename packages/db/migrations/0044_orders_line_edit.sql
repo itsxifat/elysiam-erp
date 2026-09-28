@@ -1,0 +1,26 @@
+-- Let the application remove an order line it has not shipped (M10; architecture §9, §24).
+--
+-- 0040 granted `erp_app` select, insert and update on `sales.order_lines` and no delete.
+-- 0041 then wrote a trigger whose `TG_OP = 'DELETE'` branch permits the delete while the
+-- order is `pending`, `confirmed` or `on_hold` and refuses it afterwards. Only one of
+-- those two can be right, and the trigger is: §24's order desk edits a pending order,
+-- and removing a mis-keyed line is the commonest edit there is. Without the grant that
+-- branch is unreachable code and an agent who typed the wrong SKU can never take it off
+-- — `order_lines_qty_positive` forbids zeroing it, and the unique index on
+-- `(org_id, order_id, sku_id)` forbids replacing it with the right one.
+--
+-- So the grant is added and the *bound* stays where it already is. Three things keep it
+-- narrow, and none of them is this file:
+--
+-- * 0041's trigger refuses a delete once the order is packed or beyond, for every role
+--   including the table's owner. A dispatched parcel's lines are what its revenue
+--   journal, its dispatch movements and the invoice in the box were computed from.
+-- * 0040's FORCEd RLS policy confines the delete to the caller's own org.
+-- * `OrdersService.edit` releases the reservation before rewriting the lines and
+--   reserves the new set afterwards, so stock cannot be left held for a line that no
+--   longer exists.
+--
+-- Nothing is granted on `sales.orders`, `sales.order_events` or anything else: an order
+-- is still never deleted, and its history is still append-only.
+
+grant delete on "sales"."order_lines" to "erp_app";
