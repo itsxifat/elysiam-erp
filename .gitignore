@@ -46,3 +46,8 @@ pnpm-debug.log*
 
 # benchmark output
 bench-results/
+
+# Throwaway drizzle-kit probes that check a hand-written migration against its schema.
+# Never generate into packages/db/migrations itself: restoring that folder afterwards once
+# silently reverted a snapshot-chain repair another session had just made.
+packages/db/.drift-probe-*/
