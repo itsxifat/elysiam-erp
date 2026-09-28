@@ -153,6 +153,21 @@ export const COST_FIELDS = [
   'supply_line_price_poisha',
   'supplierBalancePoisha',
   'supplier_balance_poisha',
+  /**
+   * The cost a unit left stock at, carried on the order line so a return or an
+   * exchange can put it back at the price it went out at rather than at today's
+   * weighted average (M10). It is purchase cost by another name, so it is
+   * withheld exactly like `unitCostPoisha` — an order desk that could read it
+   * could derive the margin on every line it sells.
+   */
+  'dispatchUnitCostPoisha',
+  'dispatch_unit_cost_poisha',
+  /**
+   * The cost a returned supply line was originally received at (M09). Same
+   * reasoning: it is the supplier's price, reachable from a returns screen.
+   */
+  'originalUnitCostPoisha',
+  'original_unit_cost_poisha',
 ] as const;
 
 /**

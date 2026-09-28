@@ -1456,10 +1456,12 @@ describe('GET /v1/approvals pages, filters and bounds (§23)', () => {
 
   it('filters by type', async () => {
     const { client } = await asRole('accounts');
-    const { id } = await requestApproval(client, 'settlement_posting', '4200');
+    // Any type serves this test; `closing_variance` is chosen because it is not in
+    // MODULE_RAISED_TYPES, and the generic route refuses to raise one that is.
+    const { id } = await requestApproval(client, 'closing_variance', '4200');
 
     const same = pageRows<{ id: string }>(
-      (await client.request('GET', '/v1/approvals?type=settlement_posting')).body,
+      (await client.request('GET', '/v1/approvals?type=closing_variance')).body,
     ).map((row) => row.id);
     const other = pageRows<{ id: string }>(
       (await client.request('GET', '/v1/approvals?type=supplier_payment')).body,

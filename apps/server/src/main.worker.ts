@@ -1,7 +1,14 @@
 import 'reflect-metadata';
 
+import { NestFactory } from '@nestjs/core';
 import { currentDatabaseConfig } from '@elysium/db';
 import type { Logger } from 'pino';
+
+import { BookingService } from './modules/courier/booking.service.js';
+import { CourierModule } from './modules/courier/courier.module.js';
+import { COURIER_QUEUE_DEFINITIONS } from './modules/courier/courier.queues.js';
+import { registerCourierJobs } from './modules/courier/courier.worker.js';
+import { CourierSyncService } from './modules/courier/sync.service.js';
 
 import { OutboxDispatcher } from './platform/events/dispatcher.js';
 import { serverEnv } from './platform/config/env.js';
@@ -82,6 +89,22 @@ async function bootstrap(): Promise<void> {
   });
   bridgeOutboxToRealtime(dispatcher, realtime, logger);
 
+  /*
+   * The modules whose jobs this process runs, and nothing else (architecture §21).
+   *
+   * An application *context*, not an HTTP application: the worker serves no requests, so
+   * it needs no adapter, no pipeline and no Better Auth instance — and building
+   * `AppModule` here would demand all three. `CourierModule` pulls in what it actually
+   * depends on (orders, ledger, wallets, inventory, approvals) through its own imports,
+   * which is the same graph the API builds and therefore the same behaviour: a booking
+   * job moves an order through the identical `TransitionsService`.
+   *
+   * Every future module with queue handlers is added to this list, beside its queue
+   * definitions below.
+   */
+  const context = await NestFactory.createApplicationContext(CourierModule, { logger: false });
+  const moduleQueues = [...COURIER_QUEUE_DEFINITIONS];
+
   const jobs = await JobsRuntime.start({
     role: 'worker',
     connectionString: ownerUrl,
@@ -89,19 +112,39 @@ async function bootstrap(): Promise<void> {
     // `DATABASE_URL` rather than hard-coded, so D-042's role names live in one
     // place.
     appRole: roleFrom(database.DATABASE_URL),
-    queues: PLATFORM_QUEUES,
+    queues: [...PLATFORM_QUEUES, ...moduleQueues],
+    logger,
+  });
+
+  const report = reportJobFailedThroughOutbox(logger);
+
+  /*
+   * The courier's handlers are registered **before** the dead-letter sweep below, and the
+   * order is load-bearing.
+   *
+   * `registerCourierJobs` puts a handler of its own on `delivery.book_parcel.dead` — M12
+   * check 6 wants the *order* flagged and `delivery.booking_failed` raised, which the
+   * generic `job.failed` does not do. `workDeadLetters` is a no-op for a queue that is
+   * already watched, so registering the courier first means one watcher; registering it
+   * afterwards would mean two watchers on one queue, each claiming some of the jobs, and
+   * half of a brand's failed bookings would never flag their order.
+   */
+  await registerCourierJobs({
+    jobs,
+    booking: context.get(BookingService),
+    sync: context.get(CourierSyncService),
+    report,
     logger,
   });
 
   // Every registered queue gets its dead-letter watcher, whether or not this
   // release also registered a handler for the queue itself. A queue with a
   // handler in the API tier and none here would otherwise dead-letter silently.
-  const report = reportJobFailedThroughOutbox(logger);
-  for (const definition of PLATFORM_QUEUES) {
+  for (const definition of [...PLATFORM_QUEUES, ...moduleQueues]) {
     await jobs.workDeadLetters(definition.name, report);
   }
 
-  logger.info({ queues: PLATFORM_QUEUES.length }, 'jobs runtime started');
+  logger.info({ queues: PLATFORM_QUEUES.length + moduleQueues.length }, 'jobs runtime started');
 
   const stopping = new AbortController();
   const dispatching = runDispatchLoop(dispatcher, logger, stopping.signal);
@@ -126,6 +169,8 @@ async function bootstrap(): Promise<void> {
   // connections, and its row would fail for a shutdown rather than a fault.
   await realtime.close();
   await jobs.stop();
+  // Last, because a handler that is still finishing holds services out of this context.
+  await context.close();
 }
 
 /**

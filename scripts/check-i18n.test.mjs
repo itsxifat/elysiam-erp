@@ -133,6 +133,34 @@ describe('check-i18n', () => {
     expect(result.output).toContain('1 dynamic reference');
   });
 
+  /*
+   * A key built out of a status — `t(`a.status.${row.status}`)` — used to be read
+   * as a literal key named `a.status.${row.status}`, which no catalogue can have,
+   * so a whole surface of them failed the gate for no reason. The useful check is
+   * on the text around the hole, because the call sites cast to the key type and
+   * a misspelt prefix is therefore invisible to the compiler too.
+   */
+  it('resolves an interpolated key against the family it names', () => {
+    const result = fixtureWith({
+      en: catalogue([['a.status.open', 'Open']]),
+      bn: catalogue([['a.status.open', 'চালু']]),
+      source: 'export const label = (row) => t(`a.status.${row.status}`);\n',
+    });
+    expect(result.output).toContain('1 interpolated famil');
+    expect(result.code).toBe(0);
+  });
+
+  it('fails when an interpolated key names a family the catalogue has none of', () => {
+    const result = fixtureWith({
+      en: catalogue([['a.status.open', 'Open']]),
+      bn: catalogue([['a.status.open', 'চালু']]),
+      source: 'export const label = (row) => t(`a.statsu.${row.status}`);\n',
+    });
+    expect(result.code).toBe(1);
+    expect(result.output).toContain('no key matches "a.statsu.${row.status}"');
+    expect(result.output).toContain('screen.ts:1');
+  });
+
   it('passes on this repository, which is the gate pnpm verify runs', () => {
     const result = run('--quiet');
     expect(result.output).toBe('');

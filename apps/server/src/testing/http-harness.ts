@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { base32 } from '@better-auth/utils/base32';
 import { fastifyCookie } from '@fastify/cookie';
+import { Module, type DynamicModule, type Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { MembershipRole } from '@elysium/contracts';
@@ -27,6 +28,7 @@ import { registerAuth } from '../platform/http/auth-plugin.js';
 import { CSRF_COOKIE, CSRF_HEADER } from '../platform/http/csrf.js';
 import { applyGlobalPipeline } from '../platform/http/pipeline.js';
 import { MemoryRateLimiter } from '../platform/http/rate-limit.js';
+import { setServerTestEnvWithDatabase, TEST_AUTH_SECRET } from './test-env.js';
 
 /**
  * The shared HTTP test harness (M02b: "test utilities: `asRole(role, org)`").
@@ -156,26 +158,47 @@ export interface HttpHarness {
   close(): Promise<void>;
 }
 
+/** The root the harness builds when a suite brings its own module. */
+@Module({})
+class HarnessRoot {}
+
 let active: HttpHarness | undefined;
 
 /**
  * Boot the application for one test file. Call in `beforeAll`, and `close()`
  * in `afterAll`.
  */
-export async function startHttpHarness(name: string): Promise<HttpHarness> {
+export interface HarnessOptions {
+  /**
+   * Modules mounted beside `AppModule`, for a module this session has not yet
+   * registered in `app.module.ts`.
+   *
+   * Milestones are built in parallel and `app.module.ts` is one file: an agent
+   * that adds its own import line there silently discards whatever another agent
+   * wrote to the same file. So a module under construction hands itself to the
+   * harness instead, and the integrator adds the one line at the end.
+   *
+   * Nest instantiates each module once per application, so a module passed here
+   * shares the `ApprovalsModule`, `LedgerModule` and `FilesModule` instances that
+   * `AppModule` already built rather than getting copies of them — which is what
+   * makes an executor registered by one visible to the other.
+   */
+  readonly extraModules?: readonly (DynamicModule | Type<unknown>)[];
+}
+
+export async function startHttpHarness(
+  name: string,
+  options: HarnessOptions = {},
+): Promise<HttpHarness> {
   const database = await startTestDatabase(name);
 
   // Before the app is built: `serverEnv()` parses once and caches.
-  process.env.DATABASE_URL = database.appUrl;
-  process.env.APP_DOMAIN = APP_DOMAIN;
-  process.env.API_PUBLIC_URL = ORIGIN;
-  process.env.AUTH_SECRET = 'test-secret-that-is-at-least-32-characters-long';
-  process.env.TRUSTED_ORIGINS = ORIGIN;
+  setServerTestEnvWithDatabase(database.appUrl, ORIGIN, APP_DOMAIN);
 
   const tokens = new PasswordTokenStore();
   const auth = createAuth({
     baseUrl: ORIGIN,
-    secret: process.env.AUTH_SECRET,
+    secret: TEST_AUTH_SECRET,
     trustedOrigins: [ORIGIN],
     cookieDomain: `.${APP_DOMAIN}`,
     sms: new RecordingSmsProvider(),
@@ -187,8 +210,13 @@ export async function startHttpHarness(name: string): Promise<HttpHarness> {
     },
   });
 
+  const root: DynamicModule = {
+    module: HarnessRoot,
+    imports: [AppModule.register({ auth: auth.auth, tokens }), ...(options.extraModules ?? [])],
+  };
+
   const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule.register({ auth: auth.auth, tokens }),
+    root,
     // `trustProxy` so `x-forwarded-for` decides `request.ip` per client.
     new FastifyAdapter({ trustProxy: true }),
     { logger: false },

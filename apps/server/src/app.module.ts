@@ -2,11 +2,19 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import type { Auth } from '@elysium/db';
 
 import { ApprovalsModule } from './modules/approvals/approvals.module.js';
+import { CatalogModule } from './modules/catalog/catalog.module.js';
+import { CourierModule } from './modules/courier/courier.module.js';
 import { DemoModule } from './modules/demo/demo.module.js';
 import { FilesModule } from './modules/files/files.module.js';
+import { FraudModule } from './modules/fraud/fraud.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { HrModule } from './modules/hr/hr.module.js';
 import { IamModule } from './modules/iam/iam.module.js';
+import { InventoryModule } from './modules/inventory/inventory.module.js';
+import { InvestorsModule } from './modules/investors/investors.module.js';
 import { LedgerModule } from './modules/ledger/ledger.module.js';
+import { OrdersModule } from './modules/orders/orders.module.js';
+import { WalletsModule } from './modules/wallets/wallets.module.js';
 import { JobsModule } from './platform/jobs/jobs.module.js';
 import type { PasswordTokenStore } from './modules/iam/iam.service.js';
 
@@ -49,6 +57,20 @@ export class AppModule {
         JobsModule,
         FilesModule,
         LedgerModule,
+        CatalogModule,
+        InventoryModule,
+        WalletsModule,
+        InvestorsModule,
+        HrModule,
+        OrdersModule,
+        FraudModule,
+        /*
+         * After `OrdersModule`, and that is not cosmetic: M12 imports it for `ORDERS_API`
+         * and binds its own `ORDERS_PORT`, `WALLETS_PORT` and `LEDGER_READ_PORT` inside
+         * `courier.module.ts` — a binding here would not reach the services that inject
+         * them, because Nest resolves a provider in the module that declares the injection.
+         */
+        CourierModule,
         ...(withDemo ? [DemoModule] : []),
       ],
     };

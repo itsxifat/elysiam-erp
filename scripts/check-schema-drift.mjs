@@ -47,10 +47,12 @@ function main() {
 
   /** @type {string[]} */
   let generated;
+  /** @type {string | undefined} */
+  let output;
   try {
     // `shell: true` because the Windows binstub is a .cmd, which execFileSync
     // cannot launch directly.
-    execFileSync('drizzle-kit', ['generate', '--name=__drift_check'], {
+    output = execFileSync('drizzle-kit', ['generate', '--name=__drift_check'], {
       cwd: DB_PACKAGE,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -60,6 +62,21 @@ function main() {
         PATH: `${path.join(DB_PACKAGE, 'node_modules/.bin')}${path.delimiter}${process.env.PATH ?? ''}`,
       },
     });
+
+    // drizzle-kit exits 0 even when it refuses to run.
+    //
+    // A corrupt snapshot chain — two snapshots sharing an id, which is what a
+    // hand-copied snapshot file produces — makes it print
+    // "Error: ... is a collision" and stop, without generating and without a
+    // non-zero status. This check then saw no new files and reported PASS, so
+    // the gate sat green from migration 0018 to 0060 while comparing nothing at
+    // all. Trusting the exit code alone is what made that invisible, so the
+    // output is inspected too.
+    if (output !== undefined && /^\s*Error:/m.test(output)) {
+      console.error('check-schema-drift: FAIL — drizzle-kit refused to run');
+      console.error(output);
+      return 1;
+    }
 
     generated = migrationFiles().filter((name) => !before.includes(name));
   } catch (error) {

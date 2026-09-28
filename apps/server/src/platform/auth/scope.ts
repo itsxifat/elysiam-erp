@@ -144,6 +144,26 @@ export function scopeOf(request: object): ScopeFilter {
 }
 
 /**
+ * Declare that this subject has no row dimension, so `own` and `branch` cannot filter it.
+ *
+ * The backstop below exists because a handler that forgets to apply scope silently serves
+ * every row in the org. But a few subjects genuinely have no rows to scope: `FraudSignal`
+ * is a per-phone aggregate computed across all five brands (§10), keyed by an HMAC and
+ * owned by nobody — there is no `created_by` to compare a reseller against and no
+ * `branch_id` to compare a branch manager against. Without this the interceptor fired and
+ * §6's own grant to those two roles answered 500.
+ *
+ * It takes a reason string because the only safe version of this escape hatch is one that
+ * cannot be used without saying why, and one a reviewer can grep for. It is **not** for a
+ * handler that has rows and has not got round to filtering them: that is the case the
+ * backstop is for.
+ */
+export function scopeHasNoRowDimension(request: object, why: string): void {
+  void why;
+  stateOf(request).applied = true;
+}
+
+/**
  * The backstop fired. Its own class so the audit interceptor can tell it from
  * any other 500: for a mutation it fires *after* the handler committed, so the
  * write happened, and it must still leave an audit row saying so.

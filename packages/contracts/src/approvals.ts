@@ -23,6 +23,15 @@ export const APPROVAL_TYPES = [
   'period_reopen',
   /** A relaxed approval threshold, raised by one org admin and approved by another (D-073). */
   'threshold_change',
+  /**
+   * §6's maker-checker list has always named "investor withdrawals and
+   * distributions"; M25 is where the two types exist. Both are money leaving
+   * the company to an owner, so both are in `SERVER_DERIVED_AMOUNT_TYPES` below
+   * — which, because the investors module raises them with the amount a person
+   * typed, means no threshold can ever exempt them.
+   */
+  'investor_distribution',
+  'investor_withdrawal',
 ] as const;
 
 export const approvalTypeSchema = z.enum(APPROVAL_TYPES);
@@ -71,6 +80,17 @@ export const SERVER_DERIVED_AMOUNT_TYPES: readonly ApprovalType[] = [
   'closing_variance',
   'payroll_run',
   'reseller_payout_batch',
+  /*
+   * M25. D-019 makes a distribution's amount a **manual declaration** — a person
+   * types it — and a withdrawal's amount is what an investor asked for. Neither
+   * is a number the system derived, so neither may ever be measured against a
+   * threshold: an org admin who set `investor_withdrawal` to a crore would have
+   * auto-approved every payment out of investor capital. The investors module
+   * raises both without `amountDerivedByServer`, so both always wait for a
+   * checker, whatever the thresholds say.
+   */
+  'investor_distribution',
+  'investor_withdrawal',
 ];
 
 /**

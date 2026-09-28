@@ -144,15 +144,29 @@ export type ApprovalExecutor = (
  * no executor registered is refused rather than recorded as done: a period
  * reopen that says "approved" while the period stays closed is worse than an
  * error (M03).
+ *
+ * `settlement_posting` is here for the same reason and a sharper version of it (M12): the
+ * courier module's executor is the only thing that posts a settlement's two journals, so a
+ * deployment that served `POST /v1/approvals/:id/decide` without `CourierModule` loaded would
+ * record the decision as `approved` with the books unmoved — and `canDecide` requires `pending`,
+ * so the request could never be decided again. A settlement whose COD is already in the bank
+ * would be unpostable, permanently.
  */
-const EXECUTOR_REQUIRED_TYPES: readonly ApprovalType[] = ['period_reopen'];
+const EXECUTOR_REQUIRED_TYPES: readonly ApprovalType[] = ['period_reopen', 'settlement_posting'];
 
 /**
  * Types only their owning module may raise, because the module writes the
  * payload the executor acts on: `period_reopen` through
  * `POST /v1/ledger/periods/reopen` (D-081).
+ *
+ * `settlement_posting` is here for the hazard D-081 names: the courier module's executor reads
+ * `payload.settlementId` and posts whatever it names, so a requester who could write that
+ * payload by hand through the generic route could aim an approval at a batch nobody reconciled.
+ * Two other layers already refuse it — `SettlementsService.executePosting` checks that the batch
+ * names *this* approval, and migration 0052 checks `payload->>'settlementId'` against the row —
+ * so this entry is belt-and-braces rather than the defence itself.
  */
-export const MODULE_RAISED_TYPES: readonly ApprovalType[] = ['period_reopen'];
+export const MODULE_RAISED_TYPES: readonly ApprovalType[] = ['period_reopen', 'settlement_posting'];
 
 function magnitude(amount: bigint): bigint {
   return amount < 0n ? -amount : amount;

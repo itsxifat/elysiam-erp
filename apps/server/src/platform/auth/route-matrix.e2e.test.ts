@@ -11,6 +11,35 @@ import {
   type HttpHarness,
   type RoleClient,
 } from '../../testing/http-harness.js';
+import {
+  CATALOG_ROUTE_FIXTURES,
+  prepareCatalogFixtures,
+} from '../../modules/catalog/catalog.route-fixtures.js';
+import {
+  INVENTORY_ROUTE_FIXTURES,
+  prepareInventoryFixtures,
+} from '../../modules/inventory/inventory.route-fixtures.js';
+import {
+  WALLETS_ROUTE_FIXTURES,
+  prepareWalletsFixtures,
+} from '../../modules/wallets/wallets.route-fixtures.js';
+import {
+  ORDERS_ROUTE_FIXTURES,
+  prepareOrderFixtures,
+} from '../../modules/orders/orders.route-fixtures.js';
+import {
+  FRAUD_ROUTE_FIXTURES,
+  prepareFraudFixtures,
+} from '../../modules/fraud/fraud.route-fixtures.js';
+import {
+  INVESTORS_ROUTE_FIXTURES,
+  prepareInvestorFixtures,
+} from '../../modules/investors/investors.route-fixtures.js';
+import {
+  COURIER_ROUTE_FIXTURES,
+  prepareCourierFixtures,
+} from '../../modules/courier/courier.route-fixtures.js';
+import { HR_ROUTE_FIXTURES, prepareHrFixtures } from '../../modules/hr/hr.route-fixtures.js';
 import { describeRoutes, type RouteDeclaration } from './route-map.js';
 import { ROUTE_MATRIX_MANIFEST, routeKey } from './route-matrix.manifest.js';
 
@@ -33,6 +62,18 @@ const clients = new Map<MembershipRole, RoleClient>();
 
 beforeAll(async () => {
   harness = await startHttpHarness('route-matrix');
+
+  // Each module seeds the rows its own fixtures point at. They run after the
+  // harness has migrated and seeded, and each one is idempotent, so the order
+  // here does not matter and a second call is free.
+  await prepareCatalogFixtures();
+  await prepareInventoryFixtures();
+  await prepareWalletsFixtures();
+  await prepareOrderFixtures();
+  await prepareFraudFixtures();
+  await prepareInvestorFixtures();
+  await prepareHrFixtures();
+  await prepareCourierFixtures();
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 }, 300_000);
 
@@ -187,6 +228,16 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
       role: 'sales',
     },
   }),
+  // Each module owns its own fixtures: this file is shared by every milestone,
+  // and a second write to it silently discards the first.
+  ...CATALOG_ROUTE_FIXTURES,
+  ...INVENTORY_ROUTE_FIXTURES,
+  ...WALLETS_ROUTE_FIXTURES,
+  ...ORDERS_ROUTE_FIXTURES,
+  ...FRAUD_ROUTE_FIXTURES,
+  ...INVESTORS_ROUTE_FIXTURES,
+  ...HR_ROUTE_FIXTURES,
+  ...COURIER_ROUTE_FIXTURES,
 };
 
 function testedRoutes(): RouteDeclaration[] {

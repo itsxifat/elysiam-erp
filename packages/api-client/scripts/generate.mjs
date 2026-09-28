@@ -58,6 +58,12 @@ const ENV = {
   AUTH_SECRET: 'api-client-generation-secret-at-least-32-chars',
   TRUSTED_ORIGINS: 'http://localhost:5173',
   DATABASE_URL: 'postgres://erp_app:x@127.0.0.1:5432/unused',
+  // Modules that refuse to construct without a key, deliberately — a fallback would be
+  // worse than a crash in both cases (D-108 for the phone hash, §25 for the courier
+  // credentials). Generation still needs the app to *build*, so it gets throwaway values
+  // that never touch a database or a network.
+  FRAUD_PHONE_HASH_KEY: 'api-client-generation-fraud-hash-key-32-chars',
+  COURIER_CREDENTIALS_KEY: 'YXBpLWNsaWVudC1nZW5lcmF0aW9uLWtleS0zMmJ5dGVzIQ==',
 };
 
 // pnpm keeps each package's dependencies under its own node_modules, so

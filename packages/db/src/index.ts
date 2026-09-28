@@ -47,6 +47,15 @@ export * as schema from './schema/index.js';
 
 export { SEED_ORGS, SEED_ORG_IDS, seedOrgId, deterministicUuid } from './seed/orgs.js';
 export { ensureBranchWallets, seedAccountId } from './seed/ledger.js';
+/**
+ * M10's zones and own-rider courier (§9, D-009).
+ *
+ * Exported because a test harness may be pointed at a database whose migration journal was
+ * integrated before these rows existed, and calling the seed's own function is better than
+ * a suite inventing zones of its own — a fixture that seeded a different charge would make
+ * every COD in that suite disagree with production's.
+ */
+export { seedDeliveryZones, type DeliveryZoneSeedResult } from './seed/delivery-zones.js';
 export { branchCashCode, COA_TEMPLATE, type TemplateAccount } from './seed/coa-template.js';
 
 export {

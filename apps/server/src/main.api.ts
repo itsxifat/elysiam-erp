@@ -12,12 +12,50 @@ import { applyGlobalPipeline } from './platform/http/pipeline.js';
 import { PasswordTokenStore } from './modules/iam/iam.service.js';
 import { serverEnv } from './platform/config/env.js';
 import { createLogger } from './platform/logging/logger.js';
+import type { Logger } from 'pino';
+import { pathToFileURL } from 'node:url';
 import { registerAuth } from './platform/http/auth-plugin.js';
 import { CSRF_HEADER } from './platform/http/csrf.js';
 import { IDEMPOTENCY_HEADER } from './platform/http/idempotency.js';
 import { isTrustedOrigin, withBrandOrigins } from './platform/http/origins.js';
 import { ValkeyRateLimiter } from './platform/http/rate-limit.valkey.js';
 import { createRealtimeGateway } from './platform/realtime/index.js';
+
+/**
+ * The Fastify adapter, exactly as the running API builds it.
+ *
+ * Extracted so a test can construct it. Nothing else in this file is reachable from a
+ * test: every suite builds the application through `startHttpHarness`, which makes its
+ * own adapter, so `main.api.ts` is only ever executed by `main.api.js` in a real process
+ * — and a boot-time throw here is therefore invisible to the whole suite. One did ship:
+ * Fastify 5 split `logger` (options only) from `loggerInstance` (a built logger), and
+ * passing pino to `logger` threw `FST_ERR_LOG_INVALID_LOGGER_CONFIG` before the first
+ * request, with 1,500 tests green.
+ */
+export function createApiAdapter(trustedProxyCount: number, logger: Logger): FastifyAdapter {
+  return new FastifyAdapter({
+    // `trustProxy` is what makes `request.ip` the client rather than the proxy,
+    // and the per-IP rate limit is only meaningful if it is right (§25).
+    //
+    // Cast: Fastify passes this straight to `proxy-addr`, which accepts a hop
+    // count, but the published type only lists the boolean/string/function
+    // forms. 0 becomes `false` — trust the socket, no proxy.
+    trustProxy: trustedProxyCount === 0 ? false : (trustedProxyCount as unknown as boolean),
+    /*
+     * The logger Fastify hands to `request.log` (§26).
+     *
+     * Without it Fastify defaults to `logger: false`, and `request.log.error` is a no-op
+     * that writes nowhere. The audit interceptor's failure path says "it must be loud,
+     * though: a silently missing audit trail is the worst of both worlds" and was, in
+     * fact, completely silent — verified. Handing pino to the adapter is what makes that
+     * sentence true, and it also puts request logging on the same redaction rules as
+     * everything else rather than on Fastify's defaults.
+     *
+     * `loggerInstance`, not `logger`, for the Fastify 5 reason above.
+     */
+    loggerInstance: logger,
+  });
+}
 
 async function bootstrap(): Promise<void> {
   const env = serverEnv();
@@ -65,22 +103,7 @@ async function bootstrap(): Promise<void> {
     // Cast: Fastify passes this straight to `proxy-addr`, which accepts a hop
     // count, but the published type only lists the boolean/string/function
     // forms. 0 becomes `false` — trust the socket, no proxy.
-    new FastifyAdapter({
-      trustProxy:
-        env.TRUSTED_PROXY_COUNT === 0 ? false : (env.TRUSTED_PROXY_COUNT as unknown as boolean),
-      /*
-       * The logger Fastify hands to `request.log` (§26).
-       *
-       * Without it Fastify defaults to `logger: false`, and `request.log.error`
-       * is a no-op that writes nowhere. The audit interceptor's failure path
-       * says "it must be loud, though: a silently missing audit trail is the
-       * worst of both worlds" and was, in fact, completely silent — verified.
-       * Handing pino to the adapter is what makes that sentence true, and it
-       * also puts request logging on the same redaction rules as everything
-       * else rather than on Fastify's defaults.
-       */
-      logger,
-    }),
+    createApiAdapter(env.TRUSTED_PROXY_COUNT, logger),
     {
       // Nest's own bootstrap chatter would bypass pino's redaction.
       logger: false,
@@ -228,9 +251,20 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-bootstrap().catch((error: unknown) => {
-  // The logger needs valid config, and the most likely failure here is invalid
-  // config, so this one path writes to stderr directly.
-  process.stderr.write(`api failed to start: ${String(error)}\n`);
-  process.exit(1);
-});
+/*
+ * Boot only when this file *is* the process.
+ *
+ * Without the guard, importing this module for `createApiAdapter` starts a real server —
+ * and on missing configuration takes `process.exit(1)` with it, which ends the test runner
+ * rather than the test. A composition root that runs on import is one no test can reach,
+ * which is how the Fastify 5 `loggerInstance` change shipped unnoticed.
+ */
+const entrypoint = process.argv[1];
+if (entrypoint !== undefined && pathToFileURL(entrypoint).href === import.meta.url) {
+  bootstrap().catch((error: unknown) => {
+    // The logger needs valid config, and the most likely failure here is invalid
+    // config, so this one path writes to stderr directly.
+    process.stderr.write(`api failed to start: ${String(error)}\n`);
+    process.exit(1);
+  });
+}

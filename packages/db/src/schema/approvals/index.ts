@@ -47,6 +47,11 @@ export const approvalType = approvals.enum('approval_type', [
   'period_reopen',
   // D-073: relaxing a threshold is itself maker-checker.
   'threshold_change',
+  // M25, §6's "investor withdrawals and distributions". Added to the type by
+  // migration 0058; a new enum value cannot be used as a literal in the
+  // transaction that adds it, so nothing in that file mentions either by name.
+  'investor_distribution',
+  'investor_withdrawal',
 ]);
 
 /**

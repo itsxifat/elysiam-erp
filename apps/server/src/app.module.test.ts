@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from './app.module.js';
 import { PasswordTokenStore } from './modules/iam/iam.service.js';
 import { describeRoutes } from './platform/auth/route-map.js';
+import { setServerTestEnv } from './testing/test-env.js';
 
 /**
  * What the composition root mounts, and what it deliberately does not (§3).
@@ -35,11 +36,7 @@ const auth = { api: {} } as unknown as Auth;
  * construction time, which is the thing to fix rather than the value.
  */
 beforeAll(() => {
-  process.env.DATABASE_URL ??= 'postgres://erp_app:x@127.0.0.1:5432/unused';
-  process.env.APP_DOMAIN ??= 'localhost';
-  process.env.API_PUBLIC_URL ??= 'http://127.0.0.1:3000';
-  process.env.AUTH_SECRET ??= 'app-module-test-secret-at-least-32-chars';
-  process.env.TRUSTED_ORIGINS ??= 'http://localhost:5173';
+  setServerTestEnv({ origin: 'http://127.0.0.1:3000' });
 });
 
 async function routesOf(demo?: boolean): Promise<string[]> {

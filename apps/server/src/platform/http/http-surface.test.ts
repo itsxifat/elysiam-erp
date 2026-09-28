@@ -28,6 +28,7 @@ import { PasswordTokenStore } from '../../modules/iam/iam.service.js';
 import { registerAuth } from './auth-plugin.js';
 import { CSRF_COOKIE, CSRF_HEADER } from './csrf.js';
 import { MemoryRateLimiter } from './rate-limit.js';
+import { setServerTestEnvWithDatabase, TEST_AUTH_SECRET } from '../../testing/test-env.js';
 
 /**
  * The HTTP surface (architecture §6, §25 — M02a checks 2, 4 and 6).
@@ -66,15 +67,11 @@ beforeAll(async () => {
 
   // Before the app is built: `serverEnv()` parses once and caches, and the
   // controller reads APP_DOMAIN off it.
-  process.env.DATABASE_URL = database.appUrl;
-  process.env.APP_DOMAIN = APP_DOMAIN;
-  process.env.API_PUBLIC_URL = ORIGIN;
-  process.env.AUTH_SECRET = 'test-secret-that-is-at-least-32-characters-long';
-  process.env.TRUSTED_ORIGINS = ORIGIN;
+  setServerTestEnvWithDatabase(database.appUrl, ORIGIN, APP_DOMAIN);
 
   authHandle = createAuth({
     baseUrl: ORIGIN,
-    secret: process.env.AUTH_SECRET,
+    secret: TEST_AUTH_SECRET,
     trustedOrigins: [ORIGIN],
     cookieDomain: `.${APP_DOMAIN}`,
     sms: new RecordingSmsProvider(),

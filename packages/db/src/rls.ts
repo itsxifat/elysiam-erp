@@ -150,7 +150,24 @@ export function globalTableSql(
  * Bangladesh geography. Nothing in `iam` is here — identity is not analytics
  * data, and the credential tables least of all.
  */
-export const ANALYTICS_READABLE: readonly string[] = ['org.organizations'];
+export const ANALYTICS_READABLE: readonly string[] = [
+  'org.organizations',
+  /*
+   * §5 exception 3, added by M08: the Super Admin consolidated wallet total and
+   * consolidated P&L. Balances are derived, so the three tables the derivation
+   * needs are opened and nothing else — `accounts` for the subtype and class,
+   * `journal_lines` for the amounts, `journals` for the business date.
+   *
+   * SELECT only, through the `erp_analytics` pool, which holds no write
+   * privilege on anything. That is the point of routing the consolidated read
+   * through a role rather than looping `withOrg()` per org: cross-org code that
+   * tries to write gets a permission error instead of a code review (migration
+   * 0030).
+   */
+  'ledger.accounts',
+  'ledger.journals',
+  'ledger.journal_lines',
+];
 
 /**
  * Tables `erp_app` must never be able to UPDATE or DELETE.
@@ -167,6 +184,70 @@ export const APPEND_ONLY_TABLES: readonly string[] = [
   // Invariant 2: journals never change after posting (M03).
   'ledger.journals',
   'ledger.journal_lines',
+  /*
+   * M08. A transfer between two wallets is a record of money that moved, and
+   * the journal behind it cannot change (invariant 2). A transfer row that
+   * could be edited afterwards would let the paperwork and the ledger describe
+   * different events, with no way to tell which is right. Correcting one means
+   * reversing its journal and posting a new transfer.
+   */
+  'wallets.transfers',
+  /*
+   * M07's inventory log (invariant 3). `stock_movements` is the record of how
+   * every unit got where it is, and every level, valuation and reconciliation is
+   * derived from it — so a movement that could be edited would correct all three
+   * at once and report itself as healthy. The line tables beside it are the
+   * evidence for what was written off and what went in the van; the
+   * reconciliation log has to keep "no drift found" distinguishable from "the job
+   * stopped running", which only a row nobody can delete does.
+   */
+  'inventory.stock_movements',
+  'inventory.adjustment_lines',
+  'inventory.stock_transfer_lines',
+  'inventory.reconciliations',
+  /*
+   * M10's order history (§9). `order_events` is the order's own record of how it reached
+   * the status it is in, and it is what a courier dispute, a return-rate argument and
+   * §10's trust score are all read back from. Migration 0041 refuses an UPDATE or a
+   * DELETE with a trigger as well, so `erp_owner` is held to the same rule as `erp_app` —
+   * the grants alone would have exempted the role that owns the table.
+   */
+  'sales.order_events',
+  /*
+   * M13. An override is the record that somebody with the authority decided to sell
+   * to a buyer the system refused (check 5), and `order_phones` is what the outbox
+   * subscriber trusts when it moves a counter four other brands can see — rewriting
+   * either would redirect one person's history onto another's number, with no way
+   * afterwards to tell which was right. Migration 0047 has the triggers as well, so
+   * `erp_owner` is held to the same rule as `erp_app`.
+   */
+  'fraud.overrides',
+  'fraud.order_phones',
+  /*
+   * M25's investor money (§15). A contribution exists because capital arrived and a
+   * journal recorded it, and a distribution line is one investor's share of a total
+   * a checker approved — neither can be corrected in place, because the journal
+   * behind it cannot (invariant 2). The line is the one worth naming: editing an
+   * amount after the fact would break the equality the split rests on, with nothing
+   * left to notice it. Migration 0060 refuses the DELETE with a trigger too, so
+   * `erp_owner` is held to the same rule as `erp_app`.
+   */
+  'investors.investments',
+  'investors.distribution_lines',
+  /*
+   * M19's payslips (§12). A payroll line and its component rows are the numbers a
+   * checker approved and the numbers §7's journal was built from — the same rows, not a
+   * copy — so editing one afterwards would leave the approval, the payslip in the
+   * employee's hand and the ledger describing one month three different ways, with a
+   * balanced journal and nothing to notice. `payroll_loan_deductions` is the join that
+   * says which instalment a payslip paid, and it is what a reversal would have to read.
+   * The fix for a wrong run is a reversing journal and a new run. Migration 0055 refuses
+   * the UPDATE and the DELETE with a trigger as well, so `erp_owner` is held to the same
+   * rule as `erp_app`.
+   */
+  'hr.payroll_lines',
+  'hr.payroll_line_components',
+  'hr.payroll_loan_deductions',
 ];
 
 /**
@@ -180,6 +261,19 @@ export const NO_DELETE_TABLES: readonly string[] = [
   'ledger.accounts',
   'ledger.periods',
   /*
+   * M10's orders and buyers (§9). 0040 grants UPDATE and no DELETE and says so in its
+   * header comment — but the guard only checks the tables it is given, so until they were
+   * listed here a later `grant delete on sales.orders` would have shipped green. An order
+   * is the thing a journal, a dispatch movement and a courier consignment all point at:
+   * deleting one leaves three schemas referring to a row that never existed. `order_lines`
+   * is deliberately **absent** — 0044 grants DELETE for a pre-dispatch edit, bounded by
+   * 0041's trigger.
+   */
+  'sales.orders',
+  'sales.customers',
+  'sales.customer_addresses',
+  'sales.order_counters',
+  /*
    * The outbox is append-then-mark (§19). The dispatcher needs UPDATE to stamp
    * `dispatched_at`, bump `attempts` and record `last_error`; it must never be
    * able to remove a row. Deleting on dispatch would make "did this event ever
@@ -187,6 +281,88 @@ export const NO_DELETE_TABLES: readonly string[] = [
    * has gone wrong.
    */
   'events.outbox',
+  /*
+   * M08's wallets. A wallet is deactivated, never deleted: deleting one would
+   * orphan every entry, transfer and closing that names it, and a wallet that
+   * once held money is part of the record. Cash entries and closings need
+   * UPDATE for exactly one transition — waiting for a checker, then posted or
+   * rejected, which migration 0029's trigger confines them to — and DELETE
+   * would make "what did we spend last Tuesday" answerable differently on two
+   * different days.
+   */
+  'wallets.wallets',
+  'wallets.cash_entries',
+  'wallets.closings',
+  /*
+   * M07's inventory. A level is a cache every movement refreshes, so it needs
+   * UPDATE; deleting one would lose its reorder level and make the SKU vanish
+   * from availability while its movements still exist. The other four each have
+   * exactly one legitimate transition, which migration 0033's triggers confine
+   * them to — and a released reservation, a cancelled count and a rejected
+   * write-off are all things somebody looks up precisely because they did not
+   * happen.
+   */
+  'inventory.stock_levels',
+  'inventory.sku_costs',
+  'inventory.reservations',
+  'inventory.count_sessions',
+  'inventory.count_lines',
+  'inventory.adjustments',
+  'inventory.stock_transfers',
+  /*
+   * M13's fraud configuration and manual flags. `rules` needs UPDATE because bands
+   * are edited; DELETE would silently reset a brand's fraud policy to D-011's
+   * defaults, which is exactly the change that should be a visible edit. A flag is
+   * *cleared*, never removed (0047 confines the UPDATE to the three cleared
+   * columns): it is part of why a buyer was refused for a fortnight.
+   *
+   * The two cross-org tables are listed here too, although they carry no `org_id`.
+   * This list is about a *grant*, not about tenancy, and they are the tables where
+   * the absent DELETE matters most: a counter is what five brands know about one
+   * phone number, and making it go away is the single thing a fraudster would want.
+   * A stale provider row is overwritten by the next lookup, never removed.
+   */
+  'fraud.rules',
+  'fraud.phone_flags',
+  'fraud.phone_signals',
+  'fraud.provider_checks',
+  /*
+   * M25. An investor who ever put money in is part of the record: deleting one would
+   * orphan every contribution, share and withdrawal naming them, and `own` scope
+   * resolves through that row. A distribution and a withdrawal each need UPDATE for
+   * exactly one path — waiting, then declared or rejected; requested → reviewed →
+   * approved → paid — which 0060's triggers confine them to. A document's bytes have
+   * their own lifecycle in `files.objects`, and a dangling document row is how a
+   * signed URL outlives its paperwork.
+   */
+  'investors.investors',
+  'investors.distributions',
+  'investors.withdrawals',
+  'investors.documents',
+  /*
+   * M19's people (§12). Nothing about a person is deleted here, and each of these is a
+   * different reason why.
+   *
+   * An employee resigns rather than disappearing: their payslips, loans and attendance all
+   * name them, and `own` scope resolves through that row. An attendance day is *corrected*
+   * by an UPDATE that records itself as manual (migration 0055), because a DELETE would make
+   * "we removed the absence" possible and the audit log the only evidence it ever existed —
+   * and an absence costs somebody money. A salary structure is superseded by a new one with a
+   * later effective date, never edited away, so May's payslip keeps saying what it said after
+   * June's raise. A loan and its instalments are the terms somebody signed; a payroll run and
+   * an attendance import each need UPDATE for exactly one path, which 0055's triggers confine
+   * them to, and a cancelled run and a rejected import are both things somebody looks up
+   * precisely because they did not happen. A working-day calendar is what a past month's
+   * proration was measured against.
+   */
+  'hr.employees',
+  'hr.attendance_days',
+  'hr.attendance_imports',
+  'hr.salary_structures',
+  'hr.employee_loans',
+  'hr.loan_instalments',
+  'hr.payroll_runs',
+  'hr.work_calendars',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */
@@ -218,6 +394,29 @@ export const GLOBAL_TABLES: readonly string[] = [
   'iam.accounts',
   'iam.verifications',
   'iam.two_factors',
+
+  /*
+   * M13's cross-org fraud signals (§5 exception 1, D-032).
+   *
+   * The only tables in the system that one org *writes* and another reads. A buyer
+   * who refuses an Oura parcel and then orders from Orvo is one person doing one
+   * thing, and five brands each discovering it separately is five brands each
+   * paying for it. So the counts are shared, keyed by `HMAC-SHA256(secret, e164)`.
+   *
+   * What makes the exception narrow is the column list in migration 0045, not a
+   * policy. Neither table has anywhere to hold an order number, a customer name, an
+   * address, an amount, a brand or a user id — so an org reading them learns "this
+   * number has eleven completed orders and four came back" and cannot learn whose.
+   * A policy can be widened by a migration nobody reads closely; a column that does
+   * not exist cannot leak. The reason text behind a manual flag, and the reason
+   * behind an override, stay in `fraud.phone_flags` and `fraud.overrides`, which
+   * are ordinary tenant tables with FORCE RLS.
+   *
+   * Neither is analytics-readable. A fraud score is not analytics data, and a
+   * read-only role is still a role that can read (D-049).
+   */
+  'fraud.phone_signals',
+  'fraud.provider_checks',
 ];
 
 /**

@@ -16,6 +16,10 @@ export * from './money/index.js';
 export * from './dates/index.js';
 export * from './ledger/index.js';
 export * from './posting/index.js';
+export * from './catalog/index.js';
+export * from './inventory/index.js';
+export * from './investors/index.js';
+export * from './orders/index.js';
 
 export {
   canDecide,
@@ -32,3 +36,4 @@ export {
   REDACTED,
   REDACTED_FIELD_PATTERNS,
 } from './audit/index.js';
+export * from './payroll/index.js';

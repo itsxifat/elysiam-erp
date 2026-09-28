@@ -71,6 +71,10 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
     'reseller_payout_batch',
     // D-073: a relaxed threshold needs a second org admin.
     'threshold_change',
+    // M25: owners' money. Both are in SERVER_DERIVED_AMOUNT_TYPES, so no threshold
+    // can auto-approve one however small it is.
+    'investor_distribution',
+    'investor_withdrawal',
   ],
   // §6: payments.
   /*
@@ -86,7 +90,15 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
    * shortfall at any amount; and a caller holding `branch_manager` *and*
    * `accounts` came out uncapped on the one type where the branch is the till.
    */
-  accounts: ['supplier_payment', 'settlement_posting', 'reseller_payout_batch'],
+  accounts: [
+    'supplier_payment',
+    'settlement_posting',
+    'reseller_payout_batch',
+    // Money leaving to an owner is still a payment, which is the whole of §6's cell.
+    // A *distribution* is not: declaring profit is an equity decision, not a payment,
+    // so it stays with org_admin.
+    'investor_withdrawal',
+  ],
   // §6: payroll.
   hr: ['payroll_run', 'bonus_rule'],
   // §6: branch items. Stock and till, not money leaving the company.
@@ -145,6 +157,8 @@ export const REQUESTER_TYPES: Readonly<Record<MembershipRole, readonly string[]>
     'bonus_rule',
     'reseller_payout_batch',
     'period_reopen',
+    'investor_distribution',
+    'investor_withdrawal',
   ],
   accounts: [
     'wallet_adjustment',
@@ -155,6 +169,8 @@ export const REQUESTER_TYPES: Readonly<Record<MembershipRole, readonly string[]>
     'payroll_run',
     'reseller_payout_batch',
     'period_reopen',
+    'investor_distribution',
+    'investor_withdrawal',
   ],
   hr: ['payroll_run', 'bonus_rule'],
   branch_manager: ['stock_write_off', 'stock_gain', 'closing_variance', 'wallet_adjustment'],

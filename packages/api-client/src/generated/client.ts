@@ -43,14 +43,267 @@ export const OPERATIONS = {
     path: '/v1/approvals/{id}/decide',
     ability: 'approve:ApprovalRequest',
   },
+  deleteV1CatalogProductsByIdImagesByImageId: {
+    method: 'DELETE',
+    path: '/v1/catalog/products/{id}/images/{imageId}',
+    ability: 'update:Catalog',
+  },
+  deleteV1HrPayrollRunsByIdInputsByInputId: {
+    method: 'DELETE',
+    path: '/v1/hr/payroll/runs/{id}/inputs/{inputId}',
+    ability: 'create:Payroll',
+  },
   getApproval: { method: 'GET', path: '/v1/approvals/{id}', ability: 'read:ApprovalRequest' },
+  getV1AccountsCashEntries: {
+    method: 'GET',
+    path: '/v1/accounts/cash-entries',
+    ability: 'read:Wallet',
+  },
+  getV1AccountsCategories: {
+    method: 'GET',
+    path: '/v1/accounts/categories',
+    ability: 'read:Wallet',
+  },
+  getV1AccountsClosings: { method: 'GET', path: '/v1/accounts/closings', ability: 'read:Wallet' },
+  getV1AccountsReportsAging: {
+    method: 'GET',
+    path: '/v1/accounts/reports/aging',
+    ability: 'read:LedgerReport',
+  },
+  getV1AccountsReportsBalanceSheet: {
+    method: 'GET',
+    path: '/v1/accounts/reports/balance-sheet',
+    ability: 'read:LedgerReport',
+  },
+  getV1AccountsReportsConsolidatedProfitAndLoss: {
+    method: 'GET',
+    path: '/v1/accounts/reports/consolidated-profit-and-loss',
+    ability: 'read:LedgerReport',
+  },
+  getV1AccountsReportsConsolidatedWallets: {
+    method: 'GET',
+    path: '/v1/accounts/reports/consolidated-wallets',
+    ability: 'read:LedgerReport',
+  },
+  getV1AccountsReportsProfitAndLoss: {
+    method: 'GET',
+    path: '/v1/accounts/reports/profit-and-loss',
+    ability: 'read:LedgerReport',
+  },
+  getV1AccountsWallets: { method: 'GET', path: '/v1/accounts/wallets', ability: 'read:Wallet' },
+  getV1CatalogAttributes: {
+    method: 'GET',
+    path: '/v1/catalog/attributes',
+    ability: 'read:Catalog',
+  },
+  getV1CatalogCategories: {
+    method: 'GET',
+    path: '/v1/catalog/categories',
+    ability: 'read:Catalog',
+  },
+  getV1CatalogProducts: { method: 'GET', path: '/v1/catalog/products', ability: 'read:Catalog' },
+  getV1CatalogProductsById: {
+    method: 'GET',
+    path: '/v1/catalog/products/{id}',
+    ability: 'read:Catalog',
+  },
+  getV1CatalogSkus: { method: 'GET', path: '/v1/catalog/skus', ability: 'read:Catalog' },
+  getV1CatalogSkusByIdPriceHistory: {
+    method: 'GET',
+    path: '/v1/catalog/skus/{id}/price-history',
+    ability: 'read:Catalog',
+  },
+  getV1CourierAccounts: {
+    method: 'GET',
+    path: '/v1/courier/accounts',
+    ability: 'read:CourierSettlement',
+  },
+  getV1CourierParcelsById: {
+    method: 'GET',
+    path: '/v1/courier/parcels/{id}',
+    ability: 'read:Order',
+  },
+  getV1CourierParcelsByIdReturnable: {
+    method: 'GET',
+    path: '/v1/courier/parcels/{id}/returnable',
+    ability: 'read:Order',
+  },
+  getV1CourierReportsCodReconciliation: {
+    method: 'GET',
+    path: '/v1/courier/reports/cod-reconciliation',
+    ability: 'read:LedgerReport',
+  },
+  getV1CourierSettlements: {
+    method: 'GET',
+    path: '/v1/courier/settlements',
+    ability: 'read:CourierSettlement',
+  },
+  getV1CourierSettlementsById: {
+    method: 'GET',
+    path: '/v1/courier/settlements/{id}',
+    ability: 'read:CourierSettlement',
+  },
+  getV1CourierSettlementsByIdExceptions: {
+    method: 'GET',
+    path: '/v1/courier/settlements/{id}/exceptions',
+    ability: 'read:CourierSettlement',
+  },
+  getV1Customers: { method: 'GET', path: '/v1/customers', ability: 'read:Customer' },
+  getV1CustomersById: { method: 'GET', path: '/v1/customers/{id}', ability: 'read:Customer' },
+  getV1DeliveryZones: { method: 'GET', path: '/v1/delivery-zones', ability: 'read:Catalog' },
+  getV1DeliveryZonesForArea: {
+    method: 'GET',
+    path: '/v1/delivery-zones/for-area',
+    ability: 'read:Catalog',
+  },
   getV1FilesByIdDownload: {
     method: 'GET',
     path: '/v1/files/{id}/download',
     ability: 'read:FileObject',
   },
   getV1FilesContent: { method: 'GET', path: '/v1/files/content', ability: 'public' },
+  getV1FraudCheck: { method: 'GET', path: '/v1/fraud/check', ability: 'read:FraudSignal' },
+  getV1FraudOrdersByOrderIdOverrides: {
+    method: 'GET',
+    path: '/v1/fraud/orders/{orderId}/overrides',
+    ability: 'read:FraudSignal',
+  },
+  getV1FraudRules: { method: 'GET', path: '/v1/fraud/rules', ability: 'read:FraudSignal' },
+  getV1HrAttendance: { method: 'GET', path: '/v1/hr/attendance', ability: 'read:Employee' },
+  getV1HrAttendanceImports: {
+    method: 'GET',
+    path: '/v1/hr/attendance/imports',
+    ability: 'read:Payroll',
+  },
+  getV1HrCalendars: { method: 'GET', path: '/v1/hr/calendars', ability: 'read:Employee' },
+  getV1HrEmployees: { method: 'GET', path: '/v1/hr/employees', ability: 'read:Employee' },
+  getV1HrEmployeesById: { method: 'GET', path: '/v1/hr/employees/{id}', ability: 'read:Employee' },
+  getV1HrEmployeesByIdPayoutRef: {
+    method: 'GET',
+    path: '/v1/hr/employees/{id}/payout-ref',
+    ability: 'update:Payroll',
+  },
+  getV1HrEmployeesByIdSalary: {
+    method: 'GET',
+    path: '/v1/hr/employees/{id}/salary',
+    ability: 'read:Payroll',
+  },
+  getV1HrLoans: { method: 'GET', path: '/v1/hr/loans', ability: 'read:Payroll' },
+  getV1HrLoansById: { method: 'GET', path: '/v1/hr/loans/{id}', ability: 'read:Payroll' },
+  getV1HrPayrollRuns: { method: 'GET', path: '/v1/hr/payroll/runs', ability: 'read:Payroll' },
+  getV1HrPayrollRunsById: {
+    method: 'GET',
+    path: '/v1/hr/payroll/runs/{id}',
+    ability: 'read:Payroll',
+  },
+  getV1HrPayrollRunsByIdInputs: {
+    method: 'GET',
+    path: '/v1/hr/payroll/runs/{id}/inputs',
+    ability: 'read:Payroll',
+  },
+  getV1HrPayrollRunsByIdPayslips: {
+    method: 'GET',
+    path: '/v1/hr/payroll/runs/{id}/payslips',
+    ability: 'read:Payroll',
+  },
+  getV1HrPayrollRunsByIdPayslipsByEmployeeIdPdf: {
+    method: 'GET',
+    path: '/v1/hr/payroll/runs/{id}/payslips/{employeeId}/pdf',
+    ability: 'read:Employee',
+  },
+  getV1HrPayrollRunsByIdPreview: {
+    method: 'GET',
+    path: '/v1/hr/payroll/runs/{id}/preview',
+    ability: 'read:Payroll',
+  },
+  getV1InventoryAdjustments: {
+    method: 'GET',
+    path: '/v1/inventory/adjustments',
+    ability: 'read:StockAdjustment',
+  },
+  getV1InventoryCounts: { method: 'GET', path: '/v1/inventory/counts', ability: 'read:Stock' },
+  getV1InventoryCountsById: {
+    method: 'GET',
+    path: '/v1/inventory/counts/{id}',
+    ability: 'read:Stock',
+  },
+  getV1InventoryLocations: {
+    method: 'GET',
+    path: '/v1/inventory/locations',
+    ability: 'read:Stock',
+  },
+  getV1InventoryMovements: {
+    method: 'GET',
+    path: '/v1/inventory/movements',
+    ability: 'read:Stock',
+  },
+  getV1InventoryReconciliations: {
+    method: 'GET',
+    path: '/v1/inventory/reconciliations',
+    ability: 'read:StockAdjustment',
+  },
+  getV1InventoryStock: { method: 'GET', path: '/v1/inventory/stock', ability: 'read:Stock' },
+  getV1InventoryTransfers: {
+    method: 'GET',
+    path: '/v1/inventory/transfers',
+    ability: 'read:Stock',
+  },
+  getV1InventoryValuation: { method: 'GET', path: '/v1/inventory/valuation', ability: 'read:Cost' },
+  getV1Investors: { method: 'GET', path: '/v1/investors', ability: 'read:Investor' },
+  getV1InvestorsById: { method: 'GET', path: '/v1/investors/{id}', ability: 'read:Investor' },
+  getV1InvestorsByIdStatement: {
+    method: 'GET',
+    path: '/v1/investors/{id}/statement',
+    ability: 'read:Investor',
+  },
+  getV1InvestorsDistributions: {
+    method: 'GET',
+    path: '/v1/investors/distributions',
+    ability: 'read:Investor',
+  },
+  getV1InvestorsDistributionsById: {
+    method: 'GET',
+    path: '/v1/investors/distributions/{id}',
+    ability: 'read:Investor',
+  },
+  getV1InvestorsDocuments: {
+    method: 'GET',
+    path: '/v1/investors/documents',
+    ability: 'read:Investor',
+  },
+  getV1InvestorsDocumentsByIdDownload: {
+    method: 'GET',
+    path: '/v1/investors/documents/{id}/download',
+    ability: 'read:Investor',
+  },
+  getV1InvestorsInvestments: {
+    method: 'GET',
+    path: '/v1/investors/investments',
+    ability: 'read:Investor',
+  },
+  getV1InvestorsWalletAccounts: {
+    method: 'GET',
+    path: '/v1/investors/wallet-accounts',
+    ability: 'create:Investor',
+  },
+  getV1InvestorsWithdrawals: {
+    method: 'GET',
+    path: '/v1/investors/withdrawals',
+    ability: 'read:Investor',
+  },
   getV1JobsFailed: { method: 'GET', path: '/v1/jobs/failed', ability: 'read:AuditLog' },
+  getV1Orders: { method: 'GET', path: '/v1/orders', ability: 'read:Order' },
+  getV1OrdersAvailability: {
+    method: 'GET',
+    path: '/v1/orders/availability',
+    ability: 'read:Stock',
+  },
+  getV1OrdersById: { method: 'GET', path: '/v1/orders/{id}', ability: 'read:Order' },
+  getV1OrdersByIdDocument: {
+    method: 'GET',
+    path: '/v1/orders/{id}/document',
+    ability: 'read:Order',
+  },
   healthLive: { method: 'GET', path: '/health/live', ability: 'public' },
   listApprovals: { method: 'GET', path: '/v1/approvals', ability: 'read:ApprovalRequest' },
   listDemoCostedItems: { method: 'GET', path: '/v1/demo/costed-items', ability: 'read:CostedItem' },
@@ -61,13 +314,345 @@ export const OPERATIONS = {
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
   me: { method: 'GET', path: '/v1/me', ability: 'authenticated' },
   partyBalances: { method: 'GET', path: '/v1/ledger/party-balances', ability: 'read:LedgerReport' },
+  patchV1AccountsWalletsById: {
+    method: 'PATCH',
+    path: '/v1/accounts/wallets/{id}',
+    ability: 'update:Wallet',
+  },
+  patchV1CatalogCategoriesById: {
+    method: 'PATCH',
+    path: '/v1/catalog/categories/{id}',
+    ability: 'update:Catalog',
+  },
+  patchV1CatalogProductsById: {
+    method: 'PATCH',
+    path: '/v1/catalog/products/{id}',
+    ability: 'update:Catalog',
+  },
+  patchV1CustomersById: { method: 'PATCH', path: '/v1/customers/{id}', ability: 'update:Customer' },
+  patchV1HrEmployeesById: {
+    method: 'PATCH',
+    path: '/v1/hr/employees/{id}',
+    ability: 'update:Employee',
+  },
+  patchV1InventoryLocationsById: {
+    method: 'PATCH',
+    path: '/v1/inventory/locations/{id}',
+    ability: 'update:Catalog',
+  },
+  patchV1InvestorsById: { method: 'PATCH', path: '/v1/investors/{id}', ability: 'update:Investor' },
+  patchV1OrdersById: { method: 'PATCH', path: '/v1/orders/{id}', ability: 'update:Order' },
+  postV1AccountsCashEntries: {
+    method: 'POST',
+    path: '/v1/accounts/cash-entries',
+    ability: 'update:Wallet',
+  },
+  postV1AccountsClosings: {
+    method: 'POST',
+    path: '/v1/accounts/closings',
+    ability: 'update:Wallet',
+  },
+  postV1AccountsTransfers: {
+    method: 'POST',
+    path: '/v1/accounts/transfers',
+    ability: 'update:Wallet',
+  },
+  postV1AccountsWallets: { method: 'POST', path: '/v1/accounts/wallets', ability: 'create:Wallet' },
+  postV1CatalogAttributes: {
+    method: 'POST',
+    path: '/v1/catalog/attributes',
+    ability: 'create:Catalog',
+  },
+  postV1CatalogAttributesByIdValues: {
+    method: 'POST',
+    path: '/v1/catalog/attributes/{id}/values',
+    ability: 'create:Catalog',
+  },
+  postV1CatalogCategories: {
+    method: 'POST',
+    path: '/v1/catalog/categories',
+    ability: 'create:Catalog',
+  },
+  postV1CatalogImportsPrices: {
+    method: 'POST',
+    path: '/v1/catalog/imports/prices',
+    ability: 'update:Catalog',
+  },
+  postV1CatalogImportsPricesDryRun: {
+    method: 'POST',
+    path: '/v1/catalog/imports/prices/dry-run',
+    ability: 'read:Catalog',
+  },
+  postV1CatalogLabels: { method: 'POST', path: '/v1/catalog/labels', ability: 'read:Catalog' },
+  postV1CatalogProducts: {
+    method: 'POST',
+    path: '/v1/catalog/products',
+    ability: 'create:Catalog',
+  },
+  postV1CatalogProductsByIdImages: {
+    method: 'POST',
+    path: '/v1/catalog/products/{id}/images',
+    ability: 'update:Catalog',
+  },
+  postV1CatalogProductsByIdVariants: {
+    method: 'POST',
+    path: '/v1/catalog/products/{id}/variants',
+    ability: 'update:Catalog',
+  },
+  postV1CourierAccounts: {
+    method: 'POST',
+    path: '/v1/courier/accounts',
+    ability: 'update:CourierSettlement',
+  },
+  postV1CourierParcels: { method: 'POST', path: '/v1/courier/parcels', ability: 'update:Order' },
+  postV1CourierParcelsByIdHandover: {
+    method: 'POST',
+    path: '/v1/courier/parcels/{id}/handover',
+    ability: 'update:Order',
+  },
+  postV1CourierParcelsByIdReceiveReturn: {
+    method: 'POST',
+    path: '/v1/courier/parcels/{id}/receive-return',
+    ability: 'update:Order',
+  },
+  postV1CourierParcelsByIdStatus: {
+    method: 'POST',
+    path: '/v1/courier/parcels/{id}/status',
+    ability: 'update:Order',
+  },
+  postV1CourierSettlements: {
+    method: 'POST',
+    path: '/v1/courier/settlements',
+    ability: 'create:CourierSettlement',
+  },
+  postV1CourierSettlementsByIdApproval: {
+    method: 'POST',
+    path: '/v1/courier/settlements/{id}/approval',
+    ability: 'update:CourierSettlement',
+  },
+  postV1CourierSettlementsByIdReject: {
+    method: 'POST',
+    path: '/v1/courier/settlements/{id}/reject',
+    ability: 'update:CourierSettlement',
+  },
+  postV1CourierWebhooksByOrgIdByProvider: {
+    method: 'POST',
+    path: '/v1/courier/webhooks/{orgId}/{provider}',
+    ability: 'public',
+  },
+  postV1Customers: { method: 'POST', path: '/v1/customers', ability: 'create:Customer' },
   postV1Files: { method: 'POST', path: '/v1/files', ability: 'create:FileObject' },
   postV1FilesByIdFinalize: {
     method: 'POST',
     path: '/v1/files/{id}/finalize',
     ability: 'create:FileObject',
   },
+  postV1FraudFlags: { method: 'POST', path: '/v1/fraud/flags', ability: 'update:FraudOverride' },
+  postV1FraudFlagsByIdClear: {
+    method: 'POST',
+    path: '/v1/fraud/flags/{id}/clear',
+    ability: 'update:FraudOverride',
+  },
+  postV1HrAttendanceImports: {
+    method: 'POST',
+    path: '/v1/hr/attendance/imports',
+    ability: 'update:Employee',
+  },
+  postV1HrCalendars: { method: 'POST', path: '/v1/hr/calendars', ability: 'create:Payroll' },
+  postV1HrCalendarsByIdHolidays: {
+    method: 'POST',
+    path: '/v1/hr/calendars/{id}/holidays',
+    ability: 'create:Payroll',
+  },
+  postV1HrEmployees: { method: 'POST', path: '/v1/hr/employees', ability: 'create:Employee' },
+  postV1HrEmployeesByIdSalary: {
+    method: 'POST',
+    path: '/v1/hr/employees/{id}/salary',
+    ability: 'create:Payroll',
+  },
+  postV1HrLoans: { method: 'POST', path: '/v1/hr/loans', ability: 'create:Payroll' },
+  postV1HrLoansByIdDisburse: {
+    method: 'POST',
+    path: '/v1/hr/loans/{id}/disburse',
+    ability: 'update:Payroll',
+  },
+  postV1HrPayrollRuns: { method: 'POST', path: '/v1/hr/payroll/runs', ability: 'create:Payroll' },
+  postV1HrPayrollRunsByIdCancel: {
+    method: 'POST',
+    path: '/v1/hr/payroll/runs/{id}/cancel',
+    ability: 'create:Payroll',
+  },
+  postV1HrPayrollRunsByIdInputs: {
+    method: 'POST',
+    path: '/v1/hr/payroll/runs/{id}/inputs',
+    ability: 'create:Payroll',
+  },
+  postV1HrPayrollRunsByIdPay: {
+    method: 'POST',
+    path: '/v1/hr/payroll/runs/{id}/pay',
+    ability: 'update:Payroll',
+  },
+  postV1HrPayrollRunsByIdSubmit: {
+    method: 'POST',
+    path: '/v1/hr/payroll/runs/{id}/submit',
+    ability: 'create:Payroll',
+  },
+  postV1InventoryAdjustments: {
+    method: 'POST',
+    path: '/v1/inventory/adjustments',
+    ability: 'request:StockAdjustment',
+  },
+  postV1InventoryCounts: {
+    method: 'POST',
+    path: '/v1/inventory/counts',
+    ability: 'request:StockAdjustment',
+  },
+  postV1InventoryCountsByIdClose: {
+    method: 'POST',
+    path: '/v1/inventory/counts/{id}/close',
+    ability: 'request:StockAdjustment',
+  },
+  postV1InventoryCountsByIdSubmit: {
+    method: 'POST',
+    path: '/v1/inventory/counts/{id}/submit',
+    ability: 'request:StockAdjustment',
+  },
+  postV1InventoryLocations: {
+    method: 'POST',
+    path: '/v1/inventory/locations',
+    ability: 'create:Catalog',
+  },
+  postV1InventoryTransfers: {
+    method: 'POST',
+    path: '/v1/inventory/transfers',
+    ability: 'request:StockAdjustment',
+  },
+  postV1InventoryTransfersByIdReceive: {
+    method: 'POST',
+    path: '/v1/inventory/transfers/{id}/receive',
+    ability: 'request:StockAdjustment',
+  },
+  postV1Investors: { method: 'POST', path: '/v1/investors', ability: 'create:Investor' },
+  postV1InvestorsDistributions: {
+    method: 'POST',
+    path: '/v1/investors/distributions',
+    ability: 'create:Investor',
+  },
+  postV1InvestorsDistributionsByIdReject: {
+    method: 'POST',
+    path: '/v1/investors/distributions/{id}/reject',
+    ability: 'create:Investor',
+  },
+  postV1InvestorsDocuments: {
+    method: 'POST',
+    path: '/v1/investors/documents',
+    ability: 'create:Investor',
+  },
+  postV1InvestorsInvestments: {
+    method: 'POST',
+    path: '/v1/investors/investments',
+    ability: 'create:Investor',
+  },
+  postV1InvestorsWithdrawals: {
+    method: 'POST',
+    path: '/v1/investors/withdrawals',
+    ability: 'create:Investor',
+  },
+  postV1InvestorsWithdrawalsByIdPay: {
+    method: 'POST',
+    path: '/v1/investors/withdrawals/{id}/pay',
+    ability: 'update:Investor',
+  },
+  postV1InvestorsWithdrawalsByIdReject: {
+    method: 'POST',
+    path: '/v1/investors/withdrawals/{id}/reject',
+    ability: 'update:Investor',
+  },
+  postV1InvestorsWithdrawalsByIdReview: {
+    method: 'POST',
+    path: '/v1/investors/withdrawals/{id}/review',
+    ability: 'update:Investor',
+  },
+  postV1Orders: { method: 'POST', path: '/v1/orders', ability: 'create:Order' },
+  postV1OrdersByIdAdvance: {
+    method: 'POST',
+    path: '/v1/orders/{id}/advance',
+    ability: 'create:Wallet',
+  },
+  postV1OrdersByIdAssign: {
+    method: 'POST',
+    path: '/v1/orders/{id}/assign',
+    ability: 'update:Order',
+  },
+  postV1OrdersByIdCancel: {
+    method: 'POST',
+    path: '/v1/orders/{id}/cancel',
+    ability: 'update:Order',
+  },
+  postV1OrdersByIdClaim: { method: 'POST', path: '/v1/orders/{id}/claim', ability: 'update:Order' },
+  postV1OrdersByIdConfirm: {
+    method: 'POST',
+    path: '/v1/orders/{id}/confirm',
+    ability: 'update:Order',
+  },
+  postV1OrdersByIdDeliver: {
+    method: 'POST',
+    path: '/v1/orders/{id}/deliver',
+    ability: 'update:Order',
+  },
+  postV1OrdersByIdExchange: {
+    method: 'POST',
+    path: '/v1/orders/{id}/exchange',
+    ability: 'create:Order',
+  },
+  postV1OrdersByIdHold: { method: 'POST', path: '/v1/orders/{id}/hold', ability: 'update:Order' },
+  postV1OrdersByIdPack: { method: 'POST', path: '/v1/orders/{id}/pack', ability: 'update:Order' },
+  postV1OrdersByIdPartialDelivery: {
+    method: 'POST',
+    path: '/v1/orders/{id}/partial-delivery',
+    ability: 'update:Order',
+  },
+  postV1OrdersByIdReceiveReturn: {
+    method: 'POST',
+    path: '/v1/orders/{id}/receive-return',
+    ability: 'update:Order',
+  },
+  postV1OrdersByIdReleaseHold: {
+    method: 'POST',
+    path: '/v1/orders/{id}/release-hold',
+    ability: 'update:Order',
+  },
+  postV1OrdersByIdShip: { method: 'POST', path: '/v1/orders/{id}/ship', ability: 'update:Order' },
+  postV1OrdersByIdStartReturn: {
+    method: 'POST',
+    path: '/v1/orders/{id}/start-return',
+    ability: 'update:Order',
+  },
+  putV1CatalogPrices: { method: 'PUT', path: '/v1/catalog/prices', ability: 'update:Catalog' },
+  putV1CatalogProductsByIdImagesOrder: {
+    method: 'PUT',
+    path: '/v1/catalog/products/{id}/images/order',
+    ability: 'update:Catalog',
+  },
+  putV1CatalogSkusByIdBarcode: {
+    method: 'PUT',
+    path: '/v1/catalog/skus/{id}/barcode',
+    ability: 'update:Catalog',
+  },
+  putV1DeliveryZones: { method: 'PUT', path: '/v1/delivery-zones', ability: 'update:Catalog' },
   putV1FilesContent: { method: 'PUT', path: '/v1/files/content', ability: 'public' },
+  putV1FraudRules: { method: 'PUT', path: '/v1/fraud/rules', ability: 'update:FraudOverride' },
+  putV1HrAttendance: { method: 'PUT', path: '/v1/hr/attendance', ability: 'update:Employee' },
+  putV1InventoryCountsByIdLines: {
+    method: 'PUT',
+    path: '/v1/inventory/counts/{id}/lines',
+    ability: 'request:StockAdjustment',
+  },
+  putV1InventoryReorderLevels: {
+    method: 'PUT',
+    path: '/v1/inventory/reorder-levels',
+    ability: 'update:Catalog',
+  },
   reopenPeriod: {
     method: 'POST',
     path: '/v1/ledger/periods/reopen',
@@ -141,11 +726,123 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: ApprovalDecisionInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.decideApproval, input, options),
+    /** DELETE /v1/catalog/products/:id/images/:imageId */
+    deleteV1CatalogProductsByIdImagesByImageId: (
+      input: { readonly path: { readonly id: string; readonly imageId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1CatalogProductsByIdImagesByImageId, input, options),
+    /** DELETE /v1/hr/payroll/runs/:id/inputs/:inputId */
+    deleteV1HrPayrollRunsByIdInputsByInputId: (
+      input: { readonly path: { readonly id: string; readonly inputId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1HrPayrollRunsByIdInputsByInputId, input, options),
     /** One approval request, with its decision lineage. */
     getApproval: (
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getApproval, input, options),
+    /** GET /v1/accounts/cash-entries */
+    getV1AccountsCashEntries: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AccountsCashEntries, undefined, options),
+    /** GET /v1/accounts/categories */
+    getV1AccountsCategories: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AccountsCategories, undefined, options),
+    /** GET /v1/accounts/closings */
+    getV1AccountsClosings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AccountsClosings, undefined, options),
+    /** GET /v1/accounts/reports/aging */
+    getV1AccountsReportsAging: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AccountsReportsAging, undefined, options),
+    /** GET /v1/accounts/reports/balance-sheet */
+    getV1AccountsReportsBalanceSheet: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AccountsReportsBalanceSheet, undefined, options),
+    /** GET /v1/accounts/reports/consolidated-profit-and-loss */
+    getV1AccountsReportsConsolidatedProfitAndLoss: (options?: RequestOptions): Promise<unknown> =>
+      request(
+        runtime,
+        OPERATIONS.getV1AccountsReportsConsolidatedProfitAndLoss,
+        undefined,
+        options,
+      ),
+    /** GET /v1/accounts/reports/consolidated-wallets */
+    getV1AccountsReportsConsolidatedWallets: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AccountsReportsConsolidatedWallets, undefined, options),
+    /** GET /v1/accounts/reports/profit-and-loss */
+    getV1AccountsReportsProfitAndLoss: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AccountsReportsProfitAndLoss, undefined, options),
+    /** GET /v1/accounts/wallets */
+    getV1AccountsWallets: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AccountsWallets, undefined, options),
+    /** GET /v1/catalog/attributes */
+    getV1CatalogAttributes: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogAttributes, undefined, options),
+    /** GET /v1/catalog/categories */
+    getV1CatalogCategories: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogCategories, undefined, options),
+    /** GET /v1/catalog/products */
+    getV1CatalogProducts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogProducts, undefined, options),
+    /** GET /v1/catalog/products/:id */
+    getV1CatalogProductsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1CatalogProductsById, input, options),
+    /** GET /v1/catalog/skus */
+    getV1CatalogSkus: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogSkus, undefined, options),
+    /** GET /v1/catalog/skus/:id/price-history */
+    getV1CatalogSkusByIdPriceHistory: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogSkusByIdPriceHistory, input, options),
+    /** GET /v1/courier/accounts */
+    getV1CourierAccounts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierAccounts, undefined, options),
+    /** GET /v1/courier/parcels/:id */
+    getV1CourierParcelsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1CourierParcelsById, input, options),
+    /** GET /v1/courier/parcels/:id/returnable */
+    getV1CourierParcelsByIdReturnable: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierParcelsByIdReturnable, input, options),
+    /** GET /v1/courier/reports/cod-reconciliation */
+    getV1CourierReportsCodReconciliation: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierReportsCodReconciliation, undefined, options),
+    /** GET /v1/courier/settlements */
+    getV1CourierSettlements: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierSettlements, undefined, options),
+    /** GET /v1/courier/settlements/:id */
+    getV1CourierSettlementsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1CourierSettlementsById, input, options),
+    /** GET /v1/courier/settlements/:id/exceptions */
+    getV1CourierSettlementsByIdExceptions: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierSettlementsByIdExceptions, input, options),
+    /** GET /v1/customers */
+    getV1Customers: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1Customers, undefined, options),
+    /** GET /v1/customers/:id */
+    getV1CustomersById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1CustomersById, input, options),
+    /** GET /v1/delivery-zones */
+    getV1DeliveryZones: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1DeliveryZones, undefined, options),
+    /** GET /v1/delivery-zones/for-area */
+    getV1DeliveryZonesForArea: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1DeliveryZonesForArea, undefined, options),
     /** GET /v1/files/:id/download */
     getV1FilesByIdDownload: (
       input: { readonly path: { readonly id: string } },
@@ -154,9 +851,174 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/files/content */
     getV1FilesContent: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1FilesContent, undefined, options),
+    /** GET /v1/fraud/check */
+    getV1FraudCheck: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1FraudCheck, undefined, options),
+    /** GET /v1/fraud/orders/:orderId/overrides */
+    getV1FraudOrdersByOrderIdOverrides: (
+      input: { readonly path: { readonly orderId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1FraudOrdersByOrderIdOverrides, input, options),
+    /** GET /v1/fraud/rules */
+    getV1FraudRules: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1FraudRules, undefined, options),
+    /** GET /v1/hr/attendance */
+    getV1HrAttendance: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrAttendance, undefined, options),
+    /** GET /v1/hr/attendance/imports */
+    getV1HrAttendanceImports: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrAttendanceImports, undefined, options),
+    /** GET /v1/hr/calendars */
+    getV1HrCalendars: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrCalendars, undefined, options),
+    /** GET /v1/hr/employees */
+    getV1HrEmployees: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrEmployees, undefined, options),
+    /** GET /v1/hr/employees/:id */
+    getV1HrEmployeesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1HrEmployeesById, input, options),
+    /** GET /v1/hr/employees/:id/payout-ref */
+    getV1HrEmployeesByIdPayoutRef: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrEmployeesByIdPayoutRef, input, options),
+    /** GET /v1/hr/employees/:id/salary */
+    getV1HrEmployeesByIdSalary: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1HrEmployeesByIdSalary, input, options),
+    /** GET /v1/hr/loans */
+    getV1HrLoans: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrLoans, undefined, options),
+    /** GET /v1/hr/loans/:id */
+    getV1HrLoansById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1HrLoansById, input, options),
+    /** GET /v1/hr/payroll/runs */
+    getV1HrPayrollRuns: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrPayrollRuns, undefined, options),
+    /** GET /v1/hr/payroll/runs/:id */
+    getV1HrPayrollRunsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1HrPayrollRunsById, input, options),
+    /** GET /v1/hr/payroll/runs/:id/inputs */
+    getV1HrPayrollRunsByIdInputs: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrPayrollRunsByIdInputs, input, options),
+    /** GET /v1/hr/payroll/runs/:id/payslips */
+    getV1HrPayrollRunsByIdPayslips: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrPayrollRunsByIdPayslips, input, options),
+    /** GET /v1/hr/payroll/runs/:id/payslips/:employeeId/pdf */
+    getV1HrPayrollRunsByIdPayslipsByEmployeeIdPdf: (
+      input: { readonly path: { readonly employeeId: string; readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrPayrollRunsByIdPayslipsByEmployeeIdPdf, input, options),
+    /** GET /v1/hr/payroll/runs/:id/preview */
+    getV1HrPayrollRunsByIdPreview: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrPayrollRunsByIdPreview, input, options),
+    /** GET /v1/inventory/adjustments */
+    getV1InventoryAdjustments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryAdjustments, undefined, options),
+    /** GET /v1/inventory/counts */
+    getV1InventoryCounts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryCounts, undefined, options),
+    /** GET /v1/inventory/counts/:id */
+    getV1InventoryCountsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1InventoryCountsById, input, options),
+    /** GET /v1/inventory/locations */
+    getV1InventoryLocations: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryLocations, undefined, options),
+    /** GET /v1/inventory/movements */
+    getV1InventoryMovements: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryMovements, undefined, options),
+    /** GET /v1/inventory/reconciliations */
+    getV1InventoryReconciliations: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryReconciliations, undefined, options),
+    /** GET /v1/inventory/stock */
+    getV1InventoryStock: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryStock, undefined, options),
+    /** GET /v1/inventory/transfers */
+    getV1InventoryTransfers: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryTransfers, undefined, options),
+    /** GET /v1/inventory/valuation */
+    getV1InventoryValuation: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryValuation, undefined, options),
+    /** GET /v1/investors */
+    getV1Investors: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1Investors, undefined, options),
+    /** GET /v1/investors/:id */
+    getV1InvestorsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1InvestorsById, input, options),
+    /** GET /v1/investors/:id/statement */
+    getV1InvestorsByIdStatement: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1InvestorsByIdStatement, input, options),
+    /** GET /v1/investors/distributions */
+    getV1InvestorsDistributions: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InvestorsDistributions, undefined, options),
+    /** GET /v1/investors/distributions/:id */
+    getV1InvestorsDistributionsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InvestorsDistributionsById, input, options),
+    /** GET /v1/investors/documents */
+    getV1InvestorsDocuments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InvestorsDocuments, undefined, options),
+    /** GET /v1/investors/documents/:id/download */
+    getV1InvestorsDocumentsByIdDownload: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InvestorsDocumentsByIdDownload, input, options),
+    /** GET /v1/investors/investments */
+    getV1InvestorsInvestments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InvestorsInvestments, undefined, options),
+    /** GET /v1/investors/wallet-accounts */
+    getV1InvestorsWalletAccounts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InvestorsWalletAccounts, undefined, options),
+    /** GET /v1/investors/withdrawals */
+    getV1InvestorsWithdrawals: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InvestorsWithdrawals, undefined, options),
     /** GET /v1/jobs/failed */
     getV1JobsFailed: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1JobsFailed, undefined, options),
+    /** GET /v1/orders */
+    getV1Orders: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1Orders, undefined, options),
+    /** GET /v1/orders/availability */
+    getV1OrdersAvailability: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1OrdersAvailability, undefined, options),
+    /** GET /v1/orders/:id */
+    getV1OrdersById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1OrdersById, input, options),
+    /** GET /v1/orders/:id/document */
+    getV1OrdersByIdDocument: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1OrdersByIdDocument, input, options),
     /** Liveness probe. */
     healthLive: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.healthLive, undefined, options),
@@ -204,6 +1066,144 @@ export function createApiClient(runtime: ApiRuntime) {
       },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.partyBalances, input, options),
+    /** PATCH /v1/accounts/wallets/:id */
+    patchV1AccountsWalletsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1AccountsWalletsById, input, options),
+    /** PATCH /v1/catalog/categories/:id */
+    patchV1CatalogCategoriesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1CatalogCategoriesById, input, options),
+    /** PATCH /v1/catalog/products/:id */
+    patchV1CatalogProductsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1CatalogProductsById, input, options),
+    /** PATCH /v1/customers/:id */
+    patchV1CustomersById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1CustomersById, input, options),
+    /** PATCH /v1/hr/employees/:id */
+    patchV1HrEmployeesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1HrEmployeesById, input, options),
+    /** PATCH /v1/inventory/locations/:id */
+    patchV1InventoryLocationsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1InventoryLocationsById, input, options),
+    /** PATCH /v1/investors/:id */
+    patchV1InvestorsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1InvestorsById, input, options),
+    /** PATCH /v1/orders/:id */
+    patchV1OrdersById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1OrdersById, input, options),
+    /** POST /v1/accounts/cash-entries */
+    postV1AccountsCashEntries: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1AccountsCashEntries, undefined, options),
+    /** POST /v1/accounts/closings */
+    postV1AccountsClosings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1AccountsClosings, undefined, options),
+    /** POST /v1/accounts/transfers */
+    postV1AccountsTransfers: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1AccountsTransfers, undefined, options),
+    /** POST /v1/accounts/wallets */
+    postV1AccountsWallets: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1AccountsWallets, undefined, options),
+    /** POST /v1/catalog/attributes */
+    postV1CatalogAttributes: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogAttributes, undefined, options),
+    /** POST /v1/catalog/attributes/:id/values */
+    postV1CatalogAttributesByIdValues: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogAttributesByIdValues, input, options),
+    /** POST /v1/catalog/categories */
+    postV1CatalogCategories: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogCategories, undefined, options),
+    /** POST /v1/catalog/imports/prices */
+    postV1CatalogImportsPrices: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogImportsPrices, undefined, options),
+    /** POST /v1/catalog/imports/prices/dry-run */
+    postV1CatalogImportsPricesDryRun: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogImportsPricesDryRun, undefined, options),
+    /** POST /v1/catalog/labels */
+    postV1CatalogLabels: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogLabels, undefined, options),
+    /** POST /v1/catalog/products */
+    postV1CatalogProducts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogProducts, undefined, options),
+    /** POST /v1/catalog/products/:id/images */
+    postV1CatalogProductsByIdImages: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogProductsByIdImages, input, options),
+    /** POST /v1/catalog/products/:id/variants */
+    postV1CatalogProductsByIdVariants: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogProductsByIdVariants, input, options),
+    /** POST /v1/courier/accounts */
+    postV1CourierAccounts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierAccounts, undefined, options),
+    /** POST /v1/courier/parcels */
+    postV1CourierParcels: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierParcels, undefined, options),
+    /** POST /v1/courier/parcels/:id/handover */
+    postV1CourierParcelsByIdHandover: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierParcelsByIdHandover, input, options),
+    /** POST /v1/courier/parcels/:id/receive-return */
+    postV1CourierParcelsByIdReceiveReturn: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierParcelsByIdReceiveReturn, input, options),
+    /** POST /v1/courier/parcels/:id/status */
+    postV1CourierParcelsByIdStatus: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierParcelsByIdStatus, input, options),
+    /** POST /v1/courier/settlements */
+    postV1CourierSettlements: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierSettlements, undefined, options),
+    /** POST /v1/courier/settlements/:id/approval */
+    postV1CourierSettlementsByIdApproval: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierSettlementsByIdApproval, input, options),
+    /** POST /v1/courier/settlements/:id/reject */
+    postV1CourierSettlementsByIdReject: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierSettlementsByIdReject, input, options),
+    /** POST /v1/courier/webhooks/:orgId/:provider */
+    postV1CourierWebhooksByOrgIdByProvider: (
+      input: { readonly path: { readonly orgId: string; readonly provider: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierWebhooksByOrgIdByProvider, input, options),
+    /** POST /v1/customers */
+    postV1Customers: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1Customers, undefined, options),
     /** POST /v1/files */
     postV1Files: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Files, undefined, options),
@@ -212,9 +1212,247 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.postV1FilesByIdFinalize, input, options),
+    /** POST /v1/fraud/flags */
+    postV1FraudFlags: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1FraudFlags, undefined, options),
+    /** POST /v1/fraud/flags/:id/clear */
+    postV1FraudFlagsByIdClear: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1FraudFlagsByIdClear, input, options),
+    /** POST /v1/hr/attendance/imports */
+    postV1HrAttendanceImports: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrAttendanceImports, undefined, options),
+    /** POST /v1/hr/calendars */
+    postV1HrCalendars: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrCalendars, undefined, options),
+    /** POST /v1/hr/calendars/:id/holidays */
+    postV1HrCalendarsByIdHolidays: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrCalendarsByIdHolidays, input, options),
+    /** POST /v1/hr/employees */
+    postV1HrEmployees: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrEmployees, undefined, options),
+    /** POST /v1/hr/employees/:id/salary */
+    postV1HrEmployeesByIdSalary: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1HrEmployeesByIdSalary, input, options),
+    /** POST /v1/hr/loans */
+    postV1HrLoans: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrLoans, undefined, options),
+    /** POST /v1/hr/loans/:id/disburse */
+    postV1HrLoansByIdDisburse: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1HrLoansByIdDisburse, input, options),
+    /** POST /v1/hr/payroll/runs */
+    postV1HrPayrollRuns: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrPayrollRuns, undefined, options),
+    /** POST /v1/hr/payroll/runs/:id/cancel */
+    postV1HrPayrollRunsByIdCancel: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrPayrollRunsByIdCancel, input, options),
+    /** POST /v1/hr/payroll/runs/:id/inputs */
+    postV1HrPayrollRunsByIdInputs: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrPayrollRunsByIdInputs, input, options),
+    /** POST /v1/hr/payroll/runs/:id/pay */
+    postV1HrPayrollRunsByIdPay: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1HrPayrollRunsByIdPay, input, options),
+    /** POST /v1/hr/payroll/runs/:id/submit */
+    postV1HrPayrollRunsByIdSubmit: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrPayrollRunsByIdSubmit, input, options),
+    /** POST /v1/inventory/adjustments */
+    postV1InventoryAdjustments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryAdjustments, undefined, options),
+    /** POST /v1/inventory/counts */
+    postV1InventoryCounts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryCounts, undefined, options),
+    /** POST /v1/inventory/counts/:id/close */
+    postV1InventoryCountsByIdClose: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryCountsByIdClose, input, options),
+    /** POST /v1/inventory/counts/:id/submit */
+    postV1InventoryCountsByIdSubmit: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryCountsByIdSubmit, input, options),
+    /** POST /v1/inventory/locations */
+    postV1InventoryLocations: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryLocations, undefined, options),
+    /** POST /v1/inventory/transfers */
+    postV1InventoryTransfers: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryTransfers, undefined, options),
+    /** POST /v1/inventory/transfers/:id/receive */
+    postV1InventoryTransfersByIdReceive: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryTransfersByIdReceive, input, options),
+    /** POST /v1/investors */
+    postV1Investors: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1Investors, undefined, options),
+    /** POST /v1/investors/distributions */
+    postV1InvestorsDistributions: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InvestorsDistributions, undefined, options),
+    /** POST /v1/investors/distributions/:id/reject */
+    postV1InvestorsDistributionsByIdReject: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InvestorsDistributionsByIdReject, input, options),
+    /** POST /v1/investors/documents */
+    postV1InvestorsDocuments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InvestorsDocuments, undefined, options),
+    /** POST /v1/investors/investments */
+    postV1InvestorsInvestments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InvestorsInvestments, undefined, options),
+    /** POST /v1/investors/withdrawals */
+    postV1InvestorsWithdrawals: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InvestorsWithdrawals, undefined, options),
+    /** POST /v1/investors/withdrawals/:id/pay */
+    postV1InvestorsWithdrawalsByIdPay: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InvestorsWithdrawalsByIdPay, input, options),
+    /** POST /v1/investors/withdrawals/:id/reject */
+    postV1InvestorsWithdrawalsByIdReject: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InvestorsWithdrawalsByIdReject, input, options),
+    /** POST /v1/investors/withdrawals/:id/review */
+    postV1InvestorsWithdrawalsByIdReview: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InvestorsWithdrawalsByIdReview, input, options),
+    /** POST /v1/orders */
+    postV1Orders: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1Orders, undefined, options),
+    /** POST /v1/orders/:id/advance */
+    postV1OrdersByIdAdvance: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdAdvance, input, options),
+    /** POST /v1/orders/:id/assign */
+    postV1OrdersByIdAssign: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdAssign, input, options),
+    /** POST /v1/orders/:id/cancel */
+    postV1OrdersByIdCancel: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdCancel, input, options),
+    /** POST /v1/orders/:id/claim */
+    postV1OrdersByIdClaim: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdClaim, input, options),
+    /** POST /v1/orders/:id/confirm */
+    postV1OrdersByIdConfirm: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdConfirm, input, options),
+    /** POST /v1/orders/:id/deliver */
+    postV1OrdersByIdDeliver: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdDeliver, input, options),
+    /** POST /v1/orders/:id/exchange */
+    postV1OrdersByIdExchange: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdExchange, input, options),
+    /** POST /v1/orders/:id/hold */
+    postV1OrdersByIdHold: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdHold, input, options),
+    /** POST /v1/orders/:id/pack */
+    postV1OrdersByIdPack: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdPack, input, options),
+    /** POST /v1/orders/:id/partial-delivery */
+    postV1OrdersByIdPartialDelivery: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1OrdersByIdPartialDelivery, input, options),
+    /** POST /v1/orders/:id/receive-return */
+    postV1OrdersByIdReceiveReturn: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1OrdersByIdReceiveReturn, input, options),
+    /** POST /v1/orders/:id/release-hold */
+    postV1OrdersByIdReleaseHold: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdReleaseHold, input, options),
+    /** POST /v1/orders/:id/ship */
+    postV1OrdersByIdShip: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdShip, input, options),
+    /** POST /v1/orders/:id/start-return */
+    postV1OrdersByIdStartReturn: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdStartReturn, input, options),
+    /** PUT /v1/catalog/prices */
+    putV1CatalogPrices: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1CatalogPrices, undefined, options),
+    /** PUT /v1/catalog/products/:id/images/order */
+    putV1CatalogProductsByIdImagesOrder: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1CatalogProductsByIdImagesOrder, input, options),
+    /** PUT /v1/catalog/skus/:id/barcode */
+    putV1CatalogSkusByIdBarcode: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1CatalogSkusByIdBarcode, input, options),
+    /** PUT /v1/delivery-zones */
+    putV1DeliveryZones: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1DeliveryZones, undefined, options),
     /** PUT /v1/files/content */
     putV1FilesContent: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1FilesContent, undefined, options),
+    /** PUT /v1/fraud/rules */
+    putV1FraudRules: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1FraudRules, undefined, options),
+    /** PUT /v1/hr/attendance */
+    putV1HrAttendance: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1HrAttendance, undefined, options),
+    /** PUT /v1/inventory/counts/:id/lines */
+    putV1InventoryCountsByIdLines: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1InventoryCountsByIdLines, input, options),
+    /** PUT /v1/inventory/reorder-levels */
+    putV1InventoryReorderLevels: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1InventoryReorderLevels, undefined, options),
     /** Ask to reopen a closed month. Needs an approval. */
     reopenPeriod: (
       input: { readonly body: ReopenPeriodInput },

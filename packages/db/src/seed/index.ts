@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 
 import { withSystem } from '../client.js';
 import { branches, locations, organizations } from '../schema/org/index.js';
+import { seedDeliveryZones } from './delivery-zones.js';
 import { seedChartOfAccounts } from './ledger.js';
 import { deterministicUuid, SEED_ORGS, seedOrgId } from './orgs.js';
 
@@ -115,6 +116,18 @@ export async function seedOrganizations(): Promise<SeedResult> {
     totals.accounts += await seedChartOfAccounts(seedOrgId(org.slug));
   }
 
+  /*
+   * D-009's placeholder zones and each org's own-rider courier (M10, §9).
+   *
+   * Here rather than only in migration 0042, because on a fresh database that migration
+   * runs before this seed exists to create the orgs and therefore writes nothing — and an
+   * org with no zone and no courier cannot take an order at all. Idempotent, and it never
+   * overwrites a charge an org has since edited. The count is not added to `SeedResult`:
+   * the tenancy suite asserts that shape, and zones are not one of the four things it is
+   * about.
+   */
+  await seedDeliveryZones(SEED_ORGS.map((org) => seedOrgId(org.slug)));
+
   totals.organizations = await withSystem(async (tx) => {
     const rows = await tx.execute<{ count: string }>(
       sql`select count(*) as count from org.organizations`,
@@ -147,4 +160,5 @@ export async function seedOrganizations(): Promise<SeedResult> {
 
 export { SEED_ORGS, SEED_ORG_IDS, seedOrgId, deterministicUuid } from './orgs.js';
 export { ensureBranchWallets, seedAccountId, seedChartOfAccounts } from './ledger.js';
+export { seedDeliveryZones, type DeliveryZoneSeedResult } from './delivery-zones.js';
 export { branchCashCode, COA_TEMPLATE, type TemplateAccount } from './coa-template.js';

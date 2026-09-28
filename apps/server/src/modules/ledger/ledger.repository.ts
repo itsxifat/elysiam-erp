@@ -45,6 +45,31 @@ export async function accountsByIds(
   return [...rows];
 }
 
+/**
+ * The org's account for one subtype, by code order.
+ *
+ * `limit 1` and `order by code`: the chart template seeds one account per system subtype
+ * (D-084), and where a brand has added a second the lowest code is the one the template
+ * created — so a posting rule keeps naming the same account after somebody adds a
+ * sub-account, rather than moving with whichever row the planner returned first.
+ */
+export async function accountBySubtype(
+  tx: Tx,
+  orgId: string,
+  subtype: string,
+): Promise<AccountRow | undefined> {
+  const rows = await tx.execute<AccountRow>(sql`
+    select ${ACCOUNT_COLUMNS}
+    from ledger.accounts a
+    where a.org_id = ${orgId}
+      and a.subtype = ${subtype}::ledger.account_subtype
+      and a.is_active
+    order by a.code
+    limit 1
+  `);
+  return rows[0];
+}
+
 export async function listAccounts(
   tx: Tx,
   orgId: string,

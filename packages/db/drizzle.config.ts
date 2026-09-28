@@ -19,7 +19,39 @@ export default defineConfig({
   schema: './src/schema/**/index.ts',
   out: './migrations',
   dbCredentials: { url: process.env.DATABASE_OWNER_URL ?? '' },
-  schemaFilter: ['iam', 'org', 'ref'],
+  // `fraud` is here like every other module schema. Its two cross-org tables carry no
+  // `org_id` (§5 exception 1), which changes their policies and not whether drizzle-kit
+  // owns them — leaving the schema out would make the drift check silently propose
+  // dropping it.
+  // `investors` is here for exactly the reason the note above gives: without it the
+  // drift check does not compare `src/schema/investors` against migration 0058 at
+  // all, so six tables holding investor capital would be invisible to the one gate
+  // that notices a schema and its migration disagreeing.
+  schemaFilter: [
+    'approvals',
+    'audit',
+    'catalog',
+    // M12. Without it, `check:schema` never compares `src/schema/courier/index.ts` against
+    // migration 0048, and eight tables holding the record of third-party cash sit outside the
+    // one gate that notices a schema and its migration disagreeing.
+    'courier',
+    'demo',
+    'events',
+    'files',
+    'fraud',
+    // M19. Fourteen tables holding salaries, attendance and staff loans.
+    'hr',
+    'http',
+    'iam',
+    'inventory',
+    'investors',
+    'ledger',
+    'org',
+    'ref',
+    'sales',
+    'supply',
+    'wallets',
+  ],
   strict: true,
   verbose: true,
 });

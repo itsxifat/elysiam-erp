@@ -7,6 +7,26 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./courier": {
+      "types": "./dist/courier/index.d.ts",
+      "default": "./dist/courier/index.js"
+    },
+    "./fraud": {
+      "types": "./dist/fraud/index.d.ts",
+      "default": "./dist/fraud/index.js"
+    },
+    "./payroll": {
+      "types": "./dist/payroll/index.d.ts",
+      "default": "./dist/payroll/index.js"
+    },
+    "./investors": {
+      "types": "./dist/investors/index.d.ts",
+      "default": "./dist/investors/index.js"
+    },
+    "./posting/investors": {
+      "types": "./dist/posting/investors.d.ts",
+      "default": "./dist/posting/investors.js"
     }
   },
   "files": [

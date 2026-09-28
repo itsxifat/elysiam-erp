@@ -40,6 +40,27 @@ export const FILE_PURPOSES = [
   'settlement-sheet',
   /** Creative for an ad campaign (§11). */
   'campaign-asset',
+  /**
+   * The receipt photo behind a petty-cash entry (M08, §7).
+   *
+   * Private without exception: a till receipt is photographed on a phone in a
+   * showroom, and what lands in the frame is not controlled — a customer's
+   * delivery slip on the counter, a staff member's face, the shop's own bank
+   * paperwork. It is also the evidence for money leaving the company, which is
+   * a document a checker and an auditor read and nobody else does.
+   */
+  'petty-cash-receipt',
+  /**
+   * An investor's KYC scan, investment agreement or statement (M25, §15, §25).
+   *
+   * Private without exception, and read through `Investor` rather than through
+   * `LedgerReport` or `Employee`: §6 gives investors to accounts and org_admin
+   * org-wide and to the investor themselves at `own` scope, and it is the only
+   * subject that lets an investor open their own agreement without granting them
+   * anything else. `Employee` — the other KYC purpose — would have denied the
+   * finance team the very documents they file.
+   */
+  'investor-document',
 ] as const;
 
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
@@ -79,4 +100,22 @@ export const PURPOSE_RULES: Readonly<Record<FilePurpose, PurposeRule>> = {
     mayBePublic: false,
   },
   'campaign-asset': { readRequires: { action: 'read', subject: 'Campaign' }, mayBePublic: true },
+  /*
+   * `read Wallet`, not `read LedgerReport`. §6's "Wallets, cash entries, petty
+   * cash" row is the capability this document belongs to: org_admin and accounts
+   * org-wide, a branch manager for their own branch's tills. `LedgerReport` would
+   * have been close enough to look right and wrong in one direction that matters
+   * — it is the reports grant, so it would have opened receipts to a role whose
+   * business is reading totals rather than approving spending.
+   */
+  'petty-cash-receipt': { readRequires: { action: 'read', subject: 'Wallet' }, mayBePublic: false },
+  /*
+   * Never public. An investor agreement carries capital amounts and an NID; a
+   * public object is served by the CDN with no authorization at all, so one
+   * mis-set `visibility` would put a brand's funding terms on a guessable URL.
+   */
+  'investor-document': {
+    readRequires: { action: 'read', subject: 'Investor' },
+    mayBePublic: false,
+  },
 };

@@ -174,6 +174,136 @@ export const ledgerPostedPayload = z
   .strict();
 
 /**
+ * §19: sku id, location, available, reorder level. No cost and no value.
+ *
+ * The audience is `org_admin` and `warehouse`, which is what forces the payload
+ * to be quantities only: a socket has no `serializeFor` in front of it and
+ * `warehouse` does not hold `read:cost`, so a `stockValuePoisha` here would
+ * arrive in a packer's browser. Availability is the number that answers "reorder
+ * now or not", and it is already the useful one.
+ */
+export const stockLowPayload = z
+  .object({
+    skuId: uuid,
+    skuCode: z.string(),
+    locationId: uuid,
+    available: z.number().int(),
+    reorderLevel: z.number().int(),
+  })
+  .strict();
+
+/**
+ * The nightly reconciliation found levels that disagree with Σ movements (§8, §26).
+ *
+ * Counts only, never the drifting quantities themselves: this goes to `org_admin`
+ * and to the super-admin operations view, and a drift is investigated by opening
+ * the reconciliation row rather than by reading a socket payload. Keeping the
+ * detail out means the event cannot grow into a stock report that bypasses
+ * permissions (D-144).
+ */
+export const stockDriftDetectedPayload = z
+  .object({
+    reconciliationId: uuid,
+    businessDate: z.string(),
+    levelsChecked: z.number().int(),
+    driftCount: z.number().int(),
+    costDriftCount: z.number().int(),
+  })
+  .strict();
+
+/**
+ * §19: id, order_no, channel, total, created_at. The total and nothing near a cost.
+ *
+ * The audience is sales and org_admin, both of which see an order's value on the screen
+ * anyway, so the order total belongs here — it is what makes the new-order alert worth
+ * looking at. A socket has no `serializeFor` in front of it, so there is no cost field
+ * for one to arrive in, and `codAmountPoisha` is the figure the desk actually works
+ * from: what the rider will collect.
+ */
+export const orderCreatedPayload = z
+  .object({
+    id: uuid,
+    orderNo: z.string(),
+    channel: z.string(),
+    codAmountPoisha: poishaString,
+    /** Null while the order sits in §6's unassigned queue. */
+    assignedTo: z.string().nullable(),
+    createdAt: z.string(),
+  })
+  .strict();
+
+/**
+ * §19: id, assignee. Queue ownership, and nothing else.
+ *
+ * Two events share this schema — `order.assigned` when a supervisor hands the order over,
+ * `order.claimed` when an agent takes it out of the queue themselves — because the
+ * payload is identical and the distinction is who acted. Keeping them as separate names
+ * lets the desk show "assigned to you" differently from "you took this", which is the
+ * only reason anybody cares.
+ */
+export const orderAssignedPayload = z
+  .object({ id: uuid, orderNo: z.string(), assignedTo: z.string() })
+  .strict();
+
+/**
+ * §19: id, from, to, at.
+ *
+ * No amount at all, deliberately. This event drives live lists and dashboards for sales,
+ * warehouse, accounts, a reseller and a branch — the widest audience in the catalog — and
+ * the one payload every one of those roles may see is the status change itself. Anything
+ * a screen needs beyond that it fetches, where `serializeFor` applies.
+ */
+export const orderStatusChangedPayload = z
+  .object({
+    id: uuid,
+    orderNo: z.string(),
+    /** Null on the row that records the order being created. */
+    from: z.string().nullable(),
+    to: z.string(),
+    at: z.string(),
+    /** Set for a reseller order, so the portal room can be addressed (§13). */
+    resellerId: uuid.nullable(),
+    /** Set for a branch-owned order, so the branch room can be addressed (§14). */
+    branchId: uuid.nullable(),
+  })
+  .strict();
+
+/**
+ * §10's fraud verdict on an order (M13).
+ *
+ * The payload is the narrowest in the catalog, and that is the point. This event
+ * fires because a cross-org score said something about a buyer, and the evidence
+ * behind that score belongs to up to five different companies — so what leaves the
+ * process is the order it is about, the number, and the codes. Never the phone,
+ * never the hash, never a count, never which brand contributed what.
+ *
+ * The hash is excluded deliberately even though it is not the number. It is a
+ * stable identifier for one person across every brand, and a socket payload is the
+ * one place in this system with no `serializeFor` in front of it — a hash on the
+ * wire is a correlation key sitting in five browsers' memory. The desk does not
+ * need it: it already knows which order it is looking at.
+ *
+ * `reasons` is codes, not sentences. The console renders them in Bangla or English
+ * (D-036) from `packages/i18n`, and a sentence composed on the server would be an
+ * English string in a Bangla UI.
+ */
+export const orderFraudFlaggedPayload = z
+  .object({
+    id: uuid,
+    orderNo: z.string(),
+    /** 0–100. The number on the badge. */
+    trustScore: z.number().int().min(0).max(100),
+    /** `allow`, `warn`, `require_advance` or `block` — §10's bands. */
+    decision: z.enum(['allow', 'warn', 'require_advance', 'block']),
+    /** Reason codes from `@elysium/domain/fraud`, in the order they were applied. */
+    reasons: z.array(z.string()).max(12),
+    /** False when no configured provider answered: the score is internal-only (check 3). */
+    providerAvailable: z.boolean(),
+    at: z.string(),
+  })
+  .strict();
+
+/**
  * The catalog, as data.
  *
  * Only the events something already emits are here. §19 lists twenty-odd, and
@@ -181,6 +311,26 @@ export const ledgerPostedPayload = z
  * nobody publishes is a guess about a payload, and the guess is what later
  * turns into a field nobody meant to send.
  */
+/**
+ * A parcel the courier refused after every retry (§19, §20; M12 check 6).
+ *
+ * No amount: a booking that failed has no money in it yet, and the COD would be the one
+ * number a reader could act on wrongly. No courier error text either — a courier's refusal
+ * body quotes the recipient's name, address and phone number, and a socket has no
+ * `serializeFor` in front of it (invariant 10). A code and the ids, so the desk can open
+ * the order and see why nothing is moving.
+ */
+export const deliveryBookingFailedPayload = z
+  .object({
+    orderId: uuid,
+    orderNo: z.string(),
+    consignmentId: uuid,
+    courierId: uuid,
+    code: z.string(),
+    attempts: z.number().int(),
+  })
+  .strict();
+
 export const EVENTS = {
   'approval.requested': defineEvent('approval.requested', approvalRequestedPayload, {
     // §19: to every eligible checker. The dispatcher narrows that from
@@ -200,6 +350,62 @@ export const EVENTS = {
   }),
   'ledger.posted': defineEvent('ledger.posted', ledgerPostedPayload, {
     roles: ['accounts', 'org_admin'],
+  }),
+  // M07's stock events (§19). `stock.available_changed` belongs with the order
+  // desk that makes availability move minute to minute, and §19 marks it
+  // throttled; a catalogue entry for an event nothing emits is a guess about a
+  // payload, so it arrives with M11.
+  'stock.low': defineEvent('stock.low', stockLowPayload, {
+    roles: ['org_admin', 'warehouse'],
+  }),
+  'stock.drift_detected': defineEvent('stock.drift_detected', stockDriftDetectedPayload, {
+    roles: ['org_admin'],
+    superAdmin: true,
+  }),
+  // M10's order events (§19). `order.fraud_flagged` arrives with M13, which is what
+  // produces a trust score — a schema for an event nothing emits is a guess about a
+  // payload, and the guess is what later becomes a field nobody meant to send.
+  'order.created': defineEvent('order.created', orderCreatedPayload, {
+    roles: ['sales', 'org_admin'],
+  }),
+  'order.assigned': defineEvent('order.assigned', orderAssignedPayload, {
+    roles: ['sales'],
+    extra: (payload) => [userRoom(payload.assignedTo)],
+  }),
+  'order.claimed': defineEvent('order.claimed', orderAssignedPayload, {
+    roles: ['sales'],
+    extra: (payload) => [userRoom(payload.assignedTo)],
+  }),
+  'order.status_changed': defineEvent('order.status_changed', orderStatusChangedPayload, {
+    roles: ['sales', 'warehouse'],
+    extra: (payload) => [
+      // §19 gives accounts delivered and returned only: those are the two that move the
+      // books, and the rest are warehouse and desk traffic they have no use for.
+      ...(['delivered', 'partially_delivered', 'returned'].includes(payload.to)
+        ? ['role:accounts']
+        : []),
+      ...(payload.resellerId === null ? [] : [resellerRoom(payload.resellerId)]),
+      ...(payload.branchId === null ? [] : [`branch:${payload.branchId}`]),
+    ],
+  }),
+  /*
+   * M13. §6's fraud row gives the badge to org_admin, sales, accounts and
+   * branch_manager, and `read FraudSignal` to all four — so those are the rooms.
+   *
+   * Warehouse is absent and so is reseller. The warehouse packs what the desk
+   * confirmed and has no decision to make on a score; a reseller holds
+   * `read FraudSignal|own`, which is a badge on their own order fetched through an
+   * endpoint where `serializeFor` applies, not a live feed of every verdict in the
+   * brand. A room is the coarsest grant in the system — everything broadcast to it
+   * reaches everyone in it — so it is the wrong instrument for an `own`-scoped
+   * permission.
+   */
+  'order.fraud_flagged': defineEvent('order.fraud_flagged', orderFraudFlaggedPayload, {
+    roles: ['sales', 'org_admin', 'accounts', 'branch_manager'],
+  }),
+  'delivery.booking_failed': defineEvent('delivery.booking_failed', deliveryBookingFailedPayload, {
+    roles: ['org_admin'],
+    superAdmin: true,
   }),
 } as const;
 
@@ -254,10 +460,18 @@ export function roomsForEvent<TName extends EventName>(
   if (audience.superAdmin === true) rooms.push(SUPER_ROOM);
 
   for (const room of audience.extra?.(payload) ?? []) {
-    // A payload-derived branch room is written `branch:{id}` by the audience
-    // and qualified with the org here, so an event cannot name another
-    // tenant's branch room even by accident.
-    rooms.push(room.startsWith('branch:') ? `org:${orgId}:${room}` : room);
+    /*
+     * A payload-derived branch room is written `branch:{id}` by the audience and
+     * qualified with the org here, so an event cannot name another tenant's branch room
+     * even by accident. `role:{name}` works the same way, and M10 needed it: §19 sends
+     * `order.status_changed` to accounts for *delivered and returned only*, which is a
+     * decision about the payload and therefore cannot be expressed in the static
+     * `roles` list. Both prefixes are qualified here rather than by the audience, so a
+     * room for another tenant remains unconstructable.
+     */
+    rooms.push(
+      room.startsWith('branch:') || room.startsWith('role:') ? `org:${orgId}:${room}` : room,
+    );
   }
 
   return [...new Set(rooms)];

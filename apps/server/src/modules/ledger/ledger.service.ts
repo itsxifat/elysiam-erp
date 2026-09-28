@@ -10,10 +10,14 @@ import {
   poisha,
   reverseDraft,
   validateJournalDraft,
+  type AccountSubtype,
   type JournalDraft,
   type JournalLineDraft,
   type PartyType,
+  type PostingAccount,
 } from '@elysium/domain';
+
+import { sql } from 'drizzle-orm';
 
 import type { LedgerActor, LedgerApi, PostResult } from './ledger.api.js';
 import { ledgerHttpError } from './ledger.errors.js';
@@ -141,6 +145,53 @@ export class LedgerService implements LedgerApi {
       );
     }
     return { journalId: existing.id, created: false, businessDate: draft.businessDate };
+  }
+
+  async accountBySubtype(
+    tx: Tx,
+    orgId: string,
+    subtype: AccountSubtype,
+  ): Promise<PostingAccount | null> {
+    const row = await repo.accountBySubtype(tx, orgId, subtype);
+    if (row === undefined || !isAccountSubtype(row.subtype)) return null;
+    return { accountId: row.id, subtype: row.subtype, branchId: row.branch_id };
+  }
+
+  /**
+   * The same aggregate the party-balances report reads, narrowed to one subtype.
+   *
+   * Through `repo.partyBalances` rather than a second query of its own: the report and
+   * the COD reconciliation would otherwise be two pieces of arithmetic over the same
+   * rows, and the first time one of them learned to exclude something — a reversal, a
+   * branch, a party type — a courier's statement and the ledger's own report would
+   * disagree with nobody able to say which was right.
+   *
+   * `lineScope` is `true` here and no subtype is excluded, deliberately: this is a
+   * server-side posting input, not a screen, so §6's branch narrowing and the
+   * cost-hiding exclusions the report applies would only make the receivable smaller
+   * than the money actually outstanding.
+   */
+  async courierReceivables(
+    tx: Tx,
+    orgId: string,
+    asOf: string,
+  ): Promise<ReadonlyMap<string, bigint>> {
+    const rows = await repo.partyBalances(tx, orgId, {
+      asOf,
+      partyType: 'courier',
+      partyId: undefined,
+      lineScope: sql`true`,
+      excludeSubtypes: [],
+      excludePartyTypes: [],
+    });
+
+    const totals = new Map<string, bigint>();
+    for (const row of rows) {
+      if (row.subtype !== 'courier_receivable') continue;
+      const net = BigInt(row.debit_poisha) - BigInt(row.credit_poisha);
+      totals.set(row.party_id, (totals.get(row.party_id) ?? 0n) + net);
+    }
+    return totals;
   }
 
   /**

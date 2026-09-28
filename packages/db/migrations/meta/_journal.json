@@ -155,6 +155,279 @@
       "when": 1790317633190,
       "tag": "0021_http_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790317634190,
+      "tag": "0023_catalog_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790317635190,
+      "tag": "0024_catalog_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790317636190,
+      "tag": "0025_catalog_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790317637190,
+      "tag": "0026_catalog_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790317638190,
+      "tag": "0027_wallets_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790317639190,
+      "tag": "0028_wallets_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790317640190,
+      "tag": "0029_wallets_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790317641190,
+      "tag": "0030_ledger_analytics_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790317642190,
+      "tag": "0031_inventory_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790317643190,
+      "tag": "0032_inventory_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790317644190,
+      "tag": "0033_inventory_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790317645190,
+      "tag": "0034_approvals_branch_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790317646190,
+      "tag": "0035_supply_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790317647190,
+      "tag": "0036_supply_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790317648190,
+      "tag": "0037_supply_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790317649190,
+      "tag": "0038_supply_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790317650190,
+      "tag": "0039_orders_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790317651190,
+      "tag": "0040_orders_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790317652190,
+      "tag": "0041_orders_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790317653190,
+      "tag": "0042_orders_delivery_zone_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790317654190,
+      "tag": "0043_orders_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1790317655190,
+      "tag": "0044_orders_line_edit",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1790317656190,
+      "tag": "0045_fraud_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1790317657190,
+      "tag": "0046_fraud_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1790317658190,
+      "tag": "0047_fraud_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1790317659190,
+      "tag": "0048_courier_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1790317660190,
+      "tag": "0049_courier_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790317661190,
+      "tag": "0050_courier_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1790317662190,
+      "tag": "0051_courier_settlement_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1790317671190,
+      "tag": "0052_courier_settlement_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1790317663190,
+      "tag": "0053_hr_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1790317664190,
+      "tag": "0054_hr_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1790317665190,
+      "tag": "0055_hr_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1790317666190,
+      "tag": "0056_hr_payroll_approval_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1790317667190,
+      "tag": "0057_hr_default_calendars",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1790317668190,
+      "tag": "0058_investors_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1790317669190,
+      "tag": "0059_investors_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1790317670190,
+      "tag": "0060_investors_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1790366802635,
+      "tag": "0061_schema_baseline",
+      "breakpoints": true
     }
   ]
 }

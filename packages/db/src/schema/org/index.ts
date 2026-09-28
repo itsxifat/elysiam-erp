@@ -124,6 +124,17 @@ export const locations = org.table(
     uniqueIndex('locations_org_code_idx').on(table.orgId, table.code),
     index('locations_org_idx').on(table.orgId),
     index('locations_branch_idx').on(table.branchId),
+    /*
+     * The target of every intra-tenant reference to a location, added by M07.
+     *
+     * `branches` has carried this since M01 and `locations` did not, because until
+     * inventory arrived nothing pointed at a location. A composite foreign key needs
+     * a unique constraint to reference, and it has to be this one rather than the
+     * `(org_id, code)` index: a code is a label people change, and a reference
+     * through it would move a year of stock movements to a different location the
+     * day somebody renamed a warehouse (D-047, migration 0031).
+     */
+    unique('locations_org_id_id_key').on(table.orgId, table.id),
     foreignKey({
       name: 'locations_org_id_branch_id_fk',
       columns: [table.orgId, table.branchId],

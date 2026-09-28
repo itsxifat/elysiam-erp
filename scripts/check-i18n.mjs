@@ -64,9 +64,29 @@ const SKIPPED_DIRS = new Set([
  * `t(variable)` is skipped rather than guessed at. Dynamic keys are counted and
  * reported so that a surface built entirely out of computed keys is visible
  * rather than silently unchecked.
+ *
+ * A template literal with a value interpolated into it — `` t(`hr.run.${status}`) ``
+ * — is a third case, and reading it as a literal key is how this check reported
+ * fourteen keys named `hr.run.${status}` that no catalogue could ever have. It
+ * cannot be looked up, but the literal text around the hole can be, and that is
+ * where the mistake lives: the console builds these keys out of a domain enum
+ * value and casts the result to the key type, so a misspelt *prefix* — an
+ * `hr.attnd.` family that renders as nothing for every status — is invisible to
+ * the compiler as well. So the hole is widened to "one segment" and the pattern
+ * has to match at least one real key.
  */
-const LITERAL_KEY = /\bt\(\s*(['"`])([^'"`\n]+)\1/g;
+const LITERAL_KEY = /\bt\(\s*(['"`])((?:(?!\$\{)[^'"`\n])+)\1/g;
+const INTERPOLATED_KEY = /\bt\(\s*`([^`\n]*\$\{[^`\n]*)`/g;
 const DYNAMIC_KEY = /\bt\(\s*[A-Za-z_$][\w$.[\]]*\s*[,)]/g;
+
+/** `hr.run.${run.status}` → `/^hr\.run\.[^.]+$/`. One segment per hole, not any text. */
+function patternFor(template) {
+  const source = template
+    .split(/\$\{[^}]*\}/)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('[^.]+');
+  return new RegExp(`^${source}$`);
+}
 
 /**
  * A file that names keys on purpose which must not exist — this checker's own
@@ -181,9 +201,10 @@ function* walk(directory) {
   }
 }
 
-/** Every literal key reference, and a count of the dynamic ones. */
+/** Every literal key reference, every interpolated family, and a count of the dynamic ones. */
 function references({ scan, catalogueDir }) {
   const found = new Map();
+  const families = new Map();
   let dynamic = 0;
 
   for (const root of scan) {
@@ -197,18 +218,28 @@ function references({ scan, catalogueDir }) {
       if (source.includes(IGNORE_MARKER)) continue;
       dynamic += (source.match(DYNAMIC_KEY) ?? []).length;
 
+      const site = (index) => {
+        const line = source.slice(0, index).split('\n').length;
+        return `${path.relative(REPO_ROOT, file).replace(/\\/g, '/')}:${line}`;
+      };
+
       for (const match of source.matchAll(LITERAL_KEY)) {
         const key = match[2];
-        const line = source.slice(0, match.index).split('\n').length;
-        const where = `${path.relative(REPO_ROOT, file).replace(/\\/g, '/')}:${line}`;
         const sites = found.get(key);
-        if (sites === undefined) found.set(key, [where]);
-        else sites.push(where);
+        if (sites === undefined) found.set(key, [site(match.index)]);
+        else sites.push(site(match.index));
+      }
+
+      for (const match of source.matchAll(INTERPOLATED_KEY)) {
+        const template = match[1];
+        const sites = families.get(template);
+        if (sites === undefined) families.set(template, [site(match.index)]);
+        else sites.push(site(match.index));
       }
     }
   }
 
-  return { found, dynamic };
+  return { found, families, dynamic };
 }
 
 async function main() {
@@ -255,10 +286,25 @@ async function main() {
     }
   }
 
-  const { found, dynamic } = references({ scan, catalogueDir });
+  const { found, families, dynamic } = references({ scan, catalogueDir });
   for (const [key, sites] of found) {
     if (union.has(key)) continue;
     failures.push(`no such key "${key}" — referenced at ${sites.slice(0, 3).join(', ')}`);
+  }
+
+  const keys = [...union];
+  const matched = new Set();
+  for (const [template, sites] of families) {
+    const pattern = patternFor(template);
+    const hits = keys.filter((key) => pattern.test(key));
+    if (hits.length === 0) {
+      failures.push(
+        `no key matches "${template}" — referenced at ${sites.slice(0, 3).join(', ')}; ` +
+          'the whole family renders as nothing, and the cast at the call site hides it ' +
+          'from the compiler.',
+      );
+    }
+    for (const key of hits) matched.add(key);
   }
 
   if (failures.length > 0) {
@@ -272,11 +318,12 @@ async function main() {
   }
 
   if (!quiet) {
-    const orphans = [...union].filter((key) => !found.has(key)).sort();
+    const orphans = keys.filter((key) => !found.has(key) && !matched.has(key)).sort();
     const locales = [...catalogues.keys()].join(', ');
     console.log(
       `check-i18n: ${union.size} key(s) in ${catalogues.size} locale(s) (${locales}); ` +
-        `${found.size} referenced, ${dynamic} dynamic reference(s). PASS`,
+        `${found.size} referenced, ${families.size} interpolated famil(ies), ` +
+        `${dynamic} dynamic reference(s). PASS`,
     );
     if (orphans.length > 0) {
       console.log(

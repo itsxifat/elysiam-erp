@@ -1,0 +1,29 @@
+-- A baseline. Deliberately empty, and this file exists only to carry its snapshot.
+--
+-- `drizzle-kit` decides what to generate by diffing the TypeScript schema against the
+-- newest snapshot in `meta/`, not against the database. Migrations 0023-0060 were written
+-- by hand -- policies, grants, triggers and RLS are things Drizzle cannot express, so the
+-- whole of each module's DDL was authored as SQL -- and no snapshot was taken as they
+-- landed. The newest snapshot therefore still described M04's database: 26 tables, ten
+-- schemas, none of catalog, inventory, supply, sales, wallets, courier, fraud, investors
+-- or hr.
+--
+-- That is why `pnpm check:schema` was passing while comparing almost nothing. Its own
+-- narrow `schemaFilter` hid part of it, but the deeper cause was that generation could not
+-- run at all: snapshots 0017 and 0018 shared an id, which makes drizzle-kit print a
+-- collision error, emit nothing, and exit 0 -- so the gate saw no new files and reported
+-- success. The chain is repaired and the check now inspects the generator's output rather
+-- than trusting its exit status.
+--
+-- Running the generator after that repair emitted 77 CREATE TABLE, 39 CREATE TYPE, 9
+-- CREATE SCHEMA, 224 index and 236 ADD CONSTRAINT statements, plus two ALTER TYPE ... ADD
+-- VALUE. Every one of them duplicates DDL that migrations 0023-0060 have already applied;
+-- both enum values were verified present in the live database before this file was
+-- emptied. So the divergence was entirely snapshot lag and not one line of real drift --
+-- but running that SQL would have tried to create 77 tables that exist.
+--
+-- Hence: the snapshot is kept as the new baseline, the statements are not. The generated
+-- SQL is preserved outside the repository for review rather than deleted blind. From here
+-- a schema change with no migration, or a hand-written migration the schema does not
+-- describe, is caught the next time the gate runs -- which is what it was supposed to be
+-- doing all along.

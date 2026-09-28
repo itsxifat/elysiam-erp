@@ -36,8 +36,20 @@ describe('the catalogues are the same shape', () => {
   });
 
   it('names keys the one way — lowerCamel segments separated by dots', () => {
+    /*
+     * The one exception is the *last* segment, which may be snake_case, because a
+     * family of status labels is built straight from a domain enum value:
+     * `hr.run.${run.status}` reaches `hr.run.pending_approval` with no lookup
+     * table in between. Spelling the key `pendingApproval` would need one table
+     * per enum, and a table is a second list to forget when a status is added —
+     * which fails silently, because those call sites cast to the key type. An
+     * interior segment stays lowerCamel: nothing builds a key out of two holes.
+     */
     const wrong = Object.keys(en).filter(
-      (key) => !/^[a-z][a-zA-Z0-9]*(\.[a-z0-9][a-zA-Z0-9]*)+$/.test(key),
+      (key) =>
+        !/^[a-z][a-zA-Z0-9]*(\.[a-z0-9][a-zA-Z0-9]*)*\.[a-z0-9][a-zA-Z0-9]*(?:_[a-z0-9][a-zA-Z0-9]*)*$/.test(
+          key,
+        ),
     );
     expect(wrong).toEqual([]);
   });

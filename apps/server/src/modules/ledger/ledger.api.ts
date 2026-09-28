@@ -1,5 +1,5 @@
 import type { Tx } from '@elysium/db';
-import type { JournalDraft } from '@elysium/domain';
+import type { AccountSubtype, JournalDraft, PostingAccount } from '@elysium/domain';
 
 /**
  * The ledger's service interface for other modules (invariant 12).
@@ -51,6 +51,29 @@ export interface LedgerApi {
     reason: string,
     at?: Date,
   ): Promise<PostResult>;
+
+  /**
+   * One of the chart's system accounts, by subtype (§7, D-084).
+   *
+   * Here rather than copied into each caller: resolving a subtype means reading
+   * `ledger.accounts`, and a module that queries that table itself is a module that
+   * will still be querying it the day the chart grows a second account per subtype
+   * (invariant 12). Null when the org's chart has no such account, which means the
+   * chart is broken — the template seeds all forty — so the caller says so rather
+   * than posting the value somewhere else.
+   */
+  accountBySubtype(tx: Tx, orgId: string, subtype: AccountSubtype): Promise<PostingAccount | null>;
+
+  /**
+   * Σ debit − Σ credit on `courier_receivable`, per courier party, as of a business date.
+   *
+   * Derived on every read from `ledger.journal_lines`, never from a maintained column: a
+   * `receivable_poisha` on the courier drifts the first time a journal posts by a path
+   * that forgot to update it, and nobody finds out until a courier disputes a statement.
+   * Keyed by `party_id`, which is `sales.couriers.id` — the same party §7's delivery and
+   * settlement journals name.
+   */
+  courierReceivables(tx: Tx, orgId: string, asOf: string): Promise<ReadonlyMap<string, bigint>>;
 }
 
 /** The Nest injection token for `LedgerApi`. */
