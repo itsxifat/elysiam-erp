@@ -131,7 +131,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
 const routeTree = rootRoute.addChildren([
   overviewRoute,
   approvalsRoute,
-  tablesRoute,
+  ...(import.meta.env.DEV ? [tablesRoute] : []),
   ...catalog,
   ...stock,
   ...supply,

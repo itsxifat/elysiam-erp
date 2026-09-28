@@ -100,6 +100,7 @@ const bn: Record<MessageKey, string> = {
   'error.validation': 'চিহ্নিত ঘরগুলো দেখে আবার চেষ্টা করুন।',
   'error.rateLimited': 'অনেক বেশি অনুরোধ। একটু পরে আবার চেষ্টা করুন।',
   'error.offline': 'আপনি সম্ভবত অফলাইনে আছেন। সংযোগ ফিরলে কাজটি পাঠানো হবে।',
+  'error.unreachable': 'সার্ভারে পৌঁছানো যায়নি। সংযোগ দেখে আবার চেষ্টা করুন।',
 
   'doc.invoice.title': 'চালান',
   'doc.invoice.number': 'চালান নম্বর',
@@ -278,6 +279,7 @@ const bn: Record<MessageKey, string> = {
 
   'catalog.emptyTitle': 'এখনো কোনো প্রোডাক্ট নেই',
   'catalog.emptyDetail': 'একটি প্রোডাক্ট ও তার ভ্যারিয়েন্ট তৈরি করলে এখানে দেখা যাবে।',
+  'catalog.emptyDetailReadOnly': 'ক্যাটালগ অ্যাক্সেস থাকা কেউ প্রোডাক্ট যোগ করলে এখানে দেখা যাবে।',
   'catalog.errorTitle': 'ক্যাটালগ আনা যায়নি',
   'catalog.errorDetail': 'সার্ভার উত্তর দেয়নি। আবার চেষ্টা করুন।',
   'catalog.retry': 'আবার চেষ্টা করুন',
@@ -800,6 +802,7 @@ const bn: Record<MessageKey, string> = {
   'hr.totals': 'সর্বমোট',
   'hr.emptyTitle': 'এখনো কিছু নেই',
   'hr.emptyPeople': 'শুরু করতে প্রথম কর্মী যোগ করুন।',
+  'hr.emptyPeopleReadOnly': 'আপনার অ্যাক্সেস থাকা কর্মীরা এখানে দেখা যাবে।',
   'hr.emptyRuns': 'যে মাসের বেতন দেবেন, সেই মাসের রান শুরু করুন।',
   'hr.emptyLoans': 'কোনো ঋণ লেখা হয়নি।',
   'hr.errorTitle': 'এটি লোড করা গেল না',

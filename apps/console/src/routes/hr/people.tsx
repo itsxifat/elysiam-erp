@@ -130,7 +130,13 @@ export function PeoplePage() {
             }
           />
         ) : items.length === 0 && !employees.isLoading ? (
-          <EmptyState title={t('hr.emptyTitle')} detail={t('hr.emptyPeople')} />
+          // "Add the first employee" is an instruction only a creator can follow. A role that
+          // reads its own record sees an empty list because of row scope, not because the
+          // brand has no staff, and telling it to add someone is both wrong and impossible.
+          <EmptyState
+            title={t('hr.emptyTitle')}
+            detail={t(mayCreate ? 'hr.emptyPeople' : 'hr.emptyPeopleReadOnly')}
+          />
         ) : (
           <section aria-label={t('hr.people')} className="space-y-2">
             <table className="w-full text-sm">

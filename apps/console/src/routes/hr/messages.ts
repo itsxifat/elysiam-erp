@@ -174,6 +174,7 @@ const HR_KEYS = [
   'hr.totals',
   'hr.emptyTitle',
   'hr.emptyPeople',
+  'hr.emptyPeopleReadOnly',
   'hr.emptyRuns',
   'hr.emptyLoans',
   'hr.errorTitle',

@@ -95,7 +95,10 @@ export function Field({
 }) {
   return (
     <div className="space-y-1">
-      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+      {/* `block`: a <label> is inline, so beside a fixed-width control (the filter row)
+          it sat on the same line touching the input — unreadable in Bangla, where the
+          labels run longer. Full-width grid controls hid it by wrapping. */}
+      <label htmlFor={id} className="block text-xs font-medium text-muted-foreground">
         {label}
       </label>
       {children}

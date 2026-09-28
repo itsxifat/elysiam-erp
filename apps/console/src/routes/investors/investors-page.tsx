@@ -1,3 +1,4 @@
+import type { MessageKey } from '@elysium/i18n';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Button,
@@ -671,7 +672,7 @@ export function InvestorsPage() {
         <Form<InvestorForm>
           form={investorForm}
           onSubmit={(values) => addMutation.mutateAsync(values).then(() => undefined)}
-          {...(addMutation.error === null ? {} : { submitError: messageOf(addMutation.error) })}
+          {...(addMutation.error === null ? {} : { submitError: messageOf(addMutation.error, t) })}
         >
           <div className="space-y-4">
             <TextField<InvestorForm> name="code" label={a('investors.fieldCode')} required />
@@ -714,7 +715,7 @@ export function InvestorsPage() {
           onSubmit={(values) => capitalMutation.mutateAsync(values).then(() => undefined)}
           {...(capitalMutation.error === null
             ? {}
-            : { submitError: messageOf(capitalMutation.error) })}
+            : { submitError: messageOf(capitalMutation.error, t) })}
         >
           <div className="space-y-4">
             <SelectField<InvestmentForm>
@@ -764,7 +765,7 @@ export function InvestorsPage() {
           onSubmit={(values) => declareMutation.mutateAsync(values).then(() => undefined)}
           {...(declareMutation.error === null
             ? {}
-            : { submitError: messageOf(declareMutation.error) })}
+            : { submitError: messageOf(declareMutation.error, t) })}
         >
           <div className="space-y-4">
             <TextField<DistributionForm> name="month" label={a('investors.fieldMonth')} required />
@@ -805,7 +806,7 @@ export function InvestorsPage() {
           onSubmit={(values) => requestMutation.mutateAsync(values).then(() => undefined)}
           {...(requestMutation.error === null
             ? {}
-            : { submitError: messageOf(requestMutation.error) })}
+            : { submitError: messageOf(requestMutation.error, t) })}
         >
           <div className="space-y-4">
             <SelectField<WithdrawalForm>
@@ -858,7 +859,7 @@ export function InvestorsPage() {
           }
           {...(reviewMutation.error === null
             ? {}
-            : { submitError: messageOf(reviewMutation.error) })}
+            : { submitError: messageOf(reviewMutation.error, t) })}
         >
           <div className="space-y-4">
             <SelectField<ReviewForm>
@@ -923,7 +924,17 @@ export function tableLabels(
 }
 
 /** The server's message, never a stack trace, and never the raw error object (§23). */
-export function messageOf(error: unknown): string {
+/**
+ * What to tell the user when a request fails.
+ *
+ * The server's problem+json `detail` is written to be shown (the problem filter
+ * turns every 500 into "Something went wrong on our side"), so it is passed
+ * through. Anything else never reached the server — and that sentence goes
+ * through the catalogue, because a Bangla screen with one English error line is
+ * the screen someone photographs and sends to support. It is not `error.offline`:
+ * that one promises queued work is kept, which is true for the POS and not here.
+ */
+export function messageOf(error: unknown, t: (key: MessageKey) => string): string {
   if (error instanceof ApiError) return error.message;
-  return 'The server could not be reached.';
+  return t('error.unreachable');
 }

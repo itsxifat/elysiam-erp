@@ -1,7 +1,7 @@
 import {
   Button,
   DataTable,
-  EmptyState,
+  ErrorState,
   Money,
   PermissionGate,
   StatusBadge,
@@ -103,7 +103,7 @@ export function InvestorDetailPage() {
       window.open(signed.url, '_blank', 'noopener,noreferrer');
     },
     onError: (error: unknown) => {
-      setOpenError(messageOf(error));
+      setOpenError(messageOf(error, t));
     },
   });
 
@@ -178,10 +178,14 @@ export function InvestorDetailPage() {
 
   const investor = investorQuery.data;
   if (investorQuery.isError) {
+    // ErrorState, not EmptyState: a failed load is announced (`role="alert"`) and
+    // styled as a failure. Rendered as an empty state it read as "this investor has
+    // nothing", which on a page of money balances is the most misleading thing a
+    // screen can say.
     return (
-      <EmptyState
+      <ErrorState
         title={a('investors.errorTitle')}
-        detail={messageOf(investorQuery.error)}
+        detail={messageOf(investorQuery.error, t)}
         action={
           <Button variant="outline" size="sm" onClick={() => void investorQuery.refetch()}>
             {t('common.retry')}

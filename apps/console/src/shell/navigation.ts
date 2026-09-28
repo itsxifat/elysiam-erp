@@ -173,7 +173,14 @@ export const NAVIGATION: readonly NavSection[] = [
         icon: Cog,
         required: { action: 'update', subject: 'ApprovalThreshold' },
       },
-      { to: '/tables', labelKey: 'nav.tables', icon: Table2, required: 'always' },
+      /*
+       * M05's DataTable showcase, with invented rows. Development builds only: shown
+       * to every role in production it put fake figures one click from real ones,
+       * and a demo page in a staff tool reads as unfinished software.
+       */
+      ...(import.meta.env.DEV
+        ? [{ to: '/tables', labelKey: 'nav.tables', icon: Table2, required: 'always' } as const]
+        : []),
     ],
   },
 ];

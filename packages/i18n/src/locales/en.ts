@@ -120,6 +120,7 @@ const en = {
   'error.validation': 'Check the highlighted fields and try again.',
   'error.rateLimited': 'Too many requests. Wait a moment and try again.',
   'error.offline': 'You appear to be offline. Your work is kept until the connection returns.',
+  'error.unreachable': 'The server could not be reached. Check the connection and try again.',
 
   /*
    * Customer-facing document copy (§22).
@@ -314,6 +315,7 @@ const en = {
 
   'catalog.emptyTitle': 'No products yet',
   'catalog.emptyDetail': 'Create a product and its variants to see it here.',
+  'catalog.emptyDetailReadOnly': 'Products appear here once someone with catalog access adds them.',
   'catalog.errorTitle': 'The catalog could not be loaded',
   'catalog.errorDetail': 'The server did not answer. Try again.',
   'catalog.retry': 'Try again',
@@ -837,6 +839,7 @@ const en = {
   'hr.totals': 'Totals',
   'hr.emptyTitle': 'Nothing here yet',
   'hr.emptyPeople': 'Add the first employee to get started.',
+  'hr.emptyPeopleReadOnly': 'Employees you have access to will appear here.',
   'hr.emptyRuns': 'Start a run for the month you want to pay.',
   'hr.emptyLoans': 'No staff loans have been recorded.',
   'hr.errorTitle': 'Could not load this',

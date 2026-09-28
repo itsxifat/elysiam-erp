@@ -181,7 +181,8 @@ export function CatalogProductsPage() {
             previous: ct('catalog.previous'),
             next: ct('catalog.next'),
             emptyTitle: ct('catalog.emptyTitle'),
-            emptyDetail: ct('catalog.emptyDetail'),
+            // Only a role that can create products is told to create one.
+            emptyDetail: ct(mayWrite ? 'catalog.emptyDetail' : 'catalog.emptyDetailReadOnly'),
             errorTitle: ct('catalog.errorTitle'),
             errorDetail: ct('catalog.errorDetail'),
             retry: ct('catalog.retry'),

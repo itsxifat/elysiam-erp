@@ -41,6 +41,7 @@ const CATALOG_KEYS = [
   'catalog.colBarcode',
   'catalog.emptyTitle',
   'catalog.emptyDetail',
+  'catalog.emptyDetailReadOnly',
   'catalog.errorTitle',
   'catalog.errorDetail',
   'catalog.retry',
