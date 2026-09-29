@@ -1,15 +1,18 @@
 import type { Logger } from 'pino';
+import { z } from 'zod';
 
 import type { JobFailureReporter, JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
-import { deadLetterNameFor } from '../../platform/jobs/queues.js';
 import type { BookingService } from './booking.service.js';
 import {
   bookParcelPayload,
   cancelParcelPayload,
   COURIER_QUEUES,
+  fetchAccountSettlementsPayload,
   pollOrgPayload,
   processWebhookPayload,
+  repollPayload,
 } from './courier.queues.js';
+import type { SettlementsService } from './settlements.service.js';
 import type { CourierSyncService } from './sync.service.js';
 
 /**
@@ -25,8 +28,8 @@ import type { CourierSyncService } from './sync.service.js';
  *
  * §20: "5 retries, then dead-letter → booking_failed". `JobsRuntime.workDeadLetters` already
  * emits the generic `job.failed` for every queue, and that is not enough for M12 check 6,
- * which wants the *order* flagged and `delivery.booking_failed` raised. So
- * `delivery.book_parcel`'s dead-letter queue gets a handler of its own that does both, and
+ * which wants the parcel flagged and `delivery.booking_failed` raised. So
+ * `delivery.book_parcel` is worked with a failure reporter of its own that does both, and
  * then reports `job.failed` as well — an operator watching the failed-jobs view and an
  * org_admin watching their alerts are two different people who both need to know.
  *
@@ -40,10 +43,53 @@ export interface CourierWorkerDependencies {
   readonly sync: CourierSyncService;
   readonly report: JobFailureReporter;
   readonly logger: Logger;
+  /**
+   * M15's settlement fetch. Optional only so `main.worker.ts` keeps compiling until the
+   * integrator passes `context.get(SettlementsService)` (see the INTEGRATION notes); without
+   * it the fetch queues are still drained — as no-ops that say so — rather than left to
+   * expire into dead letters every morning.
+   */
+  readonly settlements?: SettlementsService;
 }
 
 export async function registerCourierJobs(deps: CourierWorkerDependencies): Promise<void> {
-  const { jobs, booking, sync, report, logger } = deps;
+  const { jobs, booking, sync, report, logger, settlements } = deps;
+
+  /*
+   * M12 acceptance check 6: a booking that spends every retry flags its parcel and raises
+   * `delivery.booking_failed`.
+   *
+   * Through the runtime's **own** dead-letter watcher, by handing `jobs.work` a reporter that
+   * does the courier's part first. M12 registered a second `boss.work` on
+   * `delivery.book_parcel.dead` instead — but `jobs.work` had already attached the generic
+   * watcher to that queue, so there were two workers on it and pg-boss handed each dead letter
+   * to whichever fetched first. The generic one only reports `job.failed`: for every booking
+   * it won, the parcel was never flagged `failed` and `delivery.booking_failed` never reached
+   * an org_admin. One watcher, one handler, now — and the M15 queue suite drives the real
+   * retry → dead-letter path through it.
+   *
+   * The failure's `ref` is the consignment id — `reserveConsignment` enqueues with it — and it
+   * is checked to be one before it is used, because `pgboss.job` is not our table.
+   */
+  const reportBookingFailure: JobFailureReporter = async (failure) => {
+    const consignmentId =
+      failure.ref !== null && z.string().uuid().safeParse(failure.ref).success
+        ? failure.ref
+        : null;
+    if (failure.orgId === null || consignmentId === null) {
+      logger.error({ queue: failure.queue }, 'dead-lettered booking carried no usable envelope');
+    } else {
+      await booking.reportBookingFailed({
+        orgId: failure.orgId,
+        consignmentId,
+        // A code, never the courier's message: it quotes the address and phone number we
+        // sent, and `delivery.booking_failed` reaches every org_admin (§19, invariant 10).
+        code: 'COURIER_BOOKING_FAILED',
+      });
+    }
+    // And the generic report as well, so the failed-jobs view shows it too.
+    await report({ ...failure, code: 'COURIER_BOOKING_FAILED' });
+  };
 
   await jobs.work(
     COURIER_QUEUES.book,
@@ -52,7 +98,7 @@ export async function registerCourierJobs(deps: CourierWorkerDependencies): Prom
       if (job.orgId === null) throw new Error('delivery.book_parcel is tenant-scoped');
       await booking.runBooking({ orgId: job.orgId, payload });
     },
-    report,
+    reportBookingFailure,
   );
 
   await jobs.work(
@@ -95,41 +141,56 @@ export async function registerCourierJobs(deps: CourierWorkerDependencies): Prom
     report,
   );
 
-  /*
-   * M12 acceptance check 6, in one handler.
-   *
-   * `workDeadLetters` in the runtime has already claimed this queue for its generic
-   * `job.failed`, so this is a *second* worker on the same dead-letter queue — which the
-   * runtime warns about, because two watchers each claim some of the jobs. So the ordering
-   * matters: this registration happens **before** the entrypoint's sweep, and the sweep is a
-   * no-op for a queue already watched (`watchedDeadLetters`). The INTEGRATION notes say to
-   * call `registerCourierJobs` before the sweep for exactly this reason.
-   */
-  await jobs.boss.work<unknown>(deadLetterNameFor(COURIER_QUEUES.book), async (batch) => {
-    for (const job of batch) {
-      const envelope = job.data as { orgId?: unknown; payload?: unknown };
-      const orgId = typeof envelope.orgId === 'string' ? envelope.orgId : null;
-      const parsed = bookParcelPayload.safeParse(envelope.payload);
-      if (orgId === null || !parsed.success) {
-        logger.error({ jobId: job.id }, 'dead-lettered booking carried no usable envelope');
-        continue;
+  // M15: the stuck-parcel queue's bulk re-poll.
+  await jobs.work(
+    COURIER_QUEUES.repoll,
+    async (job) => {
+      const payload = repollPayload.parse(job.payload);
+      if (job.orgId === null) throw new Error('delivery.repoll_parcels is tenant-scoped');
+      const outcome = await sync.runRepoll({ orgId: job.orgId, payload });
+      logger.info({ orgId: job.orgId, ...outcome }, 'courier re-poll finished');
+    },
+    report,
+  );
+
+  // M15: the settlement fetch cron fan-out. Global: it fires once and enqueues per account.
+  await jobs.work(
+    COURIER_QUEUES.fetchSettlements,
+    async () => {
+      if (settlements === undefined) {
+        logger.warn('settlement fetch is not wired into this worker; nothing was fetched');
+        return;
       }
+      const enqueued = await settlements.runFetchFanOut();
+      if (enqueued > 0) logger.info({ enqueued }, 'courier settlement fetch fanned out');
+    },
+    report,
+  );
 
-      await booking.reportBookingFailed({
-        orgId,
-        consignmentId: parsed.data.consignmentId,
-        // A code, never the courier's message: it quotes the address and phone number we
-        // sent, and `delivery.booking_failed` reaches every org_admin (§19, invariant 10).
-        code: 'COURIER_BOOKING_FAILED',
-      });
-
-      // And the generic report as well, so the failed-jobs view shows it too.
-      await report({
-        queue: COURIER_QUEUES.book,
-        orgId,
-        ref: parsed.data.consignmentId,
-        code: 'COURIER_BOOKING_FAILED',
-      });
-    }
-  });
+  await jobs.work(
+    COURIER_QUEUES.fetchAccountSettlements,
+    async (job) => {
+      const payload = fetchAccountSettlementsPayload.parse(job.payload);
+      if (job.orgId === null) {
+        throw new Error('delivery.fetch_account_settlements is tenant-scoped');
+      }
+      if (settlements === undefined) {
+        logger.warn({ orgId: job.orgId }, 'settlement fetch is not wired into this worker');
+        return;
+      }
+      const { outcomes } = await settlements.runFetch({ orgId: job.orgId, payload });
+      // Counts and codes only: a statement reference is the courier's, but nothing here needs
+      // more than how many of each outcome there were.
+      logger.info(
+        {
+          orgId: job.orgId,
+          created: outcomes.filter((entry) => entry.outcome === 'created').length,
+          duplicate: outcomes.filter((entry) => entry.outcome === 'duplicate').length,
+          refused: outcomes.filter((entry) => entry.outcome === 'refused').length,
+        },
+        'courier settlement fetch finished',
+      );
+    },
+    report,
+  );
 }

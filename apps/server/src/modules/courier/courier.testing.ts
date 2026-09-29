@@ -27,6 +27,7 @@ import type {
   AppliedTrigger,
   CourierTriggerInput,
   OrderBookingSnapshot,
+  OrderFacts,
   OrdersPort,
   ReturnableLine,
 } from './ports/orders.port.js';
@@ -65,29 +66,54 @@ import type { WalletsPort } from './ports/wallets.port.js';
  * time. The same arrangement `inventory.testing.ts` uses for M07's four files.
  */
 export async function applyCourierMigrations(): Promise<void> {
-  const already = await withSystem(async (tx) => {
-    const rows = await tx.execute<{ present: boolean }>(sql`
-      select exists (
-        select 1 from pg_trigger
-        where tgname = 'courier_assert_collection_has_dispatch'
-      ) as present
-    `);
-    return rows[0]?.present === true;
-  });
-  if (already) return;
+  /*
+   * Each file with the object whose presence proves it ran.
+   *
+   * 0052 is in the journal now and is detected and skipped. M15's three (0065–0067) are not
+   * yet — they are handed to the integrator as INTEGRATION lines for the same reason 0052
+   * was — so until they are registered this is what applies them. The marker for each is
+   * the *last* object it creates, so a file that died half-way is re-run rather than
+   * mistaken for done.
+   */
+  const files: readonly { readonly file: string; readonly marker: ReturnType<typeof sql> }[] = [
+    {
+      file: '0052_courier_settlement_binding.sql',
+      marker: sql`select exists (select 1 from pg_trigger where tgname = 'courier_assert_collection_has_dispatch') as present`,
+    },
+    {
+      file: '0065_courier_m15_schema.sql',
+      marker: sql`select exists (select 1 from pg_constraint where conname = 'settlements_fingerprint_iff_api') as present`,
+    },
+    {
+      file: '0066_courier_m15_policies.sql',
+      marker: sql`select exists (select 1 from pg_policies where schemaname = 'courier' and policyname = 'settlement_fetch_runs_org_isolation') as present`,
+    },
+    {
+      file: '0067_courier_m15_integrity.sql',
+      marker: sql`select exists (select 1 from pg_trigger where tgname = 'courier_assert_selection_rule') as present`,
+    },
+  ];
 
-  const file = path.resolve(
-    import.meta.dirname,
-    '../../../../../packages/db/migrations/0052_courier_settlement_binding.sql',
-  );
-  const contents = await readFile(file, 'utf8');
-  // The same separator the real migrator splits on. Comment-only fragments are valid no-op
-  // statements, so they need no filtering.
-  for (const statement of contents.split('--> statement-breakpoint')) {
-    const trimmed = statement.trim();
-    if (trimmed === '') continue;
+  for (const { file, marker } of files) {
+    const already = await withSystem(async (tx) => {
+      const rows = await tx.execute<{ present: boolean }>(marker);
+      return rows[0]?.present === true;
+    });
+    if (already) continue;
+
+    const contents = await readFile(
+      path.resolve(import.meta.dirname, '../../../../../packages/db/migrations', file),
+      'utf8',
+    );
+    // The same separator the real migrator splits on. Comment-only fragments are valid no-op
+    // statements, so they need no filtering. One transaction for the file, as the migrator
+    // gives it, so a failure leaves nothing half-applied for the marker to misread.
     await withSystem(async (tx) => {
-      await tx.execute(sql.raw(trimmed));
+      for (const statement of contents.split('--> statement-breakpoint')) {
+        const trimmed = statement.trim();
+        if (trimmed === '') continue;
+        await tx.execute(sql.raw(trimmed));
+      }
     });
   }
 }
@@ -522,6 +548,35 @@ export class TestOrdersPort implements OrdersPort {
       addressLine: row.ship_address_line,
       itemSummary: null,
       notes: row.notes,
+    };
+  }
+
+  async summary(tx: Tx, orgId: string, orderId: string): Promise<OrderFacts | undefined> {
+    const rows = await tx.execute<{
+      order_no: string;
+      status: string;
+      branch_id: string | null;
+      courier_id: string | null;
+      delivery_zone_id: string | null;
+      phone_e164: string;
+      cod_amount_poisha: string;
+    }>(sql`
+      select o.order_no, o.status::text as status, o.branch_id, o.courier_id, o.delivery_zone_id,
+             c.phone_e164, o.cod_amount_poisha::text
+      from sales.orders o
+      join sales.customers c on c.org_id = o.org_id and c.id = o.customer_id
+      where o.org_id = ${orgId} and o.id = ${orderId}
+    `);
+    const row = rows[0];
+    if (row === undefined) return undefined;
+    return {
+      orderNo: row.order_no,
+      status: row.status as OrderStatus,
+      branchId: row.branch_id,
+      courierId: row.courier_id,
+      deliveryZoneId: row.delivery_zone_id,
+      customerPhoneE164: row.phone_e164,
+      codAmountPoisha: row.cod_amount_poisha,
     };
   }
 

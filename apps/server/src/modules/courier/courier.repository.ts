@@ -183,6 +183,10 @@ export interface ConsignmentRow extends Record<string, unknown> {
   readonly last_polled_at: string | null;
   readonly settlement_id: string | null;
   readonly settled_at: string | null;
+  /** M15: the order's zone when the parcel was booked. */
+  readonly delivery_zone_id: string | null;
+  /** M15: when the status last actually changed, for the stuck-parcel queue. */
+  readonly status_changed_at: string | null;
 }
 
 const CONSIGNMENT_COLUMNS = sql`
@@ -190,7 +194,8 @@ const CONSIGNMENT_COLUMNS = sql`
   tracking_code, reference, booking_state, booking_attempts, booking_failure_code,
   booking_failure_message, status, raw_status, cod_amount_poisha, collected_poisha,
   booked_at, handover_confirmed_at, handover_confirmed_by, delivered_at, returned_at,
-  last_status_at, last_polled_at, settlement_id, settled_at
+  last_status_at, last_polled_at, settlement_id, settled_at, delivery_zone_id,
+  status_changed_at
 `;
 
 export async function consignmentById(
@@ -278,17 +283,19 @@ export interface NewConsignment {
   readonly reference: string;
   readonly codAmountPoisha: bigint;
   readonly createdBy: string;
+  /** M15: the order's zone, for the performance report. Null when the order has none. */
+  readonly deliveryZoneId?: string | null;
 }
 
 export async function insertConsignment(tx: Tx, input: NewConsignment): Promise<string> {
   const rows = await tx.execute<{ id: string }>(sql`
     insert into courier.consignments
       (org_id, order_id, courier_account_id, courier_id, branch_id, reference,
-       booking_state, status, cod_amount_poisha, created_by)
+       booking_state, status, cod_amount_poisha, created_by, delivery_zone_id)
     values (
       ${input.orgId}, ${input.orderId}, ${input.courierAccountId}, ${input.courierId},
       ${input.branchId}::uuid, ${input.reference}, 'pending', 'booked',
-      ${input.codAmountPoisha.toString()}, ${input.createdBy}
+      ${input.codAmountPoisha.toString()}, ${input.createdBy}, ${input.deliveryZoneId ?? null}::uuid
     )
     returning id
   `);
@@ -326,6 +333,7 @@ export async function markBooked(
       status = ${input.status}::courier.parcel_status,
       booked_at = coalesce(booked_at, ${input.at.toISOString()}::timestamptz),
       last_status_at = coalesce(last_status_at, ${input.at.toISOString()}::timestamptz),
+      status_changed_at = coalesce(status_changed_at, ${input.at.toISOString()}::timestamptz),
       booking_failure_code = null,
       booking_failure_message = null,
       updated_at = now()
@@ -373,6 +381,7 @@ export async function markCancelled(tx: Tx, orgId: string, consignmentId: string
   await tx.execute(sql`
     update courier.consignments set
       booking_state = 'cancelled',
+      status_changed_at = case when status <> 'cancelled' then now() else status_changed_at end,
       status = 'cancelled',
       updated_at = now()
     where org_id = ${orgId} and id = ${consignmentId}
@@ -392,16 +401,44 @@ export async function applyConsignmentStatus(
   input: {
     orgId: string;
     consignmentId: string;
+    /** What the consignment should hold now: `trackingStatusAfter(current, incoming)`. */
     status: string;
     rawStatus: string;
+    /**
+     * False when the courier's word was not taken — an `unknown` word, or a finished
+     * parcel's courier talking again. The raw word then stays on the event row only, so the
+     * consignment's `raw_status` keeps describing the status it actually holds.
+     */
+    rawApplies: boolean;
     occurredAt: Date;
   },
 ): Promise<void> {
+  const at = input.occurredAt.toISOString();
+  /*
+   * M15's rules, in one statement so a concurrent writer cannot interleave between them:
+   *
+   * - an event **older** than the last status change does not move the status. Couriers
+   *   deliver out of order, and a late `in_transit` must not undo an `out_for_delivery`;
+   * - `status_changed_at` moves only when the status does — it is the stuck-parcel clock;
+   * - `last_status_at` is the latest moment the courier said anything, never moving back.
+   */
   await tx.execute(sql`
     update courier.consignments set
-      status = ${input.status}::courier.parcel_status,
-      raw_status = ${input.rawStatus},
-      last_status_at = ${input.occurredAt.toISOString()}::timestamptz,
+      status_changed_at = case
+        when (status_changed_at is null or ${at}::timestamptz >= status_changed_at)
+             and status <> ${input.status}::courier.parcel_status
+          then ${at}::timestamptz
+        else status_changed_at end,
+      raw_status = case
+        when ${input.rawApplies}
+             and (status_changed_at is null or ${at}::timestamptz >= status_changed_at)
+          then ${input.rawStatus}
+        else raw_status end,
+      status = case
+        when status_changed_at is null or ${at}::timestamptz >= status_changed_at
+          then ${input.status}::courier.parcel_status
+        else status end,
+      last_status_at = greatest(coalesce(last_status_at, ${at}::timestamptz), ${at}::timestamptz),
       updated_at = now()
     where org_id = ${input.orgId} and id = ${input.consignmentId}
   `);
@@ -772,6 +809,9 @@ export interface NewSettlement {
   readonly matchedRowCount: number;
   readonly exceptionCount: number;
   readonly importedBy: string;
+  /** M15: how the statement arrived. An API batch carries its fingerprint. */
+  readonly source?: 'upload' | 'api';
+  readonly sourceFingerprint?: string | null;
 }
 
 export async function insertSettlement(tx: Tx, input: NewSettlement): Promise<string> {
@@ -782,7 +822,7 @@ export async function insertSettlement(tx: Tx, input: NewSettlement): Promise<st
        file_row_count, matched_gross_poisha, matched_charges_poisha,
        matched_delivery_charges_poisha, matched_return_charges_poisha,
        matched_other_charges_poisha, matched_net_poisha, matched_row_count,
-       exception_count, imported_by)
+       exception_count, imported_by, source, source_fingerprint)
     values (
       ${input.orgId}, ${input.courierAccountId}, ${input.courierId}, ${input.branchId}::uuid,
       ${input.reference}, ${input.settlementDate}, ${input.fileObjectId}::uuid,
@@ -793,7 +833,8 @@ export async function insertSettlement(tx: Tx, input: NewSettlement): Promise<st
       ${input.matchedDeliveryChargesPoisha.toString()},
       ${input.matchedReturnChargesPoisha.toString()},
       ${input.matchedOtherChargesPoisha.toString()}, ${input.matchedNetPoisha.toString()},
-      ${input.matchedRowCount}, ${input.exceptionCount}, ${input.importedBy}
+      ${input.matchedRowCount}, ${input.exceptionCount}, ${input.importedBy},
+      ${input.source ?? 'upload'}, ${input.sourceFingerprint ?? null}
     )
     returning id
   `);
@@ -870,6 +911,7 @@ export interface SettlementRow extends Record<string, unknown> {
   readonly imported_by: string;
   readonly posted_at: string | null;
   readonly rejected_reason: string | null;
+  readonly source: 'upload' | 'api';
 }
 
 const SETTLEMENT_COLUMNS = sql`
@@ -880,7 +922,7 @@ const SETTLEMENT_COLUMNS = sql`
   matched_delivery_charges_poisha::text, matched_return_charges_poisha::text,
   matched_other_charges_poisha::text, matched_net_poisha::text, matched_row_count,
   exception_count, approval_request_id, charges_journal_id, cash_journal_id, imported_by,
-  posted_at, rejected_reason
+  posted_at, rejected_reason, source
 `;
 
 export async function settlementById(
@@ -1125,4 +1167,554 @@ export async function reconciliation(
     limit 5000
   `);
   return [...rows];
+}
+
+// --- M15 ------------------------------------------------------------------------
+
+/**
+ * The org's zone → courier rules, in the order `selectCourier` reads them.
+ *
+ * Every rule, active or not: the booking path filters on `is_active` through the domain,
+ * and the console shows the switched-off ones so a person can see what was turned off.
+ */
+export interface SelectionRuleRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly priority: number;
+  readonly delivery_zone_id: string | null;
+  readonly min_cod_poisha: string | null;
+  readonly max_cod_poisha: string | null;
+  readonly courier_id: string;
+  readonly is_active: boolean;
+  readonly note: string | null;
+  readonly created_by: string;
+  readonly updated_at: string;
+}
+
+export async function listSelectionRules(tx: Tx, orgId: string): Promise<SelectionRuleRow[]> {
+  const rows = await tx.execute<SelectionRuleRow>(sql`
+    select id, priority, delivery_zone_id, min_cod_poisha::text, max_cod_poisha::text,
+           courier_id, is_active, note, created_by, updated_at
+    from courier.selection_rules
+    where org_id = ${orgId}
+    order by priority, id
+  `);
+  return [...rows];
+}
+
+/**
+ * Replace the org's rule set with `rules`, in the caller's transaction.
+ *
+ * A delete and an insert per rule rather than a diff, because the set is what an operator
+ * edits and saves: a diff would need rule identity to survive the form, and the audit row
+ * the caller writes in the same transaction already holds the set before and after.
+ */
+export async function replaceSelectionRules(
+  tx: Tx,
+  orgId: string,
+  rules: readonly {
+    priority: number;
+    deliveryZoneId: string | null;
+    minCodPoisha: bigint | null;
+    maxCodPoisha: bigint | null;
+    courierId: string;
+    isActive: boolean;
+    note: string | null;
+  }[],
+  createdBy: string,
+): Promise<void> {
+  await tx.execute(sql`delete from courier.selection_rules where org_id = ${orgId}`);
+  for (const rule of rules) {
+    await tx.execute(sql`
+      insert into courier.selection_rules
+        (org_id, priority, delivery_zone_id, min_cod_poisha, max_cod_poisha, courier_id,
+         is_active, note, created_by)
+      values (
+        ${orgId}, ${rule.priority}, ${rule.deliveryZoneId}::uuid,
+        ${rule.minCodPoisha === null ? null : rule.minCodPoisha.toString()}::bigint,
+        ${rule.maxCodPoisha === null ? null : rule.maxCodPoisha.toString()}::bigint,
+        ${rule.courierId}, ${rule.isActive}, ${rule.note}, ${createdBy}
+      )
+    `);
+  }
+}
+
+/**
+ * Couriers with an active account, and the provider each is booked through.
+ *
+ * The raw material for "can this courier take a parcel now"; the caller adds whether the
+ * provider's adapter exists and is switched on, which is process configuration rather than
+ * a row.
+ */
+export async function activeAccountProviders(
+  tx: Tx,
+  orgId: string,
+): Promise<{ courier_id: string; provider_code: string }[]> {
+  const rows = await tx.execute<{ courier_id: string; provider_code: string }>(sql`
+    select courier_id, provider_code from courier.courier_accounts
+    where org_id = ${orgId} and is_active
+  `);
+  return [...rows];
+}
+
+/**
+ * Candidates for the stuck-parcel queue (M15).
+ *
+ * Three ways onto the list, and the SQL returns the union so the service can name the reason:
+ *
+ * - **stale**: booked with the courier, not finished, and the status last *changed* on or
+ *   before `cutoff` (an Asia/Dhaka date, invariant 8). The M12 fallback columns stand in for
+ *   a row written before `status_changed_at` existed.
+ * - **unknown word**: the courier's latest event was a word we could not map, or the parcel
+ *   itself holds `unknown` (an M12-era row). Listed at once, whatever its age — an unmapped
+ *   word is the exact case where a delivered parcel sits at `shipped` with its COD unbooked,
+ *   and waiting N days to mention it is N days of cash nobody is chasing. The service drops
+ *   the words the provider's map *declares* as `unknown` (Pathao's payment notices), which
+ *   are known and harmless.
+ * - **booking failed**: every retry spent. The parcel never reached the courier, and the
+ *   order will not move until somebody rebooks it.
+ *
+ * `sales.couriers` is joined for the courier's name, as `ACCOUNT_COLUMNS` already does.
+ */
+export interface StuckRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly order_id: string;
+  readonly order_no: string;
+  readonly courier_id: string;
+  readonly courier_name: string;
+  readonly provider_code: string;
+  readonly branch_id: string | null;
+  readonly consignment_no: string | null;
+  readonly tracking_code: string | null;
+  readonly booking_state: string;
+  readonly booking_failure_code: string | null;
+  readonly status: string;
+  readonly raw_status: string | null;
+  readonly cod_amount_poisha: string;
+  readonly booked_at: string | null;
+  readonly since_at: string;
+  readonly since_on: string;
+  readonly last_polled_at: string | null;
+  readonly last_event_status: string | null;
+  readonly last_event_raw: string | null;
+  readonly last_event_at: string | null;
+  readonly escalation_count: number;
+  readonly last_escalation_note: string | null;
+  readonly last_escalation_at: string | null;
+}
+
+const ACTIVE_PARCEL = sql`c.booking_state = 'booked'
+  and c.status not in ('delivered', 'partial_delivered', 'returned_to_merchant', 'cancelled')`;
+
+const STUCK_CLOCK = sql`coalesce(c.status_changed_at, c.last_status_at, c.booked_at, c.created_at)`;
+
+export async function stuckCandidates(
+  tx: Tx,
+  orgId: string,
+  options: {
+    cutoffDate: string;
+    courierId?: string | undefined;
+    branchWhere: SQL;
+    limit: number;
+  },
+): Promise<StuckRow[]> {
+  const rows = await tx.execute<StuckRow>(sql`
+    select c.id, c.order_id, c.reference as order_no, c.courier_id, co.name as courier_name,
+           a.provider_code, c.branch_id, c.consignment_no, c.tracking_code,
+           c.booking_state::text as booking_state, c.booking_failure_code,
+           c.status::text as status, c.raw_status, c.cod_amount_poisha::text,
+           c.booked_at,
+           ${STUCK_CLOCK} as since_at,
+           (${STUCK_CLOCK} at time zone 'Asia/Dhaka')::date::text as since_on,
+           c.last_polled_at,
+           le.status::text as last_event_status, le.raw_status as last_event_raw,
+           le.occurred_at as last_event_at,
+           coalesce(esc.count, 0)::int as escalation_count,
+           esc.last_note as last_escalation_note, esc.last_at as last_escalation_at
+    from courier.consignments c
+    join courier.courier_accounts a on a.org_id = c.org_id and a.id = c.courier_account_id
+    join sales.couriers co on co.org_id = c.org_id and co.id = c.courier_id
+    left join lateral (
+      select ev.status, ev.raw_status, ev.occurred_at
+      from courier.consignment_events ev
+      where ev.org_id = c.org_id and ev.consignment_id = c.id
+      order by ev.occurred_at desc, ev.created_at desc
+      limit 1
+    ) le on true
+    left join lateral (
+      select count(*) as count,
+             (array_agg(e.note order by e.created_at desc))[1] as last_note,
+             max(e.created_at) as last_at
+      from courier.consignment_escalations e
+      where e.org_id = c.org_id and e.consignment_id = c.id
+    ) esc on true
+    where c.org_id = ${orgId}
+      and (${options.courierId ?? null}::uuid is null or c.courier_id = ${options.courierId ?? null}::uuid)
+      and ${options.branchWhere}
+      and (
+        (${ACTIVE_PARCEL}
+          and (${STUCK_CLOCK} at time zone 'Asia/Dhaka')::date <= ${options.cutoffDate}::date)
+        or (${ACTIVE_PARCEL} and (c.status = 'unknown' or le.status = 'unknown'))
+        or c.booking_state = 'failed'
+      )
+    order by since_at
+    limit ${options.limit}
+  `);
+  return [...rows];
+}
+
+/** The consignments a bulk re-poll may ask about: this org's, booked, not finished. */
+export async function pollableConsignments(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+  branchWhere: SQL,
+): Promise<{ id: string; branch_id: string | null }[]> {
+  const found: { id: string; branch_id: string | null }[] = [];
+  // One statement per id, for the reason `linkSettledConsignments` gives: an id list built
+  // into SQL is interpolation, which the repository rule forbids outright.
+  for (const id of ids) {
+    const rows = await tx.execute<{ id: string; branch_id: string | null }>(sql`
+      select c.id, c.branch_id from courier.consignments c
+      where c.org_id = ${orgId} and c.id = ${id}
+        and c.consignment_no is not null
+        and ${ACTIVE_PARCEL}
+        and ${branchWhere}
+    `);
+    if (rows[0] !== undefined) found.push(rows[0]);
+  }
+  return found;
+}
+
+export async function insertEscalation(
+  tx: Tx,
+  input: { orgId: string; consignmentId: string; note: string; createdBy: string },
+): Promise<{ id: string; created_at: string }> {
+  const rows = await tx.execute<{ id: string; created_at: string }>(sql`
+    insert into courier.consignment_escalations (org_id, consignment_id, note, created_by)
+    values (${input.orgId}, ${input.consignmentId}, ${input.note}, ${input.createdBy})
+    returning id, created_at
+  `);
+  const row = rows[0];
+  if (row === undefined) throw new Error('escalation insert returned no row');
+  return row;
+}
+
+export interface EscalationRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly note: string;
+  readonly created_by: string;
+  readonly created_at: string;
+}
+
+export async function escalationsFor(
+  tx: Tx,
+  orgId: string,
+  consignmentId: string,
+): Promise<EscalationRow[]> {
+  const rows = await tx.execute<EscalationRow>(sql`
+    select id, note, created_by, created_at from courier.consignment_escalations
+    where org_id = ${orgId} and consignment_id = ${consignmentId}
+    order by created_at
+  `);
+  return [...rows];
+}
+
+/**
+ * One row per parcel booked in the window, for the performance report.
+ *
+ * The window is on `booked_at` as a timestamptz range built from Asia/Dhaka midnights, so
+ * the `(org_id, booked_at)` index serves it; wrapping the column in a date conversion would
+ * make the same filter a scan.
+ */
+export interface PerformanceSourceRow extends Record<string, unknown> {
+  readonly courier_id: string;
+  readonly courier_name: string;
+  readonly delivery_zone_id: string | null;
+  readonly status: string;
+  readonly booked_on: string;
+  readonly delivered_on: string | null;
+}
+
+export async function performanceSource(
+  tx: Tx,
+  orgId: string,
+  options: { from: string; to: string; courierId?: string | undefined; branchWhere: SQL },
+): Promise<PerformanceSourceRow[]> {
+  const rows = await tx.execute<PerformanceSourceRow>(sql`
+    select c.courier_id, co.name as courier_name, c.delivery_zone_id,
+           c.status::text as status,
+           (c.booked_at at time zone 'Asia/Dhaka')::date::text as booked_on,
+           (c.delivered_at at time zone 'Asia/Dhaka')::date::text as delivered_on
+    from courier.consignments c
+    join sales.couriers co on co.org_id = c.org_id and co.id = c.courier_id
+    where c.org_id = ${orgId}
+      and c.booking_state in ('booked', 'cancelled')
+      and c.booked_at >= (${options.from}::date)::timestamp at time zone 'Asia/Dhaka'
+      and c.booked_at < ((${options.to}::date + 1)::timestamp at time zone 'Asia/Dhaka')
+      and (${options.courierId ?? null}::uuid is null or c.courier_id = ${options.courierId ?? null}::uuid)
+      and ${options.branchWhere}
+    limit 100000
+  `);
+  return [...rows];
+}
+
+/** A page of parcels for the console's list, newest first, with the courier's name. */
+export interface ParcelListRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly order_id: string;
+  readonly order_no: string;
+  readonly courier_id: string;
+  readonly courier_name: string;
+  readonly branch_id: string | null;
+  readonly consignment_no: string | null;
+  readonly tracking_code: string | null;
+  readonly booking_state: string;
+  readonly status: string;
+  readonly raw_status: string | null;
+  readonly cod_amount_poisha: string;
+  readonly collected_poisha: string | null;
+  readonly booked_at: string | null;
+  readonly status_changed_at: string | null;
+  readonly has_return_receipt: boolean;
+}
+
+export async function listParcels(
+  tx: Tx,
+  orgId: string,
+  options: {
+    q?: string | undefined;
+    statuses?: readonly string[] | undefined;
+    bookingState?: string | undefined;
+    courierId?: string | undefined;
+    awaitingReturn?: boolean | undefined;
+    branchWhere: SQL;
+    limit: number;
+    offset: number;
+  },
+): Promise<ParcelListRow[]> {
+  // `%` and `_` in what a person typed are literal characters, not wildcards.
+  const pattern =
+    options.q === undefined ? null : `%${options.q.replace(/[%_\\]/g, (char) => `\\${char}`)}%`;
+  const statuses =
+    options.statuses === undefined || options.statuses.length === 0
+      ? sql`true`
+      : sql`c.status::text in (${sql.join(
+          options.statuses.map((status) => sql`${status}`),
+          sql`, `,
+        )})`;
+  const rows = await tx.execute<ParcelListRow>(sql`
+    select c.id, c.order_id, c.reference as order_no, c.courier_id, co.name as courier_name,
+           c.branch_id, c.consignment_no, c.tracking_code,
+           c.booking_state::text as booking_state, c.status::text as status, c.raw_status,
+           c.cod_amount_poisha::text, c.collected_poisha::text, c.booked_at,
+           c.status_changed_at,
+           exists (
+             select 1 from courier.return_receipts r
+             where r.org_id = c.org_id and r.consignment_id = c.id
+           ) as has_return_receipt
+    from courier.consignments c
+    join sales.couriers co on co.org_id = c.org_id and co.id = c.courier_id
+    where c.org_id = ${orgId}
+      and (${pattern}::text is null
+           or c.reference ilike ${pattern} or c.consignment_no ilike ${pattern}
+           or c.tracking_code ilike ${pattern})
+      and ${statuses}
+      and (${options.bookingState ?? null}::text is null
+           or c.booking_state::text = ${options.bookingState ?? null})
+      and (${options.courierId ?? null}::uuid is null or c.courier_id = ${options.courierId ?? null}::uuid)
+      and (${options.awaitingReturn !== true}
+           or not exists (
+             select 1 from courier.return_receipts r
+             where r.org_id = c.org_id and r.consignment_id = c.id
+           ))
+      and ${options.branchWhere}
+    order by c.created_at desc
+    limit ${options.limit} offset ${options.offset}
+  `);
+  return [...rows];
+}
+
+/** Parcels for a label sheet: the courier's number, name and our reference. */
+export interface LabelRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly order_id: string;
+  readonly order_no: string;
+  readonly branch_id: string | null;
+  readonly consignment_no: string | null;
+  readonly tracking_code: string | null;
+  readonly booking_state: string;
+  readonly courier_name: string;
+  readonly cod_amount_poisha: string;
+}
+
+export async function labelRows(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+): Promise<LabelRow[]> {
+  const found: LabelRow[] = [];
+  for (const id of ids) {
+    const rows = await tx.execute<LabelRow>(sql`
+      select c.id, c.order_id, c.reference as order_no, c.branch_id, c.consignment_no,
+             c.tracking_code, c.booking_state::text as booking_state, co.name as courier_name,
+             c.cod_amount_poisha::text
+      from courier.consignments c
+      join sales.couriers co on co.org_id = c.org_id and co.id = c.courier_id
+      where c.org_id = ${orgId} and c.id = ${id}
+    `);
+    if (rows[0] !== undefined) found.push(rows[0]);
+  }
+  return found;
+}
+
+/** The org's name for a label's sender block. `org.organizations` is global (§5). */
+export async function orgDisplayName(tx: Tx, orgId: string): Promise<string> {
+  const rows = await tx.execute<{ display_name: string | null; legal_name: string | null }>(sql`
+    select display_name, legal_name from org.organizations where id = ${orgId}
+  `);
+  return rows[0]?.display_name ?? rows[0]?.legal_name ?? '';
+}
+
+/**
+ * The newest parcel booked for an order number, for the public tracking page.
+ *
+ * Matched on `reference`, which is the order number the courier echoes (M12 writes it on
+ * every consignment), so the page can find an order without reading `sales.orders` — the
+ * orders module does not yet expose a lookup by number. An order that has not been booked
+ * with a courier therefore reads as "not found", which is the same answer as a wrong number
+ * and leaks nothing; the page's wording says a new order may not be trackable yet.
+ */
+export interface TrackingRow extends Record<string, unknown> {
+  readonly order_id: string;
+  readonly status: string;
+  readonly tracking_code: string | null;
+  readonly courier_name: string;
+  readonly last_status_at: string | null;
+}
+
+export async function trackingByReference(
+  tx: Tx,
+  orgId: string,
+  orderNo: string,
+): Promise<TrackingRow | undefined> {
+  const rows = await tx.execute<TrackingRow>(sql`
+    select c.order_id, c.status::text as status, c.tracking_code, co.name as courier_name,
+           c.last_status_at
+    from courier.consignments c
+    join sales.couriers co on co.org_id = c.org_id and co.id = c.courier_id
+    where c.org_id = ${orgId} and c.reference = ${orderNo}
+    order by c.created_at desc
+    limit 1
+  `);
+  return rows[0];
+}
+
+/** An active organization by its public slug. `org.organizations` is global (§5). */
+export async function organizationBySlug(tx: Tx, slug: string): Promise<string | undefined> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select id from org.organizations where slug = ${slug} and is_active
+  `);
+  return rows[0]?.id;
+}
+
+/** A settlement already imported under this fingerprint, or this courier reference. */
+export async function existingSettlementFor(
+  tx: Tx,
+  orgId: string,
+  courierAccountId: string,
+  match: { fingerprint: string; reference: string | null },
+): Promise<{ id: string; source_fingerprint: string | null } | undefined> {
+  const rows = await tx.execute<{ id: string; source_fingerprint: string | null }>(sql`
+    select id, source_fingerprint from courier.settlements
+    where org_id = ${orgId} and courier_account_id = ${courierAccountId}
+      and (source_fingerprint = ${match.fingerprint}
+           or (${match.reference}::text is not null and reference = ${match.reference}))
+    order by (source_fingerprint = ${match.fingerprint}) desc nulls last
+    limit 1
+  `);
+  return rows[0];
+}
+
+export interface FetchOutcome {
+  readonly reference: string | null;
+  readonly settlementDate: string;
+  readonly fingerprint: string;
+  readonly outcome: 'created' | 'duplicate' | 'refused';
+  /** The refusal's code, from `packages/contracts/src/errors.ts`. Never a message. */
+  readonly code: string | null;
+  readonly settlementId: string | null;
+}
+
+export async function insertFetchRun(
+  tx: Tx,
+  input: {
+    orgId: string;
+    courierAccountId: string;
+    sinceDate: string;
+    startedAt: Date;
+    finishedAt: Date;
+    outcomes: readonly FetchOutcome[];
+    error: string | null;
+  },
+): Promise<string> {
+  const count = (outcome: FetchOutcome['outcome']) =>
+    input.outcomes.filter((entry) => entry.outcome === outcome).length;
+  const rows = await tx.execute<{ id: string }>(sql`
+    insert into courier.settlement_fetch_runs
+      (org_id, courier_account_id, since_date, started_at, finished_at, statements_seen,
+       statements_created, statements_duplicate, statements_refused, outcomes, error)
+    values (
+      ${input.orgId}, ${input.courierAccountId}, ${input.sinceDate},
+      ${input.startedAt.toISOString()}::timestamptz, ${input.finishedAt.toISOString()}::timestamptz,
+      ${input.outcomes.length}, ${count('created')}, ${count('duplicate')}, ${count('refused')},
+      ${JSON.stringify(input.outcomes)}::jsonb, ${input.error}
+    )
+    returning id
+  `);
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error('fetch run insert returned no id');
+  return id;
+}
+
+export interface FetchRunRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly courier_account_id: string;
+  readonly since_date: string;
+  readonly started_at: string;
+  readonly finished_at: string;
+  readonly statements_seen: number;
+  readonly statements_created: number;
+  readonly statements_duplicate: number;
+  readonly statements_refused: number;
+  readonly outcomes: unknown;
+  readonly error: string | null;
+}
+
+export async function recentFetchRuns(
+  tx: Tx,
+  orgId: string,
+  limit: number,
+): Promise<FetchRunRow[]> {
+  const rows = await tx.execute<FetchRunRow>(sql`
+    select id, courier_account_id, since_date::text, started_at, finished_at, statements_seen,
+           statements_created, statements_duplicate, statements_refused, outcomes, error
+    from courier.settlement_fetch_runs
+    where org_id = ${orgId}
+    order by started_at desc
+    limit ${limit}
+  `);
+  return [...rows];
+}
+
+/** The newest statement date a fetch has imported for this account, or null. */
+export async function latestFetchedStatementDate(
+  tx: Tx,
+  orgId: string,
+  courierAccountId: string,
+): Promise<string | null> {
+  const rows = await tx.execute<{ latest: string | null }>(sql`
+    select max(settlement_date)::text as latest from courier.settlements
+    where org_id = ${orgId} and courier_account_id = ${courierAccountId} and source = 'api'
+  `);
+  return rows[0]?.latest ?? null;
 }

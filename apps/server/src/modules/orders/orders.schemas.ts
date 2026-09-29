@@ -62,6 +62,9 @@ const sourceSchema = z
     utmMedium: z.string().max(120).optional(),
     utmCampaign: z.string().max(120).optional(),
     utmContent: z.string().max(120).optional(),
+    // M11: the fifth UTM parameter. A landing page forwards all five, and dropping one at
+    // the edge would make a paid-search keyword unrecoverable after the fact.
+    utmTerm: z.string().max(120).optional(),
   })
   .strict();
 
@@ -211,12 +214,114 @@ export const orderQuerySchema = z
     q: z.string().trim().min(2).max(64).optional(),
     from: z.string().date().optional(),
     to: z.string().date().optional(),
+    // M11's list filters (Build list: status, channel, date, agent, zone).
+    channel: z.enum(orderChannels).optional(),
+    /** An agent's user id. Narrows the caller's scope; it never reaches past it. */
+    assignedTo: z.string().trim().min(1).max(64).optional(),
+    zoneId: uuid.optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     offset: z.coerce.number().int().min(0).max(100_000).default(0),
   })
   .strict();
 
 export type OrderQuery = z.infer<typeof orderQuerySchema>;
+
+/** Comma-separated uuids, or the same parameter repeated. */
+function uuidList(max: number) {
+  return z
+    .union([z.string(), z.array(z.string())])
+    .transform((value) =>
+      (Array.isArray(value) ? value : value.split(','))
+        .map((entry) => entry.trim())
+        .filter((entry) => entry !== ''),
+    )
+    .pipe(z.array(uuid).min(1).max(max));
+}
+
+/**
+ * The duplicate warning's question (M11 Build list): this number, these SKUs, 24 hours.
+ *
+ * The SKUs are the ones on the form right now, not "any SKU": the same buyer ordering a
+ * second, different item an hour later is a customer coming back, and warning on it would
+ * teach the desk to ignore the banner by lunchtime.
+ */
+export const duplicatesQuerySchema = z
+  .object({ phone: phoneInput, skuIds: uuidList(100) })
+  .strict();
+
+export type DuplicatesQuery = z.infer<typeof duplicatesQuerySchema>;
+
+/** `GET /v1/customers/lookup?phone=` — the desk's first keystrokes. */
+export const customerLookupSchema = z.object({ phone: phoneInput }).strict();
+
+/**
+ * Bulk confirm (M11 Build list). A hundred at a time, and each one on its own.
+ *
+ * The cap is the size of a desk's evening queue, not a performance limit: a request that
+ * could confirm ten thousand orders is one misclick from reserving a warehouse.
+ */
+export const bulkConfirmSchema = z
+  .object({ ids: z.array(uuid).min(1).max(100) })
+  .strict()
+  .refine((value) => new Set(value.ids).size === value.ids.length, {
+    message: 'An order appears twice in that list.',
+  });
+
+export type BulkConfirmInput = z.infer<typeof bulkConfirmSchema>;
+
+/** The document kinds §22 renders for an order. `label` is the parcel's address label. */
+export const orderDocumentKinds = ['invoice', 'packing_slip', 'label'] as const;
+export type OrderDocumentKindName = (typeof orderDocumentKinds)[number];
+
+/** Bulk print: one PDF, one page (or label) per order, in the order the ids were given. */
+export const bulkDocumentQuerySchema = z
+  .object({ ids: uuidList(100), kind: z.enum(orderDocumentKinds).default('invoice') })
+  .strict();
+
+/**
+ * The buyer list's filters (M11 Build list: product, SKU, size, date, channel).
+ *
+ * * `product` is a fragment of the product name **as the order line recorded it**. The
+ *   line's snapshot is what the buyer actually bought, and reading the catalog's current
+ *   name from this module would cross invariant 12 for a rename the buyer never saw.
+ * * `sku` is an exact SKU code.
+ * * `size` is a variant code (`M`, `XL`, `42`) and matches a variant segment of the
+ *   line's SKU code — the segments `buildSkuCode` appends after the product's sequence
+ *   number. See `buyers.repository.ts` for why this is the size and not a guess.
+ * * `from` and `to` are Asia/Dhaka order dates (invariant 8).
+ */
+export const buyerQuerySchema = z
+  .object({
+    product: z.string().trim().min(2).max(120).optional(),
+    sku: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z0-9]+(-[A-Z0-9]+)*$/, 'That is not a SKU code.')
+      .max(64)
+      .optional(),
+    size: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z0-9]{1,8}$/, 'A size is a variant code such as M or 42.')
+      .optional(),
+    from: z.string().date().optional(),
+    to: z.string().date().optional(),
+    channel: z.enum(orderChannels).optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+  })
+  .strict();
+
+export type BuyerQuery = z.infer<typeof buyerQuerySchema>;
+
+export const buyerExportQuerySchema = buyerQuerySchema
+  .omit({ limit: true, offset: true })
+  .extend({ format: z.enum(['csv', 'xlsx']).default('csv') })
+  .strict();
+
+export type BuyerExportQuery = z.infer<typeof buyerExportQuerySchema>;
 
 export const confirmOrderSchema = z
   .object({
@@ -348,5 +453,5 @@ export const upsertZoneSchema = z
 export type UpsertZoneInput = z.infer<typeof upsertZoneSchema>;
 
 export const documentQuerySchema = z
-  .object({ kind: z.enum(['invoice', 'packing_slip']).default('invoice') })
+  .object({ kind: z.enum(orderDocumentKinds).default('invoice') })
   .strict();

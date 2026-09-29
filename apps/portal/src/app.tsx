@@ -2,6 +2,23 @@ import { Moon, Sun } from 'lucide-react';
 import { useState } from 'react';
 
 import { applyTheme, isDark } from './theme.js';
+import { TrackingPage } from './tracking/tracking-page.js';
+import { brandFromPath, isTrackingPath } from './tracking/tracking-input.js';
+
+/**
+ * The portal's entry: the public tracking page at `/track/<brand>` (M15), and the M00
+ * placeholder everywhere else until the reseller and investor portals arrive.
+ *
+ * A path check rather than a router: the portal has one real page today, and adding a router
+ * dependency for one branch would be a lockfile change made concurrently with other agents.
+ * The first milestone that gives the portal a second page adds TanStack Router here, as the
+ * console has it.
+ */
+export function PortalApp() {
+  const path = window.location.pathname;
+  if (isTrackingPath(path)) return <TrackingPage brand={brandFromPath(path)} />;
+  return <App />;
+}
 
 /*
  * M00 placeholder.

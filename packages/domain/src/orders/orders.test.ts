@@ -293,20 +293,47 @@ describe('order totals (§9, check 3)', () => {
     ).toThrowError(/revenue cannot be negative/);
   });
 
-  it('property: COD = items − discount + delivery − advance, and never negative', () => {
+  it('property: COD = items − discount + delivery − advance, refused exactly when negative', () => {
+    /*
+     * An oracle, not a tolerance.
+     *
+     * The first version of this property returned early on *any* `ORDER_TOTAL_INVALID`, so an
+     * implementation that refused perfectly good orders passed it — a property that cannot
+     * fail on over-rejection is only half a property. So the expected outcome is computed
+     * here, independently and in plain bigint arithmetic, *before* the domain is asked, and
+     * the domain must match it both ways: refuse precisely when the discount exceeds the
+     * items or the COD would be negative (the two refusals §9 and §7 state), with the
+     * message that names which, and accept every other order with exactly the oracle's
+     * figures.
+     *
+     * The counters at the end are what stop this from becoming vacuous again: a generator
+     * drift that made every case valid (or every case invalid) would leave one side of the
+     * property unexercised, and the run fails if either side is thin.
+     */
+    let accepted = 0;
+    let refusedDiscount = 0;
+    let refusedCod = 0;
+
+    const price = fc.oneof(
+      fc.integer({ min: 0, max: 5_000_000 }),
+      // Small prices, so the discount and advance ranges below cross the order's value
+      // often enough to exercise both refusals.
+      fc.integer({ min: 0, max: 60_000 }),
+    );
+
     fc.assert(
       fc.property(
         fc.array(
           fc.record({
             qty: fc.integer({ min: 1, max: 20 }),
-            price: fc.integer({ min: 0, max: 5_000_000 }),
+            price,
             discountBp: fc.integer({ min: 0, max: 10_000 }),
           }),
           { minLength: 1, maxLength: 8 },
         ),
         fc.integer({ min: 0, max: 50_000 }),
-        fc.integer({ min: 0, max: 5_000_000 }),
-        fc.integer({ min: 0, max: 5_000_000 }),
+        fc.integer({ min: 0, max: 1_500_000 }),
+        fc.integer({ min: 0, max: 1_500_000 }),
         (rawLines, delivery, orderDiscount, advance) => {
           const lines = rawLines.map((raw) => ({
             qty: raw.qty,
@@ -318,6 +345,18 @@ describe('order totals (§9, check 3)', () => {
             ),
           }));
 
+          // The oracle.
+          const items = lines.reduce(
+            (total, entry) => total + BigInt(entry.unitPricePoisha) * BigInt(entry.qty),
+            0n,
+          );
+          const discount =
+            lines.reduce((total, entry) => total + BigInt(entry.lineDiscountPoisha), 0n) +
+            BigInt(orderDiscount);
+          const cod = items - discount + BigInt(delivery) - BigInt(advance);
+          const expected: 'discount' | 'cod' | 'ok' =
+            discount > items ? 'discount' : cod < 0n ? 'cod' : 'ok';
+
           let totals;
           try {
             totals = computeOrderTotals({
@@ -327,14 +366,26 @@ describe('order totals (§9, check 3)', () => {
               advancePaidPoisha: poisha(advance),
             });
           } catch (error) {
-            // The only legitimate refusals are the two the domain declares.
+            // A refusal the oracle did not predict is the over-rejection this test exists
+            // to catch; one it did predict must be the right refusal, for the right reason.
+            expect(expected, `refused a valid order: ${String(error)}`).not.toBe('ok');
             expect(error).toBeInstanceOf(OrderError);
             expect((error as OrderError).code).toBe('ORDER_TOTAL_INVALID');
+            expect((error as OrderError).message).toMatch(
+              expected === 'discount' ? /revenue cannot be negative/ : /nothing to collect/,
+            );
+            if (expected === 'discount') refusedDiscount += 1;
+            else refusedCod += 1;
             return;
           }
 
+          expect(expected, 'accepted an order whose discount or COD is invalid').toBe('ok');
+          accepted += 1;
+          expect(totals.itemsPoisha).toBe(items);
+          expect(totals.discountPoisha).toBe(discount);
+          expect(totals.codAmountPoisha).toBe(cod);
           expect(totals.codAmountPoisha).toBeGreaterThanOrEqual(0n);
-          expect(totals.netItemsPoisha).toBe(totals.itemsPoisha - totals.discountPoisha);
+          expect(totals.netItemsPoisha).toBe(items - discount);
           expect(totals.codAmountPoisha).toBe(
             totals.itemsPoisha -
               totals.discountPoisha +
@@ -343,7 +394,75 @@ describe('order totals (§9, check 3)', () => {
           );
         },
       ),
-      { numRuns: 500 },
+      { numRuns: 1_000 },
+    );
+
+    expect(accepted).toBeGreaterThan(200);
+    expect(refusedDiscount).toBeGreaterThan(20);
+    expect(refusedCod).toBeGreaterThan(20);
+  });
+
+  it('property: a COD of exactly zero is accepted, and one poisha less is refused', () => {
+    // The boundary the oracle above only reaches by luck, asserted directly: an advance
+    // that pays the order in full is an ordinary prepaid order, not an error.
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 10 }),
+        fc.integer({ min: 1, max: 2_000_000 }),
+        fc.integer({ min: 0, max: 50_000 }),
+        (qty, unitPrice, delivery) => {
+          const payable = BigInt(unitPrice) * BigInt(qty) + BigInt(delivery);
+          const exact = computeOrderTotals({
+            lines: [line(qty, unitPrice)],
+            deliveryChargePoisha: poisha(delivery),
+            advancePaidPoisha: poisha(payable),
+          });
+          expect(exact.codAmountPoisha).toBe(0n);
+          expect(() =>
+            computeOrderTotals({
+              lines: [line(qty, unitPrice)],
+              deliveryChargePoisha: poisha(delivery),
+              advancePaidPoisha: poisha(payable + 1n),
+            }),
+          ).toThrowError(/nothing to collect/);
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  it('property: a discount of exactly the items is accepted, and one poisha more is refused', () => {
+    // A free gift with paid delivery is a real order. The random property meets
+    // "discount = items" almost never, which is how an off-by-one refusing it survived a
+    // mutation run; so the boundary is its own property, split across line and order
+    // discounts so neither placement can hide it.
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 10 }),
+        fc.integer({ min: 1, max: 2_000_000 }),
+        fc.integer({ min: 0, max: 50_000 }),
+        fc.integer({ min: 0, max: 100 }),
+        (qty, unitPrice, delivery, lineSharePct) => {
+          const items = BigInt(unitPrice) * BigInt(qty);
+          const onLine = (items * BigInt(lineSharePct)) / 100n;
+          const onOrder = items - onLine;
+          const free = computeOrderTotals({
+            lines: [line(qty, unitPrice, Number(onLine))],
+            orderDiscountPoisha: poisha(onOrder),
+            deliveryChargePoisha: poisha(delivery),
+          });
+          expect(free.netItemsPoisha).toBe(0n);
+          expect(free.codAmountPoisha).toBe(BigInt(delivery));
+          expect(() =>
+            computeOrderTotals({
+              lines: [line(qty, unitPrice, Number(onLine))],
+              orderDiscountPoisha: poisha(onOrder + 1n),
+              deliveryChargePoisha: poisha(delivery),
+            }),
+          ).toThrowError(/revenue cannot be negative/);
+        },
+      ),
+      { numRuns: 300 },
     );
   });
 

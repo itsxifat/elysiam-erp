@@ -61,10 +61,38 @@ export class FakeCourierAdapter implements CourierAdapter {
   private readonly parcels = new Map<string, FakeParcel>();
   private readonly byReference = new Map<string, string>();
 
-  /** Test-only: forget every parcel. */
+  /** Test-only: forget every parcel, statement and queued failure. */
   reset(): void {
     this.parcels.clear();
     this.byReference.clear();
+    this.issuedStatements.length = 0;
+    this.failNextFetches = 0;
+  }
+
+  /**
+   * Test-only: the statements the fake courier's "settlement API" has issued (M15).
+   *
+   * The fake is the only adapter with `fetchSettlements`, because none of the real couriers'
+   * first-party material describes a settlement API (see the interface). So it is what the
+   * idempotency check runs against: a test issues a statement here, runs the fetch twice, and
+   * asserts one batch.
+   */
+  readonly issuedStatements: SettlementBatch[] = [];
+
+  /** Test-only: make the next `n` settlement fetches fail as a courier outage would. */
+  failNextFetches = 0;
+
+  fetchSettlements(_context: AdapterContext, since: string): Promise<readonly SettlementBatch[]> {
+    if (this.failNextFetches > 0) {
+      this.failNextFetches -= 1;
+      return Promise.reject(
+        new CourierError('COURIER_UNAVAILABLE', 'The courier did not answer.', true),
+      );
+    }
+    // Every statement dated on or after `since`, as a real API would answer a window.
+    return Promise.resolve(
+      this.issuedStatements.filter((statement) => statement.settlementDate >= since),
+    );
   }
 
   /** Test-only: the parcels this fake is holding, for a suite to assert against. */

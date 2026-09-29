@@ -1,4 +1,4 @@
-import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
 import { businessDate, poisha } from '@elysium/domain';
 import { normalizeStatus, statusDedupeKey, type ParcelInput } from '@elysium/domain/courier';
@@ -14,8 +14,8 @@ import {
   type AdapterContext,
   type CourierAdapterRegistry,
 } from './adapters/courier-adapter.js';
-import { courierEnv } from './courier.config.js';
-import { CourierError } from './courier.errors.js';
+import { adapterEnabled, courierEnv } from './courier.config.js';
+import { CourierError, databaseCourierCode } from './courier.errors.js';
 import * as repo from './courier.repository.js';
 import {
   COURIER_QUEUES,
@@ -130,13 +130,41 @@ export class BookingService implements OnModuleInit {
       return { consignmentId: existing.id, enqueued: false };
     }
 
-    const courierId = input.courierId ?? order.courierId;
+    /*
+     * The parcel goes with **the order's** courier, and only that one (M15).
+     *
+     * §7's delivery journal debits `courier_receivable` against the order's `courier_id` —
+     * `TransitionsService.courierFor` takes the party from the order — while a settlement
+     * credits the *consignment's* courier. A parcel booked with any other courier therefore
+     * splits one COD across two parties: the order's courier carries a receivable no
+     * statement ever relieves, the parcel's courier goes negative by the same amount, and
+     * the org-wide total still balances, so nothing but a per-courier variance in the
+     * reconciliation report ever shows it. M12 let the desk name a different courier here
+     * ("overrides the order's own courier"), which did exactly that; M15's selection rules
+     * would have done it for every rule-routed parcel.
+     *
+     * So the rules decide the *order's* courier — the desk applies the recommendation from
+     * `GET /v1/courier/selection/preview` to the order, and the INTEGRATION notes ask the
+     * orders module to consult them when it takes an order — and booking only ever uses the
+     * courier the order already names. A different courier named here is refused with the fix.
+     */
+    const courierId = order.courierId;
     if (courierId === null) {
       throw new CourierError(
         'CONSIGNMENT_INVALID',
-        'This order names no courier, and its delivery zone has no default (§9).',
+        'This order names no courier and its delivery zone has no default (§9). Set the order’s courier first.',
       );
     }
+    if (input.courierId !== undefined && input.courierId !== null && input.courierId !== courierId) {
+      throw new CourierError(
+        'CONSIGNMENT_INVALID',
+        'This order is set to a different courier. Change the order’s courier first: the delivery’s receivable is booked against it (§7).',
+      );
+    }
+    // The zone, copied onto the consignment so the performance report can group by it
+    // without reading `sales.orders`.
+    const facts = await this.orders.summary(tx, actor.orgId, input.orderId);
+    const deliveryZoneId = facts?.deliveryZoneId ?? null;
 
     const account = await repo.accountByCourier(tx, actor.orgId, courierId);
     if (account === undefined) {
@@ -148,10 +176,22 @@ export class BookingService implements OnModuleInit {
     if (!account.is_active) {
       throw new CourierError('COURIER_ACCOUNT_INVALID', 'That courier account is not active.');
     }
-    if (this.adapters.get(account.provider_code) === undefined) {
+    const adapter = this.adapters.get(account.provider_code);
+    if (adapter === undefined) {
       throw new CourierError(
         'COURIER_ACCOUNT_INVALID',
         `No adapter is built for "${account.provider_code}".`,
+      );
+    }
+    if (!adapterEnabled(adapter)) {
+      /*
+       * An unverified adapter whose switch is off. Refused here, inside the transaction that
+       * would have queued the booking, so no job is ever created for a courier the
+       * installation has not agreed to trust (M15: the switch is read at every use).
+       */
+      throw new CourierError(
+        'COURIER_ACCOUNT_INVALID',
+        `The ${adapter.code} adapter is UNVERIFIED and switched off; set COURIER_${adapter.code.toUpperCase()}_ENABLED=true to book with it.`,
       );
     }
 
@@ -167,6 +207,7 @@ export class BookingService implements OnModuleInit {
       reference: order.orderNo,
       codAmountPoisha: order.codAmountPoisha,
       createdBy: actor.userId,
+      deliveryZoneId,
     });
 
     /*
@@ -238,6 +279,69 @@ export class BookingService implements OnModuleInit {
     });
   }
 
+  /**
+   * Book many orders from the desk at once (M15's bulk booking).
+   *
+   * One transaction **per order**, not one for the batch. A batch transaction would make one
+   * order with a bad address roll back the forty good ones beside it, and the desk would have
+   * to find the bad one by bisecting. Each order is scope-checked, reserved and enqueued on
+   * its own, and the answer says what happened to every one.
+   *
+   * No courier is called here — each reservation enqueues `delivery.book_parcel` in its own
+   * transaction, exactly as the single booking does (invariant 6).
+   */
+  async bookMany(
+    context: ActiveContext,
+    request: AuditableRequest,
+    input: { orderIds: readonly string[]; courierId?: string | undefined },
+  ): Promise<{
+    results: readonly {
+      orderId: string;
+      consignmentId: string | null;
+      enqueued: boolean;
+      code: string | null;
+    }[];
+  }> {
+    const results: {
+      orderId: string;
+      consignmentId: string | null;
+      enqueued: boolean;
+      code: string | null;
+    }[] = [];
+
+    // Distinct, in the order given: a pasted list with a repeat is one booking, not two.
+    for (const orderId of [...new Set(input.orderIds)]) {
+      try {
+        const outcome = await this.bookFromDesk(context, request, {
+          orderId,
+          ...(input.courierId === undefined ? {} : { courierId: input.courierId }),
+        });
+        results.push({
+          orderId,
+          consignmentId: outcome.consignmentId,
+          enqueued: outcome.enqueued,
+          code: null,
+        });
+      } catch (error) {
+        /*
+         * One order's refusal is that order's answer. An order outside the caller's scope
+         * answers exactly as a missing one does, so a bulk request cannot be used to learn
+         * which ids exist in another branch.
+         */
+        const code =
+          error instanceof CourierError
+            ? error.code
+            : error instanceof NotFoundException
+              ? 'ORDER_NOT_FOUND'
+              : (databaseCourierCode(error)?.code ?? null);
+        if (code === null) throw error;
+        results.push({ orderId, consignmentId: null, enqueued: false, code });
+      }
+    }
+
+    return { results };
+  }
+
   /** Queue a cancellation with the courier, inside the caller's transaction (§9). */
   async cancelConsignment(
     tx: Tx,
@@ -303,12 +407,18 @@ export class BookingService implements OnModuleInit {
     const { consignment, account, order } = prepared;
 
     const adapter = this.adapters.get(account.provider_code);
-    if (adapter === undefined) {
-      throw new CourierError(
-        'COURIER_ACCOUNT_INVALID',
-        `No adapter is built for "${account.provider_code}".`,
-        false,
-      );
+    if (adapter === undefined || !adapterEnabled(adapter)) {
+      /*
+       * No adapter, or an unverified one switched off since the booking was queued. Nothing
+       * any retry can change, so the parcel is flagged failed now rather than after five
+       * attempts — see the non-retryable branch below.
+       */
+      await this.reportBookingFailed({
+        orgId,
+        consignmentId: consignment.id,
+        code: 'COURIER_ACCOUNT_INVALID',
+      });
+      return;
     }
 
     const parcel: ParcelInput = {
@@ -332,6 +442,25 @@ export class BookingService implements OnModuleInit {
       // The outbound call. No transaction is open here, and that is the whole point.
       result = await adapter.createParcel(this.adapterContext(orgId, account), parcel);
     } catch (error) {
+      if (error instanceof CourierError && !error.retryable) {
+        /*
+         * A refusal no retry can change: the courier rejected the parcel, the credentials, or
+         * the COD (Pathao takes whole taka only). M12's comments said such a booking
+         * "dead-letters on the first attempt", but nothing read `retryable` — every refusal
+         * was re-thrown and pg-boss spent all five attempts, with backoff, before the order
+         * was flagged. So the flag is raised here, now, through the same
+         * `reportBookingFailed` the dead-letter handler uses, and the job completes: there is
+         * nothing left for it to do.
+         */
+        await this.reportBookingFailed({
+          orgId,
+          consignmentId: consignment.id,
+          code: error.code,
+          // The adapter's own sentence, which is written never to quote the courier's body.
+          message: error.message.slice(0, 500),
+        });
+        return;
+      }
       await this.recordFailure(actor, consignment.id, error);
       throw error;
     }
@@ -435,17 +564,28 @@ export class BookingService implements OnModuleInit {
     orgId: string;
     consignmentId: string;
     code: string;
+    /** Why, when the caller knows better than "every attempt failed" (M15). */
+    message?: string;
   }): Promise<void> {
     const actor = { orgId: input.orgId, userId: 'system:courier' };
     await withOrg(actor, async (tx) => {
       const consignment = await repo.consignmentById(tx, input.orgId, input.consignmentId);
-      if (consignment === undefined || consignment.booking_state === 'booked') return;
+      if (
+        consignment === undefined ||
+        consignment.booking_state === 'booked' ||
+        // Already flagged. A dead-letter redelivery must not raise a second alert for one
+        // failure, and a non-retryable refusal that already flagged it has said so once.
+        consignment.booking_state === 'failed' ||
+        consignment.booking_state === 'cancelled'
+      ) {
+        return;
+      }
 
       await repo.recordBookingAttempt(tx, {
         orgId: input.orgId,
         consignmentId: input.consignmentId,
         code: input.code,
-        message: 'Every booking attempt failed.',
+        message: input.message ?? 'Every booking attempt failed.',
         exhausted: true,
       });
 

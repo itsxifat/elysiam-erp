@@ -612,4 +612,153 @@ describe("check 2: the statement's closing balances equal the ledger's party bal
     const last = closing.items.at(-1);
     expect(last?.runningDuePoisha).toBe(closing.closingDuePoisha);
   });
+
+  /*
+   * The comparison above is nearly a tautology, and an audit said so. The statement's
+   * closing figure comes from `supplierBalances`, which is the same grouped SUM over the
+   * same `journal_lines` as the party-balance endpoint it is compared with. A journal
+   * posted with the wrong amount, to the wrong party, on the wrong side — or a filter
+   * both queries share — moves both numbers together, and they still agree.
+   *
+   * So this builds a supplier's history whose every posting is known, works the closing
+   * balances out by hand, and holds the statement to those figures. Every event a supplier
+   * account can see is in it: an advance, two supplies (one in an earlier month, so a
+   * ranged statement has an opening balance), a return at the original cost, an advance
+   * applied to a supply, and a payment.
+   *
+   *   event                        due (supplier_payable)   advance (supplier_advance)
+   *   supply 1, 2026-03-10         + 4 × 25,000 = 100,000
+   *   advance paid                                            + 100,000
+   *   supply 2                     + 2 × 60,000 = 120,000
+   *   return 1 of supply 2         −     60,000  (the price paid, not today's average)
+   *   advance applied to supply 1  −     30,000               −  30,000
+   *   payment                      −     50,000
+   *   closing                             80,000                  70,000
+   *
+   * From 2026-04-01 the opening due is supply 1's 100,000 and the opening advance is
+   * nothing, and the same closing figures must come out of the bottom.
+   *
+   * Both supplies are of the same SKU on purpose. Its average after them is
+   * (4 × 25,000 + 2 × 60,000) / 6 = 36,667, so a return that credited the supplier at the
+   * average instead of at the 60,000 they charged would close the due at 103,333 — and
+   * would still agree with the party-balance endpoint, because both read the same
+   * wrongly-posted journal.
+   */
+  it('closes at the balances worked out by hand, not merely at the ledger’s copy of them', async () => {
+    // A threshold far above these amounts, so every payment posts without a checker:
+    // the maker-checker suite above lowered it.
+    await setThreshold('supplier_payment', '100000000');
+    const only = await seedSupplier(ORG_A, { code: 'SUP-STMT', name: 'Savar Buttons & Zips' });
+
+    const first = await enterSupply([{ skuId: sku(4), qty: 4, unitCostPoisha: '25000' }], {
+      supplierId: only,
+      occurredAt: '2026-03-10T05:00:00.000Z',
+    });
+    expect(first.statusCode, first.raw).toBe(201);
+
+    const advanceId = randomUUID();
+    const advance = await accounts.client.request('POST', '/v1/supply/payments', {
+      body: {
+        paymentId: advanceId,
+        supplierId: only,
+        walletAccountId: wallet,
+        kind: 'advance',
+        amountPoisha: '100000',
+      },
+    });
+    expect(advance.statusCode, advance.body).toBe(201);
+    expect(body<{ status: string }>(advance).status).toBe('posted');
+
+    const second = await enterSupply([{ skuId: sku(4), qty: 2, unitCostPoisha: '60000' }], {
+      supplierId: only,
+    });
+    expect(second.statusCode, second.raw).toBe(201);
+
+    const returned = await accounts.client.request('POST', '/v1/supply/returns', {
+      body: {
+        returnId: randomUUID(),
+        supplierId: only,
+        locationId: location,
+        reason: 'One zip pull snapped in QC',
+        lines: [{ skuId: sku(4), qty: 1, originalUnitCostPoisha: '60000' }],
+      },
+    });
+    expect(returned.statusCode, returned.body).toBe(201);
+
+    const applied = await accounts.client.request('POST', '/v1/supply/advance-applications', {
+      body: {
+        applicationId: randomUUID(),
+        paymentId: advanceId,
+        supplyId: first.result.id,
+        amountPoisha: '30000',
+      },
+    });
+    expect(applied.statusCode, applied.body).toBe(201);
+
+    const paid = await accounts.client.request('POST', '/v1/supply/payments', {
+      body: {
+        paymentId: randomUUID(),
+        supplierId: only,
+        walletAccountId: wallet,
+        kind: 'payment',
+        amountPoisha: '50000',
+      },
+    });
+    expect(paid.statusCode, paid.body).toBe(201);
+    expect(body<{ status: string }>(paid).status).toBe('posted');
+
+    interface Statement {
+      openingDuePoisha: string;
+      openingAdvancePoisha: string;
+      totalDebitPoisha: string;
+      totalCreditPoisha: string;
+      closingDuePoisha: string;
+      closingAdvancePoisha: string;
+      items: { account: string; runningDuePoisha: string; runningAdvancePoisha: string }[];
+    }
+    const statementOf = async (query: string): Promise<Statement> => {
+      const response = await accounts.client.request(
+        'GET',
+        `/v1/supply/suppliers/${only}/statement?${query}`,
+      );
+      expect(response.statusCode, response.body).toBe(200);
+      return body<Statement>(response);
+    };
+
+    const whole = await statementOf('to=2030-12-31');
+    expect(whole.openingDuePoisha).toBe('0');
+    expect(whole.openingAdvancePoisha).toBe('0');
+    expect(whole.closingDuePoisha).toBe('80000');
+    expect(whole.closingAdvancePoisha).toBe('70000');
+    // Seven lines: the application is one journal touching both supplier accounts.
+    // Debits 100,000 + 60,000 + 30,000 + 50,000; credits 100,000 + 120,000 + 30,000.
+    expect(whole.items).toHaveLength(7);
+    expect(whole.totalDebitPoisha).toBe('240000');
+    expect(whole.totalCreditPoisha).toBe('250000');
+    // The running columns, line by line, in date order: the March supply first.
+    expect(
+      whole.items.map((line) => [line.account, line.runningDuePoisha, line.runningAdvancePoisha]),
+    ).toEqual([
+      ['supplier_payable', '100000', '0'],
+      ['supplier_advance', '100000', '100000'],
+      ['supplier_payable', '220000', '100000'],
+      ['supplier_payable', '160000', '100000'],
+      ['supplier_payable', '130000', '100000'],
+      ['supplier_advance', '130000', '70000'],
+      ['supplier_payable', '80000', '70000'],
+    ]);
+
+    const ranged = await statementOf('from=2026-04-01&to=2030-12-31');
+    expect(ranged.openingDuePoisha).toBe('100000');
+    expect(ranged.openingAdvancePoisha).toBe('0');
+    expect(ranged.items).toHaveLength(6);
+    expect(ranged.closingDuePoisha).toBe('80000');
+    expect(ranged.closingAdvancePoisha).toBe('70000');
+    expect(ranged.items.at(-1)?.runningDuePoisha).toBe('80000');
+
+    // The supplier list reads the same two figures, which is the screen accounts works from.
+    const listed = await balances(accounts, only);
+    expect(listed.duePoisha).toBe('80000');
+    expect(listed.advancePoisha).toBe('70000');
+  });
 });

@@ -510,6 +510,7 @@ describe('§22’s invoice and packing slip', () => {
     customerPhone: '01712-345678',
     addressLine: 'ফ্ল্যাট ৪বি, বাড়ি ২৩, সড়ক ১১, বনানী',
     areaBn: 'গুলশান, ঢাকা',
+    areaEn: 'Gulshan, Dhaka',
     lines: [
       {
         name: 'ক্ষুদ্র নকশার ওড়না',
@@ -600,9 +601,13 @@ describe('the route gate (D-070), scoped to this module', () => {
    */
   it('registers exactly the routes the fixtures claim, each with a declared ability', () => {
     const mine = describeRoutes(harness.app).filter((route) =>
-      ['OrdersController', 'CustomersController', 'DeliveryZonesController'].includes(
-        route.controller,
-      ),
+      [
+        'OrdersController',
+        'CustomersController',
+        'DeliveryZonesController',
+        // M11's buyer list lives in this module too.
+        'BuyersController',
+      ].includes(route.controller),
     );
 
     expect(mine.length).toBeGreaterThan(20);

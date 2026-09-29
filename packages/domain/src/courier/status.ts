@@ -141,7 +141,239 @@ export const FAKE_STATUS_MAP: ProviderStatusMap = {
   },
 };
 
-const BUILT_IN_MAPS: readonly ProviderStatusMap[] = [STEADFAST_STATUS_MAP, FAKE_STATUS_MAP];
+/**
+ * Pathao's words, as its own open-source WooCommerce plugin receives them (D-006, M15).
+ *
+ * **UNVERIFIED**, and the provenance is worth stating exactly because it is better than
+ * Steadfast's and still not the real thing. Pathao's merchant API document is a
+ * JavaScript page behind the merchant portal that could not be read from here. What *could*
+ * be read is `pathao-eng/courier-woocommerce-plugin` — Pathao's own engineering
+ * organisation's code, which is first-party in authorship even though it is not a
+ * specification. Its webhook handler maps nineteen `event` names to nineteen
+ * `order_status` words, and stores either the body's `order_status` or the mapped word
+ * into one field — so the two lists are one vocabulary seen from two sides, and both are
+ * here. `pending` is added because the create response reports it, per every published
+ * client; it is the only word not taken from Pathao's own code.
+ *
+ * The entries worth reading twice:
+ *
+ * - **`exchange` / `order.exchanged` → `unknown`.** An exchange is a delivery that also
+ *   takes a parcel back, at a COD that need not be the order's. Mapping it to `delivered`
+ *   would recognise the full COD as revenue on a courier's word about a transaction we
+ *   did not book; `unknown` records it, moves nothing, and leaves the parcel in the
+ *   stuck-parcel queue where a person settles it with the manual status route.
+ * - **`payment_invoice` / `order.paid` → `unknown`.** Pathao paying *us* is a settlement
+ *   fact, not a place the parcel is. It arrives after delivery, and `trackingStatusAfter`
+ *   keeps a delivered parcel delivered, so the word is recorded and changes nothing.
+ * - **`order_updated` → `unknown`** for the same reason: the order's details changed, the
+ *   parcel did not move.
+ * - **`delivery_failed` → `hold`**, not a return. A failed attempt is re-attempted as often
+ *   as it is returned, and a return here would start §9's return path on a parcel that is
+ *   still going to be delivered.
+ * - **`paid_return` → `returned_to_merchant`.** The customer paid the delivery charge and
+ *   refused the goods, so the courier *collected* money on a returned parcel. We book no
+ *   revenue for it here; the courier's statement then shows a collection against a parcel
+ *   our books expect nothing from, and the matcher lists it as an `amount_mismatch` for a
+ *   person — visible, rather than silently absorbed.
+ */
+export const PATHAO_STATUS_VOCABULARY: readonly string[] = [
+  // The webhook's `event` names, verbatim from the plugin's `$orderEventsStatusMap` keys.
+  'order.created',
+  'order.updated',
+  'order.pickup-requested',
+  'order.assigned-for-pickup',
+  'order.picked',
+  'order.pickup-failed',
+  'order.pickup-cancelled',
+  'order.at-the-sorting-hub',
+  'order.in-transit',
+  'order.received-at-last-mile-hub',
+  'order.assigned-for-delivery',
+  'order.delivered',
+  'order.partial-delivery',
+  'order.returned',
+  'order.delivery-failed',
+  'order.on-hold',
+  'order.paid-return',
+  'order.exchanged',
+  'order.paid',
+  // The `order_status` words the same map produces, lower-cased as `normalizeStatus` reads.
+  'order_created',
+  'order_updated',
+  'pickup_requested',
+  'assigned_for_pickup',
+  'picked',
+  'pickup_failed',
+  'pickup_cancelled',
+  'at_the_sorting_hub',
+  'in_transit',
+  'received_at_last_mile_hub',
+  'assigned_for_delivery',
+  'delivered',
+  'partial_delivery',
+  'return',
+  'delivery_failed',
+  'on_hold',
+  'paid_return',
+  'exchange',
+  'payment_invoice',
+  // The create response's word, per every published client.
+  'pending',
+];
+
+export const PATHAO_STATUS_MAP: ProviderStatusMap = {
+  code: 'pathao',
+  statuses: {
+    'order.created': 'booked',
+    'order.updated': 'unknown',
+    'order.pickup-requested': 'pickup_pending',
+    'order.assigned-for-pickup': 'pickup_pending',
+    'order.picked': 'picked_up',
+    // A failed pickup leaves the parcel on our shelf, still waiting for a rider.
+    'order.pickup-failed': 'pickup_pending',
+    'order.pickup-cancelled': 'cancelled',
+    'order.at-the-sorting-hub': 'in_transit',
+    'order.in-transit': 'in_transit',
+    'order.received-at-last-mile-hub': 'in_transit',
+    'order.assigned-for-delivery': 'out_for_delivery',
+    'order.delivered': 'delivered',
+    'order.partial-delivery': 'partial_delivered',
+    'order.returned': 'returned_to_merchant',
+    'order.delivery-failed': 'hold',
+    'order.on-hold': 'hold',
+    'order.paid-return': 'returned_to_merchant',
+    'order.exchanged': 'unknown',
+    'order.paid': 'unknown',
+    order_created: 'booked',
+    order_updated: 'unknown',
+    pickup_requested: 'pickup_pending',
+    assigned_for_pickup: 'pickup_pending',
+    picked: 'picked_up',
+    pickup_failed: 'pickup_pending',
+    pickup_cancelled: 'cancelled',
+    at_the_sorting_hub: 'in_transit',
+    in_transit: 'in_transit',
+    received_at_last_mile_hub: 'in_transit',
+    assigned_for_delivery: 'out_for_delivery',
+    delivered: 'delivered',
+    partial_delivery: 'partial_delivered',
+    return: 'returned_to_merchant',
+    delivery_failed: 'hold',
+    on_hold: 'hold',
+    paid_return: 'returned_to_merchant',
+    exchange: 'unknown',
+    payment_invoice: 'unknown',
+    pending: 'pickup_pending',
+  },
+};
+
+/**
+ * RedX's words (D-006, M15).
+ *
+ * **UNVERIFIED, and weaker than Pathao's.** RedX's own open-source code — the
+ * `redx-for-woocommerce` plugin its parent company ShopUp publishes — creates parcels and
+ * nothing else: it contains no status handling at all. The seven words below are the
+ * webhook statuses RedX's developer page lists, recalled rather than read, because that
+ * page renders nothing without a browser session and could not be fetched in this build.
+ * They are the words that page gives for its webhook; whether `GET /parcel/info` answers
+ * in the same vocabulary is not known. A word it sends that is not here becomes `unknown`
+ * with the raw text kept (§9), changes nothing (`trackingStatusAfter`), and leaves the
+ * parcel in the stuck-parcel queue with that word showing — which is how the first person
+ * with a RedX sandbox finds out what to add.
+ *
+ * `agent-area-change` is `in_transit`: the parcel is being re-routed to another hub, which
+ * is movement, not a hold.
+ */
+export const REDX_STATUS_VOCABULARY: readonly string[] = [
+  'ready-for-delivery',
+  'delivery-in-progress',
+  'delivered',
+  'agent-hold',
+  'agent-returning',
+  'returned',
+  'agent-area-change',
+];
+
+export const REDX_STATUS_MAP: ProviderStatusMap = {
+  code: 'redx',
+  statuses: {
+    'ready-for-delivery': 'in_transit',
+    'delivery-in-progress': 'out_for_delivery',
+    delivered: 'delivered',
+    'agent-hold': 'hold',
+    'agent-returning': 'return_in_transit',
+    returned: 'returned_to_merchant',
+    'agent-area-change': 'in_transit',
+  },
+};
+
+/**
+ * Steadfast's `delivery_status` values, transcribed.
+ *
+ * Source: the "Delivery Statuses" table in `steadfast-it/SteadFast-Courier-Laravel-Package`'s
+ * README (the same first-party-authored document the map above was built from), read again
+ * for M15. Eleven values, in the README's order. Typed out rather than taken from the map's
+ * keys: M12's completeness test used `Object.keys(map.statuses)` as the vocabulary, which
+ * makes "every word is mapped" true by construction and the test unable to fail.
+ */
+export const STEADFAST_STATUS_VOCABULARY: readonly string[] = [
+  'pending',
+  'delivered_approval_pending',
+  'partial_delivered_approval_pending',
+  'cancelled_approval_pending',
+  'unknown_approval_pending',
+  'delivered',
+  'partial_delivered',
+  'cancelled',
+  'hold',
+  'in_review',
+  'unknown',
+];
+
+/**
+ * The fake courier's vocabulary, transcribed.
+ *
+ * Source: `apps/server/src/modules/courier/adapters/fake.adapter.ts` — the words its
+ * `createParcel`, `cancelParcel` and the tests' `advance()` calls put on a parcel. Its own
+ * definition, but a separate list all the same, so the map is tested against something it
+ * was not derived from.
+ */
+export const FAKE_STATUS_VOCABULARY: readonly string[] = [
+  'created',
+  'awaiting_pickup',
+  'collected',
+  'moving',
+  'with_rider',
+  'paused',
+  'handed_to_customer',
+  'part_handed',
+  'coming_back',
+  'back_at_warehouse',
+  'called_off',
+  'weird',
+];
+
+/**
+ * Each provider's declared vocabulary, beside its map.
+ *
+ * Every list is typed out from the source named on it, never derived from the map: the
+ * acceptance check is that the map *equals* the vocabulary, and a vocabulary derived from
+ * the map is equal to it by construction, which proves nothing. The tests assert the two
+ * agree in both directions.
+ */
+export const PROVIDER_VOCABULARIES: Readonly<Record<string, readonly string[]>> = {
+  steadfast: STEADFAST_STATUS_VOCABULARY,
+  fake: FAKE_STATUS_VOCABULARY,
+  pathao: PATHAO_STATUS_VOCABULARY,
+  redx: REDX_STATUS_VOCABULARY,
+};
+
+const BUILT_IN_MAPS: readonly ProviderStatusMap[] = [
+  STEADFAST_STATUS_MAP,
+  FAKE_STATUS_MAP,
+  PATHAO_STATUS_MAP,
+  REDX_STATUS_MAP,
+];
 
 export function courierStatusMap(code: string): ProviderStatusMap | undefined {
   return BUILT_IN_MAPS.find((map) => map.code === code);
@@ -192,20 +424,45 @@ export function unmappedStatuses(
  * nothing is attempted and nothing is posted (acceptance check 3). The dedupe row
  * and the ledger's idempotency key are the other two layers.
  *
- * `returned_to_merchant` deliberately produces no trigger. §9 gives
+ * `returned_to_merchant` never produces `receive_return`. §9 gives
  * `return_in_transit → returned` the trigger `receive_return`, performed when the
  * "Warehouse receives and inspects" — units go back on a shelf and a journal posts.
  * A courier saying the parcel reached its own warehouse is not our warehouse
  * receiving it, and letting a webhook perform it would put stock back on a shelf
  * nobody has looked in.
+ *
+ * It does produce `start_return` from `shipped` (M15). Pathao reports a return only
+ * once it is complete, never the leg in between, and without this the order stayed
+ * `shipped` for ever — and `receive_return` is refused from `shipped`, so the
+ * warehouse could not receive a parcel that was physically on its floor. `start_return`
+ * has no effects in §9's table; it only says the parcel is on its way back, which a
+ * parcel that has arrived back certainly was.
+ *
+ * ## A partial delivery needs the courier's figure
+ *
+ * `collectedKnown: false` makes `partial_delivered` produce nothing. The delivery journal
+ * debits `courier_receivable` with what the courier collected, and when the courier does
+ * not say, the only figure available is the full COD — which is wrong by definition for a
+ * *partial* delivery. M12 found the same class of bug the hard way (D-129: a stored
+ * payload that dropped the figure booked every webhook delivery at full COD). A courier
+ * whose partial-delivery event carries no amount now leaves the order `shipped`, the event
+ * recorded, and the parcel for a person to settle through the manual status route, which
+ * takes the amount and the delivered lines. A full delivery keeps the fallback: a rider
+ * who delivered everything collected the COD.
  */
-export function orderTriggerFor(status: ParcelStatus, from: OrderStatus): OrderTrigger | null {
+export function orderTriggerFor(
+  status: ParcelStatus,
+  from: OrderStatus,
+  options: { readonly collectedKnown?: boolean } = {},
+): OrderTrigger | null {
   switch (status) {
     case 'delivered':
       return from === 'shipped' ? 'deliver' : null;
     case 'partial_delivered':
+      if (options.collectedKnown === false) return null;
       return from === 'shipped' ? 'deliver_partially' : null;
     case 'return_in_transit':
+    case 'returned_to_merchant':
       return from === 'shipped' ? 'start_return' : null;
     case 'cancelled':
       /*
@@ -222,10 +479,44 @@ export function orderTriggerFor(status: ParcelStatus, from: OrderStatus): OrderT
     case 'in_transit':
     case 'out_for_delivery':
     case 'hold':
-    case 'returned_to_merchant':
     case 'unknown':
       return null;
   }
+}
+
+/**
+ * The status a consignment should hold after the courier says `incoming` (M15).
+ *
+ * M12 wrote every event's status straight onto the consignment, and two things a courier
+ * routinely does made that wrong once a second and third courier arrived:
+ *
+ * - **It speaks after the story has ended.** Pathao sends `order.paid` after
+ *   `order.delivered`, and `order.updated` whenever a detail changes. Both map to
+ *   `unknown`, and overwriting `delivered` with `unknown` made a finished parcel *active*
+ *   again — back in the poller's working set and, after N days, in the stuck-parcel queue
+ *   next to parcels that genuinely are missing, where the real ones get lost among it.
+ * - **It says things we cannot map.** `unknown` replacing `in_transit` hid where the
+ *   parcel last really was, which is the one fact a person chasing it needs.
+ *
+ * So: an `unknown` word never replaces a status (the event row keeps it, raw, per §9), and
+ * a finished parcel stays finished. The one exception is a partial delivery, whose
+ * undelivered remainder then really does travel back — `partial_delivered` may become
+ * `return_in_transit` or `returned_to_merchant`.
+ *
+ * This decides tracking only. Whether the *order* moves is `orderTriggerFor`'s question,
+ * asked against the order's own status, so nothing here can suppress or cause a posting.
+ */
+export function trackingStatusAfter(current: ParcelStatus, incoming: ParcelStatus): ParcelStatus {
+  if (incoming === 'unknown') return current;
+  if (current === 'unknown') return incoming;
+  if (!isTerminalParcelStatus(current)) return incoming;
+  if (
+    current === 'partial_delivered' &&
+    (incoming === 'return_in_transit' || incoming === 'returned_to_merchant')
+  ) {
+    return incoming;
+  }
+  return current;
 }
 
 /**

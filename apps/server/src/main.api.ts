@@ -4,10 +4,12 @@ import { fastifyCookie } from '@fastify/cookie';
 import { fastifyCors } from '@fastify/cors';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { activeOrgSlugs, createAuth, RecordingSmsProvider } from '@elysium/db';
+import { activeOrgSlugs, createAuth, currentDatabaseConfig, RecordingSmsProvider } from '@elysium/db';
 import { Redis } from 'ioredis';
 
 import { AppModule } from './app.module.js';
+import { ALL_QUEUES } from './job-queues.js';
+import { JobsRuntime } from './platform/jobs/jobs.runtime.js';
 import { applyGlobalPipeline } from './platform/http/pipeline.js';
 import { PasswordTokenStore } from './modules/iam/iam.service.js';
 import { serverEnv } from './platform/config/env.js';
@@ -55,6 +57,33 @@ export function createApiAdapter(trustedProxyCount: number, logger: Logger): Fas
      */
     loggerInstance: logger,
   });
+}
+
+/**
+ * Start the jobs client, waiting a bounded time for the worker to install the schema.
+ *
+ * A client never creates pg-boss's schema — only the worker migrates it — so on a fresh
+ * database, or under `pnpm dev` where both processes start together, the API can come
+ * up first. Failing immediately would crash-loop the API until the worker won the race;
+ * waiting forever would hide a worker that is not coming. A minute, logged while it
+ * waits, then the real error.
+ */
+export async function startJobsClient(logger: Logger): Promise<JobsRuntime> {
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    try {
+      return await JobsRuntime.start({
+        role: 'client',
+        connectionString: currentDatabaseConfig().DATABASE_URL,
+        queues: ALL_QUEUES,
+        logger,
+      });
+    } catch (error) {
+      if (Date.now() > deadline) throw error;
+      logger.warn({ err: error }, 'jobs schema not ready; waiting for the worker to install it');
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+  }
 }
 
 async function bootstrap(): Promise<void> {
@@ -116,6 +145,19 @@ async function bootstrap(): Promise<void> {
    * see pipeline.ts. Shared with the HTTP test suites so they cannot drift.
    */
   applyGlobalPipeline(app);
+
+  /*
+   * The jobs runtime, as a client: the API enqueues, the worker runs.
+   *
+   * This line did not exist, and nothing noticed. `enqueue(tx, …)` needs a started
+   * runtime in the process that calls it, and every test suite that enqueues starts its
+   * own, so the whole suite was green while the running API threw on every request that
+   * queued work: a courier booking from an order transition failed inside the request,
+   * and the fraud refresh — which swallows the error so a badge still renders — was
+   * never queued at all. Started before `listen`, because the first request may be one
+   * that enqueues.
+   */
+  const jobs = await startJobsClient(logger);
 
   const fastify = app.getHttpAdapter().getInstance();
   // Cast: @fastify/cookie augments FastifyInstance, and its declared plugin
@@ -244,6 +286,10 @@ async function bootstrap(): Promise<void> {
         .then(() => limiterClient.quit())
         .catch((error: unknown) => {
           logger.warn({ err: error }, 'rate limiter valkey connection did not close cleanly');
+        })
+        .then(() => jobs.stop())
+        .catch((error: unknown) => {
+          logger.warn({ err: error }, 'jobs client did not stop cleanly');
         })
         .then(() => app.close())
         .then(() => process.exit(0));

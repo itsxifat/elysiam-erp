@@ -1,20 +1,26 @@
 import 'reflect-metadata';
 
+import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { currentDatabaseConfig } from '@elysium/db';
 import type { Logger } from 'pino';
 
+import { ALL_QUEUES } from './job-queues.js';
 import { BookingService } from './modules/courier/booking.service.js';
 import { CourierModule } from './modules/courier/courier.module.js';
-import { COURIER_QUEUE_DEFINITIONS } from './modules/courier/courier.queues.js';
 import { registerCourierJobs } from './modules/courier/courier.worker.js';
 import { CourierSyncService } from './modules/courier/sync.service.js';
+import { FraudModule } from './modules/fraud/fraud.module.js';
+import { FraudService } from './modules/fraud/fraud.service.js';
+import { registerFraudJobs } from './modules/fraud/fraud.worker.js';
+import { InventoryModule } from './modules/inventory/inventory.module.js';
+import { registerInventoryJobs } from './modules/inventory/inventory.worker.js';
+import { ReconcileService } from './modules/inventory/reconcile.service.js';
 
 import { OutboxDispatcher } from './platform/events/dispatcher.js';
 import { serverEnv } from './platform/config/env.js';
 import { reportJobFailedThroughOutbox } from './platform/jobs/job-failed.js';
 import { JobsRuntime } from './platform/jobs/jobs.runtime.js';
-import { PLATFORM_QUEUES } from './platform/jobs/queues.js';
 import { createLogger } from './platform/logging/logger.js';
 import { bridgeOutboxToRealtime, createRealtimeEmitter } from './platform/realtime/index.js';
 
@@ -99,11 +105,15 @@ async function bootstrap(): Promise<void> {
    * which is the same graph the API builds and therefore the same behaviour: a booking
    * job moves an order through the identical `TransitionsService`.
    *
-   * Every future module with queue handlers is added to this list, beside its queue
-   * definitions below.
+   * Every module with queue handlers is imported by `WorkerModule` below, and its
+   * queues are listed in `job-queues.ts`. The nightly stock reconciliation and the
+   * fraud provider refresh were defined, scheduled and enqueued for weeks with no
+   * handler here at all: the cron fired, the jobs piled up, and nothing ran them.
    */
-  const context = await NestFactory.createApplicationContext(CourierModule, { logger: false });
-  const moduleQueues = [...COURIER_QUEUE_DEFINITIONS];
+  @Module({ imports: [CourierModule, InventoryModule, FraudModule] })
+  class WorkerModule {}
+
+  const context = await NestFactory.createApplicationContext(WorkerModule, { logger: false });
 
   const jobs = await JobsRuntime.start({
     role: 'worker',
@@ -112,7 +122,7 @@ async function bootstrap(): Promise<void> {
     // `DATABASE_URL` rather than hard-coded, so D-042's role names live in one
     // place.
     appRole: roleFrom(database.DATABASE_URL),
-    queues: [...PLATFORM_QUEUES, ...moduleQueues],
+    queues: ALL_QUEUES,
     logger,
   });
 
@@ -136,15 +146,17 @@ async function bootstrap(): Promise<void> {
     report,
     logger,
   });
+  await registerInventoryJobs({ jobs, reconcile: context.get(ReconcileService), report, logger });
+  await registerFraudJobs({ jobs, fraud: context.get(FraudService), report });
 
   // Every registered queue gets its dead-letter watcher, whether or not this
   // release also registered a handler for the queue itself. A queue with a
   // handler in the API tier and none here would otherwise dead-letter silently.
-  for (const definition of [...PLATFORM_QUEUES, ...moduleQueues]) {
+  for (const definition of ALL_QUEUES) {
     await jobs.workDeadLetters(definition.name, report);
   }
 
-  logger.info({ queues: PLATFORM_QUEUES.length + moduleQueues.length }, 'jobs runtime started');
+  logger.info({ queues: ALL_QUEUES.length }, 'jobs runtime started');
 
   const stopping = new AbortController();
   const dispatching = runDispatchLoop(dispatcher, logger, stopping.signal);

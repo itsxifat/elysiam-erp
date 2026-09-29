@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto';
+
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
-import { withOrg, type Tx } from '@elysium/db';
-import { poisha, toIsoDate, type IsoDate } from '@elysium/domain';
+import { withGlobal, withOrg, type Tx } from '@elysium/db';
+import { addDays, businessDate, poisha, toIsoDate, type IsoDate } from '@elysium/domain';
 import {
+  canonicalStatement,
   codSettlementDraft,
   courierChargesDraft,
   matchSettlement,
@@ -16,11 +19,17 @@ import { sql } from 'drizzle-orm';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { enqueue } from '../../platform/jobs/enqueue.js';
 import { ApprovalsService, type ApprovalExecutor } from '../approvals/approvals.service.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
-import { COURIER_ADAPTERS, type CourierAdapterRegistry } from './adapters/courier-adapter.js';
-import { courierEnv } from './courier.config.js';
-import { CourierError } from './courier.errors.js';
+import {
+  COURIER_ADAPTERS,
+  type CourierAdapterRegistry,
+  type SettlementBatch,
+} from './adapters/courier-adapter.js';
+import { adapterEnabled, courierEnv } from './courier.config.js';
+import { CourierError, databaseCourierCode } from './courier.errors.js';
+import { COURIER_QUEUES, type FetchAccountSettlementsPayload } from './courier.queues.js';
 import * as repo from './courier.repository.js';
 import { openCredentials } from './credentials.js';
 import { LEDGER_READ_PORT, type LedgerReadPort } from './ports/ledger-read.port.js';
@@ -131,130 +140,177 @@ export class SettlementsService implements OnModuleInit {
     );
 
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-      const walletId = input.walletId ?? account.settlement_wallet_id;
-      if (walletId === null || walletId === undefined) {
-        throw new CourierError(
-          'SETTLEMENT_FILE_INVALID',
-          'Name the wallet this settlement is paid into, or set one on the courier account.',
-        );
-      }
-      // Resolved now rather than at posting time, so a settlement whose wallet is wrong is
-      // refused by the person importing it instead of by the checker approving it.
-      const wallet = await this.wallets.walletAccount(tx, context.orgId, walletId);
-      if (wallet === null) {
-        throw new CourierError('SETTLEMENT_FILE_INVALID', 'No such active wallet.');
-      }
-
-      const settlementDate = toIsoDate(input.settlementDate ?? parsed.settlementDate);
-
-      const candidates: SettlementCandidate[] = (
-        await repo.settlementCandidates(tx, context.orgId, input.courierId)
-      ).map((row) => ({
-        consignmentId: row.consignment_id,
-        orderId: row.order_id,
-        orderNo: row.order_no,
-        consignmentNo: row.consignment_no,
-        receivablePoisha: poisha(BigInt(row.receivable_poisha)),
-        settled: row.settled,
-      }));
-
-      const matched = matchSettlement(parsed.rows, candidates);
-      const { totals } = matched;
-
-      if (!settlementPostsAnything(totals)) {
-        throw new CourierError(
-          'SETTLEMENT_FILE_INVALID',
-          'Nothing in that statement matched a consignment of ours, so there is nothing to post.',
-        );
-      }
-      if (settlementOwesCourier(totals)) {
-        /*
-         * Charges above collections across the whole statement.
-         *
-         * §7 has no journal for it — "Dr W" with a negative amount is not a journal — and a
-         * courier's own practice is to carry the balance into the next statement. Refused with
-         * the figure, so the accountant has something to take to the courier.
-         */
-        throw new CourierError(
-          'SETTLEMENT_OWES_COURIER',
-          `That statement's charges exceed its collections by ${(-(totals.matchedNetPoisha as bigint)).toString()} poisha, so no wallet can be debited. Settle it with the courier's next statement.`,
-        );
-      }
-
-      const settlementId = await repo.insertSettlement(tx, {
+      const recorded = await this.recordBatch(tx, {
         orgId: context.orgId,
-        courierAccountId: account.id,
-        courierId: input.courierId,
-        // Org-level. A courier statement covers parcels from every branch, so attaching it to
-        // one would make a branch manager's aging report wrong in both directions.
-        branchId: null,
+        userId: context.userId,
+        account,
+        parsed,
+        walletId: input.walletId ?? account.settlement_wallet_id,
+        settlementDate: input.settlementDate ?? parsed.settlementDate,
+        fileObjectId: input.fileObjectId ?? null,
+        source: 'upload',
+        fingerprint: null,
+        audit: { requestId: context.requestId, request },
+      });
+      return recorded.response;
+    });
+  }
+
+  /**
+   * Match a parsed statement and write it as an `imported` batch, in the caller's
+   * transaction. Shared by the upload and the API fetch (M15), so a fetched statement is
+   * matched, checked and refused by exactly the rules an uploaded one is.
+   *
+   * Posts nothing. A batch — however it arrived — reaches the ledger only through
+   * `requestApproval` and the approvals executor (§9: "→ approval → posting").
+   */
+  private async recordBatch(
+    tx: Tx,
+    input: {
+      orgId: string;
+      userId: string;
+      account: repo.CourierAccountRow;
+      parsed: SettlementBatch;
+      walletId: string | null | undefined;
+      settlementDate: string;
+      fileObjectId: string | null;
+      source: 'upload' | 'api';
+      fingerprint: string | null;
+      audit: { requestId: string | null; request: AuditableRequest | undefined };
+    },
+  ) {
+    const context = { orgId: input.orgId, userId: input.userId, requestId: input.audit.requestId };
+    const { account, parsed } = input;
+    const courierId = account.courier_id;
+    const walletId = input.walletId;
+    if (walletId === null || walletId === undefined) {
+      throw new CourierError(
+        'SETTLEMENT_FILE_INVALID',
+        'Name the wallet this settlement is paid into, or set one on the courier account.',
+      );
+    }
+    // Resolved now rather than at posting time, so a settlement whose wallet is wrong is
+    // refused by the person importing it instead of by the checker approving it.
+    const wallet = await this.wallets.walletAccount(tx, context.orgId, walletId);
+    if (wallet === null) {
+      throw new CourierError('SETTLEMENT_FILE_INVALID', 'No such active wallet.');
+    }
+
+    const settlementDate = toIsoDate(input.settlementDate);
+
+    const candidates: SettlementCandidate[] = (
+      await repo.settlementCandidates(tx, context.orgId, courierId)
+    ).map((row) => ({
+      consignmentId: row.consignment_id,
+      orderId: row.order_id,
+      orderNo: row.order_no,
+      consignmentNo: row.consignment_no,
+      receivablePoisha: poisha(BigInt(row.receivable_poisha)),
+      settled: row.settled,
+    }));
+
+    const matched = matchSettlement(parsed.rows, candidates);
+    const { totals } = matched;
+
+    if (!settlementPostsAnything(totals)) {
+      throw new CourierError(
+        'SETTLEMENT_FILE_INVALID',
+        'Nothing in that statement matched a consignment of ours, so there is nothing to post.',
+      );
+    }
+    if (settlementOwesCourier(totals)) {
+      /*
+       * Charges above collections across the whole statement.
+       *
+       * §7 has no journal for it — "Dr W" with a negative amount is not a journal — and a
+       * courier's own practice is to carry the balance into the next statement. Refused with
+       * the figure, so the accountant has something to take to the courier.
+       */
+      throw new CourierError(
+        'SETTLEMENT_OWES_COURIER',
+        `That statement's charges exceed its collections by ${(-(totals.matchedNetPoisha as bigint)).toString()} poisha, so no wallet can be debited. Settle it with the courier's next statement.`,
+      );
+    }
+
+    const settlementId = await repo.insertSettlement(tx, {
+      orgId: context.orgId,
+      courierAccountId: account.id,
+      courierId,
+      // Org-level. A courier statement covers parcels from every branch, so attaching it to
+      // one would make a branch manager's aging report wrong in both directions.
+      branchId: null,
+      reference: parsed.reference,
+      settlementDate,
+      fileObjectId: input.fileObjectId,
+      walletId,
+      source: input.source,
+      sourceFingerprint: input.fingerprint,
+      fileGrossPoisha: totals.fileGrossPoisha,
+      fileChargesPoisha: totals.fileChargesPoisha,
+      fileNetPoisha: totals.fileNetPoisha,
+      fileRowCount: totals.fileRowCount,
+      matchedGrossPoisha: totals.matchedGrossPoisha,
+      matchedChargesPoisha: totals.matchedChargesPoisha,
+      matchedDeliveryChargesPoisha: totals.matchedDeliveryChargesPoisha,
+      matchedReturnChargesPoisha: totals.matchedReturnChargesPoisha,
+      matchedOtherChargesPoisha: totals.matchedOtherChargesPoisha,
+      matchedNetPoisha: totals.matchedNetPoisha,
+      matchedRowCount: totals.matchedRowCount,
+      exceptionCount: totals.exceptionCount,
+      importedBy: context.userId,
+    });
+
+    await repo.insertSettlementLines(
+      tx,
+      context.orgId,
+      settlementId,
+      matched.lines.map((line) => ({
+        rowNo: line.rowNo,
+        consignmentNo: line.consignmentNo,
+        reference: line.reference,
+        match: line.match,
+        consignmentId: line.consignmentId,
+        orderId: line.orderId,
+        codCollectedPoisha: line.codCollectedPoisha,
+        deliveryChargePoisha: line.deliveryChargePoisha,
+        returnChargePoisha: line.returnChargePoisha,
+        otherChargePoisha: line.otherChargePoisha,
+        netPoisha: line.netPoisha,
+        expectedPoisha: line.expectedPoisha,
+        note: line.note,
+      })),
+    );
+
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'create',
+      action: 'courier.settlement.imported',
+      entityType: 'CourierSettlement',
+      entityId: settlementId,
+      before: null,
+      after: {
+        courierId,
         reference: parsed.reference,
         settlementDate,
-        fileObjectId: input.fileObjectId ?? null,
         walletId,
-        fileGrossPoisha: totals.fileGrossPoisha,
-        fileChargesPoisha: totals.fileChargesPoisha,
-        fileNetPoisha: totals.fileNetPoisha,
+        source: input.source,
         fileRowCount: totals.fileRowCount,
-        matchedGrossPoisha: totals.matchedGrossPoisha,
-        matchedChargesPoisha: totals.matchedChargesPoisha,
-        matchedDeliveryChargesPoisha: totals.matchedDeliveryChargesPoisha,
-        matchedReturnChargesPoisha: totals.matchedReturnChargesPoisha,
-        matchedOtherChargesPoisha: totals.matchedOtherChargesPoisha,
-        matchedNetPoisha: totals.matchedNetPoisha,
         matchedRowCount: totals.matchedRowCount,
         exceptionCount: totals.exceptionCount,
-        importedBy: context.userId,
-      });
+        fileGrossPoisha: totals.fileGrossPoisha.toString(),
+        matchedGrossPoisha: totals.matchedGrossPoisha.toString(),
+        matchedNetPoisha: totals.matchedNetPoisha.toString(),
+      },
+      requestId: context.requestId,
+      ...(input.audit.request === undefined ? {} : { request: input.audit.request }),
+    });
 
-      await repo.insertSettlementLines(
-        tx,
-        context.orgId,
-        settlementId,
-        matched.lines.map((line) => ({
-          rowNo: line.rowNo,
-          consignmentNo: line.consignmentNo,
-          reference: line.reference,
-          match: line.match,
-          consignmentId: line.consignmentId,
-          orderId: line.orderId,
-          codCollectedPoisha: line.codCollectedPoisha,
-          deliveryChargePoisha: line.deliveryChargePoisha,
-          returnChargePoisha: line.returnChargePoisha,
-          otherChargePoisha: line.otherChargePoisha,
-          netPoisha: line.netPoisha,
-          expectedPoisha: line.expectedPoisha,
-          note: line.note,
-        })),
-      );
-
-      await this.audit.record(tx, {
-        orgId: context.orgId,
-        actorUserId: context.userId,
-        operation: 'create',
-        action: 'courier.settlement.imported',
-        entityType: 'CourierSettlement',
-        entityId: settlementId,
-        before: null,
-        after: {
-          courierId: input.courierId,
-          reference: parsed.reference,
-          settlementDate,
-          walletId,
-          fileRowCount: totals.fileRowCount,
-          matchedRowCount: totals.matchedRowCount,
-          exceptionCount: totals.exceptionCount,
-          fileGrossPoisha: totals.fileGrossPoisha.toString(),
-          matchedGrossPoisha: totals.matchedGrossPoisha.toString(),
-          matchedNetPoisha: totals.matchedNetPoisha.toString(),
-        },
-        requestId: context.requestId,
-        request,
-      });
-
-      const saved = await repo.settlementById(tx, context.orgId, settlementId);
-      if (saved === undefined) throw new CourierError('SETTLEMENT_NOT_FOUND', 'Vanished.');
-      return {
+    const saved = await repo.settlementById(tx, context.orgId, settlementId);
+    if (saved === undefined) throw new CourierError('SETTLEMENT_NOT_FOUND', 'Vanished.');
+    return {
+      settlementId,
+      response: {
         ...view(saved),
         exceptions: matched.exceptions.map((line) => ({
           rowNo: line.rowNo,
@@ -265,8 +321,286 @@ export class SettlementsService implements OnModuleInit {
           expectedPoisha: line.expectedPoisha?.toString() ?? null,
           note: line.note,
         })),
-      };
+      },
+    };
+  }
+
+  // --- 1b. fetch (M15) ---------------------------------------------------------------
+
+  /**
+   * §20's cron: one tenant job per courier account whose adapter can fetch statements.
+   *
+   * The org list comes from `org.organizations` and the accounts are read *inside* each org,
+   * for the reason `CourierSyncService.runPollFanOut` gives at length: `courier_accounts` is
+   * FORCE row-level security, and asking it "which accounts exist" with no org context
+   * answers nothing, ever — which is how M12's first poll cron did nothing at all.
+   *
+   * Today only the fake adapter implements `fetchSettlements` (none of the three real
+   * couriers' first-party material describes a settlement API), so in production this
+   * enqueues nothing until one does.
+   */
+  async runFetchFanOut(): Promise<number> {
+    const orgIds = await withGlobal(async (tx) => {
+      const rows = await tx.execute<{ id: string }>(sql`
+        select id from org.organizations where is_active order by slug
+      `);
+      return [...rows].map((row) => row.id);
     });
+
+    let enqueued = 0;
+    for (const orgId of orgIds) {
+      enqueued += await withOrg({ orgId, userId: 'system:courier' }, async (tx) => {
+        const accounts = await repo.listAccounts(tx, orgId, { includeInactive: false });
+        let count = 0;
+        for (const account of accounts) {
+          const adapter = this.adapters.get(account.provider_code);
+          if (adapter?.fetchSettlements === undefined || !adapterEnabled(adapter)) continue;
+          const payload: FetchAccountSettlementsPayload = {
+            courierAccountId: account.id,
+            actorUserId: 'system:courier',
+          };
+          await enqueue(tx, COURIER_QUEUES.fetchAccountSettlements, payload, {
+            orgId,
+            ref: account.id,
+            // One fetch per account in the queue at a time; a second would ask the courier the
+            // same question and race the first to the same fingerprints.
+            singletonKey: `fetch:${account.id}`,
+          });
+          count += 1;
+        }
+        return count;
+      });
+    }
+    return enqueued;
+  }
+
+  /**
+   * The console's "fetch now" button: queue one account's fetch. No outbound call here —
+   * the fetch is a job (invariant 6), and this only checks the courier can be asked.
+   */
+  async requestFetch(
+    context: ActiveContext,
+    request: AuditableRequest,
+    input: { courierId: string },
+  ) {
+    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const account = await repo.accountByCourier(tx, context.orgId, input.courierId);
+      if (account?.is_active !== true) {
+        throw new CourierError(
+          'COURIER_ACCOUNT_NOT_FOUND',
+          'That courier has no active account in this organization.',
+        );
+      }
+      const adapter = this.adapters.get(account.provider_code);
+      if (adapter?.fetchSettlements === undefined || !adapterEnabled(adapter)) {
+        throw new CourierError(
+          'SETTLEMENT_FILE_INVALID',
+          `The ${account.provider_code} adapter has no settlement API to fetch from; import the courier's statement file instead.`,
+        );
+      }
+      const payload: FetchAccountSettlementsPayload = {
+        courierAccountId: account.id,
+        actorUserId: context.userId,
+      };
+      const jobId = await enqueue(tx, COURIER_QUEUES.fetchAccountSettlements, payload, {
+        orgId: context.orgId,
+        ref: account.id,
+        requestId: context.requestId,
+        singletonKey: `fetch:${account.id}`,
+      });
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'create',
+        action: 'courier.settlement.fetch_requested',
+        entityType: 'CourierSettlement',
+        entityId: account.id,
+        before: null,
+        after: { courierId: input.courierId, queued: jobId !== null },
+        requestId: context.requestId,
+        request,
+      });
+      // `null` means a fetch for this account is already queued; the singleton collapsed it.
+      return { courierId: input.courierId, queued: jobId !== null };
+    });
+  }
+
+  /**
+   * Fetch one account's statements and import each one not seen before (M15 check 4).
+   *
+   * Runs in the worker. The outbound call happens with no transaction open (invariant 6);
+   * each statement is then imported in its **own** transaction, so one statement the importer
+   * refuses does not take the others down with it.
+   *
+   * ## Idempotent, three times over
+   *
+   * 1. The statement's fingerprint (`canonicalStatement`, hashed) is looked up first, with the
+   *    courier's own reference: a statement already imported is recorded as `duplicate` and
+   *    nothing is written.
+   * 2. The partial unique indexes on `(account, source_fingerprint)` and `(account, reference)`
+   *    hold if two runs race past step 1 — the second insert fails, its transaction rolls
+   *    back whole (lines, audit and all), and the outcome is `duplicate`.
+   * 3. Nothing here posts. A fetched batch waits at `imported` for a person to request
+   *    approval, exactly like an upload, so even a duplicate batch could not post without a
+   *    second approval of cash already approved — and the matcher would find every one of its
+   *    consignments `already_settled` first.
+   *
+   * Every statement's outcome — created, duplicate or refused with its code — is written to
+   * `courier.settlement_fetch_runs`, because an unattended job that silently skipped a
+   * statement it could not import would be cash in the bank the books never hear about.
+   */
+  async runFetch(job: { orgId: string; payload: FetchAccountSettlementsPayload }): Promise<{
+    outcomes: readonly repo.FetchOutcome[];
+  }> {
+    const { orgId, payload } = job;
+    const actor = { orgId, userId: payload.actorUserId };
+
+    const account = await withOrg(actor, (tx) =>
+      repo.accountById(tx, orgId, payload.courierAccountId),
+    );
+    if (account?.is_active !== true) return { outcomes: [] };
+    const adapter = this.adapters.get(account.provider_code);
+    if (adapter?.fetchSettlements === undefined || !adapterEnabled(adapter)) {
+      return { outcomes: [] };
+    }
+
+    const today = businessDate(new Date());
+    const latest = await withOrg(actor, (tx) =>
+      repo.latestFetchedStatementDate(tx, orgId, account.id),
+    );
+    /*
+     * Seven days back from the newest statement already imported, or thirty on the first run.
+     * The overlap is deliberate: a courier that issues a statement late, dated before the last
+     * one we saw, would otherwise fall into a gap no fetch ever asks about again. Re-reading
+     * the overlap costs nothing — every statement in it is a `duplicate`.
+     */
+    const since = latest === null ? addDays(today, -30) : addDays(toIsoDate(latest), -7);
+    const startedAt = new Date();
+
+    let batches: readonly SettlementBatch[];
+    try {
+      batches = await adapter.fetchSettlements(this.adapterContext(orgId, account), since);
+    } catch (error) {
+      await withOrg(actor, (tx) =>
+        repo.insertFetchRun(tx, {
+          orgId,
+          courierAccountId: account.id,
+          sinceDate: since,
+          startedAt,
+          finishedAt: new Date(),
+          outcomes: [],
+          // A code, never the courier's text: its error body can quote whatever we sent it.
+          error: error instanceof CourierError ? error.code : 'COURIER_UNAVAILABLE',
+        }),
+      );
+      throw error;
+    }
+
+    const outcomes: repo.FetchOutcome[] = [];
+    for (const batch of batches) {
+      const fingerprint = createHash('sha256')
+        .update(canonicalStatement(batch), 'utf8')
+        .digest('hex');
+      const base = { reference: batch.reference, settlementDate: batch.settlementDate, fingerprint };
+
+      try {
+        const outcome = await withOrg(actor, async (tx) => {
+          const existing = await repo.existingSettlementFor(tx, orgId, account.id, {
+            fingerprint,
+            reference: batch.reference,
+          });
+          if (existing !== undefined) {
+            /*
+             * Seen before. Same fingerprint: the same statement again, which is every fetch
+             * after the first. Same reference, different rows: the courier re-issued a
+             * statement under its old number — a person has to decide which is right, so it
+             * is refused with a code rather than imported beside the first.
+             */
+            return existing.source_fingerprint === fingerprint
+              ? { ...base, outcome: 'duplicate' as const, code: null, settlementId: existing.id }
+              : {
+                  ...base,
+                  outcome: 'refused' as const,
+                  code: 'IDEMPOTENCY_CONFLICT',
+                  settlementId: existing.id,
+                };
+          }
+          const recorded = await this.recordBatch(tx, {
+            orgId,
+            userId: payload.actorUserId,
+            account,
+            parsed: batch,
+            walletId: account.settlement_wallet_id,
+            settlementDate: batch.settlementDate,
+            fileObjectId: null,
+            source: 'api',
+            fingerprint,
+            audit: { requestId: null, request: undefined },
+          });
+          return {
+            ...base,
+            outcome: 'created' as const,
+            code: null,
+            settlementId: recorded.settlementId,
+          };
+        });
+        outcomes.push(outcome);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          // Step 2 above: a concurrent run inserted it first. Its transaction rolled back whole.
+          outcomes.push({ ...base, outcome: 'duplicate', code: null, settlementId: null });
+          continue;
+        }
+        if (error instanceof CourierError) {
+          outcomes.push({ ...base, outcome: 'refused', code: error.code, settlementId: null });
+          continue;
+        }
+        const fromDatabase = databaseCourierCode(error);
+        if (fromDatabase !== null) {
+          outcomes.push({
+            ...base,
+            outcome: 'refused',
+            code: fromDatabase.code,
+            settlementId: null,
+          });
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    await withOrg(actor, (tx) =>
+      repo.insertFetchRun(tx, {
+        orgId,
+        courierAccountId: account.id,
+        sinceDate: since,
+        startedAt,
+        finishedAt: new Date(),
+        outcomes,
+        error: null,
+      }),
+    );
+
+    return { outcomes };
+  }
+
+  /** The newest fetch runs, for the settlements screen's "last fetched" line. */
+  async fetchRuns(context: ActiveContext) {
+    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => ({
+      items: (await repo.recentFetchRuns(tx, context.orgId, 20)).map((row) => ({
+        id: row.id,
+        courierAccountId: row.courier_account_id,
+        sinceDate: row.since_date,
+        startedAt: row.started_at,
+        finishedAt: row.finished_at,
+        seen: row.statements_seen,
+        created: row.statements_created,
+        duplicate: row.statements_duplicate,
+        refused: row.statements_refused,
+        outcomes: row.outcomes,
+        error: row.error,
+      })),
+    }));
   }
 
   // --- 2. approval --------------------------------------------------------------
@@ -813,6 +1147,8 @@ function view(row: repo.SettlementRow) {
     postingBusinessDate: row.posting_business_date,
     deferredFromClosedPeriod: row.deferred_from_closed_period,
     status: row.status,
+    /** M15: an uploaded file, or a statement the fetch job took from the courier's API. */
+    source: row.source,
     walletId: row.wallet_id,
     fileObjectId: row.file_object_id,
     fileGrossPoisha: row.file_gross_poisha,
@@ -834,4 +1170,19 @@ function view(row: repo.SettlementRow) {
     postedAt: row.posted_at,
     rejectedReason: row.rejected_reason,
   };
+}
+
+/**
+ * Whether a failed statement was a unique-index violation (SQLSTATE 23505), found through
+ * Drizzle's wrapper, which hangs the driver's error off `.cause`.
+ *
+ * The fetch treats one as "a concurrent run imported this statement first" — the partial
+ * unique indexes on the fingerprint and the courier's reference are the backstop the
+ * look-up before them relies on.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  for (let current: unknown = error; current instanceof Error; current = current.cause) {
+    if ((current as Error & { code?: unknown }).code === '23505') return true;
+  }
+  return false;
 }

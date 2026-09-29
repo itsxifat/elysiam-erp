@@ -613,6 +613,190 @@ describe('check 7: exchanging a delivered order for a different SKU', () => {
   }, 240_000);
 });
 
+// --- dispatch cost, not today's average (M10 checks 4 and 7, tightened in M11) ----
+
+/**
+ * Debit − credit per subtype, *moved by* `work` — so a scenario can run in an org other
+ * tests also post in and still assert exact figures. Nothing else posts while it runs: the
+ * tests in a file run one at a time.
+ */
+async function balancesMovedBy(
+  orgId: string,
+  work: () => Promise<void>,
+): Promise<(subtype: string) => bigint> {
+  const before = await balancesBySubtype(orgId);
+  await work();
+  const after = await balancesBySubtype(orgId);
+  return (subtype) => (after.get(subtype) ?? 0n) - (before.get(subtype) ?? 0n);
+}
+
+async function costOf(orgId: string, skuId: string): Promise<{ wac: bigint; basis: number }> {
+  const rows = await withSystem(
+    async (tx) =>
+      tx.execute<{ wac_poisha: string; qty_basis: number }>(sql`
+        select wac_poisha, qty_basis from inventory.sku_costs
+        where org_id = ${orgId} and sku_id = ${skuId}
+      `),
+    { orgId },
+  );
+  return { wac: BigInt(rows[0]?.wac_poisha ?? '-1'), basis: rows[0]?.qty_basis ?? -1 };
+}
+
+async function returnMovementCosts(orgId: string, orderId: string): Promise<string[]> {
+  const rows = await withSystem(
+    async (tx) =>
+      tx.execute<{ unit_cost_poisha: string }>(sql`
+        select unit_cost_poisha from inventory.stock_movements
+        where org_id = ${orgId} and ref_type = 'order' and ref_id = ${orderId}
+          and kind = 'customer_return'
+      `),
+    { orgId },
+  );
+  return rows.map((row) => String(row.unit_cost_poisha));
+}
+
+describe('a return and an exchange after the average cost has moved', () => {
+  /*
+   * Every other scenario in this file buys each SKU at one price, so a return valued at the
+   * dispatch cost and one valued at today's weighted average produce the same numbers and no
+   * assertion can tell them apart. These two move the average between dispatch and return,
+   * and every figure below would be different — and the goods-in-transit account would go
+   * negative — if the units came back at today's average.
+   *
+   * The quantities are chosen so every blend of the average is exact, which keeps the hand
+   * arithmetic free of rounding and makes each assertion an equality:
+   *
+   *   RETURN (one SKU)
+   *   receive 10 @ 40,000          basis 10, WAC 40,000      Dr Inventory 400,000
+   *   order 2 @ 150,000, ship      dispatch 2 @ 40,000       Dr GIT 80,000 / Cr Inventory 80,000
+   *                                basis 8, WAC 40,000
+   *   receive 8 @ 58,000           (8×40,000 + 8×58,000)/16 = 784,000/16 = WAC 49,000
+   *                                                          Dr Inventory 464,000
+   *   return 2                     at the dispatch cost, 40,000 — NOT 49,000
+   *                                (784,000 + 80,000)/18 = 864,000/18 = WAC 48,000
+   *                                                          Dr Inventory 80,000 / Cr GIT 80,000
+   *   moved: inventory +864,000 (= 18 × 48,000), GIT 0, payable −864,000, trial balance 0.
+   *   At today's average the return would post 98,000: GIT −18,000, WAC 49,000.
+   *
+   *   EXCHANGE (two SKUs)
+   *   receive X 10 @ 40,000, Y 10 @ 70,000                   Dr Inventory 1,100,000
+   *   order 1 × X @ 200,000 + 6,000 delivery; ship; deliver
+   *                                X dispatched @ 40,000; basis 9
+   *                                Dr CR 206,000 / Cr Revenue 200,000, Cr Delivery 6,000
+   *                                Dr COGS 40,000 / Cr GIT 40,000
+   *   receive X 10 @ 62,002        (9×40,000 + 10×62,002)/19 = 980,020/19 = WAC 51,580
+   *                                                          Dr Inventory 620,020
+   *   exchange 1 × X for 1 × Y @ 250,000, no delivery
+   *                                X back at 40,000 — NOT 51,580
+   *                                (980,020 + 40,000)/20 = 1,020,020/20 = WAC 51,001
+   *                                Dr Inventory 40,000 / Cr COGS 40,000
+   *                                Dr Revenue 200,000 / Cr Customer advance 200,000
+   *   replacement: COD 250,000 − 200,000 credit = 50,000
+   *   ship Y @ 70,000; deliver     Dr GIT 70,000 / Cr Inventory 70,000
+   *                                Dr CR 50,000, Dr Customer advance 200,000 / Cr Revenue 250,000
+   *                                Dr COGS 70,000 / Cr GIT 70,000
+   *   moved: inventory +1,650,020 (X 20 × 51,001 + Y 9 × 70,000), COGS +70,000,
+   *   revenue −250,000, delivery −6,000, customer advance 0, courier receivable +256,000,
+   *   GIT 0, payable −1,720,020 — Σ 0. At today's average COGS would move 58,420.
+   */
+  it('returns refused units at their dispatch cost, and the books and the shelf agree', async () => {
+    const place = await scene(ORG_A, 'wacreturn', 1);
+    const target = place.skus[0]?.id ?? '';
+    let orderId = '';
+
+    const moved = await balancesMovedBy(place.orgId, async () => {
+      await receive(place, target, 10, 40_000n);
+      orderId = await takeOrder(place, [{ skuId: target, qty: 2, unitPricePoisha: '150000' }]);
+      await orders.confirm(context(place.orgId), request(), orderId, {});
+      await orders.transition(context(place.orgId), request(), orderId, 'ship', {
+        courierId: place.courierId,
+      });
+      expect((await lineOf(place.orgId, orderId, target)).dispatchCost).toBe('40000');
+
+      await receive(place, target, 8, 58_000n);
+      // The average has moved away from what the parcel left at.
+      expect(await costOf(place.orgId, target)).toEqual({ wac: 49_000n, basis: 16 });
+
+      await orders.transition(context(place.orgId), request(), orderId, 'start_return', {
+        reason: 'Buyer refused the parcel',
+      });
+      await orders.transition(context(place.orgId), request(), orderId, 'receive_return', {
+        reason: 'Came back sealed',
+        ret: { reason: 'Came back sealed', locationId: place.location },
+      });
+    });
+
+    expect(await returnMovementCosts(place.orgId, orderId)).toEqual(['40000']);
+    expect(moved('goods_in_transit')).toBe(0n);
+    expect(moved('inventory')).toBe(864_000n);
+    expect(moved('supplier_payable')).toBe(-864_000n);
+    expect(moved('cogs')).toBe(0n);
+    expect(moved('sales_revenue')).toBe(0n);
+    expect(await trialBalanceDifference(place.orgId)).toBe(0n);
+
+    expect(await stockAt(place.orgId, target, place.location)).toEqual({ onHand: 18, reserved: 0 });
+    expect(await costOf(place.orgId, target)).toEqual({ wac: 48_000n, basis: 18 });
+    // The shelf at its new average is exactly what the books say the inventory is worth.
+    expect(18n * 48_000n).toBe(moved('inventory'));
+  }, 240_000);
+
+  it('exchanges a delivered unit back at its dispatch cost, and reverses COGS at that cost', async () => {
+    const place = await scene(ORG_A, 'wacexchange', 2);
+    const first = place.skus[0]?.id ?? '';
+    const second = place.skus[1]?.id ?? '';
+    let orderId = '';
+    let replacementId = '';
+
+    const moved = await balancesMovedBy(place.orgId, async () => {
+      await receive(place, first, 10, 40_000n);
+      await receive(place, second, 10, 70_000n);
+      orderId = await takeOrder(place, [{ skuId: first, qty: 1, unitPricePoisha: '200000' }]);
+      await orders.confirm(context(place.orgId), request(), orderId, {});
+      await orders.transition(context(place.orgId), request(), orderId, 'ship', {
+        courierId: place.courierId,
+      });
+      await orders.transition(context(place.orgId), request(), orderId, 'deliver');
+
+      await receive(place, first, 10, 62_002n);
+      expect(await costOf(place.orgId, first)).toEqual({ wac: 51_580n, basis: 19 });
+
+      const exchanged = await orders.exchange(context(place.orgId), request(), orderId, {
+        reason: 'Wrong size delivered',
+        returnLines: [{ skuId: first, qty: 1 }],
+        lines: [{ skuId: second, qty: 1, unitPricePoisha: '250000' }],
+        deliveryChargePoisha: '0',
+        locationId: place.location,
+      });
+      expect(exchanged.creditPoisha).toBe('200000');
+      expect(exchanged.replacement.codAmountPoisha).toBe('50000');
+      replacementId = exchanged.replacement.id;
+
+      await orders.confirm(context(place.orgId), request(), replacementId, {});
+      await orders.transition(context(place.orgId), request(), replacementId, 'ship', {
+        courierId: place.courierId,
+      });
+      await orders.transition(context(place.orgId), request(), replacementId, 'deliver');
+    });
+
+    expect(await returnMovementCosts(place.orgId, orderId)).toEqual(['40000']);
+    expect(moved('cogs')).toBe(70_000n);
+    expect(moved('inventory')).toBe(1_650_020n);
+    expect(moved('supplier_payable')).toBe(-1_720_020n);
+    expect(moved('sales_revenue')).toBe(-250_000n);
+    expect(moved('delivery_charge_income')).toBe(-6_000n);
+    expect(moved('customer_advance')).toBe(0n);
+    expect(moved('courier_receivable')).toBe(256_000n);
+    expect(moved('goods_in_transit')).toBe(0n);
+    expect(await trialBalanceDifference(place.orgId)).toBe(0n);
+
+    expect(await costOf(place.orgId, first)).toEqual({ wac: 51_001n, basis: 20 });
+    expect(await stockAt(place.orgId, first, place.location)).toEqual({ onHand: 20, reserved: 0 });
+    expect(await stockAt(place.orgId, second, place.location)).toEqual({ onHand: 9, reserved: 0 });
+    // The shelf at its averages is exactly what the books say.
+    expect(20n * 51_001n + 9n * 70_000n).toBe(moved('inventory'));
+  }, 240_000);
+});
+
 // --- the refusals the database itself owns ------------------------------------
 
 describe('what nothing can do to an order, whatever it is', () => {

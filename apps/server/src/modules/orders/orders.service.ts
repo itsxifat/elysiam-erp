@@ -30,7 +30,9 @@ import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { CustomersService } from './customers.service.js';
 import { FRAUD_GATE, type FraudGate } from './ports/fraud-gate.port.js';
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
+import * as desk from './desk.repository.js';
 import * as repo from './orders.repository.js';
+import { orderTimeline } from './timeline.js';
 import { mapOrderErrors, OrdersError } from './orders.errors.js';
 import type {
   AvailabilityQuery,
@@ -317,6 +319,12 @@ export class OrdersService {
 
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        /*
+         * One row more than the page, so the list can say whether there is a next page
+         * without a count query. A count races the next insert on a busy evening and costs
+         * a second scan of the same predicate; "the page came back full" misreports the one
+         * case where the last page is exactly full, which the extra row removes.
+         */
         const rows = await repo.listOrders(tx, context.orgId, {
           scope: queued,
           status: query.status,
@@ -324,10 +332,16 @@ export class OrdersService {
           q: query.q,
           from: query.from,
           to: query.to,
-          limit: query.limit,
+          channel: query.channel,
+          assignedTo: query.assignedTo,
+          zoneId: query.zoneId,
+          limit: query.limit + 1,
           offset: query.offset,
         });
-        return { items: rows.map(toOrderView) };
+        return {
+          items: rows.slice(0, query.limit).map(toOrderView),
+          hasNext: rows.length > query.limit,
+        };
       }),
     );
   }
@@ -336,22 +350,25 @@ export class OrdersService {
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const order = await this.readInScope(tx, context, request, id);
-        const [lines, events] = await Promise.all([
+        const [lines, events, audited] = await Promise.all([
           repo.orderLines(tx, context.orgId, order.id),
           repo.orderEvents(tx, context.orgId, order.id),
+          desk.orderAuditTrail(tx, context.orgId, order.id),
         ]);
+        const history = events.map((event) => ({
+          id: event.id,
+          from: event.from_status,
+          to: event.to_status,
+          trigger: event.trigger,
+          reason: event.reason,
+          actorUserId: event.actor_user_id,
+          occurredAt: new Date(event.occurred_at).toISOString(),
+        }));
         return {
           ...toOrderView(order),
           lines: lines.map(toLineView),
-          history: events.map((event) => ({
-            id: event.id,
-            from: event.from_status,
-            to: event.to_status,
-            trigger: event.trigger,
-            reason: event.reason,
-            actorUserId: event.actor_user_id,
-            occurredAt: new Date(event.occurred_at).toISOString(),
-          })),
+          history,
+          timeline: orderTimeline(history, audited),
         };
       }),
     );

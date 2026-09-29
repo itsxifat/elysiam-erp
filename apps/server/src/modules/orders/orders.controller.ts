@@ -17,20 +17,28 @@ import type { z } from 'zod';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
+import { BuyersService } from './buyers.service.js';
 import { CustomersService } from './customers.service.js';
+import { DeskService } from './desk.service.js';
 import { DocumentsService } from './documents.service.js';
 import { OrdersService } from './orders.service.js';
 import { mapOrderErrors } from './orders.errors.js';
 import {
   assignOrderSchema,
   availabilityQuerySchema,
+  bulkConfirmSchema,
+  bulkDocumentQuerySchema,
+  buyerExportQuerySchema,
+  buyerQuerySchema,
   cancelOrderSchema,
   confirmOrderSchema,
   createCustomerSchema,
   createOrderSchema,
+  customerLookupSchema,
   customerQuerySchema,
   deliverOrderSchema,
   documentQuerySchema,
+  duplicatesQuerySchema,
   exchangeOrderSchema,
   holdOrderSchema,
   orderIdSchema,
@@ -113,6 +121,7 @@ export class OrdersController {
   constructor(
     private readonly orders: OrdersService,
     private readonly documents: DocumentsService,
+    private readonly desk: DeskService,
   ) {}
 
   @RequireAbility('read', 'Order')
@@ -141,6 +150,67 @@ export class OrdersController {
   async create(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(createOrderSchema, body);
     return this.orders.create(requireContext(request), auditable(request), input);
+  }
+
+  // --- the order desk (M11) -----------------------------------------------------
+
+  /**
+   * The duplicate warning: has this number ordered one of these SKUs in the last day?
+   *
+   * `read Order`, and brand-wide on purpose — the duplicate that costs money is the one a
+   * colleague took — with every order outside the caller's scope reduced to its number,
+   * status and time. See `DeskService.duplicates`.
+   */
+  @RequireAbility('read', 'Order')
+  @Get('duplicates')
+  async duplicates(@Req() request: FastifyRequest, @Query() query: unknown) {
+    const parsed = parse(duplicatesQuerySchema, query ?? {});
+    return this.desk.duplicates(requireContext(request), request, parsed);
+  }
+
+  /** The people who act on orders, for the agent filter and the timeline's names. */
+  @RequireAbility('read', 'Order')
+  @Get('agents')
+  async agents(@Req() request: FastifyRequest) {
+    return this.desk.agents(requireContext(request), request);
+  }
+
+  /**
+   * Confirm up to a hundred orders, each in its own transaction (M11 bulk confirm).
+   *
+   * `update Order`, the grant a single confirm declares, and every order in the batch goes
+   * through the same scope lock and the same fraud gate a single confirm does — a batch is
+   * a loop over the one path, not a second path.
+   */
+  @RequireAbility('update', 'Order')
+  @Post('bulk-confirm')
+  async bulkConfirm(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(bulkConfirmSchema, body);
+    return this.desk.bulkConfirm(requireContext(request), auditable(request), input.ids);
+  }
+
+  /**
+   * Bulk print: invoices, packing slips or labels for many orders, as one PDF.
+   *
+   * The same reasoning as the single-order document below about `@Res()` and the
+   * serializer: the bytes are built from selling prices and addresses, after every id has
+   * been through the caller's scope.
+   */
+  @RequireAbility('read', 'Order')
+  @Get('documents')
+  async documentsFor(
+    @Req() request: FastifyRequest,
+    @Query() query: unknown,
+    @Res() reply: FastifyReply,
+  ) {
+    const { ids, kind } = parse(bulkDocumentQuerySchema, query ?? {});
+    const rendered = await mapOrderErrors(() =>
+      this.documents.renderMany(requireContext(request), request, ids, kind),
+    );
+    await reply
+      .header('content-type', 'application/pdf')
+      .header('content-disposition', `inline; filename="${rendered.filename}"`)
+      .send(Buffer.from(rendered.bytes));
   }
 
   @RequireAbility('read', 'Order')
@@ -435,13 +505,31 @@ export class OrdersController {
  */
 @Controller('v1/customers')
 export class CustomersController {
-  constructor(private readonly customers: CustomersService) {}
+  constructor(
+    private readonly customers: CustomersService,
+    private readonly desk: DeskService,
+  ) {}
 
   @RequireAbility('read', 'Customer')
   @Get()
   async list(@Req() request: FastifyRequest, @Query() query: unknown) {
     const parsed = parse(customerQuerySchema, query ?? {});
     return this.customers.list(requireContext(request), request, parsed);
+  }
+
+  /**
+   * The order desk's phone lookup (M11): buyer, addresses and recent orders in one call.
+   *
+   * 200 with `customer: null` for a number nobody has used *and* for a buyer outside the
+   * caller's reach, rather than a 404: a new buyer is the ordinary case at the desk, and a
+   * status code that meant "not yours" would be the oracle `assertReachable` exists to
+   * deny.
+   */
+  @RequireAbility('read', 'Customer')
+  @Get('lookup')
+  async lookup(@Req() request: FastifyRequest, @Query() query: unknown) {
+    const { phone } = parse(customerLookupSchema, query ?? {});
+    return this.desk.lookup(requireContext(request), request, phone);
   }
 
   @RequireAbility('create', 'Customer')
@@ -485,12 +573,26 @@ export class CustomersController {
  */
 @Controller('v1/delivery-zones')
 export class DeliveryZonesController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly desk: DeskService,
+  ) {}
 
   @RequireAbility('read', 'Catalog')
   @Get()
   async list(@Req() request: FastifyRequest) {
     return this.orders.zones(requireContext(request));
+  }
+
+  /**
+   * Every thana, its district and the zone that covers it (M11 address autocomplete).
+   *
+   * The whole list in one response, filtered in the browser: see `areasWithZones`.
+   */
+  @RequireAbility('read', 'Catalog')
+  @Get('areas')
+  async areas(@Req() request: FastifyRequest) {
+    return this.desk.areas(requireContext(request));
   }
 
   /** The zone and charge that cover one address, for the order form. */
@@ -506,5 +608,45 @@ export class DeliveryZonesController {
   async upsert(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(upsertZoneSchema, body);
     return this.orders.upsertZone(requireContext(request), auditable(request), input);
+  }
+}
+
+/**
+ * The buyer list and its export (M11 Build list; acceptance check 2).
+ *
+ * `export BuyerExport` on both routes — the page as well as the file — because §6 gives the
+ * list to org_admin and marketing and to nobody who takes orders, and a page of phone
+ * numbers is an export by another name. The file is sent with `@Res()`, like the order
+ * documents, so the serializer does not see it; what it contains is decided by the same
+ * query the page runs, and the service audits every export.
+ */
+@Controller('v1/buyers')
+export class BuyersController {
+  constructor(private readonly buyers: BuyersService) {}
+
+  @RequireAbility('export', 'BuyerExport')
+  @Get()
+  async list(@Req() request: FastifyRequest, @Query() query: unknown) {
+    const parsed = parse(buyerQuerySchema, query ?? {});
+    return this.buyers.list(requireContext(request), request, parsed);
+  }
+
+  @RequireAbility('export', 'BuyerExport')
+  @Get('export')
+  async export(
+    @Req() request: FastifyRequest,
+    @Query() query: unknown,
+    @Res() reply: FastifyReply,
+  ) {
+    const parsed = parse(buyerExportQuerySchema, query ?? {});
+    const file = await this.buyers.export(requireContext(request), request, parsed);
+    await reply
+      .header('content-type', file.contentType)
+      .header('content-disposition', `attachment; filename="${file.filename}"`)
+      // The count travels beside the file so a client can show "1,204 buyers exported"
+      // without parsing a spreadsheet, and so a test can compare it with the database.
+      .header('x-row-count', String(file.rows))
+      .header('cache-control', 'no-store')
+      .send(file.bytes);
   }
 }

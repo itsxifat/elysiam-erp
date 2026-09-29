@@ -1,11 +1,19 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { withOrg } from '@elysium/db';
-import { businessDate, poisha, toIsoDate } from '@elysium/domain';
-import { agingBucketFor, AGING_BUCKETS, summariseAging } from '@elysium/domain/courier';
+import { addDays, businessDate, poisha, toIsoDate } from '@elysium/domain';
+import {
+  agingBucketFor,
+  AGING_BUCKETS,
+  isParcelStatus,
+  summariseAging,
+  summarisePerformance,
+  type PerformanceParcel,
+} from '@elysium/domain/courier';
 import { sql } from 'drizzle-orm';
 
 import { scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { CourierError } from './courier.errors.js';
 import * as repo from './courier.repository.js';
 import { LEDGER_READ_PORT, type LedgerReadPort } from './ports/ledger-read.port.js';
 
@@ -191,6 +199,69 @@ export class CourierReportsService {
             .reduce((total, row) => total + BigInt(row.chargesPoisha), 0n)
             .toString(),
         },
+      };
+    });
+  }
+
+  /**
+   * Courier performance: delivery rate, average days and return rate, by zone (M15).
+   *
+   * The window is by booking date in Asia/Dhaka (invariant 8), defaulting to the last thirty
+   * days, and capped at a year — a report over every parcel ever booked is a report nobody
+   * can act on, and a query that reads them all is one the order desk feels.
+   *
+   * Every ratio is computed in the domain (`summarisePerformance`), in integers: the rates are
+   * basis points and the mean is a one-decimal string. Zones are returned as ids; the console
+   * names them from `GET /v1/delivery-zones`, the orders module's own list, rather than this
+   * module reading that module's table.
+   */
+  async performance(
+    context: ActiveContext,
+    request: object,
+    options: { from?: string | undefined; to?: string | undefined; courierId?: string | undefined },
+  ) {
+    const to = toIsoDate(options.to ?? businessDate(new Date()));
+    const from = toIsoDate(options.from ?? addDays(to, -29));
+    if (from > to) {
+      throw new CourierError('CONSIGNMENT_INVALID', 'The report starts after it ends.');
+    }
+    if (addDays(from, 366) <= to) {
+      throw new CourierError('CONSIGNMENT_INVALID', 'A performance report covers a year at most.');
+    }
+    const branchWhere = scopeWhere(request, { branchId: sql`c.branch_id` });
+
+    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const rows = await repo.performanceSource(tx, context.orgId, {
+        from,
+        to,
+        courierId: options.courierId,
+        branchWhere,
+      });
+
+      const names = new Map<string, string>();
+      const parcels: PerformanceParcel[] = [];
+      for (const row of rows) {
+        names.set(row.courier_id, row.courier_name);
+        if (!isParcelStatus(row.status)) continue;
+        parcels.push({
+          courierId: row.courier_id,
+          deliveryZoneId: row.delivery_zone_id,
+          status: row.status,
+          bookedOn: toIsoDate(row.booked_on),
+          deliveredOn: row.delivered_on === null ? null : toIsoDate(row.delivered_on),
+        });
+      }
+
+      const report = summarisePerformance(parcels);
+      const named = <T extends { courierId: string }>(row: T) => ({
+        ...row,
+        courierName: names.get(row.courierId) ?? '',
+      });
+      return {
+        from,
+        to,
+        rows: report.rows.map(named),
+        couriers: report.couriers.map(named),
       };
     });
   }

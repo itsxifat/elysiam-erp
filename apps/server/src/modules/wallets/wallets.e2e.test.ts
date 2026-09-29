@@ -774,6 +774,55 @@ describe('check 5: the role matrix', () => {
     expect(refused.statusCode, refused.body).toBe(404);
   });
 
+  /*
+   * The test above only proves that a manager whose branch has no wallet sees an empty
+   * list — and so does an implementation that hides every wallet from every branch
+   * manager, which is a broken scope and not a narrow one. This is the half that tells
+   * them apart: once their branch has a till, they see exactly that till and its real
+   * balance, and still nothing of HQ's or of the org-level bank and bKash.
+   */
+  it('shows a branch manager their own branch’s wallet and its balance, and no other', async () => {
+    const created = await accounts.client.request('POST', '/v1/accounts/wallets', {
+      body: {
+        account: { code: '1010-SHR-2', name: 'Hand cash, Second Showroom', subtype: 'wallet_cash' },
+        branchId: otherBranch,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const own = body<{ id: string }>(created);
+
+    // A balance that is not zero, so a scope that listed the right row with the wrong
+    // derived figure — or summed someone else's — shows up as a wrong number.
+    const cashIn = await accounts.client.request('POST', '/v1/accounts/cash-entries', {
+      body: {
+        entryId: randomUUID(),
+        walletId: own.id,
+        kind: 'cash_in',
+        categoryAccountId: accountId('4300'),
+        amountPoisha: '250000',
+        memo: 'Opening float, Second Showroom',
+      },
+    });
+    expect(cashIn.statusCode, cashIn.body).toBe(201);
+
+    const visible = body<{
+      items: { id: string; branchId: string | null; balancePoisha: string }[];
+      totalPoisha: string;
+    }>(await branchManager.client.request('GET', '/v1/accounts/wallets'));
+    expect(visible.items.map((wallet) => wallet.id)).toEqual([own.id]);
+    expect(visible.items[0]).toMatchObject({ branchId: otherBranch, balancePoisha: '250000' });
+    expect(visible.totalPoisha).toBe('250000');
+
+    // Accounts, org-wide, sees both tills and the org-level wallets: the manager's view is
+    // a subset of the org's, not a different list.
+    const everything = body<{ items: { id: string }[] }>(
+      await accounts.client.request('GET', '/v1/accounts/wallets'),
+    );
+    expect(everything.items.map((wallet) => wallet.id)).toEqual(
+      expect.arrayContaining([own.id, wallets.handCash, wallets.bank, wallets.bkash]),
+    );
+  });
+
   it('withholds cost from a branch manager’s P&L rather than silently netting it', async () => {
     const pnl = body<{ costWithheld: boolean }>(
       await branchManager.client.request(

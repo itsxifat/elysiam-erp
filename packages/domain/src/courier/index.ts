@@ -1,7 +1,7 @@
 /**
  * Courier logic, pure (architecture §9, §20, §21; invariant 11).
  *
- * Three files, three jobs:
+ * Three files for M12, three jobs (M15's five are listed at the exports):
  *
  * - `status` turns a courier's vocabulary into §9's twelve normalized statuses, and
  *   decides which of §9's order triggers (if any) a status justifies.
@@ -17,6 +17,13 @@
 export * from './status.js';
 export * from './settlement.js';
 export * from './booking.js';
+// M15: which courier takes a parcel, the stuck-parcel queue, the performance report, the
+// public tracking page, and what makes a fetched statement a duplicate.
+export * from './selection.js';
+export * from './stuck.js';
+export * from './performance.js';
+export * from './tracking.js';
+export * from './settlement-fetch.js';
 
 /**
  * §7's two settlement posting rules, re-exported.

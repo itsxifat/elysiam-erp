@@ -105,8 +105,16 @@ export async function seedProductWithSkus(
       `);
       const categoryId = categoryRows[0]?.id;
 
+      // Past the highest sequence already used, not merely past the counter. Other suites'
+      // fixtures (courier's, for one) write products with `max(sequence) + 1` and leave the
+      // counter behind, so a suite that runs both — the cost sweep runs every module's —
+      // collided on `products_org_sequence_idx` with the counter alone.
       const sequenceRows = await tx.execute<{ last_sequence: number }>(sql`
-        update catalog.sku_settings set last_sequence = last_sequence + 1
+        update catalog.sku_settings
+        set last_sequence = greatest(
+          last_sequence,
+          (select coalesce(max(p.sequence), 0) from catalog.products p where p.org_id = ${orgId})
+        ) + 1
         where org_id = ${orgId}
         returning last_sequence
       `);

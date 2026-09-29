@@ -5,7 +5,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { AuditService } from '../../platform/audit/audit.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { COURIER_ADAPTERS, type CourierAdapterRegistry } from './adapters/courier-adapter.js';
-import { courierEnv } from './courier.config.js';
+import { adapterEnabled } from './courier.config.js';
 import { CourierError } from './courier.errors.js';
 import * as repo from './courier.repository.js';
 import { sealCredentials } from './credentials.js';
@@ -43,7 +43,7 @@ export class CourierAccountsService {
       const rows = await repo.listAccounts(tx, context.orgId, {
         includeInactive: options.includeInactive ?? false,
       });
-      return { items: rows.map((row) => this.view(row)) };
+      return { items: rows.map((row) => this.view(row, context.orgId)) };
     });
   }
 
@@ -69,7 +69,7 @@ export class CourierAccountsService {
       );
     }
 
-    if (input.isActive && !adapter.verified && !this.unverifiedAllowed(adapter.code)) {
+    if (input.isActive && !adapterEnabled(adapter)) {
       /*
        * The honesty gate.
        *
@@ -189,19 +189,8 @@ export class CourierAccountsService {
       if (saved === undefined) {
         throw new CourierError('COURIER_ACCOUNT_NOT_FOUND', 'That courier account vanished.');
       }
-      return this.view(saved);
+      return this.view(saved, context.orgId);
     });
-  }
-
-  /**
-   * Whether this installation has opted into an unverified adapter.
-   *
-   * Per provider, because "we accept the risk on Steadfast because we have tested it by
-   * hand" must not silently accept it on the next courier somebody adds. Today that is one
-   * variable; when M15 adds Pathao and RedX it is three, and the switch reads the same way.
-   */
-  private unverifiedAllowed(code: string): boolean {
-    return code === 'steadfast' ? courierEnv().COURIER_STEADFAST_ENABLED : false;
   }
 
   /**
@@ -213,7 +202,7 @@ export class CourierAccountsService {
    * returned instead answers the only question anybody asks — "is a key configured, and is
    * it the one I put in the vault".
    */
-  private view(row: repo.CourierAccountRow) {
+  private view(row: repo.CourierAccountRow, orgId: string) {
     return {
       id: row.id,
       courierId: row.courier_id,
@@ -232,8 +221,16 @@ export class CourierAccountsService {
       /** False means the adapter was not built from the courier's own docs (D-006, D-176). */
       verified: row.verified,
       isActive: row.is_active,
-      /** Where a webhook for this account is delivered. Not a secret; the token is. */
-      webhookPath: row.supports_webhook ? `/v1/courier/webhooks/${row.provider_code}` : null,
+      /**
+       * Where a webhook for this account is delivered. Not a secret; the token is.
+       *
+       * With the org id in it, which is the route's actual shape
+       * (`/v1/courier/webhooks/:orgId/:provider`). M12 printed the path without it, so an
+       * operator copying this into a courier's panel registered a URL that could only 404.
+       */
+      webhookPath: row.supports_webhook
+        ? `/v1/courier/webhooks/${orgId}/${row.provider_code}`
+        : null,
     };
   }
 }

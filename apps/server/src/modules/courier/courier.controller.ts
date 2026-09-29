@@ -6,10 +6,12 @@ import {
   Headers,
   Param,
   Post,
+  Put,
   Query,
   Req,
+  Res,
 } from '@nestjs/common';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -18,22 +20,35 @@ import { requireContext } from '../../platform/http/context.js';
 import { CourierAccountsService } from './accounts.service.js';
 import { BookingService } from './booking.service.js';
 import { courierHttpError, mapCourierErrors } from './courier.errors.js';
+import { CourierLabelsService } from './labels.service.js';
 import { CourierReportsService } from './reports.service.js';
 import { ReturnsService } from './returns.service.js';
+import { CourierSelectionService } from './selection.service.js';
 import { SettlementsService } from './settlements.service.js';
+import { StuckParcelsService } from './stuck.service.js';
 import { CourierSyncService } from './sync.service.js';
 import {
   bookParcelSchema,
+  bulkBookSchema,
   confirmHandoverSchema,
   consignmentIdParamSchema,
+  escalationSchema,
+  fetchSettlementsSchema,
   importSettlementSchema,
+  labelsQuerySchema,
   manualStatusSchema,
+  parcelListSchema,
+  performanceQuerySchema,
   receiveReturnSchema,
   reconciliationQuerySchema,
   rejectSettlementSchema,
+  replaceSelectionRulesSchema,
+  repollSchema,
   requestSettlementApprovalSchema,
+  selectionPreviewSchema,
   settlementIdParamSchema,
   settlementListSchema,
+  stuckQuerySchema,
   upsertCourierAccountSchema,
 } from './courier.schemas.js';
 
@@ -85,6 +100,9 @@ export class CourierController {
     private readonly returns: ReturnsService,
     private readonly settlements: SettlementsService,
     private readonly reports: CourierReportsService,
+    private readonly stuck: StuckParcelsService,
+    private readonly selection: CourierSelectionService,
+    private readonly labels: CourierLabelsService,
   ) {}
 
   // --- accounts -----------------------------------------------------------------
@@ -117,6 +135,157 @@ export class CourierController {
         orderId: input.orderId,
         courierId: input.courierId,
       }),
+    );
+  }
+
+  /**
+   * Many orders booked at once (M15). `update Order`, like the single booking: one
+   * transaction per order, each scope-checked, and the answer lists every order's outcome.
+   */
+  @RequireAbility('update', 'Order')
+  @Post('parcels/bulk')
+  async bookMany(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(bulkBookSchema, body);
+    return mapCourierErrors(() =>
+      this.booking.bookMany(requireContext(request), auditable(request), {
+        orderIds: input.orderIds,
+        courierId: input.courierId,
+      }),
+    );
+  }
+
+  /** The console's parcel list (M15), newest first, in the caller's row scope. */
+  @RequireAbility('read', 'Order')
+  @Get('parcels')
+  async parcels(@Req() request: FastifyRequest, @Query() query: unknown) {
+    const filter = parse(parcelListSchema, query ?? {});
+    return mapCourierErrors(() =>
+      this.sync.listParcels(requireContext(request), request, {
+        q: filter.q,
+        status: filter.status,
+        bookingState: filter.bookingState,
+        courierId: filter.courierId,
+        awaitingReturn: filter.awaitingReturn === undefined ? undefined : filter.awaitingReturn === 'true',
+        page: filter.page,
+        pageSize: filter.pageSize,
+      }),
+    );
+  }
+
+  /**
+   * Courier labels as a PDF (M15, through M04's Gotenberg slice).
+   *
+   * A `GET` with the ids in the query — rendering changes nothing — and `@Res()` because the
+   * answer is bytes, so `SerializeInterceptor` never sees it. That is safe for the reason the
+   * order documents give: `CourierLabelsService.gather` applies the caller's §6 scope before
+   * any address is read, and the page carries no price and no cost.
+   */
+  @RequireAbility('read', 'Order')
+  @Get('labels')
+  async printLabels(
+    @Req() request: FastifyRequest,
+    @Query() query: unknown,
+    @Res() reply: FastifyReply,
+  ) {
+    const input = parse(labelsQuerySchema, query ?? {});
+    const rendered = await mapCourierErrors(() =>
+      this.labels.render(requireContext(request), request, input.ids),
+    );
+    await reply
+      .header('content-type', 'application/pdf')
+      .header('content-disposition', `inline; filename="${rendered.filename}"`)
+      .send(Buffer.from(rendered.bytes));
+  }
+
+  /**
+   * Which courier booking this order now would use, and why (M15's selection rules). A `GET`:
+   * it decides and writes nothing.
+   */
+  @RequireAbility('read', 'Order')
+  @Get('selection/preview')
+  async previewSelection(@Req() request: FastifyRequest, @Query() query: unknown) {
+    const input = parse(selectionPreviewSchema, query ?? {});
+    return mapCourierErrors(() =>
+      this.selection.preview(requireContext(request), request, {
+        orderId: input.orderId,
+        courierId: input.courierId,
+      }),
+    );
+  }
+
+  /** The org's zone → courier rules. `read CourierSettlement`, like the accounts they route to. */
+  @RequireAbility('read', 'CourierSettlement')
+  @Get('selection-rules')
+  async selectionRules(@Req() request: FastifyRequest) {
+    return mapCourierErrors(() => this.selection.list(requireContext(request)));
+  }
+
+  /**
+   * Replace the rule set. `update CourierSettlement`: which courier holds a brand's COD is the
+   * same finance decision as setting up the courier's account (§6).
+   */
+  @RequireAbility('update', 'CourierSettlement')
+  @Put('selection-rules')
+  async replaceSelectionRules(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(replaceSelectionRulesSchema, body);
+    return mapCourierErrors(() =>
+      this.selection.replace(requireContext(request), auditable(request), input),
+    );
+  }
+
+  // --- the stuck-parcel queue (M15) ---------------------------------------------
+
+  @RequireAbility('read', 'Order')
+  @Get('stuck')
+  async stuckParcels(@Req() request: FastifyRequest, @Query() query: unknown) {
+    const options = parse(stuckQuerySchema, query ?? {});
+    return mapCourierErrors(() =>
+      this.stuck.list(requireContext(request), request, {
+        thresholdDays: options.thresholdDays,
+        courierId: options.courierId,
+      }),
+    );
+  }
+
+  /** The queue as a CSV for the courier's support desk. No recipient details in it. */
+  @RequireAbility('read', 'Order')
+  @Get('stuck/export')
+  async exportStuckParcels(
+    @Req() request: FastifyRequest,
+    @Query() query: unknown,
+    @Res() reply: FastifyReply,
+  ) {
+    const options = parse(stuckQuerySchema, query ?? {});
+    const file = await mapCourierErrors(() =>
+      this.stuck.exportCsv(requireContext(request), request, {
+        thresholdDays: options.thresholdDays,
+        courierId: options.courierId,
+      }),
+    );
+    await reply
+      .header('content-type', 'text/csv; charset=utf-8')
+      .header('content-disposition', `attachment; filename="${file.filename}"`)
+      .send(file.csv);
+  }
+
+  /** Ask the courier about these parcels again, now. The calls happen in the worker. */
+  @RequireAbility('update', 'Order')
+  @Post('stuck/repoll')
+  async repoll(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(repollSchema, body);
+    return mapCourierErrors(() =>
+      this.stuck.requestRepoll(requireContext(request), auditable(request), input),
+    );
+  }
+
+  /** Add a note to a parcel's escalation trail (append-only). */
+  @RequireAbility('update', 'Order')
+  @Post('parcels/:id/escalations')
+  async escalate(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    const consignmentId = parse(consignmentIdParamSchema, id);
+    const input = parse(escalationSchema, body);
+    return mapCourierErrors(() =>
+      this.stuck.escalate(requireContext(request), auditable(request), consignmentId, input),
     );
   }
 
@@ -193,6 +362,26 @@ export class CourierController {
         ...(filter.courierId === undefined ? {} : { courierId: filter.courierId }),
       }),
     );
+  }
+
+  /**
+   * Queue a fetch of this courier's statements from its API (M15). Refused, with the reason,
+   * for a courier whose adapter has no settlement API — today, every real one.
+   */
+  @RequireAbility('create', 'CourierSettlement')
+  @Post('settlements/fetch')
+  async fetchSettlements(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(fetchSettlementsSchema, body);
+    return mapCourierErrors(() =>
+      this.settlements.requestFetch(requireContext(request), auditable(request), input),
+    );
+  }
+
+  /** What the unattended fetch saw and did, statement by statement. */
+  @RequireAbility('read', 'CourierSettlement')
+  @Get('settlements/fetch-runs')
+  async fetchRuns(@Req() request: FastifyRequest) {
+    return mapCourierErrors(() => this.settlements.fetchRuns(requireContext(request)));
   }
 
   @RequireAbility('read', 'CourierSettlement')
@@ -276,6 +465,20 @@ export class CourierController {
     );
   }
 
+  /** Delivery rate, average days and return rate, by courier and zone (M15). */
+  @RequireAbility('read', 'LedgerReport')
+  @Get('reports/performance')
+  async performance(@Req() request: FastifyRequest, @Query() query: unknown) {
+    const options = parse(performanceQuerySchema, query ?? {});
+    return mapCourierErrors(() =>
+      this.reports.performance(requireContext(request), request, {
+        from: options.from,
+        to: options.to,
+        courierId: options.courierId,
+      }),
+    );
+  }
+
   // --- the webhook --------------------------------------------------------------
 
   /**
@@ -301,6 +504,7 @@ export class CourierController {
     @Param('provider') provider: string,
     @Headers() headers: Record<string, string | undefined>,
     @Body() body: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw =
       (request as FastifyRequest & { rawBody?: Buffer }).rawBody ??
@@ -326,7 +530,19 @@ export class CourierController {
         headers,
         raw,
       });
-      // 200 for a retransmission too. A courier that gets an error for re-sending a body it
+      /*
+       * The courier's required answer, when it has one (M15). Pathao's merchant panel only
+       * registers a callback URL that answers 202 with its integration header, so the status
+       * and header come from the adapter rather than being Nest's default 201 — which every
+       * courier that only needs a 2xx still gets.
+       */
+      if (result.acknowledgement !== null) {
+        void reply.status(result.acknowledgement.status);
+        for (const [name, value] of Object.entries(result.acknowledgement.headers)) {
+          void reply.header(name, value);
+        }
+      }
+      // A 2xx for a retransmission too. A courier that gets an error for re-sending a body it
       // already sent will send it again, sooner.
       return { accepted: result.accepted, duplicate: result.duplicate };
     });

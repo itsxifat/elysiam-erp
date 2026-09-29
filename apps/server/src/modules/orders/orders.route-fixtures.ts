@@ -271,6 +271,34 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
     url: `/v1/orders/${await freshOrder('pending')}/document?kind=invoice`,
   }),
 
+  // --- M11: the order desk ------------------------------------------------------
+
+  'GET /v1/orders/duplicates': () => ({
+    url: `/v1/orders/duplicates?phone=01711000000&skuIds=${sku(0).id}`,
+  }),
+
+  'GET /v1/orders/agents': () => ({ url: '/v1/orders/agents' }),
+
+  'POST /v1/orders/bulk-confirm': async () => ({
+    // A fresh pending order per admitted role, unassigned so a sales agent's queue reaches
+    // it. A role whose scope or §9 row cannot confirm it still gets a 201 with the refusal
+    // reported against the id — which is the route's contract, and still an audited call.
+    url: '/v1/orders/bulk-confirm',
+    body: { ids: [await freshOrder('pending')] },
+  }),
+
+  'GET /v1/orders/documents': async () => ({
+    url: `/v1/orders/documents?ids=${await freshOrder('pending')}&kind=label`,
+  }),
+
+  'GET /v1/customers/lookup': () => ({ url: '/v1/customers/lookup?phone=01711000000' }),
+
+  'GET /v1/delivery-zones/areas': () => ({ url: '/v1/delivery-zones/areas' }),
+
+  'GET /v1/buyers': () => ({ url: '/v1/buyers?limit=5' }),
+
+  'GET /v1/buyers/export': () => ({ url: '/v1/buyers/export?format=csv&size=M' }),
+
   'GET /v1/customers': () => ({ url: '/v1/customers' }),
 
   'POST /v1/customers': () => ({

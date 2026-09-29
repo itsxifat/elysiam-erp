@@ -30,8 +30,10 @@ import type { QueueDefinition } from '../../platform/jobs/queues.js';
  * chose the file. Posting is not in the job either: it happens inside the transaction
  * that approves the batch, through the approvals executor (§9: "→ approval → posting").
  *
- * The API-fetch half *is* an outbound call and does need the queue. It arrives with M15,
- * which is where `fetchSettlements` on the adapter becomes real.
+ * The API-fetch half *is* an outbound call and does need the queue. M15 adds it as
+ * `delivery.fetch_settlements` (the cron) and `delivery.fetch_account_settlements` (the
+ * work) — named for what they do rather than §20's single name, because the cron and its
+ * per-account fan-out are two queues for the reason the status poll is.
  */
 export const COURIER_QUEUES = {
   book: 'delivery.book_parcel',
@@ -41,6 +43,15 @@ export const COURIER_QUEUES = {
   poll: 'delivery.poll_status',
   /** The per-org half of the poll, which is where the courier calls actually happen. */
   pollOrg: 'delivery.poll_org',
+  /** M15: the stuck-parcel queue's bulk re-poll — a person's chosen list, asked about now. */
+  repoll: 'delivery.repoll_parcels',
+  /**
+   * M15: §20's "API fetch" half of `delivery.import_settlement`, as a daily cron. Global: it
+   * fires once and fans out one tenant job per courier account whose adapter can fetch.
+   */
+  fetchSettlements: 'delivery.fetch_settlements',
+  /** The per-account half of the fetch, where the courier call and the import happen. */
+  fetchAccountSettlements: 'delivery.fetch_account_settlements',
 } as const;
 
 export const COURIER_QUEUE_DEFINITIONS: readonly QueueDefinition[] = [
@@ -103,6 +114,37 @@ export const COURIER_QUEUE_DEFINITIONS: readonly QueueDefinition[] = [
     retryDelaySeconds: 30,
     expireInSeconds: 300,
   },
+  {
+    name: COURIER_QUEUES.repoll,
+    scope: 'org',
+    // A person is waiting on the answer, and a courier that is down now will be polled by the
+    // half-hourly sweep anyway. One retry, so a blip does not cost them the click.
+    retryLimit: 1,
+    retryDelaySeconds: 30,
+    expireInSeconds: 600,
+  },
+  {
+    name: COURIER_QUEUES.fetchSettlements,
+    scope: 'global',
+    /*
+     * Daily at 06:30 Asia/Dhaka (the runtime schedules every cron in Dhaka time). Couriers
+     * issue statements for the previous day's collections overnight, and 06:30 puts the new
+     * batches in front of accounts before the working day starts.
+     */
+    cron: '30 6 * * *',
+    retryLimit: 2,
+    retryDelaySeconds: 300,
+    expireInSeconds: 600,
+  },
+  {
+    name: COURIER_QUEUES.fetchAccountSettlements,
+    scope: 'org',
+    // Idempotent by fingerprint, so a retry after a half-finished run imports only what the
+    // first attempt did not.
+    retryLimit: 3,
+    retryDelaySeconds: 120,
+    expireInSeconds: 600,
+  },
 ];
 
 /*
@@ -133,7 +175,25 @@ export const processWebhookPayload = z
 
 export const pollOrgPayload = z.object({ limit: z.number().int().min(1).max(500) }).strict();
 
+export const repollPayload = z
+  .object({
+    consignmentIds: z.array(z.string().uuid()).min(1).max(100),
+    /** Who asked, for the log line and the audit row the route already wrote. */
+    actorUserId: z.string().min(1).max(200),
+  })
+  .strict();
+
+export const fetchAccountSettlementsPayload = z
+  .object({
+    courierAccountId: z.string().uuid(),
+    /** Who asked — `system:courier` for the cron, a user id for the console's button. */
+    actorUserId: z.string().min(1).max(200),
+  })
+  .strict();
+
 export type BookParcelPayload = z.infer<typeof bookParcelPayload>;
 export type CancelParcelPayload = z.infer<typeof cancelParcelPayload>;
 export type ProcessWebhookPayload = z.infer<typeof processWebhookPayload>;
 export type PollOrgPayload = z.infer<typeof pollOrgPayload>;
+export type RepollPayload = z.infer<typeof repollPayload>;
+export type FetchAccountSettlementsPayload = z.infer<typeof fetchAccountSettlementsPayload>;

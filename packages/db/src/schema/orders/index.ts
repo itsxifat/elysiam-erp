@@ -486,6 +486,12 @@ export const orders = sales.table(
     index('orders_org_unassigned_idx')
       .on(table.orgId, table.createdAt)
       .where(sql`${table.assignedTo} is null`),
+    // M11's duplicate warning asks "has this number ordered in the last 24 hours" on every
+    // desk entry. The trigram index on the phone answers fragments, not equality over a
+    // time window, and without this the check reads every order the number ever placed.
+    index('orders_org_phone_created_idx').on(table.orgId, table.shipPhoneE164, table.createdAt),
+    // The order list's channel filter and the buyer list's, both bounded by a date range.
+    index('orders_org_channel_created_idx').on(table.orgId, table.channel, table.createdAt),
     foreignKey({
       name: 'orders_org_id_branch_id_fk',
       columns: [table.orgId, table.branchId],

@@ -218,6 +218,97 @@ describe('encrypted employee fields (check 3)', () => {
       /HR_FIELD_NOT_MASKED/,
     );
   });
+
+  /*
+   * The first test in this block writes its own ciphertext with raw SQL, so it proves the
+   * *column* can hold something unreadable and says nothing about what the *service* puts
+   * there. A service that stored the NID as UTF-8 bytes in `national_id_cipher`, or
+   * copied the number into a free-text column, would pass it untouched.
+   *
+   * This one goes through the front door — `POST /v1/hr/employees` as the HR role, the
+   * validation, the service's encryption, the audit net — and then reads back everything
+   * the database holds for that employee as the owner, the widest raw view there is short
+   * of a superuser: the whole row through `row_to_json`, and every audit row written about
+   * it. None of the three numbers may appear in any form someone could search for.
+   */
+  it('stores what the API was given only as ciphertext and masks', async () => {
+    const hr = await harness.asRole('hr', ORG_A);
+    const numbers = {
+      nationalId: '1987654321098',
+      phone: '01733344455',
+      payoutRef: '01855566677',
+    };
+
+    const created = await hr.client.request('POST', '/v1/hr/employees', {
+      body: {
+        code: 'ENC-API-01',
+        fullName: 'Through The Front Door',
+        joinDate: '2026-02-01',
+        payoutMethod: 'bkash',
+        ...numbers,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const { id } = JSON.parse(created.body) as { id: string };
+    // Not even the response echoes them: masks only.
+    for (const value of Object.values(numbers)) expect(created.body).not.toContain(value);
+
+    const raw = await withSystem(
+      async (tx) => {
+        const row = await tx.execute<{ doc: string }>(sql`
+          select row_to_json(e)::text as doc from hr.employees e
+          where org_id = ${ORG_A} and id = ${id}
+        `);
+        const audit = await tx.execute<{ doc: string }>(sql`
+          select row_to_json(a)::text as doc from audit.audit_log a
+          where org_id = ${ORG_A} and entity_id = ${id}
+        `);
+        return { row: row[0]?.doc ?? '', audit: audit.map((entry) => entry.doc) };
+      },
+      { orgId: ORG_A },
+    );
+    expect(raw.row, 'the employee row exists').toContain(id);
+    expect(raw.audit.length, 'the create was audited').toBeGreaterThan(0);
+
+    /*
+     * Every spelling a leak could take: as typed; with the leading zero dropped or the
+     * country code added, which is what phone normalisation produces; as the hex that
+     * `bytea` renders to; as base64; and, across the whole document with every non-digit
+     * removed, as a digit run — which catches a number stored with separators.
+     */
+    const spellings = (value: string): string[] => {
+      const forms = new Set([value]);
+      if (value.startsWith('0')) {
+        forms.add(value.slice(1));
+        forms.add(`880${value.slice(1)}`);
+        forms.add(`+880${value.slice(1)}`);
+      }
+      const hex = [...forms].map((form) => Buffer.from(form, 'utf8').toString('hex'));
+      const base64 = [...forms].map((form) => Buffer.from(form, 'utf8').toString('base64'));
+      return [...forms, ...hex, ...base64];
+    };
+
+    for (const doc of [raw.row, ...raw.audit]) {
+      const digits = doc.replace(/\D+/g, '');
+      for (const [field, value] of Object.entries(numbers)) {
+        for (const form of spellings(value)) {
+          expect(doc.toLowerCase(), `${field} as "${form}"`).not.toContain(form.toLowerCase());
+        }
+        expect(digits, `${field} as a digit run`).not.toContain(value.slice(1));
+      }
+    }
+
+    // And the masks are what the service promised, so the columns are not simply empty.
+    const masks = JSON.parse(raw.row) as Record<string, unknown>;
+    expect(masks.national_id_masked).toBe('********1098');
+    expect(masks.phone_masked).toBe('017******55');
+    expect(masks.payout_ref_masked).toBe('*******6677');
+    for (const column of ['national_id_cipher', 'phone_cipher', 'payout_ref_cipher']) {
+      expect(masks[column], `${column} holds ciphertext`).toEqual(
+        expect.stringMatching(/^\\x[0-9a-f]+$/),
+      );
+    }
+  });
 });
 
 // --- tenancy ------------------------------------------------------------------

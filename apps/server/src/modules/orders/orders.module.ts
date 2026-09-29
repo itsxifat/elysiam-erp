@@ -5,10 +5,13 @@ import { CatalogModule } from '../catalog/catalog.module.js';
 import { FilesModule } from '../files/files.module.js';
 import { InventoryModule } from '../inventory/inventory.module.js';
 import { LedgerModule } from '../ledger/ledger.module.js';
+import { BuyersService } from './buyers.service.js';
 import { CustomersService } from './customers.service.js';
+import { DeskService } from './desk.service.js';
 import { DocumentsService } from './documents.service.js';
 import { ORDERS_API, OrdersApiService } from './orders.api.js';
 import {
+  BuyersController,
   CustomersController,
   DeliveryZonesController,
   OrdersController,
@@ -86,13 +89,17 @@ import { FRAUD_GATE } from './ports/fraud-gate.port.js';
     ApprovalsModule,
     FraudModule,
   ],
-  controllers: [OrdersController, CustomersController, DeliveryZonesController],
+  controllers: [OrdersController, CustomersController, DeliveryZonesController, BuyersController],
   providers: [
     CustomersService,
     CourierBookingRegistry,
     TransitionsService,
     OrdersService,
     DocumentsService,
+    // M11: the desk's reads and bulk confirm, and the buyer list. Neither is exported —
+    // they are screens, and another module that wanted them would want `ORDERS_API`.
+    DeskService,
+    BuyersService,
     { provide: FRAUD_GATE, useExisting: FRAUD_API },
     { provide: ORDERS_API, useClass: OrdersApiService },
   ],

@@ -102,9 +102,35 @@ export interface AppliedTrigger {
   readonly journalId: string | null;
 }
 
+/**
+ * The few order facts M15 needs beyond the booking snapshot (M15).
+ *
+ * A structural subset of `OrdersApi.summary`'s `OrderSummary`, declared here so this module
+ * states exactly what it reads: the zone, for the selection rules and the performance
+ * report; the buyer's phone, for the public tracking page's last-four check; the status, for
+ * the stage a customer is shown. Nothing about money beyond the COD, and no cost.
+ */
+export interface OrderFacts {
+  readonly orderNo: string;
+  readonly status: OrderStatus;
+  readonly branchId: string | null;
+  readonly courierId: string | null;
+  readonly deliveryZoneId: string | null;
+  /** E.164. Compared on its last four digits and never returned by this module. */
+  readonly customerPhoneE164: string;
+  /** Decimal string, as `OrderSummary` carries it. */
+  readonly codAmountPoisha: string;
+}
+
 export interface OrdersPort {
   /** Null when the order is not this org's. */
   bookingSnapshot(tx: Tx, orgId: string, orderId: string): Promise<OrderBookingSnapshot | null>;
+
+  /**
+   * M15. `OrdersApi.summary`, read through this module's own statement of what it needs.
+   * Undefined when the order is not this org's.
+   */
+  summary(tx: Tx, orgId: string, orderId: string): Promise<OrderFacts | undefined>;
 
   /** Just the status and the two ids a consignment row needs. Null when not found. */
   statusOf(

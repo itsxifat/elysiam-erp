@@ -11,6 +11,7 @@ import {
   codSettlementDraft,
   courierChargesDraft,
   FAKE_STATUS_MAP,
+  FAKE_STATUS_VOCABULARY,
   MAPPED_COURIER_CODES,
   matchedReceivableRelieved,
   matchSettlement,
@@ -22,6 +23,7 @@ import {
   settlementPostsAnything,
   settlementRelievesPoisha,
   STEADFAST_STATUS_MAP,
+  STEADFAST_STATUS_VOCABULARY,
   statusDedupeKey,
   summariseAging,
   takaToPoisha,
@@ -80,9 +82,18 @@ function day(value: string): IsoDate {
 
 describe('courier status mapping', () => {
   it('maps every status each provider declares, and declares none it cannot map', () => {
-    for (const map of [STEADFAST_STATUS_MAP, FAKE_STATUS_MAP]) {
-      const vocabulary = Object.keys(map.statuses);
+    /*
+     * Against each provider's *transcribed* vocabulary, never `Object.keys(map.statuses)`.
+     * The M12 version took the map's own keys as the vocabulary, so `unmappedStatuses` could
+     * not return anything and the test could not fail. The lists are typed out in
+     * `status.ts` from the source each one cites; the key sets must be equal both ways.
+     */
+    for (const [map, vocabulary] of [
+      [STEADFAST_STATUS_MAP, STEADFAST_STATUS_VOCABULARY],
+      [FAKE_STATUS_MAP, FAKE_STATUS_VOCABULARY],
+    ] as const) {
       expect(unmappedStatuses(map, vocabulary)).toEqual([]);
+      expect(Object.keys(map.statuses).sort()).toEqual([...vocabulary].sort());
 
       for (const word of vocabulary) {
         const normalized = normalizeStatus(map, word);
@@ -116,7 +127,8 @@ describe('courier status mapping', () => {
   });
 
   it('names every provider it knows', () => {
-    expect([...MAPPED_COURIER_CODES].sort()).toEqual(['fake', 'steadfast']);
+    // M15 added Pathao and RedX; their completeness is asserted in `m15.test.ts`.
+    expect([...MAPPED_COURIER_CODES].sort()).toEqual(['fake', 'pathao', 'redx', 'steadfast']);
   });
 
   it('never recognises an unconfirmed delivery as delivered (D-003)', () => {
@@ -155,8 +167,18 @@ describe('courier status → order trigger', () => {
     // §9 gives `returned` to the warehouse receiving and inspecting. A webhook that
     // performed it would put stock back on a shelf nobody has looked in.
     for (const from of ['shipped', 'return_in_transit', 'partially_delivered'] as const) {
-      expect(orderTriggerFor('returned_to_merchant', from)).toBeNull();
+      expect(orderTriggerFor('returned_to_merchant', from)).not.toBe('receive_return');
     }
+    // From anywhere but `shipped` it does nothing at all.
+    expect(orderTriggerFor('returned_to_merchant', 'return_in_transit')).toBeNull();
+    expect(orderTriggerFor('returned_to_merchant', 'partially_delivered')).toBeNull();
+  });
+
+  it('starts the return path for a parcel reported back at the merchant (M15)', () => {
+    // Pathao reports a return only once it is complete. Without this the order stays
+    // `shipped`, and `receive_return` is refused from `shipped` — so the warehouse could
+    // not receive a parcel that was already on its floor. `start_return` has no effects.
+    expect(orderTriggerFor('returned_to_merchant', 'shipped')).toBe('start_return');
   });
 
   it('never cancels an order that has not shipped', () => {

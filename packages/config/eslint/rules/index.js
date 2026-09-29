@@ -1,6 +1,7 @@
 import { noEmoji } from './no-emoji.js';
 import { noFloatMoney } from './no-float-money.js';
 import { noInlineStyle } from './no-inline-style.js';
+import { noRawColour } from './no-raw-colour.js';
 
 /**
  * The house rules that keep the UI and the money honest. They are plain ESLint
@@ -13,7 +14,8 @@ export const elysiumPlugin = {
     'no-emoji': noEmoji,
     'no-float-money': noFloatMoney,
     'no-inline-style': noInlineStyle,
+    'no-raw-colour': noRawColour,
   },
 };
 
-export { noEmoji, noFloatMoney, noInlineStyle };
+export { noEmoji, noFloatMoney, noInlineStyle, noRawColour };

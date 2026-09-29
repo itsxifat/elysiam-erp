@@ -6,6 +6,7 @@ import {
   normalizeStatus,
   orderTriggerFor,
   statusDedupeKey,
+  trackingStatusAfter,
   type ParcelStatus,
 } from '@elysium/domain/courier';
 import { transitionFor } from '@elysium/domain';
@@ -15,20 +16,21 @@ import { z } from 'zod';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { enqueue } from '../../platform/jobs/enqueue.js';
-import { assertInScope } from '../../platform/auth/scope.js';
+import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import {
   COURIER_ADAPTERS,
   type AdapterContext,
   type CourierAdapterRegistry,
 } from './adapters/courier-adapter.js';
-import { courierEnv } from './courier.config.js';
+import { adapterEnabled, courierEnv } from './courier.config.js';
 import { CourierError } from './courier.errors.js';
 import * as repo from './courier.repository.js';
 import {
   COURIER_QUEUES,
   type PollOrgPayload,
   type ProcessWebhookPayload,
+  type RepollPayload,
 } from './courier.queues.js';
 import { bodyHash, openCredentials } from './credentials.js';
 import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
@@ -96,12 +98,18 @@ export class CourierSyncService {
     providerCode: string;
     headers: Readonly<Record<string, string | undefined>>;
     raw: Buffer;
-  }): Promise<{ accepted: boolean; deliveryId: string | null; duplicate: boolean }> {
+  }): Promise<{
+    accepted: boolean;
+    deliveryId: string | null;
+    duplicate: boolean;
+    /** The courier's required answer (Pathao's 202 and handshake header), when it has one. */
+    acknowledgement: { status: number; headers: Readonly<Record<string, string>> } | null;
+  }> {
     const adapter = this.adapters.get(input.providerCode);
-    if (adapter?.parseWebhook === undefined) {
-      // A provider we have no adapter for, or one with no webhook. 401 rather than 404: a
-      // public endpoint that distinguishes "no such courier" from "wrong secret" is an
-      // endpoint that tells an attacker which providers an installation uses.
+    if (adapter?.parseWebhook === undefined || !adapterEnabled(adapter)) {
+      // A provider we have no adapter for, one with no webhook, or an unverified one that is
+      // switched off. 401 rather than 404: a public endpoint that distinguishes "no such
+      // courier" from "wrong secret" tells an attacker which providers an installation uses.
       throw new CourierError('WEBHOOK_SIGNATURE_INVALID', 'That webhook was not accepted.');
     }
 
@@ -193,7 +201,12 @@ export class CourierSyncService {
 
     // A retransmission answers 200, not 409. A courier that gets an error for re-sending a
     // body it already sent will send it again, sooner.
-    return { accepted: true, deliveryId: stored.id, duplicate: !stored.created };
+    return {
+      accepted: true,
+      deliveryId: stored.id,
+      duplicate: !stored.created,
+      acknowledgement: adapter.webhookAcknowledgement ?? null,
+    };
   }
 
   /** Process one stored webhook body. Runs in the worker (§20). */
@@ -370,59 +383,115 @@ export class CourierSyncService {
     let moved = 0;
 
     for (const consignment of stale) {
-      if (consignment.consignment_no === null) continue;
-
-      const account = await withOrg(actor, (tx) =>
-        repo.accountById(tx, orgId, consignment.courier_account_id),
-      );
-      if (account === undefined) continue;
-      const adapter = this.adapters.get(account.provider_code);
-      if (adapter === undefined) continue;
-
-      let answer;
-      try {
-        // Outside any transaction, one parcel at a time. A courier that starts refusing
-        // mid-sweep leaves the parcels it already answered about recorded, which is why the
-        // poll is not one big transaction.
-        answer = await adapter.getStatus(this.adapterContext(orgId, account), {
-          consignmentNo: consignment.consignment_no,
-          reference: consignment.reference,
-          trackingCode: consignment.tracking_code,
-        });
-      } catch {
-        // A courier that cannot answer about one parcel should not stop the sweep. The row
-        // is marked polled so the next sweep does not start with the same parcel.
-        await withOrg(actor, (tx) => repo.markPolled(tx, orgId, consignment.id, new Date()));
-        continue;
-      }
-
-      await withOrg(actor, (tx) => repo.markPolled(tx, orgId, consignment.id, new Date()));
-
-      const outcome = await this.applyStatus({
-        orgId,
-        courierAccountId: account.id,
-        consignmentNo: consignment.consignment_no,
-        rawStatus: answer.rawStatus,
-        /*
-         * The courier's instant when it gives one, ours when it does not.
-         *
-         * A status endpoint that returns no timestamp — Steadfast's does not — makes the
-         * dedupe key weaker, because the same unchanged status polled an hour later produces
-         * a different key and a second event row. That is the right trade: the *transition*
-         * is still deduped by `orderTriggerFor` returning null for an order already in that
-         * state, so the cost is a duplicate row in the timeline rather than a double posting.
-         */
-        occurredAt: answer.occurredAt ?? new Date(),
-        collectedPoisha: answer.collectedPoisha,
-        source: 'poll',
-        webhookDeliveryId: null,
-        statusMapCode: account.provider_code,
-        actorUserId: 'system:courier',
-      });
-      if (outcome.transitioned) moved += 1;
+      if ((await this.pollOne(orgId, consignment)) === 'moved') moved += 1;
     }
 
     return moved;
+  }
+
+  /**
+   * Ask the courier about the parcels a person picked in the stuck-parcel queue (M15's bulk
+   * re-poll). Runs in the worker, like the scheduled poll, for the same reason: every one is
+   * an outbound call (invariant 6).
+   *
+   * Each id is re-read inside the org before it is asked about, because the payload is a
+   * list a person chose minutes ago: a parcel that has since been delivered or cancelled is
+   * skipped rather than polled.
+   */
+  async runRepoll(job: { orgId: string; payload: RepollPayload }): Promise<{
+    polled: number;
+    moved: number;
+    failed: number;
+  }> {
+    const { orgId, payload } = job;
+    const actor = { orgId, userId: 'system:courier' };
+    let polled = 0;
+    let moved = 0;
+    let failed = 0;
+
+    for (const consignmentId of payload.consignmentIds) {
+      const consignment = await withOrg(actor, (tx) =>
+        repo.consignmentById(tx, orgId, consignmentId),
+      );
+      if (
+        consignment?.booking_state !== 'booked' ||
+        consignment.consignment_no === null ||
+        isTerminalParcelStatus(consignment.status as ParcelStatus)
+      ) {
+        continue;
+      }
+      const outcome = await this.pollOne(orgId, consignment);
+      polled += 1;
+      if (outcome === 'moved') moved += 1;
+      if (outcome === 'failed') failed += 1;
+    }
+
+    return { polled, moved, failed };
+  }
+
+  /**
+   * Ask the courier about one parcel and apply what it says. Shared by the scheduled poll
+   * and the bulk re-poll so the two cannot come to disagree about what an answer means.
+   */
+  private async pollOne(
+    orgId: string,
+    consignment: repo.ConsignmentRow,
+  ): Promise<'moved' | 'recorded' | 'skipped' | 'failed'> {
+    const actor = { orgId, userId: 'system:courier' };
+    if (consignment.consignment_no === null) return 'skipped';
+
+    const account = await withOrg(actor, (tx) =>
+      repo.accountById(tx, orgId, consignment.courier_account_id),
+    );
+    if (account === undefined) return 'skipped';
+    const adapter = this.adapters.get(account.provider_code);
+    // An unverified adapter that has been switched off is not asked anything — the switch is
+    // read at every use, not only when an account is activated (M15).
+    if (adapter === undefined || !adapterEnabled(adapter)) return 'skipped';
+
+    let answer;
+    try {
+      // Outside any transaction, one parcel at a time. A courier that starts refusing
+      // mid-sweep leaves the parcels it already answered about recorded, which is why the
+      // poll is not one big transaction.
+      answer = await adapter.getStatus(this.adapterContext(orgId, account), {
+        consignmentNo: consignment.consignment_no,
+        reference: consignment.reference,
+        trackingCode: consignment.tracking_code,
+      });
+    } catch {
+      // A courier that cannot answer about one parcel should not stop the sweep. The row
+      // is marked polled so the next sweep does not start with the same parcel.
+      await withOrg(actor, (tx) => repo.markPolled(tx, orgId, consignment.id, new Date()));
+      return 'failed';
+    }
+
+    await withOrg(actor, (tx) => repo.markPolled(tx, orgId, consignment.id, new Date()));
+
+    const outcome = await this.applyStatus({
+      orgId,
+      courierAccountId: account.id,
+      consignmentNo: consignment.consignment_no,
+      rawStatus: answer.rawStatus,
+      /*
+       * The courier's instant when it gives one, ours when it does not.
+       *
+       * A status endpoint that returns no timestamp — Steadfast's does not — makes the
+       * dedupe key weaker, because the same unchanged status polled an hour later produces
+       * a different key and a second event row. That is the right trade: the *transition*
+       * is still deduped by `orderTriggerFor` returning null for an order already in that
+       * state, so the cost is a duplicate row in the timeline rather than a double posting.
+       * And it no longer resets the stuck-parcel clock: `status_changed_at` moves only when
+       * the status does (M15).
+       */
+      occurredAt: answer.occurredAt ?? new Date(),
+      collectedPoisha: answer.collectedPoisha,
+      source: 'poll',
+      webhookDeliveryId: null,
+      statusMapCode: account.provider_code,
+      actorUserId: 'system:courier',
+    });
+    return outcome.transitioned ? 'moved' : outcome.recorded ? 'recorded' : 'skipped';
   }
 
   // --- the manual fallback ------------------------------------------------------
@@ -443,6 +512,19 @@ export class CourierSyncService {
     input: ManualStatusInput,
   ) {
     const at = input.occurredAt === undefined ? new Date() : new Date(input.occurredAt);
+
+    if (input.status === 'partial_delivered' && input.collectedPoisha === undefined) {
+      /*
+       * A partial delivery posts what was collected, and a person is the one source that can
+       * say. Since M15 a partial delivery with no figure moves nothing (the only fallback left
+       * is the full COD, which is wrong by definition), so accepting the request would record
+       * an event and leave the order exactly where it was — refused instead, with the reason.
+       */
+      throw new CourierError(
+        'CONSIGNMENT_EVENT_INVALID',
+        'A partial delivery needs the amount the courier collected.',
+      );
+    }
 
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const consignment = await repo.consignmentForUpdate(tx, context.orgId, consignmentId);
@@ -600,8 +682,12 @@ export class CourierSyncService {
       throw new CourierError('ORDER_NOT_FOUND', 'That consignment’s order is gone.');
     }
 
-    // Layer 2: the machine has nothing to do for a status the order has already taken.
-    const trigger = orderTriggerFor(input.status, order.status);
+    // Layer 2: the machine has nothing to do for a status the order has already taken — and,
+    // since M15, nothing for a partial delivery the courier gave no figure for (see
+    // `orderTriggerFor`): the only figure left would be the full COD, wrong by definition.
+    const trigger = orderTriggerFor(input.status, order.status, {
+      collectedKnown: input.collectedPoisha !== null,
+    });
 
     const event = await repo.insertConsignmentEvent(tx, {
       orgId: input.orgId,
@@ -638,12 +724,18 @@ export class CourierSyncService {
      * The tracking half of the row: where the courier says the parcel is, and when it last
      * said anything. Always written, because it is true whatever the order is doing — and the
      * poller's staleness window depends on `last_status_at` moving.
+     *
+     * Through `trackingStatusAfter` since M15: an unmapped word never replaces a status, and a
+     * finished parcel stays finished when its courier talks again (Pathao's payment notice
+     * after a delivery). The event row above keeps every word, raw, either way (§9).
      */
+    const tracked = trackingStatusAfter(consignment.status as ParcelStatus, input.status);
     await repo.applyConsignmentStatus(tx, {
       orgId: input.orgId,
       consignmentId: consignment.id,
-      status: input.status,
+      status: tracked,
       rawStatus: input.rawStatus,
+      rawApplies: tracked === input.status,
       occurredAt: input.occurredAt,
     });
 
@@ -726,6 +818,65 @@ export class CourierSyncService {
     };
   }
 
+  /**
+   * A page of parcels for the console (M15's courier screens).
+   *
+   * Newest first, filterable by status, booking state, courier and "awaiting a return
+   * receipt" — the last one is the returns-receiving screen's list. Row scope on the parcel's
+   * branch and on who booked it, exactly as the stuck-parcel queue applies it.
+   */
+  async listParcels(
+    context: ActiveContext,
+    request: object,
+    filter: {
+      q?: string | undefined;
+      status?: readonly string[] | undefined;
+      bookingState?: string | undefined;
+      courierId?: string | undefined;
+      awaitingReturn?: boolean | undefined;
+      page: number;
+      pageSize: number;
+    },
+  ) {
+    const branchWhere = scopeWhere(request, {
+      branchId: sql`c.branch_id`,
+      createdBy: sql`c.created_by`,
+      assignedTo: sql`null::text`,
+    });
+    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const rows = await repo.listParcels(tx, context.orgId, {
+        q: filter.q,
+        statuses: filter.status,
+        bookingState: filter.bookingState,
+        courierId: filter.courierId,
+        awaitingReturn: filter.awaitingReturn,
+        branchWhere,
+        limit: filter.pageSize,
+        offset: (filter.page - 1) * filter.pageSize,
+      });
+      return {
+        items: rows.map((row) => ({
+          id: row.id,
+          orderId: row.order_id,
+          orderNo: row.order_no,
+          courierId: row.courier_id,
+          courierName: row.courier_name,
+          branchId: row.branch_id,
+          consignmentNo: row.consignment_no,
+          trackingCode: row.tracking_code,
+          bookingState: row.booking_state,
+          status: row.status,
+          rawStatus: row.raw_status,
+          codAmountPoisha: row.cod_amount_poisha,
+          collectedPoisha: row.collected_poisha,
+          bookedAt: row.booked_at,
+          statusChangedAt: row.status_changed_at,
+          hasReturnReceipt: row.has_return_receipt,
+        })),
+      };
+    });
+  }
+
   /** The timeline for one parcel (M12's tracking bullet). */
   async timeline(context: ActiveContext, request: object, consignmentId: string) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
@@ -738,7 +889,15 @@ export class CourierSyncService {
       // the scope backstop answers 500 rather than letting that happen silently.
       assertInScope(request, { branchId: consignment.branch_id });
       const events = await repo.consignmentTimeline(tx, context.orgId, consignmentId);
+      const escalations = await repo.escalationsFor(tx, context.orgId, consignmentId);
       return {
+        /** M15: the notes people added while chasing this parcel, oldest first. */
+        escalations: escalations.map((note) => ({
+          id: note.id,
+          note: note.note,
+          createdBy: note.created_by,
+          createdAt: note.created_at,
+        })),
         consignment: {
           id: consignment.id,
           orderId: consignment.order_id,
@@ -759,6 +918,9 @@ export class CourierSyncService {
           returnedAt: consignment.returned_at,
           settlementId: consignment.settlement_id,
           settledAt: consignment.settled_at,
+          statusChangedAt: consignment.status_changed_at,
+          lastStatusAt: consignment.last_status_at,
+          deliveryZoneId: consignment.delivery_zone_id,
           isFinal: isTerminalParcelStatus(consignment.status as ParcelStatus),
         },
         events: events.map((event) => ({

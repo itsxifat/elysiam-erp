@@ -14,6 +14,7 @@ import { InventoryModule } from './modules/inventory/inventory.module.js';
 import { InvestorsModule } from './modules/investors/investors.module.js';
 import { LedgerModule } from './modules/ledger/ledger.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
+import { SupplyModule } from './modules/supply/supply.module.js';
 import { WalletsModule } from './modules/wallets/wallets.module.js';
 import { JobsModule } from './platform/jobs/jobs.module.js';
 import type { PasswordTokenStore } from './modules/iam/iam.service.js';
@@ -60,6 +61,11 @@ export class AppModule {
         CatalogModule,
         InventoryModule,
         WalletsModule,
+        // M09. Missing until 2026-09-28: every supply route existed only in its own test
+        // suite, which mounts the module through `extraModules`, so the running API had no
+        // suppliers, purchases, returns or supplier payments at all. The route manifest
+        // agreed with the live routes because both left supply out.
+        SupplyModule,
         InvestorsModule,
         HrModule,
         OrdersModule,

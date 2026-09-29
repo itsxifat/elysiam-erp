@@ -719,6 +719,10 @@ export async function listOrders(
     readonly to: string | undefined;
     readonly limit: number;
     readonly offset: number;
+    /** M11's list filters. Each narrows; none of them can widen `scope`. */
+    readonly channel?: string | undefined;
+    readonly assignedTo?: string | undefined;
+    readonly zoneId?: string | undefined;
   },
 ): Promise<OrderRow[]> {
   const pattern = filters.q === undefined ? undefined : `%${filters.q}%`;
@@ -730,6 +734,9 @@ export async function listOrders(
       and ${filters.scope}
       and ${filters.status === undefined ? sql`true` : sql`o.status = ${filters.status}::sales.order_status`}
       and ${filters.customerId === undefined ? sql`true` : sql`o.customer_id = ${filters.customerId}`}
+      and ${filters.channel === undefined ? sql`true` : sql`o.channel = ${filters.channel}::sales.order_channel`}
+      and ${filters.assignedTo === undefined ? sql`true` : sql`o.assigned_to = ${filters.assignedTo}`}
+      and ${filters.zoneId === undefined ? sql`true` : sql`o.delivery_zone_id = ${filters.zoneId}::uuid`}
       and ${
         pattern === undefined
           ? sql`true`

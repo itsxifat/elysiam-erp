@@ -23,7 +23,7 @@ import { primaryId, timestamps } from '../columns.js';
 import { fileObjects } from '../files/index.js';
 import { journals } from '../ledger/index.js';
 import { branches, locations, organizations } from '../org/index.js';
-import { couriers, orders } from '../orders/index.js';
+import { couriers, deliveryZones, orders } from '../orders/index.js';
 import { walletAccounts } from '../wallets/index.js';
 
 /**
@@ -328,6 +328,27 @@ export const consignments = courier.table(
     settlementId: uuid('settlement_id'),
     settledAt: timestamp('settled_at', { withTimezone: true, mode: 'date' }),
 
+    /**
+     * The order's delivery zone when the parcel was booked (M15).
+     *
+     * Copied at booking, from the orders module's port, so the performance report can
+     * group by zone without reading `sales.orders` (invariant 12). A copy, not a live
+     * link: the report is about where the parcel was *sent*, and an order whose zone is
+     * edited afterwards should not move last month's delivery rate. Null for a parcel
+     * booked before M15, which the report shows as its own row rather than guessing.
+     */
+    deliveryZoneId: uuid('delivery_zone_id'),
+    /**
+     * When the parcel's status last actually *changed* (M15's stuck-parcel queue).
+     *
+     * Separate from `last_status_at`, which moves on every event: a poller asking a
+     * courier every six hours hears `in_transit` every six hours, and measured against
+     * `last_status_at` a parcel stuck in transit for three weeks looked like one the
+     * courier spoke about this morning. This column moves only when the status does, so
+     * "no status change in N days" can be asked honestly.
+     */
+    statusChangedAt: timestamp('status_changed_at', { withTimezone: true, mode: 'date' }),
+
     createdBy: text('created_by').notNull(),
     ...timestamps,
   },
@@ -385,6 +406,13 @@ export const consignments = courier.table(
       columns: [table.orgId, table.branchId],
       foreignColumns: [branches.orgId, branches.id],
     }).onDelete('restrict'),
+    foreignKey({
+      name: 'consignments_org_id_delivery_zone_id_fk',
+      columns: [table.orgId, table.deliveryZoneId],
+      foreignColumns: [deliveryZones.orgId, deliveryZones.id],
+    }).onDelete('restrict'),
+    /** The performance report's window: parcels booked between two dates. */
+    index('consignments_org_booked_idx').on(table.orgId, table.bookedAt),
     check('consignments_cod_not_negative', sql`${table.codAmountPoisha} >= 0`),
     check('consignments_cod_bounded', sql`${table.codAmountPoisha} <= 9000000000000000`),
     check(
@@ -731,10 +759,39 @@ export const settlements = courier.table(
     importedBy: text('imported_by').notNull(),
     postedAt: timestamp('posted_at', { withTimezone: true, mode: 'date' }),
     rejectedReason: text('rejected_reason'),
+    /**
+     * How the statement arrived: a person uploaded a file, or the fetch job asked the
+     * courier's API (M15).
+     */
+    source: text('source').notNull().default('upload'),
+    /**
+     * sha256 of the fetched statement's canonical form (`canonicalStatement` in the domain),
+     * for an API-fetched batch only.
+     *
+     * The unique index below is what makes the fetch idempotent: every scheduled fetch asks
+     * again about a window it has already seen, and the second copy of a statement must
+     * neither create a second batch nor — through that batch's approval — post twice. The
+     * courier's own reference already has a unique index; this one holds for a statement
+     * that carries none.
+     */
+    sourceFingerprint: text('source_fingerprint'),
     ...timestamps,
   },
   (table) => [
     unique('settlements_org_id_id_key').on(table.orgId, table.id),
+    uniqueIndex('settlements_org_account_fingerprint_idx')
+      .on(table.orgId, table.courierAccountId, table.sourceFingerprint)
+      .where(sql`${table.sourceFingerprint} is not null`),
+    check('settlements_source', sql`${table.source} in ('upload', 'api')`),
+    /*
+     * An API batch always carries its fingerprint, and an upload never does. A fetched batch
+     * without one would slip past the idempotency index; an upload with one would make a
+     * person's re-upload of a corrected file collide with the fetch that found the first.
+     */
+    check(
+      'settlements_fingerprint_iff_api',
+      sql`(${table.source} = 'api') = (${table.sourceFingerprint} is not null)`,
+    ),
     index('settlements_org_idx').on(table.orgId),
     index('settlements_org_courier_date_idx').on(
       table.orgId,
@@ -928,6 +985,164 @@ export const settlementLines = courier.table(
     check(
       'settlement_lines_exception_has_note',
       sql`${table.match} = 'matched' or ${table.note} is not null`,
+    ),
+  ],
+);
+
+/**
+ * Zone → courier rules (M15; §9 "Delivery zones and charges").
+ *
+ * §9 gives each zone one default courier. These rules refine it: a COD band, a failover
+ * order, a zone-specific exception. `selectCourier` in the domain reads them in priority
+ * order and takes the first whose conditions match and whose courier can book — so two
+ * rules for one zone at different priorities is the failover, not a conflict.
+ *
+ * Configuration, not evidence, and the one table in this schema a row may be deleted from:
+ * the set is replaced as a whole when an operator saves it, and the audit row written with
+ * that save records the whole set before and after. Keeping superseded rules as rows would
+ * leave a table whose `is_active` meant two different things.
+ */
+export const selectionRules = courier.table(
+  'selection_rules',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    /** Lower first. */
+    priority: integer('priority').notNull(),
+    /** Null matches every zone. */
+    deliveryZoneId: uuid('delivery_zone_id'),
+    /** Inclusive bounds on the parcel's COD. Null means unbounded on that side. */
+    minCodPoisha: bigint('min_cod_poisha', { mode: 'bigint' }),
+    maxCodPoisha: bigint('max_cod_poisha', { mode: 'bigint' }),
+    /** M10's party row, the courier this rule sends parcels with. */
+    courierId: uuid('courier_id').notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    /** Why the rule exists, for the next person who wonders. */
+    note: text('note'),
+    createdBy: text('created_by').notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    unique('selection_rules_org_id_id_key').on(table.orgId, table.id),
+    index('selection_rules_org_idx').on(table.orgId),
+    index('selection_rules_org_priority_idx').on(table.orgId, table.priority),
+    foreignKey({
+      name: 'selection_rules_org_id_delivery_zone_id_fk',
+      columns: [table.orgId, table.deliveryZoneId],
+      foreignColumns: [deliveryZones.orgId, deliveryZones.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'selection_rules_org_id_courier_id_fk',
+      columns: [table.orgId, table.courierId],
+      foreignColumns: [couriers.orgId, couriers.id],
+    }).onDelete('restrict'),
+    check('selection_rules_priority_range', sql`${table.priority} between 0 and 10000`),
+    check(
+      'selection_rules_cod_not_negative',
+      sql`(${table.minCodPoisha} is null or ${table.minCodPoisha} >= 0) and (${table.maxCodPoisha} is null or ${table.maxCodPoisha} >= 0)`,
+    ),
+    /*
+     * A band whose bounds are reversed matches nothing, and the parcel falls through to the
+     * zone default — which looks exactly like the rule working. Refused at the row.
+     */
+    check(
+      'selection_rules_cod_band_ordered',
+      sql`${table.minCodPoisha} is null or ${table.maxCodPoisha} is null or ${table.minCodPoisha} <= ${table.maxCodPoisha}`,
+    ),
+  ],
+);
+
+/**
+ * A note a person added while chasing a stuck parcel (M15's escalation note).
+ *
+ * Append-only: "called Pathao's hub on the 12th, they say it is at Mirpur" is a record of
+ * what somebody did, and the value of the trail is that it cannot be tidied afterwards —
+ * which is also what a courier dispute about a missing COD is settled with.
+ */
+export const consignmentEscalations = courier.table(
+  'consignment_escalations',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    consignmentId: uuid('consignment_id').notNull(),
+    note: text('note').notNull(),
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('consignment_escalations_org_id_id_key').on(table.orgId, table.id),
+    index('consignment_escalations_org_idx').on(table.orgId),
+    index('consignment_escalations_org_consignment_idx').on(
+      table.orgId,
+      table.consignmentId,
+      table.createdAt,
+    ),
+    foreignKey({
+      name: 'consignment_escalations_org_id_consignment_id_fk',
+      columns: [table.orgId, table.consignmentId],
+      foreignColumns: [consignments.orgId, consignments.id],
+    }).onDelete('restrict'),
+    check(
+      'consignment_escalations_note_length',
+      sql`char_length(${table.note}) between 1 and 1000`,
+    ),
+  ],
+);
+
+/**
+ * One run of the settlement fetch for one courier account (M15).
+ *
+ * The fetch runs unattended, so a statement it could not import — nothing matched, charges
+ * above collections, a reference already imported with different rows — has no person
+ * looking at a screen to tell. This row is where it says so: one per run, append-only,
+ * listing every statement it saw and what became of it. Without it a refused statement
+ * would simply not exist anywhere, which for a statement is money in the bank that the
+ * books never hear about.
+ */
+export const settlementFetchRuns = courier.table(
+  'settlement_fetch_runs',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    courierAccountId: uuid('courier_account_id').notNull(),
+    /** The window asked about, from this Asia/Dhaka date. */
+    sinceDate: date('since_date', { mode: 'string' }).notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }).notNull(),
+    finishedAt: timestamp('finished_at', { withTimezone: true, mode: 'date' }).notNull(),
+    statementsSeen: integer('statements_seen').notNull(),
+    statementsCreated: integer('statements_created').notNull(),
+    statementsDuplicate: integer('statements_duplicate').notNull(),
+    statementsRefused: integer('statements_refused').notNull(),
+    /** One entry per statement: reference, fingerprint, outcome, code, settlement id. */
+    outcomes: jsonb('outcomes').notNull().default([]),
+    /** The run itself failed — the courier did not answer. Never a courier's raw body. */
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('settlement_fetch_runs_org_id_id_key').on(table.orgId, table.id),
+    index('settlement_fetch_runs_org_idx').on(table.orgId),
+    index('settlement_fetch_runs_org_account_idx').on(
+      table.orgId,
+      table.courierAccountId,
+      table.startedAt,
+    ),
+    foreignKey({
+      name: 'settlement_fetch_runs_org_id_courier_account_id_fk',
+      columns: [table.orgId, table.courierAccountId],
+      foreignColumns: [courierAccounts.orgId, courierAccounts.id],
+    }).onDelete('restrict'),
+    check(
+      'settlement_fetch_runs_counts_add_up',
+      sql`${table.statementsSeen} >= 0 and ${table.statementsCreated} >= 0
+        and ${table.statementsDuplicate} >= 0 and ${table.statementsRefused} >= 0
+        and ${table.statementsCreated} + ${table.statementsDuplicate} + ${table.statementsRefused} = ${table.statementsSeen}`,
     ),
   ],
 );

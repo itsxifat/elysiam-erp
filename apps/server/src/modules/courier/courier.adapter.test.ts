@@ -3,11 +3,14 @@ import { poisha } from '@elysium/domain';
 import {
   normalizeStatus,
   PARCEL_STATUSES,
+  PROVIDER_VOCABULARIES,
   unmappedStatuses,
   type ParcelInput,
 } from '@elysium/domain/courier';
 
 import { FakeCourierAdapter } from './adapters/fake.adapter.js';
+import { PathaoCourierAdapter } from './adapters/pathao.adapter.js';
+import { RedxCourierAdapter } from './adapters/redx.adapter.js';
 import { SteadfastCourierAdapter } from './adapters/steadfast.adapter.js';
 import { parseCsvStatement } from './adapters/csv-statement.js';
 import type { AdapterContext, CourierAdapter } from './adapters/courier-adapter.js';
@@ -122,14 +125,24 @@ describe('the adapter registry contract', () => {
   const adapters: readonly CourierAdapter[] = [
     new FakeCourierAdapter(),
     new SteadfastCourierAdapter(),
+    // M15. Their own contract tests are in `courier.m15-adapters.test.ts`.
+    new PathaoCourierAdapter(),
+    new RedxCourierAdapter(),
   ];
 
   it('declares a status vocabulary the domain maps completely (check 2)', () => {
     for (const adapter of adapters) {
-      const vocabulary = Object.keys(adapter.statusMap.statuses);
+      /*
+       * The provider's *transcribed* vocabulary (`PROVIDER_VOCABULARIES`, each list citing its
+       * source), never the map's own keys. M12 used `Object.keys(adapter.statusMap.statuses)`
+       * here, which made "every word is mapped" true by construction.
+       */
+      const vocabulary = PROVIDER_VOCABULARIES[adapter.code] ?? [];
       expect(vocabulary.length).toBeGreaterThan(0);
       // Every word the courier can send has a mapping…
       expect(unmappedStatuses(adapter.statusMap, vocabulary)).toEqual([]);
+      // …and the map holds no word the courier does not send.
+      expect(Object.keys(adapter.statusMap.statuses).sort()).toEqual([...vocabulary].sort());
       // …and every mapping points at one of §9's twelve.
       for (const word of vocabulary) {
         expect(PARCEL_STATUSES).toContain(normalizeStatus(adapter.statusMap, word).status);
@@ -147,6 +160,9 @@ describe('the adapter registry contract', () => {
     expect(fake?.verified).toBe(true);
     // D-176. The gate in `AccountsService` reads exactly this.
     expect(steadfast?.verified).toBe(false);
+    // M15: neither new adapter was built from its courier's API document.
+    expect(adapters.find((adapter) => adapter.code === 'pathao')?.verified).toBe(false);
+    expect(adapters.find((adapter) => adapter.code === 'redx')?.verified).toBe(false);
   });
 });
 

@@ -22,6 +22,7 @@ import { resetCourierEnv } from './courier.config.js';
 import { COURIER_QUEUE_DEFINITIONS } from './courier.queues.js';
 import * as repo from './courier.repository.js';
 import {
+  applyCourierMigrations,
   closeMonth,
   makeBankWallet,
   makeCourier,
@@ -125,6 +126,9 @@ beforeAll(async () => {
   resetCourierEnv();
 
   harness = await startHttpHarness('courier-db');
+  // M15's three migrations (0065–0067) are not in the journal until integration; the
+  // services now read their columns, so they are applied here, guarded and idempotent.
+  await applyCourierMigrations();
 
   /*
    * A real pg-boss runtime, because invariant 6 is the shape of this module.

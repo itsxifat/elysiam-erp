@@ -620,6 +620,79 @@ describe('the CSV importer (check 4)', () => {
     expect(stillThere.items[0]?.pricePoisha).toBe('15900');
   });
 
+  /*
+   * The test above cannot prove the second half of its own name. Its bad file is refused
+   * by `allOrNothing` before the first UPDATE runs, so it passes just as well with the
+   * transaction deleted from `import.service.ts` — the all-or-nothing it observes is the
+   * validator's, not the database's.
+   *
+   * What the transaction is for is a file that is valid by every rule the importer knows
+   * and still fails part-way through the write: a connection drop, a concurrent change,
+   * or a constraint only the database can see. A barcode already carried by another SKU
+   * is the last kind — `reviewPriceImport` checks each barcode's shape and has no way to
+   * know which barcodes are taken, while `skus_org_barcode_idx` knows exactly. So the
+   * first row below is applied, the second is refused by the unique index, and the only
+   * thing that can take the first row back out is the rollback.
+   */
+  it('rolls back rows already written when a later row fails in the database', async () => {
+    const suffix = randomUUID().slice(0, 8).toUpperCase();
+    const taken = `TAKEN-${suffix}`;
+
+    // A barcode on the third SKU, through the importer itself. Same price, so no history.
+    await imports.commit(A, { csv: `sku,price_taka,barcode\n${skuCodes[2] ?? ''},179,${taken}\n` });
+
+    const state = async (code: string) =>
+      withOrg({ orgId: ORG_A, userId: 'usr_catalog_import' }, async (tx) => {
+        const rows = await tx.execute<{ id: string; price: string; barcode: string | null }>(sql`
+          select id, price_poisha::text as price, barcode from catalog.skus
+          where org_id = ${ORG_A} and code = ${code}
+        `);
+        const row = rows[0];
+        if (row === undefined) throw new Error(`no SKU ${code}`);
+        const history = (await catalog.priceHistory(A, row.id)).items.length;
+        return { price: row.price, barcode: row.barcode, history };
+      });
+    const before = [await state(skuCodes[0] ?? ''), await state(skuCodes[1] ?? '')];
+
+    const csv = [
+      'sku,price_taka,barcode',
+      `${skuCodes[0] ?? ''},201,FRESH-${suffix}`,
+      `${skuCodes[1] ?? ''},202,${taken}`,
+    ].join('\n');
+
+    // Valid by every rule the importer has: the dry run approves it.
+    const preview = await imports.dryRun(A, { csv });
+    expect(preview.canCommit, JSON.stringify(preview.problems)).toBe(true);
+    expect(preview.willChange).toBe(2);
+
+    // And the commit fails on the second row, in the database, for the barcode.
+    let refused: unknown;
+    try {
+      await imports.commit(A, { csv, reason: 'Pohela Boishakh pricing' });
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused, 'the second row was expected to be refused').toBeDefined();
+    const causes: string[] = [];
+    for (
+      let current: unknown = refused, depth = 0;
+      current !== null && current !== undefined && depth < 8;
+      depth += 1
+    ) {
+      const code = (current as { code?: unknown }).code;
+      const constraint = (current as { constraint_name?: unknown }).constraint_name;
+      causes.push(`${String(code)}:${String(constraint)}`);
+      current = (current as { cause?: unknown }).cause;
+    }
+    // The refusal came from the write, not from validation — otherwise this test is the
+    // one above again.
+    expect(causes.join(' ')).toContain('23505:skus_org_barcode_idx');
+
+    // The first row was written before the second failed. Price, barcode and history are
+    // all exactly as they were.
+    expect([await state(skuCodes[0] ?? ''), await state(skuCodes[1] ?? '')]).toEqual(before);
+  });
+
   it('refuses a file carrying a cost column (invariant 5)', async () => {
     const csv = `sku,price_taka,unit_cost_poisha\n${skuCodes[0] ?? ''},159,90\n`;
     const report = await imports.dryRun(A, { csv });

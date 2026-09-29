@@ -8,8 +8,12 @@
  * sample count is printed in the report, which is the half of check 4 that is usually left
  * out.
  *
- * Usage (the dev stack must be up, and `pnpm db:migrate` must have run):
- *   node apps/server/src/modules/fraud/fraud-lookup.bench.mjs
+ * Usage (the dev stack must be up):
+ *   pnpm bench fraud            (or `pnpm --filter @elysium/server bench:fraud`)
+ *
+ * Not `node <this file>`: it imports the module's TypeScript directly, so it runs under
+ * tsx, and `scripts/bench.mjs` is what starts it that way and points it at the dev
+ * stack's PostgreSQL.
  *
  * It seeds into a throwaway database of its own and drops it afterwards.
  *

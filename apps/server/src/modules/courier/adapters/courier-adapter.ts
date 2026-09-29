@@ -121,6 +121,34 @@ export interface CourierAdapter {
     file: Buffer,
     name: string,
   ): Promise<SettlementBatch>;
+
+  /**
+   * Ask the courier's API for the statements issued since a date (§9, §20; M15).
+   *
+   * Present only on an adapter whose courier's documentation describes a settlement API.
+   * **None of the three real couriers' first-party material does** — Steadfast's package
+   * exposes a balance and nothing itemised, Pathao's plugin receives a `order.paid` event
+   * per parcel but no statement, and RedX's plugin only creates parcels — so today only the
+   * fake implements it. The interface, the job, the idempotency and the tests exist so the
+   * day a courier publishes one, the adapter method is the only thing left to write.
+   *
+   * An outbound call: called from the fetch job, never inside a transaction (invariant 6).
+   * Returns every statement dated on or after `since`; returning one already imported is
+   * expected and harmless, because the importer recognises it by fingerprint.
+   */
+  fetchSettlements?(context: AdapterContext, since: string): Promise<readonly SettlementBatch[]>;
+
+  /**
+   * What the webhook route must answer with, when the courier specifies it.
+   *
+   * Pathao's plugin answers every webhook `202` with an `X-Pathao-Merchant-Webhook-Integration-Secret`
+   * header, and Pathao's merchant panel refuses to register a callback URL that does not.
+   * Absent for a courier that only needs a 2xx.
+   */
+  readonly webhookAcknowledgement?: {
+    readonly status: number;
+    readonly headers: Readonly<Record<string, string>>;
+  };
 }
 
 /**

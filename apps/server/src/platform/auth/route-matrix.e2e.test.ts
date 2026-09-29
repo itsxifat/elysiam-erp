@@ -40,6 +40,10 @@ import {
   prepareCourierFixtures,
 } from '../../modules/courier/courier.route-fixtures.js';
 import { HR_ROUTE_FIXTURES, prepareHrFixtures } from '../../modules/hr/hr.route-fixtures.js';
+import {
+  prepareSupplyFixtures,
+  SUPPLY_ROUTE_FIXTURES,
+} from '../../modules/supply/supply.route-fixtures.js';
 import { describeRoutes, type RouteDeclaration } from './route-map.js';
 import { ROUTE_MATRIX_MANIFEST, routeKey } from './route-matrix.manifest.js';
 
@@ -69,6 +73,7 @@ beforeAll(async () => {
   await prepareCatalogFixtures();
   await prepareInventoryFixtures();
   await prepareWalletsFixtures();
+  await prepareSupplyFixtures();
   await prepareOrderFixtures();
   await prepareFraudFixtures();
   await prepareInvestorFixtures();
@@ -233,6 +238,7 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...CATALOG_ROUTE_FIXTURES,
   ...INVENTORY_ROUTE_FIXTURES,
   ...WALLETS_ROUTE_FIXTURES,
+  ...SUPPLY_ROUTE_FIXTURES,
   ...ORDERS_ROUTE_FIXTURES,
   ...FRAUD_ROUTE_FIXTURES,
   ...INVESTORS_ROUTE_FIXTURES,

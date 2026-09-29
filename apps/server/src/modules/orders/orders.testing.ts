@@ -91,6 +91,19 @@ export async function applyOrderMigrations(): Promise<void> {
   for (const name of REPEATABLE_MIGRATIONS) await apply(directory, name);
 
   /*
+   * M11's two desk indexes (0064), guarded on the index itself: the file is plain
+   * `CREATE INDEX`, which a second run would refuse, and until the integrator registers it
+   * in the journal the test database's own migrator has not run it.
+   */
+  const deskIndexed = await withSystem(async (tx) => {
+    const rows = await tx.execute<{ present: boolean }>(
+      sql`select to_regclass('sales.orders_org_phone_created_idx') is not null as present`,
+    );
+    return rows[0]?.present === true;
+  });
+  if (!deskIndexed) await apply(directory, '0064_orders_desk_indexes.sql');
+
+  /*
    * The zones and the own-rider courier, in case the seed that owns them predates them.
    *
    * `seedDeliveryZones` is idempotent and is what `seedOrganizations` calls, so this is a

@@ -220,6 +220,8 @@ export class ReturnsService {
         consignmentId,
         status: 'returned_to_merchant',
         rawStatus: 'received_and_inspected',
+        // Our own warehouse's word, not a courier's: nothing to second-guess (M15).
+        rawApplies: true,
         occurredAt: at,
       });
 

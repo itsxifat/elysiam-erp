@@ -7,8 +7,12 @@
  * sample count, nearest-rank percentiles, and the machine and commit recorded
  * beside the numbers.
  *
- * Usage (the dev stack must be up, and `pnpm db:migrate` must have run):
- *   node apps/server/src/modules/catalog/catalog-search.bench.mjs
+ * Usage (the dev stack must be up):
+ *   pnpm bench catalog            (or `pnpm --filter @elysium/server bench:catalog`)
+ *
+ * Not `node <this file>`: it imports the module's TypeScript directly, so it runs under
+ * tsx, and `scripts/bench.mjs` is what starts it that way and points it at the dev
+ * stack's PostgreSQL.
  *
  * It seeds into a throwaway database of its own and drops it afterwards, so it
  * never leaves 20,000 rows in anybody's development catalogue.

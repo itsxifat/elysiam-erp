@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 
+import { MemoryRateLimiter, type RateLimitStore } from '../../platform/http/rate-limit.js';
 import { ApprovalsModule } from '../approvals/approvals.module.js';
+import { FilesModule } from '../files/files.module.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { LedgerModule } from '../ledger/ledger.module.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
@@ -14,16 +16,23 @@ import {
   type CourierAdapter,
 } from './adapters/courier-adapter.js';
 import { FakeCourierAdapter } from './adapters/fake.adapter.js';
+import { PathaoCourierAdapter } from './adapters/pathao.adapter.js';
+import { RedxCourierAdapter } from './adapters/redx.adapter.js';
 import { SteadfastCourierAdapter } from './adapters/steadfast.adapter.js';
 import { BookingService } from './booking.service.js';
 import { CourierController } from './courier.controller.js';
+import { CourierLabelsService } from './labels.service.js';
 import { CourierReportsService } from './reports.service.js';
 import { ReturnsService } from './returns.service.js';
+import { CourierSelectionService } from './selection.service.js';
 import { SettlementsService } from './settlements.service.js';
+import { StuckParcelsService } from './stuck.service.js';
 import { LEDGER_READ_PORT, type LedgerReadPort } from './ports/ledger-read.port.js';
 import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
 import { WALLETS_PORT, type WalletsPort } from './ports/wallets.port.js';
 import { CourierSyncService } from './sync.service.js';
+import { TrackingController } from './tracking.controller.js';
+import { TRACKING_RATE_LIMITER, TrackingService } from './tracking.service.js';
 
 /**
  * Couriers, parcels, returns and settlements (architecture §9, §20, §21; M12).
@@ -67,8 +76,9 @@ import { CourierSyncService } from './sync.service.js';
  * booking job throwing on a property read.
  */
 @Module({
-  imports: [LedgerModule, ApprovalsModule, OrdersModule, WalletsModule],
-  controllers: [CourierController],
+  // `FilesModule` for `GotenbergClient`, which renders the courier labels (M15).
+  imports: [LedgerModule, ApprovalsModule, OrdersModule, WalletsModule, FilesModule],
+  controllers: [CourierController, TrackingController],
   providers: [
     {
       provide: COURIER_ADAPTERS,
@@ -80,9 +90,26 @@ import { CourierSyncService } from './sync.service.js';
           // activate an account on it unless COURIER_STEADFAST_ENABLED says so, which is
           // why it is safe to register unconditionally: registering it is not enabling it.
           new SteadfastCourierAdapter(),
+          // D-006's other two, M15, both UNVERIFIED and both off until their switch is set —
+          // and since M15 the switch is read at every use, not only at activation.
+          new PathaoCourierAdapter(),
+          new RedxCourierAdapter(),
         ];
         return new CourierAdapterRegistry(adapters);
       },
+    },
+    /*
+     * The public tracking route's rate-limit counters (M15).
+     *
+     * In memory, per process, which multiplies the limit by the number of API replicas — the
+     * same trade D-056 made for the credential endpoints before Valkey arrived. The
+     * INTEGRATION notes ask for this token to be bound to the API's shared
+     * `ValkeyRateLimiter` in `main.api.ts`, which makes the limit global; until then this is
+     * a real limit, just a per-replica one.
+     */
+    {
+      provide: TRACKING_RATE_LIMITER,
+      useFactory: (): RateLimitStore => new MemoryRateLimiter(),
     },
     {
       provide: ORDERS_PORT,
@@ -105,7 +132,17 @@ import { CourierSyncService } from './sync.service.js';
     ReturnsService,
     SettlementsService,
     CourierReportsService,
+    CourierSelectionService,
+    StuckParcelsService,
+    CourierLabelsService,
+    TrackingService,
   ],
-  exports: [BookingService, CourierSyncService, SettlementsService, COURIER_ADAPTERS],
+  exports: [
+    BookingService,
+    CourierSyncService,
+    SettlementsService,
+    COURIER_ADAPTERS,
+    TRACKING_RATE_LIMITER,
+  ],
 })
 export class CourierModule {}

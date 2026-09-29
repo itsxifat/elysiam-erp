@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { SEED_ORG_IDS, withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 
-import { makeBankWallet, makeCourier, seedShippedOrder } from './courier.testing.js';
+import {
+  applyCourierMigrations,
+  makeBankWallet,
+  makeCourier,
+  seedShippedOrder,
+} from './courier.testing.js';
 
 /**
  * How the route-matrix suite calls M12's routes (M02b's D-070 gate).
@@ -47,6 +52,9 @@ let prepared: Fixtures | undefined;
 /** Called once from the route-matrix suite's `beforeAll`. */
 export async function prepareCourierFixtures(): Promise<void> {
   if (prepared !== undefined) return;
+
+  // M15's migrations, until the integrator registers them in the journal (guarded, idempotent).
+  await applyCourierMigrations();
 
   const courierId = await makeCourier(ORG_A, 'fake', 'Fake Courier');
   const walletId = await makeBankWallet(ORG_A, '1115');
@@ -204,7 +212,55 @@ export const COURIER_ROUTE_FIXTURES: Readonly<Record<string, () => Call>> = {
   'GET /v1/courier/reports/cod-reconciliation': () => ({
     url: '/v1/courier/reports/cod-reconciliation',
   }),
+
+  // --- M15 ---------------------------------------------------------------------
+  //
+  // The mutations below are chosen to succeed without enqueueing, like M12's booking fixture
+  // (whose order already has a live parcel): the route-matrix harness starts no pg-boss
+  // runtime, and an `enqueue` there would be a 500 that says nothing about the guard.
+
+  'GET /v1/courier/parcels': () => ({ url: '/v1/courier/parcels?pageSize=5' }),
+  'POST /v1/courier/parcels/bulk': () => ({
+    url: '/v1/courier/parcels/bulk',
+    // The fixture order already has a live parcel, so the booking returns it and queues nothing.
+    body: { orderIds: [fixtures().orderId] },
+  }),
+  'GET /v1/courier/labels': () => ({
+    url: `/v1/courier/labels?ids=${fixtures().consignmentId}`,
+  }),
+  'GET /v1/courier/selection/preview': () => ({
+    url: `/v1/courier/selection/preview?orderId=${fixtures().orderId}`,
+  }),
+  'GET /v1/courier/selection-rules': () => ({ url: '/v1/courier/selection-rules' }),
+  'PUT /v1/courier/selection-rules': () => ({
+    url: '/v1/courier/selection-rules',
+    // An empty set: a valid save that routes nothing differently for the suites after this one.
+    body: { rules: [] },
+  }),
+  'GET /v1/courier/stuck': () => ({ url: '/v1/courier/stuck?thresholdDays=3' }),
+  'GET /v1/courier/stuck/export': () => ({ url: '/v1/courier/stuck/export?thresholdDays=3' }),
+  'POST /v1/courier/stuck/repoll': () => ({
+    url: '/v1/courier/stuck/repoll',
+    // Delivered, so nothing is pollable and nothing is queued — a 200 with `queued: 0`.
+    body: { consignmentIds: [fixtures().consignmentId] },
+  }),
+  'POST /v1/courier/parcels/:id/escalations': () => ({
+    url: `/v1/courier/parcels/${fixtures().consignmentId}/escalations`,
+    body: { note: 'Asked the hub about this parcel.' },
+  }),
+  'POST /v1/courier/settlements/fetch': () => ({
+    url: '/v1/courier/settlements/fetch',
+    // A courier with no account: refused with a 404 before anything is queued.
+    body: { courierId: randomUUID() },
+  }),
+  'GET /v1/courier/settlements/fetch-runs': () => ({ url: '/v1/courier/settlements/fetch-runs' }),
+  'GET /v1/courier/reports/performance': () => ({ url: '/v1/courier/reports/performance' }),
 };
 
-/** The manifest lines M12 adds, in the order they appear above. */
+/** The manifest lines M12 and M15 add, in the order they appear above. */
 export const COURIER_ROUTE_KEYS: readonly string[] = Object.keys(COURIER_ROUTE_FIXTURES);
+
+/** M15's thirteen, for the INTEGRATION notes and the module's own HTTP smoke test. */
+export const COURIER_M15_ROUTE_KEYS: readonly string[] = COURIER_ROUTE_KEYS.slice(
+  COURIER_ROUTE_KEYS.indexOf('GET /v1/courier/parcels'),
+);

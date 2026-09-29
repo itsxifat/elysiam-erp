@@ -73,7 +73,11 @@ export type UpsertCourierAccountInput = z.infer<typeof upsertCourierAccountSchem
 export const bookParcelSchema = z
   .object({
     orderId: uuid,
-    /** Overrides the order's own courier, when the desk chooses another. */
+    /**
+     * Must be the order's own courier when given (M15): the delivery's receivable is booked
+     * against the order's courier, so a parcel with another one would split the COD across
+     * two couriers. Change the order's courier to change the parcel's.
+     */
     courierId: uuid.optional(),
   })
   .strict();
@@ -205,3 +209,136 @@ export const reconciliationQuerySchema = z
 export type ManualStatusInput = z.infer<typeof manualStatusSchema>;
 export type ReceiveReturnInput = z.infer<typeof receiveReturnSchema>;
 export type ImportSettlementInput = z.infer<typeof importSettlementSchema>;
+
+// --- M15 ------------------------------------------------------------------------
+
+const PARCEL_STATUS_VALUES = [
+  'booked',
+  'pickup_pending',
+  'picked_up',
+  'in_transit',
+  'out_for_delivery',
+  'hold',
+  'delivered',
+  'partial_delivered',
+  'return_in_transit',
+  'returned_to_merchant',
+  'cancelled',
+  'unknown',
+] as const;
+
+/** Booking many orders at once from the desk (M15's bulk booking). */
+export const bulkBookSchema = z
+  .object({
+    orderIds: z.array(uuid).min(1).max(200),
+    /** When given, each order must already be set to this courier (see `bookParcelSchema`). */
+    courierId: uuid.optional(),
+  })
+  .strict();
+
+/**
+ * A label sheet: one 4 × 6 label per parcel, named by a comma-separated `ids` query value.
+ *
+ * A `GET`, because rendering a label changes nothing; a hundred uuids is under 4 KB of URL.
+ */
+export const labelsQuerySchema = z
+  .object({
+    ids: z
+      .string()
+      .max(4000)
+      .transform((value) => value.split(',').map((part) => part.trim()).filter(Boolean))
+      .pipe(z.array(uuid).min(1).max(100)),
+  })
+  .strict();
+
+/**
+ * The parcels list. Query-string values, so every field arrives as a string and the numbers
+ * are coerced; `status` is a comma-separated list of §9's normalized statuses.
+ */
+export const parcelListSchema = z
+  .object({
+    q: z.string().trim().min(1).max(60).optional(),
+    status: z
+      .string()
+      .max(300)
+      .transform((value) => value.split(',').map((part) => part.trim()).filter(Boolean))
+      .pipe(z.array(z.enum(PARCEL_STATUS_VALUES)).max(12))
+      .optional(),
+    bookingState: z.enum(['pending', 'booked', 'failed', 'cancelled']).optional(),
+    courierId: uuid.optional(),
+    awaitingReturn: z.enum(['true', 'false']).optional(),
+    page: z.coerce.number().int().min(1).max(10_000).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50),
+  })
+  .strict();
+
+export const stuckQuerySchema = z
+  .object({
+    thresholdDays: z.coerce.number().int().min(1).max(60).optional(),
+    courierId: uuid.optional(),
+  })
+  .strict();
+
+export const repollSchema = z.object({ consignmentIds: z.array(uuid).min(1).max(100) }).strict();
+
+export const escalationSchema = z.object({ note: z.string().trim().min(1).max(1000) }).strict();
+
+export const performanceQuerySchema = z
+  .object({ from: isoDate.optional(), to: isoDate.optional(), courierId: uuid.optional() })
+  .strict();
+
+const poishaBound = z
+  .string()
+  .regex(/^\d+$/, 'A COD bound is non-negative integer poisha as a decimal string.')
+  .refine((value) => BigInt(value) <= 1_000_000_000n, 'That COD bound is above the ceiling.');
+
+/**
+ * The org's zone → courier rules, replaced as a set.
+ *
+ * Fifty is far more rules than five brands' zones can use; the ceiling exists because the set
+ * is replaced in one transaction with one insert per rule.
+ */
+export const replaceSelectionRulesSchema = z
+  .object({
+    rules: z
+      .array(
+        z
+          .object({
+            priority: z.number().int().min(0).max(10_000),
+            deliveryZoneId: uuid.nullable().optional(),
+            minCodPoisha: poishaBound.optional(),
+            maxCodPoisha: poishaBound.optional(),
+            courierId: uuid,
+            isActive: z.boolean().default(true),
+            note: z.string().max(300).optional(),
+          })
+          .strict(),
+      )
+      .max(50),
+  })
+  .strict();
+
+export const selectionPreviewSchema = z
+  .object({ orderId: uuid, courierId: uuid.optional() })
+  .strict();
+
+export const fetchSettlementsSchema = z.object({ courierId: uuid }).strict();
+
+/**
+ * The public tracking request.
+ *
+ * Lenient on purpose — Bangla digits, spaces and dashes are all accepted here and normalised
+ * by `parseTrackingQuery` — and bounded, because this is the one body in the module a
+ * stranger writes. A request that fails *this* schema is refused as malformed (400); one that
+ * passes it but names nothing real gets the one negative answer every miss gets.
+ */
+export const trackingRequestSchema = z
+  .object({
+    brand: z.string().trim().min(1).max(80),
+    orderNo: z.string().trim().min(1).max(60),
+    phoneLast4: z.string().trim().min(1).max(20),
+  })
+  .strict();
+
+export type BulkBookInput = z.infer<typeof bulkBookSchema>;
+export type ReplaceSelectionRulesInput = z.infer<typeof replaceSelectionRulesSchema>;
