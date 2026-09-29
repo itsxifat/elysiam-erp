@@ -7,6 +7,7 @@ import {
   PermissionGate,
   StatusBadge,
   cn,
+  poishaToTaka,
   takaToPoisha,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -238,7 +239,7 @@ function Desk() {
     ? deliveryTaka
     : zone === null
       ? ''
-      : poishaToTakaText(zone.chargePoisha);
+      : poishaToTaka(zone.chargePoisha);
 
   function pickArea(chosen: Area) {
     setArea(chosen);
@@ -1137,12 +1138,4 @@ function areaLabel(area: Area, locale: 'en' | 'bn'): string {
   return locale === 'bn'
     ? `${area.thanaBn}, ${area.districtBn}`
     : `${area.thanaEn}, ${area.districtEn}`;
-}
-
-/** Poisha to the taka string the delivery field shows ("100.00" → "100"). */
-function poishaToTakaText(poisha: string): string {
-  const value = BigInt(poisha);
-  const taka = value / 100n;
-  const rest = value % 100n;
-  return rest === 0n ? taka.toString() : `${taka.toString()}.${rest.toString().padStart(2, '0')}`;
 }

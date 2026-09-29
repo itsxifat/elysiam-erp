@@ -168,7 +168,14 @@ export class IntakeService {
     const existing = await withOrg(actor, (tx) =>
       repo.submissionFor(tx, orgId, site.id, idempotencyKey),
     );
-    if (existing !== undefined) return this.answerExisting(orgId, existing, requestSha256);
+    // A pending claim for this same body that has gone stale belonged to a request that
+    // died (or failed retryably): fall through and take it over, rather than answering
+    // "in flight" to every retry for ever.
+    const takeOver =
+      existing !== undefined && existing.stale && existing.request_sha256 === requestSha256;
+    if (existing !== undefined && !takeOver) {
+      return this.answerExisting(orgId, existing, requestSha256);
+    }
 
     const visitorIp = input.visitor?.ip ?? request.ip;
     await Promise.all([
@@ -185,10 +192,10 @@ export class IntakeService {
       ),
     ]);
 
-    const claimId = await withOrg(actor, (tx) =>
+    const claim = await withOrg(actor, (tx) =>
       repo.claimSubmission(tx, { orgId, siteKeyId: site.id, idempotencyKey, requestSha256 }),
     );
-    if (claimId === undefined) {
+    if (claim === undefined) {
       // Somebody claimed it between the read and here: the concurrent copy of this request.
       const raced = await withOrg(actor, (tx) =>
         repo.submissionFor(tx, orgId, site.id, idempotencyKey),
@@ -201,7 +208,7 @@ export class IntakeService {
       const verdict = await this.turnstile.verify({
         token: input.turnstileToken,
         remoteIp: input.visitor?.ip ?? null,
-        idempotencyKey: claimId,
+        idempotencyKey: claim.id,
       });
       if (!verdict.success) {
         this.logger.warn(
@@ -226,16 +233,15 @@ export class IntakeService {
         const created = await this.orders.createOrder(tx, actor, {
           channel: site.channel === 'website' ? 'website' : 'landing_page',
           source: sourceOf(input, site.landing_page_id),
-          customer: {
-            phone: phoneE164,
-            name: input.customer.name,
-            address: {
-              districtId: input.address.districtId,
-              thanaId: input.address.thanaId,
-              ...(input.address.area === undefined ? {} : { area: input.address.area }),
-              addressLine: input.address.addressLine,
-            },
-          },
+          /*
+           * The buyer by phone and name only, and the address as the order's snapshot.
+           *
+           * Passing it as the buyer's address would make it their saved **default**: anybody
+           * who passes Turnstile with a known number could then rewrite where the desk sends
+           * that buyer's next parcel. The order carries its own `shipTo`, which is all a
+           * public order needs; an agent saves an address to the buyer on the phone.
+           */
+          customer: { phone: phoneE164, name: input.customer.name },
           shipTo: {
             name: input.customer.name,
             districtId: input.address.districtId,
@@ -248,11 +254,11 @@ export class IntakeService {
         });
         const completed = await repo.completeSubmission(tx, {
           orgId,
-          id: claimId,
+          claim,
           orderId: created.id,
         });
+        // Taken over by a later retry while this one waited: its order must not commit.
         if (!completed) throw this.inFlight();
-        await repo.touchSiteKey(tx, orgId, site.id);
         await this.audit.record(tx, {
           orgId,
           actorUserId: actor.userId,
@@ -273,15 +279,28 @@ export class IntakeService {
         });
         return { orderId: created.id, orderNo: created.orderNo, status: created.status };
       });
-      return { replayed: false, receipt };
-    } catch (error) {
-      await withOrg(actor, (tx) => repo.releaseSubmission(tx, orgId, claimId)).catch(
-        (releaseError: unknown) => {
-          // The claim then stays pending and a retry takes it over after the stale window;
-          // the client is told why its request failed either way.
-          this.logger.error({ err: releaseError }, 'intake could not release a failed claim');
+      /*
+       * Best effort and after the commit: "last used" is a convenience on the key's list,
+       * and writing it inside the order's transaction would make every order from one site
+       * queue behind the same row lock.
+       */
+      await withOrg(actor, (tx) => repo.touchSiteKey(tx, orgId, site.id)).catch(
+        (touchError: unknown) => {
+          this.logger.warn({ err: touchError }, 'intake could not record a key as used');
         },
       );
+      return { replayed: false, receipt };
+    } catch (error) {
+      // A 503 is retried unchanged, so the claim is kept for the retry to take over; any
+      // other refusal is fixed by changing the body, so the key is freed for it.
+      const retryable = error instanceof IntakeError && error.status === 503;
+      await withOrg(actor, (tx) =>
+        repo.releaseSubmission(tx, orgId, claim, retryable ? 'expire' : 'delete'),
+      ).catch((releaseError: unknown) => {
+        // The claim then stays pending and a retry takes it over after the stale window;
+        // the client is told why its request failed either way.
+        this.logger.error({ err: releaseError }, 'intake could not release a failed claim');
+      });
       throw this.asHttp(error);
     }
   }

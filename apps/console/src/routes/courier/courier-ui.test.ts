@@ -53,7 +53,13 @@ describe('the courier catalogue', () => {
     ]) {
       expect(Object.hasOwn(courierEn, `courier.status.${status}`), status).toBe(true);
     }
-    for (const reason of ['no_status_change', 'unknown_status', 'booking_failed']) {
+    for (const reason of [
+      'no_status_change',
+      'unknown_status',
+      'booking_failed',
+      'unposted_delivery',
+      'return_not_received',
+    ]) {
       expect(Object.hasOwn(courierEn, `courier.stuck.reason.${reason}`), reason).toBe(true);
     }
   });

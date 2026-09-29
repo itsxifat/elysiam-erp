@@ -56,6 +56,11 @@ function refusalOf(error: HttpException): { code: string; message: string } {
   return { code: 'CONFLICT', message: typeof body === 'string' ? body : error.message };
 }
 
+/** Anyone holding a staff role in the brand, as opposed to a reseller (D-098). */
+function isStaff(context: ActiveContext): boolean {
+  return context.isSuperAdmin || context.roles.some((role) => role !== 'reseller');
+}
+
 @Injectable()
 export class DeskService {
   constructor(
@@ -82,6 +87,7 @@ export class DeskService {
           phoneE164,
           skuIds: query.skuIds,
           scope,
+          brandWide: isStaff(context),
         });
         const items: DuplicateView[] = rows.map((row) => ({
           id: row.visible ? row.id : null,
@@ -219,8 +225,7 @@ export class DeskService {
       request,
       'the brand’s order agents are people, not order rows: no created_by, no branch_id',
     );
-    const staff = context.isSuperAdmin || context.roles.some((role) => role !== 'reseller');
-    if (!staff) return { items: [] };
+    if (!isStaff(context)) return { items: [] };
 
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {

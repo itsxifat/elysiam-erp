@@ -32,7 +32,11 @@ import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
 import { WALLETS_PORT, type WalletsPort } from './ports/wallets.port.js';
 import { CourierSyncService } from './sync.service.js';
 import { TrackingController } from './tracking.controller.js';
-import { TRACKING_RATE_LIMITER, TrackingService } from './tracking.service.js';
+import {
+  TRACKING_RATE_LIMITER,
+  trackingRateLimitStore,
+  TrackingService,
+} from './tracking.service.js';
 
 /**
  * Couriers, parcels, returns and settlements (architecture §9, §20, §21; M12).
@@ -101,15 +105,14 @@ import { TRACKING_RATE_LIMITER, TrackingService } from './tracking.service.js';
     /*
      * The public tracking route's rate-limit counters (M15).
      *
-     * In memory, per process, which multiplies the limit by the number of API replicas — the
-     * same trade D-056 made for the credential endpoints before Valkey arrived. The
-     * INTEGRATION notes ask for this token to be bound to the API's shared
-     * `ValkeyRateLimiter` in `main.api.ts`, which makes the limit global; until then this is
-     * a real limit, just a per-replica one.
+     * The API's shared Valkey store when `main.api.ts` has handed it over with
+     * `useTrackingRateLimitStore` (an INTEGRATION line), which makes the limit global across
+     * replicas; otherwise in memory, per process — the same trade D-056 made for the
+     * credential endpoints before Valkey arrived. A real limit either way.
      */
     {
       provide: TRACKING_RATE_LIMITER,
-      useFactory: (): RateLimitStore => new MemoryRateLimiter(),
+      useFactory: (): RateLimitStore => trackingRateLimitStore(() => new MemoryRateLimiter()),
     },
     {
       provide: ORDERS_PORT,

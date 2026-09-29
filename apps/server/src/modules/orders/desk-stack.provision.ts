@@ -68,7 +68,7 @@ async function create(): Promise<void> {
   const password = randomBytes(18).toString('base64url');
 
   const tokens = new Map<string, string>();
-  const { auth, close } = createAuth({
+  const created = createAuth({
     baseUrl: process.env.E2E_API_URL ?? 'http://localhost:3110',
     secret: process.env.AUTH_SECRET ?? randomBytes(32).toString('hex'),
     trustedOrigins: [process.env.E2E_CONSOLE_URL ?? 'http://localhost:5183'],
@@ -79,6 +79,7 @@ async function create(): Promise<void> {
       return Promise.resolve();
     },
   });
+  const { auth } = created;
 
   const users: { role: string; email: string; userId: string }[] = [];
   for (const label of ['desk', 'queue']) {
@@ -91,7 +92,7 @@ async function create(): Promise<void> {
     await auth.api.resetPassword({ body: { newPassword: password, token } });
     users.push({ role: label, email, userId: user.id });
   }
-  await close();
+  await created.close();
 
   const { skus } = await seedProductWithSkus(orgId, `e2e${run}`, 2);
   const location = await warehouseId(orgId);

@@ -24,7 +24,7 @@ import { seedProductWithSkus, type SeededSku } from '../inventory/inventory.test
 import { IntakeModule } from './intake.module.js';
 import { INTAKE_ROUTE_KEYS } from './intake.route-fixtures.js';
 import { applyIntakeMigrations, setIntakeTestEnv } from './intake.testing.js';
-import { sign } from './signature.js';
+import { bodyHash, sign } from './signature.js';
 
 /**
  * The public intake API (M11 acceptance check 3), through the real pipeline.
@@ -424,6 +424,96 @@ describe('check 3: a replayed idempotency key', () => {
 
     const retried = await postSigned(orderBody(), { key: refused.key });
     expect(retried.statusCode).toBe(201);
+  }, 60_000);
+});
+
+describe('an idempotency key whose first request never finished', () => {
+  it('is taken over by a retry once the claim is stale, instead of answering 409 for ever', async () => {
+    const body = orderBody();
+    // A request that died mid-flight: a pending claim nobody will complete.
+    const first = await postSigned(body, { key: freshKey() });
+    expect(first.statusCode).toBe(201);
+    const orphanKey = freshKey();
+    const [site] = await withSystem(
+      async (tx) =>
+        tx.execute<{ id: string }>(sql`
+          select id from intake.site_keys where org_id = ${ORG_A} and key_id = ${keyId}
+        `),
+      { orgId: ORG_A },
+    );
+    const raw = Buffer.from(JSON.stringify(body), 'utf8');
+    await withSystem(
+      async (tx) =>
+        tx.execute(sql`
+          insert into intake.submissions
+            (org_id, site_key_id, idempotency_key, request_sha256, claimed_at)
+          values (${ORG_A}, ${site?.id ?? ''}, ${orphanKey}, ${bodyHash(raw)}, now())
+        `),
+      { orgId: ORG_A },
+    );
+
+    // While it is fresh, a retry is told to wait.
+    const early = await postSigned(body, { key: orphanKey });
+    expect(early.statusCode).toBe(409);
+    expect(json<{ code: string }>(early).code).toBe('IDEMPOTENCY_IN_FLIGHT');
+
+    // Once it is stale, the retry takes it over and the order is created.
+    await withSystem(
+      async (tx) =>
+        tx.execute(sql`
+          update intake.submissions set claimed_at = now() - interval '10 minutes'
+          where org_id = ${ORG_A} and idempotency_key = ${orphanKey}
+        `),
+      { orgId: ORG_A },
+    );
+    const retried = await postSigned(body, { key: orphanKey });
+    expect(retried.statusCode).toBe(201);
+    const again = await postSigned(body, { key: orphanKey });
+    expect(json<{ orderId: string }>(again).orderId).toBe(
+      json<{ orderId: string }>(retried).orderId,
+    );
+  }, 60_000);
+
+  it('keeps the claim through a 503, so the retry asks Cloudflare with the same key', async () => {
+    const body = orderBody({ turnstileToken: 'down' });
+    const down = await postSigned(body);
+    expect(down.statusCode).toBe(503);
+    const firstAsk = siteverifyCalls.at(-1)?.idempotencyKey;
+
+    // The same request, unchanged, once Cloudflare is back: the stand-in answers `down`
+    // again for this token, and what matters is that it was asked under the same key.
+    await postSigned(body, { key: down.key });
+    expect(siteverifyCalls.at(-1)?.idempotencyKey).toBe(firstAsk);
+  }, 60_000);
+});
+
+describe('a returning buyer', () => {
+  it('keeps their saved default address whatever a public form sends', async () => {
+    const phone = freshPhone();
+    const saved = await sales.client.request('POST', '/v1/customers', {
+      body: {
+        phone,
+        name: 'Saved Buyer',
+        address: { districtId: 47, thanaId: 366, addressLine: 'The real address, Dhamrai' },
+      },
+    });
+    expect(saved.statusCode).toBe(201);
+    const { id } = json<{ id: string }>(saved);
+
+    const posted = await postSigned(orderBody({ customer: { name: 'Someone', phone } }));
+    expect(posted.statusCode).toBe(201);
+
+    const addresses = await withSystem(
+      async (tx) =>
+        tx.execute<{ thana_id: number; is_default: boolean }>(sql`
+          select thana_id, is_default from sales.customer_addresses
+          where org_id = ${ORG_A} and customer_id = ${id}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(addresses).toEqual([{ thana_id: 366, is_default: true }]);
+    // The order itself went where the form said.
+    expect((await orderRow(json<{ orderId: string }>(posted).orderId))?.status).toBe('pending');
   }, 60_000);
 });
 

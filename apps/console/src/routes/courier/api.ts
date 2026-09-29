@@ -54,7 +54,12 @@ export interface ParcelRow {
   readonly hasReturnReceipt: boolean;
 }
 
-export type StuckReason = 'no_status_change' | 'unknown_status' | 'booking_failed';
+export type StuckReason =
+  | 'no_status_change'
+  | 'unknown_status'
+  | 'booking_failed'
+  | 'unposted_delivery'
+  | 'return_not_received';
 
 export interface StuckParcel {
   readonly consignmentId: string;

@@ -813,18 +813,29 @@ describe('the stuck-parcel queue (check 5)', () => {
     // A word the fake courier's vocabulary does not contain.
     await webhook(unmapped.id, 'teleported');
 
+    // `weird` is in the fake's vocabulary, mapped to `unknown` on purpose — like Pathao's
+    // exchange notice. On an active parcel it still leaves us not knowing where it is.
     const declared = await parcel();
     await webhook(declared.id, 'moving');
-    // `weird` is in the fake's vocabulary, mapped to `unknown` on purpose: known, not a gap.
     await webhook(declared.id, 'weird');
+
+    // The same word after the parcel was delivered is harmless and lists nothing.
+    const finished = await parcel();
+    await webhook(finished.id, 'handed_to_customer');
+    await webhook(finished.id, 'teleported');
+
+    const fresh = await parcel();
+    await webhook(fresh.id, 'moving');
 
     const queue = await stuck.list(context(), request(), { thresholdDays: 3 });
     const listed = new Map(queue.items.map((item) => [item.consignmentId, item]));
-    expect(listed.get(unmapped.id)?.reasons).toContain('unknown_status');
+    expect(listed.get(unmapped.id)?.reasons).toEqual(['unknown_status']);
     expect(listed.get(unmapped.id)?.lastEventRawStatus).toBe('teleported');
     // The parcel still holds where it really was — the unmapped word replaced nothing.
     expect((await consignment(unmapped.id)).status).toBe('in_transit');
-    expect(listed.has(declared.id)).toBe(false);
+    expect(listed.get(declared.id)?.reasons).toEqual(['unknown_status']);
+    expect(listed.has(finished.id)).toBe(false);
+    expect(listed.has(fresh.id)).toBe(false);
   });
 
   it('lists a booking no retry can fix, flagged at once (M12 gap 2)', async () => {

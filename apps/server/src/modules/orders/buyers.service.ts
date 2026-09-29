@@ -137,9 +137,9 @@ export class BuyersService {
       assignedTo: sql`o.assigned_to`,
       branchId: sql`o.branch_id`,
     });
-    return mapOrderErrors(async () =>
+    const filters = filtersOf(query);
+    const rows = await mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const filters = filtersOf(query);
         const total = await repo.buyerCount(tx, context.orgId, filters, scope);
         if (total > EXPORT_ROW_LIMIT) {
           throw new OrdersError(
@@ -147,14 +147,7 @@ export class BuyersService {
             `That filter matches ${String(total)} buyers; narrow it below ${String(EXPORT_ROW_LIMIT)} to export.`,
           );
         }
-
-        const rows = await repo.buyerRows(tx, context.orgId, filters, scope, null);
-        const cells = rows.map(exportCells);
-        const bytes =
-          query.format === 'xlsx'
-            ? toXlsx('Buyers', EXPORT_COLUMNS, cells)
-            : toCsv(EXPORT_COLUMNS, cells);
-
+        const found = await repo.buyerRows(tx, context.orgId, filters, scope, null);
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,
@@ -163,17 +156,27 @@ export class BuyersService {
           entityType: 'buyer_export',
           entityId: randomUUID(),
           // The filters and the count. Never the rows: see the class comment.
-          after: { format: query.format, rows: rows.length, filters: { ...filters } },
+          after: { format: query.format, rows: found.length, filters: { ...filters } },
         });
-
-        const stamp = businessDate(new Date());
-        return {
-          bytes,
-          filename: `buyers-${stamp}.${query.format}`,
-          contentType: query.format === 'xlsx' ? XLSX_CONTENT_TYPE : CSV_CONTENT_TYPE,
-          rows: rows.length,
-        };
+        return found;
       }),
     );
+
+    /*
+     * The file is built after the commit, not inside the transaction: compressing a
+     * hundred thousand rows is CPU work that would otherwise hold a pool connection and a
+     * snapshot open for its whole length, on the pool the order desk is using.
+     */
+    const cells = rows.map(exportCells);
+    const bytes =
+      query.format === 'xlsx'
+        ? toXlsx('Buyers', EXPORT_COLUMNS, cells)
+        : toCsv(EXPORT_COLUMNS, cells);
+    return {
+      bytes,
+      filename: `buyers-${businessDate(new Date())}.${query.format}`,
+      contentType: query.format === 'xlsx' ? XLSX_CONTENT_TYPE : CSV_CONTENT_TYPE,
+      rows: rows.length,
+    };
   }
 }

@@ -125,7 +125,7 @@ export async function postOrder(order: object): Promise<Response> {
 | `turnstileToken`      | yes      | The widget's token, at most 2048 characters. Tokens are single-use and live 300 seconds                            |
 | `visitor.ip`          | no       | The visitor's IPv4 or IPv6 address. Used for the per-visitor rate limit and passed to Turnstile. Send it           |
 
-Unknown fields are refused, so a typo does not silently drop data. Prices, discounts, delivery charges, channels, assignees and statuses **cannot** be sent: the catalog prices the lines, and the delivery zone for the address sets the delivery charge.
+The address is used for this order only; it does not change a returning buyer's saved address. Unknown fields are refused, so a typo does not silently drop data. Prices, discounts, delivery charges, channels, assignees and statuses **cannot** be sent: the catalog prices the lines, and the delivery zone for the address sets the delivery charge.
 
 ## Response
 
@@ -173,6 +173,8 @@ Counted per window. Defaults, each configurable by the operator:
 | One phone number per brand                  | 5 per hour     |
 
 A replay of an existing order does not count against the site, visitor or phone buckets.
+
+Send `visitor.ip`. Without it the per-visitor bucket falls back to your server's address, and every visitor of your site then shares one bucket of 10 per minute. The server-IP bucket is shared too: sites on a host with shared egress addresses (Vercel, for example) count against one another. Ask the operator to raise `INTAKE_RATE_SOURCE_IP_PER_MINUTE` if your sites share egress.
 
 ## Testing
 

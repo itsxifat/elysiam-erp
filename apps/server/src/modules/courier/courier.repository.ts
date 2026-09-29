@@ -410,10 +410,17 @@ export async function applyConsignmentStatus(
      * consignment's `raw_status` keeps describing the status it actually holds.
      */
     rawApplies: boolean;
+    /**
+     * True when this event moved the order. The status is then written whatever the clock
+     * says: the order's journal has posted, and a parcel left reading an older status would
+     * drop out of settlement matching (ledger audit M1).
+     */
+    authoritative?: boolean;
     occurredAt: Date;
   },
 ): Promise<void> {
   const at = input.occurredAt.toISOString();
+  const authoritative = input.authoritative === true;
   /*
    * M15's rules, in one statement so a concurrent writer cannot interleave between them:
    *
@@ -425,17 +432,17 @@ export async function applyConsignmentStatus(
   await tx.execute(sql`
     update courier.consignments set
       status_changed_at = case
-        when (status_changed_at is null or ${at}::timestamptz >= status_changed_at)
+        when (${authoritative} or status_changed_at is null or ${at}::timestamptz >= status_changed_at)
              and status <> ${input.status}::courier.parcel_status
-          then ${at}::timestamptz
+          then greatest(coalesce(status_changed_at, ${at}::timestamptz), ${at}::timestamptz)
         else status_changed_at end,
       raw_status = case
         when ${input.rawApplies}
-             and (status_changed_at is null or ${at}::timestamptz >= status_changed_at)
+             and (${authoritative} or status_changed_at is null or ${at}::timestamptz >= status_changed_at)
           then ${input.rawStatus}
         else raw_status end,
       status = case
-        when status_changed_at is null or ${at}::timestamptz >= status_changed_at
+        when ${authoritative} or status_changed_at is null or ${at}::timestamptz >= status_changed_at
           then ${input.status}::courier.parcel_status
         else status end,
       last_status_at = greatest(coalesce(last_status_at, ${at}::timestamptz), ${at}::timestamptz),
@@ -781,7 +788,11 @@ export async function settlementCandidates(
     from courier.consignments c
     where c.org_id = ${orgId}
       and c.courier_id = ${courierId}
-      and c.status in ('delivered', 'partial_delivered', 'returned_to_merchant')
+      -- Or a delivery/return that has been booked, whatever the tracking status reads: the
+      -- receivable exists once the journal does, and a candidate keyed on tracking alone drops
+      -- a posted delivery out of matching the day the tracking lags (M15 ledger audit M1).
+      and (c.status in ('delivered', 'partial_delivered', 'returned_to_merchant')
+           or c.delivered_at is not null or c.returned_at is not null)
     order by c.delivered_at nulls last, c.returned_at nulls last
   `);
   return [...rows];
@@ -1264,12 +1275,10 @@ export async function activeAccountProviders(
  * - **stale**: booked with the courier, not finished, and the status last *changed* on or
  *   before `cutoff` (an Asia/Dhaka date, invariant 8). The M12 fallback columns stand in for
  *   a row written before `status_changed_at` existed.
- * - **unknown word**: the courier's latest event was a word we could not map, or the parcel
- *   itself holds `unknown` (an M12-era row). Listed at once, whatever its age — an unmapped
- *   word is the exact case where a delivered parcel sits at `shipped` with its COD unbooked,
- *   and waiting N days to mention it is N days of cash nobody is chasing. The service drops
- *   the words the provider's map *declares* as `unknown` (Pathao's payment notices), which
- *   are known and harmless.
+ * - **unknown word**: the courier's latest event on an active parcel mapped to `unknown`, or
+ *   the parcel itself holds `unknown` (an M12-era row). Listed at once, whatever its age — an
+ *   unmapped word is the exact case where a delivered parcel sits at `shipped` with its COD
+ *   unbooked, and waiting N days to mention it is N days of cash nobody is chasing.
  * - **booking failed**: every retry spent. The parcel never reached the courier, and the
  *   order will not move until somebody rebooks it.
  *
@@ -1300,6 +1309,8 @@ export interface StuckRow extends Record<string, unknown> {
   readonly escalation_count: number;
   readonly last_escalation_note: string | null;
   readonly last_escalation_at: string | null;
+  readonly delivered_at: string | null;
+  readonly has_return_receipt: boolean;
 }
 
 const ACTIVE_PARCEL = sql`c.booking_state = 'booked'
@@ -1328,6 +1339,11 @@ export async function stuckCandidates(
            c.last_polled_at,
            le.status::text as last_event_status, le.raw_status as last_event_raw,
            le.occurred_at as last_event_at,
+           c.delivered_at,
+           exists (
+             select 1 from courier.return_receipts r
+             where r.org_id = c.org_id and r.consignment_id = c.id
+           ) as has_return_receipt,
            coalesce(esc.count, 0)::int as escalation_count,
            esc.last_note as last_escalation_note, esc.last_at as last_escalation_at
     from courier.consignments c
@@ -1355,6 +1371,19 @@ export async function stuckCandidates(
           and (${STUCK_CLOCK} at time zone 'Asia/Dhaka')::date <= ${options.cutoffDate}::date)
         or (${ACTIVE_PARCEL} and (c.status = 'unknown' or le.status = 'unknown'))
         or c.booking_state = 'failed'
+        -- The courier says delivered but no delivery was booked: a partial delivery the courier
+        -- gave no figure for, or one that reached an order not at `shipped`. Terminal to the
+        -- courier, so no other clause would ever list it (M15 ledger audit M2).
+        or (c.booking_state = 'booked' and c.status in ('delivered', 'partial_delivered')
+            and c.delivered_at is null)
+        -- The courier says it returned the parcel and the warehouse has not received it within
+        -- the threshold: goods, and their cost, still in transit on our books.
+        or (c.booking_state = 'booked' and c.status = 'returned_to_merchant'
+            and not exists (
+              select 1 from courier.return_receipts r
+              where r.org_id = c.org_id and r.consignment_id = c.id
+            )
+            and (${STUCK_CLOCK} at time zone 'Asia/Dhaka')::date <= ${options.cutoffDate}::date)
       )
     order by since_at
     limit ${options.limit}
@@ -1627,6 +1656,8 @@ export async function existingSettlementFor(
   const rows = await tx.execute<{ id: string; source_fingerprint: string | null }>(sql`
     select id, source_fingerprint from courier.settlements
     where org_id = ${orgId} and courier_account_id = ${courierAccountId}
+      -- A rejected batch is not an import: re-fetching after a rejection is the fix (M4).
+      and status <> 'rejected'
       and (source_fingerprint = ${match.fingerprint}
            or (${match.reference}::text is not null and reference = ${match.reference}))
     order by (source_fingerprint = ${match.fingerprint}) desc nulls last

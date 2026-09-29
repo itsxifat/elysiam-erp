@@ -52,6 +52,26 @@ import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
 
 export const TRACKING_RATE_LIMITER = Symbol('TrackingRateLimiter');
 
+let sharedStore: RateLimitStore | undefined;
+
+/**
+ * Give the tracking route the API's shared counters (the Valkey store `main.api.ts` already
+ * builds for the credential endpoints), before the application is created.
+ *
+ * A module-level hand-off rather than a provider override, because the store is built by the
+ * entrypoint, outside Nest, and `CourierModule` is imported by both the API and the worker.
+ * Without it the limit is per API replica, in memory — still a limit, just one that multiplies
+ * by the replica count (the INTEGRATION notes carry the one line that calls this).
+ */
+export function useTrackingRateLimitStore(store: RateLimitStore): void {
+  sharedStore = store;
+}
+
+/** The store the provider hands out: the shared one when set, else a per-process one. */
+export function trackingRateLimitStore(fallback: () => RateLimitStore): RateLimitStore {
+  return sharedStore ?? fallback();
+}
+
 /** The answer for everything that is not a match. Frozen, so no path can decorate it. */
 export const TRACKING_NOT_FOUND = Object.freeze({ found: false as const });
 

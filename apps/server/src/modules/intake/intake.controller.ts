@@ -15,6 +15,7 @@ import type { z } from 'zod';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { ALREADY_AUDITED } from '../../platform/audit/audit.interceptor.js';
 import { Public, RequireAbility } from '../../platform/auth/abilities.js';
+import { scopeHasNoRowDimension } from '../../platform/auth/scope.js';
 import { requireContext } from '../../platform/http/context.js';
 import { IDEMPOTENCY_REPLAYED_HEADER } from '../../platform/http/idempotency.js';
 import { IntakeError } from './intake.errors.js';
@@ -92,8 +93,11 @@ export class PublicIntakeController {
  * branch managers only read. Issuing and revoking are `create` and `update`; listing is
  * `read`, which shows labels and public key ids and never a secret — there is none to show.
  *
- * Every holder of these grants holds them at `org`, and a site key has no `created_by`
- * scope of its own to narrow, so the guard's filter is already applied.
+ * Issuing and revoking are held at `org` by every role that holds them. Reading is not:
+ * a branch manager holds `read LandingPage` at `branch` (§6: "apply at POS"), and a site
+ * key belongs to the brand, not to a branch — it has no `branch_id` or `created_by` to
+ * narrow by. The list says so with `scopeHasNoRowDimension` rather than letting the
+ * scope backstop answer 500; what it shows is labels and public key ids, never a secret.
  */
 @Controller('v1/intake/site-keys')
 export class SiteKeysController {
@@ -102,6 +106,10 @@ export class SiteKeysController {
   @RequireAbility('read', 'LandingPage')
   @Get()
   async list(@Req() request: FastifyRequest) {
+    scopeHasNoRowDimension(
+      request,
+      'a site key is the brand’s landing-page credential: no branch_id, no created_by scope',
+    );
     return this.intake.listKeys(requireContext(request));
   }
 

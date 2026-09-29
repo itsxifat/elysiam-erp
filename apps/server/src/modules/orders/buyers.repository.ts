@@ -135,11 +135,13 @@ export async function buyerRows(
     join sales.customers c on c.org_id = ${orgId} and c.id = m.customer_id
     left join lateral (
       select d.name_en as district_en, t.name_en as thana_en
-      from sales.orders o2
-      join ref.districts d on d.id = o2.ship_district_id
-      join ref.thanas t on t.id = o2.ship_thana_id
-      where o2.org_id = ${orgId} and o2.customer_id = m.customer_id
-      order by o2.created_at desc
+      from sales.orders o
+      join ref.districts d on d.id = o.ship_district_id
+      join ref.thanas t on t.id = o.ship_thana_id
+      where o.org_id = ${orgId} and o.customer_id = m.customer_id
+        and o.status <> 'cancelled'
+        and ${scope}
+      order by o.created_at desc
       limit 1
     ) latest on true
     order by m.last_order_at desc, c.id

@@ -736,6 +736,14 @@ export class CourierSyncService {
       status: tracked,
       rawStatus: input.rawStatus,
       rawApplies: tracked === input.status,
+      /*
+       * An event that moves the order moves the parcel's tracking too, whatever the clock
+       * says. The out-of-order guard exists for tracking noise; applied to a delivery it left
+       * the order delivered and its journal posted while the parcel still read `hold`
+       * — so the settlement matcher, which looks for delivered parcels, never found it and the
+       * receivable was never relieved (ledger audit M1).
+       */
+      authoritative: trigger !== null,
       occurredAt: input.occurredAt,
     });
 
@@ -802,10 +810,18 @@ export class CourierSyncService {
         orgId: input.orgId,
         consignmentId: consignment.id,
         occurredAt: input.occurredAt,
+        /*
+         * Only a delivery records a collection. Since M15 a courier's `returned_to_merchant`
+         * moves the order too (`start_return`), and Pathao's paid-return carries a
+         * `collected_amount` — writing it here made a returned parcel a settlement candidate
+         * expecting that figure, so the statement line matched and the settlement credited
+         * `courier_receivable` for money no delivery journal ever debited (ledger audit C1).
+         * A courier collecting on a return shows up on its statement as an exception instead.
+         */
         collectedPoisha:
           input.status === 'delivered' || input.status === 'partial_delivered'
             ? (collected ?? BigInt(consignment.cod_amount_poisha))
-            : collected,
+            : null,
         delivered: input.status === 'delivered' || input.status === 'partial_delivered',
         returned: input.status === 'returned_to_merchant',
       });

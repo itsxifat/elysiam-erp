@@ -222,6 +222,8 @@ export class ReturnsService {
         rawStatus: 'received_and_inspected',
         // Our own warehouse's word, not a courier's: nothing to second-guess (M15).
         rawApplies: true,
+        // A receipt dated earlier than the courier's last word still sets the parcel returned.
+        authoritative: true,
         occurredAt: at,
       });
 

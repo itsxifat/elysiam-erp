@@ -404,6 +404,8 @@ ${documentCss(fonts, brand.accentHue)}
  * buyer (D-036 makes customer-facing output Bangla) *and* by a courier hub whose sorting is
  * done in English district names. No price per item, no item list — a label is stuck on the
  * outside of the box, and the contents of a parcel written on its outside is an invitation.
+ * The order's notes are left off for the same reason: they are the desk's remarks and a
+ * stranger's form text, and they belong on the packing slip inside, not on the box.
  */
 export function renderLabelHtml(input: {
   readonly brand: DocumentBrand;
@@ -439,7 +441,6 @@ ${labelCss(fonts, brand.accentHue)}
         <div class="amount">${formatTaka(data.codAmountPoisha)}</div>
       </div>
       <div class="meta">${String(units)} পিস · ${escape(data.issuedOn)}</div>
-      ${data.notes === null ? '' : `<div class="note">${escape(data.notes)}</div>`}
     </div>
   </body>
 </html>`;
@@ -462,8 +463,7 @@ function labelCss(fonts: readonly FontFile[], accentHue: number): string {
       .area-en { color: var(--muted); font-size: 10pt; }
       .cod { margin-top: 10px; padding: 8px 10px; border: 2px solid var(--ink); display: flex; justify-content: space-between; align-items: baseline; }
       .cod .amount { font-size: 18pt; font-weight: 700; font-variant-numeric: tabular-nums; }
-      .meta { margin-top: 6px; font-size: 9pt; color: var(--muted); }
-      .note { margin-top: 4px; font-size: 9.5pt; }`;
+      .meta { margin-top: 6px; font-size: 9pt; color: var(--muted); }`;
 }
 
 /** The inside of a document's `<body>`, for putting several documents in one file. */

@@ -3,7 +3,6 @@ import { withOrg } from '@elysium/db';
 import {
   assertStuckThreshold,
   calendarDaysSince,
-  courierStatusMap,
   isTerminalParcelStatus,
   STUCK_THRESHOLD_DAYS,
   stuckCutoffDate,
@@ -25,17 +24,22 @@ import * as repo from './courier.repository.js';
  * bulk re-poll, an escalation note and a courier-ready export. This is where COD cash
  * actually goes missing").
  *
- * ## Three reasons, each named on the row
+ * ## Five reasons, each named on the row
  *
  * - **`no_status_change`** — with the courier, not finished, and the status has not changed
  *   for N or more Asia/Dhaka calendar days. The rider who delivered and did not report, the
  *   hub that lost the parcel.
- * - **`unknown_status`** — the courier's latest word was one no mapping table knows, or the
- *   parcel holds `unknown`. Listed **immediately**, not after N days: an unmapped word is how
- *   a parcel the courier has delivered sits at `shipped` with its COD unbooked, and it is the
- *   one failure the mapping tests cannot catch because the word did not exist when they were
- *   written. Words a provider's map *declares* as `unknown` (Pathao's `order.paid`, sent
- *   after a delivery) are known facts, not gaps, and do not list a parcel on their own.
+ * - **`unknown_status`** — the courier's latest word on an active parcel mapped to `unknown`:
+ *   a word no mapping table knows, or one a map sends to `unknown` on purpose (Pathao's
+ *   exchange and payment notices). Listed **immediately**, not after N days: an unmapped word
+ *   is how a parcel the courier has delivered sits at `shipped` with its COD unbooked, and it
+ *   is the one failure the mapping tests cannot catch because the word did not exist when they
+ *   were written. On a finished parcel such words change nothing and list nothing.
+ * - **`unposted_delivery`** — the courier reports the parcel delivered and no delivery was
+ *   booked: a partial delivery with no collected figure, or a delivery that reached an order
+ *   not at `shipped`. Listed at once; the manual status route, with the figure, settles it.
+ * - **`return_not_received`** — the courier says it returned the parcel, and the warehouse
+ *   has not received it within the threshold.
  * - **`booking_failed`** — every booking attempt spent, or a refusal no retry could change.
  *   The parcel never reached a courier; nothing moves until somebody rebooks it. This is also
  *   where M12's "flag the order" is visible: the flag lives on the consignment, and this queue
@@ -46,7 +50,12 @@ import * as repo from './courier.repository.js';
  * sees the parcels they booked.
  */
 
-export type StuckReason = 'no_status_change' | 'unknown_status' | 'booking_failed';
+export type StuckReason =
+  | 'no_status_change'
+  | 'unknown_status'
+  | 'booking_failed'
+  | 'unposted_delivery'
+  | 'return_not_received';
 
 export interface StuckParcel {
   readonly consignmentId: string;
@@ -298,24 +307,34 @@ export function reasonsFor(row: repo.StuckRow, cutoffDate: string): StuckReason[
 
   const reasons: StuckReason[] = [];
   const status = row.status as ParcelStatus;
-  const active = row.booking_state === 'booked' && !isTerminalParcelStatus(status);
-  if (!active) return reasons;
+  if (row.booking_state !== 'booked') return reasons;
+
+  /*
+   * Finished at the courier, not in our books. A delivery the courier reported and no journal
+   * followed — a partial delivery with no collected figure, which waits for a person with the
+   * manual status route — and a parcel the courier says it returned that the warehouse has not
+   * received. The courier has nothing more to say about either, so without these two reasons
+   * no clock would ever list them (M15 ledger audit M2).
+   */
+  if ((status === 'delivered' || status === 'partial_delivered') && row.delivered_at === null) {
+    return ['unposted_delivery'];
+  }
+  if (status === 'returned_to_merchant' && !row.has_return_receipt) {
+    return row.since_on <= cutoffDate ? ['return_not_received'] : [];
+  }
+  if (isTerminalParcelStatus(status)) return reasons;
 
   if (row.since_on <= cutoffDate) reasons.push('no_status_change');
 
-  const lastWordUnmapped =
-    row.last_event_status === 'unknown' &&
-    row.last_event_raw !== null &&
-    !declaredWord(row.provider_code, row.last_event_raw);
-  if (status === 'unknown' || lastWordUnmapped) reasons.push('unknown_status');
+  /*
+   * Any word that leaves us not knowing where an active parcel is — one no map knows, or one a
+   * map sends to `unknown` on purpose. The second kind is not noise on an *active* parcel:
+   * Pathao's `order.exchanged` or `order.paid` on a parcel our books still call shipped is a
+   * delivery we deliberately did not book, and a person has to settle it now, not in N days.
+   */
+  if (status === 'unknown' || row.last_event_status === 'unknown') reasons.push('unknown_status');
 
   return reasons;
-}
-
-/** Whether the provider's own map lists this word — mapped to `unknown` on purpose or not. */
-function declaredWord(providerCode: string, raw: string): boolean {
-  const map = courierStatusMap(providerCode);
-  return map !== undefined && Object.hasOwn(map.statuses, raw.trim().toLowerCase());
 }
 
 function takaText(poisha: bigint): string {

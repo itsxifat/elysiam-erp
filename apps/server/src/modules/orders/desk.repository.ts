@@ -47,7 +47,18 @@ export interface DuplicateRow extends Record<string, unknown> {
 export async function recentDuplicates(
   tx: Tx,
   orgId: string,
-  input: { readonly phoneE164: string; readonly skuIds: readonly string[]; readonly scope: SQL },
+  input: {
+    readonly phoneE164: string;
+    readonly skuIds: readonly string[];
+    readonly scope: SQL;
+    /**
+     * Staff see the brand; anybody else sees only the rows their scope reaches. A reseller
+     * holds `read Order|own` too, and a brand-wide answer would hand a partner the order
+     * numbers, times and SKUs of staff and other resellers' orders (D-098's leak by another
+     * door).
+     */
+    readonly brandWide: boolean;
+  },
 ): Promise<DuplicateRow[]> {
   const rows = await tx.execute<DuplicateRow>(sql`
     select o.id, o.order_no, o.status::text as status, o.created_at,
@@ -59,6 +70,7 @@ export async function recentDuplicates(
       and o.ship_phone_e164 = ${input.phoneE164}
       and o.created_at > now() - interval '24 hours'
       and o.status <> 'cancelled'
+      and ${input.brandWide ? sql`true` : input.scope}
       and l.sku_id = any (${sql.param([...input.skuIds])}::uuid[])
     group by o.id
     order by o.created_at desc

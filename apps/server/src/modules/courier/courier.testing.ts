@@ -90,7 +90,7 @@ export async function applyCourierMigrations(): Promise<void> {
     },
     {
       file: '0067_courier_m15_integrity.sql',
-      marker: sql`select exists (select 1 from pg_trigger where tgname = 'courier_assert_selection_rule') as present`,
+      marker: sql`select exists (select 1 from pg_trigger where tgname = 'courier_assert_collection_is_a_delivery') as present`,
     },
   ];
 

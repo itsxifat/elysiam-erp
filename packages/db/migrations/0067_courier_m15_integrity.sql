@@ -99,3 +99,28 @@ $$;--> statement-breakpoint
 create trigger courier_assert_selection_rule
 before insert or update on courier.selection_rules
 for each row execute function courier.assert_selection_rule();
+--> statement-breakpoint
+
+-- A collection is a delivery's figure, and nothing else's.
+--
+-- `collected_poisha` is what `settlementCandidates` tells the matcher the courier owes us, and
+-- §7's delivery journal is the debit behind it — so the figure may only exist on a parcel
+-- whose delivery was booked, which is exactly when `delivered_at` is written. M15 made a
+-- courier's `returned_to_merchant` move the order (start_return), and Pathao's paid-return
+-- carries a `collected_amount`; recorded on a returned parcel, it matched the courier's
+-- statement line and the settlement credited `courier_receivable` for money no journal ever
+-- debited (M15 ledger audit C1). 0052 checks the order shipped; this checks the parcel was
+-- delivered. The service no longer writes it; this is the alarm if anything else does.
+create or replace function courier.assert_collection_is_a_delivery() returns trigger
+language plpgsql as $$
+begin
+  if new.collected_poisha is not null and new.delivered_at is null then
+    raise exception 'CONSIGNMENT_INVALID: a collection is recorded only on a parcel whose delivery was booked.';
+  end if;
+  return new;
+end;
+$$;--> statement-breakpoint
+
+create trigger courier_assert_collection_is_a_delivery
+before insert or update of collected_poisha, delivered_at on courier.consignments
+for each row execute function courier.assert_collection_is_a_delivery();

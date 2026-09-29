@@ -781,7 +781,10 @@ export const settlements = courier.table(
     unique('settlements_org_id_id_key').on(table.orgId, table.id),
     uniqueIndex('settlements_org_account_fingerprint_idx')
       .on(table.orgId, table.courierAccountId, table.sourceFingerprint)
-      .where(sql`${table.sourceFingerprint} is not null`),
+      // A rejected batch releases its fingerprint: rejecting is how a person says "import this
+      // again once the exceptions are fixed", and a rejected batch holding the key made the
+      // statement unfetchable for good (M15 ledger audit M4).
+      .where(sql`${table.sourceFingerprint} is not null and ${table.status} <> 'rejected'`),
     check('settlements_source', sql`${table.source} in ('upload', 'api')`),
     /*
      * An API batch always carries its fingerprint, and an upload never does. A fetched batch
@@ -810,7 +813,8 @@ export const settlements = courier.table(
      */
     uniqueIndex('settlements_org_courier_reference_idx')
       .on(table.orgId, table.courierAccountId, table.reference)
-      .where(sql`${table.reference} is not null`),
+      // M15: rejected batches excluded, for the reason the fingerprint index gives.
+      .where(sql`${table.reference} is not null and ${table.status} <> 'rejected'`),
     foreignKey({
       name: 'settlements_org_id_courier_account_id_fk',
       columns: [table.orgId, table.courierAccountId],

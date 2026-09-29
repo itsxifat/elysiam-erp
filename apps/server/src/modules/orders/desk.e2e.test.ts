@@ -256,6 +256,16 @@ describe('check 5: sales sees only its own orders plus the unassigned queue', ()
     );
     expect(own.items[0]).toMatchObject({ id: theirs.id, visible: true });
 
+    // A reseller holds the same `read Order|own` grant and is not staff: the brand-wide
+    // answer is not theirs, so they learn nothing about an order they cannot open (D-098).
+    const partner = body<{ items: unknown[] }>(
+      await reseller.client.request(
+        'GET',
+        `/v1/orders/duplicates?phone=${encodeURIComponent(phone)}&skuIds=${sku(1)}`,
+      ),
+    );
+    expect(partner.items).toEqual([]);
+
     // A different SKU is a customer coming back, not a duplicate.
     const other = body<{ items: unknown[] }>(
       await sales1.client.request(
