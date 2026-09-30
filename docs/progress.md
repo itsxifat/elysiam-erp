@@ -170,6 +170,29 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
   - D-066 audits sign-ins into each of the user's orgs. A global security-event log, if the client wants one, belongs with M04 (owner: claude, M04).
 - Next: M03, ledger core.
 
+### 2026-09-25 · M03 · Ledger core · done
+
+- _Entry written on 2026-09-30 from the commit history. The session that built M03 closed without one._
+- Delivered: a double-entry ledger the database refuses to corrupt. Branded integer poisha, a no-float-money lint rule, deferred balance constraints, journals immutable by grant and by trigger, the period lock, deterministic idempotency keys, a chart of accounts per org, reversal journals, and the reports the business reads: trial balance, day book, account ledger, cash book and party balances.
+- Verification: `pnpm verify` exit 0 at the merge `05f7176`: 27 test files, 17 migrations, 24 routes all declared and 22 matrix-tested.
+- Auditors: two acceptance audits, a ledger audit, an adversarial review and a security review standing in for `/security-review`, which cannot run without a git remote. No criticals. Two HIGH findings, both attacks on the audit trail, were fixed in `a532048`: a key named like a phone switched secret redaction off for its subtree, and a deeply nested body suppressed the audit row. `serializeFor` failing open through a `toJSON` chain was fixed in the same commit.
+- Decisions/assumptions: D-079 to D-094.
+- New dependencies: none recorded.
+- Deviations from the milestone spec: M03 was built on M02b's closeout branch, so the two merged together.
+- Follow-ups: none left open that a later milestone did not pick up.
+- Next: M04.
+
+### 2026-09-25 · M04 · Platform services · done
+
+- _Entry written on 2026-09-30 from the commit history. The session that built M04 closed without one._
+- Delivered: the plumbing later modules reuse. The transactional outbox with `emit(tx, …)`, pg-boss jobs with `enqueue(tx, …)` in the caller's transaction, retries, dead-letter queues and Asia/Dhaka cron; the `/rt` realtime gateway with server-assigned rooms; file storage with presigned upload and authorize-then-sign download; Gotenberg PDFs with Bangla fonts; OpenAPI and the generated api-client with a drift gate; problem+json; `Idempotency-Key`; the rate limiter on Valkey; bn/en i18n with a missing-key gate; feature flags.
+- Verification: `pnpm verify` exit 0 at `11a3594`: 47 test files, 30 routes all declared and 26 matrix-tested.
+- Auditors: each of the five slices was reviewed adversarially. Three HIGH findings fixed on the way in: a socket was authorized once and never again, `Idempotency-Key` was unreachable from every browser because the CORS preflight did not list it, and a failed `complete()` left an idempotency key claimed for 24 hours.
+- Decisions/assumptions: D-104.
+- Deviations from the milestone spec: none recorded.
+- **Found later, on 2026-09-30:** the outbox dispatcher built here had never delivered an event in any environment. It claimed rows with no org context against a FORCE RLS table and saw none, while every suite drained the outbox by another route. Fixed with D-131 and D-132 and migration 0072. See the M11/M15 entry.
+- Next: M05.
+
 ### 2026-09-26 · M05–M13, M19, M25 · Parallel build of eleven milestones, then integration · partial
 
 - Delivered: the console shell and UI kit (M05); catalog (M06); stock ledger with WAC costing (M07); wallets, cash, transfers and daily closings (M08); suppliers and purchasing (M09); the order core with its state machine, reservation, Bangla invoices and delivery/return/exchange postings (M10); courier booking, status sync and COD settlement (M12); cross-org fraud check (M13); HR, attendance and payroll (M19); investors (M25). Built by parallel agents in dependency waves, then integrated and verified together. Committed one stacked branch per milestone, `m05-console-shell` → … → `m25-investors` → `integration-m05-m25`; only the integration tip builds on its own.
