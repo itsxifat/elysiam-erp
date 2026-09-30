@@ -27,6 +27,14 @@
     "./posting/investors": {
       "types": "./dist/posting/investors.d.ts",
       "default": "./dist/posting/investors.js"
+    },
+    "./pos": {
+      "types": "./dist/pos/index.d.ts",
+      "default": "./dist/pos/index.js"
+    },
+    "./posting/pos": {
+      "types": "./dist/posting/pos.d.ts",
+      "default": "./dist/posting/pos.js"
     }
   },
   "files": [
