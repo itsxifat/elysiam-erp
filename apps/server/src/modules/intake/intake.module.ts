@@ -62,7 +62,13 @@ class IntakeValkey implements OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     // An open socket keeps the event loop alive: without this a test run or a SIGTERM
     // waits on a connection nobody is using.
-    await this.client?.quit().catch(() => undefined);
+    const client = this.client;
+    if (client === undefined) return;
+    await client.quit().catch(() => undefined);
+    // `quit` only closes a connected client. One still connecting when the app closes
+    // refuses it, and ioredis goes on retrying for ever: `pnpm check:routes` printed
+    // PASS and then never exited (2026-10-01). `disconnect` stops the retries too.
+    client.disconnect();
   }
 }
 

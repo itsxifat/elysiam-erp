@@ -206,3 +206,33 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
 - Deviations from the milestone spec: one branch per milestone was produced retroactively from a single integrated tree. M11 (order desk UI, buyer list, public intake) is not built yet. D-117: investor withdrawals post at `paid`, not at every step as §15 says.
 - Follow-ups: acceptance-auditor for each milestone (owner: claude); Playwright coverage of the console flows and M05's axe/keyboard/screenshot checks (owner: claude); **one HR user can disburse a staff loan they typed with no second person — §6 names no approval for staff loans** (owner: human decision); no refund path for a customer advance, and one advance per order (owner: claude, M16/M17); `ApprovalsService` runs executors only on approval, so rejected investor and settlement requests need manual `/reject` routes (owner: claude); **no git remote, so CI has never run** (owner: human).
 - Next: M11, M15 and M23 in parallel, then M16, M18, M20 and M14a.
+
+### 2026-10-01 · M11, M15, M23, M05's checks, M08's screens · Integration, audits and the money screens · partial
+
+- Delivered:
+  - **M11**, the order desk, buyer list and signed public order intake, integrated. **M15**, Pathao and RedX adapters, zone rules, bulk booking, public tracking, settlement fetch and the stuck-parcel queue, integrated.
+  - **M23**, the showroom POS: an offline till that syncs each sale exactly once, holds anything it cannot post for a manager, prints an 80 mm Bangla receipt, and closes the branch day through M08's closing. Integrated with its ports bound to the real inventory, catalog and closing services; branch dashboards in the console.
+  - **M05's deferred quality checks** built and passing against the real stack (navigation per role and org, URL filters, axe in both themes, keyboard traversal, 22 review screenshots, bundle budget in `pnpm verify`).
+  - **M08's missing money screens**: transfers, a cash book per wallet, statements (P&L for any range and branch, balance sheet, aging), the ledger (trial balance, day book, account ledger), periods (close, request reopen) and the all-brands view.
+  - Plan files for every built milestone, and the M03 and M04 progress entries that were never written.
+- Verification:
+  - `pnpm verify` was **not run in one piece**. The full run was stopped by the system for low memory and has not been restarted; it needs the user's go-ahead. Every gate was run separately instead:
+  - format, lint (24 tasks), typecheck (24), build (15), `check:bundle` (221.2 KB of 250 KB), `check:migrations`, `check:schema` (schema, snapshot and 73 migrations agree), `check:routes` (248 routes, all declared, 241 matrix-tested, 7 public), `check:i18n` (1,669 keys in bn and en) and `check:api-client` (after regenerating the client: 248 operations). All pass.
+  - Tests in four batches with two workers each: 116 files and about 1,965 tests, all passing after the fixes listed below.
+  - Browser, real stack: 10 of 10 (M11 check 1 in 934 ms, check 4 in 96 ms; M05 checks 1, 2, 6, 7 and 10; the three money checks). Till offline spec: 3 of 3. Console stubbed specs: 13 of 13.
+- Auditors: ledger-auditor on M23: 0 critical, 6 warnings. W1 to W4 fixed, each with a regression test that fails when its fix is reverted; W5 documented; W6 tests added. **acceptance-auditor has not been run** for M05, M08, M11, M15 or M23 in this wave.
+- Found and fixed, beyond the audit:
+  - The accounts screen was never routed, so the Accounts link opened a placeholder.
+  - The UI kit's stylesheet never scanned the kit, so every dialog opened off screen on a long page.
+  - Better Auth's limiter allowed five sign-ins a minute per address, locking out the sixth person in an office (D-168).
+  - The two-factor enrolment screen raced two secrets in a development build.
+  - The login screen and org switcher ignored the chosen language.
+  - The first page shipped both languages; Bangla now loads on demand.
+  - Four property tests could generate an invalid date; the portal's tracking test imported tables that no longer existed; the cost sweep did not cover intake or the POS.
+  - `check:routes` printed PASS and never exited: intake's Valkey client, still connecting when the app closed, kept retrying for ever. The same would have stalled an API shutdown. It disconnects now.
+  - The generated API client was stale by the whole wave's routes; regenerated.
+- Decisions/assumptions: D-161 to D-169, D-173 to D-175, D-177. **D-161 is OPEN**: only org admin, accounts and a branch manager can operate a till.
+- New dependencies: `@playwright/test` in `apps/pos`, from the catalog, for the till's browser spec.
+- Deviations from the milestone spec: M23 check 1's browser half runs against a stub API; its stock and wallet half runs against real Postgres. M25's investor portal pages are still not built.
+- Follow-ups: acceptance-auditor for M05, M08, M11, M15, M23 and a re-audit of M06-M13, M19, M25 (owner: claude); a UI-kit date field (owner: claude); party names in aging beyond suppliers (owner: claude); who operates a till, D-161 (owner: human); the three POS policy questions in decisions.md (owner: human); **no git remote, so CI has never run** (owner: human).
+- Next: the acceptance audits, then M16, M18, M20 and M14a.

@@ -53,6 +53,11 @@ export const OPERATIONS = {
     path: '/v1/hr/payroll/runs/{id}/inputs/{inputId}',
     ability: 'create:Payroll',
   },
+  deleteV1SupplyDraftsById: {
+    method: 'DELETE',
+    path: '/v1/supply/drafts/{id}',
+    ability: 'update:Supply',
+  },
   getApproval: { method: 'GET', path: '/v1/approvals/{id}', ability: 'read:ApprovalRequest' },
   getV1AccountsCashEntries: {
     method: 'GET',
@@ -91,6 +96,8 @@ export const OPERATIONS = {
     ability: 'read:LedgerReport',
   },
   getV1AccountsWallets: { method: 'GET', path: '/v1/accounts/wallets', ability: 'read:Wallet' },
+  getV1Buyers: { method: 'GET', path: '/v1/buyers', ability: 'export:BuyerExport' },
+  getV1BuyersExport: { method: 'GET', path: '/v1/buyers/export', ability: 'export:BuyerExport' },
   getV1CatalogAttributes: {
     method: 'GET',
     path: '/v1/catalog/attributes',
@@ -118,6 +125,8 @@ export const OPERATIONS = {
     path: '/v1/courier/accounts',
     ability: 'read:CourierSettlement',
   },
+  getV1CourierLabels: { method: 'GET', path: '/v1/courier/labels', ability: 'read:Order' },
+  getV1CourierParcels: { method: 'GET', path: '/v1/courier/parcels', ability: 'read:Order' },
   getV1CourierParcelsById: {
     method: 'GET',
     path: '/v1/courier/parcels/{id}',
@@ -132,6 +141,21 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/courier/reports/cod-reconciliation',
     ability: 'read:LedgerReport',
+  },
+  getV1CourierReportsPerformance: {
+    method: 'GET',
+    path: '/v1/courier/reports/performance',
+    ability: 'read:LedgerReport',
+  },
+  getV1CourierSelectionPreview: {
+    method: 'GET',
+    path: '/v1/courier/selection/preview',
+    ability: 'read:Order',
+  },
+  getV1CourierSelectionRules: {
+    method: 'GET',
+    path: '/v1/courier/selection-rules',
+    ability: 'read:CourierSettlement',
   },
   getV1CourierSettlements: {
     method: 'GET',
@@ -148,9 +172,26 @@ export const OPERATIONS = {
     path: '/v1/courier/settlements/{id}/exceptions',
     ability: 'read:CourierSettlement',
   },
+  getV1CourierSettlementsFetchRuns: {
+    method: 'GET',
+    path: '/v1/courier/settlements/fetch-runs',
+    ability: 'read:CourierSettlement',
+  },
+  getV1CourierStuck: { method: 'GET', path: '/v1/courier/stuck', ability: 'read:Order' },
+  getV1CourierStuckExport: {
+    method: 'GET',
+    path: '/v1/courier/stuck/export',
+    ability: 'read:Order',
+  },
   getV1Customers: { method: 'GET', path: '/v1/customers', ability: 'read:Customer' },
   getV1CustomersById: { method: 'GET', path: '/v1/customers/{id}', ability: 'read:Customer' },
+  getV1CustomersLookup: { method: 'GET', path: '/v1/customers/lookup', ability: 'read:Customer' },
   getV1DeliveryZones: { method: 'GET', path: '/v1/delivery-zones', ability: 'read:Catalog' },
+  getV1DeliveryZonesAreas: {
+    method: 'GET',
+    path: '/v1/delivery-zones/areas',
+    ability: 'read:Catalog',
+  },
   getV1DeliveryZonesForArea: {
     method: 'GET',
     path: '/v1/delivery-zones/for-area',
@@ -216,6 +257,7 @@ export const OPERATIONS = {
     path: '/v1/hr/payroll/runs/{id}/preview',
     ability: 'read:Payroll',
   },
+  getV1IntakeSiteKeys: { method: 'GET', path: '/v1/intake/site-keys', ability: 'read:LandingPage' },
   getV1InventoryAdjustments: {
     method: 'GET',
     path: '/v1/inventory/adjustments',
@@ -293,6 +335,7 @@ export const OPERATIONS = {
   },
   getV1JobsFailed: { method: 'GET', path: '/v1/jobs/failed', ability: 'read:AuditLog' },
   getV1Orders: { method: 'GET', path: '/v1/orders', ability: 'read:Order' },
+  getV1OrdersAgents: { method: 'GET', path: '/v1/orders/agents', ability: 'read:Order' },
   getV1OrdersAvailability: {
     method: 'GET',
     path: '/v1/orders/availability',
@@ -303,6 +346,58 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/orders/{id}/document',
     ability: 'read:Order',
+  },
+  getV1OrdersDocuments: { method: 'GET', path: '/v1/orders/documents', ability: 'read:Order' },
+  getV1OrdersDuplicates: { method: 'GET', path: '/v1/orders/duplicates', ability: 'read:Order' },
+  getV1PosBranches: { method: 'GET', path: '/v1/pos/branches', ability: 'read:LedgerReport' },
+  getV1PosBranchesByIdClosings: {
+    method: 'GET',
+    path: '/v1/pos/branches/{id}/closings',
+    ability: 'read:Wallet',
+  },
+  getV1PosBranchesByIdSummary: {
+    method: 'GET',
+    path: '/v1/pos/branches/{id}/summary',
+    ability: 'read:LedgerReport',
+  },
+  getV1PosReceiptsByReceiptNo: {
+    method: 'GET',
+    path: '/v1/pos/receipts/{receiptNo}',
+    ability: 'read:Wallet',
+  },
+  getV1PosRegisters: { method: 'GET', path: '/v1/pos/registers', ability: 'read:Wallet' },
+  getV1PosRegistersByIdPriceList: {
+    method: 'GET',
+    path: '/v1/pos/registers/{id}/price-list',
+    ability: 'read:Catalog',
+  },
+  getV1PosRegistersByIdSession: {
+    method: 'GET',
+    path: '/v1/pos/registers/{id}/session',
+    ability: 'read:Wallet',
+  },
+  getV1PosReviews: { method: 'GET', path: '/v1/pos/reviews', ability: 'read:Wallet' },
+  getV1PosSalesById: { method: 'GET', path: '/v1/pos/sales/{id}', ability: 'read:Wallet' },
+  getV1PosShifts: { method: 'GET', path: '/v1/pos/shifts', ability: 'read:Wallet' },
+  getV1PosShiftsById: { method: 'GET', path: '/v1/pos/shifts/{id}', ability: 'read:Wallet' },
+  getV1SupplyEntries: { method: 'GET', path: '/v1/supply/entries', ability: 'read:Supply' },
+  getV1SupplyEntriesById: {
+    method: 'GET',
+    path: '/v1/supply/entries/{id}',
+    ability: 'read:Supply',
+  },
+  getV1SupplyPayments: { method: 'GET', path: '/v1/supply/payments', ability: 'read:Supply' },
+  getV1SupplyReturns: { method: 'GET', path: '/v1/supply/returns', ability: 'read:Supply' },
+  getV1SupplySuppliers: { method: 'GET', path: '/v1/supply/suppliers', ability: 'read:Supply' },
+  getV1SupplySuppliersById: {
+    method: 'GET',
+    path: '/v1/supply/suppliers/{id}',
+    ability: 'read:Supply',
+  },
+  getV1SupplySuppliersByIdStatement: {
+    method: 'GET',
+    path: '/v1/supply/suppliers/{id}/statement',
+    ability: 'read:Cost',
   },
   healthLive: { method: 'GET', path: '/health/live', ability: 'public' },
   listApprovals: { method: 'GET', path: '/v1/approvals', ability: 'read:ApprovalRequest' },
@@ -342,6 +437,22 @@ export const OPERATIONS = {
   },
   patchV1InvestorsById: { method: 'PATCH', path: '/v1/investors/{id}', ability: 'update:Investor' },
   patchV1OrdersById: { method: 'PATCH', path: '/v1/orders/{id}', ability: 'update:Order' },
+  patchV1PosRegistersById: {
+    method: 'PATCH',
+    path: '/v1/pos/registers/{id}',
+    ability: 'update:Wallet',
+  },
+  patchV1SupplyDraftsById: {
+    method: 'PATCH',
+    path: '/v1/supply/drafts/{id}',
+    ability: 'update:Supply',
+  },
+  patchV1SupplySuppliersById: {
+    method: 'PATCH',
+    path: '/v1/supply/suppliers/{id}',
+    ability: 'update:Supply',
+  },
+  postPublicV1Orders: { method: 'POST', path: '/public/v1/orders', ability: 'public' },
   postV1AccountsCashEntries: {
     method: 'POST',
     path: '/v1/accounts/cash-entries',
@@ -405,6 +516,16 @@ export const OPERATIONS = {
     ability: 'update:CourierSettlement',
   },
   postV1CourierParcels: { method: 'POST', path: '/v1/courier/parcels', ability: 'update:Order' },
+  postV1CourierParcelsBulk: {
+    method: 'POST',
+    path: '/v1/courier/parcels/bulk',
+    ability: 'update:Order',
+  },
+  postV1CourierParcelsByIdEscalations: {
+    method: 'POST',
+    path: '/v1/courier/parcels/{id}/escalations',
+    ability: 'update:Order',
+  },
   postV1CourierParcelsByIdHandover: {
     method: 'POST',
     path: '/v1/courier/parcels/{id}/handover',
@@ -434,6 +555,16 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/courier/settlements/{id}/reject',
     ability: 'update:CourierSettlement',
+  },
+  postV1CourierSettlementsFetch: {
+    method: 'POST',
+    path: '/v1/courier/settlements/fetch',
+    ability: 'create:CourierSettlement',
+  },
+  postV1CourierStuckRepoll: {
+    method: 'POST',
+    path: '/v1/courier/stuck/repoll',
+    ability: 'update:Order',
   },
   postV1CourierWebhooksByOrgIdByProvider: {
     method: 'POST',
@@ -496,6 +627,16 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/hr/payroll/runs/{id}/submit',
     ability: 'create:Payroll',
+  },
+  postV1IntakeSiteKeys: {
+    method: 'POST',
+    path: '/v1/intake/site-keys',
+    ability: 'create:LandingPage',
+  },
+  postV1IntakeSiteKeysByIdRevoke: {
+    method: 'POST',
+    path: '/v1/intake/site-keys/{id}/revoke',
+    ability: 'update:LandingPage',
   },
   postV1InventoryAdjustments: {
     method: 'POST',
@@ -574,6 +715,11 @@ export const OPERATIONS = {
     ability: 'update:Investor',
   },
   postV1Orders: { method: 'POST', path: '/v1/orders', ability: 'create:Order' },
+  postV1OrdersBulkConfirm: {
+    method: 'POST',
+    path: '/v1/orders/bulk-confirm',
+    ability: 'update:Order',
+  },
   postV1OrdersByIdAdvance: {
     method: 'POST',
     path: '/v1/orders/{id}/advance',
@@ -628,6 +774,60 @@ export const OPERATIONS = {
     path: '/v1/orders/{id}/start-return',
     ability: 'update:Order',
   },
+  postV1PosBranchesByIdClosings: {
+    method: 'POST',
+    path: '/v1/pos/branches/{id}/closings',
+    ability: 'update:Wallet',
+  },
+  postV1PosPromoCodesCheck: {
+    method: 'POST',
+    path: '/v1/pos/promo-codes/check',
+    ability: 'update:Wallet',
+  },
+  postV1PosRegisters: { method: 'POST', path: '/v1/pos/registers', ability: 'update:Wallet' },
+  postV1PosReviewsByIdResolve: {
+    method: 'POST',
+    path: '/v1/pos/reviews/{id}/resolve',
+    ability: 'update:Wallet',
+  },
+  postV1PosShifts: { method: 'POST', path: '/v1/pos/shifts', ability: 'update:Wallet' },
+  postV1PosShiftsByIdClose: {
+    method: 'POST',
+    path: '/v1/pos/shifts/{id}/close',
+    ability: 'update:Wallet',
+  },
+  postV1PosSync: { method: 'POST', path: '/v1/pos/sync', ability: 'update:Wallet' },
+  postV1SupplyAdvanceApplications: {
+    method: 'POST',
+    path: '/v1/supply/advance-applications',
+    ability: 'read:Cost',
+  },
+  postV1SupplyDrafts: { method: 'POST', path: '/v1/supply/drafts', ability: 'create:Supply' },
+  postV1SupplyEntries: { method: 'POST', path: '/v1/supply/entries', ability: 'read:Cost' },
+  postV1SupplyEntriesByIdReceive: {
+    method: 'POST',
+    path: '/v1/supply/entries/{id}/receive',
+    ability: 'read:Cost',
+  },
+  postV1SupplyPayments: { method: 'POST', path: '/v1/supply/payments', ability: 'read:Cost' },
+  postV1SupplyReturns: { method: 'POST', path: '/v1/supply/returns', ability: 'read:Cost' },
+  postV1SupplySuppliers: { method: 'POST', path: '/v1/supply/suppliers', ability: 'create:Supply' },
+  postV1SupplySuppliersByIdContacts: {
+    method: 'POST',
+    path: '/v1/supply/suppliers/{id}/contacts',
+    ability: 'update:Supply',
+  },
+  postV1SupplySuppliersByIdDocuments: {
+    method: 'POST',
+    path: '/v1/supply/suppliers/{id}/documents',
+    ability: 'update:Supply',
+  },
+  postV1SupplySuppliersByIdNotes: {
+    method: 'POST',
+    path: '/v1/supply/suppliers/{id}/notes',
+    ability: 'update:Supply',
+  },
+  postV1Track: { method: 'POST', path: '/v1/track', ability: 'public' },
   putV1CatalogPrices: { method: 'PUT', path: '/v1/catalog/prices', ability: 'update:Catalog' },
   putV1CatalogProductsByIdImagesOrder: {
     method: 'PUT',
@@ -638,6 +838,11 @@ export const OPERATIONS = {
     method: 'PUT',
     path: '/v1/catalog/skus/{id}/barcode',
     ability: 'update:Catalog',
+  },
+  putV1CourierSelectionRules: {
+    method: 'PUT',
+    path: '/v1/courier/selection-rules',
+    ability: 'update:CourierSettlement',
   },
   putV1DeliveryZones: { method: 'PUT', path: '/v1/delivery-zones', ability: 'update:Catalog' },
   putV1FilesContent: { method: 'PUT', path: '/v1/files/content', ability: 'public' },
@@ -738,6 +943,11 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.deleteV1HrPayrollRunsByIdInputsByInputId, input, options),
+    /** DELETE /v1/supply/drafts/:id */
+    deleteV1SupplyDraftsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1SupplyDraftsById, input, options),
     /** One approval request, with its decision lineage. */
     getApproval: (
       input: { readonly path: { readonly id: string } },
@@ -775,6 +985,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/accounts/wallets */
     getV1AccountsWallets: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsWallets, undefined, options),
+    /** GET /v1/buyers */
+    getV1Buyers: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1Buyers, undefined, options),
+    /** GET /v1/buyers/export */
+    getV1BuyersExport: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1BuyersExport, undefined, options),
     /** GET /v1/catalog/attributes */
     getV1CatalogAttributes: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CatalogAttributes, undefined, options),
@@ -801,6 +1017,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/courier/accounts */
     getV1CourierAccounts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CourierAccounts, undefined, options),
+    /** GET /v1/courier/labels */
+    getV1CourierLabels: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierLabels, undefined, options),
+    /** GET /v1/courier/parcels */
+    getV1CourierParcels: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierParcels, undefined, options),
     /** GET /v1/courier/parcels/:id */
     getV1CourierParcelsById: (
       input: { readonly path: { readonly id: string } },
@@ -815,6 +1037,15 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/courier/reports/cod-reconciliation */
     getV1CourierReportsCodReconciliation: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CourierReportsCodReconciliation, undefined, options),
+    /** GET /v1/courier/reports/performance */
+    getV1CourierReportsPerformance: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierReportsPerformance, undefined, options),
+    /** GET /v1/courier/selection/preview */
+    getV1CourierSelectionPreview: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierSelectionPreview, undefined, options),
+    /** GET /v1/courier/selection-rules */
+    getV1CourierSelectionRules: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierSelectionRules, undefined, options),
     /** GET /v1/courier/settlements */
     getV1CourierSettlements: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CourierSettlements, undefined, options),
@@ -829,6 +1060,15 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CourierSettlementsByIdExceptions, input, options),
+    /** GET /v1/courier/settlements/fetch-runs */
+    getV1CourierSettlementsFetchRuns: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierSettlementsFetchRuns, undefined, options),
+    /** GET /v1/courier/stuck */
+    getV1CourierStuck: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierStuck, undefined, options),
+    /** GET /v1/courier/stuck/export */
+    getV1CourierStuckExport: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierStuckExport, undefined, options),
     /** GET /v1/customers */
     getV1Customers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1Customers, undefined, options),
@@ -837,9 +1077,15 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1CustomersById, input, options),
+    /** GET /v1/customers/lookup */
+    getV1CustomersLookup: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CustomersLookup, undefined, options),
     /** GET /v1/delivery-zones */
     getV1DeliveryZones: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1DeliveryZones, undefined, options),
+    /** GET /v1/delivery-zones/areas */
+    getV1DeliveryZonesAreas: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1DeliveryZonesAreas, undefined, options),
     /** GET /v1/delivery-zones/for-area */
     getV1DeliveryZonesForArea: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1DeliveryZonesForArea, undefined, options),
@@ -931,6 +1177,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1HrPayrollRunsByIdPreview, input, options),
+    /** GET /v1/intake/site-keys */
+    getV1IntakeSiteKeys: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1IntakeSiteKeys, undefined, options),
     /** GET /v1/inventory/adjustments */
     getV1InventoryAdjustments: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InventoryAdjustments, undefined, options),
@@ -1006,6 +1255,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/orders */
     getV1Orders: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1Orders, undefined, options),
+    /** GET /v1/orders/agents */
+    getV1OrdersAgents: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1OrdersAgents, undefined, options),
     /** GET /v1/orders/availability */
     getV1OrdersAvailability: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1OrdersAvailability, undefined, options),
@@ -1019,6 +1271,90 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1OrdersByIdDocument, input, options),
+    /** GET /v1/orders/documents */
+    getV1OrdersDocuments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1OrdersDocuments, undefined, options),
+    /** GET /v1/orders/duplicates */
+    getV1OrdersDuplicates: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1OrdersDuplicates, undefined, options),
+    /** GET /v1/pos/branches */
+    getV1PosBranches: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PosBranches, undefined, options),
+    /** GET /v1/pos/branches/:id/closings */
+    getV1PosBranchesByIdClosings: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PosBranchesByIdClosings, input, options),
+    /** GET /v1/pos/branches/:id/summary */
+    getV1PosBranchesByIdSummary: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PosBranchesByIdSummary, input, options),
+    /** GET /v1/pos/receipts/:receiptNo */
+    getV1PosReceiptsByReceiptNo: (
+      input: { readonly path: { readonly receiptNo: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PosReceiptsByReceiptNo, input, options),
+    /** GET /v1/pos/registers */
+    getV1PosRegisters: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PosRegisters, undefined, options),
+    /** GET /v1/pos/registers/:id/price-list */
+    getV1PosRegistersByIdPriceList: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PosRegistersByIdPriceList, input, options),
+    /** GET /v1/pos/registers/:id/session */
+    getV1PosRegistersByIdSession: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PosRegistersByIdSession, input, options),
+    /** GET /v1/pos/reviews */
+    getV1PosReviews: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PosReviews, undefined, options),
+    /** GET /v1/pos/sales/:id */
+    getV1PosSalesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PosSalesById, input, options),
+    /** GET /v1/pos/shifts */
+    getV1PosShifts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PosShifts, undefined, options),
+    /** GET /v1/pos/shifts/:id */
+    getV1PosShiftsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PosShiftsById, input, options),
+    /** GET /v1/supply/entries */
+    getV1SupplyEntries: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1SupplyEntries, undefined, options),
+    /** GET /v1/supply/entries/:id */
+    getV1SupplyEntriesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1SupplyEntriesById, input, options),
+    /** GET /v1/supply/payments */
+    getV1SupplyPayments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1SupplyPayments, undefined, options),
+    /** GET /v1/supply/returns */
+    getV1SupplyReturns: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1SupplyReturns, undefined, options),
+    /** GET /v1/supply/suppliers */
+    getV1SupplySuppliers: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1SupplySuppliers, undefined, options),
+    /** GET /v1/supply/suppliers/:id */
+    getV1SupplySuppliersById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1SupplySuppliersById, input, options),
+    /** GET /v1/supply/suppliers/:id/statement */
+    getV1SupplySuppliersByIdStatement: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1SupplySuppliersByIdStatement, input, options),
     /** Liveness probe. */
     healthLive: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.healthLive, undefined, options),
@@ -1108,6 +1444,24 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1OrdersById, input, options),
+    /** PATCH /v1/pos/registers/:id */
+    patchV1PosRegistersById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1PosRegistersById, input, options),
+    /** PATCH /v1/supply/drafts/:id */
+    patchV1SupplyDraftsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1SupplyDraftsById, input, options),
+    /** PATCH /v1/supply/suppliers/:id */
+    patchV1SupplySuppliersById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1SupplySuppliersById, input, options),
+    /** POST /public/v1/orders */
+    postPublicV1Orders: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postPublicV1Orders, undefined, options),
     /** POST /v1/accounts/cash-entries */
     postV1AccountsCashEntries: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1AccountsCashEntries, undefined, options),
@@ -1162,6 +1516,15 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/courier/parcels */
     postV1CourierParcels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CourierParcels, undefined, options),
+    /** POST /v1/courier/parcels/bulk */
+    postV1CourierParcelsBulk: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierParcelsBulk, undefined, options),
+    /** POST /v1/courier/parcels/:id/escalations */
+    postV1CourierParcelsByIdEscalations: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierParcelsByIdEscalations, input, options),
     /** POST /v1/courier/parcels/:id/handover */
     postV1CourierParcelsByIdHandover: (
       input: { readonly path: { readonly id: string } },
@@ -1195,6 +1558,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CourierSettlementsByIdReject, input, options),
+    /** POST /v1/courier/settlements/fetch */
+    postV1CourierSettlementsFetch: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierSettlementsFetch, undefined, options),
+    /** POST /v1/courier/stuck/repoll */
+    postV1CourierStuckRepoll: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierStuckRepoll, undefined, options),
     /** POST /v1/courier/webhooks/:orgId/:provider */
     postV1CourierWebhooksByOrgIdByProvider: (
       input: { readonly path: { readonly orgId: string; readonly provider: string } },
@@ -1274,6 +1643,15 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1HrPayrollRunsByIdSubmit, input, options),
+    /** POST /v1/intake/site-keys */
+    postV1IntakeSiteKeys: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1IntakeSiteKeys, undefined, options),
+    /** POST /v1/intake/site-keys/:id/revoke */
+    postV1IntakeSiteKeysByIdRevoke: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1IntakeSiteKeysByIdRevoke, input, options),
     /** POST /v1/inventory/adjustments */
     postV1InventoryAdjustments: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InventoryAdjustments, undefined, options),
@@ -1346,6 +1724,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/orders */
     postV1Orders: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Orders, undefined, options),
+    /** POST /v1/orders/bulk-confirm */
+    postV1OrdersBulkConfirm: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1OrdersBulkConfirm, undefined, options),
     /** POST /v1/orders/:id/advance */
     postV1OrdersByIdAdvance: (
       input: { readonly path: { readonly id: string } },
@@ -1418,6 +1799,79 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdStartReturn, input, options),
+    /** POST /v1/pos/branches/:id/closings */
+    postV1PosBranchesByIdClosings: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PosBranchesByIdClosings, input, options),
+    /** POST /v1/pos/promo-codes/check */
+    postV1PosPromoCodesCheck: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PosPromoCodesCheck, undefined, options),
+    /** POST /v1/pos/registers */
+    postV1PosRegisters: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PosRegisters, undefined, options),
+    /** POST /v1/pos/reviews/:id/resolve */
+    postV1PosReviewsByIdResolve: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1PosReviewsByIdResolve, input, options),
+    /** POST /v1/pos/shifts */
+    postV1PosShifts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PosShifts, undefined, options),
+    /** POST /v1/pos/shifts/:id/close */
+    postV1PosShiftsByIdClose: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1PosShiftsByIdClose, input, options),
+    /** POST /v1/pos/sync */
+    postV1PosSync: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PosSync, undefined, options),
+    /** POST /v1/supply/advance-applications */
+    postV1SupplyAdvanceApplications: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplyAdvanceApplications, undefined, options),
+    /** POST /v1/supply/drafts */
+    postV1SupplyDrafts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplyDrafts, undefined, options),
+    /** POST /v1/supply/entries */
+    postV1SupplyEntries: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplyEntries, undefined, options),
+    /** POST /v1/supply/entries/:id/receive */
+    postV1SupplyEntriesByIdReceive: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplyEntriesByIdReceive, input, options),
+    /** POST /v1/supply/payments */
+    postV1SupplyPayments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplyPayments, undefined, options),
+    /** POST /v1/supply/returns */
+    postV1SupplyReturns: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplyReturns, undefined, options),
+    /** POST /v1/supply/suppliers */
+    postV1SupplySuppliers: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplySuppliers, undefined, options),
+    /** POST /v1/supply/suppliers/:id/contacts */
+    postV1SupplySuppliersByIdContacts: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplySuppliersByIdContacts, input, options),
+    /** POST /v1/supply/suppliers/:id/documents */
+    postV1SupplySuppliersByIdDocuments: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplySuppliersByIdDocuments, input, options),
+    /** POST /v1/supply/suppliers/:id/notes */
+    postV1SupplySuppliersByIdNotes: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplySuppliersByIdNotes, input, options),
+    /** POST /v1/track */
+    postV1Track: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1Track, undefined, options),
     /** PUT /v1/catalog/prices */
     putV1CatalogPrices: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1CatalogPrices, undefined, options),
@@ -1432,6 +1886,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.putV1CatalogSkusByIdBarcode, input, options),
+    /** PUT /v1/courier/selection-rules */
+    putV1CourierSelectionRules: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1CourierSelectionRules, undefined, options),
     /** PUT /v1/delivery-zones */
     putV1DeliveryZones: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1DeliveryZones, undefined, options),
