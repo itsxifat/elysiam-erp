@@ -218,7 +218,11 @@ describe('the Pathao adapter (UNVERIFIED — see the file comment)', () => {
       .mockResolvedValueOnce(jsonResponse({ ...PATHAO_LOGIN, access_token: 'second-token' }))
       .mockResolvedValueOnce(jsonResponse({ data: { order_status_slug: 'Delivered' } }));
 
-    const ref = { consignmentNo: 'DL121224VS8TTJ', reference: 'CUR-2609-00001', trackingCode: null };
+    const ref = {
+      consignmentNo: 'DL121224VS8TTJ',
+      reference: 'CUR-2609-00001',
+      trackingCode: null,
+    };
     await adapter.getStatus(PATHAO_CONTEXT, ref);
     await adapter.getStatus(PATHAO_CONTEXT, ref);
     const third = await adapter.getStatus(PATHAO_CONTEXT, ref);
@@ -262,18 +266,16 @@ describe('the Pathao adapter (UNVERIFIED — see the file comment)', () => {
   });
 
   it('reads a polled status from the info answer (community-described)', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(PATHAO_LOGIN))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          data: {
-            consignment_id: 'DL121224VS8TTJ',
-            order_status: 'Delivered',
-            order_status_slug: 'Delivered',
-            updated_at: '2026-03-05 15:30:00',
-          },
-        }),
-      );
+    fetchMock.mockResolvedValueOnce(jsonResponse(PATHAO_LOGIN)).mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          consignment_id: 'DL121224VS8TTJ',
+          order_status: 'Delivered',
+          order_status_slug: 'Delivered',
+          updated_at: '2026-03-05 15:30:00',
+        },
+      }),
+    );
     const status = await adapter.getStatus(PATHAO_CONTEXT, {
       consignmentNo: 'DL121224VS8TTJ',
       reference: 'CUR-2609-00001',
@@ -396,11 +398,30 @@ describe('the Pathao adapter (UNVERIFIED — see the file comment)', () => {
       );
     });
 
+    it('refuses a collected figure it cannot read, rather than treating it as unsaid', async () => {
+      // Unsaid books the full COD on delivery, so an unreadable figure must not become unsaid.
+      for (const collected_amount of ['1250.505', '1e+21', -100]) {
+        await expect(
+          adapter.parseWebhook(PATHAO_CONTEXT, {
+            headers: { 'x-pathao-signature': 'merchant-webhook-secret-0123' },
+            raw: raw({ ...delivered, collected_amount }),
+          }),
+        ).rejects.toSatisfy(
+          (error: unknown) =>
+            error instanceof CourierError && error.code === 'CONSIGNMENT_EVENT_INVALID',
+        );
+      }
+    });
+
     it('reports no collected figure when the body gives none — never the full COD', async () => {
       const { collected_amount: _none, ...noAmount } = delivered;
       const events = await adapter.parseWebhook(PATHAO_CONTEXT, {
         headers: { 'x-pathao-signature': 'merchant-webhook-secret-0123' },
-        raw: raw({ ...noAmount, event: 'order.partial-delivery', order_status: 'Partial_Delivery' }),
+        raw: raw({
+          ...noAmount,
+          event: 'order.partial-delivery',
+          order_status: 'Partial_Delivery',
+        }),
       });
       expect(events?.[0]?.collectedPoisha).toBeNull();
     });
@@ -474,7 +495,9 @@ describe('the RedX adapter (UNVERIFIED — see the file comment)', () => {
       adapter.createParcel({ ...REDX_CONTEXT, baseUrl: null, mode: 'sandbox' }, parcel()),
     ).rejects.toSatisfy(
       (error: unknown) =>
-        error instanceof CourierError && error.code === 'COURIER_ACCOUNT_INVALID' && !error.retryable,
+        error instanceof CourierError &&
+        error.code === 'COURIER_ACCOUNT_INVALID' &&
+        !error.retryable,
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });

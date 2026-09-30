@@ -313,12 +313,17 @@ describe('zone → courier rules (check 2)', () => {
     await onZone(inside, zoneInside, courierA);
 
     // The rule recommends B for the outside order; the inside order keeps its own courier.
-    expect(await selection.preview(context(), request(), { orderId: outside.orderId })).toMatchObject(
-      { courierId: courierB, source: 'rule', orderCourierId: courierA, differsFromOrder: true },
-    );
-    expect(await selection.preview(context(), request(), { orderId: inside.orderId })).toMatchObject(
-      { courierId: courierA, source: 'order', differsFromOrder: false },
-    );
+    expect(
+      await selection.preview(context(), request(), { orderId: outside.orderId }),
+    ).toMatchObject({
+      courierId: courierB,
+      source: 'rule',
+      orderCourierId: courierA,
+      differsFromOrder: true,
+    });
+    expect(
+      await selection.preview(context(), request(), { orderId: inside.orderId }),
+    ).toMatchObject({ courierId: courierA, source: 'order', differsFromOrder: false });
 
     // Booking with a courier the order does not name is refused: the receivable would split.
     await expect(book(outside, courierB)).rejects.toThrow(/set to a different courier/);
@@ -387,9 +392,9 @@ describe('zone → courier rules (check 2)', () => {
     const small = await seedShippedOrder(ORG_A, { unitPricePoisha: 10_000n, qty: 1 });
     await onZone(small, zoneInside, courierA);
 
-    expect((await selection.preview(context(), request(), { orderId: big.orderId })).courierId).toBe(
-      courierB,
-    );
+    expect(
+      (await selection.preview(context(), request(), { orderId: big.orderId })).courierId,
+    ).toBe(courierB);
     expect(
       (await selection.preview(context(), request(), { orderId: small.orderId })).courierId,
     ).toBe(courierA);
@@ -446,7 +451,6 @@ describe('zone → courier rules (check 2)', () => {
     expect((await selection.list(context())).items).toHaveLength(0);
   });
 });
-
 
 // --- check 3: the tracking page leaks nothing ---------------------------------------------
 
@@ -848,7 +852,11 @@ describe('the stuck-parcel queue (check 5)', () => {
     // A permanent refusal completes the job and flags the parcel on the first attempt.
     await booking.runBooking({
       orgId: ORG_A,
-      payload: { consignmentId: reserved.consignmentId, orderId: order.orderId, actorUserId: ACTOR },
+      payload: {
+        consignmentId: reserved.consignmentId,
+        orderId: order.orderId,
+        actorUserId: ACTOR,
+      },
     });
     const row = await consignment(reserved.consignmentId);
     expect(row.booking_state).toBe('failed');
@@ -978,6 +986,173 @@ describe('a courier talking after the story ended', () => {
     await webhook(id, 'back_at_warehouse');
     expect(await orderStatus(order.orderId)).toBe('return_in_transit');
     expect((await consignment(id)).returned_at).not.toBeNull();
+  });
+});
+
+// --- what the M15 ledger audit found ----------------------------------------------------------
+
+describe('what the M15 ledger audit found', () => {
+  const today = businessDate(new Date());
+
+  function statementRow(consignmentNo: string, reference: string, cod: bigint): SettlementFileRow {
+    return {
+      consignmentNo,
+      reference,
+      codCollectedPoisha: poisha(cod),
+      deliveryChargePoisha: poisha(0n),
+      returnChargePoisha: poisha(0n),
+      otherChargePoisha: poisha(0n),
+      netPoisha: null,
+      rowNo: 1,
+    };
+  }
+
+  async function fetchOnce() {
+    return settlements.runFetch({
+      orgId: ORG_A,
+      payload: { courierAccountId: accountA, actorUserId: 'system:courier' },
+    });
+  }
+
+  it('C1: a return the courier collected on records no collection, and cannot settle', async () => {
+    const order = await seedShippedOrder(ORG_A);
+    await onZone(order, zoneInside, courierA);
+    const id = await book(order);
+    // A paid return: the parcel comes back and the courier says it collected ৳60.
+    await webhook(id, 'back_at_warehouse', { collectedPoisha: '6000' });
+
+    const row = await consignment(id);
+    expect(await orderStatus(order.orderId)).toBe('return_in_transit');
+    expect(row.collected_poisha).toBeNull();
+
+    // The statement's ৳60 is an exception, so nothing credits the receivable for it.
+    fake.issuedStatements.push({
+      reference: `C1-${randomUUID().slice(0, 6)}`,
+      settlementDate: today,
+      rows: [statementRow(row.consignment_no ?? '', order.orderNo, 6_000n)],
+    });
+    const result = await fetchOnce();
+    expect(result.outcomes[0]).toMatchObject({
+      outcome: 'refused',
+      code: 'SETTLEMENT_FILE_INVALID',
+    });
+
+    // And the database refuses the figure on a parcel whose delivery was never booked.
+    await expect(
+      withSystem(
+        async (tx) => {
+          await tx.execute(sql`
+            update courier.consignments set collected_poisha = 6000
+            where org_id = ${ORG_A} and id = ${id}
+          `);
+        },
+        { orgId: ORG_A },
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('M1: a manual delivery dated before the courier’s last word still settles', async () => {
+    const order = await seedShippedOrder(ORG_A);
+    await onZone(order, zoneInside, courierA);
+    const id = await book(order);
+    await webhook(id, 'paused', { at: new Date(Date.now() - 60 * 60_000) });
+
+    await sync.setStatusManually(context(), request(), id, {
+      status: 'delivered',
+      rawStatus: 'rider confirmed by phone',
+      reason: 'The courier’s sync has not caught up.',
+      occurredAt: new Date(Date.now() - 2 * 60 * 60_000).toISOString(),
+      collectedPoisha: order.codAmountPoisha.toString(),
+    });
+
+    const row = await consignment(id);
+    expect(await orderStatus(order.orderId)).toBe('delivered');
+    expect(row.status).toBe('delivered');
+    const candidates = await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
+      repo.settlementCandidates(tx, ORG_A, courierA),
+    );
+    expect(candidates.some((candidate) => candidate.consignment_id === id)).toBe(true);
+  });
+
+  it('M1: a delivery that arrives after a later courier word still moves the parcel', async () => {
+    const order = await seedShippedOrder(ORG_A);
+    await onZone(order, zoneInside, courierA);
+    const id = await book(order);
+    const now = Date.now();
+    await webhook(id, 'with_rider', { at: new Date(now) });
+    await webhook(id, 'handed_to_customer', { at: new Date(now - 30_000) });
+
+    expect(await orderStatus(order.orderId)).toBe('delivered');
+    expect((await consignment(id)).status).toBe('delivered');
+  });
+
+  it('M2: a delivery the courier gave no figure for is in the stuck queue at once', async () => {
+    const order = await seedShippedOrder(ORG_A);
+    await onZone(order, zoneInside, courierA);
+    const id = await book(order);
+    await webhook(id, 'part_handed', { collectedPoisha: null });
+
+    const queue = await stuck.list(context(), request(), { thresholdDays: 3 });
+    expect(queue.items.find((item) => item.consignmentId === id)?.reasons).toEqual([
+      'unposted_delivery',
+    ]);
+  });
+
+  it('M2: a parcel the courier returned and the warehouse never received is listed after N days', async () => {
+    const order = await seedShippedOrder(ORG_A);
+    await onZone(order, zoneInside, courierA);
+    const id = await book(order);
+    await webhook(id, 'back_at_warehouse');
+
+    const fresh = await stuck.list(context(), request(), { thresholdDays: 3 });
+    expect(fresh.items.some((item) => item.consignmentId === id)).toBe(false);
+
+    await ageStatus(id, 5);
+    const aged = await stuck.list(context(), request(), { thresholdDays: 3 });
+    expect(aged.items.find((item) => item.consignmentId === id)?.reasons).toEqual([
+      'return_not_received',
+    ]);
+  });
+
+  it('M4: a rejected fetched statement can be fetched again once it is fixed', async () => {
+    const order = await seedShippedOrder(ORG_A);
+    await onZone(order, zoneInside, courierA);
+    const id = await book(order);
+    await webhook(id, 'handed_to_customer');
+    const row = await consignment(id);
+    const reference = `M4-${randomUUID().slice(0, 6)}`;
+    fake.issuedStatements.push({
+      reference,
+      settlementDate: today,
+      rows: [statementRow(row.consignment_no ?? '', order.orderNo, order.codAmountPoisha)],
+    });
+
+    const first = await fetchOnce();
+    const firstId = first.outcomes[0]?.settlementId ?? '';
+    expect(first.outcomes[0]?.outcome).toBe('created');
+    await settlements.reject(context(), request(), firstId, { reason: 'Courier re-issuing it.' });
+
+    const again = await fetchOnce();
+    expect(again.outcomes[0]?.outcome).toBe('created');
+    expect(again.outcomes[0]?.settlementId).not.toBe(firstId);
+  });
+
+  it('m3: a label request for another branch’s parcel says nothing about it', async () => {
+    const order = await seedShippedOrder(ORG_A, { status: 'packed' });
+    await onZone(order, zoneInside, courierA);
+    const reserved = await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
+      booking.reserveConsignment(tx, { orgId: ORG_A, userId: ACTOR }, { orderId: order.orderId }),
+    );
+
+    const narrowed = { headers: {} } as unknown as AuditableRequest;
+    attachScope(narrowed, 'read', 'Order', {
+      kind: 'some',
+      anyOf: [{ field: 'branchId', in: [randomUUID()] }],
+    });
+    // Unbooked *and* out of scope: the answer is "does not exist", never its order number.
+    await expect(labels.gather(context(), narrowed, [reserved.consignmentId])).rejects.toThrow(
+      /does not exist/,
+    );
   });
 });
 
@@ -1263,18 +1438,14 @@ describe('M15’s routes over HTTP', () => {
 
 describe('a courier webhook over HTTP', () => {
   /*
-   * The platform's CSRF hook refuses every state-changing request that carries no
-   * `elysium_csrf` cookie, and a courier's server has no cookie — so over real HTTP M12's
-   * webhook route answers 403 before the route runs, for every courier. M12's suite called
-   * `acceptWebhook` directly and never saw it. The fix is one line in
-   * `apps/server/src/platform/http/csrf.ts` (a file this milestone may not edit): the webhook
-   * path takes no authority from cookies, so it belongs with `/v1/files/content` in
-   * `BEARER_TOKEN_PATHS`. The INTEGRATION notes carry the line.
-   *
-   * `it.fails` so the suite states the defect executably: it passes while the route is
-   * refused, and starts failing — as a reminder to flip it to `it` — the day the fix lands.
+   * The platform's CSRF hook used to refuse every state-changing request with no
+   * `elysium_csrf` cookie, and a courier's server has none — so over real HTTP M12's webhook
+   * route answered 403 before it ran, for every courier, while M12's suite (which calls
+   * `acceptWebhook` directly) never saw it. The exemption for `/v1/courier/webhooks/` has now
+   * landed in `csrf.ts`; this test is what keeps it there — through the real pipeline, no
+   * cookie, and the courier's shared secret as the only authority.
    */
-  it.fails('reaches the route with no browser cookie (blocked by the CSRF hook until INTEGRATION)', async () => {
+  it('reaches the route with no browser cookie, on the courier’s secret alone', async () => {
     const order = await seedShippedOrder(ORG_A);
     await onZone(order, zoneInside, courierA);
     const id = await book(order);
@@ -1291,5 +1462,25 @@ describe('a courier webhook over HTTP', () => {
       payload: JSON.stringify(fake.webhookBody(row.consignment_no ?? '')),
     });
     expect(response.statusCode).toBeLessThan(300);
+
+    // And with the wrong secret, the same cookieless request is refused and stores nothing.
+    const before = await count(sql`
+      select count(*) as count from courier.webhook_deliveries where org_id = ${ORG_A}
+    `);
+    const forged = await harness.server.inject({
+      method: 'POST',
+      url: `/v1/courier/webhooks/${ORG_A}/fake`,
+      headers: { 'content-type': 'application/json', 'x-fake-courier-secret': 'not-the-secret' },
+      payload: JSON.stringify({
+        ...fake.webhookBody(row.consignment_no ?? ''),
+        state: 'handed_to_customer',
+      }),
+    });
+    expect(forged.statusCode).toBe(401);
+    expect(
+      await count(sql`
+        select count(*) as count from courier.webhook_deliveries where org_id = ${ORG_A}
+      `),
+    ).toBe(before);
   });
 });

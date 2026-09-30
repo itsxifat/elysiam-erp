@@ -9,6 +9,7 @@ import { FilesModule } from './modules/files/files.module.js';
 import { FraudModule } from './modules/fraud/fraud.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { HrModule } from './modules/hr/hr.module.js';
+import { IntakeModule } from './modules/intake/intake.module.js';
 import { IamModule } from './modules/iam/iam.module.js';
 import { InventoryModule } from './modules/inventory/inventory.module.js';
 import { InvestorsModule } from './modules/investors/investors.module.js';
@@ -77,6 +78,7 @@ export class AppModule {
          * them, because Nest resolves a provider in the module that declares the injection.
          */
         CourierModule,
+        IntakeModule,
         ...(withDemo ? [DemoModule] : []),
       ],
     };

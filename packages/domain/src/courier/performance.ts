@@ -92,9 +92,7 @@ function emptyTally(): Tally {
 }
 
 function calendarDays(from: IsoDate, to: IsoDate): number {
-  return Math.floor(
-    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000,
-  );
+  return Math.floor((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
 
 function count(tally: Tally, parcel: PerformanceParcel): void {

@@ -113,7 +113,9 @@ export class TrackingService {
     readonly orderNo: string;
     readonly phoneLast4: string;
     readonly ip: string;
-  }): Promise<{ limited: true; retryAfterSeconds: number } | { limited: false; answer: TrackingAnswer }> {
+  }): Promise<
+    { limited: true; retryAfterSeconds: number } | { limited: false; answer: TrackingAnswer }
+  > {
     const query = parseTrackingQuery({ orderNo: input.orderNo, phoneLast4: input.phoneLast4 });
     const brand = input.brand.trim().toLowerCase().slice(0, 80);
     const orderKey = query?.orderNo ?? input.orderNo.trim().toUpperCase().slice(0, 40);

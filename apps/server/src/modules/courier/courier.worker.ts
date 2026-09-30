@@ -73,9 +73,7 @@ export async function registerCourierJobs(deps: CourierWorkerDependencies): Prom
    */
   const reportBookingFailure: JobFailureReporter = async (failure) => {
     const consignmentId =
-      failure.ref !== null && z.string().uuid().safeParse(failure.ref).success
-        ? failure.ref
-        : null;
+      failure.ref !== null && z.string().uuid().safeParse(failure.ref).success ? failure.ref : null;
     if (failure.orgId === null || consignmentId === null) {
       logger.error({ queue: failure.queue }, 'dead-lettered booking carried no usable envelope');
     } else {

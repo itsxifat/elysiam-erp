@@ -117,9 +117,31 @@ export interface CsrfResult {
   readonly reason?: string;
 }
 
+/**
+ * Routes called by another server, which authenticates with a signature and has no cookie.
+ *
+ * CSRF is an attack on cookie authority: a hostile page makes the victim's browser send
+ * a request the victim's cookie authorises. These routes take no authority from a cookie
+ * — the public intake is authenticated by a site key and an HMAC over the body (M11), a
+ * courier webhook by the courier's shared secret (M12) — so there is nothing for a forged
+ * browser request to borrow, and a landing page's server or a courier has no way to
+ * obtain the double-submit token at all. Without this both answered 403 to every real
+ * caller while passing in their own harnesses.
+ *
+ * A prefix list, kept short and explicit: a handler under one of these prefixes must
+ * never read the session. Both are `@Public`, which the route gate enforces.
+ */
+const SIGNED_MACHINE_PREFIXES = ['/public/v1/', '/v1/courier/webhooks/'] as const;
+
+function isSignedMachineRoute(url: string): boolean {
+  const path = url.split('?')[0] ?? '';
+  return SIGNED_MACHINE_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
 export function checkCsrf(request: FastifyRequest, options: CsrfOptions): CsrfResult {
   if (SAFE_METHODS.has(request.method.toUpperCase())) return { ok: true };
   if (isBearerTokenRoute(request.url)) return { ok: true };
+  if (isSignedMachineRoute(request.url)) return { ok: true };
 
   /*
    * Fetch metadata (M02a follow-up).

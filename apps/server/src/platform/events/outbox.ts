@@ -90,7 +90,11 @@ export interface OutboxRow {
  * Ordered oldest first, because an event's usefulness decays and because a
  * backlog that delivers newest-first starves its own tail.
  */
-export async function claimPending(tx: Tx, limit: number): Promise<OutboxRow[]> {
+export async function claimPending(
+  tx: Tx,
+  limit: number,
+  maxAttempts: number,
+): Promise<OutboxRow[]> {
   const rows = await tx.execute<{
     id: string;
     org_id: string;
@@ -101,7 +105,7 @@ export async function claimPending(tx: Tx, limit: number): Promise<OutboxRow[]> 
   }>(sql`
     select id, org_id, name, payload, rooms, attempts
     from events.outbox
-    where dispatched_at is null
+    where dispatched_at is null and attempts < ${maxAttempts}
     order by created_at
     limit ${limit}
     for update skip locked

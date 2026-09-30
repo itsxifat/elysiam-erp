@@ -196,25 +196,6 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       ),
     );
 
-    /*
-     * Opt-in: the per-org outbox drain that stands in for the worker's claim. The worker's
-     * `drain()` claims as `erp_owner` with no org and FORCE RLS shows it nothing, so without
-     * this check 4 fails until that platform defect is fixed — see
-     * `desk-stack.dispatch.ts`. The real worker keeps running either way.
-     */
-    if (process.env.E2E_STACK_OUTBOX === 'per-org') {
-      const dispatch = spawn(
-        process.execPath,
-        ['--env-file=.env', 'dist/modules/orders/desk-stack.dispatch.js'],
-        {
-          cwd: SERVER_DIR,
-          env: serverEnv,
-          stdio: ['pipe', logTo('dispatch'), logTo('dispatch.err')],
-        },
-      );
-      children.push(dispatch);
-    }
-
     await waitFor(`${API_URL}/health/live`, 120_000);
     await waitFor(CONSOLE_URL, 120_000);
 

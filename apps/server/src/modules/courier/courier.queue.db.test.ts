@@ -234,7 +234,12 @@ describe('a booking that spends every retry (M12 check 6, through the real queue
         () => Promise.all(ids.map((id) => consignment(id))),
         (current) => current.every((row) => row.booking_state === 'failed'),
       );
-      expect(rows.map((row) => row.booking_state)).toEqual(['failed', 'failed', 'failed', 'failed']);
+      expect(rows.map((row) => row.booking_state)).toEqual([
+        'failed',
+        'failed',
+        'failed',
+        'failed',
+      ]);
     } finally {
       fake.failNextBookings = 0;
     }

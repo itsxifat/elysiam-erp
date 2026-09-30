@@ -165,7 +165,8 @@ export class CourierController {
         status: filter.status,
         bookingState: filter.bookingState,
         courierId: filter.courierId,
-        awaitingReturn: filter.awaitingReturn === undefined ? undefined : filter.awaitingReturn === 'true',
+        awaitingReturn:
+          filter.awaitingReturn === undefined ? undefined : filter.awaitingReturn === 'true',
         page: filter.page,
         pageSize: filter.pageSize,
       }),

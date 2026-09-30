@@ -91,7 +91,11 @@ export function TrackingPage({ brand }: { readonly brand: string | null }) {
             aria-label={dark ? t('tracking.themeLight') : t('tracking.themeDark')}
             className={`inline-flex size-8 items-center justify-center rounded-md border border-border transition-colors hover:bg-accent hover:text-accent-foreground ${FOCUS}`}
           >
-            {dark ? <Sun aria-hidden="true" className="size-4" /> : <Moon aria-hidden="true" className="size-4" />}
+            {dark ? (
+              <Sun aria-hidden="true" className="size-4" />
+            ) : (
+              <Moon aria-hidden="true" className="size-4" />
+            )}
           </button>
         </div>
       </header>
@@ -151,7 +155,10 @@ export function TrackingPage({ brand }: { readonly brand: string | null }) {
               className={`inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-60 ${FOCUS}`}
             >
               {busy ? (
-                <Loader2 aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
+                <Loader2
+                  aria-hidden="true"
+                  className="size-4 animate-spin motion-reduce:animate-none"
+                />
               ) : null}
               {busy ? t('tracking.checking') : t('tracking.submit')}
             </button>
@@ -210,7 +217,8 @@ function Answer({
       <ol className="space-y-3">
         {answer.steps.map((step, index) => {
           const current =
-            step.reached && (index === answer.steps.length - 1 || !answer.steps[index + 1]?.reached);
+            step.reached &&
+            (index === answer.steps.length - 1 || !answer.steps[index + 1]?.reached);
           return (
             <li key={step.step} className="flex items-center gap-3 text-sm">
               <span

@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  daysBefore,
-  percentOfBps,
-  quantity,
-  receiptProblem,
-  todayInDhaka,
-} from './courier-ui.js';
+import { daysBefore, percentOfBps, quantity, receiptProblem, todayInDhaka } from './courier-ui.js';
 import { courierBn, courierEn, courierMessages } from './messages.js';
 
 /**
@@ -85,9 +79,7 @@ describe('courier screen helpers', () => {
       { skuId: 'b', outstandingQty: 1 },
     ];
     expect(receiptProblem(lines, {}, '')).toBe('nothing');
-    expect(receiptProblem(lines, { a: { sellableQty: 2, damagedQty: 1 } }, 'loc')).toBe(
-      'too_many',
-    );
+    expect(receiptProblem(lines, { a: { sellableQty: 2, damagedQty: 1 } }, 'loc')).toBe('too_many');
     expect(receiptProblem(lines, { b: { sellableQty: 0, damagedQty: 1 } }, '')).toBe(
       'needs_damaged_location',
     );

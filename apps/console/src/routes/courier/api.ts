@@ -100,11 +100,7 @@ export interface PerformanceRow {
 
 export type SettlementStatus = 'imported' | 'pending_approval' | 'posted' | 'rejected';
 export type SettlementMatch =
-  | 'matched'
-  | 'unmatched'
-  | 'amount_mismatch'
-  | 'duplicate'
-  | 'already_settled';
+  'matched' | 'unmatched' | 'amount_mismatch' | 'duplicate' | 'already_settled';
 
 export interface SettlementRow {
   readonly id: string;
@@ -231,7 +227,8 @@ export function listParcels(filter: {
       q: filter.q,
       status: filter.status,
       courierId: filter.courierId,
-      awaitingReturn: filter.awaitingReturn === undefined ? undefined : String(filter.awaitingReturn),
+      awaitingReturn:
+        filter.awaitingReturn === undefined ? undefined : String(filter.awaitingReturn),
       page: filter.page,
       pageSize: filter.pageSize,
     })}`,
@@ -253,7 +250,9 @@ export function stuckParcels(input: {
   return api.get(`/v1/courier/stuck${query(input)}`);
 }
 
-export function repoll(consignmentIds: readonly string[]): Promise<{ queued: number; skipped: number }> {
+export function repoll(
+  consignmentIds: readonly string[],
+): Promise<{ queued: number; skipped: number }> {
   return api.post('/v1/courier/stuck/repoll', { consignmentIds });
 }
 

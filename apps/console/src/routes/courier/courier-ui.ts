@@ -5,7 +5,13 @@
  * reads the app's environment at import time and throws in a test process that has none.
  */
 
-import type { BookingState, ParcelStatus, SettlementMatch, SettlementStatus, StuckReason } from './api.js';
+import type {
+  BookingState,
+  ParcelStatus,
+  SettlementMatch,
+  SettlementStatus,
+  StuckReason,
+} from './api.js';
 
 export type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info';
 

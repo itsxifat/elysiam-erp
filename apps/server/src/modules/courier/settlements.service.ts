@@ -501,7 +501,11 @@ export class SettlementsService implements OnModuleInit {
       const fingerprint = createHash('sha256')
         .update(canonicalStatement(batch), 'utf8')
         .digest('hex');
-      const base = { reference: batch.reference, settlementDate: batch.settlementDate, fingerprint };
+      const base = {
+        reference: batch.reference,
+        settlementDate: batch.settlementDate,
+        fingerprint,
+      };
 
       try {
         const outcome = await withOrg(actor, async (tx) => {
@@ -547,8 +551,29 @@ export class SettlementsService implements OnModuleInit {
         outcomes.push(outcome);
       } catch (error) {
         if (isUniqueViolation(error)) {
-          // Step 2 above: a concurrent run inserted it first. Its transaction rolled back whole.
-          outcomes.push({ ...base, outcome: 'duplicate', code: null, settlementId: null });
+          /*
+           * Step 2 above: a concurrent run inserted first, and this transaction rolled back
+           * whole. Which index fired says nothing about *why* — the same statement collides on
+           * both — so the winner is looked up and the outcome classified exactly as step 1
+           * would have: same fingerprint is a duplicate, same reference with other rows is a
+           * conflict for a person.
+           */
+          const winner = await withOrg(actor, (tx) =>
+            repo.existingSettlementFor(tx, orgId, account.id, {
+              fingerprint,
+              reference: batch.reference,
+            }),
+          );
+          outcomes.push(
+            winner === undefined || winner.source_fingerprint === fingerprint
+              ? { ...base, outcome: 'duplicate', code: null, settlementId: winner?.id ?? null }
+              : {
+                  ...base,
+                  outcome: 'refused',
+                  code: 'IDEMPOTENCY_CONFLICT',
+                  settlementId: winner.id,
+                },
+          );
           continue;
         }
         if (error instanceof CourierError) {

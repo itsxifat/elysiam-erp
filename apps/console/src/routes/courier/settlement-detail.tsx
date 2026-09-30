@@ -76,7 +76,7 @@ export function SettlementDetailPage() {
       <div className="space-y-5">
         <Link
           to={courierPath('/courier/settlements')}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <ArrowLeft aria-hidden="true" className="size-4" />
           {t('courier.back')}
@@ -110,7 +110,9 @@ export function SettlementDetailPage() {
         ) : batch.isError || data === undefined ? (
           <ErrorState
             title={t('courier.errorTitle')}
-            detail={batch.error instanceof ApiError ? batch.error.message : t('courier.errorDetail')}
+            detail={
+              batch.error instanceof ApiError ? batch.error.message : t('courier.errorDetail')
+            }
             action={
               <Button size="sm" variant="outline" onClick={() => void batch.refetch()}>
                 {t('courier.retry')}
@@ -171,7 +173,9 @@ export function SettlementDetailPage() {
               ) : (
                 <div className="overflow-x-auto rounded-lg border border-border">
                   <table className="w-full text-sm">
-                    <caption className="sr-only">{t('courier.settlements.exceptionsHeading')}</caption>
+                    <caption className="sr-only">
+                      {t('courier.settlements.exceptionsHeading')}
+                    </caption>
                     <thead>
                       <tr className="border-b border-border bg-muted text-left text-xs text-muted-foreground">
                         <th scope="col" className="px-3 py-2 text-right">
@@ -212,7 +216,11 @@ export function SettlementDetailPage() {
                             <Money poisha={line.codCollectedPoisha} />
                           </td>
                           <td className="px-3 text-right">
-                            {line.expectedPoisha === null ? '—' : <Money poisha={line.expectedPoisha} />}
+                            {line.expectedPoisha === null ? (
+                              '—'
+                            ) : (
+                              <Money poisha={line.expectedPoisha} />
+                            )}
                           </td>
                           <td className="px-3 text-muted-foreground">{line.note ?? ''}</td>
                         </tr>
@@ -247,7 +255,8 @@ export function SettlementDetailPage() {
         >
           {data === undefined ? null : (
             <p className="text-sm">
-              {t('courier.settlements.colGross')}: <Money poisha={data.matchedGrossPoisha} align="start" />
+              {t('courier.settlements.colGross')}:{' '}
+              <Money poisha={data.matchedGrossPoisha} align="start" />
             </p>
           )}
         </ConfirmDialog>
@@ -289,7 +298,13 @@ export function SettlementDetailPage() {
   );
 }
 
-function Figure({ label, children }: { readonly label: string; readonly children: React.ReactNode }) {
+function Figure({
+  label,
+  children,
+}: {
+  readonly label: string;
+  readonly children: React.ReactNode;
+}) {
   return (
     <div className="space-y-1">
       <p className="text-xs text-muted-foreground">{label}</p>

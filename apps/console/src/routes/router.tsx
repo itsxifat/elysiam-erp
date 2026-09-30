@@ -10,6 +10,7 @@ import {
 import { catalogRoutes } from './catalog/routes.js';
 import { hrRoutes } from './hr/routes.js';
 import { investorsRoutes } from './investors/routes.js';
+import { ordersRoutes } from './orders/routes.js';
 import { stockRoutes } from './stock/routes.js';
 import { supplyRoutes } from './supply/routes.js';
 import { AppShell } from '../shell/app-shell.js';
@@ -104,6 +105,7 @@ const supply = supplyRoutes(rootRoute);
  */
 const hr = hrRoutes(rootRoute);
 const investors = investorsRoutes(rootRoute);
+const orders = ordersRoutes(rootRoute);
 
 const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
   .filter(
@@ -118,6 +120,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/people',
         '/payroll',
         '/investors',
+        '/orders',
       ].includes(item.to),
   )
   .map((item) =>
@@ -137,6 +140,7 @@ const routeTree = rootRoute.addChildren([
   ...supply,
   ...hr,
   ...investors,
+  ...orders,
   ...placeholderRoutes,
 ]);
 

@@ -14,13 +14,7 @@ import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
-import {
-  listLocations,
-  listParcels,
-  receiveReturn,
-  returnable,
-  type ParcelRow,
-} from './api.js';
+import { listLocations, listParcels, receiveReturn, returnable, type ParcelRow } from './api.js';
 import { control, courierPath, CourierHeader, Field } from './courier-nav.js';
 import {
   PARCEL_TONE,
@@ -69,7 +63,10 @@ export function CourierReturnsPage() {
       explain={{ title: t('courier.deniedTitle'), detail: t('courier.deniedDetail') }}
     >
       <div className="space-y-5">
-        <CourierHeader title={t('courier.returns.heading')} caption={t('courier.returns.caption')} />
+        <CourierHeader
+          title={t('courier.returns.heading')}
+          caption={t('courier.returns.caption')}
+        />
 
         {notice === null ? null : (
           <p role="status" className="text-sm text-muted-foreground">
@@ -90,7 +87,10 @@ export function CourierReturnsPage() {
             }
           />
         ) : items.length === 0 ? (
-          <EmptyState title={t('courier.returns.emptyTitle')} detail={t('courier.returns.emptyDetail')} />
+          <EmptyState
+            title={t('courier.returns.emptyTitle')}
+            detail={t('courier.returns.emptyDetail')}
+          />
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm">
@@ -121,7 +121,7 @@ export function CourierReturnsPage() {
                     <td className="px-3 font-medium tabular-nums">
                       <Link
                         to={courierPath(`/courier/parcels/${row.id}`)}
-                        className="text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                       >
                         {row.orderNo}
                       </Link>

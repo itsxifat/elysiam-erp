@@ -246,7 +246,12 @@ export const labelsQuerySchema = z
     ids: z
       .string()
       .max(4000)
-      .transform((value) => value.split(',').map((part) => part.trim()).filter(Boolean))
+      .transform((value) =>
+        value
+          .split(',')
+          .map((part) => part.trim())
+          .filter(Boolean),
+      )
       .pipe(z.array(uuid).min(1).max(100)),
   })
   .strict();
@@ -261,7 +266,12 @@ export const parcelListSchema = z
     status: z
       .string()
       .max(300)
-      .transform((value) => value.split(',').map((part) => part.trim()).filter(Boolean))
+      .transform((value) =>
+        value
+          .split(',')
+          .map((part) => part.trim())
+          .filter(Boolean),
+      )
       .pipe(z.array(z.enum(PARCEL_STATUS_VALUES)).max(12))
       .optional(),
     bookingState: z.enum(['pending', 'booked', 'failed', 'cancelled']).optional(),

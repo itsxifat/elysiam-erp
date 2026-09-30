@@ -130,9 +130,7 @@ describe('every adapter has a complete mapping table (check 1)', () => {
     // The plugin's own spelling is `Pickup_Requested`, `Delivered`, `Partial_Delivery`.
     expect(normalizeStatus(PATHAO_STATUS_MAP, 'Pickup_Requested').status).toBe('pickup_pending');
     expect(normalizeStatus(PATHAO_STATUS_MAP, 'Delivered').status).toBe('delivered');
-    expect(normalizeStatus(PATHAO_STATUS_MAP, 'Partial_Delivery').status).toBe(
-      'partial_delivered',
-    );
+    expect(normalizeStatus(PATHAO_STATUS_MAP, 'Partial_Delivery').status).toBe('partial_delivered');
     expect(normalizeStatus(PATHAO_STATUS_MAP, 'Return').status).toBe('returned_to_merchant');
   });
 
@@ -513,7 +511,12 @@ describe('the stuck-parcel threshold (check 5)', () => {
   });
 
   it('never lists a finished or unbooked parcel however old', () => {
-    for (const status of ['delivered', 'partial_delivered', 'returned_to_merchant', 'cancelled'] as const) {
+    for (const status of [
+      'delivered',
+      'partial_delivered',
+      'returned_to_merchant',
+      'cancelled',
+    ] as const) {
       expect(isStuck(candidate('2025-01-01T00:00:00.000Z', status), now, 3)).toBe(false);
     }
     expect(
@@ -563,13 +566,55 @@ describe('courier performance', () => {
 
   it('rates only the parcels that resolved, and averages whole days', () => {
     const report = summarisePerformance([
-      { courierId: 'c1', deliveryZoneId: 'z1', status: 'delivered', bookedOn: on('2026-03-01'), deliveredOn: on('2026-03-03') },
-      { courierId: 'c1', deliveryZoneId: 'z1', status: 'delivered', bookedOn: on('2026-03-01'), deliveredOn: on('2026-03-02') },
-      { courierId: 'c1', deliveryZoneId: 'z1', status: 'partial_delivered', bookedOn: on('2026-03-02'), deliveredOn: on('2026-03-06') },
-      { courierId: 'c1', deliveryZoneId: 'z1', status: 'returned_to_merchant', bookedOn: on('2026-03-02'), deliveredOn: null },
-      { courierId: 'c1', deliveryZoneId: 'z1', status: 'in_transit', bookedOn: on('2026-03-05'), deliveredOn: null },
-      { courierId: 'c1', deliveryZoneId: 'z1', status: 'cancelled', bookedOn: on('2026-03-05'), deliveredOn: null },
-      { courierId: 'c1', deliveryZoneId: null, status: 'delivered', bookedOn: on('2026-03-05'), deliveredOn: on('2026-03-05') },
+      {
+        courierId: 'c1',
+        deliveryZoneId: 'z1',
+        status: 'delivered',
+        bookedOn: on('2026-03-01'),
+        deliveredOn: on('2026-03-03'),
+      },
+      {
+        courierId: 'c1',
+        deliveryZoneId: 'z1',
+        status: 'delivered',
+        bookedOn: on('2026-03-01'),
+        deliveredOn: on('2026-03-02'),
+      },
+      {
+        courierId: 'c1',
+        deliveryZoneId: 'z1',
+        status: 'partial_delivered',
+        bookedOn: on('2026-03-02'),
+        deliveredOn: on('2026-03-06'),
+      },
+      {
+        courierId: 'c1',
+        deliveryZoneId: 'z1',
+        status: 'returned_to_merchant',
+        bookedOn: on('2026-03-02'),
+        deliveredOn: null,
+      },
+      {
+        courierId: 'c1',
+        deliveryZoneId: 'z1',
+        status: 'in_transit',
+        bookedOn: on('2026-03-05'),
+        deliveredOn: null,
+      },
+      {
+        courierId: 'c1',
+        deliveryZoneId: 'z1',
+        status: 'cancelled',
+        bookedOn: on('2026-03-05'),
+        deliveredOn: null,
+      },
+      {
+        courierId: 'c1',
+        deliveryZoneId: null,
+        status: 'delivered',
+        bookedOn: on('2026-03-05'),
+        deliveredOn: on('2026-03-05'),
+      },
     ]);
 
     const zone = report.rows.find((row) => row.deliveryZoneId === 'z1');
@@ -594,7 +639,13 @@ describe('courier performance', () => {
 
   it('says nothing about a rate before anything resolved', () => {
     const report = summarisePerformance([
-      { courierId: 'c1', deliveryZoneId: 'z1', status: 'in_transit', bookedOn: on('2026-03-01'), deliveredOn: null },
+      {
+        courierId: 'c1',
+        deliveryZoneId: 'z1',
+        status: 'in_transit',
+        bookedOn: on('2026-03-01'),
+        deliveredOn: null,
+      },
     ]);
     expect(report.rows[0]).toMatchObject({
       deliveryRateBps: null,

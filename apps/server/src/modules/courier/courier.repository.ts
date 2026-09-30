@@ -1372,7 +1372,7 @@ export async function stuckCandidates(
         or (${ACTIVE_PARCEL} and (c.status = 'unknown' or le.status = 'unknown'))
         or c.booking_state = 'failed'
         -- The courier says delivered but no delivery was booked: a partial delivery the courier
-        -- gave no figure for, or one that reached an order not at `shipped`. Terminal to the
+        -- gave no figure for, or one that reached an order not at shipped. Terminal to the
         -- courier, so no other clause would ever list it (M15 ledger audit M2).
         or (c.booking_state = 'booked' and c.status in ('delivered', 'partial_delivered')
             and c.delivered_at is null)

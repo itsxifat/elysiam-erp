@@ -232,6 +232,24 @@ export class CourierSyncService {
 
     const adapter = this.adapters.get(prepared.account.provider_code);
     if (adapter === undefined) return;
+    if (!adapterEnabled(adapter)) {
+      /*
+       * Switched off after this body was accepted. The switch is read at every use (M15), and
+       * applying it would move orders and post journals on the word of an adapter the
+       * installation has just stopped trusting. Marked processed with the reason — the body
+       * stays stored, so a person can replay it once the switch is back on — rather than
+       * retried into a dead letter.
+       */
+      await withOrg(actor, (tx) =>
+        repo.markWebhookProcessed(tx, {
+          orgId,
+          id: payload.deliveryId,
+          eventCount: 0,
+          error: `The ${adapter.code} adapter is switched off; nothing in this webhook was applied.`,
+        }),
+      );
+      return;
+    }
 
     /*
      * The stored body is the adapter's normalized events — not the courier's raw bytes.

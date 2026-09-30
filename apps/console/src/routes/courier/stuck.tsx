@@ -62,7 +62,10 @@ export function StuckParcelsPage() {
   const queue = useQuery({
     queryKey: ['courier', 'stuck', threshold, courierId],
     queryFn: () =>
-      stuckParcels({ thresholdDays: threshold, courierId: courierId === '' ? undefined : courierId }),
+      stuckParcels({
+        thresholdDays: threshold,
+        courierId: courierId === '' ? undefined : courierId,
+      }),
     enabled: mayRead,
   });
 
@@ -90,7 +93,9 @@ export function StuckParcelsPage() {
   async function exportCsv() {
     setExportError(null);
     try {
-      const url = await fileUrl(stuckExportPath(threshold, courierId === '' ? undefined : courierId));
+      const url = await fileUrl(
+        stuckExportPath(threshold, courierId === '' ? undefined : courierId),
+      );
       const anchor = document.createElement('a');
       anchor.href = url;
       anchor.download = `stuck-parcels-${String(threshold)}d.csv`;
@@ -135,7 +140,7 @@ export function StuckParcelsPage() {
                   <RefreshCw aria-hidden="true" className="size-4" />
                   {t('courier.stuck.repoll')}
                   {selected.size > 0 ? (
-                    <span className="tabular-nums text-muted-foreground">({selected.size})</span>
+                    <span className="text-muted-foreground tabular-nums">({selected.size})</span>
                   ) : null}
                 </Button>
               ) : null}
@@ -208,7 +213,10 @@ export function StuckParcelsPage() {
             }
           />
         ) : items.length === 0 ? (
-          <EmptyState title={t('courier.stuck.emptyTitle')} detail={t('courier.stuck.emptyDetail')} />
+          <EmptyState
+            title={t('courier.stuck.emptyTitle')}
+            detail={t('courier.stuck.emptyDetail')}
+          />
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm">
@@ -283,7 +291,7 @@ export function StuckParcelsPage() {
                     <td className="px-3 font-medium tabular-nums">
                       <Link
                         to={courierPath(`/courier/parcels/${item.consignmentId}`)}
-                        className="text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                       >
                         {item.orderNo}
                       </Link>
@@ -315,7 +323,10 @@ export function StuckParcelsPage() {
                     <td className="px-3 text-right">
                       <Money poisha={item.codAmountPoisha} />
                     </td>
-                    <td className="max-w-64 truncate px-3 text-muted-foreground" title={item.lastEscalationNote ?? ''}>
+                    <td
+                      className="max-w-64 truncate px-3 text-muted-foreground"
+                      title={item.lastEscalationNote ?? ''}
+                    >
                       {item.lastEscalationNote ?? '—'}
                     </td>
                     {mayAct ? (

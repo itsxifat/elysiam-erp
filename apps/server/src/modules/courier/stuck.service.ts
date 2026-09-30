@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { withOrg } from '@elysium/db';
+import { maskPhonesInText } from '@elysium/domain';
 import {
   assertStuckThreshold,
   calendarDaysSince,
@@ -199,7 +200,9 @@ export class StuckParcelsService {
           String(item.daysStuck),
           takaText(BigInt(item.codAmountPoisha)),
           item.reasons.join(' '),
-          item.lastEscalationNote ?? '',
+          // A note is free text a person typed, and this file goes to a third party: any
+          // phone number in it is masked (invariant 10; M15 ledger audit m4).
+          maskPhonesInText(item.lastEscalationNote ?? ''),
         ]
           .map(csvField)
           .join(','),

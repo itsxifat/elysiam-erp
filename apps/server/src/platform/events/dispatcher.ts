@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { withOrg, withSystem, type Tx } from '@elysium/db';
+import { withGlobal, withOrg, type Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 
 import { claimPending, findDeadLettered, markDispatched, recordFailure } from './outbox.js';
@@ -41,6 +41,9 @@ export type Subscriber = (event: DeliveredEvent) => void | Promise<void>;
  */
 export const MAX_ATTEMPTS = 5;
 
+/** Who the audit trail sees when the dispatcher touches a row. Not a person. */
+const DISPATCHER_USER = 'usr_dispatcher';
+
 @Injectable()
 export class OutboxDispatcher {
   private readonly subscribers = new Map<string, Subscriber[]>();
@@ -64,32 +67,64 @@ export class OutboxDispatcher {
    * immediately while a backlog is draining rather than sleeping through it.
    */
   async drain(batchSize = 50): Promise<{ delivered: number; failed: number }> {
-    // Claimed with the system role: the dispatcher serves every org and has no
-    // single `app.org_id`. It is the only reader of this table that does, which
-    // is why the claim and the delivery are separate transactions below —
-    // the per-row work runs inside `withOrg` for the row's own org, so a
-    // subscriber that touches tenant data is scoped to the right tenant.
-    const pending = await withSystem(async (tx) => claimPending(tx, batchSize));
+    /*
+     * Claimed org by org, inside each org's own context.
+     *
+     * This used to claim with `withSystem()` — the owner role and no `app.org_id` — on
+     * the reasoning that the dispatcher serves every org. But `events.outbox` is FORCE
+     * RLS, which binds the owner too, and with no org set the policy compares against
+     * NULL and matches nothing. `drain()` returned `{delivered: 0}` on every poll: no
+     * realtime event reached a browser and no outbox subscriber ever ran, in any
+     * environment, while the suites passed because they drained by other means. The
+     * same mistake killed the courier poll cron. The org list is global by design (§5);
+     * everything after it is tenant-scoped.
+     */
+    const orgs = await withGlobal(async (tx) => {
+      const rows = await tx.execute<{ id: string }>(sql`select id from org.organizations`);
+      return [...rows].map((row) => row.id);
+    });
 
     let delivered = 0;
     let failed = 0;
 
-    for (const row of pending) {
-      try {
-        await this.deliver(row);
-        await withSystem(async (tx) => {
-          await markDispatched(tx, row.id);
-        });
-        delivered += 1;
-      } catch (error) {
-        failed += 1;
-        await withSystem(async (tx) => {
-          await recordFailure(tx, row.id, error instanceof Error ? error.message : String(error));
-        });
+    for (const orgId of orgs) {
+      while (delivered + failed < batchSize) {
+        const outcome = await this.deliverNext(orgId);
+        if (outcome === 'empty') break;
+        if (outcome === 'delivered') delivered += 1;
+        else failed += 1;
       }
     }
 
     return { delivered, failed };
+  }
+
+  /**
+   * Claim, deliver and mark one row, in one transaction.
+   *
+   * The row lock is held from the claim to the mark. Claiming in one transaction and
+   * marking in another released `for update skip locked` at the first commit, before
+   * delivery — so a second worker polling in between claimed the same row and
+   * delivered it again. One transaction per row also keeps the original property: a
+   * failing subscriber costs its own row a retry and nothing else.
+   *
+   * A failure is recorded in the same transaction rather than rethrown, because a
+   * throw would roll the attempt count back with everything else and the row would
+   * retry for ever without reaching the dead-letter threshold.
+   */
+  private async deliverNext(orgId: string): Promise<'delivered' | 'failed' | 'empty'> {
+    return withOrg({ orgId, userId: DISPATCHER_USER }, async (tx) => {
+      const [row] = await claimPending(tx, 1, MAX_ATTEMPTS);
+      if (row === undefined) return 'empty';
+      try {
+        await this.deliver(row);
+        await markDispatched(tx, row.id);
+        return 'delivered';
+      } catch (error) {
+        await recordFailure(tx, row.id, error instanceof Error ? error.message : String(error));
+        return 'failed';
+      }
+    });
   }
 
   /**
@@ -102,7 +137,19 @@ export class OutboxDispatcher {
    * the outbox it is reporting on.
    */
   async deadLettered(): Promise<DeliveredEvent[]> {
-    return withSystem(async (tx) => findDeadLettered(tx, MAX_ATTEMPTS));
+    const orgs = await withGlobal(async (tx) => {
+      const rows = await tx.execute<{ id: string }>(sql`select id from org.organizations`);
+      return [...rows].map((row) => row.id);
+    });
+    const found: DeliveredEvent[] = [];
+    for (const orgId of orgs) {
+      found.push(
+        ...(await withOrg({ orgId, userId: DISPATCHER_USER }, async (tx) =>
+          findDeadLettered(tx, MAX_ATTEMPTS),
+        )),
+      );
+    }
+    return found;
   }
 
   private async deliver(row: DeliveredEvent): Promise<void> {
@@ -139,7 +186,7 @@ export async function drainOutbox(
 
 /** Undelivered rows for one org, for tests and the failed-jobs admin view. */
 export async function pendingFor(orgId: string): Promise<{ name: string; attempts: number }[]> {
-  return withOrg({ orgId, userId: 'usr_dispatcher' }, async (tx: Tx) => {
+  return withOrg({ orgId, userId: DISPATCHER_USER }, async (tx: Tx) => {
     const rows = await tx.execute<{ name: string; attempts: number }>(sql`
       select name, attempts from events.outbox
       where dispatched_at is null order by created_at

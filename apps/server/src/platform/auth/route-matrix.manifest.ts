@@ -217,6 +217,17 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/supply/payments',
   'POST /v1/supply/payments',
   'POST /v1/supply/advance-applications',
+  'GET /v1/orders/duplicates',
+  'GET /v1/orders/agents',
+  'POST /v1/orders/bulk-confirm',
+  'GET /v1/orders/documents',
+  'GET /v1/customers/lookup',
+  'GET /v1/delivery-zones/areas',
+  'GET /v1/buyers',
+  'GET /v1/buyers/export',
+  'GET /v1/intake/site-keys',
+  'POST /v1/intake/site-keys',
+  'POST /v1/intake/site-keys/:id/revoke',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

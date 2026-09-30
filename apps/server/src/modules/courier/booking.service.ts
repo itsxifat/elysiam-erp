@@ -155,7 +155,11 @@ export class BookingService implements OnModuleInit {
         'This order names no courier and its delivery zone has no default (§9). Set the order’s courier first.',
       );
     }
-    if (input.courierId !== undefined && input.courierId !== null && input.courierId !== courierId) {
+    if (
+      input.courierId !== undefined &&
+      input.courierId !== null &&
+      input.courierId !== courierId
+    ) {
       throw new CourierError(
         'CONSIGNMENT_INVALID',
         'This order is set to a different courier. Change the order’s courier first: the delivery’s receivable is booked against it (§7).',
@@ -533,6 +537,9 @@ export class BookingService implements OnModuleInit {
     if (prepared === null) return;
 
     const adapter = this.adapters.get(prepared.account.provider_code);
+    // An unverified adapter switched off is not called at all (M15: the switch is read at every
+    // use). The parcel then comes back as a return, like one whose courier has no cancel.
+    if (adapter !== undefined && !adapterEnabled(adapter)) return;
     // A courier with no cancel endpoint is not an error: §9 marks `cancelParcel` optional,
     // and the parcel simply comes back as a return. Marking it cancelled on our side would
     // be a lie about what the courier is holding.

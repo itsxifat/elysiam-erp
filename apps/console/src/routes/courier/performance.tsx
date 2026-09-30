@@ -45,7 +45,10 @@ export function CourierPerformancePage() {
 
   const zoneName = useMemo(() => {
     const names = new Map(
-      (zones.data?.zones ?? []).map((zone) => [zone.id, locale === 'bn' ? zone.nameBn : zone.nameEn]),
+      (zones.data?.zones ?? []).map((zone) => [
+        zone.id,
+        locale === 'bn' ? zone.nameBn : zone.nameEn,
+      ]),
     );
     return (id: string | null) =>
       id === null ? t('courier.performance.noZone') : (names.get(id) ?? id.slice(0, 8));
@@ -188,7 +191,9 @@ function Row({
 }) {
   const cell = 'px-3 text-right tabular-nums';
   return (
-    <tr className={`h-row border-b border-border last:border-0 ${strong ? 'bg-muted/40 font-medium' : ''}`}>
+    <tr
+      className={`h-row border-b border-border last:border-0 ${strong ? 'bg-muted/40 font-medium' : ''}`}
+    >
       <td className="px-3">{label}</td>
       <td className={`px-3 ${strong ? '' : 'text-muted-foreground'}`}>{zone}</td>
       <td className={cell}>{row.booked}</td>

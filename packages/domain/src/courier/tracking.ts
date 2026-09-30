@@ -46,10 +46,7 @@ export function asciiDigits(input: string): string {
  * Unicode dash turned into the hyphen `OUR-2609-00042` is written with, upper-cased.
  */
 function orderNumber(input: string): string {
-  return banglaToAscii(input)
-    .replace(/\s/g, '')
-    .replace(/[‐-―]/g, '-')
-    .toUpperCase();
+  return banglaToAscii(input).replace(/\s/g, '').replace(/[‐-―]/g, '-').toUpperCase();
 }
 
 const ORDER_NO = /^[A-Z0-9][A-Z0-9-]{2,39}$/;

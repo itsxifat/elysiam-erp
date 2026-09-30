@@ -11,7 +11,8 @@
     "e2e:install": "playwright install --with-deps chromium",
     "lint": "eslint .",
     "preview": "vite preview --port 5173 --strictPort",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e2e:stack": "playwright test -c e2e/stack.config.ts"
   },
   "dependencies": {
     "@elysium/api-client": "workspace:*",

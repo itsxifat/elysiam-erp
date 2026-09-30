@@ -1,3 +1,5 @@
+import { takaToPoisha } from '@elysium/domain/courier';
+
 import { CourierError } from '../courier.errors.js';
 
 /**
@@ -105,23 +107,35 @@ export function stringAt(row: Record<string, unknown> | null, key: string): stri
 }
 
 /**
- * A taka amount as poisha, as a decimal string, or null when absent or unreadable.
+ * A taka amount as poisha, as a decimal string; null only when the field is absent.
  *
- * Read from the field's *text*, never through a float: a number field is turned back into
- * its shortest decimal text by `String()` and parsed as digits, and anything with more than
- * two decimals is refused rather than rounded (invariant 1). Unreadable is null rather than
- * zero — "the courier did not say" and "the courier said nothing was collected" post
- * different journals.
+ * Parsed by the domain's `takaToPoisha` — the one taka parser, which refuses a third decimal
+ * rather than rounding (invariant 1) — from the field's *text*: a number field is turned back
+ * into its shortest decimal text by `String()`, never through arithmetic.
+ *
+ * Present but unreadable, or negative, is **refused**, not treated as absent. Absent means "the
+ * courier did not say", and a delivery the courier did not price falls back to the full COD —
+ * so reading `1250.505` or `1e+21` as absent would book the full COD on a figure the courier
+ * did state, and a negative figure would only fail later, on a CHECK, dead-lettering the
+ * webhook with no sentence (M15 ledger audit m1). A refusal here answers the webhook 400,
+ * stores nothing, and says why.
  */
 export function takaAtAsPoisha(row: Record<string, unknown> | null, key: string): string | null {
   const raw = stringAt(row, key);
   if (raw === null) return null;
-  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(raw.replace(/[৳,\s]/g, ''));
-  if (match === null) return null;
-  const sign = match[1] === '-' ? -1n : 1n;
-  const whole = BigInt(match[2] ?? '0');
-  const fraction = BigInt((match[3] ?? '').padEnd(2, '0'));
-  return (sign * (whole * 100n + fraction)).toString();
+  let value: bigint;
+  try {
+    value = takaToPoisha(raw);
+  } catch {
+    throw new CourierError(
+      'CONSIGNMENT_EVENT_INVALID',
+      `The courier's ${key} is not an amount in taka.`,
+    );
+  }
+  if (value < 0n) {
+    throw new CourierError('CONSIGNMENT_EVENT_INVALID', `The courier's ${key} is negative.`);
+  }
+  return value.toString();
 }
 
 /**

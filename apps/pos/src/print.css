@@ -1,0 +1,22 @@
+/*
+ * The till's print stylesheet (architecture §14: 80 mm receipts via print CSS).
+ *
+ * Page geometry only. Tailwind cannot express `@page`, and the paper is the one
+ * thing the utilities do not own: an 80 mm roll with no margin, as long as the
+ * receipt. Colour and type still come from the tokens through the receipt's own
+ * classes; which elements print is decided by `print:hidden` and
+ * `hidden print:block` in the components.
+ */
+@page {
+  size: 80mm auto;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    width: 80mm;
+    margin: 0;
+    padding: 0;
+  }
+}

@@ -26,7 +26,8 @@ export type TrackingStage =
   | 'returned'
   | 'cancelled';
 
-export type TrackingStep = 'received' | 'processing' | 'with_courier' | 'out_for_delivery' | 'delivered';
+export type TrackingStep =
+  'received' | 'processing' | 'with_courier' | 'out_for_delivery' | 'delivered';
 
 export interface TrackingFound {
   readonly found: true;

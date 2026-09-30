@@ -43,6 +43,7 @@ export default defineConfig({
     'hr',
     'http',
     'iam',
+    'intake',
     'inventory',
     'investors',
     'ledger',

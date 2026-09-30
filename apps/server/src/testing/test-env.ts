@@ -52,6 +52,10 @@ export function setServerTestEnv(overrides: TestEnvOverrides = {}): void {
    *
    * A fixed 32 bytes of base64, so a value written by one suite is readable by the next.
    */
+  // M11: without the first, issuing a site key answers 503; the second keeps rate-limit
+  // buckets in the process so a suite needs no Valkey.
+  process.env.INTAKE_KEY_SECRET ??= 'test-intake-key-secret-at-least-32-characters';
+  process.env.INTAKE_RATE_LIMIT_STORE ??= 'memory';
   process.env.COURIER_CREDENTIALS_KEY ??= Buffer.alloc(32, 7).toString('base64');
 }
 

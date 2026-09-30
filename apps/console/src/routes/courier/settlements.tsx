@@ -188,7 +188,7 @@ export function CourierSettlementsPage() {
                     <td className="px-3 font-medium">
                       <Link
                         to={courierPath(`/courier/settlements/${row.id}`)}
-                        className="text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                       >
                         {row.reference ?? t('courier.settlements.open')}
                       </Link>
@@ -229,7 +229,9 @@ export function CourierSettlementsPage() {
             {t('courier.settlements.fetchRuns')}
           </h2>
           {(runs.data?.items.length ?? 0) === 0 ? (
-            <p className="text-sm text-muted-foreground">{t('courier.settlements.fetchRunsEmpty')}</p>
+            <p className="text-sm text-muted-foreground">
+              {t('courier.settlements.fetchRunsEmpty')}
+            </p>
           ) : (
             <ul className="divide-y divide-border rounded-lg border border-border text-sm">
               {(runs.data?.items ?? []).slice(0, 10).map((run) => (

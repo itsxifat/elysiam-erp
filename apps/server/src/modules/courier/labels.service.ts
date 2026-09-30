@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { withOrg } from '@elysium/db';
 import { code128Svg, formatBdPhoneForDisplay, poisha } from '@elysium/domain';
 
@@ -69,6 +69,22 @@ export class CourierLabelsService {
     const ids = [...new Set(consignmentIds)];
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const rows = await repo.labelRows(tx, context.orgId, ids);
+      /*
+       * §6's branch narrowing on every parcel **first**, before any other answer. An
+       * out-of-scope parcel answers exactly as a missing one, and never reaches the "not
+       * booked" message below — which names order numbers, and would otherwise hand a
+       * branch-scoped caller the numbers of another branch's orders (M15 ledger audit m3).
+       */
+      for (const row of rows) {
+        try {
+          assertInScope(request, { branchId: row.branch_id });
+        } catch (error) {
+          if (error instanceof NotFoundException) {
+            throw new CourierError('CONSIGNMENT_NOT_FOUND', 'One of those parcels does not exist.');
+          }
+          throw error;
+        }
+      }
       if (rows.length !== ids.length) {
         // One answer for "missing" and "another org's": a label request must not be a way to
         // learn which consignment ids exist.
@@ -89,8 +105,6 @@ export class CourierLabelsService {
       const brandName = await repo.orgDisplayName(tx, context.orgId);
       const labels: LabelData[] = [];
       for (const row of rows) {
-        // §6's branch narrowing on each parcel, before its address is read.
-        assertInScope(request, { branchId: row.branch_id });
         const order = await this.orders.bookingSnapshot(tx, context.orgId, row.order_id);
         if (order === null) {
           throw new CourierError('ORDER_NOT_FOUND', 'That parcel’s order is gone.');
@@ -138,7 +152,8 @@ export class CourierLabelsService {
     const first = labels[0]?.orderNo ?? 'labels';
     return {
       bytes,
-      filename: labels.length === 1 ? `${first}-label.pdf` : `courier-labels-${String(labels.length)}.pdf`,
+      filename:
+        labels.length === 1 ? `${first}-label.pdf` : `courier-labels-${String(labels.length)}.pdf`,
     };
   }
 }

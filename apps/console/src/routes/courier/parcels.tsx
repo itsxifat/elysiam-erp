@@ -128,7 +128,7 @@ export function CourierParcelsPage() {
               <Printer aria-hidden="true" className="size-4" />
               {printing ? t('courier.labels.printing') : t('courier.labels.print')}
               {selected.size > 0 ? (
-                <span className="tabular-nums text-muted-foreground">({selected.size})</span>
+                <span className="text-muted-foreground tabular-nums">({selected.size})</span>
               ) : null}
             </Button>
           }
@@ -220,10 +220,14 @@ export function CourierParcelsPage() {
                       type="checkbox"
                       aria-label={t('courier.selectAll')}
                       className="size-4 rounded border-border focus-visible:ring-2 focus-visible:ring-ring"
-                      checked={printable.length > 0 && printable.every((row) => selected.has(row.id))}
+                      checked={
+                        printable.length > 0 && printable.every((row) => selected.has(row.id))
+                      }
                       onChange={(event) =>
                         setSelected(
-                          event.target.checked ? new Set(printable.map((row) => row.id)) : new Set(),
+                          event.target.checked
+                            ? new Set(printable.map((row) => row.id))
+                            : new Set(),
                         )
                       }
                     />
@@ -266,7 +270,7 @@ export function CourierParcelsPage() {
                       <td className="px-3 font-medium tabular-nums">
                         <Link
                           to={courierPath(`/courier/parcels/${row.id}`)}
-                          className="text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                         >
                           {row.orderNo}
                         </Link>
@@ -288,7 +292,11 @@ export function CourierParcelsPage() {
                         <Money poisha={row.codAmountPoisha} />
                       </td>
                       <td className="px-3 text-muted-foreground">
-                        {row.statusChangedAt === null ? '—' : <DateTime value={row.statusChangedAt} />}
+                        {row.statusChangedAt === null ? (
+                          '—'
+                        ) : (
+                          <DateTime value={row.statusChangedAt} />
+                        )}
                       </td>
                     </tr>
                   );

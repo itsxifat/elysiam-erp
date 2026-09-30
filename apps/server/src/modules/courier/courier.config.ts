@@ -137,7 +137,10 @@ const schema = z.object({
  * than only when an account is activated. Steadfast's switch was read only at activation in
  * M12, so turning it off after activating an account stopped nothing.
  */
-export function adapterEnabled(adapter: { readonly code: string; readonly verified: boolean }): boolean {
+export function adapterEnabled(adapter: {
+  readonly code: string;
+  readonly verified: boolean;
+}): boolean {
   if (adapter.verified) return true;
   const env = courierEnv();
   switch (adapter.code) {

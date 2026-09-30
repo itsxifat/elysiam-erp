@@ -206,7 +206,8 @@ export const courierEn = {
   'courier.parcel.heading': 'Parcel',
   'courier.parcel.tracking': 'Tracking code',
   'courier.parcel.timeline': 'Timeline',
-  'courier.parcel.timelineCaption': 'Everything the courier said, oldest first, exactly as it said it.',
+  'courier.parcel.timelineCaption':
+    'Everything the courier said, oldest first, exactly as it said it.',
   'courier.parcel.noEvents': 'The courier has said nothing yet.',
   'courier.parcel.colWhen': 'When',
   'courier.parcel.colSource': 'From',
@@ -227,7 +228,8 @@ export const courierBn: Record<CourierMessageKey, string> = {
   'courier.title': 'কুরিয়ার',
   'courier.subtitle': 'পার্সেল, আটকে থাকা কনসাইনমেন্ট, সেটেলমেন্ট ও রিটার্ন।',
   'courier.deniedTitle': 'কুরিয়ার স্ক্রিনগুলো আপনি খুলতে পারবেন না',
-  'courier.deniedDetail': 'অর্ডার বা কুরিয়ার সেটেলমেন্টের অনুমতির জন্য অর্গানাইজেশন অ্যাডমিনকে বলুন।',
+  'courier.deniedDetail':
+    'অর্ডার বা কুরিয়ার সেটেলমেন্টের অনুমতির জন্য অর্গানাইজেশন অ্যাডমিনকে বলুন।',
   'courier.errorTitle': 'এটি লোড করা যায়নি',
   'courier.errorDetail': 'ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।',
   'courier.retry': 'আবার চেষ্টা করুন',
@@ -300,7 +302,8 @@ export const courierBn: Record<CourierMessageKey, string> = {
   'courier.stuck.threshold': 'কমপক্ষে যত দিন কোনো পরিবর্তন নেই',
   'courier.stuck.days': 'দিন',
   'courier.stuck.emptyTitle': 'কিছুই আটকে নেই',
-  'courier.stuck.emptyDetail': 'কুরিয়ারের কাছে থাকা প্রতিটি পার্সেল নির্ধারিত সময়ের মধ্যে এগিয়েছে।',
+  'courier.stuck.emptyDetail':
+    'কুরিয়ারের কাছে থাকা প্রতিটি পার্সেল নির্ধারিত সময়ের মধ্যে এগিয়েছে।',
   'courier.stuck.reason.no_status_change': 'পরিবর্তন নেই',
   'courier.stuck.reason.unknown_status': 'স্ট্যাটাস অস্পষ্ট',
   'courier.stuck.reason.booking_failed': 'বুকিং ব্যর্থ',

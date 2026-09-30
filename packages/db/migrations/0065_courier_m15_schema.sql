@@ -10,6 +10,12 @@
 -- nobody reviews. Parcels booked before this migration appear in the performance report
 -- as "no zone", and the stuck-parcel query falls back to `last_status_at` for them.
 --
+-- Both settlement uniqueness keys — M12's statement reference (0048) and M15's fetch
+-- fingerprint — now leave rejected batches out. Rejecting a batch is how a person says
+-- "fix the exceptions with the courier, then import it again", and a rejected batch that kept
+-- the key made that re-import impossible, for a fetched statement permanently (M15 ledger
+-- audit M4). 0048's index is replaced here rather than edited (invariant 9).
+--
 -- `settlements.source` defaults to 'upload' so every existing batch — all of them uploads —
 -- is described correctly without an UPDATE.
 
@@ -82,6 +88,8 @@ CREATE INDEX "selection_rules_org_priority_idx" ON "courier"."selection_rules" U
 CREATE INDEX "settlement_fetch_runs_org_idx" ON "courier"."settlement_fetch_runs" USING btree ("org_id");--> statement-breakpoint
 CREATE INDEX "settlement_fetch_runs_org_account_idx" ON "courier"."settlement_fetch_runs" USING btree ("org_id","courier_account_id","started_at");--> statement-breakpoint
 CREATE INDEX "consignments_org_booked_idx" ON "courier"."consignments" USING btree ("org_id","booked_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "settlements_org_account_fingerprint_idx" ON "courier"."settlements" USING btree ("org_id","courier_account_id","source_fingerprint") WHERE "courier"."settlements"."source_fingerprint" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "settlements_org_account_fingerprint_idx" ON "courier"."settlements" USING btree ("org_id","courier_account_id","source_fingerprint") WHERE "courier"."settlements"."source_fingerprint" is not null and "courier"."settlements"."status" <> 'rejected';--> statement-breakpoint
+DROP INDEX "courier"."settlements_org_courier_reference_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "settlements_org_courier_reference_idx" ON "courier"."settlements" USING btree ("org_id","courier_account_id","reference") WHERE "courier"."settlements"."reference" is not null and "courier"."settlements"."status" <> 'rejected';--> statement-breakpoint
 ALTER TABLE "courier"."settlements" ADD CONSTRAINT "settlements_source" CHECK ("courier"."settlements"."source" in ('upload', 'api'));--> statement-breakpoint
 ALTER TABLE "courier"."settlements" ADD CONSTRAINT "settlements_fingerprint_iff_api" CHECK (("courier"."settlements"."source" = 'api') = ("courier"."settlements"."source_fingerprint" is not null));

@@ -51,7 +51,7 @@ export function ParcelTimelinePage() {
       <div className="space-y-5">
         <Link
           to={courierPath('/courier')}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <ArrowLeft aria-hidden="true" className="size-4" />
           {t('courier.back')}
@@ -62,7 +62,9 @@ export function ParcelTimelinePage() {
         ) : timeline.isError || data === undefined ? (
           <ErrorState
             title={t('courier.errorTitle')}
-            detail={timeline.error instanceof ApiError ? timeline.error.message : t('courier.errorDetail')}
+            detail={
+              timeline.error instanceof ApiError ? timeline.error.message : t('courier.errorDetail')
+            }
             action={
               <Button size="sm" variant="outline" onClick={() => void timeline.refetch()}>
                 {t('courier.retry')}
@@ -116,14 +118,19 @@ export function ParcelTimelinePage() {
                 <h2 id="timeline-heading" className="text-sm font-semibold">
                   {t('courier.parcel.timeline')}
                 </h2>
-                <p className="text-xs text-muted-foreground">{t('courier.parcel.timelineCaption')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('courier.parcel.timelineCaption')}
+                </p>
               </div>
               {data.events.length === 0 ? (
                 <EmptyState title={t('courier.parcel.noEvents')} />
               ) : (
                 <ol className="divide-y divide-border rounded-lg border border-border text-sm">
                   {data.events.map((event) => (
-                    <li key={event.id} className="grid gap-1 px-3 py-2 sm:grid-cols-[12rem_8rem_1fr_10rem] sm:items-center">
+                    <li
+                      key={event.id}
+                      className="grid gap-1 px-3 py-2 sm:grid-cols-[12rem_8rem_1fr_10rem] sm:items-center"
+                    >
                       <span className="text-muted-foreground">
                         <DateTime value={event.occurredAt} />
                       </span>
@@ -134,7 +141,9 @@ export function ParcelTimelinePage() {
                         <StatusBadge tone={PARCEL_TONE[event.status]}>
                           {t(`courier.status.${event.status}` as CourierMessageKey)}
                         </StatusBadge>
-                        <span className="font-mono text-xs text-muted-foreground">{event.rawStatus}</span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {event.rawStatus}
+                        </span>
                       </span>
                       <span className="text-xs">
                         {event.orderToStatus === null ? '' : `→ ${event.orderToStatus}`}

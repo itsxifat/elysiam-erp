@@ -157,7 +157,9 @@ export interface RuleSetProblem {
  * time — it silently routes parcels. A COD band with its bounds reversed matches nothing and
  * the parcel falls through to the zone default, which looks like the rule working.
  */
-export function validateRuleSet(rules: readonly Omit<CourierSelectionRule, 'id'>[]): RuleSetProblem[] {
+export function validateRuleSet(
+  rules: readonly Omit<CourierSelectionRule, 'id'>[],
+): RuleSetProblem[] {
   const problems: RuleSetProblem[] = [];
   const seen = new Set<string>();
   rules.forEach((rule, index) => {
