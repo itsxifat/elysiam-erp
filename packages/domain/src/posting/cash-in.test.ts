@@ -74,7 +74,11 @@ describe('cash in: balances for any input', () => {
         fc.bigInt({ min: 1n, max: 9n * 10n ** 14n }),
         fc.constantFrom('wallet_cash', 'wallet_bank', 'wallet_bkash', 'wallet_mfs_other' as const),
         fc.option(fc.uuid({ version: 4 }), { nil: null }),
-        fc.date({ min: new Date('2020-01-01T00:00:00Z'), max: new Date('2035-01-01T00:00:00Z') }),
+        fc.date({
+          min: new Date('2020-01-01T00:00:00Z'),
+          max: new Date('2035-01-01T00:00:00Z'),
+          noInvalidDate: true,
+        }),
         fc.uuid({ version: 4 }),
         (amount, subtype, branchId, occurredAt, entryId) => {
           fc.pre(!Number.isNaN(occurredAt.getTime()));

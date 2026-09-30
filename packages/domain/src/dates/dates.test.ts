@@ -24,7 +24,11 @@ describe('check 7: the business date is the Asia/Dhaka calendar date', () => {
   it('is always the UTC date shifted by six hours (Bangladesh has no DST today)', () => {
     fc.assert(
       fc.property(
-        fc.date({ min: new Date('2010-01-01T00:00:00Z'), max: new Date('2040-01-01T00:00:00Z') }),
+        fc.date({
+          min: new Date('2010-01-01T00:00:00Z'),
+          max: new Date('2040-01-01T00:00:00Z'),
+          noInvalidDate: true,
+        }),
         (instant) => {
           fc.pre(!Number.isNaN(instant.getTime()));
           const shifted = new Date(instant.getTime() + 6 * 60 * 60 * 1000);

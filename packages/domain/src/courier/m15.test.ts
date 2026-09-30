@@ -527,7 +527,11 @@ describe('the stuck-parcel threshold (check 5)', () => {
   it('agrees with the SQL cut-off at the boundary', () => {
     fc.assert(
       fc.property(
-        fc.date({ min: new Date('2026-01-01T00:00:00Z'), max: new Date('2026-03-20T03:59:59Z') }),
+        fc.date({
+          min: new Date('2026-01-01T00:00:00Z'),
+          max: new Date('2026-03-20T03:59:59Z'),
+          noInvalidDate: true,
+        }),
         fc.integer({ min: 1, max: 30 }),
         (changed, threshold) => {
           const cutoff = stuckCutoffDate(now, threshold);

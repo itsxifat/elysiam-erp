@@ -46,7 +46,11 @@ describe('formatDate', () => {
   it('puts no Latin digit in Bangla output, for any date', () => {
     fc.assert(
       fc.property(
-        fc.date({ min: new Date('2020-01-01T00:00:00Z'), max: new Date('2039-12-31T00:00:00Z') }),
+        fc.date({
+          min: new Date('2020-01-01T00:00:00Z'),
+          max: new Date('2039-12-31T00:00:00Z'),
+          noInvalidDate: true,
+        }),
         fc.constantFrom('short' as const, 'long' as const, 'numeric' as const),
         (instant, style) => {
           fc.pre(!Number.isNaN(instant.getTime()));
