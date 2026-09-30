@@ -77,7 +77,10 @@ export function posReturnDraft(input: PosReturnInput): JournalDraft {
     );
   }
   if (input.refundPoisha === 0n && input.costPoisha === 0n) {
-    throw new LedgerError('POSTING_INPUT_INVALID', 'This return moved no value, so has no journal.');
+    throw new LedgerError(
+      'POSTING_INPUT_INVALID',
+      'This return moved no value, so has no journal.',
+    );
   }
 
   const lines: JournalLineDraft[] = [];

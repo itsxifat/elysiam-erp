@@ -43,10 +43,31 @@ const REGISTER = {
 };
 
 const PRICE_LIST = [
-  { id: 'a1b2c3d4-0000-4000-8000-00000000000a', code: 'ELY-SHRT-0001', barcode: '8941234567890', name: 'Oxford shirt', pricePoisha: '150000', available: 10 },
-  { id: 'a1b2c3d4-0000-4000-8000-00000000000b', code: 'ELY-SCRF-0002', barcode: null, name: 'Silk scarf', pricePoisha: '45050', available: 10 },
+  {
+    id: 'a1b2c3d4-0000-4000-8000-00000000000a',
+    code: 'ELY-SHRT-0001',
+    barcode: '8941234567890',
+    name: 'Oxford shirt',
+    pricePoisha: '150000',
+    available: 10,
+  },
+  {
+    id: 'a1b2c3d4-0000-4000-8000-00000000000b',
+    code: 'ELY-SCRF-0002',
+    barcode: null,
+    name: 'Silk scarf',
+    pricePoisha: '45050',
+    available: 10,
+  },
   // None on the shelf as far as the server knows: a sale of it is a shortfall.
-  { id: 'a1b2c3d4-0000-4000-8000-00000000000c', code: 'ELY-BELT-0003', barcode: null, name: 'Leather belt', pricePoisha: '90000', available: 0 },
+  {
+    id: 'a1b2c3d4-0000-4000-8000-00000000000c',
+    code: 'ELY-BELT-0003',
+    barcode: null,
+    name: 'Leather belt',
+    pricePoisha: '90000',
+    available: 0,
+  },
 ];
 
 function freshState() {
@@ -84,7 +105,11 @@ function send(response, status, body, extra = {}) {
     'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS',
     ...extra,
   });
-  response.end(body === null ? '' : JSON.stringify(body, (_, value) => (typeof value === 'bigint' ? value.toString() : value)));
+  response.end(
+    body === null
+      ? ''
+      : JSON.stringify(body, (_, value) => (typeof value === 'bigint' ? value.toString() : value)),
+  );
 }
 
 /** Apply one document the first time it is seen; answer a replay ever after. */
@@ -97,14 +122,43 @@ function applyDocument(document) {
   if (document.kind === 'sale') {
     const short = document.lines.filter((line) => (state.stock.get(line.skuId) ?? 0) < line.qty);
     if (short.length > 0) {
-      result = { id: document.id, kind: 'sale', outcome: 'held', replayed: false, reviewItemId: `review-${document.id}`, reasons: ['stock_shortfall'], journalId: null, error: null };
+      result = {
+        id: document.id,
+        kind: 'sale',
+        outcome: 'held',
+        replayed: false,
+        reviewItemId: `review-${document.id}`,
+        reasons: ['stock_shortfall'],
+        journalId: null,
+        error: null,
+      };
     } else {
-      for (const line of document.lines) state.stock.set(line.skuId, state.stock.get(line.skuId) - line.qty);
-      for (const tender of document.tenders) state.wallets[tender.tender] += BigInt(tender.amountPoisha);
-      result = { id: document.id, kind: 'sale', outcome: 'posted', replayed: false, reviewItemId: null, reasons: [], journalId: `journal-${document.id}`, error: null };
+      for (const line of document.lines)
+        state.stock.set(line.skuId, state.stock.get(line.skuId) - line.qty);
+      for (const tender of document.tenders)
+        state.wallets[tender.tender] += BigInt(tender.amountPoisha);
+      result = {
+        id: document.id,
+        kind: 'sale',
+        outcome: 'posted',
+        replayed: false,
+        reviewItemId: null,
+        reasons: [],
+        journalId: `journal-${document.id}`,
+        error: null,
+      };
     }
   } else {
-    result = { id: document.id, kind: 'return', outcome: 'posted', replayed: false, reviewItemId: null, reasons: [], journalId: `journal-${document.id}`, error: null };
+    result = {
+      id: document.id,
+      kind: 'return',
+      outcome: 'posted',
+      replayed: false,
+      reviewItemId: null,
+      reasons: [],
+      journalId: `journal-${document.id}`,
+      error: null,
+    };
   }
   state.applied.set(document.id, { document, result });
   return result;
@@ -136,7 +190,10 @@ const server = createServer(async (request, response) => {
   if (path === '/__test/state') {
     return send(response, 200, {
       deliveries: state.deliveries,
-      applied: [...state.applied.values()].map((entry) => ({ document: entry.document, outcome: entry.result.outcome })),
+      applied: [...state.applied.values()].map((entry) => ({
+        document: entry.document,
+        outcome: entry.result.outcome,
+      })),
       stock: Object.fromEntries(state.stock),
       wallets: state.wallets,
       csrfRefusals: state.csrfRefusals,
@@ -157,12 +214,20 @@ const server = createServer(async (request, response) => {
     const token = jar.get(CSRF_COOKIE);
     if (token === undefined || token === '' || request.headers[CSRF_HEADER] !== token) {
       state.csrfRefusals += 1;
-      return send(response, 403, { code: 'FORBIDDEN', detail: 'CSRF token missing or mismatched.' });
+      return send(response, 403, {
+        code: 'FORBIDDEN',
+        detail: 'CSRF token missing or mismatched.',
+      });
     }
   }
 
   if (method === 'GET' && path === '/v1/me') {
-    return send(response, 200, { userId: 'usr_cashier', orgId: 'org', roles: ['branch_manager'] }, extra);
+    return send(
+      response,
+      200,
+      { userId: 'usr_cashier', orgId: 'org', roles: ['branch_manager'] },
+      extra,
+    );
   }
   if (method === 'GET' && path === '/v1/pos/registers') {
     return send(response, 200, { items: [REGISTER] }, extra);
@@ -196,8 +261,19 @@ const server = createServer(async (request, response) => {
   }
   if (method === 'POST' && path === '/v1/pos/shifts') {
     const body = await readBody(request);
-    state.shift = { id: body.shiftId, shiftNo: 1, openedBy: 'usr_cashier', openedAt: new Date().toISOString(), mine: true };
-    return send(response, 201, { id: body.shiftId, shiftNo: 1, status: 'open', openingFloatPoisha: body.openingFloatPoisha });
+    state.shift = {
+      id: body.shiftId,
+      shiftNo: 1,
+      openedBy: 'usr_cashier',
+      openedAt: new Date().toISOString(),
+      mine: true,
+    };
+    return send(response, 201, {
+      id: body.shiftId,
+      shiftNo: 1,
+      status: 'open',
+      openingFloatPoisha: body.openingFloatPoisha,
+    });
   }
   if (method === 'POST' && path === '/v1/pos/sync') {
     const body = await readBody(request);

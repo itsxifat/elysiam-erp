@@ -64,7 +64,9 @@ describe('posSaleDraft', () => {
      */
     const draft = posSaleDraft(saleInput());
     validateJournalDraft(draft);
-    expect(draft.lines.map((line) => [line.accountId, line.debitPoisha, line.creditPoisha])).toEqual([
+    expect(
+      draft.lines.map((line) => [line.accountId, line.debitPoisha, line.creditPoisha]),
+    ).toEqual([
       [HAND_CASH.accountId, 100_000n, 0n],
       [BKASH.accountId, 50_000n, 0n],
       [REVENUE.accountId, 0n, 150_000n],
@@ -114,7 +116,10 @@ describe('posSaleDraft', () => {
   it('posts only the cost pair for a sale given away in full', () => {
     const draft = posSaleDraft(saleInput({ tenders: [], netPoisha: poisha(0) }));
     validateJournalDraft(draft);
-    expect(draft.lines.map((line) => line.accountId)).toEqual([COGS.accountId, INVENTORY.accountId]);
+    expect(draft.lines.map((line) => line.accountId)).toEqual([
+      COGS.accountId,
+      INVENTORY.accountId,
+    ]);
   });
 
   it('refuses tenders that do not pay the sale exactly', () => {
@@ -170,7 +175,9 @@ describe('posReturnDraft', () => {
      */
     const draft = posReturnDraft(returnInput());
     validateJournalDraft(draft);
-    expect(draft.lines.map((line) => [line.accountId, line.debitPoisha, line.creditPoisha])).toEqual([
+    expect(
+      draft.lines.map((line) => [line.accountId, line.debitPoisha, line.creditPoisha]),
+    ).toEqual([
       [REVENUE.accountId, 75_000n, 0n],
       [HAND_CASH.accountId, 0n, 75_000n],
       [INVENTORY.accountId, 45_000n, 0n],
@@ -203,6 +210,8 @@ describe('posReturnDraft', () => {
   });
 
   it('refuses refunds that do not add up to the refund', () => {
-    expect(() => posReturnDraft(returnInput({ refundPoisha: poisha(74_999) }))).toThrow(LedgerError);
+    expect(() => posReturnDraft(returnInput({ refundPoisha: poisha(74_999) }))).toThrow(
+      LedgerError,
+    );
   });
 });

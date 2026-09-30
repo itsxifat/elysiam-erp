@@ -19,7 +19,14 @@ import { STUB_API } from '../playwright.config.js';
 
 interface StubState {
   readonly deliveries: string[][];
-  readonly applied: { document: { id: string; receiptNo: string; tenders: { tender: string; amountPoisha: string }[] }; outcome: string }[];
+  readonly applied: {
+    document: {
+      id: string;
+      receiptNo: string;
+      tenders: { tender: string; amountPoisha: string }[];
+    };
+    outcome: string;
+  }[];
   readonly stock: Record<string, number>;
   readonly wallets: { cash: string; bkash: string; card: string };
   readonly csrfRefusals: number;
@@ -118,7 +125,9 @@ test('three sales made offline survive a reload and sync exactly once after reco
   await page.getByRole('button', { name: 'New sale' }).click();
 
   await expect(page.getByTestId('waiting')).toHaveAttribute('data-count', '3');
-  expect((await stubState(request)).deliveries, 'nothing reached the server while offline').toEqual([]);
+  expect((await stubState(request)).deliveries, 'nothing reached the server while offline').toEqual(
+    [],
+  );
 
   // The tablet restarts with no connection: the shell loads from the worker's
   // cache, and the three sales are still in IndexedDB.
@@ -200,7 +209,9 @@ test('a receipt prints through the print stylesheet: 80 mm, Bangla, and nothing 
   await completeSale(page);
 
   await page.getByRole('button', { name: 'Print receipt' }).click();
-  expect(await page.evaluate(() => (window as unknown as { printCalls: number }).printCalls)).toBe(1);
+  expect(await page.evaluate(() => (window as unknown as { printCalls: number }).printCalls)).toBe(
+    1,
+  );
 
   const printRoot = page.getByTestId('print-root');
   // On screen the print region is not shown at all.
