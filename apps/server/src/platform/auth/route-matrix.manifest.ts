@@ -228,6 +228,19 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/intake/site-keys',
   'POST /v1/intake/site-keys',
   'POST /v1/intake/site-keys/:id/revoke',
+  'GET /v1/courier/parcels',
+  'POST /v1/courier/parcels/bulk',
+  'GET /v1/courier/labels',
+  'GET /v1/courier/selection/preview',
+  'GET /v1/courier/selection-rules',
+  'PUT /v1/courier/selection-rules',
+  'GET /v1/courier/stuck',
+  'GET /v1/courier/stuck/export',
+  'POST /v1/courier/stuck/repoll',
+  'POST /v1/courier/parcels/:id/escalations',
+  'POST /v1/courier/settlements/fetch',
+  'GET /v1/courier/settlements/fetch-runs',
+  'GET /v1/courier/reports/performance',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

@@ -13,6 +13,8 @@ import type { ActiveContext } from '../../platform/http/context.js';
 import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
 import { ORG_A, startHttpHarness, type HttpHarness } from '../../testing/http-harness.js';
 import { ApprovalsService } from '../approvals/approvals.service.js';
+import { OrdersService } from '../orders/orders.service.js';
+import { TransitionsService } from '../orders/transitions.service.js';
 import { CourierAccountsService } from './accounts.service.js';
 import { COURIER_ADAPTERS, type CourierAdapterRegistry } from './adapters/courier-adapter.js';
 import { FakeCourierAdapter } from './adapters/fake.adapter.js';
@@ -1482,5 +1484,59 @@ describe('a courier webhook over HTTP', () => {
         select count(*) as count from courier.webhook_deliveries where org_id = ${ORG_A}
       `),
     ).toBe(before);
+  });
+});
+
+// --- ledger audit M3: one parcel, one courier -------------------------------------------------
+
+describe('an order cannot move to another courier while a parcel is booked (audit M3)', () => {
+  /*
+   * The delivery journal debits `courier_receivable` against the order's courier; the
+   * settlement credits it against the consignment's. Booking already refuses a courier
+   * other than the order's, but the order itself could still be pointed somewhere else
+   * afterwards — at `ship`, or by an edit — and then the debit and the credit land on
+   * different parties while the org total still agrees. Both sides of the rule are here:
+   * the refusal, and that cancelling the booking is what frees the order.
+   */
+  it('refuses the change at ship and in the guard, and allows it once the booking is cancelled', async () => {
+    const orders = harness.app.get(OrdersService);
+    const transitions = harness.app.get(TransitionsService);
+
+    const order = await seedShippedOrder(ORG_A, { status: 'packed' });
+    await onZone(order, zoneInside, courierA);
+    const consignmentId = await book(order);
+
+    // Through the real transition route: shipping it with courier B is refused before
+    // anything is written, and the order still names courier A.
+    await expect(
+      orders.transition(context(), request(), order.orderId, 'ship', { courierId: courierB }),
+    ).rejects.toThrow(/already has a parcel booked/);
+    const after = await withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => {
+      const rows = await tx.execute<{ courier_id: string; status: string }>(sql`
+        select courier_id, status from sales.orders where id = ${order.orderId}
+      `);
+      return rows[0];
+    });
+    expect(after).toEqual({ courier_id: courierA, status: 'packed' });
+
+    const guard = (next: string) =>
+      withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
+        transitions.assertCourierChangeAllowed(
+          tx,
+          ORG_A,
+          { id: order.orderId, courier_id: courierA },
+          next,
+        ),
+      );
+    await expect(guard(courierB)).rejects.toThrow(/already has a parcel booked/);
+    // Naming the courier it already has is not a change.
+    await expect(guard(courierA)).resolves.toBeUndefined();
+
+    // Cancel the booking and the order is free to go elsewhere.
+    await booking.runCancel({
+      orgId: ORG_A,
+      payload: { consignmentId, actorUserId: ACTOR },
+    });
+    await expect(guard(courierB)).resolves.toBeUndefined();
   });
 });

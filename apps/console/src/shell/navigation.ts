@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Megaphone,
   Package,
+  PackageCheck,
   ScrollText,
   ShoppingCart,
   Table2,
@@ -94,6 +95,14 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.supply',
         icon: Truck,
         required: { action: 'read', subject: 'Supply' },
+      },
+      {
+        to: '/courier',
+        labelKey: 'nav.courier',
+        icon: PackageCheck,
+        // The parcels, stuck queue and returns screens are order work; settlements and
+        // the performance report gate themselves on their own grants inside the section.
+        required: { action: 'read', subject: 'Order' },
       },
     ],
   },

@@ -857,6 +857,12 @@ export class OrdersService {
           }
         }
 
+        await this.transitions.assertCourierChangeAllowed(
+          tx,
+          context.orgId,
+          order,
+          patch.courierId,
+        );
         const moved = await repo.updateOrderCommercials(tx, {
           orgId: context.orgId,
           orderId: order.id,
@@ -1014,6 +1020,12 @@ export class OrdersService {
         // once rather than in each of the five endpoints that accept one.
         const occurredAt = this.postingInstant(options.occurredAt);
         if (trigger === 'ship' && options.courierId != null) {
+          await this.transitions.assertCourierChangeAllowed(
+            tx,
+            context.orgId,
+            order,
+            options.courierId,
+          );
           // Recorded before the handover posts, because §7's receivable is per courier
           // and the delivery journal reads the column.
           await repo.setOrderCourier(tx, {

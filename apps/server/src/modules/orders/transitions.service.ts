@@ -871,12 +871,47 @@ export class TransitionsService {
     return fallback.id;
   }
 
+  /**
+   * Refuse to name a different courier once a parcel is with one.
+   *
+   * §7's delivery journal debits `courier_receivable` against the order's courier, and a
+   * settlement relieves it against the *consignment's* courier. While they are the same
+   * party the receivable clears to zero. Let the order move to another courier after the
+   * parcel is booked and the debit lands on one courier and the credit on another: the
+   * first is owed money it never collected, the second has a balance that never clears,
+   * and the org's total still agrees — so the trial balance is no help and the only
+   * symptom is two reconciliation variances nobody can pair up (M15's ledger audit).
+   *
+   * A live parcel is a pending or booked consignment. To change courier, cancel that
+   * booking first; then there is no parcel and this allows it.
+   */
+  async assertCourierChangeAllowed(
+    tx: Tx,
+    orgId: string,
+    order: Pick<repo.OrderRow, 'id' | 'courier_id'>,
+    nextCourierId: string | null | undefined,
+  ): Promise<void> {
+    if (nextCourierId === null || nextCourierId === undefined) return;
+    if (nextCourierId === order.courier_id) return;
+    const courier = this.courier.current();
+    if (courier === undefined) return;
+    if (await courier.hasLiveParcel(tx, orgId, order.id)) {
+      throw new OrdersError(
+        'ORDER_IMMUTABLE',
+        'This order already has a parcel booked with its courier. Cancel that booking before choosing another courier.',
+      );
+    }
+  }
+
   private async courierFor(
     tx: Tx,
     context: ActiveContext,
     order: repo.OrderRow,
     options: MoveOptions,
   ): Promise<string> {
+    // Every posting that names a courier party comes through here, so this is the one
+    // place the rule cannot be walked around by a transition that takes `courierId`.
+    await this.assertCourierChangeAllowed(tx, context.orgId, order, options.courierId);
     const named = options.courierId ?? order.courier_id;
     if (named !== null && named !== undefined) return named;
     const fallback = await repo.defaultCourier(tx, context.orgId);

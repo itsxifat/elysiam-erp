@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-router';
 
 import { catalogRoutes } from './catalog/routes.js';
+import { courierRoutes } from './courier/routes.js';
 import { hrRoutes } from './hr/routes.js';
 import { investorsRoutes } from './investors/routes.js';
 import { ordersRoutes } from './orders/routes.js';
@@ -106,6 +107,7 @@ const supply = supplyRoutes(rootRoute);
 const hr = hrRoutes(rootRoute);
 const investors = investorsRoutes(rootRoute);
 const orders = ordersRoutes(rootRoute);
+const courier = courierRoutes(rootRoute);
 
 const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
   .filter(
@@ -121,6 +123,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/payroll',
         '/investors',
         '/orders',
+        '/courier',
       ].includes(item.to),
   )
   .map((item) =>
@@ -141,6 +144,7 @@ const routeTree = rootRoute.addChildren([
   ...hr,
   ...investors,
   ...orders,
+  ...courier,
   ...placeholderRoutes,
 ]);
 

@@ -9,6 +9,7 @@ import { ALL_QUEUES } from './job-queues.js';
 import { BookingService } from './modules/courier/booking.service.js';
 import { CourierModule } from './modules/courier/courier.module.js';
 import { registerCourierJobs } from './modules/courier/courier.worker.js';
+import { SettlementsService } from './modules/courier/settlements.service.js';
 import { CourierSyncService } from './modules/courier/sync.service.js';
 import { FraudModule } from './modules/fraud/fraud.module.js';
 import { FraudService } from './modules/fraud/fraud.service.js';
@@ -129,20 +130,19 @@ async function bootstrap(): Promise<void> {
   const report = reportJobFailedThroughOutbox(logger);
 
   /*
-   * The courier's handlers are registered **before** the dead-letter sweep below, and the
-   * order is load-bearing.
+   * Each module's handlers, then the generic dead-letter sweep.
    *
-   * `registerCourierJobs` puts a handler of its own on `delivery.book_parcel.dead` — M12
-   * check 6 wants the *order* flagged and `delivery.booking_failed` raised, which the
-   * generic `job.failed` does not do. `workDeadLetters` is a no-op for a queue that is
-   * already watched, so registering the courier first means one watcher; registering it
-   * afterwards would mean two watchers on one queue, each claiming some of the jobs, and
-   * half of a brand's failed bookings would never flag their order.
+   * M12 registered a second worker of its own on `delivery.book_parcel.dead`, competing
+   * with the runtime's watcher; run through real pg-boss, every dead-lettered booking
+   * stayed `pending` and none was flagged. The courier's failure handling is now the
+   * reporter it passes to `jobs.work`, so each queue has exactly one watcher.
    */
   await registerCourierJobs({
     jobs,
     booking: context.get(BookingService),
     sync: context.get(CourierSyncService),
+    // Without it the settlement-fetch queues drain as logged no-ops.
+    settlements: context.get(SettlementsService),
     report,
     logger,
   });

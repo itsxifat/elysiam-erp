@@ -4,7 +4,12 @@ import { fastifyCookie } from '@fastify/cookie';
 import { fastifyCors } from '@fastify/cors';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { activeOrgSlugs, createAuth, currentDatabaseConfig, RecordingSmsProvider } from '@elysium/db';
+import {
+  activeOrgSlugs,
+  createAuth,
+  currentDatabaseConfig,
+  RecordingSmsProvider,
+} from '@elysium/db';
 import { Redis } from 'ioredis';
 
 import { AppModule } from './app.module.js';
@@ -22,6 +27,7 @@ import { IDEMPOTENCY_HEADER } from './platform/http/idempotency.js';
 import { isTrustedOrigin, withBrandOrigins } from './platform/http/origins.js';
 import { ValkeyRateLimiter } from './platform/http/rate-limit.valkey.js';
 import { createRealtimeGateway } from './platform/realtime/index.js';
+import { useTrackingRateLimitStore } from './modules/courier/tracking.service.js';
 
 /**
  * The Fastify adapter, exactly as the running API builds it.
@@ -124,6 +130,37 @@ async function bootstrap(): Promise<void> {
     },
   });
 
+  const limiterClient = new Redis(env.VALKEY_URL, {
+    maxRetriesPerRequest: 2,
+    // A failed EVAL degrades to the per-process fallback, so waiting is worse
+    // than failing: a queued command would add its timeout to a login's latency.
+    enableOfflineQueue: false,
+  });
+  limiterClient.on('error', (error: Error) => {
+    logger.warn({ err: error }, 'rate limiter valkey connection error');
+  });
+  const limiter = new ValkeyRateLimiter({
+    client: limiterClient,
+    keyPrefix: `rl:${env.REALTIME_ADAPTER_KEY}`,
+    onError: (error) => {
+      // Loud: the limits have silently become per-process, which is the state
+      // D-056 exists to have moved away from.
+      logger.error({ err: error }, 'rate limiter fell back to in-memory counters');
+    },
+  });
+
+  /*
+   * Built before the application, and handed to the public tracking page first.
+   *
+   * `POST /v1/track` is the one route a stranger can use to guess at an order (M15 check
+   * 3), and its guard is a limit of five attempts per order. Its provider resolves the
+   * store while Nest initialises, so a limiter created after `NestFactory.create` — where
+   * this block used to sit — arrives too late and the route falls back to a per-process
+   * counter: five guesses per *replica*, which is a limit that weakens every time the API
+   * scales out.
+   */
+  useTrackingRateLimitStore(limiter);
+
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule.register({ auth, tokens }),
     // `trustProxy` is what makes `request.ip` the client rather than the proxy,
@@ -211,28 +248,10 @@ async function bootstrap(): Promise<void> {
    * across environments — sharing them would let a staging load test lock
    * production's users out.
    */
-  const limiterClient = new Redis(env.VALKEY_URL, {
-    maxRetriesPerRequest: 2,
-    // A failed EVAL degrades to the per-process fallback, so waiting is worse
-    // than failing: a queued command would add its timeout to a login's latency.
-    enableOfflineQueue: false,
-  });
-  limiterClient.on('error', (error: Error) => {
-    logger.warn({ err: error }, 'rate limiter valkey connection error');
-  });
-
   registerAuth(fastify, {
     auth,
     ...originPolicy,
-    limiter: new ValkeyRateLimiter({
-      client: limiterClient,
-      keyPrefix: `rl:${env.REALTIME_ADAPTER_KEY}`,
-      onError: (error) => {
-        // Loud: the limits have silently become per-process, which is the state
-        // D-056 exists to have moved away from.
-        logger.error({ err: error }, 'rate limiter fell back to in-memory counters');
-      },
-    }),
+    limiter,
     cookieDomain: env.APP_DOMAIN === 'localhost' ? undefined : `.${env.APP_DOMAIN}`,
     secure: env.NODE_ENV === 'production',
   });
