@@ -105,7 +105,9 @@ export async function claimPending(
   }>(sql`
     select id, org_id, name, payload, rooms, attempts
     from events.outbox
-    where dispatched_at is null and attempts < ${maxAttempts}
+    where dispatched_at is null
+      and attempts < ${maxAttempts}
+      and (next_attempt_at is null or next_attempt_at <= now())
     order by created_at
     limit ${limit}
     for update skip locked
@@ -137,12 +139,40 @@ export async function markDispatched(tx: Tx, id: string): Promise<void> {
  * it gets here: a failure message routinely quotes the payload that caused it,
  * and this table is read by anyone with `read AuditLog`.
  */
-export async function recordFailure(tx: Tx, id: string, error: string): Promise<void> {
+export async function recordFailure(
+  tx: Tx,
+  id: string,
+  error: string,
+  retryInSeconds: number,
+): Promise<void> {
   await tx.execute(sql`
     update events.outbox
-    set attempts = attempts + 1, last_error = ${error.slice(0, 2000)}
+    set attempts = attempts + 1,
+        last_error = ${error.slice(0, 2000)},
+        next_attempt_at = now() + make_interval(secs => ${retryInSeconds})
     where id = ${id}
   `);
+}
+
+/**
+ * How long a row waits after its nth failed attempt (§20: exponential backoff).
+ *
+ * 5 s, 30 s, 2 min, 10 min: about thirteen minutes in all before the fifth failure
+ * dead-letters it, which is long enough to ride out a restart of Postgres or Valkey and
+ * short enough that a genuinely broken subscriber is reported the same quarter-hour. The
+ * table is here rather than in SQL so the policy is one list a reader can see and a test
+ * can pin.
+ */
+const RETRY_DELAYS_SECONDS = [5, 30, 120, 600] as const;
+
+export function retryDelaySeconds(failedAttempts: number): number {
+  const last = RETRY_DELAYS_SECONDS[RETRY_DELAYS_SECONDS.length - 1] ?? 600;
+  return RETRY_DELAYS_SECONDS[Math.max(0, failedAttempts - 1)] ?? last;
+}
+
+/** Mark a dead-lettered row as reported, so its `job.failed` is raised once. */
+export async function markReported(tx: Tx, id: string): Promise<void> {
+  await tx.execute(sql`update events.outbox set reported_at = now() where id = ${id}`);
 }
 
 /**
@@ -163,7 +193,7 @@ export async function findDeadLettered(tx: Tx, maxAttempts: number): Promise<Out
   }>(sql`
     select id, org_id, name, payload, rooms, attempts
     from events.outbox
-    where dispatched_at is null and attempts >= ${maxAttempts}
+    where dispatched_at is null and attempts >= ${maxAttempts} and reported_at is null
     order by created_at
   `);
 

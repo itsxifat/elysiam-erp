@@ -83,6 +83,18 @@ export const outbox = events.table(
 
     /** Why the last attempt failed. Redacted like any other stored text. */
     lastError: text('last_error'),
+
+    /**
+     * When a failed row may be tried again. Null means now.
+     *
+     * Without it a failing row was re-claimed at once — it is the oldest pending row —
+     * and spent every attempt in milliseconds, so any outage longer than that
+     * dead-lettered whatever was in flight (0072).
+     */
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true, mode: 'date' }),
+
+    /** When a dead-lettered row raised its `job.failed`. Once, not once per restart. */
+    reportedAt: timestamp('reported_at', { withTimezone: true, mode: 'date' }),
   },
   (table) => [
     index('outbox_org_idx').on(table.orgId),

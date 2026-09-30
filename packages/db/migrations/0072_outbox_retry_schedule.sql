@@ -1,0 +1,22 @@
+-- The outbox gets a retry schedule and a reported marker (architecture §19, §20).
+--
+-- Both columns exist because the dispatcher started working. Until 2026-09-30 it claimed
+-- rows with no org context against this FORCE RLS table, saw none, and delivered nothing;
+-- once it could see rows, two things that had never mattered did:
+--
+-- * **`next_attempt_at`.** A row whose subscriber failed was the oldest pending row, so the
+--   very next claim took it again. Five attempts were spent in milliseconds, which is not a
+--   retry policy: a two-second database or Valkey blip dead-lettered every event in flight,
+--   including the order outcomes the cross-brand fraud counters are built from. §20 asks for
+--   exponential backoff, and backoff needs somewhere to keep the time of the next try that
+--   outlives the process that failed. Null means "due now", so existing rows need no backfill.
+--
+-- * **`reported_at`.** A row that has spent its attempts raises `job.failed` once. The worker
+--   remembered which rows it had reported in a Set, so every restart re-reported every dead
+--   row. It is marked here instead, after the report: a crash between the two repeats the
+--   report once rather than losing it.
+--
+-- The table-level grant in 0018 (`select, insert, update`) already covers new columns, and
+-- the table stays append-only in the sense that matters: no DELETE grant, rows are marked.
+ALTER TABLE "events"."outbox" ADD COLUMN "next_attempt_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "events"."outbox" ADD COLUMN "reported_at" timestamp with time zone;

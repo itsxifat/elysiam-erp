@@ -203,40 +203,24 @@ async function runDispatchLoop(
   logger: Logger,
   signal: AbortSignal,
 ): Promise<void> {
-  /**
-   * Outbox rows already reported, for this process's lifetime.
-   *
-   * `findDeadLettered` returns every row that has spent its attempts, on every
-   * call, because the table has no column saying a row was reported — it is
-   * append-only and marked, never updated past its attempt count. Without this
-   * set, each poll would emit a fresh `job.failed` for the same undeliverable
-   * row, forever, and each of those is itself an outbox row: a queue that
-   * generates its own backlog.
-   *
-   * In-process, so a worker restart re-reports once. That is the right way round
-   * — repeating a real failure after a restart is noise, and losing it is a
-   * failure nobody hears about — but a `reported_at` column on `events.outbox`
-   * is the actual fix, and it belongs to the migration that owns that table.
-   */
-  const reported = new Set<string>();
   const report = reportJobFailedThroughOutbox(logger);
 
   while (!signal.aborted) {
     try {
       const { delivered, failed } = await dispatcher.drain();
 
-      for (const row of await dispatcher.deadLettered()) {
-        if (reported.has(row.id)) continue;
-        reported.add(row.id);
-        await report({
+      // Each dead row raises `job.failed` once; the outbox itself remembers which have
+      // (0072), so a restart no longer re-reports every undeliverable row it ever had.
+      await dispatcher.reportDeadLetters((row) =>
+        report({
           // Not a pg-boss queue, and named so it cannot be mistaken for one: the
           // failure is in delivering an event, not in doing a job's work.
           queue: 'events.dispatch',
           orgId: row.orgId,
           ref: row.id,
           code: 'OUTBOX_UNDELIVERABLE',
-        });
-      }
+        }),
+      );
 
       // Nothing moved, so nothing new can have arrived that this tick would have
       // seen. Sleeping here and not when rows were delivered is what lets a

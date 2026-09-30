@@ -1,9 +1,10 @@
 import { SEED_ORG_IDS, withOrg } from '@elysium/db';
 import { startTestDatabase, stopSharedContainer, type TestDatabase } from '@elysium/db/testing';
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { MAX_ATTEMPTS, OutboxDispatcher, pendingFor, type DeliveredEvent } from './dispatcher.js';
-import { emit } from './outbox.js';
+import { emit, retryDelaySeconds } from './outbox.js';
 
 /**
  * The dispatcher, through its own `drain()`.
@@ -33,6 +34,27 @@ afterAll(async () => {
 async function publish(orgId: string, ref: string): Promise<void> {
   await withOrg({ orgId, userId: 'usr_dispatcher_test' }, async (tx) => {
     await emit(tx, 'job.failed', { queue: 'test.queue', ref, code: 'TEST' }, { orgId });
+  });
+}
+
+/** Seconds until the org's one failed row may be tried again, as the database sees it. */
+async function secondsUntilRetry(orgId: string): Promise<number> {
+  return withOrg({ orgId, userId: 'usr_dispatcher_test' }, async (tx) => {
+    const rows = await tx.execute<{ seconds: string }>(sql`
+      select extract(epoch from (next_attempt_at - now()))::text as seconds
+      from events.outbox where dispatched_at is null and next_attempt_at is not null
+    `);
+    return Number(rows[0]?.seconds ?? Number.NaN);
+  });
+}
+
+/** Wind the retry clock forward, standing in for the wait. */
+async function makeDue(orgId: string): Promise<void> {
+  await withOrg({ orgId, userId: 'usr_dispatcher_test' }, async (tx) => {
+    await tx.execute(sql`
+      update events.outbox set next_attempt_at = now() - interval '1 second'
+      where dispatched_at is null
+    `);
   });
 }
 
@@ -66,7 +88,7 @@ describe('OutboxDispatcher.drain', () => {
     expect(await pendingFor(ORG_B)).toEqual([]);
   });
 
-  it('counts a failed attempt, retries it, and stops at the dead-letter threshold', async () => {
+  it('waits before retrying a failed event, and dead-letters it after the fifth failure', async () => {
     const dispatcher = new OutboxDispatcher();
     let calls = 0;
     dispatcher.on('job.failed', () => {
@@ -76,18 +98,41 @@ describe('OutboxDispatcher.drain', () => {
 
     await publish(ORG_A, 'poison');
 
-    // The attempt has to survive the transaction that made it: a rolled-back count
-    // would retry this row for ever and never dead-letter it.
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-      expect(await dispatcher.drain(1)).toEqual({ delivered: 0, failed: 1 });
+      expect(await dispatcher.drain()).toEqual({ delivered: 0, failed: 1 });
+
+      // The attempt survives the transaction that made it: a rolled-back count would
+      // retry this row for ever and never dead-letter it.
       expect(await pendingFor(ORG_A)).toEqual([{ name: 'job.failed', attempts: attempt }]);
+
+      // And it is not due again yet. Without the schedule the row is the oldest pending
+      // one, so the very next claim takes it and all five attempts go in one pass.
+      expect(await dispatcher.drain()).toEqual({ delivered: 0, failed: 0 });
+      expect(await secondsUntilRetry(ORG_A)).toBeCloseTo(retryDelaySeconds(attempt), -1);
+
+      await makeDue(ORG_A);
     }
 
-    // Spent: no longer claimed, still there for a person to find, and reported.
+    // Spent: no longer claimed, still there for a person to find.
     expect(await dispatcher.drain()).toEqual({ delivered: 0, failed: 0 });
     expect(calls).toBe(MAX_ATTEMPTS);
-    const dead = await dispatcher.deadLettered();
-    expect(dead.map((event) => (event.payload as { ref: string }).ref)).toEqual(['poison']);
+
+    // Reported once, and the table remembers — not the process. A second dispatcher is a
+    // restarted worker, and it must not raise the same `job.failed` again.
+    const reported: string[] = [];
+    const report = (event: DeliveredEvent): Promise<void> => {
+      reported.push((event.payload as { ref: string }).ref);
+      return Promise.resolve();
+    };
+    expect(await dispatcher.reportDeadLetters(report)).toBe(1);
+    expect(await new OutboxDispatcher().reportDeadLetters(report)).toBe(0);
+    expect(reported).toEqual(['poison']);
+  });
+
+  it('spaces retries out: 5 s, 30 s, 2 min, 10 min', () => {
+    expect([1, 2, 3, 4].map(retryDelaySeconds)).toEqual([5, 30, 120, 600]);
+    // Past the table, the last delay holds rather than reading undefined.
+    expect(retryDelaySeconds(9)).toBe(600);
   });
 
   it('does not let one failing event hold up the ones behind it', async () => {

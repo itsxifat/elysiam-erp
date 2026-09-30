@@ -2,7 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { withGlobal, withOrg, type Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 
-import { claimPending, findDeadLettered, markDispatched, recordFailure } from './outbox.js';
+import {
+  claimPending,
+  findDeadLettered,
+  markDispatched,
+  markReported,
+  recordFailure,
+  retryDelaySeconds,
+} from './outbox.js';
 
 /**
  * Delivering what the outbox holds (architecture §19, §20).
@@ -79,10 +86,7 @@ export class OutboxDispatcher {
      * same mistake killed the courier poll cron. The org list is global by design (§5);
      * everything after it is tenant-scoped.
      */
-    const orgs = await withGlobal(async (tx) => {
-      const rows = await tx.execute<{ id: string }>(sql`select id from org.organizations`);
-      return [...rows].map((row) => row.id);
-    });
+    const orgs = await this.orgIds();
 
     let delivered = 0;
     let failed = 0;
@@ -121,35 +125,54 @@ export class OutboxDispatcher {
         await markDispatched(tx, row.id);
         return 'delivered';
       } catch (error) {
-        await recordFailure(tx, row.id, error instanceof Error ? error.message : String(error));
+        await recordFailure(
+          tx,
+          row.id,
+          error instanceof Error ? error.message : String(error),
+          // Not due again until the delay has passed, so the loop above moves on to the
+          // next row instead of spending this one's remaining attempts in the same pass.
+          retryDelaySeconds(row.attempts + 1),
+        );
         return 'failed';
       }
     });
   }
 
   /**
-   * Rows that have spent their attempts, reported once each.
+   * Report each row that has spent its attempts, once.
    *
-   * §20: a job that lands in the dead-letter queue emits `job.failed`. The row
-   * stays undelivered and visible rather than being removed, so the report
-   * points at something a human can still inspect. `job.failed` itself is
-   * emitted by the caller — this returns the facts rather than recursing into
-   * the outbox it is reporting on.
+   * §20: a job that lands in the dead-letter queue emits `job.failed`. The row stays
+   * undelivered and visible rather than being removed, so the report points at something
+   * a human can still inspect. `report` is passed in rather than emitted here, so this
+   * class does not recurse into the outbox it is reporting on.
+   *
+   * Marked after the report, in its own transaction: a crash between the two repeats the
+   * report once on restart, which is noise, where marking first would lose it, which is a
+   * failure nobody hears about.
    */
-  async deadLettered(): Promise<DeliveredEvent[]> {
-    const orgs = await withGlobal(async (tx) => {
+  async reportDeadLetters(report: (event: DeliveredEvent) => Promise<void>): Promise<number> {
+    let reported = 0;
+    for (const orgId of await this.orgIds()) {
+      const dead = await withOrg({ orgId, userId: DISPATCHER_USER }, async (tx) =>
+        findDeadLettered(tx, MAX_ATTEMPTS),
+      );
+      for (const row of dead) {
+        await report(row);
+        await withOrg({ orgId, userId: DISPATCHER_USER }, async (tx) => {
+          await markReported(tx, row.id);
+        });
+        reported += 1;
+      }
+    }
+    return reported;
+  }
+
+  /** Every org, read as a global table (§5): the dispatcher serves all of them. */
+  private async orgIds(): Promise<string[]> {
+    return withGlobal(async (tx) => {
       const rows = await tx.execute<{ id: string }>(sql`select id from org.organizations`);
       return [...rows].map((row) => row.id);
     });
-    const found: DeliveredEvent[] = [];
-    for (const orgId of orgs) {
-      found.push(
-        ...(await withOrg({ orgId, userId: DISPATCHER_USER }, async (tx) =>
-          findDeadLettered(tx, MAX_ATTEMPTS),
-        )),
-      );
-    }
-    return found;
   }
 
   private async deliver(row: DeliveredEvent): Promise<void> {
