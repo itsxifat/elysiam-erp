@@ -169,6 +169,19 @@ export const asOfSchema = z.object({
   branchId: z.string().uuid().optional(),
 });
 
+/**
+ * The wallet list. Closed wallets are left out unless asked for: the cash
+ * screens have nothing to do with them, and the setup screen needs them to
+ * reopen one.
+ */
+export const walletListQuerySchema = z.object({
+  asOf: businessDateSchema.optional(),
+  includeInactive: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
+});
+
 /** Payables and receivables aging, as of a business date. */
 export const agingQuerySchema = z.object({
   asOf: businessDateSchema,

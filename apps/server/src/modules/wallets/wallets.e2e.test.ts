@@ -949,3 +949,45 @@ describe('what the module refuses', () => {
     expect(clash.statusCode).toBe(409);
   });
 });
+
+describe('a closed wallet', () => {
+  it('drops out of the cash screens, and stays on the setup screen to be reopened', async () => {
+    const created = await accounts.client.request('POST', '/v1/accounts/wallets', {
+      body: {
+        account: { code: '1130-CLOSE', name: 'Old current account', subtype: 'wallet_bank' },
+        provider: 'Test Bank',
+        accountRefLast4: '0042',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const wallet = body<{ id: string }>(created);
+
+    const closed = await accounts.client.request('PATCH', `/v1/accounts/wallets/${wallet.id}`, {
+      body: { isActive: false },
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+
+    const ids = async (query: string) =>
+      body<{ items: { id: string; isActive: boolean }[] }>(
+        await accounts.client.request('GET', `/v1/accounts/wallets${query}`),
+      ).items;
+
+    expect((await ids('')).map((row) => row.id)).not.toContain(wallet.id);
+    const all = await ids('?includeInactive=true');
+    expect(all.find((row) => row.id === wallet.id)?.isActive).toBe(false);
+
+    const reopened = await accounts.client.request('PATCH', `/v1/accounts/wallets/${wallet.id}`, {
+      body: { isActive: true },
+    });
+    expect(reopened.statusCode, reopened.body).toBe(200);
+    expect((await ids('')).map((row) => row.id)).toContain(wallet.id);
+  });
+
+  it('refuses anything but true or false for includeInactive', async () => {
+    const response = await accounts.client.request(
+      'GET',
+      '/v1/accounts/wallets?includeInactive=yes',
+    );
+    expect(response.statusCode).toBe(400);
+  });
+});

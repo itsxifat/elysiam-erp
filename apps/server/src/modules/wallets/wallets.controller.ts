@@ -31,6 +31,7 @@ import {
   reportRangeSchema,
   updateWalletSchema,
   walletIdParamSchema,
+  walletListQuerySchema,
   walletTransferSchema,
 } from './wallets.schemas.js';
 
@@ -80,10 +81,11 @@ export class WalletsController {
   @RequireAbility('read', 'Wallet')
   @Get('wallets')
   async listWallets(@Req() request: FastifyRequest, @Query() query: unknown) {
-    const parsed = parse(asOfSchema.partial(), query);
+    const parsed = parse(walletListQuerySchema, query);
     return mapWalletErrors(() =>
       this.wallets.list(requireContext(request), request, {
         ...(parsed.asOf === undefined ? {} : { asOf: parsed.asOf }),
+        includeInactive: parsed.includeInactive,
       }),
     );
   }

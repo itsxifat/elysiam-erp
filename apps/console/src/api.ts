@@ -114,6 +114,11 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', ...(body === undefined ? {} : { body }) }),
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: 'PUT', ...(body === undefined ? {} : { body }) }),
+  patch: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: 'PATCH', ...(body === undefined ? {} : { body }) }),
+  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };
 
 // --- shapes, mirroring what the server returns -----------------------------

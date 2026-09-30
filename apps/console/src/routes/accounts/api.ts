@@ -97,8 +97,16 @@ export interface CashEntryResult {
   readonly amountPoisha: string;
 }
 
-export function listWallets(asOf?: string): Promise<WalletList> {
-  const query = asOf === undefined ? '' : `?asOf=${asOf}`;
+/** Wallets in use; the setup screen also asks for the closed ones, to reopen them. */
+export function listWallets(
+  asOf?: string,
+  options: { readonly includeInactive?: boolean } = {},
+): Promise<WalletList> {
+  const params = new URLSearchParams();
+  if (asOf !== undefined) params.set('asOf', asOf);
+  if (options.includeInactive === true) params.set('includeInactive', 'true');
+  const encoded = params.toString();
+  const query = encoded === '' ? '' : `?${encoded}`;
   return api.get<WalletList>(`/v1/accounts/wallets${query}`);
 }
 
@@ -127,6 +135,39 @@ export function recordCashEntry(input: {
   memo?: string;
 }): Promise<CashEntryResult> {
   return api.post<CashEntryResult>('/v1/accounts/cash-entries', input);
+}
+
+export type WalletSubtype = 'wallet_cash' | 'wallet_bank' | 'wallet_bkash' | 'wallet_mfs_other';
+
+/**
+ * A new wallet with its own new ledger account (§7).
+ *
+ * `accountRefLast4` is the last two to four digits and nothing more: the server
+ * refuses a longer value, because a field that takes a full account number will
+ * be given one (invariant 10).
+ */
+export function createWallet(input: {
+  code: string;
+  name: string;
+  subtype: WalletSubtype;
+  branchId?: string;
+  provider?: string;
+  accountRefLast4?: string;
+  requiresDailyClosing: boolean;
+}): Promise<WalletRow> {
+  const { code, name, subtype, ...rest } = input;
+  return api.post<WalletRow>('/v1/accounts/wallets', {
+    account: { code, name, subtype },
+    ...rest,
+  });
+}
+
+/** Only what may change: the code, name and kind are named by posted journals. */
+export function updateWallet(
+  walletId: string,
+  patch: { provider?: string | null; requiresDailyClosing?: boolean; isActive?: boolean },
+): Promise<WalletRow> {
+  return api.patch<WalletRow>(`/v1/accounts/wallets/${walletId}`, patch);
 }
 
 /**

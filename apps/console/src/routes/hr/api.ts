@@ -1,4 +1,4 @@
-import { api, ApiError, CSRF_HEADER, csrfToken } from '../../api.js';
+import { api } from '../../api.js';
 import { env } from '../../env.js';
 
 /**
@@ -20,48 +20,6 @@ import { env } from '../../env.js';
  * `revealPayoutRef`, which is a separate call behind `update Payroll` that the server audits
  * — so a screen that shows it is a screen somebody chose to open.
  */
-
-async function send<T>(method: 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  // The shared client exposes `get` and `post` only. Adding `put` and `delete` belongs in
-  // that file, which is edited concurrently by other milestones in this working tree, so
-  // M19's INTEGRATION section hands the integrator those methods and this helper disappears
-  // with them. The two things it must not get wrong are the two the shared client exists
-  // for: cookies cross-origin, and the CSRF token echoed as a header.
-  const token = csrfToken();
-  const response = await fetch(new URL(path, env.VITE_API_URL), {
-    method,
-    credentials: 'include',
-    headers: {
-      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      ...(token === '' ? {} : { [CSRF_HEADER]: token }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-
-  const text = await response.text();
-  const payload: unknown = text === '' ? null : safeParse(text);
-  if (!response.ok) {
-    const problem = (payload ?? {}) as { code?: unknown; detail?: unknown; message?: unknown };
-    throw new ApiError(
-      response.status,
-      typeof problem.code === 'string' ? problem.code : null,
-      typeof problem.detail === 'string'
-        ? problem.detail
-        : typeof problem.message === 'string'
-          ? problem.message
-          : response.statusText,
-    );
-  }
-  return payload as T;
-}
-
-function safeParse(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
-}
 
 function query(params: Record<string, string | number | boolean | undefined>): string {
   const search = new URLSearchParams();
@@ -334,7 +292,7 @@ export function recordAttendance(
     readonly note?: string;
   }[],
 ): Promise<{ recorded: number }> {
-  return send('PUT', '/v1/hr/attendance', { entries });
+  return api.put('/v1/hr/attendance', { entries });
 }
 
 export function importAttendance(input: {
@@ -395,7 +353,7 @@ export function addRunInput(
 }
 
 export function removeRunInput(id: string, inputId: string): Promise<{ removed: boolean }> {
-  return send('DELETE', `/v1/hr/payroll/runs/${id}/inputs/${inputId}`);
+  return api.delete(`/v1/hr/payroll/runs/${id}/inputs/${inputId}`);
 }
 
 export function submitRun(id: string, reason?: string): Promise<PayrollRun> {

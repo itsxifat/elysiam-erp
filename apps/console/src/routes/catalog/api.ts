@@ -1,4 +1,4 @@
-import { ApiError, CSRF_HEADER, api, csrfToken } from '../../api.js';
+import { CSRF_HEADER, api, csrfToken } from '../../api.js';
 import { env } from '../../env.js';
 
 /**
@@ -22,58 +22,9 @@ import { env } from '../../env.js';
  * unenforceable, because the console would then have somewhere to put one.
  */
 
-/**
- * PUT and DELETE, and one blob response.
- *
- * The shared client exposes `get` and `post` only, and adding `put`/`delete` to it
- * belongs in that file rather than here — it is edited concurrently by other
- * milestones in this working tree, so M06's INTEGRATION section hands the
- * integrator those two methods and this helper disappears with them.
- *
- * Until then the two things it must not get wrong are the two the shared client
- * exists for: cookies cross-origin (`credentials: 'include'`, or the session
- * cookie is never sent and every request looks anonymous) and the CSRF token
- * echoed back as a header.
- */
-async function send<T>(method: 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  const response = await fetch(new URL(path, env.VITE_API_URL), {
-    method,
-    credentials: 'include',
-    headers: {
-      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      ...csrfHeader(),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-
-  const text = await response.text();
-  const payload: unknown = text === '' ? null : safeParse(text);
-  if (!response.ok) {
-    const problem = (payload ?? {}) as { code?: unknown; detail?: unknown; message?: unknown };
-    throw new ApiError(
-      response.status,
-      typeof problem.code === 'string' ? problem.code : null,
-      typeof problem.detail === 'string'
-        ? problem.detail
-        : typeof problem.message === 'string'
-          ? problem.message
-          : response.statusText,
-    );
-  }
-  return payload as T;
-}
-
 function csrfHeader(): Record<string, string> {
   const token = csrfToken();
   return token === '' ? {} : { [CSRF_HEADER]: token };
-}
-
-function safeParse(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
 }
 
 export interface CatalogProductListItem {
@@ -272,7 +223,7 @@ export function setPrices(input: {
   readonly prices: readonly { readonly skuId: string; readonly pricePoisha: string }[];
   readonly reason?: string | undefined;
 }): Promise<{ repriced: number }> {
-  return send('PUT', '/v1/catalog/prices', input);
+  return api.put('/v1/catalog/prices', input);
 }
 
 export function priceHistory(skuId: string): Promise<{
@@ -298,11 +249,11 @@ export function reorderImages(
   productId: string,
   imageIds: readonly string[],
 ): Promise<{ ordered: number }> {
-  return send('PUT', `/v1/catalog/products/${productId}/images/order`, { imageIds });
+  return api.put(`/v1/catalog/products/${productId}/images/order`, { imageIds });
 }
 
 export function detachImage(productId: string, imageId: string): Promise<{ id: string }> {
-  return send('DELETE', `/v1/catalog/products/${productId}/images/${imageId}`);
+  return api.delete(`/v1/catalog/products/${productId}/images/${imageId}`);
 }
 
 export function dryRunPriceImport(csv: string): Promise<ImportReport> {

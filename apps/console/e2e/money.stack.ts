@@ -256,3 +256,47 @@ test('last month closes, and says so', async () => {
   await expect(page.getByRole('row').filter({ hasText: 'Closed' }).first()).toBeVisible();
   await shot('periods');
 });
+
+test('a bank wallet is added, then edited, and never asks for the full number', async () => {
+  await page.goto('/accounts/wallets');
+  await expect(page.getByRole('heading', { name: 'Wallets', level: 1 })).toBeVisible();
+  await noBlockingViolations('wallet setup');
+
+  await page.getByRole('button', { name: 'Add wallet' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  // Bank is the default kind, so the provider and last-digit fields are showing.
+  await dialog.getByLabel(/^Account code/).fill('1120-DBBL');
+  await dialog.getByLabel(/^Name/).fill('Dutch-Bangla current account');
+  await dialog.getByLabel(/^Bank or provider/).fill('Dutch-Bangla Bank');
+
+  // A full account number is refused before it leaves the page.
+  await dialog.getByLabel(/^Last digits/).fill('1234567890');
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog.getByText('Give only the last two to four digits.')).toBeVisible();
+
+  await dialog.getByLabel(/^Last digits/).fill('4821');
+  await noBlockingViolations('add wallet');
+  await shot('wallet-add');
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('status')).toHaveText('Wallet added.');
+
+  const row = page.getByRole('row').filter({ hasText: '1120-DBBL' });
+  await expect(row).toContainText('Dutch-Bangla Bank');
+  await expect(row).toContainText('4821');
+  await expect(row).not.toContainText('1234567890');
+  await expect(row).toContainText('In use');
+
+  // Edit: no daily count, and closed. The code and name are not offered.
+  await row.getByRole('button', { name: 'Edit: 1120-DBBL' }).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel(/^Account code/)).toHaveCount(0);
+  await dialog.getByLabel("Count it at every day's close").uncheck();
+  await dialog.getByLabel('In use').uncheck();
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('status')).toHaveText('Wallet saved.');
+  await expect(row).toContainText('Closed');
+  await shot('wallets');
+});

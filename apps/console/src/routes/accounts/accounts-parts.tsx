@@ -70,6 +70,17 @@ export function AccountsNav() {
           {a('accounts.nav.transfers')}
         </Link>
       ) : null}
+      {ability.can('create', 'Wallet') || ability.can('update', 'Wallet') ? (
+        // Exact: `/accounts/wallets/$accountId` is a cash book, not this tab.
+        <Link
+          to="/accounts/wallets"
+          className={TAB}
+          activeProps={ACTIVE}
+          activeOptions={{ exact: true }}
+        >
+          {a('accounts.nav.wallets')}
+        </Link>
+      ) : null}
       {reports ? (
         <Link to="/accounts/reports" className={TAB} activeProps={ACTIVE}>
           {a('accounts.nav.reports')}

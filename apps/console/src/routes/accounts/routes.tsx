@@ -25,6 +25,12 @@ export function accountsRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./transfers.js'), 'TransfersPage'),
   });
 
+  const setup = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/accounts/wallets',
+    component: lazyRouteComponent(() => import('./wallets.js'), 'WalletsSetupPage'),
+  });
+
   const wallet = createRoute({
     getParentRoute: () => rootRoute,
     path: '/accounts/wallets/$accountId',
@@ -65,5 +71,5 @@ export function accountsRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./consolidated.js'), 'ConsolidatedPage'),
   });
 
-  return [cash, transfers, wallet, reports, ledger, periods, consolidated] as const;
+  return [cash, transfers, setup, wallet, reports, ledger, periods, consolidated] as const;
 }
