@@ -22,9 +22,8 @@ import { createLogger } from './platform/logging/logger.js';
 import type { Logger } from 'pino';
 import { pathToFileURL } from 'node:url';
 import { registerAuth } from './platform/http/auth-plugin.js';
-import { CSRF_HEADER } from './platform/http/csrf.js';
-import { IDEMPOTENCY_HEADER } from './platform/http/idempotency.js';
-import { isTrustedOrigin, withBrandOrigins } from './platform/http/origins.js';
+import { corsOptions } from './platform/http/cors.js';
+import { withBrandOrigins } from './platform/http/origins.js';
 import { ValkeyRateLimiter } from './platform/http/rate-limit.valkey.js';
 import { createRealtimeGateway } from './platform/realtime/index.js';
 import { useTrackingRateLimitStore } from './modules/courier/tracking.service.js';
@@ -201,38 +200,8 @@ async function bootstrap(): Promise<void> {
   // type no longer matches the un-augmented instance Nest hands back.
   await fastify.register(fastifyCookie as never);
 
-  /*
-   * CORS (architecture §25).
-   *
-   * The console, the portal and the POS are served from their own origins and
-   * talk to this API cross-origin, with cookies. That combination has two hard
-   * requirements the browser enforces: the allowed origin must be echoed
-   * exactly — `*` is rejected outright once credentials are involved — and
-   * `credentials` must be true, or the session cookie is simply never sent and
-   * every request looks anonymous.
-   */
-  await fastify.register(fastifyCors as never, {
-    origin: (
-      origin: string | undefined,
-      callback: (error: Error | null, allow: boolean) => void,
-    ) => {
-      // No Origin header at all is a same-origin or non-browser request; CORS
-      // has nothing to decide, and CSRF still applies to it.
-      if (origin === undefined) return callback(null, true);
-      callback(null, isTrustedOrigin(origin, originPolicy));
-    },
-    credentials: true,
-    // The double-submit token rides in a custom header, which means every
-    // mutation is preflighted. Omitting it here would fail them all.
-    // §23's `Idempotency-Key` belongs here too, and leaving it out made the
-    // whole feature unreachable: a custom request header triggers a CORS
-    // preflight, and a preflight that does not list the header fails before the
-    // request is sent. Every browser client would have been silently unable to
-    // send one, while the server-side tests — which use `inject` and never
-    // preflight — passed.
-    allowedHeaders: ['content-type', CSRF_HEADER, IDEMPOTENCY_HEADER],
-    maxAge: 600,
-  });
+  // CORS (architecture §25): the exact-origin, credentialed policy in `cors.ts`.
+  await fastify.register(fastifyCors as never, corsOptions(originPolicy));
 
   /*
    * The credential rate limiter's counters, in Valkey (D-056's stated exit).

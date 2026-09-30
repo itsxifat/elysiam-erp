@@ -11,10 +11,15 @@ import { enrolSecondFactor, signIn, user } from './stack/helpers.js';
  *
  * One accounts user does a small day's work and reads it back everywhere it should
  * show: records ৳5,000 of other income into the head office till, moves ৳1,000 of it
- * to the bank with a ৳10 bank charge, and then checks both cash books, the P&L, the
+ * to the bank with a ৳10 bank charge, pays a ৳250 fare in cash with the receipt
+ * photo attached, and then checks both cash books, the day book, the P&L, the
  * trial balance, and closing last month. Every figure asserted is what the ledger
- * must say if the transfer posted as §7 describes: the till down by the amount and
- * the charge, the bank up by the amount, and the charge an expense.
+ * must say if the entries posted as §7 describes: the till down by the transfer,
+ * the charge and the fare, the bank up by the amount, and the charge and the fare
+ * expenses.
+ *
+ * The receipt goes through the real upload — ticket, signed PUT, finalize — which
+ * is how this spec found the API refusing every cross-origin PUT at the preflight.
  *
  * Nothing here is stubbed. The numbers come from journal lines the real API posted.
  */
@@ -113,12 +118,116 @@ test('cash in, then a transfer with a bank charge, moves both wallets exactly', 
   expect(await closingBalance()).toBe('৳3,990.00');
 });
 
+/**
+ * A valid one-pixel PNG. The files module sniffs the bytes at finalize and
+ * refuses anything that is not what the ticket declared, so a text file named
+ * `.png` would be rejected — correctly — before the entry ever saw it.
+ */
+const RECEIPT_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+const CASH_OUT_MEMO = 'Rickshaw fare to the courier hub';
+
+test('petty cash without a receipt is stopped before it is sent (M08 check 2)', async () => {
+  await page.goto('/accounts');
+  await page.getByRole('button', { name: 'Record cash' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+
+  await dialog.getByRole('combobox', { name: /Movement/ }).click();
+  await page.getByRole('option', { name: 'Petty cash' }).click();
+  await dialog.getByRole('combobox', { name: /Wallet/ }).click();
+  await page.getByRole('option', { name: /1010-HQ/ }).click();
+  await dialog.getByRole('combobox', { name: /Category/ }).click();
+  await page.getByRole('option', { name: /5830/ }).click();
+  await dialog.getByLabel(/^Amount/).fill('90');
+
+  let sent = false;
+  const watch = (request: { url: () => string; method: () => string }) => {
+    if (request.method() === 'POST' && request.url().endsWith('/v1/accounts/cash-entries')) {
+      sent = true;
+    }
+  };
+  page.on('request', watch);
+  await dialog.getByRole('button', { name: 'Record' }).click();
+  await expect(dialog.getByRole('alert')).toHaveText(
+    'Attach the receipt before recording petty cash.',
+  );
+  page.off('request', watch);
+  expect(sent).toBe(false);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+});
+
+test('a cash out with a receipt appears in the day book and the P&L (M08 check 6)', async () => {
+  await page.goto('/accounts');
+  await page.getByRole('button', { name: 'Record cash' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+
+  await dialog.getByRole('combobox', { name: /Movement/ }).click();
+  await page.getByRole('option', { name: 'Cash out' }).click();
+  await dialog.getByRole('combobox', { name: /Wallet/ }).click();
+  await page.getByRole('option', { name: /1010-HQ/ }).click();
+  await dialog.getByRole('combobox', { name: /Category/ }).click();
+  await page.getByRole('option', { name: /5830/ }).click();
+  await dialog.getByLabel(/^Amount/).fill('250');
+  await dialog.getByLabel(/^Note/).fill(CASH_OUT_MEMO);
+
+  // Through the real ticket, the signed PUT and finalize. The name alone is not
+  // proof — it is also the "uploading" status line — so the wait is for the
+  // Remove button, which exists only once the server has sniffed the bytes and
+  // stored the file.
+  await dialog
+    .locator('input[type="file"]')
+    .setInputFiles({ name: 'fare-receipt.png', mimeType: 'image/png', buffer: RECEIPT_PNG });
+  await expect(dialog.getByRole('button', { name: 'Remove the attachment' })).toBeVisible();
+  await expect(dialog.getByText('fare-receipt.png')).toBeVisible();
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await shot('cash-out-with-receipt');
+
+  // The entry the server accepted carries the receipt, not just the dialog.
+  const recorded = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().endsWith('/v1/accounts/cash-entries'),
+  );
+  await dialog.getByRole('button', { name: 'Record' }).click();
+  const response = await recorded;
+  expect(response.ok()).toBe(true);
+  expect((response.request().postDataJSON() as { receiptFileId?: string }).receiptFileId).toMatch(
+    /^[0-9a-f-]{36}$/,
+  );
+  await expect(dialog).toBeHidden();
+
+  // Posted, not held: only petty cash goes through maker-checker.
+  const entry = page.getByRole('row').filter({ hasText: 'Transport' });
+  await expect(entry).toContainText('Cash out');
+  await expect(entry).toContainText('Posted');
+
+  // The day book: the entry, the expense debited and the till credited.
+  await page.goto('/accounts/ledger');
+  await page.getByRole('button', { name: 'Day book' }).click();
+  const journal = page.locator('ol > li').filter({ hasText: CASH_OUT_MEMO });
+  await expect(journal).toHaveCount(1);
+  await expect(journal.getByRole('row').filter({ hasText: '5830' })).toContainText('৳250.00');
+  await expect(journal.getByRole('row').filter({ hasText: '1010-HQ' })).toContainText('৳250.00');
+
+  // The P&L: Transport carries it as an expense.
+  await page.goto('/accounts/reports');
+  await expect(page.getByRole('row').filter({ hasText: '5830' })).toContainText('৳250.00');
+});
+
 test('the statements and the trial balance agree with what was posted', async () => {
   await page.goto('/accounts/reports');
   await expect(page.getByRole('heading', { name: 'Statements', level: 1 })).toBeVisible();
-  // Income 5,000 less the 10 bank charge; the transfer itself is neither.
+  // Income 5,000 less the 10 bank charge and the 250 fare; the transfer itself is
+  // neither.
   const net = page.getByRole('row', { name: /^Net/ });
-  await expect(net).toContainText('৳4,990.00');
+  await expect(net).toContainText('৳4,740.00');
   await noBlockingViolations('profit and loss');
   await shot('profit-and-loss');
 
@@ -133,8 +242,8 @@ test('the statements and the trial balance agree with what was posted', async ()
   await shot('trial-balance');
 
   await page.getByRole('button', { name: 'Day book' }).click();
-  // Two entries today: the cash in and the transfer.
-  await expect(page.locator('ol > li')).toHaveCount(2);
+  // Three entries today: the cash in, the transfer and the cash out.
+  await expect(page.locator('ol > li')).toHaveCount(3);
   await shot('day-book');
 });
 

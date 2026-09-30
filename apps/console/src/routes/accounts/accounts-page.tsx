@@ -3,6 +3,7 @@ import {
   Button,
   DataTable,
   Dialog,
+  FileUpload,
   Form,
   Money,
   MoneyField,
@@ -17,7 +18,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Banknote, Landmark, Smartphone, Wallet } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -27,11 +28,13 @@ import { ApiError } from '../../api.js';
 import {
   dhakaMonthStart,
   dhakaToday,
+  finalizeUpload,
   listCashEntries,
   listCategories,
   listClosings,
   listWallets,
   profitAndLoss,
+  receiptUploadTicket,
   recordCashEntry,
   recordClosing,
   type CashEntryRow,
@@ -62,14 +65,35 @@ import { useAccountsT, type AccountsMessageKey } from './messages.js';
  * Money is `<Money>` everywhere, in tabular numerals, from integer-poisha strings.
  */
 
-const cashEntryFormSchema = z.object({
-  walletId: z.string().uuid(),
-  kind: z.enum(['cash_in', 'cash_out', 'petty_cash']),
-  categoryAccountId: z.string().uuid(),
-  amountPoisha: z.string().regex(/^[1-9]\d*$/),
-  memo: z.string().trim().max(500).optional(),
-});
-type CashEntryForm = z.infer<typeof cashEntryFormSchema>;
+/**
+ * The cash-entry form, built with its one translated message.
+ *
+ * A function rather than a constant because the kit's `FormField` shows the
+ * schema's message as written, and "attach the receipt" is a sentence a person
+ * reads — so it arrives already in the screen's language. The server's rule is
+ * the same one (`wallets.schemas.ts` refuses petty cash without a receipt); this
+ * catches it before the round trip.
+ */
+function cashEntryFormSchema(receiptRequired: string) {
+  return z
+    .object({
+      walletId: z.string().uuid(),
+      kind: z.enum(['cash_in', 'cash_out', 'petty_cash']),
+      categoryAccountId: z.string().uuid(),
+      amountPoisha: z.string().regex(/^[1-9]\d*$/),
+      receiptFileId: z.string().uuid().optional(),
+      memo: z.string().trim().max(500).optional(),
+    })
+    .superRefine((value, context) => {
+      if (value.kind === 'petty_cash' && value.receiptFileId === undefined) {
+        context.addIssue({ code: 'custom', path: ['receiptFileId'], message: receiptRequired });
+      }
+    });
+}
+type CashEntryForm = z.infer<ReturnType<typeof cashEntryFormSchema>>;
+
+/** Photos and scans: the types the files module accepts for a receipt. */
+const RECEIPT_TYPES = 'image/jpeg,image/png,image/webp,application/pdf';
 
 const closingFormSchema = z.object({
   walletId: z.string().uuid(),
@@ -163,10 +187,14 @@ export function AccountsPage() {
     [walletQuery.data],
   );
 
+  const receiptRequired = a('accounts.receiptRequired');
+  const entrySchema = useMemo(() => cashEntryFormSchema(receiptRequired), [receiptRequired]);
   const entryForm = useForm<CashEntryForm>({
-    resolver: zodResolver(cashEntryFormSchema),
+    resolver: zodResolver(entrySchema),
     defaultValues: { kind: 'cash_in', amountPoisha: '', memo: '' },
   });
+  const receiptLabelId = useId();
+  const receiptError = entryForm.formState.errors.receiptFileId?.message;
   const closingForm = useForm<ClosingForm>({
     resolver: zodResolver(closingFormSchema),
     defaultValues: { businessDate: today, countedPoisha: '', memo: '' },
@@ -196,6 +224,7 @@ export function AccountsPage() {
         kind: values.kind,
         categoryAccountId: values.categoryAccountId,
         amountPoisha: values.amountPoisha,
+        ...(values.receiptFileId === undefined ? {} : { receiptFileId: values.receiptFileId }),
         ...(values.memo === undefined || values.memo === '' ? {} : { memo: values.memo }),
       }),
     onSuccess: async (result) => {
@@ -531,17 +560,51 @@ export function AccountsPage() {
               required
             />
             <TextField<CashEntryForm> name="memo" label={a('accounts.fieldMemo')} />
-            {kind === 'petty_cash' ? (
-              /*
-               * The receipt is uploaded on the entry screen in M08's console slice
-               * as a follow-up: the server already requires a private,
-               * petty-cash-purpose file id and refuses without one, and wiring
-               * `<FileUpload>` here needs the ticket flow this page does not yet
-               * carry. Until then the hint says what the server will ask for,
-               * rather than the form pretending the field is optional.
-               */
-              <p className="text-xs text-muted-foreground">{a('accounts.receiptHint')}</p>
-            ) : null}
+            {/*
+             * Offered for every movement and required for petty cash, which is the
+             * server's rule too. Private and `petty-cash-receipt`, the only kind of
+             * file an entry accepts: the files module reads that purpose through
+             * `Wallet` and refuses to make it public, so the photo is seen by the
+             * people who approve and audit the spend and by nobody holding a
+             * guessable URL.
+             */}
+            <div role="group" aria-labelledby={receiptLabelId} className="space-y-1.5">
+              <p id={receiptLabelId} className="text-sm font-medium text-foreground">
+                {a('accounts.fieldReceipt')}
+                {kind === 'petty_cash' ? (
+                  <span className="ml-0.5 text-destructive" aria-hidden="true">
+                    *
+                  </span>
+                ) : null}
+              </p>
+              <FileUpload
+                accept={RECEIPT_TYPES}
+                createTicket={receiptUploadTicket}
+                finalize={finalizeUpload}
+                onUploaded={(file) => {
+                  entryForm.setValue('receiptFileId', file.id, { shouldValidate: true });
+                }}
+                onRemoved={() => {
+                  entryForm.setValue('receiptFileId', undefined, { shouldValidate: true });
+                }}
+                labels={{
+                  choose: a('accounts.receiptChoose'),
+                  uploading: t('upload.uploading'),
+                  uploaded: t('upload.uploaded'),
+                  remove: t('upload.remove'),
+                  failed: t('upload.failed'),
+                  tooLarge: t('upload.tooLarge'),
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                {a(kind === 'petty_cash' ? 'accounts.receiptHint' : 'accounts.receiptOptionalHint')}
+              </p>
+              {receiptError === undefined ? null : (
+                <p role="alert" className="text-xs font-medium text-destructive">
+                  {receiptError}
+                </p>
+              )}
+            </div>
           </div>
           <div className="mt-5 flex justify-end">
             <Button type="submit" disabled={entryMutation.isPending}>

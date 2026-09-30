@@ -54,6 +54,11 @@ export interface FileUploadProps {
   /** `POST /v1/files/:id/finalize`. Returns the row as the server now sees it. */
   readonly finalize: (fileId: string) => Promise<UploadedFile>;
   readonly onUploaded: (file: UploadedFile) => void;
+  /**
+   * The person took the attachment back. A form holding the file id clears it
+   * here, or it would submit an attachment the screen no longer shows.
+   */
+  readonly onRemoved?: () => void;
   /** Passed to the input's `accept`. Advisory — the server sniffs the bytes. */
   readonly accept?: string;
   readonly disabled?: boolean;
@@ -79,6 +84,7 @@ export function FileUpload({
   createTicket,
   finalize,
   onUploaded,
+  onRemoved,
   accept,
   disabled = false,
   labels,
@@ -131,6 +137,7 @@ export function FileUpload({
   function reset() {
     setPhase({ kind: 'idle' });
     if (inputRef.current !== null) inputRef.current.value = '';
+    onRemoved?.();
   }
 
   return (
@@ -139,6 +146,10 @@ export function FileUpload({
         ref={inputRef}
         type="file"
         className="sr-only"
+        // Out of the tab order: the button below opens it, and a second, invisible
+        // stop on the same control is a focus ring nobody can see.
+        tabIndex={-1}
+        aria-hidden="true"
         {...(accept === undefined ? {} : { accept })}
         onChange={(event) => {
           const file = event.target.files?.[0];

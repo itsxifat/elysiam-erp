@@ -1,3 +1,5 @@
+import type { UploadTicket, UploadedFile } from '@elysium/ui';
+
 import { api } from '../../api.js';
 
 /**
@@ -125,6 +127,28 @@ export function recordCashEntry(input: {
   memo?: string;
 }): Promise<CashEntryResult> {
   return api.post<CashEntryResult>('/v1/accounts/cash-entries', input);
+}
+
+/**
+ * An upload ticket for a petty-cash receipt.
+ *
+ * Private, and the purpose the cash-entry endpoint checks: the server refuses a
+ * receipt uploaded under any other purpose, and refuses to make this one public.
+ */
+export function receiptUploadTicket(input: {
+  contentType: string;
+  sizeBytes: number;
+  originalName: string;
+}): Promise<UploadTicket> {
+  return api.post<UploadTicket>('/v1/files', {
+    ...input,
+    visibility: 'private',
+    purpose: 'petty-cash-receipt',
+  });
+}
+
+export function finalizeUpload(fileId: string): Promise<UploadedFile> {
+  return api.post<UploadedFile>(`/v1/files/${fileId}/finalize`);
 }
 
 export function listClosings(range: {
