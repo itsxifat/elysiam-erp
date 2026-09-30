@@ -10,10 +10,12 @@ import {
   expectedDrawerCash,
   linesAboveCeiling,
   maxDiscountFor,
+  outsideShift,
   postingDateFor,
   priceLines,
   qtyBySku,
   refundFor,
+  refundProblem,
   saleHoldReasons,
   settleTenders,
   type HoldCheckLine,
@@ -157,9 +159,16 @@ describe('discount ceilings', () => {
 
 describe('saleHoldReasons', () => {
   const now = new Date('2026-09-29T06:00:00Z'); // 12:00 in Dhaka
-  const priced = (unit: number, catalog: number | null, discount = 0): HoldCheckLine => ({
+  const shift = { openedAt: new Date('2026-09-29T03:00:00Z'), closedAt: null };
+  const priced = (
+    unit: number,
+    catalog: number,
+    discount = 0,
+    available = true,
+  ): HoldCheckLine => ({
     ...priceLines([line(1, unit, discount)]).lines[0]!,
-    catalogPricePoisha: catalog === null ? null : poisha(catalog),
+    catalogPricePoisha: poisha(catalog),
+    available,
   });
 
   it('holds nothing for a clean sale made an hour ago', () => {
@@ -168,6 +177,7 @@ describe('saleHoldReasons', () => {
         lines: [priced(100_000, 100_000, 5_000)],
         ceilingBps: 2_000,
         shiftOpen: true,
+        shift,
         occurredAt: new Date('2026-09-29T05:00:00Z'),
         now,
       }),
@@ -177,9 +187,10 @@ describe('saleHoldReasons', () => {
   it('names every reason at once, in a stable order', () => {
     expect(
       saleHoldReasons({
-        lines: [priced(50_000, 100_000), priced(100, null)],
+        lines: [priced(50_000, 100_000), priced(100, 100, 0, false)],
         ceilingBps: 0,
         shiftOpen: false,
+        shift,
         occurredAt: new Date('2026-09-26T05:00:00Z'),
         now,
       }),
@@ -189,13 +200,106 @@ describe('saleHoldReasons', () => {
       'discount_above_ceiling',
       'shift_closed',
       'outside_posting_window',
+      'outside_shift',
     ]);
+  });
+
+  it('measures a discount on an archived SKU against its list price (D-173)', () => {
+    // A ৳2,000 shirt, archived, rung up at ৳200 with nothing typed as discount.
+    // Before D-173 the archived line had no catalog price and only `sku_unavailable`
+    // was raised, so a reviewer with no discount right could post a 90% discount.
+    expect(
+      saleHoldReasons({
+        lines: [priced(20_000, 200_000, 0, false)],
+        ceilingBps: 2_000,
+        shiftOpen: true,
+        shift,
+        occurredAt: new Date('2026-09-29T05:00:00Z'),
+        now,
+      }),
+    ).toEqual(['sku_unavailable', 'price_mismatch', 'discount_above_ceiling']);
   });
 
   it('posts a late sale on its own day inside the window, and today outside it', () => {
     // 23:30 Dhaka on the 28th is 17:30Z; still yesterday at noon on the 29th.
     expect(postingDateFor(new Date('2026-09-28T17:30:00Z'), now)).toBe('2026-09-28');
     expect(postingDateFor(new Date('2026-09-25T05:00:00Z'), now)).toBe('2026-09-29');
+  });
+
+  it('posts today, not into a day its branch has already closed (D-174)', () => {
+    expect(postingDateFor(new Date('2026-09-28T17:30:00Z'), now, true)).toBe('2026-09-29');
+  });
+});
+
+describe('outsideShift (D-174)', () => {
+  const now = new Date('2026-09-29T06:00:00Z');
+  const open = { openedAt: new Date('2026-09-29T03:00:00Z'), closedAt: null };
+  const closed = { ...open, closedAt: new Date('2026-09-29T05:00:00Z') };
+  const minutes = (n: number) => n * 60_000;
+
+  it('believes a till clock within five minutes of the shift and the server', () => {
+    expect(outsideShift(new Date(open.openedAt.getTime() - minutes(4)), open, now)).toBe(false);
+    expect(outsideShift(new Date(now.getTime() + minutes(4)), open, now)).toBe(false);
+    expect(outsideShift(new Date(closed.closedAt.getTime() + minutes(4)), closed, now)).toBe(false);
+  });
+
+  it('does not believe a time before the shift, after its close, or in the future', () => {
+    expect(outsideShift(new Date(open.openedAt.getTime() - minutes(6)), open, now)).toBe(true);
+    expect(outsideShift(new Date(now.getTime() + minutes(6)), open, now)).toBe(true);
+    expect(outsideShift(new Date(closed.closedAt.getTime() + minutes(6)), closed, now)).toBe(true);
+    // Yesterday, as an edited payload or a phone set to the wrong day would say.
+    expect(outsideShift(new Date('2026-09-28T06:00:00Z'), open, now)).toBe(true);
+  });
+});
+
+describe('refundProblem (D-175)', () => {
+  const line = { qty: 3, netPoisha: poisha(100_000) };
+  const none = { qty: 0, refundPoisha: poisha(0) };
+
+  it('accepts the second of two tills that each priced a unit at "none returned yet"', () => {
+    // Both tills looked the receipt up before either synced, so both refunded
+    // 333.33. The fair second share is 333.34; a poisha short is rounding, not
+    // tampering, and used to leave the return held until someone voided it.
+    expect(refundProblem(line, none, 1, poisha(33_333))).toBeNull();
+    expect(
+      refundProblem(line, { qty: 1, refundPoisha: poisha(33_333) }, 1, poisha(33_333)),
+    ).toBeNull();
+  });
+
+  it('still refuses more than rounding, more units, or more money than the line', () => {
+    expect(refundProblem(line, none, 1, poisha(33_335))).toBe('refund differs from the receipt');
+    expect(refundProblem(line, { qty: 3, refundPoisha: poisha(100_000) }, 1, poisha(1))).toBe(
+      'more units than the receipt still allows',
+    );
+    // Within a poisha per unit of the fair figure, but past what was paid.
+    expect(refundProblem(line, { qty: 2, refundPoisha: poisha(66_667) }, 1, poisha(33_334))).toBe(
+      'more refunded than the line was sold for',
+    );
+  });
+
+  it('never lets a line refund more than its net, whatever order units come back in', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 12 }),
+        fc.bigInt({ min: 0n, max: 10_000_000n }),
+        fc.array(fc.integer({ min: -1, max: 1 }), { minLength: 12, maxLength: 12 }),
+        (qty, net, drifts) => {
+          const soFar = { qty: 0, refundPoisha: poisha(0) };
+          for (let unit = 0; unit < qty; unit += 1) {
+            const fair = refundFor({ qty, netPoisha: poisha(net), returnedQty: soFar.qty }, 1);
+            const offered = fair + BigInt(drifts[unit] ?? 0);
+            if (offered < 0n) continue;
+            if (
+              refundProblem({ qty, netPoisha: poisha(net) }, soFar, 1, poisha(offered)) === null
+            ) {
+              soFar.qty += 1;
+              soFar.refundPoisha = poisha(soFar.refundPoisha + offered);
+            }
+          }
+          expect(soFar.refundPoisha <= net).toBe(true);
+        },
+      ),
+    );
   });
 });
 

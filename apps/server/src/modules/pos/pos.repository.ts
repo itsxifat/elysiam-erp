@@ -1,4 +1,5 @@
 import type { Tx } from '@elysium/db';
+import { PosError } from '@elysium/domain/pos';
 import { sql, type SQL } from 'drizzle-orm';
 
 /**
@@ -190,16 +191,24 @@ export async function insertShift(
   return rows.length === 1;
 }
 
+/**
+ * One shift. `lock` is `true` (or `'update'`) for the close, which changes it, and
+ * `'share'` for a sync, which only needs it not to close underneath: without that
+ * a sale that read "open" just before a close was posted into a drawer that had
+ * already been counted without it.
+ */
 export async function shiftById(
   tx: Tx,
   orgId: string,
   id: string,
-  lock = false,
+  lock: boolean | 'update' | 'share' = false,
 ): Promise<ShiftRow | undefined> {
+  const locking =
+    lock === 'share' ? sql`for share of s` : lock === false ? sql`` : sql`for update of s`;
   const rows = await tx.execute<ShiftRow>(sql`
     ${SHIFT_SELECT}
     where s.org_id = ${orgId} and s.id = ${id}
-    ${lock ? sql`for update of s` : sql``}
+    ${locking}
   `);
   return rows[0];
 }
@@ -734,6 +743,32 @@ export async function returnedQty(
   return new Map(rows.map((row) => [row.sale_line_no, row.qty]));
 }
 
+/**
+ * Units and refunds already returned per sale line, voided returns excluded, held
+ * ones included: a held return's refund has already left the drawer (D-175).
+ */
+export async function returnedSoFar(
+  tx: Tx,
+  orgId: string,
+  saleId: string,
+  excludeReturnId: string | null,
+): Promise<Map<number, { qty: number; refundPoisha: bigint }>> {
+  const rows = await tx.execute<{ sale_line_no: number; qty: number; refund_poisha: string }>(sql`
+    select l.sale_line_no, sum(l.qty)::int as qty, sum(l.refund_poisha)::text as refund_poisha
+    from pos.return_lines l
+    join pos.returns r on r.org_id = l.org_id and r.id = l.return_id
+    where l.org_id = ${orgId} and l.sale_id = ${saleId} and r.status <> 'voided'
+      and ${excludeReturnId === null ? sql`true` : sql`r.id <> ${excludeReturnId}`}
+    group by l.sale_line_no
+  `);
+  return new Map(
+    rows.map((row) => [
+      row.sale_line_no,
+      { qty: row.qty, refundPoisha: BigInt(row.refund_poisha) },
+    ]),
+  );
+}
+
 // --- review items ---------------------------------------------------------------
 
 export interface ReviewRow extends Record<string, unknown> {
@@ -1084,6 +1119,22 @@ export async function branchClosing(
   return rows[0];
 }
 
+/** A branch closing by its own id, whatever branch or day it closed. */
+export async function branchClosingById(
+  tx: Tx,
+  orgId: string,
+  id: string,
+): Promise<BranchClosingRow | undefined> {
+  const rows = await tx.execute<BranchClosingRow>(sql`
+    select id, branch_id, business_date::text as business_date, closed_by, sales_count,
+           net_sales_poisha::text as net_sales_poisha, refunds_poisha::text as refunds_poisha,
+           note, ${iso(sql`created_at`)} as created_at
+    from pos.branch_closings
+    where org_id = ${orgId} and id = ${id}
+  `);
+  return rows[0];
+}
+
 export async function branchClosings(
   tx: Tx,
   orgId: string,
@@ -1139,7 +1190,15 @@ export async function insertBranchClosing(
     on conflict (id) do nothing
     returning id
   `);
-  if (inserted.length === 0) return;
+  if (inserted.length === 0) {
+    // A replay is the same closing. Anything else under this id is a different one,
+    // and recording nothing while the caller audits a close would hide that (W2).
+    const existing = await branchClosingById(tx, row.orgId, row.id);
+    if (existing?.branch_id !== row.branchId || existing.business_date !== row.businessDate) {
+      throw new PosError('IDEMPOTENCY_CONFLICT', 'That closing id already closed another day.');
+    }
+    return;
+  }
   for (const wallet of row.wallets) {
     await tx.execute(sql`
       insert into pos.branch_closing_wallets

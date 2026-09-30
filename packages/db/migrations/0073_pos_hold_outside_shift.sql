@@ -1,0 +1,12 @@
+-- A till document whose time falls outside its shift is held for review (M23; D-174).
+--
+-- The ledger audit of M23 found that `occurredAt` came straight from the till's
+-- payload. A phone set to yesterday, or an edited payload, posted a sale straight
+-- into a day whose drawer had already been counted and signed off, and the day's
+-- closing no longer matched the ledger. A document dated before its shift opened,
+-- after it closed or in the future (five minutes' tolerance for clock drift) is now
+-- held with this reason, and a manager decides.
+--
+-- Appended, because `ALTER TYPE … ADD VALUE` appends; `HOLD_REASONS` in
+-- `packages/domain/src/pos/holds.ts` keeps the same order.
+ALTER TYPE "pos"."hold_reason" ADD VALUE IF NOT EXISTS 'outside_shift';

@@ -106,6 +106,7 @@ const BRANCHES_KEYS = [
   'branch.reviews.reason.sku_unavailable',
   'branch.reviews.reason.sale_not_posted',
   'branch.reviews.reason.return_mismatch',
+  'branch.reviews.reason.outside_shift',
   'branch.closing.heading',
   'branch.closing.caption',
   'branch.closing.date',

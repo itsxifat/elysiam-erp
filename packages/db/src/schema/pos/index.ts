@@ -68,6 +68,8 @@ export const posHoldReason = pos.enum('hold_reason', [
   'sku_unavailable',
   'sale_not_posted',
   'return_mismatch',
+  // 0073 (D-174).
+  'outside_shift',
 ]);
 
 export const posReviewStatus = pos.enum('review_status', ['open', 'posted', 'voided']);

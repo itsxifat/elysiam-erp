@@ -139,6 +139,14 @@ export class ReviewsService {
       })),
     ).lines;
     const ceiling = discountCeilingBps(context, sale.branch_id);
+    // A line recorded before D-173 may carry no catalog price, so its discount cannot
+    // be measured. Only someone whose ceiling is everything may post it.
+    if (ceiling < 10_000 && lines.some((line) => line.catalog_price_poisha === null)) {
+      throw posHttpError(
+        'POS_DISCOUNT_ABOVE_CEILING',
+        'A line on this sale has no catalog price to measure its discount against; an org admin must post it.',
+      );
+    }
     const above = linesAboveCeiling(
       priced,
       lines.map((line) =>

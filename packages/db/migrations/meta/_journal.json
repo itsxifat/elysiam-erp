@@ -498,6 +498,13 @@
       "when": 1790366806635,
       "tag": "0072_outbox_retry_schedule",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1790366813635,
+      "tag": "0073_pos_hold_outside_shift",
+      "breakpoints": true
     }
   ]
 }

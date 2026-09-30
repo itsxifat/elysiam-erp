@@ -69,6 +69,7 @@ const REASON_KEYS: Record<ReviewRow['reasons'][number], BranchesMessageKey> = {
   sku_unavailable: 'branch.reviews.reason.sku_unavailable',
   sale_not_posted: 'branch.reviews.reason.sale_not_posted',
   return_mismatch: 'branch.reviews.reason.return_mismatch',
+  outside_shift: 'branch.reviews.reason.outside_shift',
 };
 
 const CLOSING_STATUS: Record<
@@ -862,7 +863,11 @@ function ClosingSection({
               type="date"
               max={today}
               value={businessDate}
-              onChange={(event) => setBusinessDate(event.target.value)}
+              onChange={(event) => {
+                setBusinessDate(event.target.value);
+                // A different day is a different closing, never a retry of this one.
+                setClosingId(crypto.randomUUID());
+              }}
             />
           </div>
           {[...wallets.entries()].map(([walletId, codes]) => (
@@ -876,9 +881,11 @@ function ClosingSection({
                 className="text-right tabular-nums"
                 value={counts[walletId] ?? ''}
                 aria-invalid={problem === 'branch.closing.countInvalid'}
-                onChange={(event) =>
-                  setCounts((current) => ({ ...current, [walletId]: event.target.value }))
-                }
+                onChange={(event) => {
+                  setCounts((current) => ({ ...current, [walletId]: event.target.value }));
+                  // A different count is a different closing, never a retry of this one.
+                  setClosingId(crypto.randomUUID());
+                }}
               />
             </div>
           ))}

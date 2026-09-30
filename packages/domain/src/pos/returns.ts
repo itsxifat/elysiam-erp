@@ -39,6 +39,45 @@ export interface ReturnableLine {
   readonly returnedQty: number;
 }
 
+/** What has come back of one sale line so far, and what was refunded for it. */
+export interface ReturnedSoFar {
+  readonly qty: number;
+  readonly refundPoisha: Poisha;
+}
+
+/**
+ * Why a till's refund for returning `qty` units of a line cannot post, or null (D-175).
+ *
+ * The fair refund is `refundFor` at the units returned so far, but two tills that
+ * each looked the receipt up before the other synced both compute it at "none
+ * returned yet", and one of them is a poisha off. Requiring the exact figure left
+ * that return held forever, and voiding it was the only way out — which kept its
+ * refunded cash and its unit off the books. So a refund within a poisha per unit of
+ * the fair figure is accepted, and what cannot be crossed is the line itself: the
+ * refunds for a line never add up to more than the customer paid for it.
+ */
+export function refundProblem(
+  line: { readonly qty: number; readonly netPoisha: Poisha },
+  soFar: ReturnedSoFar,
+  qty: number,
+  refundPoisha: Poisha,
+): string | null {
+  let fair: Poisha;
+  try {
+    fair = refundFor({ ...line, returnedQty: soFar.qty }, qty);
+  } catch (error) {
+    if (error instanceof PosError) return 'more units than the receipt still allows';
+    throw error;
+  }
+  if (refundPoisha < 0n) return 'a refund is never negative';
+  const drift = refundPoisha > fair ? refundPoisha - fair : fair - refundPoisha;
+  if (drift > BigInt(qty)) return 'refund differs from the receipt';
+  if (soFar.refundPoisha + refundPoisha > line.netPoisha) {
+    return 'more refunded than the line was sold for';
+  }
+  return null;
+}
+
 /** What returning `qty` more units of a line refunds, or a refusal. */
 export function refundFor(line: ReturnableLine, qty: number): Poisha {
   if (!Number.isSafeInteger(qty) || qty <= 0) {

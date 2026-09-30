@@ -579,6 +579,241 @@ describe('a return by receipt', () => {
   });
 });
 
+// --- what the M23 ledger audit found (2026-09-30) ---------------------------------------
+
+async function receiveAt(skuId: string, qty: number, unitCost: number): Promise<void> {
+  const actor = { orgId: ORG_A, userId: 'usr_pos_test' };
+  await withOrg(actor, (tx) =>
+    inventory.receiveSupply(tx, actor, {
+      supplyId: randomUUID(),
+      supplierId: randomUUID(),
+      locationId: showroomId,
+      branchId,
+      occurredAt: new Date(),
+      lines: [{ skuId, qty, unitCostPoisha: poisha(unitCost) }],
+    }),
+  );
+}
+
+/** Each journal line of the one journal a POS document posted, by account. */
+async function journalLines(sourceId: string) {
+  return withSystem(
+    async (tx) =>
+      tx.execute<{ account_id: string; debit: string; credit: string; business_date: string }>(sql`
+        select l.account_id, l.debit_poisha::text as debit, l.credit_poisha::text as credit,
+               j.business_date::text as business_date
+        from ledger.journal_lines l
+        join ledger.journals j on j.org_id = l.org_id and j.id = l.journal_id
+        where j.org_id = ${ORG_A} and j.source_id = ${sourceId}
+      `),
+    { orgId: ORG_A },
+  );
+}
+
+async function resolve(client: RoleClient, reviewItemId: string) {
+  return client.client.request('POST', `/v1/pos/reviews/${reviewItemId}/resolve`, {
+    body: { action: 'post', note: 'reviewed' },
+  });
+}
+
+describe('what the M23 ledger audit found', () => {
+  let audited: SeededSku[] = [];
+
+  beforeAll(async () => {
+    ({ skus: audited } = await seedProductWithSkus(ORG_A, 'posaudit', 4));
+    for (const sku of audited) await receive(sku.id, 10);
+  });
+
+  it('W1: an archived SKU sold far below list is a discount, measured against the ceiling', async () => {
+    const archived = audited[0]!;
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          update catalog.skus set status = 'archived' where org_id = ${ORG_A} and id = ${archived.id}
+        `),
+      { orgId: ORG_A },
+    );
+    // Listed at ৳1,500, rung up at ৳150 with nothing typed as discount: 90% off.
+    const document = sale(
+      [{ sku: archived, qty: 1, price: 15_000 }],
+      [{ tender: 'cash', amount: 15_000 }],
+    );
+    const [held] = await sync(cashier, [document]);
+    expect(held?.reasons).toEqual(['sku_unavailable', 'price_mismatch', 'discount_above_ceiling']);
+
+    // A branch manager's 20% does not cover it, and accounts gives no discount at all.
+    expect((await resolve(manager, held!.reviewItemId!)).statusCode).toBe(403);
+    const accounts = await harness.asRole('accounts', ORG_A);
+    expect((await resolve(accounts, held!.reviewItemId!)).statusCode).toBe(403);
+    expect(await journalsFor(document.id)).toBe(0);
+
+    const admin = await harness.asRole('org_admin', ORG_A);
+    const posted = await resolve(admin, held!.reviewItemId!);
+    expect(JSON.parse(posted.body)).toMatchObject({ outcome: 'posted' });
+  });
+
+  it('W3: a sale dated before its shift opened is held, not posted into a counted day', async () => {
+    const document = sale([{ sku: audited[1]!, qty: 1 }], [{ tender: 'cash', amount: PRICE }], {
+      occurredAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
+    });
+    const [result] = await sync(cashier, [document]);
+    expect(result).toMatchObject({ outcome: 'held', reasons: ['outside_shift'] });
+    expect(await journalsFor(document.id)).toBe(0);
+  });
+
+  it('W3: a sale for a day the branch already closed posts today when it is resolved', async () => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(new Date());
+    const yesterdayAt = new Date(Date.now() - 24 * 60 * 60_000);
+    const yesterday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(
+      yesterdayAt,
+    );
+    // Nothing reached hand cash yesterday, so the till counts zero and balances.
+    const closed = await manager.client.request('POST', `/v1/pos/branches/${branchId}/closings`, {
+      body: {
+        closingId: randomUUID(),
+        businessDate: yesterday,
+        counts: [{ walletId: handCash.id, countedPoisha: '0' }],
+      },
+    });
+    expect(closed.statusCode, closed.body).toBe(201);
+
+    const document = sale([{ sku: audited[1]!, qty: 1 }], [{ tender: 'cash', amount: PRICE }], {
+      occurredAt: yesterdayAt.toISOString(),
+    });
+    const [held] = await sync(cashier, [document]);
+    expect(held?.outcome).toBe('held');
+    const posted = await resolve(manager, held!.reviewItemId!);
+    expect(JSON.parse(posted.body)).toMatchObject({ outcome: 'posted' });
+    // Yesterday was counted and signed off; the sale lands in today's books instead.
+    const lines = await journalLines(document.id);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(new Set(lines.map((line) => line.business_date))).toEqual(new Set([today]));
+  });
+
+  it('W2: a closing id cannot be reused for another day, and a recount is not silently kept', async () => {
+    const day = (daysAgo: number) =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(
+        new Date(Date.now() - daysAgo * 24 * 60 * 60_000),
+      );
+    const closingId = randomUUID();
+    const first = await manager.client.request('POST', `/v1/pos/branches/${branchId}/closings`, {
+      body: {
+        closingId,
+        businessDate: day(3),
+        counts: [{ walletId: handCash.id, countedPoisha: '0' }],
+      },
+    });
+    expect(first.statusCode, first.body).toBe(201);
+
+    // The same id for another day was recorded as closed while nothing was counted.
+    const reused = await manager.client.request('POST', `/v1/pos/branches/${branchId}/closings`, {
+      body: {
+        closingId,
+        businessDate: day(4),
+        counts: [{ walletId: handCash.id, countedPoisha: '0' }],
+      },
+    });
+    expect(reused.statusCode).toBe(409);
+    expect(JSON.parse(reused.body)).toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+
+    // The same close with a different count is a recount, which M08 must correct.
+    const recount = await manager.client.request('POST', `/v1/pos/branches/${branchId}/closings`, {
+      body: {
+        closingId,
+        businessDate: day(3),
+        counts: [{ walletId: handCash.id, countedPoisha: '5000' }],
+      },
+    });
+    expect(recount.statusCode).toBe(409);
+
+    // And the honest retry is still the same closing.
+    const replay = await manager.client.request('POST', `/v1/pos/branches/${branchId}/closings`, {
+      body: {
+        closingId,
+        businessDate: day(3),
+        counts: [{ walletId: handCash.id, countedPoisha: '0' }],
+      },
+    });
+    expect(replay.statusCode, replay.body).toBe(201);
+  });
+
+  it('W6: a till cannot sell a unit reserved for an online order', async () => {
+    const sku = audited[2]!;
+    const actor = { orgId: ORG_A, userId: 'usr_pos_test' };
+    // Every unit on the shelf is promised to a confirmed online order.
+    await withOrg(actor, (tx) =>
+      inventory.reserve(tx, actor, {
+        refType: 'order',
+        refId: randomUUID(),
+        lines: [{ skuId: sku.id, locationId: showroomId, qty: 10 }],
+      }),
+    );
+    const document = sale([{ sku, qty: 1 }], [{ tender: 'cash', amount: PRICE }]);
+    const [result] = await sync(cashier, [document]);
+    expect(result).toMatchObject({ outcome: 'held', reasons: ['stock_shortfall'] });
+    expect(await onHand(sku.id)).toBe(10);
+    expect(await journalsFor(document.id)).toBe(0);
+  });
+
+  it('W4 and W6: two tills refund a poisha apart, and each unit re-enters at its sale cost', async () => {
+    const sku = audited[3]!;
+    // Three units for ৳4,000 net: ৳1,333.33 each, a poisha short of a third.
+    const sold = sale([{ sku, qty: 3, discount: 50_000 }], [{ tender: 'cash', amount: 400_000 }]);
+    expect((await sync(cashier, [sold]))[0]?.outcome).toBe('posted');
+
+    // The average moves after the sale: new units at ৳1,200. A return must still
+    // come back at the ৳900 the sold units left at (§8), not at the new average.
+    await receiveAt(sku.id, 10, 120_000);
+
+    // Both tills looked the receipt up before either synced: 1,33,333 each.
+    const returnOf = (suffix: string) => ({
+      kind: 'return' as const,
+      id: randomUUID(),
+      registerId,
+      shiftId,
+      saleId: sold.id,
+      receiptNo: `R${suffix}-${sold.receiptNo}`,
+      occurredAt: new Date().toISOString(),
+      lines: [{ lineNo: 1, saleLineNo: 1, qty: 1, refundPoisha: '133333' }],
+      tenders: [{ tender: 'cash' as const, amountPoisha: '133333' }],
+      refundPoisha: '133333',
+    });
+    const first = returnOf('A');
+    const second = returnOf('B');
+    const results = await sync(cashier, [first, second]);
+    expect(results.map((result) => result.outcome)).toEqual(['posted', 'posted']);
+
+    const inventoryAccount = await accountOf('inventory');
+    const cogsAccount = await accountOf('cogs');
+    for (const ret of [first, second]) {
+      const lines = await journalLines(ret.id);
+      const debitInventory = lines
+        .filter((line) => line.account_id === inventoryAccount)
+        .reduce((total, line) => total + BigInt(line.debit) - BigInt(line.credit), 0n);
+      const creditCogs = lines
+        .filter((line) => line.account_id === cogsAccount)
+        .reduce((total, line) => total + BigInt(line.credit) - BigInt(line.debit), 0n);
+      expect(debitInventory).toBe(BigInt(UNIT_COST));
+      expect(creditCogs).toBe(BigInt(UNIT_COST));
+
+      // The stock movement agrees with the journal: the unit came back at ৳900,
+      // not at the ৳1,200 average the shelf holds now. A journal at sale cost over
+      // a movement at today's average would leave inventory and the ledger apart.
+      const movementCost = await withSystem(
+        async (tx) =>
+          (
+            await tx.execute<{ unit_cost_poisha: string }>(sql`
+              select unit_cost_poisha::text as unit_cost_poisha from inventory.stock_movements
+              where org_id = ${ORG_A} and ref_id = ${ret.id} and kind = 'pos_return'
+            `)
+          ).map((row) => row.unit_cost_poisha),
+        { orgId: ORG_A },
+      );
+      expect(movementCost).toEqual([String(UNIT_COST)]);
+    }
+  });
+});
+
 // --- shift close, branch close ----------------------------------------------------------
 
 describe('closing', () => {

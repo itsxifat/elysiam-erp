@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { deterministicUuid, withOrg } from '@elysium/db';
-import { businessDate } from '@elysium/domain';
+import { businessDate, divideRounded } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -117,7 +117,7 @@ export class BranchesService {
         averageBasketPoisha:
           summary.sales_count === 0
             ? '0'
-            : (BigInt(summary.net_poisha) / BigInt(summary.sales_count)).toString(),
+            : divideRounded(BigInt(summary.net_poisha), BigInt(summary.sales_count)).toString(),
         tenders: {
           cashPoisha: summary.cash_poisha,
           bkashPoisha: summary.bkash_poisha,
@@ -171,6 +171,15 @@ export class BranchesService {
       const branch = await repo.branchById(tx, context.orgId, branchId);
       if (branch === undefined) throw posHttpError('POS_REGISTER_NOT_FOUND', 'No such branch.');
 
+      // The id is the client's. Reused for another branch or day it would re-reach
+      // closings that belong to a different count (W2).
+      const byId = await repo.branchClosingById(tx, context.orgId, input.closingId);
+      if (
+        byId !== undefined &&
+        (byId.branch_id !== branchId || byId.business_date !== input.businessDate)
+      ) {
+        throw posHttpError('IDEMPOTENCY_CONFLICT', 'That closing id already closed another day.');
+      }
       const existing = await repo.branchClosing(tx, context.orgId, branchId, input.businessDate);
       if (existing !== undefined && existing.id !== input.closingId) {
         throw posHttpError('CLOSING_ALREADY_RECORDED', 'This branch day is already closed.');
@@ -220,18 +229,37 @@ export class BranchesService {
 
     const results: WalletClosingResult[] = [];
     for (const count of input.counts) {
-      results.push(
-        await this.walletClosings.close(context, request, {
-          closingId: deterministicUuid(
-            WALLET_CLOSING_NAMESPACE,
-            `${input.closingId}:${count.walletId}`,
-          ),
-          walletId: count.walletId,
-          businessDate: input.businessDate,
-          countedPoisha: count.countedPoisha,
-          memo: `Branch close ${input.businessDate}`,
-        }),
-      );
+      /*
+       * Derived from the branch, the day and the wallet, never from the client's id.
+       * Derived from the client's id, a retry that changed the date re-reached the
+       * first day's M08 closing and recorded it as the second day's (W2); derived
+       * from what is being counted, the same count always meets the same closing and
+       * a different day never does.
+       */
+      const closing = await this.walletClosings.close(context, request, {
+        closingId: deterministicUuid(
+          WALLET_CLOSING_NAMESPACE,
+          `${branchId}:${input.businessDate}:${count.walletId}`,
+        ),
+        walletId: count.walletId,
+        businessDate: input.businessDate,
+        countedPoisha: count.countedPoisha,
+        memo: `Branch close ${input.businessDate}`,
+      });
+      // M08 answers a repeat with the closing it already has. A different count for
+      // the same wallet and day is a recount, which is M08's correction to make, not
+      // something to record silently as if it were the figure counted.
+      if (
+        closing.walletId !== count.walletId ||
+        closing.businessDate !== input.businessDate ||
+        closing.countedPoisha !== count.countedPoisha
+      ) {
+        throw posHttpError(
+          'IDEMPOTENCY_CONFLICT',
+          'This wallet was already counted for that day at a different figure.',
+        );
+      }
+      results.push(closing);
     }
 
     await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {

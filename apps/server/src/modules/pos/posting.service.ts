@@ -11,7 +11,7 @@ import {
   PosError,
   postingDateFor,
   qtyBySku,
-  refundFor,
+  refundProblem,
   type HoldReason,
   type Tender,
 } from '@elysium/domain/pos';
@@ -79,10 +79,11 @@ export class PosPostingService {
     const lines = await repo.saleLines(tx, actor.orgId, sale.id);
     const tenders = await repo.saleTenders(tx, actor.orgId, sale.id);
     const occurredAt = new Date(sale.occurred_at);
-    const postedOn = postingDateFor(occurredAt, now);
+    const dayClosed = await this.dayClosed(tx, actor.orgId, sale.branch_id, occurredAt);
+    const postedOn = postingDateFor(occurredAt, now, dayClosed);
     // The instant the movements carry, so a late sale's stock leaves on the day its
     // journal says it did rather than on a day whose count is already closed.
-    const movedAt = withinPostingWindow(occurredAt, now) ? occurredAt : now;
+    const movedAt = withinPostingWindow(occurredAt, now) && !dayClosed ? occurredAt : now;
     const netPoisha = poisha(sale.net_poisha);
 
     try {
@@ -91,9 +92,11 @@ export class PosPostingService {
           saleId: sale.id,
           locationId: sale.location_id,
           occurredAt: movedAt,
-          lines: [...qtyBySku(lines.map((line) => ({ skuId: line.sku_id, qty: line.qty })))].map(
-            ([skuId, qty]) => ({ skuId, qty }),
-          ),
+          // In SKU order, so two sales sharing SKUs lock their stock rows in the same
+          // order and cannot deadlock each other.
+          lines: [...qtyBySku(lines.map((line) => ({ skuId: line.sku_id, qty: line.qty })))]
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([skuId, qty]) => ({ skuId, qty })),
         });
         const costBySku = new Map(moved.lines.map((line) => [line.skuId, line.unitCostPoisha]));
 
@@ -169,7 +172,7 @@ export class PosPostingService {
     const saleLines = new Map(
       (await repo.saleLines(tx, actor.orgId, sale.id)).map((line) => [line.line_no, line]),
     );
-    const already = await repo.returnedQty(tx, actor.orgId, sale.id, ret.id);
+    const already = await repo.returnedSoFar(tx, actor.orgId, sale.id, ret.id);
     const lines = await repo.returnLines(tx, actor.orgId, ret.id);
 
     const costed: { lineNo: number; skuId: string; qty: number; unitCostPoisha: bigint }[] = [];
@@ -187,7 +190,11 @@ export class PosPostingService {
           },
         };
       }
-      already.set(line.sale_line_no, (already.get(line.sale_line_no) ?? 0) + line.qty);
+      const before = already.get(line.sale_line_no) ?? { qty: 0, refundPoisha: 0n };
+      already.set(line.sale_line_no, {
+        qty: before.qty + line.qty,
+        refundPoisha: before.refundPoisha + BigInt(line.refund_poisha),
+      });
       costed.push({
         lineNo: line.line_no,
         skuId: line.sku_id,
@@ -197,8 +204,9 @@ export class PosPostingService {
     }
 
     const occurredAt = new Date(ret.occurred_at);
-    const postedOn = postingDateFor(occurredAt, now);
-    const movedAt = withinPostingWindow(occurredAt, now) ? occurredAt : now;
+    const dayClosed = await this.dayClosed(tx, actor.orgId, ret.branch_id, occurredAt);
+    const postedOn = postingDateFor(occurredAt, now, dayClosed);
+    const movedAt = withinPostingWindow(occurredAt, now) && !dayClosed ? occurredAt : now;
     const refund = poisha(ret.refund_poisha);
     const tenders = await repo.returnTenders(tx, actor.orgId, ret.id);
 
@@ -262,27 +270,36 @@ export class PosPostingService {
     }
   }
 
-  /** Why a return line cannot post as it stands, or null when it can. */
+  /** Why a return line cannot post as it stands, or null when it can (D-175). */
   private checkReturnLine(
     sold: repo.SaleLineRow,
     line: repo.ReturnLineRow,
-    already: ReadonlyMap<number, number>,
+    already: ReadonlyMap<number, { qty: number; refundPoisha: bigint }>,
   ): string | null {
     if (sold.sku_id !== line.sku_id) return 'sku differs from the receipt';
-    try {
-      const refund = refundFor(
-        {
-          qty: sold.qty,
-          netPoisha: poisha(sold.net_poisha),
-          returnedQty: already.get(line.sale_line_no) ?? 0,
-        },
-        line.qty,
-      );
-      return refund === BigInt(line.refund_poisha) ? null : 'refund differs from the receipt';
-    } catch (error) {
-      if (error instanceof PosError) return 'more units than the receipt still allows';
-      throw error;
-    }
+    const soFar = already.get(line.sale_line_no) ?? { qty: 0, refundPoisha: 0n };
+    return refundProblem(
+      { qty: sold.qty, netPoisha: poisha(sold.net_poisha) },
+      { qty: soFar.qty, refundPoisha: poisha(soFar.refundPoisha) },
+      line.qty,
+      poisha(BigInt(line.refund_poisha)),
+    );
+  }
+
+  /**
+   * Whether the branch already closed the day a document happened on (D-174).
+   *
+   * A counted, signed-off day must not change after the fact, so a document that
+   * arrives or is resolved after its day closed posts today instead. Its own date
+   * stays on the row and in the journal memo.
+   */
+  private async dayClosed(
+    tx: Tx,
+    orgId: string,
+    branchId: string,
+    occurredAt: Date,
+  ): Promise<boolean> {
+    return (await repo.branchClosing(tx, orgId, branchId, businessDate(occurredAt))) !== undefined;
   }
 
   private async shortfall(

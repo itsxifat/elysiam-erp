@@ -1559,6 +1559,7 @@ const en = {
   'branch.reviews.reason.sku_unavailable': 'Item is archived',
   'branch.reviews.reason.sale_not_posted': 'The sale itself is still held',
   'branch.reviews.reason.return_mismatch': 'Return does not match the receipt',
+  'branch.reviews.reason.outside_shift': 'Dated outside its shift',
 
   'branch.closing.heading': 'Close the day',
   'branch.closing.caption':

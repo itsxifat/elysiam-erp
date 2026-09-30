@@ -8,6 +8,7 @@ import {
   discountCeilingBps,
   PosError,
   priceLines,
+  outsideShift,
   saleHoldReasons,
   settleTenders,
   type HoldReason,
@@ -215,8 +216,10 @@ export class SyncService {
       return {
         ...line,
         lineNo: document.lines[index]?.lineNo ?? index + 1,
-        catalogPricePoisha:
-          sku?.status === 'active' ? poisha(sku.pricePoisha) : null,
+        // The list price even for an archived SKU, so a discount against it is still
+        // measured against the seller's ceiling (D-173); `available` says archived.
+        catalogPricePoisha: poisha(sku?.pricePoisha ?? line.unitPricePoisha),
+        available: sku?.status === 'active',
       };
     });
     await repo.insertSaleLines(
@@ -240,6 +243,7 @@ export class SyncService {
       lines: checked,
       ceilingBps,
       shiftOpen: shift.status === 'open',
+      shift: shiftWindow(shift),
       occurredAt,
       now,
     });
@@ -256,7 +260,8 @@ export class SyncService {
             skuId: line.skuId,
             unitPricePoisha: line.unitPricePoisha.toString(),
             discountPoisha: line.discountPoisha.toString(),
-            catalogPricePoisha: line.catalogPricePoisha?.toString() ?? null,
+            catalogPricePoisha: line.catalogPricePoisha.toString(),
+            available: line.available,
           })),
         },
       };
@@ -318,7 +323,7 @@ export class SyncService {
     const sale = await repo.saleById(tx, context.orgId, document.saleId);
     if (sale?.branch_id !== register.branch_id) {
       // A receipt of another branch answers exactly as a missing one: returns are
-      // taken where the goods were sold (decision row), and anything else would let
+      // taken where the goods were sold (D-169), and anything else would let
       // a till probe another showroom's sales by id.
       throw new PosError('POS_SALE_NOT_FOUND', 'No such receipt at this branch.');
     }
@@ -389,6 +394,7 @@ export class SyncService {
     const reasons: HoldReason[] = [];
     if (shift.status !== 'open') reasons.push('shift_closed');
     if (!withinPostingWindow(occurredAt, now)) reasons.push('outside_posting_window');
+    if (outsideShift(occurredAt, shiftWindow(shift), now)) reasons.push('outside_shift');
 
     let outcome: PostOutcome;
     if (reasons.length > 0) {
@@ -457,7 +463,8 @@ export class SyncService {
     } catch {
       throw new PosError('POS_REGISTER_NOT_FOUND', 'No such register.');
     }
-    const shift = await repo.shiftById(tx, context.orgId, document.shiftId);
+    // Shared, so a close cannot count the drawer while this document is joining it.
+    const shift = await repo.shiftById(tx, context.orgId, document.shiftId, 'share');
     if (shift?.register_id !== register.id) {
       throw new PosError('POS_SHIFT_MISMATCH', 'That shift is not on this register.');
     }
@@ -521,6 +528,13 @@ function result(
     reasons: outcome.kind === 'held' ? outcome.reasons : [],
     journalId: outcome.kind === 'posted' ? outcome.journalId : null,
     error: null,
+  };
+}
+
+function shiftWindow(shift: repo.ShiftRow): { openedAt: Date; closedAt: Date | null } {
+  return {
+    openedAt: new Date(shift.opened_at),
+    closedAt: shift.closed_at === null ? null : new Date(shift.closed_at),
   };
 }
 

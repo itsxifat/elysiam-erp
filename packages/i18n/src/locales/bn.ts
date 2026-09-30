@@ -1518,6 +1518,7 @@ const bn: Record<MessageKey, string> = {
   'branch.reviews.reason.sku_unavailable': 'পণ্যটি আর্কাইভ করা',
   'branch.reviews.reason.sale_not_posted': 'মূল বিক্রিটিই এখনো অপেক্ষায়',
   'branch.reviews.reason.return_mismatch': 'ফেরত রসিদের সাথে মেলে না',
+  'branch.reviews.reason.outside_shift': 'শিফটের সময়ের বাইরের তারিখ',
 
   'branch.closing.heading': 'দিন বন্ধ করুন',
   'branch.closing.caption':
