@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
+import type { MembershipRole } from '@elysium/contracts';
 import { createAuth, RecordingSmsProvider, SEED_ORG_IDS } from '@elysium/db';
 import {
   createTestUser,
@@ -81,11 +82,40 @@ async function create(): Promise<void> {
   });
   const { auth } = created;
 
+  const otherOrgId = SEED_ORG_IDS['oura-lifestyle'] ?? '';
+
+  /*
+   * Who the browser suites sign in as.
+   *
+   * `desk` and `queue` are the two sales sessions M11's checks need. The other two exist
+   * for M05's navigation check: `accounts` is given the role and nothing else, so the
+   * suite has to pass §6's two-factor enrolment through the real screen before it sees a
+   * single page, and `switcher` holds a different role in each of two brands, which is
+   * the only way "switching org changes the navigation" can be observed.
+   */
+  const people: readonly {
+    label: string;
+    grants: readonly { orgId: string; role: MembershipRole }[];
+  }[] = [
+    { label: 'desk', grants: [{ orgId, role: 'sales' }] },
+    { label: 'queue', grants: [{ orgId, role: 'sales' }] },
+    { label: 'accounts', grants: [{ orgId, role: 'accounts' }] },
+    {
+      label: 'switcher',
+      grants: [
+        { orgId, role: 'sales' },
+        { orgId: otherOrgId, role: 'warehouse' },
+      ],
+    },
+  ];
+
   const users: { role: string; email: string; userId: string }[] = [];
-  for (const label of ['desk', 'queue']) {
+  for (const { label, grants } of people) {
     const email = `e2e.${label}.${run}@example.invalid`;
     const user = await createTestUser({ email, name: `E2E ${label} agent` });
-    await grantMembership({ userId: user.id, orgId, role: 'sales' });
+    for (const grant of grants) {
+      await grantMembership({ userId: user.id, orgId: grant.orgId, role: grant.role });
+    }
     await auth.api.requestPasswordReset({ body: { email, redirectTo: '/accept-invite' } });
     const token = tokens.get(email);
     if (token === undefined) throw new Error(`desk-stack: no reset token for ${label}.`);

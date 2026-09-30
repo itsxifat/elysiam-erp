@@ -131,7 +131,6 @@ export type BranchesMessageKey = (typeof BRANCHES_KEYS)[number];
 
 export const branchesMessages = sectionCatalogue(BRANCHES_KEYS);
 export const branchesEn = branchesMessages.en;
-export const branchesBn = branchesMessages.bn;
 
 /**
  * The section's own lookup, closing over the locale from context.

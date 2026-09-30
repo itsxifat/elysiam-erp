@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { daysBefore, percentOfBps, quantity, receiptProblem, todayInDhaka } from './courier-ui.js';
-import { courierBn, courierEn, courierMessages } from './messages.js';
+import { courierEn, courierMessages } from './messages.js';
+import { loadLocale } from '../../i18n/catalogue.js';
+
+// Bangla is fetched on demand in the console (`i18n/catalogue.ts`); load it the way
+// the app does before reading it.
+beforeAll(async () => {
+  await loadLocale('bn');
+});
 
 /**
  * The courier screens' pure pieces (M15).
@@ -17,7 +24,7 @@ import { courierBn, courierEn, courierMessages } from './messages.js';
 
 describe('the courier catalogue', () => {
   it('has the same keys in bn as in en', () => {
-    expect(Object.keys(courierBn).sort()).toEqual(Object.keys(courierEn).sort());
+    expect(Object.keys(courierMessages.bn).sort()).toEqual(Object.keys(courierEn).sort());
   });
 
   it('has a non-empty value for every key in both locales', () => {

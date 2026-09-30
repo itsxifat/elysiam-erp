@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { investorsEn, investorsMessages } from './messages.js';
 import { bpsFromPercent, lastFinishedMonth, percentOfBps } from './share.js';
+import { loadLocale } from '../../i18n/catalogue.js';
+
+// Bangla is fetched on demand in the console (`i18n/catalogue.ts`); load it the way
+// the app does before reading it.
+beforeAll(async () => {
+  await loadLocale('bn');
+});
 
 /**
  * The investor screens' pure pieces.

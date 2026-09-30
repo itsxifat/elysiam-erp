@@ -191,7 +191,6 @@ export type HrMessageKey = (typeof HR_KEYS)[number];
 
 export const hrMessages = sectionCatalogue(HR_KEYS);
 export const hrEn = hrMessages.en;
-export const hrBn = hrMessages.bn;
 
 /**
  * The HR screens' lookup.

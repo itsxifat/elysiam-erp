@@ -1,4 +1,6 @@
-import { messages, type Locale, type MessageKey } from '@elysium/i18n';
+import type { Locale, MessageKey } from '@elysium/i18n';
+
+import { catalogueFor } from './catalogue.js';
 
 /**
  * The keys the console shell renders, and the helper each section's catalogue is
@@ -141,10 +143,11 @@ export type ConsoleMessageKey = (typeof CONSOLE_KEYS)[number];
 /**
  * A section's two catalogues, read out of the shared one.
  *
- * Both locales are built once at module load rather than looked up per render,
- * because a section's `useXT` runs in a component body and rebuilding a
- * 160-key object on every keystroke in the order desk is the kind of cost §24's
- * latency budget has no room for.
+ * Each locale is built once, on first read, rather than looked up per render,
+ * because a section's `useXT` runs in a component body and rebuilding a 160-key
+ * object on every keystroke in the order desk is the kind of cost §24's latency
+ * budget has no room for. On first read rather than at module load, because
+ * Bangla arrives later than the module does (`catalogue.ts`).
  *
  * The locales are named rather than derived from `LOCALES`, so adding a third
  * one is a compile error here instead of a section that silently renders English
@@ -153,11 +156,24 @@ export type ConsoleMessageKey = (typeof CONSOLE_KEYS)[number];
 export function sectionCatalogue<Key extends MessageKey>(
   keys: readonly Key[],
 ): Record<Locale, Record<Key, string>> {
-  const forLocale = (locale: Locale) =>
-    Object.fromEntries(keys.map((key) => [key, messages[locale][key]])) as Record<Key, string>;
-  return { en: forLocale('en'), bn: forLocale('bn') };
+  const built: Partial<Record<Locale, Record<Key, string>>> = {};
+  const forLocale = (locale: Locale): Record<Key, string> => {
+    const catalogue = catalogueFor(locale);
+    built[locale] ??= Object.fromEntries(keys.map((key) => [key, catalogue[key]])) as Record<
+      Key,
+      string
+    >;
+    return built[locale];
+  };
+  return {
+    get en() {
+      return forLocale('en');
+    },
+    get bn() {
+      return forLocale('bn');
+    },
+  };
 }
 
 export const consoleMessages = sectionCatalogue(CONSOLE_KEYS);
 export const consoleEn = consoleMessages.en;
-export const consoleBn = consoleMessages.bn;

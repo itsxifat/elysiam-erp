@@ -100,7 +100,6 @@ export type StockMessageKey = (typeof STOCK_KEYS)[number];
 
 export const stockMessages = sectionCatalogue(STOCK_KEYS);
 export const stockEn = stockMessages.en;
-export const stockBn = stockMessages.bn;
 
 /**
  * The stock screens' lookup.

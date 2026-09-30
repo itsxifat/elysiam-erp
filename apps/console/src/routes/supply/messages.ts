@@ -114,7 +114,6 @@ export type SupplyMessageKey = (typeof SUPPLY_KEYS)[number];
 
 export const supplyMessages = sectionCatalogue(SUPPLY_KEYS);
 export const supplyEn = supplyMessages.en;
-export const supplyBn = supplyMessages.bn;
 
 /**
  * The supply screens' lookup.

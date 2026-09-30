@@ -49,8 +49,11 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
 - `pnpm dev` runs every app. Filter with `pnpm --filter @elysium/<app> dev`.
 - `pnpm db:generate` creates a migration from schema changes. `pnpm db:migrate` applies them as `erp_owner`, `pnpm db:seed` loads geography, the five orgs and each org's chart of accounts (with a hand-cash wallet per branch). The seed is idempotent.
 - `pnpm db:dev-users` creates local sign-in users (hr, warehouse, branch_manager, sales — the roles with no 2FA wall) through the real invite flow. Local databases only; the password is random per run and written only to the gitignored `packages/db/.dev-users.local.json`.
-- `pnpm test` runs unit + integration tests. `pnpm e2e` runs Playwright.
-- `pnpm verify` runs format check, lint, typecheck, tests, build, the migration-immutability check, the schema-drift check, the route-matrix gate, the i18n check and the api-client drift check. It is the gate for every commit to main.
+- `pnpm test` runs unit + integration tests. `pnpm e2e` runs the console's Playwright specs against a stubbed API.
+- `pnpm --filter @elysium/console e2e:stack` runs the console's `*.stack.ts` specs against the real stack: a throwaway database, the built API and worker, and the console. Build the server first. It covers M11 checks 1 and 4 and M05's quality checks, and writes M05's review screenshots to `docs/review/M05/`.
+- `pnpm --filter @elysium/pos e2e` runs the till's offline Playwright spec (M23 checks 1 and 4) against its stub API.
+- `pnpm verify` runs format check, lint, typecheck, tests, build, the console bundle budget, the migration-immutability check, the schema-drift check, the route-matrix gate, the i18n check and the api-client drift check. It is the gate for every commit to main.
+- `pnpm check:bundle` is the console's initial-route budget on its own: 250 KB gzipped, fonts excluded. Needs a console build first.
 - `pnpm check:routes` is the route-matrix gate on its own: every route declares an ability (or `@AuthenticatedOnly` / `@Public`), and every non-public route is in `apps/server/src/platform/auth/route-matrix.manifest.ts` with a fixture in the generated route-matrix suite. Needs a build first.
 - `pnpm api:client` regenerates the typed OpenAPI client. Live from M04.
 - `pnpm bench` is the shared benchmark harness; every latency acceptance check measures through it. `pnpm bench --list` names the module benches; `pnpm bench catalog` (M06 check 2) and `pnpm bench fraud` (M13 check 4) run under tsx against the dev stack's Postgres. With no argument it runs the harness's self-test.

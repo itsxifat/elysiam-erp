@@ -4,21 +4,31 @@ import { createRoot } from 'react-dom/client';
 import '@elysium/ui/styles/tailwind.css';
 
 import { ConsoleApp } from './console-app.js';
+import { preloadStoredLocale } from './i18n/locale.js';
 
 /**
  * The browser entry point.
  *
- * Separate from `main.tsx` — which M02a wrote and which mounts that milestone's
- * placeholder shell — because `main.tsx` and `app.tsx` are shared files this
- * session and a concurrent edit to either would be lost silently. `index.html`
- * points here; the INTEGRATION section of this milestone's report says to delete
- * the two superseded files.
+ * It waits for the stored locale's strings before mounting. English is bundled, so
+ * for most sessions that is already resolved; a Bangla session fetches its
+ * catalogue first, so no screen ever renders before its strings exist. A failed
+ * fetch still mounts, in English, rather than leaving a blank page.
  */
 const container = document.getElementById('root');
 if (container === null) throw new Error('#root is missing from index.html');
 
-createRoot(container).render(
-  <StrictMode>
-    <ConsoleApp />
-  </StrictMode>,
-);
+const mount = () =>
+  createRoot(container).render(
+    <StrictMode>
+      <ConsoleApp />
+    </StrictMode>,
+  );
+
+preloadStoredLocale().then(mount, () => {
+  try {
+    localStorage.removeItem('elysium-locale');
+  } catch {
+    // Storage denied: the default applies anyway.
+  }
+  mount();
+});

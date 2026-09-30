@@ -222,7 +222,7 @@ test('check 6: every mutation carries the CSRF token the server issued', async (
   await page.goto('/');
   await signIn(page);
 
-  await expect(page.getByRole('heading', { name: 'Current organisation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
 
   expect(state.csrfHeaders.length).toBeGreaterThan(0);
   expect(
@@ -259,7 +259,7 @@ test('check 1: an enrolled second factor is demanded, and recovery works', async
   await page.getByLabel('Recovery code').fill('RECOVERY01');
   await page.getByRole('button', { name: 'Verify' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Current organisation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
 });
 
 test('a privileged role is walked through enrolment rather than locked out', async ({ page }) => {
@@ -280,7 +280,7 @@ test('a privileged role is walked through enrolment rather than locked out', asy
   await page.getByLabel('Verification code').fill('123456');
   await confirm.click();
 
-  await expect(page.getByRole('heading', { name: 'Current organisation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
 });
 
 test('check 2: a user with two orgs gets a switcher that changes the roles shown', async ({
@@ -308,7 +308,7 @@ test('a user with one org never sees a switcher', async ({ page }) => {
   await page.goto('/');
   await signIn(page);
 
-  await expect(page.getByRole('heading', { name: 'Current organisation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Switch organisation' })).toHaveCount(0);
   // It still says where you are — it just is not a control.
   await expect(page.getByRole('banner').getByText('Oura', { exact: true })).toBeVisible();
@@ -331,5 +331,5 @@ test('the login is operable from the keyboard alone', async ({ page }) => {
   expect(focused).toContain('Sign in');
 
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: 'Current organisation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
 });

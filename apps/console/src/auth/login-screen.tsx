@@ -7,9 +7,8 @@ import {
   type RecoveryCode,
   type TotpCode,
 } from '@elysium/contracts';
-import { t } from '@elysium/i18n';
 import { Check, Copy, Download, KeyRound, ShieldCheck } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 
 import {
@@ -21,6 +20,7 @@ import {
 } from '../api.js';
 import { applyBrand } from '../brand.js';
 import { Alert, Button, Field, Skeleton } from '../ui/primitives.js';
+import { useT } from '../i18n/locale.js';
 
 /**
  * The branded login (D-035, architecture §6, §24).
@@ -42,6 +42,7 @@ export interface LoginScreenProps {
 }
 
 export function LoginScreen({ branding, onAuthenticated }: LoginScreenProps) {
+  const t = useT();
   const [step, setStep] = useState<Step>('credentials');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +73,7 @@ export function LoginScreen({ branding, onAuthenticated }: LoginScreenProps) {
                   setStep('totp');
                   return;
                 }
-                await finish(onAuthenticated, setStep, setError);
+                await finish(onAuthenticated, setStep, setError, t);
               }}
             />
           ) : null}
@@ -86,7 +87,7 @@ export function LoginScreen({ branding, onAuthenticated }: LoginScreenProps) {
                 setError(null);
                 setStep(next);
               }}
-              onVerified={() => finish(onAuthenticated, setStep, setError)}
+              onVerified={() => finish(onAuthenticated, setStep, setError, t)}
             />
           ) : null}
 
@@ -95,7 +96,7 @@ export function LoginScreen({ branding, onAuthenticated }: LoginScreenProps) {
               password={password}
               error={error}
               onError={setError}
-              onEnrolled={() => finish(onAuthenticated, setStep, setError)}
+              onEnrolled={() => finish(onAuthenticated, setStep, setError, t)}
             />
           ) : null}
         </div>
@@ -119,6 +120,7 @@ async function finish(
   onAuthenticated: () => void | Promise<void>,
   setStep: (step: Step) => void,
   setError: (message: string | null) => void,
+  t: ReturnType<typeof useT>,
 ): Promise<void> {
   try {
     await endpoints.myOrgs();
@@ -129,7 +131,7 @@ async function finish(
       setStep('enrol');
       return;
     }
-    setError(messageFor(cause, t('auth.failed')));
+    setError(messageFor(cause, t('auth.failed'), t));
   }
 }
 
@@ -141,7 +143,7 @@ async function finish(
  * CSRF-rejected user goes and resets a password that was never wrong. Only 401
  * and 400 are actually about the credentials.
  */
-function messageFor(cause: unknown, fallback: string): string {
+function messageFor(cause: unknown, fallback: string, t: ReturnType<typeof useT>): string {
   if (cause instanceof NetworkError) return t('auth.unreachable');
 
   if (cause instanceof ApiError) {
@@ -157,6 +159,7 @@ function messageFor(cause: unknown, fallback: string): string {
 }
 
 function BrandMark({ branding }: { readonly branding: LoginBranding | null }) {
+  const t = useT();
   const name = branding?.displayName ?? 'Elysium';
   const logo = typeof branding?.brand?.logo === 'string' ? branding.brand.logo : null;
 
@@ -189,6 +192,7 @@ function CredentialsStep({
   readonly onError: (message: string | null) => void;
   readonly onSignedIn: (values: Credentials, needsSecondFactor: boolean) => Promise<void>;
 }) {
+  const t = useT();
   const form = useForm<Credentials>({
     resolver: zodResolver(credentialsSchema),
     defaultValues: { email: '', password: '' },
@@ -200,7 +204,7 @@ function CredentialsStep({
       const result = await endpoints.signIn(values.email, values.password);
       await onSignedIn(values, result.twoFactorRedirect === true);
     } catch (cause) {
-      onError(messageFor(cause, t('auth.failed')));
+      onError(messageFor(cause, t('auth.failed'), t));
     }
   });
 
@@ -244,6 +248,7 @@ function SecondFactorStep({
   readonly onSwitchMode: (next: 'totp' | 'recovery') => void;
   readonly onVerified: () => Promise<void>;
 }) {
+  const t = useT();
   const isTotp = mode === 'totp';
   // The two codes have different shapes, and saying so beats letting a pasted
   // recovery code fail verification as though it were a wrong TOTP.
@@ -263,6 +268,7 @@ function SecondFactorStep({
         messageFor(
           cause,
           isTotp ? t('auth.twoFactor.invalid') : t('auth.twoFactor.recoveryInvalid'),
+          t,
         ),
       );
     }
@@ -325,6 +331,7 @@ function EnrolStep({
   readonly onError: (message: string | null) => void;
   readonly onEnrolled: () => Promise<void>;
 }) {
+  const t = useT();
   const [enrolment, setEnrolment] = useState<EnrolmentResult | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -333,20 +340,34 @@ function EnrolStep({
     defaultValues: { code: '' },
   });
 
+  /*
+   * One enrolment per screen, whatever the effect does.
+   *
+   * Each call to the enable endpoint issues a new secret and replaces the last one.
+   * React runs this effect twice in a development build, so two requests raced:
+   * the screen showed the secret of whichever answer it kept, the server kept the
+   * secret of whichever write landed last, and a correct code from the app was
+   * refused when the two differed. Found by the M05 stack spec on 2026-09-30. The
+   * ref survives the double run, so both runs share the one request.
+   */
+  const request = useRef<{ password: string; result: Promise<EnrolmentResult> } | null>(null);
+
   useEffect(() => {
     let cancelled = false;
-    endpoints
-      .enrol(password)
+    if (request.current?.password !== password) {
+      request.current = { password, result: endpoints.enrol(password) };
+    }
+    request.current.result
       .then((result) => {
         if (!cancelled) setEnrolment(result);
       })
       .catch((cause: unknown) => {
-        if (!cancelled) onError(messageFor(cause, t('auth.enrol.failed')));
+        if (!cancelled) onError(messageFor(cause, t('auth.enrol.failed'), t));
       });
     return () => {
       cancelled = true;
     };
-  }, [password, onError]);
+  }, [password, onError, t]);
 
   const submit = form.handleSubmit(async ({ code }) => {
     onError(null);
@@ -354,7 +375,7 @@ function EnrolStep({
       await endpoints.verifyTotp(code);
       await onEnrolled();
     } catch (cause) {
-      onError(messageFor(cause, t('auth.twoFactor.invalid')));
+      onError(messageFor(cause, t('auth.twoFactor.invalid'), t));
     }
   });
 

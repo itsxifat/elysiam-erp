@@ -1,7 +1,14 @@
 import { LOCALES } from '@elysium/i18n';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
-import { consoleBn, consoleEn, consoleMessages } from './messages.js';
+import { consoleEn, consoleMessages } from './messages.js';
+import { loadLocale } from './catalogue.js';
+
+// Bangla is fetched on demand in the console (`i18n/catalogue.ts`); load it the way
+// the app does before reading it.
+beforeAll(async () => {
+  await loadLocale('bn');
+});
 
 /**
  * M05 acceptance checks 3 and 4, for the console's own catalogue.
@@ -22,7 +29,7 @@ describe('the console catalogue is complete in both locales (check 3)', () => {
   });
 
   it('has the same key set in bn and en', () => {
-    expect(Object.keys(consoleBn).sort()).toStrictEqual(Object.keys(consoleEn).sort());
+    expect(Object.keys(consoleMessages.bn).sort()).toStrictEqual(Object.keys(consoleEn).sort());
   });
 
   it('leaves no value empty in either locale', () => {
@@ -46,7 +53,8 @@ describe('the console catalogue is complete in both locales (check 3)', () => {
     const untranslated = Object.keys(consoleEn).filter(
       (key) =>
         !identicalByDesign.has(key) &&
-        consoleBn[key as keyof typeof consoleBn] === consoleEn[key as keyof typeof consoleEn],
+        consoleMessages.bn[key as keyof typeof consoleEn] ===
+          consoleEn[key as keyof typeof consoleEn],
     );
 
     expect(untranslated).toStrictEqual([]);

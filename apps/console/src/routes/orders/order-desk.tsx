@@ -1021,7 +1021,10 @@ function Desk() {
                 {mayConfirm ? (
                   <Button type="button" disabled={save.isPending} onClick={() => submit(true)}>
                     {save.isPending ? t('orders.desk.saving') : t('orders.desk.confirm')}
-                    <kbd className="ml-auto text-xs opacity-80">Ctrl+Enter</kbd>
+                    {/* Full-strength text, set apart by the monospace face rather than
+                        by fading it: at 80% opacity on the accent it failed AA
+                        contrast (M05 check 6). */}
+                    <kbd className="ml-auto font-mono text-xs">Ctrl+Enter</kbd>
                   </Button>
                 ) : null}
                 <Button
@@ -1031,7 +1034,7 @@ function Desk() {
                   onClick={() => submit(false)}
                 >
                   {t('orders.desk.savePending')}
-                  <kbd className="ml-auto text-xs opacity-80">Ctrl+S</kbd>
+                  <kbd className="ml-auto font-mono text-xs">Ctrl+S</kbd>
                 </Button>
               </div>
             ) : (

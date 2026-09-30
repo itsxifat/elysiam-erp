@@ -2,12 +2,13 @@ import {
   DEFAULT_LOCALE,
   fontClassFor,
   isLocale,
-  messages as sharedMessages,
   type Locale,
   type MessageKey,
 } from '@elysium/i18n';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+
+import { catalogueFor, loadLocale } from './catalogue.js';
 
 /**
  * The console's locale, and the lookup every screen uses (D-036, §24).
@@ -16,19 +17,22 @@ import type { ReactNode } from 'react';
  * for a server rendering an invoice and wrong for a React tree: every component
  * would have to be handed the locale, and the one that forgot would render half
  * the screen in English inside a Bangla page. So the locale lives in context and
- * `useT()` closes over it.
+ * `useT()` closes over it. The console never imports that `t`: it defaults to
+ * English, and three components that did rendered the login screen in English for
+ * a Bangla user until 2026-09-30.
  *
- * The key type is `MessageKey`, the shared catalogue's own. It was a union with a
- * console-local key type while the console kept its strings in
- * `apps/console/src/i18n/messages.ts`; now that they are in the catalogue the
- * union would only widen what a section may pass without adding a key to it. What
- * matters is that the type is not `string`: that would turn the missing-key check
- * into a CI grep, and the failure it guards against — `nav.orders` rendered
- * literally on screen — is one a user finds, not a test.
+ * The key type is `MessageKey`, the shared catalogue's own. What matters is that
+ * the type is not `string`: that would turn the missing-key check into a CI grep,
+ * and the failure it guards against — `nav.orders` rendered literally on screen —
+ * is one a user finds, not a test.
  *
  * `<html lang>` and the font class are set from the same state. The font class is
  * not cosmetic: Bangla renders in Hind Siliguri with its own `size-adjust`, and
  * without it a mixed bn/en string sits on two optical baselines (check 9).
+ *
+ * Bangla is fetched on demand (`catalogue.ts`), so switching waits for it: the
+ * locale changes only once its strings are here, and never renders a half-loaded
+ * screen.
  */
 
 const STORAGE_KEY = 'elysium-locale';
@@ -42,7 +46,7 @@ interface LocaleContextValue {
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
 function lookup(key: MessageKey, locale: Locale): string {
-  const value = sharedMessages[locale][key] as string | undefined;
+  const value = catalogueFor(locale)[key] as string | undefined;
   if (value === undefined) {
     // Unreachable while the key type holds. Thrown rather than returned so a
     // catalogue edit that breaks it fails loudly in development instead of
@@ -62,6 +66,11 @@ export function readStoredLocale(): Locale {
   return DEFAULT_LOCALE;
 }
 
+/** Fetch the stored locale's strings. `entry.tsx` awaits this before mounting. */
+export function preloadStoredLocale(): Promise<void> {
+  return loadLocale(readStoredLocale());
+}
+
 export function LocaleProvider({ children }: { readonly children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(readStoredLocale);
 
@@ -77,12 +86,19 @@ export function LocaleProvider({ children }: { readonly children: ReactNode }) {
   }, [locale]);
 
   const setLocale = useCallback((next: Locale) => {
-    setLocaleState(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // The choice still applies to this session.
-    }
+    void loadLocale(next)
+      .then(() => {
+        setLocaleState(next);
+        try {
+          localStorage.setItem(STORAGE_KEY, next);
+        } catch {
+          // The choice still applies to this session.
+        }
+      })
+      .catch(() => {
+        // The strings could not be fetched (offline). Stay in the current locale
+        // rather than switch to a screen of missing keys.
+      });
   }, []);
 
   const value = useMemo<LocaleContextValue>(

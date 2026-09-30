@@ -88,7 +88,6 @@ export type AccountsMessageKey = (typeof ACCOUNTS_KEYS)[number];
 
 export const accountsMessages = sectionCatalogue(ACCOUNTS_KEYS);
 export const accountsEn = accountsMessages.en;
-export const accountsBn = accountsMessages.bn;
 
 /**
  * The section's own lookup, closing over the locale from context.

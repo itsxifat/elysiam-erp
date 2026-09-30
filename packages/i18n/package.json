@@ -3,10 +3,19 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./locales/en": {
+      "types": "./dist/locales/en.d.ts",
+      "default": "./dist/locales/en.js"
+    },
+    "./locales/bn": {
+      "types": "./dist/locales/bn.d.ts",
+      "default": "./dist/locales/bn.js"
     }
   },
   "files": [

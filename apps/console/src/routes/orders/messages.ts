@@ -242,7 +242,6 @@ export type OrdersMessageKey = (typeof ORDERS_KEYS)[number];
 
 export const ordersMessages = sectionCatalogue(ORDERS_KEYS);
 export const ordersEn = ordersMessages.en;
-export const ordersBn = ordersMessages.bn;
 
 /**
  * The orders screens' lookup, closing over the locale from M05's provider so the shell's

@@ -1,7 +1,7 @@
-import { t } from '@elysium/i18n';
 import { Building2, Check, ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import { useT } from '../i18n/locale.js';
 import { endpoints, type AvailableOrg } from '../api.js';
 
 /**
@@ -25,6 +25,7 @@ export interface OrgSwitcherProps {
 }
 
 export function OrgSwitcher({ orgs, activeOrgId, onSwitched }: OrgSwitcherProps) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);

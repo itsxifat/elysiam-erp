@@ -145,7 +145,6 @@ export type InvestorsMessageKey = (typeof INVESTORS_KEYS)[number];
 
 export const investorsMessages = sectionCatalogue(INVESTORS_KEYS);
 export const investorsEn = investorsMessages.en;
-export const investorsBn = investorsMessages.bn;
 
 /**
  * The section's own lookup, closing over the locale from context.

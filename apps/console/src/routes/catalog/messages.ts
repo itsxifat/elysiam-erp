@@ -124,7 +124,6 @@ export type CatalogMessageKey = (typeof CATALOG_KEYS)[number];
 
 export const catalogMessages = sectionCatalogue(CATALOG_KEYS);
 export const catalogEn = catalogMessages.en;
-export const catalogBn = catalogMessages.bn;
 
 /**
  * The catalog screens' lookup.

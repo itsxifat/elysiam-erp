@@ -211,7 +211,6 @@ export type CourierMessageKey = (typeof COURIER_KEYS)[number];
 
 export const courierMessages = sectionCatalogue(COURIER_KEYS);
 export const courierEn = courierMessages.en;
-export const courierBn = courierMessages.bn;
 
 /**
  * The courier section's lookup, closing over the locale from context.

@@ -13,6 +13,7 @@
     "bench": "node scripts/bench.mjs",
     "build": "turbo run build",
     "check:api-client": "node scripts/check-api-client.mjs",
+    "check:bundle": "node scripts/check-bundle.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:routes": "node scripts/check-route-matrix.mjs",
@@ -34,7 +35,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:migrations && pnpm run check:schema && pnpm run check:routes && pnpm run check:i18n && pnpm run check:api-client",
+    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:bundle && pnpm run check:migrations && pnpm run check:schema && pnpm run check:routes && pnpm run check:i18n && pnpm run check:api-client",
     "db:dev-users": "pnpm --filter @elysium/db run db:dev-users"
   },
   "devDependencies": {

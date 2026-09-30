@@ -1,8 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { Area } from './api.js';
 import { addLine, deskPhone, filterAreas, previewTotals, toAsciiDigits } from './desk-logic.js';
-import { ordersBn, ordersEn } from './messages.js';
+import { ordersEn, ordersMessages } from './messages.js';
+import { loadLocale } from '../../i18n/catalogue.js';
+
+// Bangla is fetched on demand in the console (`i18n/catalogue.ts`); load it the way
+// the app does before reading it.
+beforeAll(async () => {
+  await loadLocale('bn');
+});
 
 /**
  * The order desk's pure pieces, and its catalogue.
@@ -15,8 +22,8 @@ import { ordersBn, ordersEn } from './messages.js';
 
 describe('the orders catalogue', () => {
   it('has the same keys in bn as in en, and no empty string', () => {
-    expect(Object.keys(ordersBn).sort()).toEqual(Object.keys(ordersEn).sort());
-    for (const value of [...Object.values(ordersEn), ...Object.values(ordersBn)]) {
+    expect(Object.keys(ordersMessages.bn).sort()).toEqual(Object.keys(ordersEn).sort());
+    for (const value of [...Object.values(ordersEn), ...Object.values(ordersMessages.bn)]) {
       expect(value.trim()).not.toBe('');
     }
   });
