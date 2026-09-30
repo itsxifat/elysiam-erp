@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   createAuth,
+  LIBRARY_RATE_RULES,
   mustEnrolTwoFactor,
   RecordingSmsProvider,
   requiresTwoFactor,
@@ -716,9 +717,15 @@ describe("check 5 (library half): Better Auth's own limiter is still on", () => 
     });
   }
 
-  async function hammer(handle: ReturnType<typeof createAuth>, path: string, body: unknown) {
+  async function hammer(
+    handle: ReturnType<typeof createAuth>,
+    path: keyof typeof LIBRARY_RATE_RULES,
+    body: unknown,
+  ) {
     const statuses: number[] = [];
-    for (let attempt = 0; attempt < 12; attempt += 1) {
+    // One past the allowance, and two for luck: the limit is the table's, not a
+    // number this test happens to know.
+    for (let attempt = 0; attempt < LIBRARY_RATE_RULES[path].max + 2; attempt += 1) {
       const response = await handle.auth.handler(
         new Request(`https://${APP_DOMAIN}/api/auth${path}`, {
           method: 'POST',

@@ -95,6 +95,26 @@ export interface AuthOptions {
 }
 
 /**
+ * Better Auth's own limits on the endpoints worth guessing against, per address and
+ * per minute (D-168).
+ *
+ * A backstop, never the binding limit. The API's limiter (`apps/server`'s
+ * `rate-limit.ts`) counts two buckets: a generous one per address, because an office
+ * or a carrier NAT puts many people behind one address, and a tight one per email
+ * or phone, which is what makes guessing one account expensive. Better Auth can only
+ * count per address. Its sign-in rule used to allow five a minute, so the sixth
+ * person to sign in from a showroom in the same minute was refused, whatever the
+ * API's own rules said. Each allowance here equals the API's per-address bucket, and
+ * a server test keeps it from dropping below it.
+ */
+export const LIBRARY_RATE_RULES = {
+  '/sign-in/email': { window: 60, max: 20 },
+  '/sign-in/phone-number': { window: 60, max: 20 },
+  '/phone-number/send-otp': { window: 60, max: 10 },
+  '/two-factor/verify-totp': { window: 60, max: 10 },
+} as const satisfies Readonly<Record<string, { window: number; max: number }>>;
+
+/**
  * Build the auth instance.
  *
  * It connects as `erp_app` like the rest of the application: the auth tables
@@ -199,13 +219,7 @@ export function createAuth(options: AuthOptions) {
       enabled: options.rateLimitEnabled ?? true,
       window: 60,
       max: 100,
-      customRules: {
-        // Tight, because these are the endpoints worth guessing against.
-        '/sign-in/email': { window: 60, max: 5 },
-        '/sign-in/phone-number': { window: 60, max: 5 },
-        '/phone-number/send-otp': { window: 60, max: 3 },
-        '/two-factor/verify-totp': { window: 60, max: 5 },
-      },
+      customRules: { ...LIBRARY_RATE_RULES },
     },
 
     plugins: [

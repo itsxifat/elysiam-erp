@@ -22,7 +22,10 @@ import { instanceOf, problemFor, PROBLEM_CONTENT_TYPE } from './problem.js';
  * of how many addresses the attacker has. The IP bucket is what stops a single
  * host walking a list of accounts.
  *
- * Better Auth's own limiter stays on underneath as defence in depth.
+ * Better Auth's own limiter stays on underneath as defence in depth, with each
+ * per-address allowance equal to the bucket here (`LIBRARY_RATE_RULES`, D-168). It
+ * used to allow five sign-ins a minute per address, which made it the binding limit
+ * and undid the point of the generous bucket above.
  */
 
 export interface RateLimitRule {

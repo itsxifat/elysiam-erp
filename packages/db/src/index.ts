@@ -76,6 +76,7 @@ export {
 } from './iam/branding.js';
 
 export {
+  LIBRARY_RATE_RULES,
   RecordingSmsProvider,
   TWO_FACTOR_REQUIRED_ROLES,
   createAuth,

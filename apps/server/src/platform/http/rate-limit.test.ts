@@ -1,12 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import type { FastifyRequest } from 'fastify';
+import { LIBRARY_RATE_RULES } from '@elysium/db';
 
 import {
   checkRateLimit,
+  CREDENTIAL_RULES,
   identifierFrom,
   MemoryRateLimiter,
   type RateLimitRule,
 } from './rate-limit.js';
+
+/*
+ * D-168. Better Auth's limiter counts per address only and sits underneath this one
+ * as a backstop. If any of its allowances were tighter than this limiter's
+ * per-address bucket, it would become the binding limit: the sixth person to sign in
+ * from one office in a minute was refused while this limiter's rules said twenty.
+ */
+describe('the library limiter underneath', () => {
+  it('never allows fewer attempts per address than this limiter does', () => {
+    for (const [path, rule] of Object.entries(LIBRARY_RATE_RULES)) {
+      const ours = CREDENTIAL_RULES[`/api/auth${path}`];
+      expect(ours, `${path} has no rule in CREDENTIAL_RULES`).toBeDefined();
+      expect(rule.window, path).toBe(ours?.windowSeconds);
+      expect(rule.max, path).toBeGreaterThanOrEqual(ours?.perIp ?? Number.POSITIVE_INFINITY);
+    }
+  });
+});
 
 /**
  * Check 5's unit half (architecture §25).
