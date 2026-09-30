@@ -47,9 +47,13 @@ export default defineConfig({
     'inventory',
     'investors',
     'ledger',
+    // M16. Templates, opt-outs and the delivery log.
+    'notify',
     'org',
     // M23. Eleven tables holding till sales, tenders, returns and branch closings.
     'pos',
+    // M16. Promo codes and their redemption ledger.
+    'promo',
     'ref',
     'sales',
     'supply',

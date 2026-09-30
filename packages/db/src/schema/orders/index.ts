@@ -441,7 +441,11 @@ export const orders = sales.table(
       .notNull()
       .default(sql`0`),
     codAmountPoisha: bigint('cod_amount_poisha', { mode: 'bigint' }).notNull(),
-    /** M15's promo code, when one was applied. No FK yet: the table arrives with it. */
+    /**
+     * The promo code applied, if any (M16). Its foreign key to `promo.codes` is in
+     * migration 0077 rather than here: `promo` already imports this file, and a
+     * declaration in both directions would be an import cycle.
+     */
     promoCodeId: uuid('promo_code_id'),
 
     status: orderStatus('status').notNull().default('pending'),

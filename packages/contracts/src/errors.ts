@@ -339,6 +339,18 @@ export const ERROR_CODES = [
   'POS_BRANCH_DAY_NOT_READY',
   'POS_PROMO_UNAVAILABLE',
   'POS_RECORD_IMMUTABLE',
+
+  // Promo codes, notifications and buyer relationships (M16)
+  'PROMO_NOT_FOUND',
+  /** The code exists but does not apply; the reason is in the message and the body. */
+  'PROMO_NOT_APPLICABLE',
+  /** Another code of this brand already has that text. */
+  'PROMO_CODE_TAKEN',
+  'PROMO_INVALID',
+  'PROMO_REDEMPTION_IMMUTABLE',
+  'NOTIFY_TEMPLATE_INVALID',
+  'NOTIFY_MESSAGE_IMMUTABLE',
+  'CRM_OCCASION_IMMUTABLE',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
