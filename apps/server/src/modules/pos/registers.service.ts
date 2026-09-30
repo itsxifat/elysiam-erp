@@ -101,7 +101,8 @@ export class RegistersService {
         throw posHttpError('POS_REGISTER_INVALID', 'A register with that code already exists.');
       }
       const row = await repo.registerById(tx, context.orgId, id);
-      if (row === undefined) throw new Error('a register inserted in this transaction is not visible');
+      if (row === undefined)
+        throw new Error('a register inserted in this transaction is not visible');
       await this.audit.record(tx, {
         orgId: context.orgId,
         actorUserId: context.userId,
@@ -245,7 +246,11 @@ export class RegistersService {
         basketPoisha: BigInt(input.basketPoisha),
       });
       return verdict.valid
-        ? { valid: true, discountPoisha: verdict.discountPoisha.toString(), promotionId: verdict.promotionId }
+        ? {
+            valid: true,
+            discountPoisha: verdict.discountPoisha.toString(),
+            promotionId: verdict.promotionId,
+          }
         : { valid: false, reason: verdict.reason };
     });
   }
@@ -291,7 +296,9 @@ export class RegistersService {
       if (walletId === undefined || walletId === null) continue;
       const account = await this.wallets.walletAccount(tx, orgId, walletId);
       const branchOk =
-        label === 'cash' ? account?.branchId === branchId : account?.branchId == null || account.branchId === branchId;
+        label === 'cash'
+          ? account?.branchId === branchId
+          : account?.branchId == null || account.branchId === branchId;
       if (account === null || !subtypes.includes(account.subtype) || !branchOk) {
         throw posHttpError(
           'POS_REGISTER_INVALID',

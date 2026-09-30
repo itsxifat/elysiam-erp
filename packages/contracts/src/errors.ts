@@ -315,6 +315,26 @@ export const ERROR_CODES = [
   'PAYROLL_LOAN_INVALID',
   'PAYROLL_INPUT_INVALID',
   'PAYROLL_ATTENDANCE_INVALID',
+
+  // Showroom POS (M23)
+  'POS_REGISTER_NOT_FOUND',
+  'POS_REGISTER_INVALID',
+  'POS_SHIFT_NOT_OPEN',
+  'POS_SHIFT_ALREADY_OPEN',
+  /** A document names a shift that is not the sender's, or not this register's. */
+  'POS_SHIFT_MISMATCH',
+  'POS_SALE_INVALID',
+  'POS_SALE_NOT_FOUND',
+  'POS_RETURN_INVALID',
+  'POS_REVIEW_NOT_FOUND',
+  'POS_REVIEW_RESOLVED',
+  /** The person who rang a sale up may not resolve its review item. */
+  'POS_REVIEW_SELF_RESOLVE',
+  'POS_DISCOUNT_ABOVE_CEILING',
+  /** A branch day cannot close while a shift is open or a sale is held. */
+  'POS_BRANCH_DAY_NOT_READY',
+  'POS_PROMO_UNAVAILABLE',
+  'POS_RECORD_IMMUTABLE',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

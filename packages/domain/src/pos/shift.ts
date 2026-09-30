@@ -22,7 +22,10 @@ export interface DrawerMovements {
 }
 
 export function expectedDrawerCash(movements: DrawerMovements): Poisha {
-  return sub(add(movements.openingFloatPoisha, movements.cashSalesPoisha), movements.cashRefundsPoisha);
+  return sub(
+    add(movements.openingFloatPoisha, movements.cashSalesPoisha),
+    movements.cashRefundsPoisha,
+  );
 }
 
 /** `counted − expected`: positive is over, negative is short (as M08's closings). */

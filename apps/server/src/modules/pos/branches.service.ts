@@ -9,7 +9,11 @@ import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import { WALLETS_API, type WalletsApi } from '../wallets/wallets.api.js';
-import { POS_WALLET_CLOSING, type WalletClosingPort, type WalletClosingResult } from './ports/wallet-closing.port.js';
+import {
+  POS_WALLET_CLOSING,
+  type WalletClosingPort,
+  type WalletClosingResult,
+} from './ports/wallet-closing.port.js';
 import { posHttpError } from './pos.errors.js';
 import * as repo from './pos.repository.js';
 import type { BranchClosingInput } from './pos.schemas.js';
@@ -39,7 +43,7 @@ export class BranchesService {
     private readonly audit: AuditService,
     @Inject(WALLETS_API) private readonly wallets: WalletsApi,
     @Inject(CATALOG_API) private readonly catalog: CatalogApi,
-    @Inject(POS_WALLET_CLOSING) private readonly closings: WalletClosingPort,
+    @Inject(POS_WALLET_CLOSING) private readonly walletClosings: WalletClosingPort,
   ) {}
 
   async list(context: ActiveContext, request: object, date: string | undefined) {
@@ -49,7 +53,10 @@ export class BranchesService {
       const rows = await repo.branches(tx, context.orgId, scope);
       const items = [];
       for (const branch of rows) {
-        const summary = await repo.branchSummary(tx, context.orgId, branch.id, { from: day, to: day });
+        const summary = await repo.branchSummary(tx, context.orgId, branch.id, {
+          from: day,
+          to: day,
+        });
         items.push({
           id: branch.id,
           code: branch.code,
@@ -85,10 +92,13 @@ export class BranchesService {
       const summary = await repo.branchSummary(tx, context.orgId, branch.id, range);
       const top = await repo.topSkus(tx, context.orgId, branch.id, range);
       const labels = new Map(
-        (await this.catalog.skusByIds(tx, context.orgId, top.map((row) => row.sku_id))).map((sku) => [
-          sku.id,
-          sku,
-        ]),
+        (
+          await this.catalog.skusByIds(
+            tx,
+            context.orgId,
+            top.map((row) => row.sku_id),
+          )
+        ).map((sku) => [sku.id, sku]),
       );
       const registers = await repo.registers(tx, context.orgId, sql`r.branch_id = ${branch.id}`);
       const netRevenue = BigInt(summary.net_poisha) - BigInt(summary.refunds_poisha);
@@ -151,7 +161,10 @@ export class BranchesService {
   ) {
     assertInScope(request, { branchId });
     if (input.businessDate > businessDate(new Date())) {
-      throw posHttpError('POS_BRANCH_DAY_NOT_READY', 'A day is closed once it has begun, not before.');
+      throw posHttpError(
+        'POS_BRANCH_DAY_NOT_READY',
+        'A day is closed once it has begun, not before.',
+      );
     }
 
     const plan = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
@@ -186,7 +199,7 @@ export class BranchesService {
         const account = candidates.has(walletId)
           ? await this.wallets.walletAccount(tx, context.orgId, walletId)
           : null;
-        if (account === null || account.branchId !== branchId) {
+        if (account?.branchId !== branchId) {
           throw posHttpError('POS_REGISTER_INVALID', 'Count only this branch’s own till wallets.');
         }
       }
@@ -208,8 +221,11 @@ export class BranchesService {
     const results: WalletClosingResult[] = [];
     for (const count of input.counts) {
       results.push(
-        await this.closings.close(context, request, {
-          closingId: deterministicUuid(WALLET_CLOSING_NAMESPACE, `${input.closingId}:${count.walletId}`),
+        await this.walletClosings.close(context, request, {
+          closingId: deterministicUuid(
+            WALLET_CLOSING_NAMESPACE,
+            `${input.closingId}:${count.walletId}`,
+          ),
           walletId: count.walletId,
           businessDate: input.businessDate,
           countedPoisha: count.countedPoisha,

@@ -141,7 +141,9 @@ export class ReviewsService {
     const ceiling = discountCeilingBps(context, sale.branch_id);
     const above = linesAboveCeiling(
       priced,
-      lines.map((line) => (line.catalog_price_poisha === null ? null : poisha(line.catalog_price_poisha))),
+      lines.map((line) =>
+        line.catalog_price_poisha === null ? null : poisha(line.catalog_price_poisha),
+      ),
       ceiling,
     );
     if (above.length > 0) {
@@ -171,7 +173,9 @@ export class ReviewsService {
     const scope = scopeWhere(request, { branchId: sql`branch_id` });
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const sales = await repo.salesByReceipt(tx, context.orgId, receiptNo, scope);
-      return { items: await Promise.all(sales.map((sale) => this.saleDetail(tx, context.orgId, sale))) };
+      return {
+        items: await Promise.all(sales.map((sale) => this.saleDetail(tx, context.orgId, sale))),
+      };
     });
   }
 
@@ -193,10 +197,13 @@ export class ReviewsService {
     const tenders = await repo.saleTenders(tx, orgId, sale.id);
     const returned = await repo.returnedQty(tx, orgId, sale.id, null);
     const labels = new Map(
-      (await this.catalog.skusByIds(tx, orgId, lines.map((line) => line.sku_id))).map((sku) => [
-        sku.id,
-        sku,
-      ]),
+      (
+        await this.catalog.skusByIds(
+          tx,
+          orgId,
+          lines.map((line) => line.sku_id),
+        )
+      ).map((sku) => [sku.id, sku]),
     );
     return {
       id: sale.id,

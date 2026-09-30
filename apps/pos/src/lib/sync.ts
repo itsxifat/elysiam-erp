@@ -29,6 +29,13 @@ export type SyncState =
 
 type Listener = (state: SyncState) => void;
 
+export interface SyncStore {
+  queued(): Promise<OutboxEntry[]>;
+  updateEntries(
+    updates: readonly { readonly id: string; readonly patch: Partial<OutboxEntry> }[],
+  ): Promise<void>;
+}
+
 export class SyncEngine {
   private state: SyncState = { kind: 'idle' };
   private running: Promise<void> | null = null;
@@ -36,7 +43,13 @@ export class SyncEngine {
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    private readonly send: (documents: readonly unknown[]) => Promise<{ results: SyncResult[] }> = endpoints.sync,
+    private readonly send: (
+      documents: readonly unknown[],
+    ) => Promise<{ results: SyncResult[] }> = endpoints.sync,
+    /** The outbox. Injected so the engine's rules can be tested without IndexedDB. */
+    private readonly store: SyncStore = { queued, updateEntries },
+    private readonly isOnline: () => boolean = () =>
+      typeof navigator === 'undefined' || navigator.onLine,
   ) {}
 
   subscribe(listener: Listener): () => void {
@@ -74,12 +87,12 @@ export class SyncEngine {
 
   private async drain(): Promise<void> {
     for (;;) {
-      const pending = await queued();
+      const pending = await this.store.queued();
       if (pending.length === 0) {
         this.set({ kind: 'idle' });
         return;
       }
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (!this.isOnline()) {
         this.set({ kind: 'offline' });
         return;
       }
@@ -89,7 +102,7 @@ export class SyncEngine {
       try {
         answer = await this.send(batch.map((entry) => entry.document));
       } catch (error) {
-        await updateEntries(
+        await this.store.updateEntries(
           batch.map((entry) => ({ id: entry.id, patch: { attempts: entry.attempts + 1 } })),
         );
         if (error instanceof NetworkError) {
@@ -98,11 +111,16 @@ export class SyncEngine {
           // The session ended; the documents wait for the next sign-in.
           this.set({ kind: 'signedOut' });
         } else {
-          this.set({ kind: 'error', message: error instanceof Error ? error.message : 'sync failed' });
+          this.set({
+            kind: 'error',
+            message: error instanceof Error ? error.message : 'sync failed',
+          });
         }
         return;
       }
-      await updateEntries(answer.results.map((result) => ({ id: result.id, patch: patchFor(result, batch) })));
+      await this.store.updateEntries(
+        answer.results.map((result) => ({ id: result.id, patch: patchFor(result, batch) })),
+      );
       if (answer.results.length === 0) return;
     }
   }

@@ -1,4 +1,5 @@
 import { env } from '../env.js';
+import type { PriceListItem } from './cart.js';
 
 /**
  * The till's HTTP client (architecture §6, §23, §25).
@@ -43,11 +44,33 @@ export class NetworkError extends Error {
   }
 }
 
+/**
+ * The double-submit token, fetched first if this browser does not hold one.
+ *
+ * The CSRF cookie is a session cookie: it dies when the browser closes, while the
+ * sign-in survives. A till that reopens in the morning with yesterday's queue
+ * therefore has a session and **no token**, and its first sync would be refused
+ * with 403 — which the queue would have to treat as a refusal of the sales. So
+ * every mutation makes sure a token exists before it is sent: any safe request
+ * makes the server issue one (`ensureCsrfToken`), and `/v1/me` is the cheapest.
+ * Its own status does not matter — a 401 still carries the cookie.
+ */
+async function freshCsrfToken(): Promise<string> {
+  const held = csrfToken();
+  if (held !== '') return held;
+  try {
+    await fetch(new URL('/v1/me', env.VITE_API_URL), { credentials: 'include' });
+  } catch (cause) {
+    throw new NetworkError(cause);
+  }
+  return csrfToken();
+}
+
 async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (method !== 'GET') {
-    const token = csrfToken();
+    const token = await freshCsrfToken();
     if (token !== '') headers[CSRF_HEADER] = token;
   }
   let response: Response;
@@ -61,13 +84,7 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
   } catch (cause) {
     throw new NetworkError(cause);
   }
-  const text = await response.text();
-  let payload: unknown = null;
-  try {
-    payload = text === '' ? null : JSON.parse(text);
-  } catch {
-    payload = null;
-  }
+  const payload = parseJson(await response.text());
   if (!response.ok) {
     const problem = (payload ?? {}) as { code?: unknown; detail?: unknown; message?: unknown };
     throw new ApiError(
@@ -81,6 +98,15 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
     );
   }
   return payload as T;
+}
+
+function parseJson(text: string): unknown {
+  if (text === '') return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 export const api = {
@@ -188,7 +214,7 @@ export const endpoints = {
   registers: () => api.get<{ items: RegisterView[] }>('/v1/pos/registers'),
   session: (registerId: string) => api.get<Session>(`/v1/pos/registers/${registerId}/session`),
   priceList: (registerId: string, after: string | null) =>
-    api.get<{ items: import('./cart.js').PriceListItem[]; next: string | null }>(
+    api.get<{ items: PriceListItem[]; next: string | null }>(
       `/v1/pos/registers/${registerId}/price-list?limit=500${after === null ? '' : `&after=${encodeURIComponent(after)}`}`,
     ),
   openShift: (body: { shiftId: string; registerId: string; openingFloatPoisha: string }) =>

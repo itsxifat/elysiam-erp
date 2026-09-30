@@ -1,0 +1,11 @@
+{
+  "name": "Elysium POS",
+  "short_name": "POS",
+  "description": "Showroom point of sale",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "lang": "en",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

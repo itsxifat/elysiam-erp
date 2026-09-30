@@ -13,6 +13,7 @@ import {
   PackageCheck,
   ScrollText,
   ShoppingCart,
+  Store,
   Table2,
   Truck,
   Users,
@@ -122,6 +123,17 @@ export const NAVIGATION: readonly NavSection[] = [
         to: '/accounts',
         labelKey: 'nav.accounts',
         icon: Banknote,
+        required: { action: 'read', subject: 'LedgerReport' },
+      },
+      /*
+       * The showroom dashboards (M23). `read LedgerReport` like Accounts, and for
+       * the same reason: §6 gives a branch manager "branch P&L without cost
+       * detail", and the server scopes the list to the branches their role reaches.
+       */
+      {
+        to: '/branches',
+        labelKey: 'nav.branches',
+        icon: Store,
         required: { action: 'read', subject: 'LedgerReport' },
       },
       {

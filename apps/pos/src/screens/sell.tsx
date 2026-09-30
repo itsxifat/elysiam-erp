@@ -1,4 +1,13 @@
-import { Button, EmptyState, Input, Label, Money, Skeleton, StatusBadge, takaToPoisha } from '@elysium/ui';
+import {
+  Button,
+  EmptyState,
+  Input,
+  Label,
+  Money,
+  Skeleton,
+  StatusBadge,
+  takaToPoisha,
+} from '@elysium/ui';
 import { Minus, Plus, Percent, Printer, ScanLine, Trash2, Wallet } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
@@ -42,7 +51,10 @@ export function Sell({
   onRecorded,
 }: {
   readonly session: Session & { readonly openShift: NonNullable<Session['openShift']> };
-  readonly priceList: { readonly items: readonly PriceListItem[]; readonly state: 'loading' | 'ready' | 'failed' };
+  readonly priceList: {
+    readonly items: readonly PriceListItem[];
+    readonly state: 'loading' | 'ready' | 'failed';
+  };
   readonly cart: Cart;
   readonly dispatch: React.Dispatch<CartAction>;
   readonly online: boolean;
@@ -133,8 +145,12 @@ export function Sell({
             tender: tender.tender,
             amountPoisha: tender.amountPoisha,
           })),
-          cashReceivedPoisha: tenders.cashPoisha > 0n ? tenders.cashReceivedPoisha.toString() : null,
-          changePoisha: (tenders.cashPoisha > 0n ? tenders.cashReceivedPoisha - tenders.cashPoisha : 0n).toString(),
+          cashReceivedPoisha:
+            tenders.cashPoisha > 0n ? tenders.cashReceivedPoisha.toString() : null,
+          changePoisha: (tenders.cashPoisha > 0n
+            ? tenders.cashReceivedPoisha - tenders.cashPoisha
+            : 0n
+          ).toString(),
           againstReceiptNo: null,
         };
         return { document, receipt };
@@ -147,8 +163,14 @@ export function Sell({
   }
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[1fr_22rem]" onKeyDown={onKey}>
-      <section className="flex min-h-0 flex-col border-border lg:border-r" aria-label={t('sell.item')}>
+    <div
+      className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[1fr_22rem]"
+      onKeyDown={onKey}
+    >
+      <section
+        className="flex min-h-0 flex-col border-border lg:border-r"
+        aria-label={t('pos.sell.item')}
+      >
         <form
           className="flex items-end gap-2 border-b border-border p-4"
           onSubmit={(event) => {
@@ -157,7 +179,7 @@ export function Sell({
           }}
         >
           <div className="flex-1 space-y-1.5">
-            <Label htmlFor="scan">{t('sell.scanLabel')}</Label>
+            <Label htmlFor="scan">{t('pos.sell.scanLabel')}</Label>
             <Input
               id="scan"
               ref={scanRef}
@@ -171,46 +193,52 @@ export function Sell({
               className="h-control-lg font-mono"
             />
             <p id="scan-hint" className="text-xs text-muted-foreground">
-              {notFound ? <span role="alert" className="text-destructive">{t('sell.notFound')}</span> : t('sell.scanHint')}
+              {notFound ? (
+                <span role="alert" className="text-destructive">
+                  {t('pos.sell.notFound')}
+                </span>
+              ) : (
+                t('pos.sell.scanHint')
+              )}
             </p>
           </div>
-          <Button type="submit" size="lg" aria-label={t('sell.scanLabel')}>
+          <Button type="submit" size="lg" aria-label={t('pos.sell.add')}>
             <ScanLine aria-hidden />
           </Button>
         </form>
 
         {cart.exchangeReturnId === null ? null : (
           <p className="border-b border-border bg-info-subtle px-4 py-2 text-sm text-info-subtle-foreground">
-            {t('sell.exchangeBanner')}
+            {t('pos.sell.exchangeBanner')}
           </p>
         )}
 
         <div className="min-h-0 flex-1 overflow-auto">
           {priceList.state === 'loading' && priceList.items.length === 0 ? (
-            <div className="space-y-2 p-4" aria-label={t('sell.catalogLoading')}>
+            <div className="space-y-2 p-4" aria-label={t('pos.sell.catalogLoading')}>
               <Skeleton className="h-row w-full" />
               <Skeleton className="h-row w-full" />
               <Skeleton className="h-row w-full" />
             </div>
           ) : priceList.state === 'failed' && priceList.items.length === 0 ? (
             <div className="p-4">
-              <EmptyState title={t('sell.catalogFailed')} />
+              <EmptyState title={t('pos.sell.catalogFailed')} />
             </div>
           ) : cart.lines.length === 0 ? (
             <div className="p-4">
-              <EmptyState title={t('sell.emptyTitle')} detail={t('sell.emptyDetail')} />
+              <EmptyState title={t('pos.sell.emptyTitle')} detail={t('pos.sell.emptyDetail')} />
             </div>
           ) : (
             <table className="w-full text-sm" data-testid="cart">
               <thead className="sticky top-0 bg-muted text-muted-foreground">
                 <tr>
-                  <th className="h-row px-4 text-left font-medium">{t('sell.item')}</th>
-                  <th className="h-row px-2 text-center font-medium">{t('sell.qty')}</th>
-                  <th className="h-row px-2 text-right font-medium">{t('sell.price')}</th>
-                  <th className="h-row px-2 text-right font-medium">{t('sell.discount')}</th>
-                  <th className="h-row px-4 text-right font-medium">{t('sell.lineTotal')}</th>
+                  <th className="h-row px-4 text-left font-medium">{t('pos.sell.item')}</th>
+                  <th className="h-row px-2 text-center font-medium">{t('pos.sell.qty')}</th>
+                  <th className="h-row px-2 text-right font-medium">{t('pos.sell.price')}</th>
+                  <th className="h-row px-2 text-right font-medium">{t('pos.sell.discount')}</th>
+                  <th className="h-row px-4 text-right font-medium">{t('pos.sell.lineTotal')}</th>
                   <th className="h-row w-10 px-2">
-                    <span className="sr-only">{t('sell.remove')}</span>
+                    <span className="sr-only">{t('pos.sell.remove')}</span>
                   </th>
                 </tr>
               </thead>
@@ -226,7 +254,9 @@ export function Sell({
                   >
                     <td className="px-4 py-2">
                       <span className="block font-medium">{line.name}</span>
-                      <span className="block font-mono text-xs text-muted-foreground">{line.code}</span>
+                      <span className="block font-mono text-xs text-muted-foreground">
+                        {line.code}
+                      </span>
                     </td>
                     <td className="px-2 py-2">
                       <div className="flex items-center justify-center gap-1">
@@ -234,7 +264,7 @@ export function Sell({
                           variant="ghost"
                           size="icon"
                           className="h-control-lg w-control-lg"
-                          aria-label={t('sell.decrease')}
+                          aria-label={t('pos.sell.decrease')}
                           disabled={line.qty <= 1}
                           onClick={() => {
                             dispatch({ type: 'setQty', index, qty: line.qty - 1 });
@@ -247,7 +277,7 @@ export function Sell({
                           variant="ghost"
                           size="icon"
                           className="h-control-lg w-control-lg"
-                          aria-label={t('sell.increase')}
+                          aria-label={t('pos.sell.increase')}
                           onClick={() => {
                             dispatch({ type: 'setQty', index, qty: line.qty + 1 });
                           }}
@@ -267,7 +297,7 @@ export function Sell({
                         onClick={() => {
                           setDiscounting(index);
                         }}
-                        aria-label={`${t('discount.title')}: ${line.name}`}
+                        aria-label={`${t('pos.discount.title')}: ${line.name}`}
                       >
                         {line.discountPoisha === 0n ? (
                           <Percent aria-hidden />
@@ -276,7 +306,7 @@ export function Sell({
                         )}
                       </Button>
                       {withinCeiling(line, session.discountCeilingBps) ? null : (
-                        <StatusBadge tone="warning">{t('discount.over')}</StatusBadge>
+                        <StatusBadge tone="warning">{t('pos.discount.over')}</StatusBadge>
                       )}
                     </td>
                     <td className="px-4 py-2">
@@ -287,7 +317,7 @@ export function Sell({
                         variant="ghost"
                         size="icon"
                         className="h-control-lg w-control-lg"
-                        aria-label={`${t('sell.remove')}: ${line.name}`}
+                        aria-label={`${t('pos.sell.remove')}: ${line.name}`}
                         onClick={() => {
                           dispatch({ type: 'remove', index });
                         }}
@@ -301,20 +331,31 @@ export function Sell({
             </table>
           )}
         </div>
-        <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">{t('sell.shortcuts')}</p>
+        <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
+          {t('pos.sell.shortcuts')}
+        </p>
       </section>
 
-      <aside className="flex flex-col gap-4 p-4" aria-label={t('sell.total')}>
+      <aside className="flex flex-col gap-4 p-4" aria-label={t('pos.sell.total')}>
         <dl className="grid grid-cols-[1fr_auto] gap-y-2 text-sm">
-          <dt className="text-muted-foreground">{t('sell.subtotal')}</dt>
-          <dd><Money poisha={totals.grossPoisha} locale={locale} /></dd>
-          <dt className="text-muted-foreground">{t('sell.discounts')}</dt>
-          <dd><Money poisha={totals.discountPoisha} locale={locale} /></dd>
-          <dt className="border-t border-border pt-2 text-base font-semibold">{t('sell.total')}</dt>
-          <dd className="border-t border-border pt-2 text-2xl font-semibold" data-testid="cart-total">
+          <dt className="text-muted-foreground">{t('pos.sell.subtotal')}</dt>
+          <dd>
+            <Money poisha={totals.grossPoisha} locale={locale} />
+          </dd>
+          <dt className="text-muted-foreground">{t('pos.sell.discounts')}</dt>
+          <dd>
+            <Money poisha={totals.discountPoisha} locale={locale} />
+          </dd>
+          <dt className="border-t border-border pt-2 text-base font-semibold">
+            {t('pos.sell.total')}
+          </dt>
+          <dd
+            className="border-t border-border pt-2 text-2xl font-semibold"
+            data-testid="cart-total"
+          >
             <Money poisha={totals.netPoisha} locale={locale} />
           </dd>
-          <dt className="text-muted-foreground">{t('sell.units')}</dt>
+          <dt className="text-muted-foreground">{t('pos.sell.units')}</dt>
           <dd className="text-right tabular-nums">{totals.units}</dd>
         </dl>
         <Button
@@ -326,7 +367,7 @@ export function Sell({
           }}
         >
           <Wallet aria-hidden />
-          {t('sell.pay')} <kbd className="ml-1 text-xs opacity-80">F2</kbd>
+          {t('pos.sell.pay')} <kbd className="ml-1 text-xs opacity-80">F2</kbd>
         </Button>
         <Button
           size="lg"
@@ -337,9 +378,13 @@ export function Sell({
             dispatch({ type: 'clear' });
           }}
         >
-          {t('sell.clear')}
+          {t('pos.sell.clear')}
         </Button>
-        <PromoCode registerId={session.register.id} basketPoisha={totals.grossPoisha} online={online} />
+        <PromoCode
+          registerId={session.register.id}
+          basketPoisha={totals.grossPoisha}
+          online={online}
+        />
       </aside>
 
       {paying ? (
@@ -370,7 +415,7 @@ export function Sell({
 
       {lastReceipt === null ? null : (
         <Modal
-          title={online ? t('pay.saved') : t('pay.savedOffline')}
+          title={online ? t('pos.pay.saved') : t('pos.pay.savedOffline')}
           onClose={() => {
             setLastReceipt(null);
           }}
@@ -384,7 +429,7 @@ export function Sell({
                 }}
               >
                 <Printer aria-hidden />
-                {t('receipt.print')}
+                {t('pos.receipt.print')}
               </Button>
               <Button
                 size="lg"
@@ -393,7 +438,7 @@ export function Sell({
                   setLastReceipt(null);
                 }}
               >
-                {t('receipt.newSale')}
+                {t('pos.receipt.newSale')}
               </Button>
             </>
           }
@@ -422,15 +467,21 @@ function PromoCode({
 
   async function check() {
     if (!online) {
-      setMessage(t('discount.promoOffline'));
+      setMessage(t('pos.discount.promoOffline'));
       return;
     }
     try {
-      const verdict = await endpoints.checkPromo({ registerId, code: code.trim(), basketPoisha: basketPoisha.toString() });
+      const verdict = await endpoints.checkPromo({
+        registerId,
+        code: code.trim(),
+        basketPoisha: basketPoisha.toString(),
+      });
       // Until M16 binds promotions, every answer is "not available" (NoPromoCodes).
-      setMessage(verdict.valid ? null : t('discount.promoUnavailable'));
+      setMessage(verdict.valid ? null : t('pos.discount.promoUnavailable'));
     } catch (error) {
-      setMessage(error instanceof NetworkError ? t('discount.promoOffline') : t('error.generic'));
+      setMessage(
+        error instanceof NetworkError ? t('pos.discount.promoOffline') : t('pos.error.generic'),
+      );
     }
   }
 
@@ -442,7 +493,7 @@ function PromoCode({
         void check();
       }}
     >
-      <Label htmlFor="promo">{t('discount.promo')}</Label>
+      <Label htmlFor="promo">{t('pos.discount.promo')}</Label>
       <div className="flex gap-2">
         <Input
           id="promo"
@@ -454,11 +505,17 @@ function PromoCode({
           className="h-control-lg"
         />
         <Button type="submit" size="lg" variant="outline" disabled={code.trim() === ''}>
-          {t('discount.promoCheck')}
+          {t('pos.discount.promoCheck')}
         </Button>
       </div>
-      {!online ? <p className="text-xs text-muted-foreground">{t('discount.promoOffline')}</p> : null}
-      {message === null ? null : <p className="text-xs text-muted-foreground" role="status">{message}</p>}
+      {!online ? (
+        <p className="text-xs text-muted-foreground">{t('pos.discount.promoOffline')}</p>
+      ) : null}
+      {message === null ? null : (
+        <p className="text-xs text-muted-foreground" role="status">
+          {message}
+        </p>
+      )}
     </form>
   );
 }
@@ -497,32 +554,32 @@ function DiscountDialog({
 
   return (
     <Modal
-      title={t('discount.title')}
-      description={t('discount.detail', { limit })}
+      title={t('pos.discount.title')}
+      description={t('pos.discount.detail', { limit })}
       onClose={onCancel}
       footer={
         <>
           <Button size="lg" variant="outline" onClick={onCancel}>
-            {t('action.cancel')}
+            {t('pos.action.cancel')}
           </Button>
           <Button
             size="lg"
             onClick={() => {
               if (typed === null || typed > grossPoisha) {
-                setError(t('discount.invalid'));
+                setError(t('pos.discount.invalid'));
                 return;
               }
               onApply(typed);
             }}
           >
-            {t('discount.apply')}
+            {t('pos.discount.apply')}
           </Button>
         </>
       }
     >
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="discount-percent">{t('discount.percent')}</Label>
+          <Label htmlFor="discount-percent">{t('pos.discount.percent')}</Label>
           <Input
             id="discount-percent"
             inputMode="decimal"
@@ -536,7 +593,7 @@ function DiscountDialog({
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="discount-amount">{t('discount.amount')}</Label>
+          <Label htmlFor="discount-amount">{t('pos.discount.amount')}</Label>
           <Input
             id="discount-amount"
             inputMode="decimal"
@@ -554,8 +611,16 @@ function DiscountDialog({
           <Money poisha={typed} locale={locale} align="start" />
         </p>
       )}
-      {over ? <p role="status" className="mt-2 text-sm text-warning">{t('discount.over')}</p> : null}
-      {error === null ? null : <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
+      {over ? (
+        <p role="status" className="mt-2 text-sm text-warning">
+          {t('pos.discount.over')}
+        </p>
+      ) : null}
+      {error === null ? null : (
+        <p role="alert" className="mt-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
     </Modal>
   );
 }
@@ -569,7 +634,10 @@ function PayDialog({
   readonly netPoisha: bigint;
   readonly tenders: readonly ('cash' | 'bkash' | 'card')[];
   readonly onCancel: () => void;
-  readonly onConfirm: (tenders: TenderDraft, references: { bkash?: string; card?: string }) => Promise<void>;
+  readonly onConfirm: (
+    tenders: TenderDraft,
+    references: { bkash?: string; card?: string },
+  ) => Promise<void>;
 }) {
   const t = usePosT();
   const { locale } = useLocale();
@@ -599,13 +667,13 @@ function PayDialog({
 
   return (
     <Modal
-      title={t('pay.title')}
-      description={t('pay.detail')}
+      title={t('pos.pay.title')}
+      description={t('pos.pay.detail')}
       onClose={onCancel}
       footer={
         <>
           <Button size="lg" variant="outline" onClick={onCancel}>
-            {t('action.cancel')}
+            {t('pos.action.cancel')}
           </Button>
           <Button
             size="lg"
@@ -620,7 +688,7 @@ function PayDialog({
               });
             }}
           >
-            {t('pay.confirm')}
+            {t('pos.pay.confirm')}
           </Button>
         </>
       }
@@ -629,34 +697,100 @@ function PayDialog({
         <Money poisha={netPoisha} locale={locale} align="start" />
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="lg" variant="outline" onClick={() => { all('cash'); }}>{t('pay.allCash')}</Button>
-        {takes('bkash') ? <Button size="lg" variant="outline" onClick={() => { all('bkash'); }}>{t('pay.allBkash')}</Button> : null}
-        {takes('card') ? <Button size="lg" variant="outline" onClick={() => { all('card'); }}>{t('pay.allCard')}</Button> : null}
+        <Button
+          size="lg"
+          variant="outline"
+          onClick={() => {
+            all('cash');
+          }}
+        >
+          {t('pos.pay.allCash')}
+        </Button>
+        {takes('bkash') ? (
+          <Button
+            size="lg"
+            variant="outline"
+            onClick={() => {
+              all('bkash');
+            }}
+          >
+            {t('pos.pay.allBkash')}
+          </Button>
+        ) : null}
+        {takes('card') ? (
+          <Button
+            size="lg"
+            variant="outline"
+            onClick={() => {
+              all('card');
+            }}
+          >
+            {t('pos.pay.allCard')}
+          </Button>
+        ) : null}
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <TakaField id="pay-cash" label={t('pay.cash')} value={cash} onChange={setCash} autoFocus />
-        <TakaField id="pay-received" label={t('pay.cashReceived')} value={received} onChange={setReceived} />
+        <TakaField
+          id="pay-cash"
+          label={t('pos.pay.cash')}
+          value={cash}
+          onChange={setCash}
+          autoFocus
+        />
+        <TakaField
+          id="pay-received"
+          label={t('pos.pay.cashReceived')}
+          value={received}
+          onChange={setReceived}
+        />
         {takes('bkash') ? (
           <>
-            <TakaField id="pay-bkash" label={t('pay.bkash')} value={bkash} onChange={setBkash} />
-            <TextField id="pay-bkash-ref" label={t('pay.reference')} value={bkashRef} onChange={setBkashRef} />
+            <TakaField
+              id="pay-bkash"
+              label={t('pos.pay.bkash')}
+              value={bkash}
+              onChange={setBkash}
+            />
+            <TextField
+              id="pay-bkash-ref"
+              label={t('pos.pay.reference')}
+              value={bkashRef}
+              onChange={setBkashRef}
+            />
           </>
         ) : null}
         {takes('card') ? (
           <>
-            <TakaField id="pay-card" label={t('pay.card')} value={card} onChange={setCard} />
-            <TextField id="pay-card-ref" label={t('pay.reference')} value={cardRef} onChange={setCardRef} />
+            <TakaField id="pay-card" label={t('pos.pay.card')} value={card} onChange={setCard} />
+            <TextField
+              id="pay-card-ref"
+              label={t('pos.pay.reference')}
+              value={cardRef}
+              onChange={setCardRef}
+            />
           </>
         ) : null}
       </div>
       <dl className="mt-4 grid grid-cols-[1fr_auto] gap-y-1 text-sm">
-        <dt className="text-muted-foreground">{t('pay.remaining')}</dt>
-        <dd><Money poisha={remaining > 0n ? remaining : 0n} locale={locale} /></dd>
-        <dt className="font-medium">{t('pay.change')}</dt>
-        <dd className="font-medium" data-testid="pay-change"><Money poisha={changePoisha} locale={locale} /></dd>
+        <dt className="text-muted-foreground">{t('pos.pay.remaining')}</dt>
+        <dd>
+          <Money poisha={remaining > 0n ? remaining : 0n} locale={locale} />
+        </dd>
+        <dt className="font-medium">{t('pos.pay.change')}</dt>
+        <dd className="font-medium" data-testid="pay-change">
+          <Money poisha={changePoisha} locale={locale} />
+        </dd>
       </dl>
-      {problem === 'over' ? <p role="alert" className="mt-2 text-sm text-destructive">{t('pay.over')}</p> : null}
-      {problem === 'cashShort' ? <p role="alert" className="mt-2 text-sm text-destructive">{t('pay.cashShort')}</p> : null}
+      {problem === 'over' ? (
+        <p role="alert" className="mt-2 text-sm text-destructive">
+          {t('pos.pay.over')}
+        </p>
+      ) : null}
+      {problem === 'cashShort' ? (
+        <p role="alert" className="mt-2 text-sm text-destructive">
+          {t('pos.pay.cashShort')}
+        </p>
+      ) : null}
     </Modal>
   );
 }
@@ -727,6 +861,7 @@ function parse(taka: string): bigint {
 function toTaka(poisha: bigint): string {
   const whole = poisha / 100n;
   const paisa = poisha % 100n;
-  return paisa === 0n ? whole.toString() : `${whole.toString()}.${paisa.toString().padStart(2, '0')}`;
+  return paisa === 0n
+    ? whole.toString()
+    : `${whole.toString()}.${paisa.toString().padStart(2, '0')}`;
 }
-

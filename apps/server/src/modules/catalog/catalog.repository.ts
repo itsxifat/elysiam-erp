@@ -544,6 +544,43 @@ export async function searchSkus(
   return [...rows];
 }
 
+/**
+ * The till's price list: active SKUs of active products, keyset-paged by code.
+ *
+ * Its own narrow column list rather than `SKU_COLUMNS`: the till needs five
+ * fields, and a row that never selects a column cannot leak it.
+ */
+export async function sellableSkus(
+  tx: Tx,
+  orgId: string,
+  page: { readonly afterCode: string | null; readonly limit: number },
+): Promise<
+  {
+    id: string;
+    code: string;
+    barcode: string | null;
+    product_name: string;
+    price_poisha: string;
+  }[]
+> {
+  const rows = await tx.execute<{
+    id: string;
+    code: string;
+    barcode: string | null;
+    product_name: string;
+    price_poisha: string;
+  }>(sql`
+    select s.id, s.code, s.barcode, p.name as product_name, s.price_poisha::text as price_poisha
+    from catalog.skus s
+    join catalog.products p on p.org_id = s.org_id and p.id = s.product_id
+    where s.org_id = ${orgId} and s.status = 'active' and p.status = 'active'
+      and ${page.afterCode === null ? sql`true` : sql`s.code > ${page.afterCode}`}
+    order by s.code
+    limit ${page.limit}
+  `);
+  return [...rows];
+}
+
 export async function skusByIds(
   tx: Tx,
   orgId: string,

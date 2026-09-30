@@ -7,9 +7,9 @@ import type { Tx } from '@elysium/db';
  * name, selling price — in IndexedDB and refreshes it whenever it is online.
  * `CatalogApi` answers "this id" and "this code"; it has no way to page through the
  * catalog, and this module may not read `catalog.*` itself. So the POS declares
- * the one method it needs, and the catalog implements it at integration (the exact
- * body is in M23's INTEGRATION notes). Until then `PosModule` binds
- * `UnboundPosCatalog`, which refuses.
+ * the one method it needs and the catalog implements it: `CatalogApi.sellableSkus`
+ * satisfies this interface structurally, and `PosModule` binds `POS_CATALOG` to
+ * `CATALOG_API`.
  *
  * **No cost, by construction.** The row type has no field a cost could travel in,
  * for the same reason `CatalogSku` has none (`catalog.api.ts`).
@@ -38,11 +38,3 @@ export interface PosCatalogPort {
 }
 
 export const POS_CATALOG = Symbol('PosCatalogPort');
-
-export class UnboundPosCatalog implements PosCatalogPort {
-  sellableSkus(): Promise<SellableSku[]> {
-    return Promise.reject(
-      new Error('The POS catalog port is not bound: CatalogApi.sellableSkus arrives at integration.'),
-    );
-  }
-}

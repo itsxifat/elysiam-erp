@@ -36,6 +36,9 @@ import { WalletsService } from './wallets.service.js';
     WalletReportsService,
     { provide: WALLETS_API, useClass: WalletsApiService },
   ],
-  exports: [WalletsService, WALLETS_API],
+  // `ClosingsService` for M23: a branch's end of day is this module's closing per
+  // wallet, reused rather than rebuilt, so there is one place the expected balance
+  // is derived and one approval path for a variance.
+  exports: [WalletsService, WALLETS_API, ClosingsService],
 })
 export class WalletsModule {}

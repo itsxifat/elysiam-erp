@@ -43,16 +43,19 @@ export interface ReceiptData {
   readonly grossPoisha: string;
   readonly discountPoisha: string;
   readonly netPoisha: string;
-  readonly tenders: readonly { readonly tender: 'cash' | 'bkash' | 'card'; readonly amountPoisha: string }[];
+  readonly tenders: readonly {
+    readonly tender: 'cash' | 'bkash' | 'card';
+    readonly amountPoisha: string;
+  }[];
   readonly cashReceivedPoisha: string | null;
   readonly changePoisha: string;
   readonly againstReceiptNo: string | null;
 }
 
 const TENDER_KEY: Record<'cash' | 'bkash' | 'card', PosMessageKey> = {
-  cash: 'receipt.paidCash',
-  bkash: 'receipt.paidBkash',
-  card: 'receipt.paidCard',
+  cash: 'pos.receipt.paidCash',
+  bkash: 'pos.receipt.paidBkash',
+  card: 'pos.receipt.paidCard',
 };
 
 export function Receipt({
@@ -71,7 +74,7 @@ export function Receipt({
   return (
     <article
       data-receipt
-      aria-label={t(isReturn ? 'receipt.returnTitle' : 'receipt.title')}
+      aria-label={t(isReturn ? 'pos.receipt.returnTitle' : 'pos.receipt.title')}
       className={`w-[80mm] bg-background px-3 py-4 text-xs leading-snug text-foreground ${locale === 'bn' ? 'font-bangla' : 'font-sans'}`}
     >
       <header className="text-center">
@@ -81,24 +84,26 @@ export function Receipt({
         {data.header.phone === null ? null : <p className="tabular-nums">{data.header.phone}</p>}
         {data.header.vatNo === null ? null : (
           <p>
-            {t('receipt.vat')}: <span className="tabular-nums">{data.header.vatNo}</span>
+            {t('pos.receipt.vat')}: <span className="tabular-nums">{data.header.vatNo}</span>
           </p>
         )}
-        <p className="mt-2 text-sm font-semibold uppercase tracking-wide">
-          {t(isReturn ? 'receipt.returnTitle' : 'receipt.title')}
+        <p className="mt-2 text-sm font-semibold tracking-wide uppercase">
+          {t(isReturn ? 'pos.receipt.returnTitle' : 'pos.receipt.title')}
         </p>
       </header>
 
       <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 border-y border-dashed border-foreground py-1">
-        <dt>{t('receipt.no')}</dt>
+        <dt>{t('pos.receipt.no')}</dt>
         <dd className="text-right tabular-nums" data-testid="receipt-no">
           {data.receiptNo}
         </dd>
-        <dt>{t('receipt.date')}</dt>
-        <dd className="text-right tabular-nums">{formatDateTime(new Date(data.occurredAt), { locale })}</dd>
+        <dt>{t('pos.receipt.date')}</dt>
+        <dd className="text-right tabular-nums">
+          {formatDateTime(new Date(data.occurredAt), { locale })}
+        </dd>
         {data.againstReceiptNo === null ? null : (
           <>
-            <dt>{t('receipt.against')}</dt>
+            <dt>{t('pos.receipt.against')}</dt>
             <dd className="text-right tabular-nums">{data.againstReceiptNo}</dd>
           </>
         )}
@@ -107,9 +112,9 @@ export function Receipt({
       <table className="mt-1 w-full border-collapse">
         <thead>
           <tr className="border-b border-dashed border-foreground">
-            <th className="py-0.5 text-left font-medium">{t('receipt.item')}</th>
-            <th className="py-0.5 text-right font-medium">{t('receipt.qty')}</th>
-            <th className="py-0.5 text-right font-medium">{t('receipt.amount')}</th>
+            <th className="py-0.5 text-left font-medium">{t('pos.receipt.item')}</th>
+            <th className="py-0.5 text-right font-medium">{t('pos.receipt.qty')}</th>
+            <th className="py-0.5 text-right font-medium">{t('pos.receipt.amount')}</th>
           </tr>
         </thead>
         <tbody>
@@ -122,7 +127,7 @@ export function Receipt({
                 </span>
                 {line.discountPoisha === '0' ? null : (
                   <span className="block tabular-nums">
-                    {t('receipt.discount')} −{money(line.discountPoisha)}
+                    {t('pos.receipt.discount')} −{money(line.discountPoisha)}
                   </span>
                 )}
               </td>
@@ -138,17 +143,19 @@ export function Receipt({
       <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-2 border-t border-dashed border-foreground pt-1">
         {isReturn ? null : (
           <>
-            <dt>{t('receipt.subtotal')}</dt>
+            <dt>{t('pos.receipt.subtotal')}</dt>
             <dd className="text-right tabular-nums">{money(data.grossPoisha)}</dd>
             {data.discountPoisha === '0' ? null : (
               <>
-                <dt>{t('receipt.discount')}</dt>
+                <dt>{t('pos.receipt.discount')}</dt>
                 <dd className="text-right tabular-nums">−{money(data.discountPoisha)}</dd>
               </>
             )}
           </>
         )}
-        <dt className="text-sm font-semibold">{t(isReturn ? 'receipt.refund' : 'receipt.total')}</dt>
+        <dt className="text-sm font-semibold">
+          {t(isReturn ? 'pos.receipt.refund' : 'pos.receipt.total')}
+        </dt>
         <dd className="text-right text-sm font-semibold tabular-nums" data-testid="receipt-total">
           {money(data.netPoisha)}
         </dd>
@@ -160,17 +167,17 @@ export function Receipt({
         ))}
         {data.cashReceivedPoisha === null ? null : (
           <>
-            <dt>{t('receipt.cashReceived')}</dt>
+            <dt>{t('pos.receipt.cashReceived')}</dt>
             <dd className="text-right tabular-nums">{money(data.cashReceivedPoisha)}</dd>
-            <dt>{t('receipt.change')}</dt>
+            <dt>{t('pos.receipt.change')}</dt>
             <dd className="text-right tabular-nums">{money(data.changePoisha)}</dd>
           </>
         )}
       </dl>
 
       <footer className="mt-3 text-center">
-        {pending ? <p className="font-medium">{t('receipt.pending')}</p> : null}
-        <p>{data.header.footer ?? t('receipt.thanks')}</p>
+        {pending ? <p className="font-medium">{t('pos.receipt.pending')}</p> : null}
+        <p>{data.header.footer ?? t('pos.receipt.thanks')}</p>
       </footer>
     </article>
   );
@@ -180,7 +187,13 @@ export function Receipt({
  * The receipt's print region: rendered into `<body>` outside the app, hidden on
  * screen and the only thing visible on paper.
  */
-export function PrintArea({ data, locale }: { readonly data: ReceiptData | null; readonly locale?: PosLocale }) {
+export function PrintArea({
+  data,
+  locale,
+}: {
+  readonly data: ReceiptData | null;
+  readonly locale?: PosLocale;
+}) {
   if (data === null) return null;
   return createPortal(
     <div id="print-root" className="hidden print:block" data-testid="print-root">

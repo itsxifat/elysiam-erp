@@ -10,6 +10,7 @@ import {
 import { catalogRoutes } from './catalog/routes.js';
 import { courierRoutes } from './courier/routes.js';
 import { hrRoutes } from './hr/routes.js';
+import { branchesRoutes } from './branches/routes.js';
 import { investorsRoutes } from './investors/routes.js';
 import { ordersRoutes } from './orders/routes.js';
 import { stockRoutes } from './stock/routes.js';
@@ -53,6 +54,21 @@ const approvalsRoute = createRoute({
   path: '/approvals',
   validateSearch: tableSearchSchema,
   component: lazyRouteComponent(() => import('./approvals.js'), 'ApprovalsPage'),
+});
+
+/**
+ * M08's accounts screen: wallets, cash entries, transfers and daily closings.
+ *
+ * It was built on 2026-09-26 and never routed. `/accounts` fell through to the
+ * placeholder list below, so the Accounts link opened "coming soon" over a finished
+ * screen — for the one section the client asked for above all others. The route
+ * matrix could not notice, because it drives the API, and no browser test opened
+ * the link. `shell-quality.stack.ts` now does.
+ */
+const accountsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/accounts',
+  component: lazyRouteComponent(() => import('./accounts/accounts-page.js'), 'AccountsPage'),
 });
 
 const tablesRoute = createRoute({
@@ -108,6 +124,8 @@ const hr = hrRoutes(rootRoute);
 const investors = investorsRoutes(rootRoute);
 const orders = ordersRoutes(rootRoute);
 const courier = courierRoutes(rootRoute);
+/** M23 owns `/branches` and the branch dashboard, defined in `./branches/routes.tsx`. */
+const branches = branchesRoutes(rootRoute);
 
 const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
   .filter(
@@ -124,6 +142,8 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/investors',
         '/orders',
         '/courier',
+        '/accounts',
+        '/branches',
       ].includes(item.to),
   )
   .map((item) =>
@@ -145,6 +165,8 @@ const routeTree = rootRoute.addChildren([
   ...investors,
   ...orders,
   ...courier,
+  accountsRoute,
+  ...branches,
   ...placeholderRoutes,
 ]);
 

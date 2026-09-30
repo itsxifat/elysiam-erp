@@ -183,6 +183,7 @@ export const reviewListSchema = z
 
 export const shiftListSchema = z
   .object({
+    branchId: uuid.optional(),
     registerId: uuid.optional(),
     status: z.enum(['open', 'closed']).optional(),
     from: businessDateSchema.optional(),

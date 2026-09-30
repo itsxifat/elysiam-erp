@@ -48,6 +48,8 @@ export default defineConfig({
     'investors',
     'ledger',
     'org',
+    // M23. Eleven tables holding till sales, tenders, returns and branch closings.
+    'pos',
     'ref',
     'sales',
     'supply',

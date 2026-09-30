@@ -19,6 +19,20 @@ export default defineConfig(({ mode }) => {
     // M05 import through it.
     resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },
     server: { port: 5175, strictPort: true },
+    build: {
+      rollupOptions: {
+        // Two entries: the app, and the service worker. A worker's scope is the
+        // directory it is served from, so `sw.js` must sit at the root, unhashed,
+        // rather than under `/assets/` with the bundles it caches.
+        input: {
+          main: path.resolve(import.meta.dirname, 'index.html'),
+          sw: path.resolve(import.meta.dirname, 'src/sw.ts'),
+        },
+        output: {
+          entryFileNames: (chunk) => (chunk.name === 'sw' ? 'sw.js' : 'assets/[name]-[hash].js'),
+        },
+      },
+    },
     // Production sourcemaps come back in M14b, wired to Sentry upload. Enabling
     // them now only adds a Tailwind sourcemap warning to every CI run.
   };

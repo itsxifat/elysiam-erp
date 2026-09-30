@@ -1,10 +1,10 @@
 /**
  * The till's money arithmetic, in integer poisha (invariant 1).
  *
- * The PWA cannot import `@elysium/domain` (it is not one of this app's
- * dependencies yet — see M23's INTEGRATION notes), so the two operations the till
- * needs are restated here, bigint-only, and `money.test.ts` proves them equal to
- * the domain's own `percentOf` and `maxDiscountFor` over thousands of inputs. The
+ * The PWA does not depend on `@elysium/domain` at runtime (D-167), so the two
+ * operations the till needs are restated here, bigint-only, and `cart.test.ts`
+ * proves them equal to the domain's own `percentOf` and `maxDiscountFor` over
+ * thousands of inputs. The
  * server recomputes everything anyway; what this must get right is that the figure
  * the customer sees on the receipt is the figure the server will accept.
  */
@@ -42,4 +42,22 @@ export function percentToBps(input: string): number | null {
 /** Integer poisha to the decimal string the wire carries. */
 export function wire(poisha: bigint): string {
   return poisha.toString();
+}
+
+/**
+ * What returning `qty` more units of a line refunds, when `returned` have already
+ * come back: `share(returned + qty) − share(returned)` of the line's net.
+ *
+ * The server's `refundFor` (`packages/domain/src/pos/returns.ts`), restated: the
+ * difference of two cumulative rounded shares, so partial returns sum to the line
+ * exactly whatever order the units come back in.
+ */
+export function refundForUnits(
+  netPoisha: bigint,
+  lineQty: number,
+  returned: number,
+  qty: number,
+): bigint {
+  const share = (units: number) => divideRounded(netPoisha * BigInt(units), BigInt(lineQty));
+  return share(returned + qty) - share(returned);
 }

@@ -15,6 +15,7 @@ import { InventoryModule } from './modules/inventory/inventory.module.js';
 import { InvestorsModule } from './modules/investors/investors.module.js';
 import { LedgerModule } from './modules/ledger/ledger.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
+import { PosModule } from './modules/pos/pos.module.js';
 import { SupplyModule } from './modules/supply/supply.module.js';
 import { WalletsModule } from './modules/wallets/wallets.module.js';
 import { JobsModule } from './platform/jobs/jobs.module.js';
@@ -79,6 +80,7 @@ export class AppModule {
          */
         CourierModule,
         IntakeModule,
+        PosModule,
         ...(withDemo ? [DemoModule] : []),
       ],
     };

@@ -5,22 +5,29 @@ import { poisha } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ORG_A, startHttpHarness, type HttpHarness, type RoleClient } from '../../testing/http-harness.js';
+import {
+  ORG_A,
+  startHttpHarness,
+  type HttpHarness,
+  type RoleClient,
+} from '../../testing/http-harness.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
-import { makeLocation, seedProductWithSkus, type SeededSku } from '../inventory/inventory.testing.js';
+import {
+  makeLocation,
+  seedProductWithSkus,
+  type SeededSku,
+} from '../inventory/inventory.testing.js';
 import { seedWallet, type SeededWallet } from '../wallets/wallets.testing.js';
 import { NoPromoCodes, PROMO_CODES } from './ports/promo-code.port.js';
-import { PosModule } from './pos.module.js';
-import { applyPosMigrations, posTestProviders } from './pos.testing.js';
 
 /**
  * M23 against real PostgreSQL, over the real HTTP pipeline (checks 1, 2 and 3; the
  * browser half of check 1 and check 4 are the Playwright spec in `apps/pos/e2e`).
  *
- * The stock port is bound to inventory's own `MovementsService` and the closing
- * port to M08's own `ClosingsService` (`posTestProviders`), so every figure below
- * is read back from `inventory.stock_levels` and `ledger.journal_lines` — never from
- * the POS's own rows, which would only prove the POS agrees with itself.
+ * This is the application as it ships: the stock port is inventory's own API and
+ * the closing port is M08's own `ClosingsService`. Every figure below is read back
+ * from `inventory.stock_levels` and `ledger.journal_lines` — never from the POS's
+ * own rows, which would only prove the POS agrees with itself.
  */
 
 let harness: HttpHarness;
@@ -42,10 +49,7 @@ const UNIT_COST = 90_000;
 const PRICE = 150_000;
 
 beforeAll(async () => {
-  harness = await startHttpHarness('pos-db', {
-    extraModules: [PosModule.register(posTestProviders())],
-  });
-  await applyPosMigrations();
+  harness = await startHttpHarness('pos-db');
   inventory = harness.app.get<InventoryApi>(INVENTORY_API, { strict: false });
 
   branchId = await withSystem(
@@ -141,7 +145,10 @@ function sale(
     receiptNo: `GUL1-1-${String(receiptSeq).padStart(4, '0')}`,
     occurredAt: new Date().toISOString(),
     lines: priced,
-    tenders: tenders.map((tender) => ({ tender: tender.tender, amountPoisha: String(tender.amount) })),
+    tenders: tenders.map((tender) => ({
+      tender: tender.tender,
+      amountPoisha: String(tender.amount),
+    })),
     totals: {
       grossPoisha: String(gross),
       discountPoisha: String(discount),
@@ -388,13 +395,21 @@ describe('a stock shortfall discovered at sync', () => {
     expect(negative).toBe(0);
 
     const reviews = await manager.client.request('GET', '/v1/pos/reviews?status=open');
-    const items = (JSON.parse(reviews.body) as { items: { id: string; saleId: string; detail: { short: unknown[] } }[] }).items;
+    const items = (
+      JSON.parse(reviews.body) as {
+        items: { id: string; saleId: string; detail: { short: unknown[] } }[];
+      }
+    ).items;
     const item = items.find((candidate) => candidate.saleId === document.id);
     expect(item?.detail.short).toEqual([{ skuId: empty.id, wanted: 1, available: 0 }]);
 
     // A re-sync of the held sale is a replay, not a second review item.
     const [again] = await sync(cashier, [document]);
-    expect(again).toMatchObject({ outcome: 'held', replayed: true, reviewItemId: result?.reviewItemId });
+    expect(again).toMatchObject({
+      outcome: 'held',
+      replayed: true,
+      reviewItemId: result?.reviewItemId,
+    });
   });
 
   it('is resolved by another manager once stock arrives, and posts exactly once', async () => {
@@ -404,22 +419,34 @@ describe('a stock shortfall discovered at sync', () => {
     expect(held?.outcome).toBe('held');
 
     // The seller may not resolve their own held sale.
-    const own = await cashier.client.request('POST', `/v1/pos/reviews/${held!.reviewItemId!}/resolve`, {
-      body: { action: 'post', note: 'mine' },
-    });
+    const own = await cashier.client.request(
+      'POST',
+      `/v1/pos/reviews/${held!.reviewItemId!}/resolve`,
+      {
+        body: { action: 'post', note: 'mine' },
+      },
+    );
     expect(own.statusCode).toBe(403);
 
     // Not fixed yet: still held, evidence refreshed, nothing posted.
-    const early = await manager.client.request('POST', `/v1/pos/reviews/${held!.reviewItemId!}/resolve`, {
-      body: { action: 'post', note: 'trying' },
-    });
+    const early = await manager.client.request(
+      'POST',
+      `/v1/pos/reviews/${held!.reviewItemId!}/resolve`,
+      {
+        body: { action: 'post', note: 'trying' },
+      },
+    );
     expect(JSON.parse(early.body)).toMatchObject({ outcome: 'held', reasons: ['stock_shortfall'] });
     expect(await journalsFor(document.id)).toBe(0);
 
     await receive(empty.id, 3);
-    const fixed = await manager.client.request('POST', `/v1/pos/reviews/${held!.reviewItemId!}/resolve`, {
-      body: { action: 'post', note: 'transfer received' },
-    });
+    const fixed = await manager.client.request(
+      'POST',
+      `/v1/pos/reviews/${held!.reviewItemId!}/resolve`,
+      {
+        body: { action: 'post', note: 'transfer received' },
+      },
+    );
     expect(fixed.statusCode, fixed.body).toBe(200);
     expect(JSON.parse(fixed.body)).toMatchObject({ outcome: 'posted' });
     expect(await journalsFor(document.id)).toBe(1);
@@ -436,9 +463,10 @@ describe('a stock shortfall discovered at sync', () => {
 describe('the discount ceiling', () => {
   it('holds a sale above the seller’s ceiling instead of posting it', async () => {
     // 30% off: above a branch manager's 20%.
-    const document = sale([{ sku: skus[0]!, qty: 1, discount: 45_000 }], [
-      { tender: 'cash', amount: 105_000 },
-    ]);
+    const document = sale(
+      [{ sku: skus[0]!, qty: 1, discount: 45_000 }],
+      [{ tender: 'cash', amount: 105_000 }],
+    );
     const [result] = await sync(cashier, [document]);
     expect(result).toMatchObject({ outcome: 'held', reasons: ['discount_above_ceiling'] });
     expect(await journalsFor(document.id)).toBe(0);
@@ -453,23 +481,31 @@ describe('the discount ceiling', () => {
 
     // An org admin's does.
     const admin = await harness.asRole('org_admin', ORG_A);
-    const posted = await admin.client.request('POST', `/v1/pos/reviews/${result!.reviewItemId!}/resolve`, {
-      body: { action: 'post', note: 'approved for a regular' },
-    });
+    const posted = await admin.client.request(
+      'POST',
+      `/v1/pos/reviews/${result!.reviewItemId!}/resolve`,
+      {
+        body: { action: 'post', note: 'approved for a regular' },
+      },
+    );
     expect(JSON.parse(posted.body)).toMatchObject({ outcome: 'posted' });
     expect(await journalsFor(document.id)).toBe(1);
   });
 
   it('counts a price below the catalog as discount', async () => {
-    const document = sale([{ sku: skus[1]!, qty: 1, price: 50_000 }], [{ tender: 'cash', amount: 50_000 }]);
+    const document = sale(
+      [{ sku: skus[1]!, qty: 1, price: 50_000 }],
+      [{ tender: 'cash', amount: 50_000 }],
+    );
     const [result] = await sync(cashier, [document]);
     expect(result?.reasons).toEqual(['price_mismatch', 'discount_above_ceiling']);
   });
 
   it('posts a discount at exactly the ceiling', async () => {
-    const document = sale([{ sku: skus[1]!, qty: 1, discount: 30_000 }], [
-      { tender: 'cash', amount: 120_000 },
-    ]);
+    const document = sale(
+      [{ sku: skus[1]!, qty: 1, discount: 30_000 }],
+      [{ tender: 'cash', amount: 120_000 }],
+    );
     const [result] = await sync(cashier, [document]);
     expect(result?.outcome).toBe('posted');
   });
@@ -479,13 +515,20 @@ describe('the discount ceiling', () => {
 
 describe('a return by receipt', () => {
   it('refunds what was paid, puts the unit back at its sale cost, and posts once', async () => {
-    const sold = sale([{ sku: skus[0]!, qty: 3, discount: 10_000 }], [{ tender: 'cash', amount: 440_000 }]);
+    const sold = sale(
+      [{ sku: skus[0]!, qty: 3, discount: 10_000 }],
+      [{ tender: 'cash', amount: 440_000 }],
+    );
     await sync(cashier, [sold]);
     const stock = await onHand(skus[0]!.id);
     const cash = await balance(handCash.ledgerAccountId);
 
     const lookup = await cashier.client.request('GET', `/v1/pos/receipts/${sold.receiptNo}`);
-    const receipt = (JSON.parse(lookup.body) as { items: { lines: { nextUnitRefundPoisha: string; unitCostPoisha?: string }[] }[] }).items[0]!;
+    const receipt = (
+      JSON.parse(lookup.body) as {
+        items: { lines: { nextUnitRefundPoisha: string; unitCostPoisha?: string }[] }[];
+      }
+    ).items[0]!;
     // 4,40,000 over three units: 1,46,667 for the first back.
     expect(receipt.lines[0]?.nextUnitRefundPoisha).toBe('146667');
     expect(receipt.lines[0]).not.toHaveProperty('unitCostPoisha');
@@ -523,7 +566,14 @@ describe('a return by receipt', () => {
     const [second] = await sync(cashier, [rest]);
     expect(second?.outcome).toBe('posted');
     // A fourth unit would be more than the receipt sold: held, refund already paid.
-    const extra = { ...rest, id: randomUUID(), receiptNo: `R3-${sold.receiptNo}`, lines: [{ lineNo: 1, saleLineNo: 1, qty: 1, refundPoisha: '146667' }], tenders: [{ tender: 'cash' as const, amountPoisha: '146667' }], refundPoisha: '146667' };
+    const extra = {
+      ...rest,
+      id: randomUUID(),
+      receiptNo: `R3-${sold.receiptNo}`,
+      lines: [{ lineNo: 1, saleLineNo: 1, qty: 1, refundPoisha: '146667' }],
+      tenders: [{ tender: 'cash' as const, amountPoisha: '146667' }],
+      refundPoisha: '146667',
+    };
     const [third] = await sync(cashier, [extra]);
     expect(third).toMatchObject({ outcome: 'held', reasons: ['return_mismatch'] });
   });

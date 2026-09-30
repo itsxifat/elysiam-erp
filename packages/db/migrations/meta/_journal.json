@@ -472,6 +472,27 @@
       "breakpoints": true
     },
     {
+      "idx": 68,
+      "version": "7",
+      "when": 1790366810635,
+      "tag": "0068_pos_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1790366811635,
+      "tag": "0069_pos_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1790366812635,
+      "tag": "0070_pos_integrity",
+      "breakpoints": true
+    },
+    {
       "idx": 72,
       "version": "7",
       "when": 1790366806635,

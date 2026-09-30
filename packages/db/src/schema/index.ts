@@ -26,6 +26,7 @@ export * from './investors/index.js';
 export * from './ledger/index.js';
 export * from './org/index.js';
 export * from './orders/index.js';
+export * from './pos/index.js';
 export * from './ref/index.js';
 export * from './supply/index.js';
 export * from './wallets/index.js';

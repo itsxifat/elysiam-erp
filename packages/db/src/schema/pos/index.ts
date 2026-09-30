@@ -181,11 +181,7 @@ export const posShifts = pos.table(
     uniqueIndex('pos_shifts_org_register_open_idx')
       .on(table.orgId, table.registerId)
       .where(sql`${table.status} = 'open'`),
-    uniqueIndex('pos_shifts_org_register_no_idx').on(
-      table.orgId,
-      table.registerId,
-      table.shiftNo,
-    ),
+    uniqueIndex('pos_shifts_org_register_no_idx').on(table.orgId, table.registerId, table.shiftNo),
     unique('pos_shifts_org_id_id_key').on(table.orgId, table.id),
     foreignKey({
       name: 'pos_shifts_org_id_register_id_fk',
@@ -288,7 +284,10 @@ export const posSales = pos.table(
       columns: [table.orgId, table.journalId],
       foreignColumns: [journals.orgId, journals.id],
     }).onDelete('restrict'),
-    check('pos_sales_net_is_difference', sql`${table.netPoisha} = ${table.grossPoisha} - ${table.discountPoisha}`),
+    check(
+      'pos_sales_net_is_difference',
+      sql`${table.netPoisha} = ${table.grossPoisha} - ${table.discountPoisha}`,
+    ),
     check(
       'pos_sales_discount_within_gross',
       sql`${table.discountPoisha} >= 0 and ${table.discountPoisha} <= ${table.grossPoisha}`,
@@ -377,11 +376,7 @@ export const posSaleTenders = pos.table(
   },
   (table) => [
     index('pos_sale_tenders_org_idx').on(table.orgId),
-    uniqueIndex('pos_sale_tenders_org_sale_tender_idx').on(
-      table.orgId,
-      table.saleId,
-      table.tender,
-    ),
+    uniqueIndex('pos_sale_tenders_org_sale_tender_idx').on(table.orgId, table.saleId, table.tender),
     foreignKey({
       name: 'pos_sale_tenders_org_id_sale_id_fk',
       columns: [table.orgId, table.saleId],
@@ -467,7 +462,10 @@ export const posReturns = pos.table(
     }).onDelete('restrict'),
     check('pos_returns_refund_not_negative', sql`${table.refundPoisha} >= 0`),
     check('pos_returns_receipt_length', sql`length(${table.receiptNo}) between 1 and 40`),
-    check('pos_returns_reason_length', sql`${table.reason} is null or length(${table.reason}) <= 200`),
+    check(
+      'pos_returns_reason_length',
+      sql`${table.reason} is null or length(${table.reason}) <= 200`,
+    ),
     check(
       'pos_returns_status_shape',
       sql`case ${table.status}
@@ -583,7 +581,9 @@ export const posReviewItems = pos.table(
     returnId: uuid('return_id'),
     reasons: posHoldReason('reasons').array().notNull(),
     /** What the server saw: short lines, catalog prices, the ceiling applied. */
-    detail: jsonb('detail').notNull().default(sql`'{}'::jsonb`),
+    detail: jsonb('detail')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     status: posReviewStatus('status').notNull().default('open'),
     attempts: integer('attempts').notNull().default(1),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true, mode: 'date' })
@@ -675,7 +675,10 @@ export const posBranchClosings = pos.table(
       foreignColumns: [branches.orgId, branches.id],
     }).onDelete('restrict'),
     check('pos_branch_closings_sales_count', sql`${table.salesCount} >= 0`),
-    check('pos_branch_closings_note_length', sql`${table.note} is null or length(${table.note}) <= 500`),
+    check(
+      'pos_branch_closings_note_length',
+      sql`${table.note} is null or length(${table.note}) <= 500`,
+    ),
   ],
 );
 

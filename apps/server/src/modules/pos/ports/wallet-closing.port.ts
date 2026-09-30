@@ -11,10 +11,9 @@ import type { ActiveContext } from '../../../platform/http/context.js';
  * second place the expected balance is derived and a second approval path for the
  * same money, and the two would disagree the first time either changed.
  *
- * `ClosingsService` is not exported from `WalletsModule`, and this module may not
- * reach into it. The shape below is its `close` signature, so at integration the
- * binding is `{ provide: POS_WALLET_CLOSING, useExisting: ClosingsService }` once
- * `WalletsModule` exports it (or a `closeWallet` on `WalletsApi` with this shape).
+ * The shape below is `ClosingsService.close`'s own signature. `WalletsModule`
+ * exports the service for this purpose, and `PosModule` binds
+ * `{ provide: POS_WALLET_CLOSING, useExisting: ClosingsService }`.
  */
 
 export interface WalletClosingInput {
@@ -47,11 +46,3 @@ export interface WalletClosingPort {
 }
 
 export const POS_WALLET_CLOSING = Symbol('WalletClosingPort');
-
-export class UnboundWalletClosing implements WalletClosingPort {
-  close(): Promise<WalletClosingResult> {
-    return Promise.reject(
-      new Error('The wallet closing port is not bound: WalletsModule exports ClosingsService at integration.'),
-    );
-  }
-}

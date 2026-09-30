@@ -241,6 +241,26 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/courier/settlements/fetch',
   'GET /v1/courier/settlements/fetch-runs',
   'GET /v1/courier/reports/performance',
+  // M23: branches and showroom POS.
+  'GET /v1/pos/registers',
+  'POST /v1/pos/registers',
+  'PATCH /v1/pos/registers/:id',
+  'GET /v1/pos/registers/:id/session',
+  'GET /v1/pos/registers/:id/price-list',
+  'POST /v1/pos/promo-codes/check',
+  'GET /v1/pos/shifts',
+  'GET /v1/pos/shifts/:id',
+  'POST /v1/pos/shifts',
+  'POST /v1/pos/shifts/:id/close',
+  'POST /v1/pos/sync',
+  'GET /v1/pos/receipts/:receiptNo',
+  'GET /v1/pos/sales/:id',
+  'GET /v1/pos/reviews',
+  'POST /v1/pos/reviews/:id/resolve',
+  'GET /v1/pos/branches',
+  'GET /v1/pos/branches/:id/summary',
+  'GET /v1/pos/branches/:id/closings',
+  'POST /v1/pos/branches/:id/closings',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

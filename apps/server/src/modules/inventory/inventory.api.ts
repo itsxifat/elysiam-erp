@@ -186,6 +186,60 @@ export interface InventoryApi {
     locationId: string,
     skuIds: readonly string[],
   ): Promise<Map<string, number>>;
+
+  /**
+   * `pos_sale` movements out of a register's location, one per SKU (M23, §8).
+   *
+   * No reservation: the till's customer is standing at the counter, so there is no
+   * gap between promising a unit and taking it. The level update is still guarded
+   * by `stock_levels`' CHECKs, so a till cannot take a unit a confirmed online
+   * order is holding, and a shortfall is the database's refusal rather than a
+   * read-then-write race (invariant 3).
+   *
+   * Idempotent per `(saleId, skuId)`: a replay returns the cost the first attempt
+   * recorded and moves nothing.
+   *
+   * Movements and costing only. §7's POS sale is one journal holding the till's
+   * money and the cost of the units, and the module that knows the tenders posts
+   * it, in this same transaction, from the cost returned here.
+   */
+  sellAtPos(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly userId: string },
+    input: {
+      readonly saleId: string;
+      readonly locationId: string;
+      readonly occurredAt: Date;
+      readonly lines: readonly PosStockLine[];
+    },
+  ): Promise<{ readonly lines: readonly PosSoldLine[] }>;
+
+  /**
+   * `pos_return` movements back into the location, at the cost each unit was sold
+   * at (§8: a return re-enters at the cost it left at). Idempotent per
+   * `(returnId, lineNo)`.
+   */
+  receivePosReturn(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly userId: string },
+    input: {
+      readonly returnId: string;
+      readonly locationId: string;
+      readonly occurredAt: Date;
+      readonly lines: readonly (PosSoldLine & { readonly lineNo: number })[];
+    },
+  ): Promise<void>;
+}
+
+/** One SKU and a quantity at a till. */
+export interface PosStockLine {
+  readonly skuId: string;
+  readonly qty: number;
+}
+
+/** The same line, with the weighted average the units left at. */
+export interface PosSoldLine extends PosStockLine {
+  readonly unitCostPoisha: Poisha;
 }
 
 export const INVENTORY_API = Symbol('InventoryApi');
@@ -554,6 +608,61 @@ export class InventoryApiService implements InventoryApi {
       found.set(skuId, level === undefined ? 0 : level.on_hand - level.reserved);
     }
     return found;
+  }
+
+  async sellAtPos(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly userId: string },
+    input: {
+      readonly saleId: string;
+      readonly locationId: string;
+      readonly occurredAt: Date;
+      readonly lines: readonly PosStockLine[];
+    },
+  ): Promise<{ readonly lines: readonly PosSoldLine[] }> {
+    const sold: PosSoldLine[] = [];
+    for (const line of input.lines) {
+      const applied = await this.movements.apply(tx, actor, {
+        skuId: line.skuId,
+        locationId: input.locationId,
+        kind: 'pos_sale',
+        qty: line.qty,
+        refType: 'pos_sale',
+        refId: input.saleId,
+        dedupeKey: `pos_sale:${input.saleId}:${line.skuId}`,
+        occurredAt: input.occurredAt,
+        memo: null,
+      });
+      sold.push({ ...line, unitCostPoisha: poisha(applied.unitCostPoisha ?? 0n) });
+    }
+    return { lines: sold };
+  }
+
+  async receivePosReturn(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly userId: string },
+    input: {
+      readonly returnId: string;
+      readonly locationId: string;
+      readonly occurredAt: Date;
+      readonly lines: readonly (PosSoldLine & { readonly lineNo: number })[];
+    },
+  ): Promise<void> {
+    for (const line of input.lines) {
+      await this.movements.apply(tx, actor, {
+        skuId: line.skuId,
+        locationId: input.locationId,
+        kind: 'pos_return',
+        qty: line.qty,
+        // §8: back in at the cost it left at, which the sale's movement recorded.
+        unitCostPoisha: line.unitCostPoisha,
+        refType: 'pos_return',
+        refId: input.returnId,
+        dedupeKey: `pos_return:${input.returnId}:${String(line.lineNo)}`,
+        occurredAt: input.occurredAt,
+        memo: null,
+      });
+    }
   }
 
   /** One of the four accounts §7's inventory rules name, or a clear refusal. */

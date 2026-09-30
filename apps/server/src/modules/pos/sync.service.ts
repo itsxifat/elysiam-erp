@@ -115,7 +115,10 @@ export class SyncService {
           reviewItemId: null,
           reasons: [],
           journalId: null,
-          error: { code: body.code ?? 'VALIDATION_FAILED', message: body.message ?? mapped.message },
+          error: {
+            code: body.code ?? 'VALIDATION_FAILED',
+            message: body.message ?? mapped.message,
+          },
         };
       }
       // A fault nobody anticipated: the request fails and the till retries later.
@@ -212,7 +215,8 @@ export class SyncService {
       return {
         ...line,
         lineNo: document.lines[index]?.lineNo ?? index + 1,
-        catalogPricePoisha: sku === undefined || sku.status !== 'active' ? null : poisha(sku.pricePoisha),
+        catalogPricePoisha:
+          sku?.status === 'active' ? poisha(sku.pricePoisha) : null,
       };
     });
     await repo.insertSaleLines(
@@ -312,7 +316,7 @@ export class SyncService {
     const occurredAt = new Date(document.occurredAt);
 
     const sale = await repo.saleById(tx, context.orgId, document.saleId);
-    if (sale === undefined || sale.branch_id !== register.branch_id) {
+    if (sale?.branch_id !== register.branch_id) {
       // A receipt of another branch answers exactly as a missing one: returns are
       // taken where the goods were sold (decision row), and anything else would let
       // a till probe another showroom's sales by id.
@@ -338,7 +342,10 @@ export class SyncService {
     const lines = document.lines.map((line) => {
       const sold = saleLines.get(line.saleLineNo);
       if (sold === undefined) {
-        throw new PosError('POS_RETURN_INVALID', `The receipt has no line ${String(line.saleLineNo)}.`);
+        throw new PosError(
+          'POS_RETURN_INVALID',
+          `The receipt has no line ${String(line.saleLineNo)}.`,
+        );
       }
       return {
         lineNo: line.lineNo,
@@ -388,7 +395,8 @@ export class SyncService {
       outcome = { kind: 'held', reasons, detail: {} };
     } else {
       const row = await repo.returnById(tx, context.orgId, document.id);
-      if (row === undefined) throw new Error('a return inserted in this transaction is not visible');
+      if (row === undefined)
+        throw new Error('a return inserted in this transaction is not visible');
       outcome = await this.posting.postReturn(tx, context, row, now);
     }
 
@@ -450,11 +458,14 @@ export class SyncService {
       throw new PosError('POS_REGISTER_NOT_FOUND', 'No such register.');
     }
     const shift = await repo.shiftById(tx, context.orgId, document.shiftId);
-    if (shift === undefined || shift.register_id !== register.id) {
+    if (shift?.register_id !== register.id) {
       throw new PosError('POS_SHIFT_MISMATCH', 'That shift is not on this register.');
     }
     if (shift.opened_by !== context.userId) {
-      throw new PosError('POS_SHIFT_MISMATCH', 'Only the cashier whose shift it is may send its sales.');
+      throw new PosError(
+        'POS_SHIFT_MISMATCH',
+        'Only the cashier whose shift it is may send its sales.',
+      );
     }
     return { register, shift };
   }

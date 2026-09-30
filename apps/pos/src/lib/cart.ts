@@ -149,7 +149,10 @@ export function withinCeiling(line: CartLine, ceilingBps: number): boolean {
 }
 
 /** Find a scanned code: the SKU code (case-insensitive) or the exact barcode. */
-export function lookup(items: readonly PriceListItem[], scanned: string): PriceListItem | undefined {
+export function lookup(
+  items: readonly PriceListItem[],
+  scanned: string,
+): PriceListItem | undefined {
   const code = scanned.trim();
   if (code === '') return undefined;
   const upper = code.toUpperCase();
@@ -178,7 +181,8 @@ export function settle(
   const paid = draft.cashPoisha + draft.bkashPoisha + draft.cardPoisha;
   if (paid < netPoisha) return { problem: 'short', changePoisha: 0n };
   if (paid > netPoisha) return { problem: 'over', changePoisha: 0n };
-  if (draft.cashReceivedPoisha < draft.cashPoisha) return { problem: 'cashShort', changePoisha: 0n };
+  if (draft.cashReceivedPoisha < draft.cashPoisha)
+    return { problem: 'cashShort', changePoisha: 0n };
   return { problem: null, changePoisha: draft.cashReceivedPoisha - draft.cashPoisha };
 }
 
@@ -263,7 +267,9 @@ export function saleDocument(input: {
       discountPoisha: totals.discountPoisha.toString(),
       netPoisha: totals.netPoisha.toString(),
     },
-    ...(input.cart.exchangeReturnId === null ? {} : { exchangeReturnId: input.cart.exchangeReturnId }),
+    ...(input.cart.exchangeReturnId === null
+      ? {}
+      : { exchangeReturnId: input.cart.exchangeReturnId }),
   };
 }
 

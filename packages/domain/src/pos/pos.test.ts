@@ -144,11 +144,14 @@ describe('discount ceilings', () => {
       ),
     ).toBe(10_000);
     expect(
-      discountCeilingBps({ isSuperAdmin: false, roles: ['org_admin'], branchIdsByRole: {} }, BRANCH_DHA),
+      discountCeilingBps(
+        { isSuperAdmin: false, roles: ['org_admin'], branchIdsByRole: {} },
+        BRANCH_DHA,
+      ),
     ).toBe(0);
-    expect(discountCeilingBps({ isSuperAdmin: true, roles: [], branchIdsByRole: {} }, BRANCH_DHA)).toBe(
-      10_000,
-    );
+    expect(
+      discountCeilingBps({ isSuperAdmin: true, roles: [], branchIdsByRole: {} }, BRANCH_DHA),
+    ).toBe(10_000);
   });
 });
 

@@ -41,6 +41,29 @@ export interface CatalogApi {
 
   /** Resolve a scanned code or barcode to one SKU, or nothing (M23's POS). */
   skuByCode(tx: Tx, orgId: string, code: string): Promise<CatalogSku | undefined>;
+
+  /**
+   * Active SKUs of active products, ordered by code, after `afterCode` (exclusive).
+   *
+   * The till's offline price list (M23, §14): a showroom scans with no connection,
+   * so the PWA keeps every sellable SKU and refreshes it when it is online. Keyset
+   * paged, because a brand's catalog is thousands of rows and an offset page shifts
+   * under a concurrent edit.
+   */
+  sellableSkus(
+    tx: Tx,
+    orgId: string,
+    page: { readonly afterCode: string | null; readonly limit: number },
+  ): Promise<SellableSku[]>;
+}
+
+/** One row of the till's price list. Selling price only: no field a cost could use. */
+export interface SellableSku {
+  readonly id: string;
+  readonly code: string;
+  readonly barcode: string | null;
+  readonly productName: string;
+  readonly pricePoisha: bigint;
 }
 
 export const CATALOG_API = Symbol('CatalogApi');
@@ -58,6 +81,21 @@ export class CatalogApiService implements CatalogApi {
     // impossible within either column, so returning nothing rather than guessing
     // is the honest answer if it ever happens.
     return rows.length === 1 && rows[0] !== undefined ? toSku(rows[0]) : undefined;
+  }
+
+  async sellableSkus(
+    tx: Tx,
+    orgId: string,
+    page: { readonly afterCode: string | null; readonly limit: number },
+  ): Promise<SellableSku[]> {
+    const rows = await repo.sellableSkus(tx, orgId, page);
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      barcode: row.barcode,
+      productName: row.product_name,
+      pricePoisha: BigInt(row.price_poisha),
+    }));
   }
 }
 

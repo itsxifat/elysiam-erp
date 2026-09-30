@@ -1,13 +1,18 @@
-import { Module, type DynamicModule, type Provider } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 
+import { ApprovalsModule } from '../approvals/approvals.module.js';
+import { CATALOG_API } from '../catalog/catalog.api.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
+import { INVENTORY_API } from '../inventory/inventory.api.js';
+import { InventoryModule } from '../inventory/inventory.module.js';
 import { LedgerModule } from '../ledger/ledger.module.js';
+import { ClosingsService } from '../wallets/closings.service.js';
 import { WalletsModule } from '../wallets/wallets.module.js';
 import { BranchesService } from './branches.service.js';
-import { POS_CATALOG, UnboundPosCatalog } from './ports/pos-catalog.port.js';
-import { POS_STOCK, UnboundPosStock } from './ports/pos-stock.port.js';
+import { POS_CATALOG } from './ports/pos-catalog.port.js';
+import { POS_STOCK } from './ports/pos-stock.port.js';
 import { NoPromoCodes, PROMO_CODES } from './ports/promo-code.port.js';
-import { POS_WALLET_CLOSING, UnboundWalletClosing } from './ports/wallet-closing.port.js';
+import { POS_WALLET_CLOSING } from './ports/wallet-closing.port.js';
 import { PosController } from './pos.controller.js';
 import { PosPostingService } from './posting.service.js';
 import { RegistersService } from './registers.service.js';
@@ -20,53 +25,40 @@ import { SyncService } from './sync.service.js';
  *
  * Imports `LedgerModule` for `LEDGER_API` (every journal goes through
  * `ledger.post()` with a rule from `packages/domain/src/posting/pos.ts`),
- * `WalletsModule` for `WALLETS_API` (a tender's ledger account) and
- * `CatalogModule` for `CATALOG_API` (the selling price a sale is checked against).
+ * `WalletsModule` for `WALLETS_API` (a tender's ledger account) and its closing,
+ * `CatalogModule` for `CATALOG_API` (the selling price a sale is checked against),
+ * `InventoryModule` for the stock movements, and `ApprovalsModule` only for the
+ * `AuditService` it exports — this module raises no approval type of its own; the
+ * closing variance is M08's, raised by M08.
  *
- * Four ports are bound here, each with a default that is safe before its owner
- * implements it:
+ * The POS reaches other modules only through four ports, each bound here to the
+ * service that owns the work (invariant 12):
  *
- * | port                 | owner                 | default                |
- * | -------------------- | --------------------- | ---------------------- |
- * | `POS_STOCK`          | inventory (M07)       | refuses (`Unbound…`)   |
- * | `POS_CATALOG`        | catalog (M06)         | refuses                |
- * | `POS_WALLET_CLOSING` | wallets (M08)         | refuses                |
- * | `PROMO_CODES`        | promo (M16)           | no code is ever valid  |
+ * | port                 | bound to                                   |
+ * | -------------------- | ------------------------------------------ |
+ * | `POS_STOCK`          | inventory's `INVENTORY_API` (M07)          |
+ * | `POS_CATALOG`        | the catalog's `CATALOG_API` (M06)          |
+ * | `POS_WALLET_CLOSING` | wallets' `ClosingsService` (M08)           |
+ * | `PROMO_CODES`        | `NoPromoCodes`, until M16 builds promo codes |
  *
- * `register()` takes replacements, which is how the suites bind the real
- * inventory and closing services before integration and how integration binds
- * them for good (`{ provide: POS_STOCK, useExisting: INVENTORY_API }`).
+ * `NoPromoCodes` answers that no code is valid. That is a safe default for a
+ * discount: the till sells at the catalog price until M16 binds the real thing.
  */
-@Module({})
-export class PosModule {
-  static register(overrides: readonly Provider[] = []): DynamicModule {
-    const replaced = new Set(
-      overrides.map((provider) =>
-        typeof provider === 'object' && 'provide' in provider ? provider.provide : provider,
-      ),
-    );
-    const defaults: Provider[] = [
-      { provide: POS_STOCK, useClass: UnboundPosStock },
-      { provide: POS_CATALOG, useClass: UnboundPosCatalog },
-      { provide: POS_WALLET_CLOSING, useClass: UnboundWalletClosing },
-      { provide: PROMO_CODES, useClass: NoPromoCodes },
-    ].filter((provider) => !replaced.has(provider.provide));
-
-    return {
-      module: PosModule,
-      imports: [LedgerModule, WalletsModule, CatalogModule],
-      controllers: [PosController],
-      providers: [
-        PosPostingService,
-        RegistersService,
-        ShiftsService,
-        SyncService,
-        ReviewsService,
-        BranchesService,
-        ...defaults,
-        ...overrides,
-      ],
-      exports: [PosPostingService],
-    };
-  }
-}
+@Module({
+  imports: [LedgerModule, WalletsModule, CatalogModule, InventoryModule, ApprovalsModule],
+  controllers: [PosController],
+  providers: [
+    PosPostingService,
+    RegistersService,
+    ShiftsService,
+    SyncService,
+    ReviewsService,
+    BranchesService,
+    { provide: POS_STOCK, useExisting: INVENTORY_API },
+    { provide: POS_CATALOG, useExisting: CATALOG_API },
+    { provide: POS_WALLET_CLOSING, useExisting: ClosingsService },
+    { provide: PROMO_CODES, useClass: NoPromoCodes },
+  ],
+  exports: [PosPostingService],
+})
+export class PosModule {}

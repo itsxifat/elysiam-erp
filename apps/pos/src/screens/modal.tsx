@@ -29,7 +29,7 @@ export function Modal({
       }}
       title={title}
       {...(description === undefined ? {} : { description })}
-      closeLabel={t('action.close')}
+      closeLabel={t('pos.action.close')}
       footer={footer}
     >
       {children}

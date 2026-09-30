@@ -1,11 +1,9 @@
 /**
  * What the showroom POS refuses, and why (architecture §14, M23).
  *
- * The codes are proposed for `packages/contracts/src/errors.ts` and kept in step
- * with it at integration. Until then `problemFor` replaces an unknown code with the
- * status's own, so a client sees `CONFLICT` rather than `POS_SHIFT_NOT_OPEN` — the
- * status is right either way, which is why nothing here depends on the code
- * reaching the wire.
+ * Every code here is also in `packages/contracts/src/errors.ts`, which is what
+ * lets it reach the wire: `problemFor` replaces a code the contract does not know
+ * with the status's own. A code added here is added there in the same change.
  */
 export type PosErrorCode =
   | 'POS_REGISTER_NOT_FOUND'

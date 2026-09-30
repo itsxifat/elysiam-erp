@@ -1,97 +1,482 @@
-import { Moon, Sun } from 'lucide-react';
-import { useState } from 'react';
+import { Button, ErrorState, Skeleton, StatusBadge } from '@elysium/ui';
+import { CloudOff, LogOut, Moon, RefreshCw, Sun } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
+import { LocaleProvider, useLocale, usePosT } from './i18n/locale.js';
+import type { PosMessageKey } from './i18n/messages.js';
+import { ApiError, endpoints, NetworkError, type RegisterView, type Session } from './lib/api.js';
+import { cartReducer, EMPTY_CART, type PriceListItem } from './lib/cart.js';
+import { getValue, outbox, setValue, type OutboxEntry } from './lib/store.js';
+import { SyncEngine, type SyncState } from './lib/sync.js';
+import { PrintArea, printReceipt, type ReceiptData } from './receipt/receipt.js';
+import { CloseShift, Queue } from './screens/queue.js';
+import { Returns } from './screens/returns.js';
+import { Sell } from './screens/sell.js';
+import { OpenShift, PickOrg, PickRegister, SignIn } from './screens/setup.js';
 import { applyTheme, isDark } from './theme.js';
 
-/*
- * M00 placeholder.
+/**
+ * The till (architecture §14, §24 "PWAs").
  *
- * It exists to prove three things end to end before M05 builds the real shell:
- * Tailwind resolves the design tokens, both themes render from the same
- * markup, and no raw palette colour is needed to build a page. The class names
- * below are all semantic tokens, which is what the ESLint rule enforces.
+ * **Offline first, not offline tolerant.** Everything a sale needs — the
+ * register, the open shift, the cashier's discount ceiling, the receipt header and
+ * the price list — is cached in IndexedDB the last time the till was online. On
+ * start the till reads that cache *before* it asks the server anything, so a till
+ * reloaded with no connection goes straight back to selling on the shift it had
+ * open. The server is asked in the background and only ever improves on the cache.
+ *
+ * Three things do need the server, because each is a fact about more than this
+ * till: signing in, opening or closing a shift, and looking a receipt up for a
+ * return. They say so on screen rather than failing.
  */
 
-const SWATCHES = [
-  { label: 'Primary', className: 'bg-primary text-primary-foreground' },
-  { label: 'Secondary', className: 'bg-secondary text-secondary-foreground' },
-  { label: 'Muted', className: 'bg-muted text-muted-foreground' },
-  { label: 'Delivered', className: 'bg-success-subtle text-success-subtle-foreground' },
-  { label: 'Pending', className: 'bg-warning-subtle text-warning-subtle-foreground' },
-  { label: 'Returned', className: 'bg-destructive-subtle text-destructive-subtle-foreground' },
-] as const;
+type Phase =
+  | { readonly kind: 'boot' }
+  | { readonly kind: 'signIn' }
+  | { readonly kind: 'pickOrg' }
+  | { readonly kind: 'pickRegister' }
+  | { readonly kind: 'till' }
+  | { readonly kind: 'failed' };
+
+type Tab = 'sell' | 'returns' | 'queue' | 'close';
+
+const SESSION_KEY = 'session';
+const REGISTER_KEY = 'register-id';
+const priceListKey = (registerId: string) => `price-list:${registerId}`;
 
 export function App() {
-  const [dark, setDark] = useState(isDark);
+  return (
+    <LocaleProvider>
+      <Till />
+    </LocaleProvider>
+  );
+}
 
-  function toggleTheme() {
-    const next = !dark;
-    applyTheme(next ? 'dark' : 'light');
-    setDark(next);
+function useOnline(): boolean {
+  const [online, setOnline] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const update = () => {
+      setOnline(navigator.onLine);
+    };
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+  return online;
+}
+
+function Till() {
+  const t = usePosT();
+  const online = useOnline();
+  const engine = useMemo(() => new SyncEngine(), []);
+  const [phase, setPhase] = useState<Phase>({ kind: 'boot' });
+  const [session, setSession] = useState<Session | null>(null);
+  const [items, setItems] = useState<readonly PriceListItem[]>([]);
+  const [listState, setListState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [entries, setEntries] = useState<readonly OutboxEntry[]>([]);
+  const [sync, setSync] = useState<SyncState>({ kind: 'idle' });
+  const [tab, setTab] = useState<Tab>('sell');
+  const [cart, dispatch] = useReducer(cartReducer, EMPTY_CART);
+  const [printable, setPrintable] = useState<ReceiptData | null>(null);
+  const printNext = useRef(false);
+
+  const refreshEntries = useCallback(() => {
+    void outbox().then(setEntries);
+  }, []);
+
+  /** Ask the server for the session and price list; fall back to the cache. */
+  const load = useCallback(async (registerId: string) => {
+    try {
+      const fresh = await endpoints.session(registerId);
+      await setValue(SESSION_KEY, fresh);
+      setSession(fresh);
+      setPhase({ kind: 'till' });
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setPhase({ kind: 'signIn' });
+        return;
+      }
+      if (error instanceof ApiError && error.status === 404) {
+        setPhase({ kind: 'pickRegister' });
+        return;
+      }
+      // Unreachable: keep whatever the cache already put on screen.
+      const cached = await getValue<Session | null>(SESSION_KEY);
+      if (cached == null) setPhase({ kind: error instanceof NetworkError ? 'signIn' : 'failed' });
+      return;
+    }
+    try {
+      const all: PriceListItem[] = [];
+      let after: string | null = null;
+      do {
+        const page = await endpoints.priceList(registerId, after);
+        all.push(...page.items);
+        after = page.next;
+      } while (after !== null);
+      await setValue(priceListKey(registerId), all);
+      setItems(all);
+      setListState('ready');
+    } catch {
+      setListState((current) => (current === 'ready' ? 'ready' : 'failed'));
+    }
+  }, []);
+
+  // Boot: the cache first, then the server.
+  useEffect(() => {
+    void (async () => {
+      const registerId = await getValue<string>(REGISTER_KEY);
+      const cached = await getValue<Session | null>(SESSION_KEY);
+      if (registerId !== undefined && cached?.register.id === registerId) {
+        setSession(cached);
+        const list = await getValue<PriceListItem[]>(priceListKey(registerId));
+        if (list !== undefined) {
+          setItems(list);
+          setListState('ready');
+        }
+        setPhase({ kind: 'till' });
+      }
+      refreshEntries();
+      if (registerId !== undefined) await load(registerId);
+      else if (navigator.onLine) {
+        try {
+          const me = await endpoints.me();
+          setPhase({ kind: me.orgId === null ? 'pickOrg' : 'pickRegister' });
+        } catch {
+          setPhase({ kind: 'signIn' });
+        }
+      } else setPhase({ kind: 'signIn' });
+    })();
+  }, [load, refreshEntries]);
+
+  // The sync engine runs for the life of the page and repaints the queue.
+  useEffect(() => {
+    const stop = engine.start();
+    const unsubscribe = engine.subscribe((state) => {
+      setSync(state);
+      refreshEntries();
+    });
+    return () => {
+      stop();
+      unsubscribe();
+    };
+  }, [engine, refreshEntries]);
+
+  // Print once the receipt has reached the print region.
+  useEffect(() => {
+    if (printable !== null && printNext.current) {
+      printNext.current = false;
+      printReceipt();
+    }
+  }, [printable]);
+
+  const waiting = entries.filter((entry) => entry.status === 'queued').length;
+  const failed = entries.filter((entry) => entry.status === 'failed').length;
+
+  async function pickRegister(register: RegisterView) {
+    await setValue(REGISTER_KEY, register.id);
+    setPhase({ kind: 'boot' });
+    await load(register.id);
   }
 
-  return (
-    <div className="min-h-dvh bg-background text-foreground">
-      <header className="flex h-14 items-center justify-between border-b border-border px-6">
-        <div className="flex items-baseline gap-3">
-          <span className="text-sm font-semibold tracking-tight">Elysium POS</span>
-          <span className="text-xs text-muted-foreground">Showroom point of sale</span>
-        </div>
-        <button
-          type="button"
-          onClick={toggleTheme}
-          aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-        >
-          {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-        </button>
-      </header>
+  function recorded(receipt: ReceiptData) {
+    setPrintable(receipt);
+    refreshEntries();
+    void engine.flush();
+  }
 
-      <main className="mx-auto max-w-3xl px-6 py-10">
-        <h1 className="text-lg font-semibold tracking-tight">Design tokens are wired</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Every colour below resolves through packages/ui. M05 replaces this page with the real
-          application shell.
-        </p>
-
-        <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {SWATCHES.map((swatch) => (
-            <div
-              key={swatch.label}
-              className={`${swatch.className} flex h-16 items-center justify-center rounded-lg border border-border text-sm font-medium`}
-            >
-              {swatch.label}
+  const openShift = session?.openShift ?? null;
+  const body = (() => {
+    switch (phase.kind) {
+      case 'boot':
+        return (
+          <div className="mx-auto max-w-md space-y-3 p-10">
+            <Skeleton className="h-control-lg w-full" />
+            <Skeleton className="h-control-lg w-full" />
+            <Skeleton className="h-control-lg w-2/3" />
+          </div>
+        );
+      case 'failed':
+        return (
+          <div className="mx-auto max-w-md p-10">
+            <ErrorState title={t('pos.error.generic')} />
+          </div>
+        );
+      case 'signIn':
+        return (
+          <SignIn
+            onSignedIn={() => {
+              setPhase({ kind: 'pickOrg' });
+            }}
+          />
+        );
+      case 'pickOrg':
+        return (
+          <PickOrg
+            onPicked={() => {
+              void getValue<string>(REGISTER_KEY).then((registerId) => {
+                if (registerId === undefined) setPhase({ kind: 'pickRegister' });
+                else void load(registerId).then(() => engine.flush());
+              });
+            }}
+          />
+        );
+      case 'pickRegister':
+        return <PickRegister onPicked={(register) => void pickRegister(register)} />;
+      case 'till': {
+        if (session === null) return null;
+        if (openShift === null) {
+          return (
+            <OpenShift
+              registerId={session.register.id}
+              online={online}
+              onOpened={() => {
+                void load(session.register.id);
+              }}
+            />
+          );
+        }
+        if (!openShift.mine) {
+          return (
+            <div className="mx-auto max-w-md p-10">
+              <ErrorState title={t('pos.shift.someoneElse')} />
             </div>
-          ))}
-        </div>
+          );
+        }
+        const active = { ...session, openShift };
+        if (tab === 'returns') {
+          return (
+            <Returns
+              session={active}
+              online={online}
+              onRecorded={recorded}
+              onExchange={(returnId) => {
+                dispatch({ type: 'exchange', returnId });
+                setTab('sell');
+              }}
+            />
+          );
+        }
+        if (tab === 'queue') {
+          return (
+            <Queue
+              entries={entries}
+              onRetry={() => {
+                refreshEntries();
+                void engine.flush();
+              }}
+              onReprint={(receipt) => {
+                printNext.current = true;
+                // A new object each time, so reprinting the same receipt twice prints twice.
+                setPrintable({ ...receipt });
+              }}
+            />
+          );
+        }
+        if (tab === 'close') {
+          return (
+            <CloseShift
+              shiftId={openShift.id}
+              online={online}
+              waiting={waiting}
+              failed={failed}
+              onClosed={() => {
+                setTab('sell');
+                void load(session.register.id);
+              }}
+            />
+          );
+        }
+        return (
+          <Sell
+            session={active}
+            priceList={{ items, state: listState }}
+            cart={cart}
+            dispatch={dispatch}
+            online={online}
+            onRecorded={recorded}
+          />
+        );
+      }
+    }
+  })();
 
-        <table className="mt-8 w-full border-separate border-spacing-0 overflow-hidden rounded-lg border border-border text-sm">
-          <thead>
-            <tr className="bg-muted text-muted-foreground">
-              <th className="h-row px-3 text-left font-medium">Order</th>
-              <th className="h-row px-3 text-left font-medium">Status</th>
-              <th className="h-row px-3 text-right font-medium" data-numeric>
-                COD
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {[
-              ['ELB-2609-00421', 'Confirmed', '2,450.00'],
-              ['ELB-2609-00420', 'Pending', '1,180.00'],
-              ['ELB-2609-00419', 'Shipped', '12,900.00'],
-            ].map(([order, status, amount]) => (
-              <tr key={order} className="border-t border-border hover:bg-accent">
-                <td className="h-row px-3 font-medium">{order}</td>
-                <td className="h-row px-3 text-muted-foreground">{status}</td>
-                <td className="h-row px-3" data-numeric>
-                  &#2547;{amount}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </main>
-    </div>
+  return (
+    <>
+      <div className="flex min-h-dvh flex-col bg-background text-foreground print:hidden">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:ring-2 focus:ring-ring"
+        >
+          {t('pos.app.skipToContent')}
+        </a>
+        <TopBar
+          session={phase.kind === 'till' ? session : null}
+          online={online}
+          sync={sync}
+          waiting={waiting}
+          failed={failed}
+          tab={tab}
+          onTab={setTab}
+          onSync={() => void engine.flush()}
+          onSignOut={() => {
+            void endpoints
+              .signOut()
+              .catch(() => undefined)
+              // The cached session says whose shift is open; left behind, the next
+              // cashier's till would start offline as the last one.
+              .then(() => setValue(SESSION_KEY, null))
+              .then(() => {
+                setSession(null);
+                setPhase({ kind: 'signIn' });
+              });
+          }}
+        />
+        {body}
+      </div>
+      <PrintArea data={printable} />
+    </>
+  );
+}
+
+const TABS: readonly { readonly tab: Tab; readonly label: PosMessageKey }[] = [
+  { tab: 'sell', label: 'pos.sell.menuSell' },
+  { tab: 'returns', label: 'pos.sell.menuReturns' },
+  { tab: 'queue', label: 'pos.sell.menuQueue' },
+  { tab: 'close', label: 'pos.sell.menuCloseShift' },
+];
+
+function TopBar({
+  session,
+  online,
+  sync,
+  waiting,
+  failed,
+  tab,
+  onTab,
+  onSync,
+  onSignOut,
+}: {
+  readonly session: Session | null;
+  readonly online: boolean;
+  readonly sync: SyncState;
+  readonly waiting: number;
+  readonly failed: number;
+  readonly tab: Tab;
+  readonly onTab: (tab: Tab) => void;
+  readonly onSync: () => void;
+  readonly onSignOut: () => void;
+}) {
+  const t = usePosT();
+  const { locale, setLocale } = useLocale();
+  const [dark, setDark] = useState(isDark);
+  const selling = session?.openShift?.mine === true;
+
+  const status = !online
+    ? { tone: 'warning' as const, label: t('pos.status.offline') }
+    : sync.kind === 'syncing'
+      ? { tone: 'info' as const, label: t('pos.status.syncing') }
+      : sync.kind === 'signedOut'
+        ? { tone: 'danger' as const, label: t('pos.status.signedOut') }
+        : sync.kind === 'error'
+          ? { tone: 'danger' as const, label: t('pos.status.syncError') }
+          : { tone: 'success' as const, label: t('pos.status.online') };
+
+  return (
+    <header className="flex min-h-14 flex-wrap items-center gap-3 border-b border-border px-4 py-2">
+      <div className="flex items-baseline gap-2">
+        <span className="text-sm font-semibold tracking-tight">{t('pos.app.name')}</span>
+        {session === null ? null : (
+          <span className="text-xs text-muted-foreground">
+            {session.register.branchName} · {session.register.code}
+            {session.openShift === null
+              ? ''
+              : ` · ${t('pos.shift.label')} ${String(session.openShift.shiftNo)}`}
+          </span>
+        )}
+      </div>
+
+      {selling ? (
+        <nav className="flex gap-1" aria-label={t('pos.app.name')}>
+          {TABS.map((entry) => (
+            <Button
+              key={entry.tab}
+              size="lg"
+              variant={tab === entry.tab ? 'secondary' : 'ghost'}
+              aria-current={tab === entry.tab ? 'page' : undefined}
+              onClick={() => {
+                onTab(entry.tab);
+              }}
+            >
+              {t(entry.label)}
+            </Button>
+          ))}
+        </nav>
+      ) : null}
+
+      <div className="ml-auto flex items-center gap-2">
+        <span role="status" data-testid="connection" data-online={online}>
+          <StatusBadge tone={status.tone}>
+            {online ? null : <CloudOff aria-hidden />}
+            {status.label}
+          </StatusBadge>
+        </span>
+        {waiting > 0 ? (
+          <span data-testid="waiting" data-count={waiting}>
+            <StatusBadge tone="warning">
+              <span className="tabular-nums">{waiting}</span> {t('pos.status.waiting')}
+            </StatusBadge>
+          </span>
+        ) : null}
+        {failed > 0 ? (
+          <span data-testid="failed" data-count={failed}>
+            <StatusBadge tone="danger">
+              <span className="tabular-nums">{failed}</span> {t('pos.status.failed')}
+            </StatusBadge>
+          </span>
+        ) : null}
+        <Button size="lg" variant="outline" onClick={onSync} disabled={!online}>
+          <RefreshCw aria-hidden />
+          {t('pos.action.syncNow')}
+        </Button>
+        <Button
+          size="lg"
+          variant="ghost"
+          aria-label={t('pos.locale.label')}
+          onClick={() => {
+            setLocale(locale === 'en' ? 'bn' : 'en');
+          }}
+        >
+          {locale === 'en' ? t('pos.locale.toBangla') : t('pos.locale.toEnglish')}
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-control-lg w-control-lg"
+          aria-label={dark ? t('pos.theme.toLight') : t('pos.theme.toDark')}
+          onClick={() => {
+            applyTheme(dark ? 'light' : 'dark');
+            setDark(!dark);
+          }}
+        >
+          {dark ? <Sun aria-hidden /> : <Moon aria-hidden />}
+        </Button>
+        {session === null ? null : (
+          <Button
+            size="lg"
+            variant="ghost"
+            onClick={onSignOut}
+            // Unsynced sales belong to this cashier's shift; the next person's session
+            // could not send them. They must reach the server before the till changes hands.
+            disabled={waiting > 0 || !online}
+          >
+            <LogOut aria-hidden />
+            {t('pos.action.signOut')}
+          </Button>
+        )}
+      </div>
+    </header>
   );
 }

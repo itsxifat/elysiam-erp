@@ -12,14 +12,12 @@ import { PosError, type PosErrorCode } from '@elysium/domain/pos';
  * What the POS refuses over HTTP, and with which status (architecture §23).
  *
  * The body is `{ code, message }` like every module's; `problemFor` turns it into
- * problem+json. The POS codes are proposed for `packages/contracts/src/errors.ts`
- * — until they are there, `problemFor` replaces them with the status's own code
- * (`CONFLICT`, `NOT_FOUND`), so a client branches on the status today and on the
- * code once integration lands. Ledger and money codes are already in the contract
- * and pass through unchanged.
+ * problem+json. The POS codes are in `packages/contracts/src/errors.ts`, so a
+ * client branches on the code. Ledger and money codes pass through unchanged.
  */
 
-type Code = PosErrorCode | 'LEDGER_ACCOUNT_NOT_FOUND' | 'PERIOD_CLOSED' | 'CLOSING_ALREADY_RECORDED';
+type Code =
+  PosErrorCode | 'LEDGER_ACCOUNT_NOT_FOUND' | 'PERIOD_CLOSED' | 'CLOSING_ALREADY_RECORDED';
 
 const STATUS: Readonly<Partial<Record<Code, number>>> = {
   POS_REGISTER_NOT_FOUND: 404,
@@ -67,8 +65,14 @@ function databaseCode(error: unknown): { code: Code; message: string } | null {
     // and then collides with it. The partial unique index is the guarantee; this is
     // only its wording.
     const constraint = (current as { constraint_name?: unknown }).constraint_name;
-    if ((current as { code?: unknown }).code === '23505' && constraint === 'pos_shifts_org_register_open_idx') {
-      return { code: 'POS_SHIFT_ALREADY_OPEN', message: 'A shift is already open on this register.' };
+    if (
+      (current as { code?: unknown }).code === '23505' &&
+      constraint === 'pos_shifts_org_register_open_idx'
+    ) {
+      return {
+        code: 'POS_SHIFT_ALREADY_OPEN',
+        message: 'A shift is already open on this register.',
+      };
     }
   }
   return null;

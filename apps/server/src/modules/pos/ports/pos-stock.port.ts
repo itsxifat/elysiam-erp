@@ -4,16 +4,13 @@ import type { Poisha } from '@elysium/domain';
 /**
  * What the till needs from inventory (architecture §8, invariant 3 and 12).
  *
- * `InventoryApi` moves stock for orders and supply; it has no `pos_sale` or
- * `pos_return` path yet, and this module may not touch `inventory.*` or add one
- * itself. So the POS declares the narrow shape it needs and inventory implements
- * it — the same arrangement `orders/ports/fraud-gate.port.ts` used before M13.
+ * This module may not touch `inventory.*`. So the POS declares the narrow shape it
+ * needs and inventory implements it — the same arrangement
+ * `orders/ports/fraud-gate.port.ts` uses with M13.
  *
- * The method names are the ones proposed for `InventoryApi`, so at integration
- * `InventoryApiService` satisfies this interface structurally and the binding is
- * `{ provide: POS_STOCK, useExisting: INVENTORY_API }`. Until then `PosModule`
- * binds `UnboundPosStock`, which refuses — a till that cannot move stock must not
- * look as if it sold something.
+ * `InventoryApiService` has `sellAtPos`, `receivePosReturn` and `availability`
+ * with these signatures, so it satisfies this interface structurally and
+ * `PosModule` binds `{ provide: POS_STOCK, useExisting: INVENTORY_API }`.
  *
  * ## Why the port moves stock but does not post
  *
@@ -88,27 +85,6 @@ export interface PosStockPort {
 
 export const POS_STOCK = Symbol('PosStockPort');
 
-/** The refusing default, until inventory implements the two POS movements. */
-export class UnboundPosStock implements PosStockPort {
-  private refuse(): never {
-    throw new Error(
-      'The POS stock port is not bound: InventoryApi.sellAtPos and receivePosReturn arrive at integration.',
-    );
-  }
-
-  sellAtPos(): Promise<{ readonly lines: readonly PosSoldLine[] }> {
-    return Promise.resolve(this.refuse());
-  }
-
-  receivePosReturn(): Promise<void> {
-    return Promise.resolve(this.refuse());
-  }
-
-  availability(): Promise<Map<string, number>> {
-    return Promise.resolve(this.refuse());
-  }
-}
-
 /**
  * Whether an error is the shelf saying no.
  *
@@ -123,7 +99,11 @@ export function isStockShortfall(error: unknown): boolean {
     const code = (current as { code?: unknown }).code;
     if (code === 'STOCK_INSUFFICIENT') return true;
     const constraint = (current as { constraint_name?: unknown }).constraint_name;
-    if (code === '23514' && typeof constraint === 'string' && constraint.startsWith('stock_levels_')) {
+    if (
+      code === '23514' &&
+      typeof constraint === 'string' &&
+      constraint.startsWith('stock_levels_')
+    ) {
       return true;
     }
   }

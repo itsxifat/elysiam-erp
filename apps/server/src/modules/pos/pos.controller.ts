@@ -114,9 +114,7 @@ export class PosController {
   @Get('registers/:id/session')
   async session(@Req() request: FastifyRequest, @Param('id') id: string) {
     const registerId = parse(idParamSchema, id);
-    return mapPosErrors(() =>
-      this.registers.session(requireContext(request), request, registerId),
-    );
+    return mapPosErrors(() => this.registers.session(requireContext(request), request, registerId));
   }
 
   /** The offline price list, keyset-paged by SKU code. */
@@ -140,9 +138,7 @@ export class PosController {
   @HttpCode(200)
   async checkPromo(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(promoCheckSchema, body);
-    return mapPosErrors(() =>
-      this.registers.checkPromo(requireContext(request), request, input),
-    );
+    return mapPosErrors(() => this.registers.checkPromo(requireContext(request), request, input));
   }
 
   // --- shifts -------------------------------------------------------------------
@@ -165,19 +161,13 @@ export class PosController {
   @Post('shifts')
   async openShift(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(openShiftSchema, body);
-    return mapPosErrors(() =>
-      this.shifts.open(requireContext(request), auditable(request), input),
-    );
+    return mapPosErrors(() => this.shifts.open(requireContext(request), auditable(request), input));
   }
 
   @RequireAbility('update', 'Wallet')
   @Post('shifts/:id/close')
   @HttpCode(200)
-  async closeShift(
-    @Req() request: FastifyRequest,
-    @Param('id') id: string,
-    @Body() body: unknown,
-  ) {
+  async closeShift(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
     const shiftId = parse(idParamSchema, id);
     const input = parse(closeShiftSchema, body);
     return mapPosErrors(() =>

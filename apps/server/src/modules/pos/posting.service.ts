@@ -2,7 +2,6 @@ import { HttpException, Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
 import {
   businessDate,
-  LedgerError,
   poisha,
   withinPostingWindow,
   type AccountSubtype,
@@ -79,10 +78,11 @@ export class PosPostingService {
   async postSale(tx: Tx, actor: Actor, sale: repo.SaleRow, now: Date): Promise<PostOutcome> {
     const lines = await repo.saleLines(tx, actor.orgId, sale.id);
     const tenders = await repo.saleTenders(tx, actor.orgId, sale.id);
-    const postedOn = postingDateFor(sale.occurred_at, now);
+    const occurredAt = new Date(sale.occurred_at);
+    const postedOn = postingDateFor(occurredAt, now);
     // The instant the movements carry, so a late sale's stock leaves on the day its
     // journal says it did rather than on a day whose count is already closed.
-    const movedAt = withinPostingWindow(sale.occurred_at, now) ? sale.occurred_at : now;
+    const movedAt = withinPostingWindow(occurredAt, now) ? occurredAt : now;
     const netPoisha = poisha(sale.net_poisha);
 
     try {
@@ -180,7 +180,11 @@ export class PosPostingService {
         return {
           kind: 'held',
           reasons: ['return_mismatch'],
-          detail: { lineNo: line.line_no, saleLineNo: line.sale_line_no, why: verdict ?? 'no such line' },
+          detail: {
+            lineNo: line.line_no,
+            saleLineNo: line.sale_line_no,
+            why: verdict ?? 'no such line',
+          },
         };
       }
       already.set(line.sale_line_no, (already.get(line.sale_line_no) ?? 0) + line.qty);
@@ -192,8 +196,9 @@ export class PosPostingService {
       });
     }
 
-    const postedOn = postingDateFor(ret.occurred_at, now);
-    const movedAt = withinPostingWindow(ret.occurred_at, now) ? ret.occurred_at : now;
+    const occurredAt = new Date(ret.occurred_at);
+    const postedOn = postingDateFor(occurredAt, now);
+    const movedAt = withinPostingWindow(occurredAt, now) ? occurredAt : now;
     const refund = poisha(ret.refund_poisha);
     const tenders = await repo.returnTenders(tx, actor.orgId, ret.id);
 
@@ -208,7 +213,13 @@ export class PosPostingService {
         let cogs = 0n;
         for (const line of costed) {
           cogs += line.unitCostPoisha * BigInt(line.qty);
-          await repo.setReturnLineCost(savepoint, actor.orgId, ret.id, line.lineNo, line.unitCostPoisha);
+          await repo.setReturnLineCost(
+            savepoint,
+            actor.orgId,
+            ret.id,
+            line.lineNo,
+            line.unitCostPoisha,
+          );
         }
 
         let journalId: string | null = null;
@@ -333,7 +344,6 @@ function memoFor(what: string, receiptNo: string, soldOn: string, postedOn: stri
 /** The ledger refused a date inside a closed month, from either layer (D-093). */
 export function isPeriodClosed(error: unknown): boolean {
   for (let current: unknown = error; current instanceof Error; current = current.cause) {
-    if (current instanceof LedgerError && current.code === 'PERIOD_CLOSED') return true;
     if ((current as { code?: unknown }).code === 'PERIOD_CLOSED') return true;
     // `LedgerService` answers with an HTTP error whose body carries the code.
     if (current instanceof HttpException) {

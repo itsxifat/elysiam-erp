@@ -30,11 +30,11 @@ export interface ShiftView {
   readonly shiftNo: number;
   readonly status: 'open' | 'closed';
   readonly openedBy: string;
-  readonly openedAt: Date;
+  readonly openedAt: string;
   readonly businessDate: string;
   readonly openingFloatPoisha: string;
   readonly closedBy: string | null;
-  readonly closedAt: Date | null;
+  readonly closedAt: string | null;
   readonly countedCashPoisha: string | null;
   readonly expectedCashPoisha: string | null;
   readonly variancePoisha: string | null;
@@ -202,7 +202,13 @@ export class ShiftsService {
   async list(
     context: ActiveContext,
     request: object,
-    filter: { registerId?: string | undefined; status?: string | undefined; from?: string | undefined; to?: string | undefined },
+    filter: {
+      branchId?: string | undefined;
+      registerId?: string | undefined;
+      status?: string | undefined;
+      from?: string | undefined;
+      to?: string | undefined;
+    },
   ): Promise<{ items: ShiftView[] }> {
     const scope = scopeWhere(request, { branchId: sql`s.branch_id` });
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => ({

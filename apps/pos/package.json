@@ -7,6 +7,7 @@
     "build": "vite build",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "dev": "vite --port 5175 --strictPort",
+    "e2e": "playwright test",
     "lint": "eslint .",
     "preview": "vite preview --port 5175 --strictPort",
     "typecheck": "tsc --noEmit"
@@ -23,6 +24,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",

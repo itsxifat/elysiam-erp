@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Elysium POS">
+  <rect width="512" height="512" rx="96" fill="#111111" />
+  <path d="M144 176h224v40H144zm0 80h224v40H144zm0 80h144v40H144z" fill="#ffffff" />
+</svg>

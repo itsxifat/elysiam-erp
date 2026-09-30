@@ -13,9 +13,20 @@ import { sql, type SQL } from 'drizzle-orm';
  * are turned into `bigint` by the services, never into `number`.
  */
 
+/**
+ * A `timestamptz` as an ISO-8601 UTC string.
+ *
+ * The driver hands timestamps back in PostgreSQL's own spelling
+ * (`2026-09-30 07:40:14.5+00`), which `new Date()` is not required to parse. Asked
+ * for in ISO form here, every instant this module reads round-trips exactly.
+ */
+function iso(column: SQL): SQL {
+  return sql`to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+}
+
 // --- registers ------------------------------------------------------------------
 
-export interface RegisterRow {
+export interface RegisterRow extends Record<string, unknown> {
   readonly id: string;
   readonly branch_id: string;
   readonly location_id: string;
@@ -123,18 +134,18 @@ export async function nextShiftNo(tx: Tx, orgId: string, registerId: string): Pr
 
 // --- shifts ---------------------------------------------------------------------
 
-export interface ShiftRow {
+export interface ShiftRow extends Record<string, unknown> {
   readonly id: string;
   readonly register_id: string;
   readonly branch_id: string;
   readonly shift_no: number;
   readonly status: 'open' | 'closed';
   readonly opened_by: string;
-  readonly opened_at: Date;
+  readonly opened_at: string;
   readonly business_date: string;
   readonly opening_float_poisha: string;
   readonly closed_by: string | null;
-  readonly closed_at: Date | null;
+  readonly closed_at: string | null;
   readonly counted_cash_poisha: string | null;
   readonly expected_cash_poisha: string | null;
   readonly variance_poisha: string | null;
@@ -143,9 +154,9 @@ export interface ShiftRow {
 }
 
 const SHIFT_SELECT = sql`
-  select s.id, s.register_id, s.branch_id, s.shift_no, s.status, s.opened_by, s.opened_at,
+  select s.id, s.register_id, s.branch_id, s.shift_no, s.status, s.opened_by, ${iso(sql`s.opened_at`)} as opened_at,
          s.business_date::text as business_date, s.opening_float_poisha::text as opening_float_poisha,
-         s.closed_by, s.closed_at, s.counted_cash_poisha::text as counted_cash_poisha,
+         s.closed_by, ${iso(sql`s.closed_at`)} as closed_at, s.counted_cash_poisha::text as counted_cash_poisha,
          s.expected_cash_poisha::text as expected_cash_poisha,
          s.variance_poisha::text as variance_poisha, s.close_note, r.code as register_code
   from pos.shifts s
@@ -171,7 +182,8 @@ export async function insertShift(
       (id, org_id, register_id, branch_id, shift_no, opened_by, opened_at, business_date,
        opening_float_poisha)
     values (${row.id}, ${row.orgId}, ${row.registerId}, ${row.branchId}, ${row.shiftNo},
-            ${row.openedBy}, ${row.openedAt}, ${row.businessDate}, ${row.openingFloatPoisha})
+            ${row.openedBy}, ${row.openedAt.toISOString()}::timestamptz, ${row.businessDate},
+            ${row.openingFloatPoisha.toString()}::bigint)
     on conflict (id) do nothing
     returning id
   `);
@@ -209,6 +221,7 @@ export async function shifts(
   orgId: string,
   filter: {
     scope: SQL;
+    branchId?: string | undefined;
     registerId?: string | undefined;
     status?: string | undefined;
     from?: string | undefined;
@@ -218,6 +231,7 @@ export async function shifts(
   const rows = await tx.execute<ShiftRow>(sql`
     ${SHIFT_SELECT}
     where s.org_id = ${orgId} and ${filter.scope}
+      and ${filter.branchId === undefined ? sql`true` : sql`s.branch_id = ${filter.branchId}`}
       and ${filter.registerId === undefined ? sql`true` : sql`s.register_id = ${filter.registerId}`}
       and ${filter.status === undefined ? sql`true` : sql`s.status::text = ${filter.status}`}
       and ${filter.from === undefined ? sql`true` : sql`s.business_date >= ${filter.from}`}
@@ -243,14 +257,14 @@ export async function closeShift(
   await tx.execute(sql`
     update pos.shifts set
       status = 'closed', closed_by = ${close.closedBy}, closed_at = now(),
-      counted_cash_poisha = ${close.countedCashPoisha},
-      expected_cash_poisha = ${close.expectedCashPoisha},
-      variance_poisha = ${close.variancePoisha}, close_note = ${close.note}, updated_at = now()
+      counted_cash_poisha = ${close.countedCashPoisha.toString()}::bigint,
+      expected_cash_poisha = ${close.expectedCashPoisha.toString()}::bigint,
+      variance_poisha = ${close.variancePoisha.toString()}::bigint, close_note = ${close.note}, updated_at = now()
     where org_id = ${orgId} and id = ${id} and status = 'open'
   `);
 }
 
-export interface DrawerTotals {
+export interface DrawerTotals extends Record<string, unknown> {
   readonly cash_sales_poisha: string;
   readonly cash_refunds_poisha: string;
   readonly sales_count: number;
@@ -293,7 +307,7 @@ export async function drawerTotals(tx: Tx, orgId: string, shiftId: string): Prom
 
 // --- sales ----------------------------------------------------------------------
 
-export interface SaleRow {
+export interface SaleRow extends Record<string, unknown> {
   readonly id: string;
   readonly register_id: string;
   readonly shift_id: string;
@@ -301,7 +315,7 @@ export interface SaleRow {
   readonly location_id: string;
   readonly receipt_no: string;
   readonly seller_id: string;
-  readonly occurred_at: Date;
+  readonly occurred_at: string;
   readonly business_date: string;
   readonly posted_on: string | null;
   readonly status: 'posted' | 'held' | 'voided';
@@ -318,8 +332,8 @@ export interface SaleRow {
 }
 
 const SALE_COLUMNS = sql`
-  id, register_id, shift_id, branch_id, location_id, receipt_no, seller_id, occurred_at,
-  business_date::text as business_date, posted_on::text as posted_on, status,
+  id, register_id, shift_id, branch_id, location_id, receipt_no, seller_id,
+  ${iso(sql`occurred_at`)} as occurred_at, business_date::text as business_date, posted_on::text as posted_on, status,
   gross_poisha::text as gross_poisha, discount_poisha::text as discount_poisha,
   net_poisha::text as net_poisha, cash_received_poisha::text as cash_received_poisha,
   change_poisha::text as change_poisha, cogs_poisha::text as cogs_poisha, journal_id,
@@ -362,9 +376,10 @@ export async function insertHeldSale(
        occurred_at, business_date, status, gross_poisha, discount_poisha, net_poisha,
        cash_received_poisha, change_poisha, payload_hash, exchange_return_id)
     values (${row.id}, ${row.orgId}, ${row.registerId}, ${row.shiftId}, ${row.branchId},
-            ${row.locationId}, ${row.receiptNo}, ${row.sellerId}, ${row.occurredAt},
-            ${row.businessDate}, 'held', ${row.grossPoisha}, ${row.discountPoisha},
-            ${row.netPoisha}, ${row.cashReceivedPoisha}, ${row.changePoisha}, ${row.payloadHash},
+            ${row.locationId}, ${row.receiptNo}, ${row.sellerId},
+            ${row.occurredAt.toISOString()}::timestamptz,
+            ${row.businessDate}, 'held', ${row.grossPoisha.toString()}::bigint, ${row.discountPoisha.toString()}::bigint,
+            ${row.netPoisha.toString()}::bigint, ${row.cashReceivedPoisha.toString()}::bigint, ${row.changePoisha.toString()}::bigint, ${row.payloadHash},
             ${row.exchangeReturnId})
     on conflict (id) do nothing
     returning id
@@ -401,7 +416,7 @@ export async function salesByReceipt(
   return [...rows];
 }
 
-export interface SaleLineRow {
+export interface SaleLineRow extends Record<string, unknown> {
   readonly line_no: number;
   readonly sku_id: string;
   readonly qty: number;
@@ -432,8 +447,8 @@ export async function insertSaleLines(
         (org_id, sale_id, line_no, sku_id, qty, unit_price_poisha, discount_poisha, net_poisha,
          catalog_price_poisha)
       values (${orgId}, ${saleId}, ${line.lineNo}, ${line.skuId}, ${line.qty},
-              ${line.unitPricePoisha}, ${line.discountPoisha}, ${line.netPoisha},
-              ${line.catalogPricePoisha})
+              ${line.unitPricePoisha.toString()}::bigint, ${line.discountPoisha.toString()}::bigint, ${line.netPoisha.toString()}::bigint,
+              ${line.catalogPricePoisha === null ? null : line.catalogPricePoisha.toString()}::bigint)
     `);
   }
 }
@@ -469,13 +484,13 @@ export async function setSaleLineCost(
   unitCostPoisha: bigint,
 ): Promise<void> {
   await tx.execute(sql`
-    update pos.sale_lines set unit_cost_poisha = ${unitCostPoisha}, updated_at = now()
+    update pos.sale_lines set unit_cost_poisha = ${unitCostPoisha.toString()}::bigint, updated_at = now()
     where org_id = ${orgId} and sale_id = ${saleId} and line_no = ${lineNo}
       and unit_cost_poisha is null
   `);
 }
 
-export interface TenderRow {
+export interface TenderRow extends Record<string, unknown> {
   readonly tender: 'cash' | 'bkash' | 'card';
   readonly amount_poisha: string;
   readonly wallet_id: string;
@@ -486,12 +501,17 @@ export async function insertSaleTenders(
   tx: Tx,
   orgId: string,
   saleId: string,
-  tenders: readonly { tender: string; amountPoisha: bigint; walletId: string; reference: string | null }[],
+  tenders: readonly {
+    tender: string;
+    amountPoisha: bigint;
+    walletId: string;
+    reference: string | null;
+  }[],
 ): Promise<void> {
   for (const tender of tenders) {
     await tx.execute(sql`
       insert into pos.sale_tenders (org_id, sale_id, tender, amount_poisha, wallet_id, reference)
-      values (${orgId}, ${saleId}, ${tender.tender}::pos.tender, ${tender.amountPoisha},
+      values (${orgId}, ${saleId}, ${tender.tender}::pos.tender, ${tender.amountPoisha.toString()}::bigint,
               ${tender.walletId}, ${tender.reference})
     `);
   }
@@ -516,7 +536,7 @@ export async function markPosted(
   const target = table === 'sales' ? sql`pos.sales` : sql`pos.returns`;
   await tx.execute(sql`
     update ${target} set status = 'posted', posted_on = ${posted.postedOn},
-      cogs_poisha = ${posted.cogsPoisha}, journal_id = ${posted.journalId}, updated_at = now()
+      cogs_poisha = ${posted.cogsPoisha.toString()}::bigint, journal_id = ${posted.journalId}, updated_at = now()
     where org_id = ${orgId} and id = ${id} and status = 'held'
   `);
 }
@@ -538,7 +558,7 @@ export async function markVoided(
 
 // --- returns --------------------------------------------------------------------
 
-export interface ReturnRow {
+export interface ReturnRow extends Record<string, unknown> {
   readonly id: string;
   readonly register_id: string;
   readonly shift_id: string;
@@ -547,7 +567,7 @@ export interface ReturnRow {
   readonly sale_id: string;
   readonly receipt_no: string;
   readonly created_by: string;
-  readonly occurred_at: Date;
+  readonly occurred_at: string;
   readonly business_date: string;
   readonly posted_on: string | null;
   readonly status: 'posted' | 'held' | 'voided';
@@ -584,7 +604,8 @@ export async function insertHeldReturn(
        created_by, occurred_at, business_date, status, refund_poisha, reason, payload_hash)
     values (${row.id}, ${row.orgId}, ${row.registerId}, ${row.shiftId}, ${row.branchId},
             ${row.locationId}, ${row.saleId}, ${row.receiptNo}, ${row.createdBy},
-            ${row.occurredAt}, ${row.businessDate}, 'held', ${row.refundPoisha}, ${row.reason},
+            ${row.occurredAt.toISOString()}::timestamptz, ${row.businessDate}, 'held',
+            ${row.refundPoisha.toString()}::bigint, ${row.reason},
             ${row.payloadHash})
     on conflict (id) do nothing
     returning id
@@ -600,7 +621,7 @@ export async function returnById(
 ): Promise<ReturnRow | undefined> {
   const rows = await tx.execute<ReturnRow>(sql`
     select id, register_id, shift_id, branch_id, location_id, sale_id, receipt_no, created_by,
-           occurred_at, business_date::text as business_date, posted_on::text as posted_on,
+           ${iso(sql`occurred_at`)} as occurred_at, business_date::text as business_date, posted_on::text as posted_on,
            status, refund_poisha::text as refund_poisha, cogs_poisha::text as cogs_poisha,
            journal_id, reason, payload_hash
     from pos.returns
@@ -610,7 +631,7 @@ export async function returnById(
   return rows[0];
 }
 
-export interface ReturnLineRow {
+export interface ReturnLineRow extends Record<string, unknown> {
   readonly line_no: number;
   readonly sale_line_no: number;
   readonly sku_id: string;
@@ -623,19 +644,29 @@ export async function insertReturnLines(
   orgId: string,
   returnId: string,
   saleId: string,
-  lines: readonly { lineNo: number; saleLineNo: number; skuId: string; qty: number; refundPoisha: bigint }[],
+  lines: readonly {
+    lineNo: number;
+    saleLineNo: number;
+    skuId: string;
+    qty: number;
+    refundPoisha: bigint;
+  }[],
 ): Promise<void> {
   for (const line of lines) {
     await tx.execute(sql`
       insert into pos.return_lines
         (org_id, return_id, line_no, sale_id, sale_line_no, sku_id, qty, refund_poisha)
       values (${orgId}, ${returnId}, ${line.lineNo}, ${saleId}, ${line.saleLineNo},
-              ${line.skuId}, ${line.qty}, ${line.refundPoisha})
+              ${line.skuId}, ${line.qty}, ${line.refundPoisha.toString()}::bigint)
     `);
   }
 }
 
-export async function returnLines(tx: Tx, orgId: string, returnId: string): Promise<ReturnLineRow[]> {
+export async function returnLines(
+  tx: Tx,
+  orgId: string,
+  returnId: string,
+): Promise<ReturnLineRow[]> {
   const rows = await tx.execute<ReturnLineRow>(sql`
     select line_no, sale_line_no, sku_id, qty, refund_poisha::text as refund_poisha
     from pos.return_lines where org_id = ${orgId} and return_id = ${returnId}
@@ -652,7 +683,7 @@ export async function setReturnLineCost(
   unitCostPoisha: bigint,
 ): Promise<void> {
   await tx.execute(sql`
-    update pos.return_lines set unit_cost_poisha = ${unitCostPoisha}, updated_at = now()
+    update pos.return_lines set unit_cost_poisha = ${unitCostPoisha.toString()}::bigint, updated_at = now()
     where org_id = ${orgId} and return_id = ${returnId} and line_no = ${lineNo}
       and unit_cost_poisha is null
   `);
@@ -667,7 +698,7 @@ export async function insertReturnTenders(
   for (const tender of tenders) {
     await tx.execute(sql`
       insert into pos.return_tenders (org_id, return_id, tender, amount_poisha, wallet_id)
-      values (${orgId}, ${returnId}, ${tender.tender}::pos.tender, ${tender.amountPoisha},
+      values (${orgId}, ${returnId}, ${tender.tender}::pos.tender, ${tender.amountPoisha.toString()}::bigint,
               ${tender.walletId})
     `);
   }
@@ -705,7 +736,7 @@ export async function returnedQty(
 
 // --- review items ---------------------------------------------------------------
 
-export interface ReviewRow {
+export interface ReviewRow extends Record<string, unknown> {
   readonly id: string;
   readonly branch_id: string;
   readonly kind: 'sale' | 'return';
@@ -715,24 +746,25 @@ export interface ReviewRow {
   readonly detail: Record<string, unknown>;
   readonly status: 'open' | 'posted' | 'voided';
   readonly attempts: number;
-  readonly created_at: Date;
-  readonly last_attempt_at: Date;
+  readonly created_at: string;
+  readonly last_attempt_at: string;
   readonly resolved_by: string | null;
-  readonly resolved_at: Date | null;
+  readonly resolved_at: string | null;
   readonly resolution_note: string | null;
   readonly receipt_no: string;
   readonly amount_poisha: string;
-  readonly occurred_at: Date;
+  readonly occurred_at: string;
   readonly seller_id: string;
 }
 
 const REVIEW_SELECT = sql`
   select v.id, v.branch_id, v.kind, v.sale_id, v.return_id, v.reasons::text[] as reasons,
-         v.detail, v.status, v.attempts, v.created_at, v.last_attempt_at, v.resolved_by,
-         v.resolved_at, v.resolution_note,
+         v.detail, v.status, v.attempts, ${iso(sql`v.created_at`)} as created_at,
+         ${iso(sql`v.last_attempt_at`)} as last_attempt_at, v.resolved_by,
+         ${iso(sql`v.resolved_at`)} as resolved_at, v.resolution_note,
          coalesce(s.receipt_no, r.receipt_no) as receipt_no,
          coalesce(s.net_poisha, r.refund_poisha)::text as amount_poisha,
-         coalesce(s.occurred_at, r.occurred_at) as occurred_at,
+         ${iso(sql`coalesce(s.occurred_at, r.occurred_at)`)} as occurred_at,
          coalesce(s.seller_id, r.created_by) as seller_id
   from pos.review_items v
   left join pos.sales s on s.org_id = v.org_id and s.id = v.sale_id
@@ -854,7 +886,7 @@ export async function reviews(
 
 // --- branches -------------------------------------------------------------------
 
-export interface BranchRow {
+export interface BranchRow extends Record<string, unknown> {
   readonly id: string;
   readonly code: string;
   readonly name: string;
@@ -872,14 +904,18 @@ export async function branches(tx: Tx, orgId: string, scope: SQL): Promise<Branc
   return [...rows];
 }
 
-export async function branchById(tx: Tx, orgId: string, id: string): Promise<BranchRow | undefined> {
+export async function branchById(
+  tx: Tx,
+  orgId: string,
+  id: string,
+): Promise<BranchRow | undefined> {
   const rows = await tx.execute<BranchRow>(sql`
     select id, code, name, kind::text as kind from org.branches where org_id = ${orgId} and id = ${id}
   `);
   return rows[0];
 }
 
-export interface ReceiptHeaderRow {
+export interface ReceiptHeaderRow extends Record<string, unknown> {
   readonly display_name: string;
   readonly legal_name: string;
   readonly brand: Record<string, unknown> | null;
@@ -908,7 +944,7 @@ export async function receiptHeader(
   return rows[0];
 }
 
-export interface BranchSummaryRow {
+export interface BranchSummaryRow extends Record<string, unknown> {
   readonly sales_count: number;
   readonly held_count: number;
   readonly gross_poisha: string;
@@ -975,7 +1011,7 @@ export async function branchSummary(
   return row;
 }
 
-export interface TopSkuRow {
+export interface TopSkuRow extends Record<string, unknown> {
   readonly sku_id: string;
   readonly qty: number;
   readonly net_poisha: string;
@@ -1020,7 +1056,7 @@ export async function branchReadiness(
   return rows[0] ?? { open_shifts: 0, open_reviews: 0 };
 }
 
-export interface BranchClosingRow {
+export interface BranchClosingRow extends Record<string, unknown> {
   readonly id: string;
   readonly branch_id: string;
   readonly business_date: string;
@@ -1029,7 +1065,7 @@ export interface BranchClosingRow {
   readonly net_sales_poisha: string;
   readonly refunds_poisha: string;
   readonly note: string | null;
-  readonly created_at: Date;
+  readonly created_at: string;
 }
 
 export async function branchClosing(
@@ -1041,7 +1077,7 @@ export async function branchClosing(
   const rows = await tx.execute<BranchClosingRow>(sql`
     select id, branch_id, business_date::text as business_date, closed_by, sales_count,
            net_sales_poisha::text as net_sales_poisha, refunds_poisha::text as refunds_poisha,
-           note, created_at
+           note, ${iso(sql`created_at`)} as created_at
     from pos.branch_closings
     where org_id = ${orgId} and branch_id = ${branchId} and business_date = ${businessDate}
   `);
@@ -1053,13 +1089,19 @@ export async function branchClosings(
   orgId: string,
   branchId: string,
   range: { from: string; to: string },
-): Promise<(BranchClosingRow & { wallets: { wallet_id: string; wallet_closing_id: string; counted_poisha: string }[] })[]> {
+): Promise<
+  (BranchClosingRow & {
+    wallets: { wallet_id: string; wallet_closing_id: string; counted_poisha: string }[];
+  })[]
+> {
   const rows = await tx.execute<
-    BranchClosingRow & { wallets: { wallet_id: string; wallet_closing_id: string; counted_poisha: string }[] }
+    BranchClosingRow & {
+      wallets: { wallet_id: string; wallet_closing_id: string; counted_poisha: string }[];
+    }
   >(sql`
     select c.id, c.branch_id, c.business_date::text as business_date, c.closed_by, c.sales_count,
            c.net_sales_poisha::text as net_sales_poisha, c.refunds_poisha::text as refunds_poisha,
-           c.note, c.created_at,
+           c.note, ${iso(sql`c.created_at`)} as created_at,
            coalesce((select json_agg(json_build_object(
                        'wallet_id', w.wallet_id, 'wallet_closing_id', w.wallet_closing_id,
                        'counted_poisha', w.counted_poisha::text) order by w.wallet_id)
@@ -1093,7 +1135,7 @@ export async function insertBranchClosing(
       (id, org_id, branch_id, business_date, closed_by, sales_count, net_sales_poisha,
        refunds_poisha, note)
     values (${row.id}, ${row.orgId}, ${row.branchId}, ${row.businessDate}, ${row.closedBy},
-            ${row.salesCount}, ${row.netSalesPoisha}, ${row.refundsPoisha}, ${row.note})
+            ${row.salesCount}, ${row.netSalesPoisha.toString()}::bigint, ${row.refundsPoisha.toString()}::bigint, ${row.note})
     on conflict (id) do nothing
     returning id
   `);
@@ -1103,7 +1145,7 @@ export async function insertBranchClosing(
       insert into pos.branch_closing_wallets
         (org_id, branch_closing_id, wallet_id, wallet_closing_id, counted_poisha)
       values (${row.orgId}, ${row.id}, ${wallet.walletId}, ${wallet.walletClosingId},
-              ${wallet.countedPoisha})
+              ${wallet.countedPoisha.toString()}::bigint)
     `);
   }
 }
