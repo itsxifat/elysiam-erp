@@ -15,6 +15,7 @@ import {
   type SelectOption,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { Banknote, Landmark, Smartphone, Wallet } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -37,6 +38,7 @@ import {
   type ClosingRow,
   type WalletRow,
 } from './api.js';
+import { AccountsNav } from './accounts-parts.js';
 import { useAccountsT, type AccountsMessageKey } from './messages.js';
 
 /**
@@ -359,6 +361,7 @@ export function AccountsPage() {
           </div>
         </PermissionGate>
       </header>
+      <AccountsNav />
 
       {notice === null ? null : (
         <p
@@ -492,7 +495,9 @@ export function AccountsPage() {
         <Form<CashEntryForm>
           form={entryForm}
           onSubmit={(values) => entryMutation.mutateAsync(values).then(() => undefined)}
-          {...(entryMutation.error === null ? {} : { submitError: messageOf(entryMutation.error) })}
+          {...(entryMutation.error === null
+            ? {}
+            : { submitError: messageOf(entryMutation.error, t('error.unreachable')) })}
         >
           <div className="space-y-4">
             <SelectField<CashEntryForm>
@@ -558,7 +563,7 @@ export function AccountsPage() {
           onSubmit={(values) => closingMutation.mutateAsync(values).then(() => undefined)}
           {...(closingMutation.error === null
             ? {}
-            : { submitError: messageOf(closingMutation.error) })}
+            : { submitError: messageOf(closingMutation.error, t('error.unreachable')) })}
         >
           <div className="space-y-4">
             <SelectField<ClosingForm>
@@ -603,7 +608,15 @@ function WalletCard({
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
-          {wallet.name}
+          {/* The wallet's own history: every line, with what it was against. */}
+          <Link
+            to="/accounts/wallets/$accountId"
+            params={{ accountId: wallet.ledgerAccountId }}
+            aria-label={`${label('accounts.book.open')}: ${wallet.name}`}
+            className="rounded-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            {wallet.name}
+          </Link>
         </div>
         {wallet.isActive ? null : (
           <StatusBadge tone="neutral">{label('accounts.inactive')}</StatusBadge>
@@ -640,7 +653,8 @@ function Tile({
 }
 
 /** The server's message, never a stack trace, and never the raw error object (§23). */
-function messageOf(error: unknown): string {
+function messageOf(error: unknown, unreachable: string): string {
   if (error instanceof ApiError) return error.message;
-  return 'The server could not be reached.';
+  // Translated by the caller: this sentence was the one English string on the page.
+  return unreachable;
 }

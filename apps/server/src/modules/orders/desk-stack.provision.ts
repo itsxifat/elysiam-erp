@@ -11,6 +11,7 @@ import {
 
 import { applyIntakeMigrations } from '../intake/intake.testing.js';
 import { seedProductWithSkus, warehouseId } from '../inventory/inventory.testing.js';
+import { seedWallet } from '../wallets/wallets.testing.js';
 import { seedStockLevel } from './orders.testing.js';
 
 /**
@@ -91,7 +92,9 @@ async function create(): Promise<void> {
    * for M05's navigation check: `accounts` is given the role and nothing else, so the
    * suite has to pass §6's two-factor enrolment through the real screen before it sees a
    * single page, and `switcher` holds a different role in each of two brands, which is
-   * the only way "switching org changes the navigation" can be observed.
+   * the only way "switching org changes the navigation" can be observed. `treasurer` is a
+   * second accounts user for the money screens' run, so neither suite depends on whether
+   * the other has already enrolled its second factor.
    */
   const people: readonly {
     label: string;
@@ -100,6 +103,7 @@ async function create(): Promise<void> {
     { label: 'desk', grants: [{ orgId, role: 'sales' }] },
     { label: 'queue', grants: [{ orgId, role: 'sales' }] },
     { label: 'accounts', grants: [{ orgId, role: 'accounts' }] },
+    { label: 'treasurer', grants: [{ orgId, role: 'accounts' }] },
     {
       label: 'switcher',
       grants: [
@@ -134,6 +138,11 @@ async function create(): Promise<void> {
       unitCostPoisha: 40_000n,
     });
   }
+
+  // The head office's hand cash and the bank, as wallets: the seed creates their ledger
+  // accounts, and a wallet is the row a person picks on the accounts screens.
+  await seedWallet(orgId, '1010-HQ', { provider: 'Till' });
+  await seedWallet(orgId, '1100', { provider: 'Bank' });
 
   process.stdout.write(
     `${JSON.stringify({

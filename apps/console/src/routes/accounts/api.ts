@@ -78,8 +78,8 @@ export interface ClosingRow {
 export interface ProfitAndLoss {
   readonly from: string;
   readonly to: string;
-  readonly income: readonly { code: string; name: string; amountPoisha: string }[];
-  readonly expense: readonly { code: string; name: string; amountPoisha: string }[];
+  readonly income: readonly ReportLine[];
+  readonly expense: readonly ReportLine[];
   readonly incomePoisha: string;
   readonly expensePoisha: string;
   readonly netPoisha: string;
@@ -146,9 +146,284 @@ export function recordClosing(input: {
   return api.post<ClosingRow>('/v1/accounts/closings', input);
 }
 
-export function profitAndLoss(range: { from: string; to: string }): Promise<ProfitAndLoss> {
+export function profitAndLoss(range: {
+  from: string;
+  to: string;
+  branchId?: string | undefined;
+}): Promise<ProfitAndLoss> {
+  const branch = range.branchId === undefined ? '' : `&branchId=${range.branchId}`;
   return api.get<ProfitAndLoss>(
-    `/v1/accounts/reports/profit-and-loss?from=${range.from}&to=${range.to}`,
+    `/v1/accounts/reports/profit-and-loss?from=${range.from}&to=${range.to}${branch}`,
+  );
+}
+
+// --- transfers --------------------------------------------------------------------
+
+export interface TransferResult {
+  readonly transferId: string;
+  readonly journalId: string;
+  /** False when this id was already recorded: a retry, answered with the first result. */
+  readonly created: boolean;
+  readonly businessDate: string;
+  readonly amountPoisha: string;
+  readonly chargePoisha: string;
+}
+
+export function transfer(input: {
+  transferId: string;
+  fromWalletId: string;
+  toWalletId: string;
+  amountPoisha: string;
+  chargePoisha: string;
+  chargeAccountId?: string;
+  memo?: string;
+}): Promise<TransferResult> {
+  return api.post<TransferResult>('/v1/accounts/transfers', input);
+}
+
+// --- M03's ledger reports ----------------------------------------------------------
+
+export interface LedgerAccount {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly class: 'asset' | 'liability' | 'equity' | 'income' | 'expense';
+  readonly subtype: string;
+  readonly normalBalance: 'debit' | 'credit';
+  readonly branchId: string | null;
+  readonly partyType: string | null;
+  readonly isSystem: boolean;
+  readonly isActive: boolean;
+}
+
+export function ledgerAccounts(): Promise<{
+  items: readonly LedgerAccount[];
+  costWithheld: boolean;
+}> {
+  return api.get('/v1/ledger/accounts');
+}
+
+export interface StatementLine {
+  readonly journalId: string;
+  readonly lineNo: number;
+  readonly businessDate: string;
+  readonly sourceType: string;
+  readonly memo: string | null;
+  readonly branchId: string | null;
+  readonly partyType: string | null;
+  readonly partyId: string | null;
+  readonly debitPoisha: string;
+  readonly creditPoisha: string;
+  /** Running balance after this line, on the account's normal side. */
+  readonly balancePoisha: string;
+  /** Cash book only: the other accounts of the entry, by name. Never their amounts. */
+  readonly against?: readonly { readonly code: string; readonly name: string }[];
+}
+
+export interface Statement {
+  readonly account: {
+    readonly id: string;
+    readonly code: string;
+    readonly name: string;
+    readonly subtype: string;
+    readonly normalBalance: 'debit' | 'credit';
+    readonly branchId: string | null;
+  };
+  readonly from: string | null;
+  readonly to: string;
+  readonly openingBalancePoisha: string;
+  readonly totalDebitPoisha: string;
+  readonly totalCreditPoisha: string;
+  readonly closingBalancePoisha: string;
+  /** The server stops at a line limit and says so, rather than paging silently. */
+  readonly truncated: boolean;
+  readonly items: readonly StatementLine[];
+}
+
+/** One wallet's cash book, by its ledger account id. */
+export function cashBook(accountId: string, range: { from: string; to: string }) {
+  return api.get<Statement>(
+    `/v1/ledger/wallets/${accountId}/cash-book?from=${range.from}&to=${range.to}`,
+  );
+}
+
+export function accountLedger(accountId: string, range: { from: string; to: string }) {
+  return api.get<Statement>(
+    `/v1/ledger/accounts/${accountId}/ledger?from=${range.from}&to=${range.to}`,
+  );
+}
+
+export interface TrialBalance {
+  readonly asOf: string;
+  readonly items: readonly {
+    readonly accountId: string;
+    readonly code: string;
+    readonly name: string;
+    readonly class: LedgerAccount['class'];
+    readonly subtype: string;
+    readonly branchId: string | null;
+    readonly debitPoisha: string;
+    readonly creditPoisha: string;
+    readonly balancePoisha: string;
+  }[];
+  readonly totalDebitPoisha: string;
+  readonly totalCreditPoisha: string;
+  /** Zero whenever the books are whole; the screen shows it rather than assuming it. */
+  readonly differencePoisha: string;
+  readonly costWithheld: boolean;
+}
+
+export function trialBalance(asOf: string): Promise<TrialBalance> {
+  return api.get<TrialBalance>(`/v1/ledger/trial-balance?asOf=${asOf}`);
+}
+
+export interface DayBook {
+  readonly from: string;
+  readonly to: string;
+  readonly truncated: boolean;
+  readonly costWithheld: boolean;
+  readonly items: readonly {
+    readonly journalId: string;
+    readonly businessDate: string;
+    readonly sourceType: string;
+    readonly sourceId: string;
+    readonly memo: string | null;
+    readonly reversesJournalId: string | null;
+    readonly createdAt: string;
+    readonly lines: readonly {
+      readonly lineNo: number;
+      readonly accountId: string;
+      readonly accountCode: string;
+      readonly accountName: string;
+      readonly debitPoisha: string;
+      readonly creditPoisha: string;
+      readonly memo: string | null;
+    }[];
+  }[];
+}
+
+export function dayBook(range: { from: string; to: string }): Promise<DayBook> {
+  return api.get<DayBook>(`/v1/ledger/day-book?from=${range.from}&to=${range.to}`);
+}
+
+// --- M08's statements ---------------------------------------------------------------
+
+export interface ReportLine {
+  readonly accountId: string;
+  readonly code: string;
+  readonly name: string;
+  readonly subtype: string;
+  readonly amountPoisha: string;
+}
+
+export interface BalanceSheet {
+  readonly asOf: string;
+  readonly branchId: string | null;
+  readonly assets: readonly ReportLine[];
+  readonly liabilities: readonly ReportLine[];
+  readonly equity: readonly ReportLine[];
+  readonly assetsPoisha: string;
+  readonly liabilitiesPoisha: string;
+  readonly equityPoisha: string;
+  /** Income less expenses to date, not yet moved to retained earnings. */
+  readonly resultPoisha: string;
+  /** Zero for a caller who sees every account; otherwise the value that was withheld. */
+  readonly differencePoisha: string;
+  readonly costWithheld: boolean;
+}
+
+export function balanceSheet(asOf: string, branchId?: string): Promise<BalanceSheet> {
+  const branch = branchId === undefined ? '' : `&branchId=${branchId}`;
+  return api.get<BalanceSheet>(`/v1/accounts/reports/balance-sheet?asOf=${asOf}${branch}`);
+}
+
+export interface Aging {
+  readonly asOf: string;
+  readonly side: 'payable' | 'receivable';
+  readonly costWithheld: boolean;
+  readonly items: readonly {
+    readonly partyType: string;
+    readonly partyId: string;
+    readonly bucket0to7Poisha: string;
+    readonly bucket8to30Poisha: string;
+    readonly bucket31to60Poisha: string;
+    readonly bucketOver60Poisha: string;
+    readonly totalPoisha: string;
+  }[];
+}
+
+export function aging(asOf: string, side: 'payable' | 'receivable'): Promise<Aging> {
+  return api.get<Aging>(`/v1/accounts/reports/aging?asOf=${asOf}&side=${side}`);
+}
+
+// --- periods --------------------------------------------------------------------------
+
+export interface Period {
+  readonly id: string;
+  /** `YYYY-MM`. */
+  readonly month: string;
+  readonly startsOn: string;
+  readonly endsOn: string;
+  readonly status: 'open' | 'closed';
+  readonly closedAt: string | null;
+  readonly closedBy: string | null;
+  readonly reopenedAt: string | null;
+  readonly reopenApprovalId: string | null;
+}
+
+export function listPeriods(): Promise<{ items: readonly Period[] }> {
+  return api.get('/v1/ledger/periods');
+}
+
+export function closePeriod(month: string): Promise<Period> {
+  return api.post<Period>('/v1/ledger/periods/close', { month });
+}
+
+/** A reopen is maker-checker: this raises the approval, a second person decides it. */
+export function requestReopen(input: {
+  month: string;
+  reason: string;
+}): Promise<{ approvalId: string; status: string; periodId: string }> {
+  return api.post('/v1/ledger/periods/reopen', input);
+}
+
+// --- consolidation (super admin) ------------------------------------------------------
+
+export interface ConsolidatedWallets {
+  readonly orgs: readonly {
+    readonly orgId: string;
+    readonly orgName: string;
+    readonly totalPoisha: string;
+    readonly bySubtype: Readonly<Record<string, string>>;
+  }[];
+  readonly totalPoisha: string;
+}
+
+export function consolidatedWallets(): Promise<ConsolidatedWallets> {
+  return api.get<ConsolidatedWallets>('/v1/accounts/reports/consolidated-wallets');
+}
+
+export interface ConsolidatedProfitAndLoss {
+  readonly from: string;
+  readonly to: string;
+  readonly orgs: readonly {
+    readonly orgId: string;
+    readonly orgName: string;
+    readonly incomePoisha: string;
+    readonly expensePoisha: string;
+    readonly netPoisha: string;
+  }[];
+  readonly incomePoisha: string;
+  readonly expensePoisha: string;
+  readonly netPoisha: string;
+}
+
+export function consolidatedProfitAndLoss(range: {
+  from: string;
+  to: string;
+}): Promise<ConsolidatedProfitAndLoss> {
+  return api.get<ConsolidatedProfitAndLoss>(
+    `/v1/accounts/reports/consolidated-profit-and-loss?from=${range.from}&to=${range.to}`,
   );
 }
 

@@ -10,6 +10,7 @@ import {
 import { catalogRoutes } from './catalog/routes.js';
 import { courierRoutes } from './courier/routes.js';
 import { hrRoutes } from './hr/routes.js';
+import { accountsRoutes } from './accounts/routes.js';
 import { branchesRoutes } from './branches/routes.js';
 import { investorsRoutes } from './investors/routes.js';
 import { ordersRoutes } from './orders/routes.js';
@@ -57,19 +58,16 @@ const approvalsRoute = createRoute({
 });
 
 /**
- * M08's accounts screen: wallets, cash entries, transfers and daily closings.
+ * M08's Accounts section: wallets and cash, transfers, cash books, the statements,
+ * the ledger reports, periods and consolidation (`./accounts/routes.tsx`).
  *
- * It was built on 2026-09-26 and never routed. `/accounts` fell through to the
- * placeholder list below, so the Accounts link opened "coming soon" over a finished
- * screen — for the one section the client asked for above all others. The route
- * matrix could not notice, because it drives the API, and no browser test opened
- * the link. `shell-quality.stack.ts` now does.
+ * Its first screen was built on 2026-09-26 and never routed. `/accounts` fell
+ * through to the placeholder list below, so the Accounts link opened "coming soon"
+ * over a finished screen, for the one section the client asked for above all
+ * others. The route matrix could not notice, because it drives the API, and no
+ * browser test opened the link. `shell-quality.stack.ts` now does.
  */
-const accountsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/accounts',
-  component: lazyRouteComponent(() => import('./accounts/accounts-page.js'), 'AccountsPage'),
-});
+const accounts = accountsRoutes(rootRoute);
 
 const tablesRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -165,7 +163,7 @@ const routeTree = rootRoute.addChildren([
   ...investors,
   ...orders,
   ...courier,
-  accountsRoute,
+  ...accounts,
   ...branches,
   ...placeholderRoutes,
 ]);

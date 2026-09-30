@@ -1,4 +1,3 @@
-import { createHmac } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -6,7 +5,7 @@ import path from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 
-import type { StackInfo } from './stack/global-setup.js';
+import { enrolSecondFactor, signIn, user } from './stack/helpers.js';
 
 /**
  * M05's quality checks against the real stack (acceptance checks 1, 2, 6, 7 and 10).
@@ -38,61 +37,8 @@ import type { StackInfo } from './stack/global-setup.js';
 type Theme = 'light' | 'dark';
 type Locale = 'en' | 'bn';
 
-function stack(): StackInfo {
-  const raw = process.env.E2E_STACK;
-  if (raw === undefined) throw new Error('E2E_STACK is missing: run with -c e2e/stack.config.ts');
-  return JSON.parse(raw) as StackInfo;
-}
-
-function user(role: 'desk' | 'accounts' | 'switcher') {
-  const found = stack().users.find((entry) => entry.role === role);
-  if (found === undefined) throw new Error(`no ${role} user was provisioned`);
-  return found;
-}
-
 const REVIEW_DIR = path.resolve(import.meta.dirname, '../../../docs/review/M05');
 const DESK_SESSION = path.join(tmpdir(), `elysium-shell-quality-${String(process.pid)}.json`);
-
-/** RFC 4648 base32, as an authenticator app reads a setup key. */
-function base32(input: string): Buffer {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  let bits = 0;
-  let value = 0;
-  const out: number[] = [];
-  for (const char of input.replace(/[\s=]/g, '').toUpperCase()) {
-    const index = alphabet.indexOf(char);
-    if (index < 0) throw new Error('the setup key is not base32');
-    value = (value << 5) | index;
-    bits += 5;
-    if (bits >= 8) {
-      out.push((value >>> (bits - 8)) & 0xff);
-      bits -= 8;
-    }
-  }
-  return Buffer.from(out);
-}
-
-/** RFC 6238 TOTP: HMAC-SHA1, 30-second step, 6 digits, which is what an app computes. */
-function totp(secret: string, at: number = Date.now()): string {
-  const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(at / 30_000)));
-  const digest = createHmac('sha1', base32(secret)).update(counter).digest();
-  const offset = (digest[digest.length - 1] ?? 0) & 0x0f;
-  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, '0');
-}
-
-/**
- * Sign in by the form's own input types, so the same helper works in Bangla. The
- * English labels are asserted where the check is about the English screen.
- */
-async function signIn(page: Page, email: string): Promise<void> {
-  await page.goto('/');
-  const form = page.locator('form').filter({ has: page.locator('input[type="password"]') });
-  await expect(form).toBeVisible();
-  await form.locator('input[type="email"]').fill(email);
-  await form.locator('input[type="password"]').fill(stack().password);
-  await form.locator('button[type="submit"]').click();
-}
 
 /** A browser context with a theme and a language chosen before the first paint. */
 async function contextFor(
@@ -152,14 +98,7 @@ test('check 1: the navigation follows the matrix, per role and per organisation'
   const accountsContext = await browser.newContext();
   const accounts = await accountsContext.newPage();
   await signIn(accounts, user('accounts').email);
-  await expect(
-    accounts.getByRole('heading', { name: 'Set up two-step verification' }),
-  ).toBeVisible();
-  const secret = (await accounts.locator('code').first().innerText()).trim();
-  expect(secret.length).toBeGreaterThan(15);
-  await accounts.getByRole('checkbox', { name: 'I have saved my recovery codes' }).check();
-  await accounts.getByLabel(/^Verification code/).fill(totp(secret));
-  await accounts.getByRole('button', { name: 'Confirm and continue' }).click();
+  await enrolSecondFactor(accounts);
   const accountsNav = await navLabels(accounts);
   expect(accountsNav).toContain('Accounts');
 
