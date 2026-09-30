@@ -9,6 +9,19 @@
 @import './fonts.css';
 @import './tokens.css';
 
+/*
+ * The kit's own components, scanned by every app that imports this file.
+ *
+ * Tailwind v4 finds class names by scanning the app's folder, and it skips
+ * `node_modules`, which is where `@elysium/ui` is linked. So a class used only inside
+ * a kit component was never generated. The dialog was the one that showed it: its
+ * `top-1/2` and `-translate-y-1/2` existed nowhere in the console, so every dialog
+ * was placed half-way down the page instead of the screen, out of reach on a long
+ * page (found by the money screens' browser run, 2026-10-01). Relative to this file,
+ * so it holds for the console, the till and the portal alike.
+ */
+@source '../';
+
 /* Dark mode is a class on <html>, set from the OS preference and the user's
    choice. One source of values, no duplicated media query. */
 @custom-variant dark (&:where(.dark, .dark *));
