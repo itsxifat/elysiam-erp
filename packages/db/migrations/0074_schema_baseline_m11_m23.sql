@@ -1,0 +1,23 @@
+-- A baseline, like 0061. Deliberately empty; this file exists only to carry its snapshot.
+--
+-- `drizzle-kit` generates by diffing the TypeScript schema against the newest snapshot
+-- in `meta/`, and the newest snapshot was 0061's. Migrations 0062-0073 (M11's intake,
+-- M11's desk indexes, M15's courier tables, the outbox retry schedule, M23's pos schema
+-- and its `outside_shift` hold reason) were written by hand and took no snapshot, so
+-- `pnpm check:schema` reported all of them as drift.
+--
+-- Running the generator on 2026-09-30 emitted 137 statements: 2 CREATE SCHEMA, 6 CREATE
+-- TYPE, 16 CREATE TABLE, 6 ADD COLUMN, 47 indexes, 59 constraints and one DROP INDEX
+-- followed by its re-creation. Checked two ways before this file was emptied:
+--
+-- * by name: all 199 schemas, types, tables, columns, indexes and constraints it creates
+--   are created by migrations 0062-0073;
+-- * by text: 136 of the 137 statements are character-for-character identical to a
+--   statement those migrations already ran. The one that is not creates
+--   `pos.hold_reason` with `outside_shift` already in it, which is where 0068's CREATE
+--   TYPE and 0073's ADD VALUE leave the database.
+--
+-- So the divergence was snapshot lag and no real drift, and running the SQL would have
+-- tried to create sixteen tables that exist. The snapshot is kept as the new baseline;
+-- from here a schema change without a migration is caught the next time the gate runs.
+-- Record a snapshot with each hand-written migration to keep it that way.
