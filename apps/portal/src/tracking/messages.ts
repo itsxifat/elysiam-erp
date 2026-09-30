@@ -48,6 +48,20 @@ const TRACKING_KEYS = [
 
 export type TrackingMessageKey = (typeof TRACKING_KEYS)[number];
 
+function pick(locale: Locale): Record<TrackingMessageKey, string> {
+  return Object.fromEntries(TRACKING_KEYS.map((key) => [key, messages[locale][key]])) as Record<
+    TrackingMessageKey,
+    string
+  >;
+}
+
+/**
+ * The page's two catalogues. Both ship: a customer switches language on this page, and
+ * it is small enough that loading one on demand would cost more than it saves.
+ */
+export const trackingEn = pick('en');
+export const trackingBn = pick('bn');
+
 export function trackingText(locale: Locale, key: TrackingMessageKey): string {
   return messages[locale][key];
 }
