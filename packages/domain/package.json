@@ -35,6 +35,18 @@
     "./posting/pos": {
       "types": "./dist/posting/pos.d.ts",
       "default": "./dist/posting/pos.js"
+    },
+    "./promo": {
+      "types": "./dist/promo/index.d.ts",
+      "default": "./dist/promo/index.js"
+    },
+    "./crm": {
+      "types": "./dist/crm/index.d.ts",
+      "default": "./dist/crm/index.js"
+    },
+    "./notify": {
+      "types": "./dist/notify/index.d.ts",
+      "default": "./dist/notify/index.js"
     }
   },
   "files": [
