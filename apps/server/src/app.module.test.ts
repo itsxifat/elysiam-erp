@@ -71,7 +71,11 @@ describe('the demo resource is mounted where it is useful and nowhere else', () 
 
   it('defaults to off under NODE_ENV=production', async () => {
     const before = process.env.NODE_ENV;
+    const store = process.env.INTAKE_RATE_LIMIT_STORE;
     process.env.NODE_ENV = 'production';
+    // Production refuses per-process intake limits (D-139), so this boots the way
+    // production does. The limiter connects lazily, so no Valkey is needed here.
+    process.env.INTAKE_RATE_LIMIT_STORE = 'valkey';
     try {
       const routes = await routesOf();
       expect(routes.filter((route) => route.includes('/v1/demo/'))).toEqual([]);
@@ -82,6 +86,8 @@ describe('the demo resource is mounted where it is useful and nowhere else', () 
     } finally {
       if (before === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = before;
+      if (store === undefined) delete process.env.INTAKE_RATE_LIMIT_STORE;
+      else process.env.INTAKE_RATE_LIMIT_STORE = store;
     }
   });
 

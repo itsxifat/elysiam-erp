@@ -22,6 +22,10 @@ import {
 } from '../../modules/fraud/fraud.route-fixtures.js';
 import { HR_ROUTE_FIXTURES, prepareHrFixtures } from '../../modules/hr/hr.route-fixtures.js';
 import {
+  INTAKE_ROUTE_FIXTURES,
+  prepareIntakeFixtures,
+} from '../../modules/intake/intake.route-fixtures.js';
+import {
   INVENTORY_ROUTE_FIXTURES,
   prepareInventoryFixtures,
 } from '../../modules/inventory/inventory.route-fixtures.js';
@@ -37,7 +41,7 @@ import {
   prepareSupplyFixtures,
   SUPPLY_ROUTE_FIXTURES,
 } from '../../modules/supply/supply.route-fixtures.js';
-import { SupplyModule } from '../../modules/supply/supply.module.js';
+import { POS_ROUTE_FIXTURES, preparePosFixtures } from '../../modules/pos/pos.route-fixtures.js';
 import {
   prepareWalletsFixtures,
   WALLETS_ROUTE_FIXTURES,
@@ -75,11 +79,6 @@ import { ROUTE_MATRIX_MANIFEST, routeKey } from './route-matrix.manifest.js';
  *   suite fails unless the cost roles see cost on the endpoints that carry it.
  * * **Coverage.** Most routes must actually have answered 2xx, with a JSON or text body,
  *   for the roles under test.
- *
- * Supply's routes are swept too, though `SupplyModule` is not yet in `app.module.ts` and
- * so not yet in the manifest: purchase cost enters the system there (invariant 5), and the
- * day it is mounted is not the day to find out its responses leak. It is mounted here the
- * way its own suite mounts it, and its live routes join the sweep.
  */
 
 let harness: HttpHarness;
@@ -144,6 +143,8 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...HR_ROUTE_FIXTURES,
   ...COURIER_ROUTE_FIXTURES,
   ...SUPPLY_ROUTE_FIXTURES,
+  ...INTAKE_ROUTE_FIXTURES,
+  ...POS_ROUTE_FIXTURES,
 };
 
 /**
@@ -208,7 +209,7 @@ function suspectKeys(input: unknown, path = '$', out: string[] = []): string[] {
 }
 
 beforeAll(async () => {
-  harness = await startHttpHarness('cost-sweep', { extraModules: [SupplyModule] });
+  harness = await startHttpHarness('cost-sweep');
 
   await prepareCatalogFixtures();
   await prepareInventoryFixtures();
@@ -219,6 +220,8 @@ beforeAll(async () => {
   await prepareHrFixtures();
   await prepareCourierFixtures();
   await prepareSupplyFixtures();
+  await prepareIntakeFixtures();
+  await preparePosFixtures();
 
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 

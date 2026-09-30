@@ -659,6 +659,16 @@ describe('what the M23 ledger audit found', () => {
     const [result] = await sync(cashier, [document]);
     expect(result).toMatchObject({ outcome: 'held', reasons: ['outside_shift'] });
     expect(await journalsFor(document.id)).toBe(0);
+
+    // Resolved, so it does not hold up a later day close. Three hours ago is yesterday
+    // in Dhaka for a run between midnight and three, and an open review of yesterday
+    // rightly stops yesterday from closing.
+    const voided = await manager.client.request(
+      'POST',
+      `/v1/pos/reviews/${result!.reviewItemId!}/resolve`,
+      { body: { action: 'void', note: 'clock was wrong' } },
+    );
+    expect(JSON.parse(voided.body)).toMatchObject({ outcome: 'voided' });
   });
 
   it('W3: a sale for a day the branch already closed posts today when it is resolved', async () => {
