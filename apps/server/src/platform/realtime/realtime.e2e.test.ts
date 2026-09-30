@@ -6,8 +6,8 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { io, type Socket as ClientSocket } from 'socket.io-client';
 
-import { OutboxDispatcher, type DeliveredEvent, type Subscriber } from '../events/dispatcher.js';
-import { emit, markDispatched } from '../events/outbox.js';
+import { drainOutbox, OutboxDispatcher, type Subscriber } from '../events/dispatcher.js';
+import { emit } from '../events/outbox.js';
 import { createLogger } from '../logging/logger.js';
 import {
   APP_DOMAIN,
@@ -274,23 +274,17 @@ class RecordingDispatcher extends OutboxDispatcher {
 }
 
 /**
- * Write one event through the real outbox, then hand the stored row to the
- * bridge.
+ * Write one event through the real outbox and let the real dispatcher deliver it.
  *
- * Every layer this slice owns is real: `emit()` validates the payload against
- * its `.strict()` schema and computes the rooms, PostgreSQL round-trips both
- * through `jsonb`, the row is read back exactly as a dispatcher would read it,
- * and the bridge's subscriber and the gateway take it from there.
+ * Every layer is real: `emit()` validates the payload against its `.strict()` schema and
+ * computes the rooms, PostgreSQL round-trips both through `jsonb`, `drain()` claims the
+ * row, and the bridge's subscriber and the gateway take it from there.
  *
- * What is *not* used is `OutboxDispatcher.drain()`, and not by preference.
- * `drain()` claims with `withSystem()`, which connects as `erp_owner` and sets
- * no `app.org_id`; `events.outbox` is FORCE RLS and `erp_owner` is NOBYPASSRLS
- * (D-042), so the claim matches nothing and the dispatcher delivers zero rows —
- * verified here: one row visible inside `withOrg`, zero to `withSystem()`,
- * `drain()` returning `{delivered: 0, failed: 0}`. That is a bug in the events
- * slice, not in this one, and it is reported rather than worked around in
- * `dispatcher.ts`; claiming per org here would hide it. Once the claim is fixed
- * this function becomes `await drainOutbox(dispatcher)`.
+ * This used to read the outbox by hand and call the subscribers itself, because
+ * `drain()` claimed with no org context against a FORCE RLS table and delivered nothing.
+ * That was reported here rather than worked around in `dispatcher.ts`, and the workaround
+ * is gone now that the claim is per org — which is also what exposed the role-change
+ * test below as having proved nothing.
  */
 async function publish<TName extends EventName>(
   orgId: string,
@@ -300,38 +294,7 @@ async function publish<TName extends EventName>(
   await withOrg({ orgId, userId: 'usr_realtime_test' }, async (tx) => {
     await emit(tx, name, payload, { orgId });
   });
-
-  const rows = await withOrg({ orgId, userId: 'usr_realtime_test' }, async (tx) => {
-    const pending = await tx.execute<{
-      id: string;
-      org_id: string;
-      name: string;
-      payload: unknown;
-      rooms: string[];
-      attempts: number;
-    }>(sql`
-      select id, org_id, name, payload, rooms, attempts
-      from events.outbox
-      where dispatched_at is null
-      order by created_at
-    `);
-    return [...pending];
-  });
-
-  for (const row of rows) {
-    const event: DeliveredEvent = {
-      id: row.id,
-      orgId: row.org_id,
-      name: row.name,
-      payload: row.payload,
-      rooms: row.rooms,
-      attempts: row.attempts,
-    };
-    for (const subscriber of dispatcher.bridged.get(row.name) ?? []) await subscriber(event);
-    await withOrg({ orgId, userId: 'usr_realtime_test' }, async (tx) => {
-      await markDispatched(tx, row.id);
-    });
-  }
+  await drainOutbox(dispatcher);
 }
 
 function walletPayload(branchId: string | null, balance: string) {
@@ -647,12 +610,26 @@ describe('realtime gateway /rt — a live socket keeps being re-authorized (§6,
     const connected = await connect(actor);
     expect(connected.rooms).toContain(roleRoom(ORG_A, 'accounts'));
 
-    await withGlobal(async (tx) => {
-      await tx.execute(sql`
+    /*
+     * Inside the org's context, and checked.
+     *
+     * This ran under `withGlobal`, which sets neither an org nor a user — and
+     * `iam.memberships` is a tenant table, so the UPDATE matched no row and the actor
+     * stayed in `accounts` for the whole test. It passed anyway, because the dispatcher
+     * it then drained delivered nothing to anyone. Two wrongs produced a green test for
+     * a permission property nobody had ever exercised.
+     */
+    const changed = await withOrg({ orgId: ORG_A, userId: 'usr_realtime_test' }, async (tx) => {
+      const rows = await tx.execute<{ id: string }>(sql`
         update iam.memberships set role = 'marketing'
         where user_id = ${actor.userId} and org_id = ${ORG_A}
+        returning id
       `);
+      return rows.length;
     });
+    expect(changed, 'the role change did not reach the row, so nothing below means anything').toBe(
+      1,
+    );
 
     await gateway.revalidateNow();
     await pause(300);
@@ -671,9 +648,18 @@ describe('realtime gateway /rt — a live socket keeps being re-authorized (§6,
         { orgId: ORG_A },
       );
     });
-    await dispatcher.drain();
+    // A second socket that *is* still in the accounts room, as the control: without it
+    // "received nothing" is also what a dispatcher that delivers nothing looks like.
+    const control = await connect(accountsA);
+    const controlSeen: string[] = [];
+    control.socket.onAny((event: string) => controlSeen.push(event));
+
+    await drainOutbox(dispatcher);
     await pause(300);
 
+    expect(controlSeen, 'the event was never delivered, so this test proves nothing').toContain(
+      'ledger.posted',
+    );
     expect(seen, 'the socket still received an accounts-room event').toEqual([]);
   });
 });
