@@ -1,4 +1,4 @@
-import { APPROVAL_STATUSES, type ApprovalStatus } from '@elysium/contracts';
+import { APPROVAL_STATUSES, type ApprovalStatus, type ApprovalType } from '@elysium/contracts';
 
 import type { ConsoleMessageKey } from '../i18n/messages.js';
 
@@ -45,4 +45,41 @@ export function statusKey(status: ApprovalStatus): ConsoleMessageKey {
 
 export function statusTone(status: ApprovalStatus) {
   return TONES[status];
+}
+
+/**
+ * Each approval type's label.
+ *
+ * `Record<ApprovalType, …>` against the contract's list, so a type added there is
+ * a compile error here until it has words — rather than a raw `wallet_adjustment`
+ * reaching a person, which is what the table, the filter and the notifications
+ * inbox all showed before.
+ */
+const TYPE_KEYS: Readonly<Record<ApprovalType, ConsoleMessageKey>> = {
+  wallet_adjustment: 'approvals.type.wallet_adjustment',
+  stock_write_off: 'approvals.type.stock_write_off',
+  stock_gain: 'approvals.type.stock_gain',
+  supplier_payment: 'approvals.type.supplier_payment',
+  settlement_posting: 'approvals.type.settlement_posting',
+  closing_variance: 'approvals.type.closing_variance',
+  back_dated_entry: 'approvals.type.back_dated_entry',
+  payroll_run: 'approvals.type.payroll_run',
+  bonus_rule: 'approvals.type.bonus_rule',
+  reseller_payout_batch: 'approvals.type.reseller_payout_batch',
+  period_reopen: 'approvals.type.period_reopen',
+  threshold_change: 'approvals.type.threshold_change',
+  investor_distribution: 'approvals.type.investor_distribution',
+  investor_withdrawal: 'approvals.type.investor_withdrawal',
+};
+
+/**
+ * The words for a type, or the type itself.
+ *
+ * `string` rather than `ApprovalType` because a realtime payload's type is
+ * whatever the server sent: a console running against a newer API must show the
+ * raw word rather than blank the row.
+ */
+export function approvalTypeLabel(type: string, t: (key: ConsoleMessageKey) => string): string {
+  const key = (TYPE_KEYS as Readonly<Record<string, ConsoleMessageKey>>)[type];
+  return key === undefined ? type : t(key);
 }

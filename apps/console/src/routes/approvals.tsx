@@ -17,7 +17,12 @@ import { useMemo, useState } from 'react';
 import { useAbility } from '../auth/session.js';
 import { listApprovals, decideApproval, type ApprovalRow } from '../api/approvals.js';
 import { useLocale, useT } from '../i18n/locale.js';
-import { APPROVAL_STATUS_OPTIONS, statusTone, statusKey } from './approvals-status.js';
+import {
+  APPROVAL_STATUS_OPTIONS,
+  approvalTypeLabel,
+  statusTone,
+  statusKey,
+} from './approvals-status.js';
 import { formatSort, mergeSearch, parseSort, keysetPage } from '../lib/table-search.js';
 import { useRealtime } from '../realtime/use-realtime.js';
 
@@ -98,7 +103,11 @@ export function ApprovalsPage() {
   const columns = useMemo<readonly DataTableColumn<ApprovalRow>[]>(() => {
     const column = dataTableColumns<ApprovalRow>();
     return column.columns([
-      column.accessor('type', { header: t('approvals.colType'), meta: { sortable: true } }),
+      column.accessor('type', {
+        header: t('approvals.colType'),
+        meta: { sortable: true },
+        cell: (cell) => approvalTypeLabel(cell.getValue(), t),
+      }),
       column.accessor('status', {
         header: t('approvals.colStatus'),
         cell: (cell) => {
@@ -234,7 +243,10 @@ export function ApprovalsPage() {
             <FilterSelect
               label={t('table.filterType')}
               value={search.type ?? ''}
-              options={APPROVAL_TYPES.map((value) => ({ value, label: value }))}
+              options={APPROVAL_TYPES.map((value) => ({
+                value,
+                label: approvalTypeLabel(value, t),
+              }))}
               allLabel={t('common.all')}
               onChange={(value) =>
                 void navigate({
@@ -300,7 +312,7 @@ export function ApprovalsPage() {
           <dl className="space-y-1.5 text-sm">
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">{t('approvals.colType')}</dt>
-              <dd className="font-medium">{pending.row.type}</dd>
+              <dd className="font-medium">{approvalTypeLabel(pending.row.type, t)}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">{t('approvals.colAmount')}</dt>

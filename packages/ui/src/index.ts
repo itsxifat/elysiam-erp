@@ -76,6 +76,7 @@ export {
   type DialogProps,
   type ConfirmDialogProps,
 } from './components/dialog.js';
+export { Popover, PopoverContent, PopoverTrigger } from './components/popover.js';
 export {
   Form,
   FormField,

@@ -386,6 +386,37 @@ test('check 7: keyboard only — every tab stop shows focus, and the palette nav
   await context.close();
 });
 
+test('the notifications inbox opens from the keyboard, says when it is empty, and gives focus back', async ({
+  browser,
+}) => {
+  const found: Awaited<ReturnType<typeof blockingViolations>> = [];
+  for (const theme of ['light', 'dark'] as const) {
+    const context = await contextFor(browser, { signedIn: true, theme });
+    const page = await context.newPage();
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
+
+    const bell = page.getByRole('button', { name: /^Notifications/ });
+    // The inbox is its own chunk; until it lands the header shows an inert bell.
+    await expect(bell).toBeEnabled();
+    await bell.focus();
+    await page.keyboard.press('Enter');
+    const panel = page.getByRole('dialog', { name: 'Notifications' });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText('You are up to date')).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Mark all as read' })).toBeDisabled();
+    found.push(...(await blockingViolations(page, `notifications inbox (${theme})`)));
+    mkdirSync(REVIEW_DIR, { recursive: true });
+    await page.screenshot({ path: path.join(REVIEW_DIR, `notifications-${theme}-en.png`) });
+
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(bell).toBeFocused();
+    await context.close();
+  }
+  expect(found).toEqual([]);
+});
+
 test('check 9: Bangla is scaled to Inter, and every amount is in tabular numerals', async ({
   browser,
 }) => {

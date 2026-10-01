@@ -1,7 +1,7 @@
 import { Button } from '@elysium/ui';
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
-import { Command as CommandIcon, Languages, LogOut, Moon, Sun } from 'lucide-react';
-import { useState } from 'react';
+import { Bell, Command as CommandIcon, Languages, LogOut, Moon, Sun } from 'lucide-react';
+import { lazy, Suspense, useState } from 'react';
 
 import { endpoints } from '../api.js';
 import { clearBrand } from '../brand.js';
@@ -11,6 +11,17 @@ import { useLocale, useT } from '../i18n/locale.js';
 import { CommandPalette } from './command-palette.js';
 import { visibleNavigation } from './navigation.js';
 import { applyTheme, isDark } from '../theme.js';
+
+/*
+ * The inbox is its own chunk, loaded as soon as the shell has rendered. It brings
+ * the realtime socket client and the popover's positioning, about 29 KB gzipped
+ * that the first page otherwise carried — enough to sit 0.1 KB under the 250 KB
+ * budget (`pnpm check:bundle`). Until it arrives the header shows the same bell,
+ * inert, so nothing moves when it does.
+ */
+const NotificationInbox = lazy(() =>
+  import('./notifications.js').then((module) => ({ default: module.NotificationInbox })),
+);
 
 /**
  * The console frame: sidebar, topbar, and the outlet every module fills (§24).
@@ -156,6 +167,16 @@ function Topbar() {
             {t('shell.paletteHint')}
           </kbd>
         </Button>
+
+        <Suspense
+          fallback={
+            <Button variant="ghost" size="icon" aria-label={t('shell.notifications')} disabled>
+              <Bell aria-hidden="true" />
+            </Button>
+          }
+        >
+          <NotificationInbox />
+        </Suspense>
 
         <Button
           variant="ghost"
