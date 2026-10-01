@@ -1,7 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { canReadCost } from '@elysium/contracts';
 import { withAnalytics, withOrg } from '@elysium/db';
-import { aggregateBalanceOf, COST_SUBTYPES } from '@elysium/domain';
+import {
+  ageOpenItems,
+  aggregateBalanceOf,
+  COST_SUBTYPES,
+  poisha,
+  toIsoDate,
+  ZERO,
+  type PartyMovement,
+} from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 
 import { scopeWhere } from '../../platform/auth/scope.js';
@@ -238,46 +246,54 @@ export class WalletReportsService {
         excludePartyTypes: blind ? ['supplier'] : [],
       });
 
-      interface Aged {
-        partyType: string;
-        partyId: string;
-        buckets: Record<string, bigint>;
-        totalPoisha: bigint;
-      }
-      const parties = new Map<string, Aged>();
+      // One party's days, on the side the report is for: a payable grows by a
+      // credit, a receivable by a debit, and `aggregateBalanceOf` says which.
+      const parties = new Map<
+        string,
+        { partyType: string; partyId: string; movements: PartyMovement[] }
+      >();
 
       for (const row of rows) {
         if (blind && COST_SUBTYPES.includes(row.subtype as never)) continue;
         const key = `${row.party_type}:${row.party_id}`;
-        const party: Aged = parties.get(key) ?? {
+        const party = parties.get(key) ?? {
           partyType: row.party_type,
           partyId: row.party_id,
-          buckets: { '0-7': 0n, '8-30': 0n, '31-60': 0n, '60+': 0n },
-          totalPoisha: 0n,
+          movements: [],
         };
-        const balance = aggregateBalanceOf(
+        const change = aggregateBalanceOf(
           row.normal_balance,
           BigInt(row.debit_poisha),
           BigInt(row.credit_poisha),
         );
-        party.buckets[row.bucket] = (party.buckets[row.bucket] ?? 0n) + balance;
-        party.totalPoisha += balance;
+        party.movements.push({
+          businessDate: toIsoDate(row.business_date),
+          increasePoisha: change > 0n ? poisha(change) : ZERO,
+          decreasePoisha: change < 0n ? poisha(-change) : ZERO,
+        });
         parties.set(key, party);
       }
 
+      const asOf = toIsoDate(query.asOf);
       return {
         asOf: query.asOf,
         side: query.side,
         costWithheld: blind,
-        items: [...parties.values()].map((party) => ({
-          partyType: party.partyType,
-          partyId: party.partyId,
-          bucket0to7Poisha: money(party.buckets['0-7'] ?? 0n),
-          bucket8to30Poisha: money(party.buckets['8-30'] ?? 0n),
-          bucket31to60Poisha: money(party.buckets['31-60'] ?? 0n),
-          bucketOver60Poisha: money(party.buckets['60+'] ?? 0n),
-          totalPoisha: money(party.totalPoisha),
-        })),
+        items: [...parties.values()]
+          .map((party) => ({ party, aged: ageOpenItems(party.movements, asOf) }))
+          // A party whose account has come back to zero owes nothing and is owed
+          // nothing; listing it would bury the ones that do.
+          .filter(({ aged }) => aged.balancePoisha !== 0n)
+          .map(({ party, aged }) => ({
+            partyType: party.partyType,
+            partyId: party.partyId,
+            bucket0to7Poisha: money(aged.buckets['0-7']),
+            bucket8to30Poisha: money(aged.buckets['8-30']),
+            bucket31to60Poisha: money(aged.buckets['31-60']),
+            bucketOver60Poisha: money(aged.buckets['60+']),
+            unappliedPoisha: money(aged.unappliedPoisha),
+            totalPoisha: money(aged.balancePoisha),
+          })),
       };
     });
   }

@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import { SEED_ORG_IDS, withSystem } from '@elysium/db';
+import { SEED_ORG_IDS, withOrg, withSystem } from '@elysium/db';
+import { addDays, poisha, toIsoDate, ZERO } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
@@ -17,6 +18,7 @@ import {
   type RoleClient,
 } from '../../testing/http-harness.js';
 import { resetFilesEnv } from '../files/files.config.js';
+import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { WalletsModule } from './wallets.module.js';
 import { applyWalletsMigrations } from './wallets.testing.js';
 
@@ -569,6 +571,57 @@ describe('check 3: the consolidated total is the sum of the orgs', () => {
     const response = await admin.client.request('GET', '/v1/accounts/reports/consolidated-wallets');
     expect(response.statusCode).toBe(403);
   });
+
+  it('gives each brand the P&L its own accounts team reads, and adds them up', async () => {
+    const range = `from=${addDays(toIsoDate(today()), -60)}&to=${today()}`;
+    const consolidated = body<{
+      orgs: { orgId: string; incomePoisha: string; expensePoisha: string; netPoisha: string }[];
+      incomePoisha: string;
+      expensePoisha: string;
+      netPoisha: string;
+    }>(
+      await superAdmin.client.request(
+        'GET',
+        `/v1/accounts/reports/consolidated-profit-and-loss?${range}`,
+      ),
+    );
+
+    // Each brand's line, against that brand's own P&L read through its own scope.
+    for (const [orgId, role] of [
+      [ORG_A, accounts],
+      [ORG_B, await harness.asRole('accounts', ORG_B)],
+      [ORG_C, await harness.asRole('accounts', ORG_C)],
+    ] as const) {
+      const own = body<{ incomePoisha: string; expensePoisha: string }>(
+        await role.client.request('GET', `/v1/accounts/reports/profit-and-loss?${range}`),
+      );
+      const line = consolidated.orgs.find((org) => org.orgId === orgId);
+      expect(line, `${orgId} is in the consolidated P&L`).toBeDefined();
+      expect(line?.incomePoisha).toBe(own.incomePoisha);
+      expect(line?.expensePoisha).toBe(own.expensePoisha);
+      expect(BigInt(line?.netPoisha ?? '0')).toBe(
+        BigInt(own.incomePoisha) - BigInt(own.expensePoisha),
+      );
+    }
+
+    // ORG_B and ORG_C took ৳700 and ৳1,100 of other income above, and nothing else.
+    expect(consolidated.orgs.find((org) => org.orgId === ORG_B)?.incomePoisha).toBe('70000');
+    expect(consolidated.orgs.find((org) => org.orgId === ORG_C)?.incomePoisha).toBe('110000');
+
+    const sum = (field: 'incomePoisha' | 'expensePoisha' | 'netPoisha') =>
+      consolidated.orgs.reduce((total, org) => total + BigInt(org[field]), 0n).toString();
+    expect(consolidated.incomePoisha).toBe(sum('incomePoisha'));
+    expect(consolidated.expensePoisha).toBe(sum('expensePoisha'));
+    expect(consolidated.netPoisha).toBe(sum('netPoisha'));
+  });
+
+  it('refuses the consolidated P&L to an org admin too', async () => {
+    const response = await admin.client.request(
+      'GET',
+      `/v1/accounts/reports/consolidated-profit-and-loss?from=${today()}&to=${today()}`,
+    );
+    expect(response.statusCode).toBe(403);
+  });
 });
 
 /** Register a hand-cash wallet in another org and take money into it. */
@@ -989,5 +1042,104 @@ describe('a closed wallet', () => {
       '/v1/accounts/wallets?includeInactive=yes',
     );
     expect(response.statusCode).toBe(400);
+  });
+});
+
+/**
+ * Aging by open item (§7, D-193), against journals the real ledger posted.
+ *
+ * Bills and payments are posted on past business dates straight through the
+ * ledger, because the supply module that would raise them is not part of this
+ * harness; the party, the account and the date are all the report reads.
+ */
+describe('payables aging matches settlements to the oldest open amount', () => {
+  it('ages a part-paid bill by the bill, takes an advance off the next bill, and never shows a negative bucket', async () => {
+    const ledger = harness.app.get<LedgerApi>(LEDGER_API, { strict: false });
+    const asOf = toIsoDate(today());
+    const [partPaid, advanced, overpaid] = [randomUUID(), randomUUID(), randomUUID()];
+
+    const post = (supplierId: string, daysAgo: number, kind: 'bill' | 'payment', amount: bigint) =>
+      withOrg({ orgId: ORG_A, userId: accounts.userId }, (tx) => {
+        const supplierLine = {
+          accountId: accountId('2100'),
+          debitPoisha: kind === 'payment' ? poisha(amount) : ZERO,
+          creditPoisha: kind === 'bill' ? poisha(amount) : ZERO,
+          branchId: null,
+          partyType: 'supplier' as const,
+          partyId: supplierId,
+          memo: null,
+        };
+        // The other side is an expense for a bill and another payable for a
+        // payment: neither touches a wallet, so the cash checks above are unmoved.
+        const otherLine = {
+          accountId: accountId(kind === 'bill' ? '5890' : '2900'),
+          debitPoisha: kind === 'bill' ? poisha(amount) : ZERO,
+          creditPoisha: kind === 'payment' ? poisha(amount) : ZERO,
+          branchId: null,
+          partyType: null,
+          partyId: null,
+          memo: null,
+        };
+        const sourceId = randomUUID();
+        return ledger.post(
+          tx,
+          { orgId: ORG_A, userId: accounts.userId },
+          {
+            businessDate: addDays(asOf, -daysAgo),
+            sourceType: 'aging_fixture',
+            sourceId,
+            event: kind,
+            idempotencyKey: `aging_fixture:${sourceId}:${kind}`,
+            memo: null,
+            reversesJournalId: null,
+            lines: [supplierLine, otherLine],
+          },
+        );
+      });
+
+    await post(partPaid, 40, 'bill', 100_000n);
+    await post(partPaid, 3, 'payment', 40_000n);
+    await post(advanced, 20, 'payment', 50_000n);
+    await post(advanced, 10, 'bill', 80_000n);
+    await post(overpaid, 5, 'bill', 10_000n);
+    await post(overpaid, 2, 'payment', 15_000n);
+
+    const response = await accounts.client.request(
+      'GET',
+      `/v1/accounts/reports/aging?asOf=${asOf}&side=payable`,
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    const items = body<{
+      items: {
+        partyId: string;
+        bucket0to7Poisha: string;
+        bucket8to30Poisha: string;
+        bucket31to60Poisha: string;
+        bucketOver60Poisha: string;
+        unappliedPoisha: string;
+        totalPoisha: string;
+      }[];
+    }>(response).items;
+    const row = (id: string) => items.find((item) => item.partyId === id);
+
+    expect(row(partPaid)).toMatchObject({
+      bucket0to7Poisha: '0',
+      bucket8to30Poisha: '0',
+      bucket31to60Poisha: '60000',
+      bucketOver60Poisha: '0',
+      unappliedPoisha: '0',
+      totalPoisha: '60000',
+    });
+    expect(row(advanced)).toMatchObject({
+      bucket8to30Poisha: '30000',
+      bucket31to60Poisha: '0',
+      unappliedPoisha: '0',
+      totalPoisha: '30000',
+    });
+    expect(row(overpaid)).toMatchObject({
+      bucket0to7Poisha: '0',
+      unappliedPoisha: '5000',
+      totalPoisha: '-5000',
+    });
   });
 });

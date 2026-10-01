@@ -192,6 +192,7 @@ const ACCOUNTS_KEYS = [
   'accounts.reports.agingEmpty',
   'accounts.reports.party',
   'accounts.reports.total',
+  'accounts.reports.unapplied',
   'accounts.party.supplier',
   'accounts.party.courier',
   'accounts.party.reseller',

@@ -644,20 +644,18 @@ export interface AgingRow extends Record<string, unknown> {
   readonly name: string;
   readonly subtype: string;
   readonly normal_balance: 'debit' | 'credit';
-  readonly bucket: string;
+  readonly business_date: string;
   readonly debit_poisha: string;
   readonly credit_poisha: string;
 }
 
 /**
- * Party balances split into §7's aging buckets: 0–7, 8–30, 31–60, 60+ days.
+ * Each party's movements by business date, for §7's aging (D-193).
  *
- * The bucket is taken from each **line's** journal date rather than from a party's
- * oldest invoice, because the ledger is what this module has: a payable is a
- * running account, not a list of documents, until M09 gives supplies their own
- * identity. That makes this a FIFO-free aging of movements, which is the honest
- * report to draw from journals — and the buckets sum to the party balance the
- * trial balance shows, which is the property that matters (D-120).
+ * The buckets are not computed here. Aging matches settlements to the oldest
+ * amount still open, which is a fold over the days in order, so the query hands
+ * back one row per party, account and day and `ageOpenItems` in the domain does
+ * the matching. The rows still sum to the party balance the trial balance shows.
  */
 export async function agingAsOf(
   tx: Tx,
@@ -672,12 +670,7 @@ export async function agingAsOf(
   const rows = await tx.execute<AgingRow>(sql`
     select l.party_type::text as party_type, l.party_id, a.id as account_id, a.code, a.name,
            a.subtype::text as subtype, a.normal_balance::text as normal_balance,
-           case
-             when ${asOf}::date - j.business_date <= 7 then '0-7'
-             when ${asOf}::date - j.business_date <= 30 then '8-30'
-             when ${asOf}::date - j.business_date <= 60 then '31-60'
-             else '60+'
-           end as bucket,
+           j.business_date::text as business_date,
            sum(l.debit_poisha)::text as debit_poisha, sum(l.credit_poisha)::text as credit_poisha
     from ledger.journal_lines l
     join ledger.journals j on j.org_id = l.org_id and j.id = l.journal_id
@@ -692,8 +685,9 @@ export async function agingAsOf(
           ? sql`true`
           : sql`l.party_type::text <> all (${sql.param([...filters.excludePartyTypes])}::text[])`
       }
-    group by l.party_type, l.party_id, a.id, a.code, a.name, a.subtype, a.normal_balance, bucket
-    order by l.party_type, l.party_id, a.code
+    group by l.party_type, l.party_id, a.id, a.code, a.name, a.subtype, a.normal_balance,
+             j.business_date
+    order by l.party_type, l.party_id, j.business_date, a.code
   `);
   return [...rows];
 }

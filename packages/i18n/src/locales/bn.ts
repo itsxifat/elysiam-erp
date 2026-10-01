@@ -1838,10 +1838,12 @@ const bn: Record<MessageKey, string> = {
   'accounts.reports.difference': 'পার্থক্য, গোপন রাখা ব্যয়ের কারণে:',
   'accounts.reports.payable': 'আমরা দেব',
   'accounts.reports.receivable': 'আমরা পাব',
-  'accounts.reports.agingCaption': 'পক্ষ অনুযায়ী ব্যালেন্স, প্রতিটি অংশ কত দিনের পুরোনো তা ধরে।',
+  'accounts.reports.agingCaption':
+    'প্রতিটি পক্ষের দেনা বা পাওনা, কত দিন ধরে বকেয়া আছে সে অনুযায়ী। পরিশোধ আগে সবচেয়ে পুরোনো অংশ মেটায়।',
   'accounts.reports.agingEmpty': 'কিছুই বকেয়া নেই।',
   'accounts.reports.party': 'পক্ষ',
   'accounts.reports.total': 'মোট',
+  'accounts.reports.unapplied': 'অগ্রিম পরিশোধ',
   'accounts.party.supplier': 'সরবরাহকারী',
   'accounts.party.courier': 'কুরিয়ার',
   'accounts.party.reseller': 'রিসেলার',

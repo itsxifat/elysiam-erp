@@ -1886,10 +1886,12 @@ const en = {
   'accounts.reports.difference': 'Difference, from withheld cost:',
   'accounts.reports.payable': 'We owe',
   'accounts.reports.receivable': 'Owed to us',
-  'accounts.reports.agingCaption': 'Balances by party, by how many days old each part is.',
+  'accounts.reports.agingCaption':
+    'What each party owes or is owed, by how long it has been open. A payment settles the oldest amount first.',
   'accounts.reports.agingEmpty': 'Nothing is outstanding.',
   'accounts.reports.party': 'Party',
   'accounts.reports.total': 'Total',
+  'accounts.reports.unapplied': 'Paid ahead',
   'accounts.party.supplier': 'Supplier',
   'accounts.party.courier': 'Courier',
   'accounts.party.reseller': 'Reseller',

@@ -1,12 +1,4 @@
-import {
-  Button,
-  Input,
-  Label,
-  Money,
-  PermissionGate,
-  StatusBadge,
-  takaToPoisha,
-} from '@elysium/ui';
+import { Button, Input, Label, Money, PermissionGate, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowRight } from 'lucide-react';
@@ -18,6 +10,7 @@ import { useLocale } from '../../i18n/locale.js';
 import { AccountsHeader, Block, LoadingRows } from './accounts-parts.js';
 import { dhakaToday, ledgerAccounts, listWallets, transfer, type TransferResult } from './api.js';
 import { useAccountsT, type AccountsMessageKey } from './messages.js';
+import { checkTransfer } from './transfer-form.js';
 
 /**
  * Moving money between two of the brand's wallets (M08, §7).
@@ -99,20 +92,12 @@ export function TransfersPage() {
   const nameOf = (id: string) => active.find((wallet) => wallet.id === id)?.name ?? '';
 
   const submit = () => {
-    const amountPoisha = takaToPoisha(amount);
-    const chargePoisha = charge.trim() === '' ? '0' : takaToPoisha(charge);
-    if (fromWalletId === '' || toWalletId === '') {
-      setProblem({ key: 'accounts.transfer.pickBoth' });
+    const checked = checkTransfer({ fromWalletId, toWalletId, amount, charge });
+    if (!checked.ok) {
+      setProblem({ key: checked.problem });
       return;
     }
-    if (fromWalletId === toWalletId) {
-      setProblem({ key: 'accounts.transfer.sameWallet' });
-      return;
-    }
-    if (amountPoisha === null || amountPoisha === '0' || chargePoisha === null) {
-      setProblem({ key: 'accounts.transfer.amountInvalid' });
-      return;
-    }
+    const { amountPoisha, chargePoisha } = checked;
     send.mutate({
       transferId,
       fromWalletId,

@@ -373,6 +373,9 @@ function AgingView({ search, go }: ViewProps) {
                     60+
                   </th>
                   <th scope="col" className="h-row px-4 text-right font-medium">
+                    {a('accounts.reports.unapplied')}
+                  </th>
+                  <th scope="col" className="h-row px-4 text-right font-medium">
                     {a('accounts.reports.total')}
                   </th>
                 </tr>
@@ -397,6 +400,7 @@ function AgingView({ search, go }: ViewProps) {
                       <AmountCell poisha={item.bucket8to30Poisha} />
                       <AmountCell poisha={item.bucket31to60Poisha} />
                       <AmountCell poisha={item.bucketOver60Poisha} />
+                      <AmountCell poisha={item.unappliedPoisha} />
                       <AmountCell poisha={item.totalPoisha} />
                     </tr>
                   );

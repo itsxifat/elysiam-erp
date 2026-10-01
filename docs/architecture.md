@@ -564,7 +564,7 @@ All reports filter by org, branch and a range of business dates. They apply the 
 - wallet balances, plus a consolidated view for super_admin
 - account ledger
 - party statements: supplier, courier, reseller, investor, employee, lender
-- receivable and payable aging (0–7, 8–30, 31–60, 60+ days)
+- receivable and payable aging (0–7, 8–30, 31–60, 60+ days), by open item: a settlement clears the oldest amount still open, and money paid ahead is shown apart, never aged (D-193)
 - trial balance
 - P&L by org, by branch, and consolidated
 - balance sheet

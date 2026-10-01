@@ -413,6 +413,8 @@ export interface Aging {
     readonly bucket8to30Poisha: string;
     readonly bucket31to60Poisha: string;
     readonly bucketOver60Poisha: string;
+    /** Paid or credited ahead of anything owed (D-193). Not aged. */
+    readonly unappliedPoisha: string;
     readonly totalPoisha: string;
   }[];
 }
