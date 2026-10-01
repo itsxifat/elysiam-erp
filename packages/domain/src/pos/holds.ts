@@ -48,6 +48,12 @@ export const HOLD_REASONS = [
    * would otherwise post straight into a day that was already counted.
    */
   'outside_shift',
+  /**
+   * An exchange's replacement sale names a return that is not this branch's, is
+   * not there at all, or is already paired with another sale. The money is real,
+   * so the sale is kept; the pairing is what a manager has to look at.
+   */
+  'exchange_mismatch',
 ] as const;
 
 export type HoldReason = (typeof HOLD_REASONS)[number];
@@ -82,6 +88,34 @@ export interface HoldCheckInput {
   readonly shift: ShiftWindow;
   readonly occurredAt: Date;
   readonly now: Date;
+  /** What `exchangeLinkProblem` said about the sale's exchange, if it is one. */
+  readonly exchangeMismatch?: boolean;
+}
+
+/**
+ * Whether an exchange's replacement sale may be paired with the return it names.
+ *
+ * The return has to exist in the brand, have been made at the same branch — an
+ * exchange is goods back and goods out over one counter — and not already be
+ * paired with a different sale. `null` means the pairing stands. The till sends
+ * the return before its replacement sale, so a return that is not there yet is a
+ * mismatch too, not a race to wait out.
+ */
+export function exchangeLinkProblem(input: {
+  readonly saleId: string;
+  readonly saleBranchId: string;
+  readonly named: {
+    readonly branchId: string;
+    /** The sale already paired with this return, if any. */
+    readonly pairedSaleId: string | null;
+  } | null;
+}): 'missing' | 'other_branch' | 'already_paired' | null {
+  if (input.named === null) return 'missing';
+  if (input.named.branchId !== input.saleBranchId) return 'other_branch';
+  if (input.named.pairedSaleId !== null && input.named.pairedSaleId !== input.saleId) {
+    return 'already_paired';
+  }
+  return null;
 }
 
 /**
@@ -116,6 +150,7 @@ export function saleHoldReasons(input: HoldCheckInput): HoldReason[] {
   if (!input.shiftOpen) reasons.push('shift_closed');
   if (!withinPostingWindow(input.occurredAt, input.now)) reasons.push('outside_posting_window');
   if (outsideShift(input.occurredAt, input.shift, input.now)) reasons.push('outside_shift');
+  if (input.exchangeMismatch === true) reasons.push('exchange_mismatch');
   return reasons;
 }
 

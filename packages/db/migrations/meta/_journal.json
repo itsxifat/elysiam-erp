@@ -512,6 +512,13 @@
       "when": 1790790616906,
       "tag": "0074_schema_baseline_m11_m23",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1790813928297,
+      "tag": "0075_pos_exchange_pairing",
+      "breakpoints": true
     }
   ]
 }

@@ -30,6 +30,8 @@ interface StubState {
   readonly stock: Record<string, number>;
   readonly wallets: { cash: string; bkash: string; card: string };
   readonly csrfRefusals: number;
+  /** Sync bodies the server's own schema refused (`@elysium/contracts`). */
+  readonly invalidSyncs: unknown[];
   readonly requests: string[];
 }
 
@@ -167,6 +169,7 @@ test('three sales made offline survive a reload and sync exactly once after reco
   expect(after.wallets).toEqual({ cash: '250050', bkash: '85000', card: '300000' });
   // The replay fetched a fresh CSRF token first, and no mutation was refused for want of one.
   expect(after.csrfRefusals).toBe(0);
+  expect(after.invalidSyncs, 'every document the till sent is one the server accepts').toEqual([]);
   const firstSync = after.requests.indexOf('POST /v1/pos/sync');
   expect(after.requests.slice(0, firstSync)).toContain('GET /v1/me');
 
@@ -191,6 +194,7 @@ test('a sale the shelf cannot give is held for review, not lost and not retried 
 
   const state = await stubState(request);
   expect(state.applied.map((entry) => entry.outcome)).toEqual(['held']);
+  expect(state.invalidSyncs).toEqual([]);
   expect(state.wallets).toEqual({ cash: '0', bkash: '0', card: '0' });
 });
 

@@ -6,6 +6,7 @@ import { businessDate, poisha, withinPostingWindow } from '@elysium/domain';
 import {
   canonicalJson,
   discountCeilingBps,
+  exchangeLinkProblem,
   PosError,
   priceLines,
   outsideShift,
@@ -190,6 +191,19 @@ export class SyncService {
       throw new PosError('POS_SALE_INVALID', 'A line names a SKU this brand does not have.');
     }
 
+    // An exchange pairs with this branch's own, unpaired return (D-195). A link
+    // that does not hold is not written — the foreign key and the unique index
+    // would refuse it and the till would retry forever — and the sale is held so
+    // a manager sees what the till asked for.
+    const exchangeProblem =
+      document.exchangeReturnId === undefined
+        ? null
+        : exchangeLinkProblem({
+            saleId: document.id,
+            saleBranchId: register.branch_id,
+            named: await repo.returnForExchange(tx, context.orgId, document.exchangeReturnId),
+          });
+
     const inserted = await repo.insertHeldSale(tx, {
       orgId: context.orgId,
       id: document.id,
@@ -207,7 +221,7 @@ export class SyncService {
       cashReceivedPoisha: settled.cashReceivedPoisha,
       changePoisha: settled.changePoisha,
       payloadHash,
-      exchangeReturnId: document.exchangeReturnId ?? null,
+      exchangeReturnId: exchangeProblem === null ? (document.exchangeReturnId ?? null) : null,
     });
     if (!inserted) return this.replay(tx, context.orgId, 'sale', document.id, payloadHash);
 
@@ -246,6 +260,7 @@ export class SyncService {
       shift: shiftWindow(shift),
       occurredAt,
       now,
+      exchangeMismatch: exchangeProblem !== null,
     });
 
     let outcome: PostOutcome;
@@ -263,6 +278,14 @@ export class SyncService {
             catalogPricePoisha: line.catalogPricePoisha.toString(),
             available: line.available,
           })),
+          ...(exchangeProblem === null
+            ? {}
+            : {
+                exchange: {
+                  requestedReturnId: document.exchangeReturnId,
+                  problem: exchangeProblem,
+                },
+              }),
         },
       };
     } else {

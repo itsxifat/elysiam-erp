@@ -1,30 +1,35 @@
-import { businessDateSchema, positivePoishaSchema } from '@elysium/contracts';
+import {
+  businessDateSchema,
+  nonNegativePoishaSchema,
+  posSyncSchema,
+  returnDocumentSchema,
+  saleDocumentSchema,
+  type PosSyncInput,
+  type ReturnDocument,
+  type SaleDocument,
+} from '@elysium/contracts';
 import { z } from 'zod';
 
 /**
  * The POS's wire shapes (architecture §23), validated at the edge.
  *
- * Local rather than in `packages/contracts` because contracts is shared by every
- * milestone building in parallel; they move there at integration, where the PWA can
- * import them too. Every amount is integer poisha as a decimal string — a crore of
- * taka in poisha is past `Number.MAX_SAFE_INTEGER`, and a till must never be the
- * place `JSON.parse` rounds one (invariant 1).
+ * The till documents and the sync body are in `packages/contracts` (`pos.ts`),
+ * shared with the till itself and its offline test double; what is here is the
+ * staff side — registers, shifts, reviews, closings — which only the server and
+ * the console read. Every amount is integer poisha as a decimal string (invariant 1).
  */
 
-export const nonNegativePoishaSchema = z
-  .string()
-  .max(16, 'Amounts are integer poisha, sent as a decimal string.')
-  .regex(/^(0|[1-9]\d*)$/, 'Amounts are non-negative integer poisha, sent as a decimal string.')
-  .refine(
-    (value) => !/^\d+$/.test(value) || BigInt(value) <= 9_000_000_000_000_000n,
-    'That amount is out of range.',
-  );
+export {
+  nonNegativePoishaSchema,
+  returnDocumentSchema,
+  saleDocumentSchema,
+  type ReturnDocument,
+  type SaleDocument,
+};
+export const syncSchema = posSyncSchema;
+export type SyncInput = PosSyncInput;
 
 const uuid = z.string().uuid();
-const tenderSchema = z.enum(['cash', 'bkash', 'card']);
-/** Printed on paper and typed back at the counter: capitals, digits and dashes. */
-const receiptNoSchema = z.string().regex(/^[A-Z0-9][A-Z0-9-]{0,39}$/, 'Not a receipt number.');
-const instantSchema = z.string().datetime({ offset: true });
 
 export const createRegisterSchema = z
   .object({
@@ -66,105 +71,6 @@ export const closeShiftSchema = z
   })
   .strict();
 export type CloseShiftInput = z.infer<typeof closeShiftSchema>;
-
-export const saleDocumentSchema = z
-  .object({
-    kind: z.literal('sale'),
-    /** The till's own id for the sale: the idempotency key's source (§14). */
-    id: uuid,
-    registerId: uuid,
-    shiftId: uuid,
-    receiptNo: receiptNoSchema,
-    occurredAt: instantSchema,
-    lines: z
-      .array(
-        z
-          .object({
-            lineNo: z.number().int().min(1).max(500),
-            skuId: uuid,
-            qty: z.number().int().min(1).max(9_999),
-            unitPricePoisha: nonNegativePoishaSchema,
-            discountPoisha: nonNegativePoishaSchema,
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(200),
-    tenders: z
-      .array(
-        z
-          .object({
-            tender: tenderSchema,
-            amountPoisha: positivePoishaSchema,
-            reference: z.string().trim().min(1).max(40).optional(),
-          })
-          .strict(),
-      )
-      .max(3),
-    /** Cash the customer handed over; the change is derived, never sent. */
-    cashReceivedPoisha: nonNegativePoishaSchema.optional(),
-    /** What the till printed. Checked against the server's own pricing. */
-    totals: z
-      .object({
-        grossPoisha: nonNegativePoishaSchema,
-        discountPoisha: nonNegativePoishaSchema,
-        netPoisha: nonNegativePoishaSchema,
-      })
-      .strict(),
-    /** On an exchange's replacement sale: the return it pairs with. */
-    exchangeReturnId: uuid.optional(),
-  })
-  .strict();
-export type SaleDocument = z.infer<typeof saleDocumentSchema>;
-
-export const returnDocumentSchema = z
-  .object({
-    kind: z.literal('return'),
-    id: uuid,
-    registerId: uuid,
-    shiftId: uuid,
-    saleId: uuid,
-    /** The return slip's own number. */
-    receiptNo: receiptNoSchema,
-    occurredAt: instantSchema,
-    reason: z.string().trim().max(200).optional(),
-    lines: z
-      .array(
-        z
-          .object({
-            lineNo: z.number().int().min(1).max(500),
-            saleLineNo: z.number().int().min(1).max(500),
-            qty: z.number().int().min(1).max(9_999),
-            refundPoisha: nonNegativePoishaSchema,
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(200),
-    tenders: z
-      .array(z.object({ tender: tenderSchema, amountPoisha: positivePoishaSchema }).strict())
-      .max(3),
-    refundPoisha: nonNegativePoishaSchema,
-  })
-  .strict();
-export type ReturnDocument = z.infer<typeof returnDocumentSchema>;
-
-/**
- * One sync: the till's queue, oldest first.
- *
- * Bounded at 50 so one request is one short transaction per document rather than
- * a batch that holds locks for seconds; a till with more queued sends several.
- * Order matters and is kept: an exchange's return precedes its replacement sale.
- */
-export const syncSchema = z
-  .object({
-    documents: z
-      .array(z.discriminatedUnion('kind', [saleDocumentSchema, returnDocumentSchema]))
-      .min(1)
-      .max(50),
-  })
-  .strict();
-export type SyncInput = z.infer<typeof syncSchema>;
 
 export const resolveReviewSchema = z
   .object({

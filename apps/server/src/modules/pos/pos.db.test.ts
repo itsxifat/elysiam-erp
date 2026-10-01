@@ -826,6 +826,80 @@ describe('what the M23 ledger audit found', () => {
 
 // --- shift close, branch close ----------------------------------------------------------
 
+/** The return a sale is paired with, as stored. */
+async function exchangeLinkOf(saleId: string): Promise<string | null> {
+  return withSystem(
+    async (tx) =>
+      (
+        await tx.execute<{ exchange_return_id: string | null }>(
+          sql`select exchange_return_id from pos.sales where org_id = ${ORG_A} and id = ${saleId}`,
+        )
+      )[0]?.exchange_return_id ?? null,
+    { orgId: ORG_A },
+  );
+}
+
+describe('an exchange (D-195)', () => {
+  it('pairs the replacement sale with its own return, and holds one that names a return it cannot pair with', async () => {
+    const sold = sale([{ sku: skus[1]!, qty: 1 }], [{ tender: 'cash', amount: PRICE }]);
+    await sync(cashier, [sold]);
+
+    const ret = {
+      kind: 'return' as const,
+      id: randomUUID(),
+      registerId,
+      shiftId,
+      saleId: sold.id,
+      receiptNo: `R-${sold.receiptNo}`,
+      occurredAt: new Date().toISOString(),
+      lines: [{ lineNo: 1, saleLineNo: 1, qty: 1, refundPoisha: String(PRICE) }],
+      tenders: [{ tender: 'cash' as const, amountPoisha: String(PRICE) }],
+      refundPoisha: String(PRICE),
+    };
+    const replacement = sale([{ sku: skus[1]!, qty: 1 }], [{ tender: 'cash', amount: PRICE }], {
+      exchangeReturnId: ret.id,
+    });
+    // One sync, return first: the order the till keeps.
+    const [returned, exchanged] = await sync(cashier, [ret, replacement]);
+    expect(returned?.outcome).toBe('posted');
+    expect(exchanged?.outcome).toBe('posted');
+    expect(await exchangeLinkOf(replacement.id)).toBe(ret.id);
+
+    // A second sale naming the same return: the money is kept, the pairing is not.
+    const second = sale([{ sku: skus[1]!, qty: 1 }], [{ tender: 'cash', amount: PRICE }], {
+      exchangeReturnId: ret.id,
+    });
+    const [twice] = await sync(cashier, [second]);
+    expect(twice).toMatchObject({ outcome: 'held', reasons: ['exchange_mismatch'] });
+    expect(await exchangeLinkOf(second.id)).toBeNull();
+    expect(await journalsFor(second.id)).toBe(0);
+
+    // A return that is not there — mistyped, or another brand's. Written as it came,
+    // the foreign key would refuse the insert and the till would retry forever.
+    const stray = sale([{ sku: skus[1]!, qty: 1 }], [{ tender: 'cash', amount: PRICE }], {
+      exchangeReturnId: randomUUID(),
+    });
+    const [missing] = await sync(cashier, [stray]);
+    expect(missing).toMatchObject({ outcome: 'held', reasons: ['exchange_mismatch'] });
+    const detail = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ detail: { exchange?: { problem: string } } }>(
+            sql`select detail from pos.review_items where org_id = ${ORG_A} and id = ${missing!.reviewItemId!}`,
+          )
+        )[0]?.detail,
+      { orgId: ORG_A },
+    );
+    expect(detail?.exchange?.problem).toBe('missing');
+
+    // A manager posts both: the customers paid, and only the pairing was wrong.
+    for (const held of [twice!, missing!]) {
+      const posted = await resolve(manager, held.reviewItemId!);
+      expect(JSON.parse(posted.body)).toMatchObject({ outcome: 'posted' });
+    }
+  });
+});
+
 describe('closing', () => {
   it('refuses the branch day while a shift is open or a sale is held', async () => {
     const today = new Date().toISOString().slice(0, 10);

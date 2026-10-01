@@ -70,6 +70,7 @@ const REASON_KEYS: Record<ReviewRow['reasons'][number], BranchesMessageKey> = {
   sale_not_posted: 'branch.reviews.reason.sale_not_posted',
   return_mismatch: 'branch.reviews.reason.return_mismatch',
   outside_shift: 'branch.reviews.reason.outside_shift',
+  exchange_mismatch: 'branch.reviews.reason.exchange_mismatch',
 };
 
 const CLOSING_STATUS: Record<

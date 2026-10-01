@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  type AnyPgColumn,
   boolean,
   check,
   date,
@@ -70,6 +71,8 @@ export const posHoldReason = pos.enum('hold_reason', [
   'return_mismatch',
   // 0073 (D-174).
   'outside_shift',
+  // 0075 (D-195).
+  'exchange_mismatch',
 ]);
 
 export const posReviewStatus = pos.enum('review_status', ['open', 'posted', 'voided']);
@@ -217,6 +220,15 @@ export const posShifts = pos.table(
  * short, a price or discount out of bounds, a closed shift (§14). It has lines and
  * tenders like any sale, and no journal, until a manager posts or voids it.
  */
+/**
+ * `pos.returns`'s key, for the sale that pairs with one. Sales and returns refer to
+ * each other, and an accessor with a declared type is what lets TypeScript infer
+ * both tables rather than giving up on the cycle (TS7022).
+ */
+function returnKey(): { readonly orgId: AnyPgColumn; readonly id: AnyPgColumn } {
+  return posReturns;
+}
+
 export const posSales = pos.table(
   'sales',
   {
@@ -286,6 +298,16 @@ export const posSales = pos.table(
       columns: [table.orgId, table.journalId],
       foreignColumns: [journals.orgId, journals.id],
     }).onDelete('restrict'),
+    // The return an exchange pairs with: the brand's own (D-047), and one sale per
+    // return (D-195). The service checks the branch before it writes the link.
+    foreignKey({
+      name: 'pos_sales_org_id_exchange_return_id_fk',
+      columns: [table.orgId, table.exchangeReturnId],
+      foreignColumns: [returnKey().orgId, returnKey().id],
+    }).onDelete('restrict'),
+    uniqueIndex('pos_sales_org_exchange_return_key')
+      .on(table.orgId, table.exchangeReturnId)
+      .where(sql`${table.exchangeReturnId} is not null`),
     check(
       'pos_sales_net_is_difference',
       sql`${table.netPoisha} = ${table.grossPoisha} - ${table.discountPoisha}`,

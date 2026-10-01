@@ -1,6 +1,8 @@
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
+import { posSyncSchema } from '@elysium/contracts';
+
 /**
  * A stand-in for the API, for the till's browser tests (M23 checks 1 and 4).
  *
@@ -11,8 +13,10 @@ import { randomBytes } from 'node:crypto';
  *
  * It implements the **contract** of `POST /v1/pos/sync`, not its accounting: a
  * document is applied the first time its id arrives and answered as a replay every
- * time after, a mutation without the CSRF double-submit token is refused, and a
- * safe request issues that token. The accounting — stock levels and wallet
+ * time after, a mutation without the CSRF double-submit token is refused, a safe
+ * request issues that token, and a sync body is validated with the server's own
+ * schema (`posSyncSchema` from `@elysium/contracts`) — so a document the real
+ * server would refuse is refused here too, and the spec sees it. The accounting — stock levels and wallet
  * balances read back from `ledger.journal_lines` — is proved against the real
  * server and a real PostgreSQL in `apps/server/src/modules/pos/pos.db.test.ts`.
  * What this lets the browser test prove is the till's half: what it sends, how
@@ -81,6 +85,8 @@ function freshState() {
     wallets: { cash: 0n, bkash: 0n, card: 0n },
     dropNextSyncReply: false,
     csrfRefusals: 0,
+    /** Sync bodies the contract refused, with the first problems in each. */
+    invalidSyncs: [],
     requests: [],
   };
 }
@@ -197,6 +203,7 @@ const server = createServer(async (request, response) => {
       stock: Object.fromEntries(state.stock),
       wallets: state.wallets,
       csrfRefusals: state.csrfRefusals,
+      invalidSyncs: state.invalidSyncs,
       requests: state.requests,
       shiftOpen: state.shift !== null,
     });
@@ -277,6 +284,19 @@ const server = createServer(async (request, response) => {
   }
   if (method === 'POST' && path === '/v1/pos/sync') {
     const body = await readBody(request);
+    const checked = posSyncSchema.safeParse(body);
+    if (!checked.success) {
+      const issues = checked.error.issues.slice(0, 5).map((issue) => ({
+        path: issue.path.join('.'),
+        message: issue.message,
+      }));
+      state.invalidSyncs.push(issues);
+      return send(response, 400, {
+        code: 'VALIDATION_FAILED',
+        detail: 'Not a valid sync.',
+        issues,
+      });
+    }
     state.deliveries.push(body.documents.map((document) => document.id));
     const results = body.documents.map(applyDocument);
     if (state.dropNextSyncReply) {

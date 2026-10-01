@@ -1,3 +1,5 @@
+import type { PosTender, ReturnDocument, SaleDocument } from '@elysium/contracts';
+
 import { maxDiscountFor } from './money.js';
 
 /**
@@ -186,34 +188,13 @@ export function settle(
   return { problem: null, changePoisha: draft.cashReceivedPoisha - draft.cashPoisha };
 }
 
-/** The document the queue carries and the server's `POST /v1/pos/sync` accepts. */
-export interface SaleDocument {
-  readonly kind: 'sale';
-  readonly id: string;
-  readonly registerId: string;
-  readonly shiftId: string;
-  readonly receiptNo: string;
-  readonly occurredAt: string;
-  readonly lines: readonly {
-    readonly lineNo: number;
-    readonly skuId: string;
-    readonly qty: number;
-    readonly unitPricePoisha: string;
-    readonly discountPoisha: string;
-  }[];
-  readonly tenders: readonly {
-    readonly tender: 'cash' | 'bkash' | 'card';
-    readonly amountPoisha: string;
-    readonly reference?: string;
-  }[];
-  readonly cashReceivedPoisha?: string;
-  readonly totals: {
-    readonly grossPoisha: string;
-    readonly discountPoisha: string;
-    readonly netPoisha: string;
-  };
-  readonly exchangeReturnId?: string;
-}
+/**
+ * The documents the queue carries are the ones `POST /v1/pos/sync` validates:
+ * one definition in `@elysium/contracts`, imported for its types only, so a field
+ * the server stops accepting is a compile error here rather than a sale that
+ * retries forever.
+ */
+export type { ReturnDocument, SaleDocument };
 
 export function saleDocument(input: {
   readonly id: string;
@@ -276,4 +257,52 @@ export function saleDocument(input: {
 /** `GUL1-12-0007`: register, shift number, sequence within the shift. */
 export function receiptNumber(registerCode: string, shiftNo: number, seq: number): string {
   return `${registerCode}-${String(shiftNo)}-${String(seq).padStart(4, '0')}`;
+}
+
+/** `GUL1-12-R0007`: a return slip's number, in its own sequence beside the sales'. */
+export function returnSlipNumber(registerCode: string, shiftNo: number, seq: number): string {
+  return `${registerCode}-${String(shiftNo)}-R${String(seq).padStart(4, '0')}`;
+}
+
+/**
+ * The return document the queue carries (§14), against one earlier sale.
+ *
+ * The refund goes back in one tender, and a return that refunds nothing — an
+ * exchange of a gift with no money changing hands — sends no tender at all.
+ */
+export function returnDocument(input: {
+  readonly id: string;
+  readonly registerId: string;
+  readonly shiftId: string;
+  readonly saleId: string;
+  readonly receiptNo: string;
+  readonly occurredAt: Date;
+  readonly reason: string;
+  readonly lines: readonly {
+    readonly saleLineNo: number;
+    readonly qty: number;
+    readonly refundPoisha: bigint;
+  }[];
+  readonly tender: PosTender;
+}): ReturnDocument {
+  const total = input.lines.reduce((sum, line) => sum + line.refundPoisha, 0n);
+  const reason = input.reason.trim();
+  return {
+    kind: 'return',
+    id: input.id,
+    registerId: input.registerId,
+    shiftId: input.shiftId,
+    saleId: input.saleId,
+    receiptNo: input.receiptNo,
+    occurredAt: input.occurredAt.toISOString(),
+    ...(reason === '' ? {} : { reason }),
+    lines: input.lines.map((line, index) => ({
+      lineNo: index + 1,
+      saleLineNo: line.saleLineNo,
+      qty: line.qty,
+      refundPoisha: line.refundPoisha.toString(),
+    })),
+    tenders: total > 0n ? [{ tender: input.tender, amountPoisha: total.toString() }] : [],
+    refundPoisha: total.toString(),
+  };
 }

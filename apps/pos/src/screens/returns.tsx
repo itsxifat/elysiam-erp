@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 
 import { useLocale, usePosT } from '../i18n/locale.js';
 import { endpoints, NetworkError, type ReceiptLookup, type Session } from '../lib/api.js';
+import { returnDocument, returnSlipNumber } from '../lib/cart.js';
 import { divideRounded, refundForUnits } from '../lib/money.js';
 import { recordDocument } from '../lib/store.js';
 import type { ReceiptData } from '../receipt/receipt.js';
@@ -97,25 +98,22 @@ export function Returns({
         shiftId: shift.id,
         kind: 'return',
         build: (seq) => {
-          const slipNo = `${session.register.code}-${String(shift.shiftNo)}-R${String(seq).padStart(4, '0')}`;
-          const document = {
-            kind: 'return' as const,
+          const slipNo = returnSlipNumber(session.register.code, shift.shiftNo, seq);
+          const document = returnDocument({
             id,
             registerId: session.register.id,
             shiftId: shift.id,
             saleId: sale.id,
             receiptNo: slipNo,
-            occurredAt: occurredAt.toISOString(),
-            ...(reason.trim() === '' ? {} : { reason: reason.trim() }),
-            lines: chosen.map((entry, index) => ({
-              lineNo: index + 1,
+            occurredAt,
+            reason,
+            lines: chosen.map((entry) => ({
               saleLineNo: entry.line.lineNo,
               qty: entry.qty,
-              refundPoisha: entry.refund.toString(),
+              refundPoisha: entry.refund,
             })),
-            tenders: total > 0n ? [{ tender, amountPoisha: total.toString() }] : [],
-            refundPoisha: total.toString(),
-          };
+            tender,
+          });
           const receipt: ReceiptData = {
             kind: 'return',
             receiptNo: slipNo,

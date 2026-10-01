@@ -7,6 +7,7 @@ import {
   cumulativeShare,
   discountCeilingBps,
   drawerVariance,
+  exchangeLinkProblem,
   expectedDrawerCash,
   linesAboveCeiling,
   maxDiscountFor,
@@ -193,6 +194,7 @@ describe('saleHoldReasons', () => {
         shift,
         occurredAt: new Date('2026-09-26T05:00:00Z'),
         now,
+        exchangeMismatch: true,
       }),
     ).toEqual([
       'sku_unavailable',
@@ -201,7 +203,26 @@ describe('saleHoldReasons', () => {
       'shift_closed',
       'outside_posting_window',
       'outside_shift',
+      'exchange_mismatch',
     ]);
+  });
+
+  it('pairs an exchange only with a return from the same branch that no other sale holds', () => {
+    const base = { saleId: 'sale-2', saleBranchId: 'gulshan' };
+    expect(
+      exchangeLinkProblem({ ...base, named: { branchId: 'gulshan', pairedSaleId: null } }),
+    ).toBeNull();
+    // A re-sync of the same sale finds itself already paired, which is fine.
+    expect(
+      exchangeLinkProblem({ ...base, named: { branchId: 'gulshan', pairedSaleId: 'sale-2' } }),
+    ).toBeNull();
+    expect(exchangeLinkProblem({ ...base, named: null })).toBe('missing');
+    expect(
+      exchangeLinkProblem({ ...base, named: { branchId: 'dhanmondi', pairedSaleId: null } }),
+    ).toBe('other_branch');
+    expect(
+      exchangeLinkProblem({ ...base, named: { branchId: 'gulshan', pairedSaleId: 'sale-1' } }),
+    ).toBe('already_paired');
   });
 
   it('measures a discount on an archived SKU against its list price (D-173)', () => {

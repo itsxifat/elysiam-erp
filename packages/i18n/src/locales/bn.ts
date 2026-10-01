@@ -1522,6 +1522,7 @@ const bn: Record<MessageKey, string> = {
   'branch.reviews.reason.sale_not_posted': 'মূল বিক্রিটিই এখনো অপেক্ষায়',
   'branch.reviews.reason.return_mismatch': 'ফেরত রসিদের সাথে মেলে না',
   'branch.reviews.reason.outside_shift': 'শিফটের সময়ের বাইরের তারিখ',
+  'branch.reviews.reason.exchange_mismatch': 'বদলের বিক্রয়ে এমন ফেরত উল্লেখ আছে যার সাথে মেলানো যায় না',
 
   'branch.closing.heading': 'দিন বন্ধ করুন',
   'branch.closing.caption':

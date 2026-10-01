@@ -77,7 +77,8 @@ export type HoldReason =
   | 'sku_unavailable'
   | 'sale_not_posted'
   | 'return_mismatch'
-  | 'outside_shift';
+  | 'outside_shift'
+  | 'exchange_mismatch';
 
 export interface ReviewRow {
   readonly id: string;

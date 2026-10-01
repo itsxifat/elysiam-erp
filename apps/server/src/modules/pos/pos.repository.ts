@@ -769,6 +769,27 @@ export async function returnedSoFar(
   );
 }
 
+/**
+ * The return an exchange's replacement sale names: its branch, and the sale
+ * already paired with it if there is one (D-195). A voided return is treated as
+ * not there — its goods and refund were never booked, so there is nothing to
+ * exchange against.
+ */
+export async function returnForExchange(
+  tx: Tx,
+  orgId: string,
+  returnId: string,
+): Promise<{ branchId: string; pairedSaleId: string | null } | null> {
+  const rows = await tx.execute<{ branch_id: string; paired_sale_id: string | null }>(sql`
+    select r.branch_id, s.id as paired_sale_id
+    from pos.returns r
+    left join pos.sales s on s.org_id = r.org_id and s.exchange_return_id = r.id
+    where r.org_id = ${orgId} and r.id = ${returnId} and r.status <> 'voided'
+  `);
+  const row = rows[0];
+  return row === undefined ? null : { branchId: row.branch_id, pairedSaleId: row.paired_sale_id };
+}
+
 // --- review items ---------------------------------------------------------------
 
 export interface ReviewRow extends Record<string, unknown> {
