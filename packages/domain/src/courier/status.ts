@@ -270,13 +270,18 @@ export const PATHAO_STATUS_MAP: ProviderStatusMap = {
 /**
  * RedX's words (D-006, M15).
  *
- * **UNVERIFIED, and weaker than Pathao's.** RedX's own open-source code — the
- * `redx-for-woocommerce` plugin its parent company ShopUp publishes — creates parcels and
- * nothing else: it contains no status handling at all. The seven words below are the
- * webhook statuses RedX's developer page lists, recalled rather than read, because that
- * page renders nothing without a browser session and could not be fetched in this build.
- * They are the words that page gives for its webhook; whether `GET /parcel/info` answers
- * in the same vocabulary is not known. A word it sends that is not here becomes `unknown`
+ * **UNVERIFIED, and weaker than Pathao's. There is no source for this list** (D-200).
+ *
+ * The `redx-for-woocommerce` WordPress plugin was downloaded and read for M15's gap pass:
+ * it has no status handling, no webhook route and no status constants, and it is a
+ * community plugin — authored by an individual, with `shopupwp` among its contributors —
+ * rather than RedX's own SDK, which an earlier version of this comment called it.
+ * `redx.com.bd/developer-documentation/` now 301s to a 404, and the developer portal
+ * renders nothing without a merchant session.
+ *
+ * So the seven words below are recalled, not read. They are believed to be RedX's webhook
+ * statuses; whether `GET /parcel/info` answers in the same vocabulary is not known, and
+ * neither is whether the list is complete. A word it sends that is not here becomes `unknown`
  * with the raw text kept (§9), changes nothing (`trackingStatusAfter`), and leaves the
  * parcel in the stuck-parcel queue with that word showing — which is how the first person
  * with a RedX sandbox finds out what to add.

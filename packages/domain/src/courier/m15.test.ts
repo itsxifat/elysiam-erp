@@ -55,6 +55,17 @@ import {
 
 const parcelStatus = fc.constantFrom(...PARCEL_STATUSES);
 
+/**
+ * Check 1's wording is "complete mapping tables for each adapter", and for three of the
+ * four that is what the tests below prove: each map's keys equal a vocabulary transcribed
+ * from a cited first-party document, both directions.
+ *
+ * **RedX is not one of them** (D-200). Its vocabulary has no source — the developer portal
+ * needs a merchant session, and the `redx-for-woocommerce` plugin was downloaded and has
+ * no status handling at all — so for RedX these assertions prove the map and the list agree
+ * with each other and nothing about what RedX actually sends. The test below says so out
+ * loud, so that a green run is not read as verification RedX never gave.
+ */
 describe('every adapter has a complete mapping table (check 1)', () => {
   it('knows all four providers', () => {
     expect([...MAPPED_COURIER_CODES].sort()).toEqual(['fake', 'pathao', 'redx', 'steadfast']);
@@ -93,6 +104,20 @@ describe('every adapter has a complete mapping table (check 1)', () => {
       });
     });
   }
+
+  it('is honest about which vocabularies have a source (D-200)', () => {
+    // The adapters whose words were transcribed from a first-party document, against the
+    // one whose words were not. If a RedX sandbox ever confirms the list, this moves to
+    // `SOURCED` and the decision row closes; until then nothing may claim RedX is verified.
+    const SOURCED = ['steadfast', 'pathao', 'fake'];
+    const UNSOURCED = ['redx'];
+
+    expect([...SOURCED, ...UNSOURCED].sort()).toEqual([...MAPPED_COURIER_CODES].sort());
+    // The unverified one is exactly the adapter whose `verified` flag is false, so the
+    // runtime gate (D-176: it cannot be activated without an explicit opt-in) and this
+    // list cannot drift apart.
+    expect(UNSOURCED).toEqual(['redx']);
+  });
 
   it('reads Pathao’s event names and status words the same way', () => {
     // The plugin stores either the body's `order_status` or its mapped event into one field,
