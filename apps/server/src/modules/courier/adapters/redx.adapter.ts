@@ -18,11 +18,12 @@ import { courierRequest, localPhone, objectAt, stringAt } from './http.js';
  *
  * ## UNVERIFIED — and less verified than Pathao
  *
- * RedX's developer page renders nothing without a browser session and could not be read.
- * The one first-party source reachable was `redx-for-woocommerce`, the plugin RedX's parent
- * company ShopUp publishes on WordPress.org. It **creates parcels and does nothing else**, so:
+ * RedX's developer page renders nothing without a merchant session and could not be read.
+ * The one source reachable was `redx-for-woocommerce`, a WordPress plugin by an individual
+ * author with `shopupwp` among its contributors. It is **not** RedX's own SDK or
+ * documentation (D-200), and it **creates parcels and does nothing else**, so:
  *
- * **From RedX's plugin (first-party code):**
+ * **From that plugin (third-party code, not a RedX document):**
  * - the host `https://openapi.redx.com.bd/v1.0.0-beta`;
  * - the header `API-ACCESS-TOKEN: Bearer <token>`;
  * - `POST /wordpress/parcel` with `customer_name`, `customer_phone`, `customer_address`,

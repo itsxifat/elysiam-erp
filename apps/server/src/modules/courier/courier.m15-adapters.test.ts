@@ -15,7 +15,8 @@ import { CourierError } from './courier.errors.js';
  *
  * No Pathao or RedX credentials exist in this environment, so nothing below was recorded
  * from a live exchange. Every request shape and response key is **transcribed** from the one
- * first-party source that could be read for each courier:
+ * source that could be read for each courier — first-party for Pathao, a third-party plugin
+ * for RedX (D-200):
  *
  * - **Pathao**: `pathao-eng/courier-woocommerce-plugin` — `pathao-bridge.php` (hosts, the
  *   `external/login` body and answer, the order body with its casts, `data.consignment_id`),
@@ -25,9 +26,12 @@ import { CourierError } from './courier.errors.js';
  *   `settings-page.php` (the webhook secret defaulting to the client secret). The status
  *   endpoint and the webhook's `collected_amount` / `timestamp` come from community clients
  *   and are marked where they are used.
- * - **RedX**: `redx-for-woocommerce` (ShopUp) — `RedxOrderActionsService.php` (the host, the
- *   `API-ACCESS-TOKEN: Bearer` header, `/wordpress/parcel` and its body, `tracking_id`). The
- *   status endpoint is community-described.
+ * - **RedX**: `redx-for-woocommerce`, a WordPress plugin by an individual author with
+ *   `shopupwp` among its contributors — **not RedX's own** — `RedxOrderActionsService.php`
+ *   (the host, the `API-ACCESS-TOKEN: Bearer` header, `/wordpress/parcel` and its body,
+ *   `tracking_id`). The status endpoint is community-described. So the RedX tests below
+ *   prove the adapter matches that plugin, not RedX's API, and they are outside M15 check
+ *   1's claim (D-200).
  *
  * The values in the fixtures (ids, amounts, times) are invented; the *keys* are the sources'.
  * What these tests prove is that each adapter speaks exactly that transcribed contract and
