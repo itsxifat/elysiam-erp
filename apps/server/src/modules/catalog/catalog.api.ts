@@ -24,6 +24,14 @@ export interface CatalogSku {
   readonly productId: string;
   readonly code: string;
   readonly productName: string;
+  /**
+   * The product's category, or null when it has none.
+   *
+   * Here so a caller that scopes by category — a promo code limited to Sarees (M16) —
+   * can do it without reading `catalog.products` itself, which is what invariant 12
+   * forbids and `module-boundaries.test.ts` fails the build over.
+   */
+  readonly categoryId: string | null;
   /** The **selling** price, in integer poisha. */
   readonly pricePoisha: bigint;
   readonly status: 'active' | 'archived';
@@ -99,11 +107,12 @@ export class CatalogApiService implements CatalogApi {
   }
 }
 
-function toSku(row: repo.SkuRow & { product_name: string }): CatalogSku {
+function toSku(row: repo.SkuRow & { product_name: string; category_id: string | null }): CatalogSku {
   return {
     id: row.id,
     productId: row.product_id,
     code: row.code,
+    categoryId: row.category_id,
     productName: row.product_name,
     // The driver hands `bigint` back as a decimal string; callers inside the server
     // want a bigint, and §23's string is the *wire* format, not the internal one.

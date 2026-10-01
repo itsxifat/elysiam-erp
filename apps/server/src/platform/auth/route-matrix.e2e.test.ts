@@ -42,6 +42,10 @@ import {
 import { HR_ROUTE_FIXTURES, prepareHrFixtures } from '../../modules/hr/hr.route-fixtures.js';
 import { POS_ROUTE_FIXTURES, preparePosFixtures } from '../../modules/pos/pos.route-fixtures.js';
 import {
+  PROMO_ROUTE_FIXTURES,
+  preparePromoFixtures,
+} from '../../modules/promo/promo.route-fixtures.js';
+import {
   prepareSupplyFixtures,
   SUPPLY_ROUTE_FIXTURES,
 } from '../../modules/supply/supply.route-fixtures.js';
@@ -86,6 +90,7 @@ beforeAll(async () => {
   await prepareHrFixtures();
   await prepareCourierFixtures();
   await preparePosFixtures();
+  await preparePromoFixtures();
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 }, 300_000);
 
@@ -253,6 +258,7 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...HR_ROUTE_FIXTURES,
   ...COURIER_ROUTE_FIXTURES,
   ...POS_ROUTE_FIXTURES,
+  ...PROMO_ROUTE_FIXTURES,
 };
 
 function testedRoutes(): RouteDeclaration[] {

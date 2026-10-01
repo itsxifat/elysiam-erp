@@ -523,10 +523,10 @@ export async function searchSkus(
     readonly code?: string | undefined;
     readonly limit: number;
   },
-): Promise<(SkuRow & { product_name: string })[]> {
+): Promise<(SkuRow & { product_name: string; category_id: string | null })[]> {
   const fragment = query.q === undefined ? null : query.q.toUpperCase();
-  const rows = await tx.execute<SkuRow & { product_name: string }>(sql`
-    select ${SKU_COLUMNS}, p.name as product_name
+  const rows = await tx.execute<SkuRow & { product_name: string; category_id: string | null }>(sql`
+    select ${SKU_COLUMNS}, p.name as product_name, p.category_id
     from catalog.skus s
     join catalog.products p on p.org_id = s.org_id and p.id = s.product_id
     where s.org_id = ${orgId}
@@ -585,10 +585,10 @@ export async function skusByIds(
   tx: Tx,
   orgId: string,
   ids: readonly string[],
-): Promise<(SkuRow & { product_name: string })[]> {
+): Promise<(SkuRow & { product_name: string; category_id: string | null })[]> {
   if (ids.length === 0) return [];
-  const rows = await tx.execute<SkuRow & { product_name: string }>(sql`
-    select ${SKU_COLUMNS}, p.name as product_name
+  const rows = await tx.execute<SkuRow & { product_name: string; category_id: string | null }>(sql`
+    select ${SKU_COLUMNS}, p.name as product_name, p.category_id
     from catalog.skus s
     join catalog.products p on p.org_id = s.org_id and p.id = s.product_id
     where s.org_id = ${orgId} and s.id = any (${sql.param([...ids])}::uuid[])
