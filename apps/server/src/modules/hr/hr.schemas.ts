@@ -320,10 +320,12 @@ export const submitRunSchema = z
  * Paying the run.
  *
  * `walletAccountId` is a **ledger account** id of a `wallet_*` subtype, not a row in
- * the wallets module's own table. HR posts through `LEDGER_API` and reads the wallet
- * accounts it may credit from `ledger.accounts`; it never touches `wallets.*`
- * (invariant 12). `GET /v1/ledger/wallets` is what the console's picker reads, and it
- * returns exactly these ids.
+ * the wallets module's own table. HR posts through `LEDGER_API` and resolves the wallet
+ * accounts it may credit through `LedgerApi.walletAccountById`; it reads neither
+ * `ledger.*` nor `wallets.*` itself (invariant 12, D-199). `GET /v1/ledger/wallets` is
+ * what the console's picker reads and it returns exactly these ids — including
+ * deactivated ones, which is why that lookup carries `isActive` rather than filtering
+ * them out.
  */
 export const payRunSchema = z
   .object({
