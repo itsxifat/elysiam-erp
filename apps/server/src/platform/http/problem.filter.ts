@@ -94,7 +94,7 @@ export class ProblemFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const body = exception.getResponse();
-      const { code, detail, errors } = readHttpExceptionBody(body, exception.message);
+      const { code, detail, errors, reason } = readHttpExceptionBody(body, exception.message);
 
       return problemFor({
         status,
@@ -107,6 +107,9 @@ export class ProblemFilter implements ExceptionFilter {
           : { detail }),
         instance,
         ...(errors === undefined ? {} : { errors }),
+        // Not on a 5xx, for the same reason as `detail`: a server error says nothing
+        // about why beyond that it happened.
+        ...(reason === undefined || status >= SERVER_ERROR ? {} : { reason }),
       });
     }
 
@@ -123,7 +126,15 @@ interface ExceptionBody {
   readonly code: string | undefined;
   readonly detail: string | undefined;
   readonly errors: readonly { readonly path: string; readonly message: string }[] | undefined;
+  readonly reason: string | undefined;
 }
+
+/**
+ * A `reason` is published only if it looks like a token: lower-case words and
+ * underscores, short. A thrower that put a sentence — or a phone number, or a SQL
+ * fragment — into `reason` gets it dropped rather than sent to a stranger.
+ */
+const REASON_TOKEN = /^[a-z][a-z_]{0,47}$/;
 
 /**
  * Read a code and a detail out of whatever was thrown.
@@ -138,15 +149,19 @@ interface ExceptionBody {
  */
 export function readHttpExceptionBody(body: unknown, fallback: string): ExceptionBody {
   if (typeof body === 'string') {
-    return { code: undefined, detail: body, errors: undefined };
+    return { code: undefined, detail: body, errors: undefined, reason: undefined };
   }
 
   if (typeof body !== 'object' || body === null) {
-    return { code: undefined, detail: fallback, errors: undefined };
+    return { code: undefined, detail: fallback, errors: undefined, reason: undefined };
   }
 
   const record = body as Record<string, unknown>;
   const code = typeof record.code === 'string' ? record.code : undefined;
+  const reason =
+    typeof record.reason === 'string' && REASON_TOKEN.test(record.reason)
+      ? record.reason
+      : undefined;
   const raw = record.message ?? record.detail;
 
   if (Array.isArray(raw)) {
@@ -157,6 +172,7 @@ export function readHttpExceptionBody(body: unknown, fallback: string): Exceptio
       // No path: a pipe's array is flat strings. Empty paths still beat
       // dropping the list, which is the only thing that names the bad fields.
       errors: messages.map((message) => ({ path: '', message })),
+      reason,
     };
   }
 
@@ -164,5 +180,6 @@ export function readHttpExceptionBody(body: unknown, fallback: string): Exceptio
     code,
     detail: typeof raw === 'string' && raw !== '' ? raw : fallback,
     errors: undefined,
+    reason,
   };
 }

@@ -263,7 +263,7 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/pos/branches/:id/closings',
 
   // M16: promo codes. §6's row covers landing pages and promo codes together, so the
-  // subject is `LandingPage` (D-201); `read` is "apply codes", which is why the live
+  // subject is `LandingPage` (D-203); `read` is "apply codes", which is why the live
   // check is a read and every write needs `create`/`update`.
   'GET /v1/promo/codes',
   'POST /v1/promo/codes',

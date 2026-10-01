@@ -48,6 +48,8 @@ export interface ProblemDocument {
    * showing one sentence about the first of them.
    */
   readonly errors?: readonly { readonly path: string; readonly message: string }[];
+  /** See `ProblemInput.reason`. */
+  readonly reason?: string;
 }
 
 /**
@@ -108,6 +110,13 @@ export interface ProblemInput {
   readonly detail?: string;
   readonly instance?: string;
   readonly errors?: readonly { readonly path: string; readonly message: string }[];
+  /**
+   * Why, as a machine token, when the code alone leaves a client guessing — a promo
+   * code refused as `limit_reached` versus `min_order_not_met` sends the desk agent to
+   * different places. An RFC 9457 extension member. Only ever a `snake_case` token from
+   * a closed list in `packages/domain`, never prose: see `readHttpExceptionBody`.
+   */
+  readonly reason?: string;
 }
 
 /**
@@ -132,6 +141,7 @@ export function problemFor(input: ProblemInput): ProblemDocument {
     ...(input.detail === undefined || input.detail === '' ? {} : { detail: input.detail }),
     ...(input.instance === undefined ? {} : { instance: input.instance }),
     ...(input.errors === undefined || input.errors.length === 0 ? {} : { errors: input.errors }),
+    ...(input.reason === undefined ? {} : { reason: input.reason }),
   };
 }
 

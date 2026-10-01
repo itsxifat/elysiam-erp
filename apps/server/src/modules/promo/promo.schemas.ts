@@ -2,6 +2,7 @@ import {
   businessDateSchema,
   nonNegativePoishaSchema,
   positivePoishaSchema,
+  PROMO_CHANNELS,
 } from '@elysium/contracts';
 import { z } from 'zod';
 
@@ -37,10 +38,7 @@ export const createPromoCodeSchema = z
     perCustomerLimit: z.number().int().positive().optional(),
     validFrom: businessDateSchema.optional(),
     validTo: businessDateSchema.optional(),
-    channels: z
-      .array(z.enum(['web', 'desk', 'pos', 'reseller']))
-      .max(4)
-      .optional(),
+    channels: z.array(z.enum(PROMO_CHANNELS)).max(PROMO_CHANNELS.length).optional(),
     skuIds: z.array(uuid).max(500).optional(),
     categoryIds: z.array(uuid).max(100).optional(),
     customerId: uuid.optional(),
@@ -103,7 +101,8 @@ export const promoCheckSchema = z
       .min(1)
       .max(200),
     deliveryChargePoisha: nonNegativePoishaSchema.default('0'),
-    channel: z.enum(['web', 'desk', 'pos', 'reseller']).default('desk'),
+    /** The order's own channel, or `pos` at the till. Required: the caller always knows. */
+    channel: z.enum(PROMO_CHANNELS),
     customerId: uuid.optional(),
   })
   .strict();

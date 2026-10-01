@@ -72,7 +72,7 @@ export const PROMO_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> |
       code: seededCode,
       lines: [{ skuId: randomUUID(), netPoisha: '100000' }],
       deliveryChargePoisha: '6000',
-      channel: 'desk',
+      channel: 'phone',
     },
   }),
 };

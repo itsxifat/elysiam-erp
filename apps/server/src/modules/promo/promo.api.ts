@@ -3,61 +3,82 @@ import type { Tx } from '@elysium/db';
 import type { Poisha } from '@elysium/domain';
 
 import type { ActiveContext } from '../../platform/http/context.js';
-import { PromoError } from './promo.errors.js';
+import { PromoError, promoHttpError } from './promo.errors.js';
 import { PromoService } from './promo.service.js';
 
 /**
- * What the order desk and the till may ask of this module (M16; invariant 12).
+ * A code, priced for one order and not yet spent.
  *
- * One method, and its shape is the whole point: a caller passes a **code** and the lines
- * it would apply to, and gets back the discount *and* the redemption in one call inside
- * its own transaction. There is deliberately no "what is this code worth" followed by a
- * separate "record that I used it" — two calls is how a code validated against nine uses
- * gets redeemed as the eleventh, and how an order's discount ends up being a number the
- * client chose between them.
+ * Returned by `priceForOrder` and handed back, unchanged, to `redeemForOrder`. Carrying
+ * the amounts across rather than recomputing them is what makes the discount written on
+ * the order and the one recorded in the redemption ledger the same number: there is no
+ * second calculation for them to disagree with.
+ */
+export interface PricedPromo {
+  readonly codeId: string;
+  readonly customerId: string | null;
+  /** Off the goods: added to the order's discount. */
+  readonly discountPoisha: Poisha;
+  /** Off the delivery charge: free-delivery codes only. */
+  readonly deliveryDiscountPoisha: Poisha;
+}
+
+/**
+ * What the order desk may ask of this module (M16; invariant 12).
  *
- * `applyToOrder` throws rather than returning a refusal, because by the time an order is
- * being written the code has already been offered to the buyer through
- * `POST /v1/promo/check`; a code that fails here is an exception, and the orders module
- * turns it into problem+json with the domain's reason.
+ * **Two phases, one transaction.** Creating an order is chicken-and-egg: the discount has
+ * to be known before the order row is written, because the totals are computed from it;
+ * and a redemption's foreign key needs that row to exist. So the caller prices the code,
+ * writes the order, then redeems — all inside its own transaction.
+ *
+ * That is safe where "validate, then later redeem" is not, and the difference is the
+ * transaction. `redeemForOrder` takes the use with a conditional UPDATE, so a code that
+ * ran out between the two phases is refused there, the caller's transaction rolls back,
+ * and no order exists with a discount it was never entitled to. Split across two requests
+ * instead, a code validated against nine uses would be redeemed as the eleventh.
  */
 export interface PromoApi {
   /**
-   * Price a code against an order's lines, take one of its uses, and record it.
+   * What the code is worth for these lines. Claims nothing and writes nothing.
    *
-   * Runs in the caller's transaction so the order row, its discount and the redemption
-   * commit together or not at all. Returns what was actually allowed, which the caller
-   * writes onto the order — so the discount in the books and the one in the redemption
-   * ledger are the same number by construction rather than by agreement.
-   *
-   * Idempotent per (code, order): a retried submission returns the first redemption's
-   * amounts and claims no further use.
+   * Throws `PROMO_NOT_FOUND` for an unknown word and `PROMO_NOT_APPLICABLE` with the
+   * domain's reason for one that does not apply — by the time an order is being written
+   * the code has already been offered through `POST /v1/promo/check`, so a refusal here
+   * is an exception rather than an answer.
    */
-  applyToOrder(
+  priceForOrder(
     tx: Tx,
     context: ActiveContext,
     input: {
       readonly code: string;
-      readonly orderId: string;
       readonly customerId: string | null;
       readonly channel: string;
+      /** Each line's net after its own typed discount, as the domain rule expects. */
       readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
       readonly deliveryChargePoisha: string;
       /** The order's Asia/Dhaka business date; today when absent. */
       readonly on?: string;
     },
-  ): Promise<{
-    readonly codeId: string;
-    readonly discountPoisha: Poisha;
-    readonly deliveryDiscountPoisha: Poisha;
-    readonly redemptionId: string;
-  }>;
+  ): Promise<PricedPromo>;
+
+  /**
+   * Take a use of the code and record it against the order just written.
+   *
+   * Same transaction as `priceForOrder` and the order insert. Idempotent per (code,
+   * order): a retried submission returns the first redemption and claims no further use.
+   */
+  redeemForOrder(
+    tx: Tx,
+    context: ActiveContext,
+    priced: PricedPromo,
+    orderId: string,
+  ): Promise<{ readonly redemptionId: string }>;
 
   /**
    * Give a code's use back when an order is cancelled before it ships.
    *
    * False when the order carried no code or its redemption was already released — a
-   * cancel delivered twice must not return two uses (D-202). Kept once the order ships:
+   * cancel delivered twice must not return two uses (D-204). Kept once the order ships:
    * the goods went out, and a return is a different event from never having bought.
    */
   releaseForOrder(tx: Tx, orgId: string, orderId: string): Promise<boolean>;
@@ -65,23 +86,55 @@ export interface PromoApi {
 
 export const PROMO_API = Symbol('PromoApi');
 
+/**
+ * A promo refusal as the HTTP answer it should be, whichever module's route it crosses.
+ *
+ * The order desk calls this module from inside `POST /v1/orders`, so a `PromoError` thrown
+ * here would reach the orders module's mapper, which maps any foreign coded error to 400
+ * and has no idea a promo refusal is a 409 carrying a `reason`. Converting at this seam —
+ * the one place every caller passes through — means the desk gets
+ * `409 PROMO_NOT_APPLICABLE` with `reason: limit_reached` no matter which route asked.
+ */
+async function asHttp<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    if (error instanceof PromoError) throw promoHttpError(error);
+    throw error;
+  }
+}
+
 @Injectable()
 export class PromoApiService implements PromoApi {
   constructor(@Inject(PromoService) private readonly promo: PromoService) {}
 
-  async applyToOrder(
+  async priceForOrder(
     tx: Tx,
     context: ActiveContext,
     input: {
       readonly code: string;
-      readonly orderId: string;
       readonly customerId: string | null;
       readonly channel: string;
       readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
       readonly deliveryChargePoisha: string;
       readonly on?: string;
     },
-  ) {
+  ): Promise<PricedPromo> {
+    return asHttp(() => this.price(tx, context, input));
+  }
+
+  private async price(
+    tx: Tx,
+    context: ActiveContext,
+    input: {
+      readonly code: string;
+      readonly customerId: string | null;
+      readonly channel: string;
+      readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
+      readonly deliveryChargePoisha: string;
+      readonly on?: string;
+    },
+  ): Promise<PricedPromo> {
     const { code, verdict } = await this.promo.verdictFor(tx, context.orgId, {
       code: input.code,
       lines: input.lines,
@@ -99,21 +152,31 @@ export class PromoApiService implements PromoApi {
       );
     }
 
-    const { redemptionId } = await this.promo.redeem(tx, context, {
+    return {
       codeId: code.id,
-      orderId: input.orderId,
-      posSaleId: null,
       customerId: input.customerId,
       discountPoisha: verdict.discountPoisha,
       deliveryDiscountPoisha: verdict.deliveryDiscountPoisha,
-    });
-
-    return {
-      codeId: code.id,
-      discountPoisha: verdict.discountPoisha,
-      deliveryDiscountPoisha: verdict.deliveryDiscountPoisha,
-      redemptionId,
     };
+  }
+
+  async redeemForOrder(
+    tx: Tx,
+    context: ActiveContext,
+    priced: PricedPromo,
+    orderId: string,
+  ): Promise<{ readonly redemptionId: string }> {
+    return asHttp(async () => {
+      const { redemptionId } = await this.promo.redeem(tx, context, {
+        codeId: priced.codeId,
+        orderId,
+        posSaleId: null,
+        customerId: priced.customerId,
+        discountPoisha: priced.discountPoisha,
+        deliveryDiscountPoisha: priced.deliveryDiscountPoisha,
+      });
+      return { redemptionId };
+    });
   }
 
   async releaseForOrder(tx: Tx, orgId: string, orderId: string): Promise<boolean> {

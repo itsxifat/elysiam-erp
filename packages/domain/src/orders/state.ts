@@ -105,6 +105,14 @@ export const ORDER_EFFECTS = [
   'enqueue_courier_cancel',
   /** Delivered, returned and cancelled all move a buyer's counters. */
   'update_customer_stats',
+  /**
+   * M16, D-204: a promo code's use goes back. On every cancel and on nothing else —
+   * a cancel is only reachable before the order ships, and once it ships the use is
+   * kept, returned or not. Its own effect, not a step inside the stats effect, because
+   * a cancel from `pending` declares no stats effect at all and the use still has to go
+   * back; hanging it off another effect made it depend on a list that does not mention it.
+   */
+  'release_promo',
 ] as const;
 
 export type OrderEffect = (typeof ORDER_EFFECTS)[number];
@@ -141,7 +149,13 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     effects: ['reserve_stock', 'enqueue_courier_booking'],
     requiresReason: false,
   },
-  { from: 'pending', to: 'cancelled', trigger: 'cancel', effects: [], requiresReason: true },
+  {
+    from: 'pending',
+    to: 'cancelled',
+    trigger: 'cancel',
+    effects: ['release_promo'],
+    requiresReason: true,
+  },
   {
     from: 'confirmed',
     to: 'on_hold',
@@ -164,14 +178,24 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     from: 'confirmed',
     to: 'cancelled',
     trigger: 'cancel',
-    effects: ['release_reservation', 'enqueue_courier_cancel', 'update_customer_stats'],
+    effects: [
+      'release_reservation',
+      'enqueue_courier_cancel',
+      'update_customer_stats',
+      'release_promo',
+    ],
     requiresReason: true,
   },
   {
     from: 'packed',
     to: 'cancelled',
     trigger: 'cancel',
-    effects: ['release_reservation', 'enqueue_courier_cancel', 'update_customer_stats'],
+    effects: [
+      'release_reservation',
+      'enqueue_courier_cancel',
+      'update_customer_stats',
+      'release_promo',
+    ],
     requiresReason: true,
   },
   {

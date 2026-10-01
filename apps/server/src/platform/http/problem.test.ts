@@ -103,3 +103,35 @@ describe('reading whatever was thrown', () => {
     expect(readHttpExceptionBody(null, 'Forbidden').detail).toBe('Forbidden');
   });
 });
+
+describe('the reason extension member (M16)', () => {
+  it('passes a machine token through, so the desk can say why a code was refused', () => {
+    const read = readHttpExceptionBody(
+      { code: 'PROMO_NOT_APPLICABLE', message: 'Does not apply.', reason: 'limit_reached' },
+      'x',
+    );
+    expect(read.reason).toBe('limit_reached');
+    expect(
+      problemFor({ status: 409, code: 'PROMO_NOT_APPLICABLE', reason: read.reason }),
+    ).toMatchObject({ reason: 'limit_reached' });
+  });
+
+  it('drops anything that is not a token, so prose never reaches a stranger', () => {
+    // A thrower that put a sentence, a phone number or a SQL fragment into `reason`.
+    for (const reason of [
+      'The buyer +8801711000999 used it already',
+      'select * from promo.codes',
+      'Limit_Reached',
+      '',
+      'x'.repeat(60),
+    ]) {
+      expect(readHttpExceptionBody({ code: 'PROMO_NOT_APPLICABLE', reason }, 'x').reason).toBe(
+        undefined,
+      );
+    }
+  });
+
+  it('is absent when nobody gave one', () => {
+    expect(problemFor({ status: 409, code: 'PROMO_NOT_APPLICABLE' })).not.toHaveProperty('reason');
+  });
+});

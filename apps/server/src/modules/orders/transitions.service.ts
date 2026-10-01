@@ -27,6 +27,7 @@ import { CustomersService } from './customers.service.js';
 import * as repo from './orders.repository.js';
 import { OrdersError } from './orders.errors.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
+import { PROMO_PORT, type PromoPort } from './ports/promo.port.js';
 
 /**
  * Performing a transition (architecture §9, invariant 7).
@@ -141,6 +142,7 @@ export class TransitionsService {
   constructor(
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
     @Inject(LEDGER_API) private readonly ledger: LedgerApi,
+    @Inject(PROMO_PORT) private readonly promo: PromoPort,
     private readonly customers: CustomersService,
     private readonly audit: AuditService,
     private readonly courier: CourierBookingRegistry,
@@ -349,6 +351,12 @@ export class TransitionsService {
         await this.updateStats(tx, context, order, result);
         return;
 
+      case 'release_promo':
+        // The use goes back once however often the cancel arrives: conditional on the
+        // redemption still being applied (D-204). Nothing to do for an order with no code.
+        await this.promo.releaseForOrder(tx, context.orgId, order.id);
+        return;
+
       case 'create_exchange_order':
         if (options.callerHandlesExchange !== true) {
           // A guard rather than a comment: if a future caller reaches the exchange
@@ -391,6 +399,19 @@ export class TransitionsService {
         }
         await courier.cancelConsignment(tx, actor, order.id);
         return;
+      }
+
+      default: {
+        /*
+         * `effect` is `never` here while every effect the domain declares has a case. One
+         * added to the state machine without a handler stops compiling, where before it
+         * compiled and silently did nothing on every transition that named it — which is
+         * how `release_promo` would have gone missing.
+         */
+        const unhandled: never = effect;
+        throw new Error(
+          `The order state machine declared an effect with no handler: ${String(unhandled)}`,
+        );
       }
     }
   }

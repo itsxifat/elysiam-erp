@@ -792,3 +792,28 @@ describe('the posting window (§7)', () => {
     expect(withinPostingWindow(new Date('2026-09-26T04:00:00Z'), now)).toBe(false);
   });
 });
+
+describe('a promo code goes back on a cancel, and only on a cancel (D-204)', () => {
+  it('declares release_promo on every row that ends in cancelled', () => {
+    const cancels = TRANSITIONS.filter((row) => row.to === 'cancelled');
+    // Pending, confirmed and packed: every state an order can be cancelled from.
+    expect(cancels.map((row) => row.from).sort()).toEqual(['confirmed', 'packed', 'pending']);
+    for (const row of cancels) expect(row.effects).toContain('release_promo');
+  });
+
+  it('declares it nowhere else, so a shipped, returned or held order keeps its use', () => {
+    // A return is not "never bought": the goods went out, so the use stays spent.
+    const elsewhere = TRANSITIONS.filter(
+      (row) => row.to !== 'cancelled' && row.effects.includes('release_promo'),
+    );
+    expect(elsewhere).toEqual([]);
+  });
+
+  it('releases on a pending cancel, which declares no stats effect to hang it on', () => {
+    // The bug this effect exists to fix: the release was first written inside the
+    // customer-stats step, and a cancel from `pending` declares no such step.
+    const fromPending = transition({ from: 'pending', trigger: 'cancel', at: AT, reason: 'dup' });
+    expect(fromPending.effects).toContain('release_promo');
+    expect(fromPending.effects).not.toContain('update_customer_stats');
+  });
+});

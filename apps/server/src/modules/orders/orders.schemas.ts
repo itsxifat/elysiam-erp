@@ -1,3 +1,4 @@
+import { ORDER_CHANNELS } from '@elysium/contracts';
 import { z } from 'zod';
 
 /**
@@ -38,17 +39,8 @@ const reason = z.string().trim().min(3).max(500);
 
 export const orderIdSchema = uuid;
 
-export const orderChannels = [
-  'facebook',
-  'whatsapp',
-  'instagram',
-  'tiktok',
-  'landing_page',
-  'website',
-  'phone',
-  'walk_in',
-  'reseller',
-] as const;
+/** From `packages/contracts` (`channels.ts`), so promo scope speaks the same words. */
+export const orderChannels = ORDER_CHANNELS;
 
 /** §9's `source` block: where the order came from, for M11's attribution. */
 const sourceSchema = z
@@ -143,7 +135,12 @@ export const createOrderSchema = z
     deliveryChargePoisha: poishaString.optional(),
     discountPoisha: poishaString.optional(),
     advancePaidPoisha: poishaString.optional(),
-    promoCodeId: uuid.optional(),
+    /**
+     * A promo code as the buyer typed it. Never an id and never an amount: the server
+     * prices the word against the lines it priced itself (D-204). The promo module checks
+     * the real shape and answers PROMO_NOT_FOUND for anything else.
+     */
+    promoCode: z.string().trim().min(3).max(40).optional(),
     notes: z.string().trim().max(2000).optional(),
     /** Assign on creation. Left out, the order joins the unassigned queue (§6). */
     assignedTo: z.string().min(1).max(64).optional(),

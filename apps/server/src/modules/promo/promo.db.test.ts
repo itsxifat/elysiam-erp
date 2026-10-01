@@ -80,16 +80,19 @@ async function code(fields: {
   readonly totalLimit?: number;
   readonly categoryIds?: readonly string[];
   readonly valueBps?: number;
+  readonly channels?: readonly string[];
 }): Promise<{ id: string; word: string }> {
   const word = `T${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
   const id = await withSystem(
     async (tx) =>
       (
         await tx.execute<{ id: string }>(sql`
-          insert into promo.codes (org_id, code, kind, value_bps, total_limit, category_ids, created_by)
+          insert into promo.codes (
+            org_id, code, kind, value_bps, total_limit, category_ids, channels, created_by)
           values (${ORG_A}, ${word}, 'percent', ${fields.valueBps ?? 1000},
                   ${fields.totalLimit ?? null},
-                  ${JSON.stringify(fields.categoryIds ?? [])}::jsonb, ${ACTOR})
+                  ${JSON.stringify(fields.categoryIds ?? [])}::jsonb,
+                  ${JSON.stringify(fields.channels ?? [])}::jsonb, ${ACTOR})
           returning id
         `)
       )[0]?.id ?? '',
@@ -130,17 +133,23 @@ async function state(codeId: string) {
   );
 }
 
+/**
+ * Both phases in one transaction, as the order desk does it: price, then redeem against
+ * the order. The race is between two of these transactions, and only the redeem phase's
+ * conditional UPDATE stands between them.
+ */
 function apply(word: string, orderId: string) {
-  return withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
-    api.applyToOrder(tx, context(), {
+  return withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => {
+    const priced = await api.priceForOrder(tx, context(), {
       code: word,
-      orderId,
       customerId,
-      channel: 'desk',
+      channel: 'phone',
       lines: [{ skuId: saree.id, netPoisha: PRICE.toString() }],
       deliveryChargePoisha: '6000',
-    }),
-  );
+    });
+    const { redemptionId } = await api.redeemForOrder(tx, context(), priced, orderId);
+    return { redemptionId, discountPoisha: priced.discountPoisha };
+  });
 }
 
 describe('a promo code against real Postgres', () => {
@@ -156,7 +165,7 @@ describe('a promo code against real Postgres', () => {
     const lost = results.filter((result) => result.status === 'rejected');
     expect(won).toHaveLength(1);
     expect(lost).toHaveLength(1);
-    expect(String((lost[0] as PromiseRejectedResult).reason)).toMatch(/as many times as it allows/);
+    expect(String(lost[0]?.reason)).toMatch(/as many times as it allows/);
 
     // The count and the ledger agree, and neither went past the limit.
     expect(await state(id)).toEqual({ used: 1, redemptions: ['applied'] });
@@ -201,7 +210,7 @@ describe('a promo code against real Postgres', () => {
         code: word,
         lines: [{ skuId: saree.id, netPoisha: PRICE.toString() }],
         deliveryChargePoisha: '6000',
-        channel: 'desk',
+        channel: 'phone',
         customerId,
       });
       expect(answer).toMatchObject({ ok: true, discountPoisha: '15000' });
@@ -221,11 +230,109 @@ describe('a promo code against real Postgres', () => {
         { skuId: panjabi.id, netPoisha: '300000' },
       ],
       deliveryChargePoisha: '6000',
-      channel: 'desk',
+      channel: 'phone',
       customerId,
     });
 
     // 20% of the ৳1,000 saree line only; the ৳3,000 panjabi is in another category.
     expect(answer).toMatchObject({ ok: true, discountPoisha: '20000' });
+  });
+});
+
+/**
+ * The order desk, end to end on the server (M16 check 5's server half).
+ *
+ * Through `POST /v1/orders`, so the controller, the order's own transaction and the promo
+ * port are all the real ones. The desk sends a code word and nothing else about the
+ * discount: these prove the order carries what the server worked out, that a cancel gives
+ * the use back, and that an order the code cannot pay for is never written at all.
+ */
+describe('a promo code on an order taken at the desk', () => {
+  async function takeOrder(word: string, channel = 'phone') {
+    const admin = await harness.asRole('org_admin', ORG_A);
+    return admin.client.request('POST', '/v1/orders', {
+      body: {
+        channel,
+        customerId,
+        deliveryChargePoisha: '6000',
+        promoCode: word,
+        lines: [{ skuId: saree.id, qty: 1, unitPricePoisha: PRICE.toString() }],
+      },
+    });
+  }
+
+  async function ordersWith(codeId: string): Promise<number> {
+    return withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ n: number }>(sql`
+            select count(*)::int as n from sales.orders
+            where org_id = ${ORG_A} and promo_code_id = ${codeId}
+          `)
+        )[0]?.n ?? 0,
+      { orgId: ORG_A },
+    );
+  }
+
+  it('writes the discount the server worked out, and records the redemption', async () => {
+    const { id, word } = await code({});
+
+    const response = await takeOrder(word);
+
+    expect(response.statusCode, response.body).toBe(201);
+    // ৳1,500 less 10% (৳150) plus ৳60 delivery: the desk sent the word, not ৳150.
+    expect(JSON.parse(response.body)).toMatchObject({ codAmountPoisha: '141000' });
+    expect(await state(id)).toEqual({ used: 1, redemptions: ['applied'] });
+    expect(await ordersWith(id)).toBe(1);
+  });
+
+  it('gives the use back when that order is cancelled before it ships', async () => {
+    const { id, word } = await code({ totalLimit: 3 });
+    const created = JSON.parse((await takeOrder(word)).body) as { id: string };
+
+    const admin = await harness.asRole('org_admin', ORG_A);
+    const cancelled = await admin.client.request('POST', `/v1/orders/${created.id}/cancel`, {
+      body: { reason: 'Buyer changed their mind' },
+    });
+
+    expect(cancelled.statusCode, cancelled.body).toBeLessThan(300);
+    expect(await state(id)).toEqual({ used: 0, redemptions: ['released'] });
+  });
+
+  it('refuses a code for another channel, and writes no order', async () => {
+    // The vocabulary the desk really sends. M16's first cut compared against `web` and
+    // `desk`, which no order carries, so a channel-scoped code could never match.
+    const { id, word } = await code({ channels: ['facebook'] });
+
+    const response = await takeOrder(word, 'phone');
+
+    expect(response.statusCode, response.body).toBe(409);
+    expect(JSON.parse(response.body)).toMatchObject({
+      code: 'PROMO_NOT_APPLICABLE',
+      reason: 'wrong_channel',
+    });
+    expect(await ordersWith(id)).toBe(0);
+    expect(await state(id)).toEqual({ used: 0, redemptions: [] });
+  });
+
+  it('accepts the same code on the channel it is for', async () => {
+    const { id, word } = await code({ channels: ['facebook'] });
+
+    const response = await takeOrder(word, 'facebook');
+
+    expect(response.statusCode, response.body).toBe(201);
+    expect(await state(id)).toEqual({ used: 1, redemptions: ['applied'] });
+  });
+
+  it('rolls the whole order back when the code has run out, rather than keep a discount', async () => {
+    const { id, word } = await code({ totalLimit: 1 });
+    expect((await takeOrder(word)).statusCode).toBe(201);
+
+    const second = await takeOrder(word);
+
+    expect(second.statusCode, second.body).toBe(409);
+    // One order, one use: the second order does not exist, with or without the discount.
+    expect(await ordersWith(id)).toBe(1);
+    expect(await state(id)).toEqual({ used: 1, redemptions: ['applied'] });
   });
 });

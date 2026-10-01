@@ -29,6 +29,7 @@ import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js'
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { CustomersService } from './customers.service.js';
 import { FRAUD_GATE, type FraudGate } from './ports/fraud-gate.port.js';
+import { PROMO_PORT, type PricedPromo, type PromoPort } from './ports/promo.port.js';
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
 import * as desk from './desk.repository.js';
 import * as repo from './orders.repository.js';
@@ -293,6 +294,7 @@ export class OrdersService {
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
     @Inject(LEDGER_API) private readonly ledger: LedgerApi,
     @Inject(FRAUD_GATE) private readonly fraud: FraudGate,
+    @Inject(PROMO_PORT) private readonly promo: PromoPort,
     private readonly customers: CustomersService,
     private readonly transitions: TransitionsService,
     private readonly audit: AuditService,
@@ -562,12 +564,44 @@ export class OrdersService {
     const zone = await this.resolveZone(tx, context, input, shipTo, options);
     const lines = await this.priceLines(tx, context, input.lines);
 
-    const deliveryChargePoisha =
+    const baseDeliveryChargePoisha =
       input.deliveryChargePoisha !== undefined
         ? BigInt(input.deliveryChargePoisha)
         : (zone?.chargePoisha ?? options.fallbackDeliveryChargePoisha ?? 0n);
+
+    /*
+     * A promo code is priced here, before the totals, because both the order's discount
+     * and its delivery charge depend on it — and priced from the lines this server just
+     * priced, never from anything the caller sent but the word (D-204). It is redeemed
+     * after the order row exists, in this same transaction; see `PromoPort`.
+     */
+    const priced: PricedPromo | null =
+      input.promoCode === undefined
+        ? null
+        : await this.promo.priceForOrder(tx, context, {
+            code: input.promoCode,
+            customerId: buyer.id,
+            channel: input.channel,
+            lines: lines.map((line) => ({
+              skuId: line.skuId,
+              netPoisha: (
+                BigInt(line.unitPricePoisha) * BigInt(line.qty) -
+                BigInt(line.discountPoisha)
+              ).toString(),
+            })),
+            deliveryChargePoisha: baseDeliveryChargePoisha.toString(),
+          });
+
+    // The code's delivery discount comes off the charge; its goods discount joins the
+    // agent's typed one as the order's discount, which is how it reaches the books — as
+    // Sales discounts through the existing delivery posting, with no new rule.
+    const deliveryChargePoisha =
+      priced === null
+        ? baseDeliveryChargePoisha
+        : baseDeliveryChargePoisha - BigInt(priced.deliveryDiscountPoisha);
     const orderDiscountPoisha =
-      input.discountPoisha === undefined ? 0n : BigInt(input.discountPoisha);
+      (input.discountPoisha === undefined ? 0n : BigInt(input.discountPoisha)) +
+      (priced === null ? 0n : BigInt(priced.discountPoisha));
 
     /*
      * Totals twice, because a credit cannot be capped before the order is priced.
@@ -639,12 +673,18 @@ export class OrdersService {
       deliveryChargePoisha: BigInt(totals.deliveryChargePoisha),
       advancePaidPoisha: BigInt(totals.advancePaidPoisha),
       codAmountPoisha: BigInt(totals.codAmountPoisha),
-      promoCodeId: input.promoCodeId ?? null,
+      promoCodeId: priced?.codeId ?? null,
       assignedTo: input.assignedTo ?? null,
       createdBy: context.userId,
       notes: input.notes ?? null,
       exchangeOfOrderId: options.exchangeOfOrderId ?? null,
     });
+
+    // The order row now exists, so the redemption's foreign key has something to name.
+    // Same transaction: if the code's last use went to another order while this one was
+    // being priced, the conditional UPDATE inside refuses, and this order rolls back with
+    // it rather than keeping a discount it was not given.
+    if (priced !== null) await this.promo.redeemForOrder(tx, context, priced, orderId);
 
     for (const [index, line] of lines.entries()) {
       await repo.insertOrderLine(tx, {

@@ -380,6 +380,12 @@ export const OPERATIONS = {
   getV1PosSalesById: { method: 'GET', path: '/v1/pos/sales/{id}', ability: 'read:Wallet' },
   getV1PosShifts: { method: 'GET', path: '/v1/pos/shifts', ability: 'read:Wallet' },
   getV1PosShiftsById: { method: 'GET', path: '/v1/pos/shifts/{id}', ability: 'read:Wallet' },
+  getV1PromoCodes: { method: 'GET', path: '/v1/promo/codes', ability: 'read:LandingPage' },
+  getV1PromoCodesByIdRedemptions: {
+    method: 'GET',
+    path: '/v1/promo/codes/{id}/redemptions',
+    ability: 'read:LandingPage',
+  },
   getV1SupplyEntries: { method: 'GET', path: '/v1/supply/entries', ability: 'read:Supply' },
   getV1SupplyEntriesById: {
     method: 'GET',
@@ -441,6 +447,11 @@ export const OPERATIONS = {
     method: 'PATCH',
     path: '/v1/pos/registers/{id}',
     ability: 'update:Wallet',
+  },
+  patchV1PromoCodesById: {
+    method: 'PATCH',
+    path: '/v1/promo/codes/{id}',
+    ability: 'update:LandingPage',
   },
   patchV1SupplyDraftsById: {
     method: 'PATCH',
@@ -797,6 +808,8 @@ export const OPERATIONS = {
     ability: 'update:Wallet',
   },
   postV1PosSync: { method: 'POST', path: '/v1/pos/sync', ability: 'update:Wallet' },
+  postV1PromoCheck: { method: 'POST', path: '/v1/promo/check', ability: 'read:LandingPage' },
+  postV1PromoCodes: { method: 'POST', path: '/v1/promo/codes', ability: 'create:LandingPage' },
   postV1SupplyAdvanceApplications: {
     method: 'POST',
     path: '/v1/supply/advance-applications',
@@ -1327,6 +1340,15 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1PosShiftsById, input, options),
+    /** GET /v1/promo/codes */
+    getV1PromoCodes: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PromoCodes, undefined, options),
+    /** GET /v1/promo/codes/:id/redemptions */
+    getV1PromoCodesByIdRedemptions: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PromoCodesByIdRedemptions, input, options),
     /** GET /v1/supply/entries */
     getV1SupplyEntries: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplyEntries, undefined, options),
@@ -1449,6 +1471,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1PosRegistersById, input, options),
+    /** PATCH /v1/promo/codes/:id */
+    patchV1PromoCodesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1PromoCodesById, input, options),
     /** PATCH /v1/supply/drafts/:id */
     patchV1SupplyDraftsById: (
       input: { readonly path: { readonly id: string } },
@@ -1827,6 +1854,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/pos/sync */
     postV1PosSync: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PosSync, undefined, options),
+    /** POST /v1/promo/check */
+    postV1PromoCheck: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PromoCheck, undefined, options),
+    /** POST /v1/promo/codes */
+    postV1PromoCodes: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PromoCodes, undefined, options),
     /** POST /v1/supply/advance-applications */
     postV1SupplyAdvanceApplications: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1SupplyAdvanceApplications, undefined, options),

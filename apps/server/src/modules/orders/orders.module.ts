@@ -20,8 +20,11 @@ import { OrdersService } from './orders.service.js';
 import { TransitionsService } from './transitions.service.js';
 import { FRAUD_API } from '../fraud/fraud.api.js';
 import { FraudModule } from '../fraud/fraud.module.js';
+import { PROMO_API } from '../promo/promo.api.js';
+import { PromoModule } from '../promo/promo.module.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { FRAUD_GATE } from './ports/fraud-gate.port.js';
+import { PROMO_PORT } from './ports/promo.port.js';
 
 /**
  * Orders, customers, delivery zones and the state machine (architecture §9, §7).
@@ -88,6 +91,7 @@ import { FRAUD_GATE } from './ports/fraud-gate.port.js';
     FilesModule,
     ApprovalsModule,
     FraudModule,
+    PromoModule,
   ],
   controllers: [OrdersController, CustomersController, DeliveryZonesController, BuyersController],
   providers: [
@@ -101,6 +105,8 @@ import { FRAUD_GATE } from './ports/fraud-gate.port.js';
     DeskService,
     BuyersService,
     { provide: FRAUD_GATE, useExisting: FRAUD_API },
+    // M16: the desk prices and redeems a code through its own port (D-204).
+    { provide: PROMO_PORT, useExisting: PROMO_API },
     { provide: ORDERS_API, useClass: OrdersApiService },
   ],
   exports: [ORDERS_API, CustomersService, CourierBookingRegistry],

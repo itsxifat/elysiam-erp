@@ -41,7 +41,7 @@ const auditable = (request: FastifyRequest): AuditableRequest =>
  * §6 has one row covering both — "Landing pages, promo codes" — so a brand's marketing
  * people hold the same grant for the thing and the codes that promote it, and inventing a
  * `PromoCode` subject would mean editing the permission matrix and its spec fixture as a
- * side effect of this milestone instead of as a decision (D-201).
+ * side effect of this milestone instead of as a decision (D-203).
  *
  * That row also distinguishes *applying* a code from *editing* one: §6 gives sales
  * `read LandingPage` — "apply codes", not edit pages — which is why the live check below
