@@ -103,6 +103,17 @@ export class CourierLabelsService {
       }
 
       const brandName = await repo.orgDisplayName(tx, context.orgId);
+      // The couriers' names, from the module that owns them (invariant 12). One call
+      // for the sheet rather than one per label.
+      const courierNames = new Map(
+        (
+          await this.orders.courierParties(
+            tx,
+            context.orgId,
+            rows.map((row) => row.courier_id),
+          )
+        ).map((party) => [party.id, party.name]),
+      );
       const labels: LabelData[] = [];
       for (const row of rows) {
         const order = await this.orders.bookingSnapshot(tx, context.orgId, row.order_id);
@@ -111,7 +122,7 @@ export class CourierLabelsService {
         }
         labels.push({
           brandName,
-          courierName: row.courier_name,
+          courierName: courierNames.get(row.courier_id) ?? '',
           consignmentNo: row.consignment_no ?? '',
           trackingCode: row.tracking_code,
           orderNo: row.order_no,

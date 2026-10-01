@@ -888,13 +888,24 @@ export class CourierSyncService {
         limit: filter.pageSize,
         offset: (filter.page - 1) * filter.pageSize,
       });
+      // M10 owns `sales.couriers`, so the names are asked for once per page rather
+      // than joined into the query (invariant 12).
+      const courierNames = new Map(
+        (
+          await this.orders.courierParties(
+            tx,
+            context.orgId,
+            rows.map((row) => row.courier_id),
+          )
+        ).map((party) => [party.id, party.name]),
+      );
       return {
         items: rows.map((row) => ({
           id: row.id,
           orderId: row.order_id,
           orderNo: row.order_no,
           courierId: row.courier_id,
-          courierName: row.courier_name,
+          courierName: courierNames.get(row.courier_id) ?? '',
           branchId: row.branch_id,
           consignmentNo: row.consignment_no,
           trackingCode: row.tracking_code,

@@ -122,9 +122,30 @@ export interface OrderFacts {
   readonly codAmountPoisha: string;
 }
 
+/** A courier party, named. M10 owns the row; this module owns the account beside it. */
+export interface CourierParty {
+  readonly id: string;
+  /** `steadfast`, `pathao`, `redx`, `own_rider`. Resolves the adapter. */
+  readonly code: string;
+  readonly name: string;
+}
+
 export interface OrdersPort {
   /** Null when the order is not this org's. */
   bookingSnapshot(tx: Tx, orgId: string, orderId: string): Promise<OrderBookingSnapshot | null>;
+
+  /**
+   * The words for the courier ids this module stores (invariant 12).
+   *
+   * Every consignment, account, label and settlement row carries a `courier_id`, and
+   * a person reading one needs the courier's name beside it. `sales.couriers` is
+   * M10's table, so this module asks for the names instead of joining them: eight
+   * queries here used to reach across that boundary, which is the coupling that
+   * stops M10 ever changing the shape of its own table.
+   *
+   * Ids this org does not have come back absent rather than as an error.
+   */
+  courierParties(tx: Tx, orgId: string, ids: readonly string[]): Promise<readonly CourierParty[]>;
 
   /**
    * M15. `OrdersApi.summary`, read through this module's own statement of what it needs.

@@ -10,16 +10,21 @@ import { sql, type SQL } from 'drizzle-orm';
  * relying on a policy for correctness rather than for defence — and the day somebody runs
  * one of these as `erp_owner` in a script, the policy is what is missing.
  *
- * Nothing here reads another module's tables. The two exceptions a reader will look for —
- * `ledger.accounts` for a posting account, and `sales.orders` for an address to send the
- * courier — are on ports (`ledger-read.port.ts`, `orders.port.ts`) precisely so they are
- * not here.
+ * Nothing here reads another module's tables, and `courier.repository.boundary.test.ts`
+ * is what keeps that true rather than remembered. The three reads a reader will look for
+ * — `ledger.accounts` for a posting account, `sales.orders` for an address to send the
+ * courier, and `sales.couriers` for the courier's own name — are on ports
+ * (`ledger-read.port.ts`, `orders.port.ts`) precisely so they are not here. The last of
+ * those was eight joins until it was not: the claim in this paragraph was false for as
+ * long as nothing checked it.
+ *
+ * `org.organizations` is read directly and is not an exception: §5 makes it global, the
+ * row every module resolves a brand from, and no module owns it.
  */
 
 export interface CourierAccountRow extends Record<string, unknown> {
   readonly id: string;
   readonly courier_id: string;
-  readonly courier_code: string;
   readonly provider_code: string;
   readonly label: string;
   readonly mode: 'sandbox' | 'live';
@@ -36,16 +41,16 @@ export interface CourierAccountRow extends Record<string, unknown> {
 }
 
 /**
- * The account, with its courier's code joined on.
+ * The account's own columns. The courier's code is not among them.
  *
- * `sales.couriers.code` is joined rather than trusted to equal `provider_code`: M10 owns
- * the party row and M12 owns the account, so the two *can* disagree — an org that
- * registered its courier as `own_rider` and then attached Steadfast credentials to it.
- * The adapter is resolved by `provider_code`, and the join is what lets a screen show
- * both when they differ instead of quietly using one.
+ * M10 owns the party row and M12 owns the account, so the two *can* disagree — an org
+ * that registered its courier as `own_rider` and then attached Steadfast credentials to
+ * it. A screen shows both, which means the code has to be fetched; it is fetched through
+ * `OrdersPort.courierParties`, because joining `sales.couriers` from here is reading
+ * another module's table (invariant 12).
  */
 const ACCOUNT_COLUMNS = sql`
-  a.id, a.courier_id, c.code as courier_code, a.provider_code, a.label, a.mode, a.base_url,
+  a.id, a.courier_id, a.provider_code, a.label, a.mode, a.base_url,
   a.credentials, a.credentials_key_id, a.credentials_fingerprint, a.webhook_secret,
   a.supports_webhook, a.poll_after_hours, a.settlement_wallet_id, a.verified, a.is_active
 `;
@@ -58,7 +63,6 @@ export async function accountById(
   const rows = await tx.execute<CourierAccountRow>(sql`
     select ${ACCOUNT_COLUMNS}
     from courier.courier_accounts a
-    join sales.couriers c on c.org_id = a.org_id and c.id = a.courier_id
     where a.org_id = ${orgId} and a.id = ${id}
   `);
   return rows[0];
@@ -72,7 +76,6 @@ export async function accountByCourier(
   const rows = await tx.execute<CourierAccountRow>(sql`
     select ${ACCOUNT_COLUMNS}
     from courier.courier_accounts a
-    join sales.couriers c on c.org_id = a.org_id and c.id = a.courier_id
     where a.org_id = ${orgId} and a.courier_id = ${courierId}
   `);
   return rows[0];
@@ -86,7 +89,6 @@ export async function listAccounts(
   const rows = await tx.execute<CourierAccountRow>(sql`
     select ${ACCOUNT_COLUMNS}
     from courier.courier_accounts a
-    join sales.couriers c on c.org_id = a.org_id and c.id = a.courier_id
     where a.org_id = ${orgId}
       and (${options.includeInactive} or a.is_active)
     order by a.label
@@ -1282,14 +1284,14 @@ export async function activeAccountProviders(
  * - **booking failed**: every retry spent. The parcel never reached the courier, and the
  *   order will not move until somebody rebooks it.
  *
- * `sales.couriers` is joined for the courier's name, as `ACCOUNT_COLUMNS` already does.
+ * The courier's name is not selected here: `sales.couriers` is M10's table, so the
+ * service names the rows through `OrdersPort.courierParties` (invariant 12).
  */
 export interface StuckRow extends Record<string, unknown> {
   readonly id: string;
   readonly order_id: string;
   readonly order_no: string;
   readonly courier_id: string;
-  readonly courier_name: string;
   readonly provider_code: string;
   readonly branch_id: string | null;
   readonly consignment_no: string | null;
@@ -1329,7 +1331,7 @@ export async function stuckCandidates(
   },
 ): Promise<StuckRow[]> {
   const rows = await tx.execute<StuckRow>(sql`
-    select c.id, c.order_id, c.reference as order_no, c.courier_id, co.name as courier_name,
+    select c.id, c.order_id, c.reference as order_no, c.courier_id,
            a.provider_code, c.branch_id, c.consignment_no, c.tracking_code,
            c.booking_state::text as booking_state, c.booking_failure_code,
            c.status::text as status, c.raw_status, c.cod_amount_poisha::text,
@@ -1348,7 +1350,6 @@ export async function stuckCandidates(
            esc.last_note as last_escalation_note, esc.last_at as last_escalation_at
     from courier.consignments c
     join courier.courier_accounts a on a.org_id = c.org_id and a.id = c.courier_account_id
-    join sales.couriers co on co.org_id = c.org_id and co.id = c.courier_id
     left join lateral (
       select ev.status, ev.raw_status, ev.occurred_at
       from courier.consignment_events ev
@@ -1457,7 +1458,6 @@ export async function escalationsFor(
  */
 export interface PerformanceSourceRow extends Record<string, unknown> {
   readonly courier_id: string;
-  readonly courier_name: string;
   readonly delivery_zone_id: string | null;
   readonly status: string;
   readonly booked_on: string;
@@ -1470,12 +1470,11 @@ export async function performanceSource(
   options: { from: string; to: string; courierId?: string | undefined; branchWhere: SQL },
 ): Promise<PerformanceSourceRow[]> {
   const rows = await tx.execute<PerformanceSourceRow>(sql`
-    select c.courier_id, co.name as courier_name, c.delivery_zone_id,
+    select c.courier_id, c.delivery_zone_id,
            c.status::text as status,
            (c.booked_at at time zone 'Asia/Dhaka')::date::text as booked_on,
            (c.delivered_at at time zone 'Asia/Dhaka')::date::text as delivered_on
     from courier.consignments c
-    join sales.couriers co on co.org_id = c.org_id and co.id = c.courier_id
     where c.org_id = ${orgId}
       and c.booking_state in ('booked', 'cancelled')
       and c.booked_at >= (${options.from}::date)::timestamp at time zone 'Asia/Dhaka'
@@ -1493,7 +1492,6 @@ export interface ParcelListRow extends Record<string, unknown> {
   readonly order_id: string;
   readonly order_no: string;
   readonly courier_id: string;
-  readonly courier_name: string;
   readonly branch_id: string | null;
   readonly consignment_no: string | null;
   readonly tracking_code: string | null;
@@ -1532,7 +1530,7 @@ export async function listParcels(
           sql`, `,
         )})`;
   const rows = await tx.execute<ParcelListRow>(sql`
-    select c.id, c.order_id, c.reference as order_no, c.courier_id, co.name as courier_name,
+    select c.id, c.order_id, c.reference as order_no, c.courier_id,
            c.branch_id, c.consignment_no, c.tracking_code,
            c.booking_state::text as booking_state, c.status::text as status, c.raw_status,
            c.cod_amount_poisha::text, c.collected_poisha::text, c.booked_at,
@@ -1542,7 +1540,6 @@ export async function listParcels(
              where r.org_id = c.org_id and r.consignment_id = c.id
            ) as has_return_receipt
     from courier.consignments c
-    join sales.couriers co on co.org_id = c.org_id and co.id = c.courier_id
     where c.org_id = ${orgId}
       and (${pattern}::text is null
            or c.reference ilike ${pattern} or c.consignment_no ilike ${pattern}
@@ -1568,11 +1565,11 @@ export interface LabelRow extends Record<string, unknown> {
   readonly id: string;
   readonly order_id: string;
   readonly order_no: string;
+  readonly courier_id: string;
   readonly branch_id: string | null;
   readonly consignment_no: string | null;
   readonly tracking_code: string | null;
   readonly booking_state: string;
-  readonly courier_name: string;
   readonly cod_amount_poisha: string;
 }
 
@@ -1584,12 +1581,12 @@ export async function labelRows(
   const found: LabelRow[] = [];
   for (const id of ids) {
     const rows = await tx.execute<LabelRow>(sql`
-      select c.id, c.order_id, c.reference as order_no, c.branch_id, c.consignment_no,
-             c.tracking_code, c.booking_state::text as booking_state, co.name as courier_name,
+      select c.id, c.order_id, c.reference as order_no, c.courier_id, c.branch_id,
+             c.consignment_no,
+             c.tracking_code, c.booking_state::text as booking_state,
              c.cod_amount_poisha::text
       from courier.consignments c
-      join sales.couriers co on co.org_id = c.org_id and co.id = c.courier_id
-      where c.org_id = ${orgId} and c.id = ${id}
+        where c.org_id = ${orgId} and c.id = ${id}
     `);
     if (rows[0] !== undefined) found.push(rows[0]);
   }
@@ -1615,9 +1612,9 @@ export async function orgDisplayName(tx: Tx, orgId: string): Promise<string> {
  */
 export interface TrackingRow extends Record<string, unknown> {
   readonly order_id: string;
+  readonly courier_id: string;
   readonly status: string;
   readonly tracking_code: string | null;
-  readonly courier_name: string;
   readonly last_status_at: string | null;
 }
 
@@ -1627,10 +1624,9 @@ export async function trackingByReference(
   orderNo: string,
 ): Promise<TrackingRow | undefined> {
   const rows = await tx.execute<TrackingRow>(sql`
-    select c.order_id, c.status::text as status, c.tracking_code, co.name as courier_name,
+    select c.order_id, c.courier_id, c.status::text as status, c.tracking_code,
            c.last_status_at
     from courier.consignments c
-    join sales.couriers co on co.org_id = c.org_id and co.id = c.courier_id
     where c.org_id = ${orgId} and c.reference = ${orderNo}
     order by c.created_at desc
     limit 1

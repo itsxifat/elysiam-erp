@@ -26,6 +26,7 @@ import type { LedgerReadPort } from './ports/ledger-read.port.js';
 import type {
   AppliedTrigger,
   CourierTriggerInput,
+  CourierParty,
   OrderBookingSnapshot,
   OrderFacts,
   OrdersPort,
@@ -497,6 +498,20 @@ export class TestOrdersPort implements OrdersPort {
     private readonly ledger: LedgerApi,
     private readonly accounts: TestLedgerReadPort,
   ) {}
+
+  /** What the real port does: M10's table read by M10's side of the boundary. */
+  async courierParties(
+    tx: Tx,
+    orgId: string,
+    ids: readonly string[],
+  ): Promise<readonly CourierParty[]> {
+    if (ids.length === 0) return [];
+    const rows = await tx.execute<{ id: string; code: string; name: string }>(sql`
+      select id, code, name from sales.couriers
+      where org_id = ${orgId} and id = any (${sql.param([...new Set(ids)])}::uuid[])
+    `);
+    return [...rows];
+  }
 
   async bookingSnapshot(
     tx: Tx,

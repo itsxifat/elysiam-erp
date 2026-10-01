@@ -783,6 +783,21 @@ describe('the stuck-parcel queue (check 5)', () => {
     return { order, id: await book(order) };
   }
 
+  it('names the courier on a parcel list, through the port rather than a join', async () => {
+    // `sync.listParcels` is the parcels screen's query. Its courier name used to be
+    // `join sales.couriers`; it is now `OrdersPort.courierParties` (invariant 12), and
+    // the name is asserted on its value because a stitch that matched nothing would
+    // leave an empty column rather than fail.
+    const listed = await parcel();
+
+    const page = await sync.listParcels(context(), request(), { page: 1, pageSize: 50 });
+    const row = page.items.find((item) => item.id === listed.id);
+
+    expect(row).toBeDefined();
+    expect(row?.courierId).toBe(courierA);
+    expect(row?.courierName).toBe('Fake Courier');
+  });
+
   it('lists parcels past the threshold and not fresh ones, with the reason', async () => {
     const stale = await parcel();
     await webhook(stale.id, 'moving');

@@ -15,6 +15,7 @@ import { scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CourierError } from './courier.errors.js';
 import * as repo from './courier.repository.js';
+import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
 import { LEDGER_READ_PORT, type LedgerReadPort } from './ports/ledger-read.port.js';
 
 /**
@@ -47,7 +48,10 @@ import { LEDGER_READ_PORT, type LedgerReadPort } from './ports/ledger-read.port.
  */
 @Injectable()
 export class CourierReportsService {
-  constructor(@Inject(LEDGER_READ_PORT) private readonly ledger: LedgerReadPort) {}
+  constructor(
+    @Inject(LEDGER_READ_PORT) private readonly ledger: LedgerReadPort,
+    @Inject(ORDERS_PORT) private readonly orders: OrdersPort,
+  ) {}
 
   /**
    * COD reconciliation: delivered, settled, outstanding, by courier (§7).
@@ -238,10 +242,18 @@ export class CourierReportsService {
         branchWhere,
       });
 
-      const names = new Map<string, string>();
+      // The couriers' names from M10, which owns the row (invariant 12).
+      const names = new Map(
+        (
+          await this.orders.courierParties(
+            tx,
+            context.orgId,
+            rows.map((row) => row.courier_id),
+          )
+        ).map((party) => [party.id, party.name]),
+      );
       const parcels: PerformanceParcel[] = [];
       for (const row of rows) {
-        names.set(row.courier_id, row.courier_name);
         if (!isParcelStatus(row.status)) continue;
         parcels.push({
           courierId: row.courier_id,

@@ -157,7 +157,14 @@ export class TrackingService {
         const scopeOrg = orgId ?? NO_SUCH_ID;
         const facts = await this.orders.summary(tx, scopeOrg, orderId);
         const snapshot = await this.orders.bookingSnapshot(tx, scopeOrg, orderId);
-        return { parcel, facts, snapshot };
+        // The courier's name from M10, which owns the row (invariant 12). Always one
+        // lookup, with a known-absent id when there is no parcel: every other read on
+        // this path is shaped to do the same work whether or not the order exists, and
+        // a lookup that were skipped would time the difference out loud.
+        const [party] = await this.orders.courierParties(tx, scopeOrg, [
+          parcel?.courier_id ?? NO_SUCH_ID,
+        ]);
+        return { parcel, facts, snapshot, courierName: party?.name ?? '' };
       },
     );
 
@@ -189,7 +196,7 @@ export class TrackingService {
         stage,
         steps: trackingLadder(stage),
         courier: shipped
-          ? { name: outcome.parcel.courier_name, trackingCode: outcome.parcel.tracking_code }
+          ? { name: outcome.courierName, trackingCode: outcome.parcel.tracking_code }
           : null,
         lastUpdateOn:
           outcome.parcel.last_status_at === null

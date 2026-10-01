@@ -21,6 +21,7 @@ import { BookingService } from './booking.service.js';
 import { resetCourierEnv } from './courier.config.js';
 import { COURIER_QUEUE_DEFINITIONS } from './courier.queues.js';
 import * as repo from './courier.repository.js';
+import { ORDERS_PORT } from './ports/orders.port.js';
 import {
   applyCourierMigrations,
   closeMonth,
@@ -622,6 +623,12 @@ describe('courier accounts', () => {
     expect(JSON.stringify(account)).not.toContain(WEBHOOK_SECRET);
     expect(account?.hasWebhookSecret).toBe(true);
     expect(account?.verified).toBe(true);
+    // The courier's own code, which M10 owns and this module asks for over
+    // `OrdersPort.courierParties` rather than joining (invariant 12). Asserted on the
+    // value, because a stitch that silently matched nothing would read as null here and
+    // as an empty column on the screen.
+    expect(account?.courierCode).toBe('fake');
+    expect(account?.courierId).toBe(courierId);
   });
 
   it('stores the webhook secret as ciphertext, not text', async () => {
@@ -650,6 +657,7 @@ describe('courier accounts', () => {
     }) as FakeCourierAdapter;
     const service = new CourierAccountsService(
       new CourierAdapterRegistry([unverified]),
+      harness.app.get(ORDERS_PORT),
       harness.app.get(AuditService),
     );
     const another = await makeCourier(ORG_A, 'unverified_courier', 'Unverified');

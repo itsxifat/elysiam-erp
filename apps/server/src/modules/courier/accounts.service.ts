@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { withOrg } from '@elysium/db';
+import { withOrg, type Tx } from '@elysium/db';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
@@ -9,6 +9,7 @@ import { adapterEnabled } from './courier.config.js';
 import { CourierError } from './courier.errors.js';
 import * as repo from './courier.repository.js';
 import { sealCredentials } from './credentials.js';
+import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
 import type { UpsertCourierAccountInput } from './courier.schemas.js';
 
 /**
@@ -34,8 +35,28 @@ import type { UpsertCourierAccountInput } from './courier.schemas.js';
 export class CourierAccountsService {
   constructor(
     @Inject(COURIER_ADAPTERS) private readonly adapters: CourierAdapterRegistry,
+    @Inject(ORDERS_PORT) private readonly orders: OrdersPort,
     private readonly audit: AuditService,
   ) {}
+
+  /**
+   * The courier code for each of these accounts, from the module that owns the row.
+   *
+   * One call for the whole page rather than one per account: a list of ten accounts
+   * would otherwise be ten round trips for ten short words (invariant 12).
+   */
+  private async courierCodes(
+    tx: Tx,
+    orgId: string,
+    rows: readonly repo.CourierAccountRow[],
+  ): Promise<Map<string, string>> {
+    const parties = await this.orders.courierParties(
+      tx,
+      orgId,
+      rows.map((row) => row.courier_id),
+    );
+    return new Map(parties.map((party) => [party.id, party.code]));
+  }
 
   /** Every account the caller may see, with no secret in it. */
   async list(context: ActiveContext, options: { includeInactive?: boolean } = {}) {
@@ -43,7 +64,10 @@ export class CourierAccountsService {
       const rows = await repo.listAccounts(tx, context.orgId, {
         includeInactive: options.includeInactive ?? false,
       });
-      return { items: rows.map((row) => this.view(row, context.orgId)) };
+      const codes = await this.courierCodes(tx, context.orgId, rows);
+      return {
+        items: rows.map((row) => this.view(row, context.orgId, codes.get(row.courier_id) ?? null)),
+      };
     });
   }
 
@@ -189,7 +213,8 @@ export class CourierAccountsService {
       if (saved === undefined) {
         throw new CourierError('COURIER_ACCOUNT_NOT_FOUND', 'That courier account vanished.');
       }
-      return this.view(saved, context.orgId);
+      const codes = await this.courierCodes(tx, context.orgId, [saved]);
+      return this.view(saved, context.orgId, codes.get(saved.courier_id) ?? null);
     });
   }
 
@@ -202,11 +227,12 @@ export class CourierAccountsService {
    * returned instead answers the only question anybody asks — "is a key configured, and is
    * it the one I put in the vault".
    */
-  private view(row: repo.CourierAccountRow, orgId: string) {
+  private view(row: repo.CourierAccountRow, orgId: string, courierCode: string | null) {
     return {
       id: row.id,
       courierId: row.courier_id,
-      courierCode: row.courier_code,
+      /** Null when the party row has gone: the account outlives it (invariant 12). */
+      courierCode,
       providerCode: row.provider_code,
       label: row.label,
       mode: row.mode,

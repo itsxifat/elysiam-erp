@@ -164,6 +164,14 @@ export interface AppliedTrigger {
   readonly journalId: string | null;
 }
 
+/** A courier party: who delivers, named. Reference data, never order state. */
+export interface CourierParty {
+  readonly id: string;
+  /** `steadfast`, `pathao`, `redx`, `own_rider`. */
+  readonly code: string;
+  readonly name: string;
+}
+
 export interface OrdersApi {
   /**
    * Take an order inside the caller's transaction.
@@ -213,6 +221,19 @@ export interface OrdersApi {
     orderId: string,
     input: { trustScore: number | null; decision: string | null },
   ): Promise<void>;
+
+  /**
+   * The courier parties these ids name (M10 owns `sales.couriers`).
+   *
+   * Here because every other module stores a `courier_id` and needs the word beside
+   * it — a consignment list, a label, a settlement screen, a tracking page. Reading
+   * the table across the module boundary is what invariant 12 forbids, and a join
+   * is a read: the courier module used to carry eight of them.
+   *
+   * Ids that name no courier of this org are absent from the result rather than an
+   * error, so one unknown id in a page of consignments does not blank the page.
+   */
+  courierParties(tx: Tx, orgId: string, ids: readonly string[]): Promise<readonly CourierParty[]>;
 
   /** Available units per SKU at one location, for a caller pricing a basket. */
   availability(
@@ -350,6 +371,15 @@ export class OrdersApiService implements OrdersApi {
       trustScore: row.trust_score,
       fraudDecision: row.fraud_decision,
     };
+  }
+
+  async courierParties(
+    tx: Tx,
+    orgId: string,
+    ids: readonly string[],
+  ): Promise<readonly CourierParty[]> {
+    const rows = await repo.couriersByIds(tx, orgId, [...new Set(ids)]);
+    return rows.map((row) => ({ id: row.id, code: row.code, name: row.name }));
   }
 
   async recordFraudAssessment(

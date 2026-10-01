@@ -372,6 +372,25 @@ export async function listCouriers(tx: Tx, orgId: string): Promise<CourierRow[]>
   return [...rows];
 }
 
+/**
+ * The couriers these ids name, for `OrdersApi.courierParties`.
+ *
+ * Unknown ids are simply absent: the caller is naming rows it already holds a
+ * foreign key to, and one id that has since been removed must not blank a page.
+ */
+export async function couriersByIds(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+): Promise<CourierRow[]> {
+  if (ids.length === 0) return [];
+  const rows = await tx.execute<CourierRow>(sql`
+    select id, code, name, is_active from sales.couriers
+    where org_id = ${orgId} and id = any (${sql.param([...ids])}::uuid[])
+  `);
+  return [...rows];
+}
+
 export async function defaultCourier(tx: Tx, orgId: string): Promise<CourierRow | undefined> {
   const rows = await tx.execute<CourierRow>(sql`
     select id, code, name, is_active from sales.couriers

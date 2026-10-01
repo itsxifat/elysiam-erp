@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { withOrg } from '@elysium/db';
 import { maskPhonesInText } from '@elysium/domain';
 import {
@@ -19,6 +19,7 @@ import { enqueue } from '../../platform/jobs/enqueue.js';
 import { CourierError } from './courier.errors.js';
 import { COURIER_QUEUES, type RepollPayload } from './courier.queues.js';
 import * as repo from './courier.repository.js';
+import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
 
 /**
  * The stuck-parcel queue (M15: "active consignments with no status change in N days, with
@@ -96,7 +97,10 @@ function consignmentScope(request: object) {
 
 @Injectable()
 export class StuckParcelsService {
-  constructor(private readonly audit: AuditService) {}
+  constructor(
+    @Inject(ORDERS_PORT) private readonly orders: OrdersPort,
+    private readonly audit: AuditService,
+  ) {}
 
   async list(
     context: ActiveContext,
@@ -116,13 +120,27 @@ export class StuckParcelsService {
     const cutoffDate = stuckCutoffDate(now, thresholdDays);
     const branchWhere = consignmentScope(request);
 
-    const rows = await withOrg({ orgId: context.orgId, userId: context.userId }, (tx) =>
-      repo.stuckCandidates(tx, context.orgId, {
-        cutoffDate,
-        courierId: options.courierId,
-        branchWhere,
-        limit: 500,
-      }),
+    // The rows and their couriers' names in one transaction: the names belong to M10,
+    // which owns `sales.couriers`, so they are asked for rather than joined (invariant 12).
+    const { rows, courierNames } = await withOrg(
+      { orgId: context.orgId, userId: context.userId },
+      async (tx) => {
+        const found = await repo.stuckCandidates(tx, context.orgId, {
+          cutoffDate,
+          courierId: options.courierId,
+          branchWhere,
+          limit: 500,
+        });
+        const parties = await this.orders.courierParties(
+          tx,
+          context.orgId,
+          found.map((row) => row.courier_id),
+        );
+        return {
+          rows: found,
+          courierNames: new Map(parties.map((party) => [party.id, party.name])),
+        };
+      },
     );
 
     const items: StuckParcel[] = [];
@@ -135,7 +153,7 @@ export class StuckParcelsService {
         orderId: row.order_id,
         orderNo: row.order_no,
         courierId: row.courier_id,
-        courierName: row.courier_name,
+        courierName: courierNames.get(row.courier_id) ?? '',
         branchId: row.branch_id,
         consignmentNo: row.consignment_no,
         trackingCode: row.tracking_code,
