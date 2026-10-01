@@ -10,8 +10,9 @@ import { sql, type SQL } from 'drizzle-orm';
  * relying on a policy for correctness rather than for defence — and the day somebody runs
  * one of these as `erp_owner` in a script, the policy is what is missing.
  *
- * Nothing here reads another module's tables, and `courier.repository.boundary.test.ts`
- * is what keeps that true rather than remembered. The three reads a reader will look for
+ * Nothing here reads another module's tables, and `../module-boundaries.test.ts` is what
+ * keeps that true rather than remembered — this module is the one it holds to no debt at
+ * all. The three reads a reader will look for
  * — `ledger.accounts` for a posting account, `sales.orders` for an address to send the
  * courier, and `sales.couriers` for the courier's own name — are on ports
  * (`ledger-read.port.ts`, `orders.port.ts`) precisely so they are not here. The last of
