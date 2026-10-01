@@ -107,7 +107,9 @@ export class CatalogApiService implements CatalogApi {
   }
 }
 
-function toSku(row: repo.SkuRow & { product_name: string; category_id: string | null }): CatalogSku {
+function toSku(
+  row: repo.SkuRow & { product_name: string; category_id: string | null },
+): CatalogSku {
   return {
     id: row.id,
     productId: row.product_id,
