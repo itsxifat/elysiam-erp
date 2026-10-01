@@ -373,6 +373,22 @@ export const PROVIDER_VOCABULARIES: Readonly<Record<string, readonly string[]>> 
   redx: REDX_STATUS_VOCABULARY,
 };
 
+/**
+ * Where each provider's vocabulary came from (M15 check 1, D-200).
+ *
+ * `document` means the words were transcribed from a cited source the provider (or,
+ * for the fake, this codebase) publishes. `recalled` means they were not: no source
+ * could be read, so the list is a best effort, and the completeness tests prove only
+ * that the map and the list agree with each other. A provider moves to `document` when
+ * somebody transcribes its words from a source, and the decision row closes with it.
+ */
+export const VOCABULARY_PROVENANCE: Readonly<Record<string, 'document' | 'recalled'>> = {
+  steadfast: 'document',
+  fake: 'document',
+  pathao: 'document',
+  redx: 'recalled',
+};
+
 const BUILT_IN_MAPS: readonly ProviderStatusMap[] = [
   STEADFAST_STATUS_MAP,
   FAKE_STATUS_MAP,
