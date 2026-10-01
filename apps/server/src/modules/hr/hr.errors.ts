@@ -83,6 +83,13 @@ export type HrErrorCode = (typeof HR_ERROR_CODES)[number];
 export type PayrollApiCode = HrErrorCode | ErrorCode;
 
 const STATUS: Readonly<Partial<Record<PayrollApiCode, number>>> = {
+  // The ledger's codes keep the ledger's statuses. Without these they fell through to
+  // 400, which tells a caller to fix their input: choosing a wallet that `GET
+  // /v1/ledger/wallets` deliberately still lists when it is closed is not a malformed
+  // request, it is a state conflict, and a brand with no salary account is not the
+  // caller's fault either.
+  WALLET_INACTIVE: 409,
+  LEDGER_ACCOUNT_NOT_FOUND: 404,
   HR_NOT_FOUND: 404,
   PAYROLL_NOT_FOUND: 404,
   // 409, not 400: the request was well-formed and the state of the world disagreed.
