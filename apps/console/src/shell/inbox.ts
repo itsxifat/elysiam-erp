@@ -1,5 +1,3 @@
-import type { ApprovalType } from '@elysium/contracts';
-
 /**
  * The notifications inbox's state (M05 shell; §10 Notifications, §19 events).
  *
@@ -19,7 +17,7 @@ export type InboxItem =
   | {
       readonly kind: 'approval_requested';
       readonly id: string;
-      readonly type: ApprovalType | string;
+      readonly type: string;
       readonly at: number;
       readonly read: boolean;
     }
