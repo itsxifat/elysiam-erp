@@ -267,14 +267,14 @@ export function DataTable<TData extends RowData>({
                       )}
                     >
                       {header.isPlaceholder ? null : sortable ? (
+                        // Named by the column it sorts, then the action: an
+                        // `aria-label` of the action alone replaced the visible
+                        // header, so a screen reader announced "Sort ascending"
+                        // for every column alike (WCAG 2.5.3, label in name).
+                        // The current direction is the header's `aria-sort`.
                         <button
                           type="button"
                           onClick={() => cycleSort(header.column.id)}
-                          aria-label={
-                            active?.direction === 'asc'
-                              ? labels.sortDescending
-                              : labels.sortAscending
-                          }
                           className={cn(
                             'inline-flex items-center gap-1.5 rounded-sm text-xs font-medium text-muted-foreground',
                             'motion-safe:duration-fast hover:text-foreground motion-safe:transition-colors',
@@ -282,6 +282,13 @@ export function DataTable<TData extends RowData>({
                           )}
                         >
                           <table.FlexRender header={header} />
+                          <span className="sr-only">
+                            {`(${
+                              active?.direction === 'asc'
+                                ? labels.sortDescending
+                                : labels.sortAscending
+                            })`}
+                          </span>
                           {active === null ? (
                             <ArrowUpDown aria-hidden="true" className="size-3 opacity-50" />
                           ) : active.direction === 'asc' ? (

@@ -104,14 +104,14 @@ describe('the table renders the page it was given, in the order it was given', (
 describe('sorting is reported upward, never applied locally', () => {
   it('asks for ascending on the first click of an unsorted column', () => {
     const { onSortChange } = renderTable();
-    screen.getAllByRole('button', { name: 'Sort ascending' })[0]?.click();
+    screen.getByRole('button', { name: 'Reference (Sort ascending)' }).click();
     expect(onSortChange).toHaveBeenCalledWith({ columnId: 'reference', direction: 'asc' });
   });
 
   it('asks for descending on the second', () => {
     const sort: TableSort = { columnId: 'reference', direction: 'asc' };
     const { onSortChange } = renderTable({ sort });
-    screen.getByRole('button', { name: 'Sort descending' }).click();
+    screen.getByRole('button', { name: 'Reference (Sort descending)' }).click();
     expect(onSortChange).toHaveBeenCalledWith({ columnId: 'reference', direction: 'desc' });
   });
 
@@ -120,10 +120,16 @@ describe('sorting is reported upward, never applied locally', () => {
     // stable in, and on a keyset-paginated list that matters for correctness.
     const sort: TableSort = { columnId: 'reference', direction: 'desc' };
     const { onSortChange } = renderTable({ sort });
-    // The first sortable header: the second column is unsorted, so it carries the
-    // same "Sort ascending" name.
-    screen.getAllByRole('button', { name: 'Sort ascending' })[0]?.click();
+    // A descending column offers ascending next, and ascending from descending
+    // is the cycle's way back to the server order.
+    screen.getByRole('button', { name: 'Reference (Sort ascending)' }).click();
     expect(onSortChange).toHaveBeenCalledWith(null);
+  });
+
+  it('names each sort button by its column, so they are not all "Sort ascending" (WCAG 2.5.3)', () => {
+    renderTable();
+    expect(screen.getByRole('button', { name: 'Reference (Sort ascending)' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Amount (Sort ascending)' })).toBeDefined();
   });
 
   it('announces the sorted column through aria-sort', () => {
