@@ -27,6 +27,18 @@ export interface PostResult {
   readonly businessDate: string;
 }
 
+/**
+ * A wallet account, with whether it is still in use.
+ *
+ * `isActive` is carried rather than filtered out in the query, because the caller owes
+ * two different answers: "no such wallet in this brand" is a wrong request, and "that
+ * wallet is deactivated" is a right request about a closed account. A lookup that
+ * filtered would collapse them into the first.
+ */
+export interface WalletAccount extends PostingAccount {
+  readonly isActive: boolean;
+}
+
 export interface LedgerApi {
   /**
    * Post a journal built by a posting rule in `packages/domain/src/posting`.
@@ -63,6 +75,17 @@ export interface LedgerApi {
    * than posting the value somewhere else.
    */
   accountBySubtype(tx: Tx, orgId: string, subtype: AccountSubtype): Promise<PostingAccount | null>;
+
+  /**
+   * A wallet account by id, for a module paying money out of one.
+   *
+   * Restricted to the `wallet_*` subtypes here rather than checked by the caller: the id
+   * arrives in a request body, and an unrestricted lookup would let somebody name
+   * `sales_revenue` and have it credited. Null means "no such wallet", which is a
+   * different answer from the posting rule's refusal — that one means the code chose
+   * wrong, this one means the request did.
+   */
+  walletAccountById(tx: Tx, orgId: string, id: string): Promise<WalletAccount | null>;
 
   /**
    * Σ debit − Σ credit on `courier_receivable`, per courier party, as of a business date.

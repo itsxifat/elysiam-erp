@@ -18,10 +18,10 @@ import { sql, type SQL } from 'drizzle-orm';
  * into every response object and rely on the serializer to drop them, and invariant 10
  * is not a thing to delegate to a field-name allow-list.
  *
- * **Nothing here writes `ledger.journals` or `ledger.journal_lines`** (invariant 2).
- * `accountBySubtype` and `walletAccountById` read `ledger.accounts` to resolve the
- * accounts a posting rule needs — the same read M07's inventory repository does — and
- * the posting itself goes through `LEDGER_API`.
+ * **Nothing here touches `ledger.*` at all.** Resolving which account a posting rule
+ * names is a read of the ledger module's table, so it goes through `LedgerApi`
+ * (`accountBySubtype`, `walletAccountById`) like the posting itself — invariant 12, and
+ * `../module-boundaries.test.ts` fails the build if a read creeps back in.
  */
 
 // --- employees ----------------------------------------------------------------
@@ -1260,62 +1260,6 @@ export async function insertLoanDeduction(
     values (${input.orgId}, ${input.lineId}, ${input.instalmentId},
             ${input.amountPoisha.toString()})
   `);
-}
-
-// --- ledger accounts (read-only) ----------------------------------------------
-
-export interface AccountRow extends Record<string, unknown> {
-  readonly id: string;
-  readonly code: string;
-  readonly subtype: string;
-  readonly branch_id: string | null;
-  readonly is_active: boolean;
-}
-
-/**
- * The account of a subtype this org posts to.
- *
- * A read of `ledger.accounts`, the same one M07's inventory repository does: resolving
- * which account a posting rule names is a read, and the write goes through
- * `LEDGER_API` (invariant 12). Nothing here selects a balance, so no cost figure
- * crosses into this module (invariant 5).
- */
-export async function accountBySubtype(
-  tx: Tx,
-  orgId: string,
-  subtype: string,
-): Promise<AccountRow | undefined> {
-  const rows = await tx.execute<AccountRow>(sql`
-    select id, code, subtype::text as subtype, branch_id, is_active
-    from ledger.accounts
-    where org_id = ${orgId} and subtype = ${subtype}::ledger.account_subtype and is_active
-    order by code
-    limit 1
-  `);
-  return rows[0];
-}
-
-/**
- * A wallet account by id, for paying salary or disbursing a loan.
- *
- * Restricted to the `wallet_*` subtypes in SQL rather than checked afterwards: the id
- * comes from a request body, and an unrestricted lookup would let a caller name
- * `sales_revenue` and credit it. The posting rule refuses a non-wallet too, and both
- * exist because the message differs — here it is "no such wallet", there it is a
- * posting-input error that means the code chose wrong.
- */
-export async function walletAccountById(
-  tx: Tx,
-  orgId: string,
-  id: string,
-): Promise<AccountRow | undefined> {
-  const rows = await tx.execute<AccountRow>(sql`
-    select id, code, subtype::text as subtype, branch_id, is_active
-    from ledger.accounts
-    where org_id = ${orgId} and id = ${id}
-      and subtype in ('wallet_cash', 'wallet_bank', 'wallet_bkash', 'wallet_mfs_other')
-  `);
-  return rows[0];
 }
 
 /** The brand's own details, for the payslip's header (§22, D-034). */

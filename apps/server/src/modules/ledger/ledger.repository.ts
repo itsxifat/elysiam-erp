@@ -70,6 +70,27 @@ export async function accountBySubtype(
   return rows[0];
 }
 
+/**
+ * A wallet account by id, for a module paying money out of one.
+ *
+ * The subtype filter is in the SQL rather than checked after the read: the id comes from
+ * a request body, and an unrestricted lookup would let a caller name `sales_revenue` and
+ * have the payment credit it.
+ */
+export async function walletAccountById(
+  tx: Tx,
+  orgId: string,
+  id: string,
+): Promise<AccountRow | undefined> {
+  const rows = await tx.execute<AccountRow>(sql`
+    select ${ACCOUNT_COLUMNS}
+    from ledger.accounts a
+    where a.org_id = ${orgId} and a.id = ${id}
+      and a.subtype in ('wallet_cash', 'wallet_bank', 'wallet_bkash', 'wallet_mfs_other')
+  `);
+  return rows[0];
+}
+
 export async function listAccounts(
   tx: Tx,
   orgId: string,

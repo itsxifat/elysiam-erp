@@ -217,11 +217,15 @@ export class LoansService {
           );
         }
 
-        const wallet = await repo.walletAccountById(tx, context.orgId, input.walletAccountId);
-        if (wallet === undefined) {
+        const wallet = await this.ledger.walletAccountById(
+          tx,
+          context.orgId,
+          input.walletAccountId,
+        );
+        if (wallet === null) {
           throw new HrError('HR_NOT_FOUND', 'No such wallet in this brand.');
         }
-        if (!wallet.is_active) {
+        if (!wallet.isActive) {
           throw new HrError('WALLET_INACTIVE', 'That wallet is deactivated.');
         }
         const receivable = await this.account(tx, context.orgId, 'employee_loan_receivable');
@@ -237,9 +241,9 @@ export class LoansService {
             occurredAt,
             loanReceivable: receivable,
             wallet: {
-              accountId: wallet.id,
+              accountId: wallet.accountId,
               subtype: wallet.subtype as AccountSubtype,
-              branchId: wallet.branch_id,
+              branchId: wallet.branchId,
             },
             amountPoisha: poisha(BigInt(loan.principal_poisha)),
             memo: input.memo ?? 'Staff loan disbursed',
@@ -248,7 +252,7 @@ export class LoansService {
 
         await repo.markLoanDisbursed(tx, context.orgId, loan.id, {
           journalId: posted.journalId,
-          walletAccountId: wallet.id,
+          walletAccountId: wallet.accountId,
           disbursedOn: posted.businessDate,
         });
 
@@ -264,7 +268,7 @@ export class LoansService {
             status: 'active',
             employeeId: loan.employee_id,
             principalPoisha: loan.principal_poisha,
-            walletAccountId: wallet.id,
+            walletAccountId: wallet.accountId,
             journalId: posted.journalId,
             disbursedOn: posted.businessDate,
           },
@@ -297,11 +301,13 @@ export class LoansService {
   }
 
   private async account(tx: Tx, orgId: string, subtype: AccountSubtype): Promise<PayrollAccount> {
-    const row = await repo.accountBySubtype(tx, orgId, subtype);
-    if (row === undefined) {
+    // Through the ledger's own API: resolving which account a posting rule names is a
+    // read of `ledger.accounts`, and that table is the ledger module's (invariant 12).
+    const account = await this.ledger.accountBySubtype(tx, orgId, subtype);
+    if (account === null) {
       throw new HrError('LEDGER_ACCOUNT_NOT_FOUND', `This organization has no ${subtype} account.`);
     }
-    return { accountId: row.id, subtype, branchId: row.branch_id };
+    return { accountId: account.accountId, subtype, branchId: account.branchId };
   }
 }
 

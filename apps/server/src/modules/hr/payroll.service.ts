@@ -678,11 +678,15 @@ export class PayrollService implements OnModuleInit {
           );
         }
 
-        const wallet = await repo.walletAccountById(tx, context.orgId, input.walletAccountId);
-        if (wallet === undefined) {
+        const wallet = await this.ledger.walletAccountById(
+          tx,
+          context.orgId,
+          input.walletAccountId,
+        );
+        if (wallet === null) {
           throw new HrError('HR_NOT_FOUND', 'No such wallet in this brand.');
         }
-        if (!wallet.is_active) {
+        if (!wallet.isActive) {
           throw new HrError('WALLET_INACTIVE', 'That wallet is deactivated.');
         }
         const payable = await this.account(tx, context.orgId, 'salary_payable');
@@ -696,9 +700,9 @@ export class PayrollService implements OnModuleInit {
             occurredAt,
             salaryPayable: payable,
             wallet: {
-              accountId: wallet.id,
+              accountId: wallet.accountId,
               subtype: wallet.subtype as AccountSubtype,
-              branchId: wallet.branch_id,
+              branchId: wallet.branchId,
             },
             amountPoisha: poisha(BigInt(run.net_poisha)),
             memo: input.memo ?? `${run.month} salary paid`,
@@ -707,7 +711,7 @@ export class PayrollService implements OnModuleInit {
 
         await repo.markRunPaid(tx, context.orgId, run.id, {
           paymentJournalId: posted.journalId,
-          walletAccountId: wallet.id,
+          walletAccountId: wallet.accountId,
           paidOn: posted.businessDate,
         });
 
@@ -723,7 +727,7 @@ export class PayrollService implements OnModuleInit {
             status: 'paid',
             month: run.month,
             netPoisha: run.net_poisha,
-            walletAccountId: wallet.id,
+            walletAccountId: wallet.accountId,
             paymentJournalId: posted.journalId,
             paidOn: posted.businessDate,
           },
@@ -1127,11 +1131,13 @@ export class PayrollService implements OnModuleInit {
   }
 
   private async account(tx: Tx, orgId: string, subtype: AccountSubtype): Promise<PayrollAccount> {
-    const row = await repo.accountBySubtype(tx, orgId, subtype);
-    if (row === undefined) {
+    // Through the ledger's own API: resolving which account a posting rule names is a
+    // read of `ledger.accounts`, and that table is the ledger module's (invariant 12).
+    const account = await this.ledger.accountBySubtype(tx, orgId, subtype);
+    if (account === null) {
       throw new HrError('LEDGER_ACCOUNT_NOT_FOUND', `This organization has no ${subtype} account.`);
     }
-    return { accountId: row.id, subtype, branchId: row.branch_id };
+    return { accountId: account.accountId, subtype, branchId: account.branchId };
   }
 }
 

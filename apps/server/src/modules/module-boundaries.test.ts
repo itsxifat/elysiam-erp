@@ -82,8 +82,6 @@ const ENUMS = new Set([
 const DEBT: Readonly<Record<string, readonly string[]>> = {
   // A product's images. The files module owns the object row and its visibility rules.
   catalog: ['files.objects'],
-  // Posting accounts for salary and loan journals.
-  hr: ['ledger.accounts'],
   // SKU and product names on a stock screen; posting accounts for movement journals.
   inventory: ['catalog.products', 'catalog.skus', 'ledger.accounts'],
   // KYC documents, the investor's membership, and posting accounts.

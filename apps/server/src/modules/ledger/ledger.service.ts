@@ -19,7 +19,7 @@ import {
 
 import { sql } from 'drizzle-orm';
 
-import type { LedgerActor, LedgerApi, PostResult } from './ledger.api.js';
+import type { LedgerActor, LedgerApi, PostResult, WalletAccount } from './ledger.api.js';
 import { ledgerHttpError } from './ledger.errors.js';
 import * as repo from './ledger.repository.js';
 
@@ -155,6 +155,17 @@ export class LedgerService implements LedgerApi {
     const row = await repo.accountBySubtype(tx, orgId, subtype);
     if (row === undefined || !isAccountSubtype(row.subtype)) return null;
     return { accountId: row.id, subtype: row.subtype, branchId: row.branch_id };
+  }
+
+  async walletAccountById(tx: Tx, orgId: string, id: string): Promise<WalletAccount | null> {
+    const row = await repo.walletAccountById(tx, orgId, id);
+    if (row === undefined || !isAccountSubtype(row.subtype)) return null;
+    return {
+      accountId: row.id,
+      subtype: row.subtype,
+      branchId: row.branch_id,
+      isActive: row.is_active,
+    };
   }
 
   /**
