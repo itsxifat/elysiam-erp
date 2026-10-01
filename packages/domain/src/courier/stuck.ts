@@ -1,4 +1,4 @@
-import { businessDate, type IsoDate } from '../dates/index.js';
+import { businessDate, daysBetween, type IsoDate } from '../dates/index.js';
 import { isTerminalParcelStatus, type ParcelStatus } from './status.js';
 
 /**
@@ -37,12 +37,6 @@ export function calendarDaysSince(since: Date, now: Date): number {
   const from = businessDate(since);
   const to = businessDate(now);
   return Math.max(0, daysBetween(from, to));
-}
-
-function daysBetween(from: IsoDate, to: IsoDate): number {
-  const start = Date.parse(`${from}T00:00:00Z`);
-  const end = Date.parse(`${to}T00:00:00Z`);
-  return Math.floor((end - start) / 86_400_000);
 }
 
 export interface StuckCandidate {

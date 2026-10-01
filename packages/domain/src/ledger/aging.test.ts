@@ -90,10 +90,7 @@ describe('ageOpenItems', () => {
 
   it('refuses a negative movement, which would mean the caller mixed up the sides', () => {
     expect(() =>
-      ageOpenItems(
-        [{ businessDate: AS_OF, increasePoisha: -1n as never, decreasePoisha: ZERO }],
-        AS_OF,
-      ),
+      ageOpenItems([{ businessDate: AS_OF, increasePoisha: -1n, decreasePoisha: 0n }], AS_OF),
     ).toThrow(RangeError);
   });
 });

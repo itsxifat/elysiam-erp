@@ -197,6 +197,26 @@ export class WalletsService {
       }
       assertInScope(request, { branchId: before.branch_id });
 
+      // Closing takes a wallet off the cash screens and blocks every movement out
+      // of it, so one still holding money would strand that money where nobody
+      // counts it while the balance sheet still shows it (ledger audit W3). Every
+      // posted journal counts, whatever its date.
+      if (patch.isActive === false && before.is_active) {
+        const [row] = await repo.balancesAsOf(tx, context.orgId, '9999-12-31', [
+          before.ledger_account_id,
+        ]);
+        const balance =
+          row === undefined
+            ? 0n
+            : aggregateBalanceOf('debit', BigInt(row.debit_poisha), BigInt(row.credit_poisha));
+        if (balance !== 0n) {
+          throw walletsHttpError(
+            'WALLET_NOT_EMPTY',
+            'That wallet still holds money. Move it out with a transfer, then close the wallet.',
+          );
+        }
+      }
+
       await repo.updateWallet(tx, context.orgId, walletId, patch);
 
       await this.audit.record(tx, {

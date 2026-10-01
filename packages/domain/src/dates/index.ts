@@ -53,6 +53,19 @@ export function toIsoDate(value: string): IsoDate {
   return value;
 }
 
+/**
+ * Whole calendar days from `from` to `to`, negative when `to` is earlier.
+ *
+ * Both are UTC midnights, so the difference is an exact multiple of a day and
+ * the division never rounds. One definition for every age in the domain —
+ * courier settlement aging, stuck parcels and ledger aging.
+ */
+export function daysBetween(from: IsoDate, to: IsoDate): number {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  return Math.floor((end - start) / 86_400_000);
+}
+
 /** Calendar arithmetic on a date, independent of any time zone. */
 export function addDays(date: IsoDate, days: number): IsoDate {
   const [y, m, d] = date.split('-').map(Number);

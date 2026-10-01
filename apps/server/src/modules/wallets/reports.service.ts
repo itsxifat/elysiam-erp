@@ -5,9 +5,7 @@ import {
   ageOpenItems,
   aggregateBalanceOf,
   COST_SUBTYPES,
-  poisha,
   toIsoDate,
-  ZERO,
   type PartyMovement,
 } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
@@ -220,13 +218,13 @@ export class WalletReportsService {
   /**
    * Payables or receivables by party, in §7's buckets: 0–7, 8–30, 31–60, 60+ days.
    *
-   * §7 gives the boundaries, so they are not an assumption this milestone had to
-   * make (D-120). What it did have to decide is what a bucket is measured from: the
-   * business date of each **line**, because a payable in this ledger is a running
-   * account rather than a list of invoices until M09 gives supplies their own
-   * identity. The property that matters is that the buckets sum to the balance the
-   * trial balance shows for the same party, and they do, because both are sums over
-   * the same lines.
+   * §7 gives the boundaries. What a bucket holds is decided by D-193: the amount
+   * still open, aged from the day it became owed. Each party's days are netted and
+   * a settlement clears the oldest open amount first (`ageOpenItems` in the
+   * domain); money paid ahead of anything owed is `unappliedPoisha`, never aged.
+   * So the buckets less the unapplied amount are the party's balance — the same
+   * figure the trial balance shows for that party, because both are sums over the
+   * same lines.
    *
    * Supplier balances are a protected field in §6 whatever account they sit on, so
    * a caller without `read:cost` gets no supplier rows at all.
@@ -268,8 +266,10 @@ export class WalletReportsService {
         );
         party.movements.push({
           businessDate: toIsoDate(row.business_date),
-          increasePoisha: change > 0n ? poisha(change) : ZERO,
-          decreasePoisha: change < 0n ? poisha(-change) : ZERO,
+          // Plain sums of posted lines: a report never re-checks them against the
+          // single-amount bound, which only a new journal line has to meet.
+          increasePoisha: change > 0n ? change : 0n,
+          decreasePoisha: change < 0n ? -change : 0n,
         });
         parties.set(key, party);
       }

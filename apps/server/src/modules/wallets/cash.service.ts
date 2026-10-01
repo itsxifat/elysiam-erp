@@ -445,6 +445,20 @@ export class CashService implements OnModuleInit {
     if (file.visibility !== 'private') {
       throw walletsHttpError('RECEIPT_REQUIRED', 'A receipt must be a private file (§22).');
     }
+    // One receipt, one entry, and the person recording it is the one who
+    // photographed it. Without these, one ৳250 slip could stand behind any number
+    // of petty-cash entries each under the approval threshold (ledger audit W2).
+    // A retry of the same entry finds itself and passes. The unique index on
+    // `cash_entries (org_id, receipt_file_id)` is the floor under the first check.
+    if (file.used_by_entry_id !== null && file.used_by_entry_id !== input.entryId) {
+      throw walletsHttpError(
+        'RECEIPT_ALREADY_USED',
+        'That receipt is already the evidence for another cash entry. Each entry needs its own.',
+      );
+    }
+    if (file.owner_user_id !== context.userId) {
+      throw walletsHttpError('RECEIPT_REQUIRED', 'Attach a receipt you uploaded yourself.');
+    }
   }
 
   private draftFor(

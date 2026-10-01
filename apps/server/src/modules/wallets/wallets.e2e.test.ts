@@ -1143,3 +1143,246 @@ describe('payables aging matches settlements to the oldest open amount', () => {
     });
   });
 });
+
+// --- what the M08 gap-closure ledger audit found --------------------------------
+
+/** One balanced journal with a party line, posted on a past business date. */
+async function postPartyJournal(input: {
+  readonly partyType: 'supplier' | 'courier';
+  readonly partyId: string;
+  readonly partyAccount: string;
+  readonly otherAccount: string;
+  /** Which side the party line is on. */
+  readonly partySide: 'debit' | 'credit';
+  readonly amount: bigint;
+  readonly daysAgo: number;
+  readonly branchId?: string | null;
+}): Promise<void> {
+  const ledger = harness.app.get<LedgerApi>(LEDGER_API, { strict: false });
+  const amount = poisha(input.amount);
+  const line = (accountCode: string, debit: boolean, party: boolean) => ({
+    accountId: accountId(accountCode),
+    debitPoisha: debit ? amount : ZERO,
+    creditPoisha: debit ? ZERO : amount,
+    branchId: input.branchId ?? null,
+    partyType: party ? input.partyType : null,
+    partyId: party ? input.partyId : null,
+    memo: null,
+  });
+  const sourceId = randomUUID();
+  await withOrg({ orgId: ORG_A, userId: accounts.userId }, (tx) =>
+    ledger.post(
+      tx,
+      { orgId: ORG_A, userId: accounts.userId },
+      {
+        businessDate: addDays(toIsoDate(today()), -input.daysAgo),
+        sourceType: 'aging_fixture',
+        sourceId,
+        event: 'post',
+        idempotencyKey: `aging_fixture:${sourceId}:post`,
+        memo: null,
+        reversesJournalId: null,
+        lines: [
+          line(input.partyAccount, input.partySide === 'debit', true),
+          line(input.otherAccount, input.partySide !== 'debit', false),
+        ],
+      },
+    ),
+  );
+}
+
+interface AgingItem {
+  partyType: string;
+  partyId: string;
+  bucket0to7Poisha: string;
+  bucket8to30Poisha: string;
+  bucket31to60Poisha: string;
+  bucketOver60Poisha: string;
+  unappliedPoisha: string;
+  totalPoisha: string;
+}
+
+async function agingAs(role: RoleClient, side: 'payable' | 'receivable') {
+  const response = await role.client.request(
+    'GET',
+    `/v1/accounts/reports/aging?asOf=${today()}&side=${side}`,
+  );
+  expect(response.statusCode, response.body).toBe(200);
+  return body<{ costWithheld: boolean; items: AgingItem[] }>(response);
+}
+
+describe('M08 gap-closure audit', () => {
+  it('W2: one receipt backs one entry, and only its uploader may attach it', async () => {
+    const receipt = await uploadReceipt(accounts.client);
+    const first = {
+      entryId: randomUUID(),
+      walletId: wallets.handCash,
+      kind: 'cash_out',
+      categoryAccountId: accountId('5830'),
+      amountPoisha: '2500',
+      receiptFileId: receipt,
+    };
+    const posted = await accounts.client.request('POST', '/v1/accounts/cash-entries', {
+      body: first,
+    });
+    expect(posted.statusCode, posted.body).toBe(201);
+
+    // The same slip behind a second entry is refused...
+    const reused = await accounts.client.request('POST', '/v1/accounts/cash-entries', {
+      body: { ...first, entryId: randomUUID(), amountPoisha: '4900' },
+    });
+    expect(reused.statusCode, reused.body).toBe(409);
+    expect(body<{ code: string }>(reused).code).toBe('RECEIPT_ALREADY_USED');
+
+    // ...while a retry of the first entry finds itself and answers as before.
+    const retried = await accounts.client.request('POST', '/v1/accounts/cash-entries', {
+      body: first,
+    });
+    expect(retried.statusCode, retried.body).toBeLessThan(300);
+
+    // A receipt somebody else photographed is not this entry's evidence.
+    const theirs = await uploadReceipt(admin.client);
+    const borrowed = await accounts.client.request('POST', '/v1/accounts/cash-entries', {
+      body: { ...first, entryId: randomUUID(), receiptFileId: theirs },
+    });
+    expect(borrowed.statusCode, borrowed.body).toBe(400);
+    expect(borrowed.body).toContain('uploaded yourself');
+  });
+
+  it('W3: a wallet still holding money cannot be closed', async () => {
+    const wallet = body<{ items: { id: string; balancePoisha: string; isActive: boolean }[] }>(
+      await accounts.client.request('GET', '/v1/accounts/wallets'),
+    ).items.find((item) => item.id === wallets.bank);
+    expect(BigInt(wallet?.balancePoisha ?? '0')).not.toBe(0n);
+
+    const refused = await accounts.client.request('PATCH', `/v1/accounts/wallets/${wallets.bank}`, {
+      body: { isActive: false },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(body<{ code: string }>(refused).code).toBe('WALLET_NOT_EMPTY');
+
+    const after = body<{ items: { id: string; isActive: boolean }[] }>(
+      await accounts.client.request('GET', '/v1/accounts/wallets'),
+    ).items.find((item) => item.id === wallets.bank);
+    expect(after?.isActive).toBe(true);
+  });
+
+  it('W4: receivables age by open item, a branch sees its own lines, and a cost-blind reader sees no supplier', async () => {
+    const courier = randomUUID();
+    // Delivered COD at the second showroom, partly settled; and an HQ amount the
+    // branch manager must not see.
+    await postPartyJournal({
+      partyType: 'courier',
+      partyId: courier,
+      partyAccount: '1200',
+      otherAccount: '2900',
+      partySide: 'debit',
+      amount: 100_000n,
+      daysAgo: 40,
+      branchId: otherBranch,
+    });
+    await postPartyJournal({
+      partyType: 'courier',
+      partyId: courier,
+      partyAccount: '1200',
+      otherAccount: '2900',
+      partySide: 'credit',
+      amount: 40_000n,
+      daysAgo: 3,
+      branchId: otherBranch,
+    });
+    await postPartyJournal({
+      partyType: 'courier',
+      partyId: courier,
+      partyAccount: '1200',
+      otherAccount: '2900',
+      partySide: 'debit',
+      amount: 7_000n,
+      daysAgo: 1,
+      branchId: hqBranch,
+    });
+
+    const orgWide = (await agingAs(accounts, 'receivable')).items.find(
+      (item) => item.partyId === courier,
+    );
+    expect(orgWide).toMatchObject({
+      bucket0to7Poisha: '7000',
+      bucket31to60Poisha: '60000',
+      unappliedPoisha: '0',
+      totalPoisha: '67000',
+    });
+
+    const branchView = await agingAs(branchManager, 'receivable');
+    expect(branchView.items.find((item) => item.partyId === courier)).toMatchObject({
+      bucket0to7Poisha: '0',
+      bucket31to60Poisha: '60000',
+      totalPoisha: '60000',
+    });
+
+    // A supplier owed money at the manager's own branch is still not theirs to see.
+    const supplier = randomUUID();
+    await postPartyJournal({
+      partyType: 'supplier',
+      partyId: supplier,
+      partyAccount: '2100',
+      otherAccount: '5890',
+      partySide: 'credit',
+      amount: 9_000n,
+      daysAgo: 2,
+      branchId: otherBranch,
+    });
+    const payables = await agingAs(branchManager, 'payable');
+    expect(payables.costWithheld).toBe(true);
+    expect(payables.items.some((item) => item.partyType === 'supplier')).toBe(false);
+    expect(
+      (await agingAs(accounts, 'payable')).items.find((item) => item.partyId === supplier)
+        ?.totalPoisha,
+    ).toBe('9000');
+  });
+
+  it('W4: every party aging total is its ledger balance', async () => {
+    for (const side of ['payable', 'receivable'] as const) {
+      const { items } = await agingAs(accounts, side);
+      const ledger = await withSystem(
+        async (tx) =>
+          tx.execute<{ party_id: string; balance: string }>(sql`
+            select l.party_id,
+                   sum(case when a.normal_balance = 'debit'
+                            then l.debit_poisha - l.credit_poisha
+                            else l.credit_poisha - l.debit_poisha end)::text as balance
+            from ledger.journal_lines l
+            join ledger.journals j on j.org_id = l.org_id and j.id = l.journal_id
+            join ledger.accounts a on a.org_id = l.org_id and a.id = l.account_id
+            where l.org_id = ${ORG_A} and l.party_type is not null
+              and j.business_date <= ${today()}
+              and a.class::text = ${side === 'payable' ? 'liability' : 'asset'}
+            group by l.party_id
+          `),
+        { orgId: ORG_A },
+      );
+      const byParty = new Map(ledger.map((row) => [row.party_id, row.balance]));
+      expect(items.length).toBeGreaterThan(0);
+      for (const item of items) expect(item.totalPoisha).toBe(byParty.get(item.partyId));
+    }
+  });
+
+  it('N6: a branch manager asking for closed wallets still sees only their own branch', async () => {
+    const created = await accounts.client.request('POST', '/v1/accounts/wallets', {
+      body: {
+        account: { code: '1140-SHUT', name: 'Shut org account', subtype: 'wallet_bank' },
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const shut = body<{ id: string }>(created).id;
+    const closed = await accounts.client.request('PATCH', `/v1/accounts/wallets/${shut}`, {
+      body: { isActive: false },
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+
+    const seen = body<{ items: { id: string; branchId: string | null }[] }>(
+      await branchManager.client.request('GET', '/v1/accounts/wallets?includeInactive=true'),
+    ).items;
+    expect(seen.map((item) => item.id)).not.toContain(shut);
+    expect(seen.every((item) => item.branchId === otherBranch)).toBe(true);
+  });
+});

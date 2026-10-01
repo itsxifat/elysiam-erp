@@ -1,4 +1,4 @@
-import { addDays, periodOf, type IsoDate } from '../dates/index.js';
+import { addDays, daysBetween, periodOf, type IsoDate } from '../dates/index.js';
 import { add, sub, sum, ZERO, type Poisha } from '../money/index.js';
 
 /**
@@ -467,8 +467,3 @@ export function summariseAging(asOf: IsoDate, items: readonly AgingItem[]): Agin
  * answer for exactly that reason, and using `Date.now()` anywhere in an aging report
  * would make the report's own numbers depend on when it was run.
  */
-function daysBetween(from: IsoDate, to: IsoDate): number {
-  const start = Date.parse(`${from}T00:00:00Z`);
-  const end = Date.parse(`${to}T00:00:00Z`);
-  return Math.floor((end - start) / 86_400_000);
-}

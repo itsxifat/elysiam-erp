@@ -400,16 +400,33 @@ export async function receiptFile(
   tx: Tx,
   orgId: string,
   id: string,
-): Promise<{ id: string; purpose: string; visibility: string; status: string } | undefined> {
+): Promise<
+  | {
+      id: string;
+      purpose: string;
+      visibility: string;
+      status: string;
+      owner_user_id: string | null;
+      /** The cash entry this receipt already backs, if any. */
+      used_by_entry_id: string | null;
+    }
+  | undefined
+> {
   const rows = await tx.execute<{
     id: string;
     purpose: string;
     visibility: string;
     status: string;
+    owner_user_id: string | null;
+    used_by_entry_id: string | null;
   }>(sql`
-    select id, purpose, visibility::text as visibility, status::text as status
-    from files.objects
-    where org_id = ${orgId} and id = ${id}
+    select f.id, f.purpose, f.visibility::text as visibility, f.status::text as status,
+           f.owner_user_id,
+           (select c.id from wallets.cash_entries c
+             where c.org_id = f.org_id and c.receipt_file_id = f.id
+             limit 1) as used_by_entry_id
+    from files.objects f
+    where f.org_id = ${orgId} and f.id = ${id}
   `);
   return rows[0];
 }

@@ -37,6 +37,10 @@ export const ERROR_CODES = [
   'CLOSING_ALREADY_RECORDED',
   /** The wallet exists but is deactivated, so nothing may be posted to it. */
   'WALLET_INACTIVE',
+  /** That receipt is already the evidence for another cash entry. */
+  'RECEIPT_ALREADY_USED',
+  /** A wallet still holding money cannot be closed; move the money out first. */
+  'WALLET_NOT_EMPTY',
   /*
    * Catalog (M06).
    *

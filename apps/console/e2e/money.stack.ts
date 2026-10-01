@@ -136,6 +136,18 @@ test('petty cash without a receipt is stopped before it is sent (M08 check 2)', 
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
 
+  // A receipt attached to an entry that is then abandoned must not ride along
+  // with the next one (ledger audit W1): attach, close, open again.
+  await dialog
+    .locator('input[type="file"]')
+    .setInputFiles({ name: 'abandoned.png', mimeType: 'image/png', buffer: RECEIPT_PNG });
+  await expect(dialog.getByRole('button', { name: 'Remove the attachment' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await page.getByRole('button', { name: 'Record cash' }).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('abandoned.png')).toHaveCount(0);
+
   await dialog.getByRole('combobox', { name: /Movement/ }).click();
   await page.getByRole('option', { name: 'Petty cash' }).click();
   await dialog.getByRole('combobox', { name: /Wallet/ }).click();

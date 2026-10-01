@@ -525,9 +525,10 @@ const en = {
   'accounts.fieldAmount': 'Amount',
   'accounts.fieldMemo': 'Note',
   'accounts.fieldReceipt': 'Receipt photo',
-  'accounts.receiptHint': 'Required for petty cash, and only the finance team can open it.',
+  'accounts.receiptHint':
+    'Required for petty cash. Only people who can see this wallet can open it.',
   'accounts.receiptChoose': 'Attach the receipt',
-  'accounts.receiptOptionalHint': 'Optional. Only the finance team can open it.',
+  'accounts.receiptOptionalHint': 'Optional. Only people who can see this wallet can open it.',
   'accounts.receiptRequired': 'Attach the receipt before recording petty cash.',
   'accounts.kindCashIn': 'Cash in',
   'accounts.kindCashOut': 'Cash out',
@@ -1810,7 +1811,8 @@ const en = {
   'accounts.setup.last4Invalid': 'Give only the last two to four digits.',
   'accounts.setup.dailyClosing': "Count it at every day's close",
   'accounts.setup.active': 'In use',
-  'accounts.setup.activeHint': 'A closed wallet keeps its history and takes no new entries.',
+  'accounts.setup.activeHint':
+    'A closed wallet keeps its history and takes no new entries. Move its money out first.',
   'accounts.setup.colNumber': 'Number',
   'accounts.setup.colDaily': 'Daily count',
   'accounts.setup.yes': 'Yes',

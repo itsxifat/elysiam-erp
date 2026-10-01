@@ -1,5 +1,4 @@
-import type { IsoDate } from '../dates/index.js';
-import { add, sub, ZERO, type Poisha } from '../money/index.js';
+import { daysBetween, type IsoDate } from '../dates/index.js';
 
 /**
  * Payables and receivables aging, by open item (§7 "Reports", M08).
@@ -24,29 +23,28 @@ export type LedgerAgingBucket = '0-7' | '8-30' | '31-60' | '60+';
 
 export const LEDGER_AGING_BUCKETS: readonly LedgerAgingBucket[] = ['0-7', '8-30', '31-60', '60+'];
 
-/** One day's movement on a party's balance, on the account's normal side. */
+/**
+ * One day's movement on a party's balance, on the account's normal side.
+ *
+ * Plain `bigint` rather than `Poisha`, like every report aggregate (M03 review M2):
+ * these are sums of posted lines, already inside the ledger, and a report must
+ * never throw on a sum the ledger holds.
+ */
 export interface PartyMovement {
   readonly businessDate: IsoDate;
   /** What became owed: a bill on a payable, a sale on a receivable. Never negative. */
-  readonly increasePoisha: Poisha;
+  readonly increasePoisha: bigint;
   /** What was settled: a payment, a return, a credit note. Never negative. */
-  readonly decreasePoisha: Poisha;
+  readonly decreasePoisha: bigint;
 }
 
 export interface AgedBalance {
   /** The open amount in each age band. Never negative. */
-  readonly buckets: Readonly<Record<LedgerAgingBucket, Poisha>>;
+  readonly buckets: Readonly<Record<LedgerAgingBucket, bigint>>;
   /** Settled ahead of anything owed. Never negative, and never beside an open amount. */
-  readonly unappliedPoisha: Poisha;
+  readonly unappliedPoisha: bigint;
   /** Σ buckets − unapplied, which is Σ increases − Σ decreases up to the date. */
-  readonly balancePoisha: Poisha;
-}
-
-const DAY_MS = 86_400_000;
-
-/** Whole days from `from` to `to`, both calendar dates. */
-function daysBetween(from: IsoDate, to: IsoDate): number {
-  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
+  readonly balancePoisha: bigint;
 }
 
 /** The band an amount falls in, by days since it became owed. Same edges as §7. */
@@ -80,48 +78,52 @@ export function ageOpenItems(movements: Iterable<PartyMovement>, asOf: IsoDate):
   }
   const days = [...netByDate.keys()].sort();
 
-  /** Oldest first. Each entry is an amount still open and the date it became owed. */
-  const open: { date: IsoDate; remaining: Poisha }[] = [];
-  let unapplied = ZERO;
+  /**
+   * Oldest first. Each entry is an amount still open and the date it became owed;
+   * entries before `head` are fully settled. An index rather than `shift()`, so a
+   * party with years of daily movements is matched in one pass.
+   */
+  const open: { date: IsoDate; remaining: bigint }[] = [];
+  let head = 0;
+  let unapplied = 0n;
 
   for (const day of days) {
     const net = netByDate.get(day) ?? 0n;
 
-    let increase = net > 0n ? (net as Poisha) : ZERO;
-    if (increase > 0n && unapplied > 0n) {
-      const taken = increase < unapplied ? increase : unapplied;
-      increase = sub(increase, taken);
-      unapplied = sub(unapplied, taken);
+    if (net > 0n) {
+      const taken = net < unapplied ? net : unapplied;
+      unapplied -= taken;
+      if (net > taken) open.push({ date: day, remaining: net - taken });
+      continue;
     }
-    if (increase > 0n) open.push({ date: day, remaining: increase });
 
-    let decrease = net < 0n ? (-net as Poisha) : ZERO;
-    while (decrease > 0n && open.length > 0) {
-      const oldest = open[0];
+    let decrease = -net;
+    while (decrease > 0n && head < open.length) {
+      const oldest = open[head];
       if (oldest === undefined) break;
       if (oldest.remaining <= decrease) {
-        decrease = sub(decrease, oldest.remaining);
-        open.shift();
+        decrease -= oldest.remaining;
+        head += 1;
       } else {
-        oldest.remaining = sub(oldest.remaining, decrease);
-        decrease = ZERO;
+        oldest.remaining -= decrease;
+        decrease = 0n;
       }
     }
-    if (decrease > 0n) unapplied = add(unapplied, decrease);
+    unapplied += decrease;
   }
 
-  const buckets: Record<LedgerAgingBucket, Poisha> = {
-    '0-7': ZERO,
-    '8-30': ZERO,
-    '31-60': ZERO,
-    '60+': ZERO,
+  const buckets: Record<LedgerAgingBucket, bigint> = {
+    '0-7': 0n,
+    '8-30': 0n,
+    '31-60': 0n,
+    '60+': 0n,
   };
-  let openTotal = ZERO;
-  for (const item of open) {
+  let openTotal = 0n;
+  for (const item of open.slice(head)) {
     const bucket = ledgerAgingBucketOf(daysBetween(item.date, asOf));
-    buckets[bucket] = add(buckets[bucket], item.remaining);
-    openTotal = add(openTotal, item.remaining);
+    buckets[bucket] += item.remaining;
+    openTotal += item.remaining;
   }
 
-  return { buckets, unappliedPoisha: unapplied, balancePoisha: sub(openTotal, unapplied) };
+  return { buckets, unappliedPoisha: unapplied, balancePoisha: openTotal - unapplied };
 }

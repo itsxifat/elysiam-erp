@@ -215,6 +215,11 @@ export const cashEntries = wallets.table(
       columns: [table.orgId, table.receiptFileId],
       foreignColumns: [fileObjects.orgId, fileObjects.id],
     }).onDelete('restrict'),
+    // One receipt backs one entry (ledger audit W2, D-197): the floor under the
+    // service's check, so a race between two entries cannot share one slip.
+    uniqueIndex('cash_entries_org_receipt_key')
+      .on(table.orgId, table.receiptFileId)
+      .where(sql`${table.receiptFileId} is not null`),
     foreignKey({
       name: 'cash_entries_org_id_approval_request_id_fk',
       columns: [table.orgId, table.approvalRequestId],

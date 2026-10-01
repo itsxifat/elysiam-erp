@@ -489,9 +489,11 @@ const bn: Record<MessageKey, string> = {
   'accounts.fieldAmount': 'পরিমাণ',
   'accounts.fieldMemo': 'মন্তব্য',
   'accounts.fieldReceipt': 'রসিদের ছবি',
-  'accounts.receiptHint': 'পেটি ক্যাশের জন্য বাধ্যতামূলক, এবং কেবল অর্থ বিভাগ খুলতে পারবে।',
+  'accounts.receiptHint':
+    'পেটি ক্যাশের জন্য বাধ্যতামূলক। যারা এই ওয়ালেট দেখতে পারেন, কেবল তারাই এটি খুলতে পারবেন।',
   'accounts.receiptChoose': 'রসিদ যুক্ত করুন',
-  'accounts.receiptOptionalHint': 'ঐচ্ছিক। কেবল অর্থ বিভাগ খুলতে পারবে।',
+  'accounts.receiptOptionalHint':
+    'ঐচ্ছিক। যারা এই ওয়ালেট দেখতে পারেন, কেবল তারাই এটি খুলতে পারবেন।',
   'accounts.receiptRequired': 'পেটি ক্যাশ লেখার আগে রসিদ যুক্ত করুন।',
   'accounts.kindCashIn': 'নগদ আসা',
   'accounts.kindCashOut': 'নগদ যাওয়া',
@@ -1522,7 +1524,8 @@ const bn: Record<MessageKey, string> = {
   'branch.reviews.reason.sale_not_posted': 'মূল বিক্রিটিই এখনো অপেক্ষায়',
   'branch.reviews.reason.return_mismatch': 'ফেরত রসিদের সাথে মেলে না',
   'branch.reviews.reason.outside_shift': 'শিফটের সময়ের বাইরের তারিখ',
-  'branch.reviews.reason.exchange_mismatch': 'বদলের বিক্রয়ে এমন ফেরত উল্লেখ আছে যার সাথে মেলানো যায় না',
+  'branch.reviews.reason.exchange_mismatch':
+    'বদলের বিক্রয়ে এমন ফেরত উল্লেখ আছে যার সাথে মেলানো যায় না',
 
   'branch.closing.heading': 'দিন বন্ধ করুন',
   'branch.closing.caption':
@@ -1763,7 +1766,8 @@ const bn: Record<MessageKey, string> = {
   'accounts.setup.last4Invalid': 'শুধু শেষ দুই থেকে চার অঙ্ক দিন।',
   'accounts.setup.dailyClosing': 'প্রতিদিন দিনশেষে গুনতে হবে',
   'accounts.setup.active': 'চালু',
-  'accounts.setup.activeHint': 'বন্ধ ওয়ালেটের ইতিহাস থাকে, নতুন এন্ট্রি নেয় না।',
+  'accounts.setup.activeHint':
+    'বন্ধ ওয়ালেটের ইতিহাস থাকে, নতুন এন্ট্রি নেয় না। আগে এর টাকা সরিয়ে নিন।',
   'accounts.setup.colNumber': 'নম্বর',
   'accounts.setup.colDaily': 'দৈনিক গণনা',
   'accounts.setup.yes': 'হ্যাঁ',

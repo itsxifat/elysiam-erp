@@ -333,6 +333,8 @@
               "RECEIPT_REQUIRED",
               "CLOSING_ALREADY_RECORDED",
               "WALLET_INACTIVE",
+              "RECEIPT_ALREADY_USED",
+              "WALLET_NOT_EMPTY",
               "CATALOG_NOT_FOUND",
               "CATALOG_DUPLICATE",
               "CATALOG_SKU_IMMUTABLE",

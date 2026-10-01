@@ -92,6 +92,9 @@ function cashEntryFormSchema(receiptRequired: string) {
 }
 type CashEntryForm = z.infer<ReturnType<typeof cashEntryFormSchema>>;
 
+/** A blank entry: what the dialog shows every time it opens. */
+const ENTRY_DEFAULTS = { kind: 'cash_in', amountPoisha: '', memo: '' } as const;
+
 /** Photos and scans: the types the files module accepts for a receipt. */
 const RECEIPT_TYPES = 'image/jpeg,image/png,image/webp,application/pdf';
 
@@ -191,7 +194,7 @@ export function AccountsPage() {
   const entrySchema = useMemo(() => cashEntryFormSchema(receiptRequired), [receiptRequired]);
   const entryForm = useForm<CashEntryForm>({
     resolver: zodResolver(entrySchema),
-    defaultValues: { kind: 'cash_in', amountPoisha: '', memo: '' },
+    defaultValues: ENTRY_DEFAULTS,
   });
   const receiptLabelId = useId();
   const receiptError = entryForm.formState.errors.receiptFileId?.message;
@@ -230,10 +233,22 @@ export function AccountsPage() {
     onSuccess: async (result) => {
       setEntryOpen(false);
       setNotice(result.status === 'pending_approval' ? 'accounts.heldNotice' : null);
-      entryForm.reset({ kind: 'cash_in', amountPoisha: '', memo: '' });
+      entryForm.reset(ENTRY_DEFAULTS);
       await queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
   });
+
+  /*
+   * The form outlives the dialog (Radix unmounts the content, not the form), so
+   * every open and every close starts it again. Otherwise a receipt uploaded for
+   * an entry that was then abandoned stays in the form while the picker comes
+   * back empty, and posts as the evidence for the next, different entry.
+   */
+  const setEntryDialog = (open: boolean) => {
+    entryForm.reset(ENTRY_DEFAULTS);
+    entryMutation.reset();
+    setEntryOpen(open);
+  };
 
   const closingMutation = useMutation({
     mutationFn: (values: ClosingForm) =>
@@ -384,7 +399,7 @@ export function AccountsPage() {
             <Button variant="outline" size="sm" onClick={() => setClosingOpen(true)}>
               {a('accounts.countCash')}
             </Button>
-            <Button size="sm" onClick={() => setEntryOpen(true)}>
+            <Button size="sm" onClick={() => setEntryDialog(true)}>
               {a('accounts.recordCash')}
             </Button>
           </div>
@@ -516,7 +531,7 @@ export function AccountsPage() {
 
       <Dialog
         open={entryOpen}
-        onOpenChange={setEntryOpen}
+        onOpenChange={setEntryDialog}
         title={a('accounts.recordCashTitle')}
         description={a('accounts.recordCashDetail')}
         closeLabel={t('common.close')}

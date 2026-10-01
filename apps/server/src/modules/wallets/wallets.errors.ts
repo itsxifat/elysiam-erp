@@ -23,6 +23,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   RECEIPT_REQUIRED: 400,
   CLOSING_ALREADY_RECORDED: 409,
   WALLET_INACTIVE: 409,
+  RECEIPT_ALREADY_USED: 409,
+  WALLET_NOT_EMPTY: 409,
   // A wallet outside the caller's branch scope answers exactly as one that does
   // not exist. Any other answer is a way of enumerating other branches' tills.
   LEDGER_ACCOUNT_NOT_FOUND: 404,
