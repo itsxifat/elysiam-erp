@@ -32,6 +32,9 @@ describe('GET /health/live', () => {
     const response = await harness.client().request('GET', '/health/live');
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body)).toMatchObject({ status: 'ok' });
+    // The API's security headers reach the mounted application, not only a bare Fastify.
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['cache-control']).toBe('no-store');
   });
 });
 
