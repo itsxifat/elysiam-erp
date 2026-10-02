@@ -1,5 +1,5 @@
 import { CUSTOMER_LOCALE, fontClassFor, isLocale, type Locale } from '@elysium/i18n';
-import { Button, ErrorState, PermissionDeniedState, Skeleton } from '@elysium/ui';
+import { Button, EmptyState, ErrorState, PermissionDeniedState, Skeleton } from '@elysium/ui';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Landmark, Languages, LogOut, Moon, Sun } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -10,7 +10,7 @@ import { ApiError } from '../http.js';
 import { auth, type AvailableOrg, type RequestContext } from './api.js';
 import { Dashboard } from './dashboard.js';
 import { portalTranslator, type Translate } from './messages.js';
-import { brandToOpen, investorOrgs } from './model.js';
+import { brandPlan, investorOrgs } from './model.js';
 import { SignIn } from './sign-in.js';
 import { FOCUS } from './ui.js';
 
@@ -31,6 +31,10 @@ import { FOCUS } from './ui.js';
  * and only then does the session move. For the same reason the figures are not refetched on
  * window focus — the session is, and a brand changed in another tab remounts the dashboard
  * under the new brand's keys rather than refreshing the old brand's keys with new figures.
+ *
+ * Every figure is cached under the signed-in user as well as the brand, and dropped as soon
+ * as the session is not that user's: on a shared browser, the next person to sign in after a
+ * session ends must not be shown the last one's figures from cache.
  */
 
 const LOCALE_KEY = 'elysium-portal-locale';
@@ -60,6 +64,8 @@ type SessionState =
       readonly kind: 'investor';
       readonly brands: readonly AvailableOrg[];
       readonly context: RequestContext;
+      /** The active brand is one where this person is staff: ask, do not move it (D-311). */
+      readonly chooseBrand: boolean;
     };
 
 const SESSION_KEY = ['portal-session'] as const;
@@ -90,13 +96,13 @@ async function loadSession(): Promise<SessionState> {
     if (!(cause instanceof ApiError && cause.status === 401)) throw cause;
   }
 
-  const target = brandToOpen(brands, context?.orgId ?? null);
-  if (target !== null) {
-    await auth.setActiveOrg(target);
+  const plan = brandPlan(brands, context?.orgId ?? null);
+  if (plan.kind === 'open') {
+    await auth.setActiveOrg(plan.orgId);
     context = await auth.me();
   }
   if (context === null) return { kind: 'anonymous' };
-  return { kind: 'investor', brands, context };
+  return { kind: 'investor', brands, context, chooseBrand: plan.kind === 'choose' };
 }
 
 function readLocale(): Locale {
@@ -121,6 +127,15 @@ function Portal() {
   });
   const [switching, setSwitching] = useState<string | null>(null);
   const [switchFailed, setSwitchFailed] = useState(false);
+  const userId = session.data?.kind === 'investor' ? session.data.context.userId : null;
+
+  // Whatever is cached for anybody but the person signed in now goes (see the file note).
+  useEffect(() => {
+    queryClient.removeQueries({
+      queryKey: ['investor'],
+      predicate: (query) => query.queryKey[1] !== userId,
+    });
+  }, [queryClient, userId]);
 
   // `<html lang>` and the font stack follow the language: Bangla renders in Hind Siliguri
   // with its own size-adjust, and a Latin stack on a Bangla line puts it on two baselines.
@@ -260,11 +275,17 @@ function Portal() {
             activeOrgId={state.context.orgId}
             switching={switching}
             failed={switchFailed}
+            alwaysShow={state.chooseBrand}
             onSwitch={(orgId) => void switchBrand(orgId)}
           />
-          {switching === null ? (
+          {state.chooseBrand && switching === null ? (
+            <EmptyState
+              title={t('portal.investor.chooseBrandTitle')}
+              detail={t('portal.investor.chooseBrandDetail')}
+            />
+          ) : switching === null ? (
             <Dashboard
-              key={state.context.orgId}
+              key={`${state.context.userId}:${state.context.orgId}`}
               t={t}
               locale={locale}
               context={state.context}
@@ -287,7 +308,8 @@ function Portal() {
 
 /**
  * The brands this person has a stake in, as a row of buttons. With one brand there is no
- * choice to offer, so there is nothing to draw.
+ * choice to offer, so there is nothing to draw — unless the session is open in a brand that
+ * is not theirs, when even one brand is a choice to make.
  */
 function BrandSwitcher({
   t,
@@ -295,6 +317,7 @@ function BrandSwitcher({
   activeOrgId,
   switching,
   failed,
+  alwaysShow,
   onSwitch,
 }: {
   readonly t: Translate;
@@ -302,9 +325,10 @@ function BrandSwitcher({
   readonly activeOrgId: string;
   readonly switching: string | null;
   readonly failed: boolean;
+  readonly alwaysShow: boolean;
   readonly onSwitch: (orgId: string) => void;
 }) {
-  if (brands.length <= 1) return null;
+  if (brands.length <= 1 && !alwaysShow) return null;
 
   return (
     <nav aria-label={t('portal.investor.brands')} className="space-y-2">

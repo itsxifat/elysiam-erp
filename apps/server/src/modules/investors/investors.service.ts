@@ -83,6 +83,19 @@ export function investorView(row: repo.InvestorRow): InvestorView {
   };
 }
 
+/**
+ * The profile as this caller may see it (D-315).
+ *
+ * `notes` is the brand's own free text about an investor — written by accounts, read by
+ * accounts — and an investor reading their own row is not its audience. Anyone whose
+ * `read Investor` is narrower than the whole org gets it as `null`, so the field keeps its
+ * shape and the console's staff screens are unchanged.
+ */
+export function investorViewFor(request: object, row: repo.InvestorRow): InvestorView {
+  const view = investorView(row);
+  return scopeOf(request).kind === 'all' ? view : { ...view, notes: null };
+}
+
 export function positionView(position: InvestorPosition): PositionView {
   return {
     contributedPoisha: position.contributedPoisha.toString(),
@@ -186,7 +199,7 @@ export class InvestorsService {
           rows.map((row) => row.id),
         );
         const items: InvestorWithPosition[] = rows.map((row) => ({
-          ...investorView(row),
+          ...investorViewFor(request, row),
           position: positionView(positionOf(positions.get(row.id), today)),
         }));
         return serializeFor(context, 'Investor', { items });
@@ -203,7 +216,7 @@ export class InvestorsService {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const row = await this.requireInvestor(tx, context, request, investorId);
         return serializeFor(context, 'Investor', {
-          ...investorView(row),
+          ...investorViewFor(request, row),
           position: positionView(await this.positionOf(tx, context, row.id)),
         });
       }),
@@ -389,7 +402,7 @@ export class InvestorsService {
         );
 
         return serializeFor(context, 'Investor', {
-          investor: investorView(investor),
+          investor: investorViewFor(request, investor),
           from: range.from,
           to: range.to,
           entries,

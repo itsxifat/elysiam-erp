@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AvailableOrg, InvestorRow, StatementEntry, WithdrawalStatus } from './api.js';
 import { portalCatalogue } from './messages.js';
 import {
-  brandToOpen,
+  brandPlan,
   distributionsOf,
   investorOrgs,
   ownInvestor,
@@ -42,13 +42,16 @@ describe('the brands an investor may open', () => {
   });
 
   it('keeps the active brand when it is an investor brand', () => {
-    expect(brandToOpen(investorOrgs(orgs), 'orvo')).toBeNull();
+    expect(brandPlan(investorOrgs(orgs), 'orvo')).toEqual({ kind: 'ready' });
   });
 
-  it('moves off a brand where the person is only staff, or out of no brand at all', () => {
-    expect(brandToOpen(investorOrgs(orgs), 'elysium')).toBe('oura');
-    expect(brandToOpen(investorOrgs(orgs), null)).toBe('oura');
-    expect(brandToOpen([], null)).toBeNull();
+  it('opens the first investor brand only when no brand is active', () => {
+    expect(brandPlan(investorOrgs(orgs), null)).toEqual({ kind: 'open', orgId: 'oura' });
+  });
+
+  it('asks, rather than moving a session that is open in a staff brand (shared with the console)', () => {
+    expect(brandPlan(investorOrgs(orgs), 'elysium')).toEqual({ kind: 'choose' });
+    expect(brandPlan([], null)).toEqual({ kind: 'choose' });
   });
 });
 

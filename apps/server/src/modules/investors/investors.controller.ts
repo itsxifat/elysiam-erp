@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Patch,
   Post,
@@ -273,8 +274,12 @@ export class InvestorsController {
     );
   }
 
-  /** A short-lived signed URL for one private document (check 3). */
+  /**
+   * A short-lived signed URL for one private document (check 3). `no-store`, because the
+   * URL is a bearer token: no cache between here and the browser may keep a copy of it.
+   */
   @RequireAbility('read', 'Investor')
+  @Header('Cache-Control', 'private, no-store')
   @Get('documents/:id/download')
   async downloadDocument(@Req() request: FastifyRequest, @Param('id') id: string) {
     const documentId = parse(investorIdParamSchema, id);

@@ -927,7 +927,7 @@ interface CourierAdapter {
 - Investor profile with KYC documents.
 - Investments per org: amount, date, terms (D-019), lock-in, private documents.
 - Distributions are declared per period per org, approved, then paid.
-- Withdrawal requests go `requested → reviewed → approved (maker-checker) → paid`, or are rejected. Only `paid` posts to the ledger (D-117): an approval is a decision, not a payment.
+- Withdrawal requests go `requested → reviewed → approved (maker-checker) → paid`, or are rejected. Only `paid` posts to the ledger (D-117): an approval is a decision, not a payment. Nobody raises, reviews, approves or pays a withdrawal paid to themselves (D-314).
 - The investor portal (inside the `portal` app, at `/investor`) shows the investor their own position, investments with their lock-in, documents (via signed URLs), the distributions declared to them and their withdrawal requests, one brand at a time (D-310, D-311). Investors read; the brand's accounts team raises a withdrawal request for them (D-312).
 - 2FA is mandatory.
 

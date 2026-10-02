@@ -1038,6 +1038,9 @@ const en = {
   'portal.investor.brands': 'Your brands',
   'portal.investor.switching': 'Switching…',
   'portal.investor.switchFailed': 'That brand could not be opened. Try again.',
+  'portal.investor.chooseBrandTitle': 'Choose one of your brands',
+  'portal.investor.chooseBrandDetail':
+    'Your sign-in is open in a brand where you work rather than invest, perhaps in the staff console. Choose a brand above to see your figures.',
   'portal.investor.notInvestorTitle': 'This portal is for investors',
   'portal.investor.notInvestorDetail':
     'Your sign-in holds no investor role in any brand. Staff work in the console.',

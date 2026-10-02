@@ -120,193 +120,203 @@ async function create(): Promise<void> {
   // die with this process and take the database away from the stack's API.
   process.env.TEST_DATABASE_URL = adminUrl();
   const harness = await startHttpHarness('investorportal');
+  // Whatever happens below, the database this process made is dropped: a failed run must
+  // not leave an `elysium_investorportal_*` behind on the developer's server.
+  let appOpen = true;
+  try {
+    const run = randomBytes(4).toString('hex');
+    const password = randomBytes(18).toString('base64url');
 
-  const run = randomBytes(4).toString('hex');
-  const password = randomBytes(18).toString('base64url');
+    const alpha = await portalUser(harness, 'alpha', run, password, [
+      { orgId: ORG_A, role: 'investor' },
+      { orgId: ORG_B, role: 'investor' },
+    ]);
+    const beta = await portalUser(harness, 'beta', run, password, [
+      { orgId: ORG_A, role: 'investor' },
+    ]);
 
-  const alpha = await portalUser(harness, 'alpha', run, password, [
-    { orgId: ORG_A, role: 'investor' },
-    { orgId: ORG_B, role: 'investor' },
-  ]);
-  const beta = await portalUser(harness, 'beta', run, password, [
-    { orgId: ORG_A, role: 'investor' },
-  ]);
+    // The staff who move the money: three different people for a withdrawal (D-118).
+    const accounts = await harness.asRole('accounts', ORG_A);
+    const accountsB = await harness.asRole('accounts', ORG_B);
+    const reviewer = await superAdmin(harness);
+    const checker = await superAdmin(harness);
 
-  // The staff who move the money: three different people for a withdrawal (D-118).
-  const accounts = await harness.asRole('accounts', ORG_A);
-  const accountsB = await harness.asRole('accounts', ORG_B);
-  const reviewer = await superAdmin(harness);
-  const checker = await superAdmin(harness);
+    const investor = async (
+      as: RoleClient,
+      input: { code: string; name: string; userId: string; shareBps: number },
+    ) =>
+      (
+        await call<{ id: string }>(as, 'POST', '/v1/investors', {
+          ...input,
+          joinedOn: '2025-01-01',
+        })
+      ).id;
 
-  const investor = async (
-    as: RoleClient,
-    input: { code: string; name: string; userId: string; shareBps: number },
-  ) =>
-    (
-      await call<{ id: string }>(as, 'POST', '/v1/investors', {
-        ...input,
-        joinedOn: '2025-01-01',
-      })
-    ).id;
-
-  const alphaA = await investor(accounts, {
-    code: 'INV-A',
-    name: 'Rahima Akhtar',
-    userId: alpha.userId,
-    shareBps: 6_000,
-  });
-  const betaA = await investor(accounts, {
-    code: 'INV-B',
-    name: 'Shahidul Islam',
-    userId: beta.userId,
-    shareBps: 4_000,
-  });
-  const alphaB = await investor(accountsB, {
-    code: 'INV-O1',
-    name: 'Rahima Akhtar',
-    userId: alpha.userId,
-    shareBps: 10_000,
-  });
-
-  const bankA = await accountIdBySubtype(ORG_A, 'wallet_bank');
-  const bankB = await accountIdBySubtype(ORG_B, 'wallet_bank');
-  const contribute = (
-    as: RoleClient,
-    investorId: string,
-    walletAccountId: string,
-    amountPoisha: string,
-    lockInUntil?: string,
-  ) =>
-    call(as, 'POST', '/v1/investors/investments', {
-      investmentId: randomUUID(),
-      investorId,
-      walletAccountId,
-      amountPoisha,
-      ...(lockInUntil === undefined ? {} : { lockInUntil }),
+    const alphaA = await investor(accounts, {
+      code: 'INV-A',
+      name: 'Rahima Akhtar',
+      userId: alpha.userId,
+      shareBps: 6_000,
+    });
+    const betaA = await investor(accounts, {
+      code: 'INV-B',
+      name: 'Shahidul Islam',
+      userId: beta.userId,
+      shareBps: 4_000,
+    });
+    const alphaB = await investor(accountsB, {
+      code: 'INV-O1',
+      name: 'Rahima Akhtar',
+      userId: alpha.userId,
+      shareBps: 10_000,
     });
 
-  // Alpha: ৳10,00,000 free and ৳2,00,000 locked until 2030 in Elysium; ৳3,00,000 in Oura.
-  await contribute(accounts, alphaA, bankA, '100000000');
-  await contribute(accounts, alphaA, bankA, '20000000', '2030-12-31');
-  await contribute(accountsB, alphaB, bankB, '30000000');
-  // Beta: ৳5,00,000 in Elysium.
-  await contribute(accounts, betaA, bankA, '50000000');
-
-  // Last month's profit, ৳50,000 by agreed share: alpha ৳30,000, beta ৳20,000.
-  const declared = await call<{ approvalId: string }>(
-    reviewer,
-    'POST',
-    '/v1/investors/distributions',
-    {
-      distributionId: randomUUID(),
-      month: lastMonth(),
-      totalPoisha: '5000000',
-      basis: 'share_bps',
-      memo: 'E2E profit',
-    },
-  );
-  await call(checker, 'POST', `/v1/approvals/${declared.approvalId}/decide`, {
-    decision: 'approved',
-  });
-
-  // Alpha: ৳12,000 of profit paid out through the whole flow, and ৳25,000 of capital asked
-  // for and not yet reviewed. Beta: ৳7,777 of profit asked for.
-  const paid = randomUUID();
-  await call(accounts, 'POST', '/v1/investors/withdrawals', {
-    withdrawalId: paid,
-    investorId: alphaA,
-    kind: 'profit',
-    amountPoisha: '1200000',
-  });
-  const reviewed = await call<{ approvalId: string }>(
-    reviewer,
-    'POST',
-    `/v1/investors/withdrawals/${paid}/review`,
-    { walletAccountId: bankA },
-  );
-  await call(checker, 'POST', `/v1/approvals/${reviewed.approvalId}/decide`, {
-    decision: 'approved',
-  });
-  await call(accounts, 'POST', `/v1/investors/withdrawals/${paid}/pay`);
-
-  await call(accounts, 'POST', '/v1/investors/withdrawals', {
-    withdrawalId: randomUUID(),
-    investorId: alphaA,
-    kind: 'capital',
-    amountPoisha: '2500000',
-  });
-  const betaWithdrawal = randomUUID();
-  await call(accounts, 'POST', '/v1/investors/withdrawals', {
-    withdrawalId: betaWithdrawal,
-    investorId: betaA,
-    kind: 'profit',
-    amountPoisha: '777700',
-  });
-
-  const attach = async (
-    as: RoleClient,
-    orgId: string,
-    investorId: string,
-    kind: string,
-    title: string,
-  ) => {
-    const fileId = await seedFileObject(orgId, { ownerUserId: as.userId });
-    return (
-      await call<{ id: string }>(as, 'POST', '/v1/investors/documents', {
+    const bankA = await accountIdBySubtype(ORG_A, 'wallet_bank');
+    const bankB = await accountIdBySubtype(ORG_B, 'wallet_bank');
+    const contribute = (
+      as: RoleClient,
+      investorId: string,
+      walletAccountId: string,
+      amountPoisha: string,
+      lockInUntil?: string,
+    ) =>
+      call(as, 'POST', '/v1/investors/investments', {
+        investmentId: randomUUID(),
         investorId,
-        kind,
-        title,
-        fileId,
-      })
-    ).id;
-  };
-  const alphaDocument = await attach(
-    accounts,
-    ORG_A,
-    alphaA,
-    'agreement',
-    'Investment agreement INV-A',
-  );
-  const betaDocument = await attach(accounts, ORG_A, betaA, 'kyc', 'National ID INV-B');
-  await attach(accountsB, ORG_B, alphaB, 'agreement', 'Investment agreement INV-O1');
+        walletAccountId,
+        amountPoisha,
+        ...(lockInUntil === undefined ? {} : { lockInUntil }),
+      });
 
-  // The stack's own API serves the database from here; this process only keeps it alive.
-  await harness.app.close();
-  await harness.auth.close();
-  const database = harness.database;
+    // Alpha: ৳10,00,000 free and ৳2,00,000 locked until 2030 in Elysium; ৳3,00,000 in Oura.
+    await contribute(accounts, alphaA, bankA, '100000000');
+    await contribute(accounts, alphaA, bankA, '20000000', '2030-12-31');
+    await contribute(accountsB, alphaB, bankB, '30000000');
+    // Beta: ৳5,00,000 in Elysium.
+    await contribute(accounts, betaA, bankA, '50000000');
 
-  process.stdout.write(
-    `${JSON.stringify({
-      databaseName: database.databaseName,
-      appUrl: database.appUrl,
-      ownerUrl: database.ownerUrl,
-      analyticsUrl: database.analyticsUrl,
-      adminUrl: database.adminUrl,
-      password,
-      users: [
-        { role: 'alpha', email: alpha.email, userId: alpha.userId },
-        { role: 'beta', email: beta.email, userId: beta.userId },
-      ],
-      brands: {
-        elysium: { orgId: ORG_A, alpha: alphaA, beta: betaA },
-        oura: { orgId: ORG_B, alpha: alphaB },
+    // Last month's profit, ৳50,000 by agreed share: alpha ৳30,000, beta ৳20,000.
+    const declared = await call<{ approvalId: string }>(
+      reviewer,
+      'POST',
+      '/v1/investors/distributions',
+      {
+        distributionId: randomUUID(),
+        month: lastMonth(),
+        totalPoisha: '5000000',
+        basis: 'share_bps',
+        memo: 'E2E profit',
       },
-      documents: { alpha: alphaDocument, beta: betaDocument },
-      betaWithdrawal,
-    })}\n`,
-  );
-
-  // Hold the database open until the run is over, then drop it the harness's way.
-  await new Promise<void>((resolve) => {
-    let buffered = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (chunk: string) => {
-      buffered += chunk;
-      if (buffered.includes('stop')) resolve();
+    );
+    await call(checker, 'POST', `/v1/approvals/${declared.approvalId}/decide`, {
+      decision: 'approved',
     });
-    process.stdin.on('end', () => resolve());
-  });
-  await database.stop();
+
+    // Alpha: ৳12,000 of profit paid out through the whole flow, and ৳25,000 of capital asked
+    // for and not yet reviewed. Beta: ৳7,777 of profit asked for.
+    const paid = randomUUID();
+    await call(accounts, 'POST', '/v1/investors/withdrawals', {
+      withdrawalId: paid,
+      investorId: alphaA,
+      kind: 'profit',
+      amountPoisha: '1200000',
+    });
+    const reviewed = await call<{ approvalId: string }>(
+      reviewer,
+      'POST',
+      `/v1/investors/withdrawals/${paid}/review`,
+      { walletAccountId: bankA },
+    );
+    await call(checker, 'POST', `/v1/approvals/${reviewed.approvalId}/decide`, {
+      decision: 'approved',
+    });
+    await call(accounts, 'POST', `/v1/investors/withdrawals/${paid}/pay`);
+
+    await call(accounts, 'POST', '/v1/investors/withdrawals', {
+      withdrawalId: randomUUID(),
+      investorId: alphaA,
+      kind: 'capital',
+      amountPoisha: '2500000',
+    });
+    const betaWithdrawal = randomUUID();
+    await call(accounts, 'POST', '/v1/investors/withdrawals', {
+      withdrawalId: betaWithdrawal,
+      investorId: betaA,
+      kind: 'profit',
+      amountPoisha: '777700',
+    });
+
+    const attach = async (
+      as: RoleClient,
+      orgId: string,
+      investorId: string,
+      kind: string,
+      title: string,
+    ) => {
+      const fileId = await seedFileObject(orgId, { ownerUserId: as.userId });
+      return (
+        await call<{ id: string }>(as, 'POST', '/v1/investors/documents', {
+          investorId,
+          kind,
+          title,
+          fileId,
+        })
+      ).id;
+    };
+    const alphaDocument = await attach(
+      accounts,
+      ORG_A,
+      alphaA,
+      'agreement',
+      'Investment agreement INV-A',
+    );
+    const betaDocument = await attach(accounts, ORG_A, betaA, 'kyc', 'National ID INV-B');
+    await attach(accountsB, ORG_B, alphaB, 'agreement', 'Investment agreement INV-O1');
+
+    // The stack's own API serves the database from here; this process only keeps it alive.
+    await harness.app.close();
+    await harness.auth.close();
+    appOpen = false;
+    const database = harness.database;
+
+    process.stdout.write(
+      `${JSON.stringify({
+        databaseName: database.databaseName,
+        appUrl: database.appUrl,
+        ownerUrl: database.ownerUrl,
+        analyticsUrl: database.analyticsUrl,
+        adminUrl: database.adminUrl,
+        password,
+        users: [
+          { role: 'alpha', email: alpha.email, userId: alpha.userId },
+          { role: 'beta', email: beta.email, userId: beta.userId },
+        ],
+        brands: {
+          elysium: { orgId: ORG_A, alpha: alphaA, beta: betaA },
+          oura: { orgId: ORG_B, alpha: alphaB },
+        },
+        documents: { alpha: alphaDocument, beta: betaDocument },
+        betaWithdrawal,
+      })}\n`,
+    );
+
+    // Hold the database open until the run is over; `finally` drops it the harness's way.
+    await new Promise<void>((resolve) => {
+      let buffered = '';
+      process.stdin.setEncoding('utf8');
+      process.stdin.on('data', (chunk: string) => {
+        buffered += chunk;
+        if (buffered.includes('stop')) resolve();
+      });
+      process.stdin.on('end', () => resolve());
+    });
+  } finally {
+    if (appOpen) {
+      await harness.app.close().catch(() => undefined);
+      await harness.auth.close().catch(() => undefined);
+    }
+    await harness.database.stop();
+  }
 }
 
 const [command] = process.argv.slice(2);

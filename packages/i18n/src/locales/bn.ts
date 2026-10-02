@@ -998,6 +998,9 @@ const bn: Record<MessageKey, string> = {
   'portal.investor.brands': 'আপনার ব্র্যান্ড',
   'portal.investor.switching': 'বদলানো হচ্ছে…',
   'portal.investor.switchFailed': 'ব্র্যান্ডটি খোলা গেল না। আবার চেষ্টা করুন।',
+  'portal.investor.chooseBrandTitle': 'আপনার একটি ব্র্যান্ড বেছে নিন',
+  'portal.investor.chooseBrandDetail':
+    'আপনার লগইন এমন একটি ব্র্যান্ডে খোলা, যেখানে আপনি বিনিয়োগ নয়, কাজ করেন — হয়তো স্টাফ কনসোলে। আপনার হিসাব দেখতে ওপরে একটি ব্র্যান্ড বেছে নিন।',
   'portal.investor.notInvestorTitle': 'এই পোর্টাল বিনিয়োগকারীদের জন্য',
   'portal.investor.notInvestorDetail':
     'আপনার লগইনে কোনো ব্র্যান্ডে বিনিয়োগকারী ভূমিকা নেই। স্টাফরা কনসোলে কাজ করেন।',

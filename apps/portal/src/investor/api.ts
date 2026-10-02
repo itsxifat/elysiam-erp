@@ -131,8 +131,12 @@ export interface Statement {
 type Signal = AbortSignal | undefined;
 
 export const investor = {
-  /** The investor rows the caller may see; for the `investor` role, their own. */
-  list: (signal?: Signal) => request<{ items: InvestorRow[] }>('/v1/investors', { signal }),
+  /**
+   * The investor rows the caller may see; for the `investor` role, their own. Exited rows
+   * too: an investor who has left may still be owed money and still has a statement.
+   */
+  list: (signal?: Signal) =>
+    request<{ items: InvestorRow[] }>('/v1/investors?includeExited=true', { signal }),
   investments: (investorId: string, signal?: Signal) =>
     request<{ items: InvestmentRow[] }>(`/v1/investors/investments?investorId=${investorId}`, {
       signal,

@@ -52,31 +52,32 @@ export function Dashboard({
   readonly context: RequestContext;
   readonly brandName: string;
 }) {
-  const orgId = context.orgId;
+  // Keyed by the person as well as the brand: a cache entry is never somebody else's.
+  const { orgId, userId } = context;
   const self = useQuery({
-    queryKey: ['investor', orgId, 'self'],
+    queryKey: ['investor', userId, orgId, 'self'],
     queryFn: async ({ signal }) => ownInvestor((await investor.list(signal)).items, context.userId),
   });
   const investorId = self.data?.id ?? null;
   const enabled = investorId !== null;
 
   const investments = useQuery({
-    queryKey: ['investor', orgId, 'investments', investorId],
+    queryKey: ['investor', userId, orgId, 'investments', investorId],
     queryFn: ({ signal }) => investor.investments(investorId ?? '', signal),
     enabled,
   });
   const withdrawals = useQuery({
-    queryKey: ['investor', orgId, 'withdrawals', investorId],
+    queryKey: ['investor', userId, orgId, 'withdrawals', investorId],
     queryFn: ({ signal }) => investor.withdrawals(investorId ?? '', signal),
     enabled,
   });
   const documents = useQuery({
-    queryKey: ['investor', orgId, 'documents', investorId],
+    queryKey: ['investor', userId, orgId, 'documents', investorId],
     queryFn: ({ signal }) => investor.documents(investorId ?? '', signal),
     enabled,
   });
   const statement = useQuery({
-    queryKey: ['investor', orgId, 'statement', investorId],
+    queryKey: ['investor', userId, orgId, 'statement', investorId],
     queryFn: ({ signal }) =>
       investor.statement(investorId ?? '', { from: STATEMENT_FROM, to: today() }, signal),
     enabled,
@@ -102,7 +103,12 @@ export function Dashboard({
   return (
     <div className="space-y-10">
       <div className="space-y-1">
-        <h1 className="text-xl font-semibold tracking-tight">{me.name}</h1>
+        <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight">
+          {me.name}
+          {me.status === 'exited' ? (
+            <StatusBadge tone="neutral">{t('investors.statusExited')}</StatusBadge>
+          ) : null}
+        </h1>
         <p className="text-sm text-muted-foreground">
           {brandName} · {t('investors.colCode')} <span className="tabular-nums">{me.code}</span>
         </p>
@@ -319,7 +325,12 @@ function PositionTiles({
 /**
  * A document opens through a URL minted for this click and nothing else (check 3). The
  * list carries ids only; the signed URL is asked for here, used once, and never stored.
- * `noopener` so the tab it opens cannot reach back into this one.
+ *
+ * The tab is opened inside the click itself and pointed at the URL when it arrives: a
+ * window opened after an `await` is no longer the user's gesture, and a phone's popup
+ * blocker drops it without a word. The new tab is cut off from this one (`opener = null`),
+ * which is what `noopener` would have done. Without a tab at all, the page goes to the URL
+ * itself — it is served as an attachment, so the portal stays where it is.
  */
 function Documents({
   t,
@@ -332,13 +343,24 @@ function Documents({
 }) {
   const [failed, setFailed] = useState(false);
   const open = useMutation({
-    mutationFn: (documentId: string) => investor.documentUrl(documentId),
-    onSuccess: (signed) => {
+    mutationFn: (input: { readonly documentId: string; readonly tab: Window | null }) =>
+      investor.documentUrl(input.documentId),
+    onSuccess: (signed, { tab }) => {
       setFailed(false);
-      window.open(signed.url, '_blank', 'noopener,noreferrer');
+      if (tab !== null && !tab.closed) tab.location.replace(signed.url);
+      else window.location.assign(signed.url);
     },
-    onError: () => setFailed(true),
+    onError: (_error, { tab }) => {
+      tab?.close();
+      setFailed(true);
+    },
   });
+
+  function openDocument(documentId: string): void {
+    const tab = window.open('', '_blank');
+    if (tab !== null) tab.opener = null;
+    open.mutate({ documentId, tab });
+  }
 
   return (
     <div className="space-y-2">
@@ -365,14 +387,14 @@ function Documents({
             header: t('investors.open'),
             numeric: true,
             cell: (row) => {
-              const busy = open.isPending && open.variables === row.id;
+              const busy = open.isPending && open.variables.documentId === row.id;
               return (
                 <Button
                   variant="outline"
                   size="sm"
                   disabled={open.isPending}
                   aria-label={`${t('investors.open')}: ${row.title}`}
-                  onClick={() => open.mutate(row.id)}
+                  onClick={() => openDocument(row.id)}
                 >
                   {busy ? t('investors.opening') : t('investors.open')}
                 </Button>

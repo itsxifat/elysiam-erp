@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import {
   apiFromPage,
@@ -38,10 +38,11 @@ test.describe.configure({ mode: 'serial' });
 
 const REVIEW_DIR = path.resolve(import.meta.dirname, '../../../docs/review/M25');
 
-async function shot(page: Page, name: string): Promise<void> {
+/** A review screenshot. `mask` blanks what must not be committed, even from a throwaway user. */
+async function shot(page: Page, name: string, mask: Locator[] = []): Promise<void> {
   mkdirSync(REVIEW_DIR, { recursive: true });
   await page.waitForTimeout(250);
-  await page.screenshot({ path: path.join(REVIEW_DIR, `${name}.png`), fullPage: true });
+  await page.screenshot({ path: path.join(REVIEW_DIR, `${name}.png`), fullPage: true, mask });
 }
 
 async function noBlockingViolations(page: Page, label: string): Promise<void> {
@@ -161,7 +162,7 @@ test('an investor sees nothing until a second factor is enrolled', async ({ brow
   await expect(alpha.getByRole('heading', { name: 'Set up two-step verification' })).toBeVisible();
   await expect(alpha.locator('code').first()).not.toBeEmpty();
   await bothThemesInPlace(alpha, 'enrol');
-  await shot(alpha, 'enrol');
+  await shot(alpha, 'enrol', [alpha.locator('code'), alpha.locator('li')]);
 
   // Signed in, not enrolled: the session exists, and the API still answers nothing (§6).
   const walled = await apiFromPage(alpha, '/v1/investors');
@@ -269,9 +270,9 @@ test('a document opens only through a URL minted for that click', async () => {
   const signed = (await response.json()) as { url: string; expiresAt: string };
   expect(signed.url).toContain('?t=');
   expect(new Date(signed.expiresAt).getTime()).toBeGreaterThan(Date.now());
+  // The tab opened inside the click, and was then pointed at the URL minted for it.
   const tab = await opened;
-  await tab.waitForLoadState('domcontentloaded').catch(() => undefined);
-  expect(tab.url()).toBe(signed.url);
+  await tab.waitForURL(signed.url);
   await tab.close();
 });
 
@@ -309,46 +310,50 @@ test('a returning investor signs in with the code from their authenticator app',
   await expect(alpha.getByRole('heading', { name: 'Rahima Akhtar' })).toBeVisible();
 });
 
-test('beta sees their own figures and none of alpha’s', async ({ browser }) => {
-  const beta = await (
-    await browser.newContext({ viewport: { width: 390, height: 844 } })
-  ).newPage();
-  try {
-    await beta.goto('/investor');
-    await inEnglish(beta);
-    await signIn(beta, user('beta').email);
-    const betaFactor = await enrolSecondFactor(beta);
-    await expect(beta.getByRole('heading', { name: 'Shahidul Islam' })).toBeVisible();
-    await settled(beta);
+test('on the same browser, the next investor sees their own figures and none of the last one’s', async () => {
+  /*
+   * Alpha's session ends without the portal's own sign-out — it expires, or is ended from
+   * another tab — and beta signs in at the same tab. Nothing is reloaded, so whatever the
+   * portal cached for alpha is still in memory: this is the case where a cache keyed only
+   * by brand would draw alpha's figures under beta's name.
+   */
+  const beta = alpha;
+  await beta.context().clearCookies();
+  await beta.evaluate(() => window.dispatchEvent(new Event('visibilitychange')));
+  await expect(beta.getByRole('heading', { name: 'Sign in' })).toBeVisible();
 
-    // One brand, so no switcher to offer.
-    await expect(beta.getByRole('navigation', { name: 'Your brands' })).toHaveCount(0);
-    await expect(tile(beta, 'Capital held')).toContainText('৳5,00,000.00');
-    await expect(section(beta, 'Profit distributions')).toContainText('৳20,000.00');
-    await expect(section(beta, 'Withdrawals')).toContainText('৳7,777.00');
-    await expect(section(beta, 'Documents')).toContainText('National ID INV-B');
+  await signIn(beta, user('beta').email);
+  const betaFactor = await enrolSecondFactor(beta);
+  await expect(beta.getByRole('heading', { name: 'Shahidul Islam' })).toBeVisible();
+  await settled(beta);
 
-    await expectNoneOf(beta, ALPHA_ONLY);
-    const { elysium, oura } = stack().brands;
-    expect((await apiFromPage(beta, `/v1/investors/${elysium.alpha}`)).status).toBe(404);
-    expect((await apiFromPage(beta, `/v1/investors/${oura.alpha}`)).status).toBe(404);
-    expect(
-      (await apiFromPage(beta, `/v1/investors/documents/${stack().documents.alpha}/download`))
-        .status,
-    ).toBe(404);
+  // One brand, so no switcher to offer.
+  await expect(beta.getByRole('navigation', { name: 'Your brands' })).toHaveCount(0);
+  await expect(tile(beta, 'Capital held')).toContainText('৳5,00,000.00');
+  await expect(section(beta, 'Profit distributions')).toContainText('৳20,000.00');
+  await expect(section(beta, 'Withdrawals')).toContainText('৳7,777.00');
+  await expect(section(beta, 'Documents')).toContainText('National ID INV-B');
 
-    // A phone, which is where a partner opens it.
-    await noBlockingViolations(beta, 'dashboard (phone)');
-    await shot(beta, 'dashboard-phone');
+  await expectNoneOf(beta, ALPHA_ONLY);
+  const { elysium, oura } = stack().brands;
+  expect((await apiFromPage(beta, `/v1/investors/${elysium.alpha}`)).status).toBe(404);
+  expect((await apiFromPage(beta, `/v1/investors/${oura.alpha}`)).status).toBe(404);
+  expect(
+    (await apiFromPage(beta, `/v1/investors/documents/${stack().documents.alpha}/download`)).status,
+  ).toBe(404);
 
-    // A lost phone: a recovery code instead of the app, once.
-    await signOut(beta);
-    await signIn(beta, user('beta').email);
-    await beta.getByRole('button', { name: 'Use a recovery code instead' }).click();
-    await beta.getByLabel('Recovery code').fill(betaFactor.recoveryCode);
-    await beta.getByRole('button', { name: 'Verify' }).click();
-    await expect(beta.getByRole('heading', { name: 'Shahidul Islam' })).toBeVisible();
-  } finally {
-    await beta.context().close();
-  }
+  // A phone, which is where a partner opens it.
+  await beta.setViewportSize({ width: 390, height: 844 });
+  await settled(beta);
+  await noBlockingViolations(beta, 'dashboard (phone)');
+  await shot(beta, 'dashboard-phone');
+
+  // A lost phone: a recovery code instead of the app, once.
+  await signOut(beta);
+  await expectNoneOf(beta, ['Shahidul Islam', ...BETA_ONLY]);
+  await signIn(beta, user('beta').email);
+  await beta.getByRole('button', { name: 'Use a recovery code instead' }).click();
+  await beta.getByLabel('Recovery code').fill(betaFactor.recoveryCode);
+  await beta.getByRole('button', { name: 'Verify' }).click();
+  await expect(beta.getByRole('heading', { name: 'Shahidul Islam' })).toBeVisible();
 });

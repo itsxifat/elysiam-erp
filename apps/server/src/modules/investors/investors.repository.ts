@@ -497,9 +497,12 @@ export interface WithdrawalRow extends Record<string, unknown> {
   readonly approval_request_id: string | null;
   readonly journal_id: string | null;
   readonly paid_on: string | null;
+  /** The login of the investor being paid, so nobody signs for money paid to themselves. */
+  readonly investor_user_id: string | null;
 }
 
 const WITHDRAWAL_COLUMNS = sql`w.id, w.investor_id, i.code as investor_code, i.name as investor_name,
+  i.user_id as investor_user_id,
   w.kind::text as kind, w.amount_poisha::text as amount_poisha, w.status::text as status, w.reason,
   w.requested_by, w.requested_at, w.reviewed_by, w.wallet_account_id, w.approval_request_id,
   w.journal_id, w.paid_on`;
@@ -777,8 +780,7 @@ export interface ParticipantRow extends Record<string, unknown> {
  * describe who was funding the company while it earned that profit.
  *
  * Only `active` investors take part. An investor who has exited was settled when
- * they left, and reinstating them into a later declaration would pay them twice
- * (D-124 records the choice).
+ * they left, and reinstating them into a later declaration would pay them twice.
  */
 export async function distributionParticipants(
   tx: Tx,

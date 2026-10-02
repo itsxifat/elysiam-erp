@@ -25,18 +25,32 @@ export function investorOrgs(orgs: readonly AvailableOrg[]): AvailableOrg[] {
 }
 
 /**
- * The brand to open: the session's active one if it is an investor brand, otherwise the
- * first investor brand. `null` when the active one is already right, so the caller makes no
- * switch request it does not need.
+ * What to do about the session's active brand (D-311).
+ *
+ * - `open` — no brand is active yet, so the portal opens the first investor brand. Nothing
+ *   else is using the session's choice, so taking it moves nobody.
+ * - `ready` — the active brand is one of the investor's.
+ * - `choose` — the active brand is one where this person is staff, not an investor. The
+ *   session is shared with the console (one cookie, one active org), so moving it here
+ *   would move the console's brand under a colleague's open tab. The portal asks instead,
+ *   and moves it only on a click.
  */
-export function brandToOpen(
+export type BrandPlan =
+  | { readonly kind: 'open'; readonly orgId: string }
+  | { readonly kind: 'ready' }
+  | { readonly kind: 'choose' };
+
+export function brandPlan(
   investorBrands: readonly AvailableOrg[],
   activeOrgId: string | null,
-): string | null {
-  if (activeOrgId !== null && investorBrands.some((org) => org.orgId === activeOrgId)) {
-    return null;
+): BrandPlan {
+  if (activeOrgId === null) {
+    const first = investorBrands[0];
+    return first === undefined ? { kind: 'choose' } : { kind: 'open', orgId: first.orgId };
   }
-  return investorBrands[0]?.orgId ?? null;
+  return investorBrands.some((org) => org.orgId === activeOrgId)
+    ? { kind: 'ready' }
+    : { kind: 'choose' };
 }
 
 /**
