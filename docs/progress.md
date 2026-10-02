@@ -334,3 +334,79 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
   - Route OTPs and invites through notify once a gateway is verified. (D-212; owner: claude)
   - BulkSMSBD credentials, or the client's own gateway, to close D-012. (owner: human)
 - Next: M18, then M20 and M14a, which a parallel session is doing in its own worktree.
+
+### 2026-10-02 · M17 · Advance payments and return reasons · done
+
+- Delivered (branch `m17-advances`, from `remove-fraud`; the fraud half was removed by the owner,
+  D-291):
+  - **Advances that someone checked (D-013, D-230).** The desk records a buyer's bKash, Nagad
+    or bank payment as a claim (transaction id, amount); nothing posts and the COD does not
+    move. Accounts verifies it into the wallet it arrived in — never the person who recorded
+    it — which posts Dr Wallet / Cr Customer advance per advance and lowers the COD; or rejects
+    it. Several payments per order; one live claim per transaction id per brand. The old
+    `POST /v1/orders/:id/advance` and the create body's `advancePaidPoisha` (both let an
+    unchecked amount reach the books) are gone.
+  - **Its endings (D-231 to D-233, D-236).** Applied on delivery (oldest first, after any
+    exchange credit). On a cancel or a return, kept or refunded per the brand's policy
+    (`orders.advance_on_cancel` = refund, `orders.advance_on_return` = forfeit by default),
+    keeping at most the delivery charge; a refund is owed at the ending and posted when
+    accounts records it. A verification can wait for a booked parcel, settle at once on an
+    ended order, or be voided with a reversal journal before the parcel moves.
+  - **Return reasons (D-234).** A reason from a fixed list of eleven on every return and
+    exchange, refused by the state machine and by a deferred trigger without one, stored per
+    order, and a report by reason (`GET /v1/orders/return-reasons`).
+  - **Console.** An Advances panel on the order (record; accounts can undo a verification), an
+    Advances queue under Accounts (verify, reject, record a refund), a required reason on the
+    courier returns dialog, and a Returns by reason page. bn and en.
+- Verification: `pnpm verify` exits 0 at `f0c19ea` plus these docs (131 test files, 2,196 tests),
+  after one rerun: the run before it failed only `dispatcher.db.test.ts`'s `afterAll` hook (a
+  10 s timeout stopping its Testcontainer under load; all its tests passed, and the suite passes
+  alone). It also passed at `1e86c7a` (131 files, 2,194 tests). Acceptance checks 1–3 pass:
+  1. `advances.db.test.ts` › check 1 (applied on delivery; refunded on cancel with two
+     payments; a keep policy keeping only the delivery charge; plus the refused-parcel and
+     partial-delivery endings), hand-computed balances and a zero trial balance;
+  2. `advances.db.test.ts` › check 2 and `orders.e2e.test.ts` › M17 check 2 (HTTP);
+  3. `returns.test.ts` and `advances.db.test.ts` › check 3; `courier.db.test.ts` for the
+     courier returns path.
+
+  Real-stack browser run: `advances.stack.ts` 3/3 (claim, verification by a second-factor
+  accounts user, the report; axe in both themes; screenshots in `docs/review/M17/`) and
+  `order-desk.stack.ts` 3/3.
+
+- Auditors:
+  - ledger-auditor: 0 critical, 4 warnings. W1 (a booking racing a verification), W2 (no way
+    to undo a mistaken verification) and W3 (missing race, cap, credit and RLS tests) are fixed
+    with tests in `1e86c7a`; W4 (migration numbers 0081–0082 collide with M14a, M18 and M20) is
+    the integrator's. The re-check found 0 critical and 1 new warning
+    (a void by the verifier, now refused by the service and a CHECK in `f0c19ea`).
+  - acceptance-auditor: NOT READY with 5 gaps, then 1 on re-audit at `f0c19ea`. Closed: the
+    void's timeline label, a table test pinning the advance effects on every row, database
+    assertions that fail only for the rule they name, and the courier path's recorded reason.
+    Open: CLAUDE.md's Commands line should name `advances.stack.ts` and `docs/review/M17/` in
+    the `e2e:stack` entry. Not edited here: CLAUDE.md changes are the owner's to make.
+- Decisions/assumptions: D-230 to D-236 (D-232 ASSUMED: the policy defaults and the
+  delivery-charge cap). D-099 and D-101 carry update notes; D-013 stays OPEN only for an
+  optional gateway.
+- Migrations: `0081_m17_advances_returns_schema.sql` (generated), `0082_m17_advances_returns_policies.sql`
+  (RLS, grants, the advance path trigger, the born-pending insert guard, and the deferred
+  return-reason trigger). They will collide with sibling branches' 0081+ at integration.
+- New dependencies: none.
+- Deviations from the milestone spec: none in scope. Added beyond the checks, from the ledger
+  audit: the void path (D-236) and the booking lock (D-231).
+- Closes M10's follow-up "no refund path for a customer advance, and one advance per order".
+- Follow-ups:
+  - CLAUDE.md, Commands, `e2e:stack` line: add "M17's advance claim, verification and
+    returns-by-reason screens (`advances.stack.ts`)" and `docs/review/M17/`. (owner: human)
+  - Renumber 0081–0082 at integration; any database that applied an earlier m17-advances
+    0081 must be rebuilt (the file and its journal `when` changed before merge). (owner:
+    claude, integrator)
+  - A settings screen for `orders.advance_on_cancel` / `orders.advance_on_return`. (owner: claude)
+  - Exchange credits and pre-M17 advances (an advance column with no rows) have no refund path
+    of their own (D-233). (owner: claude)
+  - The return-reason trigger covers status updates, not inserts: a data import (M14a) should
+    write `sales.order_returns` for historical returns or accept that the report starts at
+    M17. (owner: claude)
+  - Refunds are one person's act; add maker-checker if the client wants it (D-232). (owner: human)
+  - Verify and refund journals are dated when accounts acts, not when the bKash money moved.
+    (owner: human, a client question)
+- Next: integration of M17 with M18, M20 and M14a.
