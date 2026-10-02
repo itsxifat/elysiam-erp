@@ -651,7 +651,7 @@ export class TransitionsService {
       throw new OrdersError(
         'ORDER_DISCOUNT_ABOVE_CEILING',
         `That is more short than your role may write off (${basisPointsAsPercent(shortCollectionCeilingBps(context))}% of the cash on delivery). ` +
-          'Record it on the parcel, or ask an org admin.',
+          'An org admin records it.',
       );
     }
 

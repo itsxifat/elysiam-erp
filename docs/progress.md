@@ -1207,7 +1207,7 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
 - Delivered (branch `m30-hardening`, `integration-wave2` merged at `f17be07`; plan
   `docs/plans/M30.md`):
   - **Security review and fixes.** Four read-only reviewers covered auth, tenancy and files,
-    money paths, and the public endpoints and clients. They found 5 high and 15 medium
+    money paths, and the public endpoints and clients. They found 5 high and 14 medium
     findings. Every high is fixed, and so are the bypasses the ledger-auditor found in those
     fixes over three rounds:
     - login rate limit walked past with `..` paths (A1);
@@ -1236,14 +1236,17 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
   - `pnpm verify` exits 0 at `57583d3` (under `heavy.mjs`): 183 test files, 2,873 tests, 1
     skipped as before. Route matrix: 319 routes, 311 matrix-tested, 8 public. Every check
     passes.
-  - The closing commit's verify is recorded in the plan's status. `e2e:preview`: 11/11, no
-    serious or critical axe violation in either theme.
+  - `pnpm verify` exits 0 again at `60a24dc`, the closing fix commit: 183 files, 2,874
+    tests, 1 skipped.
+  - `e2e:preview`: 11/11, no serious or critical axe violation in either theme.
   - Each fix ran its own suite against real Postgres as it landed.
 - Auditors:
-  - ledger-auditor: 3 critical and 5 warnings, then 1 critical and 1 warning, then 0
-    critical and 1 warning. Everything is fixed.
-  - acceptance-auditor: NOT READY at `57583d3`, with 5 gaps, all evidence and docs. All are
-    closed in the closing commits.
+  - ledger-auditor: four rounds. 3 critical and 5 warnings, then 1 critical and 1 warning,
+    then 0 critical and 1 warning, then 0 critical and 0 warnings at `60a24dc`. Everything
+    is fixed.
+  - acceptance-auditor: NOT READY at `57583d3`, with 5 gaps, all evidence and docs. The
+    re-check at `60a24dc` found all five closed and part 1 READY once this verify was
+    recorded.
 - Decisions/assumptions: D-360 to D-365 (D-364 and D-365 ASSUMED, with an open owner
   question).
 - New dependencies: none. k6 runs from the `grafana/k6` Docker image, not a package.

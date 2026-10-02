@@ -42,8 +42,10 @@ price you lower, a line discount and the **Discount (৳)** you type all count. 
 catalogue on one line does not make room for a bigger discount on another. A promo code does
 not count toward the 20%.
 
-When you edit an order an org admin priced lower than 20%, you may take items or units off,
-but not change prices, swap items or make any line cheaper.
+When you edit an order an org admin priced more than 20% below the catalogue, you may take
+items or units off, but not change prices, swap items or make any line cheaper. If the order
+has a **Discount (৳)** on the whole order, lower it in step with the units you take off, or
+the save is refused.
 
 If an order needs more, the save is refused. Do not split the order or change prices to get
 round the limit. Ask an org admin: they may give a bigger discount.
