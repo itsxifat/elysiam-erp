@@ -1,6 +1,6 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-02, evening** (M14b and M30 in progress). This is the short, plain-language view. The
+Last updated: **2026-10-02, evening** (new order of work: build, make testable, host, then M30). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
@@ -14,7 +14,7 @@ Built     [###################-]  95%
   staff activity extension (M28) and the landing page builder (M29). So **27 count**.
 - A milestone counts 100% when it is built, tested and passed its audits. A part-built one counts
   for the share that is done.
-- Today: **25 done, 2 part-built (M14b about 60%, M30 about 10%).**
+- Today: **25 done, 2 part-built (M14b about 60%, M30 about 15% and paused).**
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
 [What the owner needs to do](#what-the-owner-needs-to-do).
@@ -44,68 +44,77 @@ Built     [###################-]  95%
 
 ## By milestone
 
-| ID   | What                                   | Built | Note                                                              |
-| ---- | -------------------------------------- | ----: | ----------------------------------------------------------------- |
-| M00  | Project setup                          |  100% |                                                                   |
-| M01  | Database and brand separation          |  100% |                                                                   |
-| M02a | Sign-in and sessions                   |  100% |                                                                   |
-| M02b | Roles, audit log, approvals            |  100% |                                                                   |
-| M03  | Ledger (the books)                     |  100% |                                                                   |
-| M04  | Background jobs, files, PDFs           |  100% |                                                                   |
-| M05  | Console screens and design kit         |  100% |                                                                   |
-| M06  | Products                               |  100% |                                                                   |
-| M07  | Stock and costing                      |  100% |                                                                   |
-| M08  | Accounts and wallets                   |  100% |                                                                   |
-| M09  | Suppliers and purchases                |  100% |                                                                   |
-| M10  | Order engine                           |  100% |                                                                   |
-| M11  | Order desk, buyer list, website intake |  100% |                                                                   |
-| M12  | Courier booking and COD                |  100% | Steadfast adapter not yet tried on a live account                 |
-| M13  | Fraud check                            |     - | Removed by the owner; code deleted                                |
-| M14a | Data migration and opening balances    |  100% | Accountant must sign the pilot brand's report                     |
-| M14b | Server deploy, monitoring, backups     |   60% | Being built; its last checks need a staging server from the owner |
-| M15  | Pathao, RedX, tracking page            |  100% | RedX needs a merchant account to confirm its status words         |
-| M16  | Buyer profiles, SMS, promo codes       |  100% | SMS gateway not chosen yet; a stand-in is used                    |
-| M17  | Advance payments and return reasons    |  100% | Policy defaults need the client's OK                              |
-| M18  | Marketing                              |  100% | Meta link untested until a real token exists                      |
-| M19  | HR and payroll                         |  100% |                                                                   |
-| M20  | Targets and bonuses                    |  100% | How a team bonus is shared needs the client's answer              |
-| M21  | Reseller engine                        |     - | Set aside                                                         |
-| M22  | Reseller portal                        |     - | Set aside                                                         |
-| M23  | Showroom POS                           |  100% |                                                                   |
-| M24  | Dashboards and leaderboard             |  100% | AI summary built but switched off                                 |
-| M25  | Investors                              |  100% | Investor login pages added 2026-10-02                             |
-| M26  | Company loans                          |  100% |                                                                   |
-| M27  | Unified inbox (Chatwoot)               |     - | Removed by the owner                                              |
-| M28  | Staff activity extension               |     - | Removed by the owner                                              |
-| M29  | Landing pages                          |     - | Removed by the owner                                              |
-| M30  | Final hardening before launch          |   10% | Part 1 being built; part 2 after M14b                             |
+| ID   | What                                   | Built | Note                                                                                        |
+| ---- | -------------------------------------- | ----: | ------------------------------------------------------------------------------------------- |
+| M00  | Project setup                          |  100% |                                                                                             |
+| M01  | Database and brand separation          |  100% |                                                                                             |
+| M02a | Sign-in and sessions                   |  100% |                                                                                             |
+| M02b | Roles, audit log, approvals            |  100% |                                                                                             |
+| M03  | Ledger (the books)                     |  100% |                                                                                             |
+| M04  | Background jobs, files, PDFs           |  100% |                                                                                             |
+| M05  | Console screens and design kit         |  100% |                                                                                             |
+| M06  | Products                               |  100% |                                                                                             |
+| M07  | Stock and costing                      |  100% |                                                                                             |
+| M08  | Accounts and wallets                   |  100% |                                                                                             |
+| M09  | Suppliers and purchases                |  100% |                                                                                             |
+| M10  | Order engine                           |  100% |                                                                                             |
+| M11  | Order desk, buyer list, website intake |  100% |                                                                                             |
+| M12  | Courier booking and COD                |  100% | Steadfast adapter not yet tried on a live account                                           |
+| M13  | Fraud check                            |     - | Removed by the owner; code deleted                                                          |
+| M14a | Data migration and opening balances    |  100% | Accountant must sign the pilot brand's report                                               |
+| M14b | Server deploy, monitoring, backups     |   60% | Being built; its last checks need a staging server from the owner                           |
+| M15  | Pathao, RedX, tracking page            |  100% | RedX needs a merchant account to confirm its status words                                   |
+| M16  | Buyer profiles, SMS, promo codes       |  100% | SMS gateway not chosen yet; a stand-in is used                                              |
+| M17  | Advance payments and return reasons    |  100% | Policy defaults need the client's OK                                                        |
+| M18  | Marketing                              |  100% | Meta link untested until a real token exists                                                |
+| M19  | HR and payroll                         |  100% |                                                                                             |
+| M20  | Targets and bonuses                    |  100% | How a team bonus is shared needs the client's answer                                        |
+| M21  | Reseller engine                        |     - | Set aside                                                                                   |
+| M22  | Reseller portal                        |     - | Set aside                                                                                   |
+| M23  | Showroom POS                           |  100% |                                                                                             |
+| M24  | Dashboards and leaderboard             |  100% | AI summary built but switched off                                                           |
+| M25  | Investors                              |  100% | Investor login pages added 2026-10-02                                                       |
+| M26  | Company loans                          |  100% |                                                                                             |
+| M27  | Unified inbox (Chatwoot)               |     - | Removed by the owner                                                                        |
+| M28  | Staff activity extension               |     - | Removed by the owner                                                                        |
+| M29  | Landing pages                          |     - | Removed by the owner                                                                        |
+| M30  | Final hardening before launch          |   15% | Paused on purpose: it runs after the ERP is hosted. Started: route report, two login fixes. |
 
 ## Being built now
 
-- **M30, part 1** the final hardening: a security review of logins, permissions and money with
-  fixes, load tests against the speed targets, a route-by-route permissions report, an
-  accessibility pass, training guides per role, and a go-live checklist for the owner to sign.
-- **M14b** getting ready for a server: production images, deploy config, monitoring, backups,
-  runbooks. Its last checks need a staging server from the owner.
+The owner set the order on 2026-10-02: **build everything, make it testable by a person, host it
+on the owner's server, then do M30's review and fixes.**
 
-M14a, M17, M18, M20, M24, M26 and M25's investor pages finished on 2026-10-02 and are joined on the
-branch `integration-wave2`, where every check passes (2,640 tests).
+1. **M14b** server deploy: production images, deploy config, monitoring, backups, runbooks,
+   plus a simple one-server setup for the test site.
+2. **Missing buttons and screens** a tester would hit on day one:
+   - orders: Hold, Release, Pack, Ship and Handover buttons; courier updates moving an order to
+     Shipped;
+   - settings: approval limits, delivery zones, courier accounts, website order keys, till
+     registers;
+   - HR's Pay button;
+   - staff: a staff list, changing roles, removing a leaver, accepting an invite, password reset,
+     and resetting two-step login after a lost phone.
+3. **Preview kit**: demo data in every area, one login per role, a plain testing guide, and a
+   browser check that logs in as every role.
+4. **Hosting** on the owner's server, once the server details arrive.
+5. **M30** review and fixes (paused until after hosting). Already found and partly fixed: two
+   sign-in issues fixed; four money-control issues (cash out without a receipt, HR paying a staff
+   loan they recorded, a branch manager changing a salary account, unlimited sales discounts) are
+   written up and will be finished in M30.
 
 ## Time left (estimate)
 
-Measured from how long the last milestones took (about 1.5 to 2 hours each, including tests
-and reviews). It assumes the reviews find nothing big.
+| Work                                                      | Time left               |
+| --------------------------------------------------------- | ----------------------- |
+| M14b, missing screens and preview kit (in parallel)       | about 2 to 3 hours      |
+| Joining everything and re-running every check             | about 1 to 2 hours      |
+| Hosting on the server (after the owner sends the details) | about 1 hour            |
+| M30 review and fixes                                      | about 3 to 4 hours      |
+| **Total**                                                 | **about 7 to 10 hours** |
 
-| Work                                                                      | Where it is now                                                                     |         Time left |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------: |
-| M14b server deploy (code part)                                            | Health checks, monitoring, log masking, runbooks done; deploy config being finished |      about 1 hour |
-| M30 part 1: security review with fixes, load tests, accessibility, guides | Plan and route report done; security fixes and load tests under way                 |      2 to 3 hours |
-| Joining each finished piece and re-running every check                    | After each of the above                                                             |      about 1 hour |
-| M30 part 2: alert rules and how long data is kept                         | Starts after M14b                                                                   |      about 1 hour |
-| **Total**                                                                 |                                                                                     | **about 5 hours** |
-
-After that, everything that can be built without the owner is built (100%). Going live then
-waits only on the owner's items below, which this estimate does not include.
+**The test site should be ready in about 4 to 6 hours** (the first three rows), if the server
+details arrive in time.
 
 ## What the owner needs to do
 
