@@ -824,3 +824,26 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
     (owner: human)
   - A real narrative provider, if the client wants one (D-327). (owner: human)
 - Next: integration with M25, M26; then M14b and M30.
+
+### 2026-10-02 · M14b · Deployment, observability and the preview server · partial
+
+- Delivered: the production path built and rehearsed locally (server image, release step,
+  Kamal config, managed-Postgres bootstrap, Pages headers, Sentry and OpenTelemetry behind
+  configuration, log masking, readiness, API security headers, runbooks; details in
+  `docs/plans/M14b.md`). For the owner's server, a preview at one origin behind the host's
+  own nginx: `infra/docker-compose.preview.yml` (API on 127.0.0.1 only), the nginx site
+  `infra/preview/nginx-elyerp.conf`, and `infra/preview/deploy.sh`, which deploys a commit
+  over SSH with `git archive`. The portal and the till now work under a sub-path.
+- Verification: portal and till unit tests 49/49, typecheck and lint clean; the till's
+  offline e2e 3/3; the preview stack and nginx site locally with a browser, 13/13 (plan
+  status). Checks 1–3 need the owner's staging and are not claimed; `pnpm verify` was not
+  run in this session because Docker's disk on C: was nearly full.
+- Decisions/assumptions: D-340 to D-352 (D-352 rewritten for the host-nginx preview).
+- New dependencies: none.
+- Deviations from the milestone spec: the single-server preview is an addition the owner
+  asked for.
+- Follow-ups: the first super admin has no supported way in (invites need an admin,
+  D-057), so a fresh preview or production database cannot be signed into (owner: claude,
+  before the preview is useful); run `pnpm verify` once C: has room (owner: claude);
+  `docker-buildx` must be installed on the server (owner: human, in the runbook).
+- Next: the owner's first preview deploy, then M30.
