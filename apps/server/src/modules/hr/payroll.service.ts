@@ -323,6 +323,9 @@ export class PayrollService implements OnModuleInit {
             );
           }
           assertJournalFits(computed);
+          // Refused here, before any approval request is raised; repeated under the lock
+          // in the last step for one that goes stale in between (ledger confirmation N-a).
+          await this.assertNoStaleAwards(tx, context.orgId, run.id);
 
           return { run, computed, totals };
         },
@@ -392,14 +395,7 @@ export class PayrollService implements OnModuleInit {
             'The run’s bonuses or deductions changed while it was being submitted. Check them and submit again.',
           );
         }
-        // A target bonus whose target was cancelled, or whose rule was replaced, after the
-        // apply read it (M20 ledger confirmation N-6). Applying again rewrites them all.
-        if ((await performanceRepo.staleAwardCount(tx, context.orgId, prepared.run.id)) > 0) {
-          throw new HrError(
-            'PAYROLL_TRANSITION_INVALID',
-            'Some target bonuses on this run are for a cancelled target or a replaced bonus rule. Apply the bonuses again, then submit.',
-          );
-        }
+        await this.assertNoStaleAwards(tx, context.orgId, prepared.run.id);
 
         // What was recomputed under the lock, which the check above found equal.
         await this.freeze(tx, context.orgId, prepared.run.id, recomputed);
@@ -599,6 +595,21 @@ export class PayrollService implements OnModuleInit {
         return { id };
       }),
     );
+  }
+
+  /**
+   * A target bonus whose target was cancelled, or whose rule was replaced, after the apply
+   * read it (M20 ledger confirmation N-6). A cancel or a supersede removes its bonuses from
+   * draft runs, but an apply that read just before it committed can still write one.
+   * Applying again rewrites them all.
+   */
+  private async assertNoStaleAwards(tx: Tx, orgId: string, runId: string): Promise<void> {
+    if ((await performanceRepo.staleAwardCount(tx, orgId, runId)) > 0) {
+      throw new HrError(
+        'PAYROLL_TRANSITION_INVALID',
+        'Some target bonuses on this run are for a cancelled target or a replaced bonus rule. Apply the bonuses again, then submit.',
+      );
+    }
   }
 
   async removeInput(

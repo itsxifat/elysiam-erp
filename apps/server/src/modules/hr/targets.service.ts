@@ -379,6 +379,7 @@ export class TargetsService {
         // A draft run's bonus for this target goes with it (ledger audit W4).
         const bonusesRemoved = await repo.deleteDraftAwardInputs(tx, context.orgId, {
           targetId: id,
+          month: row.month,
         });
         await this.audit.record(tx, {
           orgId: context.orgId,

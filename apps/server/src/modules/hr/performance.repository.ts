@@ -494,7 +494,14 @@ export async function setVersionStatus(
   `);
 }
 
-/** The approved version of a rule, if any — what an approval supersedes. */
+/**
+ * The approved version of a rule, if any — what an approval supersedes.
+ *
+ * Locked `for no key update`, as a target is for its cancel: the activation then waits for
+ * every draft run, and an apply holding one inserts awards whose foreign key takes a
+ * key-share lock on this very version. A full `for update` would have each wait for the
+ * other (ledger confirmation of 4e21161).
+ */
 export async function approvedVersionOf(
   tx: Tx,
   orgId: string,
@@ -505,7 +512,7 @@ export async function approvedVersionOf(
     from hr.bonus_rule_versions v
     join hr.bonus_rules r on r.org_id = v.org_id and r.id = v.rule_id
     where v.org_id = ${orgId} and v.rule_id = ${ruleId} and v.status = 'approved'
-    for update of v
+    for no key update of v
   `);
   return rows[0];
 }
@@ -587,11 +594,13 @@ export async function deleteRuleInputs(tx: Tx, orgId: string, runId: string): Pr
 export async function deleteDraftAwardInputs(
   tx: Tx,
   orgId: string,
-  by: { readonly targetId: string } | { readonly ruleVersionId: string },
+  by: { readonly targetId: string; readonly month: string } | { readonly ruleVersionId: string },
 ): Promise<number> {
+  // A target's awards sit only on runs for its own month; a version's on any run.
   const runs = await tx.execute<{ id: string }>(sql`
     select id from hr.payroll_runs
     where org_id = ${orgId} and status = 'draft'
+      ${'month' in by ? sql`and month = ${by.month}` : sql``}
     order by id
     for share
   `);

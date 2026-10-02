@@ -486,6 +486,74 @@ describe('a run is locked before its inputs (ledger confirmation of 4215f61)', (
   });
 });
 
+describe('a version is superseded without waiting on an apply (ledger confirmation of 4e21161)', () => {
+  it('lets an apply holding a run award on the old version while the activation waits', async () => {
+    // An approved version, the way the approvals module puts one into force.
+    const { ruleId, versionId } = await seedVersion('usr_author');
+    const requestId = await seedRequest('usr_author', versionId);
+    await asA((tx) => repo.markSubmitted(tx, ORG_A, versionId, requestId));
+    await decide(requestId, 'approved', 'usr_checker');
+    await asA((tx) => repo.setVersionStatus(tx, ORG_A, versionId, 'approved'));
+
+    const month = '2027-07';
+    const targetId = await seedTarget(month);
+    const { runId, inputId } = await asA(async (tx) => {
+      const runs = await tx.execute<{ id: string }>(sql`
+        insert into hr.payroll_runs (org_id, month, status, created_by)
+        values (${ORG_A}, ${month}, 'draft', ${ACTOR}) returning id
+      `);
+      const run = runs[0]?.id ?? '';
+      const inputs = await tx.execute<{ id: string }>(sql`
+        insert into hr.payroll_inputs (org_id, run_id, employee_id, kind, label, amount_poisha, created_by)
+        values (${ORG_A}, ${run}, ${employeeE}, 'bonus', 'Target bonus', 1000, ${ACTOR})
+        returning id
+      `);
+      return { runId: run, inputId: inputs[0]?.id ?? '' };
+    });
+
+    let applyHolds: () => void = () => undefined;
+    const runHeld = new Promise<void>((resolve) => {
+      applyHolds = resolve;
+    });
+    let activationHolds: () => void = () => undefined;
+    const versionHeld = new Promise<void>((resolve) => {
+      activationHolds = resolve;
+    });
+
+    // The apply: the run first, then an award on the version it read as approved.
+    const applying = asA(async (tx) => {
+      await tx.execute(sql`select id from hr.payroll_runs where id = ${runId} for update`);
+      applyHolds();
+      await versionHeld;
+      await repo.insertAward(tx, {
+        orgId: ORG_A,
+        runId,
+        employeeId: employeeE,
+        targetId,
+        ruleVersionId: versionId,
+        payrollInputId: inputId,
+        targetValue: 10n,
+        achieved: 10n,
+        pctBps: 10_000,
+        amountPoisha: 1000n,
+        createdBy: ACTOR,
+      });
+    });
+    await runHeld;
+
+    // The activation: the old version, then the draft runs. With `for update` on the
+    // version the apply's foreign key waited for it while it waited for the run.
+    const activating = asA(async (tx) => {
+      const current = await repo.approvedVersionOf(tx, ORG_A, ruleId);
+      activationHolds();
+      return repo.deleteDraftAwardInputs(tx, ORG_A, { ruleVersionId: current?.id ?? '' });
+    });
+
+    await applying;
+    expect(await activating, 'the activation removed the award the apply wrote').toBe(1);
+  });
+});
+
 describe('another brand sees none of it (invariant 4)', () => {
   it('reads nothing of brand A’s targets, rules, awards or desk events', async () => {
     await asA((tx) =>
