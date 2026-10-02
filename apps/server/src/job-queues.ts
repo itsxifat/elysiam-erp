@@ -1,6 +1,7 @@
 import { PLATFORM_QUEUES, type QueueDefinition } from './platform/jobs/queues.js';
 import { COURIER_QUEUE_DEFINITIONS } from './modules/courier/courier.queues.js';
 import { FRAUD_QUEUES } from './modules/fraud/fraud.queues.js';
+import { NOTIFY_QUEUES } from './modules/notify/notify.queues.js';
 import { INVENTORY_QUEUES } from './modules/inventory/reconcile.service.js';
 
 /**
@@ -20,4 +21,5 @@ export const ALL_QUEUES: readonly QueueDefinition[] = [
   ...COURIER_QUEUE_DEFINITIONS,
   ...INVENTORY_QUEUES,
   ...FRAUD_QUEUES,
+  ...NOTIFY_QUEUES,
 ];

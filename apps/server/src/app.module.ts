@@ -16,6 +16,7 @@ import { InvestorsModule } from './modules/investors/investors.module.js';
 import { LedgerModule } from './modules/ledger/ledger.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
 import { PosModule } from './modules/pos/pos.module.js';
+import { NotifyModule } from './modules/notify/notify.module.js';
 import { PromoModule } from './modules/promo/promo.module.js';
 import { SupplyModule } from './modules/supply/supply.module.js';
 import { WalletsModule } from './modules/wallets/wallets.module.js';
@@ -83,6 +84,7 @@ export class AppModule {
         IntakeModule,
         PosModule,
         PromoModule,
+        NotifyModule,
         ...(withDemo ? [DemoModule] : []),
       ],
     };

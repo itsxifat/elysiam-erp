@@ -53,6 +53,11 @@ export const OPERATIONS = {
     path: '/v1/hr/payroll/runs/{id}/inputs/{inputId}',
     ability: 'create:Payroll',
   },
+  deleteV1NotifyOptOutsByPhone: {
+    method: 'DELETE',
+    path: '/v1/notify/opt-outs/{phone}',
+    ability: 'update:Campaign',
+  },
   deleteV1SupplyDraftsById: {
     method: 'DELETE',
     path: '/v1/supply/drafts/{id}',
@@ -334,6 +339,9 @@ export const OPERATIONS = {
     ability: 'read:Investor',
   },
   getV1JobsFailed: { method: 'GET', path: '/v1/jobs/failed', ability: 'read:AuditLog' },
+  getV1NotifyMessages: { method: 'GET', path: '/v1/notify/messages', ability: 'read:Campaign' },
+  getV1NotifyOptOuts: { method: 'GET', path: '/v1/notify/opt-outs', ability: 'read:Campaign' },
+  getV1NotifyTemplates: { method: 'GET', path: '/v1/notify/templates', ability: 'read:Campaign' },
   getV1Orders: { method: 'GET', path: '/v1/orders', ability: 'read:Order' },
   getV1OrdersAgents: { method: 'GET', path: '/v1/orders/agents', ability: 'read:Order' },
   getV1OrdersAvailability: {
@@ -725,6 +733,7 @@ export const OPERATIONS = {
     path: '/v1/investors/withdrawals/{id}/review',
     ability: 'update:Investor',
   },
+  postV1NotifyOptOuts: { method: 'POST', path: '/v1/notify/opt-outs', ability: 'update:Campaign' },
   postV1Orders: { method: 'POST', path: '/v1/orders', ability: 'create:Order' },
   postV1OrdersBulkConfirm: {
     method: 'POST',
@@ -871,6 +880,7 @@ export const OPERATIONS = {
     path: '/v1/inventory/reorder-levels',
     ability: 'update:Catalog',
   },
+  putV1NotifyTemplates: { method: 'PUT', path: '/v1/notify/templates', ability: 'update:Campaign' },
   reopenPeriod: {
     method: 'POST',
     path: '/v1/ledger/periods/reopen',
@@ -956,6 +966,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.deleteV1HrPayrollRunsByIdInputsByInputId, input, options),
+    /** DELETE /v1/notify/opt-outs/:phone */
+    deleteV1NotifyOptOutsByPhone: (
+      input: { readonly path: { readonly phone: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1NotifyOptOutsByPhone, input, options),
     /** DELETE /v1/supply/drafts/:id */
     deleteV1SupplyDraftsById: (
       input: { readonly path: { readonly id: string } },
@@ -1265,6 +1281,15 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/jobs/failed */
     getV1JobsFailed: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1JobsFailed, undefined, options),
+    /** GET /v1/notify/messages */
+    getV1NotifyMessages: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1NotifyMessages, undefined, options),
+    /** GET /v1/notify/opt-outs */
+    getV1NotifyOptOuts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1NotifyOptOuts, undefined, options),
+    /** GET /v1/notify/templates */
+    getV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1NotifyTemplates, undefined, options),
     /** GET /v1/orders */
     getV1Orders: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1Orders, undefined, options),
@@ -1748,6 +1773,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InvestorsWithdrawalsByIdReview, input, options),
+    /** POST /v1/notify/opt-outs */
+    postV1NotifyOptOuts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1NotifyOptOuts, undefined, options),
     /** POST /v1/orders */
     postV1Orders: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Orders, undefined, options),
@@ -1943,6 +1971,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/inventory/reorder-levels */
     putV1InventoryReorderLevels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1InventoryReorderLevels, undefined, options),
+    /** PUT /v1/notify/templates */
+    putV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1NotifyTemplates, undefined, options),
     /** Ask to reopen a closed month. Needs an approval. */
     reopenPeriod: (
       input: { readonly body: ReopenPeriodInput },

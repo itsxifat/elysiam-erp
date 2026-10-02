@@ -270,6 +270,16 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'PATCH /v1/promo/codes/:id',
   'GET /v1/promo/codes/:id/redemptions',
   'POST /v1/promo/check',
+
+  // M16: notifications. §6 has no row; `Campaign` (org_admin and marketing, both at
+  // `org`) is the audience for what a brand tells its buyers (D-205). Sending is not a
+  // route: a message is queued by the code with a reason to send it.
+  'GET /v1/notify/templates',
+  'PUT /v1/notify/templates',
+  'GET /v1/notify/opt-outs',
+  'POST /v1/notify/opt-outs',
+  'DELETE /v1/notify/opt-outs/:phone',
+  'GET /v1/notify/messages',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

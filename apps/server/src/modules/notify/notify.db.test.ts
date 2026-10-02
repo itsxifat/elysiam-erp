@@ -1,0 +1,217 @@
+import { withOrg, withSystem } from '@elysium/db';
+import { sql } from 'drizzle-orm';
+import { pino } from 'pino';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+
+import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
+import { ORG_A, startHttpHarness, type HttpHarness } from '../../testing/http-harness.js';
+import { NOTIFY_QUEUES } from './notify.queues.js';
+import { NotifyService } from './notify.service.js';
+import { FakeSmsGateway, SMS_GATEWAY } from './providers/sms-gateway.js';
+
+/**
+ * The notify module against real Postgres (M16 check 4, and what the module promises).
+ *
+ * Every instant below is a fixed UTC moment, so the tests do not depend on the hour they
+ * run at. Asia/Dhaka is UTC+6 with no daylight saving, which is what makes these exact:
+ *
+ *   2026-10-02T06:00Z = 12:00 Dhaka  (open)
+ *   2026-10-02T16:00Z = 22:00 Dhaka  (quiet, evening)
+ *   2026-10-02T20:00Z = 02:00 Dhaka on the 3rd  (quiet, small hours)
+ *   2026-10-03T03:00Z = 09:00 Dhaka on the 3rd  (quiet hours end)
+ *
+ * The phone numbers are test values for this suite, not anybody's.
+ */
+
+const NOON = new Date('2026-10-02T06:00:00.000Z');
+const EVENING = new Date('2026-10-02T16:00:00.000Z');
+const SMALL_HOURS = new Date('2026-10-02T20:00:00.000Z');
+const NINE_NEXT_DAY = new Date('2026-10-03T03:00:00.000Z');
+
+const PHONE = '01700000001';
+const OPTED_OUT = '01700000002';
+
+let harness: HttpHarness;
+let jobs: JobsRuntime;
+let notify: NotifyService;
+let gateway: FakeSmsGateway;
+
+async function template(key: string, category: 'otp' | 'transactional' | 'marketing') {
+  await withSystem(
+    (tx) =>
+      tx.execute(sql`
+        insert into notify.templates (org_id, key, channel, category, body_bn, body_en, updated_by)
+        values (${ORG_A}, ${key}, 'sms', ${category},
+                ${'আপনার কোড {code}'}, ${'Your code is {code}'}, 'usr_notify_test')
+        on conflict (org_id, channel, key) do update set category = excluded.category
+      `),
+    { orgId: ORG_A },
+  );
+}
+
+async function queueAt(templateKey: string, phone: string, now: Date) {
+  return withOrg({ orgId: ORG_A, userId: 'usr_notify_test' }, (tx) =>
+    notify.queue(tx, ORG_A, {
+      templateKey,
+      phone,
+      locale: 'en',
+      values: { code: 'EID25' },
+      now,
+    }),
+  );
+}
+
+async function stateOf(messageId: string): Promise<string> {
+  return withSystem(
+    async (tx) =>
+      (
+        await tx.execute<{ state: string }>(
+          sql`select state from notify.messages where org_id = ${ORG_A} and id = ${messageId}`,
+        )
+      )[0]?.state ?? 'missing',
+    { orgId: ORG_A },
+  );
+}
+
+beforeAll(async () => {
+  harness = await startHttpHarness('notify-db');
+  // `queue` enqueues in the caller's transaction, so a runtime must exist. The worker role
+  // is what installs pg-boss's schema in this throwaway database, and it processes a queue
+  // only once `work()` attaches a handler — which this suite never does. So nothing sends
+  // behind the test's back: every `deliver` below is called explicitly, at an instant the
+  // test chooses.
+  jobs = await JobsRuntime.start({
+    role: 'worker',
+    connectionString: harness.database.ownerUrl,
+    appRole: 'erp_app',
+    queues: NOTIFY_QUEUES,
+    logger: pino({ level: 'silent' }),
+  });
+  notify = harness.app.get(NotifyService);
+  const bound: unknown = harness.app.get(SMS_GATEWAY, { strict: false });
+  if (!(bound instanceof FakeSmsGateway)) throw new Error('the suite expects the fake gateway');
+  gateway = bound;
+
+  await template('offer.weekend', 'marketing');
+  await template('auth.code', 'otp');
+  await withSystem(
+    (tx) =>
+      tx.execute(sql`
+        insert into notify.opt_outs (org_id, phone, channel, created_by)
+        values (${ORG_A}, ${OPTED_OUT}, 'sms', 'usr_notify_test')
+        on conflict do nothing
+      `),
+    { orgId: ORG_A },
+  );
+}, 600_000);
+
+afterAll(async () => {
+  await jobs?.stop();
+  await harness?.close();
+}, 120_000);
+
+beforeEach(() => {
+  gateway.clear();
+});
+
+describe('quiet hours (check 4)', () => {
+  it('holds an offer due at 22:00 Dhaka until 09:00 the next morning', async () => {
+    const queued = await queueAt('offer.weekend', PHONE, EVENING);
+    expect(queued.state).toBe('queued');
+    expect(queued.sendAfter.toISOString()).toBe(NINE_NEXT_DAY.toISOString());
+  });
+
+  it('holds one due at 02:00 until 09:00 the same morning, not the next', async () => {
+    const queued = await queueAt('offer.weekend', PHONE, SMALL_HOURS);
+    expect(queued.sendAfter.toISOString()).toBe(NINE_NEXT_DAY.toISOString());
+  });
+
+  it('sends an offer due at noon at noon', async () => {
+    const queued = await queueAt('offer.weekend', PHONE, NOON);
+    expect(queued.sendAfter.toISOString()).toBe(NOON.toISOString());
+  });
+
+  it('never holds a sign-in code: a person locked out at 22:00 is locked out', async () => {
+    const queued = await queueAt('auth.code', PHONE, EVENING);
+    expect(queued.state).toBe('queued');
+    expect(queued.sendAfter.toISOString()).toBe(EVENING.toISOString());
+  });
+
+  it('checks again at send time: a job that runs late into the night defers, and sends nothing', async () => {
+    // Queued at noon, so due at once — but the worker only reaches it at 22:00.
+    const queued = await queueAt('offer.weekend', PHONE, NOON);
+
+    const outcome = await notify.deliver(ORG_A, queued.messageId, EVENING);
+
+    expect(outcome).toBe('deferred');
+    expect(gateway.sent).toEqual([]);
+    expect(await stateOf(queued.messageId)).toBe('queued');
+    const sendAfter = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ send_after: Date }>(
+            sql`select send_after from notify.messages where org_id = ${ORG_A} and id = ${queued.messageId}`,
+          )
+        )[0]?.send_after,
+      { orgId: ORG_A },
+    );
+    expect(new Date(sendAfter ?? 0).toISOString()).toBe(NINE_NEXT_DAY.toISOString());
+  });
+
+  it('sends a sign-in code at 22:00 when the worker reaches it then', async () => {
+    const queued = await queueAt('auth.code', PHONE, EVENING);
+    expect(await notify.deliver(ORG_A, queued.messageId, EVENING)).toBe('sent');
+    expect(gateway.sent).toHaveLength(1);
+  });
+});
+
+describe('sending', () => {
+  it('sends in the open hours, records the provider id, and does it once', async () => {
+    const queued = await queueAt('offer.weekend', PHONE, NOON);
+
+    expect(await notify.deliver(ORG_A, queued.messageId, NOON)).toBe('sent');
+    expect(gateway.sent).toEqual([{ phone: PHONE, body: 'Your code is EID25' }]);
+    expect(await stateOf(queued.messageId)).toBe('sent');
+
+    // A redelivered job after a crash finds it sent and leaves it alone.
+    expect(await notify.deliver(ORG_A, queued.messageId, NOON)).toBe('skipped');
+    expect(gateway.sent).toHaveLength(1);
+  });
+
+  it('suppresses an offer to a number that opted out, but never a sign-in code', async () => {
+    const offer = await queueAt('offer.weekend', OPTED_OUT, NOON);
+    expect(offer.state).toBe('suppressed');
+    expect(await notify.deliver(ORG_A, offer.messageId, NOON)).toBe('skipped');
+    expect(gateway.sent).toEqual([]);
+
+    const code = await queueAt('auth.code', OPTED_OUT, NOON);
+    expect(code.state).toBe('queued');
+    expect(await notify.deliver(ORG_A, code.messageId, NOON)).toBe('sent');
+  });
+
+  it('throws on a failure worth retrying, so the queue tries again, and then sends', async () => {
+    const queued = await queueAt('offer.weekend', PHONE, NOON);
+    gateway.failNext.push({ ok: false, error: 'TIMEOUT', retryable: true });
+
+    await expect(notify.deliver(ORG_A, queued.messageId, NOON)).rejects.toThrow(/will retry/);
+    expect(await stateOf(queued.messageId)).toBe('failed');
+
+    // The retry: a failed message is still deliverable.
+    expect(await notify.deliver(ORG_A, queued.messageId, NOON)).toBe('sent');
+    expect(await stateOf(queued.messageId)).toBe('sent');
+  });
+
+  it('records a refusal the gateway names, and does not retry it', async () => {
+    const queued = await queueAt('offer.weekend', PHONE, NOON);
+    gateway.failNext.push({ ok: false, error: 'INVALID_NUMBER', retryable: false });
+
+    expect(await notify.deliver(ORG_A, queued.messageId, NOON)).toBe('failed');
+    expect(await stateOf(queued.messageId)).toBe('failed');
+  });
+
+  it('refuses a template the brand does not have, rather than sending nothing quietly', async () => {
+    await expect(queueAt('no.such.template', PHONE, NOON)).rejects.toMatchObject({
+      code: 'NOTIFY_TEMPLATE_INVALID',
+    });
+  });
+});

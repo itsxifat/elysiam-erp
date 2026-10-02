@@ -45,6 +45,7 @@ import {
   PROMO_ROUTE_FIXTURES,
   preparePromoFixtures,
 } from '../../modules/promo/promo.route-fixtures.js';
+import { NOTIFY_ROUTE_FIXTURES } from '../../modules/notify/notify.route-fixtures.js';
 import {
   prepareSupplyFixtures,
   SUPPLY_ROUTE_FIXTURES,
@@ -259,6 +260,7 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...COURIER_ROUTE_FIXTURES,
   ...POS_ROUTE_FIXTURES,
   ...PROMO_ROUTE_FIXTURES,
+  ...NOTIFY_ROUTE_FIXTURES,
 };
 
 function testedRoutes(): RouteDeclaration[] {
