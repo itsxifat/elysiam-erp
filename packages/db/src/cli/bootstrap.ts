@@ -1,22 +1,18 @@
 /**
- * Create the three database roles. Once per database, as the superuser.
+ * Create the three database roles. Once per database, as the administrator.
  *
- * This is the only command that needs superuser rights. Everything afterwards
+ * This is the only command that needs administrator rights: CREATEROLE and ownership of
+ * the database, which managed Postgres gives its admin user (D-341). A superuser works too. Everything afterwards
  * runs as erp_owner, which bootstrap deliberately creates WITHOUT superuser and
  * WITHOUT bypassrls — see D-042 and the comments in bootstrap.sql.
  *
  *   pnpm db:bootstrap
  */
 
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import postgres from 'postgres';
 
 import { databaseConfig, loadDatabaseEnv, parseUrl, requireUrl } from '../config.js';
-
-const SQL_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../bootstrap.sql');
+import { applyBootstrap } from '../roles.js';
 
 async function main(): Promise<void> {
   loadDatabaseEnv();
@@ -51,15 +47,12 @@ async function main(): Promise<void> {
   });
 
   try {
-    const script = await readFile(SQL_FILE, 'utf8');
-
-    await sql.begin(async (tx) => {
-      // Passed as settings rather than interpolated, so no password is ever
-      // written into a SQL string or a query log.
-      await tx`select set_config('bootstrap.owner_password', ${owner.password}, true)`;
-      await tx`select set_config('bootstrap.app_password', ${app.password}, true)`;
-      await tx`select set_config('bootstrap.analytics_password', ${analytics.password}, true)`;
-      await tx.unsafe(script);
+    // Passed as settings rather than interpolated, so no password is ever
+    // written into a SQL string or a query log.
+    await applyBootstrap(sql, {
+      owner: owner.password,
+      app: app.password,
+      analytics: analytics.password,
     });
 
     const roles = await sql<
