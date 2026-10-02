@@ -140,6 +140,28 @@ export const ERROR_CODES = [
   'ORDER_COST_MOVED',
   'CUSTOMER_NOT_FOUND',
   'DELIVERY_ZONE_NOT_FOUND',
+  /*
+   * Advances and return reasons (M17, §7, §10; D-233 to D-237).
+   *
+   * `ORDER_ADVANCE_REQUIRED` is the confirm's refusal, and it is a 409 rather than a 403:
+   * the fix is money arriving and being verified, after which the same request succeeds.
+   * The others are about one claim. A duplicate reference and a self-verification are
+   * kept apart because they call for different people: the agent re-checks the SMS, or a
+   * second person verifies.
+   */
+  /** The fraud rules ask for an advance and the verified advances do not cover it. */
+  'ORDER_ADVANCE_REQUIRED',
+  'ORDER_ADVANCE_NOT_FOUND',
+  /** The claim is not pending, or the order no longer takes an advance (shipped, cancelled). */
+  'ORDER_ADVANCE_INVALID',
+  /** That transaction reference already backs a live claim in this brand. */
+  'ORDER_ADVANCE_DUPLICATE',
+  /** The person who recorded a claim cannot also verify it (D-234). */
+  'ORDER_ADVANCE_SELF_VERIFY',
+  /** A claim's terms are fixed, and its status moves only along its own path (migration). */
+  'ORDER_ADVANCE_IMMUTABLE',
+  /** A return reason was given for an order that is not on its way back or returned. */
+  'ORDER_RETURN_REASON_INVALID',
 
   /*
    * Couriers, parcels and settlements (M12, §9, §7; D-006, D-037).
@@ -222,6 +244,12 @@ export const ERROR_CODES = [
   'FRAUD_SIGNAL_KEY_IMMUTABLE',
   /** An order keeps the phone hash it was assessed against (0047). */
   'FRAUD_ORDER_PHONE_IMMUTABLE',
+  /** M17: no such order rule in this brand. */
+  'FRAUD_RULE_NOT_FOUND',
+  /** M17: an order rule that could never match, or that names an amount it cannot use. */
+  'FRAUD_RULE_INVALID',
+  /** M17: an assessed order's address is kept as it was; only its outcome is recorded. */
+  'FRAUD_ADDRESS_IMMUTABLE',
 
   /*
    * Investors (M25, §15).
