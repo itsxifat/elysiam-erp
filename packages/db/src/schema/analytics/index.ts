@@ -58,7 +58,7 @@ const orderMetricColumns = () => ({
   returnedOutsideDhaka: integer('returned_outside_dhaka').notNull().default(0),
 });
 
-type OrderMetricTable = {
+interface OrderMetricTable {
   ordersPlaced: unknown;
   ordersConfirmed: unknown;
   ordersDelivered: unknown;
@@ -67,7 +67,7 @@ type OrderMetricTable = {
   deliveredRevenuePoisha: unknown;
   deliveredOutsideDhaka: unknown;
   returnedOutsideDhaka: unknown;
-};
+}
 
 /** Counts are never negative; revenue is never negative. Gross profit may be (a loss). */
 const orderMetricChecks = (name: string, table: OrderMetricTable) =>
