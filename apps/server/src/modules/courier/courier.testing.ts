@@ -660,6 +660,7 @@ export class TestOrdersPort implements OrdersPort {
       trigger: input.trigger,
       at: input.occurredAt,
       reason: input.reason ?? null,
+      returnReason: input.returnReason ?? null,
       bookingPolicy: 'manual',
       parcelBooked: true,
     });
@@ -781,6 +782,17 @@ export class TestOrdersPort implements OrdersPort {
       returning id
     `);
     if (moved.length === 0) return null;
+
+    // M17 (D-234): a return records its reason, as `TransitionsService` does. Migration 0082's
+    // deferred trigger refuses the commit without it, so the double has to keep up.
+    if (result.returnReason !== null) {
+      await tx.execute(sql`
+        insert into sales.order_returns
+          (org_id, order_id, kind, reason_code, note, business_date, recorded_by)
+        values (${context.orgId}, ${input.orderId}, 'return', ${result.returnReason},
+                ${result.reason}, ${result.businessDate}::date, ${context.userId})
+      `);
+    }
 
     return {
       from: current.status,

@@ -47,7 +47,6 @@ import {
   orderQuerySchema,
   reengagementExportQuerySchema,
   reengagementQuerySchema,
-  recordAdvanceSchema,
   returnOrderSchema,
   shipOrderSchema,
   startReturnSchema,
@@ -97,17 +96,9 @@ function at(value: string | undefined): Date | undefined {
  *   this at `org` precisely so it can pack, ship and receive returns, and the domain
  *   state machine is what stops that grant from reaching confirm on a `pending` order or
  *   cancel on a `shipped` one.
- * * **`create Wallet`** — recording an advance. It is money arriving in a wallet and a
- *   journal posted against it (§7), so it belongs to the wallets row rather than to an
- *   order grant: `update Order` would have let every sales agent post into a till.
- *
- *   Read the matrix before assuming who that is. `create Wallet` is **`accounts` and
- *   super_admin only** — `org_admin` holds `read` and `update` on Wallet and not `create`
- *   — so an org admin cannot record an advance today. That is a gap in §6 rather than in
- *   this route, and it is left as a gap deliberately: widening the route to
- *   `update Wallet` would hand it to `branch_manager` at branch scope, and adding
- *   `create Wallet` to org_admin is a change to the matrix that needs a decision of its
- *   own. Recorded as a follow-up.
+ * * **Advances** are `advances.controller.ts`'s (M17, D-235): an agent records a claim under
+ *   `update Order`, and only `create Wallet` (accounts) verifies, rejects or refunds one,
+ *   because verification is money arriving in a wallet and a journal posted against it.
  * * **`read Stock`** — the availability read the order form makes before it promises a
  *   size. Exactly what the inventory controller uses for the same question, and `org`
  *   scope for every role that holds it, so there is nothing to narrow.
@@ -411,6 +402,7 @@ export class OrdersController {
       'receive_return',
       {
         reason: input.reason,
+        returnReason: input.returnReason,
         ret: {
           reason: input.reason,
           locationId: input.locationId,
@@ -442,18 +434,6 @@ export class OrdersController {
   }
 
   // --- money and exchanges ------------------------------------------------------
-
-  @RequireAbility('create', 'Wallet')
-  @Post(':id/advance')
-  async advance(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
-    const input = parse(recordAdvanceSchema, body);
-    return this.orders.recordAdvance(
-      requireContext(request),
-      auditable(request),
-      parse(orderIdSchema, id),
-      input,
-    );
-  }
 
   @RequireAbility('create', 'Order')
   @Post(':id/exchange')

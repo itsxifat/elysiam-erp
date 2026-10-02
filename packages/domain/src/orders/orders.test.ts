@@ -190,8 +190,9 @@ describe('the order state machine (§9, invariant 7)', () => {
                 trigger,
                 at: AT,
                 // Supplied unconditionally so a refusal can only ever be the table's
-                // doing, never a missing reason.
+                // doing, never a missing reason (or a missing return reason, M17).
                 reason: 'property test',
+                returnReason: 'other',
               }).to;
             } catch (error) {
               expect(error).toBeInstanceOf(OrderError);

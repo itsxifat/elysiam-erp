@@ -26,6 +26,8 @@ import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { CustomersService } from './customers.service.js';
 import * as repo from './orders.repository.js';
 import { OrdersError } from './orders.errors.js';
+import { AdvancesService } from './advances.service.js';
+import * as advancesRepo from './advances.repository.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { PROMO_PORT, type PromoPort } from './ports/promo.port.js';
 
@@ -85,6 +87,18 @@ function pick(accounts: Accounts, subtype: AccountSubtype): PostingAccount {
   return account;
 }
 
+/**
+ * What the effects of one transition hand each other.
+ *
+ * `journalId` goes back out to the courier module, which writes it on the return receipt.
+ * `advanceAppliedPoisha` is what the delivery journal relieved Customer advance by, which
+ * `apply_advances` then spreads over the order's advances (D-233).
+ */
+interface Posted {
+  journalId: string | null;
+  advanceAppliedPoisha: bigint;
+}
+
 export interface DeliverOptions {
   readonly collectedPoisha?: string | undefined;
   readonly differenceReason?: string | undefined;
@@ -128,6 +142,8 @@ export interface ReturnOptions {
 
 export interface MoveOptions {
   readonly reason?: string | null;
+  /** Why the goods came back, from the fixed list: required on a return or an exchange (D-234). */
+  readonly returnReason?: string | null | undefined;
   readonly occurredAt?: Date;
   readonly courierId?: string | null;
   readonly deliver?: DeliverOptions;
@@ -145,6 +161,7 @@ export class TransitionsService {
     private readonly customers: CustomersService,
     private readonly audit: AuditService,
     private readonly courier: CourierBookingRegistry,
+    private readonly advances: AdvancesService,
   ) {}
 
   /**
@@ -187,6 +204,7 @@ export class TransitionsService {
        * a query whose answer it cannot use.
        */
       parcelBooked: trigger === 'cancel' && (await this.parcelBooked(tx, context.orgId, order.id)),
+      returnReason: options.returnReason ?? null,
     });
 
     /*
@@ -197,7 +215,7 @@ export class TransitionsService {
      * mutable holder rather than a return value from `perform`, because the effect list is
      * a loop and only two of its effects post anything.
      */
-    const posted: { journalId: string | null } = { journalId: null };
+    const posted: Posted = { journalId: null, advanceAppliedPoisha: 0n };
 
     for (const effect of result.effects) {
       await this.perform(tx, context, order, effect, result, options, posted);
@@ -285,7 +303,7 @@ export class TransitionsService {
     effect: OrderEffect,
     result: TransitionResult,
     options: MoveOptions,
-    posted: { journalId: string | null },
+    posted: Posted,
   ): Promise<void> {
     const actor = { orgId: context.orgId, userId: context.userId };
 
@@ -346,6 +364,37 @@ export class TransitionsService {
       case 'update_customer_stats':
         await this.updateStats(tx, context, order, result);
         return;
+
+      case 'apply_advances':
+        // After the delivery journal, which computed what it applied (D-233).
+        await this.advances.applyOnDelivery(tx, context.orgId, order, posted.advanceAppliedPoisha);
+        return;
+
+      case 'settle_advances':
+        // A cancel and a received return are the two endings (D-232).
+        await this.advances.settleOnEnding(
+          tx,
+          context,
+          order,
+          result.to === 'cancelled' ? 'cancel' : 'return',
+        );
+        return;
+
+      case 'record_return_reason': {
+        // The machine refused the move without a code, so one is here (D-234).
+        const code = result.returnReason;
+        if (code === null) throw new Error('a return was allowed without a reason code');
+        await advancesRepo.insertReturnReason(tx, {
+          orgId: context.orgId,
+          orderId: order.id,
+          kind: result.to === 'exchange' ? 'exchange' : 'return',
+          reasonCode: code,
+          note: result.reason,
+          businessDate: result.businessDate,
+          recordedBy: context.userId,
+        });
+        return;
+      }
 
       case 'release_promo':
         // The use goes back once however often the cancel arrives: conditional on the
@@ -477,7 +526,7 @@ export class TransitionsService {
     order: repo.OrderRow,
     partial: boolean,
     options: MoveOptions,
-    posted: { journalId: string | null },
+    posted: Posted,
   ): Promise<void> {
     const occurredAt = options.occurredAt ?? new Date();
     const lines = await repo.orderLines(tx, context.orgId, order.id);
@@ -585,6 +634,7 @@ export class TransitionsService {
     );
 
     posted.journalId = journal.journalId;
+    posted.advanceAppliedPoisha = advanceApplied;
 
     for (const line of lines) {
       await repo.setLineFulfilment(tx, {
@@ -601,7 +651,7 @@ export class TransitionsService {
     context: ActiveContext,
     order: repo.OrderRow,
     options: MoveOptions,
-    posted: { journalId: string | null },
+    posted: Posted,
   ): Promise<void> {
     const occurredAt = options.occurredAt ?? new Date();
     const lines = await repo.orderLines(tx, context.orgId, order.id);

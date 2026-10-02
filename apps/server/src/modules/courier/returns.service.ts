@@ -238,6 +238,7 @@ export class ReturnsService {
         trigger: 'receive_return',
         occurredAt: at,
         reason: input.reason,
+        returnReason: input.returnReason,
         returnReceipt: {
           locationId,
           damagedLocationId: input.damagedLocationId ?? null,
@@ -275,6 +276,7 @@ export class ReturnsService {
           sellableQty: input.lines.reduce((total, line) => total + line.sellableQty, 0),
           damagedQty: damagedTotal,
           reason: input.reason,
+          returnReason: input.returnReason,
           orderTo: applied?.to ?? order.status,
           journalId: applied?.journalId ?? null,
         },

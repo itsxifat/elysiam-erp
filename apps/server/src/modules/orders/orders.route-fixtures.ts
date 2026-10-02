@@ -9,6 +9,7 @@ import {
   applyOrderMigrations,
   ownRiderCourier,
   seedCustomer,
+  seedAdvance,
   seedOrder,
   seedStockLevel,
   walletAccount,
@@ -231,7 +232,11 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
     });
     return {
       url: `/v1/orders/${orderId}/receive-return`,
-      body: { reason: 'Came back unopened', locationId: state().location },
+      body: {
+        reason: 'Came back unopened',
+        returnReason: 'customer_refused',
+        locationId: state().location,
+      },
     };
   },
 
@@ -244,9 +249,67 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
     url: `/v1/orders/${await freshOrder('pending')}/claim`,
   }),
 
-  'POST /v1/orders/:id/advance': async () => ({
-    url: `/v1/orders/${await freshOrder('pending')}/advance`,
-    body: { walletAccountId: state().walletAccountId, amountPoisha: '10000' },
+  // --- M17: advances and return reasons ------------------------------------------
+
+  'GET /v1/orders/:id/advances': async () => ({
+    url: `/v1/orders/${await freshOrder('pending')}/advances`,
+  }),
+
+  'POST /v1/orders/:id/advances': async () => ({
+    // A fresh reference per call: one bKash payment backs one live claim.
+    url: `/v1/orders/${await freshOrder('pending')}/advances`,
+    body: {
+      method: 'bkash',
+      transactionRef: `RM${String(Date.now()).slice(-8)}${String(Math.floor(Math.random() * 1e6))}`,
+      amountPoisha: '10000',
+    },
+  }),
+
+  'GET /v1/order-advances': () => ({ url: '/v1/order-advances' }),
+
+  'POST /v1/order-advances/:id/verify': async () => {
+    // Recorded by the fixture user, so every admitted role is somebody else (four eyes).
+    const orderId = await freshOrder('pending');
+    const id = await seedAdvance(ORG_A, {
+      orderId,
+      status: 'pending',
+      amountPoisha: 10_000n,
+      walletAccountId: state().walletAccountId,
+    });
+    return {
+      url: `/v1/order-advances/${id}/verify`,
+      body: { walletAccountId: state().walletAccountId },
+    };
+  },
+
+  'POST /v1/order-advances/:id/reject': async () => {
+    const orderId = await freshOrder('pending');
+    const id = await seedAdvance(ORG_A, {
+      orderId,
+      status: 'pending',
+      amountPoisha: 10_000n,
+      walletAccountId: state().walletAccountId,
+    });
+    return {
+      url: `/v1/order-advances/${id}/reject`,
+      body: { reason: 'No such payment in the bKash statement' },
+    };
+  },
+
+  'POST /v1/order-advances/:id/refund': async () => {
+    // Owed back after a cancel, with its received journal already posted.
+    const orderId = await freshOrder('cancelled');
+    const id = await seedAdvance(ORG_A, {
+      orderId,
+      status: 'refund_due',
+      amountPoisha: 10_000n,
+      walletAccountId: state().walletAccountId,
+    });
+    return { url: `/v1/order-advances/${id}/refund`, body: {} };
+  },
+
+  'GET /v1/orders/return-reasons': () => ({
+    url: '/v1/orders/return-reasons?from=2026-01-01&to=2026-12-31',
   }),
 
   'POST /v1/orders/:id/exchange': async () => {
@@ -260,6 +323,7 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
       url: `/v1/orders/${orderId}/exchange`,
       body: {
         reason: 'Wrong size delivered',
+        returnReason: 'size_issue',
         returnLines: [{ skuId: sku(0).id, qty: 1 }],
         lines: [{ skuId: sku(1).id, qty: 1 }],
         locationId: state().location,

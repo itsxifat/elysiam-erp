@@ -5,6 +5,8 @@ import { CatalogModule } from '../catalog/catalog.module.js';
 import { FilesModule } from '../files/files.module.js';
 import { InventoryModule } from '../inventory/inventory.module.js';
 import { LedgerModule } from '../ledger/ledger.module.js';
+import { AdvancesController } from './advances.controller.js';
+import { AdvancesService } from './advances.service.js';
 import { BuyersService } from './buyers.service.js';
 import { CustomersService } from './customers.service.js';
 import { DeskService } from './desk.service.js';
@@ -18,6 +20,7 @@ import {
   ReengagementController,
 } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
+import { ReturnReasonsService } from './returns.service.js';
 import { TransitionsService } from './transitions.service.js';
 import { PROMO_API } from '../promo/promo.api.js';
 import { PromoModule } from '../promo/promo.module.js';
@@ -89,10 +92,15 @@ import { PROMO_PORT } from './ports/promo.port.js';
     DeliveryZonesController,
     BuyersController,
     ReengagementController,
+    // M17: advance claims, the accounts queue, and returns by reason.
+    AdvancesController,
   ],
   providers: [
     CustomersService,
     CourierBookingRegistry,
+    // M17: advances end inside the order's own transitions (D-232, D-233).
+    AdvancesService,
+    ReturnReasonsService,
     TransitionsService,
     OrdersService,
     DocumentsService,

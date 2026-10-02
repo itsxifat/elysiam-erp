@@ -138,6 +138,33 @@ export const ERROR_CODES = [
   'ORDER_COST_MOVED',
   'CUSTOMER_NOT_FOUND',
   'DELIVERY_ZONE_NOT_FOUND',
+  /**
+   * A return or an exchange was given no reason from the fixed list (M17, D-234). Raised by
+   * the domain state machine, and by migration 0082's deferred trigger at commit.
+   */
+  'ORDER_RETURN_REASON_REQUIRED',
+
+  /*
+   * Advances against an order (M17, §7; D-013, D-230 to D-233).
+   *
+   * An agent records a claim and accounts verifies it. A duplicate reference and a
+   * self-verification are kept apart because they call for different people: the agent
+   * re-checks the SMS, or a second person verifies.
+   */
+  'ADVANCE_NOT_FOUND',
+  /** The claim is not in a state for this action, or the order no longer takes one. */
+  'ADVANCE_INVALID',
+  /** That transaction reference already backs a live claim in this brand. */
+  'ADVANCE_DUPLICATE',
+  /** The person who recorded a claim cannot also verify it. */
+  'ADVANCE_SELF_VERIFY',
+  /**
+   * The parcel is booked or on the road, and its COD is the one the courier was given.
+   * Verify once the booking is cancelled or the order has ended.
+   */
+  'ADVANCE_PARCEL_IN_FLIGHT',
+  /** A claim's terms are fixed, and its status moves only along its own path (0082). */
+  'ADVANCE_IMMUTABLE',
 
   /*
    * Couriers, parcels and settlements (M12, §9, §7; D-006, D-037).

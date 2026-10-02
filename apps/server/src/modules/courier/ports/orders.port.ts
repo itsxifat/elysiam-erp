@@ -1,5 +1,5 @@
 import type { Tx } from '@elysium/db';
-import type { OrderStatus, OrderTrigger, Poisha } from '@elysium/domain';
+import type { OrderStatus, OrderTrigger, Poisha, ReturnReasonCode } from '@elysium/domain';
 
 import type { AuditableRequest } from '../../../platform/audit/audit.interceptor.js';
 import type { ActiveContext } from '../../../platform/http/context.js';
@@ -81,6 +81,8 @@ export interface CourierTriggerInput {
   readonly collectedPoisha?: Poisha | undefined;
   /** Set for a partial delivery: what actually arrived, per SKU. */
   readonly deliveredLines?: readonly { readonly skuId: string; readonly deliveredQty: number }[];
+  /** Set on `receive_return`: why the parcel came back, from the fixed list (M17, D-234). */
+  readonly returnReason?: ReturnReasonCode | undefined;
   /** Set on `receive_return`: where sellable and damaged units go, and what came back. */
   readonly returnReceipt?: {
     readonly locationId: string;

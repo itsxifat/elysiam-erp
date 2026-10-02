@@ -1,3 +1,4 @@
+import { RETURN_REASON_CODES } from '@elysium/domain';
 import { z } from 'zod';
 
 /**
@@ -139,6 +140,8 @@ export const receiveReturnSchema = z
     /** §7's `damaged` location. Required when anything was damaged. */
     damagedLocationId: uuid.optional(),
     reason: z.string().min(1).max(500),
+    /** Why it came back, from the fixed list (M17, D-234). Required on every return. */
+    returnReason: z.enum(RETURN_REASON_CODES),
     inspectionNote: z.string().max(1000).optional(),
     occurredAt: z.string().datetime().optional(),
     lines: z

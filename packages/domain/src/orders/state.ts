@@ -1,4 +1,5 @@
 import { businessDate, type IsoDate } from '../dates/index.js';
+import { isReturnReasonCode, type ReturnReasonCode } from './returns.js';
 
 /**
  * The order state machine (architecture §9, invariant 7).
@@ -113,6 +114,20 @@ export const ORDER_EFFECTS = [
    * back; hanging it off another effect made it depend on a list that does not mention it.
    */
   'release_promo',
+  /**
+   * M17, D-233: the delivery journal relieved Customer advance by the applicable amount, and
+   * each verified advance records its share of it, oldest first. After `post_revenue` /
+   * `post_partial_revenue`, which is what computes the amount.
+   */
+  'apply_advances',
+  /**
+   * M17, D-232: whatever is left of each verified advance is refunded or kept, per the
+   * brand's policy. On every cancel and on a received return. Never on a delivery: a partial
+   * delivery's leftover waits for the return that follows it.
+   */
+  'settle_advances',
+  /** M17, D-234: the return reason, on every return and every exchange. */
+  'record_return_reason',
 ] as const;
 
 export type OrderEffect = (typeof ORDER_EFFECTS)[number];
@@ -153,7 +168,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     from: 'pending',
     to: 'cancelled',
     trigger: 'cancel',
-    effects: ['release_promo'],
+    effects: ['release_promo', 'settle_advances'],
     requiresReason: true,
   },
   {
@@ -183,6 +198,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
       'enqueue_courier_cancel',
       'update_customer_stats',
       'release_promo',
+      'settle_advances',
     ],
     requiresReason: true,
   },
@@ -195,6 +211,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
       'enqueue_courier_cancel',
       'update_customer_stats',
       'release_promo',
+      'settle_advances',
     ],
     requiresReason: true,
   },
@@ -216,14 +233,14 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     from: 'shipped',
     to: 'delivered',
     trigger: 'deliver',
-    effects: ['post_revenue', 'update_customer_stats'],
+    effects: ['post_revenue', 'apply_advances', 'update_customer_stats'],
     requiresReason: false,
   },
   {
     from: 'shipped',
     to: 'partially_delivered',
     trigger: 'deliver_partially',
-    effects: ['post_partial_revenue', 'update_customer_stats'],
+    effects: ['post_partial_revenue', 'apply_advances', 'update_customer_stats'],
     requiresReason: false,
   },
   {
@@ -237,21 +254,27 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     from: 'return_in_transit',
     to: 'returned',
     trigger: 'receive_return',
-    effects: ['receive_return_stock', 'post_return', 'update_customer_stats'],
+    effects: [
+      'receive_return_stock',
+      'post_return',
+      'update_customer_stats',
+      'settle_advances',
+      'record_return_reason',
+    ],
     requiresReason: true,
   },
   {
     from: 'partially_delivered',
     to: 'returned',
     trigger: 'receive_return',
-    effects: ['receive_return_stock', 'post_return'],
+    effects: ['receive_return_stock', 'post_return', 'settle_advances', 'record_return_reason'],
     requiresReason: true,
   },
   {
     from: 'delivered',
     to: 'exchange',
     trigger: 'exchange',
-    effects: ['create_exchange_order'],
+    effects: ['create_exchange_order', 'record_return_reason'],
     requiresReason: true,
   },
 ];
@@ -271,6 +294,7 @@ export const TERMINAL_STATUSES: readonly OrderStatus[] = ORDER_STATUSES.filter(
 export type OrderErrorCode =
   | 'ORDER_TRANSITION_INVALID'
   | 'ORDER_REASON_REQUIRED'
+  | 'ORDER_RETURN_REASON_REQUIRED'
   | 'ORDER_TOTAL_INVALID'
   | 'ORDER_LINES_INVALID'
   | 'ORDER_PHONE_INVALID';
@@ -313,6 +337,8 @@ export interface TransitionRequest {
   readonly bookingPolicy?: 'on_confirm' | 'on_pack' | 'manual';
   /** Whether a parcel already exists with the courier, which decides the cancel. */
   readonly parcelBooked?: boolean;
+  /** Why the goods came back: required on `receive_return` and `exchange` (M17, D-234). */
+  readonly returnReason?: string | null | undefined;
 }
 
 export interface TransitionResult {
@@ -322,6 +348,8 @@ export interface TransitionResult {
   /** The declared effects, with the two conditional ones resolved. */
   readonly effects: readonly OrderEffect[];
   readonly reason: string | null;
+  /** Set exactly when the effects include `record_return_reason`. */
+  readonly returnReason: ReturnReasonCode | null;
   readonly businessDate: IsoDate;
 }
 
@@ -333,7 +361,9 @@ const MAX_REASON = 500;
  * The refusals, in the order they are checked:
  *
  * 1. the pair is not in §9's table (`ORDER_TRANSITION_INVALID`);
- * 2. a transition that needs a reason was given none (`ORDER_REASON_REQUIRED`).
+ * 2. a transition that needs a reason was given none (`ORDER_REASON_REQUIRED`);
+ * 3. a return or an exchange was given no reason code from the fixed list
+ *    (`ORDER_RETURN_REASON_REQUIRED`, M17 check 3).
  */
 export function transition(request: TransitionRequest): TransitionResult {
   const entry = transitionFor(request.from, request.trigger);
@@ -359,6 +389,20 @@ export function transition(request: TransitionRequest): TransitionResult {
     );
   }
 
+  /*
+   * Every return and every exchange says why, from the fixed list (D-234). Checked here so no
+   * caller (the desk, the courier's returns screen, a job) can move goods back without one,
+   * and the database refuses the same thing at commit if anything bypasses this.
+   */
+  const recordsReturn = entry.effects.includes('record_return_reason');
+  const returnReason = isReturnReasonCode(request.returnReason) ? request.returnReason : null;
+  if (recordsReturn && returnReason === null) {
+    throw new OrderError(
+      'ORDER_RETURN_REASON_REQUIRED',
+      `Moving an order from ${entry.from} to ${entry.to} needs a return reason from the list.`,
+    );
+  }
+
   const policy = request.bookingPolicy ?? 'manual';
   const effects = entry.effects.filter((effect) => {
     if (effect === 'enqueue_courier_booking') {
@@ -380,6 +424,7 @@ export function transition(request: TransitionRequest): TransitionResult {
     trigger: entry.trigger,
     effects,
     reason,
+    returnReason: recordsReturn ? returnReason : null,
     businessDate: businessDateOf(request.at),
   };
 }

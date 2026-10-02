@@ -45,6 +45,14 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   PERIOD_CLOSED: 409,
   IDEMPOTENCY_CONFLICT: 409,
   APPROVAL_REQUIRED: 409,
+  // M17: advances (D-230, D-231).
+  ADVANCE_NOT_FOUND: 404,
+  ADVANCE_DUPLICATE: 409,
+  // Retryable once the order ends or the booking is cancelled.
+  ADVANCE_PARCEL_IN_FLIGHT: 409,
+  ADVANCE_IMMUTABLE: 409,
+  // About who, not what: a second person verifies, the body is fine.
+  ADVANCE_SELF_VERIFY: 403,
 };
 
 export class OrdersError extends Error {
@@ -80,6 +88,9 @@ const TRIGGER_CODES: readonly ErrorCode[] = [
   'ORDER_IMMUTABLE',
   'ORDER_LINES_FROZEN',
   'ORDER_EVENT_IMMUTABLE',
+  // M17, migration 0082.
+  'ADVANCE_IMMUTABLE',
+  'ORDER_RETURN_REASON_REQUIRED',
 ];
 
 /**
@@ -120,6 +131,10 @@ const CHECK_MESSAGES: Readonly<Record<string, { code: ErrorCode; message: string
     code: 'ORDER_PHONE_INVALID',
     message: 'That is not a Bangladeshi mobile number.',
   },
+  order_advances_four_eyes: {
+    code: 'ADVANCE_SELF_VERIFY',
+    message: 'The person who recorded an advance cannot also decide it.',
+  },
   stock_levels_on_hand_not_negative: {
     code: 'STOCK_INSUFFICIENT',
     message: 'There is not enough stock at that location.',
@@ -145,6 +160,10 @@ const UNIQUE_MESSAGES: Readonly<Record<string, { code: ErrorCode; message: strin
   order_lines_org_order_sku_idx: {
     code: 'ORDER_LINES_INVALID',
     message: 'That SKU is already on this order; change its quantity instead.',
+  },
+  order_advances_org_live_ref_idx: {
+    code: 'ADVANCE_DUPLICATE',
+    message: 'That transaction id already backs an advance in this brand.',
   },
   delivery_zone_areas_org_area_idx: {
     code: 'DELIVERY_ZONE_NOT_FOUND',

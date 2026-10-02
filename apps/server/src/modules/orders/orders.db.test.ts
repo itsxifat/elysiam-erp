@@ -25,6 +25,7 @@ import {
 import { ORDERS_API, type OrdersApi } from './orders.api.js';
 import { OrdersModule } from './orders.module.js';
 import { OrdersService } from './orders.service.js';
+import { AdvancesService } from './advances.service.js';
 import {
   applyOrderMigrations,
   balancesBySubtype,
@@ -77,12 +78,14 @@ const SYSTEM_USER = 'usr_orders_db_test';
 
 let harness: HttpHarness;
 let orders: OrdersService;
+let advances: AdvancesService;
 let inventory: InventoryApi;
 
 beforeAll(async () => {
   harness = await startHttpHarness('orders-db', { extraModules: [OrdersModule] });
   await applyOrderMigrations();
   orders = harness.app.get(OrdersService);
+  advances = harness.app.get(AdvancesService);
   inventory = harness.app.get<InventoryApi>(INVENTORY_API);
 }, 420_000);
 
@@ -333,6 +336,7 @@ describe('check 4: supply → 3 orders → ship all → 2 delivered, 1 returned'
       reason: 'Buyer refused the parcel',
     });
     await orders.transition(context(place.orgId), request(), returned, 'receive_return', {
+      returnReason: 'customer_refused',
       reason: 'Came back sealed',
       ret: { reason: 'Came back sealed', locationId: place.location },
     });
@@ -438,6 +442,7 @@ describe('check 5: a partial delivery', () => {
     expect(memo).toBe('Rider waived the delivery charge at the door');
 
     await orders.transition(context(place.orgId), request(), id, 'receive_return', {
+      returnReason: 'customer_refused',
       reason: 'The third piece came back',
       ret: { reason: 'The third piece came back', locationId: place.location },
     });
@@ -503,10 +508,18 @@ describe('a partial delivery of a mostly-prepaid order', () => {
       },
       { orgId: place.orgId },
     );
-    await orders.recordAdvance(context(place.orgId), request(), id, {
-      walletAccountId: wallet,
+    // An agent records the claim and somebody else verifies it (M17, D-230).
+    const claim = await advances.record(context(place.orgId), request(), id, {
+      method: 'bkash',
+      transactionRef: 'PREPAID106K',
       amountPoisha: '106000',
     });
+    await advances.verify(
+      context(place.orgId, 'usr_orders_db_accounts'),
+      request(),
+      claim.id,
+      wallet,
+    );
 
     await orders.confirm(context(place.orgId), request(), id);
     await orders.transition(context(place.orgId), request(), id, 'ship', {
@@ -572,6 +585,7 @@ describe('check 7: exchanging a delivered order for a different SKU', () => {
     await orders.transition(context(place.orgId), request(), id, 'deliver');
 
     const exchanged = await orders.exchange(context(place.orgId), request(), id, {
+      returnReason: 'size_issue',
       reason: 'Wrong size delivered',
       returnLines: [{ skuId: first, qty: 1 }],
       lines: [{ skuId: second, qty: 1, unitPricePoisha: '250000' }],
@@ -721,6 +735,7 @@ describe('a return and an exchange after the average cost has moved', () => {
         reason: 'Buyer refused the parcel',
       });
       await orders.transition(context(place.orgId), request(), orderId, 'receive_return', {
+        returnReason: 'customer_refused',
         reason: 'Came back sealed',
         ret: { reason: 'Came back sealed', locationId: place.location },
       });
@@ -761,6 +776,7 @@ describe('a return and an exchange after the average cost has moved', () => {
       expect(await costOf(place.orgId, first)).toEqual({ wac: 51_580n, basis: 19 });
 
       const exchanged = await orders.exchange(context(place.orgId), request(), orderId, {
+        returnReason: 'size_issue',
         reason: 'Wrong size delivered',
         returnLines: [{ skuId: first, qty: 1 }],
         lines: [{ skuId: second, qty: 1, unitPricePoisha: '250000' }],
@@ -850,11 +866,13 @@ describe('what nothing can do to an order, whatever it is', () => {
     // §9 rejects rather than clamping — the excess is a store credit, not money handed
     // back at the door.
     await expect(
-      orders.recordAdvance(context(place.orgId), request(), id, {
-        walletAccountId: wallet,
+      advances.record(context(place.orgId), request(), id, {
+        method: 'bkash',
+        transactionRef: 'TOOMUCH200K',
         amountPoisha: '200000',
       }),
     ).rejects.toThrow();
+    expect(wallet).not.toBe('');
 
     const row = await withSystem(
       async (tx) => {
@@ -968,6 +986,7 @@ describe('what an exchange will not do', () => {
      */
     await expect(
       orders.exchange(context(place.orgId), request(), id, {
+        returnReason: 'size_issue',
         reason: 'Wrong size delivered',
         returnLines: [
           { skuId: first, qty: 2 },
@@ -1003,6 +1022,7 @@ describe('what an exchange will not do', () => {
     await orders.transition(context(place.orgId), request(), id, 'deliver');
 
     const exchanged = await orders.exchange(context(place.orgId), request(), id, {
+      returnReason: 'size_issue',
       reason: 'Both pieces were the wrong size',
       // One and one: the same two units the aggregate refusal above would have doubled.
       returnLines: [

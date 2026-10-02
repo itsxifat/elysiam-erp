@@ -1,10 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { SEED_ORG_IDS, seedDeliveryZones, withSystem } from '@elysium/db';
+import { SEED_ORG_IDS, seedDeliveryZones, withOrg, withSystem } from '@elysium/db';
+import { customerAdvanceDraft, poisha } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 
 import { applyInventoryMigrations } from '../inventory/inventory.testing.js';
+import { LedgerService } from '../ledger/ledger.service.js';
 
 /**
  * Test-only setup for the order suites.
@@ -409,4 +411,78 @@ export async function stockAt(
   );
   const row = rows[0];
   return { onHand: row?.on_hand ?? 0, reserved: row?.reserved ?? 0 };
+}
+
+/**
+ * One advance against an order, written directly (M17), for a fixture that needs a claim in
+ * a given state without walking it there.
+ *
+ * `pending` is a row and nothing else. `refund_due` posts its received journal through the
+ * real `LedgerService` first, because the row's CHECKs refuse a decided advance with no
+ * journal behind it (check 2), and a fixture that could fake one would be testing a state
+ * the system cannot reach. Those are the two states the accounts routes act on.
+ */
+export async function seedAdvance(
+  orgId: string,
+  input: {
+    readonly orderId: string;
+    readonly status: 'pending' | 'refund_due';
+    readonly amountPoisha: bigint;
+    readonly walletAccountId: string;
+    readonly recordedBy?: string;
+  },
+): Promise<string> {
+  sequence += 1;
+  const reference = `FX${String(sequence)}${String(Date.now()).slice(-8)}`;
+  const recordedBy = input.recordedBy ?? 'usr_orders_fixture';
+  const actor = { orgId, userId: 'usr_orders_fixture_accounts' };
+  return withOrg(actor, async (tx) => {
+    const rows = await tx.execute<{ id: string }>(sql`
+      insert into sales.order_advances
+        (org_id, order_id, method, transaction_ref, amount_poisha, recorded_by)
+      values (${orgId}, ${input.orderId}, 'bkash', ${reference},
+              ${input.amountPoisha.toString()}::bigint, ${recordedBy})
+      returning id
+    `);
+    const id = rows[0]?.id;
+    if (id === undefined) throw new Error('seeding an advance returned no id');
+    if (input.status === 'pending') return id;
+
+    const found = await tx.execute<{ id: string; branch_id: string | null }>(sql`
+      select id, branch_id from ledger.accounts
+      where org_id = ${orgId} and subtype = 'customer_advance' and is_active
+      order by branch_id nulls first limit 1
+    `);
+    const customerAdvance = found[0];
+    if (customerAdvance === undefined) throw new Error('the seeded chart has no customer_advance');
+    const posted = await new LedgerService().post(
+      tx,
+      actor,
+      customerAdvanceDraft({
+        advanceId: id,
+        occurredAt: new Date(),
+        direction: 'received',
+        wallet: { accountId: input.walletAccountId, subtype: 'wallet_bkash', branchId: null },
+        customerAdvance: {
+          accountId: customerAdvance.id,
+          subtype: 'customer_advance',
+          branchId: customerAdvance.branch_id,
+        },
+        amountPoisha: poisha(input.amountPoisha),
+        branchId: null,
+        memo: 'fixture advance',
+      }),
+    );
+    await tx.execute(sql`
+      update sales.order_advances set
+        status = 'verified', decided_by = ${actor.userId}, decided_at = now(),
+        wallet_account_id = ${input.walletAccountId}, received_journal_id = ${posted.journalId}
+      where org_id = ${orgId} and id = ${id}
+    `);
+    await tx.execute(sql`
+      update sales.order_advances set status = 'refund_due'
+      where org_id = ${orgId} and id = ${id}
+    `);
+    return id;
+  });
 }
