@@ -94,6 +94,16 @@ export const PROVIDER_HIGH_RETURN_PENALTY = 20;
  * override with a reason, which is audited (check 5).
  */
 export const FIRST_MANUAL_FLAG_PENALTY = 55;
+
+/**
+ * An address that keeps refusing parcels from other numbers (M17, D-231).
+ *
+ * Worth less than a manual flag and as much as a recent incident. The signal is about a
+ * door, not a person: a new tenant moves into a flat that a fraudster used. The penalty
+ * moves a neutral newcomer from 70 to 50, so they are warned rather than blocked. A
+ * brand that wants an advance from such an address says so with a rule.
+ */
+export const REPEAT_RETURN_ADDRESS_PENALTY = 20;
 export const FURTHER_MANUAL_FLAG_PENALTY = 25;
 export const MANUAL_FLAG_PENALTY_CAP = 80;
 
@@ -126,6 +136,11 @@ export const TRUST_REASON_CODES = [
   'incident_this_month',
   /** Somebody here flagged this number by hand. */
   'manual_flag',
+  /**
+   * Parcels to a similar address, from other numbers, kept coming back (M17, D-231).
+   * Only on an order's assessment: a bare phone lookup has no address.
+   */
+  'repeat_return_address',
   /**
    * No provider answered: timed out, throttled, unconfigured or switched off.
    *
@@ -184,6 +199,14 @@ export interface TrustScoreInput {
   readonly bands?: FraudBands;
   /** The instant the score is being computed for. Explicit, so the score is reproducible. */
   readonly now: Date;
+  /**
+   * The order's address signal (M17, D-231), when there is an order to ask about.
+   *
+   * `returns` counts earlier returns from *other* numbers to a matching address in this
+   * brand. `minReturns` is the brand's threshold. Absent for a phone lookup with no
+   * address, which scores exactly as M13 did.
+   */
+  readonly address?: { readonly returns: number; readonly minReturns: number } | null;
 }
 
 export interface TrustAssessment {
@@ -352,6 +375,23 @@ export function trustScore(input: TrustScoreInput): TrustAssessment {
       delta: -flagPenalty,
       values: { flags: internal.manualFlagCount },
     });
+  }
+
+  if (input.address !== undefined && input.address !== null) {
+    nonNegativeInt(input.address.returns, 'address.returns');
+    if (!Number.isInteger(input.address.minReturns) || input.address.minReturns < 1) {
+      throw new TypeError(
+        `trustScore(): address.minReturns must be a whole number ≥ 1, got ${input.address.minReturns}.`,
+      );
+    }
+    if (input.address.returns >= input.address.minReturns) {
+      penalty += REPEAT_RETURN_ADDRESS_PENALTY;
+      reasons.push({
+        code: 'repeat_return_address',
+        delta: -REPEAT_RETURN_ADDRESS_PENALTY,
+        values: { returns: input.address.returns },
+      });
+    }
   }
 
   if (!input.providerAvailable) reasons.push({ code: 'provider_unavailable', delta: 0 });

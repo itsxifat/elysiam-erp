@@ -127,12 +127,77 @@ describe('the order state machine (§9, invariant 7)', () => {
       fraudOverrideReason: 'known buyer, verified by phone',
     });
     expect(forced.to).toBe('confirmed');
-    // `warn` and `require_advance` change the desk, not the machine (§10).
-    for (const decision of ['allow', 'warn', 'require_advance'] as const) {
+    // `warn` changes the desk, not the machine (§10).
+    for (const decision of ['allow', 'warn'] as const) {
       expect(
         transition({ from: 'pending', trigger: 'confirm', at: AT, fraudDecision: decision }).to,
       ).toBe('confirmed');
     }
+  });
+
+  /*
+   * M17 check 2, the machine's half: `require_advance` holds the confirm until verified
+   * money covers what the decision asked for. The server's half, with real claims and a
+   * real verification, is `advances.e2e.test.ts`.
+   */
+  it('holds a require_advance confirm until the verified advance covers it (M17 check 2)', () => {
+    const base = {
+      from: 'pending' as const,
+      trigger: 'confirm' as const,
+      at: AT,
+      fraudDecision: 'require_advance' as const,
+    };
+    // Unknown is not enough: a caller that passes no advance gets a refusal.
+    expect(() => transition(base)).toThrowError(/verified advance/);
+    let short: unknown;
+    try {
+      transition({ ...base, advance: { requiredPoisha: 6_000n, verifiedPoisha: 5_999n } });
+    } catch (error) {
+      short = error;
+    }
+    expect(short).toBeInstanceOf(OrderError);
+    expect(short).toMatchObject({ code: 'ORDER_ADVANCE_REQUIRED' });
+    expect(
+      transition({ ...base, advance: { requiredPoisha: 6_000n, verifiedPoisha: 6_000n } }).to,
+    ).toBe('confirmed');
+    // The same override that lifts a block lifts this; who may give it is the server's call.
+    expect(
+      transition({
+        ...base,
+        advance: { requiredPoisha: 6_000n, verifiedPoisha: 0n },
+        fraudOverrideReason: 'repeat buyer known to the owner',
+      }).to,
+    ).toBe('confirmed');
+    // An advance is only asked of `require_advance`: other decisions ignore it.
+    expect(
+      transition({
+        ...base,
+        fraudDecision: 'warn',
+        advance: { requiredPoisha: 6_000n, verifiedPoisha: 0n },
+      }).to,
+    ).toBe('confirmed');
+  });
+
+  it('settles advances on every cancel and every received return, and applies them on delivery', () => {
+    for (const from of ['pending', 'confirmed', 'packed'] as const) {
+      expect(
+        transition({ from, trigger: 'cancel', at: AT, reason: 'duplicate' }).effects,
+      ).toContain('settle_advances');
+    }
+    for (const from of ['return_in_transit', 'partially_delivered'] as const) {
+      expect(
+        transition({ from, trigger: 'receive_return', at: AT, reason: 'refused' }).effects,
+      ).toContain('settle_advances');
+    }
+    const delivered = transition({ from: 'shipped', trigger: 'deliver', at: AT }).effects;
+    // After the revenue posting, which is what computes the amount applied.
+    expect(delivered.indexOf('apply_advances')).toBeGreaterThan(delivered.indexOf('post_revenue'));
+    const partial = transition({ from: 'shipped', trigger: 'deliver_partially', at: AT }).effects;
+    expect(partial.indexOf('apply_advances')).toBeGreaterThan(
+      partial.indexOf('post_partial_revenue'),
+    );
+    // A delivered order's leftover advance waits for the return; nothing settles on delivery.
+    expect(delivered).not.toContain('settle_advances');
   });
 
   it('fires the courier booking on whichever transition the org’s policy names', () => {

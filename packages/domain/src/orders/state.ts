@@ -113,6 +113,19 @@ export const ORDER_EFFECTS = [
    * back; hanging it off another effect made it depend on a list that does not mention it.
    */
   'release_promo',
+  /**
+   * M17, D-234: the delivery journal relieved Customer advance by the applicable amount,
+   * and each verified advance records its own share of it, oldest first. After
+   * `post_revenue` / `post_partial_revenue`, which is what computes the amount.
+   */
+  'apply_advances',
+  /**
+   * M17, D-235 and D-236: whatever is left of each verified advance is refunded or kept,
+   * per the brand's policy, and a claim nobody verified is voided. On every cancel and
+   * on a received return. Never on a delivery: a delivered order's leftover advance (a
+   * partial delivery) waits for the return that follows it.
+   */
+  'settle_advances',
 ] as const;
 
 export type OrderEffect = (typeof ORDER_EFFECTS)[number];
@@ -153,7 +166,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     from: 'pending',
     to: 'cancelled',
     trigger: 'cancel',
-    effects: ['release_promo'],
+    effects: ['release_promo', 'settle_advances'],
     requiresReason: true,
   },
   {
@@ -183,6 +196,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
       'enqueue_courier_cancel',
       'update_customer_stats',
       'release_promo',
+      'settle_advances',
     ],
     requiresReason: true,
   },
@@ -195,6 +209,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
       'enqueue_courier_cancel',
       'update_customer_stats',
       'release_promo',
+      'settle_advances',
     ],
     requiresReason: true,
   },
@@ -216,14 +231,14 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     from: 'shipped',
     to: 'delivered',
     trigger: 'deliver',
-    effects: ['post_revenue', 'update_customer_stats'],
+    effects: ['post_revenue', 'apply_advances', 'update_customer_stats'],
     requiresReason: false,
   },
   {
     from: 'shipped',
     to: 'partially_delivered',
     trigger: 'deliver_partially',
-    effects: ['post_partial_revenue', 'update_customer_stats'],
+    effects: ['post_partial_revenue', 'apply_advances', 'update_customer_stats'],
     requiresReason: false,
   },
   {
@@ -237,14 +252,14 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     from: 'return_in_transit',
     to: 'returned',
     trigger: 'receive_return',
-    effects: ['receive_return_stock', 'post_return', 'update_customer_stats'],
+    effects: ['receive_return_stock', 'post_return', 'update_customer_stats', 'settle_advances'],
     requiresReason: true,
   },
   {
     from: 'partially_delivered',
     to: 'returned',
     trigger: 'receive_return',
-    effects: ['receive_return_stock', 'post_return'],
+    effects: ['receive_return_stock', 'post_return', 'settle_advances'],
     requiresReason: true,
   },
   {
@@ -272,6 +287,7 @@ export type OrderErrorCode =
   | 'ORDER_TRANSITION_INVALID'
   | 'ORDER_REASON_REQUIRED'
   | 'ORDER_FRAUD_BLOCKED'
+  | 'ORDER_ADVANCE_REQUIRED'
   | 'ORDER_TOTAL_INVALID'
   | 'ORDER_LINES_INVALID'
   | 'ORDER_PHONE_INVALID';
@@ -307,9 +323,10 @@ export function triggersFrom(from: OrderStatus): readonly OrderTrigger[] {
 /**
  * §10's fraud decision, as this module needs it.
  *
- * Only `block` stops a confirm, and only an override with a reason gets past it (§9,
- * §10). `warn` and `require_advance` change what the desk shows and what it collects,
- * not whether the machine turns.
+ * `block` stops a confirm, and only an override with a reason gets past it (§9, §10).
+ * `require_advance` stops it too until the verified advances cover what the decision
+ * asked for (M17 check 2, D-233); the same override gets past it. `warn` changes what
+ * the desk shows, not whether the machine turns.
  */
 export type FraudDecision = 'allow' | 'warn' | 'require_advance' | 'block';
 
@@ -321,8 +338,20 @@ export interface TransitionRequest {
   readonly reason?: string | null;
   /** §10's decision as it stood when the agent pressed confirm. */
   readonly fraudDecision?: FraudDecision | null;
-  /** An org_admin's explicit override of a `block` (§10). */
+  /** An org_admin's explicit override of a `block` or a `require_advance` (§10, D-233). */
   readonly fraudOverrideReason?: string | null;
+  /**
+   * What a `require_advance` decision asked for and what is verified against the order
+   * (M17, D-233). Only verified advances count: a claim is a promise, not money.
+   *
+   * Absent means unknown, and an unknown advance does not satisfy the rule. A caller
+   * that forgot to pass it gets a refused confirm, not a parcel shipped to a buyer the
+   * brand asked to pay first.
+   */
+  readonly advance?: {
+    readonly requiredPoisha: bigint;
+    readonly verifiedPoisha: bigint;
+  } | null;
   /** The org's courier booking policy (§9). `manual` enqueues nothing. */
   readonly bookingPolicy?: 'on_confirm' | 'on_pack' | 'manual';
   /** Whether a parcel already exists with the courier, which decides the cancel. */
@@ -349,7 +378,9 @@ const MAX_REASON = 500;
  * 1. the pair is not in §9's table (`ORDER_TRANSITION_INVALID`);
  * 2. a transition that needs a reason was given none (`ORDER_REASON_REQUIRED`);
  * 3. the fraud decision is `block` and no override reason was supplied
- *    (`ORDER_FRAUD_BLOCKED`).
+ *    (`ORDER_FRAUD_BLOCKED`);
+ * 4. the fraud decision is `require_advance`, the verified advances fall short, and no
+ *    override reason was supplied (`ORDER_ADVANCE_REQUIRED`, M17).
  *
  * The fraud check is last because the first two are about the request being
  * well-formed and this one is about policy — and a caller fixing a rejected confirm
@@ -389,6 +420,21 @@ export function transition(request: TransitionRequest): TransitionResult {
       throw new OrderError(
         'ORDER_FRAUD_BLOCKED',
         'This buyer is blocked by the fraud rules; confirming needs an override with a reason.',
+      );
+    }
+  }
+
+  if (request.trigger === 'confirm' && request.fraudDecision === 'require_advance') {
+    const override = normaliseReason(request.fraudOverrideReason);
+    const advance = request.advance ?? null;
+    const covered = advance !== null && advance.verifiedPoisha >= advance.requiredPoisha;
+    if (!covered && override === null) {
+      // M17 check 2: the brand asked for money before the parcel moves, and it has not
+      // been verified. The same rule as a block: the machine refuses, and whether an
+      // override is *allowed* is the server's permission question.
+      throw new OrderError(
+        'ORDER_ADVANCE_REQUIRED',
+        'This order needs a verified advance before it can be confirmed.',
       );
     }
   }

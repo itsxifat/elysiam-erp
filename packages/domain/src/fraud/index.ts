@@ -24,3 +24,7 @@
  */
 export * from './bands.js';
 export * from './score.js';
+// M17: a brand's own rules, the address signal, and the advance a rule can ask for.
+export * from './rules.js';
+export * from './address.js';
+export * from './advance.js';

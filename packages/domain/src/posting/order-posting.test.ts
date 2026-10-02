@@ -420,10 +420,13 @@ describe('orderExchangeDraft (§9, check 7)', () => {
   });
 });
 
-describe('customerAdvanceDraft (§7)', () => {
-  it('books an advance as a liability, not as income', () => {
+describe('customerAdvanceDraft (§7, M17)', () => {
+  const ADVANCE_ID = '0c0ffee0-1234-4567-89ab-cdef01234567';
+  const otherIncome = account('other_income');
+
+  it('books an advance as a liability, not as income, keyed on the advance', () => {
     const draft = customerAdvanceDraft({
-      orderId: ORDER_ID,
+      advanceId: ADVANCE_ID,
       occurredAt: AT,
       direction: 'received',
       wallet: ACCOUNTS.bkash,
@@ -433,7 +436,9 @@ describe('customerAdvanceDraft (§7)', () => {
       memo: null,
     });
     validateJournalDraft(draft);
-    expect(draft.idempotencyKey).toBe(`order:${ORDER_ID}:advance_received`);
+    // One journal per advance (D-234): a second payment for the same order is a
+    // different key, where M10's `order:<id>:advance_received` collided (D-101).
+    expect(draft.idempotencyKey).toBe(`order_advance:${ADVANCE_ID}:received`);
     expect(net(draft, accountIdFor('wallet_bkash'))).toBe(6_000n);
     expect(net(draft, accountIdFor('customer_advance'))).toBe(-6_000n);
     expect(draft.lines.some((line) => line.accountId === accountIdFor('sales_revenue'))).toBe(
@@ -443,7 +448,7 @@ describe('customerAdvanceDraft (§7)', () => {
 
   it('refunds by reversing the same two accounts', () => {
     const draft = customerAdvanceDraft({
-      orderId: ORDER_ID,
+      advanceId: ADVANCE_ID,
       occurredAt: AT,
       direction: 'refunded',
       wallet: ACCOUNTS.bkash,
@@ -453,15 +458,33 @@ describe('customerAdvanceDraft (§7)', () => {
       memo: null,
     });
     validateJournalDraft(draft);
-    expect(draft.idempotencyKey).toBe(`order:${ORDER_ID}:advance_refunded`);
+    expect(draft.idempotencyKey).toBe(`order_advance:${ADVANCE_ID}:refunded`);
     expect(net(draft, accountIdFor('customer_advance'))).toBe(6_000n);
     expect(net(draft, accountIdFor('wallet_bkash'))).toBe(-6_000n);
+  });
+
+  it('forfeits into Other income, never into revenue (D-235, D-236)', () => {
+    const draft = customerAdvanceDraft({
+      advanceId: ADVANCE_ID,
+      occurredAt: AT,
+      direction: 'forfeited',
+      otherIncome,
+      customerAdvance: ACCOUNTS.customerAdvance,
+      amountPoisha: poisha(6_000),
+      branchId: null,
+      memo: null,
+    });
+    validateJournalDraft(draft);
+    expect(draft.idempotencyKey).toBe(`order_advance:${ADVANCE_ID}:forfeited`);
+    expect(net(draft, accountIdFor('customer_advance'))).toBe(6_000n);
+    expect(net(draft, accountIdFor('other_income'))).toBe(-6_000n);
+    expect(draft.lines.some((line) => line.accountId === accountIdFor('wallet_bkash'))).toBe(false);
   });
 
   it('refuses an advance credited against anything but a wallet', () => {
     expect(() =>
       customerAdvanceDraft({
-        orderId: ORDER_ID,
+        advanceId: ADVANCE_ID,
         occurredAt: AT,
         direction: 'received',
         wallet: ACCOUNTS.courierReceivable,
@@ -471,6 +494,51 @@ describe('customerAdvanceDraft (§7)', () => {
         memo: null,
       }),
     ).toThrowError(/into a wallet/);
+  });
+
+  it('refuses a forfeit into anything but Other income', () => {
+    expect(() =>
+      customerAdvanceDraft({
+        advanceId: ADVANCE_ID,
+        occurredAt: AT,
+        direction: 'forfeited',
+        otherIncome: ACCOUNTS.salesRevenue,
+        customerAdvance: ACCOUNTS.customerAdvance,
+        amountPoisha: poisha(6_000),
+        branchId: null,
+        memo: null,
+      }),
+    ).toThrowError(/other_income/);
+  });
+
+  it('property: every direction balances and moves Customer advance by exactly the amount', () => {
+    fc.assert(
+      fc.property(
+        fc.bigInt({ min: 1n, max: 9_000_000_000_000n }),
+        fc.constantFrom('received', 'refunded', 'forfeited'),
+        (amount, direction) => {
+          const common = {
+            advanceId: ADVANCE_ID,
+            occurredAt: AT,
+            customerAdvance: ACCOUNTS.customerAdvance,
+            amountPoisha: poisha(amount),
+            branchId: null,
+            memo: null,
+          };
+          const draft =
+            direction === 'forfeited'
+              ? customerAdvanceDraft({ ...common, direction, otherIncome })
+              : customerAdvanceDraft({ ...common, direction, wallet: ACCOUNTS.bkash });
+          validateJournalDraft(draft);
+          const { debits, credits } = totals(draft);
+          expect(debits).toBe(credits);
+          expect(net(draft, accountIdFor('customer_advance'))).toBe(
+            direction === 'received' ? -amount : amount,
+          );
+        },
+      ),
+      { numRuns: 200 },
+    );
   });
 });
 
