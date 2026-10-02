@@ -177,7 +177,14 @@ function startTurnstileStub() {
   });
 }
 
-function runK6(scenario, env) {
+/**
+ * Run one k6 scenario in Docker.
+ *
+ * Asynchronous on purpose: the Turnstile stand-in is served from this process, and a
+ * `spawnSync` here blocked its event loop for the whole run, so every intake request timed
+ * out against a stub that could not answer (the first run measured 100% failures at 3 s).
+ */
+async function runK6(scenario, env) {
   const args = [
     'run',
     '--rm',
@@ -194,10 +201,14 @@ function runK6(scenario, env) {
     ...Object.entries(env).flatMap(([key, value]) => ['-e', `${key}=${value}`]),
     `/scripts/${scenario}.js`,
   ];
-  const result = spawnSync('docker', args, { stdio: 'inherit' });
+  const status = await new Promise((resolve, reject) => {
+    const child = spawn('docker', args, { stdio: 'inherit' });
+    child.once('error', reject);
+    child.once('exit', (code) => resolve(code));
+  });
   // 99 is k6's "a threshold failed": the numbers are still the result.
-  if (result.status !== 0 && result.status !== 99) {
-    throw new Error(`k6 ${scenario} exited with ${String(result.status)}`);
+  if (status !== 0 && status !== 99) {
+    throw new Error(`k6 ${scenario} exited with ${String(status)}`);
   }
   return JSON.parse(readFileSync(path.join(WORK_DIR, `${scenario}-summary.json`), 'utf8'));
 }
@@ -396,13 +407,16 @@ async function main() {
     };
     if (which !== 'desk') {
       console.log('load-test: intake at 20 req/s …');
-      const summary = runK6('intake', { ...env, RATE: process.env.LOAD_INTAKE_RATE ?? '20' });
+      const summary = await runK6('intake', { ...env, RATE: process.env.LOAD_INTAKE_RATE ?? '20' });
       writeFileSync(path.join(OUT_DIR, 'k6-intake-summary.json'), JSON.stringify(summary, null, 2));
       results.intake = measured(summary, 'intake');
     }
     if (which !== 'intake') {
       console.log('load-test: order desk …');
-      const summary = runK6('order-desk', { ...env, SCALE: process.env.LOAD_DESK_SCALE ?? '1' });
+      const summary = await runK6('order-desk', {
+        ...env,
+        SCALE: process.env.LOAD_DESK_SCALE ?? '1',
+      });
       writeFileSync(
         path.join(OUT_DIR, 'k6-order-desk-summary.json'),
         JSON.stringify(summary, null, 2),
@@ -429,7 +443,9 @@ async function main() {
       notes: [],
     });
     mkdirSync(OUT_DIR, { recursive: true });
-    writeFileSync(path.join(OUT_DIR, 'load-test.generated.md'), report);
+    // The hand-written report (docs/review/M30/load-test.md) cites these; this table is a run's
+    // raw verdict, kept beside its logs rather than in the docs.
+    writeFileSync(path.join(LOG_DIR, 'load-test.generated.md'), report);
     console.log(`\n${report}`);
   } finally {
     await teardown();
