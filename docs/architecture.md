@@ -234,7 +234,7 @@ See D-001 and D-002.
 | reseller  | reseller  | resellers, margin rules, slabs, earnings, payouts                             |
 | pos       | pos       | registers, shifts, POS sync                                                   |
 | investor  | investor  | investors, investments, distributions, withdrawals                            |
-| loan      | loan      | company loans, schedules, payments                                            |
+| loans     | loans     | lenders, company loans, instalments, payments, reminders (M26, D-293, D-302)  |
 | messaging | messaging | Chatwoot links, conversation stats, activity heartbeats                       |
 | landing   | landing   | pages, versions, domains                                                      |
 | analytics | analytics | rollups, leaderboard snapshots, insights                                      |
@@ -939,6 +939,7 @@ interface CourierAdapter {
 - Reminders go out N days before each due date (default 3), in-app (`loan.instalment_due`) and via SMS through the notify module, exactly once per instalment (D-300).
 - Payment postings split principal and interest (D-295). One whole instalment at a time, in order (D-297), through a `loan_repayment` approval when the brand's threshold requires it (D-298, D-299).
 - Statements: schedule, repayments and totals, with the ledger's balance for the lender beside the schedules' (D-301).
+- A loan recorded by mistake is voided once, by reversing its receipt journal, while nothing is repaid or waiting (D-304).
 
 ---
 
