@@ -15,6 +15,7 @@ import {
 } from '../../testing/http-harness.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { ApprovalsService } from '../approvals/approvals.service.js';
+import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { LoanRemindersService } from './reminders.service.js';
 
 /**
@@ -89,7 +90,7 @@ async function statement(loanId: string): Promise<Statement> {
   return body<Statement>(response);
 }
 
-async function pay(loanId: string, instalmentId: string, paymentId = randomUUID()) {
+async function pay(loanId: string, instalmentId: string, paymentId: string = randomUUID()) {
   return maker.client.request('POST', `/v1/loans/${loanId}/payments`, {
     body: { paymentId, instalmentId, walletAccountId: BANK },
   });
@@ -516,6 +517,89 @@ async function livePaymentsOf(instalmentId: string) {
   return row;
 }
 
+async function voidLoan(id: string, reason = 'Recorded by mistake', as: RoleClient = checker) {
+  return as.client.request('POST', `/v1/loans/${id}/void`, { body: { reason } });
+}
+
+async function voidedAt(id: string): Promise<string | null> {
+  const [row] = await withSystem(
+    (tx) =>
+      tx.execute<{ voided_at: string | null }>(sql`
+        select voided_at::text from loans.loans where id = ${id}
+      `),
+    { orgId: ORG_A },
+  );
+  return row?.voided_at ?? null;
+}
+
+/** A promise opened from outside, to hold a transaction open at a chosen point. */
+function latch() {
+  let open: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { promise, open: () => open() };
+}
+
+/** Until some transaction waits for a `loans.loans` row lock: the race is then set. */
+async function waitForLoanLockWaiter(): Promise<void> {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const [row] = await withSystem((tx) =>
+      tx.execute<{ waiting: boolean }>(sql`
+        select exists (
+          select 1 from pg_locks
+          where locktype = 'tuple' and relation = 'loans.loans'::regclass
+            and database = (select oid from pg_database where datname = current_database())
+        ) as waiting
+      `),
+    );
+    if (row?.waiting === true) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error('nothing waited for the loan row within 10 s');
+}
+
+/**
+ * A void as 0092 and 0093 see it, written straight to the database: the receipt reversed
+ * through the ledger, then the four void columns. `journal: 'receipt'` names the receipt
+ * itself instead of its reversal; `hold` keeps the transaction open once the row is updated.
+ */
+async function voidInDatabase(
+  id: string,
+  options: {
+    readonly voidedBy?: string;
+    readonly journal?: 'reversal' | 'receipt';
+    readonly updated?: { open: () => void };
+    readonly hold?: Promise<void>;
+  } = {},
+): Promise<void> {
+  await withSystem(
+    async (tx) => {
+      const [loan] = await tx.execute<{ received_journal_id: string }>(sql`
+        select received_journal_id from loans.loans where id = ${id}
+      `);
+      const receipt = loan?.received_journal_id ?? '';
+      const journalId =
+        options.journal === 'receipt'
+          ? receipt
+          : (
+              await harness.app
+                .get<LedgerApi>(LEDGER_API)
+                .reverse(tx, { orgId: ORG_A, userId: checker.userId }, receipt, 'Voided in a test')
+            ).journalId;
+      await tx.execute(sql`
+        update loans.loans
+        set voided_at = now(), voided_by = ${options.voidedBy ?? checker.userId},
+            void_reason = 'Voided in a test', void_journal_id = ${journalId}::uuid
+        where id = ${id}
+      `);
+      options.updated?.open();
+      await options.hold;
+    },
+    { orgId: ORG_A },
+  );
+}
+
 describe('races, orphans and the database checks (ledger audit)', () => {
   // The brand's `loan_repayment` threshold is 5,000 taka from the suite above.
 
@@ -676,9 +760,7 @@ describe('races, orphans and the database checks (ledger audit)', () => {
 describe('voiding a loan recorded by mistake (W3, D-304)', () => {
   it('reverses the receipt, stops reminders and repayments, and happens once', async () => {
     const loan = await flatLoan(50_000n, 'Typo Lender');
-    const voided = await maker.client.request('POST', `/v1/loans/${loan.loan.id}/void`, {
-      body: { reason: 'Recorded against the wrong lender' },
-    });
+    const voided = await voidLoan(loan.loan.id);
     expect(voided.statusCode, voided.body).toBe(201);
     const statement = body<Statement & { loan: { voidedAt: string | null } }>(voided);
     expect(statement.loan.voidedAt).not.toBeNull();
@@ -700,9 +782,7 @@ describe('voiding a loan recorded by mistake (W3, D-304)', () => {
     expect(pair?.reversals).toBe(1);
     expect(await trialBalanceDifference(ORG_A)).toBe(0n);
 
-    const again = await maker.client.request('POST', `/v1/loans/${loan.loan.id}/void`, {
-      body: { reason: 'Twice' },
-    });
+    const again = await voidLoan(loan.loan.id, 'Twice');
     expect(again.statusCode, again.body).toBe(409);
     const repaid = await pay(loan.loan.id, loan.instalments[0]?.id ?? '');
     expect(repaid.statusCode, repaid.body).toBe(409);
@@ -725,9 +805,177 @@ describe('voiding a loan recorded by mistake (W3, D-304)', () => {
     const loan = await flatLoan(1_000_000n, 'Busy Lender');
     const held = await pay(loan.loan.id, loan.instalments[0]?.id ?? '');
     expect(held.statusCode, held.body).toBe(201);
-    const voided = await maker.client.request('POST', `/v1/loans/${loan.loan.id}/void`, {
-      body: { reason: 'Too late' },
-    });
+    const voided = await voidLoan(loan.loan.id, 'Too late');
     expect(voided.statusCode, voided.body).toBe(409);
+  });
+
+  it('needs a second person: the one who recorded a loan cannot void it (W-B)', async () => {
+    const loan = await flatLoan(50_000n, 'Own Loan Lender');
+    const own = await voidLoan(loan.loan.id, 'My own mistake', maker);
+    expect(own.statusCode, own.body).toBe(403);
+    expect(body<{ code: string }>(own).code).toBe('LOAN_SELF_VOID');
+    expect(await voidedAt(loan.loan.id)).toBeNull();
+
+    // The statement tells each viewer whether they may.
+    const asMaker = await maker.client.request('GET', `/v1/loans/${loan.loan.id}`);
+    const asChecker = await checker.client.request('GET', `/v1/loans/${loan.loan.id}`);
+    expect(body<{ loan: { voidable: boolean } }>(asMaker).loan.voidable).toBe(false);
+    expect(body<{ loan: { voidable: boolean } }>(asChecker).loan.voidable).toBe(true);
+  });
+});
+
+describe('a void and a repayment cannot both commit (W-A)', () => {
+  it('lets exactly one through when the two race, in either order', async () => {
+    for (const order of ['void first', 'pay first'] as const) {
+      // Under the threshold, so the repayment posts in the same request.
+      const loan = await flatLoan(100_000n, `Race Void Lender (${order})`);
+      const first = loan.instalments[0]?.id ?? '';
+      const requests =
+        order === 'void first'
+          ? [voidLoan(loan.loan.id, 'Race'), pay(loan.loan.id, first)]
+          : [pay(loan.loan.id, first), voidLoan(loan.loan.id, 'Race')];
+      const responses = await Promise.all(requests);
+      expect(
+        responses.filter((response) => response.statusCode === 201),
+        responses.map((response) => response.body).join('\n'),
+      ).toHaveLength(1);
+
+      const voided = (await voidedAt(loan.loan.id)) !== null;
+      expect(await livePaymentsOf(first)).toEqual(
+        voided ? { live: 0, journals: 0 } : { live: 1, journals: 1 },
+      );
+    }
+    expect(await trialBalanceDifference(ORG_A)).toBe(0n);
+  });
+
+  it('refuses the void once a payment that held the loan commits', async () => {
+    // Deterministic: the payment's insert holds the loan `for share` and stays open; the
+    // void blocks on it; the payment commits; the void's trigger then sees it.
+    const loan = await flatLoan(1_000_000n, 'Held By Payment Lender');
+    const first = loan.instalments[0];
+    const paymentId = randomUUID();
+    const approval = await harness.app.get(ApprovalsService).request(makerContext(), {
+      type: 'loan_repayment',
+      amountPoisha: 1_000_000n,
+      amountDerivedByServer: true,
+      raisedByModule: true,
+      payload: { paymentId, loanId: loan.loan.id },
+    });
+    expect(approval.status).toBe('pending');
+
+    const gate = latch();
+    const inserted = latch();
+    const payment = withSystem(
+      async (tx) => {
+        await tx.execute(sql`
+          insert into loans.payments (org_id, id, loan_id, instalment_id, wallet_account_id,
+            principal_poisha, interest_poisha, status, occurred_at, business_date,
+            approval_request_id, created_by)
+          values (${ORG_A}, ${paymentId}, ${loan.loan.id}, ${first?.id ?? ''}, ${BANK},
+            1000000, 0, 'pending_approval', now(), current_date, ${approval.id},
+            ${maker.userId})
+        `);
+        inserted.open();
+        await gate.promise;
+      },
+      { orgId: ORG_A },
+    );
+    await inserted.promise;
+    const voiding = voidLoan(loan.loan.id, 'Racing a payment');
+    await waitForLoanLockWaiter();
+    gate.open();
+    await payment;
+
+    const voided = await voiding;
+    expect(voided.statusCode, voided.body).toBe(409);
+    expect(await voidedAt(loan.loan.id)).toBeNull();
+    await decide(approval.id, 'rejected');
+  });
+
+  it('refuses the payment once a void that held the loan commits', async () => {
+    // The other order: the void holds the loan's row lock and stays open; the payment's
+    // insert waits for it `for share`, then reads the void and refuses.
+    const loan = await flatLoan(1_000_000n, 'Held By Void Lender');
+    const gate = latch();
+    const updated = latch();
+    const voiding = voidInDatabase(loan.loan.id, { updated, hold: gate.promise });
+    await updated.promise;
+    const paying = pay(loan.loan.id, loan.instalments[0]?.id ?? '');
+    await waitForLoanLockWaiter();
+    gate.open();
+    await voiding;
+
+    const paid = await paying;
+    expect(paid.statusCode, paid.body).toBe(409);
+    expect(await voidedAt(loan.loan.id)).not.toBeNull();
+    expect(await livePaymentsOf(loan.instalments[0]?.id ?? '')).toEqual({
+      live: 0,
+      journals: 0,
+    });
+  });
+});
+
+describe('what the database refuses of a void (0092, 0093; W-D)', () => {
+  it('refuses a void by the person who recorded the loan', async () => {
+    const loan = await flatLoan(50_000n, 'DB Self Void Lender');
+    await refusedWith(voidInDatabase(loan.loan.id, { voidedBy: maker.userId }), /LOAN_SELF_VOID/);
+  });
+
+  it('refuses a void that names a journal other than the receipt’s reversal', async () => {
+    const loan = await flatLoan(50_000n, 'DB Wrong Journal Lender');
+    await refusedWith(
+      voidInDatabase(loan.loan.id, { journal: 'receipt' }),
+      /names the journal that reverses the loan's receipt/,
+    );
+  });
+
+  it('refuses a void while a repayment waits', async () => {
+    const loan = await flatLoan(1_000_000n, 'DB Waiting Lender');
+    const held = body<Payment>(await pay(loan.loan.id, loan.instalments[0]?.id ?? ''));
+    expect(held.status).toBe('pending_approval');
+    await refusedWith(voidInDatabase(loan.loan.id), /repayment posted or waiting/);
+  });
+
+  it('refuses a void after a repayment posted', async () => {
+    const loan = await flatLoan(100_000n, 'DB Posted Lender');
+    const posted = body<Payment>(await pay(loan.loan.id, loan.instalments[0]?.id ?? ''));
+    expect(posted.status).toBe('posted');
+    await refusedWith(voidInDatabase(loan.loan.id), /repayment posted or waiting/);
+  });
+
+  it('refuses a second void, and any edit of the void', async () => {
+    const loan = await flatLoan(50_000n, 'DB Twice Lender');
+    expect((await voidLoan(loan.loan.id)).statusCode).toBe(201);
+    await refusedWith(
+      withSystem(
+        (tx) =>
+          tx.execute(
+            sql`update loans.loans set void_reason = 'Rewritten' where id = ${loan.loan.id}`,
+          ),
+        { orgId: ORG_A },
+      ),
+      /voided once/,
+    );
+    await refusedWith(
+      withSystem(
+        (tx) =>
+          tx.execute(sql`update loans.loans set voided_at = now() where id = ${loan.loan.id}`),
+        { orgId: ORG_A },
+      ),
+      /voided once/,
+    );
+  });
+});
+
+describe('a payment id in any case (N2)', () => {
+  it('approves and posts a repayment whose id arrived in capitals', async () => {
+    const loan = await flatLoan(1_000_000n, 'Capitals Lender');
+    const held = await pay(loan.loan.id, loan.instalments[0]?.id ?? '', randomUUID().toUpperCase());
+    expect(held.statusCode, held.body).toBe(201);
+    const payment = body<Payment>(held);
+    expect(payment.status).toBe('pending_approval');
+    await decide(payment.approvalId ?? '', 'approved');
+    const after = await statement(loan.loan.id);
+    expect(after.payments.map((row) => row.status)).toEqual(['posted']);
   });
 });

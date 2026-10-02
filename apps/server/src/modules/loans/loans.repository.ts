@@ -79,6 +79,7 @@ export interface LoanRow extends Record<string, unknown> {
   readonly wallet_account_id: string;
   readonly received_journal_id: string;
   readonly memo: string | null;
+  readonly created_by: string;
   readonly created_at: Date;
   readonly voided_at: Date | null;
   readonly void_reason: string | null;
@@ -88,8 +89,8 @@ export interface LoanRow extends Record<string, unknown> {
 const LOAN_COLUMNS = sql`l.id, l.lender_id, le.name as lender_name, l.reference,
   l.principal_poisha::text as principal_poisha, l.rate_bps, l.method, l.tenure_months,
   l.received_on::text as received_on, l.first_due_on::text as first_due_on, l.reminder_days,
-  l.reminder_phone, l.wallet_account_id, l.received_journal_id, l.memo, l.created_at,
-  l.voided_at, l.void_reason, l.void_journal_id`;
+  l.reminder_phone, l.wallet_account_id, l.received_journal_id, l.memo, l.created_by,
+  l.created_at, l.voided_at, l.void_reason, l.void_journal_id`;
 
 export async function loanById(tx: Tx, orgId: string, id: string): Promise<LoanRow | undefined> {
   const rows = await tx.execute<LoanRow>(sql`

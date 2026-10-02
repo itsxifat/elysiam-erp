@@ -101,6 +101,8 @@ export interface Statement {
     readonly memo: string | null;
     readonly voidedAt: string | null;
     readonly voidReason: string | null;
+    /** This viewer may void it now: the server's answer, checked again on the void. */
+    readonly voidable: boolean;
   };
   readonly instalments: readonly StatementInstalment[];
   readonly payments: readonly StatementPayment[];

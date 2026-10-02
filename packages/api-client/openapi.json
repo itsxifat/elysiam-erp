@@ -504,7 +504,8 @@
               "LOAN_TERMS_INVALID",
               "LOAN_SCHEDULE_INVALID",
               "LOAN_PAYMENT_INVALID",
-              "LOAN_IMMUTABLE"
+              "LOAN_IMMUTABLE",
+              "LOAN_SELF_VOID"
             ]
           },
           "detail": {

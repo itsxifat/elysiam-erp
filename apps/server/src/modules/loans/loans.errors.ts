@@ -26,6 +26,7 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   LOAN_SCHEDULE_INVALID: 400,
   LOAN_PAYMENT_INVALID: 409,
   LOAN_IMMUTABLE: 409,
+  LOAN_SELF_VOID: 403,
   IDEMPOTENCY_CONFLICT: 409,
   CONFLICT: 409,
   FORBIDDEN: 403,
@@ -60,6 +61,7 @@ const DB_CODES: readonly ErrorCode[] = [
   'LOAN_SCHEDULE_INVALID',
   'LOAN_PAYMENT_INVALID',
   'LOAN_IMMUTABLE',
+  'LOAN_SELF_VOID',
 ];
 
 function databaseCode(error: unknown): { code: ErrorCode; message: string } | null {

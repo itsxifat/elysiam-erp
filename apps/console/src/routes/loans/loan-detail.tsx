@@ -16,7 +16,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -31,6 +31,7 @@ import {
   type StatementInstalment,
   type StatementPayment,
 } from './api.js';
+import { attemptId } from './attempt.js';
 import { messageOf, METHOD_LABEL, NEXT_STATE, tableLabels } from './loans-page.js';
 import { useLoansT, type LoansMessageKey } from './messages.js';
 
@@ -76,6 +77,15 @@ export function LoanDetailPage() {
   const mayPay = ability.can('update', 'CompanyLoan');
 
   const [paying, setPaying] = useState<StatementInstalment | null>(null);
+  /*
+   * The payment's id lives as long as the attempt, not the request: a retry after a lost
+   * response sends the same id and is answered from the row it wrote, instead of paying
+   * again (ledger audit W-C). Another instalment, another wallet or memo, or a success
+   * starts a new attempt — as the transfer screen renews its id (accounts/transfers.tsx).
+   * Keyed by the values rather than renewed by watching the form: `watch()` cannot be
+   * memoised, and the lint says so.
+   */
+  const attempt = useRef<{ readonly key: string; readonly id: string } | null>(null);
   const [voiding, setVoiding] = useState(false);
   const [notice, setNotice] = useState<LoansMessageKey | null>(null);
 
@@ -113,13 +123,14 @@ export function LoanDetailPage() {
   const payMutation = useMutation({
     mutationFn: (values: PayForm & { instalmentId: string }) =>
       payInstalment(loanId, {
-        paymentId: crypto.randomUUID(),
+        paymentId: attemptId(attempt, values),
         instalmentId: values.instalmentId,
         walletAccountId: values.walletAccountId,
         ...(values.memo === undefined || values.memo === '' ? {} : { memo: values.memo }),
       }),
     onSuccess: async (result) => {
       setPaying(null);
+      attempt.current = null;
       setNotice(result.status === 'posted' ? 'loans.paidNotice' : 'loans.heldNotice');
       payForm.reset({ memo: '' });
       await queryClient.invalidateQueries({ queryKey: ['loans'] });
@@ -128,11 +139,8 @@ export function LoanDetailPage() {
 
   const statement = statementQuery.data;
   const payableId = statement?.payable.instalmentId ?? null;
-  // Voidable while nothing is repaid or waiting (D-304); the server checks it again.
-  const mayVoid =
-    mayPay &&
-    statement?.loan.voidedAt === null &&
-    statement.payments.every((payment) => payment.status === 'rejected');
+  // Not void, nothing repaid or waiting, and not this viewer's own loan (D-304).
+  const mayVoid = mayPay && statement?.loan.voidable === true;
 
   const instalmentColumns = useMemo<readonly DataTableColumn<StatementInstalment>[]>(() => {
     const column = dataTableColumns<StatementInstalment>();

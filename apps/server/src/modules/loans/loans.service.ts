@@ -351,7 +351,9 @@ export class LoansService {
   /**
    * Void a loan recorded by mistake (D-304): reverse its receipt journal and mark it void,
    * in one transaction. Only while nothing is repaid or waiting — after that the loan is
-   * real and its mistakes are settled with the lender, not erased.
+   * real and its mistakes are settled with the lender, not erased — and only by someone
+   * other than the person who recorded it: the reversal takes the whole principal out of a
+   * wallet. 0093's trigger holds all three, and a repayment racing the void (W-A).
    */
   async void(
     context: ActiveContext,
@@ -366,6 +368,12 @@ export class LoansService {
         if (loan === undefined) throw new LoansHttpError('LOAN_NOT_FOUND', 'No such loan.');
         if (loan.voided_at !== null) {
           throw new LoansHttpError('LOAN_IMMUTABLE', 'That loan is already void.');
+        }
+        if (loan.created_by === context.userId) {
+          throw new LoansHttpError(
+            'LOAN_SELF_VOID',
+            'The person who recorded a loan cannot also void it; another accounts user can.',
+          );
         }
         if ((await repo.livePayments(tx, context.orgId, loan.id)) > 0) {
           throw new LoansHttpError(
@@ -443,6 +451,12 @@ export class LoansService {
         receivedJournalId: loan.received_journal_id,
         memo: loan.memo,
         voidedAt: loan.voided_at === null ? null : new Date(loan.voided_at).toISOString(),
+        // Whether this viewer may void it now: not void, nothing repaid or waiting, and not
+        // the person who recorded it. The void route checks each again.
+        voidable:
+          !voided &&
+          loan.created_by !== context.userId &&
+          payments.every((payment) => payment.status === 'rejected'),
         voidReason: loan.void_reason,
         voidJournalId: loan.void_journal_id,
       },

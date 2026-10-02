@@ -16,7 +16,7 @@ import {
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -41,6 +41,7 @@ import {
   type PreviewRow,
   type Terms,
 } from './api.js';
+import { attemptId } from './attempt.js';
 import { useLoansT, type LoansMessageKey } from './messages.js';
 
 /**
@@ -204,6 +205,13 @@ export function LoansPage() {
   const [lenderOpen, setLenderOpen] = useState(false);
   const [loanOpen, setLoanOpen] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
+  /*
+   * The loan's id lives as long as the attempt: a retry after a lost response sends the same
+   * id and is answered from the loan it recorded, instead of recording a second loan and a
+   * second receipt (ledger audit W-C). Any edit or a success starts a new attempt, as the
+   * transfer screen renews its id (accounts/transfers.tsx).
+   */
+  const attempt = useRef<{ readonly key: string; readonly id: string } | null>(null);
 
   const loansQuery = useQuery({
     queryKey: ['loans', 'list'],
@@ -258,7 +266,7 @@ export function LoansPage() {
     mutationFn: (values: LoanForm) =>
       createLoan({
         ...termsOf(values),
-        loanId: crypto.randomUUID(),
+        loanId: attemptId(attempt, values),
         lenderId: values.lenderId,
         walletAccountId: values.walletAccountId,
         reminderDays: Number(values.reminderDays),
@@ -274,6 +282,7 @@ export function LoansPage() {
       setLoanOpen(false);
       setPreview(null);
       loanForm.reset(LOAN_DEFAULTS);
+      attempt.current = null;
       await refresh();
     },
   });

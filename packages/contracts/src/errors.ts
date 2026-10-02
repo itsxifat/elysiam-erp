@@ -385,6 +385,8 @@ export const ERROR_CODES = [
   'LOAN_PAYMENT_INVALID',
   /** A loan, its schedule and its reminders are a record; a payment moves once (0090). */
   'LOAN_IMMUTABLE',
+  /** The person who recorded a loan cannot also void it; a second person does (D-304). */
+  'LOAN_SELF_VOID',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

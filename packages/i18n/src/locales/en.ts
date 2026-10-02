@@ -2594,7 +2594,7 @@ const en = {
   'loans.void': 'Void this loan',
   'loans.voidTitle': 'Void this loan',
   'loans.voidDetail':
-    'For a loan recorded by mistake. Reverses its receipt in the books and stops its reminders. Only while nothing is repaid or waiting.',
+    'For a loan recorded by mistake. Reverses its receipt in the books and stops its reminders. Only while nothing is repaid or waiting, and only by someone other than the person who recorded it.',
   'loans.fieldVoidReason': 'Why',
   'loans.voidedNotice': 'The loan is void; its receipt is reversed.',
 } as const;

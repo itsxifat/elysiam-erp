@@ -144,7 +144,8 @@ export class LoanPaymentsService implements OnModuleInit {
           amountPoisha: total,
           amountDerivedByServer: true,
           raisedByModule: true,
-          payload: { paymentId: input.paymentId, loanId },
+          // Lowercased, as Postgres writes a uuid, so the payload and the row always agree (N2).
+          payload: { paymentId: input.paymentId.toLowerCase(), loanId },
           reason: input.memo ?? `Loan instalment ${String(instalment.seq)}`,
           request,
         }),
@@ -327,6 +328,9 @@ export class LoanPaymentsService implements OnModuleInit {
       }
       const loan = await repo.loanById(tx, context.orgId, payment.loan_id);
       if (loan === undefined) throw new LoansHttpError('LOAN_NOT_FOUND', 'No such loan.');
+      if (loan.voided_at !== null) {
+        throw new LoansHttpError('LOAN_PAYMENT_INVALID', 'That loan is void.');
+      }
       const wallet = await this.loans.wallet(tx, context.orgId, payment.wallet_account_id);
       const journalId = await this.post(tx, context, {
         instalmentId: payment.instalment_id,
