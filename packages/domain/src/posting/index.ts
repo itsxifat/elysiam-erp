@@ -41,3 +41,6 @@ export * from './courier-settlement.js';
 // settles it, and a staff loan going out to an employee.
 export * from './payroll-posted.js';
 export * from './employee-loan.js';
+// M26's company loans (§7): the principal received from a lender, and an instalment
+// repaid, split into what reduces the debt and the interest it cost.
+export * from './company-loan.js';

@@ -51,6 +51,10 @@
     "./migration": {
       "types": "./dist/migration/index.d.ts",
       "default": "./dist/migration/index.js"
+    },
+    "./loans": {
+      "types": "./dist/loans/index.d.ts",
+      "default": "./dist/loans/index.js"
     }
   },
   "files": [
