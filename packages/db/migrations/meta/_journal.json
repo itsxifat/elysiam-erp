@@ -554,6 +554,27 @@
       "when": 1790923793755,
       "tag": "0080_remove_fraud",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1790924574406,
+      "tag": "0081_m18_marketing_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790924577767,
+      "tag": "0082_m18_marketing_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790924580907,
+      "tag": "0083_m18_marketing_integrity",
+      "breakpoints": true
     }
   ]
 }
