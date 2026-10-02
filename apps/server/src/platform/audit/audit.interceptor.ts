@@ -1,4 +1,10 @@
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+import {
+  CallHandler,
+  ExecutionContext,
+  Injectable,
+  NestInterceptor,
+  SetMetadata,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { serializeFor } from '@elysium/contracts';
 import { redact } from '@elysium/domain';
@@ -53,6 +59,18 @@ export type AuditableRequest = Record<PropertyKey, unknown> & {
   [ALREADY_AUDITED]?: boolean;
 };
 
+export const AUDIT_EXEMPT_KEY = 'elysium:audit-exempt';
+
+/**
+ * A public mutation route with no audit entry of its own, and why that is right.
+ *
+ * Declared on the handler, never set at run time, so it says what the route is rather than
+ * what one request did, and `audit-exempt.test.ts` lists every route that carries it: a new
+ * one fails that test until somebody has read the reason. A route that writes inside an org
+ * should audit itself with `AuditService.record` instead.
+ */
+export const AuditExempt = (reason: string) => SetMetadata(AUDIT_EXEMPT_KEY, reason);
+
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   constructor(
@@ -105,6 +123,11 @@ export class AuditInterceptor implements NestInterceptor {
     evenIfAudited = false,
   ): Promise<void> {
     if (request[ALREADY_AUDITED] === true && !evenIfAudited) return;
+    const exempt = this.reflector.getAllAndOverride<string | undefined>(AUDIT_EXEMPT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (exempt !== undefined && !evenIfAudited) return;
 
     const requestContext = request.context;
     const orgId = requestContext?.orgId;

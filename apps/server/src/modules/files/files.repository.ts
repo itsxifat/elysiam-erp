@@ -134,6 +134,23 @@ export async function insertPending(context: OrgUser, file: InsertPendingFile): 
 }
 
 /**
+ * A file's status by its storage key, for the local driver's public bytes `PUT`, which
+ * knows only the key. Inside the org the key names (`<visibility>/<orgId>/…`).
+ */
+export async function statusByKey(
+  orgId: string,
+  storageKey: string,
+): Promise<'pending' | 'stored' | null> {
+  const rows = await withOrg({ orgId }, async (tx) =>
+    tx.execute<{ status: string }>(sql`
+      select status::text as status from files.objects where storage_key = ${storageKey}
+    `),
+  );
+  const status = rows[0]?.status;
+  return status === 'pending' || status === 'stored' ? status : null;
+}
+
+/**
  * One file, or null.
  *
  * `scope` is the caller's row filter, rendered by `scopeWhere` — a reseller

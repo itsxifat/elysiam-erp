@@ -326,6 +326,44 @@ describe('what may be uploaded', () => {
     expect((await downloadUrl(sales.client, ticket.fileId)).status).toBe(404);
   });
 
+  it('takes bytes for a pending upload only, never over a stored file', async () => {
+    /*
+     * A ticket outlives its finalize by minutes. A PUT in that window used to replace the
+     * stored bytes after their hash and sniffed type were recorded, with no audit trace
+     * (D-389). A retry before the finalize is still an ordinary upload.
+     */
+    const sales = await harness.asRole('sales', ORG_A);
+    const bytes = await pngBytes();
+    const ticketResponse = await sales.client.request('POST', '/v1/files', {
+      body: {
+        purpose: 'order-payment-proof',
+        contentType: 'image/png',
+        sizeBytes: bytes.byteLength,
+      },
+    });
+    expect(ticketResponse.statusCode, ticketResponse.body).toBe(201);
+    const ticket = JSON.parse(ticketResponse.body) as {
+      fileId: string;
+      url: string;
+      headers: Record<string, string>;
+    };
+    const put = (payload: Buffer) =>
+      harness.server.inject({
+        method: 'PUT',
+        url: `${new URL(ticket.url).pathname}${new URL(ticket.url).search}`,
+        headers: { ...ticket.headers, host: new URL(ticket.url).host },
+        payload,
+      });
+
+    expect((await put(bytes)).statusCode).toBe(200);
+    expect((await put(bytes)).statusCode).toBe(200);
+    const finalize = await sales.client.request('POST', `/v1/files/${ticket.fileId}/finalize`);
+    expect(finalize.statusCode, finalize.body).toBe(201);
+
+    const replaced = await put(bytes);
+    expect(replaced.statusCode, replaced.body).toBe(409);
+  });
+
   it('re-encodes an uploaded image into thumb, card and full', async () => {
     const marketing = await harness.asRole('marketing', ORG_A);
     const ticketResponse = await marketing.client.request('POST', '/v1/files', {

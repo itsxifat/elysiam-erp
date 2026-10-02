@@ -1,5 +1,5 @@
 import { maskPhonesInText } from '@elysium/domain';
-import { pino, type Logger } from 'pino';
+import { destination, pino, type Logger, type LoggerOptions } from 'pino';
 
 import { serverEnv } from '../config/env.js';
 
@@ -44,8 +44,9 @@ interface LoggableRequest {
 
 export function createLogger(name: string): Logger {
   const env = serverEnv();
+  const toStderr = env.LOG_DESTINATION === 'stderr';
 
-  return pino({
+  const options: LoggerOptions = {
     name,
     level: env.LOG_LEVEL,
     redact: { paths: REDACT_PATHS, censor: '[redacted]' },
@@ -63,9 +64,17 @@ export function createLogger(name: string): Logger {
       ? {
           transport: {
             target: 'pino-pretty',
-            options: { colorize: true, translateTime: 'HH:MM:ss' },
+            options: {
+              colorize: true,
+              translateTime: 'HH:MM:ss',
+              ...(toStderr ? { destination: 2 } : {}),
+            },
           },
         }
       : {}),
-  });
+  };
+  // pino refuses a stream beside a transport; the pretty transport takes its own.
+  return toStderr && options.transport === undefined
+    ? pino(options, destination(2))
+    : pino(options);
 }

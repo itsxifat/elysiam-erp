@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -26,6 +27,7 @@ import {
   insertPending,
   markStored,
   recordVariants,
+  statusByKey,
   type FileRow,
 } from './files.repository.js';
 
@@ -90,6 +92,9 @@ function present(row: FileRow): PublicFile {
 }
 
 /** Turn a storage refusal into the HTTP answer it deserves. */
+/** The org segment of a storage key, as `buildStorageKey` writes it. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function mapStorageError(error: unknown): never {
   if (error instanceof StorageError) {
     switch (error.failure) {
@@ -417,6 +422,14 @@ export class FilesService {
 
       const rule = mimeRuleFor(claims.contentType ?? declared);
       assertWithinLimit(bytes.byteLength, rule);
+
+      // Only a pending upload takes bytes. A ticket lives for minutes after the finalize,
+      // and a PUT in that window used to replace a stored document's bytes, unaudited,
+      // after its hash and sniffed type were recorded (D-389).
+      const orgId = claims.key.split('/')[1] ?? '';
+      if (!UUID.test(orgId) || (await statusByKey(orgId, claims.key)) !== 'pending') {
+        throw new ConflictException('This upload is already stored, or was never started.');
+      }
 
       await this.driver.put(claims.key, bytes, rule.mime);
     } catch (error) {

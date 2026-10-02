@@ -14,6 +14,7 @@ import { sql } from 'drizzle-orm';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 
+import { AuditExempt } from '../../platform/audit/audit.interceptor.js';
 import { Public, RequireAbility } from '../../platform/auth/abilities.js';
 import { scopeWhere } from '../../platform/auth/scope.js';
 import { requireContext } from '../../platform/http/context.js';
@@ -121,6 +122,10 @@ export class FilesController {
    * JSON and urlencoded and nothing else.
    */
   @Public('The signed token is the credential: one key, one method, expiring.')
+  @AuditExempt(
+    'The bytes of a pending upload. Its audit trail is the ticket and the finalize, both written ' +
+      'inside the org; the bytes are refused once the file is stored (D-389).',
+  )
   @Put('content')
   async upload(@Query('t') token: string, @Req() request: FastifyRequest) {
     const body = request.body;
