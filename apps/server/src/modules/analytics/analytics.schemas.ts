@@ -1,7 +1,7 @@
 import { businessDateSchema } from '@elysium/contracts';
 import { z } from 'zod';
 
-import { MAX_ROLLUP_DAYS } from './rollup.service.js';
+import { MAX_ROLLUP_DAYS } from './analytics.queues.js';
 
 /**
  * The analytics module's wire shapes (M24), validated at the edge. Dates are Asia/Dhaka

@@ -1,3 +1,5 @@
+import { addDays, businessDate } from '@elysium/domain';
+
 import type { QueueDefinition } from '../../platform/jobs/queues.js';
 
 /**
@@ -61,4 +63,24 @@ export function rollupBucket(
     singletonKey: `rollup:${orgId}:${String(bucket)}`,
     startAfter: new Date((bucket + 1) * ROLLUP_BUCKET_MS + 1_000),
   };
+}
+
+/** The most days one recompute covers: a quarter, as M18's dashboard caps a range. */
+export const MAX_ROLLUP_DAYS = 92;
+
+/**
+ * The Dhaka days an order event's recompute covers: from the day it happened through today.
+ * One day almost always; two when an event from just before midnight is dispatched just
+ * after it. Never wider than one recompute may be: after a long outage the backlog's oldest
+ * days are the nightly run's and a refresh's, not a job `recomputeIn` would refuse.
+ */
+export function eventRecomputeRange(
+  occurredAt: Date,
+  now: Date,
+): { readonly from: string; readonly to: string } {
+  const today = businessDate(now);
+  const happened = businessDate(occurredAt);
+  const earliest = addDays(today, -(MAX_ROLLUP_DAYS - 1));
+  const from = happened < earliest ? earliest : happened < today ? happened : today;
+  return { from, to: today };
 }

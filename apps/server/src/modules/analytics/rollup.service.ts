@@ -9,14 +9,19 @@ import { enqueue } from '../../platform/jobs/enqueue.js';
 import { HR_API, type HrApi } from '../hr/hr.api.js';
 import { MARKETING_API, type MarketingApi } from '../marketing/marketing.api.js';
 import { ORDERS_API, type AnalyticsOrderFact, type OrdersApi } from '../orders/orders.api.js';
-import { ANALYTICS_QUEUES, NIGHTLY_DAYS, rollupBucket } from './analytics.queues.js';
+import {
+  ANALYTICS_QUEUES,
+  eventRecomputeRange,
+  MAX_ROLLUP_DAYS,
+  NIGHTLY_DAYS,
+  rollupBucket,
+} from './analytics.queues.js';
 import * as repo from './analytics.repository.js';
 
 /** Who the rollup acts as in `app.user_id` and the outbox (D-277). Never a person. */
 export const ROLLUP_ACTOR = 'usr_analytics_rollup';
 
 /** The most days one recompute covers: a quarter, as M18's dashboard caps a range. */
-export const MAX_ROLLUP_DAYS = 92;
 
 /** The order events that can change a day's figures (§19). */
 export const ROLLUP_EVENT_NAMES = ['order.created', 'order.status_changed'] as const;
@@ -224,9 +229,7 @@ export class RollupService {
    * costs nothing.
    */
   async enqueueForEvent(event: DeliveredEvent, now: Date = new Date()): Promise<void> {
-    const today = businessDate(now);
-    const happened = businessDate(event.occurredAt);
-    const from = happened < today ? happened : today;
+    const { from, to: today } = eventRecomputeRange(event.occurredAt, now);
     const bucket = rollupBucket(event.orgId, now);
     await withOrg({ orgId: event.orgId, userId: ROLLUP_ACTOR }, (tx) =>
       enqueue(
