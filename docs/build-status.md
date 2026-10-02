@@ -14,7 +14,7 @@ Built     [##################--]  89%
   staff activity extension (M28) and the landing page builder (M29). So **27 count**.
 - A milestone counts 100% when it is built, tested and passed its audits. A part-built one counts
   for the share that is done.
-- Today: **24 done, 1 being built (M26), 2 not started (M14b, M30).**
+- Today: **24 done, 2 being built (M26, M14b), 1 not started (M30).**
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
 [What the owner needs to do](#what-the-owner-needs-to-do).
@@ -82,10 +82,12 @@ Built     [##################--]  89%
 
 ## Being built now
 
-- **M26** company loans: loans the company takes, repayment schedules, reminders, interest
+- **M26** company loans: fixing the money review's four warnings
+- **M14b** getting ready for a server: production images, deploy config, monitoring, backups,
+  runbooks. Its last checks need a staging server from the owner.
 
 M14a, M17, M18, M20, M24 and M25's investor pages finished on 2026-10-02 and are joined on the
-branch `integration-wave2`, where every check passes (2,477 tests).
+branch `integration-wave2`, where every check passes (2,568 tests).
 
 ## What the owner needs to do
 
