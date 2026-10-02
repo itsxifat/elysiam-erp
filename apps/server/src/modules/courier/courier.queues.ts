@@ -58,6 +58,11 @@ export const COURIER_QUEUE_DEFINITIONS: readonly QueueDefinition[] = [
   {
     name: COURIER_QUEUES.book,
     scope: 'org',
+    // `exclusive`, so the singleton key actually collapses a duplicate (D-207). Under
+    // the default `standard` policy pg-boss enforces no key, and two workers running the
+    // same booking would both pass `runBooking`'s pending check and book the parcel with
+    // the courier twice. Safe because the one enqueue site always sets a key.
+    policy: 'exclusive',
     // §20: "5 retries, then dead-letter → booking_failed".
     retryLimit: 5,
     retryDelaySeconds: 5,
@@ -71,6 +76,11 @@ export const COURIER_QUEUE_DEFINITIONS: readonly QueueDefinition[] = [
   {
     name: COURIER_QUEUES.cancel,
     scope: 'org',
+    // `exclusive`, so the singleton key actually collapses a duplicate (D-207). Under
+    // the default `standard` policy pg-boss enforces no key, and a duplicate would call
+    // the courier's cancel endpoint twice. Safe because the one enqueue site always sets
+    // a key.
+    policy: 'exclusive',
     retryLimit: 5,
     retryDelaySeconds: 5,
     expireInSeconds: 120,

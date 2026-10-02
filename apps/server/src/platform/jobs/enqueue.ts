@@ -66,9 +66,16 @@ export interface EnqueueOptions {
   /** Earliest the job may run. A number is seconds from now. */
   readonly startAfter?: number | string | Date;
   /**
-   * Collapse duplicates: while a job with this key is queued, another with the
-   * same key is dropped. What makes "book this parcel" safe to enqueue from two
-   * places at once.
+   * A key that collapses duplicates — **only on a queue whose `policy` is
+   * `exclusive`** (`QueueDefinition.policy`). There, while a job with this key is
+   * queued, retrying or running, another with the same key is dropped and `enqueue`
+   * returns `null`.
+   *
+   * On a `standard` queue, which is every queue that sets no policy, pg-boss stores
+   * the key and enforces nothing: both jobs are written. That was true of every use
+   * in this codebase until D-207 found it, so a caller that needs "at most once" must
+   * either use an `exclusive` queue or be idempotent in its handler, as the courier
+   * and fraud handlers are.
    */
   readonly singletonKey?: string;
   /** Higher runs first. Default 0. */
@@ -78,9 +85,9 @@ export interface EnqueueOptions {
 /**
  * Write one job into the caller's transaction.
  *
- * Returns the job id, or `null` when a `singletonKey` meant this job was
- * collapsed into one already queued. `null` is a success, not a failure: the
- * work is going to happen, just not twice.
+ * Returns the job id, or `null` when a `singletonKey` on an `exclusive` queue meant
+ * this job was collapsed into one already queued. `null` is a success, not a
+ * failure: the work is going to happen, just not twice.
  */
 export async function enqueue(
   tx: Tx,

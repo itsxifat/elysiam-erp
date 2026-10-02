@@ -22,6 +22,10 @@ import { FRAUD_API } from '../fraud/fraud.api.js';
 import { FraudModule } from '../fraud/fraud.module.js';
 import { PROMO_API } from '../promo/promo.api.js';
 import { PromoModule } from '../promo/promo.module.js';
+import { NOTIFY_API } from '../notify/notify.api.js';
+import { NotifyModule } from '../notify/notify.module.js';
+import { CrmService } from './crm.service.js';
+import { NOTIFY_PORT } from './ports/notify.port.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { FRAUD_GATE } from './ports/fraud-gate.port.js';
 import { PROMO_PORT } from './ports/promo.port.js';
@@ -92,6 +96,7 @@ import { PROMO_PORT } from './ports/promo.port.js';
     ApprovalsModule,
     FraudModule,
     PromoModule,
+    NotifyModule,
   ],
   controllers: [OrdersController, CustomersController, DeliveryZonesController, BuyersController],
   providers: [
@@ -107,8 +112,12 @@ import { PROMO_PORT } from './ports/promo.port.js';
     { provide: FRAUD_GATE, useExisting: FRAUD_API },
     // M16: the desk prices and redeems a code through its own port (D-204).
     { provide: PROMO_PORT, useExisting: PROMO_API },
+    // M16: the CRM's greetings queue a message through their own port, in their own
+    // transaction, beside the code they announce.
+    { provide: NOTIFY_PORT, useExisting: NOTIFY_API },
+    CrmService,
     { provide: ORDERS_API, useClass: OrdersApiService },
   ],
-  exports: [ORDERS_API, CustomersService, CourierBookingRegistry],
+  exports: [ORDERS_API, CustomersService, CourierBookingRegistry, CrmService],
 })
 export class OrdersModule {}

@@ -339,6 +339,7 @@ export class JobsRuntime {
         retryBackoff: true,
         retryDelayMax: definition.retryDelayMaxSeconds ?? QUEUE_DEFAULTS.retryDelayMaxSeconds,
         expireInSeconds: definition.expireInSeconds ?? QUEUE_DEFAULTS.expireInSeconds,
+        ...(definition.policy === undefined ? {} : { policy: definition.policy }),
       });
 
       if (definition.cron !== undefined) {

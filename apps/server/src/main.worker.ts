@@ -16,6 +16,8 @@ import { FraudService } from './modules/fraud/fraud.service.js';
 import { registerFraudJobs } from './modules/fraud/fraud.worker.js';
 import { NotifyService } from './modules/notify/notify.service.js';
 import { registerNotifyJobs } from './modules/notify/notify.worker.js';
+import { CrmService } from './modules/orders/crm.service.js';
+import { registerCrmJobs } from './modules/orders/crm.worker.js';
 import { InventoryModule } from './modules/inventory/inventory.module.js';
 import { registerInventoryJobs } from './modules/inventory/inventory.worker.js';
 import { ReconcileService } from './modules/inventory/reconcile.service.js';
@@ -151,6 +153,7 @@ async function bootstrap(): Promise<void> {
   await registerInventoryJobs({ jobs, reconcile: context.get(ReconcileService), report, logger });
   await registerFraudJobs({ jobs, fraud: context.get(FraudService), report });
   await registerNotifyJobs({ jobs, notify: context.get(NotifyService), report });
+  await registerCrmJobs({ jobs, crm: context.get(CrmService), report });
 
   // Every registered queue gets its dead-letter watcher, whether or not this
   // release also registered a handler for the queue itself. A queue with a

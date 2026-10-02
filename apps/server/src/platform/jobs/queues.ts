@@ -91,6 +91,20 @@ export interface QueueDefinition {
    * happened to be first in the seed.
    */
   readonly cron?: string;
+  /**
+   * pg-boss's queue policy. Absent means `standard`, and under `standard` a
+   * `singletonKey` is stored and **enforced by nothing** — pg-boss only builds the
+   * unique indexes that collapse duplicates for the deduplicating policies.
+   *
+   * `exclusive` makes a key unique while its job is queued, retrying or running.
+   * Opt in only when every job on the queue carries a `singletonKey`: a job without
+   * one is keyed as the empty string, so on an `exclusive` queue only one keyless
+   * job could ever be pending — which would stall a queue like `notify.send`.
+   *
+   * Set when a queue is first created; changing it on an existing queue needs
+   * pg-boss's `updateQueue`, which nothing here calls (D-207).
+   */
+  readonly policy?: 'standard' | 'exclusive';
 }
 
 /**

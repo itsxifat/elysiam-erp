@@ -50,6 +50,26 @@ export interface PromoPort {
 
   /** Give the use back when the order is cancelled before it ships. Once, however often. */
   releaseForOrder(tx: Tx, orgId: string, orderId: string): Promise<boolean>;
+
+  /**
+   * A personal single-use code for a buyer's occasion (M16 check 2), in the caller's
+   * transaction — the CRM's greeting, its code and the record that it went out commit
+   * together.
+   */
+  issueOccasionCode(
+    tx: Tx,
+    orgId: string,
+    input: {
+      readonly customerId: string;
+      readonly occasion: 'birthday' | 'anniversary';
+      readonly kind: 'percent' | 'flat';
+      readonly valueBps: number;
+      readonly valuePoisha: bigint;
+      readonly validFrom: string;
+      readonly validTo: string;
+      readonly actorUserId: string;
+    },
+  ): Promise<{ readonly codeId: string; readonly code: string }>;
 }
 
 export const PROMO_PORT = Symbol('OrdersPromoPort');

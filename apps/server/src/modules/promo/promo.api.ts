@@ -82,6 +82,27 @@ export interface PromoApi {
    * the goods went out, and a return is a different event from never having bought.
    */
   releaseForOrder(tx: Tx, orgId: string, orderId: string): Promise<boolean>;
+
+  /**
+   * A personal single-use code for one buyer's birthday or anniversary (M16 check 2).
+   *
+   * In the caller's transaction, so the code, the message announcing it and the record
+   * that the greeting went out commit together or not at all.
+   */
+  issueOccasionCode(
+    tx: Tx,
+    orgId: string,
+    input: {
+      readonly customerId: string;
+      readonly occasion: 'birthday' | 'anniversary';
+      readonly kind: 'percent' | 'flat';
+      readonly valueBps: number;
+      readonly valuePoisha: bigint;
+      readonly validFrom: string;
+      readonly validTo: string;
+      readonly actorUserId: string;
+    },
+  ): Promise<{ readonly codeId: string; readonly code: string }>;
 }
 
 export const PROMO_API = Symbol('PromoApi');
@@ -177,6 +198,14 @@ export class PromoApiService implements PromoApi {
       });
       return { redemptionId };
     });
+  }
+
+  issueOccasionCode(
+    tx: Tx,
+    orgId: string,
+    input: Parameters<PromoApi['issueOccasionCode']>[2],
+  ): Promise<{ readonly codeId: string; readonly code: string }> {
+    return this.promo.issueOccasionCode(tx, orgId, input);
   }
 
   async releaseForOrder(tx: Tx, orgId: string, orderId: string): Promise<boolean> {

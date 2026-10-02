@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 import { Inject, Injectable } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
 import { businessDate, poisha, toIsoDate, type Poisha } from '@elysium/domain';
@@ -198,6 +200,72 @@ export class PromoService {
     const released = await repo.releaseRedemption(tx, orgId, applied.id);
     if (released) await repo.releaseUse(tx, orgId, applied.code_id);
     return released;
+  }
+
+  /**
+   * A personal, single-use code for one buyer's occasion, inside the caller's transaction.
+   *
+   * The caller's transaction because the code, the message announcing it and the row
+   * recording that the greeting was sent commit together or not at all (M16 check 2): a
+   * buyer is never told about a code that was rolled back, and never holds one nobody
+   * told them about.
+   *
+   * The word is generated here. A collision with an existing code is retried with a fresh
+   * word rather than failed, because the buyer did nothing wrong; three tries against a
+   * 32-bit random suffix is far past any brand's code count.
+   */
+  async issueOccasionCode(
+    tx: Tx,
+    orgId: string,
+    input: {
+      readonly customerId: string;
+      readonly occasion: 'birthday' | 'anniversary';
+      readonly kind: 'percent' | 'flat';
+      readonly valueBps: number;
+      readonly valuePoisha: bigint;
+      readonly validFrom: string;
+      readonly validTo: string;
+      readonly actorUserId: string;
+    },
+  ): Promise<{ readonly codeId: string; readonly code: string }> {
+    const prefix = input.occasion === 'birthday' ? 'BDAY' : 'ANNIV';
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const code = `${prefix}${randomBytes(4).toString('hex').toUpperCase()}`;
+      const codeId = await repo.insertCode(tx, {
+        orgId,
+        code,
+        kind: input.kind,
+        valueBps: input.kind === 'percent' ? input.valueBps : 0,
+        valuePoisha: input.kind === 'flat' ? input.valuePoisha : 0n,
+        minOrderPoisha: null,
+        maxDiscountPoisha: null,
+        totalLimit: 1,
+        perCustomerLimit: 1,
+        validFrom: input.validFrom,
+        validTo: input.validTo,
+        channels: [],
+        skuIds: [],
+        categoryIds: [],
+        customerId: input.customerId,
+        campaignId: null,
+        origin: 'occasion',
+        createdBy: input.actorUserId,
+      });
+      if (codeId === undefined) continue;
+
+      await this.audit.record(tx, {
+        orgId,
+        actorUserId: input.actorUserId,
+        operation: 'create',
+        action: 'promo.code.issued_for_occasion',
+        entityType: 'PromoCode',
+        entityId: codeId,
+        before: null,
+        after: { code, occasion: input.occasion, customerId: input.customerId },
+      });
+      return { codeId, code };
+    }
+    throw new Error('three random occasion codes collided; the code space is exhausted');
   }
 
   async list(context: ActiveContext, filters: { status?: string | undefined; limit: number }) {

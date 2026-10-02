@@ -61,7 +61,22 @@ const NIGHTLY: QueueDefinition = {
   cron: '0 2 * * *',
 };
 
-const QUEUES = [ECHO, FAILING, NIGHTLY];
+/**
+ * Two queues with no handler, so their jobs stay queued and can be counted (D-207).
+ *
+ * The same singleton key goes into each twice. pg-boss only enforces a key under a
+ * deduplicating policy, so on the default `standard` queue both jobs are written — which
+ * was true of every `singletonKey` in this codebase until D-207 — and on an `exclusive`
+ * queue the second is dropped.
+ */
+const KEYED_EXCLUSIVE: QueueDefinition = {
+  name: 'test.keyed_exclusive',
+  scope: 'org',
+  policy: 'exclusive',
+};
+const KEYED_STANDARD: QueueDefinition = { name: 'test.keyed_standard', scope: 'org' };
+
+const QUEUES = [ECHO, FAILING, NIGHTLY, KEYED_EXCLUSIVE, KEYED_STANDARD];
 
 /** A named error, so `job.failed`'s code is something specific rather than `Error`. */
 class CourierRefused extends Error {
@@ -441,3 +456,45 @@ async function waitFor(
     await sleep(100);
   }
 }
+
+describe('a singleton key (D-207)', () => {
+  async function enqueueTwice(queue: string): Promise<{ ids: (string | null)[]; rows: number }> {
+    const key = `same-${queue}`;
+    const ids: (string | null)[] = [];
+    // Two transactions, as two code paths meaning "make sure this happens" would be.
+    for (const n of [1, 2]) {
+      ids.push(
+        await withOrg({ orgId: ORG_A, userId: 'usr_jobs_test' }, (tx) =>
+          enqueueWith(runtime, tx, queue, { n }, { orgId: ORG_A, singletonKey: key }),
+        ),
+      );
+    }
+    const rows = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ n: number }>(sql`
+            select count(*)::int as n from pgboss.job
+            where name = ${queue} and singleton_key = ${key}
+          `)
+        )[0]?.n ?? -1,
+      { orgId: ORG_A },
+    );
+    return { ids, rows };
+  }
+
+  it('drops the duplicate on an exclusive queue: one job, and null for the second', async () => {
+    const { ids, rows } = await enqueueTwice(KEYED_EXCLUSIVE.name);
+    expect(ids[0]).not.toBeNull();
+    expect(ids[1]).toBeNull();
+    expect(rows).toBe(1);
+  });
+
+  it('enforces nothing on a standard queue: both jobs are written', async () => {
+    // Not a behaviour anybody wants — the reason `policy` exists. Kept as a test so the
+    // day a pg-boss upgrade changes it, the comments that rely on it are found.
+    const { ids, rows } = await enqueueTwice(KEYED_STANDARD.name);
+    expect(ids[0]).not.toBeNull();
+    expect(ids[1]).not.toBeNull();
+    expect(rows).toBe(2);
+  });
+});
