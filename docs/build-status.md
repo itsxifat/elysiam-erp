@@ -1,12 +1,12 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-02** (after the owner removed the fraud check). This is the short, plain-language view. The detail is in
+Last updated: **2026-10-02** (after M20 was built). This is the short, plain-language view. The detail is in
 `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Built     [##############------]  70%
+Built     [###############-----]  74%
 ```
 
 - The plan has 33 milestones. Six are out on the owner's instruction: the Beownz reseller
@@ -14,7 +14,7 @@ Built     [##############------]  70%
   staff activity extension (M28) and the landing page builder (M29). So **27 count**.
 - A milestone counts 100% when it is built, tested and passed its audits. A part-built one counts
   for the share that is done.
-- Today: **18 done, 2 part-built, 7 not started.**
+- Today: **19 done, 2 part-built, 6 not started.**
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
 [What the owner needs to do](#what-the-owner-needs-to-do).
@@ -35,7 +35,7 @@ Built     [##############------]  70%
 | Moving old data in                                                          |   10% | Opening balances started. Importers for products, stock, dues and customers are next.                      |
 | Advance payments and return reasons                                         |    0% | bKash advance recorded and verified, applied on delivery; why parcels come back.                           |
 | Marketing                                                                   |    0% | Ad spend, Meta import, cost per delivered order, ROAS.                                                     |
-| Targets and bonuses                                                         |    0% | Monthly sales targets split by week, bonus rules feeding payroll.                                          |
+| Targets and bonuses                                                         |  100% | Monthly targets split by week, bonus rules feeding payroll, agents' pickup time.                           |
 | Dashboards and leaderboard                                                  |    0% | Owner and super-admin dashboards, agent leaderboard.                                                       |
 | Company loans                                                               |    0% | Loans the company takes, schedules, reminders.                                                             |
 | Going live and hardening                                                    |    0% | Server deploy, monitoring, backups, load tests, security review.                                           |
@@ -68,11 +68,11 @@ Built     [##############------]  70%
 | M17  | Advance payments and return reasons    |    0% | Fraud half removed                                        |
 | M18  | Marketing                              |    0% | Next                                                      |
 | M19  | HR and payroll                         |  100% |                                                           |
-| M20  | Targets and bonuses                    |    0% | Next                                                      |
+| M20  | Targets and bonuses                    |  100% | Team targets track progress but pay no bonus yet          |
 | M21  | Reseller engine                        |     - | Set aside                                                 |
 | M22  | Reseller portal                        |     - | Set aside                                                 |
 | M23  | Showroom POS                           |  100% |                                                           |
-| M24  | Dashboards and leaderboard             |    0% | Waits for M18 and M20                                     |
+| M24  | Dashboards and leaderboard             |    0% | Waits for M18                                             |
 | M25  | Investors                              |   85% | Investor login pages missing                              |
 | M26  | Company loans                          |    0% |                                                           |
 | M27  | Unified inbox (Chatwoot)               |     - | Removed by the owner                                      |
@@ -82,7 +82,8 @@ Built     [##############------]  70%
 
 ## Being built now
 
-Nothing. Work on M14a, M17, M18 and M20 was started and **paused by the owner on 2026-10-02**.
+M20 was resumed and finished on 2026-10-02 on its own branch (`m20-targets`). Work on M14a,
+M17 and M18 was started and **paused by the owner on 2026-10-02**.
 Their half-done, uncommitted files sit in their own folders and nothing was merged.
 
 ## What the owner needs to do

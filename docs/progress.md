@@ -334,3 +334,129 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
   - Route OTPs and invites through notify once a gateway is verified. (D-212; owner: claude)
   - BulkSMSBD credentials, or the client's own gateway, to close D-012. (owner: human)
 - Next: M18, then M20 and M14a, which a parallel session is doing in its own worktree.
+
+### 2026-10-02 · M20 · Targets, bonus rules, productivity · done
+
+- Delivered:
+  - **Targets.** A monthly target per employee or per team on confirmed orders, delivered
+    orders or delivered revenue. The month is split into Saturday-start weeks by the working
+    days in the employee's M19 calendar, using largest remainder, so the weeks always sum to
+    the month. Progress is rolled up from `OrdersApi.agentResults`, counted for the agent who
+    confirmed the order (D-272). `target.progress` reaches the employee and HR only when the
+    achieved figure moves. The worker refreshes progress once per org per ten-second bucket
+    (D-279). A target is set only for the current Dhaka month or a later one (D-280).
+  - **Bonus rules into payroll.** These are versioned JSON with a pure evaluator: cumulative
+    tiers, per unit, basis points of excess revenue, and a cap. A version is previewed against
+    a month, submitted by its author and approved by someone else through the approvals
+    module. The executor and 0083 activate only the version that names the request. Applying
+    rules to a draft run (`POST /v1/hr/payroll/runs/:id/bonuses`) replaces the run's rule-made
+    bonus inputs, and only for employees the run pays. Payroll submit recomputes under the run
+    lock, refuses changed inputs and freezes what it recomputed (D-280).
+  - **Productivity.** `hr.desk_events` is written from the outbox's order events. It gives
+    pickup time (median and p90, nearest rank; a reassignment restarts the clock for the new
+    assignee) and orders per active hour, where an active hour is a Dhaka clock hour with a
+    desk action (D-276). `events.outbox.actor_user_id` records who acted (D-277).
+  - **Console.** `/performance` (the agent's own dashboard), `/performance/targets`,
+    `/performance/bonus-rules`, `/performance/productivity`, and a Bonuses panel on the payroll
+    run.
+  - 14 routes, in the route matrix with fixtures. Migrations 0081–0083.
+- Verification: `pnpm verify` exits 0 at `a53f30d` (131 test files: 2,240 passed, 1 skipped).
+  It also passed at each fix commit before that: `66e3b4c`, `4e21161` and `4215f61`.
+  An earlier run failed only `dispatcher.db.test.ts`: every test passed, but its `afterAll`
+  teardown hit the default 10 s under the full parallel run. It now gets the 60 s the other
+  database suites have. Acceptance checks 1–4 pass:
+  1. `targets.test.ts`, "the weekly split": fast-check over 500 months from 2000 to 2099 with
+     random weekly offs, holidays and totals up to 9×10^11, plus Eid, zero-working-day and
+     one-unit tables. Through the API, August 2026 splits as 3/2/2/2/1 over 6/6/6/6/3 working
+     days.
+  2. `targets.test.ts`, "the bonus evaluator": §12's example over ten rows, plus per unit,
+     basis points, the cap (with a property), parser refusals and a zero target. Through the
+     API, a 12-of-10 agent previews ৳2,100 and is paid it.
+  3. `targets.test.ts`, ten seeded streams (reassignment before and after pickup, a
+     supervisor's action, duplicated and shuffled events). `performance.e2e.test.ts` runs the
+     real outbox → dispatcher → `hr.desk_events` → HTTP path: 240 s, 120 s after a
+     reassignment, and 30 s, with a median of 30 s and a p90 of 120 s.
+  4. `performance.e2e.test.ts`, over HTTP. An agent sees only their own target, productivity
+     row and dashboard, gets 404 on another agent's target, and gets 403 on bonus rules and on
+     setting targets. A branch manager sees only their branch. In `performance.db.test.ts`,
+     another brand reads nothing from the seven M20 tables and is refused writes.
+
+  Real-stack browser run (`e2e:stack`, after the build, at `4215f61`): 20/20 in 3.1 min. It boots the built
+  worker with the HR module, and M11 check 4 passes through it (852 ms). The first attempt
+  failed 6 and left 14 unrun, because another session's stack held ports 3110 and 5183
+  (`EADDRINUSE`) and the specs ran against that stack. The M05 review screenshots now show
+  the Performance entry.
+
+- Auditors:
+  - ledger-auditor: 0 critical and 7 warnings, all fixed with tests in `2356438`. The re-check
+    found 0 critical and 2 warnings: an input or award write that never locked the run could
+    land between submit's recompute and its commit, and a cancelled target's bonus could
+    still be approved on a waiting run. Both are fixed in `4215f61`, with a two-transaction
+    test.
+  - The confirmation pass on `4215f61` found 0 critical and 1 warning, and both re-check
+    warnings closed. The warning: a cancel could still pass its check while a submit
+    committed, because nothing locked the run. Its notes:
+    - the new run locks could deadlock a removal against an apply, or return a 500 to a
+      checker approving during a submit;
+    - an older unlocked read let an apply pay a target cancelled under it;
+    - the late approval was audited as the author's.
+
+    All are fixed with tests in `4e21161`:
+    - a cancel locks the target `for no key update` and the month's runs `for share`;
+    - every remover takes the run before its inputs;
+    - submit refuses a bonus for a cancelled target or a replaced rule;
+    - a found decision is audited as `activated`.
+
+  - The confirmation of `4e21161` closed all of that and found 0 critical and 1 warning. A
+    version supersede locked the approved version `for update` and then waited for the draft
+    runs, while an apply holding a run waited on that version through its award's foreign
+    key: a deadlock, and a 500 for the checker. Fixed in `66e3b4c` with `for no key update`,
+    and a two-transaction test that fails with "deadlock detected" on the old lock. Its
+    notes are done too: a cancel locks only its month's runs, and submit refuses a stale
+    bonus before raising any approval request.
+  - The confirmation of `66e3b4c`: **0 critical, 0 warnings**. It also checked that the
+    version locks still taken `for update` (draft or pending versions, which no award
+    references) form no cycle with an apply. Its one test note is done in `a53f30d`.
+
+  - acceptance-auditor: NOT READY with 3 gaps, all docs: the plans index, `build-status.md`,
+    and two outbox comments that contradicted D-277. Then NOT READY with 2: this entry
+    unfinished and the docs uncommitted. Both are closed in the commit that adds this entry.
+    The re-audit found no check weakened by `4215f61`. It also corrected the cross-brand write
+    test, which no longer accepts a foreign-key error, since a foreign-key check ignores RLS.
+- Decisions/assumptions: D-270 to D-280. D-271, D-272 and D-273 are ASSUMED. D-280 was extended
+  by the re-check.
+- New dependencies: none. `@elysium/domain` gains a `./targets` export.
+- Deviations from the milestone spec:
+  - Team targets track progress but pay no bonus (D-273), and the console creates employee
+    targets only; team targets are API-only.
+  - An active hour is a clock hour with a desk action, not real active time, because M28 is
+    out of scope (D-276, D-292).
+- Also on this branch:
+  - The work was stopped by the owner, then restacked onto the fraud removal (D-291) as
+    `31eccef`; the originals are at `backup/m20-pre-restack`.
+  - `events.outbox` gained `actor_user_id` for every emitter (D-277), not just M20's.
+- Follow-ups:
+  - **Migration numbers collide with M18.** `m18-marketing` also ships 0081–0083. Whichever
+    branch merges second must renumber its migrations and regenerate the drizzle snapshot.
+    (owner: claude)
+  - 0083 was edited on this branch after it was first committed. That is allowed because it
+    is not on main, but the migrator does not compare hashes, so a database that applied the
+    earlier 0083 keeps the unlocked guards without warning. Reset any local database that
+    ran this branch. (owner: claude)
+  - HR reads `approvals.approval_requests` directly through `approvalStatus`, an M19 pattern
+    that M20 reuses for bonus versions. The approvals module needs an `*.api.ts` (invariant
+    12; ledger audit N11). (owner: claude)
+  - `GET /payroll/runs/:id/bonuses` does not return the last apply's `skipped` list, and a
+    draft run shows no "rules changed since the last apply" hint after a supersede removes
+    its bonuses. (re-check notes; owner: claude)
+  - A target set late in its own month has no checker (D-280). Show each award's target
+    creation date in the run's Bonuses panel for the payroll checker, or give targets an
+    approval if the client wants it closed. (owner: claude; the choice is the client's)
+  - How a team bonus is shared, to close D-273. (owner: human)
+  - No test drives `hr.refresh_target_progress` through pg-boss end to end. The enqueue and
+    `refreshOrg` are each tested, and the stack run boots the worker. (owner: claude)
+  - Assert that `target.progress` rooms exclude other agents, not only that they include the
+    member and HR. (owner: claude)
+  - Team targets in the console, and a stubbed Playwright spec for `/performance`. The 13 M20
+    console files have no test of their own; check 4 is proved over HTTP. (owner: claude)
+- Next: M14a in its own worktree. M24 waits for M18.
