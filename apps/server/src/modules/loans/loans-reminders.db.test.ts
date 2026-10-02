@@ -51,7 +51,11 @@ function body<T>(response: InjectedResponse): T {
 
 interface Created {
   readonly loan: { readonly id: string };
-  readonly instalments: readonly { readonly id: string; readonly seq: number; readonly dueOn: string }[];
+  readonly instalments: readonly {
+    readonly id: string;
+    readonly seq: number;
+    readonly dueOn: string;
+  }[];
 }
 
 async function lender(client: RoleClient, name: string): Promise<string> {
@@ -89,7 +93,12 @@ async function loan(
 async function trail(orgId: string, instalmentId: string) {
   const [row] = await withSystem(
     (tx) =>
-      tx.execute<{ reminders: number; messages: number; events: number; sms_state: string | null }>(sql`
+      tx.execute<{
+        reminders: number;
+        messages: number;
+        events: number;
+        sms_state: string | null;
+      }>(sql`
         select
           (select count(*)::int from loans.reminders
             where org_id = ${orgId} and instalment_id = ${instalmentId}) as reminders,

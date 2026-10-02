@@ -57,7 +57,11 @@ interface Statement {
     readonly totalPoisha: string;
     readonly state: string;
   }[];
-  readonly payments: readonly { readonly id: string; readonly status: string; readonly seq: number }[];
+  readonly payments: readonly {
+    readonly id: string;
+    readonly status: string;
+    readonly seq: number;
+  }[];
   readonly totals: {
     readonly paidInstalments: number;
     readonly outstandingPrincipalPoisha: string;
@@ -206,7 +210,10 @@ describe('check 4: the postings are correct (golden books)', () => {
     expect(created.statusCode, created.body).toBe(201);
     const loan = body<Statement>(created);
     expect(loan.instalments.map((row) => row.totalPoisha)).toEqual(['340022', '340022', '340023']);
-    expect(loan.lender).toMatchObject({ ledgerOwedPoisha: '1000000', scheduleOwedPoisha: '1000000' });
+    expect(loan.lender).toMatchObject({
+      ledgerOwedPoisha: '1000000',
+      scheduleOwedPoisha: '1000000',
+    });
 
     // A retried submit answers from the loan it wrote, and posts nothing more.
     const replay = await maker.client.request('POST', '/v1/loans', { body: request });
