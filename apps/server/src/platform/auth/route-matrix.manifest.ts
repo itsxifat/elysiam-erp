@@ -311,6 +311,7 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/loans',
   'GET /v1/loans/:id',
   'POST /v1/loans/:id/payments',
+  'POST /v1/loans/:id/void',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

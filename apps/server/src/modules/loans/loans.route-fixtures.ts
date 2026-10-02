@@ -9,8 +9,8 @@ import { sql } from 'drizzle-orm';
  * The suite asks which roles the guard admits, so a 404 from a handler is as good as a 201;
  * what matters is that it is not a 403. Mutations get a fresh uuid per call, because the
  * suite runs each fixture once per role and the second admitted role must not be answered
- * from the first's row. `GET /:id` and `POST /:id/payments` name a loan that does not
- * exist: an admitted role gets 404, a refused one 403.
+ * from the first's row. `GET /:id`, `POST /:id/payments` and `POST /:id/void` name a loan
+ * that does not exist: an admitted role gets 404, a refused one 403.
  */
 
 interface Call {
@@ -70,6 +70,10 @@ export const LOANS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> |
     },
   }),
   'GET /v1/loans/:id': () => ({ url: `/v1/loans/${randomUUID()}` }),
+  'POST /v1/loans/:id/void': () => ({
+    url: `/v1/loans/${randomUUID()}/void`,
+    body: { reason: 'Route matrix' },
+  }),
   'POST /v1/loans/:id/payments': () => ({
     url: `/v1/loans/${randomUUID()}/payments`,
     body: { paymentId: randomUUID(), instalmentId: randomUUID(), walletAccountId: BANK },

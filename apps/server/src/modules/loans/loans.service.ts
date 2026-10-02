@@ -169,7 +169,10 @@ export class LoansService {
       const rows = await repo.listLoans(tx, context.orgId);
       return serializeFor(context, 'CompanyLoan', {
         items: rows.map((row) => {
-          const outstanding = BigInt(row.principal_poisha) - BigInt(row.paid_principal_poisha);
+          const voided = row.voided_at !== null;
+          const outstanding = voided
+            ? 0n
+            : BigInt(row.principal_poisha) - BigInt(row.paid_principal_poisha);
           return {
             id: row.id,
             lenderId: row.lender_id,
@@ -182,8 +185,9 @@ export class LoansService {
             receivedOn: row.received_on,
             paidInstalments: row.paid_instalments,
             outstandingPrincipalPoisha: outstanding.toString(),
+            voided,
             next:
-              row.next_instalment_id === null
+              voided || row.next_instalment_id === null
                 ? null
                 : {
                     instalmentId: row.next_instalment_id,
@@ -220,9 +224,17 @@ export class LoansService {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const existing = await repo.loanById(tx, context.orgId, input.loanId);
         if (existing !== undefined) {
+          // A replay must be the same loan in every term, not just the same lender and
+          // amount: a reused id with another rate answering 201 would hide the mistake.
+          const firstDueOn = input.firstDueOn ?? existing.first_due_on;
           if (
             existing.lender_id !== input.lenderId.toLowerCase() ||
-            BigInt(existing.principal_poisha) !== principal
+            BigInt(existing.principal_poisha) !== principal ||
+            existing.rate_bps !== input.rateBps ||
+            existing.method !== input.method ||
+            existing.tenure_months !== input.tenureMonths ||
+            existing.first_due_on !== firstDueOn ||
+            existing.wallet_account_id !== input.walletAccountId.toLowerCase()
           ) {
             throw new LoansHttpError(
               'IDEMPOTENCY_CONFLICT',
@@ -336,8 +348,68 @@ export class LoansService {
     );
   }
 
+  /**
+   * Void a loan recorded by mistake (D-304): reverse its receipt journal and mark it void,
+   * in one transaction. Only while nothing is repaid or waiting — after that the loan is
+   * real and its mistakes are settled with the lender, not erased.
+   */
+  async void(
+    context: ActiveContext,
+    request: AuditableRequest,
+    loanId: string,
+    reason: string,
+    now: Date = new Date(),
+  ) {
+    return mapLoanErrors(() =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const loan = await repo.loanById(tx, context.orgId, loanId);
+        if (loan === undefined) throw new LoansHttpError('LOAN_NOT_FOUND', 'No such loan.');
+        if (loan.voided_at !== null) {
+          throw new LoansHttpError('LOAN_IMMUTABLE', 'That loan is already void.');
+        }
+        if ((await repo.livePayments(tx, context.orgId, loan.id)) > 0) {
+          throw new LoansHttpError(
+            'LOAN_IMMUTABLE',
+            'A repayment of this loan is posted or waiting, so it cannot be voided.',
+          );
+        }
+        const reversal = await this.ledger.reverse(
+          tx,
+          { orgId: context.orgId, userId: context.userId },
+          loan.received_journal_id,
+          `Loan voided: ${reason}`,
+          now,
+        );
+        const moved = await repo.voidLoan(tx, {
+          orgId: context.orgId,
+          id: loan.id,
+          voidedBy: context.userId,
+          reason,
+          voidJournalId: reversal.journalId,
+        });
+        if (moved !== 1) throw new LoansHttpError('LOAN_IMMUTABLE', 'That loan is already void.');
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'update',
+          action: 'loans.loan.voided',
+          entityType: 'CompanyLoan',
+          entityId: loan.id,
+          before: { voided: false },
+          after: { voided: true, reason, voidJournalId: reversal.journalId },
+          requestId: context.requestId,
+          request,
+        });
+        const voided = await repo.loanById(tx, context.orgId, loan.id);
+        if (voided === undefined) throw new Error('the loan just voided is not readable');
+        return this.statementIn(tx, context, voided, now);
+      }),
+    );
+  }
+
   private async statementIn(tx: Tx, context: ActiveContext, loan: repo.LoanRow, now: Date) {
     const today = businessDate(now);
+    const voided = loan.voided_at !== null;
     const instalments = await repo.instalmentsOf(tx, context.orgId, loan.id);
     const payments = await repo.paymentsOf(tx, context.orgId, loan.id);
     const rows = instalments.map(facts);
@@ -370,6 +442,9 @@ export class LoansService {
         walletAccountId: loan.wallet_account_id,
         receivedJournalId: loan.received_journal_id,
         memo: loan.memo,
+        voidedAt: loan.voided_at === null ? null : new Date(loan.voided_at).toISOString(),
+        voidReason: loan.void_reason,
+        voidJournalId: loan.void_journal_id,
       },
       instalments: instalments.map((row) => {
         const fact = facts(row);
@@ -382,7 +457,7 @@ export class LoansService {
           interestPoisha: row.interest_poisha,
           totalPoisha: (fact.principalPoisha + fact.interestPoisha).toString(),
           balanceAfterPoisha: balance.toString(),
-          state: instalmentState(fact, today),
+          state: voided && fact.payment === null ? 'void' : instalmentState(fact, today),
           paymentId: row.payment_id,
           remindedOn: row.reminded_on,
         };
@@ -405,11 +480,12 @@ export class LoansService {
         paidInstalments: position.paidInstalments,
         paidPrincipalPoisha: position.paidPrincipalPoisha.toString(),
         paidInterestPoisha: position.paidInterestPoisha.toString(),
-        outstandingPrincipalPoisha: position.outstandingPrincipalPoisha.toString(),
-        outstandingInterestPoisha: position.outstandingInterestPoisha.toString(),
+        outstandingPrincipalPoisha: voided ? '0' : position.outstandingPrincipalPoisha.toString(),
+        outstandingInterestPoisha: voided ? '0' : position.outstandingInterestPoisha.toString(),
       },
-      payable:
-        payable.seq === null
+      payable: voided
+        ? { instalmentId: null, reason: 'voided' }
+        : payable.seq === null
           ? { instalmentId: null, reason: payable.reason }
           : {
               instalmentId: instalments.find((row) => row.seq === payable.seq)?.id ?? null,

@@ -1,6 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { withGlobal, withOrg } from '@elysium/db';
-import { addDays, businessDate, maskPhone, toIsoDate, type IsoDate } from '@elysium/domain';
+import {
+  addDays,
+  businessDate,
+  maskPhone,
+  poisha,
+  takaParts,
+  toIsoDate,
+  type IsoDate,
+} from '@elysium/domain';
 import { isReminderDue, MAX_REMINDER_DAYS } from '@elysium/domain/loans';
 import { sql } from 'drizzle-orm';
 
@@ -50,10 +58,10 @@ export interface ReminderRun {
   readonly failed: readonly { readonly instalmentId: string; readonly reason: string }[];
 }
 
+/** `3400.22`: the instalment in taka for the SMS, through the money module's own split. */
 function taka(value: bigint): string {
-  const whole = value / 100n;
-  const part = (value % 100n).toString().padStart(2, '0');
-  return `${whole.toString()}.${part}`;
+  const parts = takaParts(poisha(value));
+  return `${parts.taka.toString()}.${parts.poisha.toString().padStart(2, '0')}`;
 }
 
 @Injectable()

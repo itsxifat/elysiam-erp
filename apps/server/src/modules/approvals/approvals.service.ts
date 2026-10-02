@@ -161,7 +161,13 @@ export type RejectionHandler = ApprovalExecutor;
  * so the request could never be decided again. A settlement whose COD is already in the bank
  * would be unpostable, permanently.
  */
-const EXECUTOR_REQUIRED_TYPES: readonly ApprovalType[] = ['period_reopen', 'settlement_posting'];
+const EXECUTOR_REQUIRED_TYPES: readonly ApprovalType[] = [
+  'period_reopen',
+  'settlement_posting',
+  // M26: only the loans module's executor posts a repayment; approved without it, the
+  // repayment would wait forever and block every later instalment (D-298).
+  'loan_repayment',
+];
 
 /**
  * Types only their owning module may raise, because the module writes the

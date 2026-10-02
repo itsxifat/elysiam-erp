@@ -2536,6 +2536,14 @@ const bn: Record<MessageKey, string> = {
   'loans.remindedOn': 'মনে করানো হয়েছে',
   'loans.daysBefore': 'দিন আগে',
   'loans.months': 'মাস',
+  'loans.stateVoid': 'বাতিল',
+  'loans.voided': 'বাতিল',
+  'loans.void': 'ঋণটি বাতিল করুন',
+  'loans.voidTitle': 'ঋণটি বাতিল করুন',
+  'loans.voidDetail':
+    'ভুল করে লেখা ঋণের জন্য। হিসাবে প্রাপ্তিটি উল্টে দেবে এবং রিমাইন্ডার বন্ধ করবে। কোনো পরিশোধ হওয়ার বা অপেক্ষায় থাকার আগ পর্যন্তই সম্ভব।',
+  'loans.fieldVoidReason': 'কারণ',
+  'loans.voidedNotice': 'ঋণটি বাতিল হয়েছে; প্রাপ্তি উল্টে দেওয়া হয়েছে।',
 };
 
 export { bn };

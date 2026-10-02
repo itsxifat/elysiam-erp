@@ -61,4 +61,7 @@ export const payInstalmentSchema = z
   .strict();
 export type PayInstalmentInput = z.infer<typeof payInstalmentSchema>;
 
+export const voidLoanSchema = z.object({ reason: z.string().trim().min(1).max(500) }).strict();
+export type VoidLoanInput = z.infer<typeof voidLoanSchema>;
+
 export const idParamSchema = ledgerIdSchema;

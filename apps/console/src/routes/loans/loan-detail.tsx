@@ -27,6 +27,7 @@ import { percentOfBps } from '../investors/share.js';
 import {
   getStatement,
   payInstalment,
+  voidLoan,
   type StatementInstalment,
   type StatementPayment,
 } from './api.js';
@@ -44,6 +45,9 @@ import { useLoansT, type LoansMessageKey } from './messages.js';
  */
 
 const SINGLE_PAGE = { page: 1, pageSize: 500, total: null, hasNext: false } as const;
+
+const voidFormSchema = z.object({ reason: z.string().trim().min(1).max(500) });
+type VoidForm = z.infer<typeof voidFormSchema>;
 
 const payFormSchema = z.object({
   walletAccountId: z.string().uuid(),
@@ -72,6 +76,7 @@ export function LoanDetailPage() {
   const mayPay = ability.can('update', 'CompanyLoan');
 
   const [paying, setPaying] = useState<StatementInstalment | null>(null);
+  const [voiding, setVoiding] = useState(false);
   const [notice, setNotice] = useState<LoansMessageKey | null>(null);
 
   const statementQuery = useQuery({
@@ -88,6 +93,21 @@ export function LoanDetailPage() {
   const payForm = useForm<PayForm>({
     resolver: zodResolver(payFormSchema),
     defaultValues: { memo: '' },
+  });
+
+  const voidForm = useForm<VoidForm>({
+    resolver: zodResolver(voidFormSchema),
+    defaultValues: { reason: '' },
+  });
+
+  const voidMutation = useMutation({
+    mutationFn: (values: VoidForm) => voidLoan(loanId, values.reason),
+    onSuccess: async () => {
+      setVoiding(false);
+      setNotice('loans.voidedNotice');
+      voidForm.reset({ reason: '' });
+      await queryClient.invalidateQueries({ queryKey: ['loans'] });
+    },
   });
 
   const payMutation = useMutation({
@@ -108,6 +128,11 @@ export function LoanDetailPage() {
 
   const statement = statementQuery.data;
   const payableId = statement?.payable.instalmentId ?? null;
+  // Voidable while nothing is repaid or waiting (D-304); the server checks it again.
+  const mayVoid =
+    mayPay &&
+    statement?.loan.voidedAt === null &&
+    statement.payments.every((payment) => payment.status === 'rejected');
 
   const instalmentColumns = useMemo<readonly DataTableColumn<StatementInstalment>[]>(() => {
     const column = dataTableColumns<StatementInstalment>();
@@ -231,9 +256,26 @@ export function LoanDetailPage() {
 
       {statement === undefined ? null : (
         <header className="space-y-1">
-          <h1 className="text-lg font-semibold tracking-tight">
-            {l('loans.statementTitle')} · {statement.loan.lenderName}
-          </h1>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <h1 className="text-lg font-semibold tracking-tight">
+              {l('loans.statementTitle')} · {statement.loan.lenderName}
+            </h1>
+            {statement.loan.voidedAt === null ? null : (
+              <StatusBadge tone="neutral">{l('loans.voided')}</StatusBadge>
+            )}
+            {mayVoid ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setNotice(null);
+                  setVoiding(true);
+                }}
+              >
+                {l('loans.void')}
+              </Button>
+            ) : null}
+          </div>
           <p className="text-sm text-muted-foreground">
             {[
               statement.loan.reference,
@@ -344,6 +386,29 @@ export function LoanDetailPage() {
           labels={tableLabels(t, l, 'loans.paymentsEmptyTitle', 'loans.paymentsEmptyDetail')}
         />
       </section>
+
+      <Dialog
+        open={voiding}
+        onOpenChange={setVoiding}
+        title={l('loans.voidTitle')}
+        description={l('loans.voidDetail')}
+        closeLabel={t('common.close')}
+      >
+        <Form<VoidForm>
+          form={voidForm}
+          onSubmit={(values) => voidMutation.mutateAsync(values).then(() => undefined)}
+          {...(voidMutation.error === null
+            ? {}
+            : { submitError: messageOf(voidMutation.error, t) })}
+        >
+          <TextField<VoidForm> name="reason" label={l('loans.fieldVoidReason')} required />
+          <div className="mt-5 flex justify-end">
+            <Button type="submit" variant="destructive" disabled={voidMutation.isPending}>
+              {voidMutation.isPending ? l('loans.saving') : l('loans.void')}
+            </Button>
+          </div>
+        </Form>
+      </Dialog>
 
       <Dialog
         open={paying !== null}

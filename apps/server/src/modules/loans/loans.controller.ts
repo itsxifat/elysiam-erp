@@ -12,6 +12,7 @@ import {
   idParamSchema,
   payInstalmentSchema,
   previewScheduleSchema,
+  voidLoanSchema,
 } from './loans.schemas.js';
 import { LoansService } from './loans.service.js';
 import { LoanPaymentsService } from './payments.service.js';
@@ -34,7 +35,7 @@ const auditable = (request: FastifyRequest): AuditableRequest =>
  * `POST /v1/approvals/:id/decide` and takes effect through this module's executor; there
  * is no second door into that decision here.
  *
- * The wallet picker is M08's `GET /v1/ledger/wallets`, which both roles already read.
+ * The wallet picker is M08's `GET /v1/accounts/wallets`, which both roles already read.
  */
 @Controller('v1/loans')
 export class LoansController {
@@ -88,6 +89,17 @@ export class LoansController {
   async statement(@Req() request: FastifyRequest, @Param('id') id: string) {
     const loanId = parse(idParamSchema, id);
     return mapLoanErrors(() => this.loans.statement(requireContext(request), loanId));
+  }
+
+  /** Void a loan recorded by mistake: reverses its receipt, while nothing is repaid (D-304). */
+  @RequireAbility('update', 'CompanyLoan')
+  @Post(':id/void')
+  async void(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    const loanId = parse(idParamSchema, id);
+    const input = parse(voidLoanSchema, body);
+    return mapLoanErrors(() =>
+      this.loans.void(requireContext(request), auditable(request), loanId, input.reason),
+    );
   }
 
   /** Pay the next instalment: posts, or waits for a checker above the threshold. */

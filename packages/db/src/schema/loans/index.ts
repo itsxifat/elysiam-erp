@@ -90,9 +90,27 @@ export const companyLoans = loansSchema.table(
     memo: text('memo'),
     createdBy: text('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    /**
+     * A loan recorded by mistake is voided, once, by reversing its receipt journal (D-304):
+     * the only change 0092 lets anyone make to a loan, and only while nothing is repaid.
+     */
+    voidedAt: timestamp('voided_at', { withTimezone: true, mode: 'date' }),
+    voidedBy: text('voided_by'),
+    voidReason: text('void_reason'),
+    voidJournalId: uuid('void_journal_id'),
   },
   (table) => [
     unique('loans_org_id_id_key').on(table.orgId, table.id),
+    // One loan per receipt journal, and one per reversal (ledger audit N4).
+    uniqueIndex('loans_org_received_journal_idx').on(table.orgId, table.receivedJournalId),
+    uniqueIndex('loans_org_void_journal_idx')
+      .on(table.orgId, table.voidJournalId)
+      .where(sql`void_journal_id is not null`),
+    foreignKey({
+      name: 'loans_org_id_void_journal_id_fk',
+      columns: [table.orgId, table.voidJournalId],
+      foreignColumns: [journals.orgId, journals.id],
+    }).onDelete('restrict'),
     index('loans_org_idx').on(table.orgId),
     index('loans_org_lender_idx').on(table.orgId, table.lenderId),
     foreignKey({
@@ -125,6 +143,15 @@ export const companyLoans = loansSchema.table(
       sql`${table.reference} is null or length(${table.reference}) <= 80`,
     ),
     check('loans_memo_length', sql`${table.memo} is null or length(${table.memo}) <= 500`),
+    // Voided is all four columns or none of them.
+    check(
+      'loans_void_complete',
+      sql`num_nonnulls(${table.voidedAt}, ${table.voidedBy}, ${table.voidReason}, ${table.voidJournalId}) in (0, 4)`,
+    ),
+    check(
+      'loans_void_reason_length',
+      sql`${table.voidReason} is null or length(${table.voidReason}) between 1 and 500`,
+    ),
   ],
 );
 
@@ -186,6 +213,10 @@ export const companyLoanPayments = loansSchema.table(
   },
   (table) => [
     unique('loan_payments_org_id_id_key').on(table.orgId, table.id),
+    // A repayment journal pays one payment (ledger audit N4).
+    uniqueIndex('loan_payments_org_journal_idx')
+      .on(table.orgId, table.journalId)
+      .where(sql`journal_id is not null`),
     index('loan_payments_org_idx').on(table.orgId),
     index('loan_payments_org_loan_idx').on(table.orgId, table.loanId),
     // One live payment per instalment: waiting for a checker, or posted.

@@ -108,6 +108,13 @@ const LOANS_KEYS = [
   'loans.remindedOn',
   'loans.daysBefore',
   'loans.months',
+  'loans.stateVoid',
+  'loans.voided',
+  'loans.void',
+  'loans.voidTitle',
+  'loans.voidDetail',
+  'loans.fieldVoidReason',
+  'loans.voidedNotice',
 ] as const satisfies readonly MessageKey[];
 
 export type LoansMessageKey = (typeof LOANS_KEYS)[number];

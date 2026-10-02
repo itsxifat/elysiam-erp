@@ -80,12 +80,16 @@ export interface LoanRow extends Record<string, unknown> {
   readonly received_journal_id: string;
   readonly memo: string | null;
   readonly created_at: Date;
+  readonly voided_at: Date | null;
+  readonly void_reason: string | null;
+  readonly void_journal_id: string | null;
 }
 
 const LOAN_COLUMNS = sql`l.id, l.lender_id, le.name as lender_name, l.reference,
   l.principal_poisha::text as principal_poisha, l.rate_bps, l.method, l.tenure_months,
   l.received_on::text as received_on, l.first_due_on::text as first_due_on, l.reminder_days,
-  l.reminder_phone, l.wallet_account_id, l.received_journal_id, l.memo, l.created_at`;
+  l.reminder_phone, l.wallet_account_id, l.received_journal_id, l.memo, l.created_at,
+  l.voided_at, l.void_reason, l.void_journal_id`;
 
 export async function loanById(tx: Tx, orgId: string, id: string): Promise<LoanRow | undefined> {
   const rows = await tx.execute<LoanRow>(sql`
@@ -368,6 +372,7 @@ export async function reminderCandidates(
     join loans.loans l on l.org_id = i.org_id and l.id = i.loan_id
     join loans.lenders le on le.org_id = l.org_id and le.id = l.lender_id
     where i.org_id = ${orgId}
+      and l.voided_at is null
       and i.due_on <= ${horizon}::date
       and not exists (select 1 from loans.reminders r
                       where r.org_id = i.org_id and r.instalment_id = i.id)
@@ -418,7 +423,7 @@ export async function lenderOutstanding(tx: Tx, orgId: string, lenderId: string)
   const rows = await tx.execute<{ owed: string }>(sql`
     select (
       coalesce((select sum(principal_poisha) from loans.loans
-                where org_id = ${orgId} and lender_id = ${lenderId}), 0)
+                where org_id = ${orgId} and lender_id = ${lenderId} and voided_at is null), 0)
       - coalesce((select sum(p.principal_poisha) from loans.payments p
                   join loans.loans l on l.org_id = p.org_id and l.id = p.loan_id
                   where p.org_id = ${orgId} and l.lender_id = ${lenderId}
@@ -426,4 +431,34 @@ export async function lenderOutstanding(tx: Tx, orgId: string, lenderId: string)
     )::text as owed
   `);
   return BigInt(rows[0]?.owed ?? '0');
+}
+
+/** Payments of a loan that are posted or waiting: a loan with any cannot be voided. */
+export async function livePayments(tx: Tx, orgId: string, loanId: string): Promise<number> {
+  const rows = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from loans.payments
+    where org_id = ${orgId} and loan_id = ${loanId} and status <> 'rejected'
+  `);
+  return rows[0]?.n ?? 0;
+}
+
+/** Void a loan once, naming the journal that reversed its receipt (0092 checks it). */
+export async function voidLoan(
+  tx: Tx,
+  row: {
+    readonly orgId: string;
+    readonly id: string;
+    readonly voidedBy: string;
+    readonly reason: string;
+    readonly voidJournalId: string;
+  },
+): Promise<number> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    update loans.loans
+    set voided_at = now(), voided_by = ${row.voidedBy}, void_reason = ${row.reason},
+        void_journal_id = ${row.voidJournalId}::uuid
+    where org_id = ${row.orgId} and id = ${row.id} and voided_at is null
+    returning id
+  `);
+  return rows.length;
 }

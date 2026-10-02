@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { seedAccountId, withSystem } from '@elysium/db';
+import { toIsoDate } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -12,6 +13,9 @@ import {
   type InjectedResponse,
   type RoleClient,
 } from '../../testing/http-harness.js';
+import type { ActiveContext } from '../../platform/http/context.js';
+import { ApprovalsService } from '../approvals/approvals.service.js';
+import { LoanRemindersService } from './reminders.service.js';
 
 /**
  * Company loans over HTTP against real Postgres (M26 check 4: postings are correct).
@@ -52,6 +56,7 @@ interface Statement {
   readonly instalments: readonly {
     readonly id: string;
     readonly seq: number;
+    readonly dueOn: string;
     readonly principalPoisha: string;
     readonly interestPoisha: string;
     readonly totalPoisha: string;
@@ -397,7 +402,8 @@ describe('what the database refuses (0090)', () => {
     const attempt = withSystem(
       async (tx) => {
         const [received] = await tx.execute<{ id: string }>(sql`
-          select id from ledger.journals where org_id = ${ORG_A} order by created_at limit 1
+          select id from ledger.journals where org_id = ${ORG_A}
+            and source_type = 'loan_instalment' order by created_at limit 1
         `);
         const id = randomUUID();
         await tx.execute(sql`
@@ -417,6 +423,30 @@ describe('what the database refuses (0090)', () => {
     await refusedWith(attempt, /LOAN_SCHEDULE_INVALID/);
   });
 
+  it('refuses a second loan on a receipt journal another loan already names', async () => {
+    const [first] = await withSystem(
+      (tx) =>
+        tx.execute<{ received_journal_id: string }>(sql`
+          select received_journal_id from loans.loans where id = ${loanId}
+        `),
+      { orgId: ORG_A },
+    );
+    await refusedWith(
+      withSystem(
+        (tx) =>
+          tx.execute(sql`
+            insert into loans.loans (org_id, lender_id, principal_poisha, rate_bps, method,
+              tenure_months, received_on, first_due_on, wallet_account_id, received_journal_id,
+              created_by)
+            values (${ORG_A}, ${lenderId}, 1000000, 1200, 'reducing', 3, '2026-10-01',
+              '2026-11-01', ${BANK}, ${first?.received_journal_id ?? ''}, 'usr_m26_test')
+          `),
+        { orgId: ORG_A },
+      ),
+      /loans_org_received_journal_idx/,
+    );
+  });
+
   it('refuses to change a loan or delete a payment, for the owner too', async () => {
     await refusedWith(
       withSystem(
@@ -431,5 +461,273 @@ describe('what the database refuses (0090)', () => {
       }),
       /LOAN_IMMUTABLE/,
     );
+  });
+});
+
+// --- the ledger audit's findings (W1 to W4), each pinned --------------------------------
+
+/** A context for calling a service as the maker, as the HTTP layer would build it. */
+function makerContext(): ActiveContext {
+  return {
+    userId: maker.userId,
+    orgId: ORG_A,
+    isSuperAdmin: false,
+    roles: ['accounts'],
+    branchIds: [],
+    branchIdsByRole: {},
+    requestId: randomUUID(),
+  };
+}
+
+/** A loan of 12 instalments of `instalmentPoisha` each, interest-free, on its own lender. */
+async function flatLoan(instalmentPoisha: bigint, name: string): Promise<Statement> {
+  const lender = await maker.client.request('POST', '/v1/loans/lenders', {
+    body: { name, kind: 'person' },
+  });
+  const created = await maker.client.request('POST', '/v1/loans', {
+    body: {
+      loanId: randomUUID(),
+      lenderId: body<{ id: string }>(lender).id,
+      principalPoisha: (instalmentPoisha * 12n).toString(),
+      rateBps: 0,
+      method: 'flat',
+      tenureMonths: 12,
+      walletAccountId: BANK,
+    },
+  });
+  expect(created.statusCode, created.body).toBe(201);
+  return body<Statement>(created);
+}
+
+async function livePaymentsOf(instalmentId: string) {
+  const [row] = await withSystem(
+    (tx) =>
+      tx.execute<{ live: number; journals: number }>(sql`
+        select
+          (select count(*)::int from loans.payments
+            where org_id = ${ORG_A} and instalment_id = ${instalmentId} and status <> 'rejected')
+            as live,
+          (select count(*)::int from ledger.journals
+            where org_id = ${ORG_A} and idempotency_key = ${`loan_instalment:${instalmentId}:paid`})
+            as journals
+      `),
+    { orgId: ORG_A },
+  );
+  return row;
+}
+
+describe('races, orphans and the database checks (ledger audit)', () => {
+  // The brand's `loan_repayment` threshold is 5,000 taka from the suite above.
+
+  it('posts one repayment when two pay the same instalment at once, under the threshold', async () => {
+    const loan = await flatLoan(100_000n, 'Race Lender Small');
+    const first = loan.instalments[0]?.id ?? '';
+    const [a, b] = await Promise.all([pay(loan.loan.id, first), pay(loan.loan.id, first)]);
+    expect([a.statusCode, b.statusCode].sort()).toEqual([201, 409]);
+    expect(await livePaymentsOf(first)).toEqual({ live: 1, journals: 1 });
+    expect(await trialBalanceDifference(ORG_A)).toBe(0n);
+  });
+
+  it('holds one repayment when two pay the same instalment at once, above it', async () => {
+    const loan = await flatLoan(1_000_000n, 'Race Lender Large');
+    const first = loan.instalments[0]?.id ?? '';
+    const results = await Promise.all([pay(loan.loan.id, first), pay(loan.loan.id, first)]);
+    expect(results.filter((response) => response.statusCode === 201)).toHaveLength(1);
+    expect(await livePaymentsOf(first)).toEqual({ live: 1, journals: 0 });
+  });
+
+  it('records one loan when the same loan id is submitted twice at once', async () => {
+    const id = randomUUID();
+    const request = {
+      loanId: id,
+      lenderId,
+      principalPoisha: '500000',
+      rateBps: 900,
+      method: 'reducing',
+      tenureMonths: 6,
+      walletAccountId: BANK,
+    };
+    const results = await Promise.all([
+      maker.client.request('POST', '/v1/loans', { body: request }),
+      maker.client.request('POST', '/v1/loans', { body: request }),
+    ]);
+    expect(results.some((response) => response.statusCode === 201)).toBe(true);
+    for (const response of results) expect([201, 409]).toContain(response.statusCode);
+    const [row] = await withSystem(
+      (tx) =>
+        tx.execute<{ loans: number; journals: number }>(sql`
+          select (select count(*)::int from loans.loans where id = ${id}) as loans,
+                 (select count(*)::int from ledger.journals
+                   where idempotency_key = ${`company_loan:${id}:received`}) as journals
+        `),
+      { orgId: ORG_A },
+    );
+    expect(row).toEqual({ loans: 1, journals: 1 });
+
+    // A reused id with different terms is a conflict, not the old loan.
+    const changed = await maker.client.request('POST', '/v1/loans', {
+      body: { ...request, rateBps: 1_000 },
+    });
+    expect(changed.statusCode, changed.body).toBe(409);
+  });
+
+  it('refuses a loan_repayment raised through the generic route', async () => {
+    const response = await maker.client.request('POST', '/v1/approvals', {
+      body: { type: 'loan_repayment', amountPoisha: '100000' },
+    });
+    expect(response.statusCode, response.body).toBe(400);
+  });
+
+  it('never records an approval that posted nothing (W1)', async () => {
+    const approvals = harness.app.get(ApprovalsService);
+    const orphanPayload = { paymentId: randomUUID(), loanId };
+
+    // Under the threshold the request auto-approves and runs the executor at once; with no
+    // repayment behind it the executor refuses, and nothing is left behind.
+    await expect(
+      approvals.request(makerContext(), {
+        type: 'loan_repayment',
+        amountPoisha: 100_000n,
+        amountDerivedByServer: true,
+        raisedByModule: true,
+        payload: orphanPayload,
+      }),
+    ).rejects.toThrow();
+    const [left] = await withSystem(
+      (tx) =>
+        tx.execute<{ n: number }>(sql`
+          select count(*)::int as n from approvals.approval_requests
+          where org_id = ${ORG_A} and payload ->> 'paymentId' = ${orphanPayload.paymentId}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(left?.n).toBe(0);
+
+    // Above it, an orphan waits; a checker cannot approve it into a no-op, only reject it.
+    const orphan = await approvals.request(makerContext(), {
+      type: 'loan_repayment',
+      amountPoisha: 2_000_000n,
+      amountDerivedByServer: true,
+      raisedByModule: true,
+      payload: { paymentId: randomUUID(), loanId },
+    });
+    expect(orphan.status).toBe('pending');
+    const approve = await checker.client.request('POST', `/v1/approvals/${orphan.id}/decide`, {
+      body: { decision: 'approved' },
+    });
+    expect(approve.statusCode, approve.body).toBe(409);
+    await decide(orphan.id, 'rejected');
+  });
+
+  it('ties a repayment state to its approval and its journal in the database (W2)', async () => {
+    const loan = await flatLoan(1_000_000n, 'Trigger Lender');
+    const first = loan.instalments[0]?.id ?? '';
+    const held = body<Payment>(await pay(loan.loan.id, first));
+    expect(held.status).toBe('pending_approval');
+    const [receipt] = await journalsOf(ORG_A);
+
+    // Posted while its request still waits, and on somebody else's journal.
+    await refusedWith(
+      withSystem(
+        (tx) =>
+          tx.execute(sql`
+            update loans.payments set status = 'posted', journal_id = (
+              select id from ledger.journals
+              where org_id = ${ORG_A} and idempotency_key = ${receipt?.idempotency_key ?? ''})
+            where id = ${held.paymentId}
+          `),
+        { orgId: ORG_A },
+      ),
+      /LOAN_PAYMENT_INVALID/,
+    );
+    // Rejected while its request still waits.
+    await refusedWith(
+      withSystem(
+        (tx) =>
+          tx.execute(
+            sql`update loans.payments set status = 'rejected' where id = ${held.paymentId}`,
+          ),
+        { orgId: ORG_A },
+      ),
+      /LOAN_PAYMENT_INVALID/,
+    );
+    // Born posted on another loan's journal.
+    await refusedWith(
+      withSystem(
+        async (tx) => {
+          const [journal] = await tx.execute<{ id: string }>(sql`
+            select id from ledger.journals where org_id = ${ORG_A} order by created_at limit 1
+          `);
+          await tx.execute(sql`
+            insert into loans.payments (org_id, loan_id, instalment_id, wallet_account_id,
+              principal_poisha, interest_poisha, status, occurred_at, business_date, journal_id,
+              created_by)
+            values (${ORG_A}, ${loan.loan.id}, ${loan.instalments[1]?.id ?? ''}, ${BANK},
+              1000000, 0, 'posted', now(), current_date, ${journal?.id ?? ''}, 'usr_m26_test')
+          `);
+        },
+        { orgId: ORG_A },
+      ),
+      /LOAN_PAYMENT_INVALID/,
+    );
+  });
+});
+
+describe('voiding a loan recorded by mistake (W3, D-304)', () => {
+  it('reverses the receipt, stops reminders and repayments, and happens once', async () => {
+    const loan = await flatLoan(50_000n, 'Typo Lender');
+    const voided = await maker.client.request('POST', `/v1/loans/${loan.loan.id}/void`, {
+      body: { reason: 'Recorded against the wrong lender' },
+    });
+    expect(voided.statusCode, voided.body).toBe(201);
+    const statement = body<Statement & { loan: { voidedAt: string | null } }>(voided);
+    expect(statement.loan.voidedAt).not.toBeNull();
+    expect(statement.payable).toEqual({ instalmentId: null, reason: 'voided' });
+    expect(statement.totals.outstandingPrincipalPoisha).toBe('0');
+    expect(statement.lender).toMatchObject({ ledgerOwedPoisha: '0', scheduleOwedPoisha: '0' });
+
+    // The receipt and its reversal, and the books still balanced.
+    const [pair] = await withSystem(
+      (tx) =>
+        tx.execute<{ reversals: number }>(sql`
+          select count(*)::int as reversals from ledger.journals r
+          join ledger.journals j on j.org_id = r.org_id and j.id = r.reverses_journal_id
+          where r.org_id = ${ORG_A}
+            and j.idempotency_key = ${`company_loan:${loan.loan.id}:received`}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(pair?.reversals).toBe(1);
+    expect(await trialBalanceDifference(ORG_A)).toBe(0n);
+
+    const again = await maker.client.request('POST', `/v1/loans/${loan.loan.id}/void`, {
+      body: { reason: 'Twice' },
+    });
+    expect(again.statusCode, again.body).toBe(409);
+    const repaid = await pay(loan.loan.id, loan.instalments[0]?.id ?? '');
+    expect(repaid.statusCode, repaid.body).toBe(409);
+
+    // The reminder job passes it by, even long after every due date.
+    await harness.app
+      .get(LoanRemindersService)
+      .run(ORG_A, toIsoDate(loan.instalments[11]?.dueOn ?? '2030-01-01'));
+    const [reminded] = await withSystem(
+      (tx) =>
+        tx.execute<{ n: number }>(sql`
+          select count(*)::int as n from loans.reminders where loan_id = ${loan.loan.id}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(reminded?.n).toBe(0);
+  });
+
+  it('refuses to void a loan with a repayment waiting', async () => {
+    const loan = await flatLoan(1_000_000n, 'Busy Lender');
+    const held = await pay(loan.loan.id, loan.instalments[0]?.id ?? '');
+    expect(held.statusCode, held.body).toBe(201);
+    const voided = await maker.client.request('POST', `/v1/loans/${loan.loan.id}/void`, {
+      body: { reason: 'Too late' },
+    });
+    expect(voided.statusCode, voided.body).toBe(409);
   });
 });

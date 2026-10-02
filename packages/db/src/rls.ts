@@ -239,11 +239,10 @@ export const APPEND_ONLY_TABLES: readonly string[] = [
   'hr.payroll_line_components',
   'hr.payroll_loan_deductions',
   /*
-   * M26's company loans (§15). A loan's terms and its schedule are what was signed, and
-   * the receipt journal was posted from them; a reminder went out or it did not.
-   * Migration 0090 refuses the UPDATE and the DELETE with a trigger as well.
+   * M26's company loans (§15). A loan's schedule is what was signed, and a reminder went
+   * out or it did not. Migration 0090 refuses the UPDATE and the DELETE with a trigger as
+   * well. (`loans.loans` itself is below: it is voided once, D-304.)
    */
-  'loans.loans',
   'loans.instalments',
   'loans.reminders',
 ];
@@ -351,6 +350,9 @@ export const NO_DELETE_TABLES: readonly string[] = [
    */
   'loans.lenders',
   'loans.payments',
+  // M26: a loan's terms never change; it may be voided once against the reversal of its
+  // receipt, which 0092's trigger confines UPDATE to (D-304).
+  'loans.loans',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */

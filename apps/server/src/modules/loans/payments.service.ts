@@ -15,7 +15,7 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { ApprovalsService, type ApprovalExecutor } from '../approvals/approvals.service.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
-import { LoansHttpError, mapLoanErrors, pgCode } from './loans.errors.js';
+import { loansHttpError, LoansHttpError, mapLoanErrors, pgCode } from './loans.errors.js';
 import * as repo from './loans.repository.js';
 import type { PayInstalmentInput } from './loans.schemas.js';
 import { facts, LoansService } from './loans.service.js';
@@ -99,7 +99,10 @@ export class LoanPaymentsService implements OnModuleInit {
               'That payment was rejected. Pay the instalment again with a new id.',
             );
           }
-          return { replay: this.view(existing), instalment: null };
+          return {
+            replay: serializeFor(context, 'CompanyLoan', this.view(existing)),
+            instalment: null,
+          };
         }
         const instalment = await this.payable(tx, context.orgId, loanId, input.instalmentId);
         // Checked here so a request with a foreign or inactive wallet is refused before an
@@ -125,18 +128,33 @@ export class LoanPaymentsService implements OnModuleInit {
     if (needsApproval) {
       /*
        * Raised before the row is written, in the approvals module's own transaction, as a
-       * supplier payment is: `request()` opens its own `withOrg`. A crash between the two
-       * leaves an approval naming no payment, which its executor refuses to act on.
+       * supplier payment is: `request()` opens its own `withOrg`. Two things can go wrong
+       * between the two, and neither may leave the loan stuck (ledger audit W1):
+       *
+       * - a threshold relaxed in between makes `request()` auto-approve and run the executor
+       *   at once, before this payment exists — the executor throws, so the request rolls
+       *   back and the caller retries onto the direct path;
+       * - the write below fails (a lost race) and leaves a pending request naming no
+       *   payment — its executor throws, so a checker can only reject it, never approve a
+       *   request that posts nothing.
        */
-      const raised = await this.approvals.request(context, {
-        type: 'loan_repayment',
-        amountPoisha: total,
-        amountDerivedByServer: true,
-        raisedByModule: true,
-        payload: { paymentId: input.paymentId, loanId },
-        reason: input.memo ?? `Loan instalment ${String(instalment.seq)}`,
-        request,
-      });
+      const raised = await mapLoanErrors(() =>
+        this.approvals.request(context, {
+          type: 'loan_repayment',
+          amountPoisha: total,
+          amountDerivedByServer: true,
+          raisedByModule: true,
+          payload: { paymentId: input.paymentId, loanId },
+          reason: input.memo ?? `Loan instalment ${String(instalment.seq)}`,
+          request,
+        }),
+      );
+      if (raised.status !== 'pending') {
+        throw loansHttpError(
+          'LOAN_PAYMENT_INVALID',
+          'The approval rules changed while this was being raised; pay the instalment again.',
+        );
+      }
       approvalId = raised.id;
     }
 
@@ -228,6 +246,9 @@ export class LoanPaymentsService implements OnModuleInit {
   private async payable(tx: Tx, orgId: string, loanId: string, instalmentId: string) {
     const loan = await repo.loanById(tx, orgId, loanId);
     if (loan === undefined) throw new LoansHttpError('LOAN_NOT_FOUND', 'No such loan.');
+    if (loan.voided_at !== null) {
+      throw new LoansHttpError('LOAN_PAYMENT_INVALID', 'That loan is void.');
+    }
     const instalments = await repo.instalmentsOf(tx, orgId, loanId);
     const target = instalments.find((row) => row.id === instalmentId.toLowerCase());
     if (target === undefined) {
@@ -277,18 +298,25 @@ export class LoanPaymentsService implements OnModuleInit {
   }
 
   /**
-   * Post the approved repayment, inside the transaction that approved it. Refuses rather
-   * than returns quietly when the approval's amount is not the payment's: that would be
-   * the maker-checker bypass itself.
+   * Post the approved repayment, inside the transaction that approved it.
+   *
+   * Refuses — never returns quietly — when the approval names no repayment waiting on it,
+   * or carries another amount: an approval recorded as done that posted nothing is the
+   * misleading trail payroll's executor already refuses (ledger audit W1). The refusal
+   * rolls the decision back, so such a request can only be rejected.
    */
   private readonly execute: ApprovalExecutor = async (tx, { context, approval, request }) => {
-    const parsed = payloadSchema.safeParse(approval.payload);
-    if (!parsed.success) return;
-    const payment = await repo.paymentById(tx, context.orgId, parsed.data.paymentId);
-    if (payment?.status !== 'pending_approval') return;
-    if (payment.approval_request_id !== approval.id) return;
-
     await mapLoanErrors(async () => {
+      const parsed = payloadSchema.safeParse(approval.payload);
+      const payment = parsed.success
+        ? await repo.paymentById(tx, context.orgId, parsed.data.paymentId)
+        : undefined;
+      if (payment?.status !== 'pending_approval' || payment.approval_request_id !== approval.id) {
+        throw new LoansHttpError(
+          'LOAN_PAYMENT_INVALID',
+          'That approval names no repayment waiting for it; reject it instead.',
+        );
+      }
       const principal = poisha(payment.principal_poisha);
       const interest = poisha(payment.interest_poisha);
       if (approval.amountPoisha === null || approval.amountPoisha !== principal + interest) {
@@ -311,7 +339,13 @@ export class LoanPaymentsService implements OnModuleInit {
         interestPoisha: interest,
         memo: payment.memo,
       });
-      await repo.settlePayment(tx, context.orgId, payment.id, { status: 'posted', journalId });
+      const moved = await repo.settlePayment(tx, context.orgId, payment.id, {
+        status: 'posted',
+        journalId,
+      });
+      if (moved !== 1) {
+        throw new LoansHttpError('LOAN_PAYMENT_INVALID', 'That repayment is no longer waiting.');
+      }
       await this.audit.record(tx, {
         orgId: context.orgId,
         actorUserId: context.userId,
@@ -334,10 +368,13 @@ export class LoanPaymentsService implements OnModuleInit {
     const payment = await repo.paymentById(tx, context.orgId, parsed.data.paymentId);
     if (payment?.status !== 'pending_approval') return;
     if (payment.approval_request_id !== approval.id) return;
-    await repo.settlePayment(tx, context.orgId, payment.id, {
+    const moved = await repo.settlePayment(tx, context.orgId, payment.id, {
       status: 'rejected',
       journalId: null,
     });
+    if (moved !== 1) {
+      throw loansHttpError('LOAN_PAYMENT_INVALID', 'That repayment is no longer waiting.');
+    }
     await this.audit.record(tx, {
       orgId: context.orgId,
       actorUserId: context.userId,

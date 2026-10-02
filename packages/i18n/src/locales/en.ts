@@ -2589,6 +2589,14 @@ const en = {
   'loans.remindedOn': 'Reminded',
   'loans.daysBefore': 'days before',
   'loans.months': 'months',
+  'loans.stateVoid': 'Void',
+  'loans.voided': 'Void',
+  'loans.void': 'Void this loan',
+  'loans.voidTitle': 'Void this loan',
+  'loans.voidDetail':
+    'For a loan recorded by mistake. Reverses its receipt in the books and stops its reminders. Only while nothing is repaid or waiting.',
+  'loans.fieldVoidReason': 'Why',
+  'loans.voidedNotice': 'The loan is void; its receipt is reversed.',
 } as const;
 
 /** Every key that exists. A call site passing anything else does not compile. */

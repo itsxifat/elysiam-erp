@@ -10,7 +10,7 @@ import { api } from '../../api.js';
 
 export type LoanMethod = 'flat' | 'reducing';
 export type LenderKind = 'bank' | 'person' | 'other';
-export type InstalmentState = 'paid' | 'pending_approval' | 'overdue' | 'due';
+export type InstalmentState = 'paid' | 'pending_approval' | 'overdue' | 'due' | 'void';
 
 export interface LenderRow {
   readonly id: string;
@@ -31,6 +31,7 @@ export interface LoanRow {
   readonly receivedOn: string;
   readonly paidInstalments: number;
   readonly outstandingPrincipalPoisha: string;
+  readonly voided: boolean;
   readonly next: {
     readonly instalmentId: string;
     readonly seq: number;
@@ -98,6 +99,8 @@ export interface Statement {
     readonly reminderPhoneMasked: string | null;
     readonly walletAccountId: string;
     readonly memo: string | null;
+    readonly voidedAt: string | null;
+    readonly voidReason: string | null;
   };
   readonly instalments: readonly StatementInstalment[];
   readonly payments: readonly StatementPayment[];
@@ -110,7 +113,7 @@ export interface Statement {
   };
   readonly payable: {
     readonly instalmentId: string | null;
-    readonly reason: 'settled' | 'waiting' | null;
+    readonly reason: 'settled' | 'waiting' | 'voided' | null;
   };
   readonly lender: {
     readonly asOf: string;
@@ -163,6 +166,10 @@ export function createLoan(
 
 export function getStatement(loanId: string): Promise<Statement> {
   return api.get<Statement>(`/v1/loans/${loanId}`);
+}
+
+export function voidLoan(loanId: string, reason: string): Promise<Statement> {
+  return api.post<Statement>(`/v1/loans/${loanId}/void`, { reason });
 }
 
 export function payInstalment(

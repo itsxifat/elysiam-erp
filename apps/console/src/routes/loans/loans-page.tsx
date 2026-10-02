@@ -101,13 +101,14 @@ const KIND_LABEL: Record<LenderKind, LoansMessageKey> = {
 };
 
 export const NEXT_STATE: Record<
-  'due' | 'overdue' | 'pending_approval' | 'paid',
+  'due' | 'overdue' | 'pending_approval' | 'paid' | 'void',
   { key: LoansMessageKey; tone: 'neutral' | 'danger' | 'warning' | 'success' }
 > = {
   due: { key: 'loans.stateDue', tone: 'neutral' },
   overdue: { key: 'loans.stateOverdue', tone: 'danger' },
   pending_approval: { key: 'loans.statePending', tone: 'warning' },
   paid: { key: 'loans.statePaid', tone: 'success' },
+  void: { key: 'loans.stateVoid', tone: 'neutral' },
 };
 
 /** The server's problem+json detail is written to be shown; anything else never reached it. */
@@ -320,6 +321,9 @@ export function LoansPage() {
         header: l('loans.colNext'),
         cell: (cell) => {
           const next = cell.row.original.next;
+          if (cell.row.original.voided) {
+            return <StatusBadge tone="neutral">{l('loans.voided')}</StatusBadge>;
+          }
           if (next === null) return <StatusBadge tone="success">{l('loans.settled')}</StatusBadge>;
           const state = NEXT_STATE[next.state];
           return (

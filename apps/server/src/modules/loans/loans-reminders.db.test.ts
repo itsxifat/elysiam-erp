@@ -199,6 +199,30 @@ describe('check 3: each reminder fires once per instalment', () => {
     });
   });
 
+  it('refuses a second reminder row for an instalment, whatever the timing', async () => {
+    // The race above may or may not overlap on a given machine; this pins the index it
+    // relies on deterministically.
+    const first = created.instalments[0];
+    const attempt = withSystem(
+      (tx) =>
+        tx.execute(sql`
+          insert into loans.reminders (org_id, loan_id, instalment_id, reminded_on, sms_state)
+          values (${ORG_A}, ${created.loan.id}, ${first?.id ?? ''}, current_date, 'no_phone')
+        `),
+      { orgId: ORG_A },
+    );
+    const thrown: unknown = await attempt.then(
+      () => null,
+      (error: unknown) => error,
+    );
+    let message = '';
+    for (let current = thrown; current instanceof Error; current = current.cause) {
+      message += `
+${current.message}`;
+    }
+    expect(message).toMatch(/loan_reminders_org_instalment_idx/);
+  });
+
   it('catches up once after missed days, even past the due date', async () => {
     const third = created.instalments[2];
     // The job did not run until a week after instalment 3 fell due.

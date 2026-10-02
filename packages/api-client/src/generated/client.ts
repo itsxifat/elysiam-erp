@@ -806,6 +806,11 @@ export const OPERATIONS = {
     path: '/v1/loans/{id}/payments',
     ability: 'update:CompanyLoan',
   },
+  postV1LoansByIdVoid: {
+    method: 'POST',
+    path: '/v1/loans/{id}/void',
+    ability: 'update:CompanyLoan',
+  },
   postV1LoansLenders: { method: 'POST', path: '/v1/loans/lenders', ability: 'create:CompanyLoan' },
   postV1LoansPreview: { method: 'POST', path: '/v1/loans/preview', ability: 'read:CompanyLoan' },
   postV1MarketingCampaigns: {
@@ -1955,6 +1960,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.postV1LoansByIdPayments, input, options),
+    /** POST /v1/loans/:id/void */
+    postV1LoansByIdVoid: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1LoansByIdVoid, input, options),
     /** POST /v1/loans/lenders */
     postV1LoansLenders: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1LoansLenders, undefined, options),
