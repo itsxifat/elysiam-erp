@@ -65,7 +65,44 @@ async function closingBalance(): Promise<string> {
   return (await row.locator('td').last().innerText()).trim();
 }
 
+/** A rendered amount (`৳1,060.00`, `-৳10.00`) as integer poisha. */
+function toPoisha(text: string): bigint {
+  const negative = /^[-−(]/.test(text.trim());
+  const value = BigInt(text.replace(/[^0-9]/g, '') || '0');
+  return negative ? -value : value;
+}
+
+/**
+ * A wallet's closing balance before this spec moves it, or zero for a wallet with no lines.
+ *
+ * Other specs share this stack and its wallets — M17's `advances.stack.ts` verifies a ৳60
+ * advance into the bank and runs first — so the transfer test asserts its own movement,
+ * not an absolute balance that depends on which specs ran before it.
+ */
+async function closingBefore(link: RegExp, code: string): Promise<bigint> {
+  await page.goto('/accounts');
+  await page.getByRole('link', { name: link }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(code);
+  const row = page.getByRole('row', { name: /Closing balance/ });
+  const shown = await row
+    .waitFor({ timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  return shown ? toPoisha(await row.locator('td').last().innerText()) : 0n;
+}
+
+/** Today's day-book entries before this spec posts any, for the same reason. */
+let dayBookBefore = 0;
+
 test('cash in, then a transfer with a bank charge, moves both wallets exactly', async () => {
+  const bankBefore = await closingBefore(/Open cash book: Bank/, '1100');
+  const tillBefore = await closingBefore(/Open cash book: Hand cash/, '1010-HQ');
+  await page.goto('/accounts/ledger');
+  await page.getByRole('button', { name: 'Day book' }).click();
+  await expect(page.getByRole('heading', { name: 'Ledger', level: 1 })).toBeVisible();
+  // `count()` does not wait, so let the day book's request settle first.
+  await page.waitForLoadState('networkidle');
+  dayBookBefore = await page.locator('ol > li').count();
   await page.goto('/accounts');
   await expect(page.getByRole('heading', { name: 'Accounts', level: 1 })).toBeVisible();
 
@@ -107,7 +144,7 @@ test('cash in, then a transfer with a bank charge, moves both wallets exactly', 
   // The bank's cash book: up by the amount, and not by the charge.
   await page.getByRole('link', { name: /Open cash book: Bank/ }).click();
   await expect(page.getByRole('heading', { level: 1 })).toContainText('1100');
-  expect(await closingBalance()).toBe('৳1,000.00');
+  expect(toPoisha(await closingBalance()) - bankBefore).toBe(100_000n);
   await shot('cash-book-bank');
   await noBlockingViolations('cash book');
 
@@ -115,7 +152,7 @@ test('cash in, then a transfer with a bank charge, moves both wallets exactly', 
   await page.goto('/accounts');
   await page.getByRole('link', { name: /Open cash book: Hand cash/ }).click();
   await expect(page.getByRole('heading', { level: 1 })).toContainText('1010-HQ');
-  expect(await closingBalance()).toBe('৳3,990.00');
+  expect(toPoisha(await closingBalance()) - tillBefore).toBe(399_000n);
 });
 
 /**
@@ -254,8 +291,8 @@ test('the statements and the trial balance agree with what was posted', async ()
   await shot('trial-balance');
 
   await page.getByRole('button', { name: 'Day book' }).click();
-  // Three entries today: the cash in, the transfer and the cash out.
-  await expect(page.locator('ol > li')).toHaveCount(3);
+  // Three entries today from this spec: the cash in, the transfer and the cash out.
+  await expect(page.locator('ol > li')).toHaveCount(dayBookBefore + 3);
   await shot('day-book');
 });
 
