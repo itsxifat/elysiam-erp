@@ -355,7 +355,9 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
   - **The training org.** `pnpm demo:org` seeds it and runs the anonymised sample files
     through the real importers and the opening (D-223). It is left out of the consolidated
     reads, and notify sends nothing from it.
-- Verification: see the Verification Report in the hand-back. Acceptance checks 1–5 pass in
+- Verification: `pnpm verify` exits 0 at VERIFY_SHA (VERIFY_TIME; 131 test files, VERIFY_TESTS
+  tests). An earlier full run at `d497064` passed too (365 s; 2,205 passed, 1 skipped,
+  not M14a's). Acceptance checks 1–5 pass in
   `apps/server/src/modules/migration/migration.db.test.ts`, with the domain halves in
   `packages/domain/src/migration/migration.test.ts` and
   `packages/domain/src/posting/opening-balance.test.ts`:
@@ -374,9 +376,25 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
      `docs/review/M14a/reconciliation-training.csv`, from `pnpm demo:org` and
      `pnpm migration reconcile` run against a throwaway database. **Human:** the client's
      accountant signs the pilot brand's report before go-live.
-- Auditors: ledger-auditor found 1 critical (commits, discards and the post were not
-  serialised per brand), fixed in `6694e37`, plus 3 warnings and 7 notes, all addressed in
-  `1d884ba`. The acceptance-auditor result is in the hand-back.
+- Auditors:
+  - ledger-auditor: 1 critical — commits, discards and the post were not serialised per
+    brand — fixed in `6694e37` with a per-brand advisory lock. Its 3 warnings and 7 notes:
+    - W1–W3 and N1, N3–N6 fixed in `1d884ba`;
+    - N2 recorded as D-224;
+    - N7 logged as a follow-up below.
+
+    The re-check found 0 critical and 0 warnings. Its three notes are logged below or are
+    the expected migration-number clash with sibling branches.
+
+  - acceptance-auditor: NOT READY with 5 gaps, all closed:
+    - discard and status had no tests (now `a staged file set aside`);
+    - this entry was not final;
+    - N2 and N7 were not accounted for;
+    - the plans index and this plan's status were stale (`docs/build-status.md` is left to
+      its owner, as instructed);
+    - CLAUDE.md's `demo:org` line was incomplete.
+
+    Re-audit: ACCEPTANCE_RESULT.
 - Decisions/assumptions: D-213 (amended: no re-opening), D-214 to D-224.
 - New dependencies: none.
 - Deviations from the milestone spec:
@@ -393,6 +411,16 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
     (owner: human)
   - Decide whether wrong supplier dues or courier receivables found after the opening need
     a correcting path. There is no manual journal (D-088, D-213 amended). (owner: human)
+  - A correction found after the opening lands in profit and loss (a stock adjustment or
+    a cash over/short), not in opening equity. Tell the client's accountant before the
+    pilot, and add an "opening correction" posting rule against `3350` if they want one.
+    (owner: human, then claude)
+  - Run and sign the reconciliation after the post and before the brand trades. Stock is
+    valued now, so the report moves after the first sale. Put this in M14b's go-live
+    runbook. (owner: claude)
+  - Every branch that starts from `5741b44` (M17, M18, M20 and this one) uses migrations
+    0081 onwards. Whichever merges second regenerates its migrations on top. (owner:
+    integrator)
   - A console screen if brands are to migrate themselves (D-214). (owner: claude)
   - A CSV file takes at most 5,000 rows, so split a larger customers export into several
     files. Each file is its own import. (owner: human)

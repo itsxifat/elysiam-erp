@@ -71,7 +71,7 @@ export interface LedgerApi {
    * `ledger.accounts`, and a module that queries that table itself is a module that
    * will still be querying it the day the chart grows a second account per subtype
    * (invariant 12). Null when the org's chart has no such account, which means the
-   * chart is broken — the template seeds all forty — so the caller says so rather
+   * chart is broken — the template seeds all forty-one — so the caller says so rather
    * than posting the value somewhere else.
    */
   accountBySubtype(tx: Tx, orgId: string, subtype: AccountSubtype): Promise<PostingAccount | null>;

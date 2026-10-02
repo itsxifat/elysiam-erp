@@ -162,7 +162,6 @@ export interface AppliedTrigger {
   readonly journalId: string | null;
 }
 
-/** A courier party: who delivers, named. Reference data, never order state. */
 /** One buyer and what they did with this brand before go-live (M14a). */
 export interface ImportedBuyer {
   readonly phoneE164: string;
@@ -174,6 +173,7 @@ export interface ImportedBuyer {
   readonly spentPoisha: bigint;
 }
 
+/** A courier party: who delivers, named. Reference data, never order state. */
 export interface CourierParty {
   readonly id: string;
   /** `steadfast`, `pathao`, `redx`, `own_rider`. */

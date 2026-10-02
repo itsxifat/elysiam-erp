@@ -18,7 +18,7 @@ import { sql } from 'drizzle-orm';
  * earlier in the same transaction.
  *
  * Nothing here seeds a chart of accounts. `startTestDatabase()` runs the real seed,
- * which gives every org D-084's 40 system accounts — including `investor_capital`,
+ * which gives every org D-084's 41 system accounts — including `investor_capital`,
  * `investor_payable` and `profit_distribution`. A fixture that inserted its own
  * would be testing a chart production does not have.
  */

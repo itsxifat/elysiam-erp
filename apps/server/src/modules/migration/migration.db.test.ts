@@ -330,6 +330,57 @@ describe('check 3: the same file twice is one import', () => {
   });
 });
 
+// --- discarding a staged file, and the status --------------------------------------
+
+describe('a staged file set aside', () => {
+  const extra = { kind: 'supplier_balances' as const, fileName: 'extra-advance.csv' };
+  const csv = 'supplier,kind,amount_taka\nDEMO-FAB,advance,50\n';
+
+  it('leaves the position when discarded, and can be imported again', async () => {
+    const before = await service.status(actor);
+    expect(before.opening).toBeNull();
+
+    const first = await service.commit(actor, { ...extra, csv });
+    expect(first).toMatchObject({ created: true, status: 'staged' });
+    const staged = await service.status(actor);
+    expect(staged.staged.totalDebitPoisha).toBe(before.staged.totalDebitPoisha + 5_000n);
+    expect(staged.batches.find((batch) => batch.id === first.batchId)?.status).toBe('staged');
+
+    await service.discard(actor, first.batchId);
+    const after = await service.status(actor);
+    expect(after.staged.totalDebitPoisha).toBe(before.staged.totalDebitPoisha);
+    expect(after.batches.find((batch) => batch.id === first.batchId)?.status).toBe('discarded');
+
+    // The same file is a new import once its batch is discarded, and is discarded again
+    // here so the opening below posts exactly the sample.
+    const again = await service.commit(actor, { ...extra, csv });
+    expect(again).toMatchObject({ created: true, status: 'staged' });
+    expect(again.batchId).not.toBe(first.batchId);
+    await service.discard(actor, again.batchId);
+    expect((await service.status(actor)).staged.totalDebitPoisha).toBe(
+      before.staged.totalDebitPoisha,
+    );
+  });
+
+  it('refuses to discard an applied, discarded or unknown file', async () => {
+    const batches = (await service.status(actor)).batches;
+    const applied = batches.find((batch) => batch.status === 'applied');
+    const discarded = batches.find((batch) => batch.status === 'discarded');
+    if (applied === undefined || discarded === undefined) throw new Error('Missing batches.');
+
+    for (const id of [applied.id, discarded.id]) {
+      await expect(service.discard(actor, id)).rejects.toMatchObject({
+        code: 'MIGRATION_BATCH_IMMUTABLE',
+      });
+    }
+    for (const id of ['not-a-uuid', randomUUID()]) {
+      await expect(service.discard(actor, id)).rejects.toMatchObject({
+        code: 'MIGRATION_NOT_FOUND',
+      });
+    }
+  });
+});
+
 // --- the opening, and check 4 --------------------------------------------------------
 
 describe('posting the opening', () => {
@@ -386,6 +437,14 @@ describe('posting the opening', () => {
 
     const plug = lines.filter((line) => line.subtype === 'opening_equity');
     expect(plug.map((line) => line.creditPoisha)).toEqual([35_634_900n]);
+
+    // The discarded file stayed out: still discarded, and not in the totals above.
+    const status = await service.status(actor);
+    expect(
+      status.batches
+        .filter((batch) => batch.fileName === 'extra-advance.csv')
+        .map((batch) => batch.status),
+    ).toEqual(['discarded', 'discarded']);
   });
 
   it('opens the books once: a second post and a new balance file change nothing', async () => {

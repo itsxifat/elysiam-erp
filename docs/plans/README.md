@@ -33,7 +33,7 @@ M07, M09, M10, M11, M12, M13, M15, M19 and M25 were built by parallel agents bet
 | M11  | Order desk, buyer list, intake    | done; acceptance-auditor READY                        |
 | M12  | Courier v1 and COD reconciliation | built, Steadfast adapter unverified                   |
 | M13  | Fraud check v1                    | removed by the owner, code deleted (D-291)            |
-| M14a | Data migration, opening balances  | in progress (opening-balance posting rule only)       |
+| M14a | Data migration, opening balances  | done; both auditors READY, accountant sign-off owed   |
 | M15  | Multi-courier, tracking           | built, Pathao and RedX adapters unverified (D-200)    |
 | M16  | Buyer profiles, notify, promo     | done; both auditors READY                             |
 | M19  | HR, attendance, payroll           | built, re-audit owed                                  |

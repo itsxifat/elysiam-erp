@@ -17,7 +17,7 @@ import { applyInventoryMigrations } from '../inventory/inventory.testing.js';
  * `applyInventoryMigrations` is M07's own helper and is idempotent.
  *
  * Nothing here seeds a chart of accounts. `startTestDatabase()` runs the real seed, which
- * gives every org D-084's 40 system accounts — `courier_receivable`, `sales_revenue`,
+ * gives every org D-084's 41 system accounts — `courier_receivable`, `sales_revenue`,
  * `delivery_charge_income`, `cogs`, `goods_in_transit`, `customer_advance` and
  * `sales_discounts` among them. A fixture that invented its own accounts would be testing
  * a chart production does not have.

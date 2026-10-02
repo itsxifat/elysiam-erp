@@ -649,7 +649,7 @@ export class MigrationService {
     const opening = await repo.openingOf(tx, actor.orgId);
     return opening === undefined
       ? null
-      : `This brand's books were opened on ${opening.as_of}. Balance files are closed; a correction is a journal.`;
+      : `This brand's books were opened on ${opening.as_of}. Balance files are closed; a mistake is corrected through the module that holds it (D-213).`;
   }
 
   /** Parse and review one file against what the database holds now. */
