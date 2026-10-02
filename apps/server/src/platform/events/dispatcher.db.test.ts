@@ -26,10 +26,12 @@ beforeAll(async () => {
   database = await startTestDatabase('dispatcher');
 }, 300_000);
 
+// 60 s, as the other database suites give their teardown: dropping a database under a
+// loaded `pnpm verify` outlasted vitest's 10 s default (M17 and M25 both saw it).
 afterAll(async () => {
   await database?.stop();
   await stopSharedContainer();
-});
+}, 60_000);
 
 async function publish(orgId: string, ref: string): Promise<void> {
   await withOrg({ orgId, userId: 'usr_dispatcher_test' }, async (tx) => {
