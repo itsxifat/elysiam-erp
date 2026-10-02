@@ -37,8 +37,10 @@ test('investor: signs in to the portal, enrols two-step login, sees their money'
   await expect(page.getByRole('heading', { level: 1, name: 'Preview Investor' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Your position' })).toBeVisible();
   await expect(page.getByText('Investment agreement (demo)')).toBeVisible();
-  await accessible(page, 'investor-portal');
   await snap(page, 'investor-portal');
+  await accessible(page, 'investor-portal', async () => {
+    await expect(page.getByRole('heading', { name: 'Your position' })).toBeVisible();
+  });
 });
 
 test('a buyer tracks the parcel on its way', async ({ page }) => {
@@ -52,8 +54,11 @@ test('a buyer tracks the parcel on its way', async ({ page }) => {
   await page.getByLabel(/^Last 4 digits of the phone/).fill(tracking.digits);
   await page.getByRole('button', { name: 'Track' }).click();
   await expect(page.getByRole('heading', { name: `Order ${tracking.orderNo}` })).toBeVisible();
-  await accessible(page, 'order-tracking');
   await snap(page, 'order-tracking');
+  // The reload drops the looked-up order; the dark scan covers the tracking form.
+  await accessible(page, 'order-tracking', async () => {
+    await expect(page.getByRole('heading', { name: 'Track your order' })).toBeVisible();
+  });
 });
 
 test('branch manager: signs in to the till, opens a shift, rings up by barcode', async ({
@@ -76,6 +81,8 @@ test('branch manager: signs in to the till, opens a shift, rings up by barcode',
   await scan.fill('2000000000102');
   await scan.press('Enter');
   await expect(page.getByText(/Classic Cotton Tee/).first()).toBeVisible();
-  await accessible(page, 'till-sale-screen');
   await snap(page, 'till-sale-screen');
+  await accessible(page, 'till-sale-screen', async () => {
+    await expect(page.locator('#scan')).toBeVisible();
+  });
 });

@@ -91,23 +91,39 @@ export async function look(
   // realtime socket may keep a long-poll open and the network is then never idle.
   await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
   await expect(page.getByText(FAILURES)).toHaveCount(0);
-  await accessible(page, shot);
   await snap(page, shot);
+  await accessible(page, shot, async () => {
+    await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
+    await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
+  });
 }
 
 /**
  * M30's accessibility pass: axe, WCAG 2.0 and 2.1 A and AA, on the screen as it stands, in
  * the light theme and then the dark one.
  *
- * The theme is the `dark` class on `<html>` in all three apps (`theme.ts`), so it is switched
- * in place rather than by a reload that would lose a form's state. Recorded softly: every
- * screen of the run is scanned and reported before the test fails. Serious and critical
- * only, the threshold every stack spec uses.
+ * The dark scan reloads with the theme stored, as a person switching would. Flipping the
+ * `dark` class alone is not the dark theme: the brand accent's lightness is solved for the
+ * theme when the app starts (`brand.ts`), so a class flip leaves the light accent on a dark
+ * surface and reports contrast failures nobody will ever see. `ready` is what the screen
+ * shows once it has loaded again. Recorded softly: every screen of the run is scanned and
+ * reported before the test fails. Serious and critical only, the threshold every stack spec
+ * uses.
  */
-export async function accessible(page: Page, label: string): Promise<void> {
-  const wasDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
-  for (const dark of [false, true]) {
-    await page.evaluate((on) => document.documentElement.classList.toggle('dark', on), dark);
+export async function accessible(
+  page: Page,
+  label: string,
+  ready: () => Promise<void> = async () => {
+    await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
+  },
+): Promise<void> {
+  for (const theme of ['light', 'dark'] as const) {
+    if (theme === 'dark') {
+      await page.evaluate(() => localStorage.setItem('elysium-theme', 'dark'));
+      await page.reload();
+      await ready();
+      await expect(page.locator('html')).toHaveClass(/dark/);
+    }
     const result = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
@@ -118,9 +134,12 @@ export async function accessible(page: Page, label: string): Promise<void> {
         help: violation.help,
         targets: violation.nodes.slice(0, 5).map((node) => node.target.join(' ')),
       }));
-    expect.soft(blocking, `${label} (${dark ? 'dark' : 'light'})`).toEqual([]);
+    expect.soft(blocking, `${label} (${theme})`).toEqual([]);
   }
-  await page.evaluate((on) => document.documentElement.classList.toggle('dark', on), wasDark);
+  // Back to light for whatever the test does next, as it started.
+  await page.evaluate(() => localStorage.setItem('elysium-theme', 'light'));
+  await page.reload();
+  await ready();
 }
 
 export async function snap(page: Page, name: string): Promise<void> {
