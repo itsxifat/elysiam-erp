@@ -5,6 +5,7 @@ import {
   abs,
   add,
   allocate,
+  decimalToPoisha,
   divideRounded,
   MAX_POISHA,
   MoneyError,
@@ -14,8 +15,10 @@ import {
   parseTaka,
   percentOf,
   poisha,
+  poishaToMajorNumber,
   sub,
   sum,
+  sumDecimalsToPoisha,
   takaParts,
   type Poisha,
 } from './index.js';
@@ -274,5 +277,39 @@ describe('parse helpers', () => {
     // @ts-expect-error — must go through poisha().
     const bare: Poisha = 5n;
     expect(bare).toBe(5n);
+  });
+});
+
+describe('decimal amounts from other systems (M18)', () => {
+  it('rounds a third decimal half away from zero, once', () => {
+    expect(decimalToPoisha('5339.5')).toBe(533_950n);
+    expect(decimalToPoisha('12.345')).toBe(1_235n);
+    expect(decimalToPoisha('12.344')).toBe(1_234n);
+    expect(decimalToPoisha('0')).toBe(0n);
+  });
+
+  it('refuses anything that is not a plain decimal', () => {
+    for (const input of ['-1', '1e3', '1,000', '৳5', '', '.5']) {
+      expect(() => decimalToPoisha(input), input).toThrow(MoneyError);
+    }
+  });
+
+  it('sums exactly before rounding', () => {
+    expect(sumDecimalsToPoisha(['100.005', '100.005'])).toBe(20_001n);
+    expect(sumDecimalsToPoisha([])).toBe(0n);
+  });
+
+  it('writes poisha as the exact decimal number of taka', () => {
+    fc.assert(
+      fc.property(fc.bigInt({ min: 0n, max: 900_719_925_474_099n }), (value) => {
+        const amount = poisha(value);
+        const { taka, poisha: rest } = takaParts(amount);
+        const exact = `${taka.toString()}.${rest.toString().padStart(2, '0')}`;
+        const written = JSON.stringify(poishaToMajorNumber(amount));
+        return (
+          written === exact.replace(/\.?0+$/, '') || (rest === 0n && written === taka.toString())
+        );
+      }),
+    );
   });
 });
