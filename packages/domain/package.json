@@ -47,6 +47,10 @@
     "./notify": {
       "types": "./dist/notify/index.d.ts",
       "default": "./dist/notify/index.js"
+    },
+    "./targets": {
+      "types": "./dist/targets/index.d.ts",
+      "default": "./dist/targets/index.js"
     }
   },
   "files": [
