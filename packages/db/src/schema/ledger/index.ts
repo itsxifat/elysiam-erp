@@ -86,7 +86,7 @@ export const accountSubtype = ledger.enum('account_subtype', [
   'cash_over_short',
   'bank_charges',
   'operating_expense',
-  // 0080 (M14a, D-213). Appended, because `ALTER TYPE … ADD VALUE` appends.
+  // 0081 (M14a, D-213). Appended, because `ALTER TYPE … ADD VALUE` appends.
   'opening_equity',
 ]);
 
