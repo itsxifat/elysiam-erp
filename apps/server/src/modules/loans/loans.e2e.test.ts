@@ -53,7 +53,11 @@ function body<T>(response: InjectedResponse): T {
 }
 
 interface Statement {
-  readonly loan: { readonly id: string; readonly principalPoisha: string };
+  readonly loan: {
+    readonly id: string;
+    readonly lenderId: string;
+    readonly principalPoisha: string;
+  };
   readonly instalments: readonly {
     readonly id: string;
     readonly seq: number;
@@ -532,6 +536,27 @@ async function voidedAt(id: string): Promise<string | null> {
   return row?.voided_at ?? null;
 }
 
+/** Journals that reverse this loan's receipt: 1 once it is void, 0 otherwise. */
+async function reversalsOfReceipt(id: string): Promise<number> {
+  const [row] = await withSystem(
+    (tx) =>
+      tx.execute<{ n: number }>(sql`
+        select count(*)::int as n from ledger.journals j
+        join loans.loans l on l.org_id = j.org_id and l.received_journal_id = j.reverses_journal_id
+        where l.org_id = ${ORG_A} and l.id = ${id}
+      `),
+    { orgId: ORG_A },
+  );
+  return row?.n ?? -1;
+}
+
+/** What the ledger says the brand owes a lender: Σ credit − Σ debit on its loan payable. */
+async function lenderOwed(lender: string): Promise<bigint> {
+  return (await balances(ORG_A))
+    .filter((row) => row.subtype === 'loan_payable' && row.party_id === lender)
+    .reduce((owed, row) => owed - BigInt(row.net), 0n);
+}
+
 /** A promise opened from outside, to hold a transaction open at a chosen point. */
 function latch() {
   let open: () => void = () => undefined;
@@ -541,7 +566,10 @@ function latch() {
   return { promise, open: () => open() };
 }
 
-/** Until some transaction waits for a `loans.loans` row lock: the race is then set. */
+/**
+ * Until some transaction waits for a `loans.loans` row lock in this suite's database, held by
+ * another: the race is then set.
+ */
 async function waitForLoanLockWaiter(): Promise<void> {
   for (let attempt = 0; attempt < 400; attempt += 1) {
     const [row] = await withSystem((tx) =>
@@ -550,6 +578,7 @@ async function waitForLoanLockWaiter(): Promise<void> {
           select 1 from pg_locks
           where locktype = 'tuple' and relation = 'loans.loans'::regclass
             and database = (select oid from pg_database where datname = current_database())
+            and cardinality(pg_blocking_pids(pid)) > 0
         ) as waiting
       `),
     );
@@ -827,23 +856,34 @@ describe('voiding a loan recorded by mistake (W3, D-304)', () => {
 describe('a void and a repayment cannot both commit (W-A)', () => {
   it('lets exactly one through when the two race, in either order', async () => {
     for (const order of ['void first', 'pay first'] as const) {
-      // Under the threshold, so the repayment posts in the same request.
+      // Under the threshold, so the repayment posts in the same request. ৳12,000 in twelve
+      // interest-free instalments of ৳1,000.
       const loan = await flatLoan(100_000n, `Race Void Lender (${order})`);
       const first = loan.instalments[0]?.id ?? '';
-      const requests =
+      const [voidResponse, payResponse] =
         order === 'void first'
-          ? [voidLoan(loan.loan.id, 'Race'), pay(loan.loan.id, first)]
-          : [pay(loan.loan.id, first), voidLoan(loan.loan.id, 'Race')];
-      const responses = await Promise.all(requests);
+          ? await Promise.all([voidLoan(loan.loan.id, 'Race'), pay(loan.loan.id, first)])
+          : await Promise.all([pay(loan.loan.id, first), voidLoan(loan.loan.id, 'Race')]).then(
+              ([paid, voided]) => [voided, paid] as const,
+            );
+      const responses = [voidResponse, payResponse];
       expect(
-        responses.filter((response) => response.statusCode === 201),
-        responses.map((response) => response.body).join('\n'),
+        responses.filter((response) => response?.statusCode === 201),
+        responses.map((response) => response?.body).join('\n'),
       ).toHaveLength(1);
 
+      // Whichever won, the books say exactly that and nothing of the loser.
       const voided = (await voidedAt(loan.loan.id)) !== null;
+      const loser = voided ? payResponse : voidResponse;
+      expect(loser?.statusCode, loser?.body).toBe(409);
+      expect(body<{ code: string }>(loser).code).toBe(
+        voided ? 'LOAN_PAYMENT_INVALID' : 'LOAN_IMMUTABLE',
+      );
       expect(await livePaymentsOf(first)).toEqual(
         voided ? { live: 0, journals: 0 } : { live: 1, journals: 1 },
       );
+      expect(await reversalsOfReceipt(loan.loan.id)).toBe(voided ? 1 : 0);
+      expect(await lenderOwed(loan.loan.lenderId)).toBe(voided ? 0n : 1_100_000n);
     }
     expect(await trialBalanceDifference(ORG_A)).toBe(0n);
   });
@@ -886,9 +926,15 @@ describe('a void and a repayment cannot both commit (W-A)', () => {
     gate.open();
     await payment;
 
+    // Refused by the trigger's own payments check, and the reversal it posted rolled back
+    // with it: the lender is still owed the whole principal.
     const voided = await voiding;
     expect(voided.statusCode, voided.body).toBe(409);
+    expect(body<{ code: string }>(voided).code).toBe('LOAN_IMMUTABLE');
+    expect(voided.body).toMatch(/repayment posted or waiting/);
     expect(await voidedAt(loan.loan.id)).toBeNull();
+    expect(await reversalsOfReceipt(loan.loan.id)).toBe(0);
+    expect(await lenderOwed(loan.loan.lenderId)).toBe(12_000_000n);
     await decide(approval.id, 'rejected');
   });
 
@@ -907,11 +953,15 @@ describe('a void and a repayment cannot both commit (W-A)', () => {
 
     const paid = await paying;
     expect(paid.statusCode, paid.body).toBe(409);
+    expect(body<{ code: string }>(paid).code).toBe('LOAN_PAYMENT_INVALID');
+    expect(paid.body).toMatch(/that loan is void/i);
     expect(await voidedAt(loan.loan.id)).not.toBeNull();
     expect(await livePaymentsOf(loan.instalments[0]?.id ?? '')).toEqual({
       live: 0,
       journals: 0,
     });
+    expect(await reversalsOfReceipt(loan.loan.id)).toBe(1);
+    expect(await lenderOwed(loan.loan.lenderId)).toBe(0n);
   });
 });
 

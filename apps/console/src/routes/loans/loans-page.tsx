@@ -41,7 +41,7 @@ import {
   type PreviewRow,
   type Terms,
 } from './api.js';
-import { attemptId } from './attempt.js';
+import { attemptId, endsAttempt } from './attempt.js';
 import { useLoansT, type LoansMessageKey } from './messages.js';
 
 /**
@@ -284,6 +284,9 @@ export function LoansPage() {
       loanForm.reset(LOAN_DEFAULTS);
       attempt.current = null;
       await refresh();
+    },
+    onError: (error) => {
+      if (endsAttempt(error)) attempt.current = null;
     },
   });
 

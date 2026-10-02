@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { attemptId } from './attempt.js';
+import { attemptId, endsAttempt } from './attempt.js';
 
 /**
  * The client id a loan or a repayment is sent with (ledger audit W-C): a retry after a lost
@@ -20,6 +20,14 @@ describe('attemptId', () => {
     const first = attemptId(attempt, { instalmentId: 'i1', memo: '' });
     expect(attemptId(attempt, { instalmentId: 'i1', memo: 'cash' })).not.toBe(first);
     expect(attemptId(attempt, { instalmentId: 'i2', memo: 'cash' })).not.toBe(first);
+  });
+
+  it('ends an attempt on a refusal, and keeps it through a lost response or a fault', () => {
+    expect(endsAttempt({ status: 409 })).toBe(true);
+    expect(endsAttempt({ status: 400 })).toBe(true);
+    expect(endsAttempt({ status: 503 })).toBe(false);
+    expect(endsAttempt(new Error('network'))).toBe(false);
+    expect(endsAttempt(null)).toBe(false);
   });
 
   it('starts a new attempt once the last one succeeded and was cleared', () => {

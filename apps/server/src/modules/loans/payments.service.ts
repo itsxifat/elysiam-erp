@@ -81,11 +81,14 @@ export class LoanPaymentsService implements OnModuleInit {
     now: Date = new Date(),
   ): Promise<RepaymentResult> {
     const date = businessDate(now);
+    // Lowercased once, as Postgres writes a uuid, so the row, the approval's payload, the
+    // audit entries and the response all spell it the same way (N2).
+    const paymentId = input.paymentId.toLowerCase();
 
     // A retried submit answers from the row it wrote.
     const checked = await mapLoanErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const existing = await repo.paymentById(tx, context.orgId, input.paymentId);
+        const existing = await repo.paymentById(tx, context.orgId, paymentId);
         if (existing !== undefined) {
           if (existing.instalment_id !== input.instalmentId.toLowerCase()) {
             throw new LoansHttpError(
@@ -144,8 +147,7 @@ export class LoanPaymentsService implements OnModuleInit {
           amountPoisha: total,
           amountDerivedByServer: true,
           raisedByModule: true,
-          // Lowercased, as Postgres writes a uuid, so the payload and the row always agree (N2).
-          payload: { paymentId: input.paymentId.toLowerCase(), loanId },
+          payload: { paymentId, loanId },
           reason: input.memo ?? `Loan instalment ${String(instalment.seq)}`,
           request,
         }),
@@ -180,7 +182,7 @@ export class LoanPaymentsService implements OnModuleInit {
         try {
           await repo.insertPayment(tx, {
             orgId: context.orgId,
-            id: input.paymentId,
+            id: paymentId,
             loanId,
             instalmentId: instalment.id,
             walletAccountId: wallet.accountId,
@@ -210,7 +212,7 @@ export class LoanPaymentsService implements OnModuleInit {
           operation: 'create',
           action: 'loans.payment.recorded',
           entityType: 'LoanPayment',
-          entityId: input.paymentId,
+          entityId: paymentId,
           before: null,
           after: {
             loanId,
@@ -228,7 +230,7 @@ export class LoanPaymentsService implements OnModuleInit {
         });
 
         return serializeFor(context, 'CompanyLoan', {
-          paymentId: input.paymentId,
+          paymentId,
           status: approvalId === null ? ('posted' as const) : ('pending_approval' as const),
           journalId,
           approvalId,

@@ -31,7 +31,7 @@ import {
   type StatementInstalment,
   type StatementPayment,
 } from './api.js';
-import { attemptId } from './attempt.js';
+import { attemptId, endsAttempt } from './attempt.js';
 import { messageOf, METHOD_LABEL, NEXT_STATE, tableLabels } from './loans-page.js';
 import { useLoansT, type LoansMessageKey } from './messages.js';
 
@@ -134,6 +134,9 @@ export function LoanDetailPage() {
       setNotice(result.status === 'posted' ? 'loans.paidNotice' : 'loans.heldNotice');
       payForm.reset({ memo: '' });
       await queryClient.invalidateQueries({ queryKey: ['loans'] });
+    },
+    onError: (error) => {
+      if (endsAttempt(error)) attempt.current = null;
     },
   });
 
