@@ -1,0 +1,16 @@
+section,party,imported_taka,journal_taka,module_taka,agrees
+inventory,Inventory,105916.29,105916.29,105916.29,yes
+wallet,1010-HQ,12950.00,12950.00,12950.00,yes
+wallet,1100,171500.53,171500.53,171500.53,yes
+wallet,1110,22820.00,22820.00,22820.00,yes
+supplier_advance,DEMO-TAIL,7000.00,7000.00,7000.00,yes
+courier_receivable,steadfast,5208.00,5208.00,5208.00,yes
+supplier_payable,DEMO-FAB,59500.00,59500.00,59500.00,yes
+supplier_payable,DEMO-TAIL,16450.35,16450.35,16450.35,yes
+opening_equity,Opening balance equity,249444.47,249444.47,249444.47,yes
+
+journal_debit_taka,325394.82
+journal_credit_taka,325394.82
+opening_date,2026-10-02
+agrees,yes
+signed_off_by,

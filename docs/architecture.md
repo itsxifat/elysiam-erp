@@ -238,6 +238,7 @@ See D-001 and D-002.
 | messaging | messaging | Chatwoot links, conversation stats, activity heartbeats                       |
 | landing   | landing   | pages, versions, domains                                                      |
 | analytics | analytics | rollups, leaderboard snapshots, insights                                      |
+| migration | migration | imported files and the one opening of a brand's books (M14a, D-215)           |
 
 ---
 
@@ -570,6 +571,16 @@ All reports filter by org, branch and a range of business dates. They apply the 
 - balance sheet
 - stock valuation (cost roles only)
 - COD reconciliation: delivered vs settled vs outstanding, by courier
+
+### Opening balances (M14a)
+
+A brand that has traded for years opens its books here once, before go-live (D-213 to D-223):
+
+- Six importers, each a dry run and an all-or-nothing commit: SKUs and customers apply on commit; opening stock, supplier dues and advances, wallet balances and courier COD in transit are **staged** in `migration.batches` (D-215).
+- One posting writes every staged file's `opening_balance` movements and **one** journal dated the evening before go-live (today or yesterday, D-221): assets debited, liabilities credited, the difference to `3350 Opening balance equity` (D-213). Its key is the org's, so a brand opens once; balance files close afterwards.
+- A SKU opens at one cost (D-216), so the journal's inventory line equals the inventory module's valuation to the poisha.
+- The reconciliation puts imported, journal and module figures side by side per line (D-222); the accountant's sign-off is recorded once, only when every line agrees.
+- Run by the implementation team through `pnpm migration` and `pnpm demo:org` (D-214), not a screen. The training org (`is_training`) is seeded from anonymised files through the same importers and is left out of consolidated reads (D-223).
 
 ### Periods and dates
 
