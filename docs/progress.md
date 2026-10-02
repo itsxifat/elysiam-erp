@@ -334,3 +334,66 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
   - Route OTPs and invites through notify once a gateway is verified. (D-212; owner: claude)
   - BulkSMSBD credentials, or the client's own gateway, to close D-012. (owner: human)
 - Next: M18, then M20 and M14a, which a parallel session is doing in its own worktree.
+
+### 2026-10-02 · M14a · Data migration and opening balances · done
+
+- Delivered:
+  - **Six importers**, each a dry run and an all-or-nothing commit, run by the
+    implementation team with `pnpm migration` (D-214):
+    - SKUs keep the brand's own codes (D-219), and customers arrive with their delivered,
+      returned and cancelled counts and what they spent (D-218). Both apply on commit.
+    - Opening stock per location with unit cost, supplier dues and advances, wallet
+      balances and courier COD in transit are staged (D-215). One cost per SKU (D-216).
+    - The same file twice is one import (D-217).
+  - **The opening.** One `post` writes the opening stock movements and one journal, dated
+    the evening before go-live (today or yesterday, D-221), to `3350 Opening balance
+equity` (D-213). It runs once per brand and names the accountant who agreed the staged
+    trial balance.
+  - **The reconciliation.** Imported, journal and module figures side by side per line,
+    written as CSV for the accountant, with a sign-off recorded once and only when every
+    line agrees (D-222).
+  - **The training org.** `pnpm demo:org` seeds it and runs the anonymised sample files
+    through the real importers and the opening (D-223). It is left out of the consolidated
+    reads, and notify sends nothing from it.
+- Verification: see the Verification Report in the hand-back. Acceptance checks 1–5 pass in
+  `apps/server/src/modules/migration/migration.db.test.ts`, with the domain halves in
+  `packages/domain/src/migration/migration.test.ts` and
+  `packages/domain/src/posting/opening-balance.test.ts`:
+  1. "the dry run shows a balanced opening trial balance" — stock = Σ(qty × cost) from the
+     sample file's own text, ৳151,308.75, 186 units; the property test holds it for any rows;
+  2. "a bad row anywhere leaves no partial state" — a bad last row in each of the six
+     importers, and the last product, the last buyer and the journal after its movements
+     failing inside the transaction;
+  3. "the same file twice is one import" — all six re-run, and edited files add only what
+     is new;
+  4. "check 4: posts one journal whose trial balance is zero and whose stock is the
+     valuation" — debits = credits = ৳464,849.50, inventory line = `InventoryApi.valuation`
+     to the poisha;
+  5. "the reconciliation report" agrees on all nine lines, flags a drifted wallet, and
+     records one sign-off. A generated copy for the training org is in
+     `docs/review/M14a/reconciliation-training.csv`, from `pnpm demo:org` and
+     `pnpm migration reconcile` run against a throwaway database. **Human:** the client's
+     accountant signs the pilot brand's report before go-live.
+- Auditors: ledger-auditor found 1 critical (commits, discards and the post were not
+  serialised per brand), fixed in `6694e37`, plus 3 warnings and 7 notes, all addressed in
+  `1d884ba`. The acceptance-auditor result is in the hand-back.
+- Decisions/assumptions: D-213 (amended: no re-opening), D-214 to D-224.
+- New dependencies: none.
+- Deviations from the milestone spec:
+  - No console screen; the importers are a command (D-214).
+  - Customers carry no fraud signals, because the fraud check is gone (D-291).
+  - The opening date is today or yesterday only (D-221).
+- Follow-ups:
+  - The client's accountant signs the pilot brand's reconciliation. (owner: human)
+  - Re-run `pnpm db:seed` on every existing database before a migration, so each brand
+    has `3350 Opening balance equity`. Add it to M14b's go-live runbook. (owner: claude)
+  - M12's settlement import should clear a legacy pre-go-live COD reference against the
+    opening receivable (D-220). (owner: claude)
+  - Ask whether any brand needs a cut-off older than the day before go-live (D-221).
+    (owner: human)
+  - Decide whether wrong supplier dues or courier receivables found after the opening need
+    a correcting path. There is no manual journal (D-088, D-213 amended). (owner: human)
+  - A console screen if brands are to migrate themselves (D-214). (owner: claude)
+  - A CSV file takes at most 5,000 rows, so split a larger customers export into several
+    files. Each file is its own import. (owner: human)
+- Next: M14b.
