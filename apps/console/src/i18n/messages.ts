@@ -38,6 +38,7 @@ const CONSOLE_KEYS = [
   'nav.performance',
   'nav.campaigns',
   'nav.marketing',
+  'nav.analytics',
   'nav.resellers',
   'nav.investors',
   'nav.audit',
