@@ -546,11 +546,13 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
   - **Statements (D-301).** Schedule, repayments, totals, and the ledger's balance for the
     lender beside the schedules'.
   - **Void (D-304).** A loan recorded by mistake, with nothing paid on it, is voided by
-    reversing its receipt; the database allows that one change and no other.
+    reversing its receipt — by someone other than the person who recorded it; the database
+    allows that one change and no other, and a void and a repayment cannot both commit.
   - **Console.** Loans list, record a loan (with a schedule preview), the statement with pay
     and void, and the loan-due item in the notifications inbox. bn and en.
-- Verification: `pnpm verify` exits 0 on the working tree that this entry's commit records
-  (147 test files, 2,416 tests, 1 skipped), on the fourth run. The first three failed on
+- Verification: `pnpm verify` (under `heavy.mjs`, Testcontainers) exits 0 at `8bf5e46`, the
+  re-audit's fixes (148 test files, 2,430 tests, 1 skipped). Before the re-audit it exited 0 at `24a0459` (147 files,
+  2,416 tests) on the fourth run; the first three failed on
   suites M26 does not touch: `dispatcher.db.test.ts`'s `afterAll` hook timing out, then
   `out of shared memory` (`max_locks_per_transaction`) in 12 suites' migrations — both with
   `TEST_DATABASE_URL` pointing every suite at the dev Postgres at once — and then, on
@@ -567,7 +569,12 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
      trial balance; the under-threshold path; and, from the ledger audit, two payments racing
      one instalment, two submits racing one loan id, a replay with other terms, the generic
      route refusing the type, an approval that names no payment, the database refusing a
-     payment posted or rejected behind its approval's back, and the void.
+     payment posted or rejected behind its approval's back, and the void; from the re-audit,
+     a void racing a repayment in both orders (a `Promise.all` race, and two deterministic
+     lock tests that hold one transaction open until the other waits on the loan row), each
+     asserting the winner's journals and the lender's balance, and the database refusing a
+     void by its recorder, on the wrong journal, with a payment waiting or posted, twice, or
+     edited.
 
   Real-stack browser run (`e2e:stack`): 22 of 23. The notifications inbox spec
   (`shell-quality.stack.ts:391`) passes. `money.stack.ts`'s first test failed because
@@ -581,15 +588,30 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
     are fixed: the executor and the rejection hook refuse instead of returning quietly,
     `loan_repayment` is in `EXECUTOR_REQUIRED_TYPES`, 0092's triggers bind a payment to its
     pending or approved request and its own instalment's journal, the void path (D-304), and
-    0091's unique indexes. Race and replay tests added. Re-audit of the fixes: not yet run.
+    0091's unique indexes. Race and replay tests added.
+  - ledger re-audit at `24a0459`: 0 critical, 4 warnings, fixed in `3495569` — W-A (a void
+    and a repayment could both commit: 0093 makes a payment's insert read its loan `for
+share`), W-B (one person could void a loan's receipt: `LOAN_SELF_VOID` in the service and
+    the trigger), W-C (the console minted a new id per request, so a retry after a lost
+    response could record a second loan: one id per attempt), W-D (database refusal tests for
+    the void rules) — and N2 (a capitalised payment id). Second re-audit at `3495569`: 0
+    critical, 1 warning (the race tests did not assert the ledger's result), fixed in
+    `8bf5e46` with the note-level items (error codes in the lock tests, `pg_blocking_pids` in
+    the lock poll, one lowercased payment id for the audit trail, a 4xx ending the console's
+    attempt). Not taken: the trigger trusting `voided_by` rather than `app.user_id`, and a
+    void above the threshold going through approvals (follow-ups).
   - acceptance-auditor: NOT READY with 2 gaps — the architecture's module row (fixed) and no
-    real-stack run of the touched inbox (run, passes). Re-audit: not yet run.
+    real-stack run of the touched inbox (run, passes). Re-audit: all four checks EVIDENCED,
+    NOT READY on one docs gap (no M26 row in `docs/plans/README.md`, and the plan's Status
+    without the audits), closed here.
 - Decisions/assumptions: D-293 to D-304 (ASSUMED: D-294, D-295, D-297, D-300). D-298 and
-  D-302 carry notes from the audit fixes.
+  D-302 carry notes from the audit fixes; D-304 records the second-person rule, the lock, and
+  why 0093 is a new migration rather than an edit of 0092.
 - Migrations: `0089` (generated: schema and the enum value), `0090` (`--custom`: RLS, grants,
   triggers), `0091` (generated: the void columns and unique journal indexes), `0092`
-  (`--custom`: the void trigger and the approval-bound payment triggers). They will collide
-  with sibling branches' numbers at integration.
+  (`--custom`: the void trigger and the approval-bound payment triggers), `0093`
+  (`--custom`: the loan lock, the second-person void and the case-insensitive payment id).
+  They will collide with sibling branches' numbers at integration.
 - New dependencies: none.
 - Deviations from the milestone spec: none in scope. Added beyond the checks, from the ledger
   audit: the void path (D-304).
@@ -617,5 +639,10 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
     every suite migrates at once (`max_locks_per_transaction` 64); run it without, or raise
     the setting in `infra/docker-compose.dev.yml`. (owner: human)
   - A real-stack spec for the loan screens (record, pay, approve, void). (owner: claude)
-  - Renumber 0089–0092 at integration. (owner: claude, integrator)
+  - A void needs a second person but not an approval: any accounts user other than the
+    recorder can void a genuine loan of any size. Route voids above the `loan_repayment`
+    threshold through approvals if the owner wants it. (owner: human)
+  - 0093's self-void check compares `voided_by` with `created_by` as the application wrote
+    them; it could also require `voided_by = app.user_id`. (owner: claude)
+  - Renumber 0089–0093 at integration. (owner: claude, integrator)
 - Next: integration of M26 with its sibling branches.
