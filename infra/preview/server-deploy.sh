@@ -88,6 +88,8 @@ docker build -f "$SRC/infra/docker/web.Dockerfile" --target dist \
   --build-arg "VITE_CSP_CONNECT_SRC=$CSP_EXTRA" \
   --output "type=local,dest=$WEB/releases/$SHA" "$SRC"
 [ -f "$WEB/releases/$SHA/www/index.html" ] || fail "the SPA build wrote no index.html"
+# buildx writes the output directory as 0700; nginx's workers (www-data) must read it.
+chmod -R u=rwX,go=rX "$WEB/releases/$SHA"
 PREV_WEB=$(readlink "$WEB/current" 2>/dev/null || true)
 ln -sfn "releases/$SHA" "$WEB/current.next"
 mv -Tf "$WEB/current.next" "$WEB/current"

@@ -73,6 +73,14 @@ Check that nothing already uses the API's port: `ss -ltn | grep -c ':3410 '` pri
 If it is taken, put another port in `PREVIEW_API_PORT` in `~/elyerp/.env.preview` after the
 first deploy and in the `upstream` block of the nginx site, then deploy again.
 
+The server's clock must be synchronised: `timedatectl` shows `System clock synchronized:
+yes`. Two-step sign-in codes are checked against it, so a wrong clock locks out every role
+that needs them. On 2026-10-02 this server's clock was 9 h 27 min fast because Ubuntu's NTS
+time sources never answer from its network; the fix was a plain pool in
+`/etc/chrony/sources.d/pool-ntp.sources` (`pool pool.ntp.org iburst maxsources 4`) and
+`authselectmode ignore` in `/etc/chrony/conf.d/zz-fallback.conf`, then `sudo systemctl
+restart chrony`.
+
 The DNS record `elyerp.enfinito.cloud` → the server's address must exist (it does). If it is
 ever proxied through Cloudflare, nginx sees Cloudflare's addresses as visitors; the per-IP
 login limits would then need nginx's `real_ip` module set up first.
