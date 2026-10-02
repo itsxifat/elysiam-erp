@@ -73,7 +73,7 @@ human tester can drive the ERP end to end before it is hosted. Branch
 
 ## Status on 2026-10-02
 
-Built and verified on branch `gaps-orders-settings`; not yet merged.
+Built, verified and audited (ledger-auditor: 0 critical, 0 warnings on the third pass) on branch `gaps-orders-settings`; not yet merged.
 
 - Server: D-390 to D-396 as planned, plus the ledger audit's fixes — the parcel's collection
   is written only by a delivery step that applied (C1); a person's status that moves the
