@@ -28,6 +28,7 @@ import { BuyerProfileService } from './profile.service.js';
 import { ReengagementService } from './reengagement.service.js';
 import { NOTIFY_PORT } from './ports/notify.port.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
+import { DeliveryObserverRegistry } from './ports/delivery-observer.port.js';
 import { PROMO_PORT } from './ports/promo.port.js';
 
 /**
@@ -93,6 +94,8 @@ import { PROMO_PORT } from './ports/promo.port.js';
   providers: [
     CustomersService,
     CourierBookingRegistry,
+    // M18: the marketing module registers here to hear of deliveries (D-262).
+    DeliveryObserverRegistry,
     TransitionsService,
     OrdersService,
     DocumentsService,
@@ -111,6 +114,12 @@ import { PROMO_PORT } from './ports/promo.port.js';
     ReengagementService,
     { provide: ORDERS_API, useClass: OrdersApiService },
   ],
-  exports: [ORDERS_API, CustomersService, CourierBookingRegistry, CrmService],
+  exports: [
+    ORDERS_API,
+    CustomersService,
+    CourierBookingRegistry,
+    DeliveryObserverRegistry,
+    CrmService,
+  ],
 })
 export class OrdersModule {}

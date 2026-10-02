@@ -318,6 +318,21 @@ export const ERROR_CODES = [
   'NOTIFY_TEMPLATE_INVALID',
   'NOTIFY_MESSAGE_IMMUTABLE',
   'CRM_OCCASION_IMMUTABLE',
+
+  // Marketing (M18, §11)
+  'MARKETING_INVALID',
+  'MARKETING_CAMPAIGN_NOT_FOUND',
+  /** That Meta id or `utm_campaign` already names another of this brand's campaigns. */
+  'MARKETING_REF_TAKEN',
+  'MARKETING_LEAD_NOT_FOUND',
+  /** A spend figure keeps its campaign and day, and the import never replaces a person's. */
+  'MARKETING_SPEND_IMMUTABLE',
+  /** A sent or skipped conversion is final. */
+  'MARKETING_CAPI_IMMUTABLE',
+  /** The brand has no Meta ad account, pixel or token set up for what was asked. */
+  'MARKETING_META_NOT_CONNECTED',
+  /** This installation has no key to seal a Meta token with. */
+  'MARKETING_CREDENTIALS_MISSING',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

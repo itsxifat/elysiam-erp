@@ -43,6 +43,10 @@
     "./notify": {
       "types": "./dist/notify/index.d.ts",
       "default": "./dist/notify/index.js"
+    },
+    "./marketing": {
+      "types": "./dist/marketing/index.d.ts",
+      "default": "./dist/marketing/index.js"
     }
   },
   "files": [
