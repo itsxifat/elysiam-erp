@@ -121,6 +121,8 @@ export class CrmService {
             values: { name: buyer.name, code },
             refType: 'occasion',
             refId: codeId,
+            // An offer, so opt-outs and quiet hours apply — whatever the template says.
+            category: 'marketing',
             now,
           });
           await repo.insertOccasionIssue(tx, {

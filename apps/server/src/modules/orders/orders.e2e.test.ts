@@ -607,6 +607,8 @@ describe('the route gate (D-070), scoped to this module', () => {
         'DeliveryZonesController',
         // M11's buyer list lives in this module too.
         'BuyersController',
+        // M16's re-engagement list, beside it.
+        'ReengagementController',
       ].includes(route.controller),
     );
 

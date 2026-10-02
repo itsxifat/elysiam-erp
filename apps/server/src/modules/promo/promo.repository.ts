@@ -178,17 +178,50 @@ export async function usageOf(
  * the second one's `where` finds no row and it is told the code is finished — the same
  * shape invariant 3 requires of a stock reservation, and for the same reason.
  *
- * Returns the new count, or undefined when the code is gone, archived or exhausted.
+ * Returns the new count and the code's per-buyer limit, or undefined when the code is
+ * gone, archived or exhausted. The UPDATE also leaves this transaction holding the code's
+ * row lock until it ends, which is what makes `appliedByCustomer` after it a safe re-count.
  */
-export async function claimUse(tx: Tx, orgId: string, codeId: string): Promise<number | undefined> {
-  const rows = await tx.execute<{ used_count: number }>(sql`
+export async function claimUse(
+  tx: Tx,
+  orgId: string,
+  codeId: string,
+): Promise<{ readonly usedCount: number; readonly perCustomerLimit: number | null } | undefined> {
+  const rows = await tx.execute<{ used_count: number; per_customer_limit: number | null }>(sql`
     update promo.codes
     set used_count = used_count + 1, updated_at = now()
     where org_id = ${orgId} and id = ${codeId} and status = 'active'
       and (total_limit is null or used_count < total_limit)
-    returning used_count
+    returning used_count, per_customer_limit
   `);
-  return rows[0]?.used_count;
+  const row = rows[0];
+  return row === undefined
+    ? undefined
+    : { usedCount: row.used_count, perCustomerLimit: row.per_customer_limit };
+}
+
+/**
+ * This buyer's applied redemptions of a code, other than the one for `orderId`.
+ *
+ * Read after `claimUse`, under the code's row lock: a concurrent order for the same buyer
+ * either committed before this transaction got the lock — and READ COMMITTED's next
+ * statement sees its redemption — or is waiting behind it. The order's own redemption is
+ * left out so a retried submission is still recognised as a replay.
+ */
+export async function appliedByCustomer(
+  tx: Tx,
+  orgId: string,
+  codeId: string,
+  customerId: string,
+  orderId: string | null,
+): Promise<number> {
+  const rows = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from promo.redemptions
+    where org_id = ${orgId} and code_id = ${codeId} and customer_id = ${customerId}
+      and status = 'applied'
+      and ${orderId === null ? sql`true` : sql`order_id is distinct from ${orderId}`}
+  `);
+  return rows[0]?.n ?? 0;
 }
 
 /** Give a use back when a redemption is released. Never below zero. */

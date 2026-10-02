@@ -5,7 +5,12 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { ActiveContext } from '../../platform/http/context.js';
-import { ORG_A, startHttpHarness, type HttpHarness } from '../../testing/http-harness.js';
+import {
+  createBranch,
+  ORG_A,
+  startHttpHarness,
+  type HttpHarness,
+} from '../../testing/http-harness.js';
 import { seedProductWithSkus, type SeededSku } from '../inventory/inventory.testing.js';
 import { seedCustomer, seedOrder } from '../orders/orders.testing.js';
 import { PROMO_API, type PromoApi } from './promo.api.js';
@@ -78,6 +83,7 @@ afterAll(async () => {
 
 async function code(fields: {
   readonly totalLimit?: number;
+  readonly perCustomerLimit?: number;
   readonly categoryIds?: readonly string[];
   readonly valueBps?: number;
   readonly channels?: readonly string[];
@@ -88,9 +94,10 @@ async function code(fields: {
       (
         await tx.execute<{ id: string }>(sql`
           insert into promo.codes (
-            org_id, code, kind, value_bps, total_limit, category_ids, channels, created_by)
+            org_id, code, kind, value_bps, total_limit, per_customer_limit, category_ids,
+            channels, created_by)
           values (${ORG_A}, ${word}, 'percent', ${fields.valueBps ?? 1000},
-                  ${fields.totalLimit ?? null},
+                  ${fields.totalLimit ?? null}, ${fields.perCustomerLimit ?? null},
                   ${JSON.stringify(fields.categoryIds ?? [])}::jsonb,
                   ${JSON.stringify(fields.channels ?? [])}::jsonb, ${ACTOR})
           returning id
@@ -168,6 +175,43 @@ describe('a promo code against real Postgres', () => {
     expect(String(lost[0]?.reason)).toMatch(/as many times as it allows/);
 
     // The count and the ledger agree, and neither went past the limit.
+    expect(await state(id)).toEqual({ used: 1, redemptions: ['applied'] });
+  });
+
+  it('refuses a buyer’s second use when another order took it between the check and the claim', async () => {
+    const { id, word } = await code({ perCustomerLimit: 1 });
+    const [first, second] = [await order(), await order()];
+
+    // Deterministic, not a hopeful race: the first transaction prices the code (and sees
+    // no use by this buyer), then waits; the second applies and commits; then the first
+    // redeems. Only a re-count under the claim's lock can see the second's use.
+    let priced!: () => void;
+    const pricedSignal = new Promise<void>((resolve) => {
+      priced = resolve;
+    });
+    let resume!: () => void;
+    const resumeSignal = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+
+    const late = withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => {
+      const quote = await api.priceForOrder(tx, context(), {
+        code: word,
+        customerId,
+        channel: 'phone',
+        lines: [{ skuId: saree.id, netPoisha: PRICE.toString() }],
+        deliveryChargePoisha: '6000',
+      });
+      priced();
+      await resumeSignal;
+      return api.redeemForOrder(tx, context(), quote, first);
+    });
+
+    await pricedSignal;
+    await apply(word, second);
+    resume();
+
+    await expect(late).rejects.toMatchObject({ response: { reason: 'customer_limit_reached' } });
     expect(await state(id)).toEqual({ used: 1, redemptions: ['applied'] });
   });
 
@@ -334,5 +378,18 @@ describe('a promo code on an order taken at the desk', () => {
     // One order, one use: the second order does not exist, with or without the discount.
     expect(await ordersWith(id)).toBe(1);
     expect(await state(id)).toEqual({ used: 1, redemptions: ['applied'] });
+  });
+});
+
+describe('a branch manager reads codes without the scope backstop firing (W6)', () => {
+  it('lists codes and checks one with a branch-scoped grant', async () => {
+    const branch = await createBranch(ORG_A, 'PRM-BR');
+    const manager = await harness.asRole('branch_manager', ORG_A, { branchIds: [branch] });
+
+    // Before the routes declared that a code has no branch, each of these was a 500 from
+    // `ScopeNotAppliedError`; the route matrix missed it because its branch manager is
+    // org-wide.
+    const list = await manager.client.request('GET', '/v1/promo/codes');
+    expect(list.statusCode, list.body).toBe(200);
   });
 });

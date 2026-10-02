@@ -215,3 +215,90 @@ describe('sending', () => {
     });
   });
 });
+
+describe('what an opt-out leaves behind, and what it stops', () => {
+  it('never writes the number into the append-only audit log as given (invariant 10)', async () => {
+    const marketing = await harness.asRole('marketing', ORG_A);
+    const number = '01700000377';
+    const added = await marketing.client.request('POST', '/v1/notify/opt-outs', {
+      body: { phone: number, reason: 'Asked by phone' },
+    });
+    expect(added.statusCode).toBe(201);
+    const removed = await marketing.client.request('DELETE', `/v1/notify/opt-outs/${number}`);
+    expect(removed.statusCode).toBe(200);
+
+    const rows = await withSystem(
+      (tx) =>
+        tx.execute<{ entity_id: string; before: unknown; after: unknown }>(sql`
+          select entity_id, before, after from audit.audit_log
+          where org_id = ${ORG_A} and action like 'notify.opt_out.%'
+            and actor_user_id = ${marketing.userId}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.entity_id).not.toMatch(/01700000377|8801700000377/);
+      expect(JSON.stringify([row.before, row.after])).not.toContain('01700000377');
+    }
+  });
+
+  it('suppresses an offer whose number opted out after it was queued, and sends nothing', async () => {
+    const number = '01700000378';
+    // Queued at 22:00, so held until 09:00 — the window an opt-out can arrive in.
+    const queued = await queueAt('offer.weekend', number, EVENING);
+    expect(queued.state).toBe('queued');
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          insert into notify.opt_outs (org_id, phone, channel, created_by)
+          values (${ORG_A}, ${number}, 'sms', 'usr_notify_test')
+        `),
+      { orgId: ORG_A },
+    );
+
+    expect(await notify.deliver(ORG_A, queued.messageId, NINE_NEXT_DAY)).toBe('suppressed');
+    expect(gateway.sent).toEqual([]);
+    expect(await stateOf(queued.messageId)).toBe('suppressed');
+    // Final: a redelivered job leaves it alone.
+    expect(await notify.deliver(ORG_A, queued.messageId, NINE_NEXT_DAY)).toBe('skipped');
+  });
+});
+
+describe('a template’s category is not a marketer’s to turn into a sign-in code (W4)', () => {
+  it('refuses otp over HTTP, and refuses to overwrite a sign-in template', async () => {
+    const marketing = await harness.asRole('marketing', ORG_A);
+    const asOtp = await marketing.client.request('PUT', '/v1/notify/templates', {
+      body: {
+        key: 'occasion.sneaky',
+        category: 'otp',
+        bodyBn: 'কোড {code}',
+        bodyEn: 'Code {code}',
+      },
+    });
+    expect(asOtp.statusCode).toBe(400);
+
+    // `auth.code` is the suite's sign-in template; turning it into an offer would hold
+    // sign-in codes overnight.
+    const overwrite = await marketing.client.request('PUT', '/v1/notify/templates', {
+      body: { key: 'auth.code', category: 'marketing', bodyBn: 'অফার', bodyEn: 'Offer' },
+    });
+    expect(overwrite.statusCode).toBeGreaterThanOrEqual(400);
+    expect(overwrite.body).toContain('NOTIFY_TEMPLATE_INVALID');
+  });
+
+  it('refuses a message whose template is not the kind the caller says it is sending', async () => {
+    await expect(
+      withOrg({ orgId: ORG_A, userId: 'usr_notify_test' }, (tx) =>
+        notify.queue(tx, ORG_A, {
+          templateKey: 'auth.code',
+          phone: PHONE,
+          locale: 'en',
+          values: { code: 'X' },
+          category: 'marketing',
+          now: NOON,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'NOTIFY_TEMPLATE_INVALID' });
+  });
+});

@@ -157,6 +157,31 @@ export class PromoService {
       );
     }
 
+    /*
+     * The per-buyer limit, checked again now that the claim holds the code's row lock.
+     *
+     * `validatePromo` saw a count read before the lock, and two orders for one buyer can
+     * both read 0 against a limit of 1 (ledger audit W1). This count cannot be stale: any
+     * order that redeemed first has committed, or this transaction would still be waiting
+     * on the UPDATE. Refusing throws, which rolls the claim back with everything else.
+     */
+    if (input.customerId !== null && claimed.perCustomerLimit !== null) {
+      const already = await repo.appliedByCustomer(
+        tx,
+        context.orgId,
+        input.codeId,
+        input.customerId,
+        input.orderId,
+      );
+      if (already >= claimed.perCustomerLimit) {
+        throw new PromoError(
+          'PROMO_NOT_APPLICABLE',
+          'This buyer has already used that code as many times as it allows.',
+          'customer_limit_reached',
+        );
+      }
+    }
+
     const redemptionId = await repo.insertRedemption(tx, {
       orgId: context.orgId,
       codeId: input.codeId,

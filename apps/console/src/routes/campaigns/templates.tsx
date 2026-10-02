@@ -14,11 +14,11 @@ import { useId, useMemo, useState } from 'react';
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import {
+  EDITABLE_TEMPLATE_CATEGORIES,
   listTemplates,
-  TEMPLATE_CATEGORIES,
   upsertTemplate,
+  type EditableTemplateCategory,
   type MessageTemplate,
-  type TemplateCategory,
 } from './api.js';
 import {
   CampaignsHeader,
@@ -90,7 +90,7 @@ function Templates() {
         id: 'edit',
         header: '',
         cell: (cell) =>
-          canEdit ? (
+          canEdit && cell.row.original.category !== 'otp' ? (
             <Button size="sm" variant="outline" onClick={() => setEditing(cell.row.original)}>
               {t('campaigns.templates.edit')}
             </Button>
@@ -154,7 +154,9 @@ function TemplateDialog({
   const queryClient = useQueryClient();
   const id = useId();
   const [key, setKey] = useState(template?.key ?? '');
-  const [category, setCategory] = useState<TemplateCategory>(template?.category ?? 'marketing');
+  const [category, setCategory] = useState<EditableTemplateCategory>(
+    template === null || template.category === 'otp' ? 'marketing' : template.category,
+  );
   const [bodyBn, setBodyBn] = useState(template?.bodyBn ?? '');
   const [bodyEn, setBodyEn] = useState(template?.bodyEn ?? '');
   const [isActive, setIsActive] = useState(template?.isActive ?? true);
@@ -235,9 +237,9 @@ function TemplateDialog({
             id={`${id}-category`}
             className={control}
             value={category}
-            onChange={(event) => setCategory(event.target.value as TemplateCategory)}
+            onChange={(event) => setCategory(event.target.value as EditableTemplateCategory)}
           >
-            {TEMPLATE_CATEGORIES.map((value) => (
+            {EDITABLE_TEMPLATE_CATEGORIES.map((value) => (
               <option key={value} value={value}>
                 {t(`campaigns.templates.category.${value}` as CampaignsMessageKey)}
               </option>

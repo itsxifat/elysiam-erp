@@ -67,6 +67,10 @@ export interface CreatePromoBody {
 export const TEMPLATE_CATEGORIES = ['otp', 'transactional', 'marketing'] as const;
 export type TemplateCategory = (typeof TEMPLATE_CATEGORIES)[number];
 
+/** What a person may save: sign-in code templates are the system's (W4). */
+export const EDITABLE_TEMPLATE_CATEGORIES = ['transactional', 'marketing'] as const;
+export type EditableTemplateCategory = (typeof EDITABLE_TEMPLATE_CATEGORIES)[number];
+
 export interface MessageTemplate {
   readonly id: string;
   readonly key: string;
@@ -79,7 +83,7 @@ export interface MessageTemplate {
 
 export interface UpsertTemplateBody {
   readonly key: string;
-  readonly category: TemplateCategory;
+  readonly category: EditableTemplateCategory;
   readonly bodyBn: string;
   readonly bodyEn: string;
   readonly isActive: boolean;

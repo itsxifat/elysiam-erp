@@ -48,7 +48,11 @@ const OWNER: Readonly<Record<string, string>> = {
   inventory: 'inventory',
   investors: 'investors',
   ledger: 'ledger',
+  // M16: codes and redemptions, and messages, templates and opt-outs, each reached
+  // from elsewhere only through `PromoApi` / `NotifyApi`.
+  notify: 'notify',
   pos: 'pos',
+  promo: 'promo',
   sales: 'orders',
   supply: 'supply',
   wallets: 'wallets',

@@ -20,6 +20,8 @@ export interface NotifyPort {
       readonly values: Readonly<Record<string, string>>;
       readonly refType?: string | null;
       readonly refId?: string | null;
+      /** The kind of message this is; the template must match (W4). */
+      readonly category?: 'otp' | 'transactional' | 'marketing';
       readonly now?: Date;
     },
   ): Promise<{ readonly messageId: string; readonly state: 'queued' | 'suppressed' }>;

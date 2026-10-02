@@ -71,6 +71,12 @@ export class NotifyService {
       readonly values: Readonly<Record<string, string>>;
       readonly refType?: string | null;
       readonly refId?: string | null;
+      /**
+       * The kind of message the caller is sending. The template must be that kind: the
+       * category decides whether opt-outs and quiet hours apply, so it is the caller's to
+       * state, not a template editor's to change underneath it.
+       */
+      readonly category?: MessageCategory;
       /** When the message is due. Now, unless a caller is backdating a test. */
       readonly now?: Date;
     },
@@ -84,6 +90,13 @@ export class NotifyService {
       throw new NotifyError(
         'NOTIFY_TEMPLATE_INVALID',
         `This brand has no active SMS template called ${input.templateKey}.`,
+      );
+    }
+
+    if (input.category !== undefined && template.category !== input.category) {
+      throw new NotifyError(
+        'NOTIFY_TEMPLATE_INVALID',
+        `${input.templateKey} is a ${template.category} template; this message is ${input.category}.`,
       );
     }
 
@@ -140,13 +153,20 @@ export class NotifyService {
     orgId: string,
     messageId: string,
     now: Date = new Date(),
-  ): Promise<'sent' | 'failed' | 'deferred' | 'skipped'> {
+  ): Promise<'sent' | 'failed' | 'deferred' | 'suppressed' | 'skipped'> {
     const actor = { orgId, userId: 'system:notify' };
 
     // 1. Read it, and decide whether this is the moment, in a transaction of its own.
     const due = await withOrg(actor, async (tx) => {
       const message = await repo.messageById(tx, orgId, messageId);
       if (message === undefined || !['queued', 'failed'].includes(message.state)) return null;
+
+      // The buyer may have opted out between the queueing and now — an offer queued at
+      // 22:00 for 09:00 waits eleven hours. Checked again here, as quiet hours are.
+      if (message.category !== 'otp' && (await repo.isOptedOut(tx, orgId, message.phone, 'sms'))) {
+        await repo.suppressMessage(tx, orgId, messageId);
+        return 'suppressed' as const;
+      }
 
       if (message.category !== 'otp' && inQuietHours(now)) {
         const later = nextSendTime(now, message.category as MessageCategory);
@@ -157,7 +177,7 @@ export class NotifyService {
       return message;
     });
     if (due === null) return 'skipped';
-    if (due === 'deferred') return 'deferred';
+    if (due === 'deferred' || due === 'suppressed') return due;
 
     // 2. The gateway, with no transaction open (invariant 6).
     const result = await this.gateway.send(due.phone, due.body, {
@@ -223,6 +243,13 @@ export class NotifyService {
     }
 
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const existing = await repo.templateByKey(tx, context.orgId, input.key, 'sms');
+      if (existing?.category === 'otp') {
+        throw new NotifyError(
+          'NOTIFY_TEMPLATE_INVALID',
+          `${input.key} is a sign-in code template, which only the system changes.`,
+        );
+      }
       const saved = await repo.upsertTemplate(tx, {
         orgId: context.orgId,
         key: input.key,
@@ -268,25 +295,29 @@ export class NotifyService {
   ) {
     const phone = national(input.phone);
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-      await repo.addOptOut(tx, {
+      const { id, created } = await repo.addOptOut(tx, {
         orgId: context.orgId,
         phone,
         channel: 'sms',
         reason: input.reason ?? null,
         createdBy: context.userId,
       });
-      await this.audit.record(tx, {
-        orgId: context.orgId,
-        actorUserId: context.userId,
-        operation: 'create',
-        action: 'notify.opt_out.added',
-        entityType: 'NotifyOptOut',
-        entityId: phone,
-        before: null,
-        after: { channel: 'sms' },
-        requestId: context.requestId,
-        request,
-      });
+      if (created) {
+        // Keyed on the row, not the number: `entityId` is stored as given in an append-only
+        // table, while `after.phone` goes through the audit redactor's phone mask.
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'create',
+          action: 'notify.opt_out.added',
+          entityType: 'NotifyOptOut',
+          entityId: id,
+          before: null,
+          after: { phone, channel: 'sms' },
+          requestId: context.requestId,
+          request,
+        });
+      }
       return { phone, channel: 'sms' };
     });
   }
@@ -294,22 +325,22 @@ export class NotifyService {
   async removeOptOut(context: ActiveContext, request: AuditableRequest, rawPhone: string) {
     const phone = national(rawPhone);
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-      const removed = await repo.removeOptOut(tx, context.orgId, phone, 'sms');
-      if (removed) {
+      const removedId = await repo.removeOptOut(tx, context.orgId, phone, 'sms');
+      if (removedId !== null) {
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,
           operation: 'delete',
           action: 'notify.opt_out.removed',
           entityType: 'NotifyOptOut',
-          entityId: phone,
-          before: { channel: 'sms' },
+          entityId: removedId,
+          before: { phone, channel: 'sms' },
           after: null,
           requestId: context.requestId,
           request,
         });
       }
-      return { removed };
+      return { removed: removedId !== null };
     });
   }
 

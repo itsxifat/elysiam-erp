@@ -14,6 +14,7 @@ import type { z } from 'zod';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
+import { scopeHasNoRowDimension } from '../../platform/auth/scope.js';
 import { requireContext } from '../../platform/http/context.js';
 import { mapPromoErrors } from './promo.errors.js';
 import {
@@ -48,6 +49,10 @@ const auditable = (request: FastifyRequest): AuditableRequest =>
  * is a read and every write needs `update`. A desk agent can tell a buyer whether a code
  * works; only marketing can decide what it is worth.
  */
+/** Why the promo routes apply no §6 row filter. */
+const PROMO_HAS_NO_ROW_DIMENSION =
+  'a promo code is the brand’s: it has no branch, owner or assignee to narrow by';
+
 @Controller('v1/promo')
 export class PromoController {
   constructor(private readonly promo: PromoService) {}
@@ -55,6 +60,10 @@ export class PromoController {
   @RequireAbility('read', 'LandingPage')
   @Get('codes')
   async list(@Req() request: FastifyRequest, @Query() query: unknown) {
+    // `branch_manager` holds `read LandingPage` at branch scope (§6); a code is not a
+    // branch's, so the scope is satisfied by saying so rather than by a filter that would
+    // 500 at the backstop (ledger audit W6).
+    scopeHasNoRowDimension(request, PROMO_HAS_NO_ROW_DIMENSION);
     const filters = parse(promoListSchema, query);
     return mapPromoErrors(() =>
       this.promo.list(requireContext(request), {
@@ -90,6 +99,7 @@ export class PromoController {
   @RequireAbility('read', 'LandingPage')
   @Get('codes/:id/redemptions')
   async redemptions(@Req() request: FastifyRequest, @Param('id') id: string) {
+    scopeHasNoRowDimension(request, PROMO_HAS_NO_ROW_DIMENSION);
     const codeId = parse(promoIdParamSchema, id);
     return mapPromoErrors(() => this.promo.redemptionsOf(requireContext(request), codeId, 100));
   }
@@ -105,6 +115,7 @@ export class PromoController {
   @RequireAbility('read', 'LandingPage')
   @Post('check')
   async check(@Req() request: FastifyRequest, @Body() body: unknown) {
+    scopeHasNoRowDimension(request, PROMO_HAS_NO_ROW_DIMENSION);
     const input = parse(promoCheckSchema, body);
     return mapPromoErrors(() =>
       this.promo.check(requireContext(request), {

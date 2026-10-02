@@ -119,7 +119,10 @@ export async function listOptOuts(tx: Tx, orgId: string, limit: number): Promise
   return [...rows];
 }
 
-/** Idempotent: opting out twice is one opt-out. */
+/**
+ * Idempotent: opting out twice is one opt-out. Returns the row's id either way — the
+ * audit row is keyed on it, never on the number (invariant 10).
+ */
 export async function addOptOut(
   tx: Tx,
   input: {
@@ -129,12 +132,22 @@ export async function addOptOut(
     readonly reason: string | null;
     readonly createdBy: string;
   },
-): Promise<void> {
-  await tx.execute(sql`
+): Promise<{ readonly id: string; readonly created: boolean }> {
+  const inserted = await tx.execute<{ id: string }>(sql`
     insert into notify.opt_outs (org_id, phone, channel, reason, created_by)
     values (${input.orgId}, ${input.phone}, ${input.channel}, ${input.reason}, ${input.createdBy})
     on conflict (org_id, phone, channel) do nothing
+    returning id
   `);
+  const fresh = inserted[0]?.id;
+  if (fresh !== undefined) return { id: fresh, created: true };
+  const existing = await tx.execute<{ id: string }>(sql`
+    select id from notify.opt_outs
+    where org_id = ${input.orgId} and phone = ${input.phone} and channel = ${input.channel}
+  `);
+  const id = existing[0]?.id;
+  if (id === undefined) throw new Error('an opt-out conflicted and then could not be found');
+  return { id, created: false };
 }
 
 export async function removeOptOut(
@@ -142,10 +155,23 @@ export async function removeOptOut(
   orgId: string,
   phone: string,
   channel: string,
-): Promise<boolean> {
+): Promise<string | null> {
   const rows = await tx.execute<{ id: string }>(sql`
     delete from notify.opt_outs
     where org_id = ${orgId} and phone = ${phone} and channel = ${channel}
+    returning id
+  `);
+  return rows[0]?.id ?? null;
+}
+
+/**
+ * A queued or failed message that will now never be sent: its number opted out after it
+ * was queued. Final, like `sent` (0079's trigger).
+ */
+export async function suppressMessage(tx: Tx, orgId: string, id: string): Promise<boolean> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    update notify.messages set state = 'suppressed', updated_at = now()
+    where org_id = ${orgId} and id = ${id} and state in ('queued', 'failed')
     returning id
   `);
   return rows.length > 0;

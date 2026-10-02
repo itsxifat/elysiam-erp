@@ -14,7 +14,12 @@ export const upsertTemplateSchema = z
       .string()
       .trim()
       .regex(/^[a-z][a-z0-9_.]{2,63}$/, 'A template key is lower-case words joined by dots.'),
-    category: z.enum(['otp', 'transactional', 'marketing']),
+    /**
+     * Not `otp`: an OTP template skips opt-outs and quiet hours, so a marketer who could
+     * mark a greeting `otp` could text opted-out buyers at midnight. OTP templates are the
+     * system's, seeded rather than edited (ledger audit W4).
+     */
+    category: z.enum(['transactional', 'marketing']),
     bodyBn: z.string().trim().min(1).max(1000),
     bodyEn: z.string().trim().min(1).max(1000),
     isActive: z.boolean().optional(),
