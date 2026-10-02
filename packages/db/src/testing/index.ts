@@ -33,3 +33,6 @@ export {
   type CreateUserInput,
   type TestUser,
 } from '../iam/fixtures.js';
+
+/** M14a: a seeded brand given the demo's set-up, so the sample files import into it. */
+export { seedDemoSetUp } from '../seed/training.js';

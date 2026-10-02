@@ -644,6 +644,28 @@ export async function skusByCodes(
   return [...rows];
 }
 
+/** Every SKU code and barcode in the org, any status, for M14a's SKU importer. */
+export async function allSkuCodesAndBarcodes(
+  tx: Tx,
+  orgId: string,
+): Promise<{ code: string; barcode: string | null }[]> {
+  const rows = await tx.execute<{ code: string; barcode: string | null }>(sql`
+    select code, barcode from catalog.skus where org_id = ${orgId}
+  `);
+  return [...rows];
+}
+
+/** Every product's name and slug, for M14a's SKU importer. */
+export async function productNamesAndSlugs(
+  tx: Tx,
+  orgId: string,
+): Promise<{ name: string; slug: string }[]> {
+  const rows = await tx.execute<{ name: string; slug: string }>(sql`
+    select name, slug from catalog.products where org_id = ${orgId}
+  `);
+  return [...rows];
+}
+
 export async function allSkuCodesAndPrices(
   tx: Tx,
   orgId: string,

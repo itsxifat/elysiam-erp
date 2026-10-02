@@ -68,6 +68,50 @@ export async function customerByPhone(
   return rows[0];
 }
 
+/** Of these phones, the ones already a buyer of this org (M14a's customers importer). */
+export async function existingBuyerPhones(
+  tx: Tx,
+  orgId: string,
+  phones: readonly string[],
+): Promise<string[]> {
+  if (phones.length === 0) return [];
+  const rows = await tx.execute<{ phone_e164: string }>(sql`
+    select phone_e164 from sales.customers
+    where org_id = ${orgId} and phone_e164 = any (${sql.param([...phones])}::text[])
+  `);
+  return rows.map((row) => row.phone_e164);
+}
+
+/** Buyers with their imported history, one statement per slice (M14a, D-218). */
+export async function insertImportedBuyers(
+  tx: Tx,
+  orgId: string,
+  buyers: readonly {
+    readonly phoneE164: string;
+    readonly name: string;
+    readonly delivered: number;
+    readonly returned: number;
+    readonly cancelled: number;
+    readonly spentPoisha: bigint;
+  }[],
+): Promise<void> {
+  if (buyers.length === 0) return;
+  await tx.execute(sql`
+    insert into sales.customers
+      (org_id, phone_e164, name, orders_total, delivered_count, returned_count, cancelled_count,
+       ltv_poisha)
+    values ${sql.join(
+      buyers.map(
+        (buyer) =>
+          sql`(${orgId}, ${buyer.phoneE164}, ${buyer.name},
+               ${buyer.delivered + buyer.returned + buyer.cancelled}, ${buyer.delivered},
+               ${buyer.returned}, ${buyer.cancelled}, ${buyer.spentPoisha.toString()}::bigint)`,
+      ),
+      sql`, `,
+    )}
+  `);
+}
+
 export async function customerById(
   tx: Tx,
   orgId: string,
@@ -390,6 +434,19 @@ export async function couriersByIds(
   const rows = await tx.execute<CourierRow>(sql`
     select id, code, name, is_active from sales.couriers
     where org_id = ${orgId} and id = any (${sql.param([...ids])}::uuid[])
+  `);
+  return [...rows];
+}
+
+export async function couriersByCodes(
+  tx: Tx,
+  orgId: string,
+  codes: readonly string[],
+): Promise<CourierRow[]> {
+  if (codes.length === 0) return [];
+  const rows = await tx.execute<CourierRow>(sql`
+    select id, code, name, is_active from sales.couriers
+    where org_id = ${orgId} and code = any (${sql.param([...codes])}::text[])
   `);
   return [...rows];
 }

@@ -338,3 +338,29 @@ export function reviewSkus(table: CsvTable, refs: SkusRefs): SkusReview {
     skuCount: problems.length === 0 ? products.reduce((n, p) => n + p.skus.length, 0) : 0,
   };
 }
+
+/**
+ * The slug an imported product gets: its name in the catalog's slug shape, made unique.
+ *
+ * The console's `slugify` falls back to a timestamp for a name with no ASCII; an import
+ * has to be deterministic instead (a re-run of the same file must produce the same rows),
+ * so a Bangla-only name falls back to `product-<sequence>`, and a slug already taken —
+ * in the catalog or earlier in the same file — gets the product's sequence appended.
+ * The sequence is unique per org, so the fallback cannot collide with another import.
+ */
+export function importSlug(name: string, sequence: number, taken: ReadonlySet<string>): string {
+  const base = name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100)
+    .replace(/-+$/g, '');
+  const stem = base === '' ? 'product' : base;
+  if (base !== '' && !taken.has(stem)) return stem;
+  let candidate = `${stem}-${String(sequence)}`;
+  for (let n = 2; taken.has(candidate); n += 1)
+    candidate = `${stem}-${String(sequence)}-${String(n)}`;
+  return candidate;
+}

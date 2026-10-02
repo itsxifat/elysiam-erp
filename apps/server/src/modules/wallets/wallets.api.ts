@@ -36,6 +36,18 @@ export interface WalletsApi {
    * "land" in an income account and the trial balance would still be zero.
    */
   walletAccount(tx: Tx, orgId: string, walletId: string): Promise<PostingAccount | null>;
+
+  /**
+   * Active wallets by their ledger account code (`1100`, `1010-HQ`), with the account a
+   * posting names — how M14a's wallet balance file names a wallet, because the code is
+   * what an accountant sees in the chart. A code that is not an active wallet, or not a
+   * wallet at all, is absent.
+   */
+  walletsByAccountCodes(
+    tx: Tx,
+    orgId: string,
+    codes: readonly string[],
+  ): Promise<ReadonlyMap<string, { readonly walletId: string; readonly account: PostingAccount }>>;
 }
 
 /** The Nest injection token for `WalletsApi`. */
@@ -57,5 +69,26 @@ export class WalletsApiService implements WalletsApi {
       // database keeps the two the same.
       branchId: wallet.branch_id,
     };
+  }
+
+  async walletsByAccountCodes(
+    tx: Tx,
+    orgId: string,
+    codes: readonly string[],
+  ): Promise<ReadonlyMap<string, { readonly walletId: string; readonly account: PostingAccount }>> {
+    const found = new Map<string, { walletId: string; account: PostingAccount }>();
+    for (const wallet of await repo.walletsByAccountCodes(tx, orgId, codes)) {
+      if (!wallet.is_active || !wallet.account_is_active) continue;
+      if (!isAccountSubtype(wallet.subtype) || !subtypeInfo(wallet.subtype).wallet) continue;
+      found.set(wallet.code, {
+        walletId: wallet.id,
+        account: {
+          accountId: wallet.ledger_account_id,
+          subtype: wallet.subtype,
+          branchId: wallet.branch_id,
+        },
+      });
+    }
+    return found;
   }
 }

@@ -11,7 +11,9 @@
     "start:api": "node --env-file-if-exists=.env dist/main.api.js",
     "start:worker": "node --env-file-if-exists=.env dist/main.worker.js",
     "bench:catalog": "node ../../scripts/bench.mjs catalog",
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "migration": "node --env-file-if-exists=.env --enable-source-maps dist/main.migration.js",
+    "demo:org": "node --env-file-if-exists=.env --enable-source-maps dist/main.migration.js demo"
   },
   "dependencies": {
     "@casl/ability": "catalog:",

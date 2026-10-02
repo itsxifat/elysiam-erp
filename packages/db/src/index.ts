@@ -57,6 +57,8 @@ export { ensureBranchWallets, seedAccountId } from './seed/ledger.js';
  */
 export { seedDeliveryZones, type DeliveryZoneSeedResult } from './seed/delivery-zones.js';
 export { branchCashCode, COA_TEMPLATE, type TemplateAccount } from './seed/coa-template.js';
+/** M14a: the training org's set-up, for `pnpm demo:org` (D-223). */
+export { seedTrainingOrg, TRAINING_ORG_SLUG, trainingOrgId } from './seed/training.js';
 
 export {
   availableOrgs,

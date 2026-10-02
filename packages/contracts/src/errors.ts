@@ -318,6 +318,19 @@ export const ERROR_CODES = [
   'NOTIFY_TEMPLATE_INVALID',
   'NOTIFY_MESSAGE_IMMUTABLE',
   'CRM_OCCASION_IMMUTABLE',
+
+  // Data migration and opening balances (M14a)
+  /** A file with a problem in it, or with nothing new to import. Nothing was changed. */
+  'MIGRATION_IMPORT_REJECTED',
+  /** An imported file is discarded or posted once and never changes otherwise (0082). */
+  'MIGRATION_BATCH_IMMUTABLE',
+  /** The opening of a brand's books is permanent; only its sign-off is set, once (0082). */
+  'MIGRATION_OPENING_IMMUTABLE',
+  /** This brand's books are already open, so balance files are closed (D-213). */
+  'MIGRATION_ALREADY_OPENED',
+  'MIGRATION_NOT_FOUND',
+  /** A sign-off needs a posted opening whose reconciliation agrees on every line. */
+  'MIGRATION_NOT_RECONCILED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

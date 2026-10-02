@@ -3,8 +3,8 @@
 -- Migration 0081 appended the enum value, but `ledger.subtype_shape` (0015) is what the
 -- account trigger checks an account's class, normal balance and party against, and it
 -- did not know the new subtype: seeding the chart failed with LEDGER_ACCOUNT_INVALID on
--- every database migrated past 0080. The function is restated whole, with the one row
--- added, because `create or replace` has no way to append a row.
+-- a database migrated to 0081 without this file. The function is restated whole, with the
+-- one row added, because `create or replace` has no way to append a row.
 create or replace function ledger.subtype_shape(p_subtype ledger.account_subtype)
 returns table (class ledger.account_class, normal_balance ledger.normal_balance, party_type ledger.party_type)
 language sql

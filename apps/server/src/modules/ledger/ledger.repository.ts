@@ -327,6 +327,43 @@ export async function balancesAsOf(
   return [...rows];
 }
 
+/** Σ debit and Σ credit per account and party on some subtypes, to a date (M14a). */
+export async function balancesByAccountAndParty(
+  tx: Tx,
+  orgId: string,
+  asOf: string,
+  subtypes: readonly string[],
+): Promise<
+  {
+    readonly account_id: string;
+    readonly subtype: string;
+    readonly party_id: string | null;
+    readonly debit_poisha: string;
+    readonly credit_poisha: string;
+  }[]
+> {
+  if (subtypes.length === 0) return [];
+  const rows = await tx.execute<{
+    account_id: string;
+    subtype: string;
+    party_id: string | null;
+    debit_poisha: string;
+    credit_poisha: string;
+  }>(sql`
+    select a.id as account_id, a.subtype::text as subtype, l.party_id,
+           sum(l.debit_poisha)::text as debit_poisha, sum(l.credit_poisha)::text as credit_poisha
+    from ledger.journal_lines l
+    join ledger.journals j on j.org_id = l.org_id and j.id = l.journal_id
+    join ledger.accounts a on a.org_id = l.org_id and a.id = l.account_id
+    where l.org_id = ${orgId}
+      and j.business_date <= ${asOf}
+      and a.subtype::text = any (${sql.param([...subtypes])}::text[])
+    group by a.id, a.subtype, l.party_id
+    order by a.id, l.party_id
+  `);
+  return [...rows];
+}
+
 /** Σ debit and Σ credit for one account before a date (the opening balance). */
 export async function accountTotalsBefore(
   tx: Tx,

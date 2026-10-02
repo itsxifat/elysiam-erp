@@ -12,7 +12,11 @@
  * plug goes to whichever side balances, credit when the brand owns more than it owes.
  */
 
+import type { IsoDate } from '../dates/index.js';
+import { LedgerError, type JournalDraft } from '../ledger/index.js';
 import { mulQty, negate, sum, ZERO, type Poisha } from '../money/index.js';
+import { openingBalanceDraft, type OpeningLine } from '../posting/opening-balance.js';
+import type { PostingAccount } from '../posting/supply-received.js';
 import type { CourierCodRow, SupplierBalanceRow, WalletBalanceRow } from './balances.js';
 import type { OpeningStockRow } from './opening-stock.js';
 
@@ -149,4 +153,110 @@ export function openingPosition(input: OpeningPositionInput): OpeningPosition {
     stockValuePoisha,
     units,
   };
+}
+
+/** The accounts the opening journal posts to, resolved by the caller from the org's chart. */
+export interface OpeningAccounts {
+  readonly inventory: PostingAccount;
+  readonly supplierAdvance: PostingAccount;
+  readonly supplierPayable: PostingAccount;
+  readonly courierReceivable: PostingAccount;
+  readonly equity: PostingAccount;
+  /** Each staged wallet's own ledger account, by wallet id. */
+  readonly wallets: ReadonlyMap<string, PostingAccount>;
+}
+
+/**
+ * The opening journal for a position (D-213), through the posting rule.
+ *
+ * One journal line per position line except the plug, which `openingBalanceDraft`
+ * derives itself — and the result is checked against the position's own equity figure,
+ * so the trial balance the accountant was shown and the journal that posts cannot be two
+ * different pieces of arithmetic.
+ */
+export function openingJournal(
+  position: OpeningPosition,
+  input: {
+    readonly orgId: string;
+    readonly asOf: IsoDate;
+    readonly accounts: OpeningAccounts;
+    readonly memo?: string | null;
+  },
+): JournalDraft {
+  const { accounts } = input;
+  const assets: OpeningLine[] = [];
+  const liabilities: OpeningLine[] = [];
+
+  for (const line of position.lines) {
+    switch (line.section) {
+      case 'inventory':
+        assets.push({
+          account: accounts.inventory,
+          amountPoisha: line.debitPoisha,
+          memo: 'Opening stock',
+        });
+        break;
+      case 'wallet': {
+        const account = line.refId === null ? undefined : accounts.wallets.get(line.refId);
+        if (account === undefined) {
+          throw new LedgerError(
+            'POSTING_INPUT_INVALID',
+            `The wallet ${line.label} has no ledger account to open into.`,
+          );
+        }
+        assets.push({ account, amountPoisha: line.debitPoisha, memo: 'Opening balance' });
+        break;
+      }
+      case 'supplier_advance':
+        assets.push({
+          account: accounts.supplierAdvance,
+          amountPoisha: line.debitPoisha,
+          partyType: 'supplier',
+          partyId: line.refId,
+          memo: 'Opening advance',
+        });
+        break;
+      case 'courier_receivable':
+        assets.push({
+          account: accounts.courierReceivable,
+          amountPoisha: line.debitPoisha,
+          partyType: 'courier',
+          partyId: line.refId,
+          memo: 'COD in transit at opening',
+        });
+        break;
+      case 'supplier_payable':
+        liabilities.push({
+          account: accounts.supplierPayable,
+          amountPoisha: line.creditPoisha,
+          partyType: 'supplier',
+          partyId: line.refId,
+          memo: 'Opening due',
+        });
+        break;
+      case 'opening_equity':
+        // Derived by the posting rule from the lines above, and checked below.
+        break;
+    }
+  }
+
+  const draft = openingBalanceDraft({
+    orgId: input.orgId,
+    asOf: input.asOf,
+    assets,
+    liabilities,
+    equity: accounts.equity,
+    memo: input.memo ?? null,
+  });
+
+  const plug = draft.lines
+    .filter((line) => line.accountId === accounts.equity.accountId)
+    .reduce((total, line) => total + line.creditPoisha - line.debitPoisha, 0n);
+  if (plug !== position.equityPoisha) {
+    throw new LedgerError(
+      'POSTING_INPUT_INVALID',
+      'The opening journal and the opening position disagree on equity.',
+    );
+  }
+  return draft;
 }

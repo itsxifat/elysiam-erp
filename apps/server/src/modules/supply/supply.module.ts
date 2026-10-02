@@ -8,6 +8,7 @@ import { ReturnsService } from './returns.service.js';
 import { StatementsService } from './statements.service.js';
 import { SuppliesService } from './supplies.service.js';
 import { SuppliersService } from './suppliers.service.js';
+import { SUPPLY_API, SupplyApiService } from './supply.api.js';
 import { SupplyController } from './supply.controller.js';
 
 /**
@@ -34,7 +35,8 @@ import { SupplyController } from './supply.controller.js';
     ReturnsService,
     PaymentsService,
     StatementsService,
+    { provide: SUPPLY_API, useClass: SupplyApiService },
   ],
-  exports: [SuppliersService],
+  exports: [SuppliersService, SUPPLY_API],
 })
 export class SupplyModule {}

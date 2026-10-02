@@ -24,6 +24,7 @@
 import type { CsvRow, CsvTable } from '../catalog/csv.js';
 import { takaTextToPoisha } from '../catalog/price-import.js';
 import { divideRounded } from '../money/index.js';
+import { normalizeBdPhone } from '../orders/phone.js';
 import type { MigrationKind } from './common.js';
 
 /** Names a trainee will recognise as made up. Bangla and English, as buyers write them. */
@@ -41,7 +42,7 @@ export const DEMO_NAMES: readonly string[] = [
 /** The money scale: the demo's figures are 7/10 of the source's. */
 export const DEMO_MONEY_SCALE = { numerator: 7n, denominator: 10n } as const;
 
-const MONEY_COLUMNS = new Set(['price_taka', 'unit_cost_taka', 'amount_taka']);
+const MONEY_COLUMNS = new Set(['price_taka', 'unit_cost_taka', 'amount_taka', 'spent_taka']);
 
 /**
  * The fake phone for the row at `index`: `+88019` and eight digits of the index.
@@ -58,11 +59,15 @@ export function demoName(index: number): string {
   return DEMO_NAMES[index % DEMO_NAMES.length] ?? 'Demo Buyer';
 }
 
-/** Taka text scaled by `DEMO_MONEY_SCALE`, never below one poisha. */
+/**
+ * Taka text scaled by `DEMO_MONEY_SCALE`. Zero stays zero; anything else never falls
+ * below one poisha, so a valid amount stays a valid amount.
+ */
 export function scaleTaka(text: string): string {
   const trimmed = text.trim();
   if (trimmed === '') return trimmed;
   const amount = takaTextToPoisha(trimmed);
+  if (amount === 0n) return '0.00';
   const scaled = divideRounded(amount * DEMO_MONEY_SCALE.numerator, DEMO_MONEY_SCALE.denominator);
   const atLeast = scaled < 1n ? 1n : scaled;
   const whole = atLeast / 100n;
@@ -70,14 +75,43 @@ export function scaleTaka(text: string): string {
   return `${whole.toString()}.${fraction.toString().padStart(2, '0')}`;
 }
 
+/**
+ * The fake phone for each row, by position, skipping any number the file itself holds.
+ *
+ * Position alone could hand a row a fake that happens to be a real buyer's number in the
+ * same file — the demo range is a real number range — and then the demo would carry that
+ * buyer's phone after all. Skipping the file's own numbers rules it out, and the result
+ * is still deterministic: the same file gives the same fakes.
+ */
+function fakePhones(table: CsvTable): string[] {
+  const source = new Set<string>();
+  for (const row of table.rows) {
+    try {
+      source.add(normalizeBdPhone(row.values.phone ?? ''));
+    } catch {
+      // Not a phone; the importer reports it, and it cannot collide with a fake.
+    }
+  }
+  const phones: string[] = [];
+  let next = 0;
+  for (const _row of table.rows) {
+    while (source.has(demoPhone(next))) next += 1;
+    phones.push(demoPhone(next));
+    next += 1;
+  }
+  return phones;
+}
+
 /** The same table with every personal field replaced and every amount scaled. */
 export function anonymizeTable(kind: MigrationKind, table: CsvTable): CsvTable {
+  const phones = kind === 'customers' ? fakePhones(table) : [];
   const rows: CsvRow[] = table.rows.map((row, index) => {
     const values: Record<string, string> = {};
     for (const header of table.headers) {
       const value = row.values[header] ?? '';
-      if (kind === 'customers' && header === 'phone') values[header] = demoPhone(index);
-      else if (kind === 'customers' && header === 'name') values[header] = demoName(index);
+      if (kind === 'customers' && header === 'phone') {
+        values[header] = phones[index] ?? demoPhone(index);
+      } else if (kind === 'customers' && header === 'name') values[header] = demoName(index);
       else if (kind === 'courier_cod' && header === 'reference') {
         values[header] = `DEMO-${String(index + 1).padStart(5, '0')}`;
       } else if (MONEY_COLUMNS.has(header)) values[header] = scaleTaka(value);

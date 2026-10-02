@@ -163,6 +163,17 @@ export interface AppliedTrigger {
 }
 
 /** A courier party: who delivers, named. Reference data, never order state. */
+/** One buyer and what they did with this brand before go-live (M14a). */
+export interface ImportedBuyer {
+  readonly phoneE164: string;
+  readonly name: string;
+  readonly delivered: number;
+  readonly returned: number;
+  readonly cancelled: number;
+  /** Selling money, never a cost. */
+  readonly spentPoisha: bigint;
+}
+
 export interface CourierParty {
   readonly id: string;
   /** `steadfast`, `pathao`, `redx`, `own_rider`. */
@@ -218,6 +229,25 @@ export interface OrdersApi {
    * error, so one unknown id in a page of consignments does not blank the page.
    */
   courierParties(tx: Tx, orgId: string, ids: readonly string[]): Promise<readonly CourierParty[]>;
+
+  /** The couriers these codes name, active or not (M14a's COD in transit). */
+  couriersByCodes(
+    tx: Tx,
+    orgId: string,
+    codes: readonly string[],
+  ): Promise<ReadonlyMap<string, CourierParty & { readonly isActive: boolean }>>;
+
+  /** Of these E.164 phones, the ones already a buyer of this brand. */
+  buyerPhones(tx: Tx, orgId: string, phones: readonly string[]): Promise<ReadonlySet<string>>;
+
+  /**
+   * A brand's existing buyers with their history (M14a, D-218), inside the caller's
+   * transaction: one `sales.customers` row each, its counters set from the file —
+   * `orders_total` is delivered + returned + cancelled, and `ltv_poisha` is what they
+   * spent. A phone that is already a buyer is refused by the unique index rather than
+   * merged, which rolls the whole import back; the importer skips those before calling.
+   */
+  importBuyers(tx: Tx, actor: OrdersActor, buyers: readonly ImportedBuyer[]): Promise<number>;
 
   /** Available units per SKU at one location, for a caller pricing a basket. */
   availability(
@@ -362,6 +392,42 @@ export class OrdersApiService implements OrdersApi {
   ): Promise<readonly CourierParty[]> {
     const rows = await repo.couriersByIds(tx, orgId, [...new Set(ids)]);
     return rows.map((row) => ({ id: row.id, code: row.code, name: row.name }));
+  }
+
+  async couriersByCodes(
+    tx: Tx,
+    orgId: string,
+    codes: readonly string[],
+  ): Promise<ReadonlyMap<string, CourierParty & { readonly isActive: boolean }>> {
+    const rows = await repo.couriersByCodes(tx, orgId, [...new Set(codes)]);
+    return new Map(
+      rows.map((row) => [
+        row.code,
+        { id: row.id, code: row.code, name: row.name, isActive: row.is_active },
+      ]),
+    );
+  }
+
+  async buyerPhones(
+    tx: Tx,
+    orgId: string,
+    phones: readonly string[],
+  ): Promise<ReadonlySet<string>> {
+    return new Set(await repo.existingBuyerPhones(tx, orgId, [...new Set(phones)]));
+  }
+
+  async importBuyers(
+    tx: Tx,
+    actor: OrdersActor,
+    buyers: readonly ImportedBuyer[],
+  ): Promise<number> {
+    // In slices, so a brand's tens of thousands of buyers are a few hundred statements
+    // rather than one statement over PostgreSQL's 65,535-parameter limit.
+    const SLICE = 500;
+    for (let start = 0; start < buyers.length; start += SLICE) {
+      await repo.insertImportedBuyers(tx, actor.orgId, buyers.slice(start, start + SLICE));
+    }
+    return buyers.length;
   }
 
   async availability(

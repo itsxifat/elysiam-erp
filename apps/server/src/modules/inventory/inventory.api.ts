@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
+import { sql } from 'drizzle-orm';
 import {
   handoverDraft,
   poisha,
@@ -229,6 +230,45 @@ export interface InventoryApi {
       readonly lines: readonly (PosSoldLine & { readonly lineNo: number })[];
     },
   ): Promise<void>;
+
+  /**
+   * A brand's opening stock (M14a): `opening_balance` movements at the cost each was
+   * imported at, which §8 blends into the weighted average as a first receipt (D-142).
+   *
+   * Movements and costing only. The value is debited to inventory by the one opening
+   * journal (D-213), posted by the caller in this same transaction — a journal per
+   * movement would open the books thousands of times. Idempotent per opening, SKU and
+   * location.
+   */
+  receiveOpening(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly userId: string },
+    input: {
+      readonly openingId: string;
+      readonly occurredAt: Date;
+      readonly lines: readonly OpeningStockLine[];
+    },
+  ): Promise<{ readonly movementIds: readonly string[]; readonly valuePoisha: Poisha }>;
+
+  /**
+   * The stock valuation, Σ(WAC × on hand) over every location (§8): the same figure the
+   * valuation report shows, for M14a's reconciliation. Purchase cost (invariant 5).
+   */
+  valuation(
+    tx: Tx,
+    orgId: string,
+  ): Promise<{ readonly units: number; readonly stockValuePoisha: Poisha }>;
+
+  /** The SKUs, of those given, that already have a movement or a cost basis. */
+  heldSkus(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<ReadonlySet<string>>;
+}
+
+/** One SKU's opening stock at one location, at the brand's one cost for it (D-216). */
+export interface OpeningStockLine {
+  readonly skuId: string;
+  readonly locationId: string;
+  readonly qty: number;
+  readonly unitCostPoisha: Poisha;
 }
 
 /** One SKU and a quantity at a till. */
@@ -663,6 +703,50 @@ export class InventoryApiService implements InventoryApi {
         memo: null,
       });
     }
+  }
+
+  async receiveOpening(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly userId: string },
+    input: {
+      readonly openingId: string;
+      readonly occurredAt: Date;
+      readonly lines: readonly OpeningStockLine[];
+    },
+  ): Promise<{ readonly movementIds: readonly string[]; readonly valuePoisha: Poisha }> {
+    const movementIds: string[] = [];
+    let total = 0n;
+    for (const line of input.lines) {
+      const applied = await this.movements.apply(tx, actor, {
+        skuId: line.skuId,
+        locationId: line.locationId,
+        kind: 'opening_balance',
+        qty: line.qty,
+        unitCostPoisha: line.unitCostPoisha,
+        refType: 'opening',
+        refId: input.openingId,
+        dedupeKey: `opening:${input.openingId}:${line.skuId}:${line.locationId}`,
+        occurredAt: input.occurredAt,
+        memo: 'Opening stock',
+      });
+      if (applied.created) movementIds.push(applied.movementId);
+      total += line.unitCostPoisha * BigInt(line.qty);
+    }
+    return { movementIds, valuePoisha: poisha(total) };
+  }
+
+  async valuation(
+    tx: Tx,
+    orgId: string,
+  ): Promise<{ readonly units: number; readonly stockValuePoisha: Poisha }> {
+    // `true` for the scope: a server-side reconciliation, not a screen, so §6's branch
+    // narrowing would only make the valuation smaller than the stock actually held.
+    const totals = await repo.stockValuation(tx, orgId, { scope: sql`true` });
+    return { units: totals.units, stockValuePoisha: poisha(BigInt(totals.stockValuePoisha)) };
+  }
+
+  async heldSkus(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<ReadonlySet<string>> {
+    return new Set(await repo.heldSkus(tx, orgId, skuIds));
   }
 
   /** One of the four accounts §7's inventory rules name, or a clear refusal. */

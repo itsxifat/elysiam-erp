@@ -47,6 +47,9 @@ const OWNER: Readonly<Record<string, string>> = {
   inventory: 'inventory',
   investors: 'investors',
   ledger: 'ledger',
+  // M14a: imported files and the opening of a brand's books. Everything an import writes
+  // elsewhere goes through the owning module's interface, so this module carries no debt.
+  migration: 'migration',
   // M16: codes and redemptions, and messages, templates and opt-outs, each reached
   // from elsewhere only through `PromoApi` / `NotifyApi`.
   notify: 'notify',
@@ -165,6 +168,12 @@ describe('modules do not read each other’s tables (invariant 12)', () => {
       `${module} no longer reads these, so remove them from DEBT in this file. The list ` +
         `only shrinks.`,
     ).toEqual([]);
+  });
+
+  it('holds the migration module to no debt at all (M14a)', () => {
+    // Six importers write into five other modules, every one through its `*.api.ts`.
+    expect(DEBT.migration).toBeUndefined();
+    expect(foreignTables('migration')).toEqual([]);
   });
 
   it('holds the courier module to no debt at all', () => {

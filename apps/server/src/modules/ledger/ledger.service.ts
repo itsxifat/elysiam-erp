@@ -19,7 +19,14 @@ import {
 
 import { sql } from 'drizzle-orm';
 
-import type { LedgerActor, LedgerApi, PostResult, WalletAccount } from './ledger.api.js';
+import type {
+  AccountPartyBalance,
+  JournalLineView,
+  LedgerActor,
+  LedgerApi,
+  PostResult,
+  WalletAccount,
+} from './ledger.api.js';
 import { ledgerHttpError } from './ledger.errors.js';
 import * as repo from './ledger.repository.js';
 
@@ -203,6 +210,38 @@ export class LedgerService implements LedgerApi {
       totals.set(row.party_id, (totals.get(row.party_id) ?? 0n) + net);
     }
     return totals;
+  }
+
+  async journalLines(
+    tx: Tx,
+    orgId: string,
+    journalId: string,
+  ): Promise<readonly JournalLineView[]> {
+    const rows = await repo.linesOfJournals(tx, orgId, [journalId]);
+    return rows.map((row) => ({
+      accountId: row.account_id,
+      subtype: row.subtype,
+      partyType: row.party_type,
+      partyId: row.party_id,
+      debitPoisha: BigInt(row.debit_poisha),
+      creditPoisha: BigInt(row.credit_poisha),
+    }));
+  }
+
+  async balancesAsOf(
+    tx: Tx,
+    orgId: string,
+    asOf: string,
+    subtypes: readonly AccountSubtype[],
+  ): Promise<readonly AccountPartyBalance[]> {
+    const rows = await repo.balancesByAccountAndParty(tx, orgId, asOf, subtypes);
+    return rows.map((row) => ({
+      accountId: row.account_id,
+      subtype: row.subtype,
+      partyId: row.party_id,
+      debitPoisha: BigInt(row.debit_poisha),
+      creditPoisha: BigInt(row.credit_poisha),
+    }));
   }
 
   /**

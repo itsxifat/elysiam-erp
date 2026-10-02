@@ -74,6 +74,22 @@ export async function walletById(
   return rows[0];
 }
 
+/** Wallets whose ledger account carries one of these codes (M14a's wallet balances). */
+export async function walletsByAccountCodes(
+  tx: Tx,
+  orgId: string,
+  codes: readonly string[],
+): Promise<WalletRow[]> {
+  if (codes.length === 0) return [];
+  const rows = await tx.execute<WalletRow>(sql`
+    select ${WALLET_COLUMNS}
+    from wallets.wallets w
+    join ledger.accounts a on a.org_id = w.org_id and a.id = w.ledger_account_id
+    where w.org_id = ${orgId} and a.code = any (${sql.param([...new Set(codes)])}::text[])
+  `);
+  return [...rows];
+}
+
 export interface NewWallet {
   readonly orgId: string;
   readonly ledgerAccountId: string;
@@ -737,6 +753,8 @@ export async function consolidatedWalletTotals(tx: Tx): Promise<ConsolidatedWall
     join org.organizations o on o.id = a.org_id
     left join ledger.journal_lines l on l.org_id = a.org_id and l.account_id = a.id
     where a.subtype::text like 'wallet\\_%'
+      -- The training org's practice money is not the group's (M14a, D-223).
+      and not o.is_training
     group by o.id, o.display_name, a.subtype
     order by o.display_name, a.subtype
   `);
@@ -766,6 +784,7 @@ export async function consolidatedProfitAndLoss(
     join org.organizations o on o.id = a.org_id
     where j.business_date between ${range.from} and ${range.to}
       and a.class::text in ('income', 'expense')
+      and not o.is_training
     group by o.id, o.display_name, a.class
     order by o.display_name, a.class
   `);

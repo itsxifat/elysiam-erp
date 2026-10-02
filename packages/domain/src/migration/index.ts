@@ -57,7 +57,9 @@ export {
 } from './balances.js';
 
 export {
+  openingJournal,
   openingPosition,
+  type OpeningAccounts,
   type OpeningPosition,
   type OpeningPositionInput,
   type OpeningPositionLine,
@@ -75,6 +77,7 @@ export {
 } from './customers.js';
 
 export {
+  importSlug,
   reviewSkus,
   SKUS_OPTIONAL,
   SKUS_REQUIRED,
@@ -84,6 +87,16 @@ export {
   type SkusReview,
   type VariantAttributeRef,
 } from './skus.js';
+
+export {
+  normalSide,
+  positionFigures,
+  reconcileOpening,
+  type Reconciliation,
+  type ReconciliationFigure,
+  type ReconciliationInput,
+  type ReconciliationRow,
+} from './reconciliation.js';
 
 export {
   anonymizeTable,

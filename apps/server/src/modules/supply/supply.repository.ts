@@ -59,6 +59,20 @@ export async function listSuppliers(
   return [...rows];
 }
 
+/** Suppliers by code, active or not (M14a's supplier balances). */
+export async function suppliersByCodes(
+  tx: Tx,
+  orgId: string,
+  codes: readonly string[],
+): Promise<{ id: string; code: string; is_active: boolean }[]> {
+  if (codes.length === 0) return [];
+  const rows = await tx.execute<{ id: string; code: string; is_active: boolean }>(sql`
+    select id, code, is_active from supply.suppliers
+    where org_id = ${orgId} and code = any (${sql.param([...new Set(codes)])}::text[])
+  `);
+  return [...rows];
+}
+
 export async function supplierById(
   tx: Tx,
   orgId: string,

@@ -5,13 +5,16 @@ import { parseCsv } from '../catalog/csv.js';
 import { toIsoDate } from '../dates/index.js';
 import { validateJournalDraft } from '../ledger/index.js';
 import { mulQty, poisha, sum, ZERO } from '../money/index.js';
-import { openingBalanceDraft, type OpeningLine } from '../posting/opening-balance.js';
 import type { PostingAccount } from '../posting/supply-received.js';
 import {
   anonymizeTable,
   canCommit,
   demoPhone,
+  importSlug,
+  normalSide,
+  openingJournal,
   openingPosition,
+  reconcileOpening,
   reviewCourierCod,
   reviewCustomers,
   reviewOpeningStock,
@@ -273,58 +276,22 @@ const ACC = {
   equity: 'eeeeeeee-0000-4000-8000-000000000006',
 } as const;
 
-/** The opening journal the posting step would build from a position, with fake accounts. */
+/** The opening journal the posting step builds from a position, with fake accounts. */
 function draftFrom(position: OpeningPosition) {
-  const assets: OpeningLine[] = [];
-  const liabilities: OpeningLine[] = [];
-  for (const line of position.lines) {
-    switch (line.section) {
-      case 'inventory':
-        assets.push({
-          account: account('inventory', ACC.inventory),
-          amountPoisha: line.debitPoisha,
-        });
-        break;
-      case 'wallet':
-        assets.push({
-          account: account('wallet_bank', ACC.wallet),
-          amountPoisha: line.debitPoisha,
-        });
-        break;
-      case 'supplier_advance':
-        assets.push({
-          account: account('supplier_advance', ACC.advance),
-          amountPoisha: line.debitPoisha,
-          partyType: 'supplier',
-          partyId: line.refId,
-        });
-        break;
-      case 'courier_receivable':
-        assets.push({
-          account: account('courier_receivable', ACC.courier),
-          amountPoisha: line.debitPoisha,
-          partyType: 'courier',
-          partyId: line.refId,
-        });
-        break;
-      case 'supplier_payable':
-        liabilities.push({
-          account: account('supplier_payable', ACC.payable),
-          amountPoisha: line.creditPoisha,
-          partyType: 'supplier',
-          partyId: line.refId,
-        });
-        break;
-      case 'opening_equity':
-        break;
-    }
-  }
-  return openingBalanceDraft({
+  const walletIds = position.lines
+    .filter((line) => line.section === 'wallet' && line.refId !== null)
+    .map((line) => line.refId ?? '');
+  return openingJournal(position, {
     orgId: ORG,
     asOf: ASOF,
-    assets,
-    liabilities,
-    equity: account('opening_equity', ACC.equity),
+    accounts: {
+      inventory: account('inventory', ACC.inventory),
+      supplierAdvance: account('supplier_advance', ACC.advance),
+      supplierPayable: account('supplier_payable', ACC.payable),
+      courierReceivable: account('courier_receivable', ACC.courier),
+      equity: account('opening_equity', ACC.equity),
+      wallets: new Map(walletIds.map((id) => [id, account('wallet_bank', ACC.wallet)])),
+    },
   });
 }
 
@@ -487,21 +454,42 @@ describe('customers', () => {
   it('normalises phones, skips existing buyers, and never echoes a number', () => {
     const review = reviewCustomers(
       parseCsv(
-        'phone,name,delivered,returned,cancelled,last_incident_date\n01711000001,Rahima,5,1,,2026-05-01\n+8801711000002,Existing,2,0,0,\n01711000001,Twice,1,0,0,\n12345,Bad,0,0,0,\n01811000003,Future,0,1,0,2999-01-01\n01911000004,NoIncident,3,0,0,2026-01-01\n',
+        [
+          'phone,name,delivered,returned,cancelled,spent_taka',
+          '01711000001,Rahima,5,1,,7450.50',
+          '+8801711000002,Existing,2,0,0,',
+          '01711000001,Twice,1,0,0,',
+          '12345,Bad,0,0,0,',
+          '01811000003,PaidNothingDelivered,0,1,0,500',
+          '01911000004,Negative,3,0,0,-1',
+          '01611000005,Blank counts,,,,',
+          '',
+        ].join('\n'),
       ),
-      { existingPhones: new Set(['+8801711000002']), today: '2026-10-02' },
+      { existingPhones: new Set(['+8801711000002']) },
     );
-    expect(review.rows.map((r) => [r.phoneE164, r.delivered, r.returned, r.cancelled])).toEqual([
-      ['+8801711000001', 5, 1, 0],
+    expect(
+      review.rows.map((r) => [r.phoneE164, r.delivered, r.returned, r.cancelled, r.spentPoisha]),
+    ).toEqual([
+      ['+8801711000001', 5, 1, 0, 745_050n],
+      ['+8801611000005', 0, 0, 0, 0n],
     ]);
     expect(review.skipped).toEqual([{ line: 3 }]);
     expect(review.problems.map((p) => [p.line, p.column])).toEqual([
       [4, 'phone'],
       [5, 'phone'],
-      [6, 'last_incident_date'],
-      [7, 'last_incident_date'],
+      [6, 'spent_taka'],
+      [7, 'spent_taka'],
     ]);
     for (const problem of review.problems) expect(problem.message).not.toMatch(/\d{5,}/);
+  });
+
+  it('refuses a column it does not read, such as a fraud flag or a date', () => {
+    const review = reviewCustomers(parseCsv('phone,name,last_incident_date\n01711000001,A,\n'), {
+      existingPhones: new Set(),
+    });
+    expect(review.problems.map((p) => p.column)).toEqual(['last_incident_date']);
+    expect(canCommit(review, review.rows.length).ok).toBe(false);
   });
 });
 
@@ -589,10 +577,7 @@ describe('anonymising for the training org (D-223)', () => {
             .join('\n')}\n`;
           const out = toCsv(anonymizeTable('customers', parseCsv(source)));
           for (const person of people) expect(out).not.toContain(String(person.digits));
-          const review = reviewCustomers(parseCsv(out), {
-            existingPhones: new Set(),
-            today: '2026-10-02',
-          });
+          const review = reviewCustomers(parseCsv(out), { existingPhones: new Set() });
           expect(review.problems).toEqual([]);
           expect(review.rows).toHaveLength(people.length);
           expect(new Set(review.rows.map((r) => r.phoneE164)).size).toBe(people.length);
@@ -601,11 +586,25 @@ describe('anonymising for the training org (D-223)', () => {
     );
   });
 
+  it('never hands a row a fake that is a real number in the same file', () => {
+    const source = [
+      'phone,name',
+      `${demoPhone(1)},Real Buyer`,
+      `${demoPhone(0)},Another`,
+      '01711000009,Third',
+      '',
+    ].join('\n');
+    const out = anonymizeTable('customers', parseCsv(source));
+    const phones = out.rows.map((row) => row.values.phone);
+    expect(phones).toEqual([demoPhone(2), demoPhone(3), demoPhone(4)]);
+  });
+
   it('scales money to whole poisha, deterministically, never to zero', () => {
     expect(scaleTaka('1000')).toBe('700.00');
     expect(scaleTaka('0.01')).toBe('0.01');
     expect(scaleTaka('1490.50')).toBe('1043.35');
     expect(scaleTaka('1490.50')).toBe(scaleTaka('1490.5'));
+    expect(scaleTaka('0')).toBe('0.00');
     expect(demoPhone(0)).toMatch(/^\+8801[3-9]\d{8}$/);
     const courier = anonymizeTable(
       'courier_cod',
@@ -621,5 +620,114 @@ describe('canCommit', () => {
     expect(canCommit({ problems: [] }, 0).ok).toBe(false);
     expect(canCommit({ problems: [{ line: 2, column: null, message: 'x' }] }, 5).ok).toBe(false);
     expect(canCommit({ problems: [] }, 1).ok).toBe(true);
+  });
+});
+
+// --- the reconciliation (check 5) -------------------------------------------------
+
+describe('the reconciliation', () => {
+  const position = openingPosition({
+    stock: [
+      {
+        line: 2,
+        skuId: SKU_A,
+        skuCode: 'ELY-0001-M',
+        locationId: WH,
+        locationCode: 'WH-01',
+        qty: 3,
+        unitCostPoisha: poisha(10_000),
+      },
+    ],
+    suppliers: [
+      {
+        line: 2,
+        supplierId: 'sup',
+        supplierCode: 'S1',
+        kind: 'payable',
+        amountPoisha: poisha(5_000),
+      },
+    ],
+    wallets: [{ line: 2, walletId: 'w', accountCode: '1100', amountPoisha: poisha(2_000) }],
+    couriers: [],
+  });
+  // Dr inventory 30,000 + wallet 2,000; Cr supplier 5,000 + equity 27,000.
+  const journal = [
+    { section: 'inventory' as const, refId: null, amountPoisha: poisha(30_000) },
+    { section: 'wallet' as const, refId: 'w', amountPoisha: poisha(2_000) },
+    { section: 'supplier_payable' as const, refId: 'sup', amountPoisha: poisha(5_000) },
+    { section: 'opening_equity' as const, refId: null, amountPoisha: poisha(27_000) },
+  ];
+
+  it('agrees when the files, the journal and the modules say the same', () => {
+    const report = reconcileOpening({
+      position,
+      journal,
+      journalDebitPoisha: poisha(32_000),
+      journalCreditPoisha: poisha(32_000),
+      modules: journal,
+    });
+    expect(report.rows.map((row) => [row.section, row.agrees])).toEqual([
+      ['inventory', true],
+      ['wallet', true],
+      ['supplier_payable', true],
+      ['opening_equity', true],
+    ]);
+    expect(report.agrees).toBe(true);
+  });
+
+  it('shows the line a module disagrees on, and refuses an unbalanced journal', () => {
+    const drifted = reconcileOpening({
+      position,
+      journal,
+      journalDebitPoisha: poisha(32_000),
+      journalCreditPoisha: poisha(32_000),
+      // A wallet that was used before it was opened.
+      modules: journal.map((f) =>
+        f.section === 'wallet' ? { ...f, amountPoisha: poisha(2_500) } : f,
+      ),
+    });
+    expect(drifted.rows.filter((row) => !row.agrees).map((row) => row.section)).toEqual(['wallet']);
+    expect(drifted.agrees).toBe(false);
+
+    const unbalanced = reconcileOpening({
+      position,
+      journal,
+      journalDebitPoisha: poisha(32_000),
+      journalCreditPoisha: poisha(31_999),
+      modules: journal,
+    });
+    expect(unbalanced.journalBalanced).toBe(false);
+    expect(unbalanced.agrees).toBe(false);
+  });
+
+  it('reports a journal line no file accounted for', () => {
+    const report = reconcileOpening({
+      position,
+      journal: [...journal, { section: 'courier_receivable', refId: 'k', amountPoisha: poisha(1) }],
+      journalDebitPoisha: poisha(32_001),
+      journalCreditPoisha: poisha(32_001),
+      modules: journal,
+    });
+    const extra = report.rows.find((row) => row.section === 'courier_receivable');
+    expect(extra).toMatchObject({ importedPoisha: 0n, journalPoisha: 1n, agrees: false });
+  });
+
+  it('reads a ledger balance on its normal side', () => {
+    expect(normalSide('supplier_payable', 100n, 600n)).toBe(500n);
+    expect(normalSide('wallet', 600n, 100n)).toBe(500n);
+    expect(normalSide('opening_equity', 0n, 27_000n)).toBe(27_000n);
+  });
+});
+
+describe('importSlug', () => {
+  it('is deterministic, unique, and falls back for a Bangla-only name', () => {
+    expect(importSlug('Blue Panjabi', 7, new Set())).toBe('blue-panjabi');
+    expect(importSlug('Blue Panjabi', 7, new Set(['blue-panjabi']))).toBe('blue-panjabi-7');
+    expect(importSlug('Blue Panjabi', 7, new Set(['blue-panjabi', 'blue-panjabi-7']))).toBe(
+      'blue-panjabi-7-2',
+    );
+    expect(importSlug('লাল পাঞ্জাবি', 12, new Set())).toBe('product-12');
+    expect(importSlug('Café Kurti', 1, new Set())).toBe('cafe-kurti');
+    expect(importSlug('x'.repeat(300), 1, new Set())).toMatch(/^x{100}$/);
   });
 });

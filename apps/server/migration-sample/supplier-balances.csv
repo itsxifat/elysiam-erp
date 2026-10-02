@@ -1,0 +1,4 @@
+supplier,kind,amount_taka
+DEMO-FAB,payable,85000
+DEMO-TAIL,payable,23500.50
+DEMO-TAIL,advance,10000

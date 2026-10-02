@@ -97,6 +97,42 @@ export interface LedgerApi {
    * settlement journals name.
    */
   courierReceivables(tx: Tx, orgId: string, asOf: string): Promise<ReadonlyMap<string, bigint>>;
+
+  /**
+   * One journal's lines with each account's subtype, in line order, or nothing for a
+   * journal that is not this org's. For a module that has to read back what it posted —
+   * M14a's reconciliation compares the opening journal with what was imported.
+   */
+  journalLines(tx: Tx, orgId: string, journalId: string): Promise<readonly JournalLineView[]>;
+
+  /**
+   * Σ debit and Σ credit per account and party on the given subtypes, for lines dated on
+   * or before `asOf`. Derived from `ledger.journal_lines` on every read, like every
+   * balance in this module.
+   */
+  balancesAsOf(
+    tx: Tx,
+    orgId: string,
+    asOf: string,
+    subtypes: readonly AccountSubtype[],
+  ): Promise<readonly AccountPartyBalance[]>;
+}
+
+export interface JournalLineView {
+  readonly accountId: string;
+  readonly subtype: string;
+  readonly partyType: string | null;
+  readonly partyId: string | null;
+  readonly debitPoisha: bigint;
+  readonly creditPoisha: bigint;
+}
+
+export interface AccountPartyBalance {
+  readonly accountId: string;
+  readonly subtype: string;
+  readonly partyId: string | null;
+  readonly debitPoisha: bigint;
+  readonly creditPoisha: bigint;
 }
 
 /** The Nest injection token for `LedgerApi`. */

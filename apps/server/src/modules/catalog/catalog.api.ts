@@ -1,4 +1,6 @@
 import type { RequestContext, Tx } from '@elysium/db';
+import { poisha, variantKey } from '@elysium/domain';
+import { importSlug, type ImportProduct, type SkusRefs } from '@elysium/domain/migration';
 
 import * as repo from './catalog.repository.js';
 
@@ -72,6 +74,32 @@ export interface CatalogApi {
    * category, comes back with null there; an unknown id is simply absent.
    */
   skuFacets(tx: Tx, orgId: string, ids: readonly string[]): Promise<SkuFacets[]>;
+
+  /** SKU ids by code, any status (M14a's opening stock). An unknown code is absent. */
+  skusByCodes(tx: Tx, orgId: string, codes: readonly string[]): Promise<Map<string, string>>;
+
+  /**
+   * What M14a's SKU importer checks a file against: the codes, barcodes and product names
+   * already in use, the categories by code, and the size and colour attributes with their
+   * values by code and by label. Read inside the caller's transaction, so the commit is
+   * checked against the catalog it writes into.
+   */
+  importRefs(tx: Tx, orgId: string): Promise<SkusRefs>;
+
+  /**
+   * Create a brand's opening catalog (M14a, D-219), inside the caller's transaction.
+   *
+   * Every product is `active` and keeps the SKU codes the file named, because they are
+   * printed on labels already on the shelves. Products, SKUs, their variant values and
+   * their barcodes go in together or, with the caller's transaction, not at all. The
+   * review in `@elysium/domain/migration` has already refused anything this would
+   * otherwise have to refuse; the database's unique indexes are the backstop.
+   */
+  importProducts(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly userId: string },
+    products: readonly ImportProduct[],
+  ): Promise<{ readonly products: number; readonly skus: number }>;
 }
 
 export interface SkuFacets {
@@ -128,6 +156,106 @@ export class CatalogApiService implements CatalogApi {
       categoryName: row.category_name,
       sizeLabel: row.size_label,
     }));
+  }
+
+  async skusByCodes(tx: Tx, orgId: string, codes: readonly string[]): Promise<Map<string, string>> {
+    const rows = await repo.skusByCodes(tx, orgId, [...new Set(codes)]);
+    return new Map(rows.map((row) => [row.code, row.id]));
+  }
+
+  async importRefs(tx: Tx, orgId: string): Promise<SkusRefs> {
+    const [skus, products, categories, attributes] = await Promise.all([
+      repo.allSkuCodesAndBarcodes(tx, orgId),
+      repo.productNamesAndSlugs(tx, orgId),
+      repo.listCategories(tx, orgId),
+      repo.listAttributes(tx, orgId),
+    ]);
+    const axis = (kind: 'size' | 'colour') =>
+      attributes.find((attribute) => attribute.kind === kind && attribute.is_variant);
+    const size = axis('size');
+    const colour = axis('colour');
+    const values = await repo.listAttributeValues(
+      tx,
+      orgId,
+      [size?.id, colour?.id].filter((id): id is string => id !== undefined),
+    );
+    const valuesOf = (attributeId: string | undefined) => {
+      if (attributeId === undefined) return null;
+      const byText = new Map<string, string>();
+      for (const value of values.filter((row) => row.attribute_id === attributeId)) {
+        byText.set(value.code.toLowerCase(), value.id);
+        byText.set(value.label.toLowerCase(), value.id);
+      }
+      return { attributeId, values: byText };
+    };
+
+    return {
+      existingCodes: new Set(skus.map((row) => row.code)),
+      existingBarcodes: new Set(
+        skus.map((row) => row.barcode).filter((code): code is string => code !== null),
+      ),
+      existingProductNames: new Set(products.map((row) => row.name)),
+      categories: new Map(categories.map((row) => [row.code.toLowerCase(), row.id])),
+      size: valuesOf(size?.id),
+      colour: valuesOf(colour?.id),
+    };
+  }
+
+  async importProducts(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly userId: string },
+    products: readonly ImportProduct[],
+  ): Promise<{ readonly products: number; readonly skus: number }> {
+    const slugs = new Set(
+      (await repo.productNamesAndSlugs(tx, actor.orgId)).map((row) => row.slug),
+    );
+    let skuCount = 0;
+
+    for (const product of products) {
+      const { sequence } = await repo.takeSequence(tx, actor.orgId);
+      const slug = importSlug(product.name, sequence, slugs);
+      slugs.add(slug);
+
+      const row = await repo.insertProduct(tx, actor.orgId, {
+        categoryId: product.categoryId,
+        sequence,
+        name: product.name,
+        slug,
+        description: null,
+        status: 'active',
+        createdBy: actor.userId,
+      });
+
+      const created = await repo.insertSkus(
+        tx,
+        actor.orgId,
+        product.skus.map((sku, index) => {
+          const pairs = sku.valueIds.map((valueId, axis) => ({
+            attributeId: product.axisAttributeIds[axis] ?? '',
+            valueId,
+          }));
+          return {
+            productId: row.id,
+            code: sku.code,
+            variantKey: variantKey(pairs),
+            pricePoisha: poisha(sku.pricePoisha),
+            position: index,
+            values: pairs,
+          };
+        }),
+      );
+
+      const idByCode = new Map(created.map((sku) => [sku.code, sku.id]));
+      for (const sku of product.skus) {
+        const id = idByCode.get(sku.code);
+        if (sku.barcode !== null && id !== undefined) {
+          await repo.setSkuBarcode(tx, actor.orgId, id, sku.barcode);
+        }
+      }
+      skuCount += created.length;
+    }
+
+    return { products: products.length, skus: skuCount };
   }
 }
 

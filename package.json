@@ -30,6 +30,8 @@
     "format:check": "prettier --check .",
     "lint": "turbo run lint && eslint .",
     "lint:fix": "turbo run lint -- --fix && eslint . --fix",
+    "migration": "pnpm --filter @elysium/server run migration",
+    "demo:org": "pnpm --filter @elysium/server run demo:org",
     "setup:env": "node scripts/setup-env.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

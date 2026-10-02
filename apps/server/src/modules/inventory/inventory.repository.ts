@@ -1210,6 +1210,24 @@ export async function accountBySubtype(
   return rows[0];
 }
 
+/** Of the given SKUs, those with any movement or a cost basis: stock history of any kind. */
+export async function heldSkus(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+): Promise<string[]> {
+  if (skuIds.length === 0) return [];
+  const ids = sql.param([...new Set(skuIds)]);
+  const rows = await tx.execute<{ sku_id: string }>(sql`
+    select sku_id from inventory.stock_movements
+    where org_id = ${orgId} and sku_id = any (${ids}::uuid[])
+    union
+    select sku_id from inventory.sku_costs
+    where org_id = ${orgId} and sku_id = any (${ids}::uuid[])
+  `);
+  return rows.map((row) => row.sku_id);
+}
+
 export async function skuExists(tx: Tx, orgId: string, skuId: string): Promise<boolean> {
   const rows = await tx.execute<{ id: string }>(sql`
     select id from catalog.skus where org_id = ${orgId} and id = ${skuId}

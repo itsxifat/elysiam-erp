@@ -162,3 +162,4 @@ export { SEED_ORGS, SEED_ORG_IDS, seedOrgId, deterministicUuid } from './orgs.js
 export { ensureBranchWallets, seedAccountId, seedChartOfAccounts } from './ledger.js';
 export { seedDeliveryZones, type DeliveryZoneSeedResult } from './delivery-zones.js';
 export { branchCashCode, COA_TEMPLATE, type TemplateAccount } from './coa-template.js';
+export { seedTrainingOrg, TRAINING_ORG_SLUG, trainingOrgId } from './training.js';

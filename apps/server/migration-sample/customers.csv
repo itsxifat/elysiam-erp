@@ -1,0 +1,5 @@
+phone,name,delivered,returned,cancelled,spent_taka
++8801990000001,Sample Buyer One,4,1,0,9800
++8801990000002,Sample Buyer Two,1,0,1,2450
++8801990000003,Sample Buyer Three,0,2,0,
++8801990000004,Sample Buyer Four,7,0,0,17430.50
