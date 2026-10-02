@@ -965,8 +965,8 @@ share`), W-B (one person could void a loan's receipt: `LOAN_SELF_VOID` in the se
 - Verification:
   - `pnpm verify` (under `heavy.mjs`) exits 0 at `332dac3`: 164 test files, 2,691 tests
     (1 skipped), bundle 240.7 KB of 250, schema drift, route matrix (314 routes), i18n and
-    api-client checks PASS. The re-audit fixes were run again: the iam and approvals suites
-    (150 tests) and the full verify below.
+    api-client checks PASS; and again after the re-audit fixes, at `52c81ed`: 164 files,
+    2,695 tests (1 skipped), every check PASS.
   - `users.e2e.test.ts` (real Postgres): every permission edge — self-escalation through
     either route, cross-brand 404s, super admin protection, demote-then-reset, branch
     managers and warehouse needing a second admin, deactivated users and their sessions,
