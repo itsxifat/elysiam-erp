@@ -93,4 +93,16 @@ tokens at rest (a follow-up).
 7. Stack spec with axe in both themes.
 8. Decisions, progress entry, plans index; `pnpm verify`; ledger-auditor; fixes.
 
-## Status on 2026-10-02: planned
+## Status on 2026-10-02: built and verified
+
+- Built as planned, plus what the ledger audit asked for: a second admin for anyone who
+  ever held a role that can raise or decide an approval (not only checkers), a grant
+  lineage that keeps every granter (`iam.membership_granters`, D-410), one transaction and
+  a per-person lock per action with the link minted inside it, the phone-number reset pair
+  closed, and `POST /v1/users` refusing self- and super-admin changes. Decisions D-400 to
+  D-410; migrations 0098 to 0101.
+- `pnpm verify` exits 0; the staff API suite (real Postgres), the route matrix, the cost
+  sweep and `users.stack.ts` (four journeys, axe in both themes) pass.
+- ledger-auditor: 2 critical and 7 warnings at `57d6aa5`, fixed in `332dac3`; re-audit at
+  `332dac3`: 0 critical, 3 warnings, fixed in the commit that adds this status. Follow-ups are
+  in the progress entry.

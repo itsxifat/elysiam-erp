@@ -873,6 +873,147 @@ describe('one admin cannot take over an account that can move money', () => {
 });
 
 // admin has asked for close to its 20 resets an hour by here; admin2 has asked for none.
+describe('the database holds the reset lifecycle on its own (re-audit W3)', () => {
+  async function waiting(kind: 'password' | 'two_factor'): Promise<{
+    target: RoleClient;
+    resetId: string;
+    approvalRequestId: string;
+  }> {
+    const target = await harness.asRole('accounts', ORG_A);
+    const path = kind === 'password' ? 'password-link' : 'two-factor/reset';
+    const asked = json<{ resetId: string; approvalRequestId: string }>(
+      await admin2.client.request('POST', `/v1/users/${target.userId}/${path}`, {
+        body: { reason: 'Database lifecycle' },
+      }),
+    );
+    return { target, ...asked };
+  }
+
+  it('refuses a reset recorded for someone else, a withdrawal ahead of its approval, and a collection by another admin', async () => {
+    const person = await member(['sales']);
+    await expectRefused(
+      withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
+        tx.execute(sql`
+          insert into iam.credential_resets
+            (org_id, user_id, kind, status, requested_by, reason, completed_at)
+          values (${ORG_A}, ${person.userId}, 'password', 'completed', ${admin2.userId}, 'forged', now())
+        `),
+      ),
+      /asked for by the acting user/,
+    );
+
+    const pending = await waiting('two_factor');
+    await expectRefused(
+      withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
+        tx.execute(sql`
+          update iam.credential_resets set status = 'cancelled' where id = ${pending.resetId}
+        `),
+      ),
+      /withdrawn with its approval/,
+    );
+    await expectRefused(
+      withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
+        tx.execute(sql`
+          update iam.credential_resets
+          set status = 'completed', decided_by = ${admin.userId}, decided_at = now(),
+              completed_at = now()
+          where id = ${pending.resetId}
+        `),
+      ),
+      /follows its approval/,
+    );
+
+    const approved = await waiting('password');
+    expect((await decide(admin.client, approved.approvalRequestId, 'approved')).statusCode).toBe(
+      201,
+    );
+    await expectRefused(
+      withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
+        tx.execute(sql`
+          update iam.credential_resets set status = 'completed', completed_at = now()
+          where id = ${approved.resetId}
+        `),
+      ),
+      /only the admin who asked collects/,
+    );
+    // Expiry is a legitimate end for an approved reset, whoever records it.
+    await withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
+      tx.execute(sql`
+        update iam.credential_resets set status = 'expired' where id = ${approved.resetId}
+      `),
+    );
+  });
+
+  it('cancels an approved reset when the person is deactivated, so it cannot be collected', async () => {
+    const approved = await waiting('password');
+    expect((await decide(admin.client, approved.approvalRequestId, 'approved')).statusCode).toBe(
+      201,
+    );
+    const done = await admin.client.request(
+      'POST',
+      `/v1/users/${approved.target.userId}/deactivate`,
+      { body: {} },
+    );
+    expect(done.statusCode, done.body).toBe(201);
+    const [reset] = await withSystem(
+      async (tx) =>
+        tx.execute<{ status: string }>(sql`
+          select status from iam.credential_resets where id = ${approved.resetId}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(reset?.status).toBe('cancelled');
+  });
+
+  it('refuses a self-grant in either lineage table', async () => {
+    const person = await member(['sales']);
+    await expectRefused(
+      withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
+        tx.execute(sql`
+          insert into iam.membership_granters (org_id, user_id, granted_by, reason)
+          values (${ORG_A}, ${person.userId}, ${person.userId}, 'role_granted')
+        `),
+      ),
+      /membership_granters_not_self/,
+    );
+    await expectRefused(
+      withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
+        tx.execute(sql`
+          update iam.memberships set granted_by = user_id where user_id = ${person.userId}
+        `),
+      ),
+      /memberships_not_self_granted/,
+    );
+    await expectRefused(
+      withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
+        tx.execute(sql`delete from iam.membership_granters where user_id = ${person.userId}`),
+      ),
+      /permission denied/,
+    );
+  });
+
+  it('leaves one working link when two admins ask at the same moment', async () => {
+    const person = await member(['sales'], { password: false });
+    const [first, second] = await Promise.all([
+      admin2.client.request('POST', `/v1/users/${person.userId}/password-link`, {
+        body: { reason: 'At once, one' },
+      }),
+      superAdmin.client.request('POST', `/v1/users/${person.userId}/password-link`, {
+        body: { reason: 'At once, two' },
+      }),
+    ]);
+    expect(first?.statusCode, first?.body).toBe(201);
+    expect(second?.statusCode, second?.body).toBe(201);
+    const links = await withGlobal(async (tx) =>
+      tx.execute<{ n: number }>(sql`
+        select count(*)::int as n from iam.verifications
+        where identifier like 'reset-password:%' and value = ${person.userId}
+      `),
+    );
+    expect(links[0]?.n).toBe(1);
+  });
+});
+
 describe('iam.credential_resets', () => {
   it('keeps every reset: no DELETE, terms frozen, and each brand sees only its own', async () => {
     const person = await member(['sales'], { password: false });

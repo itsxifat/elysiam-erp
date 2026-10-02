@@ -19,17 +19,19 @@ import { sql } from 'drizzle-orm';
 // --- the person lock -------------------------------------------------------------------
 
 /**
- * Serialise every change to one person's access in one brand (the ledger audit's W4, W5).
+ * Serialise every change to one person's access (the ledger audit's W4, W5; re-audit W2).
  *
  * Roles, deactivation, links, second-factor resets, an approval's executor and an invite
  * all take this first, then read the facts they decide on, inside the transaction that
- * acts on them — so a promotion, a second brand or a parallel reset cannot slip between
- * the check and the write. One lock order everywhere: an approval row (when deciding),
- * then this, then memberships, then resets.
+ * acts on them — so a promotion, a role in a second brand or a parallel reset cannot slip
+ * between the check and the write. Keyed on the person alone, not the brand: what it
+ * protects — other brands' memberships, the password, the links, the sessions — is
+ * global. No path holds an approval row it took after this lock, so a decision (approval
+ * row, then this) cannot deadlock with it.
  */
-export async function lockPerson(tx: Tx, orgId: string, userId: string): Promise<void> {
+export async function lockPerson(tx: Tx, userId: string): Promise<void> {
   await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${`iam.person:${orgId}:${userId}`}, 0))`,
+    sql`select pg_advisory_xact_lock(hashtextextended(${`iam.person:${userId}`}, 0))`,
   );
 }
 
@@ -342,10 +344,10 @@ const RESET_COLUMNS = sql`
 `;
 
 /** An approved password reset nobody collected in 24 hours is no longer open (D-404). */
-export async function expireStaleResets(tx: Tx, orgId: string): Promise<void> {
+export async function expireStaleResets(tx: Tx, orgId: string, userId: string): Promise<void> {
   await tx.execute(sql`
     update iam.credential_resets set status = 'expired'
-    where org_id = ${orgId} and status = 'approved'
+    where org_id = ${orgId} and user_id = ${userId} and status = 'approved'
       and decided_at < now() - interval '24 hours'
   `);
 }
@@ -396,6 +398,7 @@ export async function openResetsTouching(
     select ${RESET_COLUMNS} from iam.credential_resets
     where org_id = ${orgId} and status in ('pending_approval', 'approved')
       and (user_id = ${userId} or requested_by = ${userId})
+    order by approval_request_id, id
     ${options.lock ? sql`for update` : sql``}
   `);
   return [...rows];

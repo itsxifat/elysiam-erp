@@ -56,8 +56,9 @@ const NO_REPLAY = 'elysium:idempotency:no-replay';
 /**
  * A route whose response carries a secret — a password link (gaps-users-auth, the ledger
  * audit's N4) — is never stored for replay: `http.idempotency_keys` would keep the token
- * for 24 hours. The key is ignored and the request simply runs; a repeated request mints a
- * new link, which voids the first.
+ * for 24 hours. The key is ignored and the request simply runs: a repeated password link
+ * mints a new one, which voids the first; a repeated invite finds the person already there
+ * and answers without a link, which the staff screen's "send a new invite link" replaces.
  */
 export const NoIdempotencyReplay = (): MethodDecorator => SetMetadata(NO_REPLAY, true);
 

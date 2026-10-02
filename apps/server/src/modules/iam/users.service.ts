@@ -46,7 +46,8 @@ import { pgCode, usersHttpError } from './users.errors.js';
  * property; this service gathers the facts it needs and carries out what it decides.
  *
  * **One transaction per action, facts read inside it** (the ledger audit's W4–W6). Each
- * action takes the person lock (`lockPerson`), reads the facts, decides, and acts —
+ * action takes the person lock (`lockPerson`, one per person across brands), reads the
+ * facts, decides, and acts —
  * minting a link included — before committing, so no promotion, second brand or parallel
  * reset slips between the check and the write, and a failure leaves nothing half done.
  *
@@ -282,7 +283,7 @@ export class UsersService {
    * role here, ever: an admin of one brand learns nothing about another brand's people.
    */
   private async target(tx: Tx, orgId: string, userId: string): Promise<Target> {
-    await repo.lockPerson(tx, orgId, userId);
+    await repo.lockPerson(tx, userId);
     const held = await repo.membershipsOfUser(tx, orgId, userId, { lock: true });
     if (held.length === 0) return NOT_FOUND();
     const [person] = await repo.people(tx, [userId]);
@@ -408,9 +409,12 @@ export class UsersService {
    * link and remembered device, when this was the last brand they work in; otherwise
    * only the sessions acting in this one. Nothing they wrote is touched.
    *
-   * The approvals are withdrawn first, before the person lock, to keep the one lock
-   * order a decision also follows (approval row, then person): a checker approving one of
-   * these resets at the same moment either finishes first or finds it withdrawn.
+   * The approvals are withdrawn first, before the person lock, in a fixed order, to keep
+   * the order a decision also follows (approval row, then person): a checker approving one
+   * of these resets at the same moment either finishes first or finds it withdrawn. A
+   * reset raised in the moment between is not withdrawn under the person lock — that would
+   * take an approval row after it — but answered with a 409 to retry, whose first pass
+   * then withdraws it in order (the re-audit's W1).
    */
   async deactivate(
     context: ActiveContext,
@@ -433,8 +437,11 @@ export class UsersService {
           reason: 'The person was deactivated.',
           request,
         });
+      const withdrawn = new Set<string>();
       for (const reset of waiting) {
-        if (reset.approval_request_id !== null) await withdraw(reset.approval_request_id);
+        if (reset.approval_request_id === null) continue;
+        await withdraw(reset.approval_request_id);
+        withdrawn.add(reset.approval_request_id);
       }
 
       const target = await this.target(tx, context.orgId, userId);
@@ -446,9 +453,14 @@ export class UsersService {
 
       const open = await repo.openResetsTouching(tx, context.orgId, userId, { lock: true });
       for (const reset of open) {
-        // One raised after the first pass: withdraw its approval too, then the reset.
-        if (reset.status === 'pending_approval' && reset.approval_request_id !== null) {
-          await withdraw(reset.approval_request_id);
+        if (
+          reset.status === 'pending_approval' &&
+          (reset.approval_request_id === null || !withdrawn.has(reset.approval_request_id))
+        ) {
+          throw usersHttpError(
+            'CONFLICT',
+            'A sign-in reset for this person was asked for a moment ago. Deactivate them again.',
+          );
         }
         await repo.moveReset(tx, context.orgId, reset.id, { status: 'cancelled' });
       }
@@ -511,7 +523,7 @@ export class UsersService {
       LinkOutcome | { refused: Extract<ResetPlan, { decision: 'refuse' }> }
     >(context, async (tx) => {
       const target = await this.target(tx, context.orgId, userId);
-      await repo.expireStaleResets(tx, context.orgId);
+      await repo.expireStaleResets(tx, context.orgId, userId);
       const open = await repo.openResetFor(tx, context.orgId, userId, 'password');
 
       if (open !== undefined) {
@@ -595,6 +607,18 @@ export class UsersService {
     });
     if (plan.decision === 'refuse') {
       await repo.moveReset(tx, context.orgId, reset.id, { status: 'cancelled' });
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'update',
+        action: 'iam.credential_reset_cancelled',
+        entityType: 'User',
+        entityId: target.userId,
+        before: { resetId: reset.id, status: 'approved' },
+        after: { resetId: reset.id, status: 'cancelled', why: plan.code },
+        requestId: context.requestId,
+        request,
+      });
       return { refused: plan };
     }
 
@@ -810,7 +834,7 @@ export class UsersService {
     const parsed = resetPayloadSchema.safeParse(approval.payload);
     if (!parsed.success) return null;
     // The person lock after the approval row decide already holds: the one lock order.
-    await repo.lockPerson(tx, context.orgId, parsed.data.userId);
+    await repo.lockPerson(tx, parsed.data.userId);
     const reset = await repo.resetById(tx, context.orgId, parsed.data.resetId);
     if (
       reset?.status !== 'pending_approval' ||
@@ -841,6 +865,12 @@ export class UsersService {
       );
     }
     const target = await this.target(tx, context.orgId, reset.user_id);
+    const asker = await repo.membershipsOfUser(tx, context.orgId, reset.requested_by);
+    if (!asker.some((row) => row.is_active && row.role === 'org_admin')) {
+      throw new ConflictException(
+        'The admin who asked for this reset no longer manages staff here. Reject it instead.',
+      );
+    }
     const plan = planCredentialReset({
       actor: { userId: reset.requested_by, isSuperAdmin: false },
       target: resetTarget(target),

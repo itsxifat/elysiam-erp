@@ -214,9 +214,10 @@ export function createAuth(options: AuthOptions) {
      *
      * There is no email adapter (D-212), so a link Better Auth mints has nowhere to go
      * but the token store, from which the next admin action would collect it. Every link
-     * now comes from an audited admin action in the iam module, which calls
-     * `api.requestPasswordReset` from the server; this only closes the HTTP door, which
-     * let anyone on the internet mint reset rows for any address.
+     * now comes from an audited admin action in the iam module, which writes the
+     * verification row Better Auth's `/reset-password` consumes inside its own transaction;
+     * this closes the HTTP door, which let anyone on the internet mint reset rows for any
+     * address.
      */
     // The phone-number plugin's own reset pair is closed for the same reason (the ledger
     // audit's W2): an OTP reset with no audit, no limits and no second admin, and the day

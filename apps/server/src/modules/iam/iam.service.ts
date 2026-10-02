@@ -241,7 +241,7 @@ export class IamService {
     const { membershipId, invite } = await withOrg(
       { orgId: input.orgId, userId: input.caller.userId },
       async (tx) => {
-        await lockPerson(tx, input.orgId, resolvedUserId);
+        await lockPerson(tx, resolvedUserId);
         const inserted = await tx.execute<{ id: string }>(sql`
           insert into iam.memberships (org_id, user_id, role, granted_by)
           values (
