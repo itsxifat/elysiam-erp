@@ -288,7 +288,7 @@ export const ERROR_CODES = [
   'PAYROLL_ATTENDANCE_INVALID',
   /*
    * Targets and bonus rules (M20, §12). `TARGET_FROZEN` and `BONUS_RULE_FROZEN` are raised
-   * by migration 0082's triggers as well as by the services.
+   * by migration 0083's triggers as well as by the services.
    */
   /** A target's month, metric, people or value is not one that can be set. */
   'TARGET_INVALID',

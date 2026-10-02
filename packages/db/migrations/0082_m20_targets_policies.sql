@@ -4,19 +4,19 @@
 -- `packages/db/src/rls.ts`). The grants are where the decisions are:
 --
 -- * `hr.targets`: UPDATE for the progress rollup and for cancelling; never DELETE. A
---   target a bonus was paid against is named by its award. 0082 freezes its terms.
+--   target a bonus was paid against is named by its award. 0083 freezes its terms.
 -- * `hr.target_members`: INSERT and SELECT only. Who a target counts is decided when it
 --   is set, and changing it afterwards would rewrite a month's progress.
--- * `hr.target_weeks`: UPDATE for `achieved` only (0082 refuses any other change).
+-- * `hr.target_weeks`: UPDATE for `achieved` only (0083 refuses any other change).
 -- * `hr.bonus_rules`: INSERT and SELECT; a rule's terms live in its versions.
--- * `hr.bonus_rule_versions`: UPDATE for status changes only (0082 freezes the JSON).
+-- * `hr.bonus_rule_versions`: UPDATE for status changes only (0083 freezes the JSON).
 -- * `hr.bonus_awards`: INSERT and DELETE, because re-applying the rules replaces a draft
---   run's awards; 0082 refuses both once the run is submitted. Never UPDATE.
+--   run's awards; 0083 refuses both once the run is submitted. Never UPDATE.
 -- * `hr.desk_events`: INSERT and SELECT only. It is an event log.
 --
 -- No analytics read on any of them: M24's rollups come from the outbox, not from HR.
 --
--- `events.outbox.actor_user_id` (0080) needs no grant of its own: the table's grants are
+-- `events.outbox.actor_user_id` (0081) needs no grant of its own: the table's grants are
 -- table-wide.
 
 alter table "hr"."targets" enable row level security;
