@@ -631,6 +631,20 @@
       "when": 1790931944623,
       "tag": "0091_m20_targets_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1790933493366,
+      "tag": "0092_m24_analytics_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1790933503069,
+      "tag": "0093_m24_analytics_policies",
+      "breakpoints": true
     }
   ]
 }

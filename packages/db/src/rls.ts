@@ -167,6 +167,17 @@ export const ANALYTICS_READABLE: readonly string[] = [
   'ledger.accounts',
   'ledger.journals',
   'ledger.journal_lines',
+  /*
+   * §5 exception 2, added by M24 (D-329): the rollups. The leaderboard, the insight rules'
+   * group medians and the consolidated dashboard compare brands, and these five tables are
+   * everything they read — counts and sums per day, no buyer, no phone, no cost. The
+   * narrative cache beside them (`analytics.narratives`) is deliberately absent.
+   */
+  'analytics.daily_org',
+  'analytics.daily_branch',
+  'analytics.daily_channel',
+  'analytics.daily_campaign',
+  'analytics.daily_agent',
 ];
 
 /**

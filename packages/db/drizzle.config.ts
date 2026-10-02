@@ -24,6 +24,8 @@ export default defineConfig({
   // all, so six tables holding investor capital would be invisible to the one gate
   // that notices a schema and its migration disagreeing.
   schemaFilter: [
+    // M24. The rollups and the narrative cache; the only tenant data `erp_analytics` reads.
+    'analytics',
     'approvals',
     'audit',
     'catalog',
