@@ -886,6 +886,23 @@ describe('M30: the desk prices no deeper than the caller’s ceiling', () => {
     expect(errorCode(response)).toBe('ORDER_DISCOUNT_ABOVE_CEILING');
   });
 
+  it('refuses an edit that keeps the discount while the goods shrink (the re-audit)', async () => {
+    // Ten at list less ৳3,000: exactly a fifth off, so accepted.
+    const placed = await placeAs(sales, {
+      lines: [{ skuId: sku(0), qty: 10, unitPricePoisha: '150000' }],
+      discountPoisha: '300000',
+    });
+    expect(placed.statusCode, placed.body).toBe(201);
+    const { id } = body<{ id: string }>(placed);
+
+    // Two units with the ৳3,000 kept would be the goods free.
+    const cut = await sales.client.request('PATCH', `/v1/orders/${id}`, {
+      body: { lines: [{ skuId: sku(0), qty: 2, unitPricePoisha: '150000' }] },
+    });
+    expect(cut.statusCode, cut.body).toBe(403);
+    expect(errorCode(cut)).toBe('ORDER_DISCOUNT_ABOVE_CEILING');
+  });
+
   it('lets an agent shrink an order an admin priced deeply, but not deepen it', async () => {
     const order = await takeOrder(admin, {
       lines: [{ skuId: sku(0), qty: 2, unitPricePoisha: '75000' }],
@@ -932,6 +949,13 @@ describe('M30: a short collection at the desk needs a reason', () => {
     });
     expect(unexplained.statusCode, unexplained.body).toBe(400);
     expect(errorCode(unexplained)).toBe('ORDER_REASON_REQUIRED');
+
+    // A reason is not a licence: a desk-typed shortfall is held to the role's ceiling (D-365).
+    const writtenOff = await sales.client.request('POST', `/v1/orders/${order.id}/deliver`, {
+      body: { collectedPoisha: '0', differenceReason: 'Buyer paid nothing' },
+    });
+    expect(writtenOff.statusCode, writtenOff.body).toBe(403);
+    expect(errorCode(writtenOff)).toBe('ORDER_DISCOUNT_ABOVE_CEILING');
 
     const explained = await sales.client.request('POST', `/v1/orders/${order.id}/deliver`, {
       body: { collectedPoisha: '150000', differenceReason: 'Buyer short by the delivery charge' },

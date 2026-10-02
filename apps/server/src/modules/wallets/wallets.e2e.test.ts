@@ -1507,13 +1507,13 @@ describe('M30: a branch-scoped cash out follows petty cash’s rules', () => {
     const own = await manager.client.request('POST', `/v1/approvals/${heldApprovalId}/decide`, {
       body: { decision: 'approved' },
     });
-    expect(own.statusCode).toBeGreaterThanOrEqual(400);
+    expect([403, 409], own.body).toContain(own.statusCode);
     const elsewhere = await branchManager.client.request(
       'POST',
       `/v1/approvals/${heldApprovalId}/decide`,
       { body: { decision: 'approved' } },
     );
-    expect(elsewhere.statusCode).toBeGreaterThanOrEqual(400);
+    expect([403, 404], elsewhere.body).toContain(elsewhere.statusCode);
 
     const decided = await admin.client.request('POST', `/v1/approvals/${heldApprovalId}/decide`, {
       body: { decision: 'approved' },

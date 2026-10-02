@@ -7,6 +7,7 @@ import {
   discountAllowed,
   onlyShrinks,
   orderDiscountCeilingBps,
+  shortCollectionAllowed,
   typedDiscount,
   withinDiscountCeiling,
   type DiscountedLine,
@@ -88,6 +89,95 @@ describe('the order desk discount ceiling (M30, D-364)', () => {
 
     // A new order has nothing to compare with.
     expect(discountAllowed({ after: fewer, ceilingBps: 2_000 })).toBe(false);
+  });
+
+  it('refuses an edit that keeps a discount amount while the goods shrink (the re-audit)', () => {
+    // Ten at list with a ৳3,000 order discount: exactly 20%.
+    const tenAtTwenty = order(
+      [line({ qty: 10, listPricePoisha: 150_000, unitPricePoisha: 150_000 })],
+      300_000,
+    );
+    expect(withinDiscountCeiling(tenAtTwenty, 2_000)).toBe(true);
+    // Two units, the ৳3,000 kept: the whole order free.
+    const twoFree = order(
+      [line({ qty: 2, listPricePoisha: 150_000, unitPricePoisha: 150_000 })],
+      300_000,
+    );
+    expect(discountAllowed({ after: twoFree, before: tenAtTwenty, ceilingBps: 2_000 })).toBe(false);
+
+    // The same with a line discount.
+    const lineBefore = order([
+      line({
+        qty: 10,
+        listPricePoisha: 150_000,
+        unitPricePoisha: 150_000,
+        lineDiscountPoisha: 300_000,
+      }),
+    ]);
+    const lineAfter = order([
+      line({
+        qty: 2,
+        listPricePoisha: 150_000,
+        unitPricePoisha: 150_000,
+        lineDiscountPoisha: 300_000,
+      }),
+    ]);
+    expect(discountAllowed({ after: lineAfter, before: lineBefore, ceilingBps: 2_000 })).toBe(
+      false,
+    );
+
+    // Dropping one of two lines while keeping the order discount doubles its rate.
+    const twoLines = order([line({}), line({ skuId: 'B' })], 40_000);
+    const oneLine = order([line({})], 40_000);
+    expect(discountAllowed({ after: oneLine, before: twoLines, ceilingBps: 2_000 })).toBe(false);
+  });
+
+  it('never lets an edit raise the rate above both the ceiling and what it was', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 20 }),
+        fc.integer({ min: 1, max: 20 }),
+        fc.integer({ min: 1, max: 2_000_000 }),
+        fc.integer({ min: 0, max: 2_000_000 }),
+        fc.integer({ min: 0, max: 5_000_000 }),
+        fc.integer({ min: 0, max: 5_000_000 }),
+        fc.integer({ min: 0, max: 10_000 }),
+        (qtyBefore, qtyAfter, list, unit, lineDiscount, orderDiscount, ceiling) => {
+          const make = (qty: number) =>
+            order(
+              [
+                line({
+                  qty,
+                  listPricePoisha: list,
+                  unitPricePoisha: unit,
+                  lineDiscountPoisha: Math.min(lineDiscount, unit * qty),
+                }),
+              ],
+              orderDiscount,
+            );
+          const before = make(qtyBefore);
+          const after = make(qtyAfter);
+          if (!discountAllowed({ after, before, ceilingBps: ceiling })) return;
+          const a = typedDiscount(after);
+          const b = typedDiscount(before);
+          const withinCeiling = a.discountPoisha * 10_000n <= BigInt(ceiling) * a.listPoisha;
+          const notDeeper = a.discountPoisha * b.listPoisha <= b.discountPoisha * a.listPoisha;
+          expect(withinCeiling || notDeeper).toBe(true);
+        },
+      ),
+    );
+  });
+
+  it('holds a short collection at the desk to the same ceiling (D-365)', () => {
+    const allowed = (collected: bigint, ceilingBps: number) =>
+      shortCollectionAllowed({ expectedPoisha: 156_000n, collectedPoisha: collected, ceilingBps });
+    expect(allowed(150_000n, 2_000)).toBe(true);
+    expect(allowed(124_800n, 2_000)).toBe(true);
+    expect(allowed(124_799n, 2_000)).toBe(false);
+    expect(allowed(0n, 2_000)).toBe(false);
+    expect(allowed(0n, 10_000)).toBe(true);
+    // Collecting more than the order says is never a write-off.
+    expect(allowed(200_000n, 0)).toBe(true);
   });
 
   it('formats basis points without dividing money', () => {

@@ -15,6 +15,9 @@ import {
   type Poisha,
   type PostingAccount,
   type TransitionResult,
+  basisPointsAsPercent,
+  orderDiscountCeilingBps,
+  shortCollectionAllowed,
 } from '@elysium/domain';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -635,6 +638,20 @@ export class TransitionsService {
       throw new OrdersError(
         'ORDER_REASON_REQUIRED',
         'The rider collected less than the cash on delivery. Say why in the difference reason.',
+      );
+    }
+    if (
+      options.deliver?.shortfallNeedsReason === true &&
+      !shortCollectionAllowed({
+        expectedPoisha: expected,
+        collectedPoisha: collected,
+        ceilingBps: orderDiscountCeilingBps(context),
+      })
+    ) {
+      throw new OrdersError(
+        'ORDER_DISCOUNT_ABOVE_CEILING',
+        `That is more short than your role may write off (${basisPointsAsPercent(orderDiscountCeilingBps(context))}% of the cash on delivery). ` +
+          'Record it on the parcel, or ask an org admin.',
       );
     }
 

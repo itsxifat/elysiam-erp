@@ -749,6 +749,8 @@ function assertPayrollFieldsAllowed(
    */
   const reactivates =
     (left && input.status !== undefined && input.status !== before.status) ||
+    // A leaver with no leaving date yet is paid to whatever date is set now (the re-audit).
+    (left && input.leaveDate !== undefined && input.leaveDate !== before.leave_date) ||
     (before.leave_date !== null &&
       input.leaveDate !== undefined &&
       input.leaveDate !== before.leave_date);

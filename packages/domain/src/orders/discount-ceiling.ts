@@ -91,13 +91,26 @@ export function withinDiscountCeiling(order: DiscountedOrder, ceilingBps: number
   return within(total.discountPoisha, total.listPoisha, ceilingBps);
 }
 
+/** `a.part / a.whole` is at most `b.part / b.whole`, by cross-multiplication. */
+function rateNotHigher(
+  after: { part: bigint; whole: bigint },
+  before: { part: bigint; whole: bigint },
+): boolean {
+  if (after.part <= 0n) return true;
+  if (after.whole <= 0n || before.whole <= 0n) return false;
+  return after.part * before.whole <= before.part * after.whole;
+}
+
 /**
  * Whether `after` only takes things away from `before`: the same SKUs or fewer, each at its
- * old price and no larger line discount, no more units, and no larger order discount.
+ * old price, no more units, and **no line and no order priced at a deeper rate** than before.
  *
  * An agent may drop a line or a unit from an order an org admin priced deeply. They may not
- * reshape it: swapping in another SKU at the same total discount, say, would let them choose
- * what goes out at the admin's price.
+ * reshape it (another SKU at the same total discount would let them choose what goes out at
+ * the admin's price), and they may not keep a discount's amount while the goods under it
+ * shrink: ten units at 20% off as a ৳3,000 order discount, cut to two units with the ৳3,000
+ * kept, is the whole order free (the ledger re-audit's critical finding). Rates are compared
+ * by cross-multiplication, so nothing is rounded.
  */
 export function onlyShrinks(before: DiscountedOrder, after: DiscountedOrder): boolean {
   if (after.orderDiscountPoisha > before.orderDiscountPoisha) return false;
@@ -105,10 +118,21 @@ export function onlyShrinks(before: DiscountedOrder, after: DiscountedOrder): bo
     const old = before.lines.find((candidate) => candidate.skuId === line.skuId);
     if (old === undefined) return false;
     if (line.unitPricePoisha !== old.unitPricePoisha) return false;
-    if (line.lineDiscountPoisha > old.lineDiscountPoisha) return false;
     if (line.qty > old.qty) return false;
+    const now = lineShortfall(line);
+    const then = lineShortfall(old);
+    if (
+      !rateNotHigher({ part: now.short, whole: now.list }, { part: then.short, whole: then.list })
+    ) {
+      return false;
+    }
   }
-  return true;
+  const now = typedDiscount(after);
+  const then = typedDiscount(before);
+  return rateNotHigher(
+    { part: now.discountPoisha, whole: now.listPoisha },
+    { part: then.discountPoisha, whole: then.listPoisha },
+  );
 }
 
 /** Who is asking, as the request context holds it. */
@@ -145,6 +169,24 @@ export function discountAllowed(input: {
 }): boolean {
   if (withinDiscountCeiling(input.after, input.ceilingBps)) return true;
   return input.before !== undefined && onlyShrinks(input.before, input.after);
+}
+
+/**
+ * Whether a person may record this short collection at the desk (M30, D-365).
+ *
+ * Less than the cash on delivery posts the difference to Sales discounts (§7), so a typed
+ * shortfall is a discount given at the door. It is held to the same ceiling as a discount
+ * typed at the order: otherwise an agent could price within 20% and then deliver at
+ * nothing, which the re-audit found still open. The courier's own figure arrives through the
+ * parcel and is checked by the settlement instead.
+ */
+export function shortCollectionAllowed(input: {
+  readonly expectedPoisha: bigint;
+  readonly collectedPoisha: bigint;
+  readonly ceilingBps: number;
+}): boolean {
+  const shortfall = input.expectedPoisha - input.collectedPoisha;
+  return within(shortfall, input.expectedPoisha, input.ceilingBps);
 }
 
 /** Basis points as a percentage for a message, in integer arithmetic: 2_000 → "20". */
