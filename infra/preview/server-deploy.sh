@@ -88,6 +88,7 @@ docker build -f "$SRC/infra/docker/web.Dockerfile" --target dist \
   --build-arg "VITE_CSP_CONNECT_SRC=$CSP_EXTRA" \
   --output "type=local,dest=$WEB/releases/$SHA" "$SRC"
 [ -f "$WEB/releases/$SHA/www/index.html" ] || fail "the SPA build wrote no index.html"
+PREV_WEB=$(readlink "$WEB/current" 2>/dev/null || true)
 ln -sfn "releases/$SHA" "$WEB/current.next"
 mv -Tf "$WEB/current.next" "$WEB/current"
 
@@ -101,7 +102,18 @@ if [ ! -e "$SITE" ]; then
   echo "installed $SITE"
   NEW_SITE=yes
 fi
-sudo nginx -t
+if ! sudo nginx -t; then
+  # Never leave files on disk that nginx rejects: the next reload or reboot would fail for
+  # every site on this host, not only this one. Put the previous state back first.
+  if [ -n "$PREV_WEB" ]; then
+    ln -sfn "$PREV_WEB" "$WEB/current.next"
+    mv -Tf "$WEB/current.next" "$WEB/current"
+  fi
+  if [ "$NEW_SITE" = yes ]; then
+    sudo rm -f "$SITE_ENABLED" "$SITE"
+  fi
+  fail "nginx rejected the configuration; the previous web files and site were put back"
+fi
 sudo systemctl reload nginx
 
 # The release the `dcp` shorthand in the runbook points at.
