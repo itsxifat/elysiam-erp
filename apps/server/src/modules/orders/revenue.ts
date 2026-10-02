@@ -39,10 +39,7 @@ export function orderLevelDiscount(
 }
 
 /** Net revenue recognised for the units the lines record as delivered; zero if none. */
-export function deliveredNetItems(
-  order: DiscountedOrder,
-  lines: readonly DeliveredLine[],
-): Poisha {
+export function deliveredNetItems(order: DiscountedOrder, lines: readonly DeliveredLine[]): Poisha {
   if (!lines.some((line) => line.delivered_qty > 0)) return ZERO;
   const recognised = computePartialDelivery({
     lines: lines.map((line) => ({

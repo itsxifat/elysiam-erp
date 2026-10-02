@@ -44,10 +44,7 @@ export class DeliveryObserverRegistry {
     if (!this.observers.includes(observer)) this.observers.push(observer);
   }
 
-  async notify(
-    tx: Tx,
-    input: Parameters<DeliveryObserver['orderDelivered']>[1],
-  ): Promise<void> {
+  async notify(tx: Tx, input: Parameters<DeliveryObserver['orderDelivered']>[1]): Promise<void> {
     for (const observer of this.observers) await observer.orderDelivered(tx, input);
   }
 }

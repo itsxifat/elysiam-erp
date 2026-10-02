@@ -278,11 +278,7 @@ export const capiEvents = marketing.table(
   (table) => [
     unique('capi_events_org_id_id_key').on(table.orgId, table.id),
     index('capi_events_org_idx').on(table.orgId),
-    uniqueIndex('capi_events_org_order_event_idx').on(
-      table.orgId,
-      table.orderId,
-      table.eventName,
-    ),
+    uniqueIndex('capi_events_org_order_event_idx').on(table.orgId, table.orderId, table.eventName),
     index('capi_events_org_created_idx').on(table.orgId, table.createdAt),
     foreignKey({
       name: 'capi_events_org_id_order_id_fk',

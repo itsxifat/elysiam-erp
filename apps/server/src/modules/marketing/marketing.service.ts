@@ -7,6 +7,7 @@ import {
   campaignIndex,
   campaignMetrics,
   dailySeries,
+  EMPTY_INPUTS,
   normaliseRefValue,
   resolveAttribution,
   segmentReport,
@@ -15,7 +16,6 @@ import {
   type CampaignMetrics,
   type LeadFact,
   type LeadStatus,
-  type MetricInputs,
   type OrderFact,
   type SpendFact,
 } from '@elysium/domain/marketing';
@@ -589,26 +589,16 @@ export class MarketingService {
       const aggregated = aggregateFacts(orders, spend, range);
       const rows = campaigns
         .map((campaign) => ({ campaign, inputs: aggregated.byCampaign.get(campaign.id) }))
-        .filter(
-          (entry): entry is { campaign: repo.CampaignRow; inputs: MetricInputs } =>
-            entry.inputs !== undefined || entry.campaign.status === 'active',
-        )
+        // An archived campaign with nothing in the period is not a row; an active one is,
+        // with zeros, so a campaign that spent nothing yet is still on the board.
+        .filter((entry) => entry.inputs !== undefined || entry.campaign.status === 'active')
         .map(({ campaign, inputs }) => ({
           campaignId: campaign.id,
           name: campaign.name,
           platform: campaign.platform,
           status: campaign.status,
           metrics: metricsView(
-            campaignMetrics(
-              inputs ?? {
-                spendPoisha: poisha(0n),
-                confirmedOrders: 0,
-                deliveredOrders: 0,
-                deliveredRevenuePoisha: poisha(0n),
-                placedRevenuePoisha: poisha(0n),
-                returnedOrders: 0,
-              },
-            ),
+            campaignMetrics(inputs ?? EMPTY_INPUTS),
           ),
         }));
       const unattributed = aggregated.byCampaign.get(null);
