@@ -4,7 +4,7 @@ import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
-import { bookParcel, confirmHandover, parcelsForOrder } from '../courier/api.js';
+import { bookParcel, confirmHandover, parcelsForOrder, type ParcelRow } from '../courier/api.js';
 import { courierPath } from '../courier/courier-nav.js';
 import { BOOKING_TONE, PARCEL_TONE } from '../courier/courier-ui.js';
 import { useCourierT, type CourierMessageKey } from '../courier/messages.js';
@@ -22,6 +22,22 @@ import { useOrdersT } from './messages.js';
  * consignment is the courier module's row (invariant 12).
  */
 
+/** The order's parcels, shared by the panel and the lifecycle buttons (one cached query). */
+export function useOrderParcels(orderId: string) {
+  return useQuery({
+    queryKey: ['courier', 'order-parcels', orderId],
+    queryFn: () => parcelsForOrder(orderId),
+  });
+}
+
+/** The parcel a courier holds for this order, pending or booked, or null (`hasLiveParcel`). */
+export function liveParcelOf(items: readonly ParcelRow[]): ParcelRow | null {
+  return (
+    items.find((parcel) => parcel.bookingState === 'pending' || parcel.bookingState === 'booked') ??
+    null
+  );
+}
+
 /** Statuses from which a parcel can still be booked or handed over. */
 const BEFORE_SHIPMENT: readonly string[] = ['confirmed', 'packed'];
 
@@ -37,10 +53,7 @@ export function ParcelPanel({
   const queryClient = useQueryClient();
   const [problem, setProblem] = useState<string | null>(null);
 
-  const parcels = useQuery({
-    queryKey: ['courier', 'order-parcels', order.id],
-    queryFn: () => parcelsForOrder(order.id),
-  });
+  const parcels = useOrderParcels(order.id);
 
   const refresh = async () => {
     setProblem(null);

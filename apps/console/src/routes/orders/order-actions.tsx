@@ -1,8 +1,11 @@
 import { Button, Dialog, poishaToTaka, takaToPoisha } from '@elysium/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { useId, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
+import { setParcelStatus, type ParcelRow } from '../courier/api.js';
+import { courierPath } from '../courier/courier-nav.js';
 import {
   cancelOrder,
   confirmOrder,
@@ -19,6 +22,7 @@ import {
 } from './api.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { offeredActions } from './order-actions-logic.js';
+import { liveParcelOf, useOrderParcels } from './parcel-panel.js';
 import { RETURN_REASONS, type ReturnReason } from './returns-logic.js';
 
 /**
@@ -32,12 +36,18 @@ import { RETURN_REASONS, type ReturnReason } from './returns-logic.js';
  * the server's refusal was the first anybody heard of it.
  *
  * Exchange is not here: it is a new order with its own lines, raised from its own form.
+ *
+ * **An order with a parcel at a courier is delivered and received on the parcel.** Mark
+ * delivered and Partial delivery then go through the parcel's own status route, which writes
+ * the parcel's collection beside the order's journals — the order routes do not, and the
+ * server refuses them for an order with a live parcel — and Receive return opens the courier
+ * returns screen, where the inspection is per line (ledger audit of D-392, W2).
  */
 
 const LABEL: Readonly<Record<OrderTrigger, OrdersMessageKey | null>> = {
   confirm: 'orders.detail.confirm',
   hold: 'orders.action.hold',
-  release: 'orders.action.release',
+  release_hold: 'orders.action.release',
   cancel: 'orders.detail.cancel',
   pack: 'orders.action.pack',
   ship: 'orders.action.ship',
@@ -49,7 +59,7 @@ const LABEL: Readonly<Record<OrderTrigger, OrdersMessageKey | null>> = {
 };
 
 /** The two that move the order straight on; everything else asks something first. */
-const IMMEDIATE: ReadonlySet<OrderTrigger> = new Set(['confirm', 'pack', 'release']);
+const IMMEDIATE: ReadonlySet<OrderTrigger> = new Set(['confirm', 'pack', 'release_hold']);
 
 const control =
   'h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
@@ -72,7 +82,7 @@ export function OrderActions({
     mutationFn: async (trigger: OrderTrigger) => {
       if (trigger === 'confirm') await confirmOrder(order.id);
       else if (trigger === 'pack') await packOrder(order.id);
-      else if (trigger === 'release') await releaseHold(order.id);
+      else if (trigger === 'release_hold') await releaseHold(order.id);
     },
     onSuccess: async () => {
       setFailure(null);
@@ -81,6 +91,9 @@ export function OrderActions({
     },
     onError: (error) => setFailure(error instanceof Error ? error.message : String(error)),
   });
+
+  const parcels = useOrderParcels(order.id);
+  const parcel = liveParcelOf(parcels.data?.items ?? []);
 
   const offered = offeredActions(order.transitions, mayUpdate);
   if (offered.length === 0) return null;
@@ -92,6 +105,17 @@ export function OrderActions({
         if (label === null) return null;
         const primary = trigger === 'confirm' || trigger === 'pack' || trigger === 'ship';
         const quiet = trigger === 'cancel' || trigger === 'hold';
+        if (trigger === 'receive_return' && parcel !== null) {
+          return (
+            <Link
+              key={trigger}
+              to={courierPath('/courier/returns')}
+              className="inline-flex h-control-sm items-center rounded-md border border-border px-2.5 text-sm font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              {t(label)}
+            </Link>
+          );
+        }
         return (
           <Button
             key={trigger}
@@ -113,7 +137,7 @@ export function OrderActions({
         </p>
       )}
       {open === null ? null : (
-        <ActionDialog order={order} trigger={open} onClose={() => setOpen(null)} />
+        <ActionDialog order={order} trigger={open} parcel={parcel} onClose={() => setOpen(null)} />
       )}
     </>
   );
@@ -123,10 +147,13 @@ export function OrderActions({
 function ActionDialog({
   order,
   trigger,
+  parcel,
   onClose,
 }: {
   readonly order: OrderDetail;
   readonly trigger: OrderTrigger;
+  /** The order's live parcel, through which a delivery is recorded when there is one. */
+  readonly parcel: ParcelRow | null;
   readonly onClose: () => void;
 }) {
   const t = useOrdersT();
@@ -173,6 +200,15 @@ function ActionDialog({
           return t('orders.action.amountNeeded');
         }
         if (differs && reason.trim().length < 3) return t('orders.action.differenceNeeded');
+        if (parcel !== null) {
+          return () =>
+            setParcelStatus(parcel.id, {
+              status: 'delivered',
+              rawStatus: MANUAL_RAW_STATUS,
+              reason: differs ? reason.trim() : MANUAL_RAW_STATUS,
+              collectedPoisha,
+            });
+        }
         return () =>
           deliverOrder(order.id, {
             collectedPoisha,
@@ -194,6 +230,16 @@ function ActionDialog({
             line.deliveredQty <= (order.lines[index]?.qty ?? 0),
         );
         if (!fits) return t('orders.action.qtyNeeded');
+        if (parcel !== null) {
+          return () =>
+            setParcelStatus(parcel.id, {
+              status: 'partial_delivered',
+              rawStatus: MANUAL_RAW_STATUS,
+              reason: reason.trim().length >= 3 ? reason.trim() : MANUAL_RAW_STATUS,
+              collectedPoisha,
+              deliveredLines: lines,
+            });
+        }
         return () =>
           deliverPartially(order.id, {
             collectedPoisha,
@@ -209,7 +255,7 @@ function ActionDialog({
         return () => receiveReturn(order.id, { reason: reason.trim(), returnReason, damaged });
       case 'confirm':
       case 'pack':
-      case 'release':
+      case 'release_hold':
       case 'exchange':
         // Immediate moves never open this dialog, and exchange has its own form.
         return t('orders.errorDetail');
@@ -380,6 +426,13 @@ function ActionDialog({
   );
 }
 
+/**
+ * The raw status recorded on a parcel event a person sets from the order detail. §9 keeps the
+ * courier's raw word on every event; a manual entry's raw word says who said it. Stored data,
+ * read in the parcel timeline and in disputes, so it is not translated.
+ */
+const MANUAL_RAW_STATUS = 'Set from the order detail';
+
 function reasonLabel(trigger: OrderTrigger): OrdersMessageKey {
   switch (trigger) {
     case 'cancel':
@@ -395,7 +448,7 @@ function reasonLabel(trigger: OrderTrigger): OrdersMessageKey {
     case 'ship':
     case 'confirm':
     case 'pack':
-    case 'release':
+    case 'release_hold':
     case 'exchange':
       return 'orders.action.note';
   }

@@ -280,6 +280,24 @@ export function confirmHandover(
   );
 }
 
+/**
+ * §9's manual fallback on a parcel: a status the courier has not reported yet. A delivery
+ * recorded here writes the parcel's collection as well as the order's journals, which is
+ * why the order detail sends a parcel's delivery this way (ledger audit of D-392, W2).
+ */
+export function setParcelStatus(
+  consignmentId: string,
+  input: {
+    readonly status: ParcelStatus;
+    readonly rawStatus: string;
+    readonly reason: string;
+    readonly collectedPoisha?: string;
+    readonly deliveredLines?: readonly { readonly skuId: string; readonly deliveredQty: number }[];
+  },
+): Promise<{ recorded: boolean; transitioned: boolean; orderTo: string | null }> {
+  return api.post(`/v1/courier/parcels/${consignmentId}/status`, input);
+}
+
 export function courierProviders(): Promise<{ items: readonly CourierProvider[] }> {
   return api.get('/v1/courier/providers');
 }

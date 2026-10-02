@@ -17,7 +17,7 @@ const ORDER: readonly OrderTrigger[] = [
   'deliver_partially',
   'start_return',
   'receive_return',
-  'release',
+  'release_hold',
   'hold',
   'cancel',
 ];

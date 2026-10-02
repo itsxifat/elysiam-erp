@@ -214,7 +214,8 @@ describe('the order detail offers what §9 allows from the order’s status (D-3
   });
 
   it('does not offer cancel on a held order, because the server does not list it', () => {
-    // §9 from on_hold: release only. The console used to show Cancel here.
-    expect(offeredActions([row('release')], true)).toEqual(['release']);
+    // §9 from on_hold: release only, under the domain's own trigger name. The console used to
+    // show Cancel here, and for a while named the trigger `release`, which matched nothing.
+    expect(offeredActions([row('release_hold')], true)).toEqual(['release_hold']);
   });
 });

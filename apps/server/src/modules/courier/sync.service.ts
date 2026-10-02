@@ -558,6 +558,32 @@ export class CourierSyncService {
       // parcel's branch must be refused here rather than by a later constraint.
       assertInScope(request, { branchId: consignment.branch_id });
 
+      /*
+       * §7's window, for a status a person sets that would move the order (ledger audit of
+       * D-390, W1).
+       *
+       * Since D-390 this route can ship a packed order — a dispatch movement and the handover
+       * journal — as well as deliver it, dated at `occurredAt`. A person's date outside today
+       * or yesterday (or in the future) is refused here as the order routes and the handover
+       * refuse it; a back-dated entry needs §7's approval. A courier's own webhook and poll
+       * carry the courier's clock and are not refused (the period close still holds there).
+       * A tracking-only status moves no money and keeps any date.
+       */
+      if (!withinPostingWindow(at)) {
+        const order = await this.orders.statusOf(tx, context.orgId, consignment.order_id);
+        const moves =
+          order !== null &&
+          courierTriggersFor(input.status, order.status, {
+            collectedKnown: input.collectedPoisha !== undefined,
+          }).length > 0;
+        if (moves) {
+          throw new CourierError(
+            'APPROVAL_REQUIRED',
+            'A status that moves the order can only be dated today or yesterday; anything else needs a back-dated entry approval (§7).',
+          );
+        }
+      }
+
       const outcome = await this.applyStatusIn(tx, {
         orgId: context.orgId,
         consignment,
@@ -828,11 +854,12 @@ export class CourierSyncService {
      * delivery step carries the courier's figure and the delivered lines; the handover has
      * no money of the courier's in it.
      */
-    let applied: AppliedTrigger | null = null;
     let moved: AppliedTrigger | null = null;
+    let delivered: AppliedTrigger | null = null;
+    let returned: AppliedTrigger | null = null;
     for (const step of triggers) {
       const delivers = step === 'deliver' || step === 'deliver_partially';
-      applied = await this.orders.applyTrigger(tx, context, input.request, {
+      const applied = await this.orders.applyTrigger(tx, context, input.request, {
         orderId: consignment.order_id,
         trigger: step,
         occurredAt: input.occurredAt,
@@ -844,40 +871,44 @@ export class CourierSyncService {
           ? { deliveredLines: input.deliveredLines }
           : {}),
       });
-      if (applied !== null) moved = applied;
+      if (applied === null) continue;
+      moved = applied;
+      if (delivers) delivered = applied;
+      if (step === 'start_return') returned = applied;
     }
 
-    if (applied !== null) {
-      /*
-       * The money half, now that the journal exists.
-       *
-       * `collectedPoisha` is what §7's delivery journal just debited `courier_receivable` with,
-       * so this column and that debit are the same number by construction — which is the
-       * property the settlement matcher and acceptance check 5 both rest on.
-       *
-       * The fallback to the full COD is for a courier that reports "delivered" without an
-       * amount: it collected everything, and recording null would leave the matcher expecting
-       * zero from every such parcel. It is reached only when the courier genuinely said nothing,
-       * because the webhook path now carries the reported figure through the stored event.
-       */
+    /*
+     * The money half, written only for the step that earned it (ledger audit of D-390, C1).
+     *
+     * Each column is gated on its *own* step having applied, not on the sequence having moved
+     * the order: a `partial_delivered` with no figure on a packed order ships it and stops —
+     * no delivery journal — and recording the full COD as collected there would make the
+     * parcel a settlement candidate whose credit has no debit behind it.
+     *
+     * `collectedPoisha` is what §7's delivery journal just debited `courier_receivable` with,
+     * so this column and that debit are the same number by construction — which is the
+     * property the settlement matcher and acceptance check 5 both rest on. The fallback to the
+     * full COD is for a courier that reports "delivered" without an amount: it collected
+     * everything, and recording null would leave the matcher expecting zero from every such
+     * parcel.
+     *
+     * Only a delivery records a collection. A courier's `returned_to_merchant` moves the order
+     * too (`start_return`), and Pathao's paid-return carries a `collected_amount` — writing it
+     * made a returned parcel a settlement candidate expecting that figure, so the statement
+     * line matched and the settlement credited `courier_receivable` for money no delivery
+     * journal ever debited (M15 ledger audit C1). A courier collecting on a return shows up on
+     * its statement as an exception instead.
+     */
+    const backAtMerchant = returned !== null && input.status === 'returned_to_merchant';
+    if (delivered !== null || backAtMerchant) {
       await repo.recordConsignmentOutcome(tx, {
         orgId: input.orgId,
         consignmentId: consignment.id,
         occurredAt: input.occurredAt,
-        /*
-         * Only a delivery records a collection. Since M15 a courier's `returned_to_merchant`
-         * moves the order too (`start_return`), and Pathao's paid-return carries a
-         * `collected_amount` — writing it here made a returned parcel a settlement candidate
-         * expecting that figure, so the statement line matched and the settlement credited
-         * `courier_receivable` for money no delivery journal ever debited (ledger audit C1).
-         * A courier collecting on a return shows up on its statement as an exception instead.
-         */
         collectedPoisha:
-          input.status === 'delivered' || input.status === 'partial_delivered'
-            ? (collected ?? BigInt(consignment.cod_amount_poisha))
-            : null,
-        delivered: input.status === 'delivered' || input.status === 'partial_delivered',
-        returned: input.status === 'returned_to_merchant',
+          delivered === null ? null : (collected ?? BigInt(consignment.cod_amount_poisha)),
+        delivered: delivered !== null,
+        returned: backAtMerchant,
       });
     }
 
@@ -1075,7 +1106,7 @@ export class CourierSyncService {
       if (order !== null && (order.status === 'confirmed' || order.status === 'packed')) {
         if (!withinPostingWindow(at)) {
           throw new CourierError(
-            'CONSIGNMENT_EVENT_INVALID',
+            'APPROVAL_REQUIRED',
             'A handover that ships the order can only be dated today or yesterday; anything else needs a back-dated entry approval (§7).',
           );
         }

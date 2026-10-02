@@ -3,8 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { findCostFields } from '@elysium/contracts';
 import { withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
+import { pino } from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
 import {
   ORG_A,
   startHttpHarness,
@@ -19,7 +21,9 @@ import {
   seedStockLevel,
   trialBalanceDifference,
 } from '../orders/orders.testing.js';
+import { COURIER_QUEUE_DEFINITIONS } from './courier.queues.js';
 import { applyCourierMigrations, makeCourier } from './courier.testing.js';
+import { CourierSyncService } from './sync.service.js';
 
 /**
  * The console gaps' server half, over HTTP against real Postgres (D-390 to D-396).
@@ -42,6 +46,7 @@ import { applyCourierMigrations, makeCourier } from './courier.testing.js';
  */
 
 let harness: HttpHarness;
+let jobs: JobsRuntime | undefined;
 let admin: RoleClient;
 let hr: RoleClient;
 
@@ -55,6 +60,17 @@ beforeAll(async () => {
   harness = await startHttpHarness('gaps-handover');
   await applyOrderMigrations();
   await applyCourierMigrations();
+  // The webhook route enqueues its job in the same transaction as the stored body, which
+  // needs the courier's queues registered. Registered, not worked: `courierSays` runs the
+  // handler itself, so no background worker races the assertions (as `courier.m15.db.test`).
+  jobs = await JobsRuntime.start({
+    role: 'worker',
+    connectionString: harness.database.ownerUrl,
+    appRole: 'erp_app',
+    queues: COURIER_QUEUE_DEFINITIONS,
+    logger: pino({ level: 'silent' }),
+    pollingIntervalSeconds: 0.5,
+  });
 
   location = await warehouseId(ORG_A);
   customerId = await seedCustomer(ORG_A, { phoneE164: '+8801711987654', name: 'Nusrat Jahan' });
@@ -84,6 +100,7 @@ beforeAll(async () => {
 }, 420_000);
 
 afterAll(async () => {
+  await jobs?.stop();
   await harness?.close();
 }, 60_000);
 
@@ -155,6 +172,80 @@ async function journalKeys(orderId: string): Promise<string[]> {
   return rows.map((row) => row.idempotency_key);
 }
 
+/** Σ debit − Σ credit per account subtype, over this order's own journals. */
+async function netBySubtype(orderId: string): Promise<Map<string, bigint>> {
+  const rows = await withSystem(
+    async (tx) =>
+      tx.execute<{ subtype: string; net: string }>(sql`
+        select a.subtype::text as subtype,
+               (coalesce(sum(l.debit_poisha), 0) - coalesce(sum(l.credit_poisha), 0))::text as net
+        from ledger.journal_lines l
+        join ledger.journals j on j.org_id = l.org_id and j.id = l.journal_id
+        join ledger.accounts a on a.org_id = l.org_id and a.id = l.account_id
+        where l.org_id = ${ORG_A} and j.idempotency_key like ${`order:${orderId}:%`}
+        group by a.subtype
+      `),
+    { orgId: ORG_A },
+  );
+  return new Map(rows.map((row) => [row.subtype, BigInt(row.net)]));
+}
+
+/** The parcel's money and return columns, as the settlement matcher reads them. */
+async function parcelOutcome(parcelId: string) {
+  const [row] = await withSystem(
+    async (tx) =>
+      tx.execute<{
+        collected_poisha: string | null;
+        delivered_at: string | null;
+        returned_at: string | null;
+      }>(sql`
+        select collected_poisha::text as collected_poisha, delivered_at, returned_at
+        from courier.consignments where org_id = ${ORG_A} and id = ${parcelId}
+      `),
+    { orgId: ORG_A },
+  );
+  return row;
+}
+
+/**
+ * The courier's own word, the way the worker processes it: the webhook route stores the body
+ * and the job applies it with no person, no context and no request (the path D-390 is for).
+ */
+async function courierSays(parcelId: string, state: string): Promise<void> {
+  const [parcel] = await withSystem(
+    async (tx) =>
+      tx.execute<{ consignment_no: string }>(sql`
+        select consignment_no from courier.consignments where org_id = ${ORG_A} and id = ${parcelId}
+      `),
+    { orgId: ORG_A },
+  );
+  const response = await harness.server.inject({
+    method: 'POST',
+    url: `/v1/courier/webhooks/${ORG_A}/fake`,
+    headers: { 'content-type': 'application/json' },
+    payload: JSON.stringify({
+      consignment_no: parcel?.consignment_no,
+      state,
+      at: new Date().toISOString(),
+    }),
+  });
+  expect(response.statusCode, response.body).toBeLessThan(300);
+  const [delivery] = await withSystem(
+    async (tx) =>
+      tx.execute<{ id: string }>(sql`
+        select id from courier.webhook_deliveries
+        where org_id = ${ORG_A} and processed_at is null
+        order by received_at desc limit 1
+      `),
+    { orgId: ORG_A },
+  );
+  if (delivery === undefined) throw new Error('the webhook stored nothing');
+  await harness.app.get(CourierSyncService).runWebhook({
+    orgId: ORG_A,
+    payload: { deliveryId: delivery.id, courierAccountId: accountId },
+  });
+}
+
 async function statusEvents(orderId: string): Promise<{ from: string; to: string }[]> {
   const rows = await withSystem(
     async (tx) =>
@@ -193,6 +284,11 @@ describe('a courier status ships an order nobody marked shipped (D-390)', () => 
       `order:${order.id}:handover`,
     ]);
     expect(await trialBalanceDifference(ORG_A)).toBe(before);
+    // Exact amounts, not only balance: what the handover put in transit the delivery took out
+    // again, and the courier owes exactly the COD.
+    const moved = await netBySubtype(order.id);
+    expect(moved.get('goods_in_transit') ?? 0n).toBe(0n);
+    expect(moved.get('courier_receivable')).toBe(order.cod);
 
     const [parcelRow] = await withSystem(
       async (tx) =>
@@ -247,6 +343,99 @@ describe('a courier status ships an order nobody marked shipped (D-390)', () => 
   });
 });
 
+describe('the courier’s own word, through the worker (ledger audit of D-390)', () => {
+  it('ships on a partial delivery with no figure, and records no collection (C1)', async () => {
+    const order = await orderAt('packed');
+    const parcel = await bookedParcel(order.id, order.cod);
+    await courierSays(parcel, 'part_handed');
+
+    expect(await orderStatus(order.id)).toBe('shipped');
+    expect(await journalKeys(order.id)).toEqual([`order:${order.id}:handover`]);
+    // No delivery journal, so no collection: the parcel is not a settlement candidate.
+    const outcome = await parcelOutcome(parcel);
+    expect(outcome?.collected_poisha).toBeNull();
+    expect(outcome?.delivered_at).toBeNull();
+  });
+
+  it('ships and starts the return for a parcel back at the merchant, collecting nothing', async () => {
+    const order = await orderAt('packed');
+    const parcel = await bookedParcel(order.id, order.cod);
+    await courierSays(parcel, 'back_at_warehouse');
+
+    expect(await orderStatus(order.id)).toBe('return_in_transit');
+    expect(await journalKeys(order.id)).toEqual([`order:${order.id}:handover`]);
+    const outcome = await parcelOutcome(parcel);
+    expect(outcome?.returned_at).not.toBeNull();
+    expect(outcome?.collected_poisha).toBeNull();
+    expect(outcome?.delivered_at).toBeNull();
+  });
+
+  it('delivers a packed order on the courier’s "delivered", with the exact amounts', async () => {
+    const order = await orderAt('packed');
+    const parcel = await bookedParcel(order.id, order.cod);
+    await courierSays(parcel, 'handed_to_customer');
+
+    expect(await orderStatus(order.id)).toBe('delivered');
+    const moved = await netBySubtype(order.id);
+    expect(moved.get('goods_in_transit') ?? 0n).toBe(0n);
+    expect(moved.get('courier_receivable')).toBe(order.cod);
+    expect((await parcelOutcome(parcel))?.collected_poisha).toBe(order.cod.toString());
+  });
+
+  it('delivers once, with no second handover, when a person shipped the order first', async () => {
+    const order = await orderAt('packed');
+    const parcel = await bookedParcel(order.id, order.cod);
+    const ship = await admin.client.request('POST', `/v1/orders/${order.id}/ship`, { body: {} });
+    expect(ship.statusCode, ship.body).toBe(201);
+    await courierSays(parcel, 'handed_to_customer');
+
+    expect(await orderStatus(order.id)).toBe('delivered');
+    expect(await journalKeys(order.id)).toEqual([
+      `order:${order.id}:delivered`,
+      `order:${order.id}:handover`,
+    ]);
+  });
+});
+
+describe('a person’s status and delivery go through the parcel (ledger audit W1, W2)', () => {
+  it('refuses a hand-set status that would move the order, dated before yesterday', async () => {
+    const order = await orderAt('packed');
+    const parcel = await bookedParcel(order.id, order.cod);
+    const old = new Date(Date.now() - 5 * 86_400_000).toISOString();
+    const moving = await admin.client.request('POST', `/v1/courier/parcels/${parcel}/status`, {
+      body: { status: 'delivered', rawStatus: 'delivered', reason: 'Late entry.', occurredAt: old },
+    });
+    expect(moving.statusCode).toBe(409);
+    expect(body<{ code: string }>(moving).code).toBe('APPROVAL_REQUIRED');
+    expect(await orderStatus(order.id)).toBe('packed');
+
+    // A tracking-only status moves no money and keeps its date.
+    const tracking = await admin.client.request('POST', `/v1/courier/parcels/${parcel}/status`, {
+      body: {
+        status: 'pickup_pending',
+        rawStatus: 'waiting',
+        reason: 'Late entry.',
+        occurredAt: old,
+      },
+    });
+    expect(tracking.statusCode, tracking.body).toBe(201);
+  });
+
+  it('refuses a delivery on the order while its parcel is with a courier', async () => {
+    const order = await orderAt('packed');
+    await bookedParcel(order.id, order.cod);
+    const ship = await admin.client.request('POST', `/v1/orders/${order.id}/ship`, { body: {} });
+    expect(ship.statusCode, ship.body).toBe(201);
+
+    const deliver = await admin.client.request('POST', `/v1/orders/${order.id}/deliver`, {
+      body: {},
+    });
+    expect(deliver.statusCode).toBe(409);
+    expect(await orderStatus(order.id)).toBe('shipped');
+    expect(await journalKeys(order.id)).toEqual([`order:${order.id}:handover`]);
+  });
+});
+
 describe('confirming the handover ships the order, once (D-391)', () => {
   it('ships a packed order, and Ship afterwards is refused as already done', async () => {
     const order = await orderAt('packed');
@@ -277,7 +466,8 @@ describe('confirming the handover ships the order, once (D-391)', () => {
     const response = await admin.client.request('POST', `/v1/courier/parcels/${parcel}/handover`, {
       body: { occurredAt: new Date(Date.now() - 5 * 86_400_000).toISOString() },
     });
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(409);
+    expect(body<{ code: string }>(response).code).toBe('APPROVAL_REQUIRED');
     expect(await orderStatus(order.id)).toBe('packed');
   });
 });

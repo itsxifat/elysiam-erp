@@ -247,6 +247,12 @@ export function transitionsFrom(status: OrderStatus): readonly AvailableTransiti
   }));
 }
 
+/**
+ * The moves a parcel's own routes record when the order has one with a courier (see
+ * `TransitionsService.assertNoLiveParcel`).
+ */
+const PARCEL_RECORDED: readonly OrderTrigger[] = ['deliver', 'deliver_partially', 'receive_return'];
+
 /** A shipping address, however the caller expressed it. */
 interface ShipTo {
   readonly name: string;
@@ -1032,6 +1038,9 @@ export class OrdersService {
         // Every transition that posts reads its date from here, so §7's window is checked
         // once rather than in each of the five endpoints that accept one.
         const occurredAt = this.postingInstant(options.occurredAt);
+        if (PARCEL_RECORDED.includes(trigger)) {
+          await this.transitions.assertNoLiveParcel(tx, context.orgId, order.id);
+        }
         if (trigger === 'ship' && options.courierId != null) {
           await this.transitions.assertCourierChangeAllowed(
             tx,

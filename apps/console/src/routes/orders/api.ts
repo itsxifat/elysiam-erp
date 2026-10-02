@@ -128,7 +128,7 @@ export interface AvailableTransition {
 export type OrderTrigger =
   | 'confirm'
   | 'hold'
-  | 'release'
+  | 'release_hold'
   | 'cancel'
   | 'pack'
   | 'ship'
