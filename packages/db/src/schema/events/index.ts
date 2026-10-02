@@ -70,8 +70,8 @@ export const outbox = events.table(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 
     /**
-     * Who acted: `app.user_id` of the transaction that emitted, null for a worker or a
-     * public caller with no login (D-277).
+     * Who acted: `app.user_id` of the transaction that emitted — a person, or a worker's
+     * own system id — and null only for a public caller with no login (D-277).
      *
      * §3 says every event carries `actor_user_id`, and M20 is the first reader that needs
      * it: pickup time is "the assignee's first action", and a confirmation by a supervisor

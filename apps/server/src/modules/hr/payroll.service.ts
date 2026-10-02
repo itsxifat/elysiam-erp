@@ -392,7 +392,8 @@ export class PayrollService implements OnModuleInit {
           );
         }
 
-        await this.freeze(tx, context.orgId, prepared.run.id, prepared.computed);
+        // What was recomputed under the lock, which the check above found equal.
+        await this.freeze(tx, context.orgId, prepared.run.id, recomputed);
         await repo.submitRun(tx, context.orgId, prepared.run.id, {
           approvalRequestId: raised.id,
           employeeCount: prepared.totals.employeeCount,

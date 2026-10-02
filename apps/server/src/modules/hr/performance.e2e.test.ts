@@ -810,5 +810,10 @@ describe('bonus rules feed payroll', () => {
     const again = await hr.client.request('POST', `/v1/hr/payroll/runs/${runId}/bonuses`);
     expect(again.statusCode).toBe(409);
     expect(body<{ code: string }>(again).code).toBe('PAYROLL_RUN_FROZEN');
+
+    // Nor can the target a waiting run pays be cancelled under it (ledger re-check W2).
+    const cancel = await hr.client.request('POST', `/v1/hr/targets/${targetA}/cancel`);
+    expect(cancel.statusCode, cancel.body).toBe(409);
+    expect(body<{ code: string }>(cancel).code).toBe('TARGET_FROZEN');
   });
 });

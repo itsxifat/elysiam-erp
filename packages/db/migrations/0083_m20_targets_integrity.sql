@@ -143,8 +143,12 @@ begin
     the_run := new.run_id;
   end if;
 
+  -- `for share`: a submit holds the run `for update` between recomputing its payslips and
+  -- committing them, so this waits for it and then sees the run is no longer a draft
+  -- (ledger re-check W1). A plain read would see `draft` and let the write through.
   select status::text into run_status
-  from hr.payroll_runs where org_id = run_org and id = the_run;
+  from hr.payroll_runs where org_id = run_org and id = the_run
+  for share;
 
   -- A run deleted with its awards (the cascade) has no row left to read; nothing to guard.
   if run_status is not null and run_status <> 'draft' then
@@ -155,6 +159,28 @@ begin
     return old;
   end if;
   return new;
+end;
+$$;--> statement-breakpoint
+
+-- M19's input guard (0055) reads the run the same unlocked way, and M20 adds two writers
+-- that change inputs without holding the run — a target's cancel and a rule version's
+-- supersede — so its read waits for a submit too. Same refusal, same code; only the lock
+-- is new.
+create or replace function hr.assert_input_run_is_draft() returns trigger
+language plpgsql as $$
+declare
+  v_status hr.payroll_run_status;
+  v_run uuid := coalesce(new.run_id, old.run_id);
+  v_org uuid := coalesce(new.org_id, old.org_id);
+begin
+  select status into v_status from hr.payroll_runs
+  where org_id = v_org and id = v_run
+  for share;
+
+  if v_status is distinct from 'draft' then
+    raise exception 'PAYROLL_RUN_FROZEN: that payroll run is no longer a draft, so its bonus and deduction inputs cannot change.';
+  end if;
+  return coalesce(new, old);
 end;
 $$;--> statement-breakpoint
 

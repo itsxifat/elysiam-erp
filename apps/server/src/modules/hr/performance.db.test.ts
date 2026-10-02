@@ -294,6 +294,60 @@ describe('an award belongs to a draft run and to the input it made', () => {
   });
 });
 
+describe('an input waits for a run that is being closed (ledger re-check W1)', () => {
+  it('refuses the input once the closing transaction commits, rather than slipping past it', async () => {
+    const runId = await asA(async (tx) => {
+      const rows = await tx.execute<{ id: string }>(sql`
+        insert into hr.payroll_runs (org_id, month, status, created_by)
+        values (${ORG_A}, '2027-03', 'draft', ${ACTOR}) returning id
+      `);
+      return rows[0]?.id ?? '';
+    });
+
+    /*
+     * Transaction A holds the run as a submit does — locked, its status changed, not yet
+     * committed. Transaction B adds a bonus meanwhile. Reading the run without a lock, B's
+     * guard saw `draft` and its foreign key's key-share lock does not conflict with A's, so
+     * the bonus landed on a run that was no longer a draft. With `for share` B waits for A
+     * and then refuses.
+     */
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked: () => void = () => undefined;
+    const isLocked = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const closing = asA(async (tx) => {
+      await tx.execute(sql`select id from hr.payroll_runs where id = ${runId} for update`);
+      await tx.execute(sql`update hr.payroll_runs set status = 'cancelled' where id = ${runId}`);
+      locked();
+      await held;
+    });
+    await isLocked;
+
+    let settled = false;
+    const adding = refusal(
+      asA((tx) =>
+        tx.execute(sql`
+          insert into hr.payroll_inputs
+            (org_id, run_id, employee_id, kind, label, amount_poisha, created_by)
+          values (${ORG_A}, ${runId}, ${employeeE}, 'bonus', 'Slipped in', 1000, ${ACTOR})
+        `),
+      ),
+    ).finally(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(settled, 'the input waited for the closing transaction').toBe(false);
+
+    release();
+    await closing;
+    expect(await adding).toMatch(/^PAYROLL_RUN_FROZEN/);
+  });
+});
+
 describe('another brand sees none of it (invariant 4)', () => {
   it('reads nothing of brand A’s targets, rules, awards or desk events', async () => {
     await asA((tx) =>
@@ -325,18 +379,53 @@ describe('another brand sees none of it (invariant 4)', () => {
   });
 
   it('cannot write a row into brand A from brand B', async () => {
-    expect(
-      await refusal(
-        asB((tx) =>
+    const writes: [string, (tx: Tx) => Promise<unknown>][] = [
+      [
+        'a bonus rule',
+        (tx) =>
           repo.insertRule(tx, {
             orgId: ORG_A,
             name: 'Smuggled',
             metric: 'confirmed_orders',
             createdBy: ACTOR,
           }),
-        ),
-      ),
-    ).toMatch(/row-level security/);
+      ],
+      [
+        'a target',
+        (tx) =>
+          repo.insertTarget(tx, {
+            orgId: ORG_A,
+            month: '2027-02',
+            metric: 'confirmed_orders',
+            scope: 'employee',
+            employeeId: employeeE,
+            teamName: null,
+            branchId: null,
+            calendarId,
+            targetValue: 1n,
+            note: null,
+            createdBy: ACTOR,
+          }),
+      ],
+      [
+        'a desk event',
+        (tx) =>
+          repo.insertDeskEvent(tx, {
+            orgId: ORG_A,
+            eventId: randomUUID(),
+            orderId: randomUUID(),
+            kind: 'created',
+            assigneeUserId: null,
+            actorUserId: null,
+            occurredAt: new Date('2026-08-10T04:00:00Z'),
+          }),
+      ],
+    ];
+    for (const [what, write] of writes) {
+      // From brand B's context a brand-A row is refused by the policy's WITH CHECK — or,
+      // for a composite foreign key into brand A, by a reference brand B cannot see.
+      expect(await refusal(asB(write)), what).toMatch(/row-level security|foreign key/);
+    }
   });
 
   it('writes one desk row per outbox event, however often it is delivered', async () => {

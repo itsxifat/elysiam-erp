@@ -60,8 +60,9 @@ export async function emit<TName extends EventName>(
   /*
    * The actor is read from the transaction, not passed in (D-277). `withOrg` sets
    * `app.user_id` for the request that is acting, so every emit site records who acted
-   * without being able to forget it or name somebody else; a worker or a public caller with
-   * no login leaves it null. §3 says every event carries it, and M20's pickup time is the
+   * without being able to forget it or name somebody else. A worker records its own system
+   * id (`usr_dispatcher`, `usr_targets_refresh`, …); only a public caller with no login leaves
+   * it null. §3 says every event carries it, and M20's pickup time is the
    * first reader that needs it: a confirmation by a supervisor is not the assignee's.
    */
   await tx.execute(sql`

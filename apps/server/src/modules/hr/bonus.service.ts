@@ -296,7 +296,7 @@ export class BonusRulesService implements OnModuleInit {
               'Only the person who wrote this version can send it for approval; somebody else then approves it.',
             );
           }
-          await this.closeDecidedPending(tx, context.orgId, version.rule_id);
+          await this.closeDecidedPending(tx, context, version.rule_id, request);
           if ((await repo.pendingVersionOf(tx, context.orgId, version.rule_id)) !== undefined) {
             throw new HrError(
               'BONUS_RULE_FROZEN',
@@ -339,6 +339,14 @@ export class BonusRulesService implements OnModuleInit {
           requestId: context.requestId,
           request,
         });
+        // A checker who decided between the request and the write above found no version to
+        // approve; the decision is honoured here rather than at the rule's next submit.
+        if ((await approvalStatus(tx, context.orgId, raised.id)) === 'approved') {
+          const submitted = await repo.versionById(tx, context.orgId, prepared.id);
+          if (submitted !== undefined) {
+            await this.activate(tx, context, submitted, raised.id, request);
+          }
+        }
         return this.ruleView(tx, context.orgId, prepared.rule_id);
       });
     });
@@ -350,14 +358,19 @@ export class BonusRulesService implements OnModuleInit {
    * request and the submit's own write, so the executor found nothing (ledger audit N2) —
    * puts it into force now.
    */
-  private async closeDecidedPending(tx: Tx, orgId: string, ruleId: string): Promise<void> {
-    const pending = await repo.pendingVersionOf(tx, orgId, ruleId);
+  private async closeDecidedPending(
+    tx: Tx,
+    context: ActiveContext,
+    ruleId: string,
+    request: AuditableRequest,
+  ): Promise<void> {
+    const pending = await repo.pendingVersionOf(tx, context.orgId, ruleId);
     if (pending?.approval_request_id == null) return;
-    const status = await approvalStatus(tx, orgId, pending.approval_request_id);
+    const status = await approvalStatus(tx, context.orgId, pending.approval_request_id);
     if (status === 'rejected' || status === 'cancelled') {
-      await repo.setVersionStatus(tx, orgId, pending.id, 'rejected');
+      await repo.setVersionStatus(tx, context.orgId, pending.id, 'rejected');
     } else if (status === 'approved') {
-      await this.activate(tx, orgId, pending);
+      await this.activate(tx, context, pending, pending.approval_request_id, request);
     }
   }
 
@@ -367,14 +380,34 @@ export class BonusRulesService implements OnModuleInit {
    * the brand's. 0083 refuses this unless the version's own request is approved by
    * somebody other than its author.
    */
-  private async activate(tx: Tx, orgId: string, version: repo.VersionRow): Promise<string | null> {
-    const current = await repo.approvedVersionOf(tx, orgId, version.rule_id);
+  private async activate(
+    tx: Tx,
+    context: ActiveContext,
+    version: repo.VersionRow,
+    approvalId: string,
+    request: AuditableRequest | undefined,
+  ): Promise<void> {
+    const current = await repo.approvedVersionOf(tx, context.orgId, version.rule_id);
+    let removed = 0;
     if (current !== undefined) {
-      await repo.setVersionStatus(tx, orgId, current.id, 'superseded');
-      await repo.deleteDraftAwardInputs(tx, orgId, { ruleVersionId: current.id });
+      await repo.setVersionStatus(tx, context.orgId, current.id, 'superseded');
+      removed = await repo.deleteDraftAwardInputs(tx, context.orgId, { ruleVersionId: current.id });
     }
-    await repo.setVersionStatus(tx, orgId, version.id, 'approved');
-    return current?.id ?? null;
+    await repo.setVersionStatus(tx, context.orgId, version.id, 'approved');
+    // How many draft-run bonuses the old terms lost, so a run that needs re-applying is
+    // visible in the trail (ledger re-check note).
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'update',
+      action: 'hr.bonus_rule.approved',
+      entityType: 'Payroll',
+      entityId: version.id,
+      before: { status: 'pending_approval', superseded: current?.id ?? null },
+      after: { status: 'approved', approvalId, draftBonusesRemoved: removed },
+      requestId: context.requestId,
+      ...(request === undefined ? {} : { request }),
+    });
   }
 
   /**
@@ -391,19 +424,7 @@ export class BonusRulesService implements OnModuleInit {
     if (version.created_by === context.userId) {
       throw new ForbiddenException('The person who wrote a bonus rule version cannot approve it.');
     }
-    const superseded = await this.activate(tx, context.orgId, version);
-    await this.audit.record(tx, {
-      orgId: context.orgId,
-      actorUserId: context.userId,
-      operation: 'update',
-      action: 'hr.bonus_rule.approved',
-      entityType: 'Payroll',
-      entityId: version.id,
-      before: { status: 'pending_approval', superseded },
-      after: { status: 'approved', approvalId: approval.id },
-      requestId: context.requestId,
-      ...(request === undefined ? {} : { request }),
-    });
+    await this.activate(tx, context, version, approval.id, request);
   };
 
   // --- payroll ----------------------------------------------------------------------

@@ -592,6 +592,21 @@ export async function deleteDraftAwardInputs(
   return rows.length;
 }
 
+/** The month of a run awaiting approval that pays a bonus on this target, if any. */
+export async function pendingRunPaying(
+  tx: Tx,
+  orgId: string,
+  targetId: string,
+): Promise<string | undefined> {
+  const rows = await tx.execute<{ month: string }>(sql`
+    select r.month from hr.bonus_awards a
+    join hr.payroll_runs r on r.org_id = a.org_id and r.id = a.run_id
+    where a.org_id = ${orgId} and a.target_id = ${targetId} and r.status = 'pending_approval'
+    limit 1
+  `);
+  return rows[0]?.month;
+}
+
 export async function insertAward(
   tx: Tx,
   input: {

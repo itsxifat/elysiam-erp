@@ -360,6 +360,18 @@ export class TargetsService {
         if (row.status === 'cancelled') {
           throw new HrError('TARGET_FROZEN', 'That target is already cancelled.');
         }
+        /*
+         * A run already waiting for its checker pays this target's bonus, and that payslip is
+         * frozen (ledger re-check W2). Cancelling now would leave the bonus approved for a
+         * target that no longer exists, so the run has to be rejected first.
+         */
+        const pendingMonth = await repo.pendingRunPaying(tx, context.orgId, id);
+        if (pendingMonth !== undefined) {
+          throw new HrError(
+            'TARGET_FROZEN',
+            `The ${pendingMonth} payroll run waiting for approval pays a bonus on this target. Ask the checker to reject the run first, then cancel the target.`,
+          );
+        }
         await repo.cancelTarget(tx, context.orgId, id, context.userId);
         // A draft run's bonus for this target goes with it (ledger audit W4).
         const bonusesRemoved = await repo.deleteDraftAwardInputs(tx, context.orgId, {
@@ -582,7 +594,7 @@ export class TargetsService {
       'employeeId' | 'employeeCode' | 'employeeName' | 'branchId'
     > | null;
   }> {
-    const chosen = month ?? currentMonth();
+    const chosen = month ?? currentMonth(this.now());
     const scope = this.targetScope(request, context.userId);
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const employee = await hrRepo.employeeByUser(tx, context.orgId, context.userId);
