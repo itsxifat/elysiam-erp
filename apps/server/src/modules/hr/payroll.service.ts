@@ -23,7 +23,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { AuditService } from '../../platform/audit/audit.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { ApprovalsService, type ApprovalExecutor } from '../approvals/approvals.service.js';
-import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
+import { LEDGER_API, type LedgerApi, type WalletChoice } from '../ledger/ledger.api.js';
 import { AttendanceService } from './attendance.service.js';
 import { HrError, mapHrErrors } from './hr.errors.js';
 import * as repo from './hr.repository.js';
@@ -144,6 +144,20 @@ export class PayrollService implements OnModuleInit {
   }
 
   // --- runs -------------------------------------------------------------------
+
+  /**
+   * The wallets a run or a staff loan may be paid from, as id and name (D-396).
+   *
+   * HR pays salaries and disburses loans under `update Payroll` but holds no `read Wallet` —
+   * §6 keeps the brand's cash positions with accounts — so the pickers on those screens could
+   * not load from `GET /v1/ledger/wallets`, which carries every balance. This is the narrow
+   * answer: the active wallets `pay` and `disburse` would accept, with nothing else about them.
+   */
+  async payableWallets(context: ActiveContext): Promise<{ items: readonly WalletChoice[] }> {
+    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => ({
+      items: await this.ledger.activeWallets(tx, context.orgId),
+    }));
+  }
 
   async listRuns(context: ActiveContext, query: RunQuery): Promise<{ items: PayrollRunView[] }> {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {

@@ -1,7 +1,6 @@
 import {
   Button,
   DateTime,
-  Dialog,
   EmptyState,
   ErrorState,
   Money,
@@ -17,9 +16,7 @@ import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useLocale } from '../../i18n/locale.js';
 import {
-  cancelOrder,
   claimOrder,
-  confirmOrder,
   documentUrl,
   getOrder,
   listAgents,
@@ -28,6 +25,8 @@ import {
   type TimelineEntry,
 } from './api.js';
 import { AdvancesPanel } from './advances-panel.js';
+import { OrderActions } from './order-actions.js';
+import { ParcelPanel } from './parcel-panel.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { OrdersNav, OrderStatusBadge } from './parts.js';
 import { DEFAULT_ORDER_SEARCH } from './search.js';
@@ -42,8 +41,9 @@ import { ordersPath } from './paths.js';
  * queued. Action, actor and time only: the audit payloads are `read AuditLog`, org_admin's
  * alone, and the server does not send them here.
  *
- * The actions shown are the ones the caller's §6 grant and the order's status both allow;
- * the server re-checks every one, and a refusal is shown in words rather than swallowed.
+ * The actions shown are the ones the caller's §6 grant and §9's table both allow — the table
+ * as the server sends it (`transitions`, D-392), so the console keeps no copy of it; the
+ * server re-checks every one, and a refusal is shown in words rather than swallowed.
  */
 export function OrderDetailPage() {
   const ability = useAbility();
@@ -117,8 +117,6 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
   const { locale } = useLocale();
   const ability = useAbility();
   const queryClient = useQueryClient();
-  const [cancelOpen, setCancelOpen] = useState(false);
-  const [reason, setReason] = useState('');
   const [failure, setFailure] = useState<string | null>(null);
 
   const agents = useQuery({
@@ -148,25 +146,17 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
   const zone = areas.data?.zones.find((entry) => entry.id === order.deliveryZoneId);
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['orders'] });
-  const act = useMutation({
-    mutationFn: async (action: 'confirm' | 'claim' | 'cancel') => {
-      if (action === 'confirm') await confirmOrder(order.id);
-      else if (action === 'claim') await claimOrder(order.id);
-      else await cancelOrder(order.id, reason.trim());
-    },
+  const claim = useMutation({
+    mutationFn: () => claimOrder(order.id),
     onSuccess: () => {
       setFailure(null);
-      setCancelOpen(false);
       refresh();
     },
     onError: (error) => setFailure(error instanceof Error ? error.message : String(error)),
   });
 
   const mayUpdate = ability.can('update', 'Order');
-  const canConfirm = mayUpdate && order.status === 'pending';
   const canClaim = mayUpdate && order.assignedTo === null;
-  const canCancel =
-    mayUpdate && ['pending', 'confirmed', 'packed', 'on_hold'].includes(order.status);
   const source = order.source ?? {};
   const sourceEntries = Object.entries(source).filter(([, value]) => typeof value === 'string');
 
@@ -189,17 +179,13 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
             <Button
               variant="outline"
               size="sm"
-              disabled={act.isPending}
-              onClick={() => act.mutate('claim')}
+              disabled={claim.isPending}
+              onClick={() => claim.mutate()}
             >
               {t('orders.detail.claim')}
             </Button>
           ) : null}
-          {canConfirm ? (
-            <Button size="sm" disabled={act.isPending} onClick={() => act.mutate('confirm')}>
-              {t('orders.detail.confirm')}
-            </Button>
-          ) : null}
+          <OrderActions order={order} mayUpdate={mayUpdate} />
           <a
             href={documentUrl(order.id, 'invoice')}
             target="_blank"
@@ -218,11 +204,6 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
             <Tag aria-hidden="true" className="size-4" />
             {t('orders.detail.printLabel')}
           </a>
-          {canCancel ? (
-            <Button variant="ghost" size="sm" onClick={() => setCancelOpen(true)}>
-              {t('orders.detail.cancel')}
-            </Button>
-          ) : null}
         </div>
       </header>
 
@@ -349,6 +330,8 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
             </dl>
           </section>
 
+          <ParcelPanel order={order} mayUpdate={mayUpdate} />
+
           <AdvancesPanel order={order} />
 
           {order.notes === null && sourceEntries.length === 0 ? null : (
@@ -380,37 +363,6 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
           )}
         </aside>
       </div>
-
-      <Dialog
-        open={cancelOpen}
-        onOpenChange={setCancelOpen}
-        title={t('orders.detail.cancelTitle')}
-        closeLabel={t('orders.close')}
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setCancelOpen(false)}>
-              {t('orders.detail.keep')}
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={reason.trim().length < 3 || act.isPending}
-              onClick={() => act.mutate('cancel')}
-            >
-              {t('orders.detail.cancel')}
-            </Button>
-          </>
-        }
-      >
-        <label className="block space-y-1.5 text-sm">
-          <span className="font-medium">{t('orders.detail.cancelReason')}</span>
-          <textarea
-            rows={3}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          />
-        </label>
-      </Dialog>
     </div>
   );
 }
@@ -439,6 +391,8 @@ const ACTIVITY: Readonly<Record<string, OrdersMessageKey>> = {
   'order.advance_voided': 'orders.timeline.advanceVoided',
   'intake.order_received': 'orders.timeline.intake',
   'courier.booking.queued': 'orders.timeline.courier',
+  'courier.handover.confirmed': 'orders.timeline.handover',
+  'courier.status.set_manually': 'orders.timeline.courierStatus',
 };
 
 function TimelineText({ entry }: { readonly entry: TimelineEntry }) {

@@ -150,6 +150,7 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
     const { id } = JSON.parse(created.body) as { id: string };
     return { url: `/v1/approvals/${id}/decide`, body: { decision: 'approved' } };
   },
+  'GET /v1/approvals/thresholds': () => ({ url: '/v1/approvals/thresholds' }),
   'PUT /v1/approvals/thresholds': () => ({
     url: '/v1/approvals/thresholds',
     // A type that may have a threshold (bonus_rule may not, D-071). The first

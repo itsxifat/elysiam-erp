@@ -418,17 +418,16 @@ export function disburseLoan(
 /**
  * The org's wallets, for the "pay from" picker.
  *
- * `/v1/ledger/wallets` is M03's endpoint and returns `accountId` — which is what the
- * payroll and loan endpoints take, because HR posts through the ledger and never touches
- * the wallets module's own tables (invariant 12).
+ * `/v1/hr/payroll/wallets` (D-396): the active wallets `pay` and `disburse` accept, as the
+ * ledger account id they take and a name — nothing else. It used to be M03's
+ * `/v1/ledger/wallets`, which is `read Wallet` and carries every balance; hr holds no
+ * `read Wallet`, so the picker loaded nothing for the role whose button it is.
  */
 export interface WalletOption {
   readonly accountId: string;
   readonly name: string;
-  readonly subtype: string;
-  readonly branchId: string | null;
 }
 
 export function listWallets(): Promise<{ items: WalletOption[] }> {
-  return api.get('/v1/ledger/wallets');
+  return api.get('/v1/hr/payroll/wallets');
 }

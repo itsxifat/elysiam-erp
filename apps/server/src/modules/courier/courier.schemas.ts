@@ -117,6 +117,11 @@ export const manualStatusSchema = z
     occurredAt: z.string().datetime().optional(),
     collectedPoisha: collectedPoishaString.optional(),
     reason: z.string().min(1).max(500),
+    /**
+     * Why the collected amount differs from the COD (§7's "with a reason"): carried to the
+     * delivery journal's Sales discounts line, as the order route's `differenceReason` is.
+     */
+    differenceReason: z.string().trim().min(3).max(500).optional(),
     /** For a partial delivery: what actually arrived. */
     deliveredLines: z
       .array(z.object({ skuId: uuid, deliveredQty: z.number().int().min(0) }).strict())
@@ -279,6 +284,8 @@ export const parcelListSchema = z
       .optional(),
     bookingState: z.enum(['pending', 'booked', 'failed', 'cancelled']).optional(),
     courierId: uuid.optional(),
+    /** One order's parcels, for the order detail's parcel panel (D-392). */
+    orderId: uuid.optional(),
     awaitingReturn: z.enum(['true', 'false']).optional(),
     page: z.coerce.number().int().min(1).max(10_000).default(1),
     pageSize: z.coerce.number().int().min(1).max(200).default(50),

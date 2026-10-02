@@ -1024,6 +1024,64 @@ export class ApprovalsService {
   }
 
   /**
+   * This org's thresholds, for the settings screen (D-394).
+   *
+   * One row per type a threshold can exist for — `NEVER_AUTO_APPROVE_TYPES` are listed apart,
+   * because the honest answer for them is "always a second person", not "no threshold set" —
+   * with the value in force (null: none set, so every request is held) and any relaxation
+   * still waiting for a second org admin (D-073), so a screen can say "₹5,000, raising to
+   * ₹20,000 once approved" instead of showing a value that is not yet true.
+   */
+  async listThresholds(context: ActiveContext): Promise<{
+    items: {
+      type: ApprovalType;
+      thresholdPoisha: string | null;
+      pending: { approvalId: string; thresholdPoisha: string; requestedBy: string }[];
+    }[];
+    alwaysHeld: readonly ApprovalType[];
+  }> {
+    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const current = await tx.execute<{ type: string; threshold_poisha: string }>(sql`
+        select type::text as type, threshold_poisha::text as threshold_poisha
+        from approvals.approval_thresholds
+        where org_id = ${context.orgId}
+      `);
+      const waiting = await tx.execute<{ id: string; requested_by: string; payload: unknown }>(sql`
+        select id, requested_by, payload
+        from approvals.approval_requests
+        where org_id = ${context.orgId}
+          and type = 'threshold_change'::approvals.approval_type
+          and status = 'pending'
+        order by created_at
+      `);
+      const byType = new Map(current.map((row) => [row.type, row.threshold_poisha]));
+      const pendingFor = (type: string) =>
+        waiting.flatMap((row) => {
+          const payload = row.payload as { type?: unknown; thresholdPoisha?: unknown } | null;
+          return payload?.type === type && typeof payload.thresholdPoisha === 'string'
+            ? [
+                {
+                  approvalId: row.id,
+                  thresholdPoisha: payload.thresholdPoisha,
+                  requestedBy: row.requested_by,
+                },
+              ]
+            : [];
+        });
+      return {
+        items: APPROVAL_TYPES.filter((type) => !NEVER_AUTO_APPROVE_TYPES.includes(type)).map(
+          (type) => ({
+            type,
+            thresholdPoisha: byType.get(type) ?? null,
+            pending: pendingFor(type),
+          }),
+        ),
+        alwaysHeld: NEVER_AUTO_APPROVE_TYPES,
+      };
+    });
+  }
+
+  /**
    * Set an org's threshold for one approval type (D-065, D-073).
    *
    * **Tightening applies at once; relaxing needs a second org admin.** A

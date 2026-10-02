@@ -139,6 +139,7 @@ function fixtures(): Fixtures {
  */
 export const COURIER_ROUTE_FIXTURES: Readonly<Record<string, () => Call>> = {
   'GET /v1/courier/accounts': () => ({ url: '/v1/courier/accounts' }),
+  'GET /v1/courier/providers': () => ({ url: '/v1/courier/providers' }),
   'POST /v1/courier/accounts': () => ({
     url: '/v1/courier/accounts',
     body: {

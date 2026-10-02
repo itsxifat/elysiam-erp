@@ -270,4 +270,33 @@ export class DeskService {
     }
     return { results, confirmed: results.filter((result) => result.ok).length };
   }
+
+  /**
+   * Pack or ship several orders, each on its own (D-393).
+   *
+   * The warehouse's half of bulk confirm: a picker packs forty boxes and a rider takes them
+   * at once. Exactly `bulkConfirm`'s shape and for its reasons — one transaction per order
+   * through the single-order path (the scope lock, the machine, the dispatch movement and the
+   * handover journal), sequential, every refusal reported against its own id, a genuine fault
+   * stopping the batch. Only the two triggers that take no input: a hold needs a reason per
+   * order, and everything after `ship` needs a figure or an inspection per parcel.
+   */
+  async bulkTransition(
+    context: ActiveContext,
+    request: AuditableRequest,
+    ids: readonly string[],
+    trigger: 'pack' | 'ship',
+  ): Promise<{ results: BulkConfirmResult[]; moved: number }> {
+    const results: BulkConfirmResult[] = [];
+    for (const id of ids) {
+      try {
+        const moved = await this.orders.transition(context, request, id, trigger);
+        results.push({ id, ok: true, orderNo: moved.orderNo, status: moved.status });
+      } catch (error) {
+        if (!(error instanceof HttpException) || error.getStatus() >= 500) throw error;
+        results.push({ id, ok: false, ...refusalOf(error) });
+      }
+    }
+    return { results, moved: results.filter((result) => result.ok).length };
+  }
 }

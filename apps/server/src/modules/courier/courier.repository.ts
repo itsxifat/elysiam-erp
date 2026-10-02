@@ -1514,6 +1514,7 @@ export async function listParcels(
     statuses?: readonly string[] | undefined;
     bookingState?: string | undefined;
     courierId?: string | undefined;
+    orderId?: string | undefined;
     awaitingReturn?: boolean | undefined;
     branchWhere: SQL;
     limit: number;
@@ -1549,6 +1550,7 @@ export async function listParcels(
       and (${options.bookingState ?? null}::text is null
            or c.booking_state::text = ${options.bookingState ?? null})
       and (${options.courierId ?? null}::uuid is null or c.courier_id = ${options.courierId ?? null}::uuid)
+      and (${options.orderId ?? null}::uuid is null or c.order_id = ${options.orderId ?? null}::uuid)
       and (${options.awaitingReturn !== true}
            or not exists (
              select 1 from courier.return_receipts r

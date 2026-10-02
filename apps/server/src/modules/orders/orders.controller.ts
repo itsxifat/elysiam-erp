@@ -30,6 +30,7 @@ import {
   availabilityQuerySchema,
   bulkConfirmSchema,
   bulkDocumentQuerySchema,
+  bulkTransitionSchema,
   buyerExportQuerySchema,
   buyerQuerySchema,
   cancelOrderSchema,
@@ -182,6 +183,24 @@ export class OrdersController {
   async bulkConfirm(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(bulkConfirmSchema, body);
     return this.desk.bulkConfirm(requireContext(request), auditable(request), input.ids);
+  }
+
+  /**
+   * Pack or ship up to a hundred orders, each in its own transaction (D-393).
+   *
+   * `update Order`, the grant each single transition declares, and every order goes through
+   * the single-order path — a batch is a loop over the one path, as bulk confirm is.
+   */
+  @RequireAbility('update', 'Order')
+  @Post('bulk-transition')
+  async bulkTransition(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(bulkTransitionSchema, body);
+    return this.desk.bulkTransition(
+      requireContext(request),
+      auditable(request),
+      input.ids,
+      input.trigger,
+    );
   }
 
   /**

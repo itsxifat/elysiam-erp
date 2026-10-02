@@ -39,6 +39,16 @@ export interface WalletAccount extends PostingAccount {
   readonly isActive: boolean;
 }
 
+/**
+ * A wallet a person may be offered to pay from: its account id and its name, nothing else
+ * (D-396). No balance, no code, no branch — the caller is a module whose users hold no
+ * `read Wallet`, and a picker needs only enough to choose.
+ */
+export interface WalletChoice {
+  readonly accountId: string;
+  readonly name: string;
+}
+
 export interface LedgerApi {
   /**
    * Post a journal built by a posting rule in `packages/domain/src/posting`.
@@ -86,6 +96,16 @@ export interface LedgerApi {
    * wrong, this one means the request did.
    */
   walletAccountById(tx: Tx, orgId: string, id: string): Promise<WalletAccount | null>;
+
+  /**
+   * The org's active wallet accounts, as id and name, in chart order (D-396).
+   *
+   * Exactly the set `walletAccountById` accepts as active, so a picker built from this offers
+   * nothing the paying module would then refuse as "no such wallet" or "deactivated". For a
+   * module that pays out of a wallet on behalf of a role that may not read wallets — HR's
+   * payroll — which is why it carries no balance.
+   */
+  activeWallets(tx: Tx, orgId: string): Promise<readonly WalletChoice[]>;
 
   /**
    * Σ debit − Σ credit on `courier_receivable`, per courier party, as of a business date.

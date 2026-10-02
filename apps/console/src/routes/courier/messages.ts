@@ -207,6 +207,10 @@ const COURIER_KEYS = [
   'courier.parcel.noEscalations',
   'courier.parcel.settled',
   'courier.parcel.notSettled',
+  'courier.parcel.handover',
+  'courier.parcel.handoverPending',
+  'courier.parcel.handoverConfirm',
+  'courier.parcel.openOrder',
 ] as const satisfies readonly MessageKey[];
 
 export type CourierMessageKey = (typeof COURIER_KEYS)[number];

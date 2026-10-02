@@ -965,3 +965,74 @@ share`), W-B (one person could void a loan's receipt: `LOAN_SELF_VOID` in the se
   before the preview is useful); run `pnpm verify` once C: has room (owner: claude);
   `docker-buildx` must be installed on the server (owner: human, in the runbook).
 - Next: the owner's first preview deploy, then M30.
+
+### 2026-10-02 · gaps · Order lifecycle buttons, courier statuses that ship, settings screens · done
+
+- Delivered (branch `gaps-orders-settings`, from `integration-wave2` at `09c36d1`; plan
+  `docs/plans/gaps-orders-settings.md`; D-390 to D-396):
+  - **Courier statuses ship the order (D-390).** A status that proves the parcel left —
+    picked up, in transit, out for delivery, delivered, partly delivered, returning, back at
+    the merchant — ships a `confirmed` or `packed` order first and then applies what the
+    status means from `shipped`, in one transaction through the state machine. Before this
+    nothing but a missing button produced `ship`, so a delivered parcel left its order
+    `packed`, the delivery ignored and no revenue posted. `hold`, `booked`, `pickup_pending`,
+    `cancelled` and `unknown` still move nothing before shipment; a held order is never moved.
+  - **Confirming the handover ships the order (D-391)**, once, whoever comes second.
+  - **Order detail buttons from the server's own table (D-392):** Confirm, Mark packed, Hand
+    to courier, Mark delivered, Partial delivery, Start return, Receive return, Release hold,
+    Hold, Cancel — each shown only when `GET /v1/orders/:id`'s new `transitions` lists it and
+    the caller holds `update Order`, with dialogs for reasons, the collected amount and the
+    return inspection. Cancel is no longer offered on a held order. A parcel panel books the
+    parcel, shows its courier status, links its tracking and confirms the handover; the
+    parcel page shows and confirms the handover too.
+  - **Bulk pack and hand-over (D-393)** on the order list, through
+    `POST /v1/orders/bulk-transition`.
+  - **Settings (D-394, D-395):** `/settings` stops being a placeholder — approval thresholds
+    (with relaxations waiting for a second org admin), delivery zones, courier accounts
+    (write-only keys, fingerprints, the adapter's own field names), website order keys (the
+    secret shown once) and till registers. The link shows for org_admin, accounts, marketing
+    and branch managers, each seeing only the tabs their grants open. New reads:
+    `GET /v1/approvals/thresholds`, `GET /v1/courier/providers`, and an `orderId` filter on
+    `GET /v1/courier/parcels`.
+  - **HR's Pay button (D-396):** `GET /v1/hr/payroll/wallets` (id and name only, through
+    `LedgerApi.activeWallets`) feeds the pay and disburse pickers, which were empty for hr.
+  - bn and en for every string. No new dependency.
+- Verification (all under `heavy.mjs`, Testcontainers):
+  - `pnpm verify` at `f655283`: format, lint and typecheck pass; tests 2,676 of 2,678 pass,
+    1 skipped, and 1 failed — `packages/db/src/testing/tenancy.test.ts` › "seeds the chart
+    of accounts once per org" hit its 30 s timeout with the machine at about 1 GB free
+    memory. That file alone then passed (67/67), and build, the bundle budget, migrations,
+    schema drift, the route-matrix gate, i18n and the api-client check all passed. The
+    previous full run at `971b720` was green (163 files, 2,674 tests).
+  - `apps/server/src/modules/courier/handover.e2e.test.ts`: 21/21 against real Postgres,
+    through HTTP and through the worker's webhook path, with exact goods-in-transit and
+    receivable amounts.
+  - `apps/console/e2e/order-lifecycle.stack.ts` on the real stack: 4/4 (pending to delivered
+    with the buttons, bulk pack, every settings tab as org_admin through the 2FA wall, no
+    Settings for sales), axe clean in both themes; screenshots in `docs/review/gaps/`. The
+    site key's one-time secret is not photographed (invariant 10).
+- Auditors:
+  - ledger-auditor at `79fd19e`: 1 critical, 4 warnings. C1 (a figureless partial
+    delivery on a packed order recorded the full COD as collected with no delivery journal),
+    W1 (a hand-set status could ship at any date), W2 (the order routes' delivery and return
+    bypassed the parcel, so the courier's statement could never match), W3 (Release hold
+    never showed: the console said `release`, the domain `release_hold`), W4 (tests lacked
+    exact amounts and the webhook path) — fixed in `971b720`. Re-audit: 0 critical, 2
+    warnings — W-A (a parcel the courier cancelled after pickup could not be received from
+    the console), W-B (the difference reason lost from the Sales discounts memo) and notes
+    N-A, N-B — fixed in `f655283`. Third audit: 0 critical, 0 warnings.
+  - acceptance-auditor: not run; this is not a milestone and has no acceptance checks.
+- Follow-ups:
+  - The delivery journal names the order's courier, the settlement relieves the parcel's;
+    set the order's courier from the consignment in the courier-path ship step (N3,
+    decisions.md). (owner: claude)
+  - `POST /v1/orders/:id/start-return` is not refused while a parcel is live (only the
+    console steers it to the parcel); add `start_return` to `PARCEL_RECORDED` for parity.
+    (owner: claude)
+  - A booking stuck `pending` blocks a person's delivery or return on that parcel until it
+    fails; a "cancel booking" action on the parcel panel would give a way out. (owner:
+    claude)
+  - Delivery zones' thana mapping, courier party ("Steadfast") creation, exchange from the
+    order detail and settlement upload remain without a screen. (owner: claude)
+  - `tenancy.test.ts`'s seed test runs close to its 30 s timeout under load. (owner: claude)
+- Next: merge `gaps-orders-settings` into the integration branch.

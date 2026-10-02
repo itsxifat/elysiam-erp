@@ -26,9 +26,18 @@ import type {
   LedgerApi,
   PostResult,
   WalletAccount,
+  WalletChoice,
 } from './ledger.api.js';
 import { ledgerHttpError } from './ledger.errors.js';
 import * as repo from './ledger.repository.js';
+
+/** The subtypes `repo.walletAccountById` accepts: what a module may pay out of. */
+const WALLET_SUBTYPES: readonly string[] = [
+  'wallet_cash',
+  'wallet_bank',
+  'wallet_bkash',
+  'wallet_mfs_other',
+];
 
 /**
  * `ledger.post` and `ledger.reverse` (architecture §7).
@@ -173,6 +182,18 @@ export class LedgerService implements LedgerApi {
       branchId: row.branch_id,
       isActive: row.is_active,
     };
+  }
+
+  async activeWallets(tx: Tx, orgId: string): Promise<readonly WalletChoice[]> {
+    // `walletAccountById`'s four subtypes and its `is_active`, so the two cannot disagree.
+    const rows = await repo.listAccounts(tx, orgId, {
+      scope: sql`a.is_active`,
+      excludeSubtypes: [],
+      walletsOnly: true,
+    });
+    return rows
+      .filter((row) => WALLET_SUBTYPES.includes(row.subtype))
+      .map((row) => ({ accountId: row.id, name: row.name }));
   }
 
   /**

@@ -132,6 +132,11 @@ export const OPERATIONS = {
     path: '/v1/analytics/narrative',
     ability: 'read:Dashboard',
   },
+  getV1ApprovalsThresholds: {
+    method: 'GET',
+    path: '/v1/approvals/thresholds',
+    ability: 'read:ApprovalThreshold',
+  },
   getV1Buyers: { method: 'GET', path: '/v1/buyers', ability: 'export:BuyerExport' },
   getV1BuyersExport: { method: 'GET', path: '/v1/buyers/export', ability: 'export:BuyerExport' },
   getV1CatalogAttributes: {
@@ -172,6 +177,11 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/courier/parcels/{id}/returnable',
     ability: 'read:Order',
+  },
+  getV1CourierProviders: {
+    method: 'GET',
+    path: '/v1/courier/providers',
+    ability: 'read:CourierSettlement',
   },
   getV1CourierReportsCodReconciliation: {
     method: 'GET',
@@ -311,6 +321,11 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/hr/payroll/runs/{id}/preview',
     ability: 'read:Payroll',
+  },
+  getV1HrPayrollWallets: {
+    method: 'GET',
+    path: '/v1/hr/payroll/wallets',
+    ability: 'update:Payroll',
   },
   getV1HrPerformanceMe: { method: 'GET', path: '/v1/hr/performance/me', ability: 'read:Target' },
   getV1HrProductivity: { method: 'GET', path: '/v1/hr/productivity', ability: 'read:Target' },
@@ -930,6 +945,11 @@ export const OPERATIONS = {
     path: '/v1/orders/bulk-confirm',
     ability: 'update:Order',
   },
+  postV1OrdersBulkTransition: {
+    method: 'POST',
+    path: '/v1/orders/bulk-transition',
+    ability: 'update:Order',
+  },
   postV1OrdersByIdAdvances: {
     method: 'POST',
     path: '/v1/orders/{id}/advances',
@@ -1237,6 +1257,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/analytics/narrative */
     getV1AnalyticsNarrative: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AnalyticsNarrative, undefined, options),
+    /** GET /v1/approvals/thresholds */
+    getV1ApprovalsThresholds: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1ApprovalsThresholds, undefined, options),
     /** GET /v1/buyers */
     getV1Buyers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1Buyers, undefined, options),
@@ -1286,6 +1309,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CourierParcelsByIdReturnable, input, options),
+    /** GET /v1/courier/providers */
+    getV1CourierProviders: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierProviders, undefined, options),
     /** GET /v1/courier/reports/cod-reconciliation */
     getV1CourierReportsCodReconciliation: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CourierReportsCodReconciliation, undefined, options),
@@ -1443,6 +1469,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1HrPayrollRunsByIdPreview, input, options),
+    /** GET /v1/hr/payroll/wallets */
+    getV1HrPayrollWallets: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrPayrollWallets, undefined, options),
     /** GET /v1/hr/performance/me */
     getV1HrPerformanceMe: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1HrPerformanceMe, undefined, options),
@@ -2177,6 +2206,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/orders/bulk-confirm */
     postV1OrdersBulkConfirm: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1OrdersBulkConfirm, undefined, options),
+    /** POST /v1/orders/bulk-transition */
+    postV1OrdersBulkTransition: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1OrdersBulkTransition, undefined, options),
     /** POST /v1/orders/:id/advances */
     postV1OrdersByIdAdvances: (
       input: { readonly path: { readonly id: string } },

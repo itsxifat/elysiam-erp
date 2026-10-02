@@ -167,7 +167,13 @@ export function CourierReturnsPage() {
   );
 }
 
-function ReceiveDialog({
+/**
+ * Receive one parcel back, with the per-line inspection. Exported for the order detail, which
+ * opens it for its own parcel whatever the courier last said about it — a parcel the courier
+ * cancelled after pickup, or one whose return a person started, is not on the list above
+ * (ledger re-audit of D-392, W-A).
+ */
+export function ReceiveDialog({
   parcel,
   onClose,
   onReceived,

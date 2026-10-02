@@ -108,6 +108,7 @@ const BANK = seedAccountId(ORG_A, '1100');
  */
 const PLATFORM_FIXTURES: Readonly<Record<string, Fixture>> = {
   'GET /v1/approvals': () => ({ url: '/v1/approvals' }),
+  'GET /v1/approvals/thresholds': () => ({ url: '/v1/approvals/thresholds' }),
   'GET /v1/approvals/:id': async () => {
     const maker = await harness.asRole('org_admin', ORG_A);
     const created = await maker.client.request('POST', '/v1/approvals', {

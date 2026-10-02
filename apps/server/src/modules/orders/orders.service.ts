@@ -14,6 +14,7 @@ import {
   orderPrefixFor,
   poisha,
   sub,
+  TRANSITIONS,
   withinPostingWindow,
   type OrderStatus,
   type OrderTrigger,
@@ -219,6 +220,39 @@ function toOrderView(row: repo.OrderRow): OrderView {
   };
 }
 
+/**
+ * The moves §9's machine allows from this status, for the console to offer (D-392).
+ *
+ * Read off `TRANSITIONS`, the table `transition()` itself enforces, so a button the order
+ * detail shows is a row the server will accept and a row it will refuse is never offered —
+ * and the console carries no copy of the table to drift from it. Whether the *caller* may
+ * take it is their `update Order` grant (or `create Order` for an exchange), which the
+ * console asks of its own ability; the server re-checks both on the request.
+ */
+export interface AvailableTransition {
+  readonly trigger: OrderTrigger;
+  readonly to: OrderStatus;
+  /** The machine refuses this move without a reason (§9's `requiresReason`). */
+  readonly requiresReason: boolean;
+  /** The machine refuses it without a return reason code from the fixed list (D-234). */
+  readonly requiresReturnReason: boolean;
+}
+
+export function transitionsFrom(status: OrderStatus): readonly AvailableTransition[] {
+  return TRANSITIONS.filter((row) => row.from === status).map((row) => ({
+    trigger: row.trigger,
+    to: row.to,
+    requiresReason: row.requiresReason,
+    requiresReturnReason: row.effects.includes('record_return_reason'),
+  }));
+}
+
+/**
+ * The moves a parcel's own routes record when the order has one with a courier (see
+ * `TransitionsService.assertNoLiveParcel`).
+ */
+const PARCEL_RECORDED: readonly OrderTrigger[] = ['deliver', 'deliver_partially', 'receive_return'];
+
 /** A shipping address, however the caller expressed it. */
 interface ShipTo {
   readonly name: string;
@@ -343,6 +377,7 @@ export class OrdersService {
           lines: lines.map(toLineView),
           history,
           timeline: orderTimeline(history, audited),
+          transitions: transitionsFrom(order.status as OrderStatus),
         };
       }),
     );
@@ -1003,6 +1038,9 @@ export class OrdersService {
         // Every transition that posts reads its date from here, so §7's window is checked
         // once rather than in each of the five endpoints that accept one.
         const occurredAt = this.postingInstant(options.occurredAt);
+        if (PARCEL_RECORDED.includes(trigger)) {
+          await this.transitions.assertNoLiveParcel(tx, context.orgId, order.id);
+        }
         if (trigger === 'ship' && options.courierId != null) {
           await this.transitions.assertCourierChangeAllowed(
             tx,

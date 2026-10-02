@@ -739,6 +739,7 @@ interface CourierAdapter {
   - dedupe on `(courier, consignment, status, occurred_at)`
   - process in a job with idempotent transitions
 - **Polling fallback:** parcels with no update for N hours get polled.
+- **Status → order (D-390, D-391):** a status that proves the parcel left us (`picked_up`, `in_transit`, `out_for_delivery`, `delivered`, `partial_delivered`, `return_in_transit`, `returned_to_merchant`) ships a `confirmed` or `packed` order first (§9's `ship`, with its dispatch and handover journal), then applies what the status means from `shipped`, in one transaction through the order state machine. `booked`, `pickup_pending`, `hold`, `cancelled` and `unknown` move nothing before shipment, and a held order is never moved. A person confirming the handover ships the order the same way.
 - **Settlement import:** parse the file or API data → match consignments → produce an exceptions report (unmatched, amount mismatch) → approval → posting.
 
 ---

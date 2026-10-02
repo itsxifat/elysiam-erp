@@ -79,6 +79,11 @@ export interface CourierTriggerInput {
   readonly reason?: string | null;
   /** What the courier reported collecting, for the delivery journal. */
   readonly collectedPoisha?: Poisha | undefined;
+  /**
+   * Why the collection differs from the COD, for a delivery a person records (§7: the
+   * difference goes to Sales discounts "with a reason", on the journal line's memo).
+   */
+  readonly differenceReason?: string | undefined;
   /** Set for a partial delivery: what actually arrived, per SKU. */
   readonly deliveredLines?: readonly { readonly skuId: string; readonly deliveredQty: number }[];
   /** Set on `receive_return`: why the parcel came back, from the fixed list (M17, D-234). */
