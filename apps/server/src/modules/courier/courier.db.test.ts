@@ -527,6 +527,7 @@ describe('a collection is never recorded without a journal behind it', () => {
     await deliverByWebhook(consignmentId, { rawStatus: 'coming_back' });
     await returns.receive(context(), request(), consignmentId, {
       reason: 'Customer refused at the door.',
+      returnReason: 'customer_refused',
       lines: [{ skuId: order.skuId, sellableQty: order.qty, damagedQty: 0 }],
     });
 
@@ -1103,11 +1104,25 @@ describe('receiving a return with inspection (§7, §8)', () => {
     const received = await returns.receive(context(), request(), consignmentId, {
       damagedLocationId: damagedLocation,
       reason: 'Customer refused at the door.',
+      returnReason: 'customer_refused',
       lines: [{ skuId: order.skuId, sellableQty: 2, damagedQty: 1 }],
     });
 
     expect(received.orderStatus).toBe('returned');
     expect(received.journalId).not.toBeNull();
+
+    // M17 (D-234): the reason the warehouse chose is the one the orders module recorded.
+    const reason = await withSystem(
+      async (tx) =>
+        tx.execute<{ kind: string; reason_code: string; note: string | null }>(sql`
+          select kind, reason_code, note from sales.order_returns
+          where org_id = ${ORG_A} and order_id = ${order.orderId}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(reason).toEqual([
+      { kind: 'return', reason_code: 'customer_refused', note: 'Customer refused at the door.' },
+    ]);
 
     /*
      * The inspection reached the real orders module and became stock, in two places.
@@ -1138,6 +1153,7 @@ describe('receiving a return with inspection (§7, §8)', () => {
       () =>
         returns.receive(context(), request(), consignmentId, {
           reason: 'again',
+          returnReason: 'customer_refused',
           lines: [{ skuId: order.skuId, sellableQty: 1, damagedQty: 0 }],
         }),
       /already been received/,
@@ -1152,6 +1168,7 @@ describe('receiving a return with inspection (§7, §8)', () => {
     await expect(
       returns.receive(context(), request(), consignmentId, {
         reason: 'torn',
+        returnReason: 'customer_refused',
         lines: [{ skuId: order.skuId, sellableQty: 0, damagedQty: 1 }],
       }),
     ).rejects.toThrow(/damaged location/);
@@ -1165,6 +1182,7 @@ describe('receiving a return with inspection (§7, §8)', () => {
     await expect(
       returns.receive(context(), request(), consignmentId, {
         reason: 'extra unit in the box',
+        returnReason: 'customer_refused',
         lines: [{ skuId: order.skuId, sellableQty: 2, damagedQty: 0 }],
       }),
     ).rejects.toThrow(/came back/);

@@ -81,6 +81,12 @@ export function AccountsNav() {
           {a('accounts.nav.wallets')}
         </Link>
       ) : null}
+      {ability.can('create', 'Wallet') ? (
+        // M17: claims to verify and refunds owed. `create Wallet` is accounts' grant (D-235).
+        <Link to="/accounts/advances" className={TAB} activeProps={ACTIVE}>
+          {a('accounts.nav.advances')}
+        </Link>
+      ) : null}
       {reports ? (
         <Link to="/accounts/reports" className={TAB} activeProps={ACTIVE}>
           {a('accounts.nav.reports')}

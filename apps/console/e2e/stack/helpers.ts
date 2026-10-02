@@ -15,7 +15,8 @@ export function stack(): StackInfo {
   return JSON.parse(raw) as StackInfo;
 }
 
-export type StackRole = 'desk' | 'queue' | 'accounts' | 'switcher' | 'treasurer' | 'marketing';
+export type StackRole =
+  'desk' | 'queue' | 'accounts' | 'switcher' | 'treasurer' | 'marketing' | 'checker';
 
 export function user(role: StackRole) {
   const found = stack().users.find((entry) => entry.role === role);

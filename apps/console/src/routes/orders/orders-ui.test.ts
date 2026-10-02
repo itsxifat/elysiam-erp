@@ -11,6 +11,7 @@ import {
   toAsciiDigits,
 } from './desk-logic.js';
 import { ordersEn, ordersMessages } from './messages.js';
+import { formatShare, monthStartOf, RETURN_REASONS, todayInDhaka } from './returns-logic.js';
 import { loadLocale } from '../../i18n/catalogue.js';
 
 // Bangla is fetched on demand in the console (`i18n/catalogue.ts`); load it the way
@@ -172,5 +173,28 @@ describe('the desk preview with a promo code (M16)', () => {
     expect(promoLines([line(3, '3002399751580331')])).toEqual([
       { skuId: 'sku-3002399751580331', netPoisha: '9007199254740993' },
     ]);
+  });
+});
+
+describe('returns by reason (M17)', () => {
+  it('reads the month and the date in Dhaka, not in the browser’s zone', () => {
+    // 20:30 UTC on 31 October is 02:30 on 1 November in Dhaka.
+    expect(todayInDhaka(new Date('2026-10-31T20:30:00Z'))).toBe('2026-11-01');
+    expect(monthStartOf('2026-11-19')).toBe('2026-11-01');
+  });
+
+  it('shows basis points as a percentage without floating point', () => {
+    expect(formatShare(5556)).toBe('55.56%');
+    expect(formatShare(1111)).toBe('11.11%');
+    expect(formatShare(10_000)).toBe('100.00%');
+    expect(formatShare(5)).toBe('0.05%');
+  });
+
+  it('has a label for every reason the server knows, in both languages', () => {
+    for (const reason of RETURN_REASONS) {
+      const key = `orders.reason.${reason}` as const;
+      expect(ordersEn[key]).toBeTruthy();
+      expect(ordersMessages.bn[key]).toBeTruthy();
+    }
   });
 });

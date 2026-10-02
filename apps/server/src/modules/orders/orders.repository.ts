@@ -1051,6 +1051,29 @@ export async function applyAdvance(
   return rows.length > 0;
 }
 
+/**
+ * Take a voided advance back off an order (M17, D-236): the liability shrinks and the COD
+ * grows again. Only before the parcel moves, and never below zero: the same guards as
+ * `applyAdvance`, the other way round.
+ */
+export async function unapplyAdvance(
+  tx: Tx,
+  input: { readonly orgId: string; readonly orderId: string; readonly amountPoisha: bigint },
+): Promise<boolean> {
+  const amount = input.amountPoisha.toString();
+  const rows = await tx.execute<{ id: string }>(sql`
+    update sales.orders set
+      advance_paid_poisha = advance_paid_poisha - ${amount}::bigint,
+      cod_amount_poisha = cod_amount_poisha + ${amount}::bigint,
+      updated_at = now()
+    where org_id = ${input.orgId} and id = ${input.orderId}
+      and advance_paid_poisha >= ${amount}::bigint
+      and status in ('pending', 'confirmed', 'on_hold', 'packed')
+    returning id
+  `);
+  return rows.length > 0;
+}
+
 // --- the order's own history --------------------------------------------------
 
 export async function insertOrderEvent(

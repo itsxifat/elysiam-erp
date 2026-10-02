@@ -596,6 +596,20 @@
       "when": 1790929948208,
       "tag": "0086_m18_marketing_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1790930655698,
+      "tag": "0087_m17_advances_returns_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1790930657194,
+      "tag": "0088_m17_advances_returns_policies",
+      "breakpoints": true
     }
   ]
 }

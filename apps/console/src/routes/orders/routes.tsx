@@ -45,11 +45,18 @@ export function ordersRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./buyers.js'), 'BuyerListPage'),
   });
 
+  // M17: returns by reason. A literal, declared before the param route like the others.
+  const returns = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/orders/returns',
+    component: lazyRouteComponent(() => import('./returns.js'), 'ReturnReasonsPage'),
+  });
+
   const detail = createRoute({
     getParentRoute: () => rootRoute,
     path: '/orders/$orderId',
     component: lazyRouteComponent(() => import('./order-detail.js'), 'OrderDetailPage'),
   });
 
-  return [list, desk, queue, buyers, detail] as const;
+  return [list, desk, queue, buyers, returns, detail] as const;
 }

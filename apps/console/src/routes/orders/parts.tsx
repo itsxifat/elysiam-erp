@@ -48,6 +48,9 @@ export function OrdersNav() {
       >
         {t('orders.nav.list')}
       </Link>
+      <Link to={ordersPath('/orders/returns')} className={TAB} activeProps={ACTIVE}>
+        {t('orders.nav.returns')}
+      </Link>
       {ability.can('export', 'BuyerExport') ? (
         <Link
           to={ordersPath('/orders/buyers')}

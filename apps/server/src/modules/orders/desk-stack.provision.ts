@@ -108,6 +108,9 @@ async function create(): Promise<void> {
     // M16's buyer and campaign screens: promo codes, templates and the lapsed list are
     // marketing's (D-203, D-205, D-208).
     { label: 'marketing', grants: [{ orgId, role: 'marketing' }] },
+    // M17: an accounts user of its own for the advance queue, so its second-factor
+    // enrolment does not depend on whether another suite has already done its own.
+    { label: 'checker', grants: [{ orgId, role: 'accounts' }] },
     {
       label: 'switcher',
       grants: [
@@ -201,6 +204,50 @@ async function create(): Promise<void> {
     { orgId },
   );
 
+  /*
+   * M17: a pending order the desk agent works, for the advance claim; and a parcel that came
+   * back with its reason recorded today, so the returns report has a line to show. Written
+   * as the transitions would have left them: the reason row beside the returned order.
+   */
+  const desk = users.find((entry) => entry.role === 'desk');
+  if (desk === undefined) throw new Error('desk-stack: no desk user.');
+  const advanceBuyer = await seedCustomer(orgId, {
+    phoneE164: `+88019${String(10_000_000 + Math.floor(Math.random() * 89_999_999))}`,
+    name: 'Advance Buyer',
+  });
+  const firstLine = {
+    skuId: firstSku.id,
+    skuCode: firstSku.code,
+    productName: 'E2E Product',
+    qty: 1,
+    unitPricePoisha: 150_000n,
+  };
+  const advanceOrder = await seedOrder(orgId, {
+    customerId: advanceBuyer,
+    status: 'pending',
+    lines: [firstLine],
+    locationId: location,
+    createdBy: desk.userId,
+    assignedTo: desk.userId,
+  });
+  const { id: returnedOrder } = await seedOrder(orgId, {
+    customerId: advanceBuyer,
+    status: 'returned',
+    lines: [{ ...firstLine, returnedQty: 1 }],
+    createdBy: desk.userId,
+    assignedTo: desk.userId,
+  });
+  await withSystem(
+    (tx) =>
+      tx.execute(sql`
+        insert into sales.order_returns
+          (org_id, order_id, kind, reason_code, note, business_date, recorded_by)
+        values (${orgId}, ${returnedOrder}, 'return', 'customer_refused', 'Refused at the door',
+                (now() at time zone 'Asia/Dhaka')::date, ${desk.userId})
+      `),
+    { orgId },
+  );
+
   process.stdout.write(
     `${JSON.stringify({
       databaseName: database.databaseName,
@@ -214,6 +261,7 @@ async function create(): Promise<void> {
       skuCodes: skus.map((sku) => sku.code),
       promoCode,
       lapsedBuyer: { id: lapsedBuyer, name: 'Lapsed Buyer' },
+      advanceOrder: { id: advanceOrder.id, orderNo: advanceOrder.orderNo },
     })}\n`,
   );
 

@@ -50,6 +50,8 @@ export interface StackInfo {
   readonly promoCode: string;
   /** A buyer whose only order was delivered a hundred days ago (M16's lapsed list). */
   readonly lapsedBuyer: { readonly id: string; readonly name: string };
+  /** A pending order the desk agent works, for M17's advance claim. */
+  readonly advanceOrder: { readonly id: string; readonly orderNo: string };
 }
 
 function logTo(name: string): number {
@@ -149,6 +151,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       skuCodes: string[];
       promoCode: string;
       lapsedBuyer: StackInfo['lapsedBuyer'];
+      advanceOrder: StackInfo['advanceOrder'];
     };
 
     const serverEnv: NodeJS.ProcessEnv = {
@@ -213,6 +216,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       skuCodes: provisioned.skuCodes,
       promoCode: provisioned.promoCode,
       lapsedBuyer: provisioned.lapsedBuyer,
+      advanceOrder: provisioned.advanceOrder,
     };
     // Inherited by the test workers. Throwaway values only, and never printed.
     process.env.E2E_STACK = JSON.stringify(info);

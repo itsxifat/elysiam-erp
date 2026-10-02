@@ -6,7 +6,6 @@ import {
   businessDate,
   computeExchangeReturn,
   computeOrderTotals,
-  customerAdvanceDraft,
   formatOrderNo,
   mulQty,
   normalizeBdPhone,
@@ -16,16 +15,15 @@ import {
   poisha,
   sub,
   withinPostingWindow,
-  type AccountSubtype,
   type OrderStatus,
   type OrderTrigger,
 } from '@elysium/domain';
-import { sql, type SQL } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { emit } from '../../platform/events/outbox.js';
-import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
+import { assertInScope } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi, type CatalogSku } from '../catalog/catalog.api.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
@@ -35,6 +33,7 @@ import { PROMO_PORT, type PricedPromo, type PromoPort } from './ports/promo.port
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
 import * as desk from './desk.repository.js';
 import * as repo from './orders.repository.js';
+import { orderScopeSql } from './orders.scope.js';
 import { orderTimeline } from './timeline.js';
 import { mapOrderErrors, OrdersError } from './orders.errors.js';
 import type {
@@ -42,10 +41,12 @@ import type {
   CreateOrderInput,
   ExchangeOrderInput,
   OrderQuery,
-  RecordAdvanceInput,
   UpdateOrderInput,
 } from './orders.schemas.js';
 
+// §6's scope for orders lives in `orders.scope.ts`, where the advances service can reach it
+// without an import cycle through this file; re-exported for the readers that import it here.
+export { orderScopeSql } from './orders.scope.js';
 /**
  * Orders (architecture §9, invariants 1, 5, 6, 7, 11 and 12).
  *
@@ -257,27 +258,6 @@ export interface CreatedOrder {
   readonly status: OrderStatus;
   readonly codAmountPoisha: string;
   readonly advancePaidPoisha: string;
-}
-
-/**
- * §6's scope for orders, as SQL.
- *
- * The sales cell reads "own + unassigned queue", and the queue is added **only** for a
- * caller who actually holds `sales`. `reseller` holds the same `read Order|own` grant and
- * must not gain the queue with it: a reseller seeing every unassigned staff order is a
- * cross-tenant-shaped leak inside one org.
- *
- * Exported because the document endpoints answer the same question — an invoice is the
- * whole order in a form that can be forwarded — and two definitions of "may this caller
- * see this order" is one definition too many.
- */
-export function orderScopeSql(context: ActiveContext, request: object): SQL {
-  const base = scopeWhere(request, {
-    createdBy: sql`o.created_by`,
-    assignedTo: sql`o.assigned_to`,
-    branchId: sql`o.branch_id`,
-  });
-  return context.roles.includes('sales') ? sql`(${base} or o.assigned_to is null)` : base;
 }
 
 @Injectable()
@@ -625,9 +605,8 @@ export class OrdersService {
               creditPoisha: poisha(options.creditPoisha),
             }).appliedPoisha,
           )
-        : input.advancePaidPoisha === undefined
-          ? 0n
-          : BigInt(input.advancePaidPoisha);
+        : // No advance on a create body (D-230): an advance is a verified claim, never a number.
+          0n;
 
     const totals = computeOrderTotals({
       lines: lines.map((line) => ({
@@ -1130,126 +1109,6 @@ export class OrdersService {
     );
   }
 
-  // --- money the buyer paid before the parcel moved -----------------------------
-
-  /**
-   * An advance received against an order (§7, §10's `require_advance`).
-   *
-   * Two writes in one transaction: the journal that makes the money a liability, and the
-   * order's own advance and COD. Doing only the first would leave the rider collecting
-   * the full amount from a buyer who has already paid part of it; doing only the second
-   * would mean money in a wallet that the books do not know about.
-   */
-  async recordAdvance(
-    context: ActiveContext,
-    request: AuditableRequest,
-    id: string,
-    input: RecordAdvanceInput,
-  ) {
-    return mapOrderErrors(async () =>
-      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const order = await this.readInScope(tx, context, request, id);
-        const occurredAt = this.postingInstant(
-          input.occurredAt === undefined ? undefined : new Date(input.occurredAt),
-        );
-        const amountPoisha = BigInt(input.amountPoisha);
-
-        const wallet = await repo.accountById(tx, context.orgId, input.walletAccountId);
-        if (wallet === undefined) {
-          throw new OrdersError(
-            'LEDGER_ACCOUNT_NOT_FOUND',
-            'That wallet does not exist in this brand.',
-          );
-        }
-        const advance = await repo.accountBySubtype(tx, context.orgId, 'customer_advance');
-        if (advance === undefined) {
-          throw new OrdersError(
-            'LEDGER_ACCOUNT_NOT_FOUND',
-            'This organization has no customer advance account.',
-          );
-        }
-
-        const applied = await repo.applyAdvance(tx, {
-          orgId: context.orgId,
-          orderId: order.id,
-          amountPoisha,
-        });
-        if (!applied) {
-          // §9 rejects a negative COD. The buyer has offered more than the order is
-          // worth, and the fix is a smaller advance — the excess is a store credit,
-          // which is the exchange flow's business, not this one's.
-          throw new OrdersError(
-            'ORDER_TOTAL_INVALID',
-            'That advance is more than this order will collect, or the parcel has already gone out.',
-          );
-        }
-
-        const posted = await this.ledger.post(
-          tx,
-          { orgId: context.orgId, userId: context.userId },
-          customerAdvanceDraft({
-            orderId: order.id,
-            occurredAt,
-            direction: 'received',
-            wallet: {
-              accountId: wallet.id,
-              // The subtype comes back as text; `customerAdvanceDraft` refuses anything
-              // that is not a `wallet_*` account, so the cast cannot widen what posts.
-              subtype: wallet.subtype as AccountSubtype,
-              branchId: wallet.branch_id,
-            },
-            customerAdvance: {
-              accountId: advance.id,
-              subtype: 'customer_advance',
-              branchId: advance.branch_id,
-            },
-            amountPoisha: poisha(amountPoisha),
-            branchId: order.branch_id,
-            memo: input.memo ?? `Order ${order.order_no} advance`,
-          }),
-        );
-
-        if (!posted.created) {
-          /*
-           * A second advance on one order would double the column and post nothing.
-           *
-           * `customerAdvanceDraft`'s idempotency key is `order:<id>:advance_received`, so a
-           * second advance of the *same* amount returns the first journal with
-           * `created: false` and no error — and `applyAdvance` above has already increased
-           * the order's advance. Left alone, that is an order whose COD is lower than the
-           * ledger says was received: the exact divergence invariant 2's idempotency is
-           * meant to prevent, arriving through the one path where the caller's write is not
-           * itself keyed.
-           *
-           * Refused rather than silently absorbed, and the throw rolls the column back with
-           * it. A follow-up gives the key a per-advance sequence so a buyer can pay twice.
-           */
-          throw new OrdersError(
-            'IDEMPOTENCY_CONFLICT',
-            'An advance is already recorded against this order; a second payment needs its own entry.',
-          );
-        }
-
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'create',
-          action: 'order.advance_received',
-          entityType: 'order',
-          entityId: order.id,
-          after: { amountPoisha: input.amountPoisha, journalId: posted.journalId },
-          request,
-        });
-
-        const after = await repo.orderById(tx, context.orgId, order.id);
-        return {
-          journalId: posted.journalId,
-          order: after === undefined ? { id: order.id } : toOrderView(after),
-        };
-      }),
-    );
-  }
-
   // --- exchange -----------------------------------------------------------------
 
   /**
@@ -1390,6 +1249,8 @@ export class OrdersService {
 
         await this.transitions.move(tx, context, request, order, 'exchange', {
           reason: input.reason,
+          // Why the goods came back (M17, D-234): an exchange is a return too.
+          returnReason: input.returnReason,
           occurredAt,
           callerHandlesExchange: true,
         });

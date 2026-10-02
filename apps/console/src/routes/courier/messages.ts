@@ -185,6 +185,8 @@ const COURIER_KEYS = [
   'courier.returns.damagedLocation',
   'courier.returns.damagedLocationHint',
   'courier.returns.reasonLabel',
+  'courier.returns.reasonCode',
+  'courier.returns.chooseReason',
   'courier.returns.inspectionNote',
   'courier.returns.received',
   'courier.returns.tooMany',

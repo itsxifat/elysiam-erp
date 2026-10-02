@@ -7,6 +7,7 @@ import {
   type OrderStatus,
   type OrderTrigger,
   type Poisha,
+  type ReturnReasonCode,
 } from '@elysium/domain';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -142,6 +143,8 @@ export interface CourierTriggerInput {
   readonly collectedPoisha?: Poisha | undefined;
   /** Set for a partial delivery: what actually arrived, per SKU. */
   readonly deliveredLines?: readonly { readonly skuId: string; readonly deliveredQty: number }[];
+  /** Set on `receive_return`: why the parcel came back, from the fixed list (M17, D-234). */
+  readonly returnReason?: ReturnReasonCode | undefined;
   /** Set on `receive_return`: where sellable and damaged units go, and what came back. */
   readonly returnReceipt?: {
     readonly locationId: string;
@@ -302,8 +305,19 @@ export interface OrdersApi {
     skuIds: readonly string[],
   ): Promise<Map<string, number>>;
 
-  /** Null when the order is not this org's. */
-  bookingSnapshot(tx: Tx, orgId: string, orderId: string): Promise<OrderBookingSnapshot | null>;
+  /**
+   * Null when the order is not this org's.
+   *
+   * `forUpdate` locks the order for the caller's transaction (M17, D-231): the booking that
+   * copies the COD onto a consignment must serialise with an advance verification that
+   * lowers it, or the parcel goes out carrying the figure from before the advance.
+   */
+  bookingSnapshot(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    options?: { readonly forUpdate?: boolean },
+  ): Promise<OrderBookingSnapshot | null>;
 
   /** Just the status and the ids a consignment row needs. Null when not found. */
   statusOf(
@@ -498,8 +512,12 @@ export class OrdersApiService implements OrdersApi {
     tx: Tx,
     orgId: string,
     orderId: string,
+    options: { readonly forUpdate?: boolean } = {},
   ): Promise<OrderBookingSnapshot | null> {
-    const order = await repo.orderById(tx, orgId, orderId);
+    const order =
+      options.forUpdate === true
+        ? await repo.orderForUpdate(tx, orgId, orderId)
+        : await repo.orderById(tx, orgId, orderId);
     if (order === undefined) return null;
 
     const area = await repo.areaNames(tx, order.ship_district_id, order.ship_thana_id);
@@ -749,6 +767,7 @@ function moveOptionsFor(
 
   return {
     reason: input.reason ?? null,
+    returnReason: input.returnReason ?? null,
     occurredAt: input.occurredAt,
     ...(deliver === undefined ? {} : { deliver }),
     ...(input.returnReceipt === undefined

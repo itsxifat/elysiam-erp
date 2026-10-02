@@ -176,6 +176,7 @@ export const COURIER_ROUTE_FIXTURES: Readonly<Record<string, () => Call>> = {
     url: `/v1/courier/parcels/${fixtures().consignmentId}/receive-return`,
     body: {
       reason: 'Customer refused at the door.',
+      returnReason: 'customer_refused',
       lines: [{ skuId: fixtures().skuId, sellableQty: 1, damagedQty: 0 }],
     },
   }),

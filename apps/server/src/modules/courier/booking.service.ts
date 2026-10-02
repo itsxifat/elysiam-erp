@@ -114,7 +114,11 @@ export class BookingService implements OnModuleInit {
     actor: { orgId: string; userId: string; requestId?: string | null },
     input: { orderId: string; courierId?: string | null },
   ): Promise<BookingOutcome> {
-    const order = await this.orders.bookingSnapshot(tx, actor.orgId, input.orderId);
+    // Locked: the COD copied onto the consignment below must be the one an advance
+    // verification racing this booking either already lowered or will see as booked (D-231).
+    const order = await this.orders.bookingSnapshot(tx, actor.orgId, input.orderId, {
+      forUpdate: true,
+    });
     if (order === null) {
       throw new CourierError('ORDER_NOT_FOUND', 'No such order in this organization.');
     }

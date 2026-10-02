@@ -1,4 +1,5 @@
 import { ORDER_CHANNELS } from '@elysium/contracts';
+import { ADVANCE_METHODS, ADVANCE_STATUSES, RETURN_REASON_CODES } from '@elysium/domain';
 import { RFM_SEGMENTS } from '@elysium/domain/crm';
 import { z } from 'zod';
 
@@ -146,7 +147,11 @@ export const createOrderSchema = z
     /** Left out, the zone's charge applies. Set to override it for this order. */
     deliveryChargePoisha: poishaString.optional(),
     discountPoisha: poishaString.optional(),
-    advancePaidPoisha: poishaString.optional(),
+    /*
+     * No advance. Money paid ahead is a claim recorded against the order and verified by
+     * accounts (`POST /v1/orders/:id/advances`, D-230): an amount on the create body lowered
+     * the COD with no journal behind it at all, which is exactly what M17 check 2 forbids.
+     */
     /**
      * A promo code as the buyer typed it. Never an id and never an amount: the server
      * prices the word against the lines it priced itself (D-204). The promo module checks
@@ -369,9 +374,13 @@ export const deliverOrderSchema = z
 
 export type DeliverOrderInput = z.infer<typeof deliverOrderSchema>;
 
+/** Why the goods came back, from the fixed list (M17, D-234). Required on every return. */
+const returnReason = z.enum(RETURN_REASON_CODES);
+
 export const returnOrderSchema = z
   .object({
     reason,
+    returnReason,
     /** Where the units go back to. Left out, the order's own location. */
     locationId: uuid.optional(),
     /** Units that came back damaged go to the `damaged` location instead (§8). */
@@ -387,6 +396,7 @@ export const startReturnSchema = z.object({ reason: reason.optional() }).strict(
 export const exchangeOrderSchema = z
   .object({
     reason,
+    returnReason,
     /** Which of the delivered units are coming back. */
     returnLines: z
       .array(z.object({ skuId: uuid, qty: z.number().int().min(1).max(100_000) }).strict())
@@ -403,17 +413,67 @@ export const exchangeOrderSchema = z
 
 export type ExchangeOrderInput = z.infer<typeof exchangeOrderSchema>;
 
+/** A positive amount: an advance of nothing is not a claim. */
+const positivePoisha = poishaString.refine((value) => BigInt(value) > 0n, {
+  message: 'An advance is a positive amount.',
+});
+
+/**
+ * An advance claim, as the agent types it from the buyer's SMS (M17, D-230).
+ *
+ * The reference is normalised by the domain (`normalizeTransactionRef`), so the schema only
+ * bounds its length. No wallet and no date: which wallet received the money is accounts'
+ * to say when they verify it, and nothing posts until they do.
+ */
 export const recordAdvanceSchema = z
   .object({
-    /** Which wallet took the money. §7 needs the account, not a channel name. */
-    walletAccountId: uuid,
-    amountPoisha: poishaString,
-    occurredAt: z.string().datetime().optional(),
-    memo: z.string().trim().max(500).optional(),
+    method: z.enum(ADVANCE_METHODS),
+    transactionRef: z.string().trim().min(1).max(40),
+    amountPoisha: positivePoisha,
+    note: z.string().trim().min(1).max(500).optional(),
   })
   .strict();
 
 export type RecordAdvanceInput = z.infer<typeof recordAdvanceSchema>;
+
+/** Accounts verifies a claim into the wallet the money arrived in. */
+export const verifyAdvanceSchema = z.object({ walletAccountId: uuid }).strict();
+
+export const rejectAdvanceSchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict();
+
+/** The money went back. Left out, the wallet it came into; the outgoing TrxID if there is one. */
+export const refundAdvanceSchema = z
+  .object({
+    walletAccountId: uuid.optional(),
+    refundRef: z.string().trim().min(1).max(40).optional(),
+  })
+  .strict();
+
+export type RefundAdvanceInput = z.infer<typeof refundAdvanceSchema>;
+
+/** The accounts queue: pending claims and refunds owed, unless asked for others. */
+export const advanceQueueSchema = z
+  .object({
+    status: z
+      .string()
+      .optional()
+      .transform((value) =>
+        (value ?? 'pending,refund_due')
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter((entry) => entry !== ''),
+      )
+      .pipe(z.array(z.enum(ADVANCE_STATUSES)).min(1).max(ADVANCE_STATUSES.length)),
+  })
+  .strict();
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A date is YYYY-MM-DD.');
+
+/** The report by reason, over Asia/Dhaka business dates, both ends included. */
+export const returnReasonReportSchema = z
+  .object({ from: isoDate, to: isoDate })
+  .strict()
+  .refine((value) => value.from <= value.to, { message: '`from` is after `to`.' });
 
 export const availabilityQuerySchema = z
   .object({

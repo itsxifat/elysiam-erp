@@ -141,6 +141,19 @@ async function takeOrder(
   return body<CreatedOrderBody>(response);
 }
 
+/** Journals posted for one advance (M17): received, refunded or forfeited. */
+async function journalsFor(advanceId: string): Promise<number> {
+  const rows = await withSystem(
+    async (tx) =>
+      tx.execute<{ n: number }>(sql`
+        select count(*)::int as n from ledger.journals
+        where org_id = ${ORG_A} and source_type = 'customer_advance' and source_id = ${advanceId}
+      `),
+    { orgId: ORG_A },
+  );
+  return rows[0]?.n ?? -1;
+}
+
 function errorCode(response: InjectedResponse): string {
   const payload = body<{ code?: string; message?: string }>(response);
   return payload.code ?? '';
@@ -380,46 +393,120 @@ describe('invariant 7, over HTTP', () => {
 // --- §6: the abilities that are not `update Order` ----------------------------
 
 describe('the grants that are deliberately not an order grant', () => {
-  it('lets accounts record an advance and refuses a sales agent (§6’s wallets row)', async () => {
-    const order = await takeOrder(admin);
+  /*
+   * M17 check 2 over HTTP: an unverified advance never reaches the books (D-230, D-235).
+   *
+   * The agent records the claim under `update Order`, which posts nothing and leaves the COD
+   * alone. Only `create Wallet` (accounts) verifies it, and never the person who recorded
+   * it. The two old ways money reached the COD on one person's word are gone: the
+   * `POST /v1/orders/:id/advance` route, and an amount on the create body.
+   */
+  it('lets an agent claim an advance, and only accounts verify it (M17 check 2)', async () => {
+    const order = await takeOrder(sales);
 
-    const bySales = await sales.client.request('POST', `/v1/orders/${order.id}/advance`, {
+    // The old route is gone, and so is an advance typed on the create body.
+    const oldRoute = await accounts.client.request('POST', `/v1/orders/${order.id}/advance`, {
       body: { walletAccountId: wallet, amountPoisha: '5000' },
     });
-    // Money arriving in a wallet is a wallet entry, whoever took the screenshot.
-    expect(bySales.statusCode).toBe(403);
-
-    const byAccounts = await accounts.client.request('POST', `/v1/orders/${order.id}/advance`, {
-      body: { walletAccountId: wallet, amountPoisha: '5000' },
+    expect(oldRoute.statusCode).toBe(404);
+    const typedOnCreate = await sales.client.request('POST', '/v1/orders', {
+      body: {
+        channel: 'phone',
+        customerId,
+        locationId: location,
+        lines: [{ skuId: sku(0), qty: 1, unitPricePoisha: '150000' }],
+        advancePaidPoisha: '5000',
+      },
     });
-    expect(byAccounts.statusCode, byAccounts.body).toBe(201);
+    expect(typedOnCreate.statusCode).toBe(400);
 
+    // Accounts holds `read Order`, not `update Order`: it verifies, it does not claim.
+    const byAccounts = await accounts.client.request('POST', `/v1/orders/${order.id}/advances`, {
+      body: { method: 'bkash', transactionRef: 'E2E8N7A6B5C', amountPoisha: '5000' },
+    });
+    expect(byAccounts.statusCode).toBe(403);
+
+    const claimed = await sales.client.request('POST', `/v1/orders/${order.id}/advances`, {
+      body: { method: 'bkash', transactionRef: ' e2e 8n7a-6b5c ', amountPoisha: '5000' },
+    });
+    expect(claimed.statusCode, claimed.body).toBe(201);
+    const claim = body<{ id: string; status: string; transactionRef: string }>(claimed);
+    expect(claim).toMatchObject({ status: 'pending', transactionRef: 'E2E8N7A6B5C' });
+
+    // The same payment cannot back a second claim.
+    const again = await sales.client.request('POST', `/v1/orders/${order.id}/advances`, {
+      body: { method: 'bkash', transactionRef: 'E2E8N7A6B5C', amountPoisha: '5000' },
+    });
+    expect(again.statusCode).toBe(409);
+    expect(errorCode(again)).toBe('ADVANCE_DUPLICATE');
+
+    // Claimed but not verified: the COD is untouched and nothing is in the books.
+    const pending = body<{ amounts: Record<string, string> }>(
+      await admin.client.request('GET', `/v1/orders/${order.id}`),
+    );
+    expect(pending.amounts).toMatchObject({ advancePaidPoisha: '0', codAmountPoisha: '156000' });
+    expect(await journalsFor(claim.id)).toBe(0);
+
+    // The agent cannot verify, by grant; accounts sees it in the queue and verifies it.
+    const bySalesVerify = await sales.client.request(
+      'POST',
+      `/v1/order-advances/${claim.id}/verify`,
+      { body: { walletAccountId: wallet } },
+    );
+    expect(bySalesVerify.statusCode).toBe(403);
+    const queue = body<{ items: { id: string; orderNo: string }[] }>(
+      await accounts.client.request('GET', '/v1/order-advances'),
+    );
+    expect(queue.items.find((item) => item.id === claim.id)?.orderNo).toBe(order.orderNo);
+
+    const verified = await accounts.client.request(
+      'POST',
+      `/v1/order-advances/${claim.id}/verify`,
+      { body: { walletAccountId: wallet } },
+    );
+    expect(verified.statusCode, verified.body).toBe(201);
+    expect(body<{ status: string }>(verified).status).toBe('verified');
+    expect(await journalsFor(claim.id)).toBe(1);
+
+    // Verified money lowers what the rider collects: 156,000 − 5,000.
     const detail = body<{ amounts: Record<string, string> }>(
       await admin.client.request('GET', `/v1/orders/${order.id}`),
     );
-    // The advance lowers what the rider collects: 156,000 − 5,000.
     expect(detail.amounts).toMatchObject({ advancePaidPoisha: '5000', codAmountPoisha: '151000' });
 
-    /*
-     * The same advance again is refused rather than absorbed.
-     *
-     * The posting rule keys on `order:<id>:advance_received`, so a repeat returns the first
-     * journal and posts nothing — while the order's own column would have grown again. The
-     * refusal is what keeps the books and the COD on one number.
-     */
-    const twice = await accounts.client.request('POST', `/v1/orders/${order.id}/advance`, {
-      body: { walletAccountId: wallet, amountPoisha: '5000' },
+    // Deciding twice is refused, and the order's own list shows the claim to the agent.
+    const twice = await accounts.client.request('POST', `/v1/order-advances/${claim.id}/verify`, {
+      body: { walletAccountId: wallet },
     });
-    expect(twice.statusCode).toBe(409);
-    expect(errorCode(twice)).toBe('IDEMPOTENCY_CONFLICT');
-
-    const unchanged = body<{ amounts: Record<string, string> }>(
-      await admin.client.request('GET', `/v1/orders/${order.id}`),
+    expect(twice.statusCode).toBe(400);
+    expect(errorCode(twice)).toBe('ADVANCE_INVALID');
+    const listed = body<{ items: { id: string; status: string }[] }>(
+      await sales.client.request('GET', `/v1/orders/${order.id}/advances`),
     );
-    expect(unchanged.amounts).toMatchObject({
-      advancePaidPoisha: '5000',
-      codAmountPoisha: '151000',
+    expect(listed.items).toEqual([expect.objectContaining({ id: claim.id, status: 'verified' })]);
+  }, 120_000);
+
+  it('rejects a claim with no journal, and frees its reference', async () => {
+    const order = await takeOrder(sales);
+    const claimed = await sales.client.request('POST', `/v1/orders/${order.id}/advances`, {
+      body: { method: 'bkash', transactionRef: 'E2EREJ12345', amountPoisha: '6000' },
     });
+    const claim = body<{ id: string }>(claimed);
+
+    const rejected = await accounts.client.request(
+      'POST',
+      `/v1/order-advances/${claim.id}/reject`,
+      { body: { reason: 'Not in the bKash statement' } },
+    );
+    expect(rejected.statusCode, rejected.body).toBe(201);
+    expect(body<{ status: string }>(rejected).status).toBe('rejected');
+    expect(await journalsFor(claim.id)).toBe(0);
+
+    // A rejected claim frees the reference: the agent can record it again, correctly.
+    const retyped = await sales.client.request('POST', `/v1/orders/${order.id}/advances`, {
+      body: { method: 'bkash', transactionRef: 'E2EREJ12345', amountPoisha: '5000' },
+    });
+    expect(retyped.statusCode, retyped.body).toBe(201);
   }, 120_000);
 
   it('opens delivery zones to the desk and keeps editing them with org_admin (D-009)', async () => {
@@ -608,6 +695,8 @@ describe('the route gate (D-070), scoped to this module', () => {
         'BuyersController',
         // M16's re-engagement list, beside it.
         'ReengagementController',
+        // M17's advances and returns by reason.
+        'AdvancesController',
       ].includes(route.controller),
     );
 

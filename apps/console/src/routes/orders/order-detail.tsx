@@ -27,6 +27,7 @@ import {
   type OrderDetail,
   type TimelineEntry,
 } from './api.js';
+import { AdvancesPanel } from './advances-panel.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { OrdersNav, OrderStatusBadge } from './parts.js';
 import { DEFAULT_ORDER_SEARCH } from './search.js';
@@ -348,6 +349,8 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
             </dl>
           </section>
 
+          <AdvancesPanel order={order} />
+
           {order.notes === null && sourceEntries.length === 0 ? null : (
             <section className="space-y-2 rounded-lg border border-border bg-card p-4 text-sm">
               {order.notes === null ? null : (
@@ -429,6 +432,11 @@ const ACTIVITY: Readonly<Record<string, OrdersMessageKey>> = {
   'order.assigned': 'orders.timeline.assigned',
   'order.edited': 'orders.timeline.edited',
   'order.advance_received': 'orders.timeline.advance',
+  'order.advance_claimed': 'orders.timeline.advanceClaimed',
+  'order.advance_verified': 'orders.timeline.advanceVerified',
+  'order.advance_rejected': 'orders.timeline.advanceRejected',
+  'order.advance_refunded': 'orders.timeline.advanceRefunded',
+  'order.advance_voided': 'orders.timeline.advanceVoided',
   'intake.order_received': 'orders.timeline.intake',
   'courier.booking.queued': 'orders.timeline.courier',
 };

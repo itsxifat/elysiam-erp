@@ -391,6 +391,7 @@ export const OPERATIONS = {
   getV1NotifyMessages: { method: 'GET', path: '/v1/notify/messages', ability: 'read:Campaign' },
   getV1NotifyOptOuts: { method: 'GET', path: '/v1/notify/opt-outs', ability: 'read:Campaign' },
   getV1NotifyTemplates: { method: 'GET', path: '/v1/notify/templates', ability: 'read:Campaign' },
+  getV1OrderAdvances: { method: 'GET', path: '/v1/order-advances', ability: 'create:Wallet' },
   getV1Orders: { method: 'GET', path: '/v1/orders', ability: 'read:Order' },
   getV1OrdersAgents: { method: 'GET', path: '/v1/orders/agents', ability: 'read:Order' },
   getV1OrdersAvailability: {
@@ -399,6 +400,11 @@ export const OPERATIONS = {
     ability: 'read:Stock',
   },
   getV1OrdersById: { method: 'GET', path: '/v1/orders/{id}', ability: 'read:Order' },
+  getV1OrdersByIdAdvances: {
+    method: 'GET',
+    path: '/v1/orders/{id}/advances',
+    ability: 'read:Order',
+  },
   getV1OrdersByIdDocument: {
     method: 'GET',
     path: '/v1/orders/{id}/document',
@@ -406,6 +412,11 @@ export const OPERATIONS = {
   },
   getV1OrdersDocuments: { method: 'GET', path: '/v1/orders/documents', ability: 'read:Order' },
   getV1OrdersDuplicates: { method: 'GET', path: '/v1/orders/duplicates', ability: 'read:Order' },
+  getV1OrdersReturnReasons: {
+    method: 'GET',
+    path: '/v1/orders/return-reasons',
+    ability: 'read:Order',
+  },
   getV1PosBranches: { method: 'GET', path: '/v1/pos/branches', ability: 'read:LedgerReport' },
   getV1PosBranchesByIdClosings: {
     method: 'GET',
@@ -803,16 +814,36 @@ export const OPERATIONS = {
     ability: 'create:CampaignSpend',
   },
   postV1NotifyOptOuts: { method: 'POST', path: '/v1/notify/opt-outs', ability: 'update:Campaign' },
+  postV1OrderAdvancesByIdRefund: {
+    method: 'POST',
+    path: '/v1/order-advances/{id}/refund',
+    ability: 'create:Wallet',
+  },
+  postV1OrderAdvancesByIdReject: {
+    method: 'POST',
+    path: '/v1/order-advances/{id}/reject',
+    ability: 'create:Wallet',
+  },
+  postV1OrderAdvancesByIdVerify: {
+    method: 'POST',
+    path: '/v1/order-advances/{id}/verify',
+    ability: 'create:Wallet',
+  },
+  postV1OrderAdvancesByIdVoid: {
+    method: 'POST',
+    path: '/v1/order-advances/{id}/void',
+    ability: 'create:Wallet',
+  },
   postV1Orders: { method: 'POST', path: '/v1/orders', ability: 'create:Order' },
   postV1OrdersBulkConfirm: {
     method: 'POST',
     path: '/v1/orders/bulk-confirm',
     ability: 'update:Order',
   },
-  postV1OrdersByIdAdvance: {
+  postV1OrdersByIdAdvances: {
     method: 'POST',
-    path: '/v1/orders/{id}/advance',
-    ability: 'create:Wallet',
+    path: '/v1/orders/{id}/advances',
+    ability: 'update:Order',
   },
   postV1OrdersByIdAssign: {
     method: 'POST',
@@ -1397,6 +1428,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/notify/templates */
     getV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1NotifyTemplates, undefined, options),
+    /** GET /v1/order-advances */
+    getV1OrderAdvances: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1OrderAdvances, undefined, options),
     /** GET /v1/orders */
     getV1Orders: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1Orders, undefined, options),
@@ -1411,6 +1445,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1OrdersById, input, options),
+    /** GET /v1/orders/:id/advances */
+    getV1OrdersByIdAdvances: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1OrdersByIdAdvances, input, options),
     /** GET /v1/orders/:id/document */
     getV1OrdersByIdDocument: (
       input: { readonly path: { readonly id: string } },
@@ -1422,6 +1461,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/orders/duplicates */
     getV1OrdersDuplicates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1OrdersDuplicates, undefined, options),
+    /** GET /v1/orders/return-reasons */
+    getV1OrdersReturnReasons: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1OrdersReturnReasons, undefined, options),
     /** GET /v1/pos/branches */
     getV1PosBranches: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1PosBranches, undefined, options),
@@ -1901,17 +1943,40 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/notify/opt-outs */
     postV1NotifyOptOuts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1NotifyOptOuts, undefined, options),
+    /** POST /v1/order-advances/:id/refund */
+    postV1OrderAdvancesByIdRefund: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1OrderAdvancesByIdRefund, input, options),
+    /** POST /v1/order-advances/:id/reject */
+    postV1OrderAdvancesByIdReject: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1OrderAdvancesByIdReject, input, options),
+    /** POST /v1/order-advances/:id/verify */
+    postV1OrderAdvancesByIdVerify: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1OrderAdvancesByIdVerify, input, options),
+    /** POST /v1/order-advances/:id/void */
+    postV1OrderAdvancesByIdVoid: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrderAdvancesByIdVoid, input, options),
     /** POST /v1/orders */
     postV1Orders: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Orders, undefined, options),
     /** POST /v1/orders/bulk-confirm */
     postV1OrdersBulkConfirm: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1OrdersBulkConfirm, undefined, options),
-    /** POST /v1/orders/:id/advance */
-    postV1OrdersByIdAdvance: (
+    /** POST /v1/orders/:id/advances */
+    postV1OrdersByIdAdvances: (
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
-    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdAdvance, input, options),
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdAdvances, input, options),
     /** POST /v1/orders/:id/assign */
     postV1OrdersByIdAssign: (
       input: { readonly path: { readonly id: string } },
