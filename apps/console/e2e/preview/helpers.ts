@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
+import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
 
 import { totp } from '../stack/helpers.js';
@@ -90,7 +91,36 @@ export async function look(
   // realtime socket may keep a long-poll open and the network is then never idle.
   await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
   await expect(page.getByText(FAILURES)).toHaveCount(0);
+  await accessible(page, shot);
   await snap(page, shot);
+}
+
+/**
+ * M30's accessibility pass: axe, WCAG 2.0 and 2.1 A and AA, on the screen as it stands, in
+ * the light theme and then the dark one.
+ *
+ * The theme is the `dark` class on `<html>` in all three apps (`theme.ts`), so it is switched
+ * in place rather than by a reload that would lose a form's state. Recorded softly: every
+ * screen of the run is scanned and reported before the test fails. Serious and critical
+ * only, the threshold every stack spec uses.
+ */
+export async function accessible(page: Page, label: string): Promise<void> {
+  const wasDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
+  for (const dark of [false, true]) {
+    await page.evaluate((on) => document.documentElement.classList.toggle('dark', on), dark);
+    const result = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze();
+    const blocking = result.violations
+      .filter((violation) => violation.impact === 'serious' || violation.impact === 'critical')
+      .map((violation) => ({
+        id: violation.id,
+        help: violation.help,
+        targets: violation.nodes.slice(0, 5).map((node) => node.target.join(' ')),
+      }));
+    expect.soft(blocking, `${label} (${dark ? 'dark' : 'light'})`).toEqual([]);
+  }
+  await page.evaluate((on) => document.documentElement.classList.toggle('dark', on), wasDark);
 }
 
 export async function snap(page: Page, name: string): Promise<void> {

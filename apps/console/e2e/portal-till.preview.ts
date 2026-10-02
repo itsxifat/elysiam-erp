@@ -1,6 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { enrolSecondFactor, login, preview, snap, spaceEnrolment } from './preview/helpers.js';
+import {
+  accessible,
+  enrolSecondFactor,
+  login,
+  preview,
+  snap,
+  spaceEnrolment,
+} from './preview/helpers.js';
 
 /**
  * The two apps that are not the console (D-387): the investor portal with its tracking
@@ -30,6 +37,7 @@ test('investor: signs in to the portal, enrols two-step login, sees their money'
   await expect(page.getByRole('heading', { level: 1, name: 'Preview Investor' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Your position' })).toBeVisible();
   await expect(page.getByText('Investment agreement (demo)')).toBeVisible();
+  await accessible(page, 'investor-portal');
   await snap(page, 'investor-portal');
 });
 
@@ -44,6 +52,7 @@ test('a buyer tracks the parcel on its way', async ({ page }) => {
   await page.getByLabel(/^Last 4 digits of the phone/).fill(tracking.digits);
   await page.getByRole('button', { name: 'Track' }).click();
   await expect(page.getByRole('heading', { name: `Order ${tracking.orderNo}` })).toBeVisible();
+  await accessible(page, 'order-tracking');
   await snap(page, 'order-tracking');
 });
 
@@ -67,5 +76,6 @@ test('branch manager: signs in to the till, opens a shift, rings up by barcode',
   await scan.fill('2000000000102');
   await scan.press('Enter');
   await expect(page.getByText(/Classic Cotton Tee/).first()).toBeVisible();
+  await accessible(page, 'till-sale-screen');
   await snap(page, 'till-sale-screen');
 });
