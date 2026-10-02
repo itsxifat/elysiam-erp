@@ -16,7 +16,7 @@ import {
   type PostingAccount,
   type TransitionResult,
   basisPointsAsPercent,
-  orderDiscountCeilingBps,
+  shortCollectionCeilingBps,
   shortCollectionAllowed,
 } from '@elysium/domain';
 
@@ -645,12 +645,12 @@ export class TransitionsService {
       !shortCollectionAllowed({
         expectedPoisha: expected,
         collectedPoisha: collected,
-        ceilingBps: orderDiscountCeilingBps(context),
+        ceilingBps: shortCollectionCeilingBps(context),
       })
     ) {
       throw new OrdersError(
         'ORDER_DISCOUNT_ABOVE_CEILING',
-        `That is more short than your role may write off (${basisPointsAsPercent(orderDiscountCeilingBps(context))}% of the cash on delivery). ` +
+        `That is more short than your role may write off (${basisPointsAsPercent(shortCollectionCeilingBps(context))}% of the cash on delivery). ` +
           'Record it on the parcel, or ask an org admin.',
       );
     }

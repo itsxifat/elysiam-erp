@@ -34,7 +34,9 @@ and **People** (your own record).
 
 After that the courier's updates move the order to delivered or returned by themselves. Use
 **Mark delivered** or **Partial delivery** only when the courier has not reported it. Type the
-amount the rider collected, and say why if it differs from the cash to collect.
+amount the rider collected. If it is less than the cash to collect, say why in the difference
+reason. You may record a shortfall of up to 20% of the cash to collect; anything larger is
+refused, and an org admin records it.
 
 ## Chase stuck parcels
 

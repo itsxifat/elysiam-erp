@@ -877,6 +877,9 @@ export class CourierSyncService {
         ...(delivers && input.differenceReason !== undefined
           ? { differenceReason: input.differenceReason }
           : {}),
+        // A manual status is a person's figure, held to D-365 like the desk's; a webhook's
+        // or a poll's is the courier's own, which the settlement checks.
+        ...(delivers && input.source === 'manual' ? { typedByPerson: true as const } : {}),
         ...(delivers && input.deliveredLines !== undefined
           ? { deliveredLines: input.deliveredLines }
           : {}),

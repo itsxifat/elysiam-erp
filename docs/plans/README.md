@@ -48,36 +48,37 @@ M07, M09, M10, M11, M12, M13, M15, M19 and M25 were built by parallel agents bet
 
 Not a milestone: `gaps-orders-settings.md`, the console gaps M30's research found (order lifecycle buttons, courier statuses that ship an order, the settings screens, HR's pay picker; D-390 to D-396).
 
-| Plan            | Milestone                                   | State on 2026-10-02                                   |
-| --------------- | ------------------------------------------- | ----------------------------------------------------- |
-| M00             | Repo bootstrap and toolchain                | done                                                  |
-| M01             | Database core and isolation                 | done                                                  |
-| M02a            | Identity, auth, request context             | done                                                  |
-| M02b            | Permissions, audit, approvals               | done                                                  |
-| M03             | Ledger core                                 | done                                                  |
-| M04             | Platform services                           | done                                                  |
-| M05             | Console shell and UI kit                    | done; quality checks run against the real stack       |
-| M06             | Catalog                                     | built, re-audit owed                                  |
-| M07             | Stock ledger and costing                    | built, re-audit owed                                  |
-| M08             | Accounts and wallets                        | done; money screens and wallet setup added 2026-10-01 |
-| M09             | Suppliers and purchasing                    | built, re-audit owed                                  |
-| M10             | Order core                                  | built, re-audit owed                                  |
-| M11             | Order desk, buyer list, intake              | done; acceptance-auditor READY                        |
-| M12             | Courier v1 and COD reconciliation           | built, Steadfast adapter unverified                   |
-| M13             | Fraud check v1                              | removed by the owner, code deleted (D-291)            |
-| M14a            | Data migration, opening balances            | done; both auditors READY, accountant sign-off owed   |
-| M15             | Multi-courier, tracking                     | built, Pathao and RedX adapters unverified (D-200)    |
-| M16             | Buyer profiles, notify, promo               | done; both auditors READY                             |
-| M17             | Advance payments, return reasons            | built and verified; both auditors run (see the plan)  |
-| M18             | Marketing                                   | built and verified; Meta adapters unverified (D-257)  |
-| M19             | HR, attendance, payroll                     | built, re-audit owed                                  |
-| M20             | Targets, bonus rules, productivity          | done; ledger audit fixed, acceptance-auditor READY    |
-| M23             | Branches and showroom POS                   | done; integrated, ledger audit fixed                  |
-| M24             | Analytics, dashboards, leaderboard          | done; ledger audit fixed, acceptance-auditor READY    |
-| M25             | Investors                                   | done; portal pages built 2026-10-02 (see the plan)    |
-| M26             | Company loans                               | built and verified; both auditors run (see the plan)  |
-| gaps-users-auth | Staff accounts and sign-in (M30 admin gaps) | built and verified; ledger audit and re-audit fixed   |
+| Plan            | Milestone                                   | State on 2026-10-02                                    |
+| --------------- | ------------------------------------------- | ------------------------------------------------------ |
+| M00             | Repo bootstrap and toolchain                | done                                                   |
+| M01             | Database core and isolation                 | done                                                   |
+| M02a            | Identity, auth, request context             | done                                                   |
+| M02b            | Permissions, audit, approvals               | done                                                   |
+| M03             | Ledger core                                 | done                                                   |
+| M04             | Platform services                           | done                                                   |
+| M05             | Console shell and UI kit                    | done; quality checks run against the real stack        |
+| M06             | Catalog                                     | built, re-audit owed                                   |
+| M07             | Stock ledger and costing                    | built, re-audit owed                                   |
+| M08             | Accounts and wallets                        | done; money screens and wallet setup added 2026-10-01  |
+| M09             | Suppliers and purchasing                    | built, re-audit owed                                   |
+| M10             | Order core                                  | built, re-audit owed                                   |
+| M11             | Order desk, buyer list, intake              | done; acceptance-auditor READY                         |
+| M12             | Courier v1 and COD reconciliation           | built, Steadfast adapter unverified                    |
+| M13             | Fraud check v1                              | removed by the owner, code deleted (D-291)             |
+| M14a            | Data migration, opening balances            | done; both auditors READY, accountant sign-off owed    |
+| M15             | Multi-courier, tracking                     | built, Pathao and RedX adapters unverified (D-200)     |
+| M16             | Buyer profiles, notify, promo               | done; both auditors READY                              |
+| M17             | Advance payments, return reasons            | built and verified; both auditors run (see the plan)   |
+| M18             | Marketing                                   | built and verified; Meta adapters unverified (D-257)   |
+| M19             | HR, attendance, payroll                     | built, re-audit owed                                   |
+| M20             | Targets, bonus rules, productivity          | done; ledger audit fixed, acceptance-auditor READY     |
+| M23             | Branches and showroom POS                   | done; integrated, ledger audit fixed                   |
+| M24             | Analytics, dashboards, leaderboard          | done; ledger audit fixed, acceptance-auditor READY     |
+| M25             | Investors                                   | done; portal pages built 2026-10-02 (see the plan)     |
+| M26             | Company loans                               | built and verified; both auditors run (see the plan)   |
+| gaps-users-auth | Staff accounts and sign-in (M30 admin gaps) | built and verified; ledger audit and re-audit fixed    |
+| M30             | Hardening and launch readiness              | part 1 built; ledger audit fixed; part 2 needs staging |
 
-Not started: M30. Being built: M14b. Removed from scope by the owner: M27 Chatwoot and M29 landing page builder (D-290), M13 fraud check with its code (D-291), M28 activity extension (D-292). M21 and M22, the Beownz reseller platform, are out of scope by the client's instruction.
+Part-built: M30 (part 2 waits for staging, D-360) and M14b. Removed from scope by the owner: M27 Chatwoot and M29 landing page builder (D-290), M13 fraud check with its code (D-291), M28 activity extension (D-292). M21 and M22, the Beownz reseller platform, are out of scope by the client's instruction.
 
 The plain-language summary with percentages is `docs/build-status.md`.

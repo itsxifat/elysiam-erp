@@ -266,7 +266,8 @@ function machineLine() {
 }
 
 async function main() {
-  const which = process.argv[2] ?? 'all';
+  // `pnpm load:test -- desk` passes the `--` through; it is not a scenario.
+  const which = process.argv.slice(2).find((arg) => arg !== '--') ?? 'all';
   if (!['all', 'desk', 'intake'].includes(which)) {
     throw new Error('usage: load-test.mjs [all|desk|intake]');
   }

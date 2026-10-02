@@ -172,7 +172,29 @@ export function discountAllowed(input: {
 }
 
 /**
- * Whether a person may record this short collection at the desk (M30, D-365).
+ * How much of the cash on delivery a person may write off at the door, by role (D-365).
+ *
+ * The desk's ceilings, plus warehouse: the people who record a parcel's delivery by hand. With
+ * no row of its own warehouse could record no shortfall at all, not even a buyer short by the
+ * change, and an org admin would have to record every one.
+ */
+export const SHORT_COLLECTION_CEILING_BPS: Readonly<Record<string, number>> = {
+  ...ORDER_DISCOUNT_CEILING_BPS,
+  warehouse: 2_000,
+};
+
+export function shortCollectionCeilingBps(authority: OrderPricingAuthority): number {
+  if (authority.isSuperAdmin) return 10_000;
+  let best = 0;
+  for (const role of authority.roles) {
+    best = Math.max(best, SHORT_COLLECTION_CEILING_BPS[role] ?? 0);
+  }
+  return best;
+}
+
+/**
+ * Whether a person may record this short collection (M30, D-365): at the desk, or on a
+ * parcel's manual status.
  *
  * Less than the cash on delivery posts the difference to Sales discounts (§7), so a typed
  * shortfall is a discount given at the door. It is held to the same ceiling as a discount

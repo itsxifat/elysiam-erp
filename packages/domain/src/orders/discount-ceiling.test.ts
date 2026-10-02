@@ -8,6 +8,7 @@ import {
   onlyShrinks,
   orderDiscountCeilingBps,
   shortCollectionAllowed,
+  shortCollectionCeilingBps,
   typedDiscount,
   withinDiscountCeiling,
   type DiscountedLine,
@@ -178,6 +179,9 @@ describe('the order desk discount ceiling (M30, D-364)', () => {
     expect(allowed(0n, 10_000)).toBe(true);
     // Collecting more than the order says is never a write-off.
     expect(allowed(200_000n, 0)).toBe(true);
+    // Warehouse records deliveries by hand, so it has the agents' tolerance at the door.
+    expect(shortCollectionCeilingBps({ isSuperAdmin: false, roles: ['warehouse'] })).toBe(2_000);
+    expect(shortCollectionCeilingBps({ isSuperAdmin: false, roles: ['hr'] })).toBe(0);
   });
 
   it('formats basis points without dividing money', () => {

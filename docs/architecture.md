@@ -454,7 +454,7 @@ Each org configures its own thresholds. These actions go through approvals:
 
 The database enforces that the requester can never approve their own request, and a trigger freezes a decided request's terms and decision.
 
-Separation of duties outside the approvals table (M30): an employee's payout details, linked login and leaving date are payroll's to change, not a branch manager's, and nobody changes their own (D-363); a branch-scoped caller records no transfer charge (D-362); and the order desk prices no line or order further below the catalogue than the caller's role ceiling (D-364).
+Separation of duties outside the approvals table (M30): an employee's payout details, linked login and leaving date are payroll's to change, not a branch manager's, and nobody changes their own (D-363); a branch-scoped caller records no transfer charge (D-362); the order desk prices no line or order further below the catalogue than the caller's role ceiling (D-364); and a short collection a person types, at the desk or on a parcel, needs a reason and stays within a ceiling of its own (D-365).
 
 How thresholds behave (D-062, D-065, D-068):
 

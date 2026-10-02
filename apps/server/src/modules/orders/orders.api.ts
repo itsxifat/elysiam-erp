@@ -147,6 +147,11 @@ export interface CourierTriggerInput {
    * difference goes to Sales discounts "with a reason", on the journal line's memo).
    */
   readonly differenceReason?: string | undefined;
+  /**
+   * A person typed the collected amount (a parcel's manual status), not the courier: a
+   * shortfall then needs a reason and stays within the person's ceiling (D-365).
+   */
+  readonly typedByPerson?: true | undefined;
   /** Set for a partial delivery: what actually arrived, per SKU. */
   readonly deliveredLines?: readonly { readonly skuId: string; readonly deliveredQty: number }[];
   /** Set on `receive_return`: why the parcel came back, from the fixed list (M17, D-234). */
@@ -967,6 +972,7 @@ function moveOptionsFor(
           ...(input.differenceReason === undefined
             ? {}
             : { differenceReason: input.differenceReason }),
+          ...(input.typedByPerson === true ? { shortfallNeedsReason: true as const } : {}),
           ...(deliveredLines === undefined ? {} : { lines: deliveredLines }),
           occurredAt: input.occurredAt,
         };

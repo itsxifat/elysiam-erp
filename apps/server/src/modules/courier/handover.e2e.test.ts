@@ -506,6 +506,40 @@ describe('the ledger re-audit of D-392 (W-A, W-B, N-B)', () => {
     expect((await parcelOutcome(parcel))?.collected_poisha).toBe(short);
   });
 
+  /*
+   * M30, D-365 (the ledger re-check's warning): a parcel's manual status is a person's
+   * figure as much as the desk's, so a short collection there needs a reason and stays
+   * within the person's ceiling. Warehouse records deliveries by hand and has a fifth.
+   */
+  it('holds a hand-set short collection to the person’s ceiling, as at the desk', async () => {
+    const warehouse = await harness.asRole('warehouse', ORG_A);
+    const order = await orderAt('packed');
+    const parcel = await bookedParcel(order.id, order.cod);
+    const delivered = (collectedPoisha: string, differenceReason?: string) =>
+      warehouse.client.request('POST', `/v1/courier/parcels/${parcel}/status`, {
+        body: {
+          status: 'delivered',
+          rawStatus: 'Set by the warehouse',
+          reason: 'The rider confirmed by phone.',
+          collectedPoisha,
+          ...(differenceReason === undefined ? {} : { differenceReason }),
+        },
+      });
+
+    const unexplained = await delivered((order.cod - 10_000n).toString());
+    expect(unexplained.statusCode, unexplained.body).toBe(400);
+    expect(unexplained.body).toContain('ORDER_REASON_REQUIRED');
+
+    const writtenOff = await delivered('0', 'Buyer paid nothing');
+    expect(writtenOff.statusCode, writtenOff.body).toBe(403);
+    expect(writtenOff.body).toContain('ORDER_DISCOUNT_ABOVE_CEILING');
+    expect(await orderStatus(order.id)).not.toBe('delivered');
+
+    const short = await delivered((order.cod - 10_000n).toString(), 'Buyer short by the change');
+    expect(short.statusCode, short.body).toBe(201);
+    expect(await orderStatus(order.id)).toBe('delivered');
+  });
+
   it('refuses a hand-set status that would move the order while its booking is queued', async () => {
     const order = await orderAt('packed');
     const parcel = await bookedParcel(order.id, order.cod);

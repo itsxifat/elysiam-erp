@@ -1201,3 +1201,64 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
   - The preview kit's own follow-ups (R2 presigned PUT, the seed refusing a real SMS
     provider, the finalize race) and both gaps branches' follow-ups are in their entries above.
 - Next: M30 review and fixes.
+
+### 2026-10-03 · M30 · Hardening and launch readiness, part 1 · partial
+
+- Delivered (branch `m30-hardening`, `integration-wave2` merged at `f17be07`; plan
+  `docs/plans/M30.md`):
+  - **Security review and fixes.** Four read-only reviewers covered auth, tenancy and files,
+    money paths, and the public endpoints and clients. They found 5 high and 15 medium
+    findings. Every high is fixed, and so are the bypasses the ledger-auditor found in those
+    fixes over three rounds:
+    - login rate limit walked past with `..` paths (A1);
+    - a branch cash out or transfer "charge" with no receipt or checker (C1, D-362);
+    - self-loans and self-disbursal (C2, D-363);
+    - a branch manager redirecting a salary or reviving a leaver (C3, D-363);
+    - unlimited desk discounts, then their edit, exchange and markup bypasses (C4, D-364).
+      Mediums fixed: A2, A6, B1, C5 (D-365, a capped short collection at the desk and on a
+      parcel), D1 and D2. The rest have owners in the plan.
+  - **Load test**, every measured §29 target met: `pnpm load:test`, k6 in Docker on a
+    throwaway local stack, never aimed at the preview server (D-361).
+    - Order desk p95: lookup 37 ms, SKU search on 20k SKUs 37 ms, order save 83 ms.
+    - Intake: 74 ms at 20 req/s.
+    - Twelve-month reports and first load on 4G have a part-2 plan.
+  - **Route report**: `pnpm report:routes`, `docs/review/M30/route-report.md`, 319 routes.
+  - **`pnpm admin:bootstrap`**: the first super admin on a new database, through a
+    one-time `/accept-invite` link. It refuses once any super admin exists, never promotes an
+    account and is audited in every brand. `docs/runbooks/deploy.md` says how to run it.
+  - **Accessibility pass**: axe in light and dark on every screen the preview walks, plus
+    the portal, tracking page and till. Two real failures were fixed: dark-theme brand text
+    (a `--primary-text` token, held to 4.5:1 by the token audit) and the till's F2 hint.
+  - **Training guides** per role (`docs/training/`) and the **go-live checklist**
+    (`docs/go-live-checklist.md`, unsigned), built on the testing guide and
+    `runbooks/go-live.md`. The testing guide's not-on-screen list is brought up to date.
+- Verification:
+  - `pnpm verify` exits 0 at `57583d3` (under `heavy.mjs`): 183 test files, 2,873 tests, 1
+    skipped as before. Route matrix: 319 routes, 311 matrix-tested, 8 public. Every check
+    passes.
+  - The closing commit's verify is recorded in the plan's status. `e2e:preview`: 11/11, no
+    serious or critical axe violation in either theme.
+  - Each fix ran its own suite against real Postgres as it landed.
+- Auditors:
+  - ledger-auditor: 3 critical and 5 warnings, then 1 critical and 1 warning, then 0
+    critical and 1 warning. Everything is fixed.
+  - acceptance-auditor: NOT READY at `57583d3`, with 5 gaps, all evidence and docs. All are
+    closed in the closing commits.
+- Decisions/assumptions: D-360 to D-365 (D-364 and D-365 ASSUMED, with an open owner
+  question).
+- New dependencies: none. k6 runs from the `grafana/k6` Docker image, not a package.
+- Deviations from the milestone spec:
+  - Part 2 waits for staging (D-360): alert rules, retention policies, the restore drill
+    and the checklist's signature.
+  - The accessibility pass lives in the preview specs, not a new stack spec.
+  - The first super admin command was added to the milestone's scope by the coordinator.
+- Follow-ups (owner: claude unless marked; full list in the plan):
+  - Medium findings A3, A5, B2, C6, C7 and D3, and the lows.
+  - B1's head/get race, and W-2's auto-approve race.
+  - Pro-rating an order discount when an edit drops units.
+  - Ceilings as per-org settings.
+  - Console gaps: no branch on the "Add an employee" form, no employee edit screen, no
+    investor sign-in link, and the supplier dropdown empty for warehouse.
+  - Owner decisions (owner: human): A4 (host-only session cookie), and whether the 20%
+    ceilings fit (D-364, D-365).
+- Next: M30 part 2 once a staging server exists. Then the owner signs the go-live checklist.

@@ -1,6 +1,9 @@
 # Load test (M30 check 1)
 
 §29's targets, measured with k6 on 2026-10-02 at commit `0294617` by `pnpm load:test` (D-361).
+Later M30 commits changed both measured paths: order save gained the discount ceiling (one
+catalogue read per save) and the intake an area lookup. Both are one indexed query and the
+margins below are wide, but re-run the test before go-live on the commit being deployed.
 The raw k6 summaries are beside this file: `k6-order-desk-summary.json` and
 `k6-intake-summary.json`.
 
@@ -74,7 +77,7 @@ local run cannot measure honestly have a plan below, as check 1 allows.
 
 ## Re-running it
 
-`pnpm load:test` (or `pnpm load:test -- desk` / `-- intake`). Build the server first, with
+`pnpm load:test` (or `pnpm load:test desk` / `pnpm load:test intake`). Build the server first, with
 Docker and the dev stack running, under the machine's heavy lock. It needs nothing else and
 cleans up after itself. Never point it at the preview server or any shared host: they run
 other people's live apps.

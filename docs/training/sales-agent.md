@@ -37,12 +37,20 @@ Check with the buyer before you save. Press `?` on the desk to see every keyboar
 
 ## Your discount limit
 
-You may price an order at most **20% below the catalogue** in total. Every unit price you
-lower and the **Discount (৳)** you type count together. A promo code does not count toward
-the 20%.
+You may price **each line, and the order as a whole, at most 20% below the catalogue**. A unit
+price you lower, a line discount and the **Discount (৳)** you type all count. A price above the
+catalogue on one line does not make room for a bigger discount on another. A promo code does
+not count toward the 20%.
+
+When you edit an order an org admin priced lower than 20%, you may take items or units off,
+but not change prices, swap items or make any line cheaper.
 
 If an order needs more, the save is refused. Do not split the order or change prices to get
 round the limit. Ask an org admin: they may give a bigger discount.
+
+The same 20% applies at the door. If you mark an order delivered and the rider collected less
+than the cash to collect, say why in the difference reason. A shortfall of more than 20% is
+refused; an org admin records it.
 
 ## Work the queue
 

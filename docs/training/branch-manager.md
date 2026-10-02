@@ -72,6 +72,11 @@ your branch needs a receipt photo (**Attach the receipt**). At or above the bran
 threshold it waits for an org admin, and shows in **Approvals** as petty cash. **Count a
 drawer** records a counted wallet outside the till.
 
+You may move money between your branch's wallets with **Transfers**, but not record a transfer
+charge (accounts does that from the bank's statement), and you cannot switch off a wallet's
+daily count. If you mark an order delivered short, the same limits as at the order desk
+apply: a reason, and at most 20% of the cash to collect.
+
 ## Showroom staff
 
 - **People** lists your branch's staff. **Attendance**: mark a day for someone with
