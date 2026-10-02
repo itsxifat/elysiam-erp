@@ -27,6 +27,8 @@ import { CustomersService } from './customers.service.js';
 import * as repo from './orders.repository.js';
 import { OrdersError } from './orders.errors.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
+import { DeliveryObserverRegistry } from './ports/delivery-observer.port.js';
+import { deliveredNetItems, orderLevelDiscount } from './revenue.js';
 import { PROMO_PORT, type PromoPort } from './ports/promo.port.js';
 
 /**
@@ -146,6 +148,7 @@ export class TransitionsService {
     private readonly customers: CustomersService,
     private readonly audit: AuditService,
     private readonly courier: CourierBookingRegistry,
+    private readonly deliveries: DeliveryObserverRegistry,
   ) {}
 
   /**
@@ -264,6 +267,20 @@ export class TransitionsService {
       after: { status: result.to, reason: result.reason },
       request,
     });
+
+    /*
+     * M18: whoever registered for deliveries hears about this one in the same transaction
+     * (the marketing module enqueues its Conversions API event), so the event commits or
+     * rolls back with the delivery itself. Nothing registered is nothing to do (D-262).
+     */
+    if (result.to === 'delivered' || result.to === 'partially_delivered') {
+      await this.deliveries.notify(tx, {
+        orgId: context.orgId,
+        orderId: order.id,
+        status: result.to,
+        at,
+      });
+    }
 
     const after = await repo.orderById(tx, context.orgId, order.id);
     return { result, order: after ?? order, journalId: posted.journalId };
@@ -837,17 +854,7 @@ export class TransitionsService {
        * with.
        */
       const lines = await repo.orderLines(tx, context.orgId, order.id);
-      const recognised = computePartialDelivery({
-        lines: lines.map((line) => ({
-          qty: line.qty,
-          unitPricePoisha: poisha(BigInt(line.unit_price_poisha)),
-          lineDiscountPoisha: poisha(BigInt(line.discount_poisha)),
-          deliveredQty: line.delivered_qty,
-        })),
-        orderDiscountPoisha: poisha(this.orderLevelDiscount(order, lines)),
-        deliveryChargePoisha: poisha(BigInt(order.delivery_charge_poisha)),
-      });
-      const net = BigInt(recognised.deliveredNetItemsPoisha);
+      const net = BigInt(deliveredNetItems(order, lines));
       await this.customers.applyStats(tx, context.orgId, order.customer_id, {
         delivered: 1,
         ltvPoisha: net > 0n ? net : 0n,
@@ -875,9 +882,7 @@ export class TransitionsService {
    * the last migration touched.
    */
   private orderLevelDiscount(order: repo.OrderRow, lines: readonly repo.OrderLineRow[]): bigint {
-    const lineDiscounts = lines.reduce((total, line) => total + BigInt(line.discount_poisha), 0n);
-    const remainder = BigInt(order.discount_poisha) - lineDiscounts;
-    return remainder > 0n ? remainder : 0n;
+    return orderLevelDiscount(order, lines);
   }
 
   async locationFor(tx: Tx, context: ActiveContext, order: repo.OrderRow): Promise<string> {

@@ -16,6 +16,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { primaryId, timestamps } from '../columns.js';
+import { campaigns } from '../marketing/index.js';
 import { customers, orders } from '../orders/index.js';
 import { organizations } from '../org/index.js';
 import { posSales } from '../pos/index.js';
@@ -61,7 +62,7 @@ export const promoCodes = promo.table(
     categoryIds: jsonb('category_ids').notNull().default([]),
     /** A personal code: this buyer's and nobody else's. */
     customerId: uuid('customer_id'),
-    /** M18 reads this; nothing does yet. */
+    /** The brand's own campaign the code promotes (M18): explicit attribution (D-251). */
     campaignId: uuid('campaign_id'),
     /** Why the code exists: made by a person, or issued by the occasions job. */
     origin: text('origin').notNull().default('manual'),
@@ -78,6 +79,12 @@ export const promoCodes = promo.table(
       name: 'promo_codes_org_id_customer_id_fk',
       columns: [table.orgId, table.customerId],
       foreignColumns: [customers.orgId, customers.id],
+    }).onDelete('restrict'),
+    // M18: a code names a campaign of its own brand, never another's (D-047, D-261).
+    foreignKey({
+      name: 'promo_codes_org_id_campaign_id_fk',
+      columns: [table.orgId, table.campaignId],
+      foreignColumns: [campaigns.orgId, campaigns.id],
     }).onDelete('restrict'),
     check('promo_codes_code_shape', sql`${table.code} ~ '^[A-Z0-9][A-Z0-9_-]{2,39}$'`),
     check('promo_codes_kind', sql`${table.kind} in ('percent', 'flat', 'free_delivery')`),

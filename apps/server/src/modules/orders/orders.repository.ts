@@ -1189,3 +1189,67 @@ export async function orgBrand(
   `);
   return rows[0];
 }
+
+// --- M18: what the marketing module may know about orders -------------------------------
+
+export interface MarketingFactRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly channel: string;
+  readonly status: string;
+  readonly source: unknown;
+  readonly promo_code_id: string | null;
+  readonly items_poisha: string;
+  readonly discount_poisha: string;
+  readonly delivery_charge_poisha: string;
+  readonly confirmed_at: Date | null;
+  readonly delivered_at: Date | null;
+  readonly returned_at: Date | null;
+}
+
+/**
+ * Every order confirmed, delivered or returned on an Asia/Dhaka date in `[from, to]`.
+ *
+ * The three dates are §11's period membership (D-255); the comparison is a Dhaka calendar
+ * one for the reason `listOrders` gives. No phone, no name, no cost.
+ */
+export async function marketingFactRows(
+  tx: Tx,
+  orgId: string,
+  period: { readonly from: string; readonly to: string },
+): Promise<MarketingFactRow[]> {
+  const inPeriod = (column: SQL) =>
+    sql`(${column} is not null and (${column} at time zone 'Asia/Dhaka')::date between ${period.from}::date and ${period.to}::date)`;
+  const rows = await tx.execute<MarketingFactRow>(sql`
+    select o.id, o.channel::text as channel, o.status::text as status, o.source,
+           o.promo_code_id, o.items_poisha::text, o.discount_poisha::text,
+           o.delivery_charge_poisha::text, o.confirmed_at, o.delivered_at, o.returned_at
+    from sales.orders o
+    where o.org_id = ${orgId}
+      and (${inPeriod(sql`o.confirmed_at`)} or ${inPeriod(sql`o.delivered_at`)}
+           or ${inPeriod(sql`o.returned_at`)})
+    order by o.id
+  `);
+  return [...rows];
+}
+
+/** The lines of several orders at once, for delivered revenue. */
+export async function linesForOrders(
+  tx: Tx,
+  orgId: string,
+  orderIds: readonly string[],
+): Promise<(OrderLineRow & { readonly order_id: string })[]> {
+  if (orderIds.length === 0) return [];
+  const rows = await tx.execute<OrderLineRow & { readonly order_id: string }>(sql`
+    select l.order_id, l.id, l.sku_id, l.sku_code, l.product_name, l.qty, l.unit_price_poisha,
+           l.discount_poisha, l.delivered_qty, l.returned_qty, l.reseller_price_poisha,
+           l.dispatch_unit_cost_poisha, l.position
+    from sales.order_lines l
+    where l.org_id = ${orgId}
+      and l.order_id in (${sql.join(
+        orderIds.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+    order by l.order_id, l.position, l.created_at
+  `);
+  return [...rows];
+}

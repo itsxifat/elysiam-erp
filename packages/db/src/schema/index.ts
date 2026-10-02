@@ -25,6 +25,7 @@ export * from './intake/index.js';
 export * from './inventory/index.js';
 export * from './investors/index.js';
 export * from './ledger/index.js';
+export * from './marketing/index.js';
 export * from './notify/index.js';
 export * from './org/index.js';
 export * from './orders/index.js';
