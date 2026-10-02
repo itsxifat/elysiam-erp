@@ -145,18 +145,43 @@ async function state(codeId: string) {
  * the order. The race is between two of these transactions, and only the redeem phase's
  * conditional UPDATE stands between them.
  */
-function apply(word: string, orderId: string) {
+function apply(word: string, orderId: string, priced?: () => Promise<void>) {
   return withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => {
-    const priced = await api.priceForOrder(tx, context(), {
-      code: word,
-      customerId,
-      channel: 'phone',
-      lines: [{ skuId: saree.id, netPoisha: PRICE.toString() }],
-      deliveryChargePoisha: '6000',
-    });
-    const { redemptionId } = await api.redeemForOrder(tx, context(), priced, orderId);
-    return { redemptionId, discountPoisha: priced.discountPoisha };
+    // Arrive at the barrier even when pricing throws, so the other order is not left
+    // waiting for a party that will never come (the re-audit's note 4).
+    const quote = await api
+      .priceForOrder(tx, context(), {
+        code: word,
+        customerId,
+        channel: 'phone',
+        lines: [{ skuId: saree.id, netPoisha: PRICE.toString() }],
+        deliveryChargePoisha: '6000',
+      })
+      .finally(() => priced?.());
+    const { redemptionId } = await api.redeemForOrder(tx, context(), quote, orderId);
+    return { redemptionId, discountPoisha: quote.discountPoisha };
   });
+}
+
+/**
+ * Hold every caller until `parties` of them have arrived.
+ *
+ * The race this suite proves is the redeem phase's: both orders priced against the same
+ * unused code, then both redeeming. Under a loaded machine the second transaction could
+ * start after the first had committed, and was then refused at pricing — a correct refusal,
+ * but not the one under test, so the assertion on the message flaked (m30-followups' verify).
+ */
+function barrier(parties: number): () => Promise<void> {
+  let arrived = 0;
+  let release = (): void => undefined;
+  const all = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return async () => {
+    arrived += 1;
+    if (arrived === parties) release();
+    await all;
+  };
 }
 
 describe('a promo code against real Postgres', () => {
@@ -166,7 +191,11 @@ describe('a promo code against real Postgres', () => {
 
     // Two transactions, started together. A read-then-write guard lets both through;
     // the conditional UPDATE lets the row lock decide.
-    const results = await Promise.allSettled([apply(word, first), apply(word, second)]);
+    const bothPriced = barrier(2);
+    const results = await Promise.allSettled([
+      apply(word, first, bothPriced),
+      apply(word, second, bothPriced),
+    ]);
 
     const won = results.filter((result) => result.status === 'fulfilled');
     const lost = results.filter((result) => result.status === 'rejected');

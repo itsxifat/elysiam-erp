@@ -107,6 +107,26 @@ export class HrController {
     return this.employees.list(requireContext(request), request, parsed);
   }
 
+  /**
+   * The employee form's branch picker (D-419): `create Employee`, the grant the form needs,
+   * scoped like the add itself. Id, code and name only.
+   */
+  @RequireAbility('create', 'Employee')
+  @Get('branch-options')
+  async branchOptions(@Req() request: FastifyRequest) {
+    return this.employees.branchOptions(requireContext(request), request);
+  }
+
+  /**
+   * The sign-ins an employee may be linked to (D-419): `update Payroll`, which linking needs
+   * (D-363). Names, masked emails, roles and the existing link; nothing about the sign-in.
+   */
+  @RequireAbility('update', 'Payroll')
+  @Get('login-options')
+  async loginOptions(@Req() request: FastifyRequest) {
+    return this.employees.loginOptions(requireContext(request));
+  }
+
   @RequireAbility('read', 'Employee')
   @Get('employees/:id')
   async getEmployee(@Req() request: FastifyRequest, @Param('id') id: string) {

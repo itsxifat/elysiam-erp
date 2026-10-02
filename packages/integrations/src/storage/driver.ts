@@ -88,7 +88,15 @@ export interface StorageDriver {
    */
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
 
-  get(key: string): Promise<Uint8Array>;
+  /**
+   * The object's bytes.
+   *
+   * With `maxBytes`, the read stops as soon as it passes that many bytes and fails
+   * `too-large`, so whatever was stored, or swapped in after a size check, never costs
+   * more memory than the ceiling (M30's B1, D-417). A presigned PUT cannot bind a length,
+   * so anything that reads an upload passes its type's ceiling here.
+   */
+  get(key: string, options?: { readonly maxBytes?: number }): Promise<Uint8Array>;
 
   /** Metadata without the bytes, or `null` if nothing is there. */
   head(key: string): Promise<StoredObject | null>;

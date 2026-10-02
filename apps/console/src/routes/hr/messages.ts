@@ -185,6 +185,22 @@ const HR_KEYS = [
   'hr.deniedPeople',
   'hr.saveFailed',
   'hr.loading',
+  'hr.edit',
+  'hr.editTitle',
+  'hr.editHint',
+  'hr.editNothingChanged',
+  'hr.editNameRequired',
+  'hr.editPayoutRefRequired',
+  'hr.field.leaveDate',
+  'hr.field.login',
+  'hr.noBranch',
+  'hr.chooseBranch',
+  'hr.unlistedBranch',
+  'hr.notLinked',
+  'hr.linkedElsewhere',
+  'hr.unlistedLogin',
+  'hr.keepHint',
+  'hr.saved',
 ] as const satisfies readonly MessageKey[];
 
 export type HrMessageKey = (typeof HR_KEYS)[number];

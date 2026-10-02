@@ -686,10 +686,89 @@ describe('phone OTP goes through the SMS provider (D-012)', () => {
     expect(code, 'no OTP reached the provider').toBeDefined();
     expect(code).toMatch(/^\d{6}$/);
 
+    // The right code, for a number on file — and still no session (A3, D-411). Before the
+    // hook this was a 200 with a session cookie: a staff session with no second factor.
     const verified = await authRequest('/phone-number/verify', {
       body: { phoneNumber, code },
     });
-    expect(verified.status, await verified.clone().text()).toBeLessThan(400);
+    expect(verified.status, await verified.clone().text()).toBe(403);
+    expect(hasSessionCookie(verified), 'an SMS code minted a session').toBe(false);
+    const sessions = await withGlobal(async (tx) =>
+      tx.execute<{ count: number }>(
+        sql`select count(*)::int as count from iam.sessions where user_id = ${userId}`,
+      ),
+    );
+    expect(sessions[0]?.count).toBe(0);
+  });
+
+  it('refuses an SMS sign-in for a privileged user too, even asking for no session (A3)', async () => {
+    // The attack the hook closes: an org admin with a phone on file, signed in by a text
+    // message alone, past the two-step verification §6 requires of them.
+    const phoneNumber = `+88018${String(Date.now()).slice(-8)}`;
+    const email = `otp_admin_${Date.now()}@example.invalid`;
+    const userId = await createSignInableUser(email);
+    await grantMembership({ userId, orgId: ORG_A, role: 'org_admin' });
+    await withGlobal(async (tx) => {
+      await tx.execute(
+        sql`update iam.users set phone_number = ${phoneNumber}, phone_number_verified = true where id = ${userId}`,
+      );
+    });
+    sms.clear();
+    await authRequest('/phone-number/send-otp', { body: { phoneNumber } });
+    const code = sms.lastCodeFor(phoneNumber);
+
+    for (const extra of [{}, { disableSession: false }, { updatePhoneNumber: false }]) {
+      const attempt = await authRequest('/phone-number/verify', {
+        body: { phoneNumber, code, ...extra },
+      });
+      expect(attempt.status, JSON.stringify(extra)).toBe(403);
+      expect(hasSessionCookie(attempt)).toBe(false);
+    }
+  });
+
+  it('still lets a signed-in person confirm a new number on their own account', async () => {
+    const phoneNumber = `+88019${String(Date.now()).slice(-8)}`;
+    const email = `otp_update_${Date.now()}@example.invalid`;
+    const userId = await createSignInableUser(email);
+    await grantMembership({ userId, orgId: ORG_A, role: 'sales' });
+
+    const jar = new CookieJar();
+    const signedIn = await authRequest('/sign-in/email', { body: { email, password: PASSWORD } });
+    expect(signedIn.status, await signedIn.clone().text()).toBeLessThan(400);
+    jar.absorb(signedIn);
+
+    sms.clear();
+    const sent = await authRequest('/phone-number/send-otp', {
+      body: { phoneNumber },
+      headers: { cookie: jar.header() },
+    });
+    expect(sent.status, await sent.clone().text()).toBeLessThan(400);
+    const code = sms.lastCodeFor(phoneNumber);
+
+    const confirmed = await authRequest('/phone-number/verify', {
+      body: { phoneNumber, code, updatePhoneNumber: true },
+      headers: { cookie: jar.header() },
+    });
+    expect(confirmed.status, await confirmed.clone().text()).toBeLessThan(400);
+    const [row] = await withGlobal(async (tx) =>
+      tx.execute<{ phone_number: string | null }>(
+        sql`select phone_number from iam.users where id = ${userId}`,
+      ),
+    );
+    expect(row?.phone_number).toBe(phoneNumber);
+
+    // And with a right code but no session, Better Auth itself refuses it (the ledger audit's
+    // W4: a wrong code would have failed before the session check this is about).
+    const fresh = `+88016${String(Date.now()).slice(-8)}`;
+    sms.clear();
+    await authRequest('/phone-number/send-otp', { body: { phoneNumber: fresh } });
+    const freshCode = sms.lastCodeFor(fresh);
+    expect(freshCode).toBeDefined();
+    const anonymous = await authRequest('/phone-number/verify', {
+      body: { phoneNumber: fresh, code: freshCode, updatePhoneNumber: true },
+    });
+    expect(anonymous.status).toBe(401);
+    expect(hasSessionCookie(anonymous)).toBe(false);
   });
 
   it('never logs the code beside the number it belongs to (invariant 10)', async () => {

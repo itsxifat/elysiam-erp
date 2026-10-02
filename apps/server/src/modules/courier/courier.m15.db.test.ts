@@ -10,6 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { attachScope } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import type { RateLimitStore } from '../../platform/http/rate-limit.js';
 import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
 import { ORG_A, startHttpHarness, type HttpHarness } from '../../testing/http-harness.js';
 import { ApprovalsService } from '../approvals/approvals.service.js';
@@ -40,6 +41,7 @@ import { CourierSelectionService } from './selection.service.js';
 import { SettlementsService } from './settlements.service.js';
 import { StuckParcelsService } from './stuck.service.js';
 import { CourierSyncService } from './sync.service.js';
+import { TRACKING_LIMITS, TRACKING_RATE_LIMITER } from './tracking.service.js';
 
 /**
  * M15 against a real database (acceptance checks 2, 3, 4 and 5, and M12's gap 3).
@@ -583,6 +585,56 @@ describe('the public tracking page (check 3)', () => {
       phoneLast4: last4,
     });
     expect(right.statusCode).toBe(429);
+  });
+
+  it('pauses a brand’s tracking for everyone once its misses are spent (D3, D-416)', async () => {
+    const limiter = harness.app.get<RateLimitStore>(TRACKING_RATE_LIMITER, { strict: false });
+    const missKey = `track:misses:${BRAND}`;
+    const order = await seedShippedOrder(ORG_A);
+    await onZone(order, zoneInside, courierA);
+    await book(order);
+    const last4 = (await phoneOf(order)).slice(-4);
+    const right = { brand: BRAND, orderNo: order.orderNo, phoneLast4: last4 };
+
+    // A found answer spends nothing; a miss spends one.
+    const before = (await limiter.peek(missKey)).count;
+    const found = await track(await portalClient(), right);
+    expect(JSON.parse(found.body)).toMatchObject({ found: true });
+    expect((await limiter.peek(missKey)).count).toBe(before);
+    const miss = await track(await portalClient(), {
+      brand: BRAND,
+      orderNo: 'CUR-2609-55555',
+      phoneLast4: '1234',
+    });
+    expect(JSON.parse(miss.body)).toEqual({ found: false });
+    expect((await limiter.peek(missKey)).count).toBe(before + 1);
+
+    // The rest of the budget, spent the way a botnet would: one guess each at many orders.
+    const { limit, windowSeconds } = TRACKING_LIMITS.perBrandMisses;
+    for (let spent = before + 1; spent < limit; spent += 1) {
+      await limiter.hit(missKey, limit, windowSeconds);
+    }
+
+    // Now the right digits for a real order wait exactly as a guess does: no oracle.
+    const paused = await track(await portalClient(), right);
+    const guessed = await track(await portalClient(), {
+      brand: BRAND,
+      orderNo: 'CUR-2609-55556',
+      phoneLast4: '4321',
+    });
+    for (const response of [paused, guessed]) {
+      expect(response.statusCode).toBe(429);
+      expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
+    }
+    expect(paused.body).toBe(guessed.body);
+
+    // Another brand's tracking is its own budget.
+    const elsewhere = await track(await portalClient(), {
+      brand: 'no-such-brand',
+      orderNo: order.orderNo,
+      phoneLast4: last4,
+    });
+    expect(elsewhere.statusCode).toBe(200);
   });
 
   it('counts a missing order against the limit exactly as a real one', async () => {

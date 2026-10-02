@@ -439,3 +439,179 @@ describe('M30: finalize checks the stored size before reading a byte', () => {
     await expect(stat(file)).rejects.toThrow();
   });
 });
+
+/*
+ * M30 follow-ups, B2 (D-413). A narrower grant of a purpose's subject is a grant over some
+ * rows, and CASL asked without a row said yes to it: a branch manager's `read Wallet` (their
+ * branch) opened every branch's receipts, and everyone's own `read Employee` opened every
+ * colleague's KYC scan, to whoever held the file id.
+ */
+describe('B2: the generic download needs the purpose across the brand', () => {
+  const pdf = (label: string) => Buffer.from(`%PDF-1.7\n${label}\ntrailer<<>>\n%%EOF\n`, 'latin1');
+
+  it("refuses a colleague's KYC scan to everyone holding only their own employee record", async () => {
+    const hr = await harness.asRole('hr', ORG_A);
+    const { fileId } = await upload(
+      hr.client,
+      { purpose: 'kyc', contentType: 'application/pdf', originalName: 'nid.pdf' },
+      pdf('nid'),
+    );
+
+    for (const role of ['sales', 'warehouse', 'marketing'] as const) {
+      const someone = await harness.asRole(role, ORG_A);
+      const refused = await downloadUrl(someone.client, fileId);
+      expect(refused.status, `${role}: ${refused.body}`).toBe(403);
+      expect(refused.body).not.toContain('/v1/files/content');
+    }
+
+    // A positive control: org_admin holds `read Employee` across the brand.
+    const admin = await harness.asRole('org_admin', ORG_A);
+    expect((await downloadUrl(admin.client, fileId)).status).toBe(200);
+    // And the uploader always may.
+    expect((await downloadUrl(hr.client, fileId)).status).toBe(200);
+  });
+
+  it("refuses another branch's petty-cash receipt to a branch manager", async () => {
+    const accounts = await harness.asRole('accounts', ORG_A);
+    const { fileId } = await upload(
+      accounts.client,
+      { purpose: 'petty-cash-receipt', contentType: 'application/pdf' },
+      pdf('receipt'),
+    );
+
+    const manager = await harness.asRole('branch_manager', ORG_A);
+    const refused = await downloadUrl(manager.client, fileId);
+    expect(refused.status, refused.body).toBe(403);
+
+    const admin = await harness.asRole('org_admin', ORG_A);
+    expect((await downloadUrl(admin.client, fileId)).status).toBe(200);
+  });
+
+  it('still gives a branch manager the receipt they uploaded', async () => {
+    const manager = await harness.asRole('branch_manager', ORG_A);
+    const { fileId } = await upload(
+      manager.client,
+      { purpose: 'petty-cash-receipt', contentType: 'application/pdf' },
+      pdf('own receipt'),
+    );
+    expect((await downloadUrl(manager.client, fileId)).status).toBe(200);
+  });
+});
+
+/*
+ * M30 follow-ups, B1's race (D-417). The local driver's bytes PUT and the finalize take the
+ * file row's lock, so a PUT cannot land between the finalize's size check and its read: it
+ * waits for the finalize, then finds the file stored and is refused.
+ */
+describe('B1: the bytes PUT waits for a finalize holding the row', () => {
+  it('blocks behind the lock, then refuses once the file is stored', async () => {
+    const sales = await harness.asRole('sales', ORG_A);
+    const bytes = await pngBytes();
+    const ticketResponse = await sales.client.request('POST', '/v1/files', {
+      body: {
+        purpose: 'order-payment-proof',
+        contentType: 'image/png',
+        sizeBytes: bytes.byteLength,
+      },
+    });
+    expect(ticketResponse.statusCode, ticketResponse.body).toBe(201);
+    const ticket = JSON.parse(ticketResponse.body) as {
+      fileId: string;
+      url: string;
+      headers: Record<string, string>;
+    };
+    const put = (payload: Buffer) =>
+      harness.server.inject({
+        method: 'PUT',
+        url: `${new URL(ticket.url).pathname}${new URL(ticket.url).search}`,
+        headers: { ...ticket.headers, host: new URL(ticket.url).host },
+        payload,
+      });
+    expect((await put(bytes)).statusCode).toBe(200);
+
+    // Stand in for a finalize: hold the row, and mark it stored before letting go.
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let signalLocked = (): void => undefined;
+    const locked = new Promise<void>((resolve) => {
+      signalLocked = resolve;
+    });
+    const holder = withSystem(
+      async (tx) => {
+        await tx.execute(sql`select id from files.objects where id = ${ticket.fileId} for update`);
+        signalLocked();
+        await gate;
+        await tx.execute(sql`
+          update files.objects
+          set status = 'stored', size_bytes = ${String(bytes.byteLength)}::bigint,
+              sha256 = ${'a'.repeat(64)}, updated_at = now()
+          where id = ${ticket.fileId}
+        `);
+      },
+      { orgId: ORG_A },
+    );
+    await locked;
+
+    let settled = false;
+    const late = put(Buffer.concat([bytes, Buffer.from('tail')])).then((response) => {
+      settled = true;
+      return response;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(settled, 'the PUT went ahead while the finalize held the row').toBe(false);
+
+    release();
+    await holder;
+    const response = await late;
+    expect(response.statusCode, response.body).toBe(409);
+
+    // The bytes on disk are still the ones the "finalize" examined.
+    const [row] = await withSystem(
+      (tx) =>
+        tx.execute<{ storage_key: string }>(
+          sql`select storage_key from files.objects where id = ${ticket.fileId}`,
+        ),
+      { orgId: ORG_A },
+    );
+    const onDisk = await stat(
+      path.join(process.env.STORAGE_LOCAL_ROOT ?? '', row?.storage_key ?? ''),
+    );
+    expect(onDisk.size).toBe(bytes.byteLength);
+  });
+
+  it('finalizes once when two finalizes race, and the second answers from the row', async () => {
+    const sales = await harness.asRole('sales', ORG_A);
+    const bytes = await pngBytes();
+    const ticketResponse = await sales.client.request('POST', '/v1/files', {
+      body: {
+        purpose: 'order-payment-proof',
+        contentType: 'image/png',
+        sizeBytes: bytes.byteLength,
+      },
+    });
+    const ticket = JSON.parse(ticketResponse.body) as {
+      fileId: string;
+      url: string;
+      headers: Record<string, string>;
+    };
+    await harness.server.inject({
+      method: 'PUT',
+      url: `${new URL(ticket.url).pathname}${new URL(ticket.url).search}`,
+      headers: { ...ticket.headers, host: new URL(ticket.url).host },
+      payload: bytes,
+    });
+
+    const [first, second] = await Promise.all([
+      sales.client.request('POST', `/v1/files/${ticket.fileId}/finalize`),
+      sales.client.request('POST', `/v1/files/${ticket.fileId}/finalize`),
+    ]);
+    expect(first.statusCode, first.body).toBe(201);
+    expect(second.statusCode, second.body).toBe(201);
+    const a = JSON.parse(first.body) as { status: string; sha256: string };
+    const b = JSON.parse(second.body) as { status: string; sha256: string };
+    expect(a.status).toBe('stored');
+    expect(b.sha256).toBe(a.sha256);
+  });
+});

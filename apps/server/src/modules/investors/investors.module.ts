@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { ApprovalsModule } from '../approvals/approvals.module.js';
 import { FilesModule } from '../files/files.module.js';
+import { IamDirectoryModule } from '../iam/iam.api.js';
 import { LedgerModule } from '../ledger/ledger.module.js';
 import { DistributionsService } from './distributions.service.js';
 import { InvestorDocumentsService } from './documents.service.js';
@@ -28,7 +29,7 @@ import { WithdrawalsService } from './withdrawals.service.js';
  *   module owns the purpose policy that decides who may read what (§22, D-115).
  */
 @Module({
-  imports: [LedgerModule, ApprovalsModule, FilesModule],
+  imports: [LedgerModule, ApprovalsModule, FilesModule, IamDirectoryModule],
   controllers: [InvestorsController],
   providers: [
     InvestorsService,

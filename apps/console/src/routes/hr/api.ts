@@ -1,5 +1,6 @@
 import { api } from '../../api.js';
 import { env } from '../../env.js';
+import type { EmployeePatch } from './employee-patch.js';
 
 /**
  * `/v1/hr/*`, typed to what the controller actually returns.
@@ -240,6 +241,35 @@ export function createEmployee(input: {
   readonly phone?: string;
 }): Promise<Employee> {
   return api.post('/v1/hr/employees', input);
+}
+
+/** Change an employee: only the fields in `patch` (see `employee-patch.ts`). */
+export function updateEmployee(id: string, patch: EmployeePatch): Promise<Employee> {
+  return api.patch(`/v1/hr/employees/${id}`, patch);
+}
+
+/** A branch the employee form may offer: the caller's own reach (D-419). */
+export interface BranchOption {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
+export function listBranchOptions(): Promise<{ items: readonly BranchOption[] }> {
+  return api.get('/v1/hr/branch-options');
+}
+
+/** A sign-in an employee may be linked to (D-419). The email arrives masked. */
+export interface LoginOption {
+  readonly userId: string;
+  readonly name: string;
+  readonly emailMasked: string;
+  readonly roles: readonly string[];
+  readonly linkedEmployeeId: string | null;
+}
+
+export function listLoginOptions(): Promise<{ items: readonly LoginOption[] }> {
+  return api.get('/v1/hr/login-options');
 }
 
 export function listStructures(employeeId: string): Promise<{ items: SalaryStructure[] }> {

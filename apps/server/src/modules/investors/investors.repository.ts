@@ -951,6 +951,20 @@ export async function accountBySubtype(
   return rows[0];
 }
 
+/** Which investor, if any, each of these logins is linked to (D-419). */
+export async function investorsByUsers(
+  tx: Tx,
+  orgId: string,
+  userIds: readonly string[],
+): Promise<{ id: string; user_id: string }[]> {
+  if (userIds.length === 0) return [];
+  const rows = await tx.execute<{ id: string; user_id: string }>(sql`
+    select i.id, i.user_id from investors.investors i
+    where i.org_id = ${orgId} and i.user_id = any (${sql.param([...userIds])}::text[])
+  `);
+  return [...rows];
+}
+
 /** The org's wallet accounts, for the screens that pick one. */
 export async function walletAccounts(tx: Tx, orgId: string): Promise<AccountRow[]> {
   const rows = await tx.execute<AccountRow>(sql`

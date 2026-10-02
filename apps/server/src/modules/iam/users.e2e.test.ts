@@ -1053,3 +1053,109 @@ describe('iam.credential_resets', () => {
     expect(fromB[0]?.n).toBe(0);
   });
 });
+
+describe('POST /v1/users on someone from another brand (M30 A5, D-412)', () => {
+  /** A person's roles in a brand, read in that brand's own context (RLS applies). */
+  async function rolesIn(userId: string, orgId: string): Promise<string[]> {
+    const rows = await withOrg({ orgId, userId: admin.userId }, async (tx) =>
+      tx.execute<{ role: string }>(sql`
+        select role::text as role from iam.memberships where user_id = ${userId} and org_id = ${orgId}
+      `),
+    );
+    return [...rows].map((row) => row.role);
+  }
+
+  it('refuses a pre-claimed identity: one brand creates it, sets its password, the other adds it', async () => {
+    // The attack: brand A's admin invites the address of someone brand B is about to hire,
+    // redeems the invite themselves, and waits. When B's admin adds the address, the old
+    // code reused the identity and B's role opened with A's admin's password.
+    const adminB = await harness.asRole('org_admin', ORG_B);
+    const email = `preclaim_${randomUUID()}@example.invalid`;
+
+    const claimed = await admin.client.request('POST', '/v1/users', {
+      body: { email, name: 'Future hire', role: 'sales', branchIds: [] },
+    });
+    expect(claimed.statusCode, claimed.body).toBe(201);
+    const { userId, inviteToken } = json<{ userId: string; inviteToken: string }>(claimed);
+    await harness.auth.auth.api.resetPassword({
+      body: { newPassword: PASSWORD, token: inviteToken },
+    });
+
+    const added = await adminB.client.request('POST', '/v1/users', {
+      body: { email, name: 'Future hire', role: 'accounts', branchIds: [] },
+    });
+    expect(added.statusCode, added.body).toBe(403);
+    expect(json<{ code: string }>(added).code).toBe('USER_PROTECTED');
+    expect(await rolesIn(userId, ORG_B), 'no role was granted in brand B').toEqual([]);
+  });
+
+  it('counts a role that was revoked, and a password never set', async () => {
+    // Revoking the role after setting the password would otherwise launder the claim; and
+    // an invite nobody redeemed yet is still a link brand A's admin holds.
+    const adminB = await harness.asRole('org_admin', ORG_B);
+    const revoked = await member(['sales'], { password: true });
+    const switchedOff = await withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
+      tx.execute<{ id: string }>(sql`
+        update iam.memberships set is_active = false
+        where user_id = ${revoked.userId} and org_id = ${ORG_A}
+        returning id
+      `),
+    );
+    expect(switchedOff.length, 'the role was revoked').toBe(1);
+    expect(await rolesIn(revoked.userId, ORG_A), 'a positive control for rolesIn').toEqual([
+      'sales',
+    ]);
+    const unredeemed = await member(['warehouse'], { password: false });
+
+    for (const person of [revoked, unredeemed]) {
+      const added = await adminB.client.request('POST', '/v1/users', {
+        body: { email: person.email, name: 'Someone', role: 'sales', branchIds: [] },
+      });
+      expect(added.statusCode, added.body).toBe(403);
+      expect(await rolesIn(person.userId, ORG_B)).toEqual([]);
+    }
+  });
+
+  it('lets a super admin add a colleague to a second brand, reusing the identity', async () => {
+    // §5 exception 4: one person, several brands, one account. Still possible, by the
+    // person who already sees every brand.
+    const colleague = await member(['warehouse'], { password: true });
+    const root = await createTestUser({ name: 'Root for brand B', isSuperAdmin: true });
+    await setPasswordFor(root.email);
+    const signedIn = await signIn(root.email);
+    await enrol(signedIn.client);
+    const entered = await signedIn.client.request('POST', '/v1/me/active-org', {
+      body: { orgId: ORG_B },
+    });
+    expect(entered.statusCode, entered.body).toBe(201);
+
+    const added = await signedIn.client.request('POST', '/v1/users', {
+      body: { email: colleague.email, name: 'Colleague', role: 'sales', branchIds: [] },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    expect(json<{ userId: string; created: boolean }>(added)).toMatchObject({
+      userId: colleague.userId,
+      created: false,
+    });
+    expect(await rolesIn(colleague.userId, ORG_B)).toEqual(['sales']);
+  });
+
+  it('lets a brand admin add a second role to someone who also works elsewhere (N5)', async () => {
+    // Already this brand's person: a second role here stays this brand's admin's to give.
+    const shared = await member(['sales'], { alsoIn: { orgId: ORG_B, role: 'sales' } });
+    const added = await admin.client.request('POST', '/v1/users', {
+      body: { email: shared.email, name: 'Shared person', role: 'marketing', branchIds: [] },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    expect(json<{ created: boolean }>(added).created).toBe(false);
+  });
+
+  it('still lets a brand admin add a second role to their own person', async () => {
+    const person = await member(['warehouse'], { password: true });
+    const added = await admin.client.request('POST', '/v1/users', {
+      body: { email: person.email, name: 'Same person', role: 'marketing', branchIds: [] },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    expect(json<{ created: boolean }>(added).created).toBe(false);
+  });
+});

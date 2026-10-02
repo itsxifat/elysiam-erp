@@ -83,6 +83,23 @@ export function maskPhone(value: string): string {
   return `${head}${'*'.repeat(Math.max(0, digits.length - 5))}${tail}`;
 }
 
+/**
+ * `r***@example.com` (invariant 10, D-419).
+ *
+ * For a picker that has to tell two people of the same name apart without handing the
+ * screen a staff directory: the first letter and the domain are enough to choose the right
+ * login, and the rest of the address is what makes it personal data. Anything that is not
+ * a plain `local@domain` is masked whole.
+ */
+export function maskEmail(value: string): string {
+  const at = value.lastIndexOf('@');
+  if (at <= 0 || at === value.length - 1) return '*'.repeat(Math.max(3, value.length));
+  const local = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  const head = local.length > 1 ? local.slice(0, 1) : '';
+  return `${head}***@${domain}`;
+}
+
 /** Mask every string inside a value that sits under a phone-named key. */
 /**
  * References already on the path being walked.

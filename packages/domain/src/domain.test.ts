@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { changedFields, maskPhone, REDACTED, redact } from './audit/index.js';
+import { changedFields, maskEmail, maskPhone, REDACTED, redact } from './audit/index.js';
 import { canDecide, requiresApproval, type Threshold } from './approvals/index.js';
 
 /**
@@ -172,6 +172,15 @@ describe('check 3: redaction', () => {
     expect(maskPhone('+8801712345689')).toMatch(/^\d{3}\*+\d{2}$/);
     expect(maskPhone('01712345689')).toContain('017');
     expect(maskPhone('01712345689')).toMatch(/89$/);
+  });
+
+  it('masks an email down to its first letter and its domain (D-419)', () => {
+    expect(maskEmail('rina.akter@elysium.test')).toBe('r***@elysium.test');
+    // A one-letter local part keeps nothing of it: the letter would be the whole address.
+    expect(maskEmail('r@elysium.test')).toBe('***@elysium.test');
+    // Not an address at all: masked whole, never echoed.
+    expect(maskEmail('not-an-address')).not.toContain('address');
+    expect(maskEmail('@elysium.test')).not.toContain('elysium');
   });
 
   it('keeps two numbers on the same prefix distinguishable', () => {

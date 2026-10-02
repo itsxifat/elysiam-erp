@@ -144,6 +144,8 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/investors',
   'POST /v1/investors',
   'GET /v1/investors/wallet-accounts',
+  // m30-followups (D-419): the portal sign-in picker.
+  'GET /v1/investors/login-options',
   'GET /v1/investors/investments',
   'POST /v1/investors/investments',
   'GET /v1/investors/distributions',
@@ -192,6 +194,9 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/hr/attendance/imports',
   'POST /v1/hr/attendance/imports',
   'GET /v1/hr/payroll/wallets',
+  // m30-followups (D-419): the employee form's branch and sign-in pickers.
+  'GET /v1/hr/branch-options',
+  'GET /v1/hr/login-options',
   'GET /v1/hr/payroll/runs',
   'GET /v1/hr/payroll/runs/:id',
   'POST /v1/hr/payroll/runs',
@@ -224,6 +229,8 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/hr/payroll/runs/:id/bonuses',
   'POST /v1/hr/payroll/runs/:id/bonuses',
   'GET /v1/supply/suppliers',
+  // m30-followups (D-419): the supplier picker.
+  'GET /v1/supply/supplier-options',
   'GET /v1/supply/suppliers/:id',
   'POST /v1/supply/suppliers',
   'PATCH /v1/supply/suppliers/:id',

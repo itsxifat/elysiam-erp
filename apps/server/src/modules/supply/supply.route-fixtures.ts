@@ -78,6 +78,7 @@ function state(): Fixtures {
 
 export const SUPPLY_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   'GET /v1/supply/suppliers': () => ({ url: '/v1/supply/suppliers' }),
+  'GET /v1/supply/supplier-options': () => ({ url: '/v1/supply/supplier-options' }),
   'GET /v1/supply/suppliers/:id': () => ({ url: `/v1/supply/suppliers/${state().supplier}` }),
   'POST /v1/supply/suppliers': () => ({
     url: '/v1/supply/suppliers',

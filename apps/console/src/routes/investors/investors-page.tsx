@@ -27,7 +27,9 @@ import { ApiError } from '../../api.js';
 import {
   createInvestor,
   declareDistribution,
+  linkInvestorLogin,
   listDistributions,
+  listInvestorLogins,
   listInvestors,
   listWalletAccounts,
   listWithdrawals,
@@ -108,6 +110,12 @@ const withdrawalFormSchema = z.object({
 });
 type WithdrawalForm = z.infer<typeof withdrawalFormSchema>;
 
+/** The portal sign-in an investor reads their own rows through (D-419). */
+const linkFormSchema = z.object({
+  userId: z.string().min(1),
+});
+type LinkForm = z.infer<typeof linkFormSchema>;
+
 const reviewFormSchema = z.object({
   walletAccountId: z.string().uuid(),
   note: z.string().trim().max(500).optional(),
@@ -164,6 +172,7 @@ export function InvestorsPage() {
   const [declareOpen, setDeclareOpen] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
   const [reviewing, setReviewing] = useState<WithdrawalRow | null>(null);
+  const [linking, setLinking] = useState<InvestorRow | null>(null);
   const [notice, setNotice] = useState<InvestorsMessageKey | null>(null);
 
   const investorQuery = useQuery({
@@ -180,6 +189,15 @@ export function InvestorsPage() {
     queryKey: ['investors', 'withdrawals'],
     queryFn: () => listWithdrawals(),
     enabled: mayRead,
+  });
+  /*
+   * `update Investor`, the grant the link itself needs; loaded only while the dialog is open,
+   * so a page visit by anyone else asks for nothing it would be refused.
+   */
+  const loginQuery = useQuery({
+    queryKey: ['investors', 'login-options'],
+    queryFn: listInvestorLogins,
+    enabled: mayDecide && linking !== null,
   });
   const walletQuery = useQuery({
     queryKey: ['investors', 'wallet-accounts'],
@@ -227,6 +245,10 @@ export function InvestorsPage() {
   const withdrawalForm = useForm<WithdrawalForm>({
     resolver: zodResolver(withdrawalFormSchema),
     defaultValues: { kind: 'profit', amountPoisha: '', reason: '' },
+  });
+  const linkForm = useForm<LinkForm>({
+    resolver: zodResolver(linkFormSchema),
+    defaultValues: { userId: '' },
   });
   const reviewForm = useForm<ReviewForm>({
     resolver: zodResolver(reviewFormSchema),
@@ -335,6 +357,17 @@ export function InvestorsPage() {
     },
   });
 
+  const linkMutation = useMutation({
+    mutationFn: (values: LinkForm & { investorId: string }) =>
+      linkInvestorLogin(values.investorId, values.userId),
+    onSuccess: async () => {
+      setLinking(null);
+      setNotice('investors.linkedNotice');
+      linkForm.reset({ userId: '' });
+      await refresh();
+    },
+  });
+
   const payMutation = useMutation({
     mutationFn: (withdrawalId: string) => payWithdrawal(withdrawalId),
     onSuccess: async () => {
@@ -401,8 +434,36 @@ export function InvestorsPage() {
           </StatusBadge>
         ),
       }),
+      column.display({
+        id: 'portal',
+        header: a('investors.colPortal'),
+        cell: (cell) => {
+          const row = cell.row.original;
+          const linked = row.userId !== null;
+          if (!mayDecide) {
+            return (
+              <span className="text-xs text-muted-foreground">
+                {a(linked ? 'investors.portalLinked' : 'investors.portalNotLinked')}
+              </span>
+            );
+          }
+          return (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                linkForm.reset({ userId: row.userId ?? '' });
+                linkMutation.reset();
+                setLinking(row);
+              }}
+            >
+              {a(linked ? 'investors.portalChange' : 'investors.portalLink')}
+            </Button>
+          );
+        },
+      }),
     ]) as readonly DataTableColumn<InvestorRow>[];
-  }, [a, locale]);
+  }, [a, locale, mayDecide, linkForm, linkMutation]);
 
   const distributionColumns = useMemo<readonly DataTableColumn<DistributionRow>[]>(() => {
     const column = dataTableColumns<DistributionRow>();
@@ -533,6 +594,23 @@ export function InvestorsPage() {
     value: investor.id,
     label: `${investor.code} · ${investor.name}`,
   }));
+  /*
+   * The sign-ins on offer: a person already linked to a different investor is shown but
+   * cannot be chosen, because one login is one investor's view of their own rows.
+   */
+  const loginOptions: readonly SelectOption[] = (loginQuery.data?.items ?? []).map((login) => {
+    const elsewhere = login.linkedInvestorId !== null && login.linkedInvestorId !== linking?.id;
+    return {
+      value: login.userId,
+      label: `${login.name} · ${login.emailMasked}${
+        elsewhere ? ` (${a('investors.portalLinkedElsewhere')})` : ''
+      }`,
+      disabled: elsewhere,
+    };
+  });
+  const currentLogin = (loginQuery.data?.items ?? []).find(
+    (login) => linking !== null && login.userId === linking.userId,
+  );
   const walletOptions: readonly SelectOption[] = (walletQuery.data?.items ?? []).map((wallet) => ({
     value: wallet.id,
     label: `${wallet.code} · ${wallet.name}`,
@@ -836,6 +914,58 @@ export function InvestorsPage() {
           <div className="mt-5 flex justify-end">
             <Button type="submit" disabled={requestMutation.isPending}>
               {requestMutation.isPending ? a('investors.saving') : a('investors.save')}
+            </Button>
+          </div>
+        </Form>
+      </Dialog>
+
+      <Dialog
+        open={linking !== null}
+        onOpenChange={(open) => {
+          if (!open) setLinking(null);
+        }}
+        title={a('investors.portalTitle')}
+        description={a('investors.portalDetail')}
+        closeLabel={t('common.close')}
+      >
+        <Form<LinkForm>
+          form={linkForm}
+          onSubmit={(values) =>
+            linkMutation
+              .mutateAsync({ ...values, investorId: linking?.id ?? '' })
+              .then(() => undefined)
+          }
+          {...(linkMutation.error === null
+            ? {}
+            : { submitError: messageOf(linkMutation.error, t) })}
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground" role="status">
+              {linking === null
+                ? null
+                : `${linking.code} · ${linking.name}: ${
+                    linking.userId === null
+                      ? a('investors.portalNotLinked')
+                      : currentLogin === undefined
+                        ? a('investors.portalLinked')
+                        : `${a('investors.portalLinked')} (${currentLogin.name} · ${currentLogin.emailMasked})`
+                  }`}
+            </p>
+            <SelectField<LinkForm>
+              name="userId"
+              label={a('investors.fieldPortalLogin')}
+              required
+              options={loginOptions}
+              placeholder={a('investors.pickPortalLogin')}
+              hint={a('investors.portalHint')}
+            />
+            {loginQuery.isSuccess && loginOptions.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{a('investors.portalNoLogins')}</p>
+            ) : null}
+          </div>
+          <div className="mt-5 flex justify-end">
+            <Button type="submit" disabled={linkMutation.isPending}>
+              {linkMutation.isPending ? a('investors.saving') : a('investors.save')}
             </Button>
           </div>
         </Form>

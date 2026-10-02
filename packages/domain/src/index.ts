@@ -24,12 +24,14 @@ export * from './orders/index.js';
 export {
   canDecide,
   requiresApproval,
+  requiresApprovalForDay,
   type ApprovalDecisionInput,
   type Threshold,
 } from './approvals/index.js';
 
 export {
   changedFields,
+  maskEmail,
   maskPhone,
   maskPhonesInText,
   redact,

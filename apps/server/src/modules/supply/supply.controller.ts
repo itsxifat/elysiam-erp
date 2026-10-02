@@ -90,6 +90,16 @@ export class SupplyController {
 
   // --- suppliers --------------------------------------------------------------
 
+  /**
+   * The supplier picker (D-419): `create Supply`, so warehouse — which drafts deliveries
+   * and holds no `read Supply` — can choose who delivered. Id, code and name only.
+   */
+  @RequireAbility('create', 'Supply')
+  @Get('supplier-options')
+  async supplierOptions(@Req() request: FastifyRequest) {
+    return this.suppliers.options(requireContext(request));
+  }
+
   @RequireAbility('read', 'Supply')
   @Get('suppliers')
   async listSuppliers(@Req() request: FastifyRequest, @Query() query: unknown) {

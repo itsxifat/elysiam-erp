@@ -1242,3 +1242,60 @@ describe('capital contributions', () => {
     expect(view.phoneMasked).toMatch(/\*/);
   });
 });
+
+/*
+ * m30-followups (D-419). No screen linked an investor's portal sign-in, because nothing
+ * listed who could be linked. The picker is `update Investor`, the grant the link needs, and
+ * lists only people holding the investor role in this brand, masked.
+ */
+describe('the portal sign-in picker (D-419)', () => {
+  interface LoginOption {
+    readonly userId: string;
+    readonly name: string;
+    readonly emailMasked: string;
+    readonly linkedInvestorId: string | null;
+  }
+
+  it('lists the brand’s investor sign-ins with their links, and nobody else', async () => {
+    const unlinked = await harness.asRole('investor', ORG_A);
+    const response = await accounts.client.request('GET', '/v1/investors/login-options');
+    expect(response.statusCode, response.body).toBe(200);
+    const items = body<{ items: LoginOption[] }>(response).items;
+    const byUser = new Map(items.map((item) => [item.userId, item]));
+
+    expect(byUser.get(investorA.userId)?.linkedInvestorId).toBe(ids.a);
+    expect(byUser.get(investorB.userId)?.linkedInvestorId).toBe(ids.b);
+    expect(byUser.get(unlinked.userId)?.linkedInvestorId).toBeNull();
+    // Staff who hold no investor role are not offered, nor another brand's investors.
+    expect(byUser.has(sales.userId)).toBe(false);
+    expect(byUser.has(accounts.userId)).toBe(false);
+    expect(byUser.has(investorOtherOrg.userId)).toBe(false);
+    // Masked, never the address.
+    expect(response.body).not.toContain(investorA.email);
+    for (const item of items) {
+      expect(Object.keys(item).sort()).toEqual([
+        'emailMasked',
+        'linkedInvestorId',
+        'name',
+        'userId',
+      ]);
+    }
+
+    // Then the link the screen makes goes through.
+    const fresh = await createInvestor(accounts, {
+      code: `INV-${randomUUID().slice(0, 4)}`,
+      name: 'New Partner',
+    });
+    const linked = await accounts.client.request('PATCH', `/v1/investors/${fresh}`, {
+      body: { userId: unlinked.userId },
+    });
+    expect(linked.statusCode, linked.body).toBe(200);
+  });
+
+  it('is refused to an investor and to roles that cannot change an investor', async () => {
+    expect((await investorA.client.request('GET', '/v1/investors/login-options')).statusCode).toBe(
+      403,
+    );
+    expect((await sales.client.request('GET', '/v1/investors/login-options')).statusCode).toBe(403);
+  });
+});

@@ -996,7 +996,7 @@ describe('the user admin API', () => {
     expect(signIn.statusCode, signIn.body).toBeLessThan(400);
   });
 
-  it('lets a colleague who already has a password join a second brand', async () => {
+  it('leaves a colleague who already has a password to a super admin in a second brand', async () => {
     // The regression the test below could not catch, because it invites twice
     // before the invitee ever redeems. Once credentials exist, the
     // unclaimed-account guard runs for real — and it read `iam.memberships`
@@ -1020,14 +1020,17 @@ describe('the user admin API', () => {
     });
     expect(redeemed.statusCode, redeemed.body).toBeLessThan(400);
 
-    // Now a second brand invites the same person.
+    // Now a second brand's admin invites the same person. The identity is found (the
+    // unclaimed-account guard sees their membership, so this is not the 409 below), but
+    // someone who has worked for another brand is a super admin's to add (M30 A5, D-412):
+    // brand A's admin could have set this password, and must not be handed brand B.
     const { client: otherAdmin } = await asOrgAdmin(ORG_B);
     const second = await otherAdmin.request('POST', '/v1/users', {
       body: { email, name: 'Colleague', role: 'sales', branchIds: [] },
     });
 
-    expect(second.statusCode, second.body).toBe(201);
-    expect(JSON.parse(second.body)).toMatchObject({ created: false });
+    expect(second.statusCode, second.body).toBe(403);
+    expect(JSON.parse(second.body)).toMatchObject({ code: 'USER_PROTECTED' });
   });
 
   it('reuses an identity when the same person joins a second brand', async () => {

@@ -59,6 +59,27 @@ export async function listSuppliers(
   return [...rows];
 }
 
+/**
+ * The brand's active suppliers as a picker needs them: id, code and name (D-419).
+ *
+ * Nothing else is selected. The full list carries contacts and, for cost readers, the
+ * balances; a warehouse clerk choosing who delivered a draft needs neither, and a column
+ * that is never read cannot leak (invariant 5).
+ */
+export async function supplierOptions(
+  tx: Tx,
+  orgId: string,
+): Promise<{ id: string; code: string; name: string }[]> {
+  const rows = await tx.execute<{ id: string; code: string; name: string }>(sql`
+    select s.id, s.code, s.name
+    from supply.suppliers s
+    where s.org_id = ${orgId} and s.is_active
+    order by s.name
+    limit 1000
+  `);
+  return [...rows];
+}
+
 /** Suppliers by code, active or not (M14a's supplier balances). */
 export async function suppliersByCodes(
   tx: Tx,
@@ -716,6 +737,63 @@ export async function paymentById(
     where p.org_id = ${orgId} and p.id = ${id}
   `);
   return rows[0];
+}
+
+/**
+ * Today in Asia/Dhaka by the database's clock, the same clock that stamps `created_at`, so
+ * the day a payment is checked against is the day it is stored on (the re-audit's note 1).
+ */
+export async function enteredToday(tx: Tx): Promise<string> {
+  const rows = await tx.execute<{ day: string }>(
+    sql`select (now() at time zone 'Asia/Dhaka')::date::text as day`,
+  );
+  const day = rows[0]?.day;
+  if (day === undefined) throw new Error('The database did not say what day it is.');
+  return day;
+}
+
+/**
+ * Serialise one person's supplier payments on the day they enter them (C7, D-415).
+ *
+ * Taken before the day's total is read and held until the payment is written, so two
+ * payments sent at once each count the other: without it both read the same earlier total
+ * and both stay under the threshold. Keyed on the day of entry, not the payment's business
+ * date, which the person may set to yesterday (the ledger audit's W1).
+ */
+export async function lockPaymentDay(
+  tx: Tx,
+  orgId: string,
+  createdBy: string,
+  enteredOn: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`supply.payment-day:${orgId}:${createdBy}:${enteredOn}`}, 0))`,
+  );
+}
+
+/**
+ * What one person paid out to suppliers on the day they enter a payment, without a checker
+ * (C7, D-415): their posted payments and advances that carry no approval, to any supplier,
+ * entered that Asia/Dhaka day whatever business date they carry. Any supplier, because the
+ * same role adds suppliers without a checker, so a per-supplier day was ten new suppliers
+ * away from no limit at all (the ledger audit's W2). A payment a checker approved is left
+ * out: a second person has already looked at it.
+ */
+export async function unheldPaymentsEnteredOn(
+  tx: Tx,
+  orgId: string,
+  filter: { readonly createdBy: string; readonly enteredOn: string },
+): Promise<bigint> {
+  const rows = await tx.execute<{ total: string }>(sql`
+    select coalesce(sum(p.amount_poisha), 0)::text as total
+    from supply.supplier_payments p
+    where p.org_id = ${orgId}
+      and p.created_by = ${filter.createdBy}
+      and (p.created_at at time zone 'Asia/Dhaka')::date = ${filter.enteredOn}::date
+      and p.status = 'posted'::supply.supplier_payment_status
+      and p.approval_request_id is null
+  `);
+  return BigInt(rows[0]?.total ?? '0');
 }
 
 export async function insertPayment(

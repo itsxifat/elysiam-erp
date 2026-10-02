@@ -117,6 +117,18 @@ describe('the local driver', () => {
     expect(await local.head(key)).toEqual({ sizeBytes: 8, contentType: 'application/pdf' });
   });
 
+  it('stops a capped read as soon as it passes the ceiling (D-417)', async () => {
+    const local = await driver();
+    const key = 'private/org/2026/03/big.pdf';
+    await local.put(key, new Uint8Array(200 * 1024).fill(0x41), 'application/pdf');
+
+    await expect(local.get(key, { maxBytes: 100 * 1024 })).rejects.toMatchObject({
+      failure: 'too-large',
+    });
+    expect((await local.get(key, { maxBytes: 200 * 1024 })).byteLength).toBe(200 * 1024);
+    expect((await local.get(key)).byteLength).toBe(200 * 1024);
+  });
+
   it('reports a missing object rather than inventing one', async () => {
     const local = await driver();
     expect(await local.head('private/org/2026/03/missing.pdf')).toBeNull();
@@ -330,6 +342,55 @@ describe('the r2 driver', () => {
       expect((error as Error).message).not.toContain('X-Amz-Signature');
       expect((error as Error).message).not.toContain('super-secret');
     }
+  });
+
+  it('caps a read whatever the length header says, and cancels the stream (D-417)', async () => {
+    let pulled = 0;
+    let cancelled = false;
+    const endless = () =>
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulled += 1;
+          controller.enqueue(new Uint8Array(1024).fill(0x41));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+    const lying = new R2StorageDriver({
+      accountId: 'acct',
+      bucket: 'elysium',
+      accessKeyId: 'k',
+      secretAccessKey: 's',
+      // No length header at all: only counting the bytes can stop this.
+      fetchImpl: () => Promise.resolve(new Response(endless(), { status: 200 })),
+    });
+
+    await expect(
+      lying.get('private/org/2026/03/a.pdf', { maxBytes: 8 * 1024 }),
+    ).rejects.toMatchObject({ failure: 'too-large' });
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThan(20);
+
+    const honest = new R2StorageDriver({
+      accountId: 'acct',
+      bucket: 'elysium',
+      accessKeyId: 'k',
+      secretAccessKey: 's',
+      fetchImpl: () =>
+        Promise.resolve(
+          new Response(new Uint8Array(3000).fill(0x42), {
+            status: 200,
+            headers: { 'content-length': '3000' },
+          }),
+        ),
+    });
+    expect((await honest.get('private/org/2026/03/a.pdf', { maxBytes: 3000 })).byteLength).toBe(
+      3000,
+    );
+    await expect(honest.get('private/org/2026/03/a.pdf', { maxBytes: 2999 })).rejects.toMatchObject(
+      { failure: 'too-large' },
+    );
   });
 
   it('treats a missing object as missing and a missing delete as done', async () => {

@@ -199,3 +199,29 @@ describe('the policy on top of it', () => {
     expect(neighbour.allowed).toBe(true);
   });
 });
+
+describe('the Valkey peek (D-416)', () => {
+  it('reads the count and the window without touching either', async () => {
+    const store = limiter();
+    expect(await store.peek('p')).toEqual({ count: 0, retryAfterSeconds: 0 });
+
+    await store.hit('p', 10, 40);
+    await store.hit('p', 10, 40);
+    const seen = await store.peek('p');
+    expect(seen.count).toBe(2);
+    expect(seen.retryAfterSeconds).toBeGreaterThan(0);
+    expect(seen.retryAfterSeconds).toBeLessThanOrEqual(40);
+    expect((await store.peek('p')).count, 'peeking spent nothing').toBe(2);
+  });
+
+  it('falls back to the process counters when Valkey will not answer', async () => {
+    const fallback = new MemoryRateLimiter();
+    fallback.hit('q', 10, 60);
+    const broken = new ValkeyRateLimiter({
+      client: { eval: () => Promise.reject(new Error('down')) },
+      fallback,
+      onError: () => undefined,
+    });
+    expect((await broken.peek('q')).count).toBe(1);
+  });
+});

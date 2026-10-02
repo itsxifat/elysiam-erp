@@ -9,6 +9,7 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
+import { postingInstant } from './posting-date.js';
 import * as repo from './supply.repository.js';
 import { mapSupplyErrors, SupplyError } from './supply.errors.js';
 import type { SupplyReturnInput } from './supply.schemas.js';
@@ -112,7 +113,8 @@ export class ReturnsService {
         }
         assertInScope(request, { branchId: place.branch_id });
 
-        const occurredAt = input.occurredAt === undefined ? now : new Date(input.occurredAt);
+        // After the replay above (C6, D-414).
+        const occurredAt = postingInstant(input.occurredAt, now);
         const lines = input.lines.map((line) => ({
           skuId: line.skuId,
           qty: line.qty,

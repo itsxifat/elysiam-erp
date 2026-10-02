@@ -7,7 +7,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { defineAbilityFor } from '@elysium/contracts';
+import { defineAbilityFor, effectiveScope } from '@elysium/contracts';
 import {
   StorageError,
   assertWithinLimit,
@@ -26,8 +26,10 @@ import {
   findById,
   insertPending,
   markStored,
+  markStoredIn,
   recordVariants,
-  statusByKey,
+  underFileLock,
+  underKeyLock,
   type FileRow,
 } from './files.repository.js';
 
@@ -225,47 +227,33 @@ export class FilesService {
 
     try {
       const rule = mimeRuleFor(row.mime);
+      const actor = { orgId: context.orgId, userId: context.userId };
+
       /*
-       * The size first, from the store's own metadata, before a byte is read (M30, B1).
-       * A presigned PUT does not bind the length, so an uploader could put gigabytes
-       * where they declared a kilobyte, and `get` read the whole object into memory
-       * before the limit was checked: a few finalizes in parallel and the API ran out of
-       * memory. An oversized object is deleted, so it cannot be finalized again or sit in
-       * the bucket.
+       * Under the row's lock when the bytes are on this machine (the local driver, D-417):
+       * its PUT takes the same lock, so nothing can land between the size check and the
+       * read, or after the finalize. R2's PUT never passes through the API, so a lock could
+       * not stop it, and holding a transaction across a network read would break
+       * invariant 6; there the capped read is what bounds the cost.
        */
-      const stored = await this.driver.head(row.storageKey);
-      if (stored !== null && stored.sizeBytes > rule.maxBytes) {
-        await this.driver.remove(row.storageKey);
-        assertWithinLimit(stored.sizeBytes, rule);
-      }
-      const bytes = await this.driver.get(row.storageKey);
-      assertWithinLimit(bytes.byteLength, rule);
+      const examined =
+        this.driver.kind === 'local'
+          ? await underFileLock(actor, fileId, async (status, tx) => {
+              if (status !== 'pending') return null;
+              const found = await this.examine(row, rule);
+              await markStoredIn(tx, { id: fileId, ...found.stored });
+              return found;
+            })
+          : await (async () => {
+              const found = await this.examine(row, rule);
+              // A finalize that lost the race to another leaves the winner's row and makes
+              // no variants of bytes it read (the ledger audit's N1).
+              const won = await markStored(actor, { id: fileId, ...found.stored });
+              return won ? found : null;
+            })();
 
-      const sniffed = sniffMime(bytes);
-      /*
-       * A type we cannot sniff is accepted only for the formats that genuinely
-       * have no magic number — CSV is plain text. For everything else a
-       * mismatch or an unrecognised header is a refusal, because the whole
-       * point of this check is the case where the bytes are not what was
-       * declared.
-       */
-      if (sniffed === null && rule.mime !== 'text/csv') {
-        throw new BadRequestException('The uploaded bytes are not a file of the declared type.');
-      }
-      if (sniffed !== null && sniffed !== rule.mime) {
-        throw new BadRequestException(
-          `The uploaded bytes are ${sniffed}, not the ${rule.mime} the ticket was issued for.`,
-        );
-      }
-
-      const sha256 = createHash('sha256').update(bytes).digest('hex');
-      await markStored(
-        { orgId: context.orgId, userId: context.userId },
-        { id: fileId, sizeBytes: bytes.byteLength, sha256, mime: sniffed ?? rule.mime },
-      );
-
-      if (rule.isImage && isProcessableImage(sniffed ?? rule.mime)) {
-        await this.makeVariants(context, row.storageKey, fileId, bytes);
+      if (examined !== null && rule.isImage && isProcessableImage(examined.stored.mime)) {
+        await this.makeVariants(context, row.storageKey, fileId, examined.bytes);
       }
 
       const refreshed = await this.load(context, fileId, scope);
@@ -273,6 +261,73 @@ export class FilesService {
     } catch (error) {
       return mapStorageError(error);
     }
+  }
+
+  /**
+   * Read what arrived and decide what it is: size, type, hash.
+   *
+   * This is where the client's claims stop mattering. The object is read back from storage,
+   * measured, sniffed and hashed, and it is the *sniffed* type that goes on the row, so the
+   * `Content-Type` the download endpoint later serves is one the server decided.
+   *
+   * The size twice, both before a byte is kept (M30, B1; D-417). First from the store's own
+   * metadata, which turns an obviously oversized object away without reading it; then the
+   * read itself stops at the type's ceiling, because the object can be replaced between the
+   * two. A presigned PUT does not bind the length, so an uploader could put gigabytes where
+   * they declared a kilobyte, and a few finalizes in parallel used to run the API out of
+   * memory. An oversized object is deleted, so it cannot be finalized again or sit in the
+   * bucket.
+   */
+  private async examine(
+    row: FileRow,
+    rule: ReturnType<typeof mimeRuleFor>,
+  ): Promise<{
+    bytes: Uint8Array;
+    stored: { sizeBytes: number; sha256: string; mime: string };
+  }> {
+    const tooLarge = async (): Promise<never> => {
+      await this.driver.remove(row.storageKey);
+      assertWithinLimit(rule.maxBytes + 1, rule);
+      throw new BadRequestException('The uploaded file is too large.');
+    };
+
+    const head = await this.driver.head(row.storageKey);
+    if (head !== null && head.sizeBytes > rule.maxBytes) await tooLarge();
+
+    let bytes: Uint8Array;
+    try {
+      bytes = await this.driver.get(row.storageKey, { maxBytes: rule.maxBytes });
+    } catch (error) {
+      if (error instanceof StorageError && error.failure === 'too-large') return tooLarge();
+      throw error;
+    }
+    assertWithinLimit(bytes.byteLength, rule);
+
+    const sniffed = sniffMime(bytes);
+    /*
+     * A type we cannot sniff is accepted only for the formats that genuinely
+     * have no magic number — CSV is plain text. For everything else a
+     * mismatch or an unrecognised header is a refusal, because the whole
+     * point of this check is the case where the bytes are not what was
+     * declared.
+     */
+    if (sniffed === null && rule.mime !== 'text/csv') {
+      throw new BadRequestException('The uploaded bytes are not a file of the declared type.');
+    }
+    if (sniffed !== null && sniffed !== rule.mime) {
+      throw new BadRequestException(
+        `The uploaded bytes are ${sniffed}, not the ${rule.mime} the ticket was issued for.`,
+      );
+    }
+
+    return {
+      bytes,
+      stored: {
+        sizeBytes: bytes.byteLength,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+        mime: sniffed ?? rule.mime,
+      },
+    };
   }
 
   /**
@@ -329,6 +384,7 @@ export class FilesService {
     context: ActiveContext,
     fileId: string,
     scope: SqlLike,
+    options: { readonly rowCheckedByOwner?: boolean } = {},
   ): Promise<SignedDownload> {
     const row = await this.load(context, fileId, scope);
 
@@ -338,7 +394,7 @@ export class FilesService {
       throw new NotFoundException('Not found.');
     }
 
-    this.assertMayRead(context, row);
+    this.assertMayRead(context, row, options.rowCheckedByOwner === true);
 
     try {
       const signed = await this.driver.presignGet({
@@ -373,8 +429,20 @@ export class FilesService {
    * A purpose with no rule is refused. That direction matters: the opposite
    * default means a document type added by a later milestone is readable by
    * everyone until somebody notices.
+   *
+   * **Across the brand, unless the owning module has checked the row** (M30's B2,
+   * D-413). A narrower grant of the purpose's subject is a grant over *some* rows: a
+   * branch manager's `read Wallet` is their own branch's tills, everyone's `read
+   * Employee` is their own record, an investor's `read Investor` is their own position.
+   * Asked without a row, CASL answers yes to all of them, so a branch manager holding
+   * another branch's receipt id, or any staff member holding a colleague's KYC scan id,
+   * was handed a URL. The file row cannot say which branch, employee or investor a
+   * document belongs to; the module that attached it can. So on this generic route a
+   * narrower holder reads only what they uploaded, and the owning module's own download
+   * route (the investors module's, today) checks the row and then passes
+   * `rowCheckedByOwner`, which keeps the purpose gate and drops the reach.
    */
-  private assertMayRead(context: ActiveContext, row: FileRow): void {
+  private assertMayRead(context: ActiveContext, row: FileRow, rowCheckedByOwner: boolean): void {
     if (row.visibility === 'public') return;
     if (row.ownerUserId !== null && row.ownerUserId === context.userId) return;
 
@@ -392,7 +460,13 @@ export class FilesService {
       branchIdsByRole: context.branchIdsByRole,
     });
 
-    if (!ability.can(rule.readRequires.action, rule.readRequires.subject)) {
+    const reach = context.isSuperAdmin
+      ? 'org'
+      : effectiveScope(context.roles, rule.readRequires.action, rule.readRequires.subject);
+    const allowed = rowCheckedByOwner
+      ? ability.can(rule.readRequires.action, rule.readRequires.subject)
+      : reach === 'org';
+    if (!allowed) {
       // Says what the document is, not what the caller lacks. Listing the
       // missing ability back at them turns a denial into a way of mapping the
       // matrix from outside.
@@ -438,13 +512,17 @@ export class FilesService {
 
       // Only a pending upload takes bytes. A ticket lives for minutes after the finalize,
       // and a PUT in that window used to replace a stored document's bytes, unaudited,
-      // after its hash and sniffed type were recorded (D-389).
+      // after its hash and sniffed type were recorded (D-389). Written under the row's
+      // lock, which the finalize holds while it examines the bytes (D-417), so a PUT
+      // cannot land between its size check and its read either.
       const orgId = claims.key.split('/')[1] ?? '';
-      if (!UUID.test(orgId) || (await statusByKey(orgId, claims.key)) !== 'pending') {
-        throw new ConflictException('This upload is already stored, or was never started.');
-      }
-
-      await this.driver.put(claims.key, bytes, rule.mime);
+      const refused = () =>
+        new ConflictException('This upload is already stored, or was never started.');
+      if (!UUID.test(orgId)) throw refused();
+      await underKeyLock(orgId, claims.key, async (status) => {
+        if (status !== 'pending') throw refused();
+        await this.driver.put(claims.key, bytes, rule.mime);
+      });
     } catch (error) {
       mapStorageError(error);
     }

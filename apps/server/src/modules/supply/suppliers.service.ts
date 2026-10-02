@@ -79,6 +79,25 @@ export function foldBalances(
 export class SuppliersService {
   constructor(private readonly audit: AuditService) {}
 
+  /**
+   * The supplier picker on the entries screen (D-419): id, code and name, nothing else.
+   *
+   * `create Supply`, the permission the screen's own action needs, rather than
+   * `read Supply`: warehouse drafts a delivery and holds no `read Supply` (D-005), so the
+   * full list answered 403 and the dropdown was empty for the role whose form it is.
+   */
+  async options(context: ActiveContext) {
+    return mapSupplyErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => ({
+        items: (await repo.supplierOptions(tx, context.orgId)).map((row) => ({
+          id: row.id,
+          code: row.code,
+          name: row.name,
+        })),
+      })),
+    );
+  }
+
   async list(context: ActiveContext, query: SupplierListQuery) {
     const asOf = query.asOf ?? businessDate(new Date());
     const withheld = !canReadCost(context.roles, context.isSuperAdmin);

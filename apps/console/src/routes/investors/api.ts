@@ -163,6 +163,27 @@ export function createInvestor(input: {
   return api.post<InvestorRow>('/v1/investors', input);
 }
 
+/**
+ * A portal sign-in an investor may be linked to (D-419): someone holding the `investor`
+ * role in this brand. The email arrives masked; `linkedInvestorId` names the investor the
+ * sign-in already belongs to, if any.
+ */
+export interface InvestorLoginOption {
+  readonly userId: string;
+  readonly name: string;
+  readonly emailMasked: string;
+  readonly linkedInvestorId: string | null;
+}
+
+export function listInvestorLogins(): Promise<{ items: readonly InvestorLoginOption[] }> {
+  return api.get<{ items: readonly InvestorLoginOption[] }>('/v1/investors/login-options');
+}
+
+/** Link an investor to their portal sign-in (`update Investor`). */
+export function linkInvestorLogin(investorId: string, userId: string): Promise<InvestorRow> {
+  return api.patch<InvestorRow>(`/v1/investors/${investorId}`, { userId });
+}
+
 export function listWalletAccounts(): Promise<{ items: readonly WalletAccountRow[] }> {
   return api.get<{ items: readonly WalletAccountRow[] }>('/v1/investors/wallet-accounts');
 }

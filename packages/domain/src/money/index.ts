@@ -245,6 +245,17 @@ export function takaParts(amount: Poisha): {
 }
 
 /**
+ * `Tk 1,100.00`: an amount for a sentence a person reads, such as an approval's reason
+ * (m30-followups). Thousands grouped in threes and always two decimals, so it cannot be
+ * misread by a factor of a hundred the way a bare poisha figure can. Screens use `<Money>`.
+ */
+export function takaText(amount: Poisha): string {
+  const { negative, taka, poisha: paisa } = takaParts(amount);
+  const grouped = taka.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${negative ? '-' : ''}Tk ${grouped}.${paisa.toString().padStart(2, '0')}`;
+}
+
+/**
  * A plain decimal amount in major units — `"5339.5"`, `"12.345"` — as poisha, rounded half
  * away from zero to the poisha (M18).
  *

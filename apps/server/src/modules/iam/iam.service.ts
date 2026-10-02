@@ -21,7 +21,14 @@ import type { FastifyRequest } from 'fastify';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { usersHttpError } from './users.errors.js';
-import { addGranter, lockPerson, mintLink, voidLinks } from './users.repository.js';
+import {
+  addGranter,
+  heldElsewhere,
+  heldHere,
+  lockPerson,
+  mintLink,
+  voidLinks,
+} from './users.repository.js';
 
 /** What the auth plugin hangs off the request once a session is resolved. */
 export interface AuthenticatedRequest extends FastifyRequest {
@@ -242,6 +249,29 @@ export class IamService {
       { orgId: input.orgId, userId: input.caller.userId },
       async (tx) => {
         await lockPerson(tx, resolvedUserId);
+        /*
+         * Someone who has ever held a role in another brand is a super admin's to add here
+         * (M30's A5, D-412), as their resets are (D-405). Their password opens every brand
+         * they work in, and one brand's admin could have created the identity first and set
+         * that password through the invite they were handed: adopting it here would open
+         * this brand's role with a password another brand's admin knows. A revoked role
+         * counts, because the admin could have revoked it after setting the password.
+         * Checked after the person lock, so an add in the other brand cannot slip between.
+         * Someone with an active role in this brand is this brand's person, and a second
+         * role here stays its admin's to give (the ledger audit's N5). A role here that was
+         * revoked does not count: re-hiring someone who meanwhile works elsewhere is the
+         * super admin's (the re-audit's note 2).
+         */
+        if (
+          !input.caller.isSuperAdmin &&
+          !(await heldHere(tx, input.orgId, resolvedUserId)) &&
+          (await heldElsewhere(tx, [resolvedUserId], input.orgId)).has(resolvedUserId)
+        ) {
+          throw usersHttpError(
+            'USER_PROTECTED',
+            'This person already has an account with another brand. A super admin adds them here.',
+          );
+        }
         const inserted = await tx.execute<{ id: string }>(sql`
           insert into iam.memberships (org_id, user_id, role, granted_by)
           values (

@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
@@ -151,9 +151,10 @@ export class LocalStorageDriver implements StorageDriver {
     await writeFile(LocalStorageDriver.metaPath(file), contentType, 'utf8');
   }
 
-  async get(key: string): Promise<Uint8Array> {
+  async get(key: string, options: { readonly maxBytes?: number } = {}): Promise<Uint8Array> {
     try {
-      return new Uint8Array(await readFile(this.pathFor(key)));
+      if (options.maxBytes === undefined) return new Uint8Array(await readFile(this.pathFor(key)));
+      return await readCapped(this.pathFor(key), options.maxBytes);
     } catch (error) {
       if ((error as { code?: string }).code === 'ENOENT') {
         throw new StorageError('not-found', 'No such stored object.');
@@ -197,5 +198,35 @@ export class LocalStorageDriver implements StorageDriver {
    */
   verify(token: string, now: Date = new Date()): LocalTokenClaims {
     return verifyLocalToken(this.options.secret, token, now);
+  }
+}
+
+/**
+ * Read a file, failing as soon as it passes `maxBytes` (D-417).
+ *
+ * In chunks rather than `stat` then `readFile`: a size checked first and read second is
+ * exactly the gap B1 named, because the file can be replaced in between.
+ */
+async function readCapped(file: string, maxBytes: number): Promise<Uint8Array> {
+  const handle = await open(file, 'r');
+  try {
+    const chunks: Buffer[] = [];
+    const chunk = Buffer.alloc(64 * 1024);
+    let total = 0;
+    for (;;) {
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, null);
+      if (bytesRead === 0) break;
+      total += bytesRead;
+      if (total > maxBytes) {
+        throw new StorageError(
+          'too-large',
+          `The stored object is larger than ${String(maxBytes)} bytes.`,
+        );
+      }
+      chunks.push(Buffer.from(chunk.subarray(0, bytesRead)));
+    }
+    return new Uint8Array(Buffer.concat(chunks, total));
+  } finally {
+    await handle.close();
   }
 }
