@@ -1319,3 +1319,110 @@ export async function linesForOrders(
   `);
   return [...rows];
 }
+
+// --- M20: what each agent's orders came to, per Dhaka day ------------------------
+
+export interface ConfirmedCountRow extends Record<string, unknown> {
+  readonly user_id: string;
+  readonly business_date: string;
+  readonly n: number;
+}
+
+/**
+ * Orders each agent confirmed, per Asia/Dhaka day (D-272).
+ *
+ * `confirmed_by` is set once, by the transition that confirmed the order, so it is the
+ * agent who did the work rather than whoever holds the order now. An order cancelled after
+ * it was confirmed counts for nobody: a target on confirmed orders would otherwise pay for
+ * confirming an order and cancelling it a minute later.
+ */
+export async function confirmedCounts(
+  tx: Tx,
+  orgId: string,
+  from: string,
+  to: string,
+): Promise<ConfirmedCountRow[]> {
+  const rows = await tx.execute<ConfirmedCountRow>(sql`
+    select o.confirmed_by as user_id,
+           (o.confirmed_at at time zone 'Asia/Dhaka')::date::text as business_date,
+           count(*)::int as n
+    from sales.orders o
+    where o.org_id = ${orgId}
+      and o.confirmed_by is not null
+      and o.status <> 'cancelled'
+      and o.confirmed_at >= (${from}::date::timestamp at time zone 'Asia/Dhaka')
+      and o.confirmed_at < ((${to}::date + 1)::timestamp at time zone 'Asia/Dhaka')
+    group by 1, 2
+  `);
+  return [...rows];
+}
+
+export interface DeliveredOrderRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly user_id: string;
+  readonly business_date: string;
+  readonly discount_poisha: string;
+  readonly delivery_charge_poisha: string;
+}
+
+/**
+ * Orders confirmed by an agent and delivered, in full or in part, inside the range (D-272).
+ *
+ * Dated by the delivery, not the confirmation: a delivered-orders target is about what
+ * reached a buyer this month. A partial delivery that later came back keeps its delivered
+ * units (`delivered_qty`), which is what the revenue journal recognised.
+ */
+export async function deliveredOrders(
+  tx: Tx,
+  orgId: string,
+  from: string,
+  to: string,
+): Promise<DeliveredOrderRow[]> {
+  const rows = await tx.execute<DeliveredOrderRow>(sql`
+    select o.id, o.confirmed_by as user_id,
+           (o.delivered_at at time zone 'Asia/Dhaka')::date::text as business_date,
+           o.discount_poisha::text as discount_poisha,
+           o.delivery_charge_poisha::text as delivery_charge_poisha
+    from sales.orders o
+    where o.org_id = ${orgId}
+      and o.confirmed_by is not null
+      and o.delivered_at >= (${from}::date::timestamp at time zone 'Asia/Dhaka')
+      and o.delivered_at < ((${to}::date + 1)::timestamp at time zone 'Asia/Dhaka')
+      and exists (
+        select 1 from sales.order_lines l
+        where l.org_id = o.org_id and l.order_id = o.id and l.delivered_qty > 0
+      )
+  `);
+  return [...rows];
+}
+
+export interface DeliveredLineRow extends Record<string, unknown> {
+  readonly order_id: string;
+  readonly qty: number;
+  readonly unit_price_poisha: string;
+  readonly discount_poisha: string;
+  readonly delivered_qty: number;
+}
+
+/**
+ * The lines of those orders, for `computePartialDelivery`. Prices only, never a cost.
+ *
+ * One array parameter, as `linesForOrders` does: a month can hold more delivered orders
+ * than PostgreSQL's 65,535 bind parameters.
+ */
+export async function linesOfOrders(
+  tx: Tx,
+  orgId: string,
+  orderIds: readonly string[],
+): Promise<DeliveredLineRow[]> {
+  if (orderIds.length === 0) return [];
+  const rows = await tx.execute<DeliveredLineRow>(sql`
+    select l.order_id, l.qty, l.unit_price_poisha::text as unit_price_poisha,
+           l.discount_poisha::text as discount_poisha, l.delivered_qty
+    from sales.order_lines l
+    where l.org_id = ${orgId}
+      and l.order_id = any (${sql.param([...orderIds])}::uuid[])
+    order by l.order_id, l.position
+  `);
+  return [...rows];
+}

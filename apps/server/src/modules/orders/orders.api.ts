@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
 import {
+  computePartialDelivery,
   poisha,
   TRANSITIONS,
   transitionFor,
@@ -175,6 +176,20 @@ export interface ImportedBuyer {
   readonly cancelled: number;
   /** Selling money, never a cost. */
   readonly spentPoisha: bigint;
+}
+
+/**
+ * One agent's order results on one Asia/Dhaka day (M20, D-272).
+ *
+ * The shape `@elysium/domain/targets`' rollup adds up. Revenue is the net goods value the
+ * delivery journal recognised — never a cost, and never the delivery charge.
+ */
+export interface AgentDayResult {
+  readonly userId: string;
+  readonly businessDate: string;
+  readonly confirmedOrders: number;
+  readonly deliveredOrders: number;
+  readonly deliveredRevenuePoisha: bigint;
 }
 
 /** A courier party: who delivers, named. Reference data, never order state. */
@@ -368,6 +383,19 @@ export interface OrdersApi {
 
   /** One order's conversion inputs, or null when it is not this org's (M18). */
   conversionFacts(tx: Tx, orgId: string, orderId: string): Promise<ConversionFacts | null>;
+
+  /**
+   * What each agent's orders came to per Asia/Dhaka day, `from` to `to` inclusive (M20).
+   *
+   * For HR's targets: the agent who confirmed an order is the one it counts for (D-272).
+   * Delivered revenue goes through `computePartialDelivery`, the function the delivery
+   * journal uses, so a target and the books cannot disagree about what an order earned.
+   */
+  agentResults(
+    tx: Tx,
+    orgId: string,
+    range: { readonly from: string; readonly to: string },
+  ): Promise<readonly AgentDayResult[]>;
 }
 
 /** The Nest injection token for `OrdersApi`. */
@@ -701,6 +729,70 @@ export class OrdersApiService implements OrdersApi {
       businessDate: moved.result.businessDate,
       journalId: moved.journalId,
     };
+  }
+
+  async agentResults(
+    tx: Tx,
+    orgId: string,
+    range: { readonly from: string; readonly to: string },
+  ): Promise<readonly AgentDayResult[]> {
+    const results = new Map<
+      string,
+      {
+        userId: string;
+        businessDate: string;
+        confirmed: number;
+        delivered: number;
+        revenue: bigint;
+      }
+    >();
+    const entry = (userId: string, businessDate: string) => {
+      const key = `${userId}|${businessDate}`;
+      let found = results.get(key);
+      if (found === undefined) {
+        found = { userId, businessDate, confirmed: 0, delivered: 0, revenue: 0n };
+        results.set(key, found);
+      }
+      return found;
+    };
+
+    for (const row of await repo.confirmedCounts(tx, orgId, range.from, range.to)) {
+      entry(row.user_id, row.business_date).confirmed += row.n;
+    }
+
+    const delivered = await repo.deliveredOrders(tx, orgId, range.from, range.to);
+    const lines = await repo.linesOfOrders(
+      tx,
+      orgId,
+      delivered.map((order) => order.id),
+    );
+    for (const order of delivered) {
+      const own = lines.filter((line) => line.order_id === order.id);
+      // The order-level discount only; the lines carry their own (as `TransitionsService`).
+      const lineDiscounts = own.reduce((total, line) => total + BigInt(line.discount_poisha), 0n);
+      const orderDiscount = BigInt(order.discount_poisha) - lineDiscounts;
+      const split = computePartialDelivery({
+        lines: own.map((line) => ({
+          qty: line.qty,
+          unitPricePoisha: poisha(BigInt(line.unit_price_poisha)),
+          lineDiscountPoisha: poisha(BigInt(line.discount_poisha)),
+          deliveredQty: line.delivered_qty,
+        })),
+        orderDiscountPoisha: poisha(orderDiscount > 0n ? orderDiscount : 0n),
+        deliveryChargePoisha: poisha(BigInt(order.delivery_charge_poisha)),
+      });
+      const target = entry(order.user_id, order.business_date);
+      target.delivered += 1;
+      target.revenue += BigInt(split.deliveredNetItemsPoisha);
+    }
+
+    return [...results.values()].map((result) => ({
+      userId: result.userId,
+      businessDate: result.businessDate,
+      confirmedOrders: result.confirmed,
+      deliveredOrders: result.delivered,
+      deliveredRevenuePoisha: result.revenue,
+    }));
   }
 
   /**

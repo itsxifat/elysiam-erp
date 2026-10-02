@@ -26,10 +26,12 @@ beforeAll(async () => {
   database = await startTestDatabase('dispatcher');
 }, 300_000);
 
+// 60 s like the other database suites: dropping the database waits on the server, and
+// under a full parallel run the default 10 s teardown timed out with every test passed.
 afterAll(async () => {
   await database?.stop();
   await stopSharedContainer();
-});
+}, 60_000);
 
 async function publish(orgId: string, ref: string): Promise<void> {
   await withOrg({ orgId, userId: 'usr_dispatcher_test' }, async (tx) => {

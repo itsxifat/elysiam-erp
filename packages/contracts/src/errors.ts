@@ -313,6 +313,20 @@ export const ERROR_CODES = [
   'PAYROLL_LOAN_INVALID',
   'PAYROLL_INPUT_INVALID',
   'PAYROLL_ATTENDANCE_INVALID',
+  /*
+   * Targets and bonus rules (M20, §12). `TARGET_FROZEN` and `BONUS_RULE_FROZEN` are raised
+   * by migration 0091's triggers as well as by the services.
+   */
+  /** A target's month, metric, people or value is not one that can be set. */
+  'TARGET_INVALID',
+  /** That employee already has a live target on that metric for that month. */
+  'TARGET_CONFLICT',
+  /** A target's terms and weekly split are fixed once set; a cancelled one is final. */
+  'TARGET_FROZEN',
+  /** The bonus rule's JSON is not a rule this system can evaluate. */
+  'BONUS_RULE_INVALID',
+  /** A submitted or decided bonus rule version cannot change. */
+  'BONUS_RULE_FROZEN',
 
   // Showroom POS (M23)
   'POS_REGISTER_NOT_FOUND',

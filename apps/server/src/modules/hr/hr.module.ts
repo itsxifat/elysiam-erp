@@ -4,7 +4,9 @@ import { serverEnv } from '../../platform/config/env.js';
 import { ApprovalsModule } from '../approvals/approvals.module.js';
 import { FilesModule } from '../files/files.module.js';
 import { LedgerModule } from '../ledger/ledger.module.js';
+import { OrdersModule } from '../orders/orders.module.js';
 import { AttendanceService } from './attendance.service.js';
+import { BonusRulesService } from './bonus.service.js';
 import { EmployeesService } from './employees.service.js';
 import { HR_API, HrApiService } from './hr.api.js';
 import { HrController } from './hr.controller.js';
@@ -12,6 +14,8 @@ import { HR_CRYPTO, HrCrypto, hrFieldKey } from './hr.crypto.js';
 import { LoansService } from './loans.service.js';
 import { PayrollService } from './payroll.service.js';
 import { PayslipService } from './payslip.service.js';
+import { PerformanceController } from './performance.controller.js';
+import { TargetsService } from './targets.service.js';
 
 /**
  * Employees, attendance, salary, loans and payroll (architecture §7, §12).
@@ -37,25 +41,34 @@ import { PayslipService } from './payslip.service.js';
  * targets need from HR is an identity, and a general accessor would be a way around §6's
  * `Payroll` grant.
  *
+ * M20 adds a fourth, **`OrdersModule`**, for `ORDERS_API.agentResults` alone: a target's
+ * progress is what the agents' orders came to, and the orders are M10's (invariant 12).
+ * The targets, bonus rules and desk events themselves live in the `hr` schema (§3) and in
+ * this module (D-270), so a bonus reaches a payroll run as an ordinary input without
+ * crossing a boundary. `ApprovalsModule` gains a second executor, `bonus_rule`.
+ *
  * `HrCrypto` is built here from the parsed secret, once, at module construction — so
  * nothing downstream can choose a different key per request, and a deployment with a bad
  * `HR_FIELD_KEY` fails at boot rather than at the first employee record.
  */
 @Module({
-  imports: [LedgerModule, ApprovalsModule, FilesModule],
-  controllers: [HrController],
+  imports: [LedgerModule, ApprovalsModule, FilesModule, OrdersModule],
+  controllers: [HrController, PerformanceController],
   providers: [
     EmployeesService,
     AttendanceService,
     PayrollService,
     LoansService,
     PayslipService,
+    TargetsService,
+    BonusRulesService,
     {
       provide: HR_CRYPTO,
       useFactory: () => new HrCrypto(hrFieldKey(serverEnv().AUTH_SECRET)),
     },
     { provide: HR_API, useClass: HrApiService },
   ],
-  exports: [HR_API],
+  // `TargetsService` for the worker's outbox subscriber and progress job.
+  exports: [HR_API, TargetsService],
 })
 export class HrModule {}

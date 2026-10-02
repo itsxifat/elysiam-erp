@@ -46,6 +46,8 @@ const row: DeliveredEvent = {
   payload: { journalId: 'j-1' },
   rooms: ['org:org-1:role:accounts'],
   attempts: 0,
+  occurredAt: new Date('2026-10-02T06:00:00Z'),
+  actorUserId: null,
 };
 
 describe('bridgeOutboxToRealtime', () => {

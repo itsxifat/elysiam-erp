@@ -1,12 +1,12 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-02** (M14a, M17 and M18 finished). This is the short, plain-language view. The
+Last updated: **2026-10-02** (M14a, M17, M18 and M20 finished). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Built     [################----]  81%
+Built     [#################---]  85%
 ```
 
 - The plan has 33 milestones. Six are out on the owner's instruction: the Beownz reseller
@@ -14,33 +14,33 @@ Built     [################----]  81%
   staff activity extension (M28) and the landing page builder (M29). So **27 count**.
 - A milestone counts 100% when it is built, tested and passed its audits. A part-built one counts
   for the share that is done.
-- Today: **21 done, 1 part-built (M25), 1 being built (M20), 4 not started.**
+- Today: **22 done, 1 part-built (M25, its investor pages being built), 1 being built (M26), 3 not started (M14b, M24, M30).**
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
 [What the owner needs to do](#what-the-owner-needs-to-do).
 
 ## By business area
 
-| Area                                                                        | Built | In plain words                                                                                                                                                                                                       |
-| --------------------------------------------------------------------------- | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Foundation: sign-in, roles, five separate brands, audit log                 |  100% | Staff sign in, see only their brand and only what their role allows. Every change is logged.                                                                                                                         |
-| Products and stock                                                          |  100% | Products, sizes, prices, stock per warehouse and showroom, cost tracking. Stock can never go below zero.                                                                                                             |
-| Accounting and wallets                                                      |  100% | Cash, bKash and bank wallets, double-entry books, P&L, balance sheet, month close.                                                                                                                                   |
-| Orders                                                                      |  100% | Order desk for agents, website order intake, buyer list.                                                                                                                                                             |
-| Couriers and COD                                                            |  100% | Steadfast, Pathao, RedX booking, tracking page, COD cash matching, stuck-parcel list. Needs live accounts.                                                                                                           |
-| Customers, SMS, promo codes                                                 |  100% | Buyer profiles, birthday offers, lapsed-buyer list, SMS templates, promo codes at the order desk.                                                                                                                    |
-| Showrooms (POS)                                                             |  100% | A till that works offline, Bangla receipts, day closing per branch.                                                                                                                                                  |
-| HR and payroll                                                              |  100% | Employees, attendance, salary, staff loans, Bangla payslips.                                                                                                                                                         |
-| Investors                                                                   |   85% | Capital, profit share, withdrawals with approval. The investors' own login pages are not built yet.                                                                                                                  |
-| Moving old data in                                                          |  100% | Products, stock with cost, supplier dues, wallet balances, courier COD and customers load once before go-live, checked first, all-or-nothing. The accountant gets a report to sign. A training brand with demo data. |
-| Advance payments and return reasons                                         |  100% | bKash, Nagad or bank advance recorded by the agent and checked by accounts before it counts; used on delivery, refunded on cancel; a reason on every return, with a report.                                          |
-| Marketing                                                                   |  100% | Campaigns, ad spend (typed or imported from Meta), which campaign brought each order, cost per delivered order, ROAS, leads. Meta link needs a real token.                                                           |
-| Targets and bonuses                                                         |    0% | Monthly sales targets split by week, bonus rules feeding payroll.                                                                                                                                                    |
-| Dashboards and leaderboard                                                  |    0% | Owner and super-admin dashboards, agent leaderboard.                                                                                                                                                                 |
-| Company loans                                                               |    0% | Loans the company takes, schedules, reminders.                                                                                                                                                                       |
-| Going live and hardening                                                    |    0% | Server deploy, monitoring, backups, load tests, security review.                                                                                                                                                     |
-| Fraud check, Chatwoot inbox, staff activity extension, landing page builder |     - | Removed by the owner on 2026-10-02. Not counted. The fraud check code was deleted.                                                                                                                                   |
-| Reseller platform (Beownz)                                                  |     - | Set aside by the owner. Not counted.                                                                                                                                                                                 |
+| Area                                                                        | Built | In plain words                                                                                                                                                                                                           |
+| --------------------------------------------------------------------------- | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Foundation: sign-in, roles, five separate brands, audit log                 |  100% | Staff sign in, see only their brand and only what their role allows. Every change is logged.                                                                                                                             |
+| Products and stock                                                          |  100% | Products, sizes, prices, stock per warehouse and showroom, cost tracking. Stock can never go below zero.                                                                                                                 |
+| Accounting and wallets                                                      |  100% | Cash, bKash and bank wallets, double-entry books, P&L, balance sheet, month close.                                                                                                                                       |
+| Orders                                                                      |  100% | Order desk for agents, website order intake, buyer list.                                                                                                                                                                 |
+| Couriers and COD                                                            |  100% | Steadfast, Pathao, RedX booking, tracking page, COD cash matching, stuck-parcel list. Needs live accounts.                                                                                                               |
+| Customers, SMS, promo codes                                                 |  100% | Buyer profiles, birthday offers, lapsed-buyer list, SMS templates, promo codes at the order desk.                                                                                                                        |
+| Showrooms (POS)                                                             |  100% | A till that works offline, Bangla receipts, day closing per branch.                                                                                                                                                      |
+| HR and payroll                                                              |  100% | Employees, attendance, salary, staff loans, Bangla payslips.                                                                                                                                                             |
+| Investors                                                                   |   85% | Capital, profit share, withdrawals with approval. The investors' own login pages are not built yet.                                                                                                                      |
+| Moving old data in                                                          |  100% | Products, stock with cost, supplier dues, wallet balances, courier COD and customers load once before go-live, checked first, all-or-nothing. The accountant gets a report to sign. A training brand with demo data.     |
+| Advance payments and return reasons                                         |  100% | bKash, Nagad or bank advance recorded by the agent and checked by accounts before it counts; used on delivery, refunded on cancel; a reason on every return, with a report.                                              |
+| Marketing                                                                   |  100% | Campaigns, ad spend (typed or imported from Meta), which campaign brought each order, cost per delivered order, ROAS, leads. Meta link needs a real token.                                                               |
+| Targets and bonuses                                                         |  100% | Monthly targets per agent split by week, progress as orders come in, bonus rules approved by a second person and paid through payroll, pickup time and orders per hour. Team targets wait for the client's rule (D-273). |
+| Dashboards and leaderboard                                                  |    0% | Owner and super-admin dashboards, agent leaderboard.                                                                                                                                                                     |
+| Company loans                                                               |    0% | Loans the company takes, schedules, reminders.                                                                                                                                                                           |
+| Going live and hardening                                                    |    0% | Server deploy, monitoring, backups, load tests, security review.                                                                                                                                                         |
+| Fraud check, Chatwoot inbox, staff activity extension, landing page builder |     - | Removed by the owner on 2026-10-02. Not counted. The fraud check code was deleted.                                                                                                                                       |
+| Reseller platform (Beownz)                                                  |     - | Set aside by the owner. Not counted.                                                                                                                                                                                     |
 
 ## By milestone
 
@@ -68,7 +68,7 @@ Built     [################----]  81%
 | M17  | Advance payments and return reasons    |  100% | Policy defaults need the client's OK                      |
 | M18  | Marketing                              |  100% | Meta link untested until a real token exists              |
 | M19  | HR and payroll                         |  100% |                                                           |
-| M20  | Targets and bonuses                    |    0% | Next                                                      |
+| M20  | Targets and bonuses                    |  100% | How a team bonus is shared needs the client's answer      |
 | M21  | Reseller engine                        |     - | Set aside                                                 |
 | M22  | Reseller portal                        |     - | Set aside                                                 |
 | M23  | Showroom POS                           |  100% |                                                           |
@@ -82,12 +82,10 @@ Built     [################----]  81%
 
 ## Being built now
 
-- **M20** sales targets and bonuses
 - **M26** company loans: loans the company takes, repayment schedules, reminders, interest
 - **M25** the investors' own login pages (the last part of M25)
 
-M14a, M17 and M18 finished on 2026-10-02 and are joined on the branch `integration-wave2`,
-where every check passes (2,358 tests).
+M14a, M17, M18 and M20 finished on 2026-10-02 and are joined on the branch `integration-wave2`.
 
 ## What the owner needs to do
 

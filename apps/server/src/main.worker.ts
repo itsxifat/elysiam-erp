@@ -14,6 +14,9 @@ import { CourierSyncService } from './modules/courier/sync.service.js';
 import { MarketingModule } from './modules/marketing/marketing.module.js';
 import { registerMarketingJobs } from './modules/marketing/marketing.worker.js';
 import { MetaJobsService } from './modules/marketing/meta-jobs.service.js';
+import { HrModule } from './modules/hr/hr.module.js';
+import { registerPerformanceJobs } from './modules/hr/performance.worker.js';
+import { TargetsService } from './modules/hr/targets.service.js';
 import { NotifyModule } from './modules/notify/notify.module.js';
 import { NotifyService } from './modules/notify/notify.service.js';
 import { registerNotifyJobs } from './modules/notify/notify.worker.js';
@@ -121,7 +124,7 @@ async function bootstrap(): Promise<void> {
   // that delivers an order runs in this process, and without the module loaded nobody would
   // be registered to queue the order's conversion (M18, D-262).
   @Module({
-    imports: [CourierModule, InventoryModule, NotifyModule, OrdersModule, MarketingModule],
+    imports: [CourierModule, InventoryModule, NotifyModule, OrdersModule, MarketingModule, HrModule],
   })
   class WorkerModule {}
 
@@ -166,6 +169,13 @@ async function bootstrap(): Promise<void> {
   await registerNotifyJobs({ jobs, notify: context.get(NotifyService), report });
   await registerCrmJobs({ jobs, crm: context.get(CrmService), report });
   await registerMarketingJobs({ jobs, meta: context.get(MetaJobsService), report });
+  // M20: desk events from the outbox, and the target progress recompute they trigger.
+  await registerPerformanceJobs({
+    jobs,
+    dispatcher,
+    targets: context.get(TargetsService),
+    report,
+  });
 
   // Every registered queue gets its dead-letter watcher, whether or not this
   // release also registered a handler for the queue itself. A queue with a

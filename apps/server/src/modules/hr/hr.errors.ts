@@ -7,6 +7,7 @@ import {
 import type { ErrorCode } from '@elysium/contracts';
 import { LedgerError, MoneyError } from '@elysium/domain';
 import { PayrollError } from '@elysium/domain/payroll';
+import { TargetError } from '@elysium/domain/targets';
 
 import { HrDecryptionFailed } from './hr.crypto.js';
 
@@ -75,6 +76,16 @@ export const HR_ERROR_CODES = [
   'PAYROLL_INPUT_INVALID',
   /** Attendance the proration cannot make sense of. */
   'PAYROLL_ATTENDANCE_INVALID',
+  /** M20: a target that cannot be set as asked. */
+  'TARGET_INVALID',
+  /** M20: that employee already has a live target on that metric for that month. */
+  'TARGET_CONFLICT',
+  /** M20: a target's terms and weekly split are fixed; a cancelled one is final. */
+  'TARGET_FROZEN',
+  /** M20: the bonus rule's JSON is not a rule this system can evaluate. */
+  'BONUS_RULE_INVALID',
+  /** M20: a submitted or decided bonus rule version cannot change. */
+  'BONUS_RULE_FROZEN',
 ] as const;
 
 export type HrErrorCode = (typeof HR_ERROR_CODES)[number];
@@ -103,6 +114,9 @@ const STATUS: Readonly<Partial<Record<PayrollApiCode, number>>> = {
   PAYROLL_STRUCTURE_FROZEN: 409,
   PAYROLL_LOAN_FROZEN: 409,
   ATTENDANCE_IMPORT_FROZEN: 409,
+  TARGET_CONFLICT: 409,
+  TARGET_FROZEN: 409,
+  BONUS_RULE_FROZEN: 409,
   APPROVAL_REQUIRED: 409,
   IDEMPOTENCY_CONFLICT: 409,
   PERIOD_CLOSED: 409,
@@ -150,6 +164,11 @@ const TRIGGER_CODES: readonly PayrollApiCode[] = [
   'ATTENDANCE_INVALID',
   'ATTENDANCE_IMPORT_FROZEN',
   'HR_FIELD_NOT_MASKED',
+  // M20's, from 0091.
+  'TARGET_INVALID',
+  'TARGET_FROZEN',
+  'BONUS_RULE_FROZEN',
+  'PAYROLL_INPUT_INVALID',
 ];
 
 /**
@@ -258,6 +277,22 @@ const UNIQUE_MESSAGES: Readonly<Record<string, { code: PayrollApiCode; message: 
     code: 'PAYROLL_LOAN_FROZEN',
     message: 'That loan instalment has already been deducted on this payslip.',
   },
+  targets_org_month_metric_employee_idx: {
+    code: 'TARGET_CONFLICT',
+    message: 'That employee already has a target on that metric for that month. Cancel it first.',
+  },
+  bonus_rules_org_name_idx: {
+    code: 'BONUS_RULE_INVALID',
+    message: 'A bonus rule with that name already exists in this brand.',
+  },
+  bonus_rule_versions_org_rule_pending_idx: {
+    code: 'BONUS_RULE_FROZEN',
+    message: 'Another version of this rule is already waiting for approval.',
+  },
+  bonus_rule_versions_org_rule_version_idx: {
+    code: 'BONUS_RULE_FROZEN',
+    message: 'Somebody added a version of this rule at the same moment; reload and try again.',
+  },
 };
 
 export function databasePayrollCode(
@@ -295,6 +330,7 @@ export function toHrHttpError(error: unknown): unknown {
   if (error instanceof HttpException) return error;
   if (error instanceof HrError) return hrHttpError(error.code, error.message);
   if (error instanceof PayrollError) return hrHttpError(error.code, error.message);
+  if (error instanceof TargetError) return hrHttpError(error.code, error.message);
   if (error instanceof LedgerError) return hrHttpError(error.code, error.message);
   if (error instanceof MoneyError) return hrHttpError('MONEY_INVALID', error.message);
   if (error instanceof HrDecryptionFailed) {

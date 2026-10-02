@@ -51,6 +51,10 @@
     "./migration": {
       "types": "./dist/migration/index.d.ts",
       "default": "./dist/migration/index.js"
+    },
+    "./targets": {
+      "types": "./dist/targets/index.d.ts",
+      "default": "./dist/targets/index.js"
     }
   },
   "files": [

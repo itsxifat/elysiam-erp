@@ -853,7 +853,8 @@ interface CourierAdapter {
 - **Targets:**
   - monthly, per employee or team, on one metric: `confirmed_orders`, `delivered_orders` or `delivered_revenue`
   - split into weeks by the working days in each week, using largest remainder so the weeks sum exactly
-  - progress comes from rollups
+  - progress comes from rollups of the orders each member confirmed and delivered, credited to the agent who confirmed (D-272)
+  - built in the HR module and the `hr` schema (D-270); team targets track progress and pay no bonus yet (D-273)
 - **Bonus rules:** versioned JSON, evaluated by a pure function, with a preview and an approval before they feed payroll. Example:
 
 ```json
@@ -870,6 +871,7 @@ interface CourierAdapter {
   - pickup time = first agent action (claim, confirm or cancel) − the time the order was created or assigned
   - for each agent: median and p90 pickup time, and orders handled per active hour
   - computed from outbox events; reassignments reset the clock for the new assignee
+  - an active hour is an Asia/Dhaka clock hour with at least one desk action (D-276); the outbox records each event's actor (D-277)
 
 ---
 
@@ -1064,25 +1066,24 @@ Jobs run on pg-boss, with queues named `module.action`.
 - A job that lands in the dead-letter queue emits `job.failed`.
 - Cron schedules run in Asia/Dhaka time.
 
-| Queue / cron                      | When                                                     | Notes                                        |
-| --------------------------------- | -------------------------------------------------------- | -------------------------------------------- |
-| `delivery.book_parcel`            | On event                                                 | 5 retries, then dead-letter → booking_failed |
-| `delivery.process_webhook`        | On receipt                                               | Raw payload is stored before processing      |
-| `delivery.poll_status`            | Every 30 min for stale active parcels                    | Respects courier rate limits                 |
-| `delivery.import_settlement`      | On upload or API fetch                                   | Needs approval before posting                |
-| `fraud.refresh_provider`          | On demand, and when the TTL expires                      | Throttled per provider                       |
-| `inventory.reconcile_levels`      | Nightly 02:00                                            | Drift alert                                  |
-| `crm.schedule_segments`           | Nightly 02:30, one `crm.score_segments` per brand        | Segments replaced, never accumulated (D-211) |
-| `crm.schedule_greetings`          | Daily 09:00, one `crm.greet_occasions` per brand         | One greeting per buyer per occasion per year |
-| `marketing.schedule_spend_import` | Daily 06:00, one `marketing.import_meta_spend` per brand | The last three days, re-imported (D-254)     |
-| `marketing.import_meta_spend`     | From the schedule, or on request                         | Idempotent per (campaign, day) (D-252)       |
-| `marketing.capi_delivered`        | Enqueued in the delivering transaction                   | One Purchase per order, sent once (D-262)    |
-| `analytics.rollup`                | On events, plus a nightly recompute of the last 7 days   |                                              |
-| `hr.target_progress`              | Hourly                                                   |                                              |
-| `loan.reminders`                  | Daily 10:00                                              |                                              |
-| `notify.send`                     | On demand                                                | Respects quiet hours                         |
-| `files.process_image`             | On upload                                                | sharp variants, EXIF stripped                |
-| `ops.backup_verify`               | Weekly (staging)                                         | Restore to a scratch database and verify     |
+| Queue / cron                      | When                                                     | Notes                                           |
+| --------------------------------- | -------------------------------------------------------- | ----------------------------------------------- |
+| `delivery.book_parcel`            | On event                                                 | 5 retries, then dead-letter → booking_failed    |
+| `delivery.process_webhook`        | On receipt                                               | Raw payload is stored before processing         |
+| `delivery.poll_status`            | Every 30 min for stale active parcels                    | Respects courier rate limits                    |
+| `delivery.import_settlement`      | On upload or API fetch                                   | Needs approval before posting                   |
+| `inventory.reconcile_levels`      | Nightly 02:00                                            | Drift alert                                     |
+| `crm.schedule_segments`           | Nightly 02:30, one `crm.score_segments` per brand        | Segments replaced, never accumulated (D-211)    |
+| `crm.schedule_greetings`          | Daily 09:00, one `crm.greet_occasions` per brand         | One greeting per buyer per occasion per year    |
+| `marketing.schedule_spend_import` | Daily 06:00, one `marketing.import_meta_spend` per brand | The last three days, re-imported (D-254)        |
+| `marketing.import_meta_spend`     | From the schedule, or on request                         | Idempotent per (campaign, day) (D-252)          |
+| `marketing.capi_delivered`        | Enqueued in the delivering transaction                   | One Purchase per order, sent once (D-262)       |
+| `analytics.rollup`                | On events, plus a nightly recompute of the last 7 days   |                                                 |
+| `hr.refresh_target_progress`      | On an order status change, per brand per 10 s bucket     | Recomputes; `target.progress` on change (D-279) |
+| `loan.reminders`                  | Daily 10:00                                              |                                                 |
+| `notify.send`                     | On demand                                                | Respects quiet hours                            |
+| `files.process_image`             | On upload                                                | sharp variants, EXIF stripped                   |
+| `ops.backup_verify`               | Weekly (staging)                                         | Restore to a scratch database and verify        |
 
 ---
 

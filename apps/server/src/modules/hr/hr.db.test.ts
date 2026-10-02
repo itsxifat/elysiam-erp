@@ -359,7 +359,8 @@ describe('tenancy (invariant 4)', () => {
       `);
       return [...result];
     });
-    expect(rows).toHaveLength(14);
+    // M19's fourteen and M20's seven (targets, members, weeks, rules, versions, awards, desk events).
+    expect(rows).toHaveLength(21);
     for (const row of rows) {
       expect(row.relrowsecurity, `${row.relname} RLS`).toBe(true);
       // FORCE is not optional: without it `erp_owner`, the table owner, is exempt.

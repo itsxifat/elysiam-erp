@@ -37,6 +37,10 @@ interface Fixtures {
   readonly runId: string;
   readonly loanId: string;
   readonly inputId: string;
+  /** M20: a target, a bonus rule and its first version, for the read routes. */
+  readonly targetId: string;
+  readonly ruleId: string;
+  readonly versionId: string;
 }
 
 let prepared: Fixtures | undefined;
@@ -107,7 +111,73 @@ export async function prepareHrFixtures(): Promise<void> {
     return { runId, inputId: input[0]?.id ?? '', loanId: loan[0]?.id ?? '' };
   });
 
-  prepared = { employeeId: employee.id, calendarId, ...ids };
+  const targetId = await seedTarget(employee.id, calendarId, '2026-02');
+  const rule = await seedRuleVersion();
+
+  prepared = {
+    employeeId: employee.id,
+    calendarId,
+    ...ids,
+    targetId,
+    ruleId: rule.ruleId,
+    versionId: rule.versionId,
+  };
+}
+
+/** M20: an active target written directly, for a month no suite sets one in. */
+async function seedTarget(employeeId: string, calendarId: string, month: string): Promise<string> {
+  return withOrg({ orgId: ORG_A, userId: 'usr_route_matrix' }, async (tx) => {
+    const rows = await tx.execute<{ id: string }>(sql`
+      insert into hr.targets
+        (org_id, month, metric, scope, employee_id, calendar_id, target_value, created_by)
+      values (${ORG_A}, ${month}, 'confirmed_orders', 'employee', ${employeeId},
+              ${calendarId}, 10, 'usr_route_matrix')
+      returning id
+    `);
+    const id = rows[0]?.id ?? '';
+    await tx.execute(sql`
+      insert into hr.target_members (org_id, target_id, employee_id)
+      values (${ORG_A}, ${id}, ${employeeId})
+    `);
+    return id;
+  });
+}
+
+/** M20: a bonus rule with one draft version. A fresh one per call where a route consumes it. */
+async function seedRuleVersion(): Promise<{ ruleId: string; versionId: string }> {
+  return withOrg({ orgId: ORG_A, userId: 'usr_route_matrix' }, async (tx) => {
+    const rule = await tx.execute<{ id: string }>(sql`
+      insert into hr.bonus_rules (org_id, name, metric, created_by)
+      values (${ORG_A}, ${`RM rule ${randomUUID().slice(0, 8)}`}, 'confirmed_orders',
+              'usr_route_matrix')
+      returning id
+    `);
+    const ruleId = rule[0]?.id ?? '';
+    const version = await tx.execute<{ id: string }>(sql`
+      insert into hr.bonus_rule_versions (org_id, rule_id, version, definition, created_by)
+      values (${ORG_A}, ${ruleId}, 1,
+              ${JSON.stringify(RULE_DEFINITION)}::jsonb, 'usr_route_matrix')
+      returning id
+    `);
+    return { ruleId, versionId: version[0]?.id ?? '' };
+  });
+}
+
+const RULE_DEFINITION = {
+  metric: 'confirmed_orders',
+  tiers: [{ gte_pct: 100, amount_poisha: '100000' }],
+};
+
+/** M20: a draft payroll run of its own, so applying bonuses never meets a submitted one. */
+async function seedDraftRun(): Promise<string> {
+  return withOrg({ orgId: ORG_A, userId: 'usr_route_matrix' }, async (tx) => {
+    const rows = await tx.execute<{ id: string }>(sql`
+      insert into hr.payroll_runs (org_id, month, status, created_by)
+      values (${ORG_A}, ${nextFutureMonth()}, 'draft', 'usr_route_matrix')
+      returning id
+    `);
+    return rows[0]?.id ?? '';
+  });
 }
 
 /**
@@ -263,6 +333,51 @@ export const HR_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> | Ca
   'POST /v1/hr/loans/:id/disburse': () => ({
     url: `/v1/hr/loans/${state().loanId}/disburse`,
     body: { walletAccountId: randomUUID() },
+  }),
+  // --- M20: targets, bonus rules, productivity ---------------------------------------
+  'GET /v1/hr/targets': () => ({ url: '/v1/hr/targets' }),
+  'GET /v1/hr/targets/:id': () => ({ url: `/v1/hr/targets/${state().targetId}` }),
+  'POST /v1/hr/targets': () => ({
+    url: '/v1/hr/targets',
+    // One live target per employee, metric and month, so each call takes its own month.
+    body: {
+      scope: 'employee',
+      month: nextFutureMonth(),
+      metric: 'confirmed_orders',
+      employeeId: state().employeeId,
+      targetValue: '10',
+    },
+  }),
+  'POST /v1/hr/targets/refresh': () => ({ url: '/v1/hr/targets/refresh' }),
+  'POST /v1/hr/targets/:id/cancel': async () => ({
+    // A cancelled target is final, so each admitted role cancels one of its own.
+    url: `/v1/hr/targets/${await seedTarget(state().employeeId, state().calendarId, nextFutureMonth())}/cancel`,
+  }),
+  'GET /v1/hr/performance/me': () => ({ url: '/v1/hr/performance/me?month=2026-02' }),
+  'GET /v1/hr/productivity': () => ({ url: '/v1/hr/productivity?from=2026-02-01&to=2026-02-28' }),
+  'GET /v1/hr/bonus-rules': () => ({ url: '/v1/hr/bonus-rules' }),
+  'POST /v1/hr/bonus-rules': () => ({
+    url: '/v1/hr/bonus-rules',
+    // Names are unique per brand (case-insensitively), so each call names its own.
+    body: { name: `RM ${randomUUID().slice(0, 8)}`, definition: RULE_DEFINITION },
+  }),
+  'POST /v1/hr/bonus-rules/:id/versions': () => ({
+    url: `/v1/hr/bonus-rules/${state().ruleId}/versions`,
+    body: { definition: RULE_DEFINITION },
+  }),
+  'GET /v1/hr/bonus-rules/versions/:versionId/preview': () => ({
+    url: `/v1/hr/bonus-rules/versions/${state().versionId}/preview?month=2026-02`,
+  }),
+  'POST /v1/hr/bonus-rules/versions/:versionId/submit': async () => ({
+    // A submitted version cannot be submitted again, so each call gets a fresh draft.
+    url: `/v1/hr/bonus-rules/versions/${(await seedRuleVersion()).versionId}/submit`,
+    body: { reason: 'Route matrix' },
+  }),
+  'GET /v1/hr/payroll/runs/:id/bonuses': () => ({
+    url: `/v1/hr/payroll/runs/${state().runId}/bonuses`,
+  }),
+  'POST /v1/hr/payroll/runs/:id/bonuses': async () => ({
+    url: `/v1/hr/payroll/runs/${await seedDraftRun()}/bonuses`,
   }),
 };
 

@@ -234,6 +234,12 @@ export const OPERATIONS = {
     path: '/v1/hr/attendance/imports',
     ability: 'read:Payroll',
   },
+  getV1HrBonusRules: { method: 'GET', path: '/v1/hr/bonus-rules', ability: 'read:Payroll' },
+  getV1HrBonusRulesVersionsByVersionIdPreview: {
+    method: 'GET',
+    path: '/v1/hr/bonus-rules/versions/{versionId}/preview',
+    ability: 'read:Payroll',
+  },
   getV1HrCalendars: { method: 'GET', path: '/v1/hr/calendars', ability: 'read:Employee' },
   getV1HrEmployees: { method: 'GET', path: '/v1/hr/employees', ability: 'read:Employee' },
   getV1HrEmployeesById: { method: 'GET', path: '/v1/hr/employees/{id}', ability: 'read:Employee' },
@@ -253,6 +259,11 @@ export const OPERATIONS = {
   getV1HrPayrollRunsById: {
     method: 'GET',
     path: '/v1/hr/payroll/runs/{id}',
+    ability: 'read:Payroll',
+  },
+  getV1HrPayrollRunsByIdBonuses: {
+    method: 'GET',
+    path: '/v1/hr/payroll/runs/{id}/bonuses',
     ability: 'read:Payroll',
   },
   getV1HrPayrollRunsByIdInputs: {
@@ -275,6 +286,10 @@ export const OPERATIONS = {
     path: '/v1/hr/payroll/runs/{id}/preview',
     ability: 'read:Payroll',
   },
+  getV1HrPerformanceMe: { method: 'GET', path: '/v1/hr/performance/me', ability: 'read:Target' },
+  getV1HrProductivity: { method: 'GET', path: '/v1/hr/productivity', ability: 'read:Target' },
+  getV1HrTargets: { method: 'GET', path: '/v1/hr/targets', ability: 'read:Target' },
+  getV1HrTargetsById: { method: 'GET', path: '/v1/hr/targets/{id}', ability: 'read:Target' },
   getV1IntakeSiteKeys: { method: 'GET', path: '/v1/intake/site-keys', ability: 'read:LandingPage' },
   getV1InventoryAdjustments: {
     method: 'GET',
@@ -672,6 +687,17 @@ export const OPERATIONS = {
     path: '/v1/hr/attendance/imports',
     ability: 'update:Employee',
   },
+  postV1HrBonusRules: { method: 'POST', path: '/v1/hr/bonus-rules', ability: 'create:Payroll' },
+  postV1HrBonusRulesByIdVersions: {
+    method: 'POST',
+    path: '/v1/hr/bonus-rules/{id}/versions',
+    ability: 'create:Payroll',
+  },
+  postV1HrBonusRulesVersionsByVersionIdSubmit: {
+    method: 'POST',
+    path: '/v1/hr/bonus-rules/versions/{versionId}/submit',
+    ability: 'create:Payroll',
+  },
   postV1HrCalendars: { method: 'POST', path: '/v1/hr/calendars', ability: 'create:Payroll' },
   postV1HrCalendarsByIdHolidays: {
     method: 'POST',
@@ -691,6 +717,11 @@ export const OPERATIONS = {
     ability: 'update:Payroll',
   },
   postV1HrPayrollRuns: { method: 'POST', path: '/v1/hr/payroll/runs', ability: 'create:Payroll' },
+  postV1HrPayrollRunsByIdBonuses: {
+    method: 'POST',
+    path: '/v1/hr/payroll/runs/{id}/bonuses',
+    ability: 'create:Payroll',
+  },
   postV1HrPayrollRunsByIdCancel: {
     method: 'POST',
     path: '/v1/hr/payroll/runs/{id}/cancel',
@@ -710,6 +741,17 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/hr/payroll/runs/{id}/submit',
     ability: 'create:Payroll',
+  },
+  postV1HrTargets: { method: 'POST', path: '/v1/hr/targets', ability: 'create:Target' },
+  postV1HrTargetsByIdCancel: {
+    method: 'POST',
+    path: '/v1/hr/targets/{id}/cancel',
+    ability: 'update:Target',
+  },
+  postV1HrTargetsRefresh: {
+    method: 'POST',
+    path: '/v1/hr/targets/refresh',
+    ability: 'update:Target',
   },
   postV1IntakeSiteKeys: {
     method: 'POST',
@@ -1258,6 +1300,15 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/hr/attendance/imports */
     getV1HrAttendanceImports: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1HrAttendanceImports, undefined, options),
+    /** GET /v1/hr/bonus-rules */
+    getV1HrBonusRules: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrBonusRules, undefined, options),
+    /** GET /v1/hr/bonus-rules/versions/:versionId/preview */
+    getV1HrBonusRulesVersionsByVersionIdPreview: (
+      input: { readonly path: { readonly versionId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrBonusRulesVersionsByVersionIdPreview, input, options),
     /** GET /v1/hr/calendars */
     getV1HrCalendars: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1HrCalendars, undefined, options),
@@ -1296,6 +1347,12 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1HrPayrollRunsById, input, options),
+    /** GET /v1/hr/payroll/runs/:id/bonuses */
+    getV1HrPayrollRunsByIdBonuses: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrPayrollRunsByIdBonuses, input, options),
     /** GET /v1/hr/payroll/runs/:id/inputs */
     getV1HrPayrollRunsByIdInputs: (
       input: { readonly path: { readonly id: string } },
@@ -1320,6 +1377,20 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1HrPayrollRunsByIdPreview, input, options),
+    /** GET /v1/hr/performance/me */
+    getV1HrPerformanceMe: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrPerformanceMe, undefined, options),
+    /** GET /v1/hr/productivity */
+    getV1HrProductivity: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrProductivity, undefined, options),
+    /** GET /v1/hr/targets */
+    getV1HrTargets: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrTargets, undefined, options),
+    /** GET /v1/hr/targets/:id */
+    getV1HrTargetsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1HrTargetsById, input, options),
     /** GET /v1/intake/site-keys */
     getV1IntakeSiteKeys: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1IntakeSiteKeys, undefined, options),
@@ -1796,6 +1867,21 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/hr/attendance/imports */
     postV1HrAttendanceImports: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1HrAttendanceImports, undefined, options),
+    /** POST /v1/hr/bonus-rules */
+    postV1HrBonusRules: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrBonusRules, undefined, options),
+    /** POST /v1/hr/bonus-rules/:id/versions */
+    postV1HrBonusRulesByIdVersions: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrBonusRulesByIdVersions, input, options),
+    /** POST /v1/hr/bonus-rules/versions/:versionId/submit */
+    postV1HrBonusRulesVersionsByVersionIdSubmit: (
+      input: { readonly path: { readonly versionId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrBonusRulesVersionsByVersionIdSubmit, input, options),
     /** POST /v1/hr/calendars */
     postV1HrCalendars: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1HrCalendars, undefined, options),
@@ -1824,6 +1910,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/hr/payroll/runs */
     postV1HrPayrollRuns: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1HrPayrollRuns, undefined, options),
+    /** POST /v1/hr/payroll/runs/:id/bonuses */
+    postV1HrPayrollRunsByIdBonuses: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrPayrollRunsByIdBonuses, input, options),
     /** POST /v1/hr/payroll/runs/:id/cancel */
     postV1HrPayrollRunsByIdCancel: (
       input: { readonly path: { readonly id: string } },
@@ -1847,6 +1939,17 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1HrPayrollRunsByIdSubmit, input, options),
+    /** POST /v1/hr/targets */
+    postV1HrTargets: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrTargets, undefined, options),
+    /** POST /v1/hr/targets/:id/cancel */
+    postV1HrTargetsByIdCancel: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1HrTargetsByIdCancel, input, options),
+    /** POST /v1/hr/targets/refresh */
+    postV1HrTargetsRefresh: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1HrTargetsRefresh, undefined, options),
     /** POST /v1/intake/site-keys */
     postV1IntakeSiteKeys: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1IntakeSiteKeys, undefined, options),

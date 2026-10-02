@@ -23,6 +23,7 @@ import {
 } from './api.js';
 import { control, Field, HrNav, numericControl, RUN_TONE } from './hr-nav.js';
 import { useHrT, type HrMessageKey } from './messages.js';
+import { RunTargetBonuses } from './run-bonuses.js';
 
 /**
  * One payroll run: what it will pay, who agreed to it, and what it did (§12, §7).
@@ -150,6 +151,11 @@ export function PayrollRunPage() {
             </ul>
           </section>
         ) : null}
+
+        {/* M20: what the approved bonus rules paid, applied from here while the run is a draft. */}
+        {status === undefined ? null : (
+          <RunTargetBonuses runId={runId} canApply={isDraft && mayPrepare} onChanged={invalidate} />
+        )}
 
         {isDraft ? (
           <PermissionGate allowed={mayPrepare}>
