@@ -868,6 +868,8 @@ describe('check 2: the withdrawal flow posts correctly through approval', () => 
       body: { withdrawalId: randomUUID(), investorId, kind: 'capital', amountPoisha: '100000' },
     });
     expect(own.statusCode, own.body).toBe(403);
+    // Refused for being the beneficiary, not for any other reason (D-314).
+    expect(own.body).toContain('by the investor it pays');
 
     const withdrawalId = randomUUID();
     const requested = await accounts.client.request('POST', '/v1/investors/withdrawals', {
@@ -881,6 +883,8 @@ describe('check 2: the withdrawal flow posts correctly through approval', () => 
       { body: { walletAccountId: wallet } },
     );
     expect(selfReview.statusCode, selfReview.body).toBe(403);
+    // Refused for being the beneficiary, not for any other reason (D-314).
+    expect(selfReview.body).toContain('by the investor it pays');
 
     const reviewed = await reviewer.client.request(
       'POST',
@@ -897,6 +901,8 @@ describe('check 2: the withdrawal flow posts correctly through approval', () => 
       { body: { decision: 'approved' } },
     );
     expect(selfApproval.statusCode, selfApproval.body).toBe(403);
+    // Refused for being the beneficiary, not for any other reason (D-314).
+    expect(selfApproval.body).toContain('by the investor it pays');
 
     await decide(approvalId, 'approved');
 
@@ -905,6 +911,8 @@ describe('check 2: the withdrawal flow posts correctly through approval', () => 
       `/v1/investors/withdrawals/${withdrawalId}/pay`,
     );
     expect(selfPay.statusCode, selfPay.body).toBe(403);
+    // Refused for being the beneficiary, not for any other reason (D-314).
+    expect(selfPay.body).toContain('by the investor it pays');
 
     const paid = await accounts.client.request(
       'POST',
