@@ -267,7 +267,7 @@ describe('the dashboard on real orders (checks 1 and 4)', () => {
 
   beforeAll(async () => {
     const { skus } = await seedProductWithSkus(ORG_A, 'mktdash', 1);
-    const sku = skus[0] as SeededSku;
+    const sku = skus[0]!;
     const buyer = await seedCustomer(ORG_A, { phoneE164: '+8801711000555', name: 'Dash Buyer' });
 
     eid = await campaign('Eid', [
@@ -362,7 +362,7 @@ describe('the dashboard on real orders (checks 1 and 4)', () => {
     });
 
     // Another brand's order carrying the same UTM, delivered the same month: invisible.
-    const otherSku = (await seedProductWithSkus(ORG_B, 'mktother', 1)).skus[0] as SeededSku;
+    const otherSku = (await seedProductWithSkus(ORG_B, 'mktother', 1)).skus[0]!;
     const otherBuyer = await seedCustomer(ORG_B, {
       phoneE164: '+8801711000556',
       name: 'Other Brand Buyer',
@@ -557,10 +557,8 @@ describe('the Meta spend import is idempotent per (campaign, day) (check 2)', ()
   });
 
   it('lets a person correct an imported figure, and the next import leaves it alone', async () => {
-    const [imported] = (await spendRows(ORG_A, '2026-08-07', '2026-08-07')) as [
-      { campaign_id: string },
-    ];
-    await spend(imported.campaign_id, '2026-08-07', '4500');
+    const [imported] = await spendRows(ORG_A, '2026-08-07', '2026-08-07');
+    await spend(imported?.campaign_id ?? '', '2026-08-07', '4500');
     await meta.importSpend(ORG_A, { from: '2026-08-07', to: '2026-08-07' });
     expect(await spendRows(ORG_A, '2026-08-07', '2026-08-07')).toEqual([
       expect.objectContaining({ amount: '4500', source: 'manual' }),
@@ -626,7 +624,7 @@ describe('a delivered order’s Purchase is queued in the delivery and sent once
     await connect({ capiEnabled: true });
     const orders = harness.app.get(OrdersService);
     const inventory = harness.app.get<InventoryApi>(INVENTORY_API);
-    const sku = (await seedProductWithSkus(ORG_A, 'mktcapi', 1)).skus[0] as SeededSku;
+    const sku = (await seedProductWithSkus(ORG_A, 'mktcapi', 1)).skus[0]!;
     const location = await warehouseId(ORG_A);
     const courierId = await ownRiderCourier(ORG_A);
     const customerId = await seedCustomer(ORG_A, { phoneE164: PHONE, name: 'Afsana Rahman' });
@@ -719,7 +717,7 @@ describe('a delivered order’s Purchase is queued in the delivery and sent once
   });
 
   it('records a transient failure, retries it, and sends once on the retry', async () => {
-    const sku = (await seedProductWithSkus(ORG_A, 'mktcapi2', 1)).skus[0] as SeededSku;
+    const sku = (await seedProductWithSkus(ORG_A, 'mktcapi2', 1)).skus[0]!;
     const buyer = await seedCustomer(ORG_A, { phoneE164: '+8801812345678', name: 'Retry Buyer' });
     const id = await factOrder({
       customerId: buyer,
@@ -747,7 +745,7 @@ describe('a delivered order’s Purchase is queued in the delivery and sent once
   });
 
   it('skips an order delivered more than seven days ago, as Meta would refuse it', async () => {
-    const sku = (await seedProductWithSkus(ORG_A, 'mktcapi3', 1)).skus[0] as SeededSku;
+    const sku = (await seedProductWithSkus(ORG_A, 'mktcapi3', 1)).skus[0]!;
     const buyer = await seedCustomer(ORG_A, { phoneE164: '+8801912345678', name: 'Old Buyer' });
     const id = await factOrder({
       customerId: buyer,
@@ -810,11 +808,9 @@ describe('leads and their segment reports', () => {
     ]);
     // Both SKUs are one product: three leads, one converted, under the product's name.
     const byProduct = await marketing.segments(context(), { dimension: 'product' });
-    expect(byProduct.rows.find((row) => row.leads === 3)).toMatchObject({
-      label: expect.any(String),
-      converted: 1,
-      conversionBps: '3333',
-    });
+    const product = byProduct.rows.find((row) => row.leads === 3);
+    expect(product).toMatchObject({ converted: 1, conversionBps: '3333' });
+    expect(typeof product?.label).toBe('string');
     const byProfession = await marketing.segments(context(), { dimension: 'profession' });
     expect(byProfession.rows.find((row) => row.key === 'teacher')?.leads).toBe(2);
     const byAge = await marketing.segments(context(), { dimension: 'age_band' });
@@ -822,7 +818,7 @@ describe('leads and their segment reports', () => {
   });
 
   it('refuses a SKU or a campaign from another brand', async () => {
-    const foreign = (await seedProductWithSkus(ORG_B, 'mktforeign', 1)).skus[0] as SeededSku;
+    const foreign = (await seedProductWithSkus(ORG_B, 'mktforeign', 1)).skus[0]!;
     await expect(
       marketing.createLead(context(), request(), {
         phone: '01700000202',

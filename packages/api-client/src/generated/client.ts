@@ -53,6 +53,11 @@ export const OPERATIONS = {
     path: '/v1/hr/payroll/runs/{id}/inputs/{inputId}',
     ability: 'create:Payroll',
   },
+  deleteV1MarketingCampaignsByIdRefsByRefId: {
+    method: 'DELETE',
+    path: '/v1/marketing/campaigns/{id}/refs/{refId}',
+    ability: 'update:Campaign',
+  },
   deleteV1NotifyOptOutsByPhone: {
     method: 'DELETE',
     path: '/v1/notify/opt-outs/{phone}',
@@ -347,6 +352,42 @@ export const OPERATIONS = {
     ability: 'read:Investor',
   },
   getV1JobsFailed: { method: 'GET', path: '/v1/jobs/failed', ability: 'read:AuditLog' },
+  getV1MarketingCampaigns: {
+    method: 'GET',
+    path: '/v1/marketing/campaigns',
+    ability: 'read:Campaign',
+  },
+  getV1MarketingCapiEvents: {
+    method: 'GET',
+    path: '/v1/marketing/capi-events',
+    ability: 'read:Campaign',
+  },
+  getV1MarketingDashboard: {
+    method: 'GET',
+    path: '/v1/marketing/dashboard',
+    ability: 'read:Campaign',
+  },
+  getV1MarketingLeads: { method: 'GET', path: '/v1/marketing/leads', ability: 'read:Campaign' },
+  getV1MarketingLeadsSegments: {
+    method: 'GET',
+    path: '/v1/marketing/leads/segments',
+    ability: 'read:Campaign',
+  },
+  getV1MarketingMetaConnection: {
+    method: 'GET',
+    path: '/v1/marketing/meta-connection',
+    ability: 'read:Campaign',
+  },
+  getV1MarketingSpend: {
+    method: 'GET',
+    path: '/v1/marketing/spend',
+    ability: 'read:CampaignSpend',
+  },
+  getV1MarketingSpendCampaigns: {
+    method: 'GET',
+    path: '/v1/marketing/spend/campaigns',
+    ability: 'read:CampaignSpend',
+  },
   getV1NotifyMessages: { method: 'GET', path: '/v1/notify/messages', ability: 'read:Campaign' },
   getV1NotifyOptOuts: { method: 'GET', path: '/v1/notify/opt-outs', ability: 'read:Campaign' },
   getV1NotifyTemplates: { method: 'GET', path: '/v1/notify/templates', ability: 'read:Campaign' },
@@ -458,6 +499,16 @@ export const OPERATIONS = {
     ability: 'update:Catalog',
   },
   patchV1InvestorsById: { method: 'PATCH', path: '/v1/investors/{id}', ability: 'update:Investor' },
+  patchV1MarketingCampaignsById: {
+    method: 'PATCH',
+    path: '/v1/marketing/campaigns/{id}',
+    ability: 'update:Campaign',
+  },
+  patchV1MarketingLeadsById: {
+    method: 'PATCH',
+    path: '/v1/marketing/leads/{id}',
+    ability: 'update:Campaign',
+  },
   patchV1OrdersById: { method: 'PATCH', path: '/v1/orders/{id}', ability: 'update:Order' },
   patchV1PosRegistersById: {
     method: 'PATCH',
@@ -735,6 +786,22 @@ export const OPERATIONS = {
     path: '/v1/investors/withdrawals/{id}/review',
     ability: 'update:Investor',
   },
+  postV1MarketingCampaigns: {
+    method: 'POST',
+    path: '/v1/marketing/campaigns',
+    ability: 'create:Campaign',
+  },
+  postV1MarketingCampaignsByIdRefs: {
+    method: 'POST',
+    path: '/v1/marketing/campaigns/{id}/refs',
+    ability: 'update:Campaign',
+  },
+  postV1MarketingLeads: { method: 'POST', path: '/v1/marketing/leads', ability: 'create:Campaign' },
+  postV1MarketingMetaImport: {
+    method: 'POST',
+    path: '/v1/marketing/meta/import',
+    ability: 'create:CampaignSpend',
+  },
   postV1NotifyOptOuts: { method: 'POST', path: '/v1/notify/opt-outs', ability: 'update:Campaign' },
   postV1Orders: { method: 'POST', path: '/v1/orders', ability: 'create:Order' },
   postV1OrdersBulkConfirm: {
@@ -881,6 +948,16 @@ export const OPERATIONS = {
     path: '/v1/inventory/reorder-levels',
     ability: 'update:Catalog',
   },
+  putV1MarketingMetaConnection: {
+    method: 'PUT',
+    path: '/v1/marketing/meta-connection',
+    ability: 'update:Campaign',
+  },
+  putV1MarketingSpend: {
+    method: 'PUT',
+    path: '/v1/marketing/spend',
+    ability: 'create:CampaignSpend',
+  },
   putV1NotifyTemplates: { method: 'PUT', path: '/v1/notify/templates', ability: 'update:Campaign' },
   reopenPeriod: {
     method: 'POST',
@@ -967,6 +1044,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.deleteV1HrPayrollRunsByIdInputsByInputId, input, options),
+    /** DELETE /v1/marketing/campaigns/:id/refs/:refId */
+    deleteV1MarketingCampaignsByIdRefsByRefId: (
+      input: { readonly path: { readonly id: string; readonly refId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1MarketingCampaignsByIdRefsByRefId, input, options),
     /** DELETE /v1/notify/opt-outs/:phone */
     deleteV1NotifyOptOutsByPhone: (
       input: { readonly path: { readonly phone: string } },
@@ -1281,6 +1364,30 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/jobs/failed */
     getV1JobsFailed: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1JobsFailed, undefined, options),
+    /** GET /v1/marketing/campaigns */
+    getV1MarketingCampaigns: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketingCampaigns, undefined, options),
+    /** GET /v1/marketing/capi-events */
+    getV1MarketingCapiEvents: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketingCapiEvents, undefined, options),
+    /** GET /v1/marketing/dashboard */
+    getV1MarketingDashboard: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketingDashboard, undefined, options),
+    /** GET /v1/marketing/leads */
+    getV1MarketingLeads: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketingLeads, undefined, options),
+    /** GET /v1/marketing/leads/segments */
+    getV1MarketingLeadsSegments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketingLeadsSegments, undefined, options),
+    /** GET /v1/marketing/meta-connection */
+    getV1MarketingMetaConnection: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketingMetaConnection, undefined, options),
+    /** GET /v1/marketing/spend */
+    getV1MarketingSpend: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketingSpend, undefined, options),
+    /** GET /v1/marketing/spend/campaigns */
+    getV1MarketingSpendCampaigns: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketingSpendCampaigns, undefined, options),
     /** GET /v1/notify/messages */
     getV1NotifyMessages: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1NotifyMessages, undefined, options),
@@ -1486,6 +1593,17 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1InvestorsById, input, options),
+    /** PATCH /v1/marketing/campaigns/:id */
+    patchV1MarketingCampaignsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1MarketingCampaignsById, input, options),
+    /** PATCH /v1/marketing/leads/:id */
+    patchV1MarketingLeadsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1MarketingLeadsById, input, options),
     /** PATCH /v1/orders/:id */
     patchV1OrdersById: (
       input: { readonly path: { readonly id: string } },
@@ -1765,6 +1883,21 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InvestorsWithdrawalsByIdReview, input, options),
+    /** POST /v1/marketing/campaigns */
+    postV1MarketingCampaigns: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1MarketingCampaigns, undefined, options),
+    /** POST /v1/marketing/campaigns/:id/refs */
+    postV1MarketingCampaignsByIdRefs: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1MarketingCampaignsByIdRefs, input, options),
+    /** POST /v1/marketing/leads */
+    postV1MarketingLeads: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1MarketingLeads, undefined, options),
+    /** POST /v1/marketing/meta/import */
+    postV1MarketingMetaImport: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1MarketingMetaImport, undefined, options),
     /** POST /v1/notify/opt-outs */
     postV1NotifyOptOuts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1NotifyOptOuts, undefined, options),
@@ -1960,6 +2093,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/inventory/reorder-levels */
     putV1InventoryReorderLevels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1InventoryReorderLevels, undefined, options),
+    /** PUT /v1/marketing/meta-connection */
+    putV1MarketingMetaConnection: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1MarketingMetaConnection, undefined, options),
+    /** PUT /v1/marketing/spend */
+    putV1MarketingSpend: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1MarketingSpend, undefined, options),
     /** PUT /v1/notify/templates */
     putV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1NotifyTemplates, undefined, options),

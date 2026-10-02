@@ -174,7 +174,7 @@ describe('Conversions API (purchase sender)', () => {
     expect(call?.init.method).toBe('POST');
     expect(call?.url.pathname).toBe('/v25.0/5550001/events');
     expect(call?.url.searchParams.get('access_token')).toBe(TOKEN);
-    expect(JSON.parse(String(call?.init.body))).toEqual({
+    expect(JSON.parse(call?.init.body as string)).toEqual({
       data: [event],
       test_event_code: 'TEST123',
     });
