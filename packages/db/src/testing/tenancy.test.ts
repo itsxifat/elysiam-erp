@@ -1097,9 +1097,10 @@ describe('check 6: migrate and seed are idempotent', () => {
 
     // Same rows, same ids, nothing duplicated.
     expect(after).toEqual(before);
-    // 40 template accounts plus one wallet for the seeded HQ branch, per org.
-    expect(before).toHaveLength(41);
-    expect(first.accounts).toBe(41 * 5);
+    // 41 template accounts (M14a added 3350 Opening balance equity, D-213) plus one
+    // wallet for the seeded HQ branch, per org.
+    expect(before).toHaveLength(42);
+    expect(first.accounts).toBe(42 * 5);
 
     const wallets = before.filter((row) => row.subtype === 'wallet_cash');
     expect(wallets.map((row) => row.code)).toEqual(['1010-HQ']);

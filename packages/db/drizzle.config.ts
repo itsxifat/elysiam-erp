@@ -42,6 +42,8 @@ export default defineConfig({
     'inventory',
     'investors',
     'ledger',
+    // M14a. The record of a brand's opening import and the opening of its books.
+    'migration',
     // M16. Templates, opt-outs and the delivery log.
     'notify',
     'org',

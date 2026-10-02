@@ -474,7 +474,7 @@ How thresholds behave (D-062, D-065, D-068):
 
 ### Chart of accounts
 
-Each org gets a chart seeded from a template in `packages/db/src/seed/coa-template.ts` (D-084): 40 system accounts with stable codes (1xxx assets, 2xxx liabilities, 3xxx equity, 4xxx income, 5xxx expenses) plus hand cash `1010-<branch code>` for every branch. Accounts have stable `code`s and `subtype`s. Orgs can add accounts but can't delete any (`erp_app` holds no DELETE), and an account can be renamed or deactivated but never change its class, subtype, branch or party type. Subtypes marked as party subtypes below require a party of that type on every line, and a branch-level account requires its branch on every line.
+Each org gets a chart seeded from a template in `packages/db/src/seed/coa-template.ts` (D-084): 41 system accounts (M14a added `3350 Opening balance equity`, D-213) with stable codes (1xxx assets, 2xxx liabilities, 3xxx equity, 4xxx income, 5xxx expenses) plus hand cash `1010-<branch code>` for every branch. Accounts have stable `code`s and `subtype`s. Orgs can add accounts but can't delete any (`erp_app` holds no DELETE), and an account can be renamed or deactivated but never change its class, subtype, branch or party type. Subtypes marked as party subtypes below require a party of that type on every line, and a branch-level account requires its branch on every line.
 
 System subtypes:
 

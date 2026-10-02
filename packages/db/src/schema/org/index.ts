@@ -55,6 +55,13 @@ export const organizations = org.table('organizations', {
   /** Business dates are Asia/Dhaka calendar dates (invariant 8). */
   timezone: text('timezone').notNull().default('Asia/Dhaka'),
   isActive: boolean('is_active').notNull().default(true),
+  /**
+   * The training org (M14a, D-223): a brand whose figures are anonymised demo data.
+   *
+   * The consolidated cross-org reads leave it out, so practice money never reaches a
+   * super admin's group totals. Set only by `pnpm demo:org`.
+   */
+  isTraining: boolean('is_training').notNull().default(false),
   ...timestamps,
 });
 
