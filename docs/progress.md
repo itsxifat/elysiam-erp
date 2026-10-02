@@ -420,7 +420,8 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
 
   - acceptance-auditor: NOT READY with 3 gaps, all docs: the plans index, `build-status.md`,
     and two outbox comments that contradicted D-277. Then NOT READY with 2: this entry
-    unfinished and the docs uncommitted. Both are closed in the commit that adds this entry.
+    unfinished and the docs uncommitted. Then **READY** at `314eabc`, with the M20 and HR suites
+    re-run.
     The re-audit found no check weakened by `4215f61`. It also corrected the cross-brand write
     test, which no longer accepts a foreign-key error, since a foreign-key check ignores RLS.
 - Decisions/assumptions: D-270 to D-280. D-271, D-272 and D-273 are ASSUMED. D-280 was extended
