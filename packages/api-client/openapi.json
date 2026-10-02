@@ -466,7 +466,13 @@
               "PROMO_REDEMPTION_IMMUTABLE",
               "NOTIFY_TEMPLATE_INVALID",
               "NOTIFY_MESSAGE_IMMUTABLE",
-              "CRM_OCCASION_IMMUTABLE"
+              "CRM_OCCASION_IMMUTABLE",
+              "MIGRATION_IMPORT_REJECTED",
+              "MIGRATION_BATCH_IMMUTABLE",
+              "MIGRATION_OPENING_IMMUTABLE",
+              "MIGRATION_ALREADY_OPENED",
+              "MIGRATION_NOT_FOUND",
+              "MIGRATION_NOT_RECONCILED"
             ]
           },
           "detail": {
