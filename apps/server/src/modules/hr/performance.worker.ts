@@ -22,11 +22,11 @@ export const DESK_EVENT_NAMES = [
  * desk event and the enqueue are each idempotent — the first by the outbox row's id, the
  * second by the bucket key — so the dispatcher's at-least-once delivery costs nothing.
  */
-export function deskSubscriber(targets: TargetsService) {
+export function deskSubscriber(targets: TargetsService, now: () => Date = () => new Date()) {
   return async (event: DeliveredEvent): Promise<void> => {
     const { refresh } = await targets.recordDeskEvent(event);
     if (!refresh) return;
-    const bucket = progressBucket(event.orgId, new Date());
+    const bucket = progressBucket(event.orgId, now());
     await withOrg({ orgId: event.orgId, userId: PROGRESS_ACTOR }, (tx) =>
       enqueue(
         tx,

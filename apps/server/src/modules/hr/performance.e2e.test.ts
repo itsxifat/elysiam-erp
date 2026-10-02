@@ -459,7 +459,11 @@ describe('pickup time from the real outbox (check 3)', () => {
     await orderEvent(agentB.userId, 'order.status_changed', status(three, 'confirmed'), T(0, 30));
 
     const dispatcher = new OutboxDispatcher();
-    const subscriber = deskSubscriber(harness.app.get(TargetsService));
+    // A fixed clock, so both confirmations fall in one bucket whatever the wall time is.
+    const subscriber = deskSubscriber(
+      harness.app.get(TargetsService),
+      () => new Date('2026-08-10T04:00:05Z'),
+    );
     for (const name of DESK_EVENT_NAMES) dispatcher.on(name, subscriber);
     await dispatcher.drain(500);
 
