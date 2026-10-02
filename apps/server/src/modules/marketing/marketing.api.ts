@@ -11,10 +11,11 @@ import * as repo from './marketing.repository.js';
 /**
  * Marketing's service interface for other modules (invariant 12; M24).
  *
- * One read, for the analytics rollup (`analytics.daily_campaign`, `daily_org.spend_poisha`):
- * §11's inputs per campaign per Asia/Dhaka day, attributed exactly as the marketing
- * dashboard attributes them (D-250), because both go through `readAttributedPeriod`. No
- * names, no leads, no Meta link: a campaign is its id here.
+ * Two reads, both for M24's analytics: §11's inputs per campaign per Asia/Dhaka day for the
+ * rollup (`analytics.daily_campaign`, `daily_org.spend_poisha`), attributed exactly as the
+ * marketing dashboard attributes them (D-250) because both go through
+ * `readAttributedPeriod`; and campaign names for the dashboard's labels. No leads and no
+ * Meta link.
  */
 export interface CampaignDay {
   readonly businessDate: string;

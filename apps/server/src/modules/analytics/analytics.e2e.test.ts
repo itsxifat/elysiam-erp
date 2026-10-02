@@ -1,4 +1,4 @@
-import { MEMBERSHIP_ROLES, type MembershipRole } from '@elysium/contracts';
+import { MEMBERSHIP_ROLES } from '@elysium/contracts';
 import { SEED_ORG_IDS, withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
