@@ -72,6 +72,7 @@ const PERF_KEYS = [
   'perf.runBonusesHint',
   'perf.applyBonuses',
   'perf.emptyAwards',
+  'perf.skippedHint',
   'perf.rule',
   'perf.deniedTitle',
   'perf.deniedDetail',

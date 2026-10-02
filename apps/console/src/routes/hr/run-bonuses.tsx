@@ -67,6 +67,21 @@ export function RunTargetBonuses({
           {apply.error instanceof ApiError ? apply.error.message : t('hr.saveFailed')}
         </p>
       )}
+      {/* People a rule would pay but this run does not (no salary structure that month):
+          shown, so a bonus is never silently lost between this panel and the payslips. */}
+      {(apply.data?.skipped.length ?? 0) === 0 ? null : (
+        <div role="status" className="space-y-1 text-sm text-warning-subtle-foreground">
+          <p>{t('perf.skippedHint')}</p>
+          <ul className="list-inside list-disc">
+            {(apply.data?.skipped ?? []).map((one) => (
+              <li key={one.employeeId}>
+                <span className="tabular-nums">{one.employeeCode ?? ''}</span>{' '}
+                <Money poisha={one.amountPoisha} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('perf.emptyAwards')}</p>
       ) : (

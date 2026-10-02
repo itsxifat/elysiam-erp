@@ -373,6 +373,25 @@ export class PayrollService implements OnModuleInit {
           );
         }
 
+        /*
+         * The inputs, re-read under the same lock (M20 ledger audit W2).
+         *
+         * Step 1 computed the payslips and released the run's lock when it committed, and the
+         * run stayed a draft until now — so an input added or removed in between, or M20's
+         * bonus apply replacing every rule-made bonus at once, would be missing from the
+         * payslips frozen below while still showing on the run. Recomputing here and refusing
+         * on any difference keeps the frozen payslips, the inputs and the approved amount the
+         * same thing; the request raised in step 2 then names no run and its approval does
+         * nothing, as when the pending-run check above refuses.
+         */
+        const recomputed = await this.compute(tx, context.orgId, locked);
+        if (fingerprint(recomputed) !== fingerprint(prepared.computed)) {
+          throw new HrError(
+            'PAYROLL_TRANSITION_INVALID',
+            'The run’s bonuses or deductions changed while it was being submitted. Check them and submit again.',
+          );
+        }
+
         await this.freeze(tx, context.orgId, prepared.run.id, prepared.computed);
         await repo.submitRun(tx, context.orgId, prepared.run.id, {
           approvalRequestId: raised.id,
@@ -587,7 +606,7 @@ export class PayrollService implements OnModuleInit {
             'That payroll run is no longer a draft, so its bonuses cannot change.',
           );
         }
-        const removed = await repo.deleteInput(tx, context.orgId, inputId);
+        const removed = await repo.deleteInput(tx, context.orgId, runId, inputId);
         if (removed === 0) throw new HrError('HR_NOT_FOUND', 'No such payroll input.');
 
         await this.audit.record(tx, {
@@ -911,6 +930,17 @@ export class PayrollService implements OnModuleInit {
    * and refusing the whole run would hold up everybody else's salary. The preview's
    * warnings name them, so the omission is visible before a checker sees the total.
    */
+  /**
+   * The employees this run will pay: exactly those `compute` writes a payslip for (M20).
+   *
+   * M20's bonus apply asks, so it never awards a bonus to somebody the run will skip — an
+   * employee with no salary structure for the month, or one who left before it — whose
+   * input `compute` would silently ignore (ledger audit W3).
+   */
+  async payableEmployeeIds(tx: Tx, orgId: string, run: repo.RunRow): Promise<Set<string>> {
+    return new Set((await this.compute(tx, orgId, run)).map((one) => one.employee.id));
+  }
+
   private async compute(tx: Tx, orgId: string, run: repo.RunRow): Promise<Computed[]> {
     const month = toPayrollMonth(run.month);
     const monthEnd = `${month}-${String(daysInMonth(month)).padStart(2, '0')}`;
@@ -1139,6 +1169,18 @@ export class PayrollService implements OnModuleInit {
     }
     return { accountId: account.accountId, subtype, branchId: account.branchId };
   }
+}
+
+/** Every payslip's figures as one string, to tell two computations of a run apart. */
+function fingerprint(computed: readonly Computed[]): string {
+  return computed
+    .map(
+      ({ line }) =>
+        `${line.employeeId}:${line.grossPoisha.toString()}:${line.bonusPoisha.toString()}:` +
+        `${line.deductionsPoisha.toString()}:${line.netPoisha.toString()}`,
+    )
+    .sort()
+    .join('|');
 }
 
 /** An approval request's own status (also read by M20's bonus rules). */

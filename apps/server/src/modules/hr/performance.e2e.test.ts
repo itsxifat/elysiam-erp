@@ -1,11 +1,12 @@
 import { withOrg, withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import { pino } from 'pino';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { OutboxDispatcher } from '../../platform/events/dispatcher.js';
 import { emit } from '../../platform/events/outbox.js';
 import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
+import { ApprovalsService } from '../approvals/approvals.service.js';
 import {
   createBranch,
   ORG_A,
@@ -137,6 +138,9 @@ beforeAll(async () => {
     logger: pino({ level: 'silent' }),
   });
 
+  // The suite stands on 2 August 2026: August's targets may be set, July's may not (D-280).
+  harness.app.get(TargetsService).now = () => new Date('2026-08-02T06:00:00Z');
+
   showroom = await createBranch(ORG_A, 'SHR-PERF');
   hr = await harness.asRole('hr', ORG_A);
   secondHr = await harness.asRole('hr', ORG_A);
@@ -235,6 +239,20 @@ describe('targets: the split, the rollup and target.progress', () => {
     expect(second.statusCode, second.body).toBe(201);
     targetB = body<Target>(second).id;
     expect(body<Target>(second).achieved).toBe('4');
+  });
+
+  it('refuses a target for a month that has already ended', async () => {
+    const late = await hr.client.request('POST', '/v1/hr/targets', {
+      body: {
+        scope: 'employee',
+        month: '2026-07',
+        metric: 'confirmed_orders',
+        employeeId: employeeA,
+        targetValue: '1',
+      },
+    });
+    expect(late.statusCode).toBe(400);
+    expect(body<{ code: string }>(late).code).toBe('TARGET_INVALID');
   });
 
   it('refuses a second live target on the same metric and month', async () => {
@@ -585,6 +603,15 @@ describe('bonus rules feed payroll', () => {
     expect(body<{ code: string }>(bad).code).toBe('BONUS_RULE_INVALID');
   });
 
+  it('lets only the version’s author send it for approval', async () => {
+    const notTheirs = await secondHr.client.request(
+      'POST',
+      `/v1/hr/bonus-rules/versions/${versionId}/submit`,
+      { body: {} },
+    );
+    expect(notTheirs.statusCode).toBe(403);
+  });
+
   it('pays nothing until a second person approves the version', async () => {
     const run = await hr.client.request('POST', '/v1/hr/payroll/runs', { body: { month: MONTH } });
     expect(run.statusCode, run.body).toBe(201);
@@ -677,6 +704,102 @@ describe('bonus rules feed payroll', () => {
     expect(preview.payslips.find((line) => line.employeeId === employeeA)?.bonusPoisha).toBe(
       '210000',
     );
+  });
+
+  it('awards nobody the run will not pay, and says who was left out', async () => {
+    // The supervisor is staff with no salary structure, confirming ten August orders
+    // against a target of ten: the rule would pay ৳2,000, the run would pay nothing.
+    const supervisorEmployee = await seedEmployee(ORG_A, {
+      code: 'PERF-S',
+      fullName: 'Supervisor Sumi',
+      joinDate: '2026-01-01',
+      userId: supervisor.userId,
+    });
+    for (let index = 0; index < 10; index += 1) {
+      await seedDeskOrder({ agent: supervisor.userId, confirmedAt: '2026-08-12T10:00:00+06:00' });
+    }
+    const target = await hr.client.request('POST', '/v1/hr/targets', {
+      body: {
+        scope: 'employee',
+        month: MONTH,
+        metric: 'confirmed_orders',
+        employeeId: supervisorEmployee.id,
+        targetValue: '10',
+      },
+    });
+    expect(target.statusCode, target.body).toBe(201);
+
+    const applied = body<{
+      items: { employeeId: string }[];
+      skipped: { employeeId: string; amountPoisha: string }[];
+    }>(await hr.client.request('POST', `/v1/hr/payroll/runs/${runId}/bonuses`));
+    expect(applied.items.map((item) => item.employeeId)).toEqual([employeeA]);
+    expect(applied.skipped).toEqual([
+      expect.objectContaining({ employeeId: supervisorEmployee.id, amountPoisha: '200000' }),
+    ]);
+  });
+
+  it('takes a cancelled target’s bonus off the draft run', async () => {
+    const cancelled = await hr.client.request('POST', `/v1/hr/targets/${targetA}/cancel`);
+    expect(cancelled.statusCode, cancelled.body).toBe(201);
+    const after = body<{ items: unknown[] }>(
+      await hr.client.request('GET', `/v1/hr/payroll/runs/${runId}/bonuses`),
+    );
+    expect(after.items).toEqual([]);
+
+    // Set again, applied again: the bonus is back, once.
+    const again = await hr.client.request('POST', '/v1/hr/targets', {
+      body: {
+        scope: 'employee',
+        month: MONTH,
+        metric: 'confirmed_orders',
+        employeeId: employeeA,
+        targetValue: '10',
+      },
+    });
+    expect(again.statusCode, again.body).toBe(201);
+    targetA = body<{ id: string }>(again).id;
+    const reapplied = body<{ totalPoisha: string }>(
+      await hr.client.request('POST', `/v1/hr/payroll/runs/${runId}/bonuses`),
+    );
+    expect(reapplied.totalPoisha).toBe('210000');
+  });
+
+  it('refuses a submit whose bonuses changed while it was being submitted', async () => {
+    /*
+     * The window W2 found: submit computes the payslips, commits, raises the approval, then
+     * freezes what it computed. A bonus written in between would be on the run and not on
+     * the frozen payslips. The approval request is the moment in the middle, so the test
+     * writes the bonus there.
+     */
+    const approvals = harness.app.get(ApprovalsService);
+    const original = approvals.request.bind(approvals);
+    const spy = vi.spyOn(approvals, 'request').mockImplementationOnce(async (...args) => {
+      await withSystem(
+        (tx) =>
+          tx.execute(sql`
+            insert into hr.payroll_inputs
+              (org_id, run_id, employee_id, kind, label, amount_poisha, created_by)
+            values (${ORG_A}, ${runId}, ${employeeA}, 'bonus', 'Late Eid bonus', 50000,
+                    'usr_perf_test')
+          `),
+        { orgId: ORG_A },
+      );
+      return original(...args);
+    });
+    try {
+      const raced = await hr.client.request('POST', `/v1/hr/payroll/runs/${runId}/submit`, {
+        body: { reason: 'August' },
+      });
+      expect(raced.statusCode, raced.body).toBe(409);
+      expect(body<{ code: string }>(raced).code).toBe('PAYROLL_TRANSITION_INVALID');
+    } finally {
+      spy.mockRestore();
+    }
+    const run = body<{ status: string }>(
+      await hr.client.request('GET', `/v1/hr/payroll/runs/${runId}`),
+    );
+    expect(run.status).toBe('draft');
   });
 
   it('refuses to change a submitted run’s bonuses', async () => {

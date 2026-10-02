@@ -41,6 +41,32 @@ create trigger target_weeks_plan_frozen
 before update on hr.target_weeks
 for each row execute function hr.assert_target_week_change();--> statement-breakpoint
 
+-- Who a target counts is decided when it is set (D-273), and an employee target counts
+-- that employee alone (M20 ledger audit W6). A member row added later, or a second person
+-- on an employee target, would add somebody else's orders to the figure a bonus is paid on.
+-- `created_at` is the inserting transaction's `now()`, so "the same transaction" is an
+-- equality.
+create or replace function hr.assert_target_member() returns trigger
+language plpgsql as $$
+declare
+  t record;
+begin
+  select scope::text as scope, employee_id, created_at into t
+  from hr.targets where org_id = new.org_id and id = new.target_id;
+  if not found or t.created_at <> now() then
+    raise exception 'TARGET_FROZEN: a target''s people are set with the target, never added later.';
+  end if;
+  if t.scope = 'employee' and t.employee_id <> new.employee_id then
+    raise exception 'TARGET_INVALID: an employee target counts that employee and nobody else.';
+  end if;
+  return new;
+end;
+$$;--> statement-breakpoint
+
+create trigger target_members_set_once
+before insert on hr.target_members
+for each row execute function hr.assert_target_member();--> statement-breakpoint
+
 -- A bonus rule version is the JSON a checker approved: the definition never changes, and
 -- the status only moves forward (D-275).
 create or replace function hr.assert_bonus_rule_version_change() returns trigger
@@ -61,6 +87,35 @@ begin
     or (old.status = 'approved' and new.status = 'superseded')
   ) then
     raise exception 'BONUS_RULE_FROZEN: a bonus rule version cannot go from % to %.', old.status, new.status;
+  end if;
+
+  -- The approval link, held here as 0056 holds a payroll run's (M20 ledger audit W6). A
+  -- version is submitted only with a `bonus_rule` request that names it; it goes into
+  -- force only once that request is approved, by somebody other than the version's author;
+  -- and it is closed as rejected only once its request was refused or withdrawn.
+  if old.status = 'draft' and new.status = 'pending_approval' then
+    perform 1 from approvals.approval_requests r
+    where r.org_id = new.org_id and r.id = new.approval_request_id
+      and r.type = 'bonus_rule' and r.payload->>'ruleVersionId' = new.id::text;
+    if not found then
+      raise exception 'BONUS_RULE_FROZEN: a version is submitted only with a bonus_rule request that names it.';
+    end if;
+  end if;
+  if old.status = 'pending_approval' and new.status = 'approved' then
+    perform 1 from approvals.approval_requests r
+    where r.org_id = new.org_id and r.id = new.approval_request_id
+      and r.status = 'approved' and r.decided_by is distinct from new.created_by;
+    if not found then
+      raise exception 'BONUS_RULE_FROZEN: a version goes into force only on its own approved request, decided by somebody other than its author.';
+    end if;
+  end if;
+  if old.status = 'pending_approval' and new.status = 'rejected' then
+    perform 1 from approvals.approval_requests r
+    where r.org_id = new.org_id and r.id = new.approval_request_id
+      and r.status in ('rejected', 'cancelled');
+    if not found then
+      raise exception 'BONUS_RULE_FROZEN: a version is closed as rejected only once its request was refused or withdrawn.';
+    end if;
   end if;
   return new;
 end;

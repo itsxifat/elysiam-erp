@@ -1,4 +1,4 @@
-import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Injectable, type OnModuleInit } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
 import {
   bonusRuleToJson,
@@ -14,7 +14,7 @@ import type { ActiveContext } from '../../platform/http/context.js';
 import { ApprovalsService, type ApprovalExecutor } from '../approvals/approvals.service.js';
 import { HrError, mapHrErrors } from './hr.errors.js';
 import * as hrRepo from './hr.repository.js';
-import { approvalStatus } from './payroll.service.js';
+import { approvalStatus, PayrollService } from './payroll.service.js';
 import * as repo from './performance.repository.js';
 import type { CreateBonusRuleInput } from './performance.schemas.js';
 import { TargetsService } from './targets.service.js';
@@ -102,6 +102,7 @@ export class BonusRulesService implements OnModuleInit {
     private readonly approvals: ApprovalsService,
     private readonly audit: AuditService,
     private readonly targets: TargetsService,
+    private readonly payroll: PayrollService,
   ) {}
 
   onModuleInit(): void {
@@ -156,7 +157,7 @@ export class BonusRulesService implements OnModuleInit {
           actorUserId: context.userId,
           operation: 'create',
           action: 'hr.bonus_rule.created',
-          entityType: 'Target',
+          entityType: 'Payroll',
           entityId: ruleId,
           before: null,
           after: { name: input.name, versionId, definition: bonusRuleToJson(rule) },
@@ -197,7 +198,7 @@ export class BonusRulesService implements OnModuleInit {
           actorUserId: context.userId,
           operation: 'create',
           action: 'hr.bonus_rule.version_added',
-          entityType: 'Target',
+          entityType: 'Payroll',
           entityId: versionId,
           before: null,
           after: { ruleId, definition: bonusRuleToJson(rule) },
@@ -266,9 +267,11 @@ export class BonusRulesService implements OnModuleInit {
   /**
    * Send a draft version to a checker.
    *
-   * A version left pending by a rejected or cancelled request is closed as `rejected`
-   * first — the approvals module runs nothing on a rejection — so the rule is not stuck
-   * behind it; one still waiting for a decision is a refusal.
+   * Only the version's author may submit it (M20 ledger audit W1): the approvals module
+   * refuses the requester as checker, so the author being the requester is what keeps the
+   * person who wrote the terms from approving them. A version left pending by a decided
+   * request is settled first — the approvals module runs nothing on a rejection — so the
+   * rule is not stuck behind it; one still waiting for a decision is a refusal.
    */
   async submit(
     context: ActiveContext,
@@ -284,9 +287,14 @@ export class BonusRulesService implements OnModuleInit {
           if (version === undefined) {
             throw new HrError('HR_NOT_FOUND', 'No such bonus rule version.');
           }
-          assertInScope(request, { branchId: null, createdBy: context.userId });
+          assertInScope(request, { branchId: null, createdBy: version.created_by });
           if (version.status !== 'draft') {
             throw new HrError('BONUS_RULE_FROZEN', 'Only a draft version can be submitted.');
+          }
+          if (version.created_by !== context.userId) {
+            throw new ForbiddenException(
+              'Only the person who wrote this version can send it for approval; somebody else then approves it.',
+            );
           }
           await this.closeDecidedPending(tx, context.orgId, version.rule_id);
           if ((await repo.pendingVersionOf(tx, context.orgId, version.rule_id)) !== undefined) {
@@ -314,13 +322,17 @@ export class BonusRulesService implements OnModuleInit {
       });
 
       return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        await repo.markSubmitted(tx, context.orgId, prepared.id, raised.id);
+        // Two submits of one draft both raise a request; the second finds no draft left
+        // (ledger audit N1) and says so rather than auditing a submit that did nothing.
+        if ((await repo.markSubmitted(tx, context.orgId, prepared.id, raised.id)) === 0) {
+          throw new HrError('BONUS_RULE_FROZEN', 'That version has already been submitted.');
+        }
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,
           operation: 'update',
           action: 'hr.bonus_rule.submitted',
-          entityType: 'Target',
+          entityType: 'Payroll',
           entityId: prepared.id,
           before: { status: 'draft' },
           after: { status: 'pending_approval', approvalId: raised.id },
@@ -332,13 +344,37 @@ export class BonusRulesService implements OnModuleInit {
     });
   }
 
+  /**
+   * Settle a pending version whose request is already decided: rejected or withdrawn closes
+   * it, and approved — only possible when the checker decided in the moment between the
+   * request and the submit's own write, so the executor found nothing (ledger audit N2) —
+   * puts it into force now.
+   */
   private async closeDecidedPending(tx: Tx, orgId: string, ruleId: string): Promise<void> {
     const pending = await repo.pendingVersionOf(tx, orgId, ruleId);
     if (pending?.approval_request_id == null) return;
     const status = await approvalStatus(tx, orgId, pending.approval_request_id);
     if (status === 'rejected' || status === 'cancelled') {
       await repo.setVersionStatus(tx, orgId, pending.id, 'rejected');
+    } else if (status === 'approved') {
+      await this.activate(tx, orgId, pending);
     }
+  }
+
+  /**
+   * Put a version into force: the one it replaces is superseded, and that one's bonuses on
+   * draft runs go with it (ledger audit W4), so a run never pays terms that are no longer
+   * the brand's. 0083 refuses this unless the version's own request is approved by
+   * somebody other than its author.
+   */
+  private async activate(tx: Tx, orgId: string, version: repo.VersionRow): Promise<string | null> {
+    const current = await repo.approvedVersionOf(tx, orgId, version.rule_id);
+    if (current !== undefined) {
+      await repo.setVersionStatus(tx, orgId, current.id, 'superseded');
+      await repo.deleteDraftAwardInputs(tx, orgId, { ruleVersionId: current.id });
+    }
+    await repo.setVersionStatus(tx, orgId, version.id, 'approved');
+    return current?.id ?? null;
   }
 
   /**
@@ -349,19 +385,21 @@ export class BonusRulesService implements OnModuleInit {
   private readonly execute: ApprovalExecutor = async (tx, { context, approval, request }) => {
     const version = await repo.versionByApproval(tx, context.orgId, approval.id);
     if (version?.status !== 'pending_approval') return;
-    const current = await repo.approvedVersionOf(tx, context.orgId, version.rule_id);
-    if (current !== undefined) {
-      await repo.setVersionStatus(tx, context.orgId, current.id, 'superseded');
+    // The author approving their own terms (W1). Submit already makes the author the
+    // requester, whom the approvals module refuses; this is the second lock, and 0083 the
+    // third.
+    if (version.created_by === context.userId) {
+      throw new ForbiddenException('The person who wrote a bonus rule version cannot approve it.');
     }
-    await repo.setVersionStatus(tx, context.orgId, version.id, 'approved');
+    const superseded = await this.activate(tx, context.orgId, version);
     await this.audit.record(tx, {
       orgId: context.orgId,
       actorUserId: context.userId,
       operation: 'update',
       action: 'hr.bonus_rule.approved',
-      entityType: 'Target',
+      entityType: 'Payroll',
       entityId: version.id,
-      before: { status: 'pending_approval', superseded: current?.id ?? null },
+      before: { status: 'pending_approval', superseded },
       after: { status: 'approved', approvalId: approval.id },
       requestId: context.requestId,
       ...(request === undefined ? {} : { request }),
@@ -383,12 +421,20 @@ export class BonusRulesService implements OnModuleInit {
   /**
    * Evaluate every approved rule against the run's month and write the results as the
    * run's rule-made bonus inputs, replacing any from an earlier apply.
+   *
+   * Only for employees the run will pay (ledger audit W3): a bonus for somebody with no
+   * salary structure that month would be an input the run silently ignores, shown on this
+   * screen and paid nowhere. Those are returned as `skipped`, so HR sees who and why.
    */
   async applyToRun(
     context: ActiveContext,
     request: AuditableRequest,
     runId: string,
-  ): Promise<{ items: AwardView[]; totalPoisha: string }> {
+  ): Promise<{
+    items: AwardView[];
+    totalPoisha: string;
+    skipped: { employeeId: string; employeeCode: string | null; amountPoisha: string }[];
+  }> {
     return mapHrErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const run = await hrRepo.runForUpdate(tx, context.orgId, runId);
@@ -401,12 +447,23 @@ export class BonusRulesService implements OnModuleInit {
         }
 
         const removed = await repo.deleteRuleInputs(tx, context.orgId, runId);
+        const payable = await this.payroll.payableEmployeeIds(tx, context.orgId, run);
+        const skipped: { employeeId: string; employeeCode: string | null; amountPoisha: string }[] =
+          [];
         let total = 0n;
         for (const version of await repo.approvedVersions(tx, context.orgId)) {
           const rule = parseBonusRule(version.definition);
           for (const row of await this.evaluate(tx, context.orgId, run.month, rule)) {
             const amount = BigInt(row.amountPoisha);
             if (amount <= 0n) continue;
+            if (!payable.has(row.employeeId)) {
+              skipped.push({
+                employeeId: row.employeeId,
+                employeeCode: row.employeeCode,
+                amountPoisha: row.amountPoisha,
+              });
+              continue;
+            }
             const inputId = await hrRepo.insertInput(tx, {
               orgId: context.orgId,
               runId,
@@ -443,11 +500,11 @@ export class BonusRulesService implements OnModuleInit {
           entityType: 'Payroll',
           entityId: runId,
           before: { ruleInputs: removed },
-          after: { awards: awards.length, totalPoisha: total.toString() },
+          after: { awards: awards.length, totalPoisha: total.toString(), skipped },
           requestId: context.requestId,
           request,
         });
-        return { items: awards, totalPoisha: total.toString() };
+        return { items: awards, totalPoisha: total.toString(), skipped };
       }),
     );
   }

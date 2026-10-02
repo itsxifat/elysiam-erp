@@ -3,6 +3,7 @@ import { withOrg, type Tx } from '@elysium/db';
 import { addDays, businessDate, toIsoDate } from '@elysium/domain';
 import {
   addMonths,
+  compareMonths,
   daysInMonth,
   toPayrollMonth,
   type PayrollMonth,
@@ -119,6 +120,12 @@ function dhakaMidnight(date: string): Date {
 
 @Injectable()
 export class TargetsService {
+  /**
+   * The clock a target's month is judged against. A field rather than `new Date()` inline
+   * so the integration suite can stand on a fixed day, the way `refreshOrg` takes one.
+   */
+  now: () => Date = () => new Date();
+
   constructor(
     @Inject(ORDERS_API) private readonly orders: OrdersApi,
     private readonly audit: AuditService,
@@ -239,6 +246,18 @@ export class TargetsService {
     return mapHrErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const month = toPayrollMonth(input.month);
+        /*
+         * This month or a later one (M20 ledger audit W5). A target set for a month whose
+         * results are already known is not a target, it is a bonus amount chosen by whoever
+         * types the target value — and the target, unlike the rule, has no checker. Set in
+         * the month itself it can still be set after its first days (D-280).
+         */
+        if (compareMonths(month, currentMonth(this.now())) < 0) {
+          throw new HrError(
+            'TARGET_INVALID',
+            'A target is set for this month or a later one, never for a month that has ended.',
+          );
+        }
         const memberIds =
           input.scope === 'employee' ? [input.employeeId] : [...new Set(input.memberIds)];
 
@@ -342,6 +361,10 @@ export class TargetsService {
           throw new HrError('TARGET_FROZEN', 'That target is already cancelled.');
         }
         await repo.cancelTarget(tx, context.orgId, id, context.userId);
+        // A draft run's bonus for this target goes with it (ledger audit W4).
+        const bonusesRemoved = await repo.deleteDraftAwardInputs(tx, context.orgId, {
+          targetId: id,
+        });
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,
@@ -350,7 +373,7 @@ export class TargetsService {
           entityType: 'Target',
           entityId: id,
           before: { status: row.status },
-          after: { status: 'cancelled' },
+          after: { status: 'cancelled', bonusesRemoved },
           requestId: context.requestId,
           request,
         });
@@ -366,9 +389,10 @@ export class TargetsService {
   async refresh(context: ActiveContext, request: AuditableRequest): Promise<{ updated: number }> {
     // Org-wide work behind an org-wide grant (`update Target`, hr and org_admin only).
     assertInScope(request, { branchId: null, createdBy: context.userId });
-    const updated = await this.refreshOrg(context.orgId, context.userId);
-    await withOrg({ orgId: context.orgId, userId: context.userId }, (tx) =>
-      this.audit.record(tx, {
+    // The recompute and its audit row in one transaction (ledger audit N9).
+    const updated = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const moved = await this.refreshIn(tx, context.orgId, this.now());
+      await this.audit.record(tx, {
         orgId: context.orgId,
         actorUserId: context.userId,
         operation: 'update',
@@ -376,11 +400,12 @@ export class TargetsService {
         entityType: 'Target',
         entityId: context.orgId,
         before: null,
-        after: { updated },
+        after: { updated: moved },
         requestId: context.requestId,
         request,
-      }),
-    );
+      });
+      return moved;
+    });
     return { updated };
   }
 
@@ -397,13 +422,15 @@ export class TargetsService {
   async refreshOrg(
     orgId: string,
     userId: string = PROGRESS_ACTOR,
-    now = new Date(),
+    now: Date = this.now(),
   ): Promise<number> {
-    return withOrg({ orgId, userId }, async (tx) => {
-      const month = currentMonth(now);
-      const targets = await repo.activeTargets(tx, orgId, [addMonths(month, -1), month]);
-      return this.applyProgress(tx, orgId, targets);
-    });
+    return withOrg({ orgId, userId }, (tx) => this.refreshIn(tx, orgId, now));
+  }
+
+  private async refreshIn(tx: Tx, orgId: string, now: Date): Promise<number> {
+    const month = currentMonth(now);
+    const targets = await repo.activeTargets(tx, orgId, [addMonths(month, -1), month]);
+    return this.applyProgress(tx, orgId, targets);
   }
 
   /**

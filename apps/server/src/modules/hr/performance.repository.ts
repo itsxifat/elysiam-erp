@@ -456,17 +456,20 @@ export async function pendingVersionOf(
   return rows[0];
 }
 
+/** Returns how many versions moved: 0 when it was no longer a draft. */
 export async function markSubmitted(
   tx: Tx,
   orgId: string,
   versionId: string,
   approvalId: string,
-): Promise<void> {
-  await tx.execute(sql`
+): Promise<number> {
+  const rows = await tx.execute<{ id: string }>(sql`
     update hr.bonus_rule_versions
     set status = 'pending_approval', approval_request_id = ${approvalId}, updated_at = now()
     where org_id = ${orgId} and id = ${versionId} and status = 'draft'
+    returning id
   `);
+  return rows.length;
 }
 
 export async function setVersionStatus(
@@ -557,6 +560,33 @@ export async function deleteRuleInputs(tx: Tx, orgId: string, runId: string): Pr
     where org_id = ${orgId}
       and id in (select payroll_input_id from hr.bonus_awards
                  where org_id = ${orgId} and run_id = ${runId})
+    returning id
+  `);
+  return rows.length;
+}
+
+/**
+ * Remove the bonuses a cancelled target or a superseded rule version made on **draft**
+ * runs (M20 ledger audit W4); the awards go with their inputs. A submitted run's are what
+ * its checker is deciding on, and 0055 and 0083 would refuse touching them anyway.
+ */
+export async function deleteDraftAwardInputs(
+  tx: Tx,
+  orgId: string,
+  by: { readonly targetId: string } | { readonly ruleVersionId: string },
+): Promise<number> {
+  const match =
+    'targetId' in by
+      ? sql`a.target_id = ${by.targetId}`
+      : sql`a.rule_version_id = ${by.ruleVersionId}`;
+  const rows = await tx.execute<{ id: string }>(sql`
+    delete from hr.payroll_inputs
+    where org_id = ${orgId}
+      and id in (
+        select a.payroll_input_id from hr.bonus_awards a
+        join hr.payroll_runs r on r.org_id = a.org_id and r.id = a.run_id
+        where a.org_id = ${orgId} and r.status = 'draft' and ${match}
+      )
     returning id
   `);
   return rows.length;

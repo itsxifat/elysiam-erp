@@ -1081,9 +1081,21 @@ export async function insertInput(
   return id;
 }
 
-export async function deleteInput(tx: Tx, orgId: string, id: string): Promise<number> {
+/**
+ * One input of one run. The run is part of the match (M20 ledger audit N10): by id alone,
+ * a run's URL could delete another draft run's input — and with it, through the cascade,
+ * the bonus award that input carries.
+ */
+export async function deleteInput(
+  tx: Tx,
+  orgId: string,
+  runId: string,
+  id: string,
+): Promise<number> {
   const rows = await tx.execute<{ id: string }>(sql`
-    delete from hr.payroll_inputs where org_id = ${orgId} and id = ${id} returning id
+    delete from hr.payroll_inputs
+    where org_id = ${orgId} and run_id = ${runId} and id = ${id}
+    returning id
   `);
   return rows.length;
 }

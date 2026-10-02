@@ -194,8 +194,16 @@ export function listRunBonuses(runId: string): Promise<{ items: BonusAward[] }> 
   return api.get(`/v1/hr/payroll/runs/${runId}/bonuses`);
 }
 
-export function applyRunBonuses(
-  runId: string,
-): Promise<{ items: BonusAward[]; totalPoisha: string }> {
+export interface SkippedBonus {
+  readonly employeeId: string;
+  readonly employeeCode: string | null;
+  readonly amountPoisha: string;
+}
+
+export function applyRunBonuses(runId: string): Promise<{
+  items: BonusAward[];
+  totalPoisha: string;
+  skipped: SkippedBonus[];
+}> {
   return api.post(`/v1/hr/payroll/runs/${runId}/bonuses`);
 }

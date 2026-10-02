@@ -335,9 +335,17 @@ export function deskEventFrom(
 
 /**
  * Whether a status change can move a target's progress (D-272): a confirmation, a
- * delivery in full or in part, a return, or a cancellation (which un-counts a confirmed
- * order). Anything else — packed, shipped, on hold — moves no target.
+ * delivery in full or in part, a return, a cancellation (which un-counts a confirmed
+ * order), or an exchange (which takes delivered units back). Anything else — packed,
+ * shipped, on hold — moves no target.
  */
 export function movesTargets(to: string): boolean {
-  return ['confirmed', 'delivered', 'partially_delivered', 'returned', 'cancelled'].includes(to);
+  return [
+    'confirmed',
+    'delivered',
+    'partially_delivered',
+    'returned',
+    'cancelled',
+    'exchange',
+  ].includes(to);
 }

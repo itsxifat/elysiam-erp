@@ -949,6 +949,8 @@ const en = {
     'Applies every approved bonus rule to this month’s targets and replaces the bonuses it added before. Bonuses typed by hand are kept.',
   'perf.applyBonuses': 'Apply bonus rules',
   'perf.emptyAwards': 'No target bonuses on this run.',
+  'perf.skippedHint':
+    'Not awarded, because this run does not pay them this month (no salary structure):',
   'perf.rule': 'Rule',
   'perf.deniedTitle': 'Performance is not part of your role',
   'perf.deniedDetail': 'Ask an administrator if you need to see targets.',

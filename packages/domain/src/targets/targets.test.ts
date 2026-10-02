@@ -562,10 +562,17 @@ describe('which outbox events are desk events', () => {
   });
 
   it('moves targets only on the statuses a target counts', () => {
-    for (const to of ['confirmed', 'delivered', 'partially_delivered', 'returned', 'cancelled']) {
+    for (const to of [
+      'confirmed',
+      'delivered',
+      'partially_delivered',
+      'returned',
+      'cancelled',
+      'exchange',
+    ]) {
       expect(movesTargets(to)).toBe(true);
     }
-    for (const to of ['pending', 'on_hold', 'packed', 'shipped', 'return_in_transit', 'exchange']) {
+    for (const to of ['pending', 'on_hold', 'packed', 'shipped', 'return_in_transit']) {
       expect(movesTargets(to)).toBe(false);
     }
   });
