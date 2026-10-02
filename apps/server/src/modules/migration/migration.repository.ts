@@ -123,21 +123,42 @@ export async function discardBatch(
   return rows.length === 1;
 }
 
-/** Every staged batch, posted into this opening. Returns how many. */
-export async function markStagedPosted(
+/**
+ * These staged batches, posted into this opening. Returns how many.
+ *
+ * By id, never "every staged batch": the posting wrote the rows it read, and a batch
+ * staged after that read must not be marked as posted without its rows ever reaching
+ * stock or the ledger.
+ */
+export async function markPosted(
   tx: Tx,
   orgId: string,
+  batchIds: readonly string[],
   openingId: string,
   by: string,
 ): Promise<number> {
+  if (batchIds.length === 0) return 0;
   const rows = await tx.execute<{ id: string }>(sql`
     update migration.batches
     set status = 'posted', opening_id = ${openingId}, decided_by = ${by}, decided_at = now(),
         updated_at = now()
     where org_id = ${orgId} and status = 'staged'
+      and id = any (${sql.param([...batchIds])}::uuid[])
     returning id
   `);
   return rows.length;
+}
+
+/**
+ * One migration step at a time per brand.
+ *
+ * A commit, a discard, the posting and the sign-off each take this transaction-scoped
+ * lock first, so a balance file cannot be staged while the books are being opened from
+ * the files staged before it, and two files cannot both pass their review against a
+ * staged set that neither can see the other in.
+ */
+export async function lockOrg(tx: Tx, orgId: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`migration:${orgId}`}, 0))`);
 }
 
 export interface OpeningRow extends Record<string, unknown> {

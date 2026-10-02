@@ -30,6 +30,7 @@ import {
   reviewSkus,
   reviewSupplierBalances,
   reviewWalletBalances,
+  stagedStockConflicts,
   supplierBalanceTotals,
   walletBalanceTotals,
   type CourierCodRow,
@@ -173,6 +174,8 @@ interface Reviewed {
   readonly apply: (tx: Tx, actor: MigrationActor) => Promise<void>;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function sha256(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
@@ -255,6 +258,7 @@ export class MigrationService {
   async commit(actor: MigrationActor, file: ImportFile): Promise<CommitResult> {
     try {
       return await withOrg(actor, async (tx) => {
+        await repo.lockOrg(tx, actor.orgId);
         const contentSha256 = sha256(file.csv);
         const existing = await repo.batchByHash(tx, actor.orgId, file.kind, contentSha256);
         if (existing !== undefined) return this.replayed(existing);
@@ -319,7 +323,11 @@ export class MigrationService {
   /** A staged file, set aside so a corrected one can replace it. */
   async discard(actor: MigrationActor, batchId: string): Promise<void> {
     try {
+      if (!UUID.test(batchId)) {
+        throw new MigrationError('MIGRATION_NOT_FOUND', 'No such imported file in this brand.');
+      }
       await withOrg(actor, async (tx) => {
+        await repo.lockOrg(tx, actor.orgId);
         const batch = await repo.batchById(tx, actor.orgId, batchId);
         if (batch === undefined) {
           throw new MigrationError('MIGRATION_NOT_FOUND', 'No such imported file in this brand.');
@@ -384,6 +392,7 @@ export class MigrationService {
   ): Promise<PostedOpening> {
     try {
       return await withOrg(actor, async (tx) => {
+        await repo.lockOrg(tx, actor.orgId);
         const existing = await repo.openingOf(tx, actor.orgId);
         if (existing !== undefined) {
           const rows = await this.stagedRows(tx, actor.orgId, 'posted');
@@ -398,7 +407,8 @@ export class MigrationService {
         }
 
         const asOf = this.openingDate(input.asOf);
-        const staged = await this.stagedRows(tx, actor.orgId, 'staged');
+        const batches = await repo.batchesWithStatus(tx, actor.orgId, 'staged');
+        const staged = this.rowsOf(batches);
         if (
           staged.stock.length +
             staged.suppliers.length +
@@ -425,6 +435,14 @@ export class MigrationService {
           throw new MigrationError(
             'MIGRATION_IMPORT_REJECTED',
             `${[...new Set(codes)].join(', ')} received stock after the opening file was staged. Discard that file and import it again.`,
+          );
+        }
+
+        const conflicts = stagedStockConflicts(staged.stock);
+        if (conflicts.length > 0) {
+          throw new MigrationError(
+            'MIGRATION_IMPORT_REJECTED',
+            `${conflicts.join(', ')} are staged at two costs or twice at one location. Discard one of the stock files.`,
           );
         }
 
@@ -460,7 +478,13 @@ export class MigrationService {
           journalId: posted.journalId,
           postedBy: actor.userId,
         });
-        await repo.markStagedPosted(tx, actor.orgId, openingId, actor.userId);
+        await repo.markPosted(
+          tx,
+          actor.orgId,
+          batches.map((batch) => batch.id),
+          openingId,
+          actor.userId,
+        );
 
         await this.audit.record(tx, {
           orgId: actor.orgId,
@@ -526,6 +550,7 @@ export class MigrationService {
     }
     try {
       return await withOrg(actor, async (tx) => {
+        await repo.lockOrg(tx, actor.orgId);
         const report = await this.reconcile(tx, actor.orgId);
         if (report.signedOffAt !== null) {
           throw new MigrationError(
@@ -776,7 +801,10 @@ export class MigrationService {
     orgId: string,
     status: 'staged' | 'posted',
   ): Promise<StagedRows> {
-    const batches = await repo.batchesWithStatus(tx, orgId, status);
+    return this.rowsOf(await repo.batchesWithStatus(tx, orgId, status));
+  }
+
+  private rowsOf(batches: readonly repo.BatchRow[]): StagedRows {
     const out: StagedRows = { stock: [], suppliers: [], wallets: [], couriers: [] };
     for (const batch of batches) {
       const rows = Array.isArray(batch.rows) ? (batch.rows as Record<string, unknown>[]) : [];

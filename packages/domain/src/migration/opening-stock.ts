@@ -196,3 +196,27 @@ export function reviewOpeningStock(
 
   return { rows, problems, totals: openingStockTotals(rows) };
 }
+
+/**
+ * The SKU codes whose staged rows break D-216 together: two costs for one SKU, or one SKU
+ * and location twice. Empty when the rows can open as one position.
+ *
+ * Each file is reviewed against the files staged before it, so this is empty unless two
+ * files were staged at once past that review. The posting checks it anyway, because what
+ * it guards — the journal and the valuation agreeing to the poisha — is checked nowhere
+ * after the stock is in.
+ */
+export function stagedStockConflicts(rows: readonly OpeningStockRow[]): string[] {
+  const costs = new Map<string, Poisha>();
+  const pairs = new Set<string>();
+  const conflicts = new Set<string>();
+  for (const row of rows) {
+    const cost = costs.get(row.skuId);
+    if (cost !== undefined && cost !== row.unitCostPoisha) conflicts.add(row.skuCode);
+    costs.set(row.skuId, cost ?? row.unitCostPoisha);
+    const pair = `${row.skuId}|${row.locationId}`;
+    if (pairs.has(pair)) conflicts.add(row.skuCode);
+    pairs.add(pair);
+  }
+  return [...conflicts].sort();
+}

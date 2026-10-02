@@ -541,3 +541,34 @@ it('reports a malformed file as a problem rather than failing', async () => {
   expect(report.problems.length).toBeGreaterThan(0);
   await expect(service.commit(actor, input('skus', ''))).rejects.toBeInstanceOf(MigrationError);
 });
+
+describe('concurrent steps on one brand', () => {
+  const other: MigrationActor = { orgId: ORG_B, userId: 'usr_migration_test_b' };
+
+  it('stages only one of two files racing to give a SKU two costs (D-216)', async () => {
+    await seedDemoSetUp(ORG_B);
+    await service.commit(other, input('skus'));
+
+    const atCost = (cost: string) => ({
+      kind: 'opening_stock' as const,
+      fileName: `race-${cost}.csv`,
+      csv: `sku,location,qty,unit_cost_taka\nDEMO-SCF-003,WH-01,5,${cost}\n`,
+    });
+    const results = await Promise.allSettled([
+      service.commit(other, atCost('100.00')),
+      service.commit(other, atCost('101.00')),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const refused = results.find((result) => result.status === 'rejected');
+    expect((refused as PromiseRejectedResult | undefined)?.reason).toMatchObject({
+      code: 'MIGRATION_IMPORT_REJECTED',
+    });
+
+    const staged = await withOrg(other, (tx) =>
+      tx.execute<{ n: string }>(
+        sql`select count(*)::text as n from migration.batches where status = 'staged'`,
+      ),
+    );
+    expect(staged[0]?.n).toBe('1');
+  });
+});

@@ -26,6 +26,7 @@ export {
   OPENING_STOCK_REQUIRED,
   openingStockTotals,
   reviewOpeningStock,
+  stagedStockConflicts,
   type OpeningStockRefs,
   type OpeningStockRow,
   type OpeningStockTotals,

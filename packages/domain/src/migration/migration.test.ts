@@ -22,6 +22,7 @@ import {
   reviewSupplierBalances,
   reviewWalletBalances,
   scaleTaka,
+  stagedStockConflicts,
   toCsv,
   type CourierCodRow,
   type OpeningPosition,
@@ -187,6 +188,25 @@ describe('opening stock', () => {
         },
       ),
     );
+  });
+
+  it('finds two costs or a repeated location across staged rows (D-216)', () => {
+    const row = (skuId: string, locationId: string, cost: number): OpeningStockRow => ({
+      line: 2,
+      skuId,
+      skuCode: skuId === SKU_A ? 'ELY-0001-M' : 'ELY-0001-L',
+      locationId,
+      locationCode: locationId === WH ? 'WH-01' : 'SR-01',
+      qty: 1,
+      unitCostPoisha: poisha(cost),
+    });
+    expect(stagedStockConflicts([row(SKU_A, WH, 100), row(SKU_A, SHOW, 100)])).toEqual([]);
+    expect(stagedStockConflicts([row(SKU_A, WH, 100), row(SKU_A, SHOW, 101)])).toEqual([
+      'ELY-0001-M',
+    ]);
+    expect(
+      stagedStockConflicts([row(SKU_B, WH, 100), row(SKU_A, WH, 5), row(SKU_B, WH, 100)]),
+    ).toEqual(['ELY-0001-L']);
   });
 });
 
