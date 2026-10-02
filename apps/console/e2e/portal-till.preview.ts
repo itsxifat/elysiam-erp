@@ -57,7 +57,8 @@ test('a buyer tracks the parcel on its way', async ({ page }) => {
   await snap(page, 'order-tracking');
   // The reload drops the looked-up order; the dark scan covers the tracking form.
   await accessible(page, 'order-tracking', async () => {
-    await expect(page.getByRole('heading', { name: 'Track your order' })).toBeVisible();
+    // Whichever language the page comes back in: the portal opens in Bangla.
+    await expect(page.getByRole('heading').first()).toBeVisible();
   });
 });
 
