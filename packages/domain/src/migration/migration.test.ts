@@ -732,6 +732,19 @@ describe('the reconciliation', () => {
     expect(extra).toMatchObject({ importedPoisha: 0n, journalPoisha: 1n, agrees: false });
   });
 
+  it('reports a balance a module holds that no file or journal line explains', () => {
+    const report = reconcileOpening({
+      position,
+      journal,
+      journalDebitPoisha: poisha(32_000),
+      journalCreditPoisha: poisha(32_000),
+      modules: [...journal, { section: 'supplier_payable', refId: 'old', amountPoisha: poisha(7) }],
+    });
+    const extra = report.rows.find((row) => row.refId === 'old');
+    expect(extra).toMatchObject({ importedPoisha: 0n, journalPoisha: 0n, modulePoisha: 7n });
+    expect(report.agrees).toBe(false);
+  });
+
   it('reads a ledger balance on its normal side', () => {
     expect(normalSide('supplier_payable', 100n, 600n)).toBe(500n);
     expect(normalSide('wallet', 600n, 100n)).toBe(500n);

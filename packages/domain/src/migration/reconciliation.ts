@@ -14,6 +14,10 @@
  * the same account, a stock movement since, a wallet that was used before it was opened.
  * Nothing here decides which column is right; it shows the accountant where to look.
  *
+ * Stock is the inventory module's valuation *now*, the others are as of the opening date,
+ * so the report is run and signed before the brand trades: after the first sale the stock
+ * line is expected to move, and the signed copy is the record.
+ *
  * Every amount is on its account's normal side and positive when normal: an asset is
  * debit − credit, a liability and equity are credit − debit. A negative figure is the
  * account on its wrong side, shown as it is rather than folded into a sign convention.
@@ -124,8 +128,12 @@ export function reconcileOpening(input: ReconciliationInput): Reconciliation {
     keys.push({ section, refId });
   };
   for (const line of input.position.lines) add(line.section, line.refId, line.label);
-  // A journal line the files did not account for is the most important row of all.
+  // A journal line the files did not account for is the most important row of all, and a
+  // balance a module holds that neither the files nor the journal explain comes next.
   for (const figure of input.journal) add(figure.section, figure.refId, figure.refId ?? '');
+  for (const figure of input.modules) {
+    if (figure.amountPoisha !== 0n) add(figure.section, figure.refId, figure.refId ?? '');
+  }
 
   keys.sort((a, b) => SECTION_ORDER.indexOf(a.section) - SECTION_ORDER.indexOf(b.section));
 

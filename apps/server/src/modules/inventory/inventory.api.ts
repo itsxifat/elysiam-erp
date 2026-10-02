@@ -3,7 +3,9 @@ import type { Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import {
   handoverDraft,
+  mulQty,
   poisha,
+  sum,
   supplyReceivedDraft,
   supplierReturnDraft,
   type AccountSubtype,
@@ -238,7 +240,7 @@ export interface InventoryApi {
    * Movements and costing only. The value is debited to inventory by the one opening
    * journal (D-213), posted by the caller in this same transaction — a journal per
    * movement would open the books thousands of times. Idempotent per opening, SKU and
-   * location.
+   * location; `movementIds` and `valuePoisha` count only the movements this call wrote.
    */
   receiveOpening(
     tx: Tx,
@@ -715,7 +717,7 @@ export class InventoryApiService implements InventoryApi {
     },
   ): Promise<{ readonly movementIds: readonly string[]; readonly valuePoisha: Poisha }> {
     const movementIds: string[] = [];
-    let total = 0n;
+    const values: Poisha[] = [];
     for (const line of input.lines) {
       const applied = await this.movements.apply(tx, actor, {
         skuId: line.skuId,
@@ -729,10 +731,13 @@ export class InventoryApiService implements InventoryApi {
         occurredAt: input.occurredAt,
         memo: 'Opening stock',
       });
-      if (applied.created) movementIds.push(applied.movementId);
-      total += line.unitCostPoisha * BigInt(line.qty);
+      // The value the movements *wrote*, not the value asked for: a replayed line wrote
+      // nothing, and the caller compares this with the journal it is about to post.
+      if (!applied.created) continue;
+      movementIds.push(applied.movementId);
+      values.push(mulQty(poisha(applied.unitCostPoisha ?? 0n), applied.qtyDelta));
     }
-    return { movementIds, valuePoisha: poisha(total) };
+    return { movementIds, valuePoisha: values.length === 0 ? poisha(0) : sum(values) };
   }
 
   async valuation(

@@ -85,7 +85,9 @@ export function idempotencyKey(sourceType: string, sourceId: string, event: stri
 }
 
 const MAX_MEMO = 500;
-const MAX_LINES = 500;
+/** The most lines one journal may carry. Exported so an importer can refuse early (M14a). */
+export const MAX_JOURNAL_LINES = 500;
+const MAX_LINES = MAX_JOURNAL_LINES;
 
 function positive(value: Poisha): boolean {
   return value > 0n;

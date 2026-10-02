@@ -10,12 +10,14 @@ import type { MigrationService, PostedOpening, ReconciliationReport } from './mi
 /**
  * The training org, seeded from anonymised data (M14a, D-223).
  *
- * Seeds the org's set-up (`seedTrainingOrg`), then runs a brand's migration files through
- * the anonymiser and the **real** importers and opening post — the same path a brand's
- * go-live takes, so a trainee's demo stock and money arrived the way a brand's do. Pointed
- * at a real brand's export directory it still writes no real phone, name or consignment:
- * every customer and courier field that could identify someone is replaced by position
- * before the importer sees it.
+ * Seeds the org's set-up (`seedTrainingOrg`), then runs the repository's sample files
+ * through the anonymiser and the **real** importers and opening post — the same path a
+ * brand's go-live takes, so a trainee's demo stock and money arrived the way a brand's do.
+ *
+ * Only the repository's synthetic sample, never a directory of the operator's choosing.
+ * The anonymiser protects people — phones, names, consignments — but scales money by a
+ * constant written in this codebase, so a real brand's purchase costs and dues run through
+ * it would be readable, near enough, by every trainee in the training org.
  *
  * Idempotent: the importers skip a file already imported and the opening posts once, so a
  * second run changes nothing and prints the same reconciliation.
@@ -45,9 +47,9 @@ export interface DemoResult {
 
 export async function runDemo(
   service: MigrationService,
-  options: { readonly from?: string; readonly asOf?: string } = {},
+  options: { readonly asOf?: string } = {},
 ): Promise<DemoResult> {
-  const directory = options.from ?? sampleDirectory();
+  const directory = sampleDirectory();
   const orgId = await seedTrainingOrg();
   const actor = { orgId, userId: 'system:migration-demo' };
 
@@ -61,7 +63,7 @@ export async function runDemo(
 
   // The evening before "go-live", which for a demo is today.
   const asOf = options.asOf ?? businessDate(new Date());
-  const opening = await service.postOpening(actor, { asOf });
+  const opening = await service.postOpening(actor, { asOf, approvedBy: 'Training demo' });
   const reconciliation = await service.reconciliation(actor);
   return { orgId, imported, opening, reconciliation };
 }

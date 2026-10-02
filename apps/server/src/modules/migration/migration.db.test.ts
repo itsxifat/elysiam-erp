@@ -21,9 +21,13 @@ import { ORG_A, ORG_B, startHttpHarness, type HttpHarness } from '../../testing/
 import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
+import { NOTIFY_API, type NotifyApi } from '../notify/notify.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import { WALLETS_API, type WalletsApi } from '../wallets/wallets.api.js';
-import { consolidatedWalletTotals } from '../wallets/wallets.repository.js';
+import {
+  consolidatedProfitAndLoss,
+  consolidatedWalletTotals,
+} from '../wallets/wallets.repository.js';
 import { runDemo, SAMPLE_FILES, sampleDirectory } from './demo.js';
 import { MigrationError } from './migration.errors.js';
 import { MigrationModule } from './migration.module.js';
@@ -59,9 +63,11 @@ let inventory: InventoryApi;
 let catalog: CatalogApi;
 let orders: OrdersApi;
 let wallets: WalletsApi;
+let notify: NotifyApi;
 
 const actor: MigrationActor = { orgId: ORG_A, userId: 'usr_migration_test' };
 const TODAY = businessDate(new Date());
+const ACCOUNTANT = 'Test Accountant';
 
 beforeAll(async () => {
   harness = await startHttpHarness('migration-db', { extraModules: [MigrationModule] });
@@ -71,6 +77,7 @@ beforeAll(async () => {
   catalog = harness.app.get<CatalogApi>(CATALOG_API);
   orders = harness.app.get<OrdersApi>(ORDERS_API);
   wallets = harness.app.get<WalletsApi>(WALLETS_API);
+  notify = harness.app.get<NotifyApi>(NOTIFY_API);
   await seedDemoSetUp(ORG_A);
 }, 420_000);
 
@@ -330,9 +337,9 @@ describe('posting the opening', () => {
     const before = await footprint();
     const spy = vi.spyOn(ledger, 'post').mockRejectedValueOnce(new Error('the journal failed'));
     try {
-      await expect(service.postOpening(actor, { asOf: TODAY })).rejects.toThrow(
-        'the journal failed',
-      );
+      await expect(
+        service.postOpening(actor, { asOf: TODAY, approvedBy: ACCOUNTANT }),
+      ).rejects.toThrow('the journal failed');
     } finally {
       spy.mockRestore();
     }
@@ -342,7 +349,9 @@ describe('posting the opening', () => {
 
   it('refuses an opening dated in the future or before yesterday', async () => {
     for (const asOf of ['2999-01-01', '2020-01-01', 'yesterday']) {
-      await expect(service.postOpening(actor, { asOf })).rejects.toMatchObject({
+      await expect(
+        service.postOpening(actor, { asOf, approvedBy: ACCOUNTANT }),
+      ).rejects.toMatchObject({
         code: 'MIGRATION_IMPORT_REJECTED',
       });
     }
@@ -350,7 +359,10 @@ describe('posting the opening', () => {
 
   it('check 4: posts one journal whose trial balance is zero and whose stock is the valuation', async () => {
     const before = await footprint();
-    const opening = await service.postOpening(actor, { asOf: TODAY });
+    await expect(
+      service.postOpening(actor, { asOf: TODAY, approvedBy: ' ' }),
+    ).rejects.toMatchObject({ code: 'MIGRATION_IMPORT_REJECTED' });
+    const opening = await service.postOpening(actor, { asOf: TODAY, approvedBy: ACCOUNTANT });
     expect(opening).toMatchObject({ created: true, asOf: TODAY, movements: 7 });
 
     const after = await footprint();
@@ -378,7 +390,7 @@ describe('posting the opening', () => {
 
   it('opens the books once: a second post and a new balance file change nothing', async () => {
     const before = await footprint();
-    const again = await service.postOpening(actor, { asOf: TODAY });
+    const again = await service.postOpening(actor, { asOf: TODAY, approvedBy: ACCOUNTANT });
     expect(again.created).toBe(false);
 
     const late = withLine('wallet,amount_taka', '1100,1');
@@ -526,9 +538,67 @@ describe('the training org, seeded from anonymised data (D-223)', () => {
     expect(again.imported.every((file) => !file.created)).toBe(true);
     expect(again.opening.created).toBe(false);
 
+    // Practice income in the training org, so the P&L read has something to leave out.
+    const trainee = { orgId: again.orgId, userId: 'usr_trainee' };
+    const sale = randomUUID();
+    await withOrg(trainee, async (tx) => {
+      const bank = (await wallets.walletsByAccountCodes(tx, again.orgId, ['1100'])).get('1100');
+      const income = await ledger.accountBySubtype(tx, again.orgId, 'other_income');
+      if (bank === undefined || income === null) throw new Error('The training set-up is missing.');
+      const line = { branchId: null, partyType: null, partyId: null, memo: null };
+      await ledger.post(tx, trainee, {
+        businessDate: toIsoDate(TODAY),
+        sourceType: 'training_test',
+        sourceId: sale,
+        event: 'posted',
+        idempotencyKey: idempotencyKey('training_test', sale, 'posted'),
+        memo: 'Practice income',
+        reversesJournalId: null,
+        lines: [
+          {
+            ...line,
+            accountId: bank.account.accountId,
+            debitPoisha: poisha(500),
+            creditPoisha: ZERO,
+          },
+          { ...line, accountId: income.accountId, debitPoisha: ZERO, creditPoisha: poisha(500) },
+        ],
+      });
+    });
+
     const totals = await withAnalytics((tx) => consolidatedWalletTotals(tx));
     expect(totals.map((row) => row.org_id)).not.toContain(again.orgId);
     expect(totals.map((row) => row.org_id)).toContain(ORG_A);
+    const pnl = await withAnalytics((tx) =>
+      consolidatedProfitAndLoss(tx, { from: TODAY, to: TODAY }),
+    );
+    expect(pnl.map((row) => row.org_id)).not.toContain(again.orgId);
+  });
+
+  it('sends no SMS, whatever a trainee sets up', async () => {
+    const orgId = (await runDemo(service, { asOf: TODAY })).orgId;
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          insert into notify.templates
+            (org_id, key, channel, category, body_bn, body_en, is_active, updated_by)
+          values (${orgId}, 'practice', 'sms', 'transactional', 'অনুশীলন', 'Practice', true,
+                  'usr_trainee')
+        `),
+      { orgId },
+    );
+    const queued = await withOrg({ orgId, userId: 'usr_trainee' }, async (tx) => {
+      const buyer = await tx.execute<{ phone_e164: string }>(
+        sql`select phone_e164 from sales.customers limit 1`,
+      );
+      return notify.queue(tx, orgId, {
+        templateKey: 'practice',
+        phone: buyer[0]?.phone_e164 ?? '',
+        locale: 'en',
+        values: {},
+      });
+    });
+    expect(queued.state).toBe('suppressed');
   });
 });
 
@@ -572,5 +642,24 @@ describe('concurrent steps on one brand', () => {
       ),
     );
     expect(staged[0]?.n).toBe('1');
+  });
+
+  it('never leaves a file staged beside an open book when a commit races the post', async () => {
+    const results = await Promise.allSettled([
+      service.postOpening(other, { asOf: TODAY, approvedBy: ACCOUNTANT }),
+      service.commit(other, input('wallet_balances')),
+    ]);
+    expect(results[0]?.status).toBe('fulfilled');
+
+    const state = await withOrg(other, (tx) =>
+      tx.execute<{ staged: string; openings: string }>(sql`
+        select (select count(*) from migration.batches where status = 'staged')::text as staged,
+               (select count(*) from migration.openings)::text as openings
+      `),
+    );
+    expect(state[0]).toEqual({ staged: '0', openings: '1' });
+    if (results[1]?.status === 'rejected') {
+      expect(results[1].reason).toMatchObject({ code: 'MIGRATION_ALREADY_OPENED' });
+    }
   });
 });

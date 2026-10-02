@@ -9,7 +9,7 @@
 --   because the opening journal was built from exactly these rows. Never DELETE.
 -- * `migration.openings`: INSERT and SELECT, and UPDATE of the sign-off only, once. The
 --   opening is the record that a brand's books were opened from these files; it is never
---   removed, and a mistake is a reversal journal and a new import (invariant 2).
+--   removed; a mistake found after it is corrected through the owning module (D-213).
 --
 -- No analytics read on either.
 

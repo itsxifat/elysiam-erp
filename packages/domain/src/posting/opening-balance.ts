@@ -137,7 +137,8 @@ export function openingBalanceDraft(input: OpeningBalanceInput): JournalDraft {
      * The org and nothing else. Not a client id, so a retry cannot make a second
      * journal; and deliberately not the as-of date either, which would allow a brand
      * two opening journals by opening it twice for different days. A business starts
-     * keeping its books once. Re-opening is a reversal and a new import, like every
+     * keeping its books once. There is no re-opening: a mistake found afterwards is
+     * corrected through the owning module (a stock count, a wallet closing), like every
      * other posted journal (invariant 2).
      */
     idempotencyKey: idempotencyKey('opening_balance', input.orgId, 'posted'),

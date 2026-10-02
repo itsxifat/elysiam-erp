@@ -26,10 +26,10 @@ import {
  *   pnpm migration commit    --org <slug> --kind <kind> --file <path.csv>
  *   pnpm migration discard   --org <slug> --batch <id>
  *   pnpm migration status    --org <slug>
- *   pnpm migration post      --org <slug> --as-of <YYYY-MM-DD>
+ *   pnpm migration post      --org <slug> --as-of <YYYY-MM-DD> --approved-by "<accountant>"
  *   pnpm migration reconcile --org <slug> [--out <report.csv>]
  *   pnpm migration sign-off  --org <slug> --by "<accountant>" [--note "<text>"]
- *   pnpm demo:org            [--from <directory>]
+ *   pnpm demo:org
  *
  * Kinds, in the order a brand runs them: skus, customers, opening_stock,
  * supplier_balances, wallet_balances, courier_cod.
@@ -198,8 +198,7 @@ async function main(argv: readonly string[]): Promise<void> {
     const service = context.get(MigrationService);
 
     if (command === 'demo') {
-      const from = argument(args, 'from');
-      const result = await runDemo(service, from === undefined ? {} : { from: fromCaller(from) });
+      const result = await runDemo(service);
       print(`Training org ${result.orgId}`);
       for (const file of result.imported) {
         print(`  ${file.kind.padEnd(18)} ${file.created ? 'imported' : 'already imported'}`);
@@ -257,7 +256,10 @@ async function main(argv: readonly string[]): Promise<void> {
         return;
       }
       case 'post': {
-        const opening = await service.postOpening(actor, { asOf: required(args, 'as-of') });
+        const opening = await service.postOpening(actor, {
+          asOf: required(args, 'as-of'),
+          approvedBy: required(args, 'approved-by'),
+        });
         print(
           opening.created
             ? `Opening posted as of ${opening.asOf}: journal ${opening.journalId}, ${String(opening.movements)} stock movements.`

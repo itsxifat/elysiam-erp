@@ -7,6 +7,7 @@ import {
   businessDate,
   CsvError,
   isIsoDate,
+  MAX_JOURNAL_LINES,
   parseCsv,
   poisha,
   type CsvTable,
@@ -338,7 +339,9 @@ export class MigrationService {
             `That file is ${batch.status}; only a staged file can be discarded.`,
           );
         }
-        await repo.discardBatch(tx, actor.orgId, batchId, actor.userId);
+        if (!(await repo.discardBatch(tx, actor.orgId, batchId, actor.userId))) {
+          throw new MigrationError('MIGRATION_BATCH_IMMUTABLE', 'That file is no longer staged.');
+        }
         await this.audit.record(tx, {
           orgId: actor.orgId,
           actorUserId: actor.userId,
@@ -385,11 +388,17 @@ export class MigrationService {
    * The `opening_balance` movements, the one opening journal, the opening row and the
    * batches' `posted` mark commit together or not at all. Idempotent: a brand that is
    * already open gets its opening back and nothing is written.
+   *
+   * Permanent (D-213): there is no re-opening, so the accountant who agreed the staged
+   * trial balance is named here (`approvedBy`) and recorded in the audit row. A mistake
+   * found afterwards is corrected through the owning module — a stock count or approved
+   * adjustment, a wallet closing — not by opening the books again.
    */
   async postOpening(
     actor: MigrationActor,
-    input: { readonly asOf: string },
+    input: { readonly asOf: string; readonly approvedBy: string },
   ): Promise<PostedOpening> {
+    const approvedBy = input.approvedBy.trim();
     try {
       return await withOrg(actor, async (tx) => {
         await repo.lockOrg(tx, actor.orgId);
@@ -407,6 +416,12 @@ export class MigrationService {
         }
 
         const asOf = this.openingDate(input.asOf);
+        if (approvedBy === '' || approvedBy.length > 120) {
+          throw new MigrationError(
+            'MIGRATION_IMPORT_REJECTED',
+            'Name the accountant who agreed the staged trial balance; the opening is permanent.',
+          );
+        }
         const batches = await repo.batchesWithStatus(tx, actor.orgId, 'staged');
         const staged = this.rowsOf(batches);
         if (
@@ -461,7 +476,13 @@ export class MigrationService {
             unitCostPoisha: row.unitCostPoisha,
           })),
         });
-        if (received.valuePoisha !== position.stockValuePoisha) {
+        // What the movements wrote, against what the journal will debit: a line the
+        // movement dedupe swallowed would otherwise be debited to inventory and never
+        // reach the shelf.
+        if (
+          received.movementIds.length !== staged.stock.length ||
+          received.valuePoisha !== position.stockValuePoisha
+        ) {
           throw new MigrationError(
             'MIGRATION_IMPORT_REJECTED',
             'The stock received and the opening position disagree. Nothing was posted.',
@@ -470,6 +491,14 @@ export class MigrationService {
 
         const draft = openingJournal(position, { orgId: actor.orgId, asOf, accounts });
         const posted = await this.ledger.post(tx, actor, draft);
+        if (!posted.created) {
+          // The org's key was already posted, with no opening row beside it: something
+          // outside this module opened the books. Refused rather than adopted.
+          throw new MigrationError(
+            'MIGRATION_ALREADY_OPENED',
+            'An opening journal already exists for this brand. Nothing was posted.',
+          );
+        }
 
         await repo.insertOpening(tx, {
           id: openingId,
@@ -478,13 +507,19 @@ export class MigrationService {
           journalId: posted.journalId,
           postedBy: actor.userId,
         });
-        await repo.markPosted(
+        const marked = await repo.markPosted(
           tx,
           actor.orgId,
           batches.map((batch) => batch.id),
           openingId,
           actor.userId,
         );
+        if (marked !== batches.length) {
+          throw new MigrationError(
+            'MIGRATION_BATCH_IMMUTABLE',
+            'A staged file changed while the opening was posted. Nothing was posted.',
+          );
+        }
 
         await this.audit.record(tx, {
           orgId: actor.orgId,
@@ -495,6 +530,7 @@ export class MigrationService {
           entityId: openingId,
           after: {
             asOf,
+            approvedBy,
             journalId: posted.journalId,
             movements: received.movementIds.length,
             lines: draft.lines.length,
@@ -564,7 +600,12 @@ export class MigrationService {
             'The reconciliation does not agree on every line; it cannot be signed off.',
           );
         }
-        await repo.signOff(tx, actor.orgId, by, note);
+        if (!(await repo.signOff(tx, actor.orgId, by, note))) {
+          throw new MigrationError(
+            'MIGRATION_OPENING_IMMUTABLE',
+            'The reconciliation was already signed off.',
+          );
+        }
         const opening = await repo.openingOf(tx, actor.orgId);
         await this.audit.record(tx, {
           orgId: actor.orgId,
@@ -783,13 +824,25 @@ export class MigrationService {
       }
     }
 
+    const position = openingPosition(next);
+    if (position.lines.length > MAX_JOURNAL_LINES) {
+      problems = [
+        ...problems,
+        {
+          line: 1,
+          column: null,
+          message: `With this file the opening journal would have ${String(position.lines.length)} lines; the ledger takes ${String(MAX_JOURNAL_LINES)}. Combine small balances before importing.`,
+        },
+      ];
+    }
+
     return {
       problems,
       rows: rows.length,
       skipped: 0,
       summary,
       staged: rows,
-      position: openingPosition(next),
+      position,
       // Staging is the batch row itself; nothing else is written until the opening.
       apply: () => Promise.resolve(),
     };

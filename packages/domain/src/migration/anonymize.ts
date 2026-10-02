@@ -2,8 +2,7 @@
  * Anonymising a brand's migration files for the training org (M14a, D-223).
  *
  * The demo org is seeded by running the real importers over these tables, so what comes
- * out has to be a valid import file — and it must not carry a buyer's phone or name, even
- * when the input is a real brand's export.
+ * out has to be a valid import file — and it must not carry a buyer's phone or name.
  *
  * - **Phones are replaced by position, not derived from the number.** A fake computed
  *   from the real phone — any hash, keyed or not — can be reversed by trying all of
@@ -11,9 +10,11 @@
  *   on the row's position carries nothing about the buyer at all, and is still
  *   deterministic: the same file gives the same demo.
  * - **Names come from a fixed list**, by position, for the same reason.
- * - **Money is scaled by one constant**, rounded half away from zero to whole poisha, so
- *   the demo's totals are plausible without being the brand's. The same input amount always
- *   gives the same output, so a SKU's one cost stays one cost (D-216).
+ * - **Money is scaled by one constant**, rounded half away from zero to whole poisha. The
+ *   same input amount always gives the same output, so a SKU's one cost stays one cost
+ *   (D-216). The constant is in this file, so scaling hides nothing from anyone who reads
+ *   it: this protects people, not a brand's figures, which is why `pnpm demo:org` runs the
+ *   repository's synthetic sample only and takes no other directory (D-223).
  * - **A courier reference becomes `DEMO-<n>`**: a consignment id is a key into the
  *   courier's own records of a real parcel to a real address.
  *
@@ -48,8 +49,8 @@ const MONEY_COLUMNS = new Set(['price_taka', 'unit_cost_taka', 'amount_taka', 's
  * The fake phone for the row at `index`: `+88019` and eight digits of the index.
  *
  * Valid by `normalizeBdPhone`'s rules, because the importer refuses anything else. It is
- * still a real number range, which is why the training org must never be given SMS
- * templates (the runbook says so): notify sends to nobody in an org with none.
+ * still a real number range, which is why the notify module suppresses every message the
+ * training org queues (D-223): a trainee practising templates must not text a stranger.
  */
 export function demoPhone(index: number): string {
   return `+88019${String(90_000_000 + (index % 10_000_000)).padStart(8, '0')}`;

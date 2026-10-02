@@ -118,8 +118,11 @@ export class NotifyService {
     const now = input.now ?? new Date();
 
     // An OTP is how a person signs in; an opt-out from offers must never lock them out.
+    // The training org sends nothing at all: its buyers' demo numbers are a real mobile
+    // range, so a trainee practising templates would otherwise text strangers (D-223).
     const suppressed =
-      category !== 'otp' && (await repo.isOptedOut(tx, orgId, phone, template.channel));
+      (await repo.isTrainingOrg(tx, orgId)) ||
+      (category !== 'otp' && (await repo.isOptedOut(tx, orgId, phone, template.channel)));
     const sendAfter = nextSendTime(now, category);
 
     const messageId = await repo.insertMessage(tx, {
@@ -162,8 +165,12 @@ export class NotifyService {
       if (message === undefined || !['queued', 'failed'].includes(message.state)) return null;
 
       // The buyer may have opted out between the queueing and now — an offer queued at
-      // 22:00 for 09:00 waits eleven hours. Checked again here, as quiet hours are.
-      if (message.category !== 'otp' && (await repo.isOptedOut(tx, orgId, message.phone, 'sms'))) {
+      // 22:00 for 09:00 waits eleven hours. Checked again here, as quiet hours are. And
+      // nothing leaves the training org (D-223), whenever the message was queued.
+      if (
+        (await repo.isTrainingOrg(tx, orgId)) ||
+        (message.category !== 'otp' && (await repo.isOptedOut(tx, orgId, message.phone, 'sms')))
+      ) {
         await repo.suppressMessage(tx, orgId, messageId);
         return 'suppressed' as const;
       }

@@ -82,6 +82,17 @@ export async function upsertTemplate(
   return row;
 }
 
+/**
+ * Whether the org is the training org (M14a, D-223), whose buyers carry demo numbers in a
+ * real mobile range. Read from §5's global `org` schema.
+ */
+export async function isTrainingOrg(tx: Tx, orgId: string): Promise<boolean> {
+  const rows = await tx.execute<{ is_training: boolean }>(sql`
+    select is_training from org.organizations where id = ${orgId}
+  `);
+  return rows[0]?.is_training === true;
+}
+
 export async function isOptedOut(
   tx: Tx,
   orgId: string,
