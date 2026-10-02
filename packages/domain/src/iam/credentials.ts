@@ -204,7 +204,7 @@ export function planRoleChange<Role extends string>(
 
   for (const want of wanted) {
     const current = held.find((entry) => entry.role === want.role);
-    if (current === undefined || !current.active) grant.push(want.role);
+    if (current?.active !== true) grant.push(want.role);
     else if (sameBranches(current.branchIds, want.branchIds)) keep.push(want.role);
     else reshape.push(want.role);
   }

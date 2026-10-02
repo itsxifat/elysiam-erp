@@ -148,6 +148,9 @@ function messageFor(cause: unknown, fallback: string, t: ReturnType<typeof useT>
 
   if (cause instanceof ApiError) {
     if (cause.status === 429) return t('auth.tooMany');
+    // The password was right and the account may not be used: a deactivated leaver,
+    // or someone with no role left anywhere (D-401). Saying so stops a reset hunt.
+    if (cause.code === 'ACCOUNT_INACTIVE') return t('auth.inactive');
     // 403 here is the CSRF or origin check, not a permission decision — the
     // user has not been identified yet, so there is nothing to forbid.
     if (cause.status === 403 && cause.code !== 'TWO_FACTOR_ENROLMENT_REQUIRED') {
@@ -158,7 +161,7 @@ function messageFor(cause: unknown, fallback: string, t: ReturnType<typeof useT>
   return fallback;
 }
 
-function BrandMark({ branding }: { readonly branding: LoginBranding | null }) {
+export function BrandMark({ branding }: { readonly branding: LoginBranding | null }) {
   const t = useT();
   const name = branding?.displayName ?? 'Elysium';
   const logo = typeof branding?.brand?.logo === 'string' ? branding.brand.logo : null;

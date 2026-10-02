@@ -21,6 +21,7 @@ import { campaignsRoutes } from './campaigns/routes.js';
 import { marketingRoutes } from './marketing/routes.js';
 import { stockRoutes } from './stock/routes.js';
 import { supplyRoutes } from './supply/routes.js';
+import { usersRoutes } from './users/routes.js';
 import { AppShell } from '../shell/app-shell.js';
 import { useT } from '../i18n/locale.js';
 import { tableSearchSchema } from '../lib/table-search.js';
@@ -138,6 +139,8 @@ const analytics = analyticsRoutes(rootRoute);
 const courier = courierRoutes(rootRoute);
 /** M23 owns `/branches` and the branch dashboard, defined in `./branches/routes.tsx`. */
 const branches = branchesRoutes(rootRoute);
+/** gaps-users-auth owns `/users`: the brand's staff, their roles and their sign-in. */
+const users = usersRoutes(rootRoute);
 
 const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
   .filter(
@@ -162,6 +165,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/campaigns',
         '/marketing',
         '/analytics',
+        '/users',
       ].includes(item.to),
   )
   .map((item) =>
@@ -190,6 +194,7 @@ const routeTree = rootRoute.addChildren([
   ...courier,
   ...accounts,
   ...branches,
+  ...users,
   ...placeholderRoutes,
 ]);
 

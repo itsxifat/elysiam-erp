@@ -404,7 +404,7 @@ export async function moveReset(
   await tx.execute(sql`
     update iam.credential_resets
     set status = ${change.status},
-        decided_by = ${change.decidedBy === undefined ? sql`decided_by` : change.decidedBy},
+        decided_by = ${change.decidedBy ?? sql`decided_by`},
         decided_at = ${change.decidedBy === undefined ? sql`decided_at` : sql`now()`},
         completed_at = ${change.status === 'completed' ? sql`now()` : sql`completed_at`},
         link_expires_at = ${

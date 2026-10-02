@@ -71,6 +71,7 @@ const TYPE_KEYS: Readonly<Record<ApprovalType, ConsoleMessageKey>> = {
   investor_distribution: 'approvals.type.investor_distribution',
   investor_withdrawal: 'approvals.type.investor_withdrawal',
   loan_repayment: 'approvals.type.loan_repayment',
+  credential_reset: 'approvals.type.credential_reset',
 };
 
 /**

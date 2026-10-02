@@ -30,18 +30,14 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
 
 export function usersHttpError(code: ErrorCode, message: string): HttpException {
   const body = { code, message };
-  switch (STATUS[code] ?? HttpStatus.BAD_REQUEST) {
-    case HttpStatus.FORBIDDEN:
-      return new ForbiddenException(body);
-    case HttpStatus.NOT_FOUND:
-      return new NotFoundException(body);
-    case HttpStatus.CONFLICT:
-      return new ConflictException(body);
-    case HttpStatus.TOO_MANY_REQUESTS:
-      return new HttpException(body, HttpStatus.TOO_MANY_REQUESTS);
-    default:
-      return new BadRequestException(body);
+  const status: number = STATUS[code] ?? HttpStatus.BAD_REQUEST;
+  if (status === Number(HttpStatus.FORBIDDEN)) return new ForbiddenException(body);
+  if (status === Number(HttpStatus.NOT_FOUND)) return new NotFoundException(body);
+  if (status === Number(HttpStatus.CONFLICT)) return new ConflictException(body);
+  if (status === Number(HttpStatus.TOO_MANY_REQUESTS)) {
+    return new HttpException(body, HttpStatus.TOO_MANY_REQUESTS);
   }
+  return new BadRequestException(body);
 }
 
 /** The PostgreSQL error a statement failed with, found through Drizzle's wrapper. */

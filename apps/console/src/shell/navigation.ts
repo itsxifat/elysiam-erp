@@ -20,6 +20,7 @@ import {
   TrendingUp,
   Target,
   Truck,
+  UserCog,
   Users,
   Wallet,
   type LucideIcon,
@@ -230,6 +231,17 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.audit',
         icon: ScrollText,
         required: { action: 'read', subject: 'AuditLog' },
+      },
+      /*
+       * gaps-users-auth. `read User`, org_admin's (and super admin's through `manage all`):
+       * the brand's people, their roles and sign-in, and the resets waiting for a second
+       * admin.
+       */
+      {
+        to: '/users',
+        labelKey: 'nav.users',
+        icon: UserCog,
+        required: { action: 'read', subject: 'User' },
       },
       {
         to: '/settings',

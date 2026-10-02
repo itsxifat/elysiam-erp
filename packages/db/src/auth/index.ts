@@ -389,7 +389,7 @@ export async function mayHoldSession(userId: string): Promise<boolean> {
       sql`select is_active, is_super_admin from iam.users where id = ${userId}`,
     ),
   );
-  if (user === undefined || !user.is_active) return false;
+  if (user?.is_active !== true) return false;
   if (user.is_super_admin) return true;
 
   const [held] = await withUser({ userId }, async (tx) =>

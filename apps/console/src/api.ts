@@ -173,6 +173,9 @@ export const endpoints = {
     api.post<EnrolmentResult>('/api/auth/two-factor/enable', { password, method: 'totp' }),
   myOrgs: () => api.get<{ orgs: AvailableOrg[] }>('/v1/me/orgs'),
   me: () => api.get<RequestContext>('/v1/me'),
+  /** Redeem an invite or reset link (gaps-users-auth). The token never goes in a URL here. */
+  resetPassword: (token: string, newPassword: string) =>
+    api.post<{ status: boolean }>('/api/auth/reset-password', { token, newPassword }),
   setActiveOrg: (orgId: string) =>
     api.post<{ orgId: string; roles: string[] }>('/v1/me/active-org', { orgId }),
 };
