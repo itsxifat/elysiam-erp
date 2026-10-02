@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { withSystem } from '@elysium/db';
 import { businessDate } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
@@ -442,6 +444,25 @@ describe('the re-engagement list', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]?.after).toMatchObject({ filters: { days: 90, minDelivered: 1 } });
     expect(JSON.stringify(rows.map((row) => row.after))).not.toMatch(/\+?8801|01700/);
+  });
+
+  it('exports the same buyers as a Meta customer list: hashed phones only (M18)', async () => {
+    const listed = await get<Lapsed>(marketing, '/v1/crm/reengagement?days=90&limit=1');
+    const file = await download(
+      marketing,
+      '/v1/crm/reengagement/export?days=90&format=meta_audience',
+    );
+    expect(file.statusCode).toBe(200);
+    expect(file.headers['content-disposition']).toMatch(/meta-audience-.*\.csv/);
+    expect(Number(file.headers['x-row-count'])).toBe(listed.body.total);
+    const lines = file.rawPayload.toString('utf8').trimEnd().split('\n');
+    expect(lines[0]).toBe('phone');
+    expect(lines).toHaveLength(listed.body.total + 1);
+    // Meta's normalisation (digits, country code, no plus), then SHA-256.
+    const lapsed = createHash('sha256').update('8801700000311', 'utf8').digest('hex');
+    expect(lines).toContain(lapsed);
+    expect(lines.slice(1).every((line) => /^[0-9a-f]{64}$/.test(line))).toBe(true);
+    expect(file.rawPayload.toString('utf8')).not.toMatch(/8801|01700|\+/);
   });
 
   it('is behind export BuyerExport, like the buyer list', async () => {

@@ -4,6 +4,7 @@ import type { Poisha } from '@elysium/domain';
 
 import type { ActiveContext } from '../../platform/http/context.js';
 import { PromoError, promoHttpError } from './promo.errors.js';
+import * as repo from './promo.repository.js';
 import { PromoService } from './promo.service.js';
 
 /**
@@ -105,6 +106,19 @@ export interface PromoApi {
       readonly actorUserId: string;
     },
   ): Promise<{ readonly codeId: string; readonly code: string }>;
+
+  /**
+   * The campaign each of these codes was made for, when it was made for one (M18).
+   *
+   * §11's first attribution rule is "a campaign set explicitly on the order", and a code
+   * made for a campaign is that campaign named by the buyer (D-251). Codes with no
+   * campaign, and ids that are not this brand's, are simply absent from the map.
+   */
+  campaignsOfCodes(
+    tx: Tx,
+    orgId: string,
+    codeIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>>;
 }
 
 export const PROMO_API = Symbol('PromoApi');
@@ -219,5 +233,13 @@ export class PromoApiService implements PromoApi {
 
   async releaseForOrder(tx: Tx, orgId: string, orderId: string): Promise<boolean> {
     return this.promo.releaseForOrder(tx, orgId, orderId);
+  }
+
+  async campaignsOfCodes(
+    tx: Tx,
+    orgId: string,
+    codeIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>> {
+    return repo.campaignsOfCodes(tx, orgId, codeIds);
   }
 }

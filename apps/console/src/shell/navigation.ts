@@ -15,6 +15,7 @@ import {
   ShoppingCart,
   Store,
   Table2,
+  TrendingUp,
   Truck,
   Users,
   Wallet,
@@ -176,6 +177,17 @@ export const NAVIGATION: readonly NavSection[] = [
   {
     titleKey: 'nav.sectionAdmin',
     items: [
+      /*
+       * M18. `read CampaignSpend`, the wider of the section's two subjects: accounts holds
+       * it for spend entry (§6) and nothing else here, so an accountant sees Marketing with
+       * one tab, Spend. Marketing and org_admin hold both.
+       */
+      {
+        to: '/marketing',
+        labelKey: 'nav.marketing',
+        icon: TrendingUp,
+        required: { action: 'read', subject: 'CampaignSpend' },
+      },
       {
         to: '/campaigns',
         labelKey: 'nav.campaigns',

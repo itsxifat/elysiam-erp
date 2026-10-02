@@ -243,3 +243,64 @@ export function takaParts(amount: Poisha): {
   const magnitude = negative ? 0n - amount : amount;
   return { negative, taka: magnitude / 100n, poisha: magnitude % 100n };
 }
+
+/**
+ * A plain decimal amount in major units — `"5339.5"`, `"12.345"` — as poisha, rounded half
+ * away from zero to the poisha (M18).
+ *
+ * For figures another system computed, never for what a person typed (`parseTaka` refuses
+ * a third decimal, because a person who typed one made a mistake). Meta's Insights API
+ * reports `spend` as a "numeric string" with whatever precision its estimate has, and the
+ * only honest thing to do with a third decimal there is to round it once, here, by the
+ * system's one rounding rule. Signs, exponents, grouping and currency marks are refused:
+ * none of them is a numeric string an API should send.
+ */
+export function decimalToPoisha(input: string): Poisha {
+  const match = /^(\d{1,16})(?:\.(\d{1,12}))?$/.exec(input.trim());
+  if (match === null) throw new MoneyError(`"${input}" is not a plain decimal amount.`);
+  const [, whole = '0', fraction = ''] = match;
+  const scale = 10n ** BigInt(fraction.length);
+  const scaled = BigInt(`${whole}${fraction}`);
+  // `scaled / scale` is the amount in major units; ×100 for poisha, then round once.
+  return checked(divideRounded(scaled * 100n, scale));
+}
+
+/**
+ * Poisha as a JSON number of major units, for an API that types money as a float (M18).
+ *
+ * Meta's Conversions API takes `custom_data.value` as a number, so the amount has to
+ * leave as one. It is built from the exact decimal text (`"1234.50"` → 1234.5), never by
+ * dividing a float, and refused at 10^15 poisha (ten trillion taka) or more. Below that the
+ * amount has at most 15 significant digits, and every such decimal has a double whose
+ * shortest decimal form is exactly that amount (15 is the digits a double always keeps),
+ * which is what `JSON.stringify` writes. Nothing inside the system reads the result back
+ * as money.
+ */
+const MAJOR_NUMBER_LIMIT = 1_000_000_000_000_000n;
+
+export function poishaToMajorNumber(amount: Poisha): number {
+  if (amount >= MAJOR_NUMBER_LIMIT || amount <= -MAJOR_NUMBER_LIMIT) {
+    throw new MoneyError('That amount is too large to send as a number.', 'MONEY_OVERFLOW');
+  }
+  const { negative, taka, poisha: rest } = takaParts(amount);
+  return Number(`${negative ? '-' : ''}${taka.toString()}.${rest.toString().padStart(2, '0')}`);
+}
+
+/**
+ * The sum of several plain decimal amounts, as poisha, rounded once (M18).
+ *
+ * Summed exactly before rounding, so twenty ad-level spend figures for one campaign's day
+ * round to the same poisha as the campaign's own total would — rounding each and adding
+ * could drift by up to half a poisha per row.
+ */
+export function sumDecimalsToPoisha(inputs: readonly string[]): Poisha {
+  const SCALE_DIGITS = 12;
+  let total = 0n;
+  for (const input of inputs) {
+    const match = /^(\d{1,16})(?:\.(\d{1,12}))?$/.exec(input.trim());
+    if (match === null) throw new MoneyError(`"${input}" is not a plain decimal amount.`);
+    const [, whole = '0', fraction = ''] = match;
+    total += BigInt(`${whole}${fraction.padEnd(SCALE_DIGITS, '0')}`);
+  }
+  return checked(divideRounded(total * 100n, 10n ** BigInt(SCALE_DIGITS)));
+}

@@ -44,6 +44,10 @@
       "types": "./dist/notify/index.d.ts",
       "default": "./dist/notify/index.js"
     },
+    "./marketing": {
+      "types": "./dist/marketing/index.d.ts",
+      "default": "./dist/marketing/index.js"
+    },
     "./migration": {
       "types": "./dist/migration/index.d.ts",
       "default": "./dist/migration/index.js"

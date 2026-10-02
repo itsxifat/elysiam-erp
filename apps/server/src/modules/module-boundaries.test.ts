@@ -47,6 +47,9 @@ const OWNER: Readonly<Record<string, string>> = {
   inventory: 'inventory',
   investors: 'investors',
   ledger: 'ledger',
+  // M18: campaigns, spend, leads, the Meta link and the conversion log. The promo FK to
+  // `marketing.campaigns` is a constraint, not a read.
+  marketing: 'marketing',
   // M14a: imported files and the opening of a brand's books. Everything an import writes
   // elsewhere goes through the owning module's interface, so this module carries no debt.
   migration: 'migration',

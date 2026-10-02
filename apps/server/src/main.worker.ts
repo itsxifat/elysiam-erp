@@ -11,6 +11,9 @@ import { CourierModule } from './modules/courier/courier.module.js';
 import { registerCourierJobs } from './modules/courier/courier.worker.js';
 import { SettlementsService } from './modules/courier/settlements.service.js';
 import { CourierSyncService } from './modules/courier/sync.service.js';
+import { MarketingModule } from './modules/marketing/marketing.module.js';
+import { registerMarketingJobs } from './modules/marketing/marketing.worker.js';
+import { MetaJobsService } from './modules/marketing/meta-jobs.service.js';
 import { NotifyModule } from './modules/notify/notify.module.js';
 import { NotifyService } from './modules/notify/notify.service.js';
 import { registerNotifyJobs } from './modules/notify/notify.worker.js';
@@ -114,7 +117,12 @@ async function bootstrap(): Promise<void> {
    * defined, scheduled and enqueued for weeks with no
    * handler here at all: the cron fired, the jobs piled up, and nothing ran them.
    */
-  @Module({ imports: [CourierModule, InventoryModule, NotifyModule, OrdersModule] })
+  // `MarketingModule` is here for its handlers *and* for its delivery hook: a courier sync
+  // that delivers an order runs in this process, and without the module loaded nobody would
+  // be registered to queue the order's conversion (M18, D-262).
+  @Module({
+    imports: [CourierModule, InventoryModule, NotifyModule, OrdersModule, MarketingModule],
+  })
   class WorkerModule {}
 
   // `abortOnError: false` for the reason `main.api.ts` gives: with the logger off, Nest's
@@ -157,6 +165,7 @@ async function bootstrap(): Promise<void> {
   await registerInventoryJobs({ jobs, reconcile: context.get(ReconcileService), report, logger });
   await registerNotifyJobs({ jobs, notify: context.get(NotifyService), report });
   await registerCrmJobs({ jobs, crm: context.get(CrmService), report });
+  await registerMarketingJobs({ jobs, meta: context.get(MetaJobsService), report });
 
   // Every registered queue gets its dead-letter watcher, whether or not this
   // release also registered a handler for the queue itself. A queue with a

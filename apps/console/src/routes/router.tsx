@@ -16,6 +16,7 @@ import { investorsRoutes } from './investors/routes.js';
 import { ordersRoutes } from './orders/routes.js';
 import { customersRoutes } from './customers/routes.js';
 import { campaignsRoutes } from './campaigns/routes.js';
+import { marketingRoutes } from './marketing/routes.js';
 import { stockRoutes } from './stock/routes.js';
 import { supplyRoutes } from './supply/routes.js';
 import { AppShell } from '../shell/app-shell.js';
@@ -126,6 +127,8 @@ const orders = ordersRoutes(rootRoute);
 /** M16's buyer screens and campaigns: `/customers` and `/campaigns` stop being placeholders. */
 const customers = customersRoutes(rootRoute);
 const campaigns = campaignsRoutes(rootRoute);
+/** M18 owns `/marketing`: the dashboard, campaigns, spend, leads and the Meta link. */
+const marketing = marketingRoutes(rootRoute);
 const courier = courierRoutes(rootRoute);
 /** M23 owns `/branches` and the branch dashboard, defined in `./branches/routes.tsx`. */
 const branches = branchesRoutes(rootRoute);
@@ -149,6 +152,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/branches',
         '/customers',
         '/campaigns',
+        '/marketing',
       ].includes(item.to),
   )
   .map((item) =>
@@ -171,6 +175,7 @@ const routeTree = rootRoute.addChildren([
   ...orders,
   ...customers,
   ...campaigns,
+  ...marketing,
   ...courier,
   ...accounts,
   ...branches,

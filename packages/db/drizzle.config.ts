@@ -42,6 +42,8 @@ export default defineConfig({
     'inventory',
     'investors',
     'ledger',
+    // M18. Campaigns, spend, leads, the Meta link and the conversion log.
+    'marketing',
     // M14a. The record of a brand's opening import and the opening of its books.
     'migration',
     // M16. Templates, opt-outs and the delivery log.

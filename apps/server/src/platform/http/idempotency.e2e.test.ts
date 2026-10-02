@@ -41,7 +41,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await harness.close();
-});
+}, 60_000);
 
 /** Rows in `demo.costed_items` with this sku, read as the owner so RLS is not the question. */
 async function rowCount(orgId: string, sku: string): Promise<number> {

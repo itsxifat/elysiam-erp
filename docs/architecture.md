@@ -818,6 +818,11 @@ interface CourierAdapter {
   - confirm Meta's current event-time rules in its docs
   - log responses and never send PII in clear text
   - credentials are per org
+- **As built (M18):**
+  - attribution is resolved when read, from the order's recorded source, its promo code's campaign and the brand's current mappings (D-250, D-251); an id that names nothing falls through
+  - spend is one figure per (campaign, Dhaka day); a person's figure is never overwritten by the import (D-252), and nothing posts to the ledger (D-253)
+  - each event counts in the period it happened in; ratios are null only on a zero denominator (D-255)
+  - the CAPI event and its identifiers are D-256; the delivery hook is D-262; the hashed audience export is D-259
 
 ---
 
@@ -1052,41 +1057,42 @@ Jobs run on pg-boss, with queues named `module.action`.
 - A job that lands in the dead-letter queue emits `job.failed`.
 - Cron schedules run in Asia/Dhaka time.
 
-| Queue / cron                  | When                                                   | Notes                                        |
-| ----------------------------- | ------------------------------------------------------ | -------------------------------------------- |
-| `delivery.book_parcel`        | On event                                               | 5 retries, then dead-letter → booking_failed |
-| `delivery.process_webhook`    | On receipt                                             | Raw payload is stored before processing      |
-| `delivery.poll_status`        | Every 30 min for stale active parcels                  | Respects courier rate limits                 |
-| `delivery.import_settlement`  | On upload or API fetch                                 | Needs approval before posting                |
-| `fraud.refresh_provider`      | On demand, and when the TTL expires                    | Throttled per provider                       |
-| `inventory.reconcile_levels`  | Nightly 02:00                                          | Drift alert                                  |
-| `crm.schedule_segments`       | Nightly 02:30, one `crm.score_segments` per brand      | Segments replaced, never accumulated (D-211) |
-| `crm.schedule_greetings`      | Daily 09:00, one `crm.greet_occasions` per brand       | One greeting per buyer per occasion per year |
-| `marketing.import_meta_spend` | Daily 06:00, plus manual                               | Yesterday plus today so far                  |
-| `marketing.capi_delivered`    | On delivery                                            |                                              |
-| `analytics.rollup`            | On events, plus a nightly recompute of the last 7 days |                                              |
-| `hr.target_progress`          | Hourly                                                 |                                              |
-| `loan.reminders`              | Daily 10:00                                            |                                              |
-| `notify.send`                 | On demand                                              | Respects quiet hours                         |
-| `files.process_image`         | On upload                                              | sharp variants, EXIF stripped                |
-| `ops.backup_verify`           | Weekly (staging)                                       | Restore to a scratch database and verify     |
+| Queue / cron                      | When                                                     | Notes                                        |
+| --------------------------------- | -------------------------------------------------------- | -------------------------------------------- |
+| `delivery.book_parcel`            | On event                                                 | 5 retries, then dead-letter → booking_failed |
+| `delivery.process_webhook`        | On receipt                                               | Raw payload is stored before processing      |
+| `delivery.poll_status`            | Every 30 min for stale active parcels                    | Respects courier rate limits                 |
+| `delivery.import_settlement`      | On upload or API fetch                                   | Needs approval before posting                |
+| `fraud.refresh_provider`          | On demand, and when the TTL expires                      | Throttled per provider                       |
+| `inventory.reconcile_levels`      | Nightly 02:00                                            | Drift alert                                  |
+| `crm.schedule_segments`           | Nightly 02:30, one `crm.score_segments` per brand        | Segments replaced, never accumulated (D-211) |
+| `crm.schedule_greetings`          | Daily 09:00, one `crm.greet_occasions` per brand         | One greeting per buyer per occasion per year |
+| `marketing.schedule_spend_import` | Daily 06:00, one `marketing.import_meta_spend` per brand | The last three days, re-imported (D-254)     |
+| `marketing.import_meta_spend`     | From the schedule, or on request                         | Idempotent per (campaign, day) (D-252)       |
+| `marketing.capi_delivered`        | Enqueued in the delivering transaction                   | One Purchase per order, sent once (D-262)    |
+| `analytics.rollup`                | On events, plus a nightly recompute of the last 7 days   |                                              |
+| `hr.target_progress`              | Hourly                                                   |                                              |
+| `loan.reminders`                  | Daily 10:00                                              |                                              |
+| `notify.send`                     | On demand                                                | Respects quiet hours                         |
+| `files.process_image`             | On upload                                                | sharp variants, EXIF stripped                |
+| `ops.backup_verify`               | Weekly (staging)                                         | Restore to a scratch database and verify     |
 
 ---
 
 ## 21. Integrations
 
-| Integration                                      | Phase       | Interface                     | Notes                                                      |
-| ------------------------------------------------ | ----------- | ----------------------------- | ---------------------------------------------------------- |
-| Couriers (Steadfast, Pathao, RedX; others later) | 1–2         | CourierAdapter                | Official docs and user credentials only                    |
-| Fraud providers (Steadfast via fraudjs; others)  | 1–2         | FraudSignalProvider           | Cached, throttled                                          |
-| Cloudflare Turnstile, R2                         | 1           | —                             |                                                            |
-| BD SMS gateway                                   | 2           | SmsProvider                   | Branded sender IDs need approval, so apply early (D-012)   |
-| Advance payment gateway (bKash or aggregator)    | 2, optional | PaymentProvider               | Only if the client wants online collection (D-013)         |
-| Meta Marketing API, Conversions API              | 3           | MetaAdsProvider, CapiProvider | System-user tokens per org                                 |
-| Biometric attendance                             | 3           | AttendanceImporter            | CSV first                                                  |
-| LLM for insight narratives                       | 4, optional | InsightNarrator               | Metrics only, feature-flagged                              |
-| Chatwoot                                         | 5           | ChatwootClient                | Webhooks plus the Dashboard App                            |
-| WhatsApp Cloud API templates                     | 5           | WhatsAppProvider              | For templated notifications if Chatwoot doesn't cover them |
+| Integration                                      | Phase       | Interface                       | Notes                                                      |
+| ------------------------------------------------ | ----------- | ------------------------------- | ---------------------------------------------------------- |
+| Couriers (Steadfast, Pathao, RedX; others later) | 1–2         | CourierAdapter                  | Official docs and user credentials only                    |
+| Fraud providers (Steadfast via fraudjs; others)  | 1–2         | FraudSignalProvider             | Cached, throttled                                          |
+| Cloudflare Turnstile, R2                         | 1           | —                               |                                                            |
+| BD SMS gateway                                   | 2           | SmsProvider                     | Branded sender IDs need approval, so apply early (D-012)   |
+| Advance payment gateway (bKash or aggregator)    | 2, optional | PaymentProvider                 | Only if the client wants online collection (D-013)         |
+| Meta Marketing API, Conversions API              | 3           | MetaGateway (unverified, D-257) | System-user tokens per org, sealed                         |
+| Biometric attendance                             | 3           | AttendanceImporter              | CSV first                                                  |
+| LLM for insight narratives                       | 4, optional | InsightNarrator                 | Metrics only, feature-flagged                              |
+| Chatwoot                                         | 5           | ChatwootClient                  | Webhooks plus the Dashboard App                            |
+| WhatsApp Cloud API templates                     | 5           | WhatsAppProvider                | For templated notifications if Chatwoot doesn't cover them |
 
 Rules for every integration:
 

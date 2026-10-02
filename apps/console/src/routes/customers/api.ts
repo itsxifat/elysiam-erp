@@ -113,7 +113,11 @@ export const listLapsed = (filters: LapsedFilters, limit: number, offset: number
   );
 
 /** The file, opened by the browser with the cookie it already has (see the buyer export). */
-export const lapsedExportUrl = (filters: LapsedFilters, format: 'csv' | 'xlsx') =>
+export const lapsedExportUrl = (
+  filters: LapsedFilters,
+  // `meta_audience` (M18): the same buyers as SHA-256 phone hashes for a Meta customer list.
+  format: 'csv' | 'xlsx' | 'meta_audience',
+) =>
   new URL(
     `/v1/crm/reengagement/export${query({ ...filters, format })}`,
     env.VITE_API_URL,

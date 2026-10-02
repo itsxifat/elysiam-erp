@@ -42,6 +42,8 @@ export const createPromoCodeSchema = z
     skuIds: z.array(uuid).max(500).optional(),
     categoryIds: z.array(uuid).max(100).optional(),
     customerId: uuid.optional(),
+    /** The brand's own campaign this code promotes (M18): explicit attribution (D-251). */
+    campaignId: uuid.optional(),
   })
   .strict()
   .superRefine((value, context) => {

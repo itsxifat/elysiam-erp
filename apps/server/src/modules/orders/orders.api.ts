@@ -16,6 +16,7 @@ import { OrdersService, type CreateOrderOptions, type CreatedOrder } from './ord
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
 import { mapOrderErrors } from './orders.errors.js';
 import * as repo from './orders.repository.js';
+import { deliveredNetItems } from './revenue.js';
 import type { CreateOrderInput } from './orders.schemas.js';
 
 /**
@@ -181,6 +182,50 @@ export interface CourierParty {
   readonly name: string;
 }
 
+/**
+ * One order, as §11's marketing dashboard needs it (M18).
+ *
+ * The dates things happened, the order's own recorded source and promo code (attribution
+ * is the marketing module's to resolve), and two revenues computed here, where the lines
+ * are: delivered net item value, by the same function the delivery journal uses, and the
+ * net item value as placed. No buyer, no phone, no cost.
+ */
+export interface MarketingOrderFact {
+  readonly orderId: string;
+  readonly channel: string;
+  readonly status: OrderStatus;
+  readonly source: {
+    readonly campaignId: string | null;
+    readonly adId: string | null;
+    readonly utmCampaign: string | null;
+  };
+  readonly promoCodeId: string | null;
+  readonly confirmedAt: Date | null;
+  readonly deliveredAt: Date | null;
+  readonly returnedAt: Date | null;
+  readonly deliveredRevenuePoisha: Poisha;
+  readonly placedRevenuePoisha: Poisha;
+}
+
+/**
+ * What a delivered order's Conversions API event is built from (M18, §11).
+ *
+ * The buyer's phone, name and district are here because Meta matches on them — hashed by
+ * the caller before anything is stored or sent, and never logged (invariant 10).
+ */
+export interface ConversionFacts {
+  readonly orderId: string;
+  readonly customerId: string;
+  readonly channel: string;
+  readonly status: OrderStatus;
+  readonly deliveredAt: Date | null;
+  readonly deliveredRevenuePoisha: Poisha;
+  readonly phoneE164: string;
+  readonly name: string;
+  readonly city: string | null;
+  readonly lines: readonly { readonly skuCode: string; readonly deliveredQty: number }[];
+}
+
 export interface OrdersApi {
   /**
    * Take an order inside the caller's transaction.
@@ -299,6 +344,16 @@ export interface OrdersApi {
     request: AuditableRequest | undefined,
     input: CourierTriggerInput,
   ): Promise<AppliedTrigger | null>;
+
+  /** Orders confirmed, delivered or returned on a Dhaka date in the period (M18, D-255). */
+  marketingFacts(
+    tx: Tx,
+    orgId: string,
+    period: { readonly from: string; readonly to: string },
+  ): Promise<readonly MarketingOrderFact[]>;
+
+  /** One order's conversion inputs, or null when it is not this org's (M18). */
+  conversionFacts(tx: Tx, orgId: string, orderId: string): Promise<ConversionFacts | null>;
 }
 
 /** The Nest injection token for `OrdersApi`. */
@@ -511,6 +566,59 @@ export class OrdersApiService implements OrdersApi {
     }));
   }
 
+  async marketingFacts(
+    tx: Tx,
+    orgId: string,
+    period: { readonly from: string; readonly to: string },
+  ): Promise<readonly MarketingOrderFact[]> {
+    const rows = await repo.marketingFactRows(tx, orgId, period);
+    const delivered = rows.filter((row) => row.delivered_at !== null).map((row) => row.id);
+    const linesByOrder = new Map<string, repo.RevenueLineRow[]>();
+    for (const line of await repo.linesForOrders(tx, orgId, delivered)) {
+      const list = linesByOrder.get(line.order_id) ?? [];
+      list.push(line);
+      linesByOrder.set(line.order_id, list);
+    }
+    return rows.map((row) => {
+      const source = sourceFields(row.source);
+      const net = BigInt(row.items_poisha) - BigInt(row.discount_poisha);
+      return {
+        orderId: row.id,
+        channel: row.channel,
+        status: row.status as OrderStatus,
+        source,
+        promoCodeId: row.promo_code_id,
+        confirmedAt: instant(row.confirmed_at),
+        deliveredAt: instant(row.delivered_at),
+        returnedAt: instant(row.returned_at),
+        deliveredRevenuePoisha:
+          row.delivered_at === null
+            ? poisha(0n)
+            : deliveredNetItems(row, linesByOrder.get(row.id) ?? []),
+        placedRevenuePoisha: poisha(net > 0n ? net : 0n),
+      };
+    });
+  }
+
+  async conversionFacts(tx: Tx, orgId: string, orderId: string): Promise<ConversionFacts | null> {
+    const order = await repo.orderById(tx, orgId, orderId);
+    if (order === undefined) return null;
+    const lines = await repo.orderLines(tx, orgId, orderId);
+    const area = await repo.areaNames(tx, order.ship_district_id, order.ship_thana_id);
+    return {
+      orderId: order.id,
+      customerId: order.customer_id,
+      channel: order.channel,
+      status: order.status as OrderStatus,
+      deliveredAt: instant(order.delivered_at),
+      deliveredRevenuePoisha: deliveredNetItems(order, lines),
+      phoneE164: order.customer_phone,
+      name: order.ship_name,
+      city: area?.district_en ?? null,
+      lines: lines.map((line) => ({ skuCode: line.sku_code, deliveredQty: line.delivered_qty })),
+    };
+  }
+
   async applyTrigger(
     tx: Tx,
     context: ActiveContext,
@@ -670,4 +778,22 @@ function itemSummaryOf(lines: readonly repo.OrderLineRow[]): string | null {
   if (lines.length === 0) return null;
   const summary = lines.map((line) => `${line.product_name} ×${String(line.qty)}`).join(', ');
   return summary.length <= 200 ? summary : `${summary.slice(0, 197)}...`;
+}
+
+/** A timestamp column as a `Date`, whichever form the driver handed back. */
+function instant(value: Date | string | null): Date | null {
+  if (value === null) return null;
+  return value instanceof Date ? value : new Date(value);
+}
+
+/** §9's `source` block, reduced to the three fields §11's attribution reads. */
+function sourceFields(source: unknown): MarketingOrderFact['source'] {
+  const record =
+    typeof source === 'object' && source !== null ? (source as Record<string, unknown>) : {};
+  const text = (value: unknown) => (typeof value === 'string' && value !== '' ? value : null);
+  return {
+    campaignId: text(record.campaignId),
+    adId: text(record.adId),
+    utmCampaign: text(record.utmCampaign),
+  };
 }

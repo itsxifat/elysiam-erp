@@ -479,7 +479,9 @@ export type ReengagementQuery = z.infer<typeof reengagementQuerySchema>;
 
 export const reengagementExportQuerySchema = reengagementQuerySchema
   .omit({ limit: true, offset: true })
-  .extend({ format: z.enum(['csv', 'xlsx']).default('csv') })
+  // `meta_audience` (M18): the same buyers as SHA-256 phone hashes, for a Meta customer
+  // list — no name, no number (D-259).
+  .extend({ format: z.enum(['csv', 'xlsx', 'meta_audience']).default('csv') })
   .strict();
 
 export type ReengagementExportQuery = z.infer<typeof reengagementExportQuerySchema>;

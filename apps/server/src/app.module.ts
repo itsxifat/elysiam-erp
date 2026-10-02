@@ -13,6 +13,7 @@ import { IamModule } from './modules/iam/iam.module.js';
 import { InventoryModule } from './modules/inventory/inventory.module.js';
 import { InvestorsModule } from './modules/investors/investors.module.js';
 import { LedgerModule } from './modules/ledger/ledger.module.js';
+import { MarketingModule } from './modules/marketing/marketing.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
 import { PosModule } from './modules/pos/pos.module.js';
 import { NotifyModule } from './modules/notify/notify.module.js';
@@ -83,6 +84,9 @@ export class AppModule {
         PosModule,
         PromoModule,
         NotifyModule,
+        // M18. After orders and promo, whose APIs it reads; it joins the orders module's
+        // delivery observers at init (D-262).
+        MarketingModule,
         ...(withDemo ? [DemoModule] : []),
       ],
     };
