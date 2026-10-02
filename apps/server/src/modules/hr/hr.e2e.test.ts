@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { withOrg, withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -512,6 +514,42 @@ describe('the payroll scenario (check 1)', () => {
       { body: { walletAccountId: wallet } },
     );
     expect(byManager.statusCode).toBe(403);
+
+    /*
+     * The two refusals before the one that works, because paying closes the run.
+     *
+     * Both exist to keep two different answers apart, which is the whole reason the
+     * ledger hands this module a wallet carrying `isActive` instead of filtering the
+     * closed ones out (D-199): "no such wallet in this brand" is a wrong request, and
+     * "that wallet is deactivated" is a right request about an account the wallet picker
+     * still lists on purpose. Without these, a narrowed select that dropped `is_active`
+     * would make every payment refuse, or pay salary out of a closed bank account, and
+     * nothing in CI would notice.
+     */
+    const unknown = await accounts.client.request('POST', `/v1/hr/payroll/runs/${runId}/pay`, {
+      body: { walletAccountId: randomUUID() },
+    });
+    expect(unknown.statusCode, unknown.body).toBe(404);
+    expect(body<{ code: string }>(unknown).code).toBe('HR_NOT_FOUND');
+
+    const closed = await withSystem(
+      async (tx) => {
+        const rows = await tx.execute<{ id: string }>(sql`
+          insert into ledger.accounts (org_id, code, name, class, subtype, normal_balance, is_active)
+          values (${ORG_A}, '1115-SHUT', 'Closed bKash', 'asset',
+                  'wallet_bkash'::ledger.account_subtype, 'debit', false)
+          on conflict (org_id, code) do update set is_active = false
+          returning id
+        `);
+        return rows[0]?.id ?? '';
+      },
+      { orgId: ORG_A },
+    );
+    const deactivated = await accounts.client.request('POST', `/v1/hr/payroll/runs/${runId}/pay`, {
+      body: { walletAccountId: closed },
+    });
+    expect(deactivated.statusCode, deactivated.body).toBe(409);
+    expect(body<{ code: string }>(deactivated).code).toBe('WALLET_INACTIVE');
 
     const paid = await accounts.client.request('POST', `/v1/hr/payroll/runs/${runId}/pay`, {
       body: { walletAccountId: wallet, memo: 'March salaries' },

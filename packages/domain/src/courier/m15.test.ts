@@ -17,6 +17,7 @@ import {
   oneDecimalMean,
   orderTriggerFor,
   PARCEL_STATUSES,
+  VOCABULARY_PROVENANCE,
   parseTrackingQuery,
   PATHAO_STATUS_MAP,
   PATHAO_STATUS_VOCABULARY,
@@ -106,17 +107,16 @@ describe('every adapter has a complete mapping table (check 1)', () => {
   }
 
   it('is honest about which vocabularies have a source (D-200)', () => {
-    // The adapters whose words were transcribed from a first-party document, against the
-    // one whose words were not. If a RedX sandbox ever confirms the list, this moves to
-    // `SOURCED` and the decision row closes; until then nothing may claim RedX is verified.
-    const SOURCED = ['steadfast', 'pathao', 'fake'];
-    const UNSOURCED = ['redx'];
-
-    expect([...SOURCED, ...UNSOURCED].sort()).toEqual([...MAPPED_COURIER_CODES].sort());
-    // The unverified one is exactly the adapter whose `verified` flag is false, so the
-    // runtime gate (D-176: it cannot be activated without an explicit opt-in) and this
-    // list cannot drift apart.
-    expect(UNSOURCED).toEqual(['redx']);
+    // Every mapped provider declares where its words came from, so a new courier cannot
+    // join the "complete mapping" claim without saying whether its list was read or
+    // recalled.
+    expect(Object.keys(VOCABULARY_PROVENANCE).sort()).toEqual([...MAPPED_COURIER_CODES].sort());
+    // Only RedX's is recalled. Flipping it to `document` without a source to transcribe
+    // from fails here, which is the prompt to close D-200 properly rather than by edit.
+    const recalled = Object.entries(VOCABULARY_PROVENANCE)
+      .filter(([, provenance]) => provenance === 'recalled')
+      .map(([code]) => code);
+    expect(recalled).toEqual(['redx']);
   });
 
   it('reads Pathao’s event names and status words the same way', () => {

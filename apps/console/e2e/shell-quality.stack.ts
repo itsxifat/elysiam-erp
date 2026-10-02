@@ -265,7 +265,7 @@ async function focusIndicator(page: Page) {
     const focusedLook = look();
     element.blur();
     const restingLook = look();
-    element.focus({ preventScroll: true, focusVisible: true } as FocusOptions);
+    element.focus({ preventScroll: true, focusVisible: true });
 
     const labelled =
       element.getAttribute('aria-label') ??
@@ -347,7 +347,9 @@ test('check 7: keyboard only — every tab stop shows focus, and the palette nav
     [/^Search$/, /^Status/, /^Columns$/, /\(Sort ascending\)$/, /^Next$/],
     'data table',
   );
-  const sortNames = tableStops.filter((stop) => /\(Sort/.test(stop.name)).map((s) => s.name);
+  const sortNames = tableStops
+    .filter((stop) => stop.name.includes('(Sort'))
+    .map((stop) => stop.name);
   expect(new Set(sortNames).size, 'each sort button is named by its column').toBe(sortNames.length);
   expect(unseen(tableStops), 'table stops without a visible focus change').toEqual([]);
 

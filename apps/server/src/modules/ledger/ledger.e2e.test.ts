@@ -1033,3 +1033,72 @@ describe('the database knows each subtype as the domain does (0015)', () => {
     }
   });
 });
+
+/**
+ * The resolver HR depends on since it stopped reading `ledger.accounts` itself (D-199).
+ *
+ * Two rules are load-bearing and neither was asserted anywhere: an inactive account is
+ * never chosen, and where a brand has added a second account of a subtype the lowest code
+ * wins. Payroll, payroll payment and loan disbursement across all five brands now share
+ * this one resolver with the ledger's own cash service, so a change made for one caller
+ * moves the others' journals. The failure is silent — the journal still balances, the
+ * trial balance is still zero, and the salary liability accumulates in the wrong account.
+ */
+describe('accountBySubtype picks the account a posting rule means', () => {
+  it('skips an inactive account and takes the lowest code among the active ones', async () => {
+    const seeded = await withSystem(
+      async (tx) => {
+        const add = async (code: string, isActive: boolean) => {
+          const rows = await tx.execute<{ id: string }>(sql`
+            insert into ledger.accounts (org_id, code, name, class, subtype, normal_balance, is_active)
+            values (${ORG_B}, ${code}, ${`Salary payable ${code}`}, 'liability',
+                    'salary_payable'::ledger.account_subtype, 'credit', ${isActive})
+            on conflict (org_id, code) do update set is_active = excluded.is_active
+            returning id
+          `);
+          return rows[0]?.id ?? '';
+        };
+        // Lower code than either, and inactive: the row a naive `order by code` takes.
+        const closed = await add('2095-CLOSED', false);
+        const lowest = await add('2096-LOW', true);
+        const higher = await add('2097-HIGH', true);
+        return { closed, lowest, higher };
+      },
+      { orgId: ORG_B },
+    );
+
+    const chosen = await withOrg({ orgId: ORG_B, userId: ACTOR }, (tx) =>
+      ledger.accountBySubtype(tx, ORG_B, 'salary_payable'),
+    );
+
+    // The seed's own 2300 is lower than all three, so it is what must win; what the
+    // assertion really pins is that neither the inactive row nor a higher code does.
+    expect(chosen).not.toBeNull();
+    expect(chosen?.accountId).not.toBe(seeded.closed);
+    expect(chosen?.accountId).not.toBe(seeded.higher);
+
+    const code = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ code: string }>(
+            sql`select code from ledger.accounts where org_id = ${ORG_B} and id = ${chosen?.accountId ?? ''}`,
+          )
+        )[0]?.code ?? '',
+      { orgId: ORG_B },
+    );
+    const everyActive = await withSystem(
+      async (tx) =>
+        [
+          ...(await tx.execute<{ code: string }>(sql`
+            select code from ledger.accounts
+            where org_id = ${ORG_B} and subtype = 'salary_payable'::ledger.account_subtype
+              and is_active
+            order by code
+          `)),
+        ].map((row) => row.code),
+      { orgId: ORG_B },
+    );
+    expect(code).toBe(everyActive[0]);
+    expect(everyActive).not.toContain('2095-CLOSED');
+  });
+});

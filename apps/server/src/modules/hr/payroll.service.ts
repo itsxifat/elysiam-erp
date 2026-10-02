@@ -701,7 +701,7 @@ export class PayrollService implements OnModuleInit {
             salaryPayable: payable,
             wallet: {
               accountId: wallet.accountId,
-              subtype: wallet.subtype as AccountSubtype,
+              subtype: wallet.subtype,
               branchId: wallet.branchId,
             },
             amountPoisha: poisha(BigInt(run.net_poisha)),

@@ -242,7 +242,7 @@ export class LoansService {
             loanReceivable: receivable,
             wallet: {
               accountId: wallet.accountId,
-              subtype: wallet.subtype as AccountSubtype,
+              subtype: wallet.subtype,
               branchId: wallet.branchId,
             },
             amountPoisha: poisha(BigInt(loan.principal_poisha)),

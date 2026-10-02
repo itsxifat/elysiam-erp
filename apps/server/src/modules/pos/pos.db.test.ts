@@ -900,6 +900,117 @@ describe('an exchange (D-195)', () => {
   });
 });
 
+describe('an exchange across branches (D-195)', () => {
+  it('holds a replacement sale at another branch that names this branch’s return', async () => {
+    // A second showroom: its branch, its hand cash, its shelf, a till and a cashier.
+    const otherBranch = await withSystem(
+      async (tx) => {
+        const rows = await tx.execute<{ id: string }>(sql`
+          insert into org.branches (org_id, code, name, kind)
+          values (${ORG_A}, 'XCH', 'Exchange test showroom', 'showroom')
+          on conflict (org_id, code) do update set name = excluded.name
+          returning id
+        `);
+        const id = rows[0]?.id ?? '';
+        await tx.execute(sql`
+          insert into ledger.accounts (org_id, code, name, class, subtype, normal_balance, branch_id)
+          values (${ORG_A}, '1010-XCH', 'Hand cash, exchange test showroom',
+                  'asset', 'wallet_cash', 'debit', ${id})
+          on conflict (org_id, code) do nothing
+        `);
+        return id;
+      },
+      { orgId: ORG_A },
+    );
+    const otherCash = await seedWallet(ORG_A, '1010-XCH', { provider: 'Till' });
+    const otherShelf = await makeLocation(ORG_A, {
+      code: 'POS-XCH',
+      name: 'Exchange test shelf',
+      kind: 'showroom',
+      branchId: otherBranch,
+    });
+    const otherCashier = await harness.asRole('branch_manager', ORG_A, {
+      branchIds: [otherBranch],
+    });
+    const otherManager = await harness.asRole('branch_manager', ORG_A, {
+      branchIds: [otherBranch],
+    });
+    const registered = await otherCashier.client.request('POST', '/v1/pos/registers', {
+      body: {
+        branchId: otherBranch,
+        locationId: otherShelf,
+        code: 'XCH1',
+        name: 'Exchange test till',
+        cashWalletId: otherCash.id,
+      },
+    });
+    expect(registered.statusCode, registered.body).toBe(201);
+    const otherRegister = (JSON.parse(registered.body) as { id: string }).id;
+    const otherShift = randomUUID();
+    const opened = await otherCashier.client.request('POST', '/v1/pos/shifts', {
+      body: { shiftId: otherShift, registerId: otherRegister, openingFloatPoisha: '0' },
+    });
+    expect(opened.statusCode, opened.body).toBe(201);
+
+    // The return, made at this branch.
+    const sold = sale([{ sku: skus[1]!, qty: 1 }], [{ tender: 'cash', amount: PRICE }]);
+    await sync(cashier, [sold]);
+    const ret = {
+      kind: 'return' as const,
+      id: randomUUID(),
+      registerId,
+      shiftId,
+      saleId: sold.id,
+      receiptNo: `R-${sold.receiptNo}`,
+      occurredAt: new Date().toISOString(),
+      lines: [{ lineNo: 1, saleLineNo: 1, qty: 1, refundPoisha: String(PRICE) }],
+      tenders: [{ tender: 'cash' as const, amountPoisha: String(PRICE) }],
+      refundPoisha: String(PRICE),
+    };
+    const [returned] = await sync(cashier, [ret]);
+    expect(returned?.outcome).toBe('posted');
+
+    // Its replacement rung up at the other showroom: an exchange is goods back and
+    // goods out over one counter, so the pairing is refused and a manager decides.
+    const replacement = sale([{ sku: skus[1]!, qty: 1 }], [{ tender: 'cash', amount: PRICE }], {
+      registerId: otherRegister,
+      shiftId: otherShift,
+      receiptNo: 'XCH1-1-0001',
+      exchangeReturnId: ret.id,
+    });
+    const [held] = await sync(otherCashier, [replacement]);
+    expect(held?.outcome).toBe('held');
+    expect(held?.reasons).toContain('exchange_mismatch');
+    expect(await exchangeLinkOf(replacement.id)).toBeNull();
+    const detail = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ detail: { exchange?: { problem: string } } }>(
+            sql`select detail from pos.review_items where org_id = ${ORG_A} and id = ${held!.reviewItemId!}`,
+          )
+        )[0]?.detail,
+      { orgId: ORG_A },
+    );
+    expect(detail?.exchange?.problem).toBe('other_branch');
+
+    // The return is still free to pair with a sale at its own branch.
+    const sameBranch = sale([{ sku: skus[1]!, qty: 1 }], [{ tender: 'cash', amount: PRICE }], {
+      exchangeReturnId: ret.id,
+    });
+    const [paired] = await sync(cashier, [sameBranch]);
+    expect(paired?.outcome).toBe('posted');
+    expect(await exchangeLinkOf(sameBranch.id)).toBe(ret.id);
+
+    // Voided, so the other showroom's day is not held up by it.
+    const voided = await otherManager.client.request(
+      'POST',
+      `/v1/pos/reviews/${held!.reviewItemId!}/resolve`,
+      { body: { action: 'void', note: 'rung up at the wrong showroom' } },
+    );
+    expect(JSON.parse(voided.body)).toMatchObject({ outcome: 'voided' });
+  });
+});
+
 describe('closing', () => {
   it('refuses the branch day while a shift is open or a sale is held', async () => {
     const today = new Date().toISOString().slice(0, 10);
