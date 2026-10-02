@@ -41,7 +41,7 @@ M07, M09, M10, M11, M12, M13, M15, M19 and M25 were built by parallel agents bet
 | M19  | HR, attendance, payroll            | built, re-audit owed                                  |
 | M20  | Targets, bonus rules, productivity | done; ledger audit fixed, acceptance-auditor READY    |
 | M23  | Branches and showroom POS          | done; integrated, ledger audit fixed                  |
-| M24  | Analytics, dashboards, leaderboard | built and verified; auditors run (see the plan)       |
+| M24  | Analytics, dashboards, leaderboard | done; ledger audit fixed, acceptance-auditor READY    |
 | M25  | Investors                          | built, investor portal pages missing                  |
 
 Not started: M14b, M30. Being built: M26, and M25's investor pages. Removed from scope by the owner: M27 Chatwoot and M29 landing page builder (D-290), M13 fraud check with its code (D-291), M28 activity extension (D-292). M21 and M22, the Beownz reseller platform, are out of scope by the client's instruction.

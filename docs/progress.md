@@ -677,8 +677,9 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
   - **LLM narrative**: off by default behind `analytics.llm_narrative`; an allow-list payload
     with a guard, a daily cache and a fake provider. No real provider was built (D-327).
 - Verification: `pnpm verify` exit 0 at `ee833e0` (153 test files: 2,540 passed, 1 skipped)
-  and again at `6f54975` after the ledger audit's fixes (2,542 passed, 1 skipped); the last
-  run, after the acceptance audit's gaps were closed, is recorded in `docs/plans/M24.md`.
+  and again at `6f54975` after the ledger audit's fixes (2,542 passed, 1 skipped). The final
+  run at `35d7027`, after the acceptance audit's gaps were closed: exit 0, 154 files, 2,552
+  passed, 1 skipped.
   Acceptance checks 1–4 pass; the evidence table is in the plan:
   1. `rollup.db.test.ts`: all five tables equal direct SQL over two seeded brands, after a
      rerun, a partial rerun, overlapping recomputes, a spend correction and the worker's
@@ -702,7 +703,7 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
   - acceptance-auditor: NOT READY with 4 gaps, all closed: three insight rules lacked a
     sample or boundary case; the rollup's triggers (nightly fan-out, the event job) were
     untested; the plan's status ended in a placeholder; and this entry did not say 0093 was
-    edited in place. Its re-audit is recorded in the plan.
+    edited in place. Its re-audit at `35d7027`: **READY**.
 - Decisions/assumptions: D-320 to D-330. D-323 and D-326 are ASSUMED.
 - New dependencies: none. `@elysium/domain` gains an `./analytics` export.
 - Deviations from the milestone spec:
