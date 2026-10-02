@@ -101,6 +101,8 @@ export const promoCheckSchema = z
       .min(1)
       .max(200),
     deliveryChargePoisha: nonNegativePoishaSchema.default('0'),
+    /** The desk's typed order discount; the code is priced on what is left (W3). */
+    orderDiscountPoisha: nonNegativePoishaSchema.optional(),
     /** The order's own channel, or `pos` at the till. Required: the caller always knows. */
     channel: z.enum(PROMO_CHANNELS),
     customerId: uuid.optional(),

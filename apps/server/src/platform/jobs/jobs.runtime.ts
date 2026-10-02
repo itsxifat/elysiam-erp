@@ -323,6 +323,14 @@ export class JobsRuntime {
    * fails on a fresh database and succeeds on an existing one — the worst kind
    * of ordering bug, because staging would never show it.
    */
+  /** Queues whose stored policy is not the one their definition asks for (W7). */
+  private readonly drift: string[] = [];
+
+  /** For the boot log's reader and the tests: which queues have drifted, if any. */
+  policyDrift(): readonly string[] {
+    return [...this.drift];
+  }
+
   private async registerQueues(): Promise<void> {
     for (const definition of this.definitions.values()) {
       const deadLetter = deadLetterNameFor(definition.name);
@@ -341,6 +349,25 @@ export class JobsRuntime {
         expireInSeconds: definition.expireInSeconds ?? QUEUE_DEFAULTS.expireInSeconds,
         ...(definition.policy === undefined ? {} : { policy: definition.policy }),
       });
+
+      /*
+       * `createQueue` does nothing to a queue that exists, and pg-boss cannot change a
+       * queue's policy afterwards (`updateQueue` throws). So a database created before a
+       * queue became `exclusive` keeps `standard`, and its singleton keys are enforced by
+       * nothing — silently, which is the failure D-207 was about. Said loudly instead, on
+       * every boot, with the way out (ledger audit W7).
+       */
+      if (definition.policy !== undefined) {
+        const stored = await this.boss.getQueue(definition.name);
+        const storedPolicy = stored?.policy ?? 'standard';
+        if (storedPolicy !== definition.policy) {
+          this.drift.push(definition.name);
+          this.logger.error(
+            { queue: definition.name, stored: storedPolicy, wanted: definition.policy },
+            'queue policy drift: this queue was created before its policy changed, so its singleton keys are not enforced; see docs/runbooks/queue-policy.md',
+          );
+        }
+      }
 
       if (definition.cron !== undefined) {
         // `missed: 'once'` rather than pg-boss's default `skip`: a nightly

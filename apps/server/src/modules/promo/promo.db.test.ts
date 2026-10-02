@@ -292,7 +292,7 @@ describe('a promo code against real Postgres', () => {
  * the use back, and that an order the code cannot pay for is never written at all.
  */
 describe('a promo code on an order taken at the desk', () => {
-  async function takeOrder(word: string, channel = 'phone') {
+  async function takeOrder(word: string, channel = 'phone', discountPoisha?: string) {
     const admin = await harness.asRole('org_admin', ORG_A);
     return admin.client.request('POST', '/v1/orders', {
       body: {
@@ -300,6 +300,7 @@ describe('a promo code on an order taken at the desk', () => {
         customerId,
         deliveryChargePoisha: '6000',
         promoCode: word,
+        ...(discountPoisha === undefined ? {} : { discountPoisha }),
         lines: [{ skuId: saree.id, qty: 1, unitPricePoisha: PRICE.toString() }],
       },
     });
@@ -357,6 +358,41 @@ describe('a promo code on an order taken at the desk', () => {
     });
     expect(await ordersWith(id)).toBe(0);
     expect(await state(id)).toEqual({ used: 0, redemptions: [] });
+  });
+
+  it('prices the code on what the buyer pays after the agent’s own discount (W3)', async () => {
+    const { word } = await code({ valueBps: 1000 });
+
+    // ৳1,500 with ৳500 typed off: the code sees ৳1,000, so 10% is ৳100, not ৳150.
+    const response = await takeOrder(word, 'phone', '50000');
+
+    expect(response.statusCode, response.body).toBe(201);
+    // ৳1,500 − (৳500 typed + ৳100 code) + ৳60 delivery. Priced on the full ৳1,500, the
+    // code would have taken ৳150 and the COD would be ৳910.
+    expect(JSON.parse(response.body)).toMatchObject({ codAmountPoisha: '96000' });
+  });
+
+  it('will not let an edit change the price a code set, but still lets the address change (W2)', async () => {
+    const { id, word } = await code({});
+    const taken = await takeOrder(word);
+    expect(taken.statusCode, taken.body).toBe(201);
+    const orderId = (JSON.parse(taken.body) as { id: string }).id;
+    const admin = await harness.asRole('org_admin', ORG_A);
+
+    for (const body of [
+      { discountPoisha: '5000' },
+      { deliveryChargePoisha: '12000' },
+      { lines: [{ skuId: saree.id, qty: 2, unitPricePoisha: PRICE.toString() }] },
+    ]) {
+      const edit = await admin.client.request('PATCH', `/v1/orders/${orderId}`, { body });
+      expect(edit.statusCode, edit.body).toBe(409);
+      expect(edit.body).toContain('ORDER_IMMUTABLE');
+    }
+    const note = await admin.client.request('PATCH', `/v1/orders/${orderId}`, {
+      body: { notes: 'Call before delivery' },
+    });
+    expect(note.statusCode, note.body).toBe(200);
+    expect(await state(id)).toEqual({ used: 1, redemptions: ['applied'] });
   });
 
   it('accepts the same code on the channel it is for', async () => {

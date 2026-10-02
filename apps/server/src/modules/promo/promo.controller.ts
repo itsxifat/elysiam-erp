@@ -121,6 +121,9 @@ export class PromoController {
       this.promo.check(requireContext(request), {
         code: input.code,
         lines: input.lines,
+        ...(input.orderDiscountPoisha === undefined
+          ? {}
+          : { orderDiscountPoisha: input.orderDiscountPoisha }),
         deliveryChargePoisha: input.deliveryChargePoisha,
         channel: input.channel,
         customerId: input.customerId ?? null,

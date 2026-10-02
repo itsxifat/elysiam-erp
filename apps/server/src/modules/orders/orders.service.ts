@@ -2,16 +2,19 @@ import { Inject, Injectable } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
 import {
   applicableAdvance,
+  add,
   businessDate,
   computeExchangeReturn,
   computeOrderTotals,
   customerAdvanceDraft,
   formatOrderNo,
+  mulQty,
   normalizeBdPhone,
   orderExchangeDraft,
   orderPeriodFor,
   orderPrefixFor,
   poisha,
+  sub,
   withinPostingWindow,
   type AccountSubtype,
   type OrderStatus,
@@ -584,24 +587,27 @@ export class OrdersService {
             channel: input.channel,
             lines: lines.map((line) => ({
               skuId: line.skuId,
-              netPoisha: (
-                BigInt(line.unitPricePoisha) * BigInt(line.qty) -
-                BigInt(line.discountPoisha)
+              netPoisha: sub(
+                mulQty(poisha(line.unitPricePoisha), line.qty),
+                poisha(line.discountPoisha),
               ).toString(),
             })),
+            // The agent's own discount comes off first; the code is priced on the rest.
+            orderDiscountPoisha: (input.discountPoisha ?? '0').toString(),
             deliveryChargePoisha: baseDeliveryChargePoisha.toString(),
           });
 
     // The code's delivery discount comes off the charge; its goods discount joins the
-    // agent's typed one as the order's discount, which is how it reaches the books — as
-    // Sales discounts through the existing delivery posting, with no new rule.
+    // agent's typed one as the order's discount. Revenue is then credited net of it by
+    // the existing delivery posting (§7), with no new rule.
     const deliveryChargePoisha =
       priced === null
         ? baseDeliveryChargePoisha
-        : baseDeliveryChargePoisha - BigInt(priced.deliveryDiscountPoisha);
-    const orderDiscountPoisha =
-      (input.discountPoisha === undefined ? 0n : BigInt(input.discountPoisha)) +
-      (priced === null ? 0n : BigInt(priced.discountPoisha));
+        : sub(poisha(baseDeliveryChargePoisha), poisha(priced.deliveryDiscountPoisha));
+    const orderDiscountPoisha = add(
+      poisha(input.discountPoisha ?? 0n),
+      poisha(priced === null ? 0n : priced.discountPoisha),
+    );
 
     /*
      * Totals twice, because a credit cannot be capped before the order is priced.
@@ -790,6 +796,27 @@ export class OrdersService {
           throw new OrdersError(
             'ORDER_IMMUTABLE',
             `An order that is ${order.status} can no longer be edited; its terms are already on an invoice.`,
+          );
+        }
+
+        /*
+         * An order a promo code priced keeps its price (ledger audit W2).
+         *
+         * The redemption records what the code gave against these lines, this discount and
+         * this delivery charge; changing any of them would leave the code's use spent on a
+         * price that no longer exists — or bring back a charge a free-delivery code took
+         * off. Re-pricing a code on an edit is its own decision; until then the honest path
+         * is to cancel the order (which gives the use back) and take it again.
+         */
+        if (
+          order.promo_code_id !== null &&
+          (patch.lines !== undefined ||
+            patch.discountPoisha !== undefined ||
+            patch.deliveryChargePoisha !== undefined)
+        ) {
+          throw new OrdersError(
+            'ORDER_IMMUTABLE',
+            'A promo code priced this order, so its lines, discount and delivery charge are fixed. Cancel it and take it again to change them.',
           );
         }
 

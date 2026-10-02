@@ -36,6 +36,8 @@ export interface PromoPort {
       readonly customerId: string | null;
       readonly channel: string;
       readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
+      /** The agent's typed order discount, spread over the lines first (`promoBasis`, W3). */
+      readonly orderDiscountPoisha?: string;
       readonly deliveryChargePoisha: string;
     },
   ): Promise<PricedPromo>;

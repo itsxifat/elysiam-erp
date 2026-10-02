@@ -496,6 +496,8 @@ export interface OrderRow extends Record<string, unknown> {
   readonly cancel_reason: string | null;
   readonly reseller_id: string | null;
   readonly exchange_of_order_id: string | null;
+  /** The promo code that priced this order, when one did (M16). */
+  readonly promo_code_id: string | null;
   readonly notes: string | null;
   readonly created_at: string;
 }
@@ -508,7 +510,8 @@ const ORDER_COLUMNS = sql`o.id, o.branch_id, o.order_no, o.channel::text as chan
   o.cod_amount_poisha, o.status::text as status, o.hold_reason, o.trust_score,
   o.fraud_decision::text as fraud_decision, o.assigned_to, o.created_by,
   o.confirmed_at, o.packed_at, o.handed_over_at, o.delivered_at, o.returned_at,
-  o.cancelled_at, o.cancel_reason, o.reseller_id, o.exchange_of_order_id, o.notes, o.created_at`;
+  o.cancelled_at, o.cancel_reason, o.reseller_id, o.exchange_of_order_id, o.promo_code_id,
+  o.notes, o.created_at`;
 
 export async function insertOrder(
   tx: Tx,

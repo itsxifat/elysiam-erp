@@ -5,6 +5,7 @@ import { withOrg, type Tx } from '@elysium/db';
 import { businessDate, poisha, toIsoDate, type Poisha } from '@elysium/domain';
 import {
   normaliseCode,
+  promoBasis,
   validatePromo,
   type PromoBasketLine,
   type PromoCode,
@@ -50,6 +51,8 @@ export class PromoService {
     input: {
       readonly code: string;
       readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
+      /** The agent's typed order discount, spread over the lines first (`promoBasis`, W3). */
+      readonly orderDiscountPoisha?: string;
       readonly deliveryChargePoisha: string;
       readonly channel: string;
       readonly customerId: string | null;
@@ -88,6 +91,8 @@ export class PromoService {
     input: {
       readonly code: string;
       readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
+      /** The agent's typed order discount, spread over the lines first (`promoBasis`, W3). */
+      readonly orderDiscountPoisha?: string;
       readonly deliveryChargePoisha: string;
       readonly channel: string;
       readonly customerId: string | null;
@@ -104,10 +109,14 @@ export class PromoService {
     const skus = new Map(
       (await this.catalog.skusByIds(tx, orgId, skuIds)).map((sku) => [sku.id, sku]),
     );
-    const lines: PromoBasketLine[] = input.lines.map((line) => ({
+    const basis = promoBasis(
+      input.lines.map((line) => ({ skuId: line.skuId, netPoisha: poisha(line.netPoisha) })),
+      poisha(input.orderDiscountPoisha ?? '0'),
+    );
+    const lines: PromoBasketLine[] = basis.map((line) => ({
       skuId: line.skuId,
       categoryId: skus.get(line.skuId)?.categoryId ?? null,
-      netPoisha: poisha(line.netPoisha),
+      netPoisha: line.netPoisha,
     }));
 
     const usage = await repo.usageOf(tx, orgId, row.id, input.customerId);

@@ -382,7 +382,11 @@ function Desk() {
    * so nothing the desk computes here is ever sent as an amount — only the word is.
    */
   const promoBasket = promoLines(lines);
-  const promoActive = settledPromo.length >= 3 && lines.length > 0 && deliveryPoisha !== null;
+  const promoActive =
+    settledPromo.length >= 3 &&
+    lines.length > 0 &&
+    deliveryPoisha !== null &&
+    discountPoisha !== null;
   const promo = useQuery({
     queryKey: [
       'orders',
@@ -390,6 +394,7 @@ function Desk() {
       settledPromo,
       promoBasket,
       deliveryPoisha,
+      discountPoisha,
       channel,
       customer?.id ?? null,
     ],
@@ -397,6 +402,11 @@ function Desk() {
       checkPromo({
         code: settledPromo,
         lines: promoBasket,
+        // The server prices the code on what is left after the agent's own discount, the
+        // same way the order's transaction will (W3), so the preview and the save agree.
+        ...(discountPoisha !== null && discountPoisha !== '0'
+          ? { orderDiscountPoisha: discountPoisha }
+          : {}),
         deliveryChargePoisha: deliveryPoisha ?? '0',
         channel,
         ...(customer === null ? {} : { customerId: customer.id }),

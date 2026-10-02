@@ -55,6 +55,8 @@ export interface PromoApi {
       readonly channel: string;
       /** Each line's net after its own typed discount, as the domain rule expects. */
       readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
+      /** The agent's typed order discount, spread over the lines first (`promoBasis`, W3). */
+      readonly orderDiscountPoisha?: string;
       readonly deliveryChargePoisha: string;
       /** The order's Asia/Dhaka business date; today when absent. */
       readonly on?: string;
@@ -137,6 +139,8 @@ export class PromoApiService implements PromoApi {
       readonly customerId: string | null;
       readonly channel: string;
       readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
+      /** The agent's typed order discount, spread over the lines first (`promoBasis`, W3). */
+      readonly orderDiscountPoisha?: string;
       readonly deliveryChargePoisha: string;
       readonly on?: string;
     },
@@ -152,6 +156,8 @@ export class PromoApiService implements PromoApi {
       readonly customerId: string | null;
       readonly channel: string;
       readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
+      /** The agent's typed order discount, spread over the lines first (`promoBasis`, W3). */
+      readonly orderDiscountPoisha?: string;
       readonly deliveryChargePoisha: string;
       readonly on?: string;
     },
@@ -159,6 +165,9 @@ export class PromoApiService implements PromoApi {
     const { code, verdict } = await this.promo.verdictFor(tx, context.orgId, {
       code: input.code,
       lines: input.lines,
+      ...(input.orderDiscountPoisha === undefined
+        ? {}
+        : { orderDiscountPoisha: input.orderDiscountPoisha }),
       deliveryChargePoisha: input.deliveryChargePoisha,
       channel: input.channel,
       customerId: input.customerId,

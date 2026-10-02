@@ -489,6 +489,24 @@ describe('a singleton key (D-207)', () => {
     expect(rows).toBe(1);
   });
 
+  it('reports a queue whose stored policy is older than its definition (W7)', async () => {
+    // `test.keyed_standard` exists as `standard`. A release that makes it `exclusive`
+    // cannot change it in place, and must say so rather than carry on as if it had.
+    const later = await JobsRuntime.start({
+      role: 'worker',
+      connectionString: database.ownerUrl,
+      appRole: 'erp_app',
+      queues: [{ ...KEYED_STANDARD, policy: 'exclusive' }],
+      logger: pino({ level: 'silent' }),
+    });
+    try {
+      expect(later.policyDrift()).toEqual([KEYED_STANDARD.name]);
+    } finally {
+      await later.stop();
+    }
+    expect(runtime.policyDrift()).toEqual([]);
+  });
+
   it('enforces nothing on a standard queue: both jobs are written', async () => {
     // Not a behaviour anybody wants — the reason `policy` exists. Kept as a test so the
     // day a pg-boss upgrade changes it, the comments that rely on it are found.
