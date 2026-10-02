@@ -35,6 +35,7 @@ const CONSOLE_KEYS = [
   'nav.approvals',
   'nav.people',
   'nav.payroll',
+  'nav.performance',
   'nav.campaigns',
   'nav.resellers',
   'nav.investors',

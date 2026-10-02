@@ -15,6 +15,7 @@ import {
   ShoppingCart,
   Store,
   Table2,
+  Target,
   Truck,
   Users,
   Wallet,
@@ -164,6 +165,17 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.payroll',
         icon: BarChart3,
         required: { action: 'read', subject: 'Payroll' },
+      },
+      /*
+       * M20. `read Target`, which every desk role holds for its own targets: an agent's
+       * entry opens their own dashboard, and HR's opens the same section with the
+       * brand's targets, rules and report beside it.
+       */
+      {
+        to: '/performance',
+        labelKey: 'nav.performance',
+        icon: Target,
+        required: { action: 'read', subject: 'Target' },
       },
       {
         to: '/resellers',

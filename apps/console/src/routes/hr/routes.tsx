@@ -56,5 +56,40 @@ export function hrRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./run-detail.js'), 'PayrollRunPage'),
   });
 
-  return [people, attendance, payroll, loans, run] as const;
+  // M20: the performance section. The agent's dashboard, then HR's three screens.
+  const performance = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/performance',
+    component: lazyRouteComponent(() => import('./performance.js'), 'MyPerformancePage'),
+  });
+
+  const targets = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/performance/targets',
+    component: lazyRouteComponent(() => import('./targets.js'), 'TargetsPage'),
+  });
+
+  const productivity = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/performance/productivity',
+    component: lazyRouteComponent(() => import('./productivity.js'), 'ProductivityPage'),
+  });
+
+  const bonusRules = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/performance/bonus-rules',
+    component: lazyRouteComponent(() => import('./bonus-rules.js'), 'BonusRulesPage'),
+  });
+
+  return [
+    people,
+    attendance,
+    payroll,
+    loans,
+    run,
+    performance,
+    targets,
+    productivity,
+    bonusRules,
+  ] as const;
 }

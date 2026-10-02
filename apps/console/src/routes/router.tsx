@@ -142,6 +142,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/supply',
         '/people',
         '/payroll',
+        '/performance',
         '/investors',
         '/orders',
         '/courier',
