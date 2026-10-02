@@ -1,12 +1,12 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-02** (M14a finished). This is the short, plain-language view. The
+Last updated: **2026-10-02** (M14a, M17 and M18 finished). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Built     [###############-----]  74%
+Built     [################----]  81%
 ```
 
 - The plan has 33 milestones. Six are out on the owner's instruction: the Beownz reseller
@@ -14,7 +14,7 @@ Built     [###############-----]  74%
   staff activity extension (M28) and the landing page builder (M29). So **27 count**.
 - A milestone counts 100% when it is built, tested and passed its audits. A part-built one counts
   for the share that is done.
-- Today: **19 done, 1 part-built (M25), 3 being built (M17, M18, M20), 4 not started.**
+- Today: **21 done, 1 part-built (M25), 1 being built (M20), 4 not started.**
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
 [What the owner needs to do](#what-the-owner-needs-to-do).
@@ -33,8 +33,8 @@ Built     [###############-----]  74%
 | HR and payroll                                                              |  100% | Employees, attendance, salary, staff loans, Bangla payslips.                                                                                                                                                         |
 | Investors                                                                   |   85% | Capital, profit share, withdrawals with approval. The investors' own login pages are not built yet.                                                                                                                  |
 | Moving old data in                                                          |  100% | Products, stock with cost, supplier dues, wallet balances, courier COD and customers load once before go-live, checked first, all-or-nothing. The accountant gets a report to sign. A training brand with demo data. |
-| Advance payments and return reasons                                         |    0% | bKash advance recorded and verified, applied on delivery; why parcels come back.                                                                                                                                     |
-| Marketing                                                                   |    0% | Ad spend, Meta import, cost per delivered order, ROAS.                                                                                                                                                               |
+| Advance payments and return reasons                                         |  100% | bKash, Nagad or bank advance recorded by the agent and checked by accounts before it counts; used on delivery, refunded on cancel; a reason on every return, with a report.                                          |
+| Marketing                                                                   |  100% | Campaigns, ad spend (typed or imported from Meta), which campaign brought each order, cost per delivered order, ROAS, leads. Meta link needs a real token.                                                           |
 | Targets and bonuses                                                         |    0% | Monthly sales targets split by week, bonus rules feeding payroll.                                                                                                                                                    |
 | Dashboards and leaderboard                                                  |    0% | Owner and super-admin dashboards, agent leaderboard.                                                                                                                                                                 |
 | Company loans                                                               |    0% | Loans the company takes, schedules, reminders.                                                                                                                                                                       |
@@ -65,8 +65,8 @@ Built     [###############-----]  74%
 | M14b | Server deploy, monitoring, backups     |    0% | Needs a staging server from the owner                     |
 | M15  | Pathao, RedX, tracking page            |  100% | RedX needs a merchant account to confirm its status words |
 | M16  | Buyer profiles, SMS, promo codes       |  100% | SMS gateway not chosen yet; a stand-in is used            |
-| M17  | Advance payments and return reasons    |    0% | Fraud half removed                                        |
-| M18  | Marketing                              |    0% | Next                                                      |
+| M17  | Advance payments and return reasons    |  100% | Policy defaults need the client's OK                      |
+| M18  | Marketing                              |  100% | Meta link untested until a real token exists              |
 | M19  | HR and payroll                         |  100% |                                                           |
 | M20  | Targets and bonuses                    |    0% | Next                                                      |
 | M21  | Reseller engine                        |     - | Set aside                                                 |
@@ -82,10 +82,10 @@ Built     [###############-----]  74%
 
 ## Being built now
 
-- **M17** bKash advance payments and return reasons
 - **M20** sales targets and bonuses
 
-M14a and M18 finished on 2026-10-02 and are joined on the branch `integration-wave2`.
+M14a, M17 and M18 finished on 2026-10-02 and are joined on the branch `integration-wave2`,
+where every check passes (2,358 tests).
 
 ## What the owner needs to do
 
