@@ -89,7 +89,7 @@ export interface OutboxRow {
   readonly actorUserId: string | null;
 }
 
-type OutboxRecord = {
+interface OutboxRecord extends Record<string, unknown> {
   id: string;
   org_id: string;
   name: string;
@@ -98,7 +98,7 @@ type OutboxRecord = {
   attempts: number;
   created_at: string | Date;
   actor_user_id: string | null;
-};
+}
 
 function toOutboxRow(row: OutboxRecord): OutboxRow {
   return {
