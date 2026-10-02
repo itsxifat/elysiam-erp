@@ -1315,7 +1315,8 @@ Installable, with an offline shell and web push (Android first).
 - **Migrations** run as a release step using the owner role: `main.release.js`, run by Kamal's `pre-deploy` hook from the new image before anything boots, migrates under an advisory lock and installs the job queues (D-340). The app runs as `erp_app`; only the worker role holds the owner URL.
 - **Backups:** point-in-time recovery, plus a nightly `pg_dump` as `erp_backup` (BYPASSRLS, read-only), encrypted, to a second provider (D-342).
 - **Feature flags:** an `org.feature_flags` table (D-031), so unfinished modules can ship dark.
-- **Runbooks** in `docs/runbooks/`: deploy, rollback, restore, secret rotation, courier outage, month-end close, go-live, monitoring, queue policy.
+- **Preview:** before staging exists, the whole ERP can run on one Docker host (`infra/docker-compose.preview.yml`: Postgres, Valkey, Gotenberg, API, worker, a one-shot release step and Caddy serving the SPAs over HTTPS), for people to try it; it is not production (D-352).
+- **Runbooks** in `docs/runbooks/`: deploy, rollback, restore, secret rotation, courier outage, month-end close, go-live, monitoring, queue policy, preview server.
 
 ---
 

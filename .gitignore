@@ -30,6 +30,8 @@ blob-report/
 .env
 .env.*
 !.env.example
+# The preview server's template is committed; the file init-env.sh writes from it is not.
+!.env.preview.example
 
 # editors and os
 .DS_Store

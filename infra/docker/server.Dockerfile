@@ -59,6 +59,10 @@ WORKDIR /app
 COPY --from=build /out /app
 COPY --from=build /repo/packages/ui/src/assets/fonts /app/fonts
 
+# The one writable path: the local storage driver's root when R2 is not configured (the
+# single-server preview, D-352). A named volume mounted here starts with this ownership.
+RUN mkdir -p /data/files && chown node:node /data/files
+
 # The `node` user (uid 1000) of the official image. Never root.
 USER node
 

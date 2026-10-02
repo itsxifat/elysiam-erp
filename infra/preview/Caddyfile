@@ -1,0 +1,48 @@
+# The single-server preview's front door (D-352): HTTPS for every hostname, the three SPAs,
+# and the API behind a reverse proxy. Values come from infra/preview/.env.preview through
+# docker-compose.preview.yml.
+#
+# Login needs HTTPS: the session cookie is Secure (§6), and a browser drops a Secure cookie
+# sent over plain HTTP. So every hostname is HTTPS, from Let's Encrypt by default. With no
+# domain of your own, PREVIEW_DOMAIN=<ip with dashes>.sslip.io names the server's IP (the
+# runbook shows how); PREVIEW_LOCAL_CERTS=local_certs uses Caddy's own certificate
+# authority instead, which browsers warn about. Plain HTTP on the bare IP redirects to the
+# console.
+
+{
+	{$PREVIEW_LOCAL_CERTS}
+}
+
+(spa) {
+	root * /srv/{args[0]}
+	encode zstd gzip
+	import /etc/caddy/headers/{args[0]}.caddy
+	# Every route the router knows is index.html; files that exist are served as they are.
+	try_files {path} /index.html
+	file_server
+}
+
+api.{$PREVIEW_DOMAIN} {
+	encode zstd gzip
+	# Caddy replaces any X-Forwarded-For a client sends with the client's address, so the
+	# API trusts exactly one hop (TRUSTED_PROXY_COUNT=1). WebSockets (/rt) pass through.
+	reverse_proxy api:3000
+}
+
+# The console, also on each brand's hostname for branded login (D-035).
+console.{$PREVIEW_DOMAIN}, elysium-lifestyle-bd.{$PREVIEW_DOMAIN}, oura-lifestyle.{$PREVIEW_DOMAIN}, orvo.{$PREVIEW_DOMAIN}, wear-x-clothing.{$PREVIEW_DOMAIN}, beownz.{$PREVIEW_DOMAIN} {
+	import spa console
+}
+
+portal.{$PREVIEW_DOMAIN} {
+	import spa portal
+}
+
+pos.{$PREVIEW_DOMAIN} {
+	import spa pos
+}
+
+# Anything else over plain HTTP (the bare IP, say): to the console.
+http:// {
+	redir https://console.{$PREVIEW_DOMAIN}{uri}
+}
