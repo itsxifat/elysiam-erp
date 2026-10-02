@@ -597,9 +597,7 @@ export class MarketingService {
           name: campaign.name,
           platform: campaign.platform,
           status: campaign.status,
-          metrics: metricsView(
-            campaignMetrics(inputs ?? EMPTY_INPUTS),
-          ),
+          metrics: metricsView(campaignMetrics(inputs ?? EMPTY_INPUTS)),
         }));
       const unattributed = aggregated.byCampaign.get(null);
 
