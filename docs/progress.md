@@ -655,3 +655,70 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
   - Team targets in the console, and a stubbed Playwright spec for `/performance`. The 13 M20
     console files have no test of their own; check 4 is proved over HTTP. (owner: claude)
 - Next: M14a in its own worktree. M24 waits for M18.
+
+### 2026-10-02 · M24 · Analytics, dashboards, leaderboard · done
+
+- Delivered:
+  - **Rollups.** A new `analytics` schema with five daily tables (brand, showroom, channel,
+    campaign, agent), rebuilt per brand from the owning modules' interfaces — orders, the new
+    `MarketingApi`, HR — never incremented (D-320, D-321). The worker recomputes the day on
+    order events (one job per brand per ten seconds), nightly for the last seven days, and the
+    org admin can recompute up to 92 days from the dashboard. Migrations 0092–0093.
+  - **The brand dashboard** (`/analytics`, a new `Dashboard` subject for org_admin, D-325):
+    orders placed to returned, delivered revenue, gross profit, AOV, return rate, delivery
+    success, spend, CPO, CPDO, ROAS, desk pickup, cash in wallets and stock value, by channel,
+    showroom and campaign, best sellers and agents, a daily revenue chart, and CSV/XLSX export
+    (D-328, D-330).
+  - **All brands** for Super Admin, through the read-only analytics role.
+  - **The leaderboard**: seven normalized metrics per brand per month, ranked, with a weighted
+    composite (weights are configuration). An org admin sees every brand's rates and ranks
+    and only their own brand's revenue (D-023 as D-322 to D-324).
+  - **Insight rules**: seven, as pure functions with thresholds (D-326), worded in bn and en.
+  - **LLM narrative**: off by default behind `analytics.llm_narrative`; an allow-list payload
+    with a guard, a daily cache and a fake provider. No real provider was built (D-327).
+- Verification: `pnpm verify` exit 0 at `ee833e0` (153 test files: 2,540 passed, 1 skipped).
+  After the ledger audit's fixes (`cb0f8cb`) the analytics, tenancy and domain suites pass
+  (7 files, 143 tests) and the final full run is recorded in the plan. Acceptance checks 1–4
+  pass; the evidence table is in `docs/plans/M24.md`:
+  1. `rollup.db.test.ts`: all five tables equal direct SQL over two seeded brands, after a
+     rerun, a partial rerun, overlapping recomputes, a spend correction and the worker's
+     handler. A deliberately broken rollup fails it.
+  2. `analytics.e2e.test.ts`: two org admins, Super Admin and every other role, over HTTP.
+  3. `insights.test.ts`: every rule fired, held at its boundary, and silenced by a small
+     sample; and one rule fired over HTTP against the group median.
+  4. `narrative.test.ts`: planted personal data, a 300-run property and the guard; the HTTP
+     test reads the prompt the fake provider received.
+- Auditors:
+  - ledger-auditor: 0 critical, 2 warnings, both fixed in `cb0f8cb`. W1: the first cut
+    opened all five rollups to `erp_analytics`; only `daily_org` is read across brands, so
+    only it is now. W2: gross profit beside revenue gives cost of goods, so the leaderboard and
+    the group medians read a variant without it. Its notes on overlapping recomputes, an
+    event's own day, the agents' pickup rounding and the fake's prompt list are done too.
+  - acceptance-auditor: see the plan's status.
+- Decisions/assumptions: D-320 to D-330. D-323 and D-326 are ASSUMED.
+- New dependencies: none. `@elysium/domain` gains an `./analytics` export.
+- Deviations from the milestone spec:
+  - Response time is not on the leaderboard: it was the Message Hub's figure (D-290).
+  - Pickup time is the mean, not M20's median, because a median cannot be summed from days
+    (D-322).
+  - No `leaderboard.updated` event: the board is computed on read (D-324).
+- Also on this branch: M18's dashboard attribution moved into `attribution.reader.ts`, shared
+  with the rollup; `FlagsModule` now has its first runtime reader.
+- Follow-ups:
+  - **Migration numbers.** 0092–0093 collide with M26's; the integration renumbers. (owner:
+    claude)
+  - A training brand's org admin still sees the real brands' leaderboard and group medians
+    (ledger audit note). Refuse both for a training brand if the client wants. (owner: claude)
+  - A delivered line with no dispatch cost counts as zero cost, which overstates gross profit
+    for such lines. Count and show them. (owner: claude)
+  - The CSV/XLSX writer is imported from `orders/export/tabular.ts`; move it to the platform.
+    (owner: claude)
+  - The rollup's order and marketing reads scan a brand's orders on each recompute; index or
+    narrow them if a brand's order count makes the ten-second job slow. (owner: claude)
+  - No Playwright spec for `/analytics`; the four checks are proved over HTTP and in the
+    domain. (owner: claude)
+  - Tell the client that a peer's ROAS and CPDO together give its average order value, and
+    that with few brands the group median can reveal a peer's rate (ledger audit note 1).
+    (owner: human)
+  - A real narrative provider, if the client wants one (D-327). (owner: human)
+- Next: integration with M25, M26; then M14b and M30.
