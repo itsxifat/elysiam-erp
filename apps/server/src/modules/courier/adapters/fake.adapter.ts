@@ -233,12 +233,17 @@ export class FakeCourierAdapter implements CourierAdapter {
     context: AdapterContext,
     request: { headers: Readonly<Record<string, string | undefined>>; raw: Buffer },
   ): Promise<readonly RawCourierEvent[] | null> {
+    /*
+     * Fail closed with no secret configured, as every real adapter does (M30, D1). The fake
+     * is registered everywhere, production included, because the preview and a brand trying
+     * the desk use it. Before this, an account set up without a secret accepted any body
+     * from anyone who knew the org id (public, from login branding) and a consignment number
+     * (in the public tracking answer), and that body could mark an order delivered and post
+     * its revenue.
+     */
     const expected = context.credentials.webhookSecret;
     const presented = request.headers['x-fake-courier-secret'];
-    if (
-      expected !== undefined &&
-      (presented === undefined || !secretMatches(presented, expected))
-    ) {
+    if (expected === undefined || presented === undefined || !secretMatches(presented, expected)) {
       return Promise.resolve(null);
     }
 

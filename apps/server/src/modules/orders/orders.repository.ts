@@ -1537,3 +1537,25 @@ export async function topSkus(
   `);
   return [...rows];
 }
+
+/** The largest value a Postgres `integer` holds; the geography ids are `integer`. */
+const INT4_MAX = 2_147_483_647;
+
+/**
+ * Whether a district and a thana exist and the thana lies in the district (M30, D2).
+ *
+ * The schemas only say "a positive integer". An id the reference data does not have used to
+ * reach the insert and fail its foreign key, or overflow `integer`, as a 500. That was a
+ * 500 any landing-page visitor could cause, and the driver's error quoted the row it refused
+ * (name, phone, address) into the log. A thana from another district was accepted and
+ * priced at the claimed district's delivery charge.
+ */
+export async function areaExists(tx: Tx, districtId: number, thanaId: number): Promise<boolean> {
+  if (districtId > INT4_MAX || thanaId > INT4_MAX) return false;
+  const rows = await tx.execute<{ ok: boolean }>(sql`
+    select exists (
+      select 1 from ref.thanas t where t.id = ${thanaId} and t.district_id = ${districtId}
+    ) as ok
+  `);
+  return rows[0]?.ok === true;
+}

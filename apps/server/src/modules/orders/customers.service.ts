@@ -281,6 +281,7 @@ export class CustomersService {
         if (!changed) throw new OrdersError('CUSTOMER_NOT_FOUND', 'No such buyer.');
 
         if (patch.address !== undefined) {
+          await assertArea(tx, patch.address);
           await repo.insertAddress(tx, {
             orgId: context.orgId,
             customerId: id,
@@ -331,6 +332,7 @@ export class CustomersService {
     const existing = await repo.customerByPhone(tx, context.orgId, phoneE164);
     if (existing !== undefined) {
       if (input.address !== undefined) {
+        await assertArea(tx, input.address);
         await repo.insertAddress(tx, {
           orgId: context.orgId,
           customerId: existing.id,
@@ -358,6 +360,7 @@ export class CustomersService {
       notes: input.notes ?? null,
     });
     if (input.address !== undefined) {
+      await assertArea(tx, input.address);
       await repo.insertAddress(tx, {
         orgId: context.orgId,
         customerId: id,
@@ -407,5 +410,18 @@ export class CustomersService {
   /** Narrows a decimal string to `Poisha` for callers that need the branded type. */
   static asPoisha(value: string) {
     return poisha(BigInt(value));
+  }
+}
+
+/** An address's district and thana, checked against the reference data (M30, D2). */
+async function assertArea(
+  tx: Tx,
+  address: { readonly districtId: number; readonly thanaId: number },
+): Promise<void> {
+  if (!(await repo.areaExists(tx, address.districtId, address.thanaId))) {
+    throw new OrdersError(
+      'VALIDATION_FAILED',
+      'That thana is not one of the district’s. Choose the district, then a thana in it.',
+    );
   }
 }

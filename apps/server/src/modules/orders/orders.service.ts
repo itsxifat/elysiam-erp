@@ -918,6 +918,7 @@ export class OrdersService {
           advancePaidPoisha: poisha(BigInt(order.advance_paid_poisha)),
         });
 
+        if (patch.shipTo !== undefined) await this.assertArea(tx, patch.shipTo);
         const shipTo: ShipTo =
           patch.shipTo === undefined
             ? {
@@ -1450,6 +1451,19 @@ export class OrdersService {
     return { id: upserted.id, name: upserted.name, phoneE164: upserted.phoneE164 };
   }
 
+  /** A district and thana the reference data has, the thana inside the district (D2). */
+  private async assertArea(
+    tx: Tx,
+    address: { readonly districtId: number; readonly thanaId: number },
+  ): Promise<void> {
+    if (!(await repo.areaExists(tx, address.districtId, address.thanaId))) {
+      throw new OrdersError(
+        'VALIDATION_FAILED',
+        'That thana is not one of the district’s. Choose the district, then a thana in it.',
+      );
+    }
+  }
+
   /**
    * The address snapshot the parcel is labelled with.
    *
@@ -1466,6 +1480,7 @@ export class OrdersService {
     options: CreateOrderOptions,
   ): Promise<ShipTo> {
     if (input.shipTo !== undefined) {
+      await this.assertArea(tx, input.shipTo);
       return {
         name: input.shipTo.name ?? buyer.name,
         phoneE164: normalizeBdPhone(buyer.phoneE164),

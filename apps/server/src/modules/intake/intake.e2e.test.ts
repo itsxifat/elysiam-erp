@@ -636,3 +636,23 @@ describe('site keys', () => {
     expect(JSON.stringify(rows)).not.toContain('sk_');
   }, 60_000);
 });
+
+/*
+ * M30 security review, D2. The address ids were checked only as positive integers, so an
+ * unknown thana reached the insert and failed its foreign key as a 500, with the driver's
+ * error quoting the buyer's name, phone and address into the log. A thana from another
+ * district was accepted at the claimed district's delivery charge.
+ */
+describe('M30: an address the reference data does not have is a 400', () => {
+  it.each([
+    ['an unknown thana', { districtId: 47, thanaId: 99_999 }],
+    ['a thana in another district', { districtId: 47, thanaId: 1 }],
+    ['an id past the integer range', { districtId: 47, thanaId: 3_000_000_000 }],
+  ])('refuses %s, and creates nothing', async (_label, area) => {
+    const response = await postSigned(
+      orderBody({ address: { ...area, addressLine: 'House 4, Road 2' } }),
+    );
+    expect(response.statusCode, response.body).toBe(400);
+    expect(json<{ code: string }>(response).code).toBe('VALIDATION_FAILED');
+  });
+});

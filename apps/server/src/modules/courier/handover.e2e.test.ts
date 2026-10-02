@@ -45,6 +45,8 @@ import { CourierSyncService } from './sync.service.js';
  *    HR wallet list carries no balance.
  */
 
+const WEBHOOK_SECRET = 'a-webhook-secret-for-the-handover-suite';
+
 let harness: HttpHarness;
 let jobs: JobsRuntime | undefined;
 let admin: RoleClient;
@@ -97,6 +99,18 @@ beforeAll(async () => {
 
   admin = await harness.asRole('org_admin', ORG_A);
   hr = await harness.asRole('hr', ORG_A);
+
+  // The fake courier refuses every webhook without a secret (M30, D1), as the real ones do.
+  const secured = await admin.client.request('POST', '/v1/courier/accounts', {
+    body: {
+      courierId,
+      providerCode: 'fake',
+      label: 'Gaps courier',
+      webhookSecret: WEBHOOK_SECRET,
+      isActive: true,
+    },
+  });
+  expect(secured.statusCode, secured.body).toBeLessThan(300);
 }, 420_000);
 
 afterAll(async () => {
@@ -222,7 +236,7 @@ async function courierSays(parcelId: string, state: string): Promise<void> {
   const response = await harness.server.inject({
     method: 'POST',
     url: `/v1/courier/webhooks/${ORG_A}/fake`,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-fake-courier-secret': WEBHOOK_SECRET },
     payload: JSON.stringify({
       consignment_no: parcel?.consignment_no,
       state,
