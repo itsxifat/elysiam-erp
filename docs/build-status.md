@@ -83,6 +83,8 @@ Built     [################----]  81%
 ## Being built now
 
 - **M20** sales targets and bonuses
+- **M26** company loans: loans the company takes, repayment schedules, reminders, interest
+- **M25** the investors' own login pages (the last part of M25)
 
 M14a, M17 and M18 finished on 2026-10-02 and are joined on the branch `integration-wave2`,
 where every check passes (2,358 tests).
