@@ -37,11 +37,19 @@ interface WorkerScope {
 const worker = self as unknown as WorkerScope;
 const SHELL_CACHE = 'elysium-pos-shell-v1';
 
+/**
+ * The till's own path: the directory this worker is served from, `/` on Pages and `/pos/`
+ * on the single-server preview (D-352). The shell is that path's index, and nothing outside
+ * it is the worker's business: on the preview the API shares the origin, and an API answer
+ * must never be cached here (offline-shell.ts).
+ */
+const SHELL = new URL('./', worker.location.href).pathname;
+
 worker.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(SHELL_CACHE)
-      .then((cache) => cache.add('/'))
+      .then((cache) => cache.add(SHELL))
       .then(() => worker.skipWaiting()),
   );
 });
@@ -66,7 +74,7 @@ async function fromCache(request: Request): Promise<Response> {
   const cached = await caches.match(request, { ignoreSearch: true, ignoreVary: true });
   if (cached !== undefined) return cached;
   if (request.mode === 'navigate') {
-    const shell = await caches.match('/');
+    const shell = await caches.match(SHELL);
     if (shell !== undefined) return shell;
   }
   return Response.error();
@@ -75,7 +83,8 @@ async function fromCache(request: Request): Promise<Response> {
 worker.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET') return;
-  if (new URL(request.url).origin !== worker.location.origin) return;
+  const url = new URL(request.url);
+  if (url.origin !== worker.location.origin || !url.pathname.startsWith(SHELL)) return;
 
   event.respondWith(
     fetch(request)
