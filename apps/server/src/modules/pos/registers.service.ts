@@ -229,8 +229,8 @@ export class RegistersService {
   }
 
   /**
-   * A promo code, asked online. Until M16 binds `PROMO_CODES`, every answer is no
-   * (`NoPromoCodes`) — see the port for why the default refuses.
+   * A promo code, asked online. While `PROMO_CODES` is `NoPromoCodes`, every answer is
+   * no — see the port for why the default refuses, and D-209 for why M16 left it bound.
    */
   async checkPromo(
     context: ActiveContext,

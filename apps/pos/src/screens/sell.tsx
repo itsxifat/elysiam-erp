@@ -476,7 +476,7 @@ function PromoCode({
         code: code.trim(),
         basketPoisha: basketPoisha.toString(),
       });
-      // Until M16 binds promotions, every answer is "not available" (NoPromoCodes).
+      // The till does not redeem codes yet, so every answer is "not available" (D-209).
       setMessage(verdict.valid ? null : t('pos.discount.promoUnavailable'));
     } catch (error) {
       setMessage(

@@ -39,10 +39,11 @@ import { SyncService } from './sync.service.js';
  * | `POS_STOCK`          | inventory's `INVENTORY_API` (M07)          |
  * | `POS_CATALOG`        | the catalog's `CATALOG_API` (M06)          |
  * | `POS_WALLET_CLOSING` | wallets' `ClosingsService` (M08)           |
- * | `PROMO_CODES`        | `NoPromoCodes`, until M16 builds promo codes |
+ * | `PROMO_CODES`        | `NoPromoCodes`; M16 applies codes at the desk only (D-209) |
  *
  * `NoPromoCodes` answers that no code is valid. That is a safe default for a
- * discount: the till sells at the catalog price until M16 binds the real thing.
+ * discount: the till sells at the catalog price until the till can redeem a code
+ * when its sale syncs, which is what binding the real thing requires (D-209).
  */
 @Module({
   imports: [LedgerModule, WalletsModule, CatalogModule, InventoryModule, ApprovalsModule],
