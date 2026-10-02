@@ -57,13 +57,21 @@ export async function emit<TName extends EventName>(
   const parsed = parseEventPayload(name, payload);
   const rooms = roomsForEvent(name, options.orgId, parsed);
 
+  /*
+   * The actor is read from the transaction, not passed in (D-277). `withOrg` sets
+   * `app.user_id` for the request that is acting, so every emit site records who acted
+   * without being able to forget it or name somebody else; a worker or a public caller with
+   * no login leaves it null. §3 says every event carries it, and M20's pickup time is the
+   * first reader that needs it: a confirmation by a supervisor is not the assignee's.
+   */
   await tx.execute(sql`
-    insert into events.outbox (org_id, name, payload, rooms)
+    insert into events.outbox (org_id, name, payload, rooms, actor_user_id)
     values (
       ${options.orgId},
       ${name},
       ${JSON.stringify(parsed)}::jsonb,
-      ${JSON.stringify(rooms)}::jsonb
+      ${JSON.stringify(rooms)}::jsonb,
+      nullif(current_setting('app.user_id', true), '')
     )
   `);
 }
@@ -75,6 +83,34 @@ export interface OutboxRow {
   readonly payload: unknown;
   readonly rooms: string[];
   readonly attempts: number;
+  /** When the emitting transaction wrote the row (§3's `occurred_at`). */
+  readonly occurredAt: Date;
+  /** Who acted, or null (D-277). */
+  readonly actorUserId: string | null;
+}
+
+type OutboxRecord = {
+  id: string;
+  org_id: string;
+  name: string;
+  payload: unknown;
+  rooms: string[];
+  attempts: number;
+  created_at: string | Date;
+  actor_user_id: string | null;
+};
+
+function toOutboxRow(row: OutboxRecord): OutboxRow {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    name: row.name,
+    payload: row.payload,
+    rooms: row.rooms,
+    attempts: row.attempts,
+    occurredAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
+    actorUserId: row.actor_user_id,
+  };
 }
 
 /**
@@ -95,15 +131,8 @@ export async function claimPending(
   limit: number,
   maxAttempts: number,
 ): Promise<OutboxRow[]> {
-  const rows = await tx.execute<{
-    id: string;
-    org_id: string;
-    name: string;
-    payload: unknown;
-    rooms: string[];
-    attempts: number;
-  }>(sql`
-    select id, org_id, name, payload, rooms, attempts
+  const rows = await tx.execute<OutboxRecord>(sql`
+    select id, org_id, name, payload, rooms, attempts, created_at, actor_user_id
     from events.outbox
     where dispatched_at is null
       and attempts < ${maxAttempts}
@@ -113,14 +142,7 @@ export async function claimPending(
     for update skip locked
   `);
 
-  return [...rows].map((row) => ({
-    id: row.id,
-    orgId: row.org_id,
-    name: row.name,
-    payload: row.payload,
-    rooms: row.rooms,
-    attempts: row.attempts,
-  }));
+  return [...rows].map(toOutboxRow);
 }
 
 /** Mark one event delivered. Marked, never deleted — see the schema comment. */
@@ -183,26 +205,12 @@ export async function markReported(tx: Tx, id: string): Promise<void> {
  * rather than a notification about a row that has vanished.
  */
 export async function findDeadLettered(tx: Tx, maxAttempts: number): Promise<OutboxRow[]> {
-  const rows = await tx.execute<{
-    id: string;
-    org_id: string;
-    name: string;
-    payload: unknown;
-    rooms: string[];
-    attempts: number;
-  }>(sql`
-    select id, org_id, name, payload, rooms, attempts
+  const rows = await tx.execute<OutboxRecord>(sql`
+    select id, org_id, name, payload, rooms, attempts, created_at, actor_user_id
     from events.outbox
     where dispatched_at is null and attempts >= ${maxAttempts} and reported_at is null
     order by created_at
   `);
 
-  return [...rows].map((row) => ({
-    id: row.id,
-    orgId: row.org_id,
-    name: row.name,
-    payload: row.payload,
-    rooms: row.rooms,
-    attempts: row.attempts,
-  }));
+  return [...rows].map(toOutboxRow);
 }

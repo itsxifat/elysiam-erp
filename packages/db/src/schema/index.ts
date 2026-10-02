@@ -31,4 +31,5 @@ export * from './pos/index.js';
 export * from './promo/index.js';
 export * from './ref/index.js';
 export * from './supply/index.js';
+export * from './targets/index.js';
 export * from './wallets/index.js';
