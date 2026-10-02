@@ -438,6 +438,7 @@ Each org configures its own thresholds. These actions go through approvals:
 - payroll runs and bonuses
 - reseller payout batches
 - investor withdrawals and distributions
+- company loan repayments above the threshold (M26, D-298)
 - fraud block overrides
 - reopening a closed period (super_admin only)
 
@@ -548,7 +549,7 @@ W = the wallet account used.
 | Profit distribution declared          | Dr Profit distribution / Cr Investor payable                                                                                                                                                                                       |
 | Distribution or withdrawal paid       | Dr Investor payable (or Investor capital) / Cr W                                                                                                                                                                                   |
 | Company loan received                 | Dr W / Cr Loan payable (lender)                                                                                                                                                                                                    |
-| Loan instalment paid                  | Dr Loan payable (principal) + Dr Interest expense / Cr W                                                                                                                                                                           |
+| Loan instalment paid                  | Dr Loan payable (principal) + Dr Interest expense / Cr W, one whole instalment, keyed per instalment; interest expensed when paid (D-295, D-297)                                                                                   |
 | Stock write-off / count loss          | Dr Inventory write-off / Cr Inventory (approval required)                                                                                                                                                                          |
 | Stock gain                            | Dr Inventory / Cr Inventory adjustment gain (approval required)                                                                                                                                                                    |
 
@@ -933,11 +934,11 @@ interface CourierAdapter {
 
 ### Company loans
 
-- A loan has a lender (bank or person), principal, rate, method (`flat | reducing`, D-020), tenure and start date.
-- A pure function generates the schedule. Principal sums exactly to the loan amount.
-- Reminders go out N days before each due date, in-app and via SMS, exactly once per instalment.
-- Payment postings split principal and interest.
-- Statements.
+- A loan has a lender (bank, person or other, D-293), principal, annual rate in basis points, method (`flat | reducing`, D-020), tenure in months, the wallet it arrived in and a first due date. Recording it posts the receipt at once and writes the schedule in the same transaction (D-296).
+- A pure function generates the schedule (`packages/domain/src/loans`, D-294): monthly, flat or reducing balance, integer poisha, largest remainder (flat) or last-instalment rounding (reducing). Principal sums exactly to the loan amount, which a deferred trigger checks again at commit (D-302).
+- Reminders go out N days before each due date (default 3), in-app (`loan.instalment_due`) and via SMS through the notify module, exactly once per instalment (D-300).
+- Payment postings split principal and interest (D-295). One whole instalment at a time, in order (D-297), through a `loan_repayment` approval when the brand's threshold requires it (D-298, D-299).
+- Statements: schedule, repayments and totals, with the ledger's balance for the lender beside the schedules' (D-301).
 
 ---
 
@@ -1051,6 +1052,7 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 | `payout.updated`                        | `reseller:{id}`, `org:role:accounts`                                                                                                                              | payout id, status                          | Reseller portal                          |
 | `investor.withdrawal.updated`           | `user:{investor user}`                                                                                                                                            | request id, status                         | Investor portal                          |
 | `pos.sale_synced` / `pos.sync_conflict` | `org:branch:{b}`                                                                                                                                                  | sale id / conflict id                      | POS status                               |
+| `loan.instalment_due`                   | `org:role:accounts`, `org:role:org_admin`                                                                                                                         | loan id, instalment id, seq, due, amount   | Loan reminder in the inbox (D-300)       |
 | `notification.created`                  | `user:{id}`                                                                                                                                                       | notification id, title key                 | In-app inbox                             |
 | `job.failed`                            | `org:role:org_admin`, `super`                                                                                                                                     | job type, ref, error code                  | Operations                               |
 
@@ -1079,7 +1081,7 @@ Jobs run on pg-boss, with queues named `module.action`.
 | `marketing.capi_delivered`        | Enqueued in the delivering transaction                   | One Purchase per order, sent once (D-262)    |
 | `analytics.rollup`                | On events, plus a nightly recompute of the last 7 days   |                                              |
 | `hr.target_progress`              | Hourly                                                   |                                              |
-| `loan.reminders`                  | Daily 10:00                                              |                                              |
+| `loans.schedule_reminders`        | Daily 10:00, one `loans.remind_instalments` per brand    | Once per instalment, in-app and SMS (D-300)  |
 | `notify.send`                     | On demand                                                | Respects quiet hours                         |
 | `files.process_image`             | On upload                                                | sharp variants, EXIF stripped                |
 | `ops.backup_verify`               | Weekly (staging)                                         | Restore to a scratch database and verify     |
