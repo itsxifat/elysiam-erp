@@ -276,8 +276,10 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
     lapsed-buyer list with CSV/XLSX export, which leaves out opted-out numbers.
   - **Console.** `/customers` (search, profile, lapsed) and `/campaigns` (codes, templates,
     opt-outs, log), plus the desk's promo field.
-- Verification: `pnpm verify` exit 0 (8m29s) before the acceptance-audit fixes, and again at
-  the final commit (see the Verification Report in the session). Acceptance checks 1–5 pass:
+- Verification: `pnpm verify` exits 0 at `3aaaa00` (5m22s; 133 test files, 2,188 tests). It also
+  passed once before the acceptance-audit fixes (8m29s). The run at `a57e156` failed one pre-M16
+  intake test, whose `now + 301` timestamp drifted into the signature window under load; that is
+  fixed in `3aaaa00`. Acceptance checks 1–5 pass:
   1. `crm.test.ts` and `crm.db.test.ts`;
   2. `crm.db.test.ts` (run twice, a race, and a deterministic 23505);
   3. `promo.test.ts` and `promo.db.test.ts`;
@@ -290,7 +292,8 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
 - Auditors:
   - ledger-auditor: 2 critical and 8 warnings, all fixed with tests. The re-check found 0 and
     0, and its one "should not wait" item (`campaignId` without an FK) is fixed.
-  - acceptance-auditor: NOT READY with 7 gaps, all closed in the final commit:
+  - acceptance-auditor: NOT READY with 7 gaps, then 1 on re-audit, then **READY** at `3aaaa00`.
+    The gaps were:
     - date capture in the console, with clearing;
     - BulkSMSBD tests against a local stub;
     - this entry;
