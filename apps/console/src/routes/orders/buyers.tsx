@@ -6,6 +6,7 @@ import {
   type DataTableColumn,
 } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { Download } from 'lucide-react';
 import { useMemo } from 'react';
 
@@ -20,7 +21,7 @@ import {
 } from './api.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { OrdersNav } from './parts.js';
-import { useSchemaSearch } from './paths.js';
+import { ordersPath, useSchemaSearch } from './paths.js';
 import { BUYER_PAGE_SIZE, buyerSearchSchema, type BuyerSearch } from './search.js';
 
 /**
@@ -83,7 +84,17 @@ function Buyers() {
   const columns = useMemo<readonly DataTableColumn<Buyer>[]>(() => {
     const column = dataTableColumns<Buyer>();
     return column.columns([
-      column.accessor('name', { header: t('orders.buyers.col.name') }),
+      column.accessor('name', {
+        header: t('orders.buyers.col.name'),
+        cell: (cell) => (
+          <Link
+            to={ordersPath(`/customers/${cell.row.original.customerId}`)}
+            className="font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            {cell.getValue()}
+          </Link>
+        ),
+      }),
       column.accessor('phone', {
         header: t('orders.buyers.col.phone'),
         cell: (cell) => <span className="tabular-nums">{cell.getValue()}</span>,

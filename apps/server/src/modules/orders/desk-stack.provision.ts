@@ -13,7 +13,7 @@ import {
 import { applyIntakeMigrations } from '../intake/intake.testing.js';
 import { seedProductWithSkus, warehouseId } from '../inventory/inventory.testing.js';
 import { seedWallet } from '../wallets/wallets.testing.js';
-import { seedStockLevel } from './orders.testing.js';
+import { seedCustomer, seedOrder, seedStockLevel } from './orders.testing.js';
 
 /**
  * The order desk's real-stack Playwright run: a throwaway database with throwaway users
@@ -105,6 +105,9 @@ async function create(): Promise<void> {
     { label: 'queue', grants: [{ orgId, role: 'sales' }] },
     { label: 'accounts', grants: [{ orgId, role: 'accounts' }] },
     { label: 'treasurer', grants: [{ orgId, role: 'accounts' }] },
+    // M16's buyer and campaign screens: promo codes, templates and the lapsed list are
+    // marketing's (D-203, D-205, D-208).
+    { label: 'marketing', grants: [{ orgId, role: 'marketing' }] },
     {
       label: 'switcher',
       grants: [
@@ -160,6 +163,44 @@ async function create(): Promise<void> {
     { orgId },
   );
 
+  // M16: a buyer the lapsed list must find — one delivered order, placed a hundred days
+  // ago, and nothing since. Written as the order transitions would have left it: the order
+  // delivered, the line's delivered quantity set, the buyer's counters moved.
+  const [firstSku] = skus;
+  if (firstSku === undefined) throw new Error('desk-stack: no SKU to seed a lapsed buyer with.');
+  const lapsedPhone = `+88017${String(10_000_000 + Math.floor(Math.random() * 89_999_999))}`;
+  const lapsedBuyer = await seedCustomer(orgId, { phoneE164: lapsedPhone, name: 'Lapsed Buyer' });
+  const { id: lapsedOrder } = await seedOrder(orgId, {
+    customerId: lapsedBuyer,
+    status: 'delivered',
+    lines: [
+      {
+        skuId: firstSku.id,
+        skuCode: firstSku.code,
+        productName: 'E2E Product',
+        qty: 2,
+        unitPricePoisha: 120_000n,
+        deliveredQty: 2,
+      },
+    ],
+  });
+  await withSystem(
+    async (tx) => {
+      await tx.execute(sql`
+        update sales.orders
+        set created_at = now() - interval '100 days', delivered_at = now() - interval '98 days'
+        where org_id = ${orgId} and id = ${lapsedOrder}
+      `);
+      await tx.execute(sql`
+        update sales.customers
+        set orders_total = 1, delivered_count = 1, ltv_poisha = 240000,
+            first_order_at = now() - interval '100 days', last_order_at = now() - interval '100 days'
+        where org_id = ${orgId} and id = ${lapsedBuyer}
+      `);
+    },
+    { orgId },
+  );
+
   process.stdout.write(
     `${JSON.stringify({
       databaseName: database.databaseName,
@@ -172,6 +213,7 @@ async function create(): Promise<void> {
       users,
       skuCodes: skus.map((sku) => sku.code),
       promoCode,
+      lapsedBuyer: { id: lapsedBuyer, name: 'Lapsed Buyer' },
     })}\n`,
   );
 

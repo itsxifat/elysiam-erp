@@ -48,6 +48,8 @@ export interface StackInfo {
   readonly skuCodes: readonly string[];
   /** A 10%-off code seeded for the brand, for M16 check 5. */
   readonly promoCode: string;
+  /** A buyer whose only order was delivered a hundred days ago (M16's lapsed list). */
+  readonly lapsedBuyer: { readonly id: string; readonly name: string };
 }
 
 function logTo(name: string): number {
@@ -146,6 +148,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       users: StackInfo['users'];
       skuCodes: string[];
       promoCode: string;
+      lapsedBuyer: StackInfo['lapsedBuyer'];
     };
 
     const serverEnv: NodeJS.ProcessEnv = {
@@ -209,6 +212,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       users: provisioned.users,
       skuCodes: provisioned.skuCodes,
       promoCode: provisioned.promoCode,
+      lapsedBuyer: provisioned.lapsedBuyer,
     };
     // Inherited by the test workers. Throwaway values only, and never printed.
     process.env.E2E_STACK = JSON.stringify(info);

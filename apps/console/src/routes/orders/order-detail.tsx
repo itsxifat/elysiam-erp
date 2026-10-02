@@ -246,7 +246,13 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
               <h2 className="text-xs font-medium text-muted-foreground">
                 {t('orders.detail.buyer')}
               </h2>
-              <p className="text-sm font-medium">{order.customer.name}</p>
+              {/* The buyer's profile (M16): their history across every order, not just this one. */}
+              <Link
+                to={ordersPath(`/customers/${order.customer.id}`)}
+                className="text-sm font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                {order.customer.name}
+              </Link>
               <p className="text-sm tabular-nums">{order.shipTo.phone}</p>
             </div>
             <div>
