@@ -65,14 +65,35 @@ export async function signIn(page: Page, email: string): Promise<void> {
   await form.locator('button[type="submit"]').click();
 }
 
-/** §6's enrolment wall, cleared as a person clears it: key off the screen, code from it. */
-export async function enrolSecondFactor(page: Page): Promise<void> {
+/**
+ * §6's enrolment wall, cleared as a person clears it: key off the screen, code from it.
+ * Returns the key and one recovery code, for a later sign-in with either.
+ */
+export async function enrolSecondFactor(
+  page: Page,
+): Promise<{ secret: string; recoveryCode: string }> {
   await expect(page.getByRole('heading', { name: 'Set up two-step verification' })).toBeVisible();
   const secret = (await page.locator('code').first().innerText()).trim();
   expect(secret.length).toBeGreaterThan(15);
+  const recoveryCode = (
+    await page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: /Save your recovery codes/ }) })
+      .locator('li')
+      .first()
+      .innerText()
+  ).trim();
+  expect(recoveryCode.length).toBeGreaterThan(5);
   await page.getByRole('checkbox', { name: 'I have saved my recovery codes' }).check();
   await page.getByLabel(/^Verification code/).fill(totp(secret));
   await page.getByRole('button', { name: 'Confirm and continue' }).click();
+  return { secret, recoveryCode };
+}
+
+/** Sign out from the header, and land on the sign-in form again. */
+export async function signOut(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
 }
 
 /**

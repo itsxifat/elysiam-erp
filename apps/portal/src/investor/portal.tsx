@@ -3,6 +3,7 @@ import { Button, ErrorState, PermissionDeniedState, Skeleton } from '@elysium/ui
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Landmark, Languages, LogOut, Moon, Sun } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { flushSync } from 'react-dom';
 
 import { applyTheme, isDark } from '../theme.js';
 import { ApiError } from '../http.js';
@@ -23,9 +24,13 @@ import { FOCUS } from './ui.js';
  * the role is behind §6's enrolment wall, so nothing arrives until a second factor exists.
  *
  * One brand at a time (D-311). A person can hold a stake in several of the five brands; the
- * session carries one active org, as the console's does, and the switcher changes it. Before
- * a switch, every query of the brand being left is cancelled and dropped, so an answer that
- * was in flight cannot land under the next brand's name.
+ * session carries one active org, as the console's does, and the switcher changes it. The
+ * server answers for whichever brand is active when a request arrives, and its answers do not
+ * name the brand, so a switch is careful about order: the dashboard is unmounted first (so no
+ * query of the brand being left can start again), every such query is cancelled and dropped,
+ * and only then does the session move. For the same reason the figures are not refetched on
+ * window focus — the session is, and a brand changed in another tab remounts the dashboard
+ * under the new brand's keys rather than refreshing the old brand's keys with new figures.
  */
 
 const LOCALE_KEY = 'elysium-portal-locale';
@@ -34,7 +39,7 @@ function createQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
       // 401, 403 and 404 are answers, not hiccups; retrying them only delays the message.
-      queries: { retry: false, refetchOnWindowFocus: true, staleTime: 30_000 },
+      queries: { retry: false, refetchOnWindowFocus: false, staleTime: 30_000 },
     },
   });
 }
@@ -109,7 +114,13 @@ function Portal() {
   const [locale, setLocale] = useState<Locale>(readLocale);
   const [dark, setDark] = useState(isDark);
   const t = useMemo(() => portalTranslator(locale), [locale]);
-  const session = useQuery({ queryKey: SESSION_KEY, queryFn: loadSession });
+  const session = useQuery({
+    queryKey: SESSION_KEY,
+    queryFn: loadSession,
+    refetchOnWindowFocus: 'always',
+  });
+  const [switching, setSwitching] = useState<string | null>(null);
+  const [switchFailed, setSwitchFailed] = useState(false);
 
   // `<html lang>` and the font stack follow the language: Bangla renders in Hind Siliguri
   // with its own size-adjust, and a Latin stack on a Bangla line puts it on two baselines.
@@ -130,12 +141,37 @@ function Portal() {
     await queryClient.refetchQueries({ queryKey: SESSION_KEY });
   }
 
+  /** Move the session to another brand, in the order the note at the top explains. */
+  async function switchBrand(orgId: string): Promise<void> {
+    flushSync(() => {
+      setSwitching(orgId);
+      setSwitchFailed(false);
+    });
+    try {
+      await queryClient.cancelQueries({ queryKey: ['investor'] });
+      queryClient.removeQueries({ queryKey: ['investor'] });
+      await auth.setActiveOrg(orgId);
+      await refreshSession();
+    } catch {
+      setSwitchFailed(true);
+    } finally {
+      setSwitching(null);
+    }
+  }
+
+  /**
+   * Sign out, then let the server say what the session now is. The session is refetched
+   * before anything is dropped: dropping it first left the dashboard on screen, because a
+   * mounted query keeps showing its last answer when its cache entry is removed (found by
+   * the stack spec's sign-out). Once the sign-in is drawn, nothing holds the figures, and
+   * they are dropped so the next person at this browser cannot be shown them from cache.
+   */
   async function signOut(): Promise<void> {
     try {
       await auth.signOut();
     } finally {
-      queryClient.clear();
       await refreshSession();
+      queryClient.removeQueries({ queryKey: ['investor'] });
     }
   }
 
@@ -222,17 +258,27 @@ function Portal() {
             t={t}
             brands={state.brands}
             activeOrgId={state.context.orgId}
-            onSwitched={refreshSession}
+            switching={switching}
+            failed={switchFailed}
+            onSwitch={(orgId) => void switchBrand(orgId)}
           />
-          <Dashboard
-            key={state.context.orgId}
-            t={t}
-            locale={locale}
-            context={state.context}
-            brandName={
-              state.brands.find((brand) => brand.orgId === state.context.orgId)?.displayName ?? ''
-            }
-          />
+          {switching === null ? (
+            <Dashboard
+              key={state.context.orgId}
+              t={t}
+              locale={locale}
+              context={state.context}
+              brandName={
+                state.brands.find((brand) => brand.orgId === state.context.orgId)?.displayName ?? ''
+              }
+            />
+          ) : (
+            <div className="space-y-6" aria-busy="true">
+              <span className="sr-only">{t('portal.investor.switching')}</span>
+              <Skeleton className="h-7 w-56" />
+              <Skeleton className="h-36 w-full" />
+            </div>
+          )}
         </main>
       )}
     </div>
@@ -241,40 +287,24 @@ function Portal() {
 
 /**
  * The brands this person has a stake in, as a row of buttons. With one brand there is no
- * choice to offer, so it only says where they are.
+ * choice to offer, so there is nothing to draw.
  */
 function BrandSwitcher({
   t,
   brands,
   activeOrgId,
-  onSwitched,
+  switching,
+  failed,
+  onSwitch,
 }: {
   readonly t: Translate;
   readonly brands: readonly AvailableOrg[];
   readonly activeOrgId: string;
-  readonly onSwitched: () => Promise<void>;
+  readonly switching: string | null;
+  readonly failed: boolean;
+  readonly onSwitch: (orgId: string) => void;
 }) {
-  const queryClient = useQueryClient();
-  const [busy, setBusy] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-
   if (brands.length <= 1) return null;
-
-  async function switchTo(orgId: string): Promise<void> {
-    setBusy(orgId);
-    setFailed(false);
-    try {
-      // Nothing of the brand being left may arrive after this point (see the file note).
-      await queryClient.cancelQueries({ queryKey: ['investor'] });
-      queryClient.removeQueries({ queryKey: ['investor'] });
-      await auth.setActiveOrg(orgId);
-      await onSwitched();
-    } catch {
-      setFailed(true);
-    } finally {
-      setBusy(null);
-    }
-  }
 
   return (
     <nav aria-label={t('portal.investor.brands')} className="space-y-2">
@@ -287,9 +317,9 @@ function BrandSwitcher({
               <button
                 type="button"
                 aria-current={current ? 'true' : undefined}
-                disabled={busy !== null}
+                disabled={switching !== null}
                 onClick={() => {
-                  if (!current) void switchTo(brand.orgId);
+                  if (!current) onSwitch(brand.orgId);
                 }}
                 className={`inline-flex h-control items-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors disabled:opacity-60 ${FOCUS} ${
                   current
@@ -298,7 +328,7 @@ function BrandSwitcher({
                 }`}
               >
                 <Building2 aria-hidden="true" className="size-4" />
-                {busy === brand.orgId ? t('portal.investor.switching') : brand.displayName}
+                {switching === brand.orgId ? t('portal.investor.switching') : brand.displayName}
               </button>
             </li>
           );

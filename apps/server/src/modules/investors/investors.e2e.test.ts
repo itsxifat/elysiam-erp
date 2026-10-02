@@ -259,7 +259,7 @@ describe('check 1: an investor sees only their own data', () => {
     );
   });
 
-  it('refuses another investor’s statement, contributions and withdrawals', async () => {
+  it('refuses another investor’s statement and contributions', async () => {
     const statement = await investorA.client.request(
       'GET',
       `/v1/investors/${ids.b}/statement?from=2025-01-01&to=2030-12-31`,
@@ -903,6 +903,36 @@ describe('check 2: the withdrawal flow posts correctly through approval', () => 
       ),
       /INVESTOR_SPLIT_INVALID/,
     );
+  });
+});
+
+// --- check 1, once both investors have withdrawals ----------------------------
+
+describe('check 1: an investor’s withdrawal list holds only their own requests', () => {
+  /*
+   * After check 2 both investors have requests on file — paid, reviewed and
+   * rejected ones — so a list that leaked would have something to leak. At check
+   * 1's own point in the file investor B has none yet.
+   */
+  it('lists only the caller’s requests, and nothing when filtered to another investor', async () => {
+    const mine = body<{ items: { investorId: string }[] }>(
+      await investorA.client.request('GET', '/v1/investors/withdrawals'),
+    ).items;
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((row) => row.investorId === ids.a)).toBe(true);
+
+    const theirs = body<{ items: { investorId: string }[] }>(
+      await investorB.client.request('GET', '/v1/investors/withdrawals'),
+    ).items;
+    expect(theirs.length).toBeGreaterThan(0);
+    expect(theirs.every((row) => row.investorId === ids.b)).toBe(true);
+
+    const reached = await investorA.client.request(
+      'GET',
+      `/v1/investors/withdrawals?investorId=${ids.b}`,
+    );
+    expect(reached.statusCode).toBe(200);
+    expect(body<{ items: unknown[] }>(reached).items).toHaveLength(0);
   });
 });
 

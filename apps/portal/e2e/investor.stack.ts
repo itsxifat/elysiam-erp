@@ -4,7 +4,16 @@ import path from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
-import { apiFromPage, enrolSecondFactor, inEnglish, signIn, stack, user } from './stack/helpers.js';
+import {
+  apiFromPage,
+  enrolSecondFactor,
+  inEnglish,
+  signIn,
+  signOut,
+  stack,
+  totp,
+  user,
+} from './stack/helpers.js';
 
 /**
  * M25 acceptance check 1 in a browser: **an investor sees only their own data.**
@@ -41,7 +50,12 @@ async function noBlockingViolations(page: Page, label: string): Promise<void> {
     .analyze();
   const blocking = result.violations
     .filter((violation) => violation.impact === 'serious' || violation.impact === 'critical')
-    .map((violation) => ({ page: label, id: violation.id, help: violation.help }));
+    .map((violation) => ({
+      page: label,
+      id: violation.id,
+      help: violation.help,
+      nodes: violation.nodes.map((node) => node.target.join(' ')),
+    }));
   expect(blocking).toEqual([]);
 }
 
@@ -62,6 +76,21 @@ async function bothThemes(page: Page, name: string): Promise<void> {
   await page.evaluate(() => localStorage.setItem('elysium-theme', 'light'));
   await page.reload();
   await settled(page);
+}
+
+/**
+ * Both themes without a reload, for the sign-in journey: a reload would end the step the
+ * page is on (the enrolment screen holds the password only in memory). The theme is a class
+ * on `<html>`, exactly what the header's toggle sets.
+ */
+async function bothThemesInPlace(page: Page, name: string): Promise<void> {
+  await noBlockingViolations(page, `${name} (light)`);
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  // Colours ease over the motion tokens' 120–200 ms; measure the theme, not the fade.
+  await page.waitForTimeout(400);
+  await noBlockingViolations(page, `${name} (dark)`);
+  await page.evaluate(() => document.documentElement.classList.remove('dark'));
+  await page.waitForTimeout(400);
 }
 
 function tile(page: Page, label: string) {
@@ -108,6 +137,7 @@ async function expectNoneOf(page: Page, words: readonly string[]): Promise<void>
 }
 
 let alpha: Page;
+let alphaFactor: { secret: string; recoveryCode: string };
 
 test.afterAll(async () => {
   await alpha?.context().close();
@@ -121,7 +151,7 @@ test('an investor sees nothing until a second factor is enrolled', async ({ brow
   await expect(alpha.locator('html')).toHaveAttribute('lang', 'bn');
   await expect(alpha.getByRole('heading', { name: 'সাইন ইন' })).toBeVisible();
   await settled(alpha);
-  await noBlockingViolations(alpha, 'sign-in (bn)');
+  await bothThemesInPlace(alpha, 'sign-in (bn)');
   await shot(alpha, 'sign-in-bn');
 
   await inEnglish(alpha);
@@ -129,6 +159,8 @@ test('an investor sees nothing until a second factor is enrolled', async ({ brow
 
   await signIn(alpha, user('alpha').email);
   await expect(alpha.getByRole('heading', { name: 'Set up two-step verification' })).toBeVisible();
+  await expect(alpha.locator('code').first()).not.toBeEmpty();
+  await bothThemesInPlace(alpha, 'enrol');
   await shot(alpha, 'enrol');
 
   // Signed in, not enrolled: the session exists, and the API still answers nothing (§6).
@@ -137,7 +169,7 @@ test('an investor sees nothing until a second factor is enrolled', async ({ brow
   expect(JSON.parse(walled.body)).toMatchObject({ code: 'TWO_FACTOR_ENROLMENT_REQUIRED' });
   await expect(alpha.getByText('Rahima Akhtar')).toHaveCount(0);
 
-  await enrolSecondFactor(alpha);
+  alphaFactor = await enrolSecondFactor(alpha);
   await expect(alpha.getByRole('heading', { name: 'Rahima Akhtar' })).toBeVisible();
 });
 
@@ -263,6 +295,20 @@ test('alpha’s other brand shows only that brand’s stake', async () => {
   await openBrand(alpha, 'Elysium Lifestyle BD');
 });
 
+test('a returning investor signs in with the code from their authenticator app', async () => {
+  await signOut(alpha);
+  expect((await apiFromPage(alpha, '/v1/investors')).status).toBe(401);
+
+  await signIn(alpha, user('alpha').email);
+  // Enrolled now, so the password alone opens nothing: no session until the code verifies.
+  await expect(alpha.getByRole('heading', { name: 'Two-step verification' })).toBeVisible();
+  expect((await apiFromPage(alpha, '/v1/investors')).status).toBe(401);
+  await bothThemesInPlace(alpha, 'second factor');
+  await alpha.getByLabel(/^Verification code/).fill(totp(alphaFactor.secret));
+  await alpha.getByRole('button', { name: 'Verify' }).click();
+  await expect(alpha.getByRole('heading', { name: 'Rahima Akhtar' })).toBeVisible();
+});
+
 test('beta sees their own figures and none of alpha’s', async ({ browser }) => {
   const beta = await (
     await browser.newContext({ viewport: { width: 390, height: 844 } })
@@ -271,7 +317,7 @@ test('beta sees their own figures and none of alpha’s', async ({ browser }) =>
     await beta.goto('/investor');
     await inEnglish(beta);
     await signIn(beta, user('beta').email);
-    await enrolSecondFactor(beta);
+    const betaFactor = await enrolSecondFactor(beta);
     await expect(beta.getByRole('heading', { name: 'Shahidul Islam' })).toBeVisible();
     await settled(beta);
 
@@ -294,6 +340,14 @@ test('beta sees their own figures and none of alpha’s', async ({ browser }) =>
     // A phone, which is where a partner opens it.
     await noBlockingViolations(beta, 'dashboard (phone)');
     await shot(beta, 'dashboard-phone');
+
+    // A lost phone: a recovery code instead of the app, once.
+    await signOut(beta);
+    await signIn(beta, user('beta').email);
+    await beta.getByRole('button', { name: 'Use a recovery code instead' }).click();
+    await beta.getByLabel('Recovery code').fill(betaFactor.recoveryCode);
+    await beta.getByRole('button', { name: 'Verify' }).click();
+    await expect(beta.getByRole('heading', { name: 'Shahidul Islam' })).toBeVisible();
   } finally {
     await beta.context().close();
   }
