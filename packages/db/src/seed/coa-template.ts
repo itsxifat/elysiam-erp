@@ -65,6 +65,7 @@ export const COA_TEMPLATE: readonly TemplateAccount[] = [
   row('3100', 'Owner capital', 'owner_capital', 'equity', 'credit'),
   row('3200', 'Investor capital', 'investor_capital', 'equity', 'credit', 'investor'),
   row('3300', 'Retained earnings', 'retained_earnings', 'equity', 'credit'),
+  row('3350', 'Opening balance equity', 'opening_equity', 'equity', 'credit'),
   row('3400', 'Profit distribution', 'profit_distribution', 'equity', 'debit'),
 
   // Income

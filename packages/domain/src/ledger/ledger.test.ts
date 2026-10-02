@@ -280,8 +280,8 @@ describe('the subtype table', () => {
       expect.arrayContaining(['inventory', 'cogs', 'supplier_payable', 'goods_in_transit']),
     );
     expect(COST_SUBTYPES).not.toContain('wallet_cash');
-    // 37 from §7 plus operating_expense (D-084).
-    expect(ACCOUNT_SUBTYPE_NAMES).toHaveLength(38);
+    // 37 from §7, plus operating_expense (D-084) and opening_equity (M14a, D-213).
+    expect(ACCOUNT_SUBTYPE_NAMES).toHaveLength(39);
   });
 
   it('expresses a balance on the normal side', () => {

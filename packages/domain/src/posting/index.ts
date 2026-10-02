@@ -15,6 +15,8 @@ export * from './closing-variance.js';
 export * from './wallet-transfer.js';
 // M07's stock movements (§7): purchase cost entering the system, stock leaving it
 // at weighted average, and the two adjustments that need an approval.
+// M14a: the opening-balance journal, whose equity line is a declared plug (D-213).
+export * from './opening-balance.js';
 export * from './supply-received.js';
 export * from './supplier-return.js';
 export * from './handover.js';

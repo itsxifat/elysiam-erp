@@ -136,6 +136,21 @@ export const ACCOUNT_SUBTYPES = {
   cash_over_short: expense(),
   bank_charges: expense(),
   operating_expense: expense(),
+
+  /**
+   * The balancing figure when a brand's books are opened mid-life (M14a, D-213).
+   *
+   * Its own account rather than `retained_earnings`, because the two are different
+   * facts: retained earnings is what the business has actually earned, and this is
+   * "what we were holding on the day we started recording". An accountant clears this
+   * to the real equity accounts once they have agreed the opening figures, and they can
+   * only do that if it is visible.
+   *
+   * Last in this list, not beside the other equity subtypes, because
+   * `ledger-sync.test.ts` compares it to the database enum in order and
+   * `ALTER TYPE … ADD VALUE` appends.
+   */
+  opening_equity: equity(),
 } as const satisfies Record<string, SubtypeInfo>;
 
 export type AccountSubtype = keyof typeof ACCOUNT_SUBTYPES;
