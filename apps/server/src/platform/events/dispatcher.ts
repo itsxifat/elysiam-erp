@@ -35,6 +35,10 @@ export interface DeliveredEvent {
   readonly payload: unknown;
   readonly rooms: readonly string[];
   readonly attempts: number;
+  /** When the emitting transaction wrote it — §3's `occurred_at`. */
+  readonly occurredAt: Date;
+  /** Who acted, from the emitting transaction's `app.user_id`; null for none (D-277). */
+  readonly actorUserId: string | null;
 }
 
 export type Subscriber = (event: DeliveredEvent) => void | Promise<void>;

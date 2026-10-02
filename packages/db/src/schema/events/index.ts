@@ -69,6 +69,17 @@ export const outbox = events.table(
 
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 
+    /**
+     * Who acted: `app.user_id` of the transaction that emitted, null for a worker or a
+     * public caller with no login (D-277).
+     *
+     * §3 says every event carries `actor_user_id`, and M20 is the first reader that needs
+     * it: pickup time is "the assignee's first action", and a confirmation by a supervisor
+     * is not the assignee's. Read from the transaction rather than passed by each emit
+     * site, so no emitter can forget it or name somebody else.
+     */
+    actorUserId: text('actor_user_id'),
+
     /** Null until delivered. The dispatcher's claim marker. */
     dispatchedAt: timestamp('dispatched_at', { withTimezone: true, mode: 'date' }),
 

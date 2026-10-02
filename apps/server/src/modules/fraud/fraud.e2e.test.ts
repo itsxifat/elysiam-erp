@@ -509,6 +509,8 @@ describe('the cross-org counters are maintained from order events', () => {
       },
       rooms: [],
       attempts: 0,
+      occurredAt: new Date(),
+      actorUserId: null,
     };
 
     // Delivered three times, which the dispatcher is entitled to do — it marks a row after

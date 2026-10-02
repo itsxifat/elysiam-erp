@@ -547,6 +547,27 @@
       "when": 1790817694089,
       "tag": "0079_m16_crm_promo_notify_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1790922821650,
+      "tag": "0080_m20_targets_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1790922839059,
+      "tag": "0081_m20_targets_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790922840398,
+      "tag": "0082_m20_targets_integrity",
+      "breakpoints": true
     }
   ]
 }

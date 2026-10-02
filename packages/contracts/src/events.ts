@@ -331,6 +331,25 @@ export const deliveryBookingFailedPayload = z
   })
   .strict();
 
+/**
+ * §19: target id, achieved, pct — a progress widget moved (M20).
+ *
+ * To the employees the target counts (`user:{id}` for each) and to HR. `achieved` is in
+ * the target's own unit — orders, or poisha for a revenue target — as an integer string,
+ * and both audiences may see it: it is the employee's own figure, and HR set the target.
+ * `userIds` is here only so the audience can address the members' own rooms; it is a list
+ * of login ids, which every recipient already knows or may know.
+ */
+export const targetProgressPayload = z
+  .object({
+    targetId: uuid,
+    achieved: z.string().regex(/^\d+$/, 'An achieved figure is a non-negative integer string.'),
+    /** Achieved over target in basis points, rounded down: 10,000 is 100%. */
+    pctBps: z.number().int().min(0),
+    userIds: z.array(z.string().min(1)).max(50),
+  })
+  .strict();
+
 export const EVENTS = {
   'approval.requested': defineEvent('approval.requested', approvalRequestedPayload, {
     // §19: to every eligible checker. The dispatcher narrows that from
@@ -406,6 +425,11 @@ export const EVENTS = {
   'delivery.booking_failed': defineEvent('delivery.booking_failed', deliveryBookingFailedPayload, {
     roles: ['org_admin'],
     superAdmin: true,
+  }),
+  // M20. §19: `user:{employee}` and `org:role:hr`.
+  'target.progress': defineEvent('target.progress', targetProgressPayload, {
+    roles: ['hr'],
+    extra: (payload) => payload.userIds.map(userRoom),
   }),
 } as const;
 
