@@ -14,6 +14,7 @@ import {
   sendRateLimited,
   type RateLimitOptions,
   type RateLimitStore,
+  requestPath,
 } from './rate-limit.js';
 
 /**
@@ -155,6 +156,16 @@ export async function resolveIdentity(input: {
   return { kind: 'authenticated', user, sessionId, orgId, context };
 }
 
+/**
+ * Whether the raw request path is already the one `URL` resolves it to (M30).
+ *
+ * False for dot segments in any spelling (`/x/../`, `/./`, `%2e%2e`): the bridge refuses
+ * those rather than let the router and Better Auth disagree about which endpoint is meant.
+ */
+export function isCanonicalAuthPath(rawUrl: string, resolvedPath: string): boolean {
+  return (rawUrl.split('?')[0] ?? '') === resolvedPath;
+}
+
 export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): void {
   app.addHook('onRequest', (request: FastifyRequest, reply: FastifyReply, done) => {
     // One id per request, carried into the database as app.request_id so a
@@ -221,7 +232,7 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
    * uses and everybody can read is not a trade-off.
    */
   app.addHook('onSend', (request: FastifyRequest, _reply: FastifyReply, payload: unknown, done) => {
-    const path = request.url.split('?')[0] ?? '';
+    const path = requestPath(request.url);
     if (!path.startsWith('/api/auth/') || typeof payload !== 'string' || payload === '') {
       done(null, payload);
       return;
@@ -282,7 +293,7 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
   ]);
 
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
-    const path = request.url.split('?')[0] ?? '';
+    const path = requestPath(request.url);
     if (!path.startsWith('/api/auth/')) return;
     if (ENROLMENT_PATHS.has(path)) return;
 
@@ -313,11 +324,36 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       request.url,
       `${request.protocol}://${request.headers.host ?? 'localhost'}`,
     );
+
+    /*
+     * A path Better Auth would read differently from the router is refused (M30).
+     *
+     * `URL` resolves `.` and `..` segments; Fastify matched `/api/auth/*` without doing so.
+     * No client of ours sends either, and a request whose meaning depends on which layer
+     * reads it is exactly how the credential limiter was walked past. The limiter now reads
+     * the resolved path too (`requestPath`); this is the second lock on the same door.
+     */
+    if (!isCanonicalAuthPath(request.url, url.pathname)) {
+      return reply
+        .status(404)
+        .header('content-type', PROBLEM_CONTENT_TYPE)
+        .send(problemFor({ status: 404, code: 'NOT_FOUND', instance: url.pathname }));
+    }
+
     const headers = new Headers();
     for (const [key, value] of Object.entries(request.headers)) {
       if (typeof value === 'string') headers.set(key, value);
       else if (Array.isArray(value)) headers.set(key, value.join(', '));
     }
+    /*
+     * The client address Better Auth's own limiter and session rows see is the one Fastify
+     * resolved (`request.ip`, which honours TRUSTED_PROXY_COUNT), never the header the
+     * client sent (M30). Copied verbatim, a caller could rotate `x-forwarded-for` per
+     * request to void the backstop limiter, or send two values and drop everyone into
+     * one shared bucket — Better Auth trusts a single-value header and returns no address
+     * for anything else, which in production is one bucket for the whole company.
+     */
+    headers.set('x-forwarded-for', request.ip);
 
     // Who this call is about, captured before Better Auth acts: a sign-out ends
     // the session and a reset consumes the token, so afterwards the answer is
@@ -382,7 +418,7 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
 
   /** Resolve the session, then the context, for everything Better Auth does not own. */
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
-    const path = request.url.split('?')[0] ?? '';
+    const path = requestPath(request.url);
     if (path === '/api/auth' || path.startsWith('/api/auth/')) {
       // Better Auth owns its own endpoints: it authenticates each one itself,
       // and the enrolment wall below must not cover the routes enrolment needs.
