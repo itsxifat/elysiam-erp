@@ -23,6 +23,9 @@ export {
   type Tx,
 } from './client.js';
 
+// The release step (M14b): migrations as erp_owner, one run at a time.
+export { runMigrations, type MigrationResult } from './migrations.js';
+
 export {
   ANALYTICS_READABLE,
   APPEND_ONLY_TABLES,

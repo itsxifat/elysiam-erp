@@ -1,0 +1,30 @@
+# The server image's build context (infra/docker/server.Dockerfile). What is left out is
+# either rebuilt inside the image or must never reach it.
+
+# Rebuilt inside the image from the lockfile and the sources.
+**/node_modules
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+**/.next
+**/.output
+**/.wxt
+
+# Secrets and personal data (invariant 10). Only the examples, which hold names.
+**/.env
+**/.env.*
+!**/.env.example
+packages/db/.dev-users.local.json
+infra/kamal/secrets*
+
+# Not needed to build or run the server.
+.git
+.github
+.claude
+docs
+**/coverage
+**/test-results
+**/playwright-report
+**/blob-report
+apps/server/migration-sample
+bench-results

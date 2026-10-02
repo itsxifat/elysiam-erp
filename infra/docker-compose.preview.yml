@@ -1,0 +1,174 @@
+# The whole ERP on one Linux server with Docker, for previewing and testing (D-352).
+# Not production: production is Kamal, managed Postgres and Cloudflare Pages
+# (docs/runbooks/deploy.md). The server's own nginx is the front door: it serves the SPA
+# builds and proxies the API (infra/preview/nginx-elyerp.conf). Step by step, and the deploy
+# script that runs all of this from a workstation: docs/runbooks/preview-server.md.
+#
+# Nothing here listens on a public address. Docker-published ports bypass ufw, so the one
+# port the host needs, the API's, is bound to 127.0.0.1. Postgres, Valkey and Gotenberg
+# publish nothing. Every secret comes from .env.preview (gitignored, written by init-env.sh).
+
+name: elysium-preview
+
+x-server-env: &server-env
+  NODE_ENV: production
+  LOG_LEVEL: info
+  DATABASE_URL: postgres://erp_app:${PREVIEW_DB_APP_PASSWORD:?run infra/preview/init-env.sh}@postgres:5432/elysium
+  DATABASE_ANALYTICS_URL: postgres://erp_analytics:${PREVIEW_DB_ANALYTICS_PASSWORD:?}@postgres:5432/elysium
+  VALKEY_URL: redis://:${PREVIEW_VALKEY_PASSWORD:?}@valkey:6379
+  # One origin for the console, portal, till and API (D-352).
+  APP_DOMAIN: ${PREVIEW_DOMAIN:?set PREVIEW_DOMAIN in .env.preview}
+  API_PUBLIC_URL: ${PREVIEW_PUBLIC_URL:?set PREVIEW_PUBLIC_URL in .env.preview}
+  TRUSTED_ORIGINS: ${PREVIEW_PUBLIC_URL}
+  # The host's nginx is the one proxy in front, and it sets X-Forwarded-For to the visitor
+  # rather than appending to whatever the visitor sent.
+  TRUSTED_PROXY_COUNT: 1
+  REALTIME_ADAPTER_KEY: elysium:preview
+  AUTH_SECRET: ${PREVIEW_AUTH_SECRET:?}
+  HR_FIELD_KEY: ${PREVIEW_HR_FIELD_KEY:?}
+  COURIER_CREDENTIALS_KEY: ${PREVIEW_COURIER_CREDENTIALS_KEY:?}
+  MARKETING_CREDENTIALS_KEY: ${PREVIEW_MARKETING_CREDENTIALS_KEY:?}
+  INTAKE_KEY_SECRET: ${PREVIEW_INTAKE_KEY_SECRET:?}
+  INTAKE_RATE_LIMIT_STORE: valkey
+  GOTENBERG_URL: http://gotenberg:3000
+  # Files (§22): the local driver on the `files` volume unless PREVIEW_STORAGE_DRIVER=r2
+  # (D-352). The files config refuses an empty R2 value, so an unused one reads `unused`;
+  # the local driver never looks at them.
+  STORAGE_DRIVER: ${PREVIEW_STORAGE_DRIVER:-local}
+  STORAGE_LOCAL_ROOT: /data/files
+  R2_ACCOUNT_ID: ${PREVIEW_R2_ACCOUNT_ID:-unused}
+  R2_BUCKET: ${PREVIEW_R2_BUCKET:-unused}
+  R2_ACCESS_KEY_ID: ${PREVIEW_R2_ACCESS_KEY_ID:-unused}
+  R2_SECRET_ACCESS_KEY: ${PREVIEW_R2_SECRET_ACCESS_KEY:-unused}
+  # Optional; empty means off (D-344).
+  SENTRY_DSN: ${PREVIEW_SENTRY_DSN:-}
+  SENTRY_ENVIRONMENT: preview
+
+# Container logs are capped: the server is shared with other live sites.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 20m
+    max-file: '5'
+
+x-server-image: &server-image
+  image: elysium-server:preview
+  restart: unless-stopped
+  logging: *logging
+
+services:
+  postgres:
+    image: postgres:17.11-alpine@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      # The container's superuser. Used by the release step to create the three roles and
+      # by nothing else; the application connects as erp_app (§5).
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PREVIEW_DB_ROOT_PASSWORD:?}
+      POSTGRES_DB: elysium
+      POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=en-US --encoding=UTF8'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d elysium']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  valkey:
+    image: valkey/valkey:8.1-alpine@sha256:d2e18f3410b6f616de1417f570fa55261af2898b9c5b2cfb6781ce2373ea43d1
+    restart: unless-stopped
+    logging: *logging
+    command:
+      - sh
+      - -c
+      - exec valkey-server --save "" --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass "$$VALKEY_PASSWORD"
+    environment:
+      VALKEY_PASSWORD: ${PREVIEW_VALKEY_PASSWORD:?}
+    healthcheck:
+      test: ['CMD-SHELL', 'valkey-cli -a "$$VALKEY_PASSWORD" --no-auth-warning ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  gotenberg:
+    image: gotenberg/gotenberg:8.37@sha256:f29984bd1e226bf1b93ba90af06000afa8b315853e99d27b9aaa41b93f15c769
+    restart: unless-stopped
+    logging: *logging
+    command:
+      - gotenberg
+      - --chromium-disable-javascript=true
+      - --chromium-allow-list=file:///tmp/.*
+
+  # One-shot, on every `up`: create or reset the three roles, then migrate as erp_owner and
+  # install the job queues (the release step, D-340). Both idempotent. The seed is not part
+  # of it, as in production (deploy.md): it resets the brands' names and system accounts, so
+  # infra/preview/server-deploy.sh runs it on the first deploy only, or when asked.
+  release:
+    <<: *server-image
+    build:
+      context: ..
+      dockerfile: infra/docker/server.Dockerfile
+    restart: 'no'
+    command:
+      - sh
+      - -c
+      - >-
+        node node_modules/@elysium/db/dist/cli/bootstrap.js &&
+        node dist/main.release.js
+    environment:
+      <<: *server-env
+      DATABASE_OWNER_URL: postgres://erp_owner:${PREVIEW_DB_OWNER_PASSWORD:?}@postgres:5432/elysium
+      DATABASE_ADMIN_URL: postgres://postgres:${PREVIEW_DB_ROOT_PASSWORD:?}@postgres:5432/elysium
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    <<: *server-image
+    # Built by `release` above, under the same tag; never pulled.
+    pull_policy: never
+    command: ['node', '--import', './dist/instrument.js', 'dist/main.worker.js']
+    environment:
+      <<: *server-env
+      # The worker, and only the worker, holds the owner role (§5, D-340).
+      DATABASE_OWNER_URL: postgres://erp_owner:${PREVIEW_DB_OWNER_PASSWORD:?}@postgres:5432/elysium
+    volumes:
+      - files:/data/files
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+
+  api:
+    <<: *server-image
+    pull_policy: never
+    environment: *server-env
+    ports:
+      # Loopback only: the host's nginx is the way in.
+      - '127.0.0.1:${PREVIEW_API_PORT:-3410}:3000'
+    volumes:
+      - files:/data/files
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+      gotenberg:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  files:

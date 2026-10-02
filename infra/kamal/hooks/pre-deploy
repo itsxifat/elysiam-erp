@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# The release step (architecture §28; M14b, D-340).
+#
+# Kamal runs this after the new image is built and pushed and before any new container
+# boots (kamal-deploy.org/docs/hooks). It runs `main.release.js` from the NEW image, in a
+# one-off container of the worker role, the only role holding DATABASE_OWNER_URL: the
+# schema migrations as erp_owner, then the job queue's schema and queues. A non-zero exit
+# stops the deploy before anything is replaced.
+#
+# Migrations are forward-only (invariant 9), so a release whose migrations ran stays
+# migrated even if its containers are later rolled back: docs/runbooks/rollback.md.
+#
+# `kamal rollback` runs this hook too; release.js is idempotent and the migrations hold an
+# advisory lock, so that run changes nothing.
+
+set -eu
+
+: "${KAMAL_DESTINATION:?the release step runs only with -d staging or -d production}"
+: "${KAMAL_VERSION:?Kamal did not say which version is being deployed}"
+
+echo "release step: ${KAMAL_SERVICE:-elysium} ${KAMAL_VERSION} on ${KAMAL_DESTINATION}"
+
+kamal app exec \
+  --config-file infra/kamal/deploy.yml \
+  --destination "$KAMAL_DESTINATION" \
+  --roles worker \
+  --version "$KAMAL_VERSION" \
+  "node dist/main.release.js"

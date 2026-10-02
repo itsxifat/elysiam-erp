@@ -1,0 +1,156 @@
+# Kamal 2 deployment (architecture §28; M14b, D-340, D-343).
+#
+# Built from the Kamal configuration reference (kamal-deploy.org/docs/configuration and
+# lib/kamal/configuration/docs/*.yml in basecamp/kamal, read 2026-10-02 for 2.12).
+# Every command names a destination, from the repository root:
+#
+#   kamal setup  -c infra/kamal/deploy.yml -d staging      first time (boots accessories)
+#   kamal deploy -c infra/kamal/deploy.yml -d staging      every release
+#
+# This file holds what both environments share. The hosts, hostnames and URLs are in
+# deploy.staging.yml and deploy.production.yml. Secrets are never here: each name under
+# `secret:` is resolved from infra/kamal/secrets-common and secrets.<destination>, which
+# hold references to the operator's environment or a secret manager, never values.
+#
+# Topology (D-343). Cloudflare in front (DNS, WAF, TLS to the edge), then kamal-proxy with
+# a Cloudflare Origin CA certificate (Full (strict)), then the API. The `web` host runs the
+# API, Valkey and Gotenberg; the `jobs` host runs the worker. Staging puts both on one VM.
+# Postgres is managed, outside Kamal. The SPAs are on Cloudflare Pages (docs/runbooks/deploy.md).
+
+minimum_version: 2.12.0
+
+service: elysium
+# Placeholder: <registry>/<namespace>/elysium-server.
+image: elysium-org/elysium-server
+
+# Every command must say staging or production.
+require_destination: true
+
+# Kept beside this file, not in .kamal/ at the root. Kamal resolves both from the
+# directory it is run in, which is the repository root.
+secrets_path: infra/kamal/secrets
+hooks_path: infra/kamal/hooks
+
+registry:
+  # Placeholder: GitHub Container Registry, a private package.
+  server: ghcr.io
+  username: elysium-deploy
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+builder:
+  arch: amd64
+  # The local checkout, so an image is exactly the commit being deployed.
+  context: .
+  dockerfile: infra/docker/server.Dockerfile
+
+# The roles share one image (D-340). Hosts are in the destination files.
+servers:
+  api:
+    cmd: node --import ./dist/instrument.js dist/main.api.js
+  worker:
+    cmd: node --import ./dist/instrument.js dist/main.worker.js
+    # Not behind the proxy: the worker serves nothing.
+    proxy: false
+    env:
+      secret:
+        # Only the worker holds the owner role: pg-boss installs its own schema, and the
+        # release step migrates (§5, §28). The API never receives it.
+        - DATABASE_OWNER_URL
+
+primary_role: api
+
+proxy:
+  app_port: 3000
+  # Cloudflare terminates the visitor's TLS; this is the origin certificate it checks
+  # (Full (strict)). Both are names in the secrets files, never PEM text in this repo.
+  ssl:
+    certificate_pem: CLOUDFLARE_ORIGIN_CERT_PEM
+    private_key_pem: CLOUDFLARE_ORIGIN_KEY_PEM
+  # With ssl on, kamal-proxy forwards no X-Forwarded-For unless told to. The API trusts two
+  # hops (TRUSTED_PROXY_COUNT below): Cloudflare, then kamal-proxy.
+  forward_headers: true
+  # A new release takes traffic only once its database, job queue and Valkey answer (§26).
+  healthcheck:
+    path: /health/ready
+    interval: 2
+    timeout: 3
+  response_timeout: 30
+  buffering:
+    requests: true
+    responses: true
+    # Uploads go to R2 directly (§22); nothing larger than a CSV import reaches the API.
+    max_request_body: 10_000_000
+
+# Long enough for an API that waits on its first database connection; kamal-proxy polls
+# the health check until then.
+deploy_timeout: 90
+drain_timeout: 30
+# Kept for `kamal rollback` (docs/runbooks/rollback.md).
+retain_containers: 5
+
+logging:
+  driver: json-file
+  options:
+    max-size: 50m
+    max-file: '5'
+
+env:
+  clear:
+    NODE_ENV: production
+    LOG_LEVEL: info
+    API_HOST: 0.0.0.0
+    API_PORT: 3000
+    # Cloudflare appends the visitor to X-Forwarded-For and kamal-proxy appends
+    # Cloudflare's edge, so the client is two hops in. Correct only while the VMs accept
+    # 80/443 from Cloudflare's ranges alone (docs/runbooks/deploy.md, D-343).
+    TRUSTED_PROXY_COUNT: 2
+    # Gotenberg runs beside the API on the `web` host (accessory below), on Kamal's network.
+    GOTENBERG_URL: http://elysium-gotenberg:3000
+    STORAGE_DRIVER: r2
+    # Per-replica intake limits are refused in production (D-139).
+    INTAKE_RATE_LIMIT_STORE: valkey
+  secret:
+    # erp_app and erp_analytics (§5). The owner URL is the worker's alone (above).
+    - DATABASE_URL
+    - DATABASE_ANALYTICS_URL
+    # Carries Valkey's password, so it is a secret (D-343).
+    - VALKEY_URL
+    - AUTH_SECRET
+    - HR_FIELD_KEY
+    - COURIER_CREDENTIALS_KEY
+    - MARKETING_CREDENTIALS_KEY
+    - INTAKE_KEY_SECRET
+    - TURNSTILE_SECRET_KEY
+    - R2_ACCOUNT_ID
+    - R2_ACCESS_KEY_ID
+    - R2_SECRET_ACCESS_KEY
+    # Optional. Left empty in the secrets file, each is read as unset (§26, D-344).
+    - SENTRY_DSN
+    - OTEL_EXPORTER_OTLP_HEADERS
+
+accessories:
+  # Rate-limit counters and the realtime adapter's channels, nothing that must survive a
+  # restart, so no persistence (D-343). Published on the host's private address only, with
+  # a password, because the worker on the `jobs` host publishes realtime events through it.
+  valkey:
+    image: valkey/valkey:8.1-alpine@sha256:d2e18f3410b6f616de1417f570fa55261af2898b9c5b2cfb6781ce2373ea43d1
+    cmd: >-
+      sh -c 'exec valkey-server --save "" --appendonly no
+      --maxmemory 256mb --maxmemory-policy allkeys-lru
+      --requirepass "$VALKEY_PASSWORD"'
+    env:
+      secret:
+        - VALKEY_PASSWORD
+    options:
+      restart: unless-stopped
+
+  # PDF rendering for invoices, labels and payslips (§22), requested by the API. Never
+  # published: the API reaches it on Kamal's network by its container name.
+  gotenberg:
+    image: gotenberg/gotenberg:8.37@sha256:f29984bd1e226bf1b93ba90af06000afa8b315853e99d27b9aaa41b93f15c769
+    cmd: gotenberg --chromium-disable-javascript=true --chromium-allow-list=file:///tmp/.*
+    roles:
+      - api
+    options:
+      restart: unless-stopped

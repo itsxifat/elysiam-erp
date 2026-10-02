@@ -12,6 +12,10 @@
     "./env": {
       "types": "./dist/env.d.ts",
       "default": "./dist/env.js"
+    },
+    "./pages-headers": {
+      "types": "./dist/pages-headers.d.ts",
+      "default": "./dist/pages-headers.js"
     }
   },
   "files": [

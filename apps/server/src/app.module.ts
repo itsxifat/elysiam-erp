@@ -24,6 +24,7 @@ import { SupplyModule } from './modules/supply/supply.module.js';
 import { WalletsModule } from './modules/wallets/wallets.module.js';
 import { JobsModule } from './platform/jobs/jobs.module.js';
 import type { PasswordTokenStore } from './modules/iam/iam.service.js';
+import type { ReadinessProbes } from './modules/health/readiness.js';
 
 /**
  * The API's root module. Every domain module from architecture §3 registers
@@ -50,13 +51,18 @@ export class AppModule {
      * a module that decides for itself is one the gate cannot ask.
      */
     readonly demo?: boolean;
+    /**
+     * Readiness probes beyond the database and the job queue (§26). The running API adds
+     * Valkey's; a suite that boots without Valkey adds none.
+     */
+    readonly readiness?: ReadinessProbes;
   }): DynamicModule {
     const withDemo = dependencies.demo ?? process.env.NODE_ENV !== 'production';
 
     return {
       module: AppModule,
       imports: [
-        HealthModule,
+        HealthModule.register(dependencies.readiness),
         IamModule.register(dependencies),
         ApprovalsModule,
         // A platform module rather than a domain one, and mounted here because

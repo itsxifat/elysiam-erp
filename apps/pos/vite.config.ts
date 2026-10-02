@@ -5,16 +5,24 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 
 import { createEnv } from '@elysium/config/env';
+import { pagesHeaders } from '@elysium/config/pages-headers';
 
 import { clientEnvSchema } from './src/env.schema.js';
 
 export default defineConfig(({ mode }) => {
   // Fail the build, not the browser. Vite inlines import.meta.env, so a
   // check that only runs in the bundle would ship the broken config first.
-  createEnv('pos', clientEnvSchema, loadEnv(mode, import.meta.dirname, 'VITE_'));
+  const raw = loadEnv(mode, import.meta.dirname, 'VITE_');
+  const env = createEnv('pos', clientEnvSchema, raw);
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      // `dist/_headers` for Cloudflare Pages, and the same headers under `vite preview`
+      // (M14b, D-347). `VITE_CSP_CONNECT_SRC` adds the R2 upload endpoint in production.
+      pagesHeaders({ apiUrl: env.VITE_API_URL, extraConnectSrc: raw.VITE_CSP_CONNECT_SRC }),
+    ],
     // Matches the tsconfig path alias; shadcn/ui components generated in
     // M05 import through it.
     resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },

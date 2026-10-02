@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { trackingBn, trackingEn } from './messages.js';
-import { brandFromPath, digitsOf, isTrackingPath, readyToSubmit } from './tracking-input.js';
+import {
+  brandFromPath,
+  digitsOf,
+  isTrackingPath,
+  pathWithinBase,
+  readyToSubmit,
+} from './tracking-input.js';
 
 /**
  * The tracking page's pure pieces (M15).
@@ -70,5 +76,21 @@ describe('the tracking catalogue', () => {
     ]) {
       expect(Object.hasOwn(trackingBn, `tracking.stage.${stage}`), stage).toBe(true);
     }
+  });
+});
+
+describe('pathWithinBase (D-352)', () => {
+  it('is the path itself when the portal is served from the root', () => {
+    expect(pathWithinBase('/track/orvo', '/')).toBe('/track/orvo');
+    expect(pathWithinBase('/investor', '/')).toBe('/investor');
+  });
+
+  it('drops the base the portal is served under, and only that', () => {
+    expect(pathWithinBase('/portal/track/orvo', '/portal/')).toBe('/track/orvo');
+    expect(pathWithinBase('/portal/investor', '/portal/')).toBe('/investor');
+    expect(pathWithinBase('/portal/', '/portal/')).toBe('/');
+    expect(pathWithinBase('/portal', '/portal/')).toBe('/');
+    // A path that merely starts with the same letters is not under the base.
+    expect(pathWithinBase('/portaledge', '/portal/')).toBe('/portaledge');
   });
 });

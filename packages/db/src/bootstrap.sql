@@ -1,7 +1,9 @@
 -- Create the three database roles (architecture §5, D-042).
 --
--- This is the only step that needs a superuser, and it runs once per database.
--- Everything after it runs as erp_owner.
+-- This is the only step that needs an administrator, and it runs once per
+-- database. Everything after it runs as erp_owner. The administrator need not be
+-- a superuser: CREATEROLE and ownership of the database are enough, which is what
+-- managed Postgres gives you (D-341, docs/runbooks/deploy.md).
 --
 -- The critical property: erp_owner is NOSUPERUSER and NOBYPASSRLS. A superuser
 -- bypasses FORCE ROW LEVEL SECURITY entirely, which would make every tenant
@@ -37,10 +39,29 @@ begin
 
     -- Reasserted on every run: a role that acquires one of these later, by any
     -- route, is a tenant-isolation hole. Cheap to reapply, expensive to miss.
-    execute format(
-      'alter role %I with nosuperuser nocreatedb nocreaterole noreplication nobypassrls',
-      role_name
-    );
+    --
+    -- One attribute at a time, and only when the role actually has it (D-341).
+    -- Managed Postgres has no superuser, and PostgreSQL 16+ refuses
+    -- `nosuperuser`, `noreplication` and `nobypassrls` from anyone who lacks
+    -- that attribute themselves, even when the statement would change nothing
+    -- (verified on 17.11). A clean role therefore needs no privileged ALTER, and
+    -- a role that has gained one still gets it cleared here, or the run fails
+    -- loudly because the admin cannot clear it, which is the right outcome too.
+    if (select rolsuper from pg_roles where rolname = role_name) then
+      execute format('alter role %I with nosuperuser', role_name);
+    end if;
+    if (select rolcreatedb from pg_roles where rolname = role_name) then
+      execute format('alter role %I with nocreatedb', role_name);
+    end if;
+    if (select rolcreaterole from pg_roles where rolname = role_name) then
+      execute format('alter role %I with nocreaterole', role_name);
+    end if;
+    if (select rolreplication from pg_roles where rolname = role_name) then
+      execute format('alter role %I with noreplication', role_name);
+    end if;
+    if (select rolbypassrls from pg_roles where rolname = role_name) then
+      execute format('alter role %I with nobypassrls', role_name);
+    end if;
   end loop;
 end $$;
 

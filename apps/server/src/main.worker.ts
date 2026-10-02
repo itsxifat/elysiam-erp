@@ -38,6 +38,7 @@ import { serverEnv } from './platform/config/env.js';
 import { reportJobFailedThroughOutbox } from './platform/jobs/job-failed.js';
 import { JobsRuntime } from './platform/jobs/jobs.runtime.js';
 import { createLogger } from './platform/logging/logger.js';
+import { reportError, shutdownObservability } from './platform/observability/errors.js';
 import { bridgeOutboxToRealtime, createRealtimeEmitter } from './platform/realtime/index.js';
 
 /**
@@ -235,6 +236,8 @@ async function bootstrap(): Promise<void> {
   await jobs.stop();
   // Last, because a handler that is still finishing holds services out of this context.
   await context.close();
+  // Then the error events and spans of the jobs that just finished (§26).
+  await shutdownObservability();
 }
 
 /**
@@ -307,7 +310,9 @@ function roleFrom(connectionString: string): string {
   return user === '' ? 'erp_app' : user;
 }
 
-bootstrap().catch((error: unknown) => {
+bootstrap().catch(async (error: unknown) => {
   process.stderr.write(`worker failed to start: ${String(error)}\n`);
+  reportError(error, { kind: 'boot', process: 'worker' });
+  await shutdownObservability();
   process.exit(1);
 });

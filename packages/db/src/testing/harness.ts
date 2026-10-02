@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,6 +9,7 @@ import postgres from 'postgres';
 
 import { closeDatabase, configureDatabase, withSystem } from '../client.js';
 import { databaseConfig, loadDatabaseEnv, parseUrl } from '../config.js';
+import { applyBootstrap } from '../roles.js';
 import { seedGeography } from '../seed/geography.js';
 import { seedOrganizations } from '../seed/index.js';
 
@@ -37,7 +37,6 @@ const silenceNotices = (): void => undefined;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_FOLDER = path.resolve(HERE, '../../migrations');
-const BOOTSTRAP_SQL = path.resolve(HERE, '../bootstrap.sql');
 
 /**
  * Role passwords, taken from the ambient configuration when there is one.
@@ -162,15 +161,10 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
     // against a permissions shape that differed from production — observably,
     // erp_app could create temp tables in the harness and cannot after the
     // real bootstrap.
-    const script = await readFile(BOOTSTRAP_SQL, 'utf8');
-    await setup.begin(async (tx) => {
-      // As settings, quoted by format('%L') inside the script. Interpolating
-      // them into DDL would put production-shaped credentials into the query
-      // log of any server running with log_statement=all (invariant 10).
-      await tx`select set_config('bootstrap.owner_password', ${passwords.erp_owner}, true)`;
-      await tx`select set_config('bootstrap.app_password', ${passwords.erp_app}, true)`;
-      await tx`select set_config('bootstrap.analytics_password', ${passwords.erp_analytics}, true)`;
-      await tx.unsafe(script);
+    await applyBootstrap(setup, {
+      owner: passwords.erp_owner,
+      app: passwords.erp_app,
+      analytics: passwords.erp_analytics,
     });
   } finally {
     await setup.end();
