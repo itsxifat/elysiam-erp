@@ -214,7 +214,7 @@ See D-001 and D-002.
 | Module    | Schema    | Owns                                                                          |
 | --------- | --------- | ----------------------------------------------------------------------------- |
 | org       | org       | organizations, branches, locations, settings, feature flags, per-org branding |
-| iam       | iam       | Better Auth tables, memberships, API keys, devices                            |
+| iam       | iam       | Better Auth tables, memberships, sign-in resets, API keys, devices            |
 | audit     | audit     | audit log                                                                     |
 | approvals | approvals | maker-checker requests                                                        |
 | events    | events    | outbox and event log                                                          |
@@ -351,6 +351,13 @@ Once enrolled, the second factor is enforced by the plugin itself: sign-in retur
 
 **Registration is closed (D-057).** There is no self-service sign-up: this is a staff ERP, and an open sign-up was also the enabling half of an account pre-hijacking attack. An `org_admin` — and only an `org_admin` (D-058) — creates a user through `POST /v1/users`, which returns a one-time invite token. The recipient redeems it to set their own password. An existing identity is reused when a colleague joins a second brand, but never when the row holds credentials and belongs to no org.
 
+**Staff accounts (gaps-users-auth, D-400 to D-409).** An org admin manages the brand's people at `/users`: `GET /v1/users` lists them, `PUT /v1/users/:id/roles` replaces a person's roles and branch scope (every role granted or reshaped names the admin as its granter, D-077), and `POST /v1/users/:id/deactivate` switches a leaver off — their roles here end, their open resets are withdrawn, and their sessions end at once (every session, link and remembered device when this was their last brand). Nobody changes their own access, and only a super admin changes a super admin.
+
+- **A session needs an active account with an active role somewhere** (D-401): Better Auth's `session.create.before` hook refuses anything else with `403 ACCOUNT_INACTIVE`, after the password is checked. Super admins hold no membership and are exempt. This is a refusal of the session, unlike the enrolment wall, because nothing a deactivated account could do with one is legitimate.
+- **Password links come only from an admin** (D-402). There is no email adapter (D-212), so `POST /v1/users/:id/password-link` hands the admin a one-time link to pass on: an invite sent again for someone who never set a password (72 hours), or a reset (1 hour) that voids the old password and ends every session at once. A new link voids earlier ones, redeeming one ends sessions again, and the token rides in the URL fragment (`/accept-invite#token=…`, `/reset-password#token=…`), which no browser sends to a server. Better Auth's public `/request-password-reset` path is disabled; the server mints links through `api.requestPasswordReset`. An admin may ask for 20 resets an hour and a person may be reset 5 times a day, per brand, counted from `iam.credential_resets`.
+- **A lost phone** (D-403): `POST /v1/users/:id/two-factor/reset` removes the enrolled factor, ends sessions and forgets remembered devices; the next sign-in meets the enrolment wall again if the role needs one.
+- **A reset of anyone who can approve at org tier needs a second admin** (D-404): org_admin, accounts and hr (derived from `CHECKER_TYPES`), and super admins. It is raised as a `credential_reset` approval, decided by another org admin who is neither the requester, the person being reset, nor in the requester's grant lineage; an approved password reset is collected by the admin who asked, within 24 hours. A super admin acts alone. **Only a super admin resets someone who also works in another brand** (D-405), because a password opens every brand they belong to. Whoever is handed a link becomes the granter of the person's roles here (D-406), so the person can never approve that admin's requests.
+
 **Rate limits are per identifier as well as per IP (D-056).** Both buckets are counted on the credential endpoints and either can reject. Per-IP alone is close to useless against a botnet — credential stuffing gets the full allowance per address — and actively harmful in Bangladesh, where most mobile traffic shares a handful of carrier NAT addresses, so one attacker would lock out a whole network. The per-identifier bucket makes attacking one account expensive however many addresses the attacker has; the per-IP bucket stops one address walking a list of accounts. The store is in memory per process until M04 moves it to Valkey.
 
 **Browser origins (D-053, D-054).** The console, portal and POS are served from their own origins and talk to this API cross-origin with cookies. Two consequences are load-bearing rather than incidental:
@@ -440,6 +447,7 @@ Each org configures its own thresholds. These actions go through approvals:
 - reseller payout batches
 - investor withdrawals and distributions
 - company loan repayments above the threshold (M26, D-298)
+- password and second-factor resets of anyone who can approve at org tier (D-404)
 - fraud block overrides
 - reopening a closed period (super_admin only)
 
@@ -449,7 +457,7 @@ How thresholds behave (D-062, D-065, D-068):
 
 - Only `org_admin` sets a threshold (`PUT /v1/approvals/thresholds`, subject `ApprovalThreshold`). Lowering one applies at once; raising one, or setting the first, is a `threshold_change` request another org admin must approve (D-073). Each request records the threshold in force when it was raised.
 - **Under** the threshold, a request is recorded `auto_approved`: audited, both events emitted, no checker. **At or above** it, with no threshold configured, it is `pending`. Amounts are compared by magnitude.
-- Never auto-approved, whatever the threshold (D-071): reopening a period, bonus rules, threshold changes and back-dated entries. The database refuses a threshold for them and an auto-approved row of them. A request's terms are fixed from the moment it is raised.
+- Never auto-approved, whatever the threshold (D-071): reopening a period, bonus rules, threshold changes, back-dated entries and sign-in resets (D-404). The database refuses a threshold for them and an auto-approved row of them. A request's terms are fixed from the moment it is raised.
 - Who may raise is per type (`REQUESTER_TYPES`, D-072). A type whose amount the owning module derives (stock write-offs and gains, settlements, closing variances, payroll, payout batches) is always held when its amount was typed by a person.
 - Who may check is per type (`CHECKER_TYPES`): accounts decides payments, hr decides payroll and bonuses, branch_manager decides branch items (stock write-offs and gains, closing variances), org_admin decides everything except reopening a period, which only super_admin decides.
 - A branch manager is a branch-tier checker: only branch items (never auto-approved, D-076) whose amount the owning module derived, carrying a `branch_id` in the branch manager membership's own scope (D-075), and only under both the captured and the current threshold for the type.
