@@ -65,9 +65,10 @@ export const AUDIT_EXEMPT_KEY = 'elysium:audit-exempt';
  * A public mutation route with no audit entry of its own, and why that is right.
  *
  * Declared on the handler, never set at run time, so it says what the route is rather than
- * what one request did, and `audit-exempt.test.ts` lists every route that carries it: a new
- * one fails that test until somebody has read the reason. A route that writes inside an org
- * should audit itself with `AuditService.record` instead.
+ * what one request did, and `audit-exempt.test.ts` lists every handler that carries it: a new
+ * one fails that test until somebody has read the reason. It only ever silences the "no org"
+ * error. A request that has an org is audited as usual, exempt or not, so an exemption can
+ * never remove a row from an org's log.
  */
 export const AuditExempt = (reason: string) => SetMetadata(AUDIT_EXEMPT_KEY, reason);
 
@@ -123,15 +124,14 @@ export class AuditInterceptor implements NestInterceptor {
     evenIfAudited = false,
   ): Promise<void> {
     if (request[ALREADY_AUDITED] === true && !evenIfAudited) return;
-    const exempt = this.reflector.getAllAndOverride<string | undefined>(AUDIT_EXEMPT_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (exempt !== undefined && !evenIfAudited) return;
 
     const requestContext = request.context;
     const orgId = requestContext?.orgId;
     if (requestContext === undefined || orgId == null) {
+      // A public route that declared why it has no org log entry (`@AuditExempt`). Handler
+      // only: a class-level exemption would cover routes nobody reviewed.
+      const exempt = this.reflector.get<string | undefined>(AUDIT_EXEMPT_KEY, context.getHandler());
+      if (exempt !== undefined) return;
       // No org means no tenant log to write into: `audit.audit_log` is
       // tenant-scoped and `org_id` is NOT NULL. A mutation that reaches here
       // without having audited itself is a route that should have — the org

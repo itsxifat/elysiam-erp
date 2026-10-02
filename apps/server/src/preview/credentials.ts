@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { chmodSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, writeFileSync } from 'node:fs';
 
 /**
  * The preview's sign-ins, and the one place they are written (invariant 10, D-381).
@@ -112,7 +112,8 @@ export function credentialsMarkdown(
 }
 
 export function writeCredentials(file: string, text: string): void {
+  // `mode` applies only when the file is created, so a file from an earlier run is made
+  // owner-only first, before the new passwords are in it. (Windows ignores both.)
+  if (existsSync(file)) chmodSync(file, 0o600);
   writeFileSync(file, text, { encoding: 'utf8', mode: 0o600 });
-  // `mode` applies only when the file is created; a file from an earlier run keeps its own.
-  chmodSync(file, 0o600);
 }

@@ -49,8 +49,10 @@ with the next update)".
 
 ## Status on 2026-10-02
 
-Done, pending the commit's `pnpm verify` and the ledger re-audit (recorded in the progress
-entry).
+Done. `pnpm verify` exits 0 on 2ad6070. The ledger re-audit found 0 critical and 3
+warnings: W1 and W2 are fixed, and W3 is narrowed in D-389 with a follow-up (see the progress
+entry). The preview server runs a snapshot of this work (`preview-deploy`), seeded once on
+2026-10-02. Do not re-seed it, or the owner's passwords change.
 
 - `preview:seed` runs end to end on a fresh database and again on top of itself with
   identical books. It also runs with `NODE_ENV=production`, with `--out -` (credentials on

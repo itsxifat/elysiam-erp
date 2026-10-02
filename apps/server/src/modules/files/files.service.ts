@@ -92,9 +92,6 @@ function present(row: FileRow): PublicFile {
 }
 
 /** Turn a storage refusal into the HTTP answer it deserves. */
-/** The org segment of a storage key, as `buildStorageKey` writes it. */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 function mapStorageError(error: unknown): never {
   if (error instanceof StorageError) {
     switch (error.failure) {
@@ -120,6 +117,9 @@ function mapStorageError(error: unknown): never {
   if (error instanceof ImageRejected) throw new BadRequestException(error.message);
   throw error;
 }
+
+/** The org segment of a storage key, as `buildStorageKey` writes it. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @Injectable()
 export class FilesService {

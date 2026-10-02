@@ -69,13 +69,15 @@ function argument(args: readonly string[], name: string): string | undefined {
   return index === -1 ? undefined : args[index + 1];
 }
 
-/** Whole taka with lakh grouping, for the books line. */
+/** Taka with lakh grouping and the poisha, for the books line: a difference may be small. */
 function taka(amount: string): string {
   const parts = takaParts(poisha(amount));
   const text = parts.taka.toString();
   const last3 = text.slice(-3);
   const rest = text.slice(0, -3).replace(/\B(?=(\d{2})+(?!\d))/g, ',');
-  return `${parts.negative ? '-' : ''}Tk ${rest === '' ? last3 : `${rest},${last3}`}`;
+  const whole = rest === '' ? last3 : `${rest},${last3}`;
+  const fraction = parts.poisha === 0n ? '' : `.${parts.poisha.toString().padStart(2, '0')}`;
+  return `${parts.negative ? '-' : ''}Tk ${whole}${fraction}`;
 }
 
 /**

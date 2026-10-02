@@ -942,3 +942,73 @@ share`), W-B (one person could void a loan's receipt: `LOAN_SELF_VOID` in the se
     them; it could also require `voided_by = app.user_id`. (owner: claude)
   - Renumber 0089–0093 at integration. (owner: claude, integrator)
 - Next: integration of M26 with its sibling branches.
+
+### 2026-10-02 · preview kit · Demo data, sign-ins and a guide for trying the ERP · done
+
+- Delivered: `pnpm preview:seed` fills a database with a few weeks of believable work in
+  Elysium Lifestyle BD and creates one sign-in per role (new random passwords every run,
+  written only to a gitignored file or stdout). All the work goes through the real API
+  routes, in-process, with the worker's job handlers. It covers 15 orders in every state,
+  parcels on a fake courier with a COD settlement, purchases, stock, marketing, payroll,
+  targets, till sales, investors, a company loan and the dashboards. Some items are left
+  waiting to approve. It is idempotent, and it fails if the books disagree: trial balance,
+  stock against 1300 Inventory, or COD against courier receivables. `pnpm preview:local`
+  does the whole thing on this PC in one command. `e2e:preview` is the smoke run: it builds
+  a preview the same way and signs in as every role. `docs/testing-guide.md` is the owner's
+  plain-language guide for https://elyerp.enfinito.cloud, and
+  `docs/runbooks/preview-kit.md` has the steps for this PC and the server.
+- Verification:
+  - `pnpm verify` exits 0 on 2ad6070 (165 test files: 2674 passed, 1 skipped).
+  - The re-audit fixes after it pass format, lint, typecheck, the preview and audit unit
+    tests (32), and the files and auth platform suites (40).
+  - Two seed runs on a fresh local preview, the second on top of the first, give identical
+    books. A planted change by an outsider made the seed refuse, even with
+    `--allow-existing-users`.
+  - Seed on a fresh database: every book check agrees. The demo brand's trial balance is
+    Tk 31,01,514.51 on each side, stock equals 1300 at Tk 4,35,160, COD variance is 0, and
+    the training brand balances. It also ran with `NODE_ENV=production`, with `--out -` and
+    without `migration-sample/`.
+  - Smoke run: `roles.preview.ts` passes 8 of 8 with the enrolment spacing (before it, the
+    accounts test hit the limit). `portal-till.preview.ts` passed 3 of 3 in the earlier run.
+  - Suites touched by the first audit's fixes (files, HR, courier M15 tracking, auth
+    platform) pass: 53 + 61 tests.
+- Auditors: ledger-auditor, first pass: 1 critical, 7 warnings, all fixed (D-381, D-389).
+  Re-audit: 0 critical, 3 warnings.
+  - W1 fixed. A change in any brand's audit log by someone outside the preview refuses the
+    seed, and no flag skips it. Refusals point at the runbook, and the runbook says to
+    unmark a database before real use.
+  - W2 fixed. An exemption only silences the no-org error, and the test pins it per
+    handler.
+  - W3: D-389 is narrowed to the local driver, and the R2 case is a follow-up.
+  - Notes N3 to N6 are fixed.
+  - The acceptance-auditor does not apply: this is not a milestone.
+- Decisions/assumptions: D-380 to D-389.
+- New dependencies: none.
+- Deviations: none from the plan. Added from the audit: the database marker guard, a
+  two-connection check, fake gateways, `LOG_DESTINATION`, and the stronger books check.
+  Also two fixes to shipped code: `@AuditExempt` route metadata in place of the run-time
+  audited flag, and the refusal of bytes for a stored upload.
+- Follow-ups:
+  - R2 uploads: a presigned `PUT` can replace a stored object during its 900 s life. Copy
+    to a final key on finalize, or use a conditional `PUT` (re-audit W3). (owner: claude)
+  - The SMS and Meta fakes apply only in the seed's process. On the server the deployed
+    worker shares the queue. Today the seed queues no SMS. Refusing to run when the
+    environment names a real provider would make that hold by design (re-audit N1).
+    (owner: claude)
+  - A finalize landing between the bytes `PUT`'s status check and its write is still
+    possible; lock the row in both (re-audit N2). (owner: claude)
+  - `intake.controller.ts` still sets `ALREADY_AUDITED` at run time for a replay; move it to
+    `@AuditExempt` or a service-written row (re-audit N7). (owner: claude)
+  - The credentials file's `chmod 600` does nothing on Windows (`preview:local`). It is
+    gitignored, but readable by other local users. (owner: human, if the PC is shared)
+  - The console has no buttons yet for hold, pack, ship, deliver, booking a parcel and
+    inviting staff; the guide lists them as "not on screen yet". (owner: claude)
+  - Merge into `integration-wave2`, which now has M14b. Reuse the resolution from
+    `preview-deploy` (0d09119). `logger.ts` keeps M14b's `createLogger(name, destination?)`
+    and `loggerOptions()`, and adds `LOG_DESTINATION=stderr` → `pino.destination(2)` when no
+    destination is passed. `apps/server/package.json` keeps M14b's dependencies and adds
+    only `files` and `preview:seed`. The portal and till sub-path URLs need M14b's
+    7f15149. (owner: claude, integrator)
+- Next: merge into `integration-wave2`. The preview server already runs a snapshot of this
+  work (`preview-deploy`), seeded once on 2026-10-02 (17 s, books agree). Do not re-seed
+  it, or the owner's passwords change.

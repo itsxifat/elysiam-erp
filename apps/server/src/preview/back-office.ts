@@ -204,6 +204,13 @@ export async function ensureCash(ctx: Context): Promise<void> {
   const income = category('4300');
   const utilities = category('5810');
   const miscellaneous = category('5890');
+  for (const [code, found] of [
+    ['4300', income],
+    ['5810', utilities],
+    ['5890', miscellaneous],
+  ] as const) {
+    if (found === undefined) ctx.note(`no category account ${code}; its cash entry is skipped`);
+  }
 
   await accounts.post('/v1/accounts/transfers', {
     transferId: ctx.id('transfer:bank-to-office'),

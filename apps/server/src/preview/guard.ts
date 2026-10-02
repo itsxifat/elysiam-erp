@@ -13,6 +13,11 @@ import { sql } from 'drizzle-orm';
  * Both connections are checked, not one. The seed writes through the application role and
  * through the owner role (the base seed, the job queues, the super admin flag), so an owner
  * address pointing somewhere else would slip past a check of the first alone.
+ *
+ * The marker is permanent, so a preview that later holds real work is still marked. The audit
+ * log is what says so: any change in any brand made by someone outside the preview stops the
+ * seed, and no flag skips that (ledger re-audit W1). Unmark a database before real use
+ * (docs/runbooks/preview-kit.md).
  */
 
 export const PREVIEW_MARKER = 'elysium-preview';
@@ -33,14 +38,6 @@ const IDENTITY = sql`
   where d.datname = current_database()
 `;
 
-/** The marker, as the SQL that sets it. Quoted for a name like `elysium_preview_e2e`. */
-export function markerStatement(database: string): string {
-  if (!/^[a-z_][a-z0-9_]*$/.test(database)) {
-    throw new Error(`"${database}" is not a plain database name.`);
-  }
-  return `comment on database "${database}" is '${PREVIEW_MARKER}'`;
-}
-
 /**
  * The decision, apart from the reads, so it can be tested without a database. Returns the
  * reason to refuse, or null.
@@ -48,7 +45,7 @@ export function markerStatement(database: string): string {
 export function refusal(
   app: DatabaseIdentity,
   owner: DatabaseIdentity,
-  outsiders: number,
+  people: { readonly outsiders: number; readonly outsiderChanges: number },
   allowExistingUsers: boolean,
 ): string | null {
   // Name, oid and the server's start time: one database on one running cluster. Not the
@@ -65,14 +62,22 @@ export function refusal(
   if (app.marker !== PREVIEW_MARKER) {
     return (
       `"${app.database}" is not marked as a preview, so it may hold a brand's real data. ` +
-      '`pnpm preview:local` makes and marks a preview database. To mark one by hand, as its ' +
-      `owner or a superuser: ${markerStatement(app.database)};`
+      '`pnpm preview:local` makes and marks a preview database; for a preview server, see ' +
+      'docs/runbooks/preview-kit.md.'
     );
   }
-  if (outsiders > 0 && !allowExistingUsers) {
+  if (people.outsiderChanges > 0) {
     return (
-      `${String(outsiders)} person(s) outside the preview can sign in to "${app.database}". ` +
-      'Pass --allow-existing-users if they are testers you invited on purpose.'
+      `${String(people.outsiderChanges)} change(s) in "${app.database}" were made by people ` +
+      'outside the preview, so it holds work that is not demo data. Nothing overrides this: ' +
+      'start a fresh preview instead (docs/runbooks/preview-kit.md).'
+    );
+  }
+  if (people.outsiders > 0 && !allowExistingUsers) {
+    return (
+      `${String(people.outsiders)} person(s) outside the preview can sign in to ` +
+      `"${app.database}". Pass --allow-existing-users if they are testers you invited on ` +
+      'purpose and have changed nothing.'
     );
   }
   return null;
@@ -87,13 +92,35 @@ export async function assertPreviewTarget(options: {
   if (app === undefined || owner === undefined) {
     throw new Error('preview:seed could not read which database it is connected to.');
   }
+  const outside = `%@${options.emailDomain}`;
   const counted = await withGlobal((tx) =>
     tx.execute<{ n: number }>(sql`
-      select count(*)::int as n from iam.users
-      where email not like ${`%@${options.emailDomain}`}
+      select count(*)::int as n from iam.users where email not like ${outside}
     `),
   );
-  const reason = refusal(app, owner, counted[0]?.n ?? 0, options.allowExistingUsers);
+  // Read brand by brand: the audit log is FORCE RLS, so each read runs in that org.
+  const orgs = await withSystem((tx) =>
+    tx.execute<{ id: string }>(sql`select id::text as id from org.organizations`),
+  );
+  let outsiderChanges = 0;
+  for (const org of orgs) {
+    const rows = await withSystem(
+      (tx) =>
+        tx.execute<{ n: number }>(sql`
+          select count(*)::int as n
+          from audit.audit_log a join iam.users u on u.id = a.actor_user_id
+          where u.email not like ${outside}
+        `),
+      { orgId: org.id },
+    );
+    outsiderChanges += rows[0]?.n ?? 0;
+  }
+  const reason = refusal(
+    app,
+    owner,
+    { outsiders: counted[0]?.n ?? 0, outsiderChanges },
+    options.allowExistingUsers,
+  );
   if (reason !== null) throw new Error(`preview:seed refuses this database. ${reason}`);
   return app.database;
 }
