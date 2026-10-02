@@ -674,6 +674,74 @@ describe('HR and accounts permissions follow the matrix (check 4)', () => {
     expect(other.statusCode).toBe(404);
   });
 
+  it('keeps the check-in and check-out times a day is recorded with', async () => {
+    /*
+     * Every entry with a time answered 500: the instants were bound into raw SQL as `Date`
+     * objects, which Drizzle's postgres-js driver refuses, and read back with
+     * `.toISOString()` on what the driver returns as text. No test sent a time; the preview
+     * seed did (2026-10-02).
+     */
+    const recorded = await hr.client.request('PUT', '/v1/hr/attendance', {
+      body: {
+        entries: [
+          {
+            employeeId: chameli.id,
+            businessDate: '2026-07-06',
+            // Present, so the time changes nothing a later payroll test computes for July.
+            status: 'present',
+            checkIn: '10:40',
+            checkOut: '19:05',
+          },
+        ],
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(200);
+
+    const month = await hr.client.request(
+      'GET',
+      `/v1/hr/attendance?month=2026-07&employeeId=${chameli.id}`,
+    );
+    expect(month.statusCode, month.body).toBe(200);
+    const day = body<{
+      items: { businessDate: string; status: string; checkInAt: string; checkOutAt: string }[];
+    }>(month).items.find((row) => row.businessDate === '2026-07-06');
+    // Asia/Dhaka is UTC+6 all year, so 10:40 there is 04:40 UTC.
+    expect(day).toMatchObject({
+      status: 'present',
+      checkInAt: '2026-07-06T04:40:00.000Z',
+      checkOutAt: '2026-07-06T13:05:00.000Z',
+    });
+  });
+
+  it('keeps the times an attendance file brings in', async () => {
+    // The import path used the same binding as the manual one (D-389).
+    const csv = ['code,day,in,out', 'EMP-003,08/07/2026,09:15,18:20'].join('\n');
+    const imported = await hr.client.request('POST', '/v1/hr/attendance/imports', {
+      body: {
+        month: '2026-07',
+        csv,
+        mapping: { employeeCode: 'code', date: 'day', checkIn: 'in', checkOut: 'out' },
+        apply: true,
+      },
+    });
+    expect(imported.statusCode, imported.body).toBe(201);
+    expect(body<{ acceptedCount: number }>(imported).acceptedCount).toBe(1);
+
+    const month = await hr.client.request(
+      'GET',
+      `/v1/hr/attendance?month=2026-07&employeeId=${chameli.id}`,
+    );
+    expect(month.statusCode, month.body).toBe(200);
+    const day = body<{
+      items: { businessDate: string; source: string; checkInAt: string; checkOutAt: string }[];
+    }>(month).items.find((row) => row.businessDate === '2026-07-08');
+    expect(day).toMatchObject({
+      source: 'csv_import',
+      checkInAt: '2026-07-08T03:15:00.000Z',
+      checkOutAt: '2026-07-08T12:20:00.000Z',
+    });
+  });
+
   it('confines a branch manager’s attendance writes to their own branch', async () => {
     /*
      * `update Employee` at branch scope (§6), which is what lets a showroom manager mark

@@ -6,7 +6,8 @@
   "files": [
     "dist",
     "!dist/**/*.test.*",
-    "!dist/testing"
+    "!dist/testing",
+    "migration-sample"
   ],
   "scripts": {
     "build": "tsc -b",
@@ -18,7 +19,8 @@
     "bench:catalog": "node ../../scripts/bench.mjs catalog",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "migration": "node --env-file-if-exists=.env --enable-source-maps dist/main.migration.js",
-    "demo:org": "node --env-file-if-exists=.env --enable-source-maps dist/main.migration.js demo"
+    "demo:org": "node --env-file-if-exists=.env --enable-source-maps dist/main.migration.js demo",
+    "preview:seed": "node --env-file-if-exists=.env --enable-source-maps dist/main.preview.js"
   },
   "dependencies": {
     "@casl/ability": "catalog:",

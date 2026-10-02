@@ -4,7 +4,9 @@ import { base, ignores } from '@elysium/config/eslint/base';
 // package lints itself with its own preset.
 export default [
   {
-    ignores: [...ignores, 'apps/**', 'packages/**', 'docs/**', 'infra/**'],
+    // A script's `.d.mts` is checked by the TypeScript project that imports it (the
+    // console's e2e setup imports `preview-stack.mjs`); no root project contains it.
+    ignores: [...ignores, 'apps/**', 'packages/**', 'docs/**', 'infra/**', 'scripts/**/*.d.mts'],
   },
   ...base({ tsconfigRootDir: import.meta.dirname }),
 ];

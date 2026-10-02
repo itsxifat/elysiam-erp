@@ -62,6 +62,12 @@ export { seedDeliveryZones, type DeliveryZoneSeedResult } from './seed/delivery-
 export { branchCashCode, COA_TEMPLATE, type TemplateAccount } from './seed/coa-template.js';
 /** M14a: the training org's set-up, for `pnpm demo:org` (D-223). */
 export { seedTrainingOrg, TRAINING_ORG_SLUG, trainingOrgId } from './seed/training.js';
+/**
+ * `pnpm db:seed`'s two steps, for `pnpm preview:seed` (D-380), which runs them first so one
+ * command makes a fresh database previewable. Both are idempotent upserts.
+ */
+export { seedGeography, type GeographySeedResult } from './seed/geography.js';
+export { seedOrganizations, type SeedResult } from './seed/index.js';
 
 export {
   availableOrgs,

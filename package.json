@@ -32,6 +32,8 @@
     "lint:fix": "turbo run lint -- --fix && eslint . --fix",
     "migration": "pnpm --filter @elysium/server run migration",
     "demo:org": "pnpm --filter @elysium/server run demo:org",
+    "preview:local": "node scripts/preview-local.mjs",
+    "preview:seed": "pnpm --filter @elysium/server run preview:seed",
     "setup:env": "node scripts/setup-env.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

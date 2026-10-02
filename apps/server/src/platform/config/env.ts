@@ -13,6 +13,13 @@ const schema = z.object({
   API_HOST: z.string().min(1).default('0.0.0.0'),
   API_PORT: z.coerce.number().int().positive().max(65535).default(3000),
 
+  /**
+   * Where the logs go. `stderr` is for a command whose stdout is its product:
+   * `preview:seed --out -` prints the preview's sign-ins there, and a log line in the
+   * middle of them would corrupt the file (D-381).
+   */
+  LOG_DESTINATION: z.enum(['stdout', 'stderr']).default('stdout'),
+
   // Required from M01 onward. It is required now so a misconfigured environment
   // fails at boot rather than at the first query.
   DATABASE_URL: z.string().url().startsWith('postgres'),

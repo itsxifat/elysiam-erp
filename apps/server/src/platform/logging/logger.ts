@@ -1,5 +1,6 @@
 import { maskPhonesInText, redact } from '@elysium/domain';
 import {
+  destination as pinoDestination,
   pino,
   stdSerializers,
   type DestinationStream,
@@ -141,10 +142,13 @@ export function loggerOptions(name: string, settings: LoggerSettings): LoggerOpt
 
 export function createLogger(name: string, destination?: DestinationStream): Logger {
   const env = serverEnv();
+  // `LOG_DESTINATION=stderr` keeps stdout free for a CLI's own output (the preview seed's
+  // `--out -`).
+  const target = destination ?? (env.LOG_DESTINATION === 'stderr' ? pinoDestination(2) : undefined);
   const options = loggerOptions(name, {
     level: env.LOG_LEVEL,
     // A transport and an explicit destination are mutually exclusive in pino.
-    pretty: env.NODE_ENV === 'development' && destination === undefined,
+    pretty: env.NODE_ENV === 'development' && target === undefined,
   });
-  return destination === undefined ? pino(options) : pino(options, destination);
+  return target === undefined ? pino(options) : pino(options, target);
 }
