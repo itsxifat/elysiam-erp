@@ -23,6 +23,9 @@ export {
   type Tx,
 } from './client.js';
 
+// The release step (M14b): migrations as erp_owner, one run at a time.
+export { runMigrations, type MigrationResult } from './migrations.js';
+
 export {
   ANALYTICS_READABLE,
   APPEND_ONLY_TABLES,
@@ -59,6 +62,12 @@ export { seedDeliveryZones, type DeliveryZoneSeedResult } from './seed/delivery-
 export { branchCashCode, COA_TEMPLATE, type TemplateAccount } from './seed/coa-template.js';
 /** M14a: the training org's set-up, for `pnpm demo:org` (D-223). */
 export { seedTrainingOrg, TRAINING_ORG_SLUG, trainingOrgId } from './seed/training.js';
+/**
+ * `pnpm db:seed`'s two steps, for `pnpm preview:seed` (D-380), which runs them first so one
+ * command makes a fresh database previewable. Both are idempotent upserts.
+ */
+export { seedGeography, type GeographySeedResult } from './seed/geography.js';
+export { seedOrganizations, type SeedResult } from './seed/index.js';
 
 export {
   availableOrgs,
@@ -78,10 +87,13 @@ export {
 } from './iam/branding.js';
 
 export {
+  INVITE_LINK_SECONDS,
   LIBRARY_RATE_RULES,
+  PASSWORD_LINK_SECONDS,
   RecordingSmsProvider,
   TWO_FACTOR_REQUIRED_ROLES,
   createAuth,
+  mayHoldSession,
   mustEnrolTwoFactor,
   requiresTwoFactor,
   type Auth,

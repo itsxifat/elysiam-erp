@@ -22,7 +22,9 @@ export function registerOfflineShell(): void {
   if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return;
 
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('/sw.js').catch(() => {
+    // Under Vite's base: `/` on Pages, `/pos/` on the single-server preview (D-352). The
+    // worker's scope is the directory it is served from, which is the till's own.
+    void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {
       // No worker means no offline start; the till still works while it stays open.
     });
     void cacheRunningPage();
@@ -31,7 +33,7 @@ export function registerOfflineShell(): void {
 
 async function cacheRunningPage(): Promise<void> {
   if (!('caches' in window)) return;
-  const urls = new Set<string>(['/']);
+  const urls = new Set<string>([import.meta.env.BASE_URL]);
   for (const element of document.querySelectorAll(
     'script[src], link[rel="stylesheet"][href], link[rel="modulepreload"][href], link[rel="manifest"][href]',
   )) {
@@ -43,7 +45,11 @@ async function cacheRunningPage(): Promise<void> {
     // Same-origin files only: API responses are never cached here. What the till
     // may use offline is in IndexedDB, written on purpose, not a copy of whatever
     // the last request happened to return.
-    if (url.origin === location.origin) urls.add(url.pathname);
+    // Same origin and under the till's own path: on the single-server preview the API
+    // shares the origin (D-352), and its `/v1` responses are not the till's files.
+    if (url.origin === location.origin && url.pathname.startsWith(import.meta.env.BASE_URL)) {
+      urls.add(url.pathname);
+    }
   }
   /*
    * Every font the stylesheet names, not only the ones this visit happened to use.

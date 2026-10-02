@@ -284,6 +284,19 @@ export class HrController {
 
   // --- payroll runs -----------------------------------------------------------
 
+  /**
+   * The wallets a run or a staff loan may be paid from: id and name only (D-396).
+   *
+   * `update Payroll`, the grant `pay` and `disburse` declare, so whoever may press Pay can
+   * load its picker — hr included, who holds no `read Wallet` and so could not load
+   * `GET /v1/ledger/wallets`. No balance leaves here.
+   */
+  @RequireAbility('update', 'Payroll')
+  @Get('payroll/wallets')
+  async payableWallets(@Req() request: FastifyRequest) {
+    return this.payroll.payableWallets(requireContext(request));
+  }
+
   @RequireAbility('read', 'Payroll')
   @Get('payroll/runs')
   async listRuns(@Req() request: FastifyRequest, @Query() query: unknown) {

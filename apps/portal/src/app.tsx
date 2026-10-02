@@ -1,6 +1,6 @@
 import { InvestorPortal } from './investor/portal.js';
 import { TrackingPage } from './tracking/tracking-page.js';
-import { brandFromPath, isTrackingPath } from './tracking/tracking-input.js';
+import { brandFromPath, isTrackingPath, pathWithinBase } from './tracking/tracking-input.js';
 
 /**
  * The portal's entry: the public tracking page at `/track/<brand>` (M15), and the investor
@@ -17,8 +17,10 @@ import { brandFromPath, isTrackingPath } from './tracking/tracking-input.js';
  * signed-in thing the portal serves.
  */
 export function PortalApp() {
-  const path = window.location.pathname;
+  // Under Vite's base: `/` on Pages, `/portal/` on the single-server preview (D-352).
+  const base = import.meta.env.BASE_URL;
+  const path = pathWithinBase(window.location.pathname, base);
   if (isTrackingPath(path)) return <TrackingPage brand={brandFromPath(path)} />;
-  if (path !== '/investor') window.history.replaceState(null, '', '/investor');
+  if (path !== '/investor') window.history.replaceState(null, '', `${base}investor`);
   return <InvestorPortal />;
 }

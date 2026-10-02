@@ -1,0 +1,34 @@
+# Production (M14b). Merged over deploy.yml by `-d production`.
+#
+# Two VMs (§28): `web` runs the API, Valkey and Gotenberg; `jobs` runs the worker. Every
+# host, name and URL below is a PLACEHOLDER until the owner supplies production (G3).
+
+servers:
+  api:
+    hosts:
+      - 10.20.0.11 # placeholder: web VM
+  worker:
+    hosts:
+      # One host. The release step runs on the worker role, and one host means one run
+      # (the migrations also hold an advisory lock, D-340).
+      - 10.20.0.12 # placeholder: jobs VM
+
+proxy:
+  host: api.elysium.example # placeholder
+
+env:
+  clear:
+    APP_DOMAIN: elysium.example
+    API_PUBLIC_URL: https://api.elysium.example
+    TRUSTED_ORIGINS: https://console.elysium.example,https://portal.elysium.example,https://pos.elysium.example
+    REALTIME_ADAPTER_KEY: elysium:production
+    R2_BUCKET: elysium-production
+    SENTRY_ENVIRONMENT: production
+    OTEL_EXPORTER_OTLP_ENDPOINT: ''
+
+accessories:
+  valkey:
+    host: 10.20.0.11
+    # The web VM's private address: the worker on the jobs VM reaches it there, and the
+    # firewall admits 6379 from the jobs VM alone (docs/runbooks/deploy.md).
+    port: 10.20.0.11:6379:6379

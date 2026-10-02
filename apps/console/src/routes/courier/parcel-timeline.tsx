@@ -8,13 +8,13 @@ import {
   Skeleton,
   StatusBadge,
 } from '@elysium/ui';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
-import { parcelTimeline } from './api.js';
+import { confirmHandover, parcelTimeline } from './api.js';
 import { courierPath, paramOf } from './courier-nav.js';
 import { BOOKING_TONE, PARCEL_TONE } from './courier-ui.js';
 import { useCourierT, type CourierMessageKey } from './messages.js';
@@ -35,6 +35,8 @@ export function ParcelTimelinePage() {
   const ability = useAbility();
   const consignmentId = paramOf(useParams({ strict: false }), 'consignmentId');
   const mayRead = ability.can('read', 'Order');
+  const mayUpdate = ability.can('update', 'Order');
+  const queryClient = useQueryClient();
 
   const timeline = useQuery({
     queryKey: ['courier', 'parcel', consignmentId],
@@ -42,6 +44,15 @@ export function ParcelTimelinePage() {
     enabled: mayRead && consignmentId !== '',
   });
   const data = timeline.data;
+
+  // A rider signed for the box; the server ships the order if it was still waiting (D-391).
+  const handover = useMutation({
+    mutationFn: () => confirmHandover(consignmentId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['courier'] });
+      await queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
 
   return (
     <PermissionGate
@@ -77,7 +88,7 @@ export function ParcelTimelinePage() {
               <h1 className="text-lg font-semibold tracking-tight tabular-nums">
                 {t('courier.parcel.heading')} {data.consignment.orderNo}
               </h1>
-              <dl className="grid gap-3 rounded-lg border border-border p-4 text-sm sm:grid-cols-3 lg:grid-cols-6">
+              <dl className="grid gap-3 rounded-lg border border-border p-4 text-sm sm:grid-cols-3 lg:grid-cols-7">
                 <Term label={t('courier.colConsignment')}>
                   <span className="tabular-nums">{data.consignment.consignmentNo ?? '—'}</span>
                 </Term>
@@ -110,7 +121,41 @@ export function ParcelTimelinePage() {
                     ? t('courier.parcel.notSettled')
                     : t('courier.parcel.settled')}
                 </Term>
+                <Term label={t('courier.parcel.handover')}>
+                  {data.consignment.handoverConfirmedAt == null ? (
+                    t('courier.parcel.handoverPending')
+                  ) : (
+                    <DateTime value={data.consignment.handoverConfirmedAt} />
+                  )}
+                </Term>
               </dl>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  to={courierPath(`/orders/${data.consignment.orderId}`)}
+                  className="text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                  {t('courier.parcel.openOrder')}
+                </Link>
+                {mayUpdate &&
+                data.consignment.bookingState === 'booked' &&
+                data.consignment.handoverConfirmedAt == null ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={handover.isPending}
+                    onClick={() => handover.mutate()}
+                  >
+                    {t('courier.parcel.handoverConfirm')}
+                  </Button>
+                ) : null}
+                {handover.isError ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {handover.error instanceof ApiError
+                      ? handover.error.message
+                      : t('courier.errorDetail')}
+                  </p>
+                ) : null}
+              </div>
             </header>
 
             <section aria-labelledby="timeline-heading" className="space-y-2">

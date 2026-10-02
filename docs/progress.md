@@ -942,3 +942,262 @@ share`), W-B (one person could void a loan's receipt: `LOAN_SELF_VOID` in the se
     them; it could also require `voided_by = app.user_id`. (owner: claude)
   - Renumber 0089–0093 at integration. (owner: claude, integrator)
 - Next: integration of M26 with its sibling branches.
+
+### 2026-10-02 · M14b · Deployment, observability and the preview server · partial
+
+- Delivered: the production path built and rehearsed locally (server image, release step,
+  Kamal config, managed-Postgres bootstrap, Pages headers, Sentry and OpenTelemetry behind
+  configuration, log masking, readiness, API security headers, runbooks; details in
+  `docs/plans/M14b.md`). For the owner's server, a preview at one origin behind the host's
+  own nginx: `infra/docker-compose.preview.yml` (API on 127.0.0.1 only), the nginx site
+  `infra/preview/nginx-elyerp.conf`, and `infra/preview/deploy.sh`, which deploys a commit
+  over SSH with `git archive`. The portal and the till now work under a sub-path.
+- Verification: portal and till unit tests 49/49, typecheck and lint clean; the till's
+  offline e2e 3/3; the preview stack and nginx site locally with a browser, 13/13 (plan
+  status). Checks 1–3 need the owner's staging and are not claimed; `pnpm verify` was not
+  run in this session because Docker's disk on C: was nearly full.
+- Decisions/assumptions: D-340 to D-352 (D-352 rewritten for the host-nginx preview).
+- New dependencies: none.
+- Deviations from the milestone spec: the single-server preview is an addition the owner
+  asked for.
+- Follow-ups: the first super admin has no supported way in (invites need an admin,
+  D-057), so a fresh preview or production database cannot be signed into (owner: claude,
+  before the preview is useful); run `pnpm verify` once C: has room (owner: claude);
+  `docker-buildx` must be installed on the server (owner: human, in the runbook).
+- Next: the owner's first preview deploy, then M30.
+
+### 2026-10-02 · gaps · Order lifecycle buttons, courier statuses that ship, settings screens · done
+
+- Delivered (branch `gaps-orders-settings`, from `integration-wave2` at `09c36d1`; plan
+  `docs/plans/gaps-orders-settings.md`; D-390 to D-396):
+  - **Courier statuses ship the order (D-390).** A status that proves the parcel left —
+    picked up, in transit, out for delivery, delivered, partly delivered, returning, back at
+    the merchant — ships a `confirmed` or `packed` order first and then applies what the
+    status means from `shipped`, in one transaction through the state machine. Before this
+    nothing but a missing button produced `ship`, so a delivered parcel left its order
+    `packed`, the delivery ignored and no revenue posted. `hold`, `booked`, `pickup_pending`,
+    `cancelled` and `unknown` still move nothing before shipment; a held order is never moved.
+  - **Confirming the handover ships the order (D-391)**, once, whoever comes second.
+  - **Order detail buttons from the server's own table (D-392):** Confirm, Mark packed, Hand
+    to courier, Mark delivered, Partial delivery, Start return, Receive return, Release hold,
+    Hold, Cancel — each shown only when `GET /v1/orders/:id`'s new `transitions` lists it and
+    the caller holds `update Order`, with dialogs for reasons, the collected amount and the
+    return inspection. Cancel is no longer offered on a held order. A parcel panel books the
+    parcel, shows its courier status, links its tracking and confirms the handover; the
+    parcel page shows and confirms the handover too.
+  - **Bulk pack and hand-over (D-393)** on the order list, through
+    `POST /v1/orders/bulk-transition`.
+  - **Settings (D-394, D-395):** `/settings` stops being a placeholder — approval thresholds
+    (with relaxations waiting for a second org admin), delivery zones, courier accounts
+    (write-only keys, fingerprints, the adapter's own field names), website order keys (the
+    secret shown once) and till registers. The link shows for org_admin, accounts, marketing
+    and branch managers, each seeing only the tabs their grants open. New reads:
+    `GET /v1/approvals/thresholds`, `GET /v1/courier/providers`, and an `orderId` filter on
+    `GET /v1/courier/parcels`.
+  - **HR's Pay button (D-396):** `GET /v1/hr/payroll/wallets` (id and name only, through
+    `LedgerApi.activeWallets`) feeds the pay and disburse pickers, which were empty for hr.
+  - bn and en for every string. No new dependency.
+- Verification (all under `heavy.mjs`, Testcontainers):
+  - `pnpm verify` at `f655283`: format, lint and typecheck pass; tests 2,676 of 2,678 pass,
+    1 skipped, and 1 failed — `packages/db/src/testing/tenancy.test.ts` › "seeds the chart
+    of accounts once per org" hit its 30 s timeout with the machine at about 1 GB free
+    memory. That file alone then passed (67/67), and build, the bundle budget, migrations,
+    schema drift, the route-matrix gate, i18n and the api-client check all passed. The
+    previous full run at `971b720` was green (163 files, 2,674 tests).
+  - `apps/server/src/modules/courier/handover.e2e.test.ts`: 21/21 against real Postgres,
+    through HTTP and through the worker's webhook path, with exact goods-in-transit and
+    receivable amounts.
+  - `apps/console/e2e/order-lifecycle.stack.ts` on the real stack: 4/4 (pending to delivered
+    with the buttons, bulk pack, every settings tab as org_admin through the 2FA wall, no
+    Settings for sales), axe clean in both themes; screenshots in `docs/review/gaps/`. The
+    site key's one-time secret is not photographed (invariant 10).
+- Auditors:
+  - ledger-auditor at `79fd19e`: 1 critical, 4 warnings. C1 (a figureless partial
+    delivery on a packed order recorded the full COD as collected with no delivery journal),
+    W1 (a hand-set status could ship at any date), W2 (the order routes' delivery and return
+    bypassed the parcel, so the courier's statement could never match), W3 (Release hold
+    never showed: the console said `release`, the domain `release_hold`), W4 (tests lacked
+    exact amounts and the webhook path) — fixed in `971b720`. Re-audit: 0 critical, 2
+    warnings — W-A (a parcel the courier cancelled after pickup could not be received from
+    the console), W-B (the difference reason lost from the Sales discounts memo) and notes
+    N-A, N-B — fixed in `f655283`. Third audit: 0 critical, 0 warnings.
+  - acceptance-auditor: not run; this is not a milestone and has no acceptance checks.
+- Follow-ups:
+  - The delivery journal names the order's courier, the settlement relieves the parcel's;
+    set the order's courier from the consignment in the courier-path ship step (N3,
+    decisions.md). (owner: claude)
+  - `POST /v1/orders/:id/start-return` is not refused while a parcel is live (only the
+    console steers it to the parcel); add `start_return` to `PARCEL_RECORDED` for parity.
+    (owner: claude)
+  - A booking stuck `pending` blocks a person's delivery or return on that parcel until it
+    fails; a "cancel booking" action on the parcel panel would give a way out. (owner:
+    claude)
+  - Delivery zones' thana mapping, courier party ("Steadfast") creation, exchange from the
+    order detail and settlement upload remain without a screen. (owner: claude)
+  - `tenancy.test.ts`'s seed test runs close to its 30 s timeout under load. (owner: claude)
+- Next: merge `gaps-orders-settings` into the integration branch.
+
+### 2026-10-02 · preview kit · Demo data, sign-ins and a guide for trying the ERP · done
+
+- Delivered: `pnpm preview:seed` fills a database with a few weeks of believable work in
+  Elysium Lifestyle BD and creates one sign-in per role (new random passwords every run,
+  written only to a gitignored file or stdout). All the work goes through the real API
+  routes, in-process, with the worker's job handlers. It covers 15 orders in every state,
+  parcels on a fake courier with a COD settlement, purchases, stock, marketing, payroll,
+  targets, till sales, investors, a company loan and the dashboards. Some items are left
+  waiting to approve. It is idempotent, and it fails if the books disagree: trial balance,
+  stock against 1300 Inventory, or COD against courier receivables. `pnpm preview:local`
+  does the whole thing on this PC in one command. `e2e:preview` is the smoke run: it builds
+  a preview the same way and signs in as every role. `docs/testing-guide.md` is the owner's
+  plain-language guide for https://elyerp.enfinito.cloud, and
+  `docs/runbooks/preview-kit.md` has the steps for this PC and the server.
+- Verification:
+  - `pnpm verify` exits 0 on 2ad6070 (165 test files: 2674 passed, 1 skipped).
+  - The re-audit fixes after it pass format, lint, typecheck, the preview and audit unit
+    tests (32), and the files and auth platform suites (40).
+  - Two seed runs on a fresh local preview, the second on top of the first, give identical
+    books. A planted change by an outsider made the seed refuse, even with
+    `--allow-existing-users`.
+  - Seed on a fresh database: every book check agrees. The demo brand's trial balance is
+    Tk 31,01,514.51 on each side, stock equals 1300 at Tk 4,35,160, COD variance is 0, and
+    the training brand balances. It also ran with `NODE_ENV=production`, with `--out -` and
+    without `migration-sample/`.
+  - Smoke run: `roles.preview.ts` passes 8 of 8 with the enrolment spacing (before it, the
+    accounts test hit the limit). `portal-till.preview.ts` passed 3 of 3 in the earlier run.
+  - Suites touched by the first audit's fixes (files, HR, courier M15 tracking, auth
+    platform) pass: 53 + 61 tests.
+- Auditors: ledger-auditor, first pass: 1 critical, 7 warnings, all fixed (D-381, D-389).
+  Re-audit: 0 critical, 3 warnings.
+  - W1 fixed. A change in any brand's audit log by someone outside the preview refuses the
+    seed, and no flag skips it. Refusals point at the runbook, and the runbook says to
+    unmark a database before real use.
+  - W2 fixed. An exemption only silences the no-org error, and the test pins it per
+    handler.
+  - W3: D-389 is narrowed to the local driver, and the R2 case is a follow-up.
+  - Notes N3 to N6 are fixed.
+  - The acceptance-auditor does not apply: this is not a milestone.
+- Decisions/assumptions: D-380 to D-389.
+- New dependencies: none.
+- Deviations: none from the plan. Added from the audit: the database marker guard, a
+  two-connection check, fake gateways, `LOG_DESTINATION`, and the stronger books check.
+  Also two fixes to shipped code: `@AuditExempt` route metadata in place of the run-time
+  audited flag, and the refusal of bytes for a stored upload.
+- Follow-ups:
+  - R2 uploads: a presigned `PUT` can replace a stored object during its 900 s life. Copy
+    to a final key on finalize, or use a conditional `PUT` (re-audit W3). (owner: claude)
+  - The SMS and Meta fakes apply only in the seed's process. On the server the deployed
+    worker shares the queue. Today the seed queues no SMS. Refusing to run when the
+    environment names a real provider would make that hold by design (re-audit N1).
+    (owner: claude)
+  - A finalize landing between the bytes `PUT`'s status check and its write is still
+    possible; lock the row in both (re-audit N2). (owner: claude)
+  - `intake.controller.ts` still sets `ALREADY_AUDITED` at run time for a replay; move it to
+    `@AuditExempt` or a service-written row (re-audit N7). (owner: claude)
+  - The credentials file's `chmod 600` does nothing on Windows (`preview:local`). It is
+    gitignored, but readable by other local users. (owner: human, if the PC is shared)
+  - The console has no buttons yet for hold, pack, ship, deliver, booking a parcel and
+    inviting staff; the guide lists them as "not on screen yet". (owner: claude)
+  - Merge into `integration-wave2`, which now has M14b. Reuse the resolution from
+    `preview-deploy` (0d09119). `logger.ts` keeps M14b's `createLogger(name, destination?)`
+    and `loggerOptions()`, and adds `LOG_DESTINATION=stderr` → `pino.destination(2)` when no
+    destination is passed. `apps/server/package.json` keeps M14b's dependencies and adds
+    only `files` and `preview:seed`. The portal and till sub-path URLs need M14b's
+    7f15149. (owner: claude, integrator)
+- Next: merge into `integration-wave2`. The preview server already runs a snapshot of this
+  work (`preview-deploy`), seeded once on 2026-10-02 (17 s, books agree). Do not re-seed
+  it, or the owner's passwords change.
+
+### 2026-10-02 · gaps-users-auth · Staff accounts and sign-in · done
+
+- Delivered (branch `gaps-users-auth`, from `integration-wave2`):
+  - **Staff screen** (`/users`, `read User`): a brand's people with roles and branch scope,
+    status (active, invited, deactivated, disabled), two-step state and last sign-in. An
+    admin changes roles (D-400), deactivates a leaver — roles here off, sessions ended at
+    once, nothing they wrote touched (D-401) — and approves another admin's reset.
+  - **Sign-in refusal (D-401).** Better Auth's session hook refuses an account that is
+    disabled or holds no active role anywhere (`403 ACCOUNT_INACTIVE`); the login says so.
+  - **Accept-invite and password reset without email (D-402).** `/accept-invite#token=…`
+    and `/reset-password#token=…` set a password before any session check. An admin issues a
+    one-time link (invite 72 hours, reset 1 hour; a reset voids the old password and every
+    session), minted in the action's own transaction. The public reset paths are closed.
+    20 resets an admin an hour, 5 a person a day.
+  - **Lost phone (D-403).** An admin removes a second factor; the person enrols again.
+  - **Second admin (D-404, D-405).** A reset of anyone who ever held a role that can raise
+    or decide an approval, or an investor, is a `credential_reset` approval decided by
+    another org admin — never the asker, never the person; a cross-brand person is a super
+    admin's to reset. The grant lineage keeps every granter and link holder (D-406, D-410).
+- Verification:
+  - `pnpm verify` (under `heavy.mjs`) exits 0 at `332dac3`: 164 test files, 2,691 tests
+    (1 skipped), bundle 240.7 KB of 250, schema drift, route matrix (314 routes), i18n and
+    api-client checks PASS; and again after the re-audit fixes, at `52c81ed`: 164 files,
+    2,695 tests (1 skipped), every check PASS.
+  - `users.e2e.test.ts` (real Postgres): every permission edge — self-escalation through
+    either route, cross-brand 404s, super admin protection, demote-then-reset, branch
+    managers and warehouse needing a second admin, deactivated users and their sessions,
+    tokens single-use and expiring, resets audited and ending sessions, approvals by a
+    second admin only, rate limits, the trigger's refusals, two admins minting at once.
+  - `users.stack.ts` (real stack, one worker): invite and set a password; reset a forgotten
+    one; reset an accountant's second factor through a second admin; deactivate a leaver.
+    axe, no serious or critical violation, both themes; screenshots in
+    `docs/review/gaps-users-auth/`.
+- Auditors: ledger-auditor at `57d6aa5` (2 critical, 7 warnings, 7 notes), fixed in
+  `332dac3`; re-audit at `332dac3` (0 critical, 3 warnings), fixed after it: the deactivation
+  path never takes an approval row after the person lock, the lock is per person across
+  brands, and the database lifecycle and a concurrent mint have direct tests.
+- Decisions/assumptions: D-400 to D-410 (ASSUMED: D-402's lifetimes and limits, D-404's
+  24-hour collection window).
+- Migrations: `0098` (generated: `iam.credential_resets`, `users.last_sign_in_at`, the
+  `credential_reset` approval type and both never-auto-approve CHECKs), `0099` (custom:
+  RLS, grants, the reset trigger), `0100` (generated: `iam.membership_granters`, the
+  self-grant CHECK, restrict on deleting a person with resets), `0101` (custom: backfill,
+  RLS, the tightened trigger, `iam.users_active_elsewhere`). They will collide with sibling
+  branches' numbers at integration.
+- New dependencies: none.
+- Follow-ups:
+  - Email the links once an email adapter exists (D-212); until then an admin can approve
+    requests raised by someone whose invite they held (D-077's W4). (owner: human, then claude)
+  - Before SMS is switched on, confirm whether `/phone-number/verify` creates a staff session
+    without TOTP for a user with a phone number; close it if so. (owner: claude)
+  - Freeze `org_id`, `user_id` and `role` on `iam.memberships` and refuse DELETE, so "ever
+    held" cannot be rewritten (re-audit note 1). (owner: claude)
+  - `POST /v1/users` on a role already held still adds branches without an audit row of its
+    own, and creates the user row outside the membership transaction. (owner: claude)
+  - The per-admin limit is counted without a lock per admin; parallel asks for different
+    people can pass it. (owner: claude)
+  - The lineage only grows: two admins who edit each other's roles can no longer check each
+    other's requests, and only a super admin unblocks them. Decide whether routine edits
+    should count (D-410). (owner: human)
+  - The 0101 backfill cannot recover granters `POST /v1/users` overwrote before it; recover
+    them from the audit log if any brand has live data. (owner: claude, integrator)
+  - An operator-disabled account keeps its `/api/auth` session until expiry (predates this).
+    (owner: claude)
+  - Renumber 0098–0101 at integration. (owner: claude, integrator)
+- Next: integration with the other wave-2 branches.
+
+### 2026-10-02 · integration · Wave-2 gaps joined, the test site hosted · done
+
+- Delivered (branch `integration-wave2`):
+  - Merged M14b's preview deploy, `gaps-orders-settings`, the preview kit and
+    `gaps-users-auth`. Conflicts were side-by-side additions (routes, navigation, i18n, the
+    stack helpers, docs) and kept both sides; the logger keeps M14b's `createLogger(name,
+destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0098–0101
+    follow 0097 unchanged.
+  - Hosted on the owner's server (D-352): https://elyerp.enfinito.cloud, certbot TLS, the
+    database marked `elysium-preview` and seeded once with `preview:seed` (books agree). Two
+    deploy-script fixes came out of the first real run: nginx's workers could not read the
+    0700 release directory (500), and a rejected nginx config is now rolled back so the
+    shared host's other sites survive the next reload.
+  - The server's clock was 9 h 27 min fast (Ubuntu's NTS sources never answer from its
+    network), which would have refused every two-step code. With the owner's OK, chrony now
+    also uses a plain pool (`authselectmode ignore`); the runbook has the check.
+- Verification: `pnpm verify` exit 0 at `49b96b5` with all four merged: 179 test files,
+  2,808 tests (1 skipped); bundle, migrations, schema drift (100 migrations), route matrix
+  (319 routes, 311 matrix-tested, 8 public), i18n and api-client checks all pass. All nine
+  preview sign-ins accepted on the live site after deploying `49b96b5`.
+- Follow-ups:
+  - A supported way to create the first super admin on a brand-new database: invites need an
+    existing admin (D-057) and `db:dev-users` refuses non-local databases. Needed before real
+    go-live. (owner: claude, M30)
+  - The preview kit's own follow-ups (R2 presigned PUT, the seed refusing a real SMS
+    provider, the finalize race) and both gaps branches' follow-ups are in their entries above.
+- Next: M30 review and fixes.

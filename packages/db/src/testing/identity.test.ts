@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createAuth,
   LIBRARY_RATE_RULES,
+  mayHoldSession,
   mustEnrolTwoFactor,
   RecordingSmsProvider,
   requiresTwoFactor,
@@ -149,10 +150,11 @@ async function createSignInableUser(email: string): Promise<string> {
     `);
   });
 
-  const requested = await authRequest('/request-password-reset', {
+  // From the server, as the iam module does: the HTTP path is disabled (D-402).
+  await authHandle.auth.api.requestPasswordReset({
     body: { email, redirectTo: '/accept-invite' },
+    headers: new Headers(),
   });
-  expect(requested.status, await requested.clone().text()).toBeLessThan(400);
 
   const token = issuedTokens.get(email.toLowerCase());
   expect(token, `no invite token was issued for ${email}`).toBeDefined();
@@ -620,6 +622,43 @@ describe('self-service registration is closed', () => {
   });
 });
 
+describe('who may hold a session at all (gaps-users-auth, D-401)', () => {
+  it('refuses an account with no active role in any brand, after the password is checked', async () => {
+    const email = `nobody_${Date.now()}@example.invalid`;
+    const userId = await createSignInableUser(email);
+
+    const wrong = await authRequest('/sign-in/email', {
+      body: { email, password: 'not-the-password' },
+    });
+    expect(wrong.status).toBe(401);
+
+    const refused = await authRequest('/sign-in/email', { body: { email, password: PASSWORD } });
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { code?: string }).code).toBe('ACCOUNT_INACTIVE');
+    expect(hasSessionCookie(refused)).toBe(false);
+
+    const membershipId = await grantMembership({ userId, orgId: ORG_A, role: 'sales' });
+    const allowed = await authRequest('/sign-in/email', { body: { email, password: PASSWORD } });
+    expect(allowed.status).toBe(200);
+
+    await revokeMembership(membershipId, ORG_A);
+    const revoked = await authRequest('/sign-in/email', { body: { email, password: PASSWORD } });
+    expect(revoked.status).toBe(403);
+  });
+
+  it('refuses a disabled account whatever its memberships say', async () => {
+    const email = `disabled_${Date.now()}@example.invalid`;
+    const userId = await createSignInableUser(email);
+    await grantMembership({ userId, orgId: ORG_A, role: 'sales' });
+    await withGlobal(async (tx) =>
+      tx.execute(sql`update iam.users set is_active = false where id = ${userId}`),
+    );
+    const refused = await authRequest('/sign-in/email', { body: { email, password: PASSWORD } });
+    expect(refused.status).toBe(403);
+    expect(await mayHoldSession(userId)).toBe(false);
+  });
+});
+
 describe('phone OTP goes through the SMS provider (D-012)', () => {
   it('sends a code, and the code verifies', async () => {
     // The fake provider had no functional test at all: nothing asserted a code
@@ -630,6 +669,8 @@ describe('phone OTP goes through the SMS provider (D-012)', () => {
     const phoneNumber = `+88017${String(Date.now()).slice(-8)}`;
     const email = `otp_${Date.now()}@example.invalid`;
     const userId = await createSignInableUser(email);
+    // A session needs an active role somewhere (D-401).
+    await grantMembership({ userId, orgId: ORG_A, role: 'sales' });
 
     await withGlobal(async (tx) => {
       await tx.execute(
@@ -667,7 +708,8 @@ describe('phone OTP goes through the SMS provider (D-012)', () => {
 describe('check 4: the session cookie is scoped correctly', () => {
   it('is httpOnly, Secure, SameSite=Lax and on the parent domain', async () => {
     const email = `cookie_${Date.now()}@example.invalid`;
-    await createSignInableUser(email);
+    const userId = await createSignInableUser(email);
+    await grantMembership({ userId, orgId: ORG_A, role: 'sales' });
     const response = await authRequest('/sign-in/email', {
       body: { email, password: PASSWORD },
     });

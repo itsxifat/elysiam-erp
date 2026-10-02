@@ -93,8 +93,10 @@ async function portalUser(
   }
   const anonymous = harness.client();
   await anonymous.request('GET', '/v1/auth/login-branding');
-  await anonymous.request('POST', '/api/auth/request-password-reset', {
+  // Minted from the server, as the iam module does: the HTTP path is disabled (D-402).
+  await harness.auth.auth.api.requestPasswordReset({
     body: { email, redirectTo: '/accept-invite' },
+    headers: new Headers(),
   });
   const token = harness.tokens.take(email);
   const reset = await anonymous.request('POST', '/api/auth/reset-password', {

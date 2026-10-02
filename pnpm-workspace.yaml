@@ -71,6 +71,21 @@ catalog:
   # what strips the EXIF GPS tags a customer photo carries (invariant 10).
   sharp: 0.35.4
 
+  # --- observability (§26, M14b) ----------------------------------------------
+  # Each is loaded only by `apps/server/src/instrument.ts`, and only when its DSN or
+  # endpoint is configured; with neither, no test and no process imports them.
+  #   - @sentry/node: server error reporting, errors only (no Sentry tracing, D-344).
+  #   - @opentelemetry/sdk-node: the documented NodeSDK; it builds the OTLP exporters
+  #     from the standard OTEL_* variables, so no exporter package is imported directly.
+  #   - @opentelemetry/api: the SDK's peer, which must resolve from the server.
+  #   - @opentelemetry/instrumentation-http / -undici: incoming requests, and the
+  #     outbound courier, SMS and Meta calls (Node's fetch is undici).
+  '@sentry/node': 11.2.0
+  '@opentelemetry/sdk-node': 0.222.0
+  '@opentelemetry/api': 1.9.1
+  '@opentelemetry/instrumentation-http': 0.222.0
+  '@opentelemetry/instrumentation-undici': 0.32.0
+
   # --- realtime (§19) -----------------------------------------------------
   # socket.io for the /rt gateway, its redis adapter so several API instances
   # fan one event out to every socket, and ioredis as that adapter's client.

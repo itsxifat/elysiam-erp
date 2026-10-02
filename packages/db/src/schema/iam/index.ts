@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   foreignKey,
   index,
   integer,
@@ -75,6 +77,13 @@ export const users = iam.table('users', {
   isSuperAdmin: boolean('is_super_admin').notNull().default(false),
 
   isActive: boolean('is_active').notNull().default(true),
+
+  /**
+   * When this person last finished signing in, second factor included (gaps-users-auth).
+   * Stamped by the auth bridge after Better Auth answers, for the staff screen: an admin
+   * deciding whether an account is still used should not have to read the audit log.
+   */
+  lastSignInAt: timestamp('last_sign_in_at', { withTimezone: true, mode: 'date' }),
   ...timestamps,
 });
 
@@ -201,6 +210,11 @@ export const memberships = iam.table(
     index('memberships_user_idx').on(table.userId),
     // The target of membership_branches' composite reference (D-047).
     unique('memberships_org_id_id_key').on(table.orgId, table.id),
+    /**
+     * Nobody is their own granter (D-077, the ledger audit's C2): a self-grant would cut
+     * the lineage that keeps a person from approving their granter's requests.
+     */
+    check('memberships_not_self_granted', sql`${table.grantedBy} is distinct from ${table.userId}`),
   ],
 );
 
@@ -241,5 +255,111 @@ export const membershipBranches = iam.table(
       columns: [table.orgId, table.membershipId],
       foreignColumns: [memberships.orgId, memberships.id],
     }).onDelete('cascade'),
+  ],
+);
+
+/**
+ * The record of every sign-in reset an admin asked for (gaps-users-auth, D-402 to D-406).
+ *
+ * `invite` is a password link for someone who never set a password, `password` a link
+ * that replaces a password, `two_factor` the removal of an enrolled second factor. A
+ * reset of someone who can decide approvals at org tier waits for a second admin
+ * (`pending_approval`, D-404); an approved password reset waits for the admin who asked
+ * to collect its link (`approved`), for 24 hours. Every row is kept: it is also what the
+ * reset limits count (D-402).
+ *
+ * Tenant-scoped: a reset is asked for in one brand, by that brand's admin, and only that
+ * brand's admins should read it. Migration 0099 adds RLS, the grants (no DELETE) and the
+ * trigger that holds the lifecycle.
+ */
+export const credentialResets = iam.table(
+  'credential_resets',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    // Restrict, not cascade: a reset is evidence, and deleting a person must not erase
+    // it (D-407). Migration 0100 replaced 0098's cascade.
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    kind: text('kind').notNull(),
+    status: text('status').notNull(),
+    requestedBy: text('requested_by').notNull(),
+    reason: text('reason').notNull(),
+    /** The `credential_reset` approval a second admin decides, when one was needed. */
+    approvalRequestId: uuid('approval_request_id'),
+    decidedBy: text('decided_by'),
+    decidedAt: timestamp('decided_at', { withTimezone: true, mode: 'date' }),
+    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+    /** For a link: when it stops working. Never the token itself. */
+    linkExpiresAt: timestamp('link_expires_at', { withTimezone: true, mode: 'date' }),
+    ...timestamps,
+  },
+  (table) => [
+    index('credential_resets_org_idx').on(table.orgId),
+    index('credential_resets_org_user_idx').on(table.orgId, table.userId),
+    index('credential_resets_org_requester_idx').on(table.orgId, table.requestedBy),
+    /** One open reset per person and kind in a brand: a second ask waits for the first. */
+    uniqueIndex('credential_resets_one_open_idx')
+      .on(table.orgId, table.userId, table.kind)
+      .where(sql`${table.status} in ('pending_approval', 'approved')`),
+    check(
+      'credential_resets_kind_known',
+      sql`${table.kind} in ('invite', 'password', 'two_factor')`,
+    ),
+    check(
+      'credential_resets_status_known',
+      sql`${table.status} in ('pending_approval', 'approved', 'completed', 'rejected', 'cancelled', 'expired')`,
+    ),
+    /** Nobody resets their own sign-in (D-403). */
+    check('credential_resets_not_self', sql`${table.requestedBy} <> ${table.userId}`),
+    /** An invite is never approved: it is issued at once, and its issuer becomes the granter (D-406). */
+    check(
+      'credential_resets_invite_unapproved',
+      sql`${table.kind} <> 'invite' or ${table.approvalRequestId} is null`,
+    ),
+    /** Waiting for a second admin means there is an approval to wait for. */
+    check(
+      'credential_resets_pending_has_approval',
+      sql`${table.status} not in ('pending_approval', 'approved') or ${table.approvalRequestId} is not null`,
+    ),
+  ],
+);
+
+/**
+ * Everyone who ever granted a person a role in a brand, or held a link that set their
+ * password (D-077, D-406, the ledger audit's C2 and N6).
+ *
+ * `iam.memberships.granted_by` holds only the latest granter, so a re-grant or a reset
+ * by a second admin used to drop the first from the lineage — and with it the rule that
+ * a person never approves a request raised by whoever could have set their password.
+ * This keeps every one of them. Append-only (migration 0101): INSERT and SELECT for
+ * `erp_app`, never UPDATE or DELETE. The approvals lineage reads both.
+ */
+export const membershipGranters = iam.table(
+  'membership_granters',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    grantedBy: text('granted_by').notNull(),
+    /** `role_granted`, `link_issued` or `backfill`, for whoever reads the lineage later. */
+    reason: text('reason').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('membership_granters_org_idx').on(table.orgId),
+    index('membership_granters_org_user_idx').on(table.orgId, table.userId),
+    check('membership_granters_not_self', sql`${table.grantedBy} <> ${table.userId}`),
+    check(
+      'membership_granters_reason_known',
+      sql`${table.reason} in ('role_granted', 'link_issued', 'backfill')`,
+    ),
   ],
 );

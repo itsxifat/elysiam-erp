@@ -77,6 +77,15 @@ describe('navigation follows the permission matrix (check 1)', () => {
     }
   });
 
+  it('shows Settings to every role that can open one of its tabs, and to no other (D-394)', () => {
+    for (const role of ['org_admin', 'accounts', 'marketing', 'branch_manager'] as const) {
+      expect(labels([role]), role).toContain('Settings');
+    }
+    for (const role of ['sales', 'warehouse', 'hr', 'reseller', 'investor'] as const) {
+      expect(labels([role]), role).not.toContain('Settings');
+    }
+  });
+
   it('always offers the overview, whatever the roles', () => {
     // A user with no grants at all must still land somewhere. An empty sidebar
     // plus a blank page is indistinguishable from a broken deploy.

@@ -149,6 +149,22 @@ export type ApprovalExecutor = (
 export type RejectionHandler = ApprovalExecutor;
 
 /**
+ * What `registerExecutor` hands the module that owns a type: the power to withdraw a
+ * pending request of that type, and only that type (gaps-users-auth, D-409).
+ */
+export interface OwnedApprovalType {
+  cancel(
+    tx: Tx,
+    context: ActiveContext,
+    input: {
+      readonly id: string;
+      readonly reason: string;
+      readonly request?: AuditableRequest | undefined;
+    },
+  ): Promise<boolean>;
+}
+
+/**
  * Types whose approval means nothing without an executor. Approving one with
  * no executor registered is refused rather than recorded as done: a period
  * reopen that says "approved" while the period stays closed is worse than an
@@ -167,6 +183,9 @@ const EXECUTOR_REQUIRED_TYPES: readonly ApprovalType[] = [
   // M26: only the loans module's executor posts a repayment; approved without it, the
   // repayment would wait forever and block every later instalment (D-298).
   'loan_repayment',
+  // gaps-users-auth: only the iam module's executor resets a second factor or releases a
+  // password link; "approved" with nothing done would leave the person locked out (D-404).
+  'credential_reset',
 ];
 
 /**
@@ -186,6 +205,9 @@ export const MODULE_RAISED_TYPES: readonly ApprovalType[] = [
   'settlement_posting',
   // M26: the payload names a waiting repayment, and the amount is its instalment's (D-298).
   'loan_repayment',
+  // gaps-users-auth: the payload names whose sign-in is reset; only `/v1/users/:id/...`
+  // writes it, after checking who may reset whom (D-404).
+  'credential_reset',
 ];
 
 function magnitude(amount: bigint): bigint {
@@ -204,11 +226,16 @@ export class ApprovalsService {
    * by the owning module when it starts (the ledger registers
    * `period_reopen`); a second registration is a wiring mistake.
    */
-  registerExecutor(type: ApprovalType, executor: ApprovalExecutor): void {
+  registerExecutor(type: ApprovalType, executor: ApprovalExecutor): OwnedApprovalType {
     if (this.executors.has(type)) {
       throw new Error(`An executor for ${type} is already registered.`);
     }
     this.executors.set(type, executor);
+    // The withdrawal handle goes to the module that owns the type and nobody else, so
+    // one module cannot cancel another's requests (the ledger audit's N5).
+    return {
+      cancel: (tx, context, input) => this.cancelRaisedByModule(tx, context, { ...input, type }),
+    };
   }
 
   /** Register what rejecting a type releases (D-299). One per type, like an executor. */
@@ -351,6 +378,12 @@ export class ApprovalsService {
       raisedByModule?: boolean;
       /** The HTTP request: carries the caller's scope, and tells the audit net to stand down. */
       request?: AuditableRequest;
+      /**
+       * The owning module's own transaction, so the request and the module's row that
+       * names it commit together or not at all (gaps-users-auth, the ledger audit's W3).
+       * Omitted, the request opens its own.
+       */
+      tx?: Tx;
     },
   ): Promise<{ id: string; required: boolean; status: ApprovalStatus }> {
     // A type whose payload decides what gets executed is raised only by its
@@ -384,7 +417,7 @@ export class ApprovalsService {
     const events: DomainEvent[] = [];
 
     try {
-      const result = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const work = async (tx: Tx) => {
         const thresholds = await this.thresholdsFor(tx, context.orgId);
         const threshold = thresholds.find((entry) => entry.type === input.type);
         const required = requiresApproval({
@@ -488,9 +521,11 @@ export class ApprovalsService {
 
         await this.writeEvents(tx, context.orgId, events);
         return { id, required, status };
-      });
+      };
 
-      return result;
+      return input.tx === undefined
+        ? await withOrg({ orgId: context.orgId, userId: context.userId }, work)
+        : await work(input.tx);
     } catch (error) {
       // The composite FK: a branch that does not exist in this org. The same
       // answer whether it exists elsewhere or nowhere, so it is not an oracle.
@@ -702,6 +737,63 @@ export class ApprovalsService {
   }
 
   /**
+   * Withdraw a pending request its owning module raised, because what it asked for no
+   * longer makes sense (gaps-users-auth: the person whose sign-in it would reset has been
+   * deactivated). Inside the caller's transaction, like an executor.
+   *
+   * Only for a type in `MODULE_RAISED_TYPES`: a request a person raised through the
+   * generic route is theirs to have decided, not a module's to withdraw. Returns false
+   * when the request is no longer pending — decided meanwhile, which is not an error.
+   */
+  private async cancelRaisedByModule(
+    tx: Tx,
+    context: ActiveContext,
+    input: {
+      readonly id: string;
+      readonly type: ApprovalType;
+      readonly reason: string;
+      readonly request?: AuditableRequest | undefined;
+    },
+  ): Promise<boolean> {
+    if (!MODULE_RAISED_TYPES.includes(input.type)) {
+      throw new Error(`A ${input.type} request is not a module's to cancel.`);
+    }
+    const rows = await tx.execute<{ requested_by: string }>(sql`
+      update approvals.approval_requests
+      set status = 'cancelled'::approvals.approval_status,
+          decision_note = ${input.reason},
+          updated_at = now()
+      where id = ${input.id}
+        and type = ${input.type}::approvals.approval_type
+        and status = 'pending'
+      returning requested_by
+    `);
+    const row = rows[0];
+    if (row === undefined) return false;
+
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'update',
+      action: `approval.cancelled:${input.type}`,
+      entityType: 'ApprovalRequest',
+      entityId: input.id,
+      before: { status: 'pending' },
+      after: { status: 'cancelled', note: input.reason },
+      requestId: context.requestId,
+      ...(input.request === undefined ? {} : { request: input.request }),
+    });
+    await this.writeEvents(tx, context.orgId, [
+      {
+        name: 'approval.decided',
+        orgId: context.orgId,
+        payload: { id: input.id, decision: 'cancelled', requestedBy: row.requested_by },
+      },
+    ]);
+    return true;
+  }
+
+  /**
    * §6: a branch manager checks "branch items **under threshold**".
    *
    * Two conditions, both judged on the branch-tier roles alone:
@@ -789,17 +881,29 @@ export class ApprovalsService {
     context: ActiveContext,
     row: { readonly requested_by: string },
   ): Promise<void> {
+    /*
+     * Every granter counts, not only the latest (gaps-users-auth, D-410): a re-grant or a
+     * reset by a second admin overwrites `memberships.granted_by`, and the first granter —
+     * who may have held the password link — would drop out of the lineage with it.
+     * `iam.membership_granters` keeps them all.
+     */
     const found = await tx.execute<{ hit: number }>(sql`
-      with recursive lineage (user_id, depth) as (
-        select granted_by, 1
-        from iam.memberships
-        where org_id = ${context.orgId} and user_id = ${context.userId}
-          and is_active and granted_by is not null
+      with recursive grants (user_id, granted_by) as (
+        select user_id, granted_by from iam.memberships
+        where org_id = ${context.orgId} and granted_by is not null
         union
-        select m.granted_by, l.depth + 1
-        from iam.memberships m
-        join lineage l on m.user_id = l.user_id
-        where m.org_id = ${context.orgId} and m.granted_by is not null and l.depth < 16
+        select user_id, granted_by from iam.membership_granters
+        where org_id = ${context.orgId}
+      ),
+      lineage (user_id, depth) as (
+        select g.granted_by, 1
+        from grants g
+        where g.user_id = ${context.userId}
+        union
+        select g.granted_by, l.depth + 1
+        from grants g
+        join lineage l on g.user_id = l.user_id
+        where l.depth < 16
       )
       select 1 as hit from lineage where user_id = ${row.requested_by} limit 1
     `);
@@ -1020,6 +1124,64 @@ export class ApprovalsService {
       });
 
       return { rows: mapped, nextCursor };
+    });
+  }
+
+  /**
+   * This org's thresholds, for the settings screen (D-394).
+   *
+   * One row per type a threshold can exist for — `NEVER_AUTO_APPROVE_TYPES` are listed apart,
+   * because the honest answer for them is "always a second person", not "no threshold set" —
+   * with the value in force (null: none set, so every request is held) and any relaxation
+   * still waiting for a second org admin (D-073), so a screen can say "₹5,000, raising to
+   * ₹20,000 once approved" instead of showing a value that is not yet true.
+   */
+  async listThresholds(context: ActiveContext): Promise<{
+    items: {
+      type: ApprovalType;
+      thresholdPoisha: string | null;
+      pending: { approvalId: string; thresholdPoisha: string; requestedBy: string }[];
+    }[];
+    alwaysHeld: readonly ApprovalType[];
+  }> {
+    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const current = await tx.execute<{ type: string; threshold_poisha: string }>(sql`
+        select type::text as type, threshold_poisha::text as threshold_poisha
+        from approvals.approval_thresholds
+        where org_id = ${context.orgId}
+      `);
+      const waiting = await tx.execute<{ id: string; requested_by: string; payload: unknown }>(sql`
+        select id, requested_by, payload
+        from approvals.approval_requests
+        where org_id = ${context.orgId}
+          and type = 'threshold_change'::approvals.approval_type
+          and status = 'pending'
+        order by created_at
+      `);
+      const byType = new Map(current.map((row) => [row.type, row.threshold_poisha]));
+      const pendingFor = (type: string) =>
+        waiting.flatMap((row) => {
+          const payload = row.payload as { type?: unknown; thresholdPoisha?: unknown } | null;
+          return payload?.type === type && typeof payload.thresholdPoisha === 'string'
+            ? [
+                {
+                  approvalId: row.id,
+                  thresholdPoisha: payload.thresholdPoisha,
+                  requestedBy: row.requested_by,
+                },
+              ]
+            : [];
+        });
+      return {
+        items: APPROVAL_TYPES.filter((type) => !NEVER_AUTO_APPROVE_TYPES.includes(type)).map(
+          (type) => ({
+            type,
+            thresholdPoisha: byType.get(type) ?? null,
+            pending: pendingFor(type),
+          }),
+        ),
+        alwaysHeld: NEVER_AUTO_APPROVE_TYPES,
+      };
     });
   }
 

@@ -34,6 +34,8 @@
     "migration": "pnpm --filter @elysium/server run migration",
     "report:routes": "node scripts/route-report.mjs",
     "demo:org": "pnpm --filter @elysium/server run demo:org",
+    "preview:local": "node scripts/preview-local.mjs",
+    "preview:seed": "pnpm --filter @elysium/server run preview:seed",
     "setup:env": "node scripts/setup-env.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

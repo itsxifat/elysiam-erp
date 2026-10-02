@@ -20,12 +20,14 @@ import {
   TrendingUp,
   Target,
   Truck,
+  UserCog,
   Users,
   Wallet,
   type LucideIcon,
 } from 'lucide-react';
 
 import type { ConsoleMessageKey } from '../i18n/messages.js';
+import { SETTINGS_TABS } from '../routes/settings/tabs.js';
 
 /**
  * The navigation, as a function of the permission matrix (M05 check 1).
@@ -53,12 +55,20 @@ import type { ConsoleMessageKey } from '../i18n/messages.js';
  * everyone whose grant is scoped, which is most people.
  */
 
+interface Grant {
+  readonly action: Action;
+  readonly subject: Subject;
+}
+
 export interface NavItem {
   readonly to: string;
   readonly labelKey: ConsoleMessageKey;
   readonly icon: LucideIcon;
-  /** The permission that makes this screen reachable. */
-  readonly required: { readonly action: Action; readonly subject: Subject } | 'always';
+  /**
+   * The permission that makes this screen reachable — or, for a section of tabs that each
+   * declare their own (Settings), the list of them: the entry shows when any one is held.
+   */
+  readonly required: Grant | readonly Grant[] | 'always';
 }
 
 export interface NavSection {
@@ -231,11 +241,28 @@ export const NAVIGATION: readonly NavSection[] = [
         icon: ScrollText,
         required: { action: 'read', subject: 'AuditLog' },
       },
+      /*
+       * gaps-users-auth. `read User`, org_admin's (and super admin's through `manage all`):
+       * the brand's people, their roles and sign-in, and the resets waiting for a second
+       * admin.
+       */
+      {
+        to: '/users',
+        labelKey: 'nav.users',
+        icon: UserCog,
+        required: { action: 'read', subject: 'User' },
+      },
+      /*
+       * Settings is a section of tabs, each gated on the grant its own routes declare
+       * (`routes/settings/tabs.ts`, D-394), so the link shows for anyone who can open one of
+       * them — an accountant for the courier accounts and till registers, marketing for the
+       * website order keys — and not, as before, for org_admin alone.
+       */
       {
         to: '/settings',
         labelKey: 'nav.settings',
         icon: Cog,
-        required: { action: 'update', subject: 'ApprovalThreshold' },
+        required: SETTINGS_TABS.map((tab) => tab.required),
       },
       /*
        * M05's DataTable showcase, with invented rows. Development builds only: shown
@@ -250,8 +277,10 @@ export const NAVIGATION: readonly NavSection[] = [
 ];
 
 export function canSee(ability: AppAbility, item: NavItem): boolean {
-  if (item.required === 'always') return true;
-  return ability.can(item.required.action, item.required.subject);
+  const required = item.required;
+  if (required === 'always') return true;
+  const grants: readonly Grant[] = 'action' in required ? [required] : required;
+  return grants.some((grant) => ability.can(grant.action, grant.subject));
 }
 
 /**

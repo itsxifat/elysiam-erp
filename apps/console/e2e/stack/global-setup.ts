@@ -52,6 +52,10 @@ export interface StackInfo {
   readonly lapsedBuyer: { readonly id: string; readonly name: string };
   /** A pending order the desk agent works, for M17's advance claim. */
   readonly advanceOrder: { readonly id: string; readonly orderNo: string };
+  /** A pending order the desk walks to delivered with the lifecycle buttons (D-392). */
+  readonly lifecycleOrder: { readonly id: string; readonly orderNo: string };
+  /** A confirmed order, its units held, for bulk pack (D-393). */
+  readonly bulkOrder: { readonly id: string; readonly orderNo: string };
 }
 
 function logTo(name: string): number {
@@ -152,6 +156,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       promoCode: string;
       lapsedBuyer: StackInfo['lapsedBuyer'];
       advanceOrder: StackInfo['advanceOrder'];
+      lifecycleOrder: StackInfo['lifecycleOrder'];
+      bulkOrder: StackInfo['bulkOrder'];
     };
 
     const serverEnv: NodeJS.ProcessEnv = {
@@ -217,6 +223,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       promoCode: provisioned.promoCode,
       lapsedBuyer: provisioned.lapsedBuyer,
       advanceOrder: provisioned.advanceOrder,
+      lifecycleOrder: provisioned.lifecycleOrder,
+      bulkOrder: provisioned.bulkOrder,
     };
     // Inherited by the test workers. Throwaway values only, and never printed.
     process.env.E2E_STACK = JSON.stringify(info);

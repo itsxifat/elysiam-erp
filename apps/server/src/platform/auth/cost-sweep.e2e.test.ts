@@ -56,6 +56,7 @@ import {
   prepareWalletsFixtures,
   WALLETS_ROUTE_FIXTURES,
 } from '../../modules/wallets/wallets.route-fixtures.js';
+import { USERS_ROUTE_FIXTURES } from '../../modules/iam/users.route-fixtures.js';
 import {
   ORG_A,
   startHttpHarness,
@@ -108,6 +109,7 @@ const BANK = seedAccountId(ORG_A, '1100');
  */
 const PLATFORM_FIXTURES: Readonly<Record<string, Fixture>> = {
   'GET /v1/approvals': () => ({ url: '/v1/approvals' }),
+  'GET /v1/approvals/thresholds': () => ({ url: '/v1/approvals/thresholds' }),
   'GET /v1/approvals/:id': async () => {
     const maker = await harness.asRole('org_admin', ORG_A);
     const created = await maker.client.request('POST', '/v1/approvals', {
@@ -159,6 +161,7 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...MARKETING_ROUTE_FIXTURES,
   ...ANALYTICS_ROUTE_FIXTURES,
   ...LOANS_ROUTE_FIXTURES,
+  ...USERS_ROUTE_FIXTURES,
 };
 
 /**

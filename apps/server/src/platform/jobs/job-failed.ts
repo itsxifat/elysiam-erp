@@ -2,6 +2,7 @@ import { withOrg } from '@elysium/db';
 import type { Logger } from 'pino';
 
 import { emit } from '../events/outbox.js';
+import { reportError } from '../observability/errors.js';
 import type { JobFailure, JobFailureReporter } from './jobs.runtime.js';
 
 /**
@@ -32,6 +33,14 @@ export function reportJobFailedThroughOutbox(logger: Logger): JobFailureReporter
     // does not survive into a callback, and `orgId!` would be the shape that
     // stops being true the first time someone reorders these two statements.
     const orgId = failure.orgId;
+
+    // To the error tracker as well (§26: alert on job failures). One event per job that
+    // spent its retries, named by queue and code; the payload stays in the database.
+    reportError(new Error(`job dead-lettered on ${failure.queue}`), {
+      kind: 'job',
+      queue: failure.queue,
+      code: failure.code,
+    });
 
     if (orgId === null) {
       logger.error(

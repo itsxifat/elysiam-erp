@@ -57,6 +57,13 @@ export const AUDITED_AUTH_PATHS: Readonly<Record<string, AuthEvent>> = {
   '/api/auth/sign-out': { action: 'auth.signed_out', operation: 'logout' },
 };
 
+/** The actions after which a person is signed in, all the way. */
+const SIGN_IN_ACTIONS: ReadonlySet<string> = new Set([
+  'auth.signed_in',
+  'auth.second_factor_verified',
+  'auth.backup_code_used',
+]);
+
 /**
  * Who a reset-password call is about, read *before* Better Auth consumes the
  * token. The endpoint has no session and its response carries no user, so this
@@ -130,6 +137,14 @@ export async function recordAuthEvent(input: {
 
     // The first factor alone is not a sign-in when a second one is owed.
     const action = redirect ? 'auth.first_factor_passed' : event.action;
+
+    // The staff screen's "last signed in" (gaps-users-auth): only a sign-in that
+    // finished, second factor included, and never the half that is still owed one.
+    if (SIGN_IN_ACTIONS.has(action)) {
+      await withGlobal(async (tx) =>
+        tx.execute(sql`update iam.users set last_sign_in_at = now() where id = ${userId}`),
+      );
+    }
 
     const orgs = await withUser({ userId }, async (tx) =>
       tx.execute<{ org_id: string }>(sql`

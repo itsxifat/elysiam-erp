@@ -411,6 +411,25 @@ export const ERROR_CODES = [
   'LOAN_IMMUTABLE',
   /** The person who recorded a loan cannot also void it; a second person does (D-304). */
   'LOAN_SELF_VOID',
+
+  // Staff accounts and sign-in (gaps-users-auth, D-400 to D-409)
+  /** No such person holds or held a role in this organization. */
+  'USER_NOT_FOUND',
+  /** Nobody changes their own roles, deactivates themselves or resets their own sign-in. */
+  'USER_SELF_MANAGEMENT',
+  /** A super admin, or someone in more than one brand: only a super admin acts on them. */
+  'USER_PROTECTED',
+  /** The person has been deactivated in this organization. */
+  'USER_INACTIVE',
+  /** A reset of this kind is already waiting for approval or collection. */
+  'CREDENTIAL_RESET_PENDING',
+  /** There is nothing to reset: no second factor is enrolled. */
+  'CREDENTIAL_NOTHING_TO_RESET',
+  /**
+   * Sent by sign-in itself (Better Auth's error body), not by a route here: the account
+   * is disabled, or holds no active role in any brand (D-401).
+   */
+  'ACCOUNT_INACTIVE',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

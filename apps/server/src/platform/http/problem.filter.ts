@@ -8,6 +8,7 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 
+import { reportError } from '../observability/errors.js';
 import { instanceOf, problemFor, PROBLEM_CONTENT_TYPE, type ProblemDocument } from './problem.js';
 
 /**
@@ -66,6 +67,14 @@ export class ProblemFilter implements ExceptionFilter {
         { err: exception, code: document.code, instance: document.instance },
         'request failed',
       );
+      // And to the error tracker, when one is configured (§26). Tagged with the code and
+      // the method only: the URL can hold a phone number, and the scrubber is a second
+      // line, not the first.
+      reportError(exception, {
+        kind: 'http',
+        code: document.code,
+        method: request.method,
+      });
     }
 
     void reply.status(document.status).header('content-type', PROBLEM_CONTENT_TYPE).send(document);

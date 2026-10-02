@@ -3,17 +3,24 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/testing",
+    "migration-sample"
+  ],
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "lint": "eslint .",
-    "dev": "tsc -b && concurrently -n tsc,api,worker -c blue,green,magenta \"tsc -b --watch --preserveWatchOutput\" \"node --watch --env-file-if-exists=.env --enable-source-maps dist/main.api.js\" \"node --watch --env-file-if-exists=.env --enable-source-maps dist/main.worker.js\"",
-    "start:api": "node --env-file-if-exists=.env dist/main.api.js",
-    "start:worker": "node --env-file-if-exists=.env dist/main.worker.js",
+    "dev": "tsc -b && concurrently -n tsc,api,worker -c blue,green,magenta \"tsc -b --watch --preserveWatchOutput\" \"node --watch --env-file-if-exists=.env --enable-source-maps --import ./dist/instrument.js dist/main.api.js\" \"node --watch --env-file-if-exists=.env --enable-source-maps --import ./dist/instrument.js dist/main.worker.js\"",
+    "start:api": "node --env-file-if-exists=.env --import ./dist/instrument.js dist/main.api.js",
+    "start:worker": "node --env-file-if-exists=.env --import ./dist/instrument.js dist/main.worker.js",
     "bench:catalog": "node ../../scripts/bench.mjs catalog",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "migration": "node --env-file-if-exists=.env --enable-source-maps dist/main.migration.js",
-    "demo:org": "node --env-file-if-exists=.env --enable-source-maps dist/main.migration.js demo"
+    "demo:org": "node --env-file-if-exists=.env --enable-source-maps dist/main.migration.js demo",
+    "preview:seed": "node --env-file-if-exists=.env --enable-source-maps dist/main.preview.js"
   },
   "dependencies": {
     "@casl/ability": "catalog:",
@@ -27,6 +34,11 @@
     "@nestjs/common": "catalog:",
     "@nestjs/core": "catalog:",
     "@nestjs/platform-fastify": "catalog:",
+    "@opentelemetry/api": "catalog:",
+    "@opentelemetry/instrumentation-http": "catalog:",
+    "@opentelemetry/instrumentation-undici": "catalog:",
+    "@opentelemetry/sdk-node": "catalog:",
+    "@sentry/node": "catalog:",
     "@socket.io/redis-adapter": "catalog:",
     "drizzle-orm": "catalog:",
     "fastify": "catalog:",

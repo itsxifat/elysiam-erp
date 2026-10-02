@@ -141,9 +141,10 @@ export const approvalDecidedPayload = z
      * `auto_approved` is one of these, and leaving it out would have been a
      * silent drop rather than an error: a request under its org's threshold is
      * decided the moment it is raised, and the requester still needs to be told
-     * so. The database enum has the same five values.
+     * so. The database enum has the same five values; `cancelled` is a request its
+     * owning module withdrew (gaps-users-auth), which the requester hears about too.
      */
-    decision: z.enum(['approved', 'rejected', 'auto_approved']),
+    decision: z.enum(['approved', 'rejected', 'auto_approved', 'cancelled']),
     requestedBy: z.string(),
   })
   .strict();

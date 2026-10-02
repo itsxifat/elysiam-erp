@@ -976,6 +976,30 @@ export class TransitionsService {
     }
   }
 
+  /**
+   * Refuse a delivery or a received return recorded on the order while its parcel is live
+   * with a courier (ledger audit of D-392, W2).
+   *
+   * The order routes post §7's journals and never touch the consignment, so a delivery
+   * marked here left the parcel's `collected_poisha` empty: the courier's own "delivered"
+   * then found the order delivered and recorded nothing, and every such parcel became an
+   * amount mismatch on the courier's statement, its receivable never cleared by matching.
+   * A return received here sat in the courier's "awaiting return" list for good. The parcel
+   * routes (`POST /v1/courier/parcels/:id/status` and `…/receive-return`) take the same
+   * moves through `applyTrigger` and write the consignment too, so the order is pointed
+   * there. Pending counts as live, as it does for a cancel (`hasLiveParcel`).
+   */
+  async assertNoLiveParcel(tx: Tx, orgId: string, orderId: string): Promise<void> {
+    const courier = this.courier.current();
+    if (courier === undefined) return;
+    if (await courier.hasLiveParcel(tx, orgId, orderId)) {
+      throw new OrdersError(
+        'ORDER_TRANSITION_INVALID',
+        'This order has a parcel with the courier. Record the delivery or the return on the parcel, so the courier’s figure and its statement agree.',
+      );
+    }
+  }
+
   private async courierFor(
     tx: Tx,
     context: ActiveContext,

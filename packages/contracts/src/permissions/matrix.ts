@@ -77,6 +77,8 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
     'investor_withdrawal',
     // M26: repaying a company loan (D-298).
     'loan_repayment',
+    // gaps-users-auth: a privileged person's sign-in reset needs a second admin (D-404).
+    'credential_reset',
   ],
   // §6: payments.
   /*
@@ -164,6 +166,8 @@ export const REQUESTER_TYPES: Readonly<Record<MembershipRole, readonly string[]>
     'investor_distribution',
     'investor_withdrawal',
     'loan_repayment',
+    // Raised only by the iam module's reset routes, never the generic one (D-404).
+    'credential_reset',
   ],
   accounts: [
     'wallet_adjustment',
@@ -228,6 +232,43 @@ export function checkerTier(
     tier = 'branch';
   }
   return tier;
+}
+
+/**
+ * Roles whose sign-in an admin may not reset alone (D-404, after the ledger audit).
+ *
+ * Whoever holds a person's sign-in can act as them. So a password or second-factor
+ * reset is itself maker-checker for anyone whose account can **raise** an approval
+ * (`REQUESTER_TYPES`: the admin would raise it as them and approve it as themselves),
+ * **decide** one (`CHECKER_TYPES`: the admin would approve their own request as them),
+ * or holds an investor's money and statements. Derived from both lists, so a role that
+ * gains either joins it without anyone remembering this one. Today: org_admin,
+ * accounts, hr, branch_manager, warehouse and investor; sales, marketing and reseller
+ * may be reset by one admin.
+ */
+export const SECOND_ADMIN_RESET_ROLES: readonly MembershipRole[] = (
+  Object.keys(CHECKER_TYPES) as MembershipRole[]
+).filter(
+  (role) =>
+    (CHECKER_TYPES[role] ?? []).length > 0 ||
+    (REQUESTER_TYPES[role] ?? []).length > 0 ||
+    role === 'investor',
+);
+
+/**
+ * Does resetting the sign-in of someone who holds, **or has held**, these roles in a
+ * brand need a second admin? (D-404)
+ *
+ * The roles a person ever held, not only those held now: otherwise an admin demotes an
+ * accountant to sales, resets them alone, signs in as them and promotes them back — the
+ * ledger audit's C1. Memberships are switched off, never deleted, so the history is there.
+ */
+export function resetNeedsSecondPerson(
+  rolesEverHeld: readonly MembershipRole[],
+  isSuperAdmin: boolean,
+): boolean {
+  if (isSuperAdmin) return true;
+  return rolesEverHeld.some((role) => SECOND_ADMIN_RESET_ROLES.includes(role));
 }
 
 export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {

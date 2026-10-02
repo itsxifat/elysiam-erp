@@ -552,8 +552,9 @@ export interface AttendanceRow extends Record<string, unknown> {
   readonly branch_id: string | null;
   readonly business_date: string;
   readonly status: string;
-  readonly check_in_at: Date | null;
-  readonly check_out_at: Date | null;
+  /** Text, not `Date`: Drizzle's postgres-js driver leaves `timestamptz` unparsed. */
+  readonly check_in_at: string | null;
+  readonly check_out_at: string | null;
   readonly source: string;
   readonly note: string | null;
 }
@@ -611,13 +612,17 @@ export interface AttendanceUpsert {
  * device, so a hand-edited month cannot hide behind the biometric import.
  */
 export async function upsertAttendance(tx: Tx, entry: AttendanceUpsert): Promise<void> {
+  // Instants as ISO text with a cast: the driver refuses a `Date` bound into raw `sql`,
+  // and every check-in time sent to `PUT /v1/hr/attendance` answered 500 (found by the
+  // preview seed, 2026-10-02).
   await tx.execute(sql`
     insert into hr.attendance_days
       (org_id, employee_id, branch_id, business_date, status, check_in_at, check_out_at,
        source, import_id, note, recorded_by)
     values (${entry.orgId}, ${entry.employeeId}, ${entry.branchId}::uuid,
             ${entry.businessDate}::date, ${entry.status}::hr.attendance_status,
-            ${entry.checkInAt}, ${entry.checkOutAt},
+            ${entry.checkInAt?.toISOString() ?? null}::timestamptz,
+            ${entry.checkOutAt?.toISOString() ?? null}::timestamptz,
             ${entry.source}::hr.attendance_source, ${entry.importId}::uuid,
             ${entry.note}, ${entry.recordedBy})
     on conflict (org_id, employee_id, business_date) do update

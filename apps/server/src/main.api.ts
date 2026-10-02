@@ -19,6 +19,7 @@ import { applyGlobalPipeline } from './platform/http/pipeline.js';
 import { PasswordTokenStore } from './modules/iam/iam.service.js';
 import { serverEnv } from './platform/config/env.js';
 import { createLogger } from './platform/logging/logger.js';
+import { reportError, shutdownObservability } from './platform/observability/errors.js';
 import type { Logger } from 'pino';
 import { pathToFileURL } from 'node:url';
 import { registerAuth } from './platform/http/auth-plugin.js';
@@ -163,7 +164,9 @@ async function bootstrap(): Promise<void> {
   useTrackingRateLimitStore(limiter);
 
   const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule.register({ auth, tokens }),
+    // Valkey joins the readiness checks here, through the rate limiter's own connection:
+    // with its offline queue off, a ping fails at once rather than waiting (§26).
+    AppModule.register({ auth, tokens, readiness: { valkey: () => limiterClient.ping() } }),
     // `trustProxy` is what makes `request.ip` the client rather than the proxy,
     // and the per-IP rate limit is only meaningful if it is right (§25).
     //
@@ -285,6 +288,8 @@ async function bootstrap(): Promise<void> {
           logger.warn({ err: error }, 'jobs client did not stop cleanly');
         })
         .then(() => app.close())
+        // Last: the error events and spans of the requests just drained (§26).
+        .then(() => shutdownObservability())
         .then(() => process.exit(0));
     });
   }
@@ -300,10 +305,13 @@ async function bootstrap(): Promise<void> {
  */
 const entrypoint = process.argv[1];
 if (entrypoint !== undefined && pathToFileURL(entrypoint).href === import.meta.url) {
-  bootstrap().catch((error: unknown) => {
+  bootstrap().catch(async (error: unknown) => {
     // The logger needs valid config, and the most likely failure here is invalid
     // config, so this one path writes to stderr directly.
     process.stderr.write(`api failed to start: ${String(error)}\n`);
+    // A boot that fails during a deploy is the error most worth being told about.
+    reportError(error, { kind: 'boot', process: 'api' });
+    await shutdownObservability();
     process.exit(1);
   });
 }

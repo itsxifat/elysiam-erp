@@ -13,7 +13,10 @@ import type {
   CashInInput,
   ClosePeriodInput,
   CreateUser,
+  CredentialResetInput,
+  DeactivateUser,
   ReopenPeriodInput,
+  SetRoles,
   SwitchOrg,
   ThresholdInput,
 } from '@elysium/contracts';
@@ -38,6 +41,7 @@ export const OPERATIONS = {
   },
   createUser: { method: 'POST', path: '/v1/users', ability: 'create:User' },
   dayBook: { method: 'GET', path: '/v1/ledger/day-book', ability: 'read:LedgerReport' },
+  deactivateUser: { method: 'POST', path: '/v1/users/{id}/deactivate', ability: 'update:User' },
   decideApproval: {
     method: 'POST',
     path: '/v1/approvals/{id}/decide',
@@ -132,6 +136,11 @@ export const OPERATIONS = {
     path: '/v1/analytics/narrative',
     ability: 'read:Dashboard',
   },
+  getV1ApprovalsThresholds: {
+    method: 'GET',
+    path: '/v1/approvals/thresholds',
+    ability: 'read:ApprovalThreshold',
+  },
   getV1Buyers: { method: 'GET', path: '/v1/buyers', ability: 'export:BuyerExport' },
   getV1BuyersExport: { method: 'GET', path: '/v1/buyers/export', ability: 'export:BuyerExport' },
   getV1CatalogAttributes: {
@@ -172,6 +181,11 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/courier/parcels/{id}/returnable',
     ability: 'read:Order',
+  },
+  getV1CourierProviders: {
+    method: 'GET',
+    path: '/v1/courier/providers',
+    ability: 'read:CourierSettlement',
   },
   getV1CourierReportsCodReconciliation: {
     method: 'GET',
@@ -311,6 +325,11 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/hr/payroll/runs/{id}/preview',
     ability: 'read:Payroll',
+  },
+  getV1HrPayrollWallets: {
+    method: 'GET',
+    path: '/v1/hr/payroll/wallets',
+    ability: 'update:Payroll',
   },
   getV1HrPerformanceMe: { method: 'GET', path: '/v1/hr/performance/me', ability: 'read:Target' },
   getV1HrProductivity: { method: 'GET', path: '/v1/hr/productivity', ability: 'read:Target' },
@@ -518,11 +537,13 @@ export const OPERATIONS = {
     ability: 'read:Cost',
   },
   healthLive: { method: 'GET', path: '/health/live', ability: 'public' },
+  healthReady: { method: 'GET', path: '/health/ready', ability: 'public' },
   listApprovals: { method: 'GET', path: '/v1/approvals', ability: 'read:ApprovalRequest' },
   listDemoCostedItems: { method: 'GET', path: '/v1/demo/costed-items', ability: 'read:CostedItem' },
   listLedgerAccounts: { method: 'GET', path: '/v1/ledger/accounts', ability: 'read:LedgerReport' },
   listMyOrgs: { method: 'GET', path: '/v1/me/orgs', ability: 'authenticated' },
   listPeriods: { method: 'GET', path: '/v1/ledger/periods', ability: 'read:LedgerPeriod' },
+  listUsers: { method: 'GET', path: '/v1/users', ability: 'read:User' },
   listWallets: { method: 'GET', path: '/v1/ledger/wallets', ability: 'read:Wallet' },
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
   me: { method: 'GET', path: '/v1/me', ability: 'authenticated' },
@@ -929,6 +950,11 @@ export const OPERATIONS = {
     path: '/v1/orders/bulk-confirm',
     ability: 'update:Order',
   },
+  postV1OrdersBulkTransition: {
+    method: 'POST',
+    path: '/v1/orders/bulk-transition',
+    ability: 'update:Order',
+  },
   postV1OrdersByIdAdvances: {
     method: 'POST',
     path: '/v1/orders/{id}/advances',
@@ -1084,13 +1110,24 @@ export const OPERATIONS = {
     path: '/v1/ledger/periods/reopen',
     ability: 'update:LedgerPeriod',
   },
+  resetUserTwoFactor: {
+    method: 'POST',
+    path: '/v1/users/{id}/two-factor/reset',
+    ability: 'update:User',
+  },
   setApprovalThresholds: {
     method: 'PUT',
     path: '/v1/approvals/thresholds',
     ability: 'update:ApprovalThreshold',
   },
+  setUserRoles: { method: 'PUT', path: '/v1/users/{id}/roles', ability: 'update:User' },
   switchOrg: { method: 'POST', path: '/v1/me/active-org', ability: 'authenticated' },
   trialBalance: { method: 'GET', path: '/v1/ledger/trial-balance', ability: 'read:LedgerReport' },
+  userPasswordLink: {
+    method: 'POST',
+    path: '/v1/users/{id}/password-link',
+    ability: 'update:User',
+  },
 } as const;
 
 export type OperationName = keyof typeof OPERATIONS;
@@ -1147,6 +1184,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly query: { readonly from: string; readonly to: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.dayBook, input, options),
+    /** Switch a leaver off here: their roles end, and so do their sessions. */
+    deactivateUser: (
+      input: { readonly path: { readonly id: string }; readonly body: DeactivateUser },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deactivateUser, input, options),
     /** Approve or reject a request as the checker. */
     decideApproval: (
       input: { readonly path: { readonly id: string }; readonly body: ApprovalDecisionInput },
@@ -1236,6 +1278,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/analytics/narrative */
     getV1AnalyticsNarrative: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AnalyticsNarrative, undefined, options),
+    /** GET /v1/approvals/thresholds */
+    getV1ApprovalsThresholds: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1ApprovalsThresholds, undefined, options),
     /** GET /v1/buyers */
     getV1Buyers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1Buyers, undefined, options),
@@ -1285,6 +1330,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CourierParcelsByIdReturnable, input, options),
+    /** GET /v1/courier/providers */
+    getV1CourierProviders: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierProviders, undefined, options),
     /** GET /v1/courier/reports/cod-reconciliation */
     getV1CourierReportsCodReconciliation: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CourierReportsCodReconciliation, undefined, options),
@@ -1442,6 +1490,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1HrPayrollRunsByIdPreview, input, options),
+    /** GET /v1/hr/payroll/wallets */
+    getV1HrPayrollWallets: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrPayrollWallets, undefined, options),
     /** GET /v1/hr/performance/me */
     getV1HrPerformanceMe: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1HrPerformanceMe, undefined, options),
@@ -1701,6 +1752,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Liveness probe. */
     healthLive: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.healthLive, undefined, options),
+    /** Readiness probe. */
+    healthReady: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.healthReady, undefined, options),
     /** Approval requests, filtered and cursor-paginated. */
     listApprovals: (
       input: {
@@ -1725,6 +1779,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Accounting periods and whether each is closed. */
     listPeriods: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listPeriods, undefined, options),
+    /** This organization's staff, their roles and sign-in state, and open resets. */
+    listUsers: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.listUsers, undefined, options),
     /** Cash, bank and mobile-money wallets with their balances. */
     listWallets: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listWallets, undefined, options),
@@ -2173,6 +2230,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/orders/bulk-confirm */
     postV1OrdersBulkConfirm: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1OrdersBulkConfirm, undefined, options),
+    /** POST /v1/orders/bulk-transition */
+    postV1OrdersBulkTransition: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1OrdersBulkTransition, undefined, options),
     /** POST /v1/orders/:id/advances */
     postV1OrdersByIdAdvances: (
       input: { readonly path: { readonly id: string } },
@@ -2373,11 +2433,21 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: ReopenPeriodInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.reopenPeriod, input, options),
+    /** Remove a person's second factor, so they enrol again at next sign-in. */
+    resetUserTwoFactor: (
+      input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.resetUserTwoFactor, input, options),
     /** Set this organization's maker-checker thresholds. */
     setApprovalThresholds: (
       input: { readonly body: ThresholdInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.setApprovalThresholds, input, options),
+    /** Replace a person's roles and branch scope in this organization. */
+    setUserRoles: (
+      input: { readonly path: { readonly id: string }; readonly body: SetRoles },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.setUserRoles, input, options),
     /** Enter an organization for the rest of this session. */
     switchOrg: (input: { readonly body: SwitchOrg }, options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.switchOrg, input, options),
@@ -2386,6 +2456,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly query: { readonly asOf: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.trialBalance, input, options),
+    /** Issue, ask for, or collect a one-time link that sets a password. */
+    userPasswordLink: (
+      input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.userPasswordLink, input, options),
   };
 }
 

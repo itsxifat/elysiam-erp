@@ -9,13 +9,14 @@ import {
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { CheckCheck, FileText, Plus, Tag } from 'lucide-react';
+import { CheckCheck, FileText, PackageCheck, Plus, Tag, Truck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
 import { useLocale } from '../../i18n/locale.js';
 import {
   bulkConfirm,
+  bulkTransition,
   documentsUrl,
   listAgents,
   listAreas,
@@ -33,7 +34,7 @@ import { mergeOrderSearch, orderListSearchSchema } from './search.js';
 
 /**
  * Every order the caller may see, filtered (M11 Build list: status, channel, date, agent,
- * zone), with bulk confirm and bulk print.
+ * zone), with bulk confirm, bulk pack and hand-over (D-393) and bulk print.
  *
  * The filters are in the URL (M05), so "yesterday's unconfirmed WhatsApp orders" is a link.
  * The list is §6-scoped by the server — a sales agent's "every agent" is their own orders
@@ -136,6 +137,21 @@ function OrderList() {
       setBulkMessage(
         `${String(result.confirmed)} ${t('orders.bulk.confirmedCount')}` +
           (failed > 0 ? ` · ${String(failed)} ${t('orders.bulk.failedCount')}` : ''),
+      );
+      setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+    onError: (error) => setBulkMessage(error instanceof Error ? error.message : String(error)),
+  });
+
+  // Pack and hand to the courier in bulk (D-393): the warehouse's half of bulk confirm.
+  const moveMany = useMutation({
+    mutationFn: (trigger: 'pack' | 'ship') => bulkTransition(chosen, trigger),
+    onSuccess: (result) => {
+      const failed = result.results.length - result.moved;
+      setBulkMessage(
+        `${String(result.moved)} ${t('orders.bulk.movedCount')}` +
+          (failed > 0 ? ` · ${String(failed)} ${t('orders.bulk.notMoved')}` : ''),
       );
       setSelected(new Set());
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
@@ -267,6 +283,28 @@ function OrderList() {
               <CheckCheck aria-hidden="true" />
               {t('orders.bulk.confirm')}
             </Button>
+          ) : null}
+          {mayConfirm ? (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={moveMany.isPending}
+                onClick={() => moveMany.mutate('pack')}
+              >
+                <PackageCheck aria-hidden="true" />
+                {t('orders.bulk.pack')}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={moveMany.isPending}
+                onClick={() => moveMany.mutate('ship')}
+              >
+                <Truck aria-hidden="true" />
+                {t('orders.bulk.ship')}
+              </Button>
+            </>
           ) : null}
           <Button
             size="sm"

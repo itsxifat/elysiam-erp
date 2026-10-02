@@ -507,8 +507,8 @@ function view(row: repo.AttendanceRow): AttendanceDayView {
     branchId: row.branch_id,
     businessDate: row.business_date,
     status: row.status,
-    checkInAt: row.check_in_at === null ? null : row.check_in_at.toISOString(),
-    checkOutAt: row.check_out_at === null ? null : row.check_out_at.toISOString(),
+    checkInAt: row.check_in_at === null ? null : new Date(row.check_in_at).toISOString(),
+    checkOutAt: row.check_out_at === null ? null : new Date(row.check_out_at).toISOString(),
     source: row.source,
     note: row.note,
   };

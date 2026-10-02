@@ -39,6 +39,12 @@ export const APPROVAL_TYPES = [
    * scheduled, so it is server-derived and only that module raises one.
    */
   'loan_repayment',
+  /**
+   * gaps-users-auth: a password or second-factor reset for someone who can act as an
+   * org-level checker (D-404). A control, not a sum of money, so it carries no amount
+   * and no threshold can ever exempt it; only the iam module raises one.
+   */
+  'credential_reset',
 ] as const;
 
 export const approvalTypeSchema = z.enum(APPROVAL_TYPES);
@@ -52,6 +58,7 @@ export const NO_AMOUNT_APPROVAL_TYPES: readonly ApprovalType[] = [
   'period_reopen',
   'bonus_rule',
   'threshold_change',
+  'credential_reset',
 ];
 
 /**

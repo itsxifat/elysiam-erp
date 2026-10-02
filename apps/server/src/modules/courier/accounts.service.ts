@@ -58,6 +58,26 @@ export class CourierAccountsService {
     return new Map(parties.map((party) => [party.id, party.code]));
   }
 
+  /**
+   * The couriers this installation has an adapter for, for the account form (D-395).
+   *
+   * Field *names* only — which credentials a Steadfast or Pathao account needs, so the form
+   * can ask for them — and whether the adapter is verified and switched on, so the form can
+   * say why "active" will be refused before the operator types a key. `webhookToken` is left
+   * out: it is the webhook secret, which the form asks for as its own field.
+   */
+  providers() {
+    return {
+      items: this.adapters.all().map((adapter) => ({
+        code: adapter.code,
+        verified: adapter.verified,
+        enabled: adapterEnabled(adapter),
+        supportsWebhook: adapter.supportsWebhook,
+        credentialFields: adapter.credentialFields.filter((field) => field !== 'webhookToken'),
+      })),
+    };
+  }
+
   /** Every account the caller may see, with no secret in it. */
   async list(context: ActiveContext, options: { includeInactive?: boolean } = {}) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {

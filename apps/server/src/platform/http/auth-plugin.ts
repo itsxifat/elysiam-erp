@@ -16,6 +16,7 @@ import {
   type RateLimitStore,
   requestPath,
 } from './rate-limit.js';
+import { registerSecurityHeaders } from './security-headers.js';
 
 /**
  * Mount authentication and build the request context (architecture §6, §25).
@@ -167,6 +168,9 @@ export function isCanonicalAuthPath(rawUrl: string, resolvedPath: string): boole
 }
 
 export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): void {
+  // Every response's headers (§25, D-349). Here so the API and every HTTP suite share them.
+  registerSecurityHeaders(app, { hsts: options.secure === true });
+
   app.addHook('onRequest', (request: FastifyRequest, reply: FastifyReply, done) => {
     // One id per request, carried into the database as app.request_id so a
     // slow query can be traced back to the request that caused it (§26).

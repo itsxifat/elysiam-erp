@@ -30,6 +30,8 @@ blob-report/
 .env
 .env.*
 !.env.example
+# The preview server's template is committed; the file init-env.sh writes from it is not.
+!.env.preview.example
 
 # editors and os
 .DS_Store
@@ -54,3 +56,8 @@ packages/db/.drift-probe-*/
 
 # Local dev sign-in credentials written by `pnpm db:dev-users` (invariant 10).
 packages/db/.dev-users.local.json
+
+# The preview's sign-ins, written by `pnpm preview:seed` (invariant 10, D-381), and the
+# logs `pnpm preview:local` keeps for its processes.
+preview-credentials.local.md
+.preview/

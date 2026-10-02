@@ -1,5 +1,6 @@
 import { api } from '../../api.js';
 import { env } from '../../env.js';
+import type { ReturnReason } from './returns-logic.js';
 
 /**
  * `/v1/orders`, `/v1/customers`, `/v1/delivery-zones`, `/v1/catalog/skus` and
@@ -116,9 +117,37 @@ export type TimelineEntry =
       readonly actorUserId: string | null;
     };
 
+/** A move §9's machine allows from the order's status (D-392). */
+export interface AvailableTransition {
+  readonly trigger: OrderTrigger;
+  readonly to: OrderStatus;
+  readonly requiresReason: boolean;
+  readonly requiresReturnReason: boolean;
+}
+
+export type OrderTrigger =
+  | 'confirm'
+  | 'hold'
+  | 'release_hold'
+  | 'cancel'
+  | 'pack'
+  | 'ship'
+  | 'deliver'
+  | 'deliver_partially'
+  | 'start_return'
+  | 'receive_return'
+  | 'exchange';
+
 export interface OrderDetail extends OrderRow {
-  readonly lines: readonly OrderLine[];
+  readonly courierId: string | null;
+  readonly locationId: string | null;
+  readonly lines: readonly (OrderLine & {
+    readonly deliveredQty: number;
+    readonly returnedQty: number;
+  })[];
   readonly timeline: readonly TimelineEntry[];
+  /** What the server will accept next, from the domain's own table. */
+  readonly transitions: readonly AvailableTransition[];
 }
 
 export interface OrderListQuery {
@@ -209,6 +238,50 @@ export const confirmOrder = (id: string) => api.post<OrderRow>(`/v1/orders/${id}
 export const claimOrder = (id: string) => api.post<OrderRow>(`/v1/orders/${id}/claim`);
 export const cancelOrder = (id: string, reason: string) =>
   api.post<OrderRow>(`/v1/orders/${id}/cancel`, { reason });
+
+export const holdOrder = (id: string, reason: string) =>
+  api.post<OrderRow>(`/v1/orders/${id}/hold`, { reason });
+export const releaseHold = (id: string) => api.post<OrderRow>(`/v1/orders/${id}/release-hold`, {});
+export const packOrder = (id: string) => api.post<OrderRow>(`/v1/orders/${id}/pack`, {});
+/** The handover to the courier (§9 `ship`): the dispatch movement and its journal. */
+export const shipOrder = (id: string, input: { readonly consignmentNo?: string } = {}) =>
+  api.post<OrderRow>(`/v1/orders/${id}/ship`, input);
+
+/** §9's manual fallback for a delivery the courier sync has not reported. */
+export const deliverOrder = (
+  id: string,
+  input: { readonly collectedPoisha?: string; readonly differenceReason?: string },
+) => api.post<OrderRow>(`/v1/orders/${id}/deliver`, input);
+
+export const deliverPartially = (
+  id: string,
+  input: {
+    readonly collectedPoisha: string;
+    readonly differenceReason?: string;
+    readonly lines: readonly { readonly skuId: string; readonly deliveredQty: number }[];
+  },
+) => api.post<OrderRow>(`/v1/orders/${id}/partial-delivery`, input);
+
+export const startReturn = (id: string, reason?: string) =>
+  api.post<OrderRow>(`/v1/orders/${id}/start-return`, reason === undefined ? {} : { reason });
+
+export const receiveReturn = (
+  id: string,
+  input: {
+    readonly reason: string;
+    readonly returnReason: ReturnReason;
+    readonly damaged?: boolean;
+  },
+) => api.post<OrderRow>(`/v1/orders/${id}/receive-return`, input);
+
+export interface BulkTransitionResult {
+  readonly moved: number;
+  readonly results: BulkConfirmResult['results'];
+}
+
+/** Pack or ship many orders, each on its own (D-393). */
+export const bulkTransition = (ids: readonly string[], trigger: 'pack' | 'ship') =>
+  api.post<BulkTransitionResult>('/v1/orders/bulk-transition', { ids, trigger });
 
 export interface BulkConfirmResult {
   readonly confirmed: number;

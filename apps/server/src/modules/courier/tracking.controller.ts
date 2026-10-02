@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
-import { ALREADY_AUDITED, type AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { AuditExempt } from '../../platform/audit/audit.interceptor.js';
 import { Public } from '../../platform/auth/abilities.js';
 import { instanceOf, problemFor, PROBLEM_CONTENT_TYPE } from '../../platform/http/problem.js';
 import { trackingRequestSchema } from './courier.schemas.js';
@@ -31,6 +31,9 @@ export class TrackingController {
   @Public(
     'A buyer tracking their parcel has no account; the last four digits of the order’s phone are what authorise an answer (M15).',
   )
+  @AuditExempt(
+    'A read, sent as a POST only to keep the phone digits out of URLs. It changes nothing.',
+  )
   @Post()
   @HttpCode(200)
   async track(
@@ -38,14 +41,6 @@ export class TrackingController {
     @Body() body: unknown,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    /*
-     * A read, sent as a `POST` only to keep the digits out of URLs. The audit interceptor
-     * treats every successful `POST` as a mutation and, finding no org on a public request,
-     * logs an error that a mutation escaped the audit log — once per tracking lookup. There is
-     * no mutation to audit, so this says so, the way a service that audits itself does.
-     */
-    (request as unknown as AuditableRequest)[ALREADY_AUDITED] = true;
-
     const parsed = trackingRequestSchema.safeParse(body);
     if (!parsed.success) {
       // About the shape of the body, identical for every order: not an oracle.

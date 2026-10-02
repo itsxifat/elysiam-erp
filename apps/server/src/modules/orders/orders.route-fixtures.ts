@@ -370,6 +370,13 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
     body: { ids: [await freshOrder('pending')] },
   }),
 
+  'POST /v1/orders/bulk-transition': async () => ({
+    // A fresh confirmed, reserved order per admitted role, packed through the single path.
+    // A role whose scope cannot reach it still gets a 201 with the refusal against its id.
+    url: '/v1/orders/bulk-transition',
+    body: { ids: [await freshOrder('confirmed', { reserve: true })], trigger: 'pack' },
+  }),
+
   'GET /v1/orders/documents': async () => ({
     url: `/v1/orders/documents?ids=${await freshOrder('pending')}&kind=label`,
   }),

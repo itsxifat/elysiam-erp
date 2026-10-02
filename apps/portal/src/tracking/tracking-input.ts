@@ -14,6 +14,20 @@ export function brandFromPath(pathname: string): string | null {
   return match?.[1] ?? null;
 }
 
+/**
+ * The path inside the portal, whatever path the portal itself is served under.
+ *
+ * Vite's `base` (`import.meta.env.BASE_URL`) is `/` on Cloudflare Pages and `/portal/` on
+ * the single-server preview, where the console, portal and till share one origin (D-352).
+ * The routes below are written from the portal's own root, so the base comes off first.
+ */
+export function pathWithinBase(pathname: string, base: string): string {
+  const prefix = base.endsWith('/') ? base.slice(0, -1) : base;
+  if (prefix === '' || !pathname.startsWith(prefix)) return pathname;
+  const rest = pathname.slice(prefix.length);
+  return rest === '' ? '/' : rest.startsWith('/') ? rest : pathname;
+}
+
 /** Whether a path is the tracking page at all, with or without a brand. */
 export function isTrackingPath(pathname: string): boolean {
   return pathname === '/track' || pathname.startsWith('/track/');

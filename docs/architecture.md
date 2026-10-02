@@ -214,7 +214,7 @@ See D-001 and D-002.
 | Module    | Schema    | Owns                                                                          |
 | --------- | --------- | ----------------------------------------------------------------------------- |
 | org       | org       | organizations, branches, locations, settings, feature flags, per-org branding |
-| iam       | iam       | Better Auth tables, memberships, API keys, devices                            |
+| iam       | iam       | Better Auth tables, memberships, sign-in resets, API keys, devices            |
 | audit     | audit     | audit log                                                                     |
 | approvals | approvals | maker-checker requests                                                        |
 | events    | events    | outbox and event log                                                          |
@@ -351,6 +351,13 @@ Once enrolled, the second factor is enforced by the plugin itself: sign-in retur
 
 **Registration is closed (D-057).** There is no self-service sign-up: this is a staff ERP, and an open sign-up was also the enabling half of an account pre-hijacking attack. An `org_admin` — and only an `org_admin` (D-058) — creates a user through `POST /v1/users`, which returns a one-time invite token. The recipient redeems it to set their own password. An existing identity is reused when a colleague joins a second brand, but never when the row holds credentials and belongs to no org.
 
+**Staff accounts (gaps-users-auth, D-400 to D-409).** An org admin manages the brand's people at `/users`: `GET /v1/users` lists them, `PUT /v1/users/:id/roles` replaces a person's roles and branch scope (every role granted or reshaped names the admin as its granter, D-077), and `POST /v1/users/:id/deactivate` switches a leaver off — their roles here end, their open resets are withdrawn, and their sessions end at once (every session, link and remembered device when this was their last brand). Nobody changes their own access, and only a super admin changes a super admin.
+
+- **A session needs an active account with an active role somewhere** (D-401): Better Auth's `session.create.before` hook refuses anything else with `403 ACCOUNT_INACTIVE`, after the password is checked. Super admins hold no membership and are exempt. This is a refusal of the session, unlike the enrolment wall, because nothing a deactivated account could do with one is legitimate.
+- **Password links come only from an admin** (D-402). There is no email adapter (D-212), so `POST /v1/users/:id/password-link` hands the admin a one-time link, minted in the action's own transaction, to pass on: an invite sent again for someone who never set a password (72 hours), or a reset (1 hour) that voids the old password and ends every session at once. A new link voids earlier ones, redeeming one ends sessions again, and the token rides in the URL fragment (`/accept-invite#token=…`, `/reset-password#token=…`), which no browser sends to a server. Better Auth's public `/request-password-reset` path and the phone-number plugin's reset pair are disabled. An admin may ask for 20 resets an hour and a person may be reset 5 times a day, per brand, counted from `iam.credential_resets`.
+- **A lost phone** (D-403): `POST /v1/users/:id/two-factor/reset` removes the enrolled factor, ends sessions and forgets remembered devices; the next sign-in meets the enrolment wall again if the role needs one.
+- **A reset of anyone whose account can move money needs a second admin** (D-404): anyone who holds or ever held a role that can raise or decide an approval, or the investor role (`SECOND_ADMIN_RESET_ROLES`). It is raised as a `credential_reset` approval in the same transaction as the reset, decided by another org admin who is neither the requester, the person being reset, nor in the requester's grant lineage; an approved password reset is collected by the admin who asked, within 24 hours. A super admin acts alone. **Only a super admin resets someone who also works in another brand** (D-405), because a password opens every brand they belong to. Whoever is handed a link joins the person's grant lineage here (D-406), which keeps every granter (`iam.membership_granters`, D-410), so the person can never approve that admin's requests. Every action takes a per-person lock and decides on facts read in its own transaction.
+
 **Rate limits are per identifier as well as per IP (D-056).** Both buckets are counted on the credential endpoints and either can reject. Per-IP alone is close to useless against a botnet — credential stuffing gets the full allowance per address — and actively harmful in Bangladesh, where most mobile traffic shares a handful of carrier NAT addresses, so one attacker would lock out a whole network. The per-identifier bucket makes attacking one account expensive however many addresses the attacker has; the per-IP bucket stops one address walking a list of accounts. The store is in memory per process until M04 moves it to Valkey.
 
 **Browser origins (D-053, D-054).** The console, portal and POS are served from their own origins and talk to this API cross-origin with cookies. Two consequences are load-bearing rather than incidental:
@@ -440,6 +447,7 @@ Each org configures its own thresholds. These actions go through approvals:
 - reseller payout batches
 - investor withdrawals and distributions
 - company loan repayments above the threshold (M26, D-298)
+- password and second-factor resets of anyone who can approve at org tier (D-404)
 - fraud block overrides
 - reopening a closed period (super_admin only)
 
@@ -449,7 +457,7 @@ How thresholds behave (D-062, D-065, D-068):
 
 - Only `org_admin` sets a threshold (`PUT /v1/approvals/thresholds`, subject `ApprovalThreshold`). Lowering one applies at once; raising one, or setting the first, is a `threshold_change` request another org admin must approve (D-073). Each request records the threshold in force when it was raised.
 - **Under** the threshold, a request is recorded `auto_approved`: audited, both events emitted, no checker. **At or above** it, with no threshold configured, it is `pending`. Amounts are compared by magnitude.
-- Never auto-approved, whatever the threshold (D-071): reopening a period, bonus rules, threshold changes and back-dated entries. The database refuses a threshold for them and an auto-approved row of them. A request's terms are fixed from the moment it is raised.
+- Never auto-approved, whatever the threshold (D-071): reopening a period, bonus rules, threshold changes, back-dated entries and sign-in resets (D-404). The database refuses a threshold for them and an auto-approved row of them. A request's terms are fixed from the moment it is raised.
 - Who may raise is per type (`REQUESTER_TYPES`, D-072). A type whose amount the owning module derives (stock write-offs and gains, settlements, closing variances, payroll, payout batches) is always held when its amount was typed by a person.
 - Who may check is per type (`CHECKER_TYPES`): accounts decides payments, hr decides payroll and bonuses, branch_manager decides branch items (stock write-offs and gains, closing variances), org_admin decides everything except reopening a period, which only super_admin decides.
 - A branch manager is a branch-tier checker: only branch items (never auto-approved, D-076) whose amount the owning module derived, carrying a `branch_id` in the branch manager membership's own scope (D-075), and only under both the captured and the current threshold for the type.
@@ -739,6 +747,7 @@ interface CourierAdapter {
   - dedupe on `(courier, consignment, status, occurred_at)`
   - process in a job with idempotent transitions
 - **Polling fallback:** parcels with no update for N hours get polled.
+- **Status → order (D-390, D-391):** a status that proves the parcel left us (`picked_up`, `in_transit`, `out_for_delivery`, `delivered`, `partial_delivered`, `return_in_transit`, `returned_to_merchant`) ships a `confirmed` or `packed` order first (§9's `ship`, with its dispatch and handover journal), then applies what the status means from `shipped`, in one transaction through the order state machine. `booked`, `pickup_pending`, `hold`, `cancelled` and `unknown` move nothing before shipment, and a held order is never moved. A person confirming the handover ships the order the same way.
 - **Settlement import:** parse the file or API data → match consignments → produce an exceptions report (unmatched, amount mismatch) → approval → posting.
 
 ---
@@ -1275,12 +1284,12 @@ Installable, with an offline shell and web push (Android first).
 
 ## 26. Observability and operations
 
-- **Logging:** pino structured logs carrying request id, org id and user id, with redaction.
-- **Errors:** Sentry on the server and all apps.
-- **Tracing:** OpenTelemetry traces and metrics.
+- **Logging:** pino structured logs carrying request id, org id and user id, with redaction: credential-named fields removed at any depth and every phone number in the written line masked (D-346).
+- **Errors:** Sentry on the server, errors only, through one `reportError` seam (5xx, dead-lettered jobs, failed boots), scrubbed before sending and off without `SENTRY_DSN`. The SPAs' browser reporting is deferred (D-344).
+- **Tracing:** OpenTelemetry traces and metrics over OTLP (incoming requests and outbound calls, URLs scrubbed), configured by the standard `OTEL_*` variables and off without an endpoint (D-344). Both start from `node --import ./dist/instrument.js`.
 - **Health endpoints:**
   - `/health/live`
-  - `/health/ready`, which checks the database, Valkey and pg-boss
+  - `/health/ready`, which checks the database (as `erp_app`), Valkey and pg-boss's schema; 503 names the failing check and nothing else (D-345). kamal-proxy gates a release on it.
 - **Failed jobs:** a view in the console for super_admin, with retry.
 - **Uptime and alerts:**
   - uptime monitoring
@@ -1310,15 +1319,16 @@ Installable, with an offline shell and web push (Android first).
   - Docker Compose runs Postgres 17, Valkey and Gotenberg (Chatwoot optional from Phase 5)
   - `pnpm dev` starts every app
 - **Staging and production** (Singapore region):
-  - managed PostgreSQL with point-in-time recovery
-  - two or more VMs running Docker (api, worker, Valkey, Gotenberg; Chatwoot later), deployed with Kamal
-  - console, portal and pos (static builds) on Cloudflare Pages
-  - `sites` on Vercel (D-026)
-  - Cloudflare in front: DNS, WAF, Turnstile, R2
+  - managed PostgreSQL with point-in-time recovery; the three roles are created by `bootstrap.sql` run by the provider's admin, which need not be a superuser (D-341)
+  - one server image for the API and the worker (`infra/docker/server.Dockerfile`, D-340); production on two VMs, `web` (API, Valkey, Gotenberg) and `jobs` (worker), staging on one, deployed with Kamal (`infra/kamal/`, D-343)
+  - console, portal and pos (static builds) on Cloudflare Pages by direct upload, each with a generated `_headers` (CSP and security headers, D-347)
+  - Cloudflare in front: DNS, WAF, TLS (Full (strict) with an Origin CA certificate), Turnstile, R2
   - keep production off shared agency servers
-- **Migrations** run as a release step using the owner role. The app runs as `erp_app`.
+- **Migrations** run as a release step using the owner role: `main.release.js`, run by Kamal's `pre-deploy` hook from the new image before anything boots, migrates under an advisory lock and installs the job queues (D-340). The app runs as `erp_app`; only the worker role holds the owner URL.
+- **Backups:** point-in-time recovery, plus a nightly `pg_dump` as `erp_backup` (BYPASSRLS, read-only), encrypted, to a second provider (D-342).
 - **Feature flags:** an `org.feature_flags` table (D-031), so unfinished modules can ship dark.
-- **Runbooks** in `docs/runbooks/`: deploy, rollback, restore, rotate secrets, courier outage, month-end close, Chatwoot setup.
+- **Preview:** before staging exists, the whole ERP can run on one Docker host (`infra/docker-compose.preview.yml`: Postgres, Valkey, Gotenberg, API, worker and a one-shot release step, behind the host's own nginx, which serves the SPAs and the API on one origin over HTTPS; `infra/preview/deploy.sh` deploys a commit), for people to try it; it is not production (D-352).
+- **Runbooks** in `docs/runbooks/`: deploy, rollback, restore, secret rotation, courier outage, month-end close, go-live, monitoring, queue policy, preview server.
 
 ---
 
