@@ -545,6 +545,8 @@ describe('a version is superseded without waiting on an apply (ledger confirmati
     // version the apply's foreign key waited for it while it waited for the run.
     const activating = asA(async (tx) => {
       const current = await repo.approvedVersionOf(tx, ORG_A, ruleId);
+      // As `activate` does: supersede it, then take its bonuses off the draft runs.
+      await repo.setVersionStatus(tx, ORG_A, current?.id ?? '', 'superseded');
       activationHolds();
       return repo.deleteDraftAwardInputs(tx, ORG_A, { ruleVersionId: current?.id ?? '' });
     });
