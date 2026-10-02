@@ -220,6 +220,7 @@ const ORDERS_KEYS = [
   'orders.timeline.advanceVerified',
   'orders.timeline.advanceRejected',
   'orders.timeline.advanceRefunded',
+  'orders.timeline.advanceVoided',
   'orders.advances.heading',
   'orders.advances.caption',
   'orders.advances.empty',

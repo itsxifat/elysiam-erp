@@ -453,8 +453,8 @@ export class AdvancesService {
    *
    * Invariant 2 fixes a posted mistake with a reversal journal, never an edit. Only while the
    * COD is still ours to change (before the parcel moves, no booking holding the old figure)
-   * and before anything used the advance. The claim's reference is free again afterwards, so
-   * the agent can record the right one.
+   * and before anything used the advance, and never by the person who verified it. The
+   * claim's reference is free again afterwards, so the agent can record the right one.
    */
   async void(context: ActiveContext, request: AuditableRequest, advanceId: string, reason: string) {
     return mapOrderErrors(async () =>
@@ -481,6 +481,14 @@ export class AdvancesService {
             'This parcel is booked or on the road with the lower COD. Cancel the booking first.',
           );
         }
+        if (advance.row.decided_by === context.userId) {
+          // Four eyes both ways: a void takes money off a wallet's books and raises the COD
+          // again, so the person who verified cannot also undo it (the database agrees).
+          throw new OrdersError(
+            'ADVANCE_SELF_VERIFY',
+            'You verified this advance, so somebody else has to undo it.',
+          );
+        }
         const receivedJournalId = advance.row.received_journal_id;
         if (receivedJournalId === null) throw new Error('a verified advance has no journal');
 
@@ -501,6 +509,9 @@ export class AdvancesService {
           receivedJournalId,
           `Advance ${advance.row.transaction_ref} voided: ${reason}`,
         );
+        if (!reversal.created) {
+          throw new OrdersError('IDEMPOTENCY_CONFLICT', 'This verification was already reversed.');
+        }
         const marked = await advances.markVoided(tx, {
           orgId: context.orgId,
           id: advance.row.id,

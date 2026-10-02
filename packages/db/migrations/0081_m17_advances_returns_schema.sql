@@ -61,7 +61,8 @@ CREATE TABLE "sales"."order_advances" (
 	CONSTRAINT "order_advances_voided" CHECK (("sales"."order_advances"."status" = 'voided') = ("sales"."order_advances"."void_journal_id" is not null)
           and ("sales"."order_advances"."void_journal_id" is null) = ("sales"."order_advances"."voided_by" is null)
           and ("sales"."order_advances"."voided_by" is null) = ("sales"."order_advances"."voided_at" is null)
-          and ("sales"."order_advances"."voided_by" is null) = ("sales"."order_advances"."void_reason" is null)),
+          and ("sales"."order_advances"."voided_by" is null) = ("sales"."order_advances"."void_reason" is null)
+          and ("sales"."order_advances"."voided_by" is null or "sales"."order_advances"."voided_by" <> "sales"."order_advances"."decided_by")),
 	CONSTRAINT "order_advances_text_lengths" CHECK (("sales"."order_advances"."note" is null or length("sales"."order_advances"."note") <= 500)
           and ("sales"."order_advances"."reject_reason" is null or length("sales"."order_advances"."reject_reason") between 1 and 500)
           and ("sales"."order_advances"."void_reason" is null or length("sales"."order_advances"."void_reason") between 1 and 500)

@@ -436,6 +436,7 @@ const ACTIVITY: Readonly<Record<string, OrdersMessageKey>> = {
   'order.advance_verified': 'orders.timeline.advanceVerified',
   'order.advance_rejected': 'orders.timeline.advanceRejected',
   'order.advance_refunded': 'orders.timeline.advanceRefunded',
+  'order.advance_voided': 'orders.timeline.advanceVoided',
   'intake.order_received': 'orders.timeline.intake',
   'courier.booking.queued': 'orders.timeline.courier',
 };

@@ -54,6 +54,7 @@ const ORG_PARTIAL = SEED_ORG_IDS['elysium-lifestyle-bd'] ?? '';
 
 const AGENT = 'usr_m17_agent';
 const ACCOUNTANT = 'usr_m17_accounts';
+const SECOND_ACCOUNTANT = 'usr_m17_accounts_2';
 
 let harness: HttpHarness;
 let orders: OrdersService;
@@ -217,6 +218,27 @@ async function owedByRows(orgId: string): Promise<bigint> {
     { orgId },
   );
   return BigInt(rows[0]?.owed ?? '0');
+}
+
+/** The PostgreSQL error under drizzle's "Failed query" wrapper: message and constraint. */
+function pgError(error: unknown): { message: string; constraint: string } {
+  const cause = (error as { cause?: { message?: string; constraint_name?: string } }).cause;
+  return {
+    message: cause?.message ?? (error instanceof Error ? error.message : ''),
+    constraint: cause?.constraint_name ?? '',
+  };
+}
+
+/** Any journal of the brand, to stand behind a row in a test that must fail on something else. */
+async function someJournal(orgId: string): Promise<string> {
+  const rows = await withSystem(
+    async (tx) =>
+      tx.execute<{ id: string }>(
+        sql`select id from ledger.journals where org_id = ${orgId} limit 1`,
+      ),
+    { orgId },
+  );
+  return rows[0]?.id ?? '';
 }
 
 const balance = (balances: Map<string, bigint>, subtype: string): bigint =>
@@ -483,17 +505,22 @@ describe('check 2: an unverified advance never reaches the books', () => {
     await expect(
       advances.verify(context(place.orgId, AGENT), request(), advanceId, place.wallet),
     ).rejects.toMatchObject({ response: { code: 'ADVANCE_SELF_VERIFY' } });
+    // Everything else about the row is valid (a journal, a wallet), so only four eyes refuses.
+    const journal = await someJournal(place.orgId);
     await expect(
       withSystem(
         async (tx) =>
           tx.execute(sql`
             update sales.order_advances
-            set status = 'verified', decided_by = recorded_by, decided_at = now()
+            set status = 'verified', decided_by = recorded_by, decided_at = now(),
+                wallet_account_id = ${place.wallet}, received_journal_id = ${journal}
             where org_id = ${place.orgId} and id = ${advanceId}
           `),
         { orgId: place.orgId },
       ),
-    ).rejects.toThrow();
+    ).rejects.toSatisfy(
+      (error: unknown) => pgError(error).constraint === 'order_advances_four_eyes',
+    );
     // Nor can a row say "verified" with no journal behind it.
     await expect(
       withSystem(
@@ -505,7 +532,9 @@ describe('check 2: an unverified advance never reaches the books', () => {
           `),
         { orgId: place.orgId },
       ),
-    ).rejects.toThrow();
+    ).rejects.toSatisfy(
+      (error: unknown) => pgError(error).constraint === 'order_advances_received_journal',
+    );
 
     // Shipped with the claim still pending: the COD the courier holds is the full one, so
     // verification has to wait for the order to end.
@@ -771,8 +800,12 @@ describe('undoing a mistaken verification (D-236)', () => {
     await verify(place, advanceId);
     expect(await orderAmounts(place.orgId, orderId)).toMatchObject({ cod: '150000' });
 
+    // The person who verified it cannot undo it: four eyes both ways.
+    await expect(
+      advances.void(context(place.orgId, ACCOUNTANT), request(), advanceId, 'My own mistake'),
+    ).rejects.toMatchObject({ response: { code: 'ADVANCE_SELF_VERIFY' } });
     const voided = await advances.void(
-      context(place.orgId, ACCOUNTANT),
+      context(place.orgId, SECOND_ACCOUNTANT),
       request(),
       advanceId,
       'Matched the wrong statement line',
@@ -800,7 +833,7 @@ describe('undoing a mistaken verification (D-236)', () => {
 
     // Undone once; and the same reference can now be recorded again, correctly.
     await expect(
-      advances.void(context(place.orgId, ACCOUNTANT), request(), advanceId, 'again'),
+      advances.void(context(place.orgId, SECOND_ACCOUNTANT), request(), advanceId, 'again'),
     ).rejects.toThrow();
     await expect(claim(place, orderId, '6000')).resolves.toBeTruthy();
   }, 240_000);
@@ -815,7 +848,7 @@ describe('undoing a mistaken verification (D-236)', () => {
       liveParcel(tx, place, orderId, '150000'),
     );
     await expect(
-      advances.void(context(place.orgId, ACCOUNTANT), request(), advanceId, 'Too late'),
+      advances.void(context(place.orgId, SECOND_ACCOUNTANT), request(), advanceId, 'Too late'),
     ).rejects.toMatchObject({ response: { code: 'ADVANCE_PARCEL_IN_FLIGHT' } });
     expect(await advanceRow(place.orgId, advanceId)).toMatchObject({ status: 'verified' });
   }, 240_000);
@@ -832,7 +865,7 @@ describe('concurrency', () => {
         () => 'refused',
       ),
       advances
-        .verify(context(place.orgId, 'usr_m17_accounts_2'), request(), advanceId, place.wallet)
+        .verify(context(place.orgId, SECOND_ACCOUNTANT), request(), advanceId, place.wallet)
         .then(
           () => 'ok',
           () => 'refused',
@@ -984,7 +1017,7 @@ describe('tenancy: one brand cannot see or write another brand’s advances or r
           values (${place.orgId}, ${orderId}, 'bkash', 'RLS0000001', 100, ${AGENT})
         `),
       ),
-    ).rejects.toThrow();
+    ).rejects.toSatisfy((error: unknown) => pgError(error).message.includes('row-level security'));
     await expect(
       withOrg({ orgId: other, userId: AGENT }, (tx) =>
         tx.execute(sql`
@@ -993,16 +1026,23 @@ describe('tenancy: one brand cannot see or write another brand’s advances or r
           values (${place.orgId}, ${orderId}, 'return', 'other', current_date, ${AGENT})
         `),
       ),
-    ).rejects.toThrow();
-    // And an advance can only be born a claim: no row arrives already verified.
+    ).rejects.toSatisfy((error: unknown) => pgError(error).message.includes('row-level security'));
+    // And an advance can only be born a claim. This row passes every CHECK (a rejected claim,
+    // decided by somebody else, with its reason); only the insert trigger refuses it.
     await expect(
       withOrg({ orgId: place.orgId, userId: AGENT }, (tx) =>
         tx.execute(sql`
           insert into sales.order_advances
-            (org_id, order_id, method, transaction_ref, amount_poisha, recorded_by, status)
-          values (${place.orgId}, ${orderId}, 'bkash', 'RLS0000002', 100, ${AGENT}, 'applied')
+            (org_id, order_id, method, transaction_ref, amount_poisha, recorded_by, status,
+             decided_by, decided_at, reject_reason)
+          values (${place.orgId}, ${orderId}, 'bkash', 'RLS0000002', 100, ${AGENT}, 'rejected',
+                  'usr_somebody_else', now(), 'made up')
         `),
       ),
-    ).rejects.toThrow();
+    ).rejects.toSatisfy((error: unknown) =>
+      pgError(error).message.startsWith(
+        'ADVANCE_IMMUTABLE: an advance is recorded as a pending claim',
+      ),
+    );
   }, 240_000);
 });

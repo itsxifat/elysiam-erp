@@ -1199,6 +1199,7 @@ const bn: Record<MessageKey, string> = {
   'orders.timeline.advanceVerified': 'অগ্রিম যাচাই হয়েছে',
   'orders.timeline.advanceRejected': 'অগ্রিম বাতিল হয়েছে',
   'orders.timeline.advanceRefunded': 'অগ্রিম ফেরত দেওয়া হয়েছে',
+  'orders.timeline.advanceVoided': 'অগ্রিমের যাচাই বাতিল হয়েছে',
   'orders.advances.heading': 'অগ্রিম',
   'orders.advances.caption':
     'ক্রেতা আগে যে টাকা পাঠিয়েছেন। হিসাব বিভাগ যাচাই না করা পর্যন্ত এটি গণনা হয় না।',

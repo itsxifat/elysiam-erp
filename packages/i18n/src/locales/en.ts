@@ -1238,6 +1238,7 @@ const en = {
   'orders.timeline.advanceVerified': 'Advance verified',
   'orders.timeline.advanceRejected': 'Advance rejected',
   'orders.timeline.advanceRefunded': 'Advance refunded',
+  'orders.timeline.advanceVoided': 'Advance verification undone',
   'orders.advances.heading': 'Advances',
   'orders.advances.caption':
     'Money the buyer sent ahead. Accounts checks each one before it counts.',

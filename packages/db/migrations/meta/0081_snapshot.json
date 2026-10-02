@@ -1,5 +1,5 @@
 {
-  "id": "1c6c99ab-d07a-40c6-bf3e-0d2fb3817249",
+  "id": "8c98340d-766b-4657-ace6-3bfd8d79848b",
   "prevId": "47e18ea0-71b3-4d10-9803-49c9c65ae39b",
   "version": "7",
   "dialect": "postgresql",
@@ -405,7 +405,7 @@
         },
         "order_advances_voided": {
           "name": "order_advances_voided",
-          "value": "(\"sales\".\"order_advances\".\"status\" = 'voided') = (\"sales\".\"order_advances\".\"void_journal_id\" is not null)\n          and (\"sales\".\"order_advances\".\"void_journal_id\" is null) = (\"sales\".\"order_advances\".\"voided_by\" is null)\n          and (\"sales\".\"order_advances\".\"voided_by\" is null) = (\"sales\".\"order_advances\".\"voided_at\" is null)\n          and (\"sales\".\"order_advances\".\"voided_by\" is null) = (\"sales\".\"order_advances\".\"void_reason\" is null)"
+          "value": "(\"sales\".\"order_advances\".\"status\" = 'voided') = (\"sales\".\"order_advances\".\"void_journal_id\" is not null)\n          and (\"sales\".\"order_advances\".\"void_journal_id\" is null) = (\"sales\".\"order_advances\".\"voided_by\" is null)\n          and (\"sales\".\"order_advances\".\"voided_by\" is null) = (\"sales\".\"order_advances\".\"voided_at\" is null)\n          and (\"sales\".\"order_advances\".\"voided_by\" is null) = (\"sales\".\"order_advances\".\"void_reason\" is null)\n          and (\"sales\".\"order_advances\".\"voided_by\" is null or \"sales\".\"order_advances\".\"voided_by\" <> \"sales\".\"order_advances\".\"decided_by\")"
         },
         "order_advances_text_lengths": {
           "name": "order_advances_text_lengths",

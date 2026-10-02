@@ -135,6 +135,10 @@ const CHECK_MESSAGES: Readonly<Record<string, { code: ErrorCode; message: string
     code: 'ADVANCE_SELF_VERIFY',
     message: 'The person who recorded an advance cannot also decide it.',
   },
+  order_advances_voided: {
+    code: 'ADVANCE_SELF_VERIFY',
+    message: 'The person who verified an advance cannot also undo it.',
+  },
   stock_levels_on_hand_not_negative: {
     code: 'STOCK_INSUFFICIENT',
     message: 'There is not enough stock at that location.',

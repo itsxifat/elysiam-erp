@@ -15,7 +15,7 @@ import {
   voidVerification,
   type HeldAdvance,
 } from './advances.js';
-import { ORDER_STATUSES, type OrderStatus } from './state.js';
+import { ORDER_STATUSES, TRANSITIONS, type OrderStatus } from './state.js';
 
 /** Advances (M17, D-230 to D-233): the arithmetic and the rules, without a database. */
 
@@ -255,6 +255,38 @@ describe('undoing a verification (D-236)', () => {
       'voided',
     ] as const) {
       expect(voidVerification({ ...base, advanceStatus })).toBe('not_verified');
+    }
+  });
+});
+
+describe('the machine ends advances on every row that should (D-232, D-233)', () => {
+  const rows = (effect: 'settle_advances' | 'apply_advances') =>
+    TRANSITIONS.filter((row) => row.effects.includes(effect))
+      .map((row) => `${row.from}->${row.to}`)
+      .sort();
+
+  it('settles on every cancel and every received return, and nowhere else', () => {
+    const endings = TRANSITIONS.filter((row) => row.to === 'cancelled' || row.to === 'returned')
+      .map((row) => `${row.from}->${row.to}`)
+      .sort();
+    expect(rows('settle_advances')).toEqual(endings);
+    expect(endings).toEqual([
+      'confirmed->cancelled',
+      'packed->cancelled',
+      'partially_delivered->returned',
+      'pending->cancelled',
+      'return_in_transit->returned',
+    ]);
+  });
+
+  it('applies on both deliveries, after the posting that computes the amount', () => {
+    expect(rows('apply_advances')).toEqual(['shipped->delivered', 'shipped->partially_delivered']);
+    for (const row of TRANSITIONS.filter((entry) => entry.effects.includes('apply_advances'))) {
+      const posting = row.effects.findIndex(
+        (effect) => effect === 'post_revenue' || effect === 'post_partial_revenue',
+      );
+      expect(posting).toBeGreaterThanOrEqual(0);
+      expect(row.effects.indexOf('apply_advances')).toBeGreaterThan(posting);
     }
   });
 });

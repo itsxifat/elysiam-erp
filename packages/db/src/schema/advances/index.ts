@@ -193,13 +193,15 @@ export const orderAdvances = sales.table(
           and (${table.status} = 'refunded') = (${table.refundWalletAccountId} is not null)
           and (${table.refundRef} is null or ${table.status} = 'refunded')`,
     ),
-    // A voided advance has its reversal journal, its reason and who undid it; nothing else does.
+    // A voided advance has its reversal journal, its reason and who undid it, and the person
+    // who undid a verification is not the one who made it (D-236).
     check(
       'order_advances_voided',
       sql`(${table.status} = 'voided') = (${table.voidJournalId} is not null)
           and (${table.voidJournalId} is null) = (${table.voidedBy} is null)
           and (${table.voidedBy} is null) = (${table.voidedAt} is null)
-          and (${table.voidedBy} is null) = (${table.voidReason} is null)`,
+          and (${table.voidedBy} is null) = (${table.voidReason} is null)
+          and (${table.voidedBy} is null or ${table.voidedBy} <> ${table.decidedBy})`,
     ),
     check(
       'order_advances_text_lengths',

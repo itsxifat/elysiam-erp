@@ -1111,6 +1111,19 @@ describe('receiving a return with inspection (§7, §8)', () => {
     expect(received.orderStatus).toBe('returned');
     expect(received.journalId).not.toBeNull();
 
+    // M17 (D-234): the reason the warehouse chose is the one the orders module recorded.
+    const reason = await withSystem(
+      async (tx) =>
+        tx.execute<{ kind: string; reason_code: string; note: string | null }>(sql`
+          select kind, reason_code, note from sales.order_returns
+          where org_id = ${ORG_A} and order_id = ${order.orderId}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(reason).toEqual([
+      { kind: 'return', reason_code: 'customer_refused', note: 'Customer refused at the door.' },
+    ]);
+
     /*
      * The inspection reached the real orders module and became stock, in two places.
      *

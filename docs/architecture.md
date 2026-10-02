@@ -527,8 +527,9 @@ W = the wallet account used.
 | Return received (sellable or damaged) | Dr Inventory / Cr Goods in transit (at dispatch value). Damaged units go to the `damaged` location; writing them off is a separate step that needs approval.                                                                       |
 | Courier charges (from settlement)     | Dr Courier charges and Dr Return charges / Cr Courier receivable                                                                                                                                                                   |
 | COD settlement received               | Dr W (bank or bKash) / Cr Courier receivable (net)                                                                                                                                                                                 |
-| Advance received before delivery      | Dr W / Cr Customer advance                                                                                                                                                                                                         |
-| Advance refunded on cancel            | Dr Customer advance / Cr W (or Cr Other income, per org policy)                                                                                                                                                                    |
+| Advance received before delivery      | Dr W / Cr Customer advance, when accounts **verifies** the claim an agent recorded; a claim alone posts nothing (D-230)                                                                                                            |
+| Advance at the order's ending         | Kept (per org policy, at most the delivery charge): Dr Customer advance / Cr Other income. Owed back: stays in Customer advance until the refund is paid, then Dr Customer advance / Cr W (D-232)                                  |
+| Advance verification undone           | The reversal of its received journal, and the COD restored; only before the parcel moves (D-236)                                                                                                                                   |
 | POS sale                              | Dr W (branch) / Cr Sales revenue, and Dr COGS / Cr Inventory                                                                                                                                                                       |
 | POS return (D-169)                    | Dr Sales revenue / Cr W (the tender refunded), and Dr Inventory / Cr COGS at the unit cost the sale recorded. An exchange is a return and a new sale, two journals. Taken only at the branch that made the sale.                   |
 | Cash in (category)                    | Dr W / Cr income account                                                                                                                                                                                                           |
@@ -690,6 +691,12 @@ Notes:
 - Once an order is shipped it can't be cancelled; it becomes a return.
 - Every transition writes an outbox event and an audit row.
 - Until courier sync covers a status, staff can set `delivered`, `partially_delivered` and `returned` manually, with a reason. The postings are the same.
+- M17 adds three effects to the table (D-232 to D-234): `apply_advances` after the delivery postings (each verified advance records its share of what the delivery applied, oldest first, after any exchange credit), `settle_advances` on every cancel and every received return (what is left is kept or owed back, per the brand's policy), and `record_return_reason` on `receive_return` and `exchange`, which the machine refuses without a reason code from the fixed list.
+
+### Advances and return reasons (M17)
+
+- `sales.order_advances`: one row per payment a buyer sent ahead. An agent records the claim (method, transaction id, amount); accounts verifies it into a wallet or rejects it; the recorder never verifies. Statuses `pending → verified | rejected`, `verified → applied | refund_due | forfeited | voided`, `refund_due → refunded`, kept by a trigger. Only verification posts and lowers the COD, and only before the parcel moves with no live booking (D-230, D-231, D-236).
+- `sales.order_returns`: one row per returned or exchanged order, with a reason code from a fixed list of eleven and the free-text note; a deferred trigger refuses a status update into `returned` or `exchange` without one. `GET /v1/orders/return-reasons` reports by reason (D-234).
 
 ### Delivery zones and charges
 
