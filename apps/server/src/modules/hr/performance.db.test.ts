@@ -307,9 +307,9 @@ describe('an input waits for a run that is being closed (ledger re-check W1)', (
     /*
      * Transaction A holds the run as a submit does — locked, its status changed, not yet
      * committed. Transaction B adds a bonus meanwhile. Reading the run without a lock, B's
-     * guard saw `draft` and its foreign key's key-share lock does not conflict with A's, so
-     * the bonus landed on a run that was no longer a draft. With `for share` B waits for A
-     * and then refuses.
+     * guard saw `draft`; its foreign key's key-share lock then waited for A and succeeded
+     * once A committed, because the run's key never changes, so the bonus landed on a run
+     * that was no longer a draft. With `for share` B's guard waits for A and then refuses.
      */
     let release: () => void = () => undefined;
     const held = new Promise<void>((resolve) => {
@@ -345,6 +345,144 @@ describe('an input waits for a run that is being closed (ledger re-check W1)', (
     release();
     await closing;
     expect(await adding).toMatch(/^PAYROLL_RUN_FROZEN/);
+  });
+});
+
+/**
+ * Transaction A takes the run as a submit does and makes `change` without committing;
+ * `release` lets it commit.
+ */
+async function holdRun(
+  runId: string,
+  change: (tx: Tx) => Promise<unknown>,
+): Promise<{ release: () => Promise<void> }> {
+  let letGo: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    letGo = resolve;
+  });
+  let locked: () => void = () => undefined;
+  const isLocked = new Promise<void>((resolve) => {
+    locked = resolve;
+  });
+  const closing = asA(async (tx) => {
+    await tx.execute(sql`select id from hr.payroll_runs where id = ${runId} for update`);
+    await change(tx);
+    locked();
+    await held;
+  });
+  await isLocked;
+  return {
+    release: async () => {
+      letGo();
+      await closing;
+    },
+  };
+}
+
+/** Whether `work` is still waiting after a pause long enough for it to have finished. */
+async function stillWaiting(work: Promise<unknown>): Promise<boolean> {
+  let settled = false;
+  void work.then(
+    () => (settled = true),
+    () => (settled = true),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  return !settled;
+}
+
+/** A draft run for `month` with one bonus input and its award on a fresh target. */
+async function seedAwardedRun(month: string): Promise<{
+  runId: string;
+  inputId: string;
+  targetId: string;
+  versionId: string;
+}> {
+  const targetId = await seedTarget(month);
+  const { versionId } = await seedVersion('usr_author');
+  return asA(async (tx) => {
+    const runs = await tx.execute<{ id: string }>(sql`
+      insert into hr.payroll_runs (org_id, month, status, created_by)
+      values (${ORG_A}, ${month}, 'draft', ${ACTOR}) returning id
+    `);
+    const runId = runs[0]?.id ?? '';
+    const inputs = await tx.execute<{ id: string }>(sql`
+      insert into hr.payroll_inputs (org_id, run_id, employee_id, kind, label, amount_poisha, created_by)
+      values (${ORG_A}, ${runId}, ${employeeE}, 'bonus', 'Target bonus', 1000, ${ACTOR})
+      returning id
+    `);
+    const inputId = inputs[0]?.id ?? '';
+    await repo.insertAward(tx, {
+      orgId: ORG_A,
+      runId,
+      employeeId: employeeE,
+      targetId,
+      ruleVersionId: versionId,
+      payrollInputId: inputId,
+      targetValue: 10n,
+      achieved: 10n,
+      pctBps: 10_000,
+      amountPoisha: 1000n,
+      createdBy: ACTOR,
+    });
+    return { runId, inputId, targetId, versionId };
+  });
+}
+
+describe('a run is locked before its inputs (ledger confirmation of 4215f61)', () => {
+  it('makes a removal wait for a run being closed, then refuses it (W1, the delete side)', async () => {
+    const { runId, inputId } = await seedAwardedRun('2027-04');
+    const hold = await holdRun(runId, (tx) =>
+      tx.execute(sql`update hr.payroll_runs set status = 'cancelled' where id = ${runId}`),
+    );
+    const removing = refusal(
+      asA((tx) => tx.execute(sql`delete from hr.payroll_inputs where id = ${inputId}`)),
+    );
+    expect(await stillWaiting(removing), 'the delete waited for the closing run').toBe(true);
+    await hold.release();
+    expect(await removing).toMatch(/^PAYROLL_RUN_FROZEN/);
+  });
+
+  it('lets a target cancel see the run a submit left pending, not the draft it was (W-1)', async () => {
+    const month = '2027-05';
+    const { runId, targetId } = await seedAwardedRun(month);
+    const requestId = await asA(async (tx) => {
+      const rows = await tx.execute<{ id: string }>(sql`
+        insert into approvals.approval_requests
+          (org_id, type, status, requested_by, payload, amount_poisha, amount_derived_by_server)
+        values (${ORG_A}, 'payroll_run', 'pending', ${ACTOR}, '{}'::jsonb, 0, true)
+        returning id
+      `);
+      return rows[0]?.id ?? '';
+    });
+    const hold = await holdRun(runId, (tx) =>
+      tx.execute(sql`
+        update hr.payroll_runs
+        set status = 'pending_approval', approval_request_id = ${requestId}
+        where id = ${runId}
+      `),
+    );
+    // What the cancel does before it decides: lock the month's runs, then look.
+    const checking = asA(async (tx) => {
+      await repo.lockRunsForMonth(tx, ORG_A, month);
+      return repo.pendingRunPaying(tx, ORG_A, targetId);
+    });
+    expect(await stillWaiting(checking), 'the cancel waited for the submit').toBe(true);
+    await hold.release();
+    expect(await checking).toBe(month);
+  });
+
+  it('leaves alone a run whose submit commits while a removal waits for it (N-4)', async () => {
+    const { runId, versionId } = await seedAwardedRun('2027-06');
+    const hold = await holdRun(runId, (tx) =>
+      tx.execute(sql`update hr.payroll_runs set status = 'cancelled' where id = ${runId}`),
+    );
+    // A supersede's removal: no error from 0055's guard, and nothing removed.
+    const removing = asA((tx) =>
+      repo.deleteDraftAwardInputs(tx, ORG_A, { ruleVersionId: versionId }),
+    );
+    expect(await stillWaiting(removing), 'the removal waited for the run').toBe(true);
+    await hold.release();
+    expect(await removing).toBe(0);
   });
 });
 
@@ -422,9 +560,9 @@ describe('another brand sees none of it (invariant 4)', () => {
       ],
     ];
     for (const [what, write] of writes) {
-      // From brand B's context a brand-A row is refused by the policy's WITH CHECK — or,
-      // for a composite foreign key into brand A, by a reference brand B cannot see.
-      expect(await refusal(asB(write)), what).toMatch(/row-level security|foreign key/);
+      // From brand B's context a brand-A row is refused by the policy's WITH CHECK, which
+      // runs before any foreign key is checked (and a foreign-key check ignores RLS anyway).
+      expect(await refusal(asB(write)), what).toMatch(/row-level security/);
     }
   });
 

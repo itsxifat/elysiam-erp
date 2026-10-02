@@ -765,6 +765,49 @@ describe('bonus rules feed payroll', () => {
     expect(reapplied.totalPoisha).toBe('210000');
   });
 
+  it('refuses to freeze a bonus whose target was cancelled after the apply read it', async () => {
+    /*
+     * What a race between an apply and a cancel can leave (ledger confirmation of 4215f61,
+     * N-6): the target cancelled, its award still on the draft run. Written directly, as
+     * the cancel would have removed the award had it seen it.
+     */
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          update hr.targets
+          set status = 'cancelled', cancelled_by = 'usr_perf_test', cancelled_at = now(),
+              updated_at = now()
+          where org_id = ${ORG_A} and id = ${targetA}
+        `),
+      { orgId: ORG_A },
+    );
+    const refused = await hr.client.request('POST', `/v1/hr/payroll/runs/${runId}/submit`, {
+      body: { reason: 'August' },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(body<{ code: string; detail?: string }>(refused)).toMatchObject({
+      code: 'PAYROLL_TRANSITION_INVALID',
+      detail: expect.stringMatching(/Apply the bonuses again/) as unknown,
+    });
+
+    // Set again and applied again, the run is whole.
+    const again = await hr.client.request('POST', '/v1/hr/targets', {
+      body: {
+        scope: 'employee',
+        month: MONTH,
+        metric: 'confirmed_orders',
+        employeeId: employeeA,
+        targetValue: '10',
+      },
+    });
+    expect(again.statusCode, again.body).toBe(201);
+    targetA = body<{ id: string }>(again).id;
+    const reapplied = body<{ totalPoisha: string }>(
+      await hr.client.request('POST', `/v1/hr/payroll/runs/${runId}/bonuses`),
+    );
+    expect(reapplied.totalPoisha).toBe('210000');
+  });
+
   it('refuses a submit whose bonuses changed while it was being submitted', async () => {
     /*
      * The window W2 found: submit computes the payslips, commits, raises the approval, then
@@ -815,5 +858,57 @@ describe('bonus rules feed payroll', () => {
     const cancel = await hr.client.request('POST', `/v1/hr/targets/${targetA}/cancel`);
     expect(cancel.statusCode, cancel.body).toBe(409);
     expect(body<{ code: string }>(cancel).code).toBe('TARGET_FROZEN');
+  });
+
+  it('honours an approval decided while its version was being submitted', async () => {
+    const created = await hr.client.request('POST', '/v1/hr/bonus-rules', {
+      body: { name: 'Decided early', definition },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const lateVersion = body<{ versions: { id: string }[] }>(created).versions[0]?.id ?? '';
+
+    /*
+     * The checker decides between the request being raised and the submit recording which
+     * version it is for, so the executor finds no version to approve. The submit then
+     * finds the decision and puts the version into force (ledger confirmation N-2).
+     */
+    const approvals = harness.app.get(ApprovalsService);
+    const original = approvals.request.bind(approvals);
+    const spy = vi.spyOn(approvals, 'request').mockImplementationOnce(async (...args) => {
+      const raised = await original(...args);
+      const decided = await secondHr.client.request('POST', `/v1/approvals/${raised.id}/decide`, {
+        body: { decision: 'approved' },
+      });
+      expect(decided.statusCode, decided.body).toBe(201);
+      return raised;
+    });
+    try {
+      const submitted = await hr.client.request(
+        'POST',
+        `/v1/hr/bonus-rules/versions/${lateVersion}/submit`,
+        { body: {} },
+      );
+      expect(submitted.statusCode, submitted.body).toBe(201);
+      const version = body<{ versions: { id: string; status: string }[] }>(submitted).versions.find(
+        (one) => one.id === lateVersion,
+      );
+      expect(version?.status).toBe('approved');
+    } finally {
+      spy.mockRestore();
+    }
+
+    // The author's request activated it; the trail does not show them approving it (N-1).
+    const trail = await withSystem(
+      (tx) =>
+        tx.execute<{ action: string }>(sql`
+          select action from audit.audit_log
+          where org_id = ${ORG_A} and entity_id = ${lateVersion} and action like 'hr.bonus_rule.%'
+        `),
+      { orgId: ORG_A },
+    );
+    expect(trail.map((row) => row.action).sort()).toEqual([
+      'hr.bonus_rule.activated',
+      'hr.bonus_rule.submitted',
+    ]);
   });
 });

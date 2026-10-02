@@ -98,6 +98,13 @@ export async function listTargets(
   return [...rows];
 }
 
+/**
+ * `forUpdate` takes `for no key update`: enough to serialise two writers of one target,
+ * and it does not block the key-share lock a bonus award's foreign key takes. A cancel
+ * then locks the month's payroll runs while a bonus apply holds its run and inserts
+ * awards that reference the target; with a full `for update` here each would wait for the
+ * other (ledger confirmation of 4215f61).
+ */
 export async function targetById(
   tx: Tx,
   orgId: string,
@@ -109,7 +116,7 @@ export async function targetById(
     from hr.targets t
     left join hr.employees e on e.org_id = t.org_id and e.id = t.employee_id
     where t.org_id = ${orgId} and t.id = ${id}
-    ${options.forUpdate === true ? sql`for update of t` : sql``}
+    ${options.forUpdate === true ? sql`for no key update of t` : sql``}
   `);
   return rows[0];
 }
@@ -569,12 +576,26 @@ export async function deleteRuleInputs(tx: Tx, orgId: string, runId: string): Pr
  * Remove the bonuses a cancelled target or a superseded rule version made on **draft**
  * runs (M20 ledger audit W4); the awards go with their inputs. A submitted run's are what
  * its checker is deciding on, and 0055 and 0083 would refuse touching them anyway.
+ *
+ * The draft runs are locked first, `for share` and in id order, and the delete is a later
+ * statement (ledger confirmation of 4215f61, N-3 and N-4). Taking the run before any input
+ * row is the order a bonus apply and a submit use, so the two cannot deadlock. A run whose
+ * submit commits while this waits is re-read as no longer a draft and left alone, rather
+ * than tripping 0055's guard into an error inside somebody's approval. And the delete's
+ * snapshot is taken after the wait, so it sees the awards an apply holding the run wrote.
  */
 export async function deleteDraftAwardInputs(
   tx: Tx,
   orgId: string,
   by: { readonly targetId: string } | { readonly ruleVersionId: string },
 ): Promise<number> {
+  const runs = await tx.execute<{ id: string }>(sql`
+    select id from hr.payroll_runs
+    where org_id = ${orgId} and status = 'draft'
+    order by id
+    for share
+  `);
+  if (runs.length === 0) return 0;
   const match =
     'targetId' in by
       ? sql`a.target_id = ${by.targetId}`
@@ -584,12 +605,47 @@ export async function deleteDraftAwardInputs(
     where org_id = ${orgId}
       and id in (
         select a.payroll_input_id from hr.bonus_awards a
-        join hr.payroll_runs r on r.org_id = a.org_id and r.id = a.run_id
-        where a.org_id = ${orgId} and r.status = 'draft' and ${match}
+        where a.org_id = ${orgId} and ${match}
+          and a.run_id in (${sql.join(
+            runs.map((run) => sql`${run.id}`),
+            sql`, `,
+          )})
       )
     returning id
   `);
   return rows.length;
+}
+
+/**
+ * Lock the month's payroll runs, `for share` and in id order, before a target cancel
+ * reads them (ledger confirmation of 4215f61, W-1). A submit holding one is waited out, so
+ * the check that follows sees the run it left pending rather than the draft it was; a
+ * submit that starts later waits for the cancel and then finds its inputs changed.
+ */
+export async function lockRunsForMonth(tx: Tx, orgId: string, month: string): Promise<void> {
+  await tx.execute(sql`
+    select id from hr.payroll_runs
+    where org_id = ${orgId} and month = ${month}
+    order by id
+    for share
+  `);
+}
+
+/**
+ * Awards on this run whose target is no longer active or whose rule version is no longer
+ * in force (ledger confirmation of 4215f61, N-6). A cancel or a supersede removes its
+ * bonuses from draft runs, but an apply that read the target or the version just before
+ * that committed can still write one after; payroll submit refuses to freeze such a run.
+ */
+export async function staleAwardCount(tx: Tx, orgId: string, runId: string): Promise<number> {
+  const rows = await tx.execute<{ count: string }>(sql`
+    select count(*)::text as count from hr.bonus_awards a
+    join hr.targets t on t.org_id = a.org_id and t.id = a.target_id
+    join hr.bonus_rule_versions v on v.org_id = a.org_id and v.id = a.rule_version_id
+    where a.org_id = ${orgId} and a.run_id = ${runId}
+      and (t.status <> 'active' or v.status <> 'approved')
+  `);
+  return Number(rows[0]?.count ?? '0');
 }
 
 /** The month of a run awaiting approval that pays a bonus on this target, if any. */

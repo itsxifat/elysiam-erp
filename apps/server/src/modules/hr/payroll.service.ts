@@ -27,6 +27,7 @@ import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { AttendanceService } from './attendance.service.js';
 import { HrError, mapHrErrors } from './hr.errors.js';
 import * as repo from './hr.repository.js';
+import * as performanceRepo from './performance.repository.js';
 import type {
   CreateRunInput,
   PayRunInput,
@@ -391,6 +392,14 @@ export class PayrollService implements OnModuleInit {
             'The run’s bonuses or deductions changed while it was being submitted. Check them and submit again.',
           );
         }
+        // A target bonus whose target was cancelled, or whose rule was replaced, after the
+        // apply read it (M20 ledger confirmation N-6). Applying again rewrites them all.
+        if ((await performanceRepo.staleAwardCount(tx, context.orgId, prepared.run.id)) > 0) {
+          throw new HrError(
+            'PAYROLL_TRANSITION_INVALID',
+            'Some target bonuses on this run are for a cancelled target or a replaced bonus rule. Apply the bonuses again, then submit.',
+          );
+        }
 
         // What was recomputed under the lock, which the check above found equal.
         await this.freeze(tx, context.orgId, prepared.run.id, recomputed);
@@ -600,7 +609,10 @@ export class PayrollService implements OnModuleInit {
   ): Promise<{ removed: boolean }> {
     return mapHrErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const run = await this.requireRun(tx, context.orgId, runId);
+        // The run is locked before the input row, the order a bonus apply and a submit use;
+        // the other way round the two can deadlock (M20 ledger confirmation N-3).
+        const run = await repo.runForUpdate(tx, context.orgId, runId);
+        if (run === undefined) throw new HrError('PAYROLL_NOT_FOUND', 'No such payroll run.');
         if (run.status !== 'draft') {
           throw new HrError(
             'PAYROLL_RUN_FROZEN',

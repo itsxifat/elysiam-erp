@@ -363,8 +363,11 @@ export class TargetsService {
         /*
          * A run already waiting for its checker pays this target's bonus, and that payslip is
          * frozen (ledger re-check W2). Cancelling now would leave the bonus approved for a
-         * target that no longer exists, so the run has to be rejected first.
+         * target that no longer exists, so the run has to be rejected first. The month's runs
+         * are locked before the check, so a submit committing in between cannot slip past it
+         * (ledger confirmation W-1).
          */
+        await repo.lockRunsForMonth(tx, context.orgId, row.month);
         const pendingMonth = await repo.pendingRunPaying(tx, context.orgId, id);
         if (pendingMonth !== undefined) {
           throw new HrError(

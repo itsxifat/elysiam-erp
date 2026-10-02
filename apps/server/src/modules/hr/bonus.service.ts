@@ -344,7 +344,7 @@ export class BonusRulesService implements OnModuleInit {
         if ((await approvalStatus(tx, context.orgId, raised.id)) === 'approved') {
           const submitted = await repo.versionById(tx, context.orgId, prepared.id);
           if (submitted !== undefined) {
-            await this.activate(tx, context, submitted, raised.id, request);
+            await this.activate(tx, context, submitted, raised.id, request, 'late');
           }
         }
         return this.ruleView(tx, context.orgId, prepared.rule_id);
@@ -370,7 +370,7 @@ export class BonusRulesService implements OnModuleInit {
     if (status === 'rejected' || status === 'cancelled') {
       await repo.setVersionStatus(tx, context.orgId, pending.id, 'rejected');
     } else if (status === 'approved') {
-      await this.activate(tx, context, pending, pending.approval_request_id, request);
+      await this.activate(tx, context, pending, pending.approval_request_id, request, 'late');
     }
   }
 
@@ -379,6 +379,11 @@ export class BonusRulesService implements OnModuleInit {
    * draft runs go with it (ledger audit W4), so a run never pays terms that are no longer
    * the brand's. 0083 refuses this unless the version's own request is approved by
    * somebody other than its author.
+   *
+   * `late` is a decision found already made, by the author's submit or their next one,
+   * rather than made now by the checker. The trail then says `activated`, so the author is
+   * not recorded approving their own terms; the approvals module's own row names the
+   * checker (ledger confirmation N-1).
    */
   private async activate(
     tx: Tx,
@@ -386,6 +391,7 @@ export class BonusRulesService implements OnModuleInit {
     version: repo.VersionRow,
     approvalId: string,
     request: AuditableRequest | undefined,
+    how: 'decided' | 'late' = 'decided',
   ): Promise<void> {
     const current = await repo.approvedVersionOf(tx, context.orgId, version.rule_id);
     let removed = 0;
@@ -400,7 +406,7 @@ export class BonusRulesService implements OnModuleInit {
       orgId: context.orgId,
       actorUserId: context.userId,
       operation: 'update',
-      action: 'hr.bonus_rule.approved',
+      action: how === 'late' ? 'hr.bonus_rule.activated' : 'hr.bonus_rule.approved',
       entityType: 'Payroll',
       entityId: version.id,
       before: { status: 'pending_approval', superseded: current?.id ?? null },
