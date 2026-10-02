@@ -2,10 +2,10 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { poisha } from '../money/index.js';
-import { discountCeilingBps } from '../pos/discount-policy.js';
 import {
+  discountAllowed,
   discountBasisPoints,
-  ORDER_DISCOUNT_CEILING_BPS,
+  orderDiscountCeilingBps,
   typedDiscount,
   withinDiscountCeiling,
   type DiscountedLine,
@@ -22,10 +22,7 @@ const line = (overrides: Partial<Record<keyof DiscountedLine, bigint | number>>)
 describe('the order desk discount ceiling (M30, D-364)', () => {
   it('counts a price under the list, a line discount and the order discount together', () => {
     const discount = typedDiscount(
-      [
-        line({ qty: 2, unitPricePoisha: 90_000 }),
-        line({ lineDiscountPoisha: 5_000 }),
-      ],
+      [line({ qty: 2, unitPricePoisha: 90_000 }), line({ lineDiscountPoisha: 5_000 })],
       poisha(5_000n),
     );
     expect(discount).toEqual({ listPoisha: 300_000n, discountPoisha: 30_000n });
@@ -50,14 +47,26 @@ describe('the order desk discount ceiling (M30, D-364)', () => {
 
   it('refuses a free line to a sales agent and allows it to an org admin', () => {
     const free = typedDiscount([line({ unitPricePoisha: 0 })], poisha(0n));
-    const sales = { isSuperAdmin: false, roles: ['sales'], branchIdsByRole: { sales: [] } };
-    const admin = { isSuperAdmin: false, roles: ['org_admin'], branchIdsByRole: { org_admin: [] } };
-    expect(
-      withinDiscountCeiling(free, discountCeilingBps(sales, '', ORDER_DISCOUNT_CEILING_BPS)),
-    ).toBe(false);
-    expect(
-      withinDiscountCeiling(free, discountCeilingBps(admin, '', ORDER_DISCOUNT_CEILING_BPS)),
-    ).toBe(true);
+    const sales = orderDiscountCeilingBps({ isSuperAdmin: false, roles: ['sales'] });
+    const admin = orderDiscountCeilingBps({ isSuperAdmin: false, roles: ['org_admin'] });
+    expect(sales).toBe(2_000);
+    expect(withinDiscountCeiling(free, sales)).toBe(false);
+    expect(withinDiscountCeiling(free, admin)).toBe(true);
+    // A role with no row prices at the list: warehouse edits addresses, not prices.
+    expect(orderDiscountCeilingBps({ isSuperAdmin: false, roles: ['warehouse'] })).toBe(0);
+    expect(orderDiscountCeilingBps({ isSuperAdmin: true, roles: [] })).toBe(10_000);
+  });
+
+  it('lets an edit keep a deep discount it did not add to, and refuses one that deepens it', () => {
+    const before = typedDiscount([line({ qty: 2, unitPricePoisha: 50_000 })], poisha(0n));
+    // One unit dropped: less given away than before.
+    const fewer = typedDiscount([line({ qty: 1, unitPricePoisha: 50_000 })], poisha(0n));
+    expect(discountAllowed({ after: fewer, before, ceilingBps: 2_000 })).toBe(true);
+    // One more unit at the same half price: more given away.
+    const more = typedDiscount([line({ qty: 3, unitPricePoisha: 50_000 })], poisha(0n));
+    expect(discountAllowed({ after: more, before, ceilingBps: 2_000 })).toBe(false);
+    // A new order has nothing to compare with.
+    expect(discountAllowed({ after: fewer, ceilingBps: 2_000 })).toBe(false);
   });
 
   it('agrees with exact rational arithmetic on random orders', () => {
@@ -91,13 +100,13 @@ describe('the order desk discount ceiling (M30, D-364)', () => {
               0n,
             ) - BigInt(orderDiscount);
           expect(discount.discountPoisha).toBe(list - charged);
-          const expected = list - charged <= 0n || (list - charged) * 10_000n <= BigInt(ceiling) * list;
+          const expected =
+            list - charged <= 0n || (list - charged) * 10_000n <= BigInt(ceiling) * list;
           expect(withinDiscountCeiling(discount, ceiling)).toBe(expected);
-          // Whole basis points rounded up never understate the discount.
-          if (discount.discountPoisha > 0n) {
-            expect(BigInt(discountBasisPoints(discount)) * list).toBeGreaterThanOrEqual(
-              discount.discountPoisha * 10_000n > 10_000n * list ? 10_000n * list : discount.discountPoisha * 10_000n,
-            );
+          // Whole basis points, rounded up, never understate a discount under 100%.
+          const bps = BigInt(discountBasisPoints(discount));
+          if (discount.discountPoisha > 0n && bps < 10_000n) {
+            expect(bps * list).toBeGreaterThanOrEqual(discount.discountPoisha * 10_000n);
           }
         },
       ),

@@ -53,6 +53,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   ADVANCE_IMMUTABLE: 409,
   // About who, not what: a second person verifies, the body is fine.
   ADVANCE_SELF_VERIFY: 403,
+  // M30 (D-364): about who is asking, not the body. An org admin may enter the same price.
+  ORDER_DISCOUNT_ABOVE_CEILING: 403,
 };
 
 export class OrdersError extends Error {

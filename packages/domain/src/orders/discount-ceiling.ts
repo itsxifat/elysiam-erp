@@ -78,3 +78,43 @@ export function discountBasisPoints(discount: TypedDiscount): number {
   const bps = (scaled + discount.listPoisha - 1n) / discount.listPoisha;
   return Number(bps > 10_000n ? 10_000n : bps);
 }
+
+/** Who is asking, as the request context holds it. */
+export interface OrderPricingAuthority {
+  readonly isSuperAdmin: boolean;
+  readonly roles: readonly string[];
+}
+
+/**
+ * The caller's ceiling: the highest any of their roles grants.
+ *
+ * Not per branch, unlike the till's (D-075). Whether the caller may touch an order at all
+ * is the order's scope check; this only says how deep a price they may type into one they
+ * can. With sales and branch_manager at the same figure, a per-branch reading would change
+ * nothing but the number of ways to get it wrong.
+ */
+export function orderDiscountCeilingBps(authority: OrderPricingAuthority): number {
+  if (authority.isSuperAdmin) return 10_000;
+  let best = 0;
+  for (const role of authority.roles) {
+    best = Math.max(best, ORDER_DISCOUNT_CEILING_BPS[role] ?? 0);
+  }
+  return best;
+}
+
+/**
+ * Whether the caller may save an order priced like this.
+ *
+ * Within their ceiling, always. Above it, only an edit that adds nothing to the discount
+ * the order already carried: an agent may change the address or drop a line on an order an
+ * org admin priced deeply, but not deepen it.
+ */
+export function discountAllowed(input: {
+  readonly after: TypedDiscount;
+  readonly before?: TypedDiscount;
+  readonly ceilingBps: number;
+}): boolean {
+  if (withinDiscountCeiling(input.after, input.ceilingBps)) return true;
+  if (input.before === undefined) return false;
+  return input.after.discountPoisha <= input.before.discountPoisha;
+}

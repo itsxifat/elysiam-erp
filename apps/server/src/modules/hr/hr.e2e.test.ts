@@ -1079,13 +1079,23 @@ describe('M30: payroll money needs a second person and the payroll grant', () =>
     });
 
     const toSelf = await hr.client.request('POST', '/v1/hr/loans', {
-      body: { employeeId: self.id, principalPoisha: '100000', instalmentCount: 2, firstMonth: '2026-11' },
+      body: {
+        employeeId: self.id,
+        principalPoisha: '100000',
+        instalmentCount: 2,
+        firstMonth: '2026-11',
+      },
     });
     expect(toSelf.statusCode, toSelf.body).toBe(403);
     expect(toSelf.body).toContain('PAYROLL_SELF_DEALING');
 
     const recorded = await secondHr.client.request('POST', '/v1/hr/loans', {
-      body: { employeeId: self.id, principalPoisha: '100000', instalmentCount: 2, firstMonth: '2026-11' },
+      body: {
+        employeeId: self.id,
+        principalPoisha: '100000',
+        instalmentCount: 2,
+        firstMonth: '2026-11',
+      },
     });
     expect(recorded.statusCode, recorded.body).toBe(201);
     const byBorrower = await hr.client.request(

@@ -493,7 +493,12 @@ export class OrdersApiService implements OrdersApi {
     input: CreateOrderInput,
     options: CreateOrderOptions = {},
   ): Promise<CreatedOrder> {
-    return this.orders.createIn(tx, workerContext(actor), NO_REQUEST, input, options);
+    // System-authored prices (the intake, migrated history, the preview seed): the desk's
+    // discount ceiling is for people typing prices (D-364).
+    return this.orders.createIn(tx, workerContext(actor), NO_REQUEST, input, {
+      ...options,
+      systemPricing: true,
+    });
   }
 
   async transition(

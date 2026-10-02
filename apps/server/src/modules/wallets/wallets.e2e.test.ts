@@ -1458,8 +1458,9 @@ describe('M30: a branch-scoped cash out follows petty cash’s rules', () => {
   it('holds one at or above the wallet-adjustment threshold for a second person', async () => {
     const response = await cashOut(manager.client, '150000', await uploadReceipt(manager.client));
     expect(response.statusCode, response.body).toBe(201);
-    expect(body<{ status: string; journalId: string | null; approvalId: string | null }>(response))
-      .toMatchObject({ status: 'pending_approval', journalId: null });
+    expect(
+      body<{ status: string; journalId: string | null; approvalId: string | null }>(response),
+    ).toMatchObject({ status: 'pending_approval', journalId: null });
     expect(body<{ approvalId: string | null }>(response).approvalId).not.toBeNull();
   });
 

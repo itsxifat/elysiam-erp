@@ -803,3 +803,71 @@ async function someAddress(): Promise<{
     addressLine: 'House 7, Road 2, Dhanmondi, Dhaka',
   };
 }
+
+/*
+ * M30 security review, C4 (D-364). An agent's typed price had no floor: a sales agent could
+ * book a line at nothing to an accomplice, and the delivery would post full cost against no
+ * revenue with nobody else having seen the price. The fixture SKUs list at ৳1,500.
+ */
+describe('M30: the desk prices no deeper than the caller’s ceiling', () => {
+  function placeAs(actor: RoleClient, overrides: Record<string, unknown>) {
+    return actor.client.request('POST', '/v1/orders', {
+      body: {
+        channel: 'phone',
+        customerId,
+        locationId: location,
+        courierId,
+        deliveryChargePoisha: '6000',
+        ...overrides,
+      },
+    });
+  }
+
+  it('refuses a sales agent a free line, and lets an org admin enter it', async () => {
+    const free = { lines: [{ skuId: sku(0), qty: 1, unitPricePoisha: '0' }] };
+    const bySales = await placeAs(sales, free);
+    expect(bySales.statusCode, bySales.body).toBe(403);
+    expect(errorCode(bySales)).toBe('ORDER_DISCOUNT_ABOVE_CEILING');
+
+    const byAdmin = await placeAs(admin, free);
+    expect(byAdmin.statusCode, byAdmin.body).toBe(201);
+  });
+
+  it('allows exactly a fifth off and refuses one poisha more', async () => {
+    const atCeiling = await placeAs(sales, {
+      lines: [{ skuId: sku(0), qty: 1, unitPricePoisha: '120000' }],
+    });
+    expect(atCeiling.statusCode, atCeiling.body).toBe(201);
+
+    const over = await placeAs(sales, {
+      lines: [{ skuId: sku(0), qty: 1, unitPricePoisha: '119999' }],
+    });
+    expect(over.statusCode, over.body).toBe(403);
+  });
+
+  it('counts the line and order discounts together with the price', async () => {
+    const response = await placeAs(sales, {
+      lines: [{ skuId: sku(0), qty: 1, unitPricePoisha: '150000', discountPoisha: '15000' }],
+      discountPoisha: '15001',
+    });
+    expect(response.statusCode, response.body).toBe(403);
+    expect(errorCode(response)).toBe('ORDER_DISCOUNT_ABOVE_CEILING');
+  });
+
+  it('lets an agent shrink an order an admin priced deeply, but not deepen it', async () => {
+    const order = await takeOrder(admin, {
+      lines: [{ skuId: sku(0), qty: 2, unitPricePoisha: '75000' }],
+      assignedTo: sales.userId,
+    });
+
+    const deeper = await sales.client.request('PATCH', `/v1/orders/${order.id}`, {
+      body: { lines: [{ skuId: sku(0), qty: 3, unitPricePoisha: '75000' }] },
+    });
+    expect(deeper.statusCode, deeper.body).toBe(403);
+
+    const smaller = await sales.client.request('PATCH', `/v1/orders/${order.id}`, {
+      body: { lines: [{ skuId: sku(0), qty: 1, unitPricePoisha: '75000' }] },
+    });
+    expect(smaller.statusCode, smaller.body).toBe(200);
+  });
+});
