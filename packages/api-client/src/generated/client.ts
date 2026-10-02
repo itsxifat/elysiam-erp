@@ -515,6 +515,7 @@ export const OPERATIONS = {
     ability: 'read:Cost',
   },
   healthLive: { method: 'GET', path: '/health/live', ability: 'public' },
+  healthReady: { method: 'GET', path: '/health/ready', ability: 'public' },
   listApprovals: { method: 'GET', path: '/v1/approvals', ability: 'read:ApprovalRequest' },
   listDemoCostedItems: { method: 'GET', path: '/v1/demo/costed-items', ability: 'read:CostedItem' },
   listLedgerAccounts: { method: 'GET', path: '/v1/ledger/accounts', ability: 'read:LedgerReport' },
@@ -1674,6 +1675,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Liveness probe. */
     healthLive: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.healthLive, undefined, options),
+    /** Readiness probe. */
+    healthReady: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.healthReady, undefined, options),
     /** Approval requests, filtered and cursor-paginated. */
     listApprovals: (
       input: {

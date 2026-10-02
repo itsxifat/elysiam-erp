@@ -163,7 +163,9 @@ async function bootstrap(): Promise<void> {
   useTrackingRateLimitStore(limiter);
 
   const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule.register({ auth, tokens }),
+    // Valkey joins the readiness checks here, through the rate limiter's own connection:
+    // with its offline queue off, a ping fails at once rather than waiting (§26).
+    AppModule.register({ auth, tokens, readiness: { valkey: () => limiterClient.ping() } }),
     // `trustProxy` is what makes `request.ip` the client rather than the proxy,
     // and the per-IP rate limit is only meaningful if it is right (§25).
     //
