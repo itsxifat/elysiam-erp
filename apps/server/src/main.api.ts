@@ -19,6 +19,7 @@ import { applyGlobalPipeline } from './platform/http/pipeline.js';
 import { PasswordTokenStore } from './modules/iam/iam.service.js';
 import { serverEnv } from './platform/config/env.js';
 import { createLogger } from './platform/logging/logger.js';
+import { reportError, shutdownObservability } from './platform/observability/errors.js';
 import type { Logger } from 'pino';
 import { pathToFileURL } from 'node:url';
 import { registerAuth } from './platform/http/auth-plugin.js';
@@ -287,6 +288,8 @@ async function bootstrap(): Promise<void> {
           logger.warn({ err: error }, 'jobs client did not stop cleanly');
         })
         .then(() => app.close())
+        // Last: the error events and spans of the requests just drained (§26).
+        .then(() => shutdownObservability())
         .then(() => process.exit(0));
     });
   }
@@ -302,10 +305,13 @@ async function bootstrap(): Promise<void> {
  */
 const entrypoint = process.argv[1];
 if (entrypoint !== undefined && pathToFileURL(entrypoint).href === import.meta.url) {
-  bootstrap().catch((error: unknown) => {
+  bootstrap().catch(async (error: unknown) => {
     // The logger needs valid config, and the most likely failure here is invalid
     // config, so this one path writes to stderr directly.
     process.stderr.write(`api failed to start: ${String(error)}\n`);
+    // A boot that fails during a deploy is the error most worth being told about.
+    reportError(error, { kind: 'boot', process: 'api' });
+    await shutdownObservability();
     process.exit(1);
   });
 }
