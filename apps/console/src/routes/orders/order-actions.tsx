@@ -313,7 +313,7 @@ function ActionDialog({
                   id={`${id}-qty-${line.skuId}`}
                   inputMode="numeric"
                   value={delivered[line.skuId] ?? ''}
-                  className={`${control} w-20 text-right tabular-nums`}
+                  className={`${control.replace('w-full', 'w-20')} text-right tabular-nums`}
                   onChange={(event) =>
                     setDelivered((current) => ({ ...current, [line.skuId]: event.target.value }))
                   }

@@ -111,9 +111,11 @@ test('the desk walks an order from pending to delivered with the detail’s butt
   await deliver.getByRole('button', { name: 'Mark delivered' }).click();
   await expect(deliver).toBeHidden();
   await expectStatus(desk, order.orderNo, 'Delivered');
-  // Delivered: start a return is the only move left.
-  await expect(desk.getByRole('button', { name: 'Start return' })).toBeVisible();
-  await expect(desk.getByRole('button', { name: 'Hand to courier' })).toHaveCount(0);
+  // Delivered: §9's only move left is an exchange, which has its own form — no button here.
+  for (const name of ['Start return', 'Hand to courier', 'Mark delivered', 'Cancel']) {
+    await expect(desk.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
+  await bothThemes(desk, 'order-detail-delivered');
 });
 
 test('the list packs selected orders in bulk', async () => {
@@ -179,7 +181,8 @@ test('an org admin opens every settings tab from the sidebar', async () => {
   await issue.getByRole('button', { name: 'Issue a key' }).click();
   const secret = admin.getByRole('dialog', { name: 'Copy the secret now' });
   await expect(secret.locator('code')).not.toBeEmpty();
-  await shot(admin, 'settings-site-key-secret');
+  // Not photographed: a review screenshot of a secret is a secret in the repository, even a
+  // throwaway one (invariant 10).
   await secret.getByRole('button', { name: 'Close' }).first().click();
   await expect(admin.getByRole('row').filter({ hasText: 'E2E landing page' })).toBeVisible();
   // The secret is not on the page once the dialog is gone.

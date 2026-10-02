@@ -942,3 +942,35 @@ share`), W-B (one person could void a loan's receipt: `LOAN_SELF_VOID` in the se
     them; it could also require `voided_by = app.user_id`. (owner: claude)
   - Renumber 0089–0093 at integration. (owner: claude, integrator)
 - Next: integration of M26 with its sibling branches.
+
+### 2026-10-02 · gaps · Order lifecycle buttons, courier statuses that ship, settings screens · in progress
+
+- Delivered (branch `gaps-orders-settings`, from `integration-wave2` at `09c36d1`; plan
+  `docs/plans/gaps-orders-settings.md`; D-390 to D-396):
+  - **Courier statuses ship the order (D-390).** A status that proves the parcel left —
+    picked up, in transit, out for delivery, delivered, partly delivered, returning, back at
+    the merchant — ships a `confirmed` or `packed` order first and then applies what the
+    status means from `shipped`, in one transaction through the state machine. Before this
+    nothing but a missing button produced `ship`, so a delivered parcel left its order
+    `packed`, the delivery ignored and no revenue posted. `hold`, `booked`, `pickup_pending`,
+    `cancelled` and `unknown` still move nothing before shipment; a held order is never moved.
+  - **Confirming the handover ships the order (D-391)**, once, whoever comes second.
+  - **Order detail buttons from the server's own table (D-392):** Confirm, Mark packed, Hand
+    to courier, Mark delivered, Partial delivery, Start return, Receive return, Release hold,
+    Hold, Cancel — each shown only when `GET /v1/orders/:id`'s new `transitions` lists it and
+    the caller holds `update Order`, with dialogs for reasons, the collected amount and the
+    return inspection. Cancel is no longer offered on a held order. A parcel panel books the
+    parcel, shows its courier status, links its tracking and confirms the handover; the
+    parcel page shows and confirms the handover too.
+  - **Bulk pack and hand-over (D-393)** on the order list, through
+    `POST /v1/orders/bulk-transition`.
+  - **Settings (D-394, D-395):** `/settings` stops being a placeholder — approval thresholds
+    (with relaxations waiting for a second org admin), delivery zones, courier accounts
+    (write-only keys, fingerprints, the adapter's own field names), website order keys (the
+    secret shown once) and till registers. The link shows for org_admin, accounts, marketing
+    and branch managers, each seeing only the tabs their grants open. New reads:
+    `GET /v1/approvals/thresholds`, `GET /v1/courier/providers`, and an `orderId` filter on
+    `GET /v1/courier/parcels`.
+  - **HR's Pay button (D-396):** `GET /v1/hr/payroll/wallets` (id and name only, through
+    `LedgerApi.activeWallets`) feeds the pay and disburse pickers, which were empty for hr.
+  - bn and en for every string. No new dependency.

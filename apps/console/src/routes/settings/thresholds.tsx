@@ -138,7 +138,7 @@ function ThresholdLine({ row }: { readonly row: ThresholdRow }) {
               id={id}
               inputMode="decimal"
               value={value}
-              className={`${control} w-32 tabular-nums`}
+              className={`${control.replace('w-full', 'w-32')} tabular-nums`}
               onChange={(event) => setValue(event.target.value)}
             />
             <Button type="submit" size="sm" variant="outline" disabled={save.isPending}>
