@@ -277,6 +277,25 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/notify/opt-outs',
   'DELETE /v1/notify/opt-outs/:phone',
   'GET /v1/notify/messages',
+  // M18: marketing. `Campaign` for campaigns, leads, the dashboard, the Meta link and the
+  // conversion log; `CampaignSpend` for spend and the import (D-260).
+  'GET /v1/marketing/campaigns',
+  'POST /v1/marketing/campaigns',
+  'PATCH /v1/marketing/campaigns/:id',
+  'POST /v1/marketing/campaigns/:id/refs',
+  'DELETE /v1/marketing/campaigns/:id/refs/:refId',
+  'GET /v1/marketing/spend',
+  'GET /v1/marketing/spend/campaigns',
+  'PUT /v1/marketing/spend',
+  'POST /v1/marketing/meta/import',
+  'GET /v1/marketing/meta-connection',
+  'PUT /v1/marketing/meta-connection',
+  'GET /v1/marketing/capi-events',
+  'GET /v1/marketing/dashboard',
+  'GET /v1/marketing/leads',
+  'GET /v1/marketing/leads/segments',
+  'POST /v1/marketing/leads',
+  'PATCH /v1/marketing/leads/:id',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

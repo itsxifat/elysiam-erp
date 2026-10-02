@@ -7,8 +7,8 @@ import type { Tx } from '@elysium/db';
  * §11's Conversions API sends a purchase "when an order is delivered", and invariant 6
  * says the send is a job enqueued in the transaction that delivered it — so the marketing
  * module has to be told *here*, before the commit, not after it. Enqueueing from an outbox
- * subscriber would also work, but the outbox is at-least-once with no durable dedupe
- * (`fraud.subscriber.ts` says why), and a job enqueued in the same transaction commits or
+ * subscriber would also work, but the outbox is delivered at least once with no durable
+ * dedupe on the subscriber's side, while a job enqueued in the same transaction commits or
  * rolls back with the delivery itself.
  *
  * Shaped like `CourierBookingRegistry`, for the same reason: the marketing module reads

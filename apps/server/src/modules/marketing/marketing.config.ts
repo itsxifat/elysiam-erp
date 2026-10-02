@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { FakeMetaGateway, GraphMetaGateway, type MetaGateway } from './providers/meta-gateway.js';
+
 /**
  * The marketing module's configuration (architecture §21, §25; M18).
  *
@@ -57,4 +59,14 @@ export function marketingConfig(env: NodeJS.ProcessEnv = process.env): Marketing
     );
   }
   return config;
+}
+
+/** The gateway this configuration names. `marketingConfig` already refused a half-on one. */
+export function metaGatewayFor(config: MarketingConfig): MetaGateway {
+  if (config.MARKETING_META_PROVIDER === 'fake') return new FakeMetaGateway();
+  return new GraphMetaGateway({
+    baseUrl: config.MARKETING_META_BASE_URL,
+    apiVersion: config.MARKETING_META_API_VERSION,
+    timeoutMs: config.MARKETING_META_TIMEOUT_MS,
+  });
 }

@@ -56,13 +56,12 @@ export function sealToken(token: string, orgId: string, config: TokenKey): Seale
 
 export function openToken(sealed: Buffer, orgId: string, config: TokenKey): string {
   if (sealed.length < IV_BYTES + TAG_BYTES) {
-    throw new MarketingError('MARKETING_CREDENTIALS_MISSING', 'The stored Meta token is malformed.');
+    throw new MarketingError(
+      'MARKETING_CREDENTIALS_MISSING',
+      'The stored Meta token is malformed.',
+    );
   }
-  const decipher = createDecipheriv(
-    'aes-256-gcm',
-    keyBytes(config),
-    sealed.subarray(0, IV_BYTES),
-  );
+  const decipher = createDecipheriv('aes-256-gcm', keyBytes(config), sealed.subarray(0, IV_BYTES));
   decipher.setAuthTag(sealed.subarray(IV_BYTES, IV_BYTES + TAG_BYTES));
   decipher.setAAD(associatedData(orgId));
   try {

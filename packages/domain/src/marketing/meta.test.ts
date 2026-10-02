@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { poisha } from '../money/index.js';
 import {
   aggregateMetaSpend,
+  audiencePhoneHashes,
   buildPurchaseEvent,
   capiActionSource,
   capiEventTimeAllowed,
+  metaAudienceCsv,
   metaCity,
   metaName,
   metaPhone,
@@ -134,5 +136,16 @@ describe('aggregating Insights rows', () => {
     expect(() => aggregateMetaSpend([row({ accountCurrency: 'USD' })])).toThrow(MetaSpendError);
     expect(() => aggregateMetaSpend([row({ dateStop: '2026-10-02' })])).toThrow(MetaSpendError);
     expect(() => aggregateMetaSpend([row({ spend: '1e3' })])).toThrow(MetaSpendError);
+  });
+});
+
+describe('the hashed custom-audience file', () => {
+  it('normalises, de-duplicates and hashes each phone, and never writes a number', () => {
+    const hashes = audiencePhoneHashes(
+      ['+8801712345678', '+8801712345678', '+8801812345678'],
+      fakeHash,
+    );
+    expect(hashes).toEqual(['h(8801712345678)', 'h(8801812345678)']);
+    expect(metaAudienceCsv(hashes)).toBe('phone\nh(8801712345678)\nh(8801812345678)\n');
   });
 });

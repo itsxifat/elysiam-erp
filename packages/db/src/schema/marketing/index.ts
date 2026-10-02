@@ -26,7 +26,7 @@ import { organizations } from '../org/index.js';
  * Campaigns, ad spend, leads and the Meta link (architecture §11, M18).
  *
  * Owned by the `marketing` module. Every table carries `org_id` with RLS ENABLE + FORCE
- * (migration 0081) and every tenant foreign key carries `org_id` on both sides (D-047).
+ * (migration 0082) and every tenant foreign key carries `org_id` on both sides (D-047).
  *
  * Three shapes worth knowing before the columns:
  *

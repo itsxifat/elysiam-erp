@@ -47,6 +47,9 @@ const OWNER: Readonly<Record<string, string>> = {
   inventory: 'inventory',
   investors: 'investors',
   ledger: 'ledger',
+  // M18: campaigns, spend, leads, the Meta link and the conversion log. The promo FK to
+  // `marketing.campaigns` is a constraint, not a read.
+  marketing: 'marketing',
   // M16: codes and redemptions, and messages, templates and opt-outs, each reached
   // from elsewhere only through `PromoApi` / `NotifyApi`.
   notify: 'notify',

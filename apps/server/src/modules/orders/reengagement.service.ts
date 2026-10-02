@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
 import { businessDate, poisha, takaParts } from '@elysium/domain';
 import { lapsedSince } from '@elysium/domain/crm';
+import { audiencePhoneHashes, metaAudienceCsv } from '@elysium/domain/marketing';
 import { sql } from 'drizzle-orm';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
@@ -175,6 +176,18 @@ export class ReengagementService {
     );
 
     // Built after the commit, for the reason `BuyersService.export` gives.
+    if (query.format === 'meta_audience') {
+      const hashes = audiencePhoneHashes(
+        rows.map((row) => row.phone_e164),
+        (value) => createHash('sha256').update(value, 'utf8').digest('hex'),
+      );
+      return {
+        bytes: Buffer.from(metaAudienceCsv(hashes), 'utf8'),
+        filename: `meta-audience-${businessDate(now)}.csv`,
+        contentType: CSV_CONTENT_TYPE,
+        rows: hashes.length,
+      };
+    }
     const cells = rows.map(exportCells);
     const bytes =
       query.format === 'xlsx'

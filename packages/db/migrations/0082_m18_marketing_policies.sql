@@ -13,7 +13,7 @@
 --   that somebody said so.
 -- * `marketing.leads`: UPDATE for status and details; never DELETE.
 -- * `marketing.meta_connections`: UPDATE to change settings or the sealed token.
--- * `marketing.capi_events`: UPDATE as the send job records the outcome (0082 makes a sent
+-- * `marketing.capi_events`: UPDATE as the send job records the outcome (0083 makes a sent
 --   or skipped row final); never DELETE. It is the conversion log.
 --
 -- No analytics read on any of them yet (D-049); M24's rollups opt in per table.

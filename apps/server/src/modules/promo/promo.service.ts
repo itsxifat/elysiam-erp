@@ -328,9 +328,7 @@ export class PromoService {
         skuIds: input.skuIds ?? [],
         categoryIds: input.categoryIds ?? [],
         customerId: input.customerId ?? null,
-        // Not accepted until M18 builds campaigns and the composite FK that checks the id
-        // belongs to this brand; a bare uuid now would be a row that migration rejects.
-        campaignId: null,
+        campaignId: input.campaignId ?? null,
         origin: 'manual',
         createdBy: context.userId,
       });

@@ -279,3 +279,28 @@ export function aggregateMetaSpend(rows: readonly MetaInsightRow[]): AggregatedM
     adsByCampaign: new Map([...ads].map(([campaign, set]) => [campaign, [...set].sort()])),
   };
 }
+
+/**
+ * The re-engagement list as a Meta customer-list file takes it (D-259): one SHA-256 hash
+ * of each phone, normalised as Meta's customer-list page asks ("remove symbols, letters
+ * and any leading zeros", country code included), each buyer once.
+ *
+ * Hashed here, before the file exists, so the brand never downloads a list of numbers to
+ * upload somewhere else: what leaves the ERP is what Meta matches on, and nothing more.
+ */
+export function audiencePhoneHashes(phonesE164: readonly string[], hash: HashFn): string[] {
+  const seen = new Set<string>();
+  const hashes: string[] = [];
+  for (const phone of phonesE164) {
+    const normalised = metaPhone(phone);
+    if (normalised === '' || seen.has(normalised)) continue;
+    seen.add(normalised);
+    hashes.push(hash(normalised));
+  }
+  return hashes;
+}
+
+/** The file itself: Meta's `phone` identifier column, one hash per line. */
+export function metaAudienceCsv(hashes: readonly string[]): string {
+  return ['phone', ...hashes].join('\n') + '\n';
+}
