@@ -554,27 +554,6 @@
       "when": 1790923793755,
       "tag": "0080_remove_fraud",
       "breakpoints": true
-    },
-    {
-      "idx": 81,
-      "version": "7",
-      "when": 1790922884856,
-      "tag": "0081_m14a_migration_schema",
-      "breakpoints": true
-    },
-    {
-      "idx": 82,
-      "version": "7",
-      "when": 1790922897329,
-      "tag": "0082_m14a_migration_policies",
-      "breakpoints": true
-    },
-    {
-      "idx": 83,
-      "version": "7",
-      "when": 1790922992898,
-      "tag": "0083_m14a_opening_equity_shape",
-      "breakpoints": true
     }
   ]
 }
