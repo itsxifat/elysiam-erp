@@ -42,6 +42,8 @@ const SOURCES: Readonly<Record<string, AccountsMessageKey>> = {
   investment: 'accounts.source.investment',
   investor_distribution: 'accounts.source.investor_distribution',
   investor_withdrawal: 'accounts.source.investor_withdrawal',
+  company_loan: 'accounts.source.company_loan',
+  loan_instalment: 'accounts.source.loan_instalment',
 };
 
 /** What an entry came from, in words: `wallet_transfer` is not a description. */

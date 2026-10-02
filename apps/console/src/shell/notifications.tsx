@@ -1,7 +1,7 @@
 import type { MessageKey } from '@elysium/i18n';
 import { Button, DateTime, Popover, PopoverContent, PopoverTrigger } from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
-import { Bell, CheckCheck, ShieldCheck, ShieldX } from 'lucide-react';
+import { Bell, CalendarClock, CheckCheck, ShieldCheck, ShieldX } from 'lucide-react';
 import { useReducer, useState } from 'react';
 
 import { useT } from '../i18n/locale.js';
@@ -22,7 +22,7 @@ import { EMPTY_INBOX, inboxReducer, itemFromEvent, unreadCount, type InboxItem }
  * badge is a coloured shape and a screen reader user is owed the number too.
  */
 
-const INBOX_EVENTS = ['approval.requested', 'approval.decided'] as const;
+const INBOX_EVENTS = ['approval.requested', 'approval.decided', 'loan.instalment_due'] as const;
 
 /** Every entry is about an approval, so each opens the approvals list at its start. */
 const APPROVALS_FIRST_PAGE = { page: 1, pageSize: DEFAULT_PAGE_SIZE } as const;
@@ -35,6 +35,19 @@ const DECISION_LABELS: Record<
   auto_approved: 'shell.notifyAutoApproved',
   rejected: 'shell.notifyRejected',
 };
+
+const ITEM_CLASS =
+  'flex gap-3 px-4 py-3 text-sm hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset';
+
+function Unread({ read, label }: { readonly read: boolean; readonly label: string }) {
+  if (read) return null;
+  return (
+    <>
+      <span aria-hidden="true" className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" />
+      <span className="sr-only">{label}</span>
+    </>
+  );
+}
 
 export function NotificationInbox() {
   const t = useT();
@@ -107,45 +120,63 @@ export function NotificationInbox() {
           <ul className="max-h-96 divide-y divide-border overflow-y-auto">
             {inbox.items.map((item) => (
               <li key={`${item.kind}:${item.id}`}>
-                <Link
-                  to="/approvals"
-                  search={APPROVALS_FIRST_PAGE}
-                  onClick={() => setOpen(false)}
-                  className="flex gap-3 px-4 py-3 text-sm hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
-                >
-                  <span aria-hidden="true" className="mt-0.5 text-muted-foreground">
-                    {item.kind === 'approval_decided' && item.decision === 'rejected' ? (
-                      <ShieldX className="size-4" />
-                    ) : (
-                      <ShieldCheck className="size-4" />
-                    )}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className={item.read ? 'block' : 'block font-medium'}>
-                      {item.kind === 'approval_requested'
-                        ? t('shell.notifyApprovalRequested')
-                        : t(DECISION_LABELS[item.decision])}
+                {item.kind === 'loan_due' ? (
+                  <Link
+                    to="/loans/$loanId"
+                    params={{ loanId: item.loanId }}
+                    onClick={() => setOpen(false)}
+                    className={ITEM_CLASS}
+                  >
+                    <span aria-hidden="true" className="mt-0.5 text-muted-foreground">
+                      <CalendarClock className="size-4" />
                     </span>
-                    {item.kind === 'approval_requested' ? (
-                      <span className="block text-xs text-muted-foreground">
-                        {approvalTypeLabel(item.type, t)}
+                    <span className="min-w-0 flex-1">
+                      <span className={item.read ? 'block' : 'block font-medium'}>
+                        {t('shell.notifyLoanDue')}
                       </span>
-                    ) : null}
-                    <DateTime
-                      value={new Date(item.at)}
-                      className="block text-xs text-muted-foreground"
-                    />
-                  </span>
-                  {item.read ? null : (
-                    <>
-                      <span
-                        aria-hidden="true"
-                        className="mt-1.5 size-2 shrink-0 rounded-full bg-primary"
+                      <span className="block text-xs text-muted-foreground tabular-nums">
+                        {item.dueOn}
+                      </span>
+                      <DateTime
+                        value={new Date(item.at)}
+                        className="block text-xs text-muted-foreground"
                       />
-                      <span className="sr-only">{t('shell.unread')}</span>
-                    </>
-                  )}
-                </Link>
+                    </span>
+                    <Unread read={item.read} label={t('shell.unread')} />
+                  </Link>
+                ) : (
+                  <Link
+                    to="/approvals"
+                    search={APPROVALS_FIRST_PAGE}
+                    onClick={() => setOpen(false)}
+                    className={ITEM_CLASS}
+                  >
+                    <span aria-hidden="true" className="mt-0.5 text-muted-foreground">
+                      {item.kind === 'approval_decided' && item.decision === 'rejected' ? (
+                        <ShieldX className="size-4" />
+                      ) : (
+                        <ShieldCheck className="size-4" />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={item.read ? 'block' : 'block font-medium'}>
+                        {item.kind === 'approval_requested'
+                          ? t('shell.notifyApprovalRequested')
+                          : t(DECISION_LABELS[item.decision])}
+                      </span>
+                      {item.kind === 'approval_requested' ? (
+                        <span className="block text-xs text-muted-foreground">
+                          {approvalTypeLabel(item.type, t)}
+                        </span>
+                      ) : null}
+                      <DateTime
+                        value={new Date(item.at)}
+                        className="block text-xs text-muted-foreground"
+                      />
+                    </span>
+                    <Unread read={item.read} label={t('shell.unread')} />
+                  </Link>
+                )}
               </li>
             ))}
           </ul>

@@ -92,6 +92,18 @@ describe('which events become entries', () => {
     });
   });
 
+  it('turns a loan instalment coming due into one, linked to its loan (M26)', () => {
+    const LOAN = '22222222-2222-4222-8222-222222222222';
+    expect(
+      itemFromEvent(
+        'loan.instalment_due',
+        { loanId: LOAN, instalmentId: ID, seq: 2, dueOn: '2026-11-05', amountPoisha: '340022' },
+        5,
+      ),
+    ).toEqual({ kind: 'loan_due', id: ID, loanId: LOAN, dueOn: '2026-11-05', at: 5, read: false });
+    expect(itemFromEvent('loan.instalment_due', { loanId: LOAN }, 5)).toBeNull();
+  });
+
   it('ignores anything it does not recognise rather than guessing', () => {
     expect(itemFromEvent('approval.decided', { id: ID, decision: 'maybe' }, 1)).toBeNull();
     expect(itemFromEvent('order.created', { id: ID }, 1)).toBeNull();

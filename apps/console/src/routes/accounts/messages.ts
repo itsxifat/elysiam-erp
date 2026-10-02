@@ -292,6 +292,8 @@ const ACCOUNTS_KEYS = [
   'accounts.source.investment',
   'accounts.source.investor_distribution',
   'accounts.source.investor_withdrawal',
+  'accounts.source.company_loan',
+  'accounts.source.loan_instalment',
 ] as const satisfies readonly MessageKey[];
 
 export type AccountsMessageKey = (typeof ACCOUNTS_KEYS)[number];

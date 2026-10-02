@@ -352,6 +352,9 @@ export const OPERATIONS = {
     ability: 'read:Investor',
   },
   getV1JobsFailed: { method: 'GET', path: '/v1/jobs/failed', ability: 'read:AuditLog' },
+  getV1Loans: { method: 'GET', path: '/v1/loans', ability: 'read:CompanyLoan' },
+  getV1LoansById: { method: 'GET', path: '/v1/loans/{id}', ability: 'read:CompanyLoan' },
+  getV1LoansLenders: { method: 'GET', path: '/v1/loans/lenders', ability: 'read:CompanyLoan' },
   getV1MarketingCampaigns: {
     method: 'GET',
     path: '/v1/marketing/campaigns',
@@ -797,6 +800,14 @@ export const OPERATIONS = {
     path: '/v1/investors/withdrawals/{id}/review',
     ability: 'update:Investor',
   },
+  postV1Loans: { method: 'POST', path: '/v1/loans', ability: 'create:CompanyLoan' },
+  postV1LoansByIdPayments: {
+    method: 'POST',
+    path: '/v1/loans/{id}/payments',
+    ability: 'update:CompanyLoan',
+  },
+  postV1LoansLenders: { method: 'POST', path: '/v1/loans/lenders', ability: 'create:CompanyLoan' },
+  postV1LoansPreview: { method: 'POST', path: '/v1/loans/preview', ability: 'read:CompanyLoan' },
   postV1MarketingCampaigns: {
     method: 'POST',
     path: '/v1/marketing/campaigns',
@@ -1395,6 +1406,17 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/jobs/failed */
     getV1JobsFailed: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1JobsFailed, undefined, options),
+    /** GET /v1/loans */
+    getV1Loans: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1Loans, undefined, options),
+    /** GET /v1/loans/:id */
+    getV1LoansById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1LoansById, input, options),
+    /** GET /v1/loans/lenders */
+    getV1LoansLenders: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LoansLenders, undefined, options),
     /** GET /v1/marketing/campaigns */
     getV1MarketingCampaigns: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1MarketingCampaigns, undefined, options),
@@ -1925,6 +1947,20 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InvestorsWithdrawalsByIdReview, input, options),
+    /** POST /v1/loans */
+    postV1Loans: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1Loans, undefined, options),
+    /** POST /v1/loans/:id/payments */
+    postV1LoansByIdPayments: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1LoansByIdPayments, input, options),
+    /** POST /v1/loans/lenders */
+    postV1LoansLenders: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1LoansLenders, undefined, options),
+    /** POST /v1/loans/preview */
+    postV1LoansPreview: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1LoansPreview, undefined, options),
     /** POST /v1/marketing/campaigns */
     postV1MarketingCampaigns: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1MarketingCampaigns, undefined, options),
