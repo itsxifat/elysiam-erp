@@ -275,6 +275,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
      * `all` scope.
      */
     { action: 'read', subject: 'Leaderboard', scope: 'all' },
+    // M24 (D-325): the brand's own dashboard, and recomputing its rollups.
+    { action: ['read', 'update'], subject: 'Dashboard', scope: 'org' },
     /*
      * §22's files. The grant is coarse and the row check is not (D-115).
      *

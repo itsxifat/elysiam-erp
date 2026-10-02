@@ -387,6 +387,11 @@ export const ERROR_CODES = [
   'MARKETING_META_NOT_CONNECTED',
   /** This installation has no key to seal a Meta token with. */
   'MARKETING_CREDENTIALS_MISSING',
+
+  // Analytics (M24, §18)
+  'ANALYTICS_INVALID',
+  /** The narrative provider did not answer, or answered with nothing usable. Nothing was cached. */
+  'ANALYTICS_NARRATIVE_FAILED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

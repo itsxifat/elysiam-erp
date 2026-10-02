@@ -1,23 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
-import { businessDate, normalizeBdPhone, poisha, toIsoDate, type IsoDate } from '@elysium/domain';
+import { normalizeBdPhone, toIsoDate } from '@elysium/domain';
 import {
   aggregateFacts,
-  ATTRIBUTION_RULES,
-  campaignIndex,
   campaignMetrics,
   dailySeries,
   EMPTY_INPUTS,
   normaliseRefValue,
-  resolveAttribution,
   segmentReport,
   type AgeBand,
-  type AttributionRule,
   type CampaignMetrics,
   type LeadFact,
   type LeadStatus,
-  type OrderFact,
-  type SpendFact,
 } from '@elysium/domain/marketing';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -27,6 +21,7 @@ import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import { PROMO_API, type PromoApi } from '../promo/promo.api.js';
+import { readAttributedPeriod } from './attribution.reader.js';
 import { sealToken } from './credentials.js';
 import { MARKETING_CONFIG, type MarketingConfig } from './marketing.config.js';
 import { MarketingError } from './marketing.errors.js';
@@ -103,10 +98,6 @@ function leadView(row: repo.LeadRow) {
     notes: row.notes,
     createdAt: row.created_at,
   };
-}
-
-function dhaka(instant: Date | null): IsoDate | null {
-  return instant === null ? null : businessDate(instant);
 }
 
 @Injectable()
@@ -541,50 +532,12 @@ export class MarketingService {
   async dashboard(context: ActiveContext, period: PeriodInput) {
     const range = { from: toIsoDate(period.from), to: toIsoDate(period.to) };
     return this.tx(context, async (tx) => {
-      const facts = await this.orders.marketingFacts(tx, context.orgId, period);
-      const campaigns = await repo.listCampaigns(tx, context.orgId, undefined);
-      const refs = await repo.listRefs(tx, context.orgId);
-      const spendRows = await repo.spendInPeriod(tx, context.orgId, period);
-      const codeIds = [
-        ...new Set(facts.flatMap((fact) => (fact.promoCodeId === null ? [] : [fact.promoCodeId]))),
-      ];
-      const promoCampaigns = await this.promo.campaignsOfCodes(tx, context.orgId, codeIds);
-
-      const index = campaignIndex(
-        campaigns.map((row) => row.id),
-        refs.map((ref) => ({ campaignId: ref.campaign_id, kind: ref.kind, value: ref.value })),
+      const { campaigns, orders, spend, rules } = await readAttributedPeriod(
+        tx,
+        context.orgId,
+        period,
+        { orders: this.orders, promo: this.promo },
       );
-      const rules = Object.fromEntries(ATTRIBUTION_RULES.map((rule) => [rule, 0])) as Record<
-        AttributionRule,
-        number
-      >;
-      const orders: OrderFact[] = facts.map((fact) => {
-        const attribution = resolveAttribution(
-          {
-            campaignId: fact.source.campaignId,
-            promoCampaignId:
-              fact.promoCodeId === null ? null : (promoCampaigns.get(fact.promoCodeId) ?? null),
-            adId: fact.source.adId,
-            utmCampaign: fact.source.utmCampaign,
-          },
-          index,
-        );
-        rules[attribution.rule] += 1;
-        return {
-          orderId: fact.orderId,
-          campaignId: attribution.campaignId,
-          confirmedOn: dhaka(fact.confirmedAt),
-          deliveredOn: dhaka(fact.deliveredAt),
-          returnedOn: dhaka(fact.returnedAt),
-          deliveredRevenuePoisha: fact.deliveredRevenuePoisha,
-          placedRevenuePoisha: fact.placedRevenuePoisha,
-        };
-      });
-      const spend: SpendFact[] = spendRows.map((row) => ({
-        campaignId: row.campaign_id,
-        spendOn: toIsoDate(row.spend_date),
-        amountPoisha: poisha(row.amount_poisha),
-      }));
 
       const aggregated = aggregateFacts(orders, spend, range);
       const rows = campaigns

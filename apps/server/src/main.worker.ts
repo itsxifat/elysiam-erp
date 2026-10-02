@@ -6,6 +6,9 @@ import { currentDatabaseConfig } from '@elysium/db';
 import type { Logger } from 'pino';
 
 import { ALL_QUEUES } from './job-queues.js';
+import { AnalyticsModule } from './modules/analytics/analytics.module.js';
+import { registerAnalyticsJobs } from './modules/analytics/analytics.worker.js';
+import { RollupService } from './modules/analytics/rollup.service.js';
 import { BookingService } from './modules/courier/booking.service.js';
 import { CourierModule } from './modules/courier/courier.module.js';
 import { registerCourierJobs } from './modules/courier/courier.worker.js';
@@ -131,6 +134,7 @@ async function bootstrap(): Promise<void> {
       OrdersModule,
       MarketingModule,
       HrModule,
+      AnalyticsModule,
     ],
   })
   class WorkerModule {}
@@ -181,6 +185,13 @@ async function bootstrap(): Promise<void> {
     jobs,
     dispatcher,
     targets: context.get(TargetsService),
+    report,
+  });
+  // M24: the rollups, on order events and nightly (D-320).
+  await registerAnalyticsJobs({
+    jobs,
+    dispatcher,
+    rollup: context.get(RollupService),
     report,
   });
 

@@ -46,6 +46,12 @@ export const FEATURE_FLAGS = {
     milestone: 'M23',
     default: false,
   },
+  'analytics.llm_narrative': {
+    description:
+      'Write a short monthly summary of the dashboard with a language model, from the figures alone (no names, phones or addresses).',
+    milestone: 'M24',
+    default: false,
+  },
   'inbox.chatwoot': {
     description: 'Show the unified inbox and let staff reply to customers from inside the console.',
     milestone: 'M27',

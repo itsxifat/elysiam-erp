@@ -318,6 +318,16 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/marketing/leads/segments',
   'POST /v1/marketing/leads',
   'PATCH /v1/marketing/leads/:id',
+  // M24: analytics. `Dashboard` (org_admin; D-325) for the brand's own dashboard, insights,
+  // narrative, export and rollup refresh, and for the consolidated view, which the service
+  // then keeps to a platform super admin. `Leaderboard` for the cross-brand ranking (D-023).
+  'GET /v1/analytics/dashboard',
+  'GET /v1/analytics/insights',
+  'GET /v1/analytics/narrative',
+  'POST /v1/analytics/rollups/refresh',
+  'GET /v1/analytics/export',
+  'GET /v1/analytics/consolidated',
+  'GET /v1/analytics/leaderboard',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

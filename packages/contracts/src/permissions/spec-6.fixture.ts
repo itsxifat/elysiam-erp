@@ -312,6 +312,16 @@ export const SPEC_6_GRANTS: readonly string[] = [
    */
   'org_admin|read|Leaderboard|all',
 
+  // | (not a row in the grid) | §18's org dashboard (M24, D-325) |
+  /*
+   * §6 has no dashboard row. The org dashboard puts the brand's revenue, gross profit,
+   * cash and stock value on one screen, which is the org admin's; Super Admin holds it
+   * through `manage all` and is the only one who may see it across brands. `update` is
+   * recomputing the brand's rollups for a range.
+   */
+  'org_admin|read|Dashboard|org',
+  'org_admin|update|Dashboard|org',
+
   // | Users, roles, settings | org_admin org | everyone else — |
   'org_admin|create|User|org',
   'org_admin|delete|User|org',
