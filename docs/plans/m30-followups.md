@@ -105,7 +105,7 @@ findings.
 5. api client and route report regenerated; `pnpm verify`; ledger-auditor; fixes.
 6. Decisions, progress, this plan's status, the plans index, M30's plan, the guides.
 
-## Status on 2026-10-03: built and verified; full test run owed once more
+## Status on 2026-10-03: built and verified
 
 Everything in scope is built, with tests against real Postgres.
 
@@ -155,7 +155,8 @@ Everything in scope is built, with tests against real Postgres.
   every suite the fixes touch, one worker at a time: supply, wallets, hr, iam users,
   identity, investors, files, courier m15, promo, platform auth and http, approvals,
   module boundaries, domain and console (1,553 tests in 83 files, all passing).
-- **Owed:** one full `pnpm verify` when the machine has memory to spare.
+- `pnpm verify` (under `heavy.mjs`) exits 0 at `a1a1c43`: 185 test files, 2,922 tests (1
+  skipped); every check passes.
 
 ### Auditors
 

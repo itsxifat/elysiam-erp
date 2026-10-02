@@ -1302,7 +1302,8 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
     matrix (323 routes, 315 matrix-tested, 8 public), i18n and api-client checks PASS; lint and
     format pass; every touched suite passes, one worker at a time (1,553 tests across 83
     files, real Postgres).
-  - **A full `pnpm verify` is owed** when the machine has memory to spare.
+  - `pnpm verify` (under `heavy.mjs`) exits 0 at `a1a1c43`: 185 test files, 2,922 tests (1
+    skipped); every check passes.
 - Auditors: ledger-auditor 0 critical, 4 warnings, 10 notes; the warnings and five notes fixed;
   re-check 0 critical, 0 warnings, its remaining notes fixed or recorded. acceptance-auditor
   not run (not a milestone).
@@ -1312,4 +1313,4 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
 - New dependencies: none.
 - Follow-ups: in the plan's status (Turnstile keys, the roles-path re-grant, R2 copy at
   finalize, module-owned receipt downloads, a warehouse menu link, owner questions).
-- Next: the full `pnpm verify`, then M30 part 2 on staging.
+- Next: M30 part 2 on staging.
