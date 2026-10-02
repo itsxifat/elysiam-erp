@@ -8,6 +8,7 @@ import {
   isAccountSubtype,
   poisha,
   subtypeInfo,
+  takaText,
   type AccountSubtype,
   type JournalDraft,
 } from '@elysium/domain';
@@ -106,20 +107,38 @@ export class CashService implements OnModuleInit {
       const occurredAt = now;
       const draft = this.draftFor(input, wallet, category, amount, occurredAt);
 
-      // Petty cash (and a branch-scoped cash out, above) goes through maker-checker:
-      // §6's maker-checker list names "wallet adjustments", and a cash in from a known
-      // income category or a cash out booked by the finance team is ordinary
-      // bookkeeping. The amount is the requester's, so it is compared against the
-      // org's threshold rather than trusted (D-068).
-      const needsApproval =
-        pettyCashRules &&
-        (await this.approvals.isRequired(context, {
+      /*
+       * Petty cash (and a branch-scoped cash out, above) goes through maker-checker:
+       * §6's maker-checker list names "wallet adjustments", and a cash in from a known
+       * income category or a cash out booked by the finance team is ordinary
+       * bookkeeping. The amount is the requester's, so it is compared against the
+       * org's threshold rather than trusted (D-068).
+       *
+       * Compared with the person's day, not the entry alone (C7, D-415): what they
+       * already spent today under the same rule without a checker counts, so a ৳9,000
+       * bill paid as three ৳3,000 entries meets the same ৳5,000 threshold one entry
+       * would. The same rule covers petty cash for everyone and a cash out for a
+       * branch-scoped caller, so for them both kinds count. The day is locked first, so
+       * two entries sent at once count each other.
+       */
+      if (pettyCashRules) {
+        await repo.lockPettyCashDay(tx, context.orgId, context.userId, draft.businessDate);
+        const earlier = await repo.unheldEntriesToday(tx, context.orgId, {
+          createdBy: context.userId,
+          kinds: scopeOf(request).kind === 'all' ? ['petty_cash'] : ['petty_cash', 'cash_out'],
+          businessDate: draft.businessDate,
+        });
+        const decision = await this.approvals.requiredForDay(tx, context, {
           type: 'wallet_adjustment',
           amountPoisha: amount,
-        }));
-
-      if (needsApproval) {
-        return this.hold(tx, context, request, input, wallet, amount, occurredAt, draft);
+          earlierTodayPoisha: earlier,
+        });
+        if (decision.required) {
+          return this.hold(tx, context, request, input, wallet, amount, occurredAt, draft, {
+            heldByDayTotal: decision.heldByDayTotal,
+            dayTotal: amount + earlier,
+          });
+        }
       }
 
       const posted = await this.ledger.post(
@@ -224,18 +243,31 @@ export class CashService implements OnModuleInit {
     amount: bigint,
     occurredAt: Date,
     draft: JournalDraft,
+    held: { readonly heldByDayTotal: boolean; readonly dayTotal: bigint },
   ): Promise<CashEntryResult> {
+    const reason = input.memo ?? (input.kind === 'petty_cash' ? 'Petty cash' : 'Cash out');
     const raised = await this.approvals.request(context, {
       type: 'wallet_adjustment',
       amountPoisha: amount,
       payload: { cashEntryId: input.entryId, walletId: wallet.id },
-      reason: input.memo ?? (input.kind === 'petty_cash' ? 'Petty cash' : 'Cash out'),
+      reason: held.heldByDayTotal
+        ? `${reason} (with today's earlier entries, ${takaText(poisha(held.dayTotal))})`
+        : reason,
       ...(wallet.branch_id === null ? {} : { branchId: wallet.branch_id }),
       request,
       // In this transaction (the ledger audit's W-2, M30): opened on its own, the approval
       // committed before the entry that names it existed, so a checker quick enough found
       // nothing to post and the entry waited for ever; a failed insert left an orphan.
       tx,
+      /*
+       * And held whatever the thresholds say by now (W-2's second half, D-418). The
+       * request re-reads the thresholds; one relaxed after the check above used to
+       * auto-approve it here and run the executor while the entry did not exist yet, so
+       * the entry was written pending against an approval already decided, and waited
+       * for ever. The day's total (C7) is this module's rule, which the request cannot
+       * see either.
+       */
+      holdForChecker: true,
     });
 
     await repo.insertCashEntry(tx, {

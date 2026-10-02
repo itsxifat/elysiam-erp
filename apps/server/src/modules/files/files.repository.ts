@@ -137,16 +137,43 @@ export async function insertPending(context: OrgUser, file: InsertPendingFile): 
  * A file's status by its storage key, for the local driver's public bytes `PUT`, which
  * knows only the key. Inside the org the key names (`<visibility>/<orgId>/…`).
  */
-export async function statusByKey(
+/**
+ * Run `work` holding the row a storage key belongs to, with its status (D-417).
+ *
+ * The local driver's bytes PUT writes under this lock, and the finalize examines and marks
+ * the file stored under the same one, so a PUT cannot land between the finalize's size check
+ * and its read, nor after it: it waits, then sees `stored` and is refused.
+ */
+export async function underKeyLock<T>(
   orgId: string,
   storageKey: string,
-): Promise<'pending' | 'stored' | null> {
-  const rows = await withOrg({ orgId }, async (tx) =>
-    tx.execute<{ status: string }>(sql`
-      select status::text as status from files.objects where storage_key = ${storageKey}
-    `),
-  );
-  const status = rows[0]?.status;
+  work: (status: 'pending' | 'stored' | null) => Promise<T>,
+): Promise<T> {
+  return withOrg({ orgId }, async (tx) => {
+    const rows = await tx.execute<{ status: string }>(sql`
+      select status::text as status from files.objects
+      where storage_key = ${storageKey}
+      for update
+    `);
+    return work(statusOf(rows[0]?.status));
+  });
+}
+
+/** `underKeyLock`, by the file's id, for the finalize; `work` marks it stored through `tx`. */
+export async function underFileLock<T>(
+  context: OrgUser,
+  id: string,
+  work: (status: 'pending' | 'stored' | null, tx: Tx) => Promise<T>,
+): Promise<T> {
+  return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+    const rows = await tx.execute<{ status: string }>(sql`
+      select status::text as status from files.objects where id = ${id}::uuid for update
+    `);
+    return work(statusOf(rows[0]?.status), tx);
+  });
+}
+
+function statusOf(status: string | undefined): 'pending' | 'stored' | null {
   return status === 'pending' || status === 'stored' ? status : null;
 }
 
@@ -188,8 +215,14 @@ export interface FinalizeInput {
  * uploader controls, and `text/html` served from our own origin is stored XSS.
  */
 export async function markStored(context: OrgUser, input: FinalizeInput): Promise<boolean> {
-  const rows = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
-    tx.execute<{ id: string }>(sql`
+  return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
+    markStoredIn(tx, input),
+  );
+}
+
+/** `markStored` inside a transaction that already holds the row (`underFileLock`). */
+export async function markStoredIn(tx: Tx, input: FinalizeInput): Promise<boolean> {
+  const rows = await tx.execute<{ id: string }>(sql`
       update files.objects
       set status = 'stored'::files.file_status,
           size_bytes = ${String(input.sizeBytes)}::bigint,
@@ -198,8 +231,7 @@ export async function markStored(context: OrgUser, input: FinalizeInput): Promis
           updated_at = now()
       where id = ${input.id}::uuid and status = 'pending'::files.file_status
       returning id
-    `),
-  );
+    `);
   return rows.length === 1;
 }
 

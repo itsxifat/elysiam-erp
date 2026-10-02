@@ -109,6 +109,16 @@ export class InvestorsController {
     return mapInvestorErrors(() => this.investors.walletAccounts(requireContext(request)));
   }
 
+  /**
+   * The portal sign-in picker (D-419): `update Investor`, which linking needs. People who
+   * hold the `investor` role in this brand, with masked emails and their existing link.
+   */
+  @RequireAbility('update', 'Investor')
+  @Get('login-options')
+  async loginOptions(@Req() request: FastifyRequest) {
+    return this.investors.loginOptions(requireContext(request));
+  }
+
   @RequireAbility('read', 'Investor')
   @Get('investments')
   async listInvestments(@Req() request: FastifyRequest, @Query() query: unknown) {

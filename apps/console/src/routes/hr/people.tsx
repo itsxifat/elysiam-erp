@@ -1,18 +1,29 @@
+import { effectiveScope } from '@elysium/contracts';
 import { Button, EmptyState, ErrorState, Money, PermissionGate, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
-import { useAbility } from '../../auth/session.js';
+import { useAbility, useSession } from '../../auth/session.js';
 import {
   createEmployee,
+  listBranchOptions,
   listEmployees,
+  listLoginOptions,
   listStructures,
   setStructure,
+  updateEmployee,
+  type BranchOption,
   type Employee,
   type EmploymentStatus,
   type PayoutMethod,
 } from './api.js';
+import {
+  editFormFor,
+  employeePatch,
+  type EmployeeEditForm,
+  type EmployeePatchProblem,
+} from './employee-patch.js';
 import { control, Field, HrNav, numericControl } from './hr-nav.js';
 import { useHrT, type HrMessageKey } from './messages.js';
 import { takaToPoisha } from '@elysium/ui';
@@ -39,6 +50,14 @@ import { takaToPoisha } from '@elysium/ui';
  * A raise is a **new version with a later start date**, never an edit — the form says so in
  * its hint, and the server refuses an edit to a structure a payslip has used. Past payslips
  * have to keep the figures they were paid on.
+ *
+ * ## Branch and edit (m30-followups)
+ *
+ * The add form offers the branches the caller may add to (`GET /v1/hr/branch-options`): a
+ * branch manager's own, every branch for HR. Without it a branch manager's add carried no
+ * branch and their own scope refused it. Each row's Edit panel changes the record after the
+ * add; the payroll half of it (payout, personal numbers, the linked sign-in) is shown only
+ * to `update Payroll`, and the panel sends only what changed (`employee-patch.ts`).
  */
 
 const STATUS_TONE: Readonly<Record<EmploymentStatus, 'success' | 'warning' | 'neutral'>> = {
@@ -56,13 +75,36 @@ export function PeoplePage() {
   const ability = useAbility();
   const queryClient = useQueryClient();
 
+  const session = useSession();
   const mayRead = ability.can('read', 'Employee');
   const mayCreate = ability.can('create', 'Employee');
+  const mayUpdate = ability.can('update', 'Employee');
   const maySetSalary = ability.can('create', 'Payroll');
+  const mayEditPayroll = ability.can('update', 'Payroll');
+  /*
+   * Whether the caller may keep a person outside every branch. Only an org-wide reach can:
+   * a branch manager's add or move to "no branch" is outside their own scope, and the
+   * server refuses it as it would a row it cannot see.
+   */
+  const orgWide =
+    session.context?.isSuperAdmin === true ||
+    effectiveScope(session.roles, 'create', 'Employee') === 'org';
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>('');
-  const [selected, setSelected] = useState<string | null>(null);
+  const [panel, setPanel] = useState<{ kind: 'salary' | 'edit'; id: string } | null>(null);
+
+  const branchOptions = useQuery({
+    queryKey: ['hr', 'branch-options'],
+    queryFn: listBranchOptions,
+    enabled: mayCreate || mayUpdate,
+    staleTime: 5 * 60_000,
+  });
+  const branches = branchOptions.data?.items ?? [];
+
+  const toggle = (kind: 'salary' | 'edit', id: string) => {
+    setPanel(panel?.kind === kind && panel.id === id ? null : { kind, id });
+  };
 
   const employees = useQuery({
     queryKey: ['hr', 'employees', search, status],
@@ -116,7 +158,7 @@ export function PeoplePage() {
         </div>
 
         <PermissionGate allowed={mayCreate}>
-          <NewEmployeeForm />
+          <NewEmployeeForm branches={branches} orgWide={orgWide} />
         </PermissionGate>
 
         {employees.isError ? (
@@ -191,11 +233,22 @@ export function PeoplePage() {
                         {t(`hr.status.${employee.status}` as HrMessageKey)}
                       </StatusBadge>
                     </td>
-                    <td className="py-2 text-right">
+                    <td className="py-2 text-right whitespace-nowrap">
+                      {mayUpdate ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-expanded={panel?.kind === 'edit' && panel.id === employee.id}
+                          onClick={() => toggle('edit', employee.id)}
+                        >
+                          {t('hr.edit')}
+                        </Button>
+                      ) : null}
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setSelected(selected === employee.id ? null : employee.id)}
+                        aria-expanded={panel?.kind === 'salary' && panel.id === employee.id}
+                        onClick={() => toggle('salary', employee.id)}
                       >
                         {t('hr.salary')}
                       </Button>
@@ -205,13 +258,22 @@ export function PeoplePage() {
               </tbody>
             </table>
 
-            {selected === null ? null : (
+            {panel?.kind === 'salary' ? (
               <SalaryPanel
-                employee={items.find((one) => one.id === selected)}
+                employee={items.find((one) => one.id === panel.id)}
                 mayEdit={maySetSalary}
                 onSaved={() => void queryClient.invalidateQueries({ queryKey: ['hr'] })}
               />
-            )}
+            ) : null}
+            {panel?.kind === 'edit' ? (
+              <EditPanelFor
+                employee={items.find((one) => one.id === panel.id)}
+                branches={branches}
+                orgWide={orgWide}
+                mayEditPayroll={mayEditPayroll}
+                onClose={() => setPanel(null)}
+              />
+            ) : null}
           </section>
         )}
       </div>
@@ -219,10 +281,24 @@ export function PeoplePage() {
   );
 }
 
-function NewEmployeeForm() {
+function NewEmployeeForm({
+  branches,
+  orgWide,
+}: {
+  readonly branches: readonly BranchOption[];
+  readonly orgWide: boolean;
+}) {
   const t = useHrT();
   const queryClient = useQueryClient();
 
+  /*
+   * The branch, chosen for the caller when there is only one they could pick: a showroom
+   * manager with one branch should not have to choose it. `null` until they choose, so
+   * the default can follow the options as they load.
+   */
+  const [chosenBranch, setChosenBranch] = useState<string | null>(null);
+  const branchId =
+    chosenBranch ?? (!orgWide && branches.length === 1 ? (branches[0]?.id ?? '') : '');
   const [code, setCode] = useState('');
   const [fullName, setFullName] = useState('');
   const [designation, setDesignation] = useState('');
@@ -239,6 +315,7 @@ function NewEmployeeForm() {
         fullName: fullName.trim(),
         joinDate,
         ...(designation.trim() === '' ? {} : { designation: designation.trim() }),
+        ...(branchId === '' ? {} : { branchId }),
         payoutMethod,
         ...(payoutRef.trim() === '' ? {} : { payoutRef: payoutRef.trim() }),
         ...(nationalId.trim() === '' ? {} : { nationalId: nationalId.trim() }),
@@ -259,6 +336,7 @@ function NewEmployeeForm() {
     code.trim() !== '' &&
     fullName.trim() !== '' &&
     joinDate !== '' &&
+    (orgWide || branchId !== '') &&
     (payoutMethod === 'cash' || payoutRef.trim() !== '') &&
     !submit.isPending;
 
@@ -297,6 +375,16 @@ function NewEmployeeForm() {
           maxLength={80}
           className={control}
           onChange={(event) => setDesignation(event.target.value)}
+        />
+      </Field>
+      <Field label={t('hr.field.branch')} id="employee-branch">
+        <BranchSelect
+          id="employee-branch"
+          value={branchId}
+          branches={branches}
+          orgWide={orgWide}
+          required={!orgWide}
+          onChange={setChosenBranch}
         />
       </Field>
       <Field label={t('hr.field.joinDate')} id="employee-join">
@@ -372,6 +460,335 @@ function NewEmployeeForm() {
         )}
       </div>
     </form>
+  );
+}
+
+/**
+ * The branch picker both forms share.
+ *
+ * "No branch" is offered only to an org-wide caller; a branch manager is asked to choose
+ * one of theirs. A record's current branch that is not on the list (a branch since closed)
+ * is kept as an option, so opening the form does not quietly move the person.
+ */
+function BranchSelect({
+  id,
+  value,
+  branches,
+  orgWide,
+  required,
+  onChange,
+}: {
+  readonly id: string;
+  readonly value: string;
+  readonly branches: readonly BranchOption[];
+  readonly orgWide: boolean;
+  readonly required: boolean;
+  readonly onChange: (branchId: string) => void;
+}) {
+  const t = useHrT();
+  const unlisted = value !== '' && !branches.some((branch) => branch.id === value);
+  return (
+    <select
+      id={id}
+      value={value}
+      required={required}
+      className={control}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      {orgWide ? (
+        <option value="">{t('hr.noBranch')}</option>
+      ) : (
+        <option value="" disabled>
+          {t('hr.chooseBranch')}
+        </option>
+      )}
+      {unlisted ? <option value={value}>{t('hr.unlistedBranch')}</option> : null}
+      {branches.map((branch) => (
+        <option key={branch.id} value={branch.id}>
+          {branch.code} · {branch.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+const PROBLEM_MESSAGE: Readonly<Record<EmployeePatchProblem, HrMessageKey>> = {
+  nothingChanged: 'hr.editNothingChanged',
+  nameRequired: 'hr.editNameRequired',
+  payoutRefRequired: 'hr.editPayoutRefRequired',
+};
+
+/** The edit panel for one row, keyed on it so opening another employee starts a fresh form. */
+function EditPanelFor({
+  employee,
+  ...rest
+}: {
+  readonly employee: Employee | undefined;
+  readonly branches: readonly BranchOption[];
+  readonly orgWide: boolean;
+  readonly mayEditPayroll: boolean;
+  readonly onClose: () => void;
+}) {
+  if (employee === undefined) return null;
+  return <EditPanel key={employee.id} employee={employee} {...rest} />;
+}
+
+/**
+ * Change an employee after they were added (m30-followups).
+ *
+ * Everyone who may update the record sees the record half: name, designation, department,
+ * branch, status and leaving date. The payroll half — how and where they are paid, their
+ * phone and national ID, and the sign-in linked to them — is shown only to `update Payroll`
+ * (D-363), and is write-only: an empty field keeps what is on file, because the server never
+ * sends the plain value back to fill it.
+ */
+function EditPanel({
+  employee,
+  branches,
+  orgWide,
+  mayEditPayroll,
+  onClose,
+}: {
+  readonly employee: Employee;
+  readonly branches: readonly BranchOption[];
+  readonly orgWide: boolean;
+  readonly mayEditPayroll: boolean;
+  readonly onClose: () => void;
+}) {
+  const t = useHrT();
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState<EmployeeEditForm>(() => editFormFor(employee));
+  const [problem, setProblem] = useState<EmployeePatchProblem | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const logins = useQuery({
+    queryKey: ['hr', 'login-options'],
+    queryFn: listLoginOptions,
+    enabled: mayEditPayroll,
+    staleTime: 60_000,
+  });
+
+  function set<K extends keyof EmployeeEditForm>(key: K, value: EmployeeEditForm[K]): void {
+    setSaved(false);
+    setProblem(null);
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  const save = useMutation({
+    mutationFn: async (): Promise<Employee | null> => {
+      const result = employeePatch(employee, form, mayEditPayroll);
+      if (result.problem !== null) {
+        setProblem(result.problem);
+        return null;
+      }
+      return updateEmployee(employee.id, result.patch);
+    },
+    onSuccess: (updated) => {
+      if (updated === null) return;
+      setSaved(true);
+      setForm(editFormFor(updated));
+      void queryClient.invalidateQueries({ queryKey: ['hr'] });
+    },
+  });
+
+  const loginItems = logins.data?.items ?? [];
+  const currentLoginUnlisted =
+    form.userId !== '' && !loginItems.some((login) => login.userId === form.userId);
+  const prefix = `employee-edit-${employee.id}`;
+  const keep = (masked: string | null) => `${masked ?? '—'} · ${t('hr.keepHint')}`;
+
+  return (
+    <section
+      aria-label={`${t('hr.editTitle')} — ${employee.fullName}`}
+      className="space-y-3 rounded-lg border border-border bg-card p-4"
+    >
+      <header>
+        <h2 className="text-sm font-semibold">
+          {t('hr.editTitle')} — {employee.fullName}
+        </h2>
+        <p className="text-xs text-muted-foreground">{t('hr.editHint')}</p>
+      </header>
+
+      <form
+        className="grid gap-3 sm:grid-cols-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          save.mutate();
+        }}
+      >
+        <Field label={t('hr.field.name')} id={`${prefix}-name`}>
+          <input
+            id={`${prefix}-name`}
+            value={form.fullName}
+            required
+            maxLength={160}
+            className={control}
+            onChange={(event) => set('fullName', event.target.value)}
+          />
+        </Field>
+        <Field label={t('hr.field.designation')} id={`${prefix}-designation`}>
+          <input
+            id={`${prefix}-designation`}
+            value={form.designation}
+            maxLength={80}
+            className={control}
+            onChange={(event) => set('designation', event.target.value)}
+          />
+        </Field>
+        <Field label={t('hr.field.department')} id={`${prefix}-department`}>
+          <input
+            id={`${prefix}-department`}
+            value={form.department}
+            maxLength={80}
+            className={control}
+            onChange={(event) => set('department', event.target.value)}
+          />
+        </Field>
+        <Field label={t('hr.field.branch')} id={`${prefix}-branch`}>
+          <BranchSelect
+            id={`${prefix}-branch`}
+            value={form.branchId}
+            branches={branches}
+            orgWide={orgWide}
+            required={!orgWide}
+            onChange={(value) => set('branchId', value)}
+          />
+        </Field>
+        <Field label={t('hr.colStatus')} id={`${prefix}-status`}>
+          <select
+            id={`${prefix}-status`}
+            value={form.status}
+            className={control}
+            onChange={(event) => set('status', event.target.value as EmploymentStatus)}
+          >
+            {STATUSES.map((one) => (
+              <option key={one} value={one}>
+                {t(`hr.status.${one}` as HrMessageKey)}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label={t('hr.field.leaveDate')} id={`${prefix}-leave`}>
+          <input
+            id={`${prefix}-leave`}
+            type="date"
+            value={form.leaveDate}
+            className={control}
+            onChange={(event) => set('leaveDate', event.target.value)}
+          />
+        </Field>
+
+        {mayEditPayroll ? (
+          <>
+            <Field label={t('hr.field.payoutMethod')} id={`${prefix}-payout`}>
+              <select
+                id={`${prefix}-payout`}
+                value={form.payoutMethod}
+                className={control}
+                onChange={(event) => set('payoutMethod', event.target.value as PayoutMethod)}
+              >
+                {PAYOUT_METHODS.map((method) => (
+                  <option key={method} value={method}>
+                    {t(`hr.payout.${method}` as HrMessageKey)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field
+              label={t('hr.field.payoutRef')}
+              id={`${prefix}-payout-ref`}
+              hint={keep(employee.payoutRefMasked)}
+            >
+              <input
+                id={`${prefix}-payout-ref`}
+                value={form.payoutRef}
+                disabled={form.payoutMethod === 'cash'}
+                maxLength={40}
+                inputMode="numeric"
+                autoComplete="off"
+                className={numericControl}
+                onChange={(event) => set('payoutRef', event.target.value)}
+              />
+            </Field>
+            <Field label={t('hr.field.login')} id={`${prefix}-login`}>
+              <select
+                id={`${prefix}-login`}
+                value={form.userId}
+                className={control}
+                onChange={(event) => set('userId', event.target.value)}
+              >
+                <option value="">{t('hr.notLinked')}</option>
+                {currentLoginUnlisted ? (
+                  <option value={form.userId}>{t('hr.unlistedLogin')}</option>
+                ) : null}
+                {loginItems.map((login) => {
+                  const elsewhere =
+                    login.linkedEmployeeId !== null && login.linkedEmployeeId !== employee.id;
+                  return (
+                    <option key={login.userId} value={login.userId} disabled={elsewhere}>
+                      {login.name} · {login.emailMasked}
+                      {elsewhere ? ` (${t('hr.linkedElsewhere')})` : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </Field>
+          </>
+        ) : null}
+
+        {/* Personal details any editor of the record may set, as on the add form. */}
+        <Field label={t('hr.field.phone')} id={`${prefix}-phone`} hint={keep(employee.phoneMasked)}>
+          <input
+            id={`${prefix}-phone`}
+            value={form.phone}
+            maxLength={40}
+            inputMode="tel"
+            autoComplete="off"
+            className={numericControl}
+            onChange={(event) => set('phone', event.target.value)}
+          />
+        </Field>
+        <Field
+          label={t('hr.field.nationalId')}
+          id={`${prefix}-nid`}
+          hint={keep(employee.nationalIdMasked)}
+        >
+          <input
+            id={`${prefix}-nid`}
+            value={form.nationalId}
+            maxLength={40}
+            inputMode="numeric"
+            autoComplete="off"
+            className={numericControl}
+            onChange={(event) => set('nationalId', event.target.value)}
+          />
+        </Field>
+
+        <div className="flex flex-wrap items-end gap-3 sm:col-span-3">
+          <Button type="submit" size="sm" disabled={save.isPending}>
+            {t('hr.save')}
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={onClose}>
+            {t('hr.cancel')}
+          </Button>
+          {problem === null ? null : (
+            <p role="alert" className="text-sm text-destructive">
+              {t(PROBLEM_MESSAGE[problem])}
+            </p>
+          )}
+          {save.error === null ? null : (
+            <p role="alert" className="text-sm text-destructive">
+              {save.error instanceof ApiError ? save.error.message : t('hr.saveFailed')}
+            </p>
+          )}
+          {saved ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              {t('hr.saved')}
+            </p>
+          ) : null}
+        </div>
+      </form>
+    </section>
   );
 }
 

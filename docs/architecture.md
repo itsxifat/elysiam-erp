@@ -460,6 +460,7 @@ How thresholds behave (D-062, D-065, D-068):
 
 - Only `org_admin` sets a threshold (`PUT /v1/approvals/thresholds`, subject `ApprovalThreshold`). Lowering one applies at once; raising one, or setting the first, is a `threshold_change` request another org admin must approve (D-073). Each request records the threshold in force when it was raised.
 - **Under** the threshold, a request is recorded `auto_approved`: audited, both events emitted, no checker. **At or above** it, with no threshold configured, it is `pending`. Amounts are compared by magnitude.
+- A payment a person types is compared together with what the same person already moved under the same rule that business day without a checker: a supplier payment with their earlier payments to that supplier, petty cash and a branch cash out with their earlier ones, under a per-person lock (D-415). A request the owning module has decided to hold is raised with `holdForChecker` and is pending whatever the thresholds say by then (D-418).
 - Never auto-approved, whatever the threshold (D-071): reopening a period, bonus rules, threshold changes, back-dated entries and sign-in resets (D-404). The database refuses a threshold for them and an auto-approved row of them. A request's terms are fixed from the moment it is raised.
 - Who may raise is per type (`REQUESTER_TYPES`, D-072). A type whose amount the owning module derives (stock write-offs and gains, settlements, closing variances, payroll, payout batches) is always held when its amount was typed by a person.
 - Who may check is per type (`CHECKER_TYPES`): accounts decides payments, hr decides payroll and bonuses, branch_manager decides branch items (stock write-offs and gains, closing variances), org_admin decides everything except reopening a period, which only super_admin decides.
@@ -1134,10 +1135,10 @@ Rules for every integration:
 ## 22. Files and documents
 
 - **Storage driver:** an interface with a `local` driver (development and tests) and an `r2` driver (staging and production).
-  - Private bucket (receipts, invoices, legal documents, KYC, payslips): served only through short-lived signed URLs after an authorization check.
+  - Private bucket (receipts, invoices, legal documents, KYC, payslips): served only through short-lived signed URLs after an authorization check. The generic `GET /v1/files/:id/download` serves a file someone else uploaded only to a holder of the purpose's ability across the brand; a narrower holder reaches such a document through the owning module's route, which checks the row first (D-413).
   - Public bucket (product images, landing page assets): served through the CDN.
 - **Uploads:**
-  - presigned PUT, with size and MIME limits
+  - presigned PUT, with size and MIME limits; the finalize reads at most the type's ceiling (D-417)
   - each upload creates a `files.objects` row with sha256, owner and visibility
   - images are re-encoded with sharp into thumb, card and full sizes, with EXIF stripped
 - **PDFs:**

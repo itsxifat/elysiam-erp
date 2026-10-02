@@ -37,6 +37,41 @@ export async function lockPerson(tx: Tx, userId: string): Promise<void> {
 
 // --- memberships ---------------------------------------------------------------------
 
+/**
+ * People with an enabled account and an active role in a brand (`IamApi`, D-419).
+ *
+ * In the caller's `withOrg` transaction, so RLS shows this brand's memberships and no
+ * other's. Never a super admin who holds no membership: they are not linked to an employee
+ * or an investor of a brand.
+ */
+export async function activeMembers(
+  tx: Tx,
+  orgId: string,
+  roles: readonly MembershipRole[] | undefined,
+): Promise<{ user_id: string; name: string; email: string; roles: MembershipRole[] }[]> {
+  const rows = await tx.execute<{
+    user_id: string;
+    name: string;
+    email: string;
+    roles: MembershipRole[];
+  }>(sql`
+    select u.id as user_id, u.name, u.email,
+           array_agg(distinct m.role::text order by m.role::text) as roles
+    from iam.memberships m
+    join iam.users u on u.id = m.user_id
+    where m.org_id = ${orgId}
+      and m.is_active
+      and u.is_active
+      and ${
+        roles === undefined ? sql`true` : sql`m.role::text = any (${sql.param([...roles])}::text[])`
+      }
+    group by u.id, u.name, u.email
+    order by u.name, u.id
+    limit 1000
+  `);
+  return [...rows];
+}
+
 export interface MembershipRow extends Record<string, unknown> {
   readonly id: string;
   readonly user_id: string;
@@ -238,6 +273,36 @@ export async function activeElsewhere(
     select iam.users_active_elsewhere(${sql.param([...userIds])}::text[], ${orgId}::uuid) as user_id
   `);
   return new Set([...rows].map((row) => row.user_id));
+}
+
+/**
+ * Which of these people have ever held a role in a brand other than `orgId` (D-412).
+ *
+ * Through `iam.users_held_elsewhere` (migration 0102), the same own-lens read as
+ * `activeElsewhere`, except that a revoked role and a closed brand count too. Inside the
+ * caller's transaction, after the person lock.
+ */
+export async function heldElsewhere(
+  tx: Tx,
+  userIds: readonly string[],
+  orgId: string,
+): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  const rows = await tx.execute<{ user_id: string }>(sql`
+    select iam.users_held_elsewhere(${sql.param([...userIds])}::text[], ${orgId}::uuid) as user_id
+  `);
+  return new Set([...rows].map((row) => row.user_id));
+}
+
+/** Does this person hold an active role in this brand? In its own context. */
+export async function heldHere(tx: Tx, orgId: string, userId: string): Promise<boolean> {
+  const rows = await tx.execute<{ found: boolean }>(sql`
+    select exists (
+      select 1 from iam.memberships
+      where org_id = ${orgId} and user_id = ${userId} and is_active
+    ) as found
+  `);
+  return rows[0]?.found === true;
 }
 
 /** End every session this person holds, or only those acting in one brand. */

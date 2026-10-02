@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { serializeFor } from '@elysium/contracts';
 import { withOrg, type Tx } from '@elysium/db';
 import { businessDate, maskPhone, poisha, toIsoDate, type Poisha } from '@elysium/domain';
@@ -13,6 +13,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeOf, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import * as repo from './investors.repository.js';
 import { investorsHttpError, mapInvestorErrors } from './investors.errors.js';
 import type { CreateInvestorInput, UpdateInvestorInput } from './investors.schemas.js';
@@ -172,7 +173,43 @@ function positionOf(rows: repo.PositionRows | undefined, onDate: string): Invest
 
 @Injectable()
 export class InvestorsService {
-  constructor(private readonly audit: AuditService) {}
+  constructor(
+    private readonly audit: AuditService,
+    @Inject(IAM_API) private readonly iam: IamApi,
+  ) {}
+
+  /**
+   * The portal sign-ins an investor may be linked to (D-419).
+   *
+   * `update Investor`, the grant the link itself needs (`PATCH /v1/investors/:id`). Only
+   * people holding the `investor` role in this brand: the link is refused for anyone else
+   * (`assertInvestorLogin`), so offering them would offer a refusal. Names, masked emails
+   * and the investor each is already linked to.
+   */
+  async loginOptions(context: ActiveContext) {
+    return mapInvestorErrors(() =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const members = await this.iam.activeMembers(tx, context.orgId, { roles: ['investor'] });
+        const links = new Map(
+          (
+            await repo.investorsByUsers(
+              tx,
+              context.orgId,
+              members.map((member) => member.userId),
+            )
+          ).map((row) => [row.user_id, row.id]),
+        );
+        return {
+          items: members.map((member) => ({
+            userId: member.userId,
+            name: member.name,
+            emailMasked: member.emailMasked,
+            linkedInvestorId: links.get(member.userId) ?? null,
+          })),
+        };
+      }),
+    );
+  }
 
   async list(
     context: ActiveContext,

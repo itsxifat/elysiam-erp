@@ -64,6 +64,35 @@ export function requiresApproval(input: ApprovalDecisionInput): boolean {
 }
 
 /**
+ * Does this payment need a second person once the same person's earlier ones today count?
+ * (M30's C7, D-415)
+ *
+ * A threshold compared with one payment at a time is a threshold anyone can step under by
+ * paying in pieces: five payments of 9,000 to the same supplier where the brand asks a
+ * checker to look at 10,000. So the amount compared is this payment plus what the same
+ * person already moved under the same rule today without a checker — the owning module
+ * says which entries those are and sums them (`earlierTodayPoisha`, never negative).
+ *
+ * `heldByDayTotal` is true when the payment alone would have passed: the module raises
+ * such a request as held whatever the threshold says by then (`holdForChecker`), because
+ * the approvals service compares one amount, and would otherwise wave it through.
+ *
+ * Entries a checker approved do not count towards the day: a second person has already
+ * looked at them, and counting them would hold every later payment of the day too.
+ */
+export function requiresApprovalForDay(
+  input: ApprovalDecisionInput & { readonly earlierTodayPoisha: Amount },
+): { readonly required: boolean; readonly heldByDayTotal: boolean } {
+  const alone = requiresApproval(input);
+  if (alone || input.amountPoisha === null) return { required: alone, heldByDayTotal: false };
+
+  const earlier = input.earlierTodayPoisha < 0n ? 0n : input.earlierTodayPoisha;
+  const magnitude = input.amountPoisha < 0n ? -input.amountPoisha : input.amountPoisha;
+  const withDay = requiresApproval({ ...input, amountPoisha: magnitude + earlier });
+  return { required: withDay, heldByDayTotal: withDay };
+}
+
+/**
  * Can this person decide this request?
  *
  * The database has the same rule as a CHECK constraint, which is what actually

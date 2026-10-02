@@ -69,8 +69,10 @@ it. Promo codes are not available at the till yet.
 
 **Accounts** → **Record cash** on your branch's wallet. A **Cash out** or **Petty cash** from
 your branch needs a receipt photo (**Attach the receipt**). At or above the brand's
-threshold it waits for an org admin, and shows in **Approvals** as petty cash. **Count a
-drawer** records a counted wallet outside the till.
+threshold it waits for an org admin, and shows in **Approvals** as petty cash. The
+threshold counts your whole day: once your cash outs and petty cash today reach it, the next
+one waits too, even if it is small. **Count a drawer** records a counted wallet outside the
+till.
 
 You may move money between your branch's wallets with **Transfers**, but not record a transfer
 charge (accounts does that from the bank's statement), and you cannot switch off a wallet's
@@ -83,8 +85,10 @@ apply: a reason, and at most 20% of the cash to collect.
   **Record this day**.
 - Your role may keep a staffer's showroom record, but not their payout method or account,
   their linked login, or bringing back someone who left. HR does those.
-- Ask HR to add new showroom staff. The **Add an employee** form has no branch field yet, so
-  it cannot place someone in your branch.
+- **Add an employee** adds new showroom staff to your branch, paid in cash. The branch list
+  shows only your branch. HR adds a bank or bKash account later if there is one.
+- **Edit** on a row changes a staffer's name, designation, department, branch or status, and
+  only what you change is saved. You may mark someone resigned; bringing them back is HR's.
 
 ## Stock and approvals
 

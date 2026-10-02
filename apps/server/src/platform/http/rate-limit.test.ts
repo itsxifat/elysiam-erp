@@ -337,3 +337,19 @@ describe('a dot-segment spelling of a limited path', () => {
     expect(requestPath('/api/auth/sign-in/email?a=b')).toBe('/api/auth/sign-in/email');
   });
 });
+
+describe('peek (D-416)', () => {
+  it('reads a counter without spending it, and forgets it with the window', () => {
+    let now = 1_000_000;
+    const store = new MemoryRateLimiter(() => now);
+    expect(store.peek('k')).toEqual({ count: 0, retryAfterSeconds: 0 });
+
+    store.hit('k', 5, 60);
+    store.hit('k', 5, 60);
+    expect(store.peek('k')).toEqual({ count: 2, retryAfterSeconds: 60 });
+    expect(store.peek('k').count, 'peeking spent nothing').toBe(2);
+
+    now += 61_000;
+    expect(store.peek('k')).toEqual({ count: 0, retryAfterSeconds: 0 });
+  });
+});

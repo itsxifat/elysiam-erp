@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { scopeFilterFor } from '@elysium/contracts';
+import { scopeFilterFor, type MembershipRole } from '@elysium/contracts';
 import { withOrg, type Tx } from '@elysium/db';
 import { poisha } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
@@ -8,6 +8,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeHasNoRowDimension, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import {
   HR_CRYPTO,
   HrCrypto,
@@ -101,7 +102,57 @@ export class EmployeesService {
   constructor(
     @Inject(HR_CRYPTO) private readonly crypto: HrCrypto,
     private readonly audit: AuditService,
+    @Inject(IAM_API) private readonly iam: IamApi,
   ) {}
+
+  /**
+   * The branches the employee form may offer (D-419): id, code and name.
+   *
+   * `create Employee`, the grant the form's own action needs. The pick list used to be the
+   * branches report (`read LedgerReport`), which hr does not hold, and a branch manager
+   * who submitted the form with no branch was refused by their own scope (a 404), so the
+   * form could not add anyone for the role it was built for. Scoped like the add itself: a
+   * branch manager is offered only their own branches.
+   */
+  async branchOptions(context: ActiveContext, request: object) {
+    const scope = scopeWhere(request, { branchId: sql`b.id` });
+    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => ({
+      items: await repo.branchOptions(tx, context.orgId, scope),
+    }));
+  }
+
+  /**
+   * The sign-ins an employee record may be linked to (D-419).
+   *
+   * `update Payroll`, the grant linking needs (D-363). The brand's staff with an active
+   * role, by name, with a masked email to tell two of the same name apart, their staff
+   * roles, and the employee each is already linked to, so the form can say so rather than
+   * send a link the unique index refuses. Investors and resellers are not staff and are not
+   * listed: hr holds no grant over either (the ledger audit's W3).
+   */
+  async loginOptions(context: ActiveContext) {
+    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const members = await this.iam.activeMembers(tx, context.orgId, { roles: STAFF_ROLES });
+      const links = new Map(
+        (
+          await repo.employeesByUsers(
+            tx,
+            context.orgId,
+            members.map((member) => member.userId),
+          )
+        ).flatMap((row) => (row.user_id === null ? [] : [[row.user_id, row.id] as const])),
+      );
+      return {
+        items: members.map((member) => ({
+          userId: member.userId,
+          name: member.name,
+          emailMasked: member.emailMasked,
+          roles: member.roles,
+          linkedEmployeeId: links.get(member.userId) ?? null,
+        })),
+      };
+    });
+  }
 
   /** The scope columns for an employee row, mapped once (§6 `own` and `branch`). */
   private employeeScope(request: object) {
@@ -721,6 +772,20 @@ function structureView(
 export const toPoisha = (value: string | bigint) => poisha(BigInt(value));
 
 /** Whether the caller holds `update Payroll` across the brand: hr and org_admin (§6). */
+/**
+ * The roles an employee record can belong to (D-419). An allowlist, so a role added later is
+ * left out of HR's sign-in picker until someone decides it is staff (the re-audit's note 3).
+ */
+const STAFF_ROLES: readonly MembershipRole[] = [
+  'org_admin',
+  'sales',
+  'accounts',
+  'marketing',
+  'hr',
+  'branch_manager',
+  'warehouse',
+];
+
 function holdsOrgPayroll(context: ActiveContext): boolean {
   return scopeFilterFor(context, 'update', 'Payroll').kind === 'all';
 }

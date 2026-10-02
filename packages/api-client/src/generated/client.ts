@@ -280,6 +280,11 @@ export const OPERATIONS = {
     path: '/v1/hr/bonus-rules/versions/{versionId}/preview',
     ability: 'read:Payroll',
   },
+  getV1HrBranchOptions: {
+    method: 'GET',
+    path: '/v1/hr/branch-options',
+    ability: 'create:Employee',
+  },
   getV1HrCalendars: { method: 'GET', path: '/v1/hr/calendars', ability: 'read:Employee' },
   getV1HrEmployees: { method: 'GET', path: '/v1/hr/employees', ability: 'read:Employee' },
   getV1HrEmployeesById: { method: 'GET', path: '/v1/hr/employees/{id}', ability: 'read:Employee' },
@@ -295,6 +300,7 @@ export const OPERATIONS = {
   },
   getV1HrLoans: { method: 'GET', path: '/v1/hr/loans', ability: 'read:Payroll' },
   getV1HrLoansById: { method: 'GET', path: '/v1/hr/loans/{id}', ability: 'read:Payroll' },
+  getV1HrLoginOptions: { method: 'GET', path: '/v1/hr/login-options', ability: 'update:Payroll' },
   getV1HrPayrollRuns: { method: 'GET', path: '/v1/hr/payroll/runs', ability: 'read:Payroll' },
   getV1HrPayrollRunsById: {
     method: 'GET',
@@ -400,6 +406,11 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/investors/investments',
     ability: 'read:Investor',
+  },
+  getV1InvestorsLoginOptions: {
+    method: 'GET',
+    path: '/v1/investors/login-options',
+    ability: 'update:Investor',
   },
   getV1InvestorsWalletAccounts: {
     method: 'GET',
@@ -525,6 +536,11 @@ export const OPERATIONS = {
   },
   getV1SupplyPayments: { method: 'GET', path: '/v1/supply/payments', ability: 'read:Supply' },
   getV1SupplyReturns: { method: 'GET', path: '/v1/supply/returns', ability: 'read:Supply' },
+  getV1SupplySupplierOptions: {
+    method: 'GET',
+    path: '/v1/supply/supplier-options',
+    ability: 'create:Supply',
+  },
   getV1SupplySuppliers: { method: 'GET', path: '/v1/supply/suppliers', ability: 'read:Supply' },
   getV1SupplySuppliersById: {
     method: 'GET',
@@ -1422,6 +1438,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1HrBonusRulesVersionsByVersionIdPreview, input, options),
+    /** GET /v1/hr/branch-options */
+    getV1HrBranchOptions: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrBranchOptions, undefined, options),
     /** GET /v1/hr/calendars */
     getV1HrCalendars: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1HrCalendars, undefined, options),
@@ -1452,6 +1471,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1HrLoansById, input, options),
+    /** GET /v1/hr/login-options */
+    getV1HrLoginOptions: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1HrLoginOptions, undefined, options),
     /** GET /v1/hr/payroll/runs */
     getV1HrPayrollRuns: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1HrPayrollRuns, undefined, options),
@@ -1573,6 +1595,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/investors/investments */
     getV1InvestorsInvestments: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InvestorsInvestments, undefined, options),
+    /** GET /v1/investors/login-options */
+    getV1InvestorsLoginOptions: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InvestorsLoginOptions, undefined, options),
     /** GET /v1/investors/wallet-accounts */
     getV1InvestorsWalletAccounts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InvestorsWalletAccounts, undefined, options),
@@ -1735,6 +1760,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/supply/returns */
     getV1SupplyReturns: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplyReturns, undefined, options),
+    /** GET /v1/supply/supplier-options */
+    getV1SupplySupplierOptions: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1SupplySupplierOptions, undefined, options),
     /** GET /v1/supply/suppliers */
     getV1SupplySuppliers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplySuppliers, undefined, options),

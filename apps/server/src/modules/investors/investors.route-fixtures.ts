@@ -89,6 +89,7 @@ export const INVESTORS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Cal
     },
   }),
   'GET /v1/investors/wallet-accounts': () => ({ url: '/v1/investors/wallet-accounts' }),
+  'GET /v1/investors/login-options': () => ({ url: '/v1/investors/login-options' }),
   'GET /v1/investors/investments': () => ({ url: '/v1/investors/investments' }),
   'POST /v1/investors/investments': () => ({
     url: '/v1/investors/investments',

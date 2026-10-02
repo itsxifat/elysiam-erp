@@ -1,6 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { APIError } from 'better-auth/api';
+import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { phoneNumber, twoFactor } from 'better-auth/plugins';
 import { and, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -227,6 +227,32 @@ export function createAuth(options: AuthOptions) {
       '/phone-number/request-password-reset',
       '/phone-number/reset-password',
     ],
+
+    /**
+     * A text-message code never signs anyone in (M30's A3, D-411).
+     *
+     * The phone-number plugin's `/phone-number/verify` creates a session for whoever owns
+     * the number once the code matches, and the two-factor plugin only guards the
+     * credential sign-ins (`/sign-in/email`, `/sign-in/phone-number`): the day SMS is
+     * switched on, an org admin or an accountant with a phone on file could be signed in
+     * by an SMS code alone, past the second factor §6 requires of them. So the endpoint
+     * answers only its other use: a person already signed in confirming a new number on
+     * their own account (`updatePhoneNumber`, which needs a session). Phone and password
+     * sign-in stays, behind the two-factor hook.
+     */
+    hooks: {
+      before: createAuthMiddleware((ctx) => {
+        if (ctx.path !== '/phone-number/verify') return Promise.resolve();
+        const body = ctx.body as { updatePhoneNumber?: unknown } | undefined;
+        if (body?.updatePhoneNumber === true) return Promise.resolve();
+        return Promise.reject(
+          new APIError('FORBIDDEN', {
+            code: 'PHONE_CODE_SIGN_IN_DISABLED',
+            message: 'A text-message code does not sign you in. Use your email and password.',
+          }),
+        );
+      }),
+    },
 
     session: {
       expiresIn: 60 * 60 * 12,

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import { SEED_ORG_IDS, withOrg, withSystem } from '@elysium/db';
+import { asUser } from '@elysium/db/testing';
 import { addDays, poisha, toIsoDate, ZERO } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
@@ -17,6 +18,8 @@ import {
   type HttpHarness,
   type RoleClient,
 } from '../../testing/http-harness.js';
+import type { ActiveContext } from '../../platform/http/context.js';
+import { ApprovalsService } from '../approvals/approvals.service.js';
 import { resetFilesEnv } from '../files/files.config.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { WalletsModule } from './wallets.module.js';
@@ -1581,5 +1584,126 @@ describe('M30: a branch-scoped cash out follows petty cash’s rules', () => {
     );
     expect(visible.items.find((wallet) => wallet.id === till)?.balancePoisha).toBe('190000');
     expect(visible.items.find((wallet) => wallet.id === drawer)?.balancePoisha).toBe('5000');
+  });
+
+  it('counts a branch manager’s cash outs and petty cash in one day (C7, D-415)', async () => {
+    // Earlier today this manager posted 5,000 unheld (the 150,000 one waited for a checker
+    // and so does not count). 60,000 more is 65,000; 40,000 of petty cash would pass alone,
+    // and with the day it is 105,000, over the 100,000 threshold.
+    const out = await cashOut(manager.client, '60000', await uploadReceipt(manager.client));
+    expect(body<{ status: string }>(out).status, out.body).toBe('posted');
+
+    const petty = await manager.client.request('POST', '/v1/accounts/cash-entries', {
+      body: {
+        entryId: randomUUID(),
+        walletId: till,
+        kind: 'petty_cash',
+        categoryAccountId: accountId('5890'),
+        amountPoisha: '40000',
+        receiptFileId: await uploadReceipt(manager.client),
+        memo: 'The rest of the same bill',
+      },
+    });
+    expect(petty.statusCode, petty.body).toBe(201);
+    expect(body<{ status: string }>(petty).status).toBe('pending_approval');
+  });
+});
+
+/*
+ * m30-followups, C7 (D-415) and W-2 (D-418). Petty cash was compared with the threshold one
+ * entry at a time, so one bill could be paid in pieces under it; and a held entry's request
+ * re-read the thresholds, so one relaxed in between auto-approved it before the entry existed.
+ */
+describe('m30-followups: the day’s petty cash meets the threshold together', () => {
+  async function petty(client: Client, amountPoisha: string) {
+    return client.request('POST', '/v1/accounts/cash-entries', {
+      body: {
+        entryId: randomUUID(),
+        walletId: wallets.handCash,
+        kind: 'petty_cash',
+        categoryAccountId: accountId('5820'),
+        amountPoisha,
+        receiptFileId: await uploadReceipt(client),
+        memo: 'One bill, several receipts',
+      },
+    });
+  }
+
+  it('holds the entry that takes one person’s day across the threshold', async () => {
+    const keeper = await harness.asRole('accounts', ORG_A);
+    const colleague = await harness.asRole('accounts', ORG_A);
+
+    expect(body<{ status: string }>(await petty(keeper.client, '60000')).status).toBe('posted');
+    const second = await petty(keeper.client, '50000');
+    expect(second.statusCode, second.body).toBe(201);
+    const held = body<{ status: string; approvalId: string | null; journalId: string | null }>(
+      second,
+    );
+    expect(held).toMatchObject({ status: 'pending_approval', journalId: null });
+
+    // Another person's day is their own.
+    expect(body<{ status: string }>(await petty(colleague.client, '60000')).status).toBe('posted');
+
+    // Approved, it posts, and a checked entry does not count towards the unheld day.
+    const decided = await admin.client.request(
+      'POST',
+      `/v1/approvals/${held.approvalId ?? ''}/decide`,
+      { body: { decision: 'approved' } },
+    );
+    expect(decided.statusCode, decided.body).toBe(201);
+    expect(body<{ status: string }>(await petty(keeper.client, '30000')).status).toBe('posted');
+    // 60,000 + 30,000 unheld; 10,000 more is the 100,000 threshold.
+    expect(body<{ status: string }>(await petty(keeper.client, '10000')).status).toBe(
+      'pending_approval',
+    );
+  });
+
+  it('counts two entries sent at once against each other', async () => {
+    const keeper = await harness.asRole('accounts', ORG_A);
+    const receipts = await Promise.all([
+      uploadReceipt(keeper.client),
+      uploadReceipt(keeper.client),
+    ]);
+    const send = (receiptFileId: string) =>
+      keeper.client.request('POST', '/v1/accounts/cash-entries', {
+        body: {
+          entryId: randomUUID(),
+          walletId: wallets.handCash,
+          kind: 'petty_cash',
+          categoryAccountId: accountId('5820'),
+          amountPoisha: '60000',
+          receiptFileId,
+          memo: 'Sent twice at once',
+        },
+      });
+    const both = await Promise.all(receipts.map(send));
+    expect(both.map((response) => body<{ status: string }>(response).status).sort()).toEqual([
+      'pending_approval',
+      'posted',
+    ]);
+  });
+
+  it('raises a module-held request as pending whatever the threshold says by then (W-2)', async () => {
+    // What a relaxed threshold looks like to the request: this amount is far under it.
+    const keeper = await harness.asRole('accounts', ORG_A);
+    const context = (await asUser(keeper.userId, ORG_A)) as ActiveContext;
+    const approvals = harness.app.get(ApprovalsService, { strict: false });
+
+    const held = await approvals.request(context, {
+      type: 'wallet_adjustment',
+      amountPoisha: 1000n,
+      payload: {},
+      reason: 'Held by the module',
+      holdForChecker: true,
+    });
+    expect(held.status).toBe('pending');
+
+    const free = await approvals.request(context, {
+      type: 'wallet_adjustment',
+      amountPoisha: 1000n,
+      payload: {},
+      reason: 'Not held',
+    });
+    expect(free.status).toBe('auto_approved');
   });
 });

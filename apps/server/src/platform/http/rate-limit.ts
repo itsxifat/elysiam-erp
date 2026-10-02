@@ -109,6 +109,20 @@ export interface RateLimitStore {
     limit: number,
     windowSeconds: number,
   ): RateLimitDecision | Promise<RateLimitDecision>;
+
+  /**
+   * How many hits `key` holds in its current window, without counting one (D-416).
+   *
+   * For a budget that only some outcomes spend: the tracking page asks before it looks
+   * whether a brand's misses are spent, and spends one only when the answer is a miss.
+   */
+  peek(key: string): RateLimitPeek | Promise<RateLimitPeek>;
+}
+
+export interface RateLimitPeek {
+  readonly count: number;
+  /** Seconds until the window resets; 0 when the key holds nothing. */
+  readonly retryAfterSeconds: number;
 }
 
 /**
@@ -170,6 +184,17 @@ export class MemoryRateLimiter implements RateLimitStore {
     for (const [key, counter] of this.counters) {
       if (counter.resetAt <= now) this.counters.delete(key);
     }
+  }
+
+  peek(key: string): RateLimitPeek {
+    const now = this.now();
+    const existing = this.counters.get(key);
+    if (existing === undefined || existing.resetAt <= now)
+      return { count: 0, retryAfterSeconds: 0 };
+    return {
+      count: existing.count,
+      retryAfterSeconds: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)),
+    };
   }
 
   /** Test seam. */

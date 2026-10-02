@@ -24,7 +24,12 @@ import {
   type ScopeCondition,
   type ScopeFilter,
 } from '@elysium/contracts';
-import { canDecide, requiresApproval, type Threshold } from '@elysium/domain';
+import {
+  canDecide,
+  requiresApproval,
+  requiresApprovalForDay,
+  type Threshold,
+} from '@elysium/domain';
 import { withOrg, type Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 
@@ -350,6 +355,29 @@ export class ApprovalsService {
     );
   }
 
+  /**
+   * Would this payment need a second person once the same person's earlier ones today
+   * count? (M30's C7, D-415)
+   *
+   * In the owning module's transaction, after it has locked the person's day and summed
+   * what they already moved under the same rule without a checker (`earlierTodayPoisha`).
+   * When the answer is "held by the day's total", the module raises the request with
+   * `holdForChecker`, because `request()` compares this payment alone.
+   */
+  async requiredForDay(
+    tx: Tx,
+    context: ActiveContext,
+    input: { type: ApprovalType; amountPoisha: bigint; earlierTodayPoisha: bigint },
+  ): Promise<{ required: boolean; heldByDayTotal: boolean }> {
+    return requiresApprovalForDay({
+      type: input.type,
+      amountPoisha: input.amountPoisha,
+      thresholds: await this.thresholdsFor(tx, context.orgId),
+      alwaysRequired: this.alwaysRequired(input.type, false),
+      earlierTodayPoisha: input.earlierTodayPoisha,
+    });
+  }
+
   /** An event payload every recipient may see: no cost-valued amount (D-074). */
   private eventAmount(type: ApprovalType, amount: bigint | null): Record<string, unknown> {
     if (COST_VALUED_APPROVAL_TYPES.includes(type)) {
@@ -384,6 +412,15 @@ export class ApprovalsService {
        * Omitted, the request opens its own.
        */
       tx?: Tx;
+      /**
+       * The owning module has already decided this waits for a second person (D-418): by
+       * the thresholds as it read them, or by its own rule, such as a day's running total
+       * (C7, D-415). The request is pending whatever the thresholds say by now. Without it,
+       * a threshold relaxed between the module's check and this call auto-approved the
+       * request and ran its executor before the module's row existed, so the row then
+       * waited for ever on an approval already decided (M30's W-2). Set only by modules.
+       */
+      holdForChecker?: boolean;
     },
   ): Promise<{ id: string; required: boolean; status: ApprovalStatus }> {
     // A type whose payload decides what gets executed is raised only by its
@@ -420,12 +457,14 @@ export class ApprovalsService {
       const work = async (tx: Tx) => {
         const thresholds = await this.thresholdsFor(tx, context.orgId);
         const threshold = thresholds.find((entry) => entry.type === input.type);
-        const required = requiresApproval({
-          type: input.type,
-          amountPoisha: input.amountPoisha,
-          thresholds,
-          alwaysRequired: this.alwaysRequired(input.type, input.amountDerivedByServer ?? false),
-        });
+        const required =
+          input.holdForChecker === true ||
+          requiresApproval({
+            type: input.type,
+            amountPoisha: input.amountPoisha,
+            thresholds,
+            alwaysRequired: this.alwaysRequired(input.type, input.amountDerivedByServer ?? false),
+          });
         const status: ApprovalStatus = required ? 'pending' : 'auto_approved';
 
         const rows = await tx.execute<{ id: string }>(sql`
@@ -469,6 +508,8 @@ export class ApprovalsService {
             // Typed by a person, or computed by the owning module (D-072).
             amountDerivedByServer: input.amountDerivedByServer ?? false,
             required,
+            // Held by the owning module's decision rather than by the threshold alone (D-418).
+            heldByModule: input.holdForChecker === true,
             reason: input.reason ?? null,
             // The payload is the *intent* — what will be executed once this
             // is approved. `AuditService` redacts on the way in.

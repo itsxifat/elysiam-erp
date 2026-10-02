@@ -89,6 +89,28 @@ export async function listEmployees(
   return [...rows];
 }
 
+/**
+ * The brand's active branches a caller may put an employee in (D-419): id, code, name.
+ *
+ * `org.branches` is global (§5), so this crosses no module boundary. `scope` is the
+ * caller's `create Employee` reach mapped onto `b.id`: a branch manager is offered their
+ * own branches, HR and org_admin every one.
+ */
+export async function branchOptions(
+  tx: Tx,
+  orgId: string,
+  scope: SQL,
+): Promise<{ id: string; code: string; name: string }[]> {
+  const rows = await tx.execute<{ id: string; code: string; name: string }>(sql`
+    select b.id, b.code, b.name
+    from org.branches b
+    where b.org_id = ${orgId} and b.is_active and ${scope}
+    order by b.name
+    limit 500
+  `);
+  return [...rows];
+}
+
 export async function employeeById(
   tx: Tx,
   orgId: string,

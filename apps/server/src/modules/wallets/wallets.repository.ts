@@ -324,6 +324,49 @@ export interface NewCashEntry {
   readonly createdBy: string;
 }
 
+/**
+ * Serialise one person's petty-cash-ruled entries on one business day (C7, D-415).
+ *
+ * Taken before the day's total is read and held until the entry is written, so two entries
+ * sent at once each count the other.
+ */
+export async function lockPettyCashDay(
+  tx: Tx,
+  orgId: string,
+  createdBy: string,
+  businessDate: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`wallets.petty-cash-day:${orgId}:${createdBy}:${businessDate}`}, 0))`,
+  );
+}
+
+/**
+ * What one person spent today, under petty cash's rules, without a checker (C7, D-415):
+ * their posted entries of these kinds that carry no approval, from any wallet.
+ */
+export async function unheldEntriesToday(
+  tx: Tx,
+  orgId: string,
+  filter: {
+    readonly createdBy: string;
+    readonly kinds: readonly ('petty_cash' | 'cash_out')[];
+    readonly businessDate: string;
+  },
+): Promise<bigint> {
+  const rows = await tx.execute<{ total: string }>(sql`
+    select coalesce(sum(e.amount_poisha), 0)::text as total
+    from wallets.cash_entries e
+    where e.org_id = ${orgId}
+      and e.created_by = ${filter.createdBy}
+      and e.kind::text = any (${sql.param([...filter.kinds])}::text[])
+      and e.business_date = ${filter.businessDate}
+      and e.status = 'posted'::wallets.cash_entry_status
+      and e.approval_request_id is null
+  `);
+  return BigInt(rows[0]?.total ?? '0');
+}
+
 export async function insertCashEntry(tx: Tx, entry: NewCashEntry): Promise<void> {
   await tx.execute(sql`
     insert into wallets.cash_entries

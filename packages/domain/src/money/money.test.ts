@@ -18,6 +18,7 @@ import {
   poishaToMajorNumber,
   sub,
   sum,
+  takaText,
   sumDecimalsToPoisha,
   takaParts,
   type Poisha,
@@ -319,5 +320,13 @@ describe('decimal amounts from other systems (M18)', () => {
     );
     expect(() => poishaToMajorNumber(poisha(1_000_000_000_000_000n))).toThrow(MoneyError);
     expect(() => poishaToMajorNumber(poisha(-1_000_000_000_000_000n))).toThrow(MoneyError);
+  });
+});
+
+describe('takaText (m30-followups)', () => {
+  it('writes taka with two decimals, never bare poisha', () => {
+    expect(takaText(poisha(11_000_000n))).toBe('Tk 110,000.00');
+    expect(takaText(poisha(5n))).toBe('Tk 0.05');
+    expect(takaText(poisha(-12_345n))).toBe('-Tk 123.45');
   });
 });

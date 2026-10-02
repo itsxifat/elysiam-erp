@@ -8,6 +8,7 @@ import {
   poisha,
   supplierAdvancePaidDraft,
   supplierPaidDraft,
+  takaText,
   type AccountSubtype,
 } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
@@ -19,6 +20,7 @@ import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { ApprovalsService, type ApprovalExecutor } from '../approvals/approvals.service.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
+import { postingInstant } from './posting-date.js';
 import * as repo from './supply.repository.js';
 import { mapSupplyErrors, SupplyError } from './supply.errors.js';
 import type {
@@ -135,8 +137,6 @@ export class PaymentsService implements OnModuleInit {
   ): Promise<PaymentResult> {
     this.assertMayHandleSupplierMoney(context);
     const amount = poisha(input.amountPoisha);
-    const occurredAt = input.occurredAt === undefined ? now : new Date(input.occurredAt);
-    const date = businessDate(occurredAt);
 
     const replay = await mapSupplyErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
@@ -167,36 +167,58 @@ export class PaymentsService implements OnModuleInit {
     );
     if (replay !== null) return replay;
 
-    // §6 routes supplier payments above the org's threshold through a checker. The
-    // amount is the requester's, so it is compared against the threshold rather than
-    // trusted (D-068) — `amountDerivedByServer` is deliberately not passed.
-    const needsApproval = await this.approvals.isRequired(context, {
-      type: 'supplier_payment',
-      amountPoisha: amount,
-    });
+    // §7's window, after the replay so a retry of yesterday's payment still answers (C6).
+    const occurredAt = await mapSupplyErrors(() =>
+      Promise.resolve(postingInstant(input.occurredAt, now)),
+    );
+    const date = businessDate(occurredAt);
 
-    if (needsApproval) {
-      /*
-       * Raised before the row is written, in the approvals module's own transaction.
-       *
-       * `request()` opens its own `withOrg`, so nesting it inside this module's
-       * transaction would not join it — it would deadlock against the row we are about
-       * to insert. Raised first instead, which leaves one residual: a crash between the
-       * two commits leaves an approval with no payment. That approval can never do
-       * anything, because the executor refuses unless the payment it names carries the
-       * approval's own id, so the cost of the residual is a row in a checker's queue.
-       */
-      const raised = await this.approvals.request(context, {
-        type: 'supplier_payment',
-        amountPoisha: amount,
-        payload: { paymentId: input.paymentId, supplierId: input.supplierId },
-        reason: input.memo ?? `Supplier ${input.kind}`,
-        request,
-      });
+    /*
+     * One transaction: the decision, the request a checker sees and the payment row commit
+     * together or not at all.
+     *
+     * §6 routes supplier payments at or above the org's threshold through a checker. The
+     * amount is the requester's, so it is compared rather than trusted (D-068), and it is
+     * compared with what the same person already paid out to suppliers today without a
+     * checker (C7, D-415): five payments of 9,000 where the brand's threshold is 10,000
+     * are one payment of 45,000, whether to one supplier or five, and whichever of today
+     * and yesterday each is dated. The day is locked first, so two payments sent at once
+     * count each other.
+     *
+     * The request is raised in this transaction (`tx`) and held whatever the thresholds
+     * say by then (`holdForChecker`, D-418). Raised on its own, as it used to be, a
+     * threshold relaxed in between auto-approved it and ran the executor before this
+     * payment existed, and a crash between the two commits left an approval naming no
+     * payment.
+     */
+    return mapSupplyErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const wallet = await this.assertWalletInScope(tx, context, request, input.walletAccountId);
+        const enteredOn = await repo.enteredToday(tx);
+        await repo.lockPaymentDay(tx, context.orgId, context.userId, enteredOn);
+        const earlier = await repo.unheldPaymentsEnteredOn(tx, context.orgId, {
+          createdBy: context.userId,
+          enteredOn,
+        });
+        const decision = await this.approvals.requiredForDay(tx, context, {
+          type: 'supplier_payment',
+          amountPoisha: amount,
+          earlierTodayPoisha: earlier,
+        });
 
-      return mapSupplyErrors(async () =>
-        withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-          await this.assertWalletInScope(tx, context, request, input.walletAccountId);
+        if (decision.required) {
+          const raised = await this.approvals.request(context, {
+            type: 'supplier_payment',
+            amountPoisha: amount,
+            payload: { paymentId: input.paymentId, supplierId: input.supplierId },
+            reason: decision.heldByDayTotal
+              ? `${input.memo ?? `Supplier ${input.kind}`} (with today's earlier supplier payments, ${takaText(poisha(amount + earlier))})`
+              : (input.memo ?? `Supplier ${input.kind}`),
+            request,
+            tx,
+            holdForChecker: true,
+          });
+
           await repo.insertPayment(tx, {
             orgId: context.orgId,
             id: input.paymentId,
@@ -229,13 +251,8 @@ export class PaymentsService implements OnModuleInit {
             businessDate: date,
             amountPoisha: amount.toString(),
           };
-        }),
-      );
-    }
+        }
 
-    return mapSupplyErrors(async () =>
-      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const wallet = await this.assertWalletInScope(tx, context, request, input.walletAccountId);
         const journalId = await this.postPayment(tx, context, {
           paymentId: input.paymentId,
           supplierId: input.supplierId,

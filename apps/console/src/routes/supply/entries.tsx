@@ -12,7 +12,7 @@ import {
   listEntries,
   listLocations,
   listStock,
-  listSuppliers,
+  listSupplierOptions,
   receiveEntry,
 } from './api.js';
 import { useSupplyT, type SupplyMessageKey } from './messages.js';
@@ -75,10 +75,15 @@ export function SupplyEntriesPage() {
   const [pricing, setPricing] = useState<string | null>(null);
   const [prices, setPrices] = useState<Record<string, string>>({});
 
+  /*
+   * The picker reads `GET /v1/supply/supplier-options` (`create Supply`, D-419): ids, codes
+   * and names only. Warehouse drafts deliveries without `read Supply`, so the full supplier
+   * list answered 403 and the dropdown was empty for the role whose form this is.
+   */
   const suppliers = useQuery({
-    queryKey: ['supply', 'suppliers', 'picker'],
-    queryFn: () => listSuppliers(),
-    enabled: mayRead,
+    queryKey: ['supply', 'suppliers', 'options'],
+    queryFn: listSupplierOptions,
+    enabled: mayDraft,
     staleTime: 5 * 60_000,
   });
 

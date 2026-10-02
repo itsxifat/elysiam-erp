@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { serverEnv } from '../../platform/config/env.js';
 import { ApprovalsModule } from '../approvals/approvals.module.js';
 import { FilesModule } from '../files/files.module.js';
+import { IamDirectoryModule } from '../iam/iam.api.js';
 import { LedgerModule } from '../ledger/ledger.module.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { AttendanceService } from './attendance.service.js';
@@ -52,7 +53,7 @@ import { TargetsService } from './targets.service.js';
  * `HR_FIELD_KEY` fails at boot rather than at the first employee record.
  */
 @Module({
-  imports: [LedgerModule, ApprovalsModule, FilesModule, OrdersModule],
+  imports: [LedgerModule, ApprovalsModule, FilesModule, OrdersModule, IamDirectoryModule],
   controllers: [HrController, PerformanceController],
   providers: [
     EmployeesService,

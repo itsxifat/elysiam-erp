@@ -48,6 +48,18 @@ import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
  * one cannot be kept cold behind the other. The cost is that somebody can lock one order's
  * tracking for fifteen minutes by guessing at it; the order's owner still has the SMS and the
  * courier's own page.
+ *
+ * ## And a miss budget per brand (M30's D3, D-416)
+ *
+ * The per-order bucket stops five guesses at one order; it does nothing against one guess
+ * at each of thousands of orders from thousands of addresses, which is how a botnet would
+ * walk a brand's sequential order numbers. So misses are also counted per brand, and once a
+ * brand's budget for the window is spent its tracking answers 429 to everyone, found or not,
+ * until the window passes: the budget is checked before the lookup, so it says nothing
+ * about which orders exist. The budget is far above what typing mistakes spend. The cost is
+ * the same as the per-order one, for a whole brand: an attacker can pause its tracking for
+ * an hour. Turnstile on the page would let real buyers through such an attack; it needs the
+ * brand's site key and the widget on the portal (ASSUMED off, D-416).
  */
 
 export const TRACKING_RATE_LIMITER = Symbol('TrackingRateLimiter');
@@ -78,6 +90,8 @@ export const TRACKING_NOT_FOUND = Object.freeze({ found: false as const });
 export const TRACKING_LIMITS = {
   perIp: { limit: 20, windowSeconds: 600 },
   perOrder: { limit: 5, windowSeconds: 900 },
+  /** Wrong answers a brand's tracking takes per hour before it pauses (D-416, ASSUMED). */
+  perBrandMisses: { limit: 300, windowSeconds: 3600 },
 } as const;
 
 /**
@@ -143,6 +157,22 @@ export class TrackingService {
       };
     }
 
+    // Before the lookup, so a spent budget answers the same for a real order as for none.
+    const missKey = `track:misses:${brand}`;
+    const misses = await this.limiter.peek(missKey);
+    if (misses.count >= TRACKING_LIMITS.perBrandMisses.limit) {
+      // A spent budget with no expiry (restored from a snapshot, set by hand) would pause the
+      // brand for ever: a hit gives it one, as `HIT_SCRIPT` repairs (the ledger audit's N2).
+      if (misses.retryAfterSeconds === 0) {
+        await this.limiter.hit(
+          missKey,
+          TRACKING_LIMITS.perBrandMisses.limit,
+          TRACKING_LIMITS.perBrandMisses.windowSeconds,
+        );
+      }
+      return { limited: true, retryAfterSeconds: Math.max(misses.retryAfterSeconds, 1) };
+    }
+
     const orgId = await withGlobal((tx) => repo.organizationBySlug(tx, brand));
 
     // The same queries on every path; a miss runs them against an id that matches nothing.
@@ -182,6 +212,11 @@ export class TrackingService {
       // and a parcel rebooked under a renumbered order must not answer for the old number.
       outcome.facts?.orderNo !== query.orderNo
     ) {
+      await this.limiter.hit(
+        missKey,
+        TRACKING_LIMITS.perBrandMisses.limit,
+        TRACKING_LIMITS.perBrandMisses.windowSeconds,
+      );
       return { limited: false, answer: TRACKING_NOT_FOUND };
     }
 

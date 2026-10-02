@@ -23,8 +23,9 @@ the brand dashboard, the **Leaderboard**, and **Export CSV** and **Export XLSX**
    least one branch ticked. Press **Invite**.
 3. **Give them this link** appears. Press **Copy link** and send it yourself, to that person
    only, by a channel only they read. It works once, for three days.
-4. If they already have an account from another brand, there is no link: the role is added
-   and they sign in as before.
+4. If they have ever worked for another brand in the ERP, you cannot add them: the screen
+   says a super admin adds them here. Ask the super admin. They are added with the same
+   sign-in, so they keep one password for both brands.
 
 They show as **Invited** until they set a password. If the link is lost, open **Manage** and
 press **Send a new invite link**.
@@ -93,22 +94,23 @@ sale above the seller's limit waits in **Branches** → **Held for review** for 
 - **You cannot add wallets or verify advances.** Accounts does both: **Accounts** →
   **Wallets** → **Add wallet**, and **Accounts** → **Advances**.
 - **Warehouse staff can open the supply page `/supply/entries`** though it is not in their
-  menu. Today its supplier list is empty for them, so accounts records each delivery.
+  menu. They choose the supplier there and enter what arrived; accounts prices it.
 - **A branch manager's cash out** from a branch wallet needs a receipt photo and, at or above
   the threshold, your approval.
 - **Self-dealing is refused.** Nobody records a staff loan to themselves, pays out a loan they
   recorded, or changes their own payout account. A branch manager keeps showroom records, but
   payout details, linked logins and bringing back leavers are HR's.
 - **Investors:** you read them and approve distributions and withdrawals. Accounts adds
-  investors and records, reviews and pays withdrawals.
+  investors, links each one's **Portal sign-in**, and records, reviews and pays withdrawals.
+- **Approval limits count the day.** A supplier payment, petty cash or a branch cash out is
+  compared with the same person's total for the day (supplier payments: to any supplier).
+  Paying one bill in small pieces does not get round the limit.
 
 ## Not on screen yet
 
 - **Audit log** is a placeholder. **Resellers** is out of scope.
 - Uploading a courier's statement (statements are fetched only), the thana list on a delivery
   zone, adding a new courier company for the brand, and an exchange from the order page.
-- Editing an existing employee (payout account, status, branch, linked login), and linking an
-  investor's portal sign-in to their investor record. Ask ERP support.
 
 ## If something goes wrong
 

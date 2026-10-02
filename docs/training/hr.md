@@ -60,14 +60,18 @@ A branch manager may add showroom staff (paid in cash) and keep their record, bu
 an org admin changes a payout method or account, the login linked to an employee, or brings
 back someone who left.
 
-Some changes have no screen yet. Ask your org admin, who passes them to ERP support:
-
-- an existing employee's payout account, status, leaving date or linked login;
-- the branch an employee works at. The add form has no branch field, so a new employee is not
-  placed in a showroom, and that showroom's branch manager does not see them.
+- **Add an employee** has a **Branch** field. Choose the showroom for showroom staff, so
+  that branch's manager sees them; leave **No branch** for head-office staff.
+- **Edit** on a row changes the name, designation, department, branch, status and leaving
+  date, and the payout method and account, phone, national ID and **Linked sign-in**. Only
+  what you change is saved. The account number, phone and national ID are never shown back:
+  leave them empty to keep what is on file.
+- **Linked sign-in** lists the brand's people by name and a shortened email. One already
+  linked to someone else is shown but cannot be chosen.
 
 The linked login matters: it lets an agent see their own targets, and it lets the system stop
-someone paying a loan to themselves.
+someone paying a loan to themselves. Nobody changes the link or the payout account on their
+own record: a second person in HR does.
 
 ## Targets and bonus rules
 

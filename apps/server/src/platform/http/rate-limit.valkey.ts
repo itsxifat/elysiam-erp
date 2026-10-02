@@ -1,4 +1,9 @@
-import { MemoryRateLimiter, type RateLimitDecision, type RateLimitStore } from './rate-limit.js';
+import {
+  MemoryRateLimiter,
+  type RateLimitDecision,
+  type RateLimitPeek,
+  type RateLimitStore,
+} from './rate-limit.js';
 
 /**
  * The credential rate limiter's counters, in Valkey (D-056's stated exit).
@@ -52,6 +57,13 @@ if count == 1 or ttl < 0 then
   ttl = tonumber(ARGV[1])
 end
 return {count, ttl}
+`.trim();
+
+/** Read a counter and its TTL without touching either (D-416). */
+const PEEK_SCRIPT = `
+local count = redis.call('GET', KEYS[1])
+local ttl = redis.call('PTTL', KEYS[1])
+return {tonumber(count) or 0, ttl}
 `.trim();
 
 export interface ValkeyRateLimiterOptions {
@@ -126,6 +138,27 @@ export class ValkeyRateLimiter implements RateLimitStore {
       // At least a second: a `retry-after: 0` invites an immediate retry, which
       // is a busy loop against the endpoint the limiter is protecting.
       retryAfterSeconds: Math.max(1, Math.ceil(ttlMs / 1000)),
+    };
+  }
+
+  async peek(key: string): Promise<RateLimitPeek> {
+    const namespaced = `${this.keyPrefix}:${key}`;
+    let reply: unknown;
+    try {
+      reply = await this.client.eval(PEEK_SCRIPT, 1, namespaced);
+    } catch (error) {
+      // As for `hit`: degrade to this process's counters rather than to "nothing spent".
+      this.onError?.(error);
+      return this.fallback.peek(key);
+    }
+    const parsed = readReply(reply);
+    if (parsed === null) {
+      this.onError?.(new Error(`Unreadable rate-limit reply: ${JSON.stringify(reply)}`));
+      return this.fallback.peek(key);
+    }
+    return {
+      count: parsed.count,
+      retryAfterSeconds: parsed.ttlMs > 0 ? Math.max(1, Math.ceil(parsed.ttlMs / 1000)) : 0,
     };
   }
 }

@@ -210,13 +210,14 @@ export class R2StorageDriver implements StorageDriver {
     }
   }
 
-  async get(key: string): Promise<Uint8Array> {
+  async get(key: string, options: { readonly maxBytes?: number } = {}): Promise<Uint8Array> {
     const response = await this.signedRequest('GET', key);
     if (response.status === 404) throw new StorageError('not-found', 'No such stored object.');
     if (!response.ok) {
       throw new StorageError('driver-unavailable', `R2 refused a read: ${String(response.status)}`);
     }
-    return new Uint8Array(await response.arrayBuffer());
+    if (options.maxBytes === undefined) return new Uint8Array(await response.arrayBuffer());
+    return readCapped(response, options.maxBytes);
   }
 
   async head(key: string): Promise<StoredObject | null> {
@@ -241,4 +242,46 @@ export class R2StorageDriver implements StorageDriver {
       );
     }
   }
+}
+
+/**
+ * A response body, read only up to `maxBytes` (D-417).
+ *
+ * The declared length is believed only as a reason to stop early, never as a reason to
+ * keep reading: the stream is counted as it arrives and cancelled the moment it passes
+ * the ceiling, so an object swapped for a larger one after the size check costs at most
+ * the ceiling in memory.
+ */
+async function readCapped(response: Response, maxBytes: number): Promise<Uint8Array> {
+  const tooLarge = () =>
+    new StorageError('too-large', `The stored object is larger than ${String(maxBytes)} bytes.`);
+  const declared = Number(response.headers.get('content-length') ?? Number.NaN);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await response.body?.cancel();
+    throw tooLarge();
+  }
+  // Typed here: the fetch body's chunk type is `any` in this package's library types.
+  const body = response.body as ReadableStream<Uint8Array> | null;
+  const reader = body?.getReader();
+  if (reader === undefined) return new Uint8Array(0);
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }

@@ -177,7 +177,11 @@ export class InvestorDocumentsService {
         },
       );
 
-      const signed = await this.files.signDownload(context, document.file_id, sql`true`);
+      // The row is checked above, so the files module keeps its purpose gate and drops its
+      // brand-wide reach rule, which is for its own generic route (D-413).
+      const signed = await this.files.signDownload(context, document.file_id, sql`true`, {
+        rowCheckedByOwner: true,
+      });
       return serializeFor(context, 'Investor', {
         documentId: document.id,
         title: document.title,

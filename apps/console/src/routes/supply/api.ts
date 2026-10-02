@@ -103,6 +103,23 @@ export function listSuppliers(filters: { q?: string; includeInactive?: boolean }
   );
 }
 
+/** A supplier as the entries picker needs it: no contact, no balance (D-419). */
+export interface SupplierOption {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
+/**
+ * The supplier picker on the entries screen (`create Supply`, D-419).
+ *
+ * Not `listSuppliers()`: that is `read Supply`, which warehouse — the role that drafts a
+ * delivery — does not hold, so the dropdown came back empty for the person whose form it is.
+ */
+export function listSupplierOptions() {
+  return api.get<{ readonly items: readonly SupplierOption[] }>('/v1/supply/supplier-options');
+}
+
 export interface SupplierDetail extends SupplierRow {
   readonly asOf: string;
   readonly costWithheld: boolean;

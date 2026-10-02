@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 
 import { findCostFields } from '@elysium/contracts';
 import { withOrg } from '@elysium/db';
+import { addDays, businessDate } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   ORG_A,
@@ -84,6 +85,28 @@ beforeAll(async () => {
 afterAll(async () => {
   await harness?.close();
 }, 60_000);
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/**
+ * Pretend the server's clock reads `instant` (only `Date`; the database driver's timers are
+ * untouched, as `files.e2e.test.ts` does).
+ *
+ * §7's posting window (C6, D-414) only takes today and yesterday, so a test that needs an
+ * entry in a past month — a closed period, a statement with an opening balance — moves the
+ * clock to that month rather than typing an old date the server now refuses.
+ */
+function clockAt(instant: string): void {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(instant));
+}
+
+/** An instant `days` Asia/Dhaka calendar days from today, at 10:00 there, as the API takes it. */
+function daysFromNow(days: number): string {
+  return `${addDays(businessDate(new Date()), days)}T04:00:00.000Z`;
+}
 
 // --- helpers ------------------------------------------------------------------
 
@@ -543,10 +566,14 @@ describe('check 1: a failing journal step leaves nothing behind', () => {
       movements: await movementCount(target),
     };
 
+    // 1 February 2026 in Dhaka, so the 31st of January is yesterday: inside §7's window
+    // (C6), and in the month just closed.
+    clockAt('2026-02-01T05:00:00+06:00');
     const attempt = await enterSupply([{ skuId: target, qty: 99, unitCostPoisha: '77000' }], {
       supplierId: only,
-      occurredAt: '2026-01-15T04:00:00.000Z',
+      occurredAt: '2026-01-31T05:00:00.000Z',
     });
+    vi.useRealTimers();
     expect(attempt.statusCode, attempt.raw).toBe(409);
     expect((JSON.parse(attempt.raw) as { code: string }).code).toBe('PERIOD_CLOSED');
 
@@ -650,10 +677,13 @@ describe("check 2: the statement's closing balances equal the ledger's party bal
     await setThreshold('supplier_payment', '100000000');
     const only = await seedSupplier(ORG_A, { code: 'SUP-STMT', name: 'Savar Buttons & Zips' });
 
+    // Entered on 10 March 2026 by the clock, so it is today's (C6) and in an earlier month.
+    clockAt('2026-03-10T13:00:00+06:00');
     const first = await enterSupply([{ skuId: sku(4), qty: 4, unitCostPoisha: '25000' }], {
       supplierId: only,
       occurredAt: '2026-03-10T05:00:00.000Z',
     });
+    vi.useRealTimers();
     expect(first.statusCode, first.raw).toBe(201);
 
     const advanceId = randomUUID();
@@ -760,5 +790,221 @@ describe("check 2: the statement's closing balances equal the ledger's party bal
     const listed = await balances(accounts, only);
     expect(listed.duePoisha).toBe('80000');
     expect(listed.advancePoisha).toBe('70000');
+  });
+});
+
+// --- m30-followups -------------------------------------------------------------
+
+/*
+ * C6 (D-414). §7 allows today and yesterday without a back-dated-entry approval, and every
+ * other module that takes a date holds to it. Supply did not: a receipt or a payment could be
+ * dated into a reported month, or next year.
+ */
+describe('C6: supply dates stay inside the posting window', () => {
+  async function draftCount(supplierId: string): Promise<number> {
+    return withOrg({ orgId: ORG_A, userId: 'usr_supply_e2e' }, async (tx) => {
+      const rows = await tx.execute<{ total: string }>(sql`
+        select count(*)::text as total from supply.supplies
+        where org_id = ${ORG_A} and supplier_id = ${supplierId}
+      `);
+      return Number(rows[0]?.total ?? '0');
+    });
+  }
+
+  it('refuses a receipt dated three days ago or tomorrow, and leaves no draft behind', async () => {
+    const only = await seedSupplier(ORG_A, { code: 'SUP-WINDOW', name: 'Narayanganj Dyeing' });
+    for (const occurredAt of [daysFromNow(-3), daysFromNow(1)]) {
+      const refused = await enterSupply([{ skuId: sku(1), qty: 1, unitCostPoisha: '10000' }], {
+        supplierId: only,
+        occurredAt,
+      });
+      expect(refused.statusCode, refused.raw).toBe(409);
+      expect(JSON.parse(refused.raw)).toMatchObject({ code: 'APPROVAL_REQUIRED' });
+    }
+    expect(await draftCount(only), 'no draft was left by a refused date').toBe(0);
+
+    // Yesterday is inside the window.
+    const yesterday = await enterSupply([{ skuId: sku(1), qty: 1, unitCostPoisha: '10000' }], {
+      supplierId: only,
+      occurredAt: daysFromNow(-1),
+    });
+    expect(yesterday.statusCode, yesterday.raw).toBe(201);
+  });
+
+  it('refuses an old date on a draft being received, a supplier payment and a return', async () => {
+    const only = await seedSupplier(ORG_A, { code: 'SUP-WINDOW-2', name: 'Gazipur Trims' });
+
+    const draftId = randomUUID();
+    const draft = await warehouse.client.request('POST', '/v1/supply/drafts', {
+      body: {
+        draftId,
+        supplierId: only,
+        locationId: location,
+        lines: [{ skuId: sku(2), qty: 2 }],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const received = await accounts.client.request(
+      'POST',
+      `/v1/supply/entries/${draftId}/receive`,
+      {
+        body: {
+          lines: [{ skuId: sku(2), unitCostPoisha: '15000' }],
+          occurredAt: daysFromNow(-10),
+        },
+      },
+    );
+    expect(received.statusCode, received.body).toBe(409);
+    expect(received.body).toContain('APPROVAL_REQUIRED');
+
+    const paid = await accounts.client.request('POST', '/v1/supply/payments', {
+      body: {
+        paymentId: randomUUID(),
+        supplierId: only,
+        walletAccountId: wallet,
+        kind: 'advance',
+        amountPoisha: '1000',
+        occurredAt: daysFromNow(-7),
+      },
+    });
+    expect(paid.statusCode, paid.body).toBe(409);
+    expect(paid.body).toContain('APPROVAL_REQUIRED');
+
+    const returned = await accounts.client.request('POST', '/v1/supply/returns', {
+      body: {
+        returnId: randomUUID(),
+        supplierId: only,
+        locationId: location,
+        reason: 'Dated last week',
+        lines: [{ skuId: sku(2), qty: 1, originalUnitCostPoisha: '15000' }],
+        occurredAt: daysFromNow(-5),
+      },
+    });
+    expect(returned.statusCode, returned.body).toBe(409);
+    expect(returned.body).toContain('APPROVAL_REQUIRED');
+  });
+});
+
+/*
+ * C7 (D-415). The threshold was compared with one payment at a time, so a person could pay a
+ * supplier in pieces under it. The same person's unheld payments to any supplier, on the day they are entered,
+ * now count.
+ */
+describe('C7: payments split under the threshold meet it together', () => {
+  const pay = (client: RoleClient, supplierId: string, amountPoisha: string) =>
+    client.client.request('POST', '/v1/supply/payments', {
+      body: {
+        paymentId: randomUUID(),
+        supplierId,
+        walletAccountId: wallet,
+        kind: 'payment',
+        amountPoisha,
+      },
+    });
+
+  it('holds the payment that takes the day to one supplier across the threshold', async () => {
+    await setThreshold('supplier_payment', '100000');
+    const payer = await harness.asRole('accounts', ORG_A);
+    const colleague = await harness.asRole('accounts', ORG_A);
+    const one = await seedSupplier(ORG_A, { code: 'SUP-SPLIT-1', name: 'Ashulia Washing' });
+    const two = await seedSupplier(ORG_A, { code: 'SUP-SPLIT-2', name: 'Savar Labels' });
+
+    const first = await pay(payer, one, '60000');
+    expect(body<{ status: string }>(first).status, first.body).toBe('posted');
+
+    const second = await pay(payer, one, '50000');
+    expect(second.statusCode, second.body).toBe(201);
+    const held = body<{ status: string; approvalId: string | null; journalId: string | null }>(
+      second,
+    );
+    expect(held).toMatchObject({ status: 'pending_approval', journalId: null });
+
+    // Another supplier is the same day: the same role adds suppliers without a checker, so a
+    // per-supplier day was a few new suppliers away from no limit (the ledger audit's W2).
+    expect(body<{ status: string }>(await pay(payer, two, '50000')).status).toBe(
+      'pending_approval',
+    );
+    // Another person's day is their own.
+    expect(body<{ status: string }>(await pay(colleague, one, '50000')).status).toBe('posted');
+
+    // The checker sees the day in the reason, in taka.
+    const approval = await admin.client.request('GET', `/v1/approvals/${held.approvalId ?? ''}`);
+    expect(approval.statusCode, approval.body).toBe(200);
+    expect(approval.body).toContain('Tk 1,100.00');
+
+    // Approved, it posts, and it does not count towards the payer's unheld day.
+    const decided = await admin.client.request(
+      'POST',
+      `/v1/approvals/${held.approvalId ?? ''}/decide`,
+      {
+        body: { decision: 'approved' },
+      },
+    );
+    expect(decided.statusCode, decided.body).toBe(201);
+    expect(body<{ status: string }>(await pay(payer, one, '30000')).status).toBe('posted');
+    // 60,000 + 30,000 posted unheld; 10,000 more reaches the 100,000 threshold.
+    expect(body<{ status: string }>(await pay(payer, one, '10000')).status).toBe(
+      'pending_approval',
+    );
+  });
+
+  it('counts a payment dated yesterday in the day it was entered (the ledger audit, W1)', async () => {
+    await setThreshold('supplier_payment', '100000');
+    const payer = await harness.asRole('accounts', ORG_A);
+    const only = await seedSupplier(ORG_A, { code: 'SUP-SPLIT-4', name: 'Mirpur Buttons' });
+    const dated = (amountPoisha: string, occurredAt: string) =>
+      payer.client.request('POST', '/v1/supply/payments', {
+        body: {
+          paymentId: randomUUID(),
+          supplierId: only,
+          walletAccountId: wallet,
+          kind: 'payment',
+          amountPoisha,
+          occurredAt,
+        },
+      });
+
+    const yesterday = await dated('60000', daysFromNow(-1));
+    expect(body<{ status: string }>(yesterday).status, yesterday.body).toBe('posted');
+    const today = await dated('50000', daysFromNow(0));
+    expect(body<{ status: string }>(today).status, today.body).toBe('pending_approval');
+  });
+
+  it('counts two payments sent at once against each other', async () => {
+    await setThreshold('supplier_payment', '100000');
+    const payer = await harness.asRole('accounts', ORG_A);
+    const only = await seedSupplier(ORG_A, { code: 'SUP-SPLIT-3', name: 'Tongi Cartons' });
+
+    const both = await Promise.all([pay(payer, only, '60000'), pay(payer, only, '60000')]);
+    const statuses = both.map((response) => body<{ status: string }>(response).status).sort();
+    expect(statuses).toEqual(['pending_approval', 'posted']);
+  });
+});
+
+/*
+ * D-419. Warehouse drafts deliveries and holds no `read Supply`, so the supplier dropdown on
+ * the entries screen loaded a 403 and stayed empty. The picker route is `create Supply` and
+ * carries nothing but the id, the code and the name.
+ */
+describe('the supplier picker (D-419)', () => {
+  it('lists active suppliers to warehouse, with no cost field and nothing else', async () => {
+    const response = await warehouse.client.request('GET', '/v1/supply/supplier-options');
+    expect(response.statusCode, response.body).toBe(200);
+    const { items } = body<{ items: Record<string, unknown>[] }>(response);
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) expect(Object.keys(item).sort()).toEqual(['code', 'id', 'name']);
+    expect(findCostFields(body(response))).toEqual([]);
+    expect(items.some((item) => item.id === supplier)).toBe(true);
+
+    // The full list stays closed to warehouse.
+    expect((await warehouse.client.request('GET', '/v1/supply/suppliers')).statusCode).toBe(403);
+  });
+
+  it('is refused to a role that cannot draft a supply, and shows only this brand', async () => {
+    expect((await sales.client.request('GET', '/v1/supply/supplier-options')).statusCode).toBe(403);
+    const other = await otherOrgAdmin.client.request('GET', '/v1/supply/supplier-options');
+    expect(other.statusCode, other.body).toBe(200);
+    const ids = body<{ items: { id: string }[] }>(other).items.map((item) => item.id);
+    expect(ids).not.toContain(supplier);
   });
 });

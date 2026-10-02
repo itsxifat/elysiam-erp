@@ -1182,3 +1182,95 @@ describe('M30: payroll money needs a second person and the payroll grant', () =>
     expect(byHr.statusCode, byHr.body).toBe(200);
   });
 });
+
+/*
+ * m30-followups (D-419). The employee form's pickers: the branches a caller may add staff to
+ * (`create Employee`, scoped like the add), and the sign-ins an employee may be linked to
+ * (`update Payroll`, which linking needs), with masked emails and nothing about the sign-in.
+ */
+describe('the employee form’s pickers (D-419)', () => {
+  interface BranchOption {
+    readonly id: string;
+    readonly code: string;
+    readonly name: string;
+  }
+  interface LoginOption {
+    readonly userId: string;
+    readonly name: string;
+    readonly emailMasked: string;
+    readonly roles: readonly string[];
+    readonly linkedEmployeeId: string | null;
+  }
+
+  it('offers HR every active branch, and a branch manager only their own', async () => {
+    const all = await hr.client.request('GET', '/v1/hr/branch-options');
+    expect(all.statusCode, all.body).toBe(200);
+    const ids = body<{ items: BranchOption[] }>(all).items.map((item) => item.id);
+    expect(ids).toEqual(expect.arrayContaining([hqBranch, otherBranch]));
+    for (const item of body<{ items: BranchOption[] }>(all).items) {
+      expect(Object.keys(item).sort()).toEqual(['code', 'id', 'name']);
+    }
+
+    const own = await branchManager.client.request('GET', '/v1/hr/branch-options');
+    expect(own.statusCode, own.body).toBe(200);
+    expect(body<{ items: BranchOption[] }>(own).items.map((item) => item.id)).toEqual([
+      otherBranch,
+    ]);
+
+    // And the add the form makes with the branch it offered goes through (the gap: a
+    // branch manager's add with no branch was a 404).
+    const added = await branchManager.client.request('POST', '/v1/hr/employees', {
+      body: {
+        code: `PICK-${randomUUID().slice(0, 6).toUpperCase()}`,
+        fullName: 'Picked Branch',
+        joinDate: '2026-01-01',
+        branchId: otherBranch,
+      },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+
+    expect((await sales.client.request('GET', '/v1/hr/branch-options')).statusCode).toBe(403);
+  });
+
+  it('offers the brand’s sign-ins to HR, masked, with the employee each is linked to', async () => {
+    const staffer = await harness.asRole('warehouse', ORG_A);
+    const partner = await harness.asRole('investor', ORG_A);
+    const linked = await createEmployee(hr, {
+      code: `LINK-${randomUUID().slice(0, 6).toUpperCase()}`,
+      fullName: 'Linked Staffer',
+      joinDate: '2026-01-01',
+    });
+    const link = await hr.client.request('PATCH', `/v1/hr/employees/${linked.id}`, {
+      body: { userId: staffer.userId },
+    });
+    expect(link.statusCode, link.body).toBe(200);
+
+    const response = await hr.client.request('GET', '/v1/hr/login-options');
+    expect(response.statusCode, response.body).toBe(200);
+    const items = body<{ items: LoginOption[] }>(response).items;
+    const mine = items.find((item) => item.userId === staffer.userId);
+    expect(mine).toMatchObject({ roles: ['warehouse'], linkedEmployeeId: linked.id });
+    expect(mine?.emailMasked).toMatch(/^.?\*\*\*@/);
+    // Staff only: hr holds no grant over investors (the ledger audit's W3).
+    expect(items.some((item) => item.userId === partner.userId)).toBe(false);
+    expect(items.every((item) => !item.roles.includes('investor'))).toBe(true);
+    // No address in the clear, for anyone.
+    expect(response.body).not.toContain(staffer.email);
+    expect(response.body).not.toContain(hr.email);
+    for (const item of items) {
+      expect(Object.keys(item).sort()).toEqual([
+        'emailMasked',
+        'linkedEmployeeId',
+        'name',
+        'roles',
+        'userId',
+      ]);
+    }
+
+    // `update Payroll` only: a branch manager edits records but links no logins (D-363).
+    expect((await branchManager.client.request('GET', '/v1/hr/login-options')).statusCode).toBe(
+      403,
+    );
+    expect((await sales.client.request('GET', '/v1/hr/login-options')).statusCode).toBe(403);
+  });
+});

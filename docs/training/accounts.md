@@ -23,7 +23,8 @@ To practise on the preview, see the testing guide, sections
 1. **Accounts** → **Wallets and cash** → **Record cash**. Choose **Cash in**, **Cash out** or
    **Petty cash**, the wallet, the category and the amount, then **Record**.
 2. **Petty cash** needs a receipt photo (**Attach the receipt**). It waits for a checker when
-   it is at or above the brand's threshold.
+   it is at or above the brand's threshold, counting your other petty cash today. One bill
+   paid as several entries meets the threshold together.
 3. **Count a drawer** records the counted cash in a wallet. A difference goes to a checker
    before it posts.
 4. **Transfers** moves money between two wallets, for example bank to office cash. Add the
@@ -48,7 +49,11 @@ You cannot verify an advance you recorded yourself. A wrong match is undone on t
    quantity and **Unit cost**, then **Price and receive**. Stock and the amount owed update at
    once.
 3. **Returns** → **New return** sends goods back to a supplier.
-4. **Payments** → **Record payment**. At or above the threshold it waits for a checker.
+4. **Payments** → **Record payment**. At or above the threshold it waits for a checker. What
+   you already paid suppliers today counts, to any supplier and whatever date you gave it:
+   two payments of half the threshold make the second wait.
+5. Entries, payments and returns are dated today or yesterday. A bill that arrives late is
+   entered today, with its own invoice number on the entry.
 
 ## Courier cash
 
@@ -70,7 +75,8 @@ courier connection has been verified and switched on.
 ## Investors, loans and payroll
 
 - **Investors**: **Add investor**, **Record capital**, **Declare distribution** (an org admin
-  approves it). A withdrawal takes three people: one presses **Request withdrawal**, a second
+  approves it). **Portal sign-in** on an investor's row links the sign-in they use on the
+  investor portal; invite them first (an org admin does, with the investor role). A withdrawal takes three people: one presses **Request withdrawal**, a second
   accounts user presses **Review** and names the account, and a third person (an org admin or
   another accounts user) approves it in **Approvals**. Then press **Pay**.
 - **Company loans**: **Add a lender**, **Record a loan**, then **Pay instalment**. A large

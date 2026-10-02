@@ -9,6 +9,7 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
+import { postingInstant } from './posting-date.js';
 import * as repo from './supply.repository.js';
 import { mapSupplyErrors, SupplyError } from './supply.errors.js';
 import { assertSupplyDocument } from './suppliers.service.js';
@@ -346,7 +347,8 @@ export class SuppliesService {
           await assertSupplyDocument(tx, context.orgId, input.attachmentFileId);
         }
 
-        const occurredAt = input.occurredAt === undefined ? now : new Date(input.occurredAt);
+        // After the replay above, so a retry of a receipt made yesterday still answers (C6).
+        const occurredAt = postingInstant(input.occurredAt, now);
         const lines = existing.map((line) => {
           const price = input.lines.find((candidate) => candidate.skuId === line.sku_id);
           return {
@@ -441,6 +443,9 @@ export class SuppliesService {
       await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const existing = await repo.supplyById(tx, context.orgId, input.supplyId);
         if (existing !== undefined) return;
+        // Refused before the draft exists, so a date outside §7's window leaves nothing
+        // behind (C6, D-414). `receive` checks again, after its replay.
+        postingInstant(input.occurredAt, now);
         await repo.insertSupply(tx, {
           orgId: context.orgId,
           id: input.supplyId,
