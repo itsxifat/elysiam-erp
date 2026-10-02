@@ -4,6 +4,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Header,
   Post,
   Query,
   Req,
@@ -21,6 +22,7 @@ import type { FastifyRequest } from 'fastify';
 
 import { AuthenticatedOnly, Public, RequireAbility } from '../../platform/auth/abilities.js';
 import { serverEnv } from '../../platform/config/env.js';
+import { NoIdempotencyReplay } from '../../platform/http/idempotency.interceptor.js';
 import { IamService } from './iam.service.js';
 
 /**
@@ -127,6 +129,9 @@ export class IamController {
    */
   @RequireAbility('create', 'User')
   @Post('users')
+  // The response carries the invite token: never cached, never stored for replay.
+  @Header('Cache-Control', 'no-store')
+  @NoIdempotencyReplay()
   async createUser(@Req() request: FastifyRequest, @Body() body: unknown) {
     const context = (request as FastifyRequest & { context?: RequestContext }).context;
     if (context?.orgId == null) {

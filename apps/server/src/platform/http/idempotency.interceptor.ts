@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Injectable,
   NestInterceptor,
+  SetMetadata,
 } from '@nestjs/common';
 import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
 import type { RequestContext } from '@elysium/db';
@@ -50,6 +51,17 @@ import {
  * A replay is authorized exactly like the original request, so a user whose role
  * was revoked in between does not get to replay their old answer.
  */
+const NO_REPLAY = 'elysium:idempotency:no-replay';
+
+/**
+ * A route whose response carries a secret — a password link (gaps-users-auth, the ledger
+ * audit's N4) — is never stored for replay: `http.idempotency_keys` would keep the token
+ * for 24 hours. The key is ignored and the request simply runs: a repeated password link
+ * mints a new one, which voids the first; a repeated invite finds the person already there
+ * and answers without a link, which the staff screen's "send a new invite link" replaces.
+ */
+export const NoIdempotencyReplay = (): MethodDecorator => SetMetadata(NO_REPLAY, true);
+
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
   constructor(private readonly windowHours: number = IDEMPOTENCY_WINDOW_HOURS) {}
@@ -63,6 +75,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     // Nothing to do for the overwhelming majority of requests, and this is the
     // hot path, so it is decided before anything touches the database.
     if (header === undefined || !isMutation(request.method)) return next.handle();
+    if (Reflect.getMetadata(NO_REPLAY, context.getHandler()) === true) return next.handle();
 
     const checked = checkKey(header);
     if (!checked.ok) {

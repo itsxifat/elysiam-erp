@@ -13,7 +13,10 @@ import type {
   CashInInput,
   ClosePeriodInput,
   CreateUser,
+  CredentialResetInput,
+  DeactivateUser,
   ReopenPeriodInput,
+  SetRoles,
   SwitchOrg,
   ThresholdInput,
 } from '@elysium/contracts';
@@ -38,6 +41,7 @@ export const OPERATIONS = {
   },
   createUser: { method: 'POST', path: '/v1/users', ability: 'create:User' },
   dayBook: { method: 'GET', path: '/v1/ledger/day-book', ability: 'read:LedgerReport' },
+  deactivateUser: { method: 'POST', path: '/v1/users/{id}/deactivate', ability: 'update:User' },
   decideApproval: {
     method: 'POST',
     path: '/v1/approvals/{id}/decide',
@@ -539,6 +543,7 @@ export const OPERATIONS = {
   listLedgerAccounts: { method: 'GET', path: '/v1/ledger/accounts', ability: 'read:LedgerReport' },
   listMyOrgs: { method: 'GET', path: '/v1/me/orgs', ability: 'authenticated' },
   listPeriods: { method: 'GET', path: '/v1/ledger/periods', ability: 'read:LedgerPeriod' },
+  listUsers: { method: 'GET', path: '/v1/users', ability: 'read:User' },
   listWallets: { method: 'GET', path: '/v1/ledger/wallets', ability: 'read:Wallet' },
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
   me: { method: 'GET', path: '/v1/me', ability: 'authenticated' },
@@ -1105,13 +1110,24 @@ export const OPERATIONS = {
     path: '/v1/ledger/periods/reopen',
     ability: 'update:LedgerPeriod',
   },
+  resetUserTwoFactor: {
+    method: 'POST',
+    path: '/v1/users/{id}/two-factor/reset',
+    ability: 'update:User',
+  },
   setApprovalThresholds: {
     method: 'PUT',
     path: '/v1/approvals/thresholds',
     ability: 'update:ApprovalThreshold',
   },
+  setUserRoles: { method: 'PUT', path: '/v1/users/{id}/roles', ability: 'update:User' },
   switchOrg: { method: 'POST', path: '/v1/me/active-org', ability: 'authenticated' },
   trialBalance: { method: 'GET', path: '/v1/ledger/trial-balance', ability: 'read:LedgerReport' },
+  userPasswordLink: {
+    method: 'POST',
+    path: '/v1/users/{id}/password-link',
+    ability: 'update:User',
+  },
 } as const;
 
 export type OperationName = keyof typeof OPERATIONS;
@@ -1168,6 +1184,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly query: { readonly from: string; readonly to: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.dayBook, input, options),
+    /** Switch a leaver off here: their roles end, and so do their sessions. */
+    deactivateUser: (
+      input: { readonly path: { readonly id: string }; readonly body: DeactivateUser },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deactivateUser, input, options),
     /** Approve or reject a request as the checker. */
     decideApproval: (
       input: { readonly path: { readonly id: string }; readonly body: ApprovalDecisionInput },
@@ -1758,6 +1779,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Accounting periods and whether each is closed. */
     listPeriods: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listPeriods, undefined, options),
+    /** This organization's staff, their roles and sign-in state, and open resets. */
+    listUsers: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.listUsers, undefined, options),
     /** Cash, bank and mobile-money wallets with their balances. */
     listWallets: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listWallets, undefined, options),
@@ -2409,11 +2433,21 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: ReopenPeriodInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.reopenPeriod, input, options),
+    /** Remove a person's second factor, so they enrol again at next sign-in. */
+    resetUserTwoFactor: (
+      input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.resetUserTwoFactor, input, options),
     /** Set this organization's maker-checker thresholds. */
     setApprovalThresholds: (
       input: { readonly body: ThresholdInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.setApprovalThresholds, input, options),
+    /** Replace a person's roles and branch scope in this organization. */
+    setUserRoles: (
+      input: { readonly path: { readonly id: string }; readonly body: SetRoles },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.setUserRoles, input, options),
     /** Enter an organization for the rest of this session. */
     switchOrg: (input: { readonly body: SwitchOrg }, options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.switchOrg, input, options),
@@ -2422,6 +2456,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly query: { readonly asOf: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.trialBalance, input, options),
+    /** Issue, ask for, or collect a one-time link that sets a password. */
+    userPasswordLink: (
+      input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.userPasswordLink, input, options),
   };
 }
 

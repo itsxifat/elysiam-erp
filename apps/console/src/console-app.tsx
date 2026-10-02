@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { endpoints, type LoginBranding } from './api.js';
 import { applyBrand, clearBrand } from './brand.js';
 import { LoginScreen } from './auth/login-screen.js';
+import { passwordLinkPage, SetPasswordScreen } from './auth/set-password-screen.js';
 import { SessionProvider, useSessionQuery } from './auth/session.js';
 import { LocaleProvider, useT } from './i18n/locale.js';
 import { router } from './routes/router.js';
@@ -91,6 +92,14 @@ function Boot() {
       cancelled = true;
     };
   }, []);
+
+  /*
+   * A link an admin gave — an invite or a password reset — is answered before the
+   * session is: the person opening it has none, and must not be asked to sign in to
+   * set the password they would sign in with (gaps-users-auth).
+   */
+  const linkPage = passwordLinkPage(window.location.pathname);
+  if (linkPage !== null) return <SetPasswordScreen page={linkPage} branding={branding} />;
 
   if (session.isPending) return <BootSkeleton />;
 

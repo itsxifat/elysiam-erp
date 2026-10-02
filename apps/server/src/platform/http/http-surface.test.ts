@@ -246,10 +246,11 @@ async function createUserRow(email: string, name: string): Promise<string> {
 /** Redeem an invite, which is how a created user first gets a password. */
 async function setPassword(client: Client, email: string): Promise<void> {
   await client.request('GET', '/v1/auth/login-branding');
-  const requested = await client.request('POST', '/api/auth/request-password-reset', {
+  // Minted from the server, as the iam module does: the HTTP path is disabled (D-402).
+  await authHandle.auth.api.requestPasswordReset({
     body: { email, redirectTo: '/accept-invite' },
+    headers: new Headers(),
   });
-  expect(requested.statusCode, requested.body).toBeLessThan(400);
 
   const token = tokens.take(email);
   expect(token, `no invite token was issued for ${email}`).toBeDefined();

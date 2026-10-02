@@ -22,6 +22,7 @@ import { marketingRoutes } from './marketing/routes.js';
 import { stockRoutes } from './stock/routes.js';
 import { settingsRoutes } from './settings/routes.js';
 import { supplyRoutes } from './supply/routes.js';
+import { usersRoutes } from './users/routes.js';
 import { AppShell } from '../shell/app-shell.js';
 import { useT } from '../i18n/locale.js';
 import { tableSearchSchema } from '../lib/table-search.js';
@@ -141,6 +142,8 @@ const courier = courierRoutes(rootRoute);
 const branches = branchesRoutes(rootRoute);
 /** `/settings` and its tabs (D-394): thresholds, zones, couriers, site keys, registers. */
 const settings = settingsRoutes(rootRoute);
+/** gaps-users-auth owns `/users`: the brand's staff, their roles and their sign-in. */
+const users = usersRoutes(rootRoute);
 
 const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
   .filter(
@@ -166,6 +169,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/marketing',
         '/analytics',
         '/settings',
+        '/users',
       ].includes(item.to),
   )
   .map((item) =>
@@ -195,6 +199,7 @@ const routeTree = rootRoute.addChildren([
   ...accounts,
   ...branches,
   ...settings,
+  ...users,
   ...placeholderRoutes,
 ]);
 

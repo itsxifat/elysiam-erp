@@ -1106,3 +1106,70 @@ share`), W-B (one person could void a loan's receipt: `LOAN_SELF_VOID` in the se
 - Next: merge into `integration-wave2`. The preview server already runs a snapshot of this
   work (`preview-deploy`), seeded once on 2026-10-02 (17 s, books agree). Do not re-seed
   it, or the owner's passwords change.
+
+### 2026-10-02 · gaps-users-auth · Staff accounts and sign-in · done
+
+- Delivered (branch `gaps-users-auth`, from `integration-wave2`):
+  - **Staff screen** (`/users`, `read User`): a brand's people with roles and branch scope,
+    status (active, invited, deactivated, disabled), two-step state and last sign-in. An
+    admin changes roles (D-400), deactivates a leaver — roles here off, sessions ended at
+    once, nothing they wrote touched (D-401) — and approves another admin's reset.
+  - **Sign-in refusal (D-401).** Better Auth's session hook refuses an account that is
+    disabled or holds no active role anywhere (`403 ACCOUNT_INACTIVE`); the login says so.
+  - **Accept-invite and password reset without email (D-402).** `/accept-invite#token=…`
+    and `/reset-password#token=…` set a password before any session check. An admin issues a
+    one-time link (invite 72 hours, reset 1 hour; a reset voids the old password and every
+    session), minted in the action's own transaction. The public reset paths are closed.
+    20 resets an admin an hour, 5 a person a day.
+  - **Lost phone (D-403).** An admin removes a second factor; the person enrols again.
+  - **Second admin (D-404, D-405).** A reset of anyone who ever held a role that can raise
+    or decide an approval, or an investor, is a `credential_reset` approval decided by
+    another org admin — never the asker, never the person; a cross-brand person is a super
+    admin's to reset. The grant lineage keeps every granter and link holder (D-406, D-410).
+- Verification:
+  - `pnpm verify` (under `heavy.mjs`) exits 0 at `332dac3`: 164 test files, 2,691 tests
+    (1 skipped), bundle 240.7 KB of 250, schema drift, route matrix (314 routes), i18n and
+    api-client checks PASS; and again after the re-audit fixes, at `52c81ed`: 164 files,
+    2,695 tests (1 skipped), every check PASS.
+  - `users.e2e.test.ts` (real Postgres): every permission edge — self-escalation through
+    either route, cross-brand 404s, super admin protection, demote-then-reset, branch
+    managers and warehouse needing a second admin, deactivated users and their sessions,
+    tokens single-use and expiring, resets audited and ending sessions, approvals by a
+    second admin only, rate limits, the trigger's refusals, two admins minting at once.
+  - `users.stack.ts` (real stack, one worker): invite and set a password; reset a forgotten
+    one; reset an accountant's second factor through a second admin; deactivate a leaver.
+    axe, no serious or critical violation, both themes; screenshots in
+    `docs/review/gaps-users-auth/`.
+- Auditors: ledger-auditor at `57d6aa5` (2 critical, 7 warnings, 7 notes), fixed in
+  `332dac3`; re-audit at `332dac3` (0 critical, 3 warnings), fixed after it: the deactivation
+  path never takes an approval row after the person lock, the lock is per person across
+  brands, and the database lifecycle and a concurrent mint have direct tests.
+- Decisions/assumptions: D-400 to D-410 (ASSUMED: D-402's lifetimes and limits, D-404's
+  24-hour collection window).
+- Migrations: `0098` (generated: `iam.credential_resets`, `users.last_sign_in_at`, the
+  `credential_reset` approval type and both never-auto-approve CHECKs), `0099` (custom:
+  RLS, grants, the reset trigger), `0100` (generated: `iam.membership_granters`, the
+  self-grant CHECK, restrict on deleting a person with resets), `0101` (custom: backfill,
+  RLS, the tightened trigger, `iam.users_active_elsewhere`). They will collide with sibling
+  branches' numbers at integration.
+- New dependencies: none.
+- Follow-ups:
+  - Email the links once an email adapter exists (D-212); until then an admin can approve
+    requests raised by someone whose invite they held (D-077's W4). (owner: human, then claude)
+  - Before SMS is switched on, confirm whether `/phone-number/verify` creates a staff session
+    without TOTP for a user with a phone number; close it if so. (owner: claude)
+  - Freeze `org_id`, `user_id` and `role` on `iam.memberships` and refuse DELETE, so "ever
+    held" cannot be rewritten (re-audit note 1). (owner: claude)
+  - `POST /v1/users` on a role already held still adds branches without an audit row of its
+    own, and creates the user row outside the membership transaction. (owner: claude)
+  - The per-admin limit is counted without a lock per admin; parallel asks for different
+    people can pass it. (owner: claude)
+  - The lineage only grows: two admins who edit each other's roles can no longer check each
+    other's requests, and only a super admin unblocks them. Decide whether routine edits
+    should count (D-410). (owner: human)
+  - The 0101 backfill cannot recover granters `POST /v1/users` overwrote before it; recover
+    them from the audit log if any brand has live data. (owner: claude, integrator)
+  - An operator-disabled account keeps its `/api/auth` session until expiry (predates this).
+    (owner: claude)
+  - Renumber 0098–0101 at integration. (owner: claude, integrator)
+- Next: integration with the other wave-2 branches.

@@ -16,7 +16,16 @@ export function stack(): StackInfo {
 }
 
 export type StackRole =
-  'desk' | 'queue' | 'accounts' | 'switcher' | 'treasurer' | 'marketing' | 'checker' | 'admin';
+  | 'desk'
+  | 'queue'
+  | 'accounts'
+  | 'switcher'
+  | 'treasurer'
+  | 'marketing'
+  | 'checker'
+  | 'admin'
+  | 'admin2'
+  | 'locked';
 
 export function user(role: StackRole) {
   const found = stack().users.find((entry) => entry.role === role);
@@ -56,12 +65,16 @@ export function totp(secret: string, at: number = Date.now()): string {
  * Sign in by the form's own input types, so the same helper works in Bangla. The
  * English labels are asserted where a check is about the English screen.
  */
-export async function signIn(page: Page, email: string): Promise<void> {
+export async function signIn(
+  page: Page,
+  email: string,
+  password: string = stack().password,
+): Promise<void> {
   await page.goto('/');
   const form = page.locator('form').filter({ has: page.locator('input[type="password"]') });
   await expect(form).toBeVisible();
   await form.locator('input[type="email"]').fill(email);
-  await form.locator('input[type="password"]').fill(stack().password);
+  await form.locator('input[type="password"]').fill(password);
   await form.locator('button[type="submit"]').click();
 }
 

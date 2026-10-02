@@ -56,6 +56,7 @@ import {
   prepareWalletsFixtures,
   WALLETS_ROUTE_FIXTURES,
 } from '../../modules/wallets/wallets.route-fixtures.js';
+import { USERS_ROUTE_FIXTURES } from '../../modules/iam/users.route-fixtures.js';
 import {
   ORG_A,
   startHttpHarness,
@@ -160,6 +161,7 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...MARKETING_ROUTE_FIXTURES,
   ...ANALYTICS_ROUTE_FIXTURES,
   ...LOANS_ROUTE_FIXTURES,
+  ...USERS_ROUTE_FIXTURES,
 };
 
 /**
