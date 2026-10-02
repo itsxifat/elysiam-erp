@@ -1,4 +1,4 @@
-import { type OrderStatus, type OrderTrigger } from '../orders/state.js';
+import { transitionFor, type OrderStatus, type OrderTrigger } from '../orders/state.js';
 
 /**
  * Normalising what a courier says (architecture §9 "Couriers", invariant 7).
@@ -436,6 +436,24 @@ export function unmappedStatuses(
 }
 
 /**
+ * The courier statuses that prove a parcel has left our hands (D-390).
+ *
+ * Everything a rider can only say once the box is with them. `booked` and `pickup_pending`
+ * are said while it is still on our shelf; `hold` is ambiguous (Steadfast says it of an order
+ * it has not reviewed yet, Pathao of a failed delivery attempt); `cancelled` before pickup is
+ * the desk's call (see `orderTriggerFor`); `unknown` proves nothing.
+ */
+export const LEFT_THE_MERCHANT: readonly ParcelStatus[] = [
+  'picked_up',
+  'in_transit',
+  'out_for_delivery',
+  'delivered',
+  'partial_delivered',
+  'return_in_transit',
+  'returned_to_merchant',
+];
+
+/**
  * Which of §9's triggers this courier status justifies, from where the order is.
  *
  * `null` means "record the event and change nothing", which is the answer for most
@@ -476,6 +494,23 @@ export function orderTriggerFor(
   from: OrderStatus,
   options: { readonly collectedKnown?: boolean } = {},
 ): OrderTrigger | null {
+  /*
+   * The handover, on the courier's word (D-390).
+   *
+   * §9 gives `confirmed → shipped` and `packed → shipped` the trigger `ship`, performed at the
+   * "handover to courier". A courier reporting the parcel picked up, moving, out with a rider,
+   * delivered or on its way back is the courier's own evidence that the handover happened —
+   * and until this, nothing but a person pressing Ship moved the order, so a brand whose
+   * warehouse forgot (or whose courier, like Steadfast, never says "picked up") had an order
+   * sitting `packed` while its parcel was delivered, the delivery recorded and ignored, and no
+   * revenue posted. `hold`, `cancelled`, `booked`, `pickup_pending` and `unknown` do not prove
+   * the parcel left (Steadfast's `in_review` is a `hold` before pickup), so they still move
+   * nothing before shipment. An order `on_hold` is not moved either: a hold is "do not ship",
+   * and a person decides what to do about a courier that took the box anyway.
+   */
+  if ((from === 'confirmed' || from === 'packed') && LEFT_THE_MERCHANT.includes(status)) {
+    return 'ship';
+  }
   switch (status) {
     case 'delivered':
       return from === 'shipped' ? 'deliver' : null;
@@ -503,6 +538,34 @@ export function orderTriggerFor(
     case 'unknown':
       return null;
   }
+}
+
+/**
+ * Every trigger one courier status justifies, in the order to perform them (D-390).
+ *
+ * At most two: the handover a status proves (`ship`, from `confirmed` or `packed`) and then
+ * whatever the same status justifies from `shipped` — a `delivered` reaching a `packed` order
+ * ships it and delivers it, in one transaction, with the handover journal posted before the
+ * delivery journal relieves it. Each step is still one of §9's rows, applied through the
+ * machine by the caller; this only says which rows. Empty means "record the event and change
+ * nothing", exactly as `orderTriggerFor` returning null does.
+ */
+export function courierTriggersFor(
+  status: ParcelStatus,
+  from: OrderStatus,
+  options: { readonly collectedKnown?: boolean } = {},
+): readonly OrderTrigger[] {
+  const triggers: OrderTrigger[] = [];
+  let at: OrderStatus = from;
+  for (let step = 0; step < 2; step += 1) {
+    const next = orderTriggerFor(status, at, options);
+    if (next === null) break;
+    const row = transitionFor(at, next);
+    if (row === undefined) break;
+    triggers.push(next);
+    at = row.to;
+  }
+  return triggers;
 }
 
 /**

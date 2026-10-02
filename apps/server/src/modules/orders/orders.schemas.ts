@@ -282,6 +282,16 @@ export const bulkConfirmSchema = z
 
 export type BulkConfirmInput = z.infer<typeof bulkConfirmSchema>;
 
+/** Pack or ship up to a hundred orders, each in its own transaction (D-393). */
+export const bulkTransitionSchema = z
+  .object({ ids: z.array(uuid).min(1).max(100), trigger: z.enum(['pack', 'ship']) })
+  .strict()
+  .refine((value) => new Set(value.ids).size === value.ids.length, {
+    message: 'An order appears twice in that list.',
+  });
+
+export type BulkTransitionInput = z.infer<typeof bulkTransitionSchema>;
+
 /** The document kinds §22 renders for an order. `label` is the parcel's address label. */
 export const orderDocumentKinds = ['invoice', 'packing_slip', 'label'] as const;
 export type OrderDocumentKindName = (typeof orderDocumentKinds)[number];

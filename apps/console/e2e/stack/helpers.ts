@@ -16,7 +16,7 @@ export function stack(): StackInfo {
 }
 
 export type StackRole =
-  'desk' | 'queue' | 'accounts' | 'switcher' | 'treasurer' | 'marketing' | 'checker';
+  'desk' | 'queue' | 'accounts' | 'switcher' | 'treasurer' | 'marketing' | 'checker' | 'admin';
 
 export function user(role: StackRole) {
   const found = stack().users.find((entry) => entry.role === role);

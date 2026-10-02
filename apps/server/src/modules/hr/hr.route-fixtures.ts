@@ -307,6 +307,7 @@ export const HR_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> | Ca
   'POST /v1/hr/payroll/runs/:id/cancel': () => ({
     url: `/v1/hr/payroll/runs/${state().runId}/cancel`,
   }),
+  'GET /v1/hr/payroll/wallets': () => ({ url: '/v1/hr/payroll/wallets' }),
   'POST /v1/hr/payroll/runs/:id/pay': () => ({
     url: `/v1/hr/payroll/runs/${state().runId}/pay`,
     // A random wallet id: the run is a draft, so this is a 409 for every admitted role,

@@ -151,6 +151,26 @@ export interface CourierAccount {
   readonly providerCode: string;
   readonly isActive: boolean;
   readonly verified: boolean;
+  /** The rest of the account view: never a credential, only whether one is set (§21). */
+  readonly courierCode?: string | null;
+  readonly mode?: 'sandbox' | 'live';
+  readonly baseUrl?: string | null;
+  readonly hasCredentials?: boolean;
+  readonly credentialsFingerprint?: string | null;
+  readonly hasWebhookSecret?: boolean;
+  readonly supportsWebhook?: boolean;
+  readonly pollAfterHours?: number;
+  readonly settlementWalletId?: string | null;
+  readonly webhookPath?: string | null;
+}
+
+/** An adapter an account can use, and the credential field names it needs (D-395). */
+export interface CourierProvider {
+  readonly code: string;
+  readonly verified: boolean;
+  readonly enabled: boolean;
+  readonly supportsWebhook: boolean;
+  readonly credentialFields: readonly string[];
 }
 
 export interface ParcelTimeline {
@@ -173,6 +193,8 @@ export interface ParcelTimeline {
     readonly settlementId: string | null;
     readonly statusChangedAt: string | null;
     readonly isFinal: boolean;
+    /** When a person confirmed a rider took it, or null (M12; D-391 ships the order). */
+    readonly handoverConfirmedAt?: string | null;
   };
   readonly events: readonly {
     readonly id: string;
@@ -233,6 +255,51 @@ export function listParcels(filter: {
       pageSize: filter.pageSize,
     })}`,
   );
+}
+
+/** One order's parcels, for the order detail (D-392). */
+export function parcelsForOrder(orderId: string): Promise<{ items: readonly ParcelRow[] }> {
+  return api.get(`/v1/courier/parcels${query({ orderId, pageSize: 10 })}`);
+}
+
+/** Queue a booking with the order's courier (§9's `manual` policy). */
+export function bookParcel(
+  orderId: string,
+): Promise<{ consignmentId: string | null; enqueued: boolean }> {
+  return api.post('/v1/courier/parcels', { orderId });
+}
+
+/** A rider signed for the parcel; ships the order if it is still waiting to ship (D-391). */
+export function confirmHandover(
+  consignmentId: string,
+  note?: string,
+): Promise<{ consignmentId: string; handoverConfirmedAt: string; orderTo: string | null }> {
+  return api.post(
+    `/v1/courier/parcels/${consignmentId}/handover`,
+    note === undefined || note.trim() === '' ? {} : { note: note.trim() },
+  );
+}
+
+export function courierProviders(): Promise<{ items: readonly CourierProvider[] }> {
+  return api.get('/v1/courier/providers');
+}
+
+export interface UpsertCourierAccountInput {
+  readonly courierId: string;
+  readonly providerCode: string;
+  readonly label: string;
+  readonly mode: 'sandbox' | 'live';
+  readonly baseUrl?: string;
+  /** Sent only when typed: an empty field keeps the stored key (accounts.service). */
+  readonly credentials?: Record<string, string>;
+  readonly webhookSecret?: string;
+  readonly pollAfterHours: number;
+  readonly settlementWalletId?: string;
+  readonly isActive: boolean;
+}
+
+export function saveCourierAccount(input: UpsertCourierAccountInput): Promise<CourierAccount> {
+  return api.post('/v1/courier/accounts', input);
 }
 
 export function parcelTimeline(consignmentId: string): Promise<ParcelTimeline> {

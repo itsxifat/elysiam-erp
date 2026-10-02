@@ -20,6 +20,7 @@ import { customersRoutes } from './customers/routes.js';
 import { campaignsRoutes } from './campaigns/routes.js';
 import { marketingRoutes } from './marketing/routes.js';
 import { stockRoutes } from './stock/routes.js';
+import { settingsRoutes } from './settings/routes.js';
 import { supplyRoutes } from './supply/routes.js';
 import { AppShell } from '../shell/app-shell.js';
 import { useT } from '../i18n/locale.js';
@@ -138,6 +139,8 @@ const analytics = analyticsRoutes(rootRoute);
 const courier = courierRoutes(rootRoute);
 /** M23 owns `/branches` and the branch dashboard, defined in `./branches/routes.tsx`. */
 const branches = branchesRoutes(rootRoute);
+/** `/settings` and its tabs (D-394): thresholds, zones, couriers, site keys, registers. */
+const settings = settingsRoutes(rootRoute);
 
 const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
   .filter(
@@ -162,6 +165,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/campaigns',
         '/marketing',
         '/analytics',
+        '/settings',
       ].includes(item.to),
   )
   .map((item) =>
@@ -190,6 +194,7 @@ const routeTree = rootRoute.addChildren([
   ...courier,
   ...accounts,
   ...branches,
+  ...settings,
   ...placeholderRoutes,
 ]);
 

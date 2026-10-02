@@ -72,6 +72,19 @@ export class ApprovalsController {
   }
 
   /**
+   * This org's thresholds, with any relaxation waiting for a second org admin (D-394).
+   *
+   * `read ApprovalThreshold`, org_admin's alone (§6 "settings"): the screen that sets them is
+   * the only reader, and a threshold tells whoever reads it how large a payment slips past
+   * the second person. (Fastify's router ranks this static path above `:id`.)
+   */
+  @RequireAbility('read', 'ApprovalThreshold')
+  @Get('thresholds')
+  async thresholds(@Req() request: FastifyRequest) {
+    return this.approvals.listThresholds(requireContext(request));
+  }
+
+  /**
    * Set this org's threshold for one approval type.
    *
    * org_admin only, through the matrix (`update ApprovalThreshold`): whoever

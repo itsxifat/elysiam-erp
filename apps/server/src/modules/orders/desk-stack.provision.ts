@@ -13,7 +13,7 @@ import {
 import { applyIntakeMigrations } from '../intake/intake.testing.js';
 import { seedProductWithSkus, warehouseId } from '../inventory/inventory.testing.js';
 import { seedWallet } from '../wallets/wallets.testing.js';
-import { seedCustomer, seedOrder, seedStockLevel } from './orders.testing.js';
+import { ownRiderCourier, seedCustomer, seedOrder, seedStockLevel } from './orders.testing.js';
 
 /**
  * The order desk's real-stack Playwright run: a throwaway database with throwaway users
@@ -111,6 +111,8 @@ async function create(): Promise<void> {
     // M17: an accounts user of its own for the advance queue, so its second-factor
     // enrolment does not depend on whether another suite has already done its own.
     { label: 'checker', grants: [{ orgId, role: 'accounts' }] },
+    // The console gaps (D-394): an org admin for the settings screens, behind §6's 2FA wall.
+    { label: 'admin', grants: [{ orgId, role: 'org_admin' }] },
     {
       label: 'switcher',
       grants: [
@@ -248,6 +250,32 @@ async function create(): Promise<void> {
     { orgId },
   );
 
+  /*
+   * The console gaps (D-392, D-393): a pending order the desk agent walks to delivered with
+   * the lifecycle buttons, and a confirmed one (its units held) for bulk pack. Both carry the
+   * brand's own rider as their courier, because the delivery journal names one (§7).
+   */
+  const rider = await ownRiderCourier(orgId);
+  const lifecycleOrder = await seedOrder(orgId, {
+    customerId: advanceBuyer,
+    status: 'pending',
+    lines: [firstLine],
+    locationId: location,
+    courierId: rider,
+    createdBy: desk.userId,
+    assignedTo: desk.userId,
+  });
+  const bulkOrder = await seedOrder(orgId, {
+    customerId: advanceBuyer,
+    status: 'confirmed',
+    lines: [firstLine],
+    locationId: location,
+    courierId: rider,
+    reserve: true,
+    createdBy: desk.userId,
+    assignedTo: desk.userId,
+  });
+
   process.stdout.write(
     `${JSON.stringify({
       databaseName: database.databaseName,
@@ -262,6 +290,8 @@ async function create(): Promise<void> {
       promoCode,
       lapsedBuyer: { id: lapsedBuyer, name: 'Lapsed Buyer' },
       advanceOrder: { id: advanceOrder.id, orderNo: advanceOrder.orderNo },
+      lifecycleOrder,
+      bulkOrder,
     })}\n`,
   );
 

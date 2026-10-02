@@ -115,6 +115,16 @@ export class CourierController {
     );
   }
 
+  /**
+   * The adapters an account can use, with the credential field names each needs (D-395).
+   * `read CourierSettlement`, like the accounts: the screen that sets one up is the reader.
+   */
+  @RequireAbility('read', 'CourierSettlement')
+  @Get('providers')
+  providers() {
+    return this.accounts.providers();
+  }
+
   @RequireAbility('update', 'CourierSettlement')
   @Post('accounts')
   async upsertAccount(@Req() request: FastifyRequest, @Body() body: unknown) {
@@ -165,6 +175,7 @@ export class CourierController {
         status: filter.status,
         bookingState: filter.bookingState,
         courierId: filter.courierId,
+        orderId: filter.orderId,
         awaitingReturn:
           filter.awaitingReturn === undefined ? undefined : filter.awaitingReturn === 'true',
         page: filter.page,

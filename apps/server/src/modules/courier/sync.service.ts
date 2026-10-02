@@ -1,15 +1,20 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { withGlobal, withOrg, type Tx } from '@elysium/db';
-import { businessDate, poisha } from '@elysium/domain';
 import {
+  businessDate,
+  poisha,
+  transitionFor,
+  withinPostingWindow,
+  type OrderStatus,
+} from '@elysium/domain';
+import {
+  courierTriggersFor,
   isTerminalParcelStatus,
   normalizeStatus,
-  orderTriggerFor,
   statusDedupeKey,
   trackingStatusAfter,
   type ParcelStatus,
 } from '@elysium/domain/courier';
-import { transitionFor } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -33,7 +38,7 @@ import {
   type RepollPayload,
 } from './courier.queues.js';
 import { bodyHash, openCredentials } from './credentials.js';
-import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
+import { ORDERS_PORT, type AppliedTrigger, type OrdersPort } from './ports/orders.port.js';
 import type { ManualStatusInput } from './courier.schemas.js';
 
 /**
@@ -53,7 +58,7 @@ import type { ManualStatusInput } from './courier.schemas.js';
  *    This is the only layer that also prevents the *attempt*, which matters — an attempt
  *    that the machine refuses is logged as a failure and eventually dead-letters a
  *    perfectly healthy webhook.
- * 2. **The state machine.** `orderTriggerFor(status, from)` returns null when the order is
+ * 2. **The state machine.** `courierTriggersFor(status, from)` returns nothing when the order is
  *    already where the status would put it. This is the layer that saves us when the
  *    courier reports the same delivery with two different timestamps — different keys, one
  *    fact.
@@ -703,9 +708,23 @@ export class CourierSyncService {
     // Layer 2: the machine has nothing to do for a status the order has already taken — and,
     // since M15, nothing for a partial delivery the courier gave no figure for (see
     // `orderTriggerFor`): the only figure left would be the full COD, wrong by definition.
-    const trigger = orderTriggerFor(input.status, order.status, {
+    //
+    // Since D-390 a status can justify two of §9's rows: a parcel the courier picked up,
+    // delivered or is returning proves the handover, so a `confirmed` or `packed` order is
+    // shipped first and then moved on from `shipped`. Each is applied below through the
+    // orders module's `applyTrigger`, one after the other, in this transaction.
+    const triggers = courierTriggersFor(input.status, order.status, {
       collectedKnown: input.collectedPoisha !== null,
     });
+    /*
+     * What the event row records: the last trigger and where the whole sequence lands. For a
+     * single step that is exactly what it always recorded; for the handover-then-delivery pair
+     * it is the step that the courier's word was *about* (`deliver`), with the order's own
+     * history (`sales.order_events`) holding both rows, each with its audit entry.
+     */
+    const trigger = triggers.at(-1) ?? null;
+    let destination: OrderStatus = order.status;
+    for (const step of triggers) destination = transitionFor(destination, step)?.to ?? destination;
 
     const event = await repo.insertConsignmentEvent(tx, {
       orgId: input.orgId,
@@ -730,7 +749,7 @@ export class CourierSyncService {
        * then fails the whole transaction rolls back, so a recorded destination is never one
        * the order did not reach.
        */
-      orderToStatus: trigger === null ? null : (transitionFor(order.status, trigger)?.to ?? null),
+      orderToStatus: trigger === null ? null : destination,
     });
     if (event === undefined) {
       return { recorded: false, transitioned: false, orderTo: null };
@@ -798,18 +817,35 @@ export class CourierSyncService {
      */
     const context =
       input.context ?? ({ orgId: input.orgId, userId: input.actorUserId } as ActiveContext);
-    const applied = await this.orders.applyTrigger(tx, context, input.request, {
-      orderId: consignment.order_id,
-      trigger,
-      occurredAt: input.occurredAt,
-      reason: input.reason,
-      ...(input.status === 'delivered' || input.status === 'partial_delivered'
-        ? {
-            collectedPoisha: poisha(collected ?? BigInt(consignment.cod_amount_poisha)),
-          }
-        : {}),
-      ...(input.deliveredLines === undefined ? {} : { deliveredLines: input.deliveredLines }),
-    });
+
+    /*
+     * One step at a time, each through the orders module (D-390).
+     *
+     * A step that comes back null found the order already where it leads — a person pressed
+     * Ship a moment before the courier's "delivered" arrived — and the sequence carries on
+     * from there rather than stopping: the delivery is still this event's to apply, and
+     * `applyTrigger` answers null again if a racing duplicate already applied it. Only a
+     * delivery step carries the courier's figure and the delivered lines; the handover has
+     * no money of the courier's in it.
+     */
+    let applied: AppliedTrigger | null = null;
+    let moved: AppliedTrigger | null = null;
+    for (const step of triggers) {
+      const delivers = step === 'deliver' || step === 'deliver_partially';
+      applied = await this.orders.applyTrigger(tx, context, input.request, {
+        orderId: consignment.order_id,
+        trigger: step,
+        occurredAt: input.occurredAt,
+        reason: input.reason,
+        ...(delivers
+          ? { collectedPoisha: poisha(collected ?? BigInt(consignment.cod_amount_poisha)) }
+          : {}),
+        ...(delivers && input.deliveredLines !== undefined
+          ? { deliveredLines: input.deliveredLines }
+          : {}),
+      });
+      if (applied !== null) moved = applied;
+    }
 
     if (applied !== null) {
       /*
@@ -847,8 +883,8 @@ export class CourierSyncService {
 
     return {
       recorded: true,
-      transitioned: applied !== null,
-      orderTo: applied?.to ?? null,
+      transitioned: moved !== null,
+      orderTo: moved?.to ?? null,
     };
   }
 
@@ -867,6 +903,7 @@ export class CourierSyncService {
       status?: readonly string[] | undefined;
       bookingState?: string | undefined;
       courierId?: string | undefined;
+      orderId?: string | undefined;
       awaitingReturn?: boolean | undefined;
       page: number;
       pageSize: number;
@@ -883,6 +920,7 @@ export class CourierSyncService {
         statuses: filter.status,
         bookingState: filter.bookingState,
         courierId: filter.courierId,
+        orderId: filter.orderId,
         awaitingReturn: filter.awaitingReturn,
         branchWhere,
         limit: filter.pageSize,
@@ -1008,22 +1046,50 @@ export class CourierSyncService {
         );
       }
 
-      /*
-       * The handover **does not** move the order.
-       *
-       * §9 gives `confirmed → shipped` and `packed → shipped` the trigger `ship`, whose
-       * effects are consuming the reservation, the dispatch movement and the goods-in-transit
-       * journal — and the warehouse performs that when the box leaves, through the orders
-       * module. This is the courier-side confirmation that a rider signed for it, which is
-       * what an argument about a lost parcel is settled with. Making it also ship the order
-       * would give one physical event two owners and two chances to post the handover journal.
-       */
       const confirmed = await repo.confirmHandover(tx, {
         orgId: context.orgId,
         consignmentId,
         at,
         by: context.userId,
       });
+
+      /*
+       * The handover ships the order, when the order is still waiting to ship (D-391).
+       *
+       * §9 performs `ship` at the "handover to courier", and this is a person recording exactly
+       * that: the rider signed for the box. M12 kept the two apart ("one physical event, two
+       * owners"), which left a warehouse that confirmed the handover looking at an order still
+       * `packed` and a second button to press for the same box. The ownership worry is answered
+       * where it always was: the move goes through the orders module's `applyTrigger` and the
+       * machine, under the order's row lock, so whichever of Ship, this, or a courier's
+       * "picked up" comes second finds the order `shipped` and moves nothing — and the handover
+       * journal's key (`order:<id>:handover`) posts once whatever happens.
+       *
+       * Only from `confirmed` or `packed`. An order on hold is "do not ship", and a person
+       * decides what a signed-for parcel on a held order means. The dispatch is dated at the
+       * handover, so a handover dated outside today or yesterday is refused here as every
+       * order event is (`postingInstant`): a back-dated movement needs §7's approval.
+       */
+      let orderTo: string | null = null;
+      const order = await this.orders.statusOf(tx, context.orgId, consignment.order_id);
+      if (order !== null && (order.status === 'confirmed' || order.status === 'packed')) {
+        if (!withinPostingWindow(at)) {
+          throw new CourierError(
+            'CONSIGNMENT_EVENT_INVALID',
+            'A handover that ships the order can only be dated today or yesterday; anything else needs a back-dated entry approval (§7).',
+          );
+        }
+        const shipped = await this.orders.applyTrigger(tx, context, request, {
+          orderId: consignment.order_id,
+          trigger: 'ship',
+          occurredAt: at,
+          reason:
+            consignment.consignment_no === null
+              ? 'Handed to the courier'
+              : `Handed to the courier, consignment ${consignment.consignment_no}`,
+        });
+        orderTo = shipped?.to ?? null;
+      }
 
       await this.audit.record(tx, {
         orgId: context.orgId,
@@ -1033,7 +1099,12 @@ export class CourierSyncService {
         entityType: 'Order',
         entityId: consignment.order_id,
         before: { handoverConfirmedAt: consignment.handover_confirmed_at },
-        after: { handoverConfirmedAt: at, note: input.note ?? null, changed: confirmed },
+        after: {
+          handoverConfirmedAt: at,
+          note: input.note ?? null,
+          changed: confirmed,
+          orderTo,
+        },
         requestId: context.requestId,
         request,
       });
@@ -1046,6 +1117,8 @@ export class CourierSyncService {
         handoverConfirmedAt: confirmed
           ? at.toISOString()
           : new Date(consignment.handover_confirmed_at ?? at).toISOString(),
+        /** Where the order moved to (`shipped`), or null when it did not move (D-391). */
+        orderTo,
       };
     });
   }

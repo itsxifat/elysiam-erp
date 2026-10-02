@@ -279,6 +279,8 @@ export const parcelListSchema = z
       .optional(),
     bookingState: z.enum(['pending', 'booked', 'failed', 'cancelled']).optional(),
     courierId: uuid.optional(),
+    /** One order's parcels, for the order detail's parcel panel (D-392). */
+    orderId: uuid.optional(),
     awaitingReturn: z.enum(['true', 'false']).optional(),
     page: z.coerce.number().int().min(1).max(10_000).default(1),
     pageSize: z.coerce.number().int().min(1).max(200).default(50),

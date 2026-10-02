@@ -11,6 +11,7 @@ import {
   toAsciiDigits,
 } from './desk-logic.js';
 import { ordersEn, ordersMessages } from './messages.js';
+import { offeredActions } from './order-actions-logic.js';
 import { formatShare, monthStartOf, RETURN_REASONS, todayInDhaka } from './returns-logic.js';
 import { loadLocale } from '../../i18n/catalogue.js';
 
@@ -196,5 +197,24 @@ describe('returns by reason (M17)', () => {
       expect(ordersEn[key]).toBeTruthy();
       expect(ordersMessages.bn[key]).toBeTruthy();
     }
+  });
+});
+
+describe('the order detail offers what §9 allows from the order’s status (D-392)', () => {
+  const row = (trigger: string, to = 'confirmed') =>
+    ({ trigger, to, requiresReason: false, requiresReturnReason: false }) as never;
+
+  it('shows the server’s moves in working order, and never an exchange', () => {
+    const transitions = [row('cancel'), row('ship'), row('hold'), row('pack'), row('exchange')];
+    expect(offeredActions(transitions, true)).toEqual(['pack', 'ship', 'hold', 'cancel']);
+  });
+
+  it('offers nothing to a caller without update Order', () => {
+    expect(offeredActions([row('pack')], false)).toEqual([]);
+  });
+
+  it('does not offer cancel on a held order, because the server does not list it', () => {
+    // §9 from on_hold: release only. The console used to show Cancel here.
+    expect(offeredActions([row('release')], true)).toEqual(['release']);
   });
 });
