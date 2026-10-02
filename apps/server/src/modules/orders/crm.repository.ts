@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import type { Tx } from '@elysium/db';
 
 /**
@@ -176,4 +176,133 @@ export async function occasionsOf(
     limit 20
   `);
   return [...rows];
+}
+
+/**
+ * Units a buyer kept, per SKU: the delivered quantity on delivered orders.
+ *
+ * What the profile's favourite categories and sizes are ranked from. Delivered, because a
+ * parcel refused at the door is not a preference.
+ */
+export async function keptUnitsBySku(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+): Promise<{ sku_id: string; units: number }[]> {
+  const rows = await tx.execute<{ sku_id: string; units: number }>(sql`
+    select l.sku_id, sum(l.delivered_qty)::int as units
+    from sales.orders o
+    join sales.order_lines l on l.org_id = o.org_id and l.order_id = o.id
+    where o.org_id = ${orgId} and o.customer_id = ${customerId}
+      and o.delivered_at is not null and l.delivered_qty > 0
+    group by l.sku_id
+  `);
+  return [...rows];
+}
+
+export interface ProfileOrderRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly order_no: string;
+  readonly status: string;
+  readonly channel: string;
+  readonly cod_amount_poisha: string;
+  readonly created_at: string;
+}
+
+/** A buyer's latest orders that the caller may see (`scope` is the §6 filter over `o`). */
+export async function recentOrders(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+  scope: SQL,
+  limit: number,
+): Promise<ProfileOrderRow[]> {
+  const rows = await tx.execute<ProfileOrderRow>(sql`
+    select o.id, o.order_no, o.status::text as status, o.channel::text as channel,
+           o.cod_amount_poisha::text as cod_amount_poisha, o.created_at
+    from sales.orders o
+    where o.org_id = ${orgId} and o.customer_id = ${customerId} and ${scope}
+    order by o.created_at desc, o.id
+    limit ${limit}
+  `);
+  return [...rows];
+}
+
+export interface ReengagementFilters {
+  /** Buyers whose last order is on or before this Asia/Dhaka date. */
+  readonly lastOrderOnOrBefore: string;
+  readonly minDelivered: number;
+  readonly segment?: string | undefined;
+  /** E.164 numbers to leave out: everyone who opted out of marketing SMS. */
+  readonly excludePhones: readonly string[];
+}
+
+/**
+ * Who has not bought for a while (architecture §10 "Re-engagement lists").
+ *
+ * **A lapsed buyer** has at least `minDelivered` delivered orders, and their latest order
+ * that was not cancelled was placed on or before the cut-off, by the Dhaka calendar. The
+ * latest *placed* order rather than the latest delivered one: somebody whose parcel is on a
+ * van today has bought, and texting them "we miss you" is the wrong message. A cancelled
+ * order does not count as buying, for the reason the buyer list gives.
+ *
+ * One definition for the page, the count and the file, as in `buyers.repository.ts`.
+ */
+function lapsedSql(orgId: string, filters: ReengagementFilters, scope: SQL): SQL {
+  return sql`
+    with activity as (
+      select o.customer_id,
+             max((o.created_at at time zone 'Asia/Dhaka')::date) as last_order_on
+      from sales.orders o
+      where o.org_id = ${orgId} and o.status <> 'cancelled' and ${scope}
+      group by o.customer_id
+    )
+    select c.id as customer_id, c.name, c.phone_e164, c.delivered_count,
+           c.ltv_poisha::text as ltv_poisha, a.last_order_on::text as last_order_on,
+           s.segment
+    from activity a
+    join sales.customers c on c.org_id = ${orgId} and c.id = a.customer_id
+    left join sales.customer_segments s on s.org_id = c.org_id and s.customer_id = c.id
+    where a.last_order_on <= ${filters.lastOrderOnOrBefore}::date
+      and c.delivered_count >= ${filters.minDelivered}
+      and ${filters.segment === undefined ? sql`true` : sql`s.segment = ${filters.segment}`}
+      and c.phone_e164 <> all (${sql.param([...filters.excludePhones])}::text[])`;
+}
+
+export interface LapsedRow extends Record<string, unknown> {
+  readonly customer_id: string;
+  readonly name: string;
+  readonly phone_e164: string;
+  readonly delivered_count: number;
+  readonly ltv_poisha: string;
+  readonly last_order_on: string;
+  readonly segment: string | null;
+}
+
+/** The page, or with `page` null the whole list (the export). Longest-lapsed last. */
+export async function lapsedRows(
+  tx: Tx,
+  orgId: string,
+  filters: ReengagementFilters,
+  scope: SQL,
+  page: { readonly limit: number; readonly offset: number } | null,
+): Promise<LapsedRow[]> {
+  const rows = await tx.execute<LapsedRow>(sql`
+    select * from (${lapsedSql(orgId, filters, scope)}) lapsed
+    order by last_order_on desc, customer_id
+    ${page === null ? sql`` : sql`limit ${page.limit} offset ${page.offset}`}
+  `);
+  return [...rows];
+}
+
+export async function lapsedCount(
+  tx: Tx,
+  orgId: string,
+  filters: ReengagementFilters,
+  scope: SQL,
+): Promise<number> {
+  const rows = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from (${lapsedSql(orgId, filters, scope)}) lapsed
+  `);
+  return rows[0]?.n ?? 0;
 }

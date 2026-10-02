@@ -15,6 +15,7 @@ import {
   CustomersController,
   DeliveryZonesController,
   OrdersController,
+  ReengagementController,
 } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 import { TransitionsService } from './transitions.service.js';
@@ -25,6 +26,8 @@ import { PromoModule } from '../promo/promo.module.js';
 import { NOTIFY_API } from '../notify/notify.api.js';
 import { NotifyModule } from '../notify/notify.module.js';
 import { CrmService } from './crm.service.js';
+import { BuyerProfileService } from './profile.service.js';
+import { ReengagementService } from './reengagement.service.js';
 import { NOTIFY_PORT } from './ports/notify.port.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { FRAUD_GATE } from './ports/fraud-gate.port.js';
@@ -98,7 +101,13 @@ import { PROMO_PORT } from './ports/promo.port.js';
     PromoModule,
     NotifyModule,
   ],
-  controllers: [OrdersController, CustomersController, DeliveryZonesController, BuyersController],
+  controllers: [
+    OrdersController,
+    CustomersController,
+    DeliveryZonesController,
+    BuyersController,
+    ReengagementController,
+  ],
   providers: [
     CustomersService,
     CourierBookingRegistry,
@@ -116,6 +125,9 @@ import { PROMO_PORT } from './ports/promo.port.js';
     // transaction, beside the code they announce.
     { provide: NOTIFY_PORT, useExisting: NOTIFY_API },
     CrmService,
+    // M16: the buyer profile and the re-engagement list — screens, like the buyer list.
+    BuyerProfileService,
+    ReengagementService,
     { provide: ORDERS_API, useClass: OrdersApiService },
   ],
   exports: [ORDERS_API, CustomersService, CourierBookingRegistry, CrmService],

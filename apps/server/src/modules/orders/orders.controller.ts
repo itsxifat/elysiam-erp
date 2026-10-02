@@ -21,6 +21,8 @@ import { BuyersService } from './buyers.service.js';
 import { CustomersService } from './customers.service.js';
 import { DeskService } from './desk.service.js';
 import { DocumentsService } from './documents.service.js';
+import { BuyerProfileService } from './profile.service.js';
+import { ReengagementService } from './reengagement.service.js';
 import { OrdersService } from './orders.service.js';
 import { mapOrderErrors } from './orders.errors.js';
 import {
@@ -43,6 +45,8 @@ import {
   holdOrderSchema,
   orderIdSchema,
   orderQuerySchema,
+  reengagementExportQuerySchema,
+  reengagementQuerySchema,
   recordAdvanceSchema,
   returnOrderSchema,
   shipOrderSchema,
@@ -508,6 +512,7 @@ export class CustomersController {
   constructor(
     private readonly customers: CustomersService,
     private readonly desk: DeskService,
+    private readonly profiles: BuyerProfileService,
   ) {}
 
   @RequireAbility('read', 'Customer')
@@ -543,6 +548,16 @@ export class CustomersController {
   @Get(':id')
   async get(@Req() request: FastifyRequest, @Param('id') id: string) {
     return this.customers.get(requireContext(request), request, parse(orderIdSchema, id));
+  }
+
+  /**
+   * The buyer profile (M16; §10 "Buyer stats"): totals, segment, favourites, greetings
+   * and the caller's own recent orders. The same reach as `GET :id`; see the service.
+   */
+  @RequireAbility('read', 'Customer')
+  @Get(':id/profile')
+  async profile(@Req() request: FastifyRequest, @Param('id') id: string) {
+    return this.profiles.profile(requireContext(request), request, parse(orderIdSchema, id));
   }
 
   @RequireAbility('update', 'Customer')
@@ -645,6 +660,42 @@ export class BuyersController {
       .header('content-disposition', `attachment; filename="${file.filename}"`)
       // The count travels beside the file so a client can show "1,204 buyers exported"
       // without parsing a spreadsheet, and so a test can compare it with the database.
+      .header('x-row-count', String(file.rows))
+      .header('cache-control', 'no-store')
+      .send(file.bytes);
+  }
+}
+
+/**
+ * The re-engagement list and its export (M16; §10 "Re-engagement lists").
+ *
+ * `export BuyerExport` on both routes, for the reason `BuyersController` gives: a page of
+ * phone numbers is an export by another name, and this is the same list cut a different
+ * way. The file goes out with `@Res()` beside its row count, like the buyer export.
+ */
+@Controller('v1/crm/reengagement')
+export class ReengagementController {
+  constructor(private readonly reengagement: ReengagementService) {}
+
+  @RequireAbility('export', 'BuyerExport')
+  @Get()
+  async list(@Req() request: FastifyRequest, @Query() query: unknown) {
+    const parsed = parse(reengagementQuerySchema, query ?? {});
+    return this.reengagement.list(requireContext(request), request, parsed);
+  }
+
+  @RequireAbility('export', 'BuyerExport')
+  @Get('export')
+  async export(
+    @Req() request: FastifyRequest,
+    @Query() query: unknown,
+    @Res() reply: FastifyReply,
+  ) {
+    const parsed = parse(reengagementExportQuerySchema, query ?? {});
+    const file = await this.reengagement.export(requireContext(request), request, parsed);
+    await reply
+      .header('content-type', file.contentType)
+      .header('content-disposition', `attachment; filename="${file.filename}"`)
       .header('x-row-count', String(file.rows))
       .header('cache-control', 'no-store')
       .send(file.bytes);

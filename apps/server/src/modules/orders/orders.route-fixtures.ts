@@ -299,6 +299,10 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
 
   'GET /v1/buyers/export': () => ({ url: '/v1/buyers/export?format=csv&size=M' }),
 
+  'GET /v1/crm/reengagement': () => ({ url: '/v1/crm/reengagement?days=30&limit=5' }),
+
+  'GET /v1/crm/reengagement/export': () => ({ url: '/v1/crm/reengagement/export?days=30' }),
+
   'GET /v1/customers': () => ({ url: '/v1/customers' }),
 
   'POST /v1/customers': () => ({
@@ -312,6 +316,10 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
   }),
 
   'GET /v1/customers/:id': () => ({ url: `/v1/customers/${state().customerId}` }),
+
+  'GET /v1/customers/:id/profile': () => ({
+    url: `/v1/customers/${state().customerId}/profile`,
+  }),
 
   'PATCH /v1/customers/:id': () => ({
     url: `/v1/customers/${state().customerId}`,

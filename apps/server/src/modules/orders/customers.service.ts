@@ -50,7 +50,8 @@ export interface CustomerView {
   };
 }
 
-function toView(row: repo.CustomerRow): CustomerView {
+/** The wire shape of one buyer, shared with the profile. */
+export function toCustomerView(row: repo.CustomerRow): CustomerView {
   return {
     id: row.id,
     phone: row.phone_e164,
@@ -127,7 +128,7 @@ export class CustomersService {
         order by c.last_order_at desc nulls last, c.created_at desc
         limit ${query.limit} offset ${query.offset}
       `);
-      return { items: [...rows].map(toView) };
+      return { items: [...rows].map(toCustomerView) };
     });
   }
 
@@ -211,7 +212,7 @@ export class CustomersService {
         const row = await repo.customerById(tx, context.orgId, id);
         if (row === undefined) throw new OrdersError('CUSTOMER_NOT_FOUND', 'No such buyer.');
         return {
-          ...toView(row),
+          ...toCustomerView(row),
           addresses: (await repo.listAddresses(tx, context.orgId, id)).map((address) => ({
             id: address.id,
             label: address.label,
@@ -304,7 +305,7 @@ export class CustomersService {
           request,
         });
         const row = await repo.customerById(tx, context.orgId, id);
-        return row === undefined ? { id } : toView(row);
+        return row === undefined ? { id } : toCustomerView(row);
       }),
     );
   }

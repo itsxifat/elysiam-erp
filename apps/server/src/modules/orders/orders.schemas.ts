@@ -1,4 +1,5 @@
 import { ORDER_CHANNELS } from '@elysium/contracts';
+import { RFM_SEGMENTS } from '@elysium/domain/crm';
 import { z } from 'zod';
 
 /**
@@ -452,3 +453,27 @@ export type UpsertZoneInput = z.infer<typeof upsertZoneSchema>;
 export const documentQuerySchema = z
   .object({ kind: z.enum(orderDocumentKinds).default('invoice') })
   .strict();
+
+/**
+ * The re-engagement list's filters (M16; architecture §10 "no purchase in N days, plus
+ * filters"). `days` is how long since the buyer's last order, by the Dhaka calendar;
+ * `minDelivered` keeps the list to people who have actually received something.
+ */
+export const reengagementQuerySchema = z
+  .object({
+    days: z.coerce.number().int().min(1).max(3_650).default(90),
+    minDelivered: z.coerce.number().int().min(1).max(1_000).default(1),
+    segment: z.enum(RFM_SEGMENTS).optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+  })
+  .strict();
+
+export type ReengagementQuery = z.infer<typeof reengagementQuerySchema>;
+
+export const reengagementExportQuerySchema = reengagementQuerySchema
+  .omit({ limit: true, offset: true })
+  .extend({ format: z.enum(['csv', 'xlsx']).default('csv') })
+  .strict();
+
+export type ReengagementExportQuery = z.infer<typeof reengagementExportQuerySchema>;

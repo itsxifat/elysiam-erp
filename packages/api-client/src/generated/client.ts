@@ -188,8 +188,23 @@ export const OPERATIONS = {
     path: '/v1/courier/stuck/export',
     ability: 'read:Order',
   },
+  getV1CrmReengagement: {
+    method: 'GET',
+    path: '/v1/crm/reengagement',
+    ability: 'export:BuyerExport',
+  },
+  getV1CrmReengagementExport: {
+    method: 'GET',
+    path: '/v1/crm/reengagement/export',
+    ability: 'export:BuyerExport',
+  },
   getV1Customers: { method: 'GET', path: '/v1/customers', ability: 'read:Customer' },
   getV1CustomersById: { method: 'GET', path: '/v1/customers/{id}', ability: 'read:Customer' },
+  getV1CustomersByIdProfile: {
+    method: 'GET',
+    path: '/v1/customers/{id}/profile',
+    ability: 'read:Customer',
+  },
   getV1CustomersLookup: { method: 'GET', path: '/v1/customers/lookup', ability: 'read:Customer' },
   getV1DeliveryZones: { method: 'GET', path: '/v1/delivery-zones', ability: 'read:Catalog' },
   getV1DeliveryZonesAreas: {
@@ -1098,6 +1113,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/courier/stuck/export */
     getV1CourierStuckExport: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CourierStuckExport, undefined, options),
+    /** GET /v1/crm/reengagement */
+    getV1CrmReengagement: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CrmReengagement, undefined, options),
+    /** GET /v1/crm/reengagement/export */
+    getV1CrmReengagementExport: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CrmReengagementExport, undefined, options),
     /** GET /v1/customers */
     getV1Customers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1Customers, undefined, options),
@@ -1106,6 +1127,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1CustomersById, input, options),
+    /** GET /v1/customers/:id/profile */
+    getV1CustomersByIdProfile: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1CustomersByIdProfile, input, options),
     /** GET /v1/customers/lookup */
     getV1CustomersLookup: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CustomersLookup, undefined, options),

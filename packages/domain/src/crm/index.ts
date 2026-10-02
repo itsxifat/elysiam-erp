@@ -4,3 +4,4 @@
  */
 export * from './occasions.js';
 export * from './rfm.js';
+export * from './profile.js';

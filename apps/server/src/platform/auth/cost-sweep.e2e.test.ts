@@ -41,7 +41,12 @@ import {
   prepareSupplyFixtures,
   SUPPLY_ROUTE_FIXTURES,
 } from '../../modules/supply/supply.route-fixtures.js';
+import { NOTIFY_ROUTE_FIXTURES } from '../../modules/notify/notify.route-fixtures.js';
 import { POS_ROUTE_FIXTURES, preparePosFixtures } from '../../modules/pos/pos.route-fixtures.js';
+import {
+  PROMO_ROUTE_FIXTURES,
+  preparePromoFixtures,
+} from '../../modules/promo/promo.route-fixtures.js';
 import {
   prepareWalletsFixtures,
   WALLETS_ROUTE_FIXTURES,
@@ -145,6 +150,8 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...SUPPLY_ROUTE_FIXTURES,
   ...INTAKE_ROUTE_FIXTURES,
   ...POS_ROUTE_FIXTURES,
+  ...PROMO_ROUTE_FIXTURES,
+  ...NOTIFY_ROUTE_FIXTURES,
 };
 
 /**
@@ -222,6 +229,7 @@ beforeAll(async () => {
   await prepareSupplyFixtures();
   await prepareIntakeFixtures();
   await preparePosFixtures();
+  await preparePromoFixtures();
 
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 
