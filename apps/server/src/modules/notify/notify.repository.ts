@@ -95,6 +95,14 @@ export async function isOptedOut(
   return rows.length > 0;
 }
 
+/** Every number that opted out of a channel, national form. */
+export async function optedOutPhones(tx: Tx, orgId: string, channel: string): Promise<string[]> {
+  const rows = await tx.execute<{ phone: string }>(sql`
+    select phone from notify.opt_outs where org_id = ${orgId} and channel = ${channel}
+  `);
+  return rows.map((row) => row.phone);
+}
+
 export interface OptOutRow extends Record<string, unknown> {
   readonly id: string;
   readonly phone: string;

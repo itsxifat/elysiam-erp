@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
+import { normalizeBdPhone } from '@elysium/domain';
 
+import * as repo from './notify.repository.js';
 import { NotifyService } from './notify.service.js';
 
 /**
@@ -29,6 +31,16 @@ export interface NotifyApi {
       readonly now?: Date;
     },
   ): Promise<{ readonly messageId: string; readonly state: 'queued' | 'suppressed' }>;
+
+  /**
+   * Every number in the brand that opted out of marketing SMS, in E.164.
+   *
+   * For a list built to be texted or advertised to — the re-engagement export — which has
+   * to leave these buyers out before the file exists, because once it is downloaded this
+   * module's suppression can no longer reach it. E.164 because that is how every other
+   * module stores a buyer's phone; the opt-out table keeps the national form.
+   */
+  optedOutPhones(tx: Tx, orgId: string): Promise<readonly string[]>;
 }
 
 export const NOTIFY_API = Symbol('NotifyApi');
@@ -44,5 +56,10 @@ export class NotifyApiService implements NotifyApi {
   ): Promise<{ readonly messageId: string; readonly state: 'queued' | 'suppressed' }> {
     const { messageId, state } = await this.notify.queue(tx, orgId, input);
     return { messageId, state };
+  }
+
+  async optedOutPhones(tx: Tx, orgId: string): Promise<readonly string[]> {
+    const national = await repo.optedOutPhones(tx, orgId, 'sms');
+    return national.map((phone) => normalizeBdPhone(phone));
   }
 }

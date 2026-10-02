@@ -9,6 +9,7 @@ import { ORG_A, startHttpHarness, type HttpHarness } from '../../testing/http-ha
 import { NOTIFY_QUEUES } from '../notify/notify.queues.js';
 import { CRM_QUEUE_DEFINITIONS, CRM_QUEUES } from './crm.queues.js';
 import { CrmService, OCCASION_TEMPLATES } from './crm.service.js';
+import * as crmRepo from './crm.repository.js';
 import { seedCustomer } from './orders.testing.js';
 
 /**
@@ -60,6 +61,17 @@ async function issuedFor(customerId: string, occasion: string) {
   );
 }
 
+/** Postgres's own error code, however the driver wraps it. */
+function pgErrorCode(error: unknown): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current !== null && typeof current === 'object'; depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
 beforeAll(async () => {
   harness = await startHttpHarness('crm-db');
   // `notify.queue` enqueues in the greeting's transaction. The worker role installs
@@ -108,6 +120,51 @@ describe('occasions (check 2): one code and one message per buyer per occasion p
     const second = await crm.runOccasions(ORG_A, TODAY, NOON);
     expect(second.greeted).toBe(0);
     expect(second.alreadyGreeted).toBeGreaterThanOrEqual(1);
+    expect(await issuedFor(buyer, 'birthday')).toEqual({ codes: 1, messages: 1, issues: 1 });
+  });
+
+  it('refuses a second greeting row for the same buyer, occasion and year', async () => {
+    // The deterministic half of the race above, and the rule the rollback rests on. The
+    // concurrent test can only prove this when its two transactions genuinely overlap,
+    // which is not something a test can insist on; this one always exercises it.
+    const buyer = await seedCustomer(ORG_A, { phoneE164: '+8801700000207', name: 'Ruma' });
+    await setDates(buyer, '1992-10-02', null);
+    await crm.runOccasions(ORG_A, TODAY, NOON);
+
+    const existing = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ promo_code_id: string; message_id: string }>(sql`
+            select promo_code_id, message_id from sales.occasion_issues
+            where org_id = ${ORG_A} and customer_id = ${buyer} and occasion = 'birthday'
+          `)
+        )[0],
+      { orgId: ORG_A },
+    );
+    expect(existing).toBeDefined();
+
+    // Through the repository function the job uses, and asserted on Postgres's own
+    // `unique_violation` rather than on "it threw". That distinction is the test: with
+    // `on conflict do nothing` the insert returns no row and the function throws its own
+    // error, which `toThrow()` would accept — while the loser's orphan code and message
+    // quietly committed. Only 23505 means the database refused.
+    const conflict = await withSystem(
+      (tx) =>
+        crmRepo.insertOccasionIssue(tx, {
+          orgId: ORG_A,
+          customerId: buyer,
+          occasion: 'birthday',
+          year: 2026,
+          promoCodeId: existing?.promo_code_id ?? '',
+          messageId: existing?.message_id ?? '',
+        }),
+      { orgId: ORG_A },
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(pgErrorCode(conflict), 'the unique index must be what refuses').toBe('23505');
+
     expect(await issuedFor(buyer, 'birthday')).toEqual({ codes: 1, messages: 1, issues: 1 });
   });
 

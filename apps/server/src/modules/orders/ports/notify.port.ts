@@ -23,6 +23,9 @@ export interface NotifyPort {
       readonly now?: Date;
     },
   ): Promise<{ readonly messageId: string; readonly state: 'queued' | 'suppressed' }>;
+
+  /** Every number that opted out of marketing SMS, E.164. Kept out of re-engagement lists. */
+  optedOutPhones(tx: Tx, orgId: string): Promise<readonly string[]>;
 }
 
 export const NOTIFY_PORT = Symbol('OrdersNotifyPort');

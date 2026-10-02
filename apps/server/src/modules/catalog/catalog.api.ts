@@ -63,6 +63,21 @@ export interface CatalogApi {
     orgId: string,
     page: { readonly afterCode: string | null; readonly limit: number },
   ): Promise<SellableSku[]>;
+
+  /**
+   * Each SKU's category name and size label, for the buyer profile's favourites (M16).
+   *
+   * The size is the label of the SKU's value for an attribute of kind `size`, as the
+   * catalog defines it, not a guess from the code. A SKU with no size, or a product with no
+   * category, comes back with null there; an unknown id is simply absent.
+   */
+  skuFacets(tx: Tx, orgId: string, ids: readonly string[]): Promise<SkuFacets[]>;
+}
+
+export interface SkuFacets {
+  readonly skuId: string;
+  readonly categoryName: string | null;
+  readonly sizeLabel: string | null;
 }
 
 /** One row of the till's price list. Selling price only: no field a cost could use. */
@@ -103,6 +118,15 @@ export class CatalogApiService implements CatalogApi {
       barcode: row.barcode,
       productName: row.product_name,
       pricePoisha: BigInt(row.price_poisha),
+    }));
+  }
+
+  async skuFacets(tx: Tx, orgId: string, ids: readonly string[]): Promise<SkuFacets[]> {
+    const rows = await repo.skuFacets(tx, orgId, ids);
+    return rows.map((row) => ({
+      skuId: row.sku_id,
+      categoryName: row.category_name,
+      sizeLabel: row.size_label,
     }));
   }
 }

@@ -597,6 +597,40 @@ export async function skusByIds(
   return [...rows];
 }
 
+/**
+ * Category name and size label per SKU (M16's buyer favourites).
+ *
+ * At most one size per SKU: `sku_values_pk` is one value per attribute, and a product with
+ * two attributes of kind `size` would be a catalog mistake, so the lowest-positioned one
+ * wins rather than the row doubling.
+ */
+export async function skuFacets(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+): Promise<{ sku_id: string; category_name: string | null; size_label: string | null }[]> {
+  if (ids.length === 0) return [];
+  const rows = await tx.execute<{
+    sku_id: string;
+    category_name: string | null;
+    size_label: string | null;
+  }>(sql`
+    select s.id as sku_id, c.name as category_name,
+           (select v.label
+              from catalog.sku_values sv
+              join catalog.attributes a on a.org_id = sv.org_id and a.id = sv.attribute_id
+              join catalog.attribute_values v on v.org_id = sv.org_id and v.id = sv.value_id
+             where sv.org_id = s.org_id and sv.sku_id = s.id and a.kind = 'size'
+             order by a.position, a.code
+             limit 1) as size_label
+    from catalog.skus s
+    join catalog.products p on p.org_id = s.org_id and p.id = s.product_id
+    left join catalog.categories c on c.org_id = p.org_id and c.id = p.category_id
+    where s.org_id = ${orgId} and s.id = any (${sql.param([...ids])}::uuid[])
+  `);
+  return [...rows];
+}
+
 export async function skusByCodes(
   tx: Tx,
   orgId: string,
