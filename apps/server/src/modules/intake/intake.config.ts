@@ -83,7 +83,11 @@ export class UnsafeIntakeConfigError extends Error {
 }
 
 export function intakeConfig(source: NodeJS.ProcessEnv = process.env): IntakeConfig {
-  const parsed = schema.safeParse(source);
+  // `KEY=` in a dotenv file is an empty string, not an absent key, and `.env.example`
+  // ships both secrets that way. Read as given, an empty secret failed its length check
+  // and stopped the API — the opposite of "missing secrets switch the intake off".
+  const present = Object.fromEntries(Object.entries(source).filter(([, value]) => value !== ''));
+  const parsed = schema.safeParse(present);
   if (!parsed.success) {
     const problems = parsed.error.issues
       .map((issue) => `  ${issue.path.join('.') || '(root)'}: ${issue.message}`)

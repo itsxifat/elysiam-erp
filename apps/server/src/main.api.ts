@@ -172,6 +172,11 @@ async function bootstrap(): Promise<void> {
     {
       // Nest's own bootstrap chatter would bypass pino's redaction.
       logger: false,
+      // With the logger off, Nest's default on a provider that throws is to log through
+      // nothing and `process.exit(1)` itself — so the handler at the bottom of this file
+      // never saw the error and the API died without a word (an empty `.env` value did
+      // exactly that, 2026-10-02). Rethrowing hands it to that handler, which prints it.
+      abortOnError: false,
     },
   );
 

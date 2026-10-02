@@ -174,6 +174,22 @@ describe('configuration production refuses to start with', () => {
     expect(intakeConfig(base).INTAKE_TURNSTILE_VERIFY_URL).toBe(TURNSTILE_SITEVERIFY_URL);
   });
 
+  it('reads an empty value as unset, which is how .env.example ships both secrets', () => {
+    // `pnpm setup:env` copies the example verbatim. Read as given, `INTAKE_KEY_SECRET=`
+    // failed its 32-character floor and the API never booted (2026-10-02).
+    const config = intakeConfig({
+      NODE_ENV: 'development',
+      INTAKE_KEY_SECRET: '',
+      TURNSTILE_SECRET_KEY: '',
+      INTAKE_TURNSTILE_BYPASS: '',
+    });
+    expect(config.INTAKE_KEY_SECRET).toBeUndefined();
+    expect(config.TURNSTILE_SECRET_KEY).toBeUndefined();
+    expect(config.INTAKE_TURNSTILE_BYPASS).toBe(false);
+    // A short secret that *is* set is still refused: that one is a mistake, not an absence.
+    expect(() => intakeConfig({ INTAKE_KEY_SECRET: 'short' })).toThrow(/at least 32/);
+  });
+
   it('refuses per-process rate limits in production', () => {
     expect(() => intakeConfig({ ...base, INTAKE_RATE_LIMIT_STORE: 'memory' })).toThrow(
       UnsafeIntakeConfigError,

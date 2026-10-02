@@ -14,9 +14,11 @@ import { CourierSyncService } from './modules/courier/sync.service.js';
 import { FraudModule } from './modules/fraud/fraud.module.js';
 import { FraudService } from './modules/fraud/fraud.service.js';
 import { registerFraudJobs } from './modules/fraud/fraud.worker.js';
+import { NotifyModule } from './modules/notify/notify.module.js';
 import { NotifyService } from './modules/notify/notify.service.js';
 import { registerNotifyJobs } from './modules/notify/notify.worker.js';
 import { CrmService } from './modules/orders/crm.service.js';
+import { OrdersModule } from './modules/orders/orders.module.js';
 import { registerCrmJobs } from './modules/orders/crm.worker.js';
 import { InventoryModule } from './modules/inventory/inventory.module.js';
 import { registerInventoryJobs } from './modules/inventory/inventory.worker.js';
@@ -115,10 +117,15 @@ async function bootstrap(): Promise<void> {
    * fraud provider refresh were defined, scheduled and enqueued for weeks with no
    * handler here at all: the cron fired, the jobs piled up, and nothing ran them.
    */
-  @Module({ imports: [CourierModule, InventoryModule, FraudModule] })
+  @Module({ imports: [CourierModule, InventoryModule, FraudModule, NotifyModule, OrdersModule] })
   class WorkerModule {}
 
-  const context = await NestFactory.createApplicationContext(WorkerModule, { logger: false });
+  // `abortOnError: false` for the reason `main.api.ts` gives: with the logger off, Nest's
+  // own teardown exits without printing the error that stopped it.
+  const context = await NestFactory.createApplicationContext(WorkerModule, {
+    logger: false,
+    abortOnError: false,
+  });
 
   const jobs = await JobsRuntime.start({
     role: 'worker',
