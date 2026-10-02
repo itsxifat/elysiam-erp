@@ -118,6 +118,11 @@ async function create(): Promise<void> {
         { orgId: otherOrgId, role: 'warehouse' },
       ],
     },
+    // gaps-users-auth: two org admins for the staff screen — one asks for a reset, the
+    // other approves it — and an accountant whose lost phone is the reset (users.stack.ts).
+    { label: 'admin', grants: [{ orgId, role: 'org_admin' }] },
+    { label: 'admin2', grants: [{ orgId, role: 'org_admin' }] },
+    { label: 'locked', grants: [{ orgId, role: 'accounts' }] },
   ];
 
   const users: { role: string; email: string; userId: string }[] = [];
