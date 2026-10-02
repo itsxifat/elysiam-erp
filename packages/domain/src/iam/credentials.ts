@@ -32,7 +32,7 @@ export interface ResetTarget {
   readonly hasPasswordAccount: boolean;
   readonly twoFactorEnabled: boolean;
   /**
-   * Their roles here can decide an approval at org tier (contracts'
+   * Their roles here, held now or ever, can raise or decide an approval (contracts'
    * `resetNeedsSecondPerson`), so a reset needs a second admin (D-404).
    */
   readonly needsSecondPerson: boolean;

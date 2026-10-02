@@ -218,7 +218,14 @@ export function createAuth(options: AuthOptions) {
      * `api.requestPasswordReset` from the server; this only closes the HTTP door, which
      * let anyone on the internet mint reset rows for any address.
      */
-    disabledPaths: ['/request-password-reset'],
+    // The phone-number plugin's own reset pair is closed for the same reason (the ledger
+    // audit's W2): an OTP reset with no audit, no limits and no second admin, and the day
+    // SMS is wired it would let anyone with a phone take over the account behind it.
+    disabledPaths: [
+      '/request-password-reset',
+      '/phone-number/request-password-reset',
+      '/phone-number/reset-password',
+    ],
 
     session: {
       expiresIn: 60 * 60 * 12,

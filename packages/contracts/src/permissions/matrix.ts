@@ -235,27 +235,40 @@ export function checkerTier(
 }
 
 /**
- * Roles whose holder can decide some approval at org tier (D-404): org_admin,
- * accounts and hr today, derived from `CHECKER_TYPES` so a role that becomes a checker
- * joins it without anyone remembering this list.
+ * Roles whose sign-in an admin may not reset alone (D-404, after the ledger audit).
  *
- * Whoever holds a person's sign-in can sign as them, so a password or second-factor
- * reset of one of these is itself maker-checker: otherwise one admin could reset an
- * accountant's password, sign in with the link, and approve their own payment. A
- * branch manager decides only branch items under the brand's threshold (D-076) and is
- * not on the list.
+ * Whoever holds a person's sign-in can act as them. So a password or second-factor
+ * reset is itself maker-checker for anyone whose account can **raise** an approval
+ * (`REQUESTER_TYPES`: the admin would raise it as them and approve it as themselves),
+ * **decide** one (`CHECKER_TYPES`: the admin would approve their own request as them),
+ * or holds an investor's money and statements. Derived from both lists, so a role that
+ * gains either joins it without anyone remembering this one. Today: org_admin,
+ * accounts, hr, branch_manager, warehouse and investor; sales, marketing and reseller
+ * may be reset by one admin.
  */
-export const ORG_TIER_CHECKER_ROLES: readonly MembershipRole[] = (
+export const SECOND_ADMIN_RESET_ROLES: readonly MembershipRole[] = (
   Object.keys(CHECKER_TYPES) as MembershipRole[]
-).filter((role) => (CHECKER_TYPES[role] ?? []).length > 0 && !BRANCH_TIER_CHECKERS.includes(role));
+).filter(
+  (role) =>
+    (CHECKER_TYPES[role] ?? []).length > 0 ||
+    (REQUESTER_TYPES[role] ?? []).length > 0 ||
+    role === 'investor',
+);
 
-/** Does resetting the sign-in of someone holding these roles need a second admin? (D-404) */
+/**
+ * Does resetting the sign-in of someone who holds, **or has held**, these roles in a
+ * brand need a second admin? (D-404)
+ *
+ * The roles a person ever held, not only those held now: otherwise an admin demotes an
+ * accountant to sales, resets them alone, signs in as them and promotes them back — the
+ * ledger audit's C1. Memberships are switched off, never deleted, so the history is there.
+ */
 export function resetNeedsSecondPerson(
-  roles: readonly MembershipRole[],
+  rolesEverHeld: readonly MembershipRole[],
   isSuperAdmin: boolean,
 ): boolean {
   if (isSuperAdmin) return true;
-  return roles.some((role) => ORG_TIER_CHECKER_ROLES.includes(role));
+  return rolesEverHeld.some((role) => SECOND_ADMIN_RESET_ROLES.includes(role));
 }
 
 export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {

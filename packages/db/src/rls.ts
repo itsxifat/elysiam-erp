@@ -190,6 +190,8 @@ export const ANALYTICS_READABLE: readonly string[] = [
  */
 export const APPEND_ONLY_TABLES: readonly string[] = [
   'audit.audit_log',
+  // gaps-users-auth: everyone who ever granted a role or held a link (D-406, D-410).
+  'iam.membership_granters',
   // Invariant 2: journals never change after posting (M03).
   'ledger.journals',
   'ledger.journal_lines',

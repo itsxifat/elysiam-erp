@@ -149,6 +149,22 @@ export type ApprovalExecutor = (
 export type RejectionHandler = ApprovalExecutor;
 
 /**
+ * What `registerExecutor` hands the module that owns a type: the power to withdraw a
+ * pending request of that type, and only that type (gaps-users-auth, D-409).
+ */
+export interface OwnedApprovalType {
+  cancel(
+    tx: Tx,
+    context: ActiveContext,
+    input: {
+      readonly id: string;
+      readonly reason: string;
+      readonly request?: AuditableRequest | undefined;
+    },
+  ): Promise<boolean>;
+}
+
+/**
  * Types whose approval means nothing without an executor. Approving one with
  * no executor registered is refused rather than recorded as done: a period
  * reopen that says "approved" while the period stays closed is worse than an
@@ -210,11 +226,16 @@ export class ApprovalsService {
    * by the owning module when it starts (the ledger registers
    * `period_reopen`); a second registration is a wiring mistake.
    */
-  registerExecutor(type: ApprovalType, executor: ApprovalExecutor): void {
+  registerExecutor(type: ApprovalType, executor: ApprovalExecutor): OwnedApprovalType {
     if (this.executors.has(type)) {
       throw new Error(`An executor for ${type} is already registered.`);
     }
     this.executors.set(type, executor);
+    // The withdrawal handle goes to the module that owns the type and nobody else, so
+    // one module cannot cancel another's requests (the ledger audit's N5).
+    return {
+      cancel: (tx, context, input) => this.cancelRaisedByModule(tx, context, { ...input, type }),
+    };
   }
 
   /** Register what rejecting a type releases (D-299). One per type, like an executor. */
@@ -357,6 +378,12 @@ export class ApprovalsService {
       raisedByModule?: boolean;
       /** The HTTP request: carries the caller's scope, and tells the audit net to stand down. */
       request?: AuditableRequest;
+      /**
+       * The owning module's own transaction, so the request and the module's row that
+       * names it commit together or not at all (gaps-users-auth, the ledger audit's W3).
+       * Omitted, the request opens its own.
+       */
+      tx?: Tx;
     },
   ): Promise<{ id: string; required: boolean; status: ApprovalStatus }> {
     // A type whose payload decides what gets executed is raised only by its
@@ -390,7 +417,7 @@ export class ApprovalsService {
     const events: DomainEvent[] = [];
 
     try {
-      const result = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      const work = async (tx: Tx) => {
         const thresholds = await this.thresholdsFor(tx, context.orgId);
         const threshold = thresholds.find((entry) => entry.type === input.type);
         const required = requiresApproval({
@@ -494,9 +521,11 @@ export class ApprovalsService {
 
         await this.writeEvents(tx, context.orgId, events);
         return { id, required, status };
-      });
+      };
 
-      return result;
+      return input.tx === undefined
+        ? await withOrg({ orgId: context.orgId, userId: context.userId }, work)
+        : await work(input.tx);
     } catch (error) {
       // The composite FK: a branch that does not exist in this org. The same
       // answer whether it exists elsewhere or nowhere, so it is not an oracle.
@@ -716,7 +745,7 @@ export class ApprovalsService {
    * generic route is theirs to have decided, not a module's to withdraw. Returns false
    * when the request is no longer pending — decided meanwhile, which is not an error.
    */
-  async cancelRaisedByModule(
+  private async cancelRaisedByModule(
     tx: Tx,
     context: ActiveContext,
     input: {
@@ -852,17 +881,29 @@ export class ApprovalsService {
     context: ActiveContext,
     row: { readonly requested_by: string },
   ): Promise<void> {
+    /*
+     * Every granter counts, not only the latest (gaps-users-auth, D-410): a re-grant or a
+     * reset by a second admin overwrites `memberships.granted_by`, and the first granter —
+     * who may have held the password link — would drop out of the lineage with it.
+     * `iam.membership_granters` keeps them all.
+     */
     const found = await tx.execute<{ hit: number }>(sql`
-      with recursive lineage (user_id, depth) as (
-        select granted_by, 1
-        from iam.memberships
-        where org_id = ${context.orgId} and user_id = ${context.userId}
-          and is_active and granted_by is not null
+      with recursive grants (user_id, granted_by) as (
+        select user_id, granted_by from iam.memberships
+        where org_id = ${context.orgId} and granted_by is not null
         union
-        select m.granted_by, l.depth + 1
-        from iam.memberships m
-        join lineage l on m.user_id = l.user_id
-        where m.org_id = ${context.orgId} and m.granted_by is not null and l.depth < 16
+        select user_id, granted_by from iam.membership_granters
+        where org_id = ${context.orgId}
+      ),
+      lineage (user_id, depth) as (
+        select g.granted_by, 1
+        from grants g
+        where g.user_id = ${context.userId}
+        union
+        select g.granted_by, l.depth + 1
+        from grants g
+        join lineage l on g.user_id = l.user_id
+        where l.depth < 16
       )
       select 1 as hit from lineage where user_id = ${row.requested_by} limit 1
     `);

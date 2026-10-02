@@ -1,4 +1,14 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Put, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Header,
+  Param,
+  Post,
+  Put,
+  Req,
+} from '@nestjs/common';
 import {
   credentialResetSchema,
   deactivateUserSchema,
@@ -12,6 +22,7 @@ import type { z } from 'zod';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
+import { NoIdempotencyReplay } from '../../platform/http/idempotency.interceptor.js';
 import { UsersService } from './users.service.js';
 
 function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
@@ -75,6 +86,8 @@ export class UsersController {
   /** A password link: an invite sent again, a reset, or an approved reset collected. */
   @RequireAbility('update', 'User')
   @Post(':id/password-link')
+  @Header('Cache-Control', 'no-store')
+  @NoIdempotencyReplay()
   async passwordLink(
     @Req() request: FastifyRequest,
     @Param('id') id: string,

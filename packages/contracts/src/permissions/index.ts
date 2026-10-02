@@ -30,7 +30,7 @@ export {
   checkerTier,
   COST_READING_ROLES,
   MATRIX,
-  ORG_TIER_CHECKER_ROLES,
+  SECOND_ADMIN_RESET_ROLES,
   resetNeedsSecondPerson,
   type Rule,
 } from './matrix.js';

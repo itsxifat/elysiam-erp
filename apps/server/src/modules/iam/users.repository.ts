@@ -1,3 +1,5 @@
+import { randomBytes, randomUUID } from 'node:crypto';
+
 import type { MembershipRole } from '@elysium/contracts';
 import type { Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
@@ -13,6 +15,23 @@ import { sql } from 'drizzle-orm';
  * `iam.two_factors` are global (§5 exception 4) and carry no org; they are written inside
  * the same transaction, so a deactivation and the sessions it ends commit together.
  */
+
+// --- the person lock -------------------------------------------------------------------
+
+/**
+ * Serialise every change to one person's access in one brand (the ledger audit's W4, W5).
+ *
+ * Roles, deactivation, links, second-factor resets, an approval's executor and an invite
+ * all take this first, then read the facts they decide on, inside the transaction that
+ * acts on them — so a promotion, a second brand or a parallel reset cannot slip between
+ * the check and the write. One lock order everywhere: an approval row (when deciding),
+ * then this, then memberships, then resets.
+ */
+export async function lockPerson(tx: Tx, orgId: string, userId: string): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`iam.person:${orgId}:${userId}`}, 0))`,
+  );
+}
 
 // --- memberships ---------------------------------------------------------------------
 
@@ -143,20 +162,24 @@ export async function revokeRoles(
 }
 
 /**
- * Record the acting admin as the granter of every role this person holds here (D-077,
- * D-406). Called whenever an admin is handed a link that sets this person's password:
- * from then on the person must not approve that admin's requests, because the admin
- * could have set the password themselves.
+ * Add a granter to the person's lineage in this brand (D-077, D-406, D-410): an admin who
+ * granted them a role, or who was handed a link that sets their password. From then on
+ * the person never approves that admin's requests. Appended, never overwritten, so an
+ * earlier granter stays in the lineage.
  */
-export async function recordGranter(
+export async function addGranter(
   tx: Tx,
-  orgId: string,
-  userId: string,
-  grantedBy: string,
+  input: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly grantedBy: string;
+    readonly reason: 'role_granted' | 'link_issued';
+  },
 ): Promise<void> {
+  if (input.grantedBy === input.userId) return;
   await tx.execute(sql`
-    update iam.memberships set granted_by = ${grantedBy}, updated_at = now()
-    where org_id = ${orgId} and user_id = ${userId} and is_active
+    insert into iam.membership_granters (org_id, user_id, granted_by, reason)
+    values (${input.orgId}, ${input.userId}, ${input.grantedBy}, ${input.reason})
   `);
 }
 
@@ -196,20 +219,23 @@ export async function people(tx: Tx, userIds: readonly string[]): Promise<Person
 }
 
 /**
- * Does this person hold an active role in a brand other than this one? (D-405)
+ * Which of these people hold an active role in another active brand? (D-405)
  *
- * Asked through the person's own lens (`withUser` with *their* id), the D-050 self
- * policy, because the acting admin's org context cannot see another brand's rows — which
- * is the point of it.
+ * Through `iam.users_active_elsewhere` (migration 0101), which looks through each
+ * person's own lens — the D-050 self policy — because the acting admin's org context
+ * cannot see another brand's rows, which is the point of it. Inside the caller's
+ * transaction, one round trip for the whole list; it returns ids, never a brand.
  */
-export async function activeElsewhere(tx: Tx, userId: string, orgId: string): Promise<boolean> {
-  const rows = await tx.execute<{ found: boolean }>(sql`
-    select exists (
-      select 1 from iam.memberships
-      where user_id = ${userId} and org_id <> ${orgId} and is_active
-    ) as found
+export async function activeElsewhere(
+  tx: Tx,
+  userIds: readonly string[],
+  orgId: string,
+): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  const rows = await tx.execute<{ user_id: string }>(sql`
+    select iam.users_active_elsewhere(${sql.param([...userIds])}::text[], ${orgId}::uuid) as user_id
   `);
-  return rows[0]?.found === true;
+  return new Set([...rows].map((row) => row.user_id));
 }
 
 /** End every session this person holds, or only those acting in one brand. */
@@ -264,22 +290,32 @@ export async function removeSecondFactor(tx: Tx, userId: string): Promise<void> 
   `);
 }
 
-/** Set an unexpired link's lifetime from now, and say when it ends. */
-export async function setLinkExpiry(tx: Tx, token: string, seconds: number): Promise<Date | null> {
+/**
+ * Mint a password link inside the caller's transaction (the ledger audit's W6).
+ *
+ * Better Auth redeems a link by consuming the `iam.verifications` row named
+ * `reset-password:<token>` whose value is the user id — the row its own
+ * `requestPasswordReset` writes. Writing that row here, after voiding every earlier one,
+ * makes "one person, one working link" true under concurrency and commits the link with
+ * the reset row and the audit entry, or not at all. 32 random bytes, base64url.
+ */
+export async function mintLink(
+  tx: Tx,
+  userId: string,
+  seconds: number,
+): Promise<{ token: string; expiresAt: Date }> {
+  const token = randomBytes(32).toString('base64url');
   const rows = await tx.execute<{ expires_at: Date }>(sql`
-    update iam.verifications
-    set expires_at = now() + make_interval(secs => ${seconds}), updated_at = now()
-    where identifier = ${`reset-password:${token}`}
+    insert into iam.verifications (id, identifier, value, expires_at)
+    values (
+      ${randomUUID()}, ${`reset-password:${token}`}, ${userId},
+      now() + make_interval(secs => ${seconds})
+    )
     returning expires_at
   `);
-  const value = rows[0]?.expires_at;
-  return value === undefined ? null : new Date(value);
-}
-
-export async function deleteLink(tx: Tx, token: string): Promise<void> {
-  await tx.execute(sql`
-    delete from iam.verifications where identifier = ${`reset-password:${token}`}
-  `);
+  const expiresAt = rows[0]?.expires_at;
+  if (expiresAt === undefined) throw new Error('the password link insert returned nothing');
+  return { token, expiresAt: new Date(expiresAt) };
 }
 
 // --- resets ------------------------------------------------------------------------------
@@ -349,17 +385,18 @@ export async function resetById(tx: Tx, orgId: string, id: string): Promise<Rese
   return rows[0];
 }
 
-/** Every open reset this person is the subject or the requester of, locked. */
+/** Every open reset this person is the subject or the requester of, locked when asked. */
 export async function openResetsTouching(
   tx: Tx,
   orgId: string,
   userId: string,
+  options: { readonly lock: boolean },
 ): Promise<ResetRow[]> {
   const rows = await tx.execute<ResetRow>(sql`
     select ${RESET_COLUMNS} from iam.credential_resets
     where org_id = ${orgId} and status in ('pending_approval', 'approved')
       and (user_id = ${userId} or requested_by = ${userId})
-    for update
+    ${options.lock ? sql`for update` : sql``}
   `);
   return [...rows];
 }

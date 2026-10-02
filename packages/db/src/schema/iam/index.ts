@@ -210,6 +210,11 @@ export const memberships = iam.table(
     index('memberships_user_idx').on(table.userId),
     // The target of membership_branches' composite reference (D-047).
     unique('memberships_org_id_id_key').on(table.orgId, table.id),
+    /**
+     * Nobody is their own granter (D-077, the ledger audit's C2): a self-grant would cut
+     * the lineage that keeps a person from approving their granter's requests.
+     */
+    check('memberships_not_self_granted', sql`${table.grantedBy} is distinct from ${table.userId}`),
   ],
 );
 
@@ -274,9 +279,11 @@ export const credentialResets = iam.table(
     orgId: uuid('org_id')
       .notNull()
       .references(() => organizations.id, { onDelete: 'restrict' }),
+    // Restrict, not cascade: a reset is evidence, and deleting a person must not erase
+    // it (D-407). Migration 0100 replaced 0098's cascade.
     userId: text('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => users.id, { onDelete: 'restrict' }),
     kind: text('kind').notNull(),
     status: text('status').notNull(),
     requestedBy: text('requested_by').notNull(),
@@ -317,6 +324,42 @@ export const credentialResets = iam.table(
     check(
       'credential_resets_pending_has_approval',
       sql`${table.status} not in ('pending_approval', 'approved') or ${table.approvalRequestId} is not null`,
+    ),
+  ],
+);
+
+/**
+ * Everyone who ever granted a person a role in a brand, or held a link that set their
+ * password (D-077, D-406, the ledger audit's C2 and N6).
+ *
+ * `iam.memberships.granted_by` holds only the latest granter, so a re-grant or a reset
+ * by a second admin used to drop the first from the lineage — and with it the rule that
+ * a person never approves a request raised by whoever could have set their password.
+ * This keeps every one of them. Append-only (migration 0101): INSERT and SELECT for
+ * `erp_app`, never UPDATE or DELETE. The approvals lineage reads both.
+ */
+export const membershipGranters = iam.table(
+  'membership_granters',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    grantedBy: text('granted_by').notNull(),
+    /** `role_granted`, `link_issued` or `backfill`, for whoever reads the lineage later. */
+    reason: text('reason').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('membership_granters_org_idx').on(table.orgId),
+    index('membership_granters_org_user_idx').on(table.orgId, table.userId),
+    check('membership_granters_not_self', sql`${table.grantedBy} <> ${table.userId}`),
+    check(
+      'membership_granters_reason_known',
+      sql`${table.reason} in ('role_granted', 'link_issued', 'backfill')`,
     ),
   ],
 );

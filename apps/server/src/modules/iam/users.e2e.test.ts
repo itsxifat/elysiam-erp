@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { base32 } from '@better-auth/utils/base32';
 import type { MembershipRole } from '@elysium/contracts';
 import { withGlobal, withOrg, withSystem } from '@elysium/db';
@@ -153,6 +155,19 @@ async function grantedBy(userId: string, orgId: string = ORG_A): Promise<(string
       tx.execute<{ granted_by: string | null }>(sql`
         select granted_by from iam.memberships
         where org_id = ${orgId} and user_id = ${userId} and is_active
+      `),
+    { orgId },
+  );
+  return [...rows].map((row) => row.granted_by);
+}
+
+/** Everyone in a person's grant history here (D-410). */
+async function grantersOf(userId: string, orgId: string = ORG_A): Promise<string[]> {
+  const rows = await withSystem(
+    async (tx) =>
+      tx.execute<{ granted_by: string }>(sql`
+        select granted_by from iam.membership_granters
+        where org_id = ${orgId} and user_id = ${userId}
       `),
     { orgId },
   );
@@ -438,8 +453,8 @@ describe('POST /v1/users/:id/password-link', () => {
     expect((await redeem(second.token, 'yet-another-passphrase')).statusCode).toBe(400);
     expect((await signIn(invited.email, NEW_PASSWORD)).response.statusCode).toBe(200);
 
-    // Whoever held the link could have set the password: they are now the granter.
-    expect(await grantedBy(invited.userId)).toEqual([admin.userId]);
+    // Whoever held the link could have set the password: they join the lineage (D-410).
+    expect(await grantersOf(invited.userId)).toContain(admin.userId);
   });
 
   it('resets a password: the old one stops at once, sessions end, the link lasts an hour', async () => {
@@ -475,7 +490,7 @@ describe('POST /v1/users/:id/password-link', () => {
   });
 
   it('refuses an expired link', async () => {
-    const person = await member(['warehouse']);
+    const person = await member(['sales']);
     const { token } = json<{ token: string }>(
       await admin.client.request('POST', `/v1/users/${person.userId}/password-link`, {
         body: { reason: 'Expiry' },
@@ -705,10 +720,163 @@ describe('POST /v1/users/:id/two-factor/reset', () => {
 
 // --- the database --------------------------------------------------------------------------
 
+// --- the ledger audit's findings --------------------------------------------------------
+
+describe('one admin cannot take over an account that can move money', () => {
+  it('still asks a second admin after the accountant is demoted (C1)', async () => {
+    const target = await harness.asRole('accounts', ORG_A);
+    const demoted = await admin.client.request('PUT', `/v1/users/${target.userId}/roles`, {
+      body: { roles: [{ role: 'sales', branchIds: [] }] },
+    });
+    expect(demoted.statusCode, demoted.body).toBe(200);
+
+    const twoFactor = await admin.client.request(
+      'POST',
+      `/v1/users/${target.userId}/two-factor/reset`,
+      { body: { reason: 'After the demotion' } },
+    );
+    expect(json<{ outcome: string }>(twoFactor).outcome).toBe('pending_approval');
+    const password = await admin.client.request(
+      'POST',
+      `/v1/users/${target.userId}/password-link`,
+      { body: { reason: 'After the demotion' } },
+    );
+    expect(json<{ outcome: string }>(password).outcome).toBe('pending_approval');
+  });
+
+  it('asks a second admin for anyone who can raise a request: branch manager, warehouse (W1)', async () => {
+    const branch = await createBranch(ORG_A, `W${Date.now().toString(36).slice(-5)}`);
+    const manager = await member(['sales']);
+    await admin2.client.request('PUT', `/v1/users/${manager.userId}/roles`, {
+      body: { roles: [{ role: 'branch_manager', branchIds: [branch] }] },
+    });
+    const store = await member(['warehouse']);
+    for (const person of [manager, store]) {
+      const asked = await admin.client.request('POST', `/v1/users/${person.userId}/password-link`, {
+        body: { reason: 'Forgot it' },
+      });
+      expect(json<{ outcome: string }>(asked).outcome, person.email).toBe('pending_approval');
+    }
+  });
+
+  it('refuses granting yourself a role through the invite route, and keeps the first granter (C2)', async () => {
+    const own = await admin.client.request('POST', '/v1/users', {
+      body: { email: admin.email, name: 'Me', role: 'accounts', branchIds: [] },
+    });
+    expect(own.statusCode).toBe(403);
+    expect(json<{ code: string }>(own).code).toBe('USER_SELF_MANAGEMENT');
+
+    // A person admin created, then re-granted and reshaped by admin2: admin stays in their
+    // lineage, so they can never approve admin's requests.
+    const email = `lineage_${Date.now()}@example.invalid`;
+    const created = await admin.client.request('POST', '/v1/users', {
+      body: { email, name: 'Lineage', role: 'org_admin', branchIds: [] },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const { userId, inviteToken } = json<{ userId: string; inviteToken: string }>(created);
+    expect((await redeem(inviteToken, PASSWORD)).statusCode).toBe(200);
+
+    await admin2.client.request('POST', '/v1/users', {
+      body: { email, name: 'Lineage', role: 'org_admin', branchIds: [] },
+    });
+    expect(await grantedBy(userId)).toEqual([admin.userId]);
+    const reshaped = await admin2.client.request('PUT', `/v1/users/${userId}/roles`, {
+      body: {
+        roles: [
+          { role: 'org_admin', branchIds: [] },
+          { role: 'sales', branchIds: [] },
+        ],
+      },
+    });
+    expect(reshaped.statusCode, reshaped.body).toBe(200);
+    expect(await grantersOf(userId)).toEqual(expect.arrayContaining([admin.userId, admin2.userId]));
+
+    const lineage = await signIn(email);
+    await enrol(lineage.client);
+    await lineage.client.request('POST', '/v1/me/active-org', { body: { orgId: ORG_A } });
+    const raised = await admin.client.request('POST', '/v1/approvals', {
+      body: { type: 'supplier_payment', amountPoisha: '700000' },
+    });
+    const { id } = json<{ id: string }>(raised);
+    const decided = await decide(lineage.client, id, 'approved');
+    expect(decided.statusCode).toBe(403);
+    expect(decided.body).toMatch(/granted you your role/);
+  });
+
+  it('cannot carry out an approved reset of someone who has since joined another brand (W4)', async () => {
+    const target = await harness.asRole('accounts', ORG_A);
+    const pending = json<{ approvalRequestId: string }>(
+      await admin.client.request('POST', `/v1/users/${target.userId}/two-factor/reset`, {
+        body: { reason: 'Phone lost' },
+      }),
+    );
+    await grantMembership({ userId: target.userId, orgId: ORG_B, role: 'sales' });
+    const approved = await decide(admin2.client, pending.approvalRequestId, 'approved');
+    expect(approved.statusCode).toBe(409);
+    expect((await target.client.request('GET', '/v1/me')).statusCode).toBe(200);
+    expect((await decide(admin2.client, pending.approvalRequestId, 'rejected')).statusCode).toBe(
+      201,
+    );
+  });
+
+  it('lets a checker reject an approval that names no reset (W3)', async () => {
+    const payload = JSON.stringify({
+      resetId: randomUUID(),
+      userId: 'usr_nobody',
+      kind: 'password',
+    });
+    const [orphan] = await withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
+      tx.execute<{ id: string }>(sql`
+        insert into approvals.approval_requests
+          (org_id, type, status, requested_by, payload, reason)
+        values (
+          ${ORG_A}, 'credential_reset', 'pending', ${admin.userId}, ${payload}::jsonb, 'orphan'
+        )
+        returning id
+      `),
+    );
+    if (orphan === undefined) throw new Error('no orphan');
+    expect((await decide(admin2.client, orphan.id, 'approved')).statusCode).toBe(409);
+    expect((await decide(admin2.client, orphan.id, 'rejected')).statusCode).toBe(201);
+  });
+
+  it('keeps the phone-number reset pair closed (W2)', async () => {
+    const client = harness.client();
+    await client.request('GET', '/v1/auth/login-branding');
+    for (const path of ['request-password-reset', 'reset-password']) {
+      const response = await client.request('POST', `/api/auth/phone-number/${path}`, {
+        body: { phoneNumber: '+8801700000009', otp: '123456', newPassword: 'whatever-it-is' },
+      });
+      expect(response.statusCode, path).toBe(404);
+    }
+  });
+
+  it('never stores a link for idempotent replay, and says not to cache it (N4)', async () => {
+    const person = await member(['sales'], { password: false });
+    const response = await admin2.client.request(
+      'POST',
+      `/v1/users/${person.userId}/password-link`,
+      { body: { reason: 'Replay check' }, headers: { 'idempotency-key': 'replay-check-0001' } },
+    );
+    expect(response.statusCode, response.body).toBe(201);
+    expect(response.headers['cache-control']).toBe('no-store');
+    const [stored] = await withSystem(
+      async (tx) =>
+        tx.execute<{ n: number }>(sql`
+          select count(*)::int as n from http.idempotency_keys
+          where idempotency_key = 'replay-check-0001'
+        `),
+      { orgId: ORG_A },
+    );
+    expect(stored?.n).toBe(0);
+  });
+});
+
+// admin has asked for close to its 20 resets an hour by here; admin2 has asked for none.
 describe('iam.credential_resets', () => {
   it('keeps every reset: no DELETE, terms frozen, and each brand sees only its own', async () => {
     const person = await member(['sales'], { password: false });
-    await admin.client.request('POST', `/v1/users/${person.userId}/password-link`, {
+    await admin2.client.request('POST', `/v1/users/${person.userId}/password-link`, {
       body: { reason: 'Database checks' },
     });
 

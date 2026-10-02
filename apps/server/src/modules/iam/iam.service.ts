@@ -4,7 +4,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -13,7 +12,6 @@ import {
   withGlobal,
   withOrg,
   withUser,
-  type Auth,
   type MembershipRole,
   type RequestContext,
 } from '@elysium/db';
@@ -22,6 +20,8 @@ import type { FastifyRequest } from 'fastify';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
+import { usersHttpError } from './users.errors.js';
+import { addGranter, lockPerson, mintLink, voidLinks } from './users.repository.js';
 
 /** What the auth plugin hangs off the request once a session is resolved. */
 export interface AuthenticatedRequest extends FastifyRequest {
@@ -73,11 +73,7 @@ function isForeignKeyViolation(cause: unknown): boolean {
 
 @Injectable()
 export class IamService {
-  constructor(
-    @Inject(AUTH) private readonly auth: Auth,
-    @Inject(PASSWORD_TOKENS) private readonly tokens: PasswordTokenStore,
-    private readonly audit: AuditService,
-  ) {}
+  constructor(private readonly audit: AuditService) {}
 
   requireUserId(request: FastifyRequest): string {
     const userId = (request as AuthenticatedRequest).authUser?.id;
@@ -188,7 +184,13 @@ export class IamService {
     name: string;
     role: MembershipRole;
     branchIds: readonly string[];
-  }): Promise<{ userId: string; membershipId: string; created: boolean; inviteToken?: string }> {
+  }): Promise<{
+    userId: string;
+    membershipId: string;
+    created: boolean;
+    inviteToken?: string;
+    inviteExpiresAt?: string;
+  }> {
     const isAdmin = input.caller.isSuperAdmin || input.caller.roles.includes('org_admin');
     if (!isAdmin) {
       throw new ForbiddenException('Only an organisation admin can create users.');
@@ -197,13 +199,29 @@ export class IamService {
     const email = input.email;
 
     const existing = await withGlobal(async (tx) =>
-      tx.execute<{ id: string; email_verified: boolean }>(
-        sql`select id, email_verified from iam.users where email = ${email}`,
+      tx.execute<{ id: string; email_verified: boolean; is_super_admin: boolean }>(
+        sql`select id, email_verified, is_super_admin from iam.users where email = ${email}`,
       ),
     );
 
     let userId = existing[0]?.id;
     const created = userId === undefined;
+
+    /*
+     * The staff screen's rules hold here too (the ledger audit's C2): this route is a
+     * second door to a person's roles. Granting yourself a role would also make you your
+     * own granter and cut the lineage that keeps you from approving for whoever could
+     * have set your password (D-077); and a super admin is a super admin's to change.
+     */
+    if (userId === input.caller.userId) {
+      throw usersHttpError(
+        'USER_SELF_MANAGEMENT',
+        'Nobody changes their own access. Ask another admin.',
+      );
+    }
+    if (existing[0]?.is_super_admin === true && !input.caller.isSuperAdmin) {
+      throw usersHttpError('USER_PROTECTED', 'Only a super admin can change a super admin.');
+    }
 
     if (userId !== undefined) {
       await this.refuseUnclaimedAccount(userId);
@@ -220,9 +238,10 @@ export class IamService {
 
     const resolvedUserId = userId;
 
-    const membershipId = await withOrg(
+    const { membershipId, invite } = await withOrg(
       { orgId: input.orgId, userId: input.caller.userId },
       async (tx) => {
+        await lockPerson(tx, input.orgId, resolvedUserId);
         const inserted = await tx.execute<{ id: string }>(sql`
           insert into iam.memberships (org_id, user_id, role, granted_by)
           values (
@@ -230,13 +249,30 @@ export class IamService {
             ${input.caller.userId}
           )
           -- Reactivating is granting again, so the granter is recorded again:
-          -- maker-checker reads it (D-077).
+          -- maker-checker reads it (D-077). A role already active is left as it is,
+          -- granter included: overwriting it dropped the first granter from the lineage.
           on conflict (org_id, user_id, role) do update
-            set is_active = true, granted_by = excluded.granted_by
+            set is_active = true, granted_by = excluded.granted_by, updated_at = now()
+            where iam.memberships.is_active = false
           returning id
         `);
 
-        const id = inserted[0]?.id;
+        let id = inserted[0]?.id;
+        if (id === undefined) {
+          const [held] = await tx.execute<{ id: string }>(sql`
+            select id from iam.memberships
+            where org_id = ${input.orgId} and user_id = ${resolvedUserId}
+              and role = ${input.role}::iam.membership_role
+          `);
+          id = held?.id;
+        } else {
+          await addGranter(tx, {
+            orgId: input.orgId,
+            userId: resolvedUserId,
+            grantedBy: input.caller.userId,
+            reason: 'role_granted',
+          });
+        }
         if (id === undefined) throw new ConflictException('Could not create the membership.');
 
         for (const branchId of input.branchIds) {
@@ -258,11 +294,18 @@ export class IamService {
           }
         }
 
-        return id;
+        // The invite is minted in this transaction, so it exists only if the person does
+        // (the ledger audit's W6). One person, one working link; three days (D-402).
+        const minted = created
+          ? await (async () => {
+              await voidLinks(tx, resolvedUserId, { devices: false });
+              return mintLink(tx, resolvedUserId, INVITE_LINK_SECONDS);
+            })()
+          : undefined;
+
+        return { membershipId: id, invite: minted };
       },
     );
-
-    const invite = created ? await this.issueInvite(resolvedUserId, email) : undefined;
 
     return {
       userId: resolvedUserId,
@@ -320,45 +363,5 @@ export class IamService {
     throw new ConflictException(
       'That address already has an account that belongs to no organisation. Have it removed before inviting it.',
     );
-  }
-
-  /**
-   * Mint the token the invited user redeems to set their password.
-   *
-   * Through Better Auth's own `request-password-reset`, so the token, its
-   * expiry and the redemption endpoint are the library's rather than a second
-   * implementation of the same thing with its own bugs.
-   */
-  private async issueInvite(
-    userId: string,
-    email: string,
-  ): Promise<{ token: string; expiresAt: Date } | undefined> {
-    // One person, one working link (D-402): nothing minted earlier may still open.
-    await withGlobal(async (tx) =>
-      tx.execute(sql`
-        delete from iam.verifications
-        where identifier like 'reset-password:%' and value = ${userId}
-      `),
-    );
-    this.tokens.take(email);
-
-    await this.auth.api.requestPasswordReset({
-      body: { email, redirectTo: '/accept-invite' },
-      headers: new Headers(),
-    });
-
-    const token = this.tokens.take(email);
-    if (token === undefined) return undefined;
-
-    // Better Auth gives every link an hour; an invite gets three days (D-402).
-    const [row] = await withGlobal(async (tx) =>
-      tx.execute<{ expires_at: Date }>(sql`
-        update iam.verifications
-        set expires_at = now() + make_interval(secs => ${INVITE_LINK_SECONDS}), updated_at = now()
-        where identifier = ${`reset-password:${token}`}
-        returning expires_at
-      `),
-    );
-    return { token, expiresAt: row === undefined ? new Date() : new Date(row.expires_at) };
   }
 }

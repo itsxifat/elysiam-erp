@@ -4,7 +4,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  Inject,
   Injectable,
 } from '@nestjs/common';
 import { resetNeedsSecondPerson, type MembershipRole, type RoleGrant } from '@elysium/contracts';
@@ -12,10 +11,7 @@ import {
   INVITE_LINK_SECONDS,
   PASSWORD_LINK_SECONDS,
   requiresTwoFactor,
-  withGlobal,
   withOrg,
-  withUser,
-  type Auth,
   type Tx,
 } from '@elysium/db';
 import {
@@ -24,6 +20,7 @@ import {
   planRoleChange,
   resetAllowedByLimits,
   type ResetKind,
+  type ResetPlan,
   type ResetTarget,
 } from '@elysium/domain/iam';
 import { z } from 'zod';
@@ -34,9 +31,9 @@ import type { ActiveContext } from '../../platform/http/context.js';
 import {
   ApprovalsService,
   type ApprovalExecutor,
+  type OwnedApprovalType,
   type RejectionHandler,
 } from '../approvals/approvals.service.js';
-import { AUTH, PASSWORD_TOKENS, type PasswordTokenStore } from './iam.service.js';
 import * as repo from './users.repository.js';
 import { pgCode, usersHttpError } from './users.errors.js';
 
@@ -48,10 +45,15 @@ import { pgCode, usersHttpError } from './users.errors.js';
  * admin may touch is `planCredentialReset` in `packages/domain`, so it can be walked as a
  * property; this service gathers the facts it needs and carries out what it decides.
  *
+ * **One transaction per action, facts read inside it** (the ledger audit's W4–W6). Each
+ * action takes the person lock (`lockPerson`), reads the facts, decides, and acts —
+ * minting a link included — before committing, so no promotion, second brand or parallel
+ * reset slips between the check and the write, and a failure leaves nothing half done.
+ *
  * **Links are tokens the admin holds.** There is no email adapter (D-212), so a password
  * link is handed to the admin to pass on, as invites always were (D-057). Whoever holds
- * the link can set the password, so every link records its issuer as the granter of the
- * person's roles here (D-077, D-406), and a reset of anyone who can approve at org tier
+ * the link could set the password, so they join the person's grant lineage (D-406,
+ * D-410), and a reset of anyone whose account can raise or decide an approval, ever,
  * waits for a second admin (D-404).
  */
 
@@ -122,11 +124,10 @@ export type TwoFactorOutcome =
       readonly approvalRequestId: string;
     };
 
-/** Everything the rules ask about the person being acted on. */
+/** Everything the rules ask about the person being acted on, read in the acting transaction. */
 interface Target {
   readonly userId: string;
   readonly name: string;
-  readonly email: string;
   readonly isSuperAdmin: boolean;
   readonly accountActive: boolean;
   readonly twoFactorEnabled: boolean;
@@ -141,6 +142,11 @@ function iso(value: Date | string | null): string | null {
   return (value instanceof Date ? value : new Date(value)).toISOString();
 }
 
+/**
+ * The rules' view of a person. "Needs a second admin" is decided over every role they
+ * have **ever** held here, not only the ones they hold now: otherwise an admin demotes an
+ * accountant, resets them alone and promotes them back (the ledger audit's C1).
+ */
 function resetTarget(target: Target): ResetTarget {
   return {
     userId: target.userId,
@@ -149,73 +155,85 @@ function resetTarget(target: Target): ResetTarget {
     inOtherBrand: target.inOtherBrand,
     hasPasswordAccount: target.hasPassword,
     twoFactorEnabled: target.twoFactorEnabled,
-    needsSecondPerson: resetNeedsSecondPerson(target.activeRoles, target.isSuperAdmin),
+    needsSecondPerson: resetNeedsSecondPerson(
+      target.held.map((row) => row.role),
+      target.isSuperAdmin,
+    ),
   };
 }
 
+const NOT_FOUND = (): never => {
+  throw usersHttpError('USER_NOT_FOUND', 'No such person in this organization.');
+};
+
 @Injectable()
 export class UsersService {
+  private readonly resets: OwnedApprovalType;
+
   constructor(
-    @Inject(AUTH) private readonly auth: Auth,
-    @Inject(PASSWORD_TOKENS) private readonly tokens: PasswordTokenStore,
     private readonly audit: AuditService,
     private readonly approvals: ApprovalsService,
   ) {
-    this.approvals.registerExecutor('credential_reset', this.executeReset);
+    this.resets = this.approvals.registerExecutor('credential_reset', this.executeReset);
     this.approvals.registerRejectionHandler('credential_reset', this.rejectReset);
+  }
+
+  private inOrg<T>(context: ActiveContext, work: (tx: Tx) => Promise<T>): Promise<T> {
+    return withOrg({ orgId: context.orgId, userId: context.userId }, work);
   }
 
   // --- reading --------------------------------------------------------------------------
 
   /** Everyone who holds or held a role in this brand, and the resets still open. */
   async list(context: ActiveContext): Promise<{ items: StaffRow[]; resets: OpenResetView[] }> {
-    const { memberships, resets } = await withOrg(
-      { orgId: context.orgId, userId: context.userId },
-      async (tx) => ({
-        memberships: await repo.membershipsInOrg(tx, context.orgId),
-        resets: await repo.openResets(tx, context.orgId),
-      }),
-    );
+    return this.inOrg(context, async (tx) => {
+      const memberships = await repo.membershipsInOrg(tx, context.orgId);
+      const resets = await repo.openResets(tx, context.orgId);
+      const userIds = [...new Set(memberships.map((row) => row.user_id))];
+      const found = await repo.people(tx, [
+        ...new Set([...userIds, ...resets.map((row) => row.requested_by)]),
+      ]);
+      const byId = new Map(found.map((person) => [person.id, person]));
+      const elsewhere = await repo.activeElsewhere(tx, userIds, context.orgId);
 
-    const userIds = [...new Set(memberships.map((row) => row.user_id))];
-    const requesterIds = resets.map((row) => row.requested_by);
-    const found = await withGlobal(async (tx) =>
-      repo.people(tx, [...new Set([...userIds, ...requesterIds])]),
-    );
-    const byId = new Map(found.map((person) => [person.id, person]));
+      const items: StaffRow[] = [];
+      for (const userId of userIds) {
+        const person = byId.get(userId);
+        if (person === undefined) continue;
+        const held = memberships.filter((row) => row.user_id === userId);
+        items.push(this.view(context, person, held, elsewhere.has(userId)));
+      }
+      items.sort((a, b) => a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
 
-    const elsewhere = new Map<string, boolean>();
-    for (const userId of userIds) {
-      elsewhere.set(userId, await this.activeElsewhere(userId, context.orgId));
-    }
+      return {
+        items,
+        resets: resets
+          .filter((row) => row.kind !== 'invite')
+          .map((row) => ({
+            id: row.id,
+            userId: row.user_id,
+            kind: row.kind as 'password' | 'two_factor',
+            status: row.status as 'pending_approval' | 'approved',
+            requestedBy: row.requested_by,
+            requestedByName: byId.get(row.requested_by)?.name ?? null,
+            reason: row.reason,
+            approvalRequestId: row.approval_request_id,
+            createdAt: iso(row.created_at) ?? '',
+            decidedAt: iso(row.decided_at),
+            mine: row.requested_by === context.userId,
+          })),
+      };
+    });
+  }
 
-    const items: StaffRow[] = [];
-    for (const userId of userIds) {
-      const person = byId.get(userId);
-      if (person === undefined) continue;
-      const held = memberships.filter((row) => row.user_id === userId);
-      items.push(this.view(context, person, held, elsewhere.get(userId) === true));
-    }
-    items.sort((a, b) => a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
-
-    return {
-      items,
-      resets: resets
-        .filter((row) => row.kind !== 'invite')
-        .map((row) => ({
-          id: row.id,
-          userId: row.user_id,
-          kind: row.kind as 'password' | 'two_factor',
-          status: row.status as 'pending_approval' | 'approved',
-          requestedBy: row.requested_by,
-          requestedByName: byId.get(row.requested_by)?.name ?? null,
-          reason: row.reason,
-          approvalRequestId: row.approval_request_id,
-          createdAt: iso(row.created_at) ?? '',
-          decidedAt: iso(row.decided_at),
-          mine: row.requested_by === context.userId,
-        })),
-    };
+  async get(context: ActiveContext, userId: string): Promise<StaffRow> {
+    return this.inOrg(context, async (tx) => {
+      const held = await repo.membershipsOfUser(tx, context.orgId, userId);
+      const [person] = await repo.people(tx, [userId]);
+      if (held.length === 0 || person === undefined) return NOT_FOUND();
+      const elsewhere = await repo.activeElsewhere(tx, [userId], context.orgId);
+      return this.view(context, person, held, elsewhere.has(userId));
+    });
   }
 
   private view(
@@ -225,7 +243,6 @@ export class UsersService {
     inOtherBrand: boolean,
   ): StaffRow {
     const active = held.filter((row) => row.is_active);
-    const roles = active.map((row) => ({ role: row.role, branchIds: [...row.branch_ids] }));
     const status: StaffStatus = !person.is_active
       ? 'disabled'
       : active.length === 0
@@ -238,7 +255,7 @@ export class UsersService {
       name: person.name,
       email: person.email,
       status,
-      roles,
+      roles: active.map((row) => ({ role: row.role, branchIds: [...row.branch_ids] })),
       formerRoles: held.filter((row) => !row.is_active).map((row) => row.role),
       twoFactorEnabled: person.two_factor_enabled,
       twoFactorRequired: requiresTwoFactor(
@@ -254,42 +271,33 @@ export class UsersService {
       resetNeedsApproval:
         !context.isSuperAdmin &&
         resetNeedsSecondPerson(
-          active.map((row) => row.role),
+          held.map((row) => row.role),
           person.is_super_admin,
         ),
     };
   }
 
-  private async activeElsewhere(userId: string, orgId: string): Promise<boolean> {
-    return withUser({ userId }, async (tx) => repo.activeElsewhere(tx, userId, orgId));
-  }
-
   /**
-   * The person, as the rules need them. 404 for anyone with no role here, ever: an
-   * admin of one brand learns nothing about another brand's people from this route.
+   * The person, as the rules need them, under the person lock. 404 for anyone with no
+   * role here, ever: an admin of one brand learns nothing about another brand's people.
    */
-  private async target(context: ActiveContext, userId: string): Promise<Target> {
-    const held = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
-      repo.membershipsOfUser(tx, context.orgId, userId),
-    );
-    if (held.length === 0) {
-      throw usersHttpError('USER_NOT_FOUND', 'No such person in this organization.');
-    }
-    const [person] = await withGlobal(async (tx) => repo.people(tx, [userId]));
-    if (person === undefined) {
-      throw usersHttpError('USER_NOT_FOUND', 'No such person in this organization.');
-    }
+  private async target(tx: Tx, orgId: string, userId: string): Promise<Target> {
+    await repo.lockPerson(tx, orgId, userId);
+    const held = await repo.membershipsOfUser(tx, orgId, userId, { lock: true });
+    if (held.length === 0) return NOT_FOUND();
+    const [person] = await repo.people(tx, [userId]);
+    if (person === undefined) return NOT_FOUND();
+    const elsewhere = await repo.activeElsewhere(tx, [userId], orgId);
     return {
       userId,
       name: person.name,
-      email: person.email,
       isSuperAdmin: person.is_super_admin,
       accountActive: person.is_active,
       twoFactorEnabled: person.two_factor_enabled,
       hasPassword: person.has_password,
       held,
       activeRoles: held.filter((row) => row.is_active).map((row) => row.role),
-      inOtherBrand: await this.activeElsewhere(userId, context.orgId),
+      inOtherBrand: elsewhere.has(userId),
     };
   }
 
@@ -306,17 +314,6 @@ export class UsersService {
     }
   }
 
-  async get(context: ActiveContext, userId: string): Promise<StaffRow> {
-    const held = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
-      repo.membershipsOfUser(tx, context.orgId, userId),
-    );
-    const [person] = await withGlobal(async (tx) => repo.people(tx, [userId]));
-    if (held.length === 0 || person === undefined) {
-      throw usersHttpError('USER_NOT_FOUND', 'No such person in this organization.');
-    }
-    return this.view(context, person, held, await this.activeElsewhere(userId, context.orgId));
-  }
-
   // --- roles ----------------------------------------------------------------------------
 
   /**
@@ -324,7 +321,7 @@ export class UsersService {
    *
    * Takes effect on their next request: the context is rebuilt from memberships every
    * time, and a newly privileged role meets the enrolment wall at once (§6). Every role
-   * granted or reshaped names the acting admin as its granter (D-077).
+   * granted or reshaped adds the acting admin to the person's lineage (D-077, D-410).
    */
   async setRoles(
     context: ActiveContext,
@@ -332,14 +329,16 @@ export class UsersService {
     userId: string,
     wanted: readonly RoleGrant[],
   ): Promise<StaffRow> {
-    const target = await this.target(context, userId);
-    this.guardManage(context, target);
-
     try {
-      await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const held = await repo.membershipsOfUser(tx, context.orgId, userId, { lock: true });
+      await this.inOrg(context, async (tx) => {
+        const target = await this.target(tx, context.orgId, userId);
+        this.guardManage(context, target);
         const change = planRoleChange(
-          held.map((row) => ({ role: row.role, active: row.is_active, branchIds: row.branch_ids })),
+          target.held.map((row) => ({
+            role: row.role,
+            active: row.is_active,
+            branchIds: row.branch_ids,
+          })),
           wanted,
         );
 
@@ -353,6 +352,14 @@ export class UsersService {
           const branchIds = wanted.find((entry) => entry.role === role)?.branchIds ?? [];
           await repo.setBranches(tx, context.orgId, membershipId, branchIds);
         }
+        if (change.grant.length + change.reshape.length > 0) {
+          await repo.addGranter(tx, {
+            orgId: context.orgId,
+            userId,
+            grantedBy: context.userId,
+            reason: 'role_granted',
+          });
+        }
         await repo.revokeRoles(tx, context.orgId, userId, change.revoke);
 
         await this.audit.record(tx, {
@@ -363,7 +370,7 @@ export class UsersService {
           entityType: 'User',
           entityId: userId,
           before: {
-            roles: held
+            roles: target.held
               .filter((row) => row.is_active)
               .map((row) => ({ role: row.role, branchIds: row.branch_ids })),
           },
@@ -398,8 +405,12 @@ export class UsersService {
    *
    * Their roles here end, their open resets are cancelled (and the approvals waiting on
    * them withdrawn), and their sessions end at once — every session, with every unused
-   * link and remembered device, when this was the last brand they worked in; otherwise
+   * link and remembered device, when this was the last brand they work in; otherwise
    * only the sessions acting in this one. Nothing they wrote is touched.
+   *
+   * The approvals are withdrawn first, before the person lock, to keep the one lock
+   * order a decision also follows (approval row, then person): a checker approving one of
+   * these resets at the same moment either finishes first or finds it withdrawn.
    */
   async deactivate(
     context: ActiveContext,
@@ -412,27 +423,34 @@ export class UsersService {
     sessionsEnded: number;
     resetsCancelled: number;
   }> {
-    const target = await this.target(context, userId);
-    this.guardManage(context, target);
-    if (target.activeRoles.length === 0) {
-      throw usersHttpError('USER_INACTIVE', 'This person is already deactivated here.');
-    }
+    return this.inOrg(context, async (tx) => {
+      const waiting = (
+        await repo.openResetsTouching(tx, context.orgId, userId, { lock: false })
+      ).filter((row) => row.status === 'pending_approval' && row.approval_request_id !== null);
+      const withdraw = async (approvalId: string) =>
+        this.resets.cancel(tx, context, {
+          id: approvalId,
+          reason: 'The person was deactivated.',
+          request,
+        });
+      for (const reset of waiting) {
+        if (reset.approval_request_id !== null) await withdraw(reset.approval_request_id);
+      }
 
-    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-      await repo.membershipsOfUser(tx, context.orgId, userId, { lock: true });
+      const target = await this.target(tx, context.orgId, userId);
+      this.guardManage(context, target);
+      if (target.activeRoles.length === 0) {
+        throw usersHttpError('USER_INACTIVE', 'This person is already deactivated here.');
+      }
       const revoked = await repo.revokeRoles(tx, context.orgId, userId, 'all');
 
-      const open = await repo.openResetsTouching(tx, context.orgId, userId);
+      const open = await repo.openResetsTouching(tx, context.orgId, userId, { lock: true });
       for (const reset of open) {
-        await repo.moveReset(tx, context.orgId, reset.id, { status: 'cancelled' });
+        // One raised after the first pass: withdraw its approval too, then the reset.
         if (reset.status === 'pending_approval' && reset.approval_request_id !== null) {
-          await this.approvals.cancelRaisedByModule(tx, context, {
-            id: reset.approval_request_id,
-            type: 'credential_reset',
-            reason: 'The person was deactivated.',
-            request,
-          });
+          await withdraw(reset.approval_request_id);
         }
+        await repo.moveReset(tx, context.orgId, reset.id, { status: 'cancelled' });
       }
 
       const sessionsEnded = target.inOtherBrand
@@ -479,8 +497,9 @@ export class UsersService {
    *
    * - **collect** an approved reset this admin asked for, within 24 hours;
    * - **issue** at once — an invite sent again for someone who never set a password, a
-   *   reset by a super admin, or a reset of someone who cannot approve anything;
-   * - **ask** a second admin, for anyone who can approve at org tier.
+   *   reset by a super admin, or a reset of someone who never could raise or decide an
+   *   approval here;
+   * - **ask** a second admin, for everyone else.
    */
   async passwordLink(
     context: ActiveContext,
@@ -488,141 +507,119 @@ export class UsersService {
     userId: string,
     reason: string,
   ): Promise<LinkOutcome> {
-    const target = await this.target(context, userId);
-
-    const open = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+    const result = await this.inOrg<
+      LinkOutcome | { refused: Extract<ResetPlan, { decision: 'refuse' }> }
+    >(context, async (tx) => {
+      const target = await this.target(tx, context.orgId, userId);
       await repo.expireStaleResets(tx, context.orgId);
-      return repo.openResetFor(tx, context.orgId, userId, 'password');
-    });
+      const open = await repo.openResetFor(tx, context.orgId, userId, 'password');
 
-    if (open !== undefined) {
-      const collectable =
-        open.status === 'approved' &&
-        open.requested_by === context.userId &&
-        open.decided_at !== null &&
-        isCollectable(new Date(open.decided_at), new Date());
-      if (!collectable) {
-        throw usersHttpError(
-          'CREDENTIAL_RESET_PENDING',
-          open.status === 'pending_approval'
-            ? 'A password reset for this person is already waiting for a second admin.'
-            : 'A password reset for this person was approved for the admin who asked for it.',
-        );
+      if (open !== undefined) {
+        const collectable =
+          open.status === 'approved' &&
+          open.requested_by === context.userId &&
+          open.decided_at !== null &&
+          isCollectable(new Date(open.decided_at), new Date());
+        if (!collectable) {
+          throw usersHttpError(
+            'CREDENTIAL_RESET_PENDING',
+            open.status === 'pending_approval'
+              ? 'A password reset for this person is already waiting for a second admin.'
+              : 'A password reset for this person was approved for the admin who asked for it.',
+          );
+        }
+        return this.collect(tx, context, request, target, open);
       }
-      return this.collect(context, request, target, open);
-    }
 
-    const plan = planCredentialReset({
-      actor: { userId: context.userId, isSuperAdmin: context.isSuperAdmin },
-      target: resetTarget(target),
-      kind: 'password',
-    });
-    if (plan.decision === 'refuse') throw usersHttpError(plan.code, plan.reason);
-    await this.checkLimits(context, userId);
+      const plan = this.plan(context, target, 'password');
+      await this.checkLimits(tx, context, userId);
 
-    if (plan.decision === 'approval') {
-      return this.askSecondAdmin(context, request, target, 'password', reason);
-    }
-
-    const kind = plan.effect === 'invite' ? 'invite' : 'password';
-    const link = await this.mint(target, kind);
-    try {
-      await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const resetId = randomUUID();
-        await this.applyPasswordLink(tx, context, target, kind);
-        await repo.insertReset(tx, {
-          id: resetId,
-          orgId: context.orgId,
-          userId,
-          kind,
-          status: 'completed',
-          requestedBy: context.userId,
-          reason,
-          approvalRequestId: null,
-          linkExpiresAt: link.expiresAt,
-        });
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'update',
-          action: kind === 'invite' ? 'iam.invite_reissued' : 'iam.password_link_issued',
-          entityType: 'User',
-          entityId: userId,
-          before: null,
-          after: { resetId, reason, expiresAt: link.expiresAt.toISOString(), approvedBy: null },
-          requestId: context.requestId,
-          request,
-        });
+      if (plan.decision === 'approval') {
+        return this.askSecondAdmin(tx, context, request, target, 'password', reason);
+      }
+      const kind: 'invite' | 'password' = plan.effect === 'invite' ? 'invite' : 'password';
+      const link = await this.issueLink(tx, context, target, kind);
+      const resetId = randomUUID();
+      await repo.insertReset(tx, {
+        id: resetId,
+        orgId: context.orgId,
+        userId,
+        kind,
+        status: 'completed',
+        requestedBy: context.userId,
+        reason,
+        approvalRequestId: null,
+        linkExpiresAt: link.expiresAt,
       });
-    } catch (error) {
-      await withGlobal(async (tx) => repo.deleteLink(tx, link.token)).catch(() => undefined);
-      throw error;
-    }
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'update',
+        action: kind === 'invite' ? 'iam.invite_reissued' : 'iam.password_link_issued',
+        entityType: 'User',
+        entityId: userId,
+        before: null,
+        after: { resetId, reason, expiresAt: link.expiresAt.toISOString(), approvedBy: null },
+        requestId: context.requestId,
+        request,
+      });
+      return {
+        outcome: 'issued' as const,
+        kind,
+        token: link.token,
+        expiresAt: link.expiresAt.toISOString(),
+      };
+    });
 
-    return {
-      outcome: 'issued',
-      kind,
-      token: link.token,
-      expiresAt: link.expiresAt.toISOString(),
-    };
+    if ('refused' in result) throw usersHttpError(result.refused.code, result.refused.reason);
+    return result;
   }
 
-  /** Hand the admin who asked the link a second admin approved (D-404). */
+  /**
+   * Hand the admin who asked the link a second admin approved (D-404). The rules are asked
+   * again first, short of the second person they already had: if the person has since
+   * left or joined another brand, the reset is cancelled — and stays cancelled, which is
+   * why the refusal is returned rather than thrown inside the transaction.
+   */
   private async collect(
+    tx: Tx,
     context: ActiveContext,
     request: AuditableRequest,
     target: Target,
     reset: repo.ResetRow,
-  ): Promise<LinkOutcome> {
-    // The facts may have changed since the approval: re-ask the rules, short of the
-    // second person they already had.
+  ): Promise<LinkOutcome | { refused: Extract<ResetPlan, { decision: 'refuse' }> }> {
     const plan = planCredentialReset({
       actor: { userId: context.userId, isSuperAdmin: context.isSuperAdmin },
       target: resetTarget(target),
       kind: 'password',
     });
     if (plan.decision === 'refuse') {
-      await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
-        repo.moveReset(tx, context.orgId, reset.id, { status: 'cancelled' }),
-      );
-      throw usersHttpError(plan.code, plan.reason);
+      await repo.moveReset(tx, context.orgId, reset.id, { status: 'cancelled' });
+      return { refused: plan };
     }
 
-    const link = await this.mint(target, 'password');
-    try {
-      await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const current = await repo.resetById(tx, context.orgId, reset.id);
-        if (current?.status !== 'approved' || current.requested_by !== context.userId) {
-          throw usersHttpError('CONFLICT', 'That reset is no longer waiting to be collected.');
-        }
-        await this.applyPasswordLink(tx, context, target, 'password');
-        await repo.moveReset(tx, context.orgId, reset.id, {
-          status: 'completed',
-          linkExpiresAt: link.expiresAt,
-        });
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'update',
-          action: 'iam.password_link_issued',
-          entityType: 'User',
-          entityId: target.userId,
-          before: null,
-          after: {
-            resetId: reset.id,
-            reason: reset.reason,
-            expiresAt: link.expiresAt.toISOString(),
-            approvedBy: reset.decided_by,
-          },
-          requestId: context.requestId,
-          request,
-        });
-      });
-    } catch (error) {
-      await withGlobal(async (tx) => repo.deleteLink(tx, link.token)).catch(() => undefined);
-      throw error;
-    }
-
+    const link = await this.issueLink(tx, context, target, 'password');
+    await repo.moveReset(tx, context.orgId, reset.id, {
+      status: 'completed',
+      linkExpiresAt: link.expiresAt,
+    });
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'update',
+      action: 'iam.password_link_issued',
+      entityType: 'User',
+      entityId: target.userId,
+      before: null,
+      after: {
+        resetId: reset.id,
+        reason: reset.reason,
+        expiresAt: link.expiresAt.toISOString(),
+        approvedBy: reset.decided_by,
+      },
+      requestId: context.requestId,
+      request,
+    });
     return {
       outcome: 'issued',
       kind: 'password',
@@ -632,50 +629,33 @@ export class UsersService {
   }
 
   /**
-   * What issuing a link does to the person, in the caller's transaction: the old password
-   * stops working, every session ends, and the issuer becomes the granter of their roles
-   * here (D-402, D-406). For an invite there is no password and no session to end.
+   * Mint a link and do what issuing one does to the person, in the caller's transaction:
+   * every earlier link stops working; for a reset, the old password too, with every
+   * session and pending second-factor challenge; and the issuer joins the person's
+   * lineage here, because they could set the password themselves (D-402, D-406).
    */
-  private async applyPasswordLink(
+  private async issueLink(
     tx: Tx,
     context: ActiveContext,
     target: Target,
     kind: 'invite' | 'password',
-  ): Promise<void> {
+  ): Promise<{ token: string; expiresAt: Date }> {
+    await repo.voidLinks(tx, target.userId, { devices: kind === 'password' });
     if (kind === 'password') {
       await repo.voidPassword(tx, target.userId);
       await repo.endSessions(tx, target.userId, 'all');
     }
-    await repo.recordGranter(tx, context.orgId, target.userId, context.userId);
-  }
-
-  /**
-   * Mint a password link through Better Auth's own reset flow, so the token, its storage
-   * and the redemption endpoint are the library's. Every earlier link is voided first —
-   * one person, one working link — and the new one is given its lifetime (D-402).
-   */
-  private async mint(
-    target: Target,
-    kind: 'invite' | 'password',
-  ): Promise<{ token: string; expiresAt: Date }> {
-    await withGlobal(async (tx) => repo.voidLinks(tx, target.userId, { devices: false }));
-    this.tokens.take(target.email);
-    await this.auth.api.requestPasswordReset({
-      body: { email: target.email, redirectTo: '/accept-invite' },
-      headers: new Headers(),
+    await repo.addGranter(tx, {
+      orgId: context.orgId,
+      userId: target.userId,
+      grantedBy: context.userId,
+      reason: 'link_issued',
     });
-    const token = this.tokens.take(target.email);
-    if (token === undefined) throw new Error('Better Auth minted no password link.');
-
-    const expiresAt = await withGlobal(async (tx) =>
-      repo.setLinkExpiry(
-        tx,
-        token,
-        kind === 'invite' ? INVITE_LINK_SECONDS : PASSWORD_LINK_SECONDS,
-      ),
+    return repo.mintLink(
+      tx,
+      target.userId,
+      kind === 'invite' ? INVITE_LINK_SECONDS : PASSWORD_LINK_SECONDS,
     );
-    if (expiresAt === null) throw new Error('The password link vanished as it was minted.');
-    return { token, expiresAt };
   }
 
   // --- second factors -------------------------------------------------------------------
@@ -690,31 +670,22 @@ export class UsersService {
     userId: string,
     reason: string,
   ): Promise<TwoFactorOutcome> {
-    const target = await this.target(context, userId);
+    return this.inOrg(context, async (tx) => {
+      const target = await this.target(tx, context.orgId, userId);
+      const open = await repo.openResetFor(tx, context.orgId, userId, 'two_factor');
+      if (open !== undefined) {
+        throw usersHttpError(
+          'CREDENTIAL_RESET_PENDING',
+          'A two-step verification reset for this person is already waiting for a second admin.',
+        );
+      }
 
-    const open = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
-      repo.openResetFor(tx, context.orgId, userId, 'two_factor'),
-    );
-    if (open !== undefined) {
-      throw usersHttpError(
-        'CREDENTIAL_RESET_PENDING',
-        'A two-step verification reset for this person is already waiting for a second admin.',
-      );
-    }
+      const plan = this.plan(context, target, 'two_factor');
+      await this.checkLimits(tx, context, userId);
+      if (plan.decision === 'approval') {
+        return this.askSecondAdmin(tx, context, request, target, 'two_factor', reason);
+      }
 
-    const plan = planCredentialReset({
-      actor: { userId: context.userId, isSuperAdmin: context.isSuperAdmin },
-      target: resetTarget(target),
-      kind: 'two_factor',
-    });
-    if (plan.decision === 'refuse') throw usersHttpError(plan.code, plan.reason);
-    await this.checkLimits(context, userId);
-
-    if (plan.decision === 'approval') {
-      return this.askSecondAdmin(context, request, target, 'two_factor', reason);
-    }
-
-    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const resetId = randomUUID();
       const sessionsEnded = await this.removeTwoFactor(tx, target.userId);
       await repo.insertReset(tx, {
@@ -750,12 +721,26 @@ export class UsersService {
     return repo.endSessions(tx, userId, 'all');
   }
 
-  // --- the second admin -----------------------------------------------------------------
+  // --- the rules and the second admin -----------------------------------------------------
 
-  private async checkLimits(context: ActiveContext, userId: string): Promise<void> {
-    const counts = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
-      repo.resetCounts(tx, context.orgId, context.userId, userId),
-    );
+  /** Ask the rules; a refusal is the answer, with its own code. */
+  private plan(
+    context: ActiveContext,
+    target: Target,
+    kind: ResetKind,
+  ): Exclude<ResetPlan, { decision: 'refuse' }> {
+    const plan = planCredentialReset({
+      actor: { userId: context.userId, isSuperAdmin: context.isSuperAdmin },
+      target: resetTarget(target),
+      kind,
+    });
+    if (plan.decision === 'refuse') throw usersHttpError(plan.code, plan.reason);
+    return plan;
+  }
+
+  /** The reset limits, counted under the person lock so parallel asks cannot pass them. */
+  private async checkLimits(tx: Tx, context: ActiveContext, userId: string): Promise<void> {
+    const counts = await repo.resetCounts(tx, context.orgId, context.userId, userId);
     if (!resetAllowedByLimits(counts)) {
       throw usersHttpError(
         'RATE_LIMITED',
@@ -765,13 +750,12 @@ export class UsersService {
   }
 
   /**
-   * Raise the `credential_reset` approval, then record the reset that waits on it.
-   *
-   * Two transactions, as a loan repayment's are: `ApprovalsService.request` opens its
-   * own. If the second fails — another admin asked in the same moment and the unique
-   * index refused this one — the approval is withdrawn rather than left naming nothing.
+   * Raise the `credential_reset` approval and record the reset that waits on it, in the
+   * same transaction (the ledger audit's W3): both commit, or neither does, so no
+   * approval ever names a reset that is not there.
    */
   private async askSecondAdmin(
+    tx: Tx,
     context: ActiveContext,
     request: AuditableRequest,
     target: Target,
@@ -786,77 +770,55 @@ export class UsersService {
       reason: `${kind === 'password' ? 'Password link' : 'Two-step verification reset'} for ${target.name}: ${reason}`,
       raisedByModule: true,
       request,
+      tx,
     });
     if (raised.status !== 'pending') {
       throw new ConflictException('A sign-in reset always waits for a second admin.');
     }
-
-    try {
-      await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        await repo.insertReset(tx, {
-          id: resetId,
-          orgId: context.orgId,
-          userId: target.userId,
-          kind,
-          status: 'pending_approval',
-          requestedBy: context.userId,
-          reason,
-          approvalRequestId: raised.id,
-          linkExpiresAt: null,
-        });
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'create',
-          action: 'iam.credential_reset_requested',
-          entityType: 'User',
-          entityId: target.userId,
-          before: null,
-          after: { resetId, kind, reason, approvalRequestId: raised.id },
-          requestId: context.requestId,
-          request,
-        });
-      });
-    } catch (error) {
-      await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
-        this.approvals.cancelRaisedByModule(tx, context, {
-          id: raised.id,
-          type: 'credential_reset',
-          reason: 'The reset could not be recorded.',
-        }),
-      ).catch(() => undefined);
-      if (pgCode(error) === '23505') {
-        throw usersHttpError(
-          'CREDENTIAL_RESET_PENDING',
-          'Another admin asked for the same reset a moment ago.',
-        );
-      }
-      throw error;
-    }
-
+    await repo.insertReset(tx, {
+      id: resetId,
+      orgId: context.orgId,
+      userId: target.userId,
+      kind,
+      status: 'pending_approval',
+      requestedBy: context.userId,
+      reason,
+      approvalRequestId: raised.id,
+      linkExpiresAt: null,
+    });
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'create',
+      action: 'iam.credential_reset_requested',
+      entityType: 'User',
+      entityId: target.userId,
+      before: null,
+      after: { resetId, kind, reason, approvalRequestId: raised.id },
+      requestId: context.requestId,
+      request,
+    });
     return { outcome: 'pending_approval', resetId, approvalRequestId: raised.id };
   }
 
-  /** The reset an approval names, checked against the approval itself. */
+  /** The reset an approval names, if the approval names one that is still waiting. */
   private async waitingReset(
     tx: Tx,
     context: ActiveContext,
     approval: { readonly id: string; readonly payload: Record<string, unknown> },
-  ): Promise<repo.ResetRow> {
+  ): Promise<repo.ResetRow | null> {
     const parsed = resetPayloadSchema.safeParse(approval.payload);
-    const reset = parsed.success
-      ? await repo.resetById(tx, context.orgId, parsed.data.resetId)
-      : undefined;
+    if (!parsed.success) return null;
+    // The person lock after the approval row decide already holds: the one lock order.
+    await repo.lockPerson(tx, context.orgId, parsed.data.userId);
+    const reset = await repo.resetById(tx, context.orgId, parsed.data.resetId);
     if (
-      !parsed.success ||
       reset?.status !== 'pending_approval' ||
       reset.approval_request_id !== approval.id ||
       reset.user_id !== parsed.data.userId ||
       reset.kind !== parsed.data.kind
     ) {
-      throw new ConflictException(
-        'That approval names no sign-in reset waiting for it; reject it instead.',
-      );
+      return null;
     }
     // The approvals service keeps the requester out; this keeps the subject out (D-404).
     if (reset.user_id === context.userId) {
@@ -865,9 +827,28 @@ export class UsersService {
     return reset;
   }
 
-  /** Approved: a second factor goes now; a password link waits to be collected. */
+  /**
+   * Approved: a second factor goes now; a password link waits to be collected. The rules
+   * are asked again first, with the admin who asked as the actor: if the person has left,
+   * joined another brand, or lost the factor meanwhile, the approval cannot take effect
+   * and the checker rejects it instead.
+   */
   private readonly executeReset: ApprovalExecutor = async (tx, { context, approval, request }) => {
     const reset = await this.waitingReset(tx, context, approval);
+    if (reset === null) {
+      throw new ConflictException(
+        'That approval names no sign-in reset waiting for it; reject it instead.',
+      );
+    }
+    const target = await this.target(tx, context.orgId, reset.user_id);
+    const plan = planCredentialReset({
+      actor: { userId: reset.requested_by, isSuperAdmin: false },
+      target: resetTarget(target),
+      kind: reset.kind === 'two_factor' ? 'two_factor' : 'password',
+    });
+    if (plan.decision === 'refuse') {
+      throw new ConflictException(`${plan.reason} Reject this reset instead.`);
+    }
 
     if (reset.kind === 'two_factor') {
       const sessionsEnded = await this.removeTwoFactor(tx, reset.user_id);
@@ -915,8 +896,13 @@ export class UsersService {
     });
   };
 
+  /**
+   * Rejected: the reset ends with nothing changed. An approval that names no waiting reset
+   * is rejected without complaint, so nothing can leave one stuck in every admin's queue.
+   */
   private readonly rejectReset: RejectionHandler = async (tx, { context, approval, request }) => {
     const reset = await this.waitingReset(tx, context, approval);
+    if (reset === null) return;
     await repo.moveReset(tx, context.orgId, reset.id, {
       status: 'rejected',
       decidedBy: context.userId,
