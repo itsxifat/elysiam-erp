@@ -130,12 +130,14 @@ beforeAll(async () => {
   branchSalesA = await harness.asRole('sales', ORG_A, { branchIds: [branchOne] });
 }, 180_000);
 
+// 60 s, as the other HTTP suites give their teardown: closing the harness drops its
+// database, which under a loaded `pnpm verify` outlasted vitest's 10 s default.
 afterAll(async () => {
   for (const socket of open) socket.disconnect();
   await gateway.close();
   await worker.close();
   await harness.close();
-});
+}, 60_000);
 
 /** Everything one socket was sent, in order. */
 class Recorder {

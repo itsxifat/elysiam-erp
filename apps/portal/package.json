@@ -7,6 +7,7 @@
     "build": "vite build",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "dev": "vite --port 5174 --strictPort",
+    "e2e:stack": "playwright test -c e2e/stack.config.ts",
     "lint": "eslint .",
     "preview": "vite preview --port 5174 --strictPort",
     "typecheck": "tsc --noEmit"
@@ -17,12 +18,17 @@
     "@elysium/contracts": "workspace:*",
     "@elysium/i18n": "workspace:*",
     "@elysium/ui": "workspace:*",
+    "@hookform/resolvers": "catalog:",
+    "@tanstack/react-query": "catalog:",
     "lucide-react": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "react-hook-form": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@axe-core/playwright": "catalog:",
+    "@playwright/test": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",

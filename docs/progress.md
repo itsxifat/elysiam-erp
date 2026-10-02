@@ -655,3 +655,91 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
   - Team targets in the console, and a stubbed Playwright spec for `/performance`. The 13 M20
     console files have no test of their own; check 4 is proved over HTTP. (owner: claude)
 - Next: M14a in its own worktree. M24 waits for M18.
+
+### 2026-10-02 · M25 · Investor portal pages, with 2FA mandatory · done
+
+- Delivered (branch `m25-investor-portal`, from `integration-wave2`; not merged):
+  - **The investor's own pages at `/investor` in `apps/portal`** (D-310). Bangla first with an
+    English toggle, light and dark. Sign-in is the console's journey against the same Better
+    Auth endpoints: an investor who has not enrolled a second factor gets the enrolment screen
+    and nothing else, because the server's enrolment wall refuses every other route until a
+    code verifies; a returning investor needs their authenticator code or a recovery code.
+  - **What an investor sees, one brand at a time** (D-311): their position (capital held,
+    under lock-in, withdrawable, profit declared, paid and owed), their contributions with each
+    lot's lock-in, the profit declared to them (from their own statement), their withdrawals
+    with each status, their statement, and their documents, each opened through a URL minted
+    for that click. A switcher when they invest in more than one brand. Exited investors
+    still see their row. No withdrawal form: the role is read-only, so the page tells them to
+    ask the brand's accounts team (D-312).
+  - **The browser half of check 1, against the real stack** (D-313):
+    `apps/portal/e2e/investor.stack.ts`, run with `pnpm --filter @elysium/portal e2e:stack`.
+    A throwaway database whose money is posted through the real API in process
+    (`investor-portal-stack.provision.ts`), the built API and worker, and the portal. Chosen
+    over the till's stub pattern because isolation is the server's property; a stub could only
+    show that the page draws what the stub returns.
+  - **From the ledger audit** (server): nobody raises, reviews, approves or pays a withdrawal
+    paid to themselves (D-314); an investor's own row omits the brand's staff notes and the
+    signed document URL is `no-store` (D-315). Portal: figures cached per signed-in user and
+    brand, and the portal never moves the session's brand on its own except when none is
+    chosen (the session is shared with the console).
+- Verification: `pnpm verify` exits 0 at `103f589` (144 test files, 2,374 tests passed, 1 skipped;
+  bundle 231.9 KB of 250 KB, route matrix, i18n, api-client, migration and schema checks PASS)
+  plus this entry and one test assertion (the D-314 message). Acceptance checks:
+  1. API: `investors.e2e.test.ts` › "check 1" (11 tests) and "check 1: an investor's withdrawal
+     list holds only their own requests"; `investors-tenancy.test.ts`. Browser:
+     `investor.stack.ts` 6/6 (two investors, one in two brands; each enrols, sees their own
+     figures and none of the other's on the page, and the other's rows answer 404 or nothing
+     from inside the same session; a second investor signing in at the same tab after the first
+     one's session ended sees none of the first one's figures). The new browser tests were
+     mutation-checked: removing the per-user cache keys fails test 6.
+  2. `investors.e2e.test.ts` › "check 2" (13 tests, including D-314, mutation-checked).
+  3. `investors.e2e.test.ts` › "check 3" (6 tests, now asserting `no-store`) and
+     `investor.stack.ts` › "a document opens only through a URL minted for that click".
+
+  axe (WCAG 2.1 AA, no serious or critical) on the sign-in, enrolment, second-factor and
+  dashboard screens in both themes, in Bangla and at phone width; it found a scrollable table
+  with no keyboard access at phone width, now fixed. Screenshots in `docs/review/M25/` (the
+  setup key and recovery codes masked).
+
+- Auditors:
+  - ledger-auditor: 0 critical, 4 warnings (portal cache not keyed by user; the portal moving
+    the console's brand on window focus; exited investors hidden; a staff member who is also
+    the investor could sign for their own withdrawal). All fixed with tests; the re-check
+    found 0 critical, 0 warnings, and five notes listed under follow-ups.
+  - acceptance-auditor: NOT READY with 3 documentation gaps and no code gaps (the plan's
+    Status, architecture §15 still saying every withdrawal step posts, and CLAUDE.md's
+    Commands). The first two are fixed. The re-audit at `103f589`:
+    NOT READY with one gap, the CLAUDE.md Commands line below, which only the owner edits; READY
+    once it is added. Its nit (pin the D-314 test to the beneficiary message) is done.
+- Decisions/assumptions: D-310 to D-315. D-120 carries an update note (superseded for
+  investors).
+- New dependencies (all already in the catalog, new to `apps/portal`): `@tanstack/react-query`
+  (server state per brand and user, cancellation on a brand switch), `react-hook-form` and
+  `@hookform/resolvers` (the sign-in forms, as the console's, validated with the shared Zod
+  schemas), `@playwright/test` and `@axe-core/playwright` (the real-stack spec and its
+  accessibility checks).
+- Deviations from the milestone spec: none. Not built, by decision: a withdrawal request from
+  the portal (D-312) and a cross-brand total (D-311).
+- Fixed in passing: `dispatcher.db.test.ts` and `realtime.e2e.test.ts` gave their `afterAll` only
+  vitest's 10 s default, which a loaded `pnpm verify` outlasted on three runs here (and on M17's);
+  both now get the 60 s the other 32 database suites use (`103f589`, test-only). One other run
+  failed on the shared Postgres running out of lock memory (`max_locks_per_transaction`) and
+  passed on the next run with nothing else changed.
+- Follow-ups:
+  - CLAUDE.md, Commands: add "`pnpm --filter @elysium/portal e2e:stack` runs the portal's
+    `investor.stack.ts` against the real stack (a throwaway database seeded through the real
+    API, the built API and worker, and the portal). Build the server first. It covers M25
+    check 1's browser half and writes review screenshots to `docs/review/M25/`." (owner: human)
+  - The "Withdrawable capital" tile is not net of requests already waiting. (owner: claude)
+  - Linking a login to an investor row is one person's act and cannot be undone; consider
+    maker-checker, which would also close D-314's gap for a link made after a request was
+    signed. (owner: human)
+  - The distributions table shows the day a profit was declared, not the month it was for.
+    (owner: claude)
+  - The server suite's checker is a super admin; rerun the flow with `accounts` as checker
+    (D-119). (owner: claude)
+  - Commit `260e199` holds an unmasked enrolment screenshot of a throwaway user in a dropped
+    database: harmless, but a secret scanner will flag it. (owner: human, at merge)
+  - D-310 to D-315 do not collide with the main worktree today; check again at merge, as M26
+    is being built in parallel. (owner: claude, integrator)
+- Next: integration of M25's portal into the wave-2 branch.

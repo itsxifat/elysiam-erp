@@ -1101,6 +1101,55 @@ const en = {
   'investors.opening': 'Opening…',
   'investors.documentHint': 'Links are signed and short-lived, so they expire after a few minutes.',
 
+  // The investor portal (M25, apps/portal; D-310 to D-313).
+  'portal.investor.title': 'Investor portal',
+  'portal.investor.subtitle': 'Your investments, profit and documents',
+  'portal.investor.enrolSubtitle':
+    'Investors must use a second step when signing in. Setting it up takes about a minute.',
+  'portal.investor.brands': 'Your brands',
+  'portal.investor.switching': 'Switching…',
+  'portal.investor.switchFailed': 'That brand could not be opened. Try again.',
+  'portal.investor.chooseBrandTitle': 'Choose one of your brands',
+  'portal.investor.chooseBrandDetail':
+    'Your sign-in is open in a brand where you work rather than invest, perhaps in the staff console. Choose a brand above to see your figures.',
+  'portal.investor.notInvestorTitle': 'This portal is for investors',
+  'portal.investor.notInvestorDetail':
+    'Your sign-in holds no investor role in any brand. Staff work in the console.',
+  'portal.investor.noProfileTitle': 'No investor profile in this brand',
+  'portal.investor.noProfileDetail':
+    'Ask the brand’s accounts team to link your profile to this sign-in.',
+  'portal.investor.errorTitle': 'Your figures could not be loaded',
+  'portal.investor.errorDetail': 'Check your connection and try again.',
+  'portal.investor.retry': 'Try again',
+  'portal.investor.positionHeading': 'Your position',
+  'portal.investor.contributionsHeading': 'Capital contributions',
+  'portal.investor.contributionsCaption': 'Each contribution and its lock-in',
+  'portal.investor.contributionsEmptyTitle': 'No capital recorded yet',
+  'portal.investor.contributionsEmptyDetail':
+    'A contribution appears here once the brand records it.',
+  'portal.investor.colLockIn': 'Locked until',
+  'portal.investor.notLocked': 'Not locked',
+  'portal.investor.distributionsHeading': 'Profit distributions',
+  'portal.investor.distributionsCaption': 'Your share of each declared profit',
+  'portal.investor.distributionsEmptyTitle': 'No profit declared to you yet',
+  'portal.investor.distributionsEmptyDetail':
+    'A distribution appears here once it is declared and approved.',
+  'portal.investor.withdrawalsCaption': 'Your withdrawal requests and where each one is',
+  'portal.investor.withdrawHint':
+    'To withdraw, ask the brand’s accounts team. Two different people review and approve each request before it is paid.',
+  'portal.investor.withdrawalsEmptyDetail': 'Nothing has been requested.',
+  'portal.investor.colRequestedOn': 'Requested',
+  'portal.investor.colPaidOn': 'Paid on',
+  'portal.investor.statementCaption': 'Every movement of your money, oldest first',
+  'portal.investor.statementEmptyDetail': 'Nothing has moved yet.',
+  'portal.investor.documentsCaption': 'Your agreements and papers',
+  'portal.investor.documentsEmptyDetail': 'The brand has not filed a document for you yet.',
+  'portal.investor.openFailed': 'The document could not be opened. Try again.',
+  'portal.language': 'বাংলা',
+  'portal.languageLabel': 'Change language',
+  'portal.themeLight': 'Light theme',
+  'portal.themeDark': 'Dark theme',
+
   // Orders: the desk, the queue, the list and the buyer list (M11).
   'orders.title': 'Orders',
   'orders.nav.desk': 'Order desk',

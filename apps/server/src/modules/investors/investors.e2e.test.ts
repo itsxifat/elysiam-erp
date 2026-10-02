@@ -259,7 +259,7 @@ describe('check 1: an investor sees only their own data', () => {
     );
   });
 
-  it('refuses another investor’s statement, contributions and withdrawals', async () => {
+  it('refuses another investor’s statement and contributions', async () => {
     const statement = await investorA.client.request(
       'GET',
       `/v1/investors/${ids.b}/statement?from=2025-01-01&to=2030-12-31`,
@@ -341,6 +341,32 @@ describe('check 1: an investor sees only their own data', () => {
       `/v1/investors/distributions/${randomUUID()}`,
     );
     expect(one.statusCode).toBe(403);
+  });
+
+  it('keeps the brand’s own notes about an investor from that investor (D-315)', async () => {
+    const note = 'Prefers calls after six';
+    const patched = await accounts.client.request('PATCH', `/v1/investors/${ids.a}`, {
+      body: { notes: note },
+    });
+    expect(patched.statusCode, patched.body).toBe(200);
+
+    const staff = await accounts.client.request('GET', `/v1/investors/${ids.a}`);
+    expect(body<{ notes: string | null }>(staff).notes).toBe(note);
+
+    for (const path of [
+      `/v1/investors/${ids.a}`,
+      '/v1/investors',
+      `/v1/investors/${ids.a}/statement?from=2020-01-01&to=2099-12-31`,
+    ]) {
+      const response = await investorA.client.request('GET', path);
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.body, path).not.toContain(note);
+    }
+    expect(
+      body<{ notes: string | null }>(
+        await investorA.client.request('GET', `/v1/investors/${ids.a}`),
+      ).notes,
+    ).toBeNull();
   });
 
   it('never shows an investor the org’s wallet accounts', async () => {
@@ -827,6 +853,75 @@ describe('check 2: the withdrawal flow posts correctly through approval', () => 
     });
   });
 
+  it('never lets the investor being paid raise, review, approve or pay it (D-314)', async () => {
+    // Staff in this brand who are also one of its investors: the roles a login may hold.
+    const insider = await harness.asRole(['accounts', 'investor'], ORG_A);
+    const wallet = accountsById.get('wallet_bank') ?? '';
+    const investorId = await createInvestor(accounts, {
+      code: 'INV-S',
+      name: 'Staff Investor',
+      userId: insider.userId,
+    });
+    await contribute(investorId, '1000000');
+
+    const own = await insider.client.request('POST', '/v1/investors/withdrawals', {
+      body: { withdrawalId: randomUUID(), investorId, kind: 'capital', amountPoisha: '100000' },
+    });
+    expect(own.statusCode, own.body).toBe(403);
+    // Refused for being the beneficiary, not for any other reason (D-314).
+    expect(own.body).toContain('by the investor it pays');
+
+    const withdrawalId = randomUUID();
+    const requested = await accounts.client.request('POST', '/v1/investors/withdrawals', {
+      body: { withdrawalId, investorId, kind: 'capital', amountPoisha: '100000' },
+    });
+    expect(requested.statusCode, requested.body).toBe(201);
+
+    const selfReview = await insider.client.request(
+      'POST',
+      `/v1/investors/withdrawals/${withdrawalId}/review`,
+      { body: { walletAccountId: wallet } },
+    );
+    expect(selfReview.statusCode, selfReview.body).toBe(403);
+    // Refused for being the beneficiary, not for any other reason (D-314).
+    expect(selfReview.body).toContain('by the investor it pays');
+
+    const reviewed = await reviewer.client.request(
+      'POST',
+      `/v1/investors/withdrawals/${withdrawalId}/review`,
+      { body: { walletAccountId: wallet } },
+    );
+    expect(reviewed.statusCode, reviewed.body).toBe(201);
+    const { approvalId } = body<{ approvalId: string }>(reviewed);
+
+    // Accounts may decide an investor withdrawal (D-119) — but not this one.
+    const selfApproval = await insider.client.request(
+      'POST',
+      `/v1/approvals/${approvalId}/decide`,
+      { body: { decision: 'approved' } },
+    );
+    expect(selfApproval.statusCode, selfApproval.body).toBe(403);
+    // Refused for being the beneficiary, not for any other reason (D-314).
+    expect(selfApproval.body).toContain('by the investor it pays');
+
+    await decide(approvalId, 'approved');
+
+    const selfPay = await insider.client.request(
+      'POST',
+      `/v1/investors/withdrawals/${withdrawalId}/pay`,
+    );
+    expect(selfPay.statusCode, selfPay.body).toBe(403);
+    // Refused for being the beneficiary, not for any other reason (D-314).
+    expect(selfPay.body).toContain('by the investor it pays');
+
+    const paid = await accounts.client.request(
+      'POST',
+      `/v1/investors/withdrawals/${withdrawalId}/pay`,
+    );
+    expect(paid.statusCode, paid.body).toBe(201);
+    expect(body<{ status: string }>(paid).status).toBe('paid');
+  });
+
   it('refuses a review that names an account which is not a wallet', async () => {
     // Caught at review rather than at payment: the posting rule and the trigger
     // both fire days later, and the reviewer is the person who can still fix it.
@@ -906,6 +1001,36 @@ describe('check 2: the withdrawal flow posts correctly through approval', () => 
   });
 });
 
+// --- check 1, once both investors have withdrawals ----------------------------
+
+describe('check 1: an investor’s withdrawal list holds only their own requests', () => {
+  /*
+   * After check 2 both investors have requests on file — paid, reviewed and
+   * rejected ones — so a list that leaked would have something to leak. At check
+   * 1's own point in the file investor B has none yet.
+   */
+  it('lists only the caller’s requests, and nothing when filtered to another investor', async () => {
+    const mine = body<{ items: { investorId: string }[] }>(
+      await investorA.client.request('GET', '/v1/investors/withdrawals'),
+    ).items;
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((row) => row.investorId === ids.a)).toBe(true);
+
+    const theirs = body<{ items: { investorId: string }[] }>(
+      await investorB.client.request('GET', '/v1/investors/withdrawals'),
+    ).items;
+    expect(theirs.length).toBeGreaterThan(0);
+    expect(theirs.every((row) => row.investorId === ids.b)).toBe(true);
+
+    const reached = await investorA.client.request(
+      'GET',
+      `/v1/investors/withdrawals?investorId=${ids.b}`,
+    );
+    expect(reached.statusCode).toBe(200);
+    expect(body<{ items: unknown[] }>(reached).items).toHaveLength(0);
+  });
+});
+
 // --- check 3 -----------------------------------------------------------------
 
 describe('check 3: documents are available only through signed URLs', () => {
@@ -953,6 +1078,8 @@ describe('check 3: documents are available only through signed URLs', () => {
     expect(response.statusCode, response.body).toBe(200);
     const signed = body<{ url: string; expiresAt: string }>(response);
     expect(signed.url).toMatch(/^https?:\/\//);
+    // A bearer token: no cache between here and the browser may keep a copy of it.
+    expect(String(response.headers['cache-control'])).toContain('no-store');
     // A signed URL is a bearer token, so it has to die. The files module's TTL.
     expect(new Date(signed.expiresAt).getTime()).toBeGreaterThan(Date.now());
   });
