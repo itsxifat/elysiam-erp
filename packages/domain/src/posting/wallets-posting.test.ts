@@ -219,16 +219,19 @@ describe('wallet transfer: worked example', () => {
         fc.bigInt({ min: 1n, max: 1_000_000_000_000n }),
         fc.bigInt({ min: 0n, max: 1_000_000_000n }),
         (amount, charge) => {
-          const draft = walletTransferDraft(
-            transfer({
-              amountPoisha: poisha(amount),
-              chargePoisha: poisha(charge),
-              charge:
-                charge > 0n
-                  ? { accountId: CHARGES, subtype: 'bank_charges', branchId: null }
-                  : null,
-            }),
-          );
+          const input = transfer({
+            amountPoisha: poisha(amount),
+            chargePoisha: poisha(charge),
+            charge:
+              charge > 0n ? { accountId: CHARGES, subtype: 'bank_charges', branchId: null } : null,
+          });
+          // A charge larger than the transfer is an expense in disguise (M30, the ledger
+          // audit's C-1), refused before any line is built.
+          if (charge > amount) {
+            expect(() => walletTransferDraft(input)).toThrow(/larger than the amount/);
+            return;
+          }
+          const draft = walletTransferDraft(input);
           validateJournalDraft(draft);
 
           const debits = sum(draft.lines.map((line) => line.debitPoisha));

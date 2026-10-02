@@ -349,6 +349,7 @@ export class OrdersController {
         deliver: {
           collectedPoisha: input.collectedPoisha,
           differenceReason: input.differenceReason,
+          shortfallNeedsReason: true,
         },
         ...(at(input.occurredAt) === undefined ? {} : { occurredAt: at(input.occurredAt) }),
       },
@@ -382,6 +383,7 @@ export class OrdersController {
         deliver: {
           collectedPoisha: input.collectedPoisha,
           differenceReason: input.differenceReason,
+          shortfallNeedsReason: true,
           lines: input.lines,
         },
         ...(at(input.occurredAt) === undefined ? {} : { occurredAt: at(input.occurredAt) }),

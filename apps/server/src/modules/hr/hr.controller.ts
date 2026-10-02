@@ -478,11 +478,9 @@ export class HrController {
   /**
    * `update Payroll` — accounts, hr and org_admin.
    *
-   * §6's maker-checker list does not name staff loans, so a disbursement carries no approval:
-   * one person records the loan (`create Payroll`) and one person pays it out, and the matrix
-   * lets those be the same person. That is a real gap — the principal is typed rather than
-   * derived — and it is recorded as a follow-up rather than closed here, because closing it
-   * means either a new approval type or a new subject, both of which are §6's to change.
+   * No approval row, but two people (M30, D-363): the person who recorded the loan cannot pay
+   * it out, and nobody pays out a loan to themselves (`PAYROLL_SELF_DEALING`, in
+   * `LoansService.disburse`). A threshold-based approval type would be §6's to add.
    */
   @RequireAbility('update', 'Payroll')
   @Post('loans/:id/disburse')

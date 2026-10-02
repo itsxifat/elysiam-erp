@@ -9,7 +9,7 @@ import {
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
-import { assertInScope } from '../../platform/auth/scope.js';
+import { assertInScope, scopeOf } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import * as repo from './wallets.repository.js';
@@ -51,6 +51,21 @@ export class TransfersService {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const from = await this.walletFor(tx, context, request, input.fromWalletId);
       const to = await this.walletFor(tx, context, request, input.toWalletId);
+
+      /*
+       * A branch-scoped caller moves money between wallets; they do not book its charges
+       * (M30, the ledger audit's C-1; D-362). A transfer's charge is Dr bank charges / Cr the
+       * paying wallet, an expense with no receipt and no checker, so a branch manager could
+       * send one poisha from the till with a ৳50,000 "charge" and the daily closing would
+       * still balance. The petty cash rule closed the front door (a cash out) and this is
+       * the side door. Accounts, who see the bank's statement, record the charge.
+       */
+      if (charge > 0n && scopeOf(request).kind !== 'all') {
+        throw walletsHttpError(
+          'FORBIDDEN',
+          'A transfer charge is recorded by accounts. Send the transfer without it.',
+        );
+      }
 
       const chargeAccount =
         input.chargeAccountId === undefined

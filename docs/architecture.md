@@ -437,7 +437,7 @@ This summary is authoritative until M02b writes the code matrix. After that, the
 
 Each org configures its own thresholds. These actions go through approvals:
 
-- wallet adjustments
+- wallet adjustments, including a cash out by anyone whose wallet reach is narrower than the brand (D-362)
 - stock write-offs and gains
 - supplier payments above the threshold
 - courier settlement posting
@@ -448,10 +448,13 @@ Each org configures its own thresholds. These actions go through approvals:
 - investor withdrawals and distributions
 - company loan repayments above the threshold (M26, D-298)
 - password and second-factor resets of anyone who can approve at org tier (D-404)
+- staff loans: recorded and paid out by two different people, never to oneself (D-363)
 - fraud block overrides
 - reopening a closed period (super_admin only)
 
 The database enforces that the requester can never approve their own request, and a trigger freezes a decided request's terms and decision.
+
+Separation of duties outside the approvals table (M30): an employee's payout details, linked login and leaving date are payroll's to change, not a branch manager's, and nobody changes their own (D-363); a branch-scoped caller records no transfer charge (D-362); and the order desk prices no line or order further below the catalogue than the caller's role ceiling (D-364).
 
 How thresholds behave (D-062, D-065, D-068):
 

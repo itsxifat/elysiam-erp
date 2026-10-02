@@ -1397,6 +1397,10 @@ describe('M08 gap-closure audit', () => {
 describe('M30: a branch-scoped cash out follows petty cash’s rules', () => {
   let manager: RoleClient;
   let till = '';
+  let tillAccount = '';
+  let drawer = '';
+  let heldEntryId = '';
+  let heldApprovalId = '';
 
   beforeAll(async () => {
     const branch = await withSystem(
@@ -1421,6 +1425,21 @@ describe('M30: a branch-scoped cash out follows petty cash’s rules', () => {
     });
     expect(created.statusCode, created.body).toBe(201);
     till = body<{ id: string }>(created).id;
+    tillAccount = body<{ ledgerAccountId: string }>(created).ledgerAccountId;
+
+    // A second wallet in the same branch, for the transfer-charge case.
+    const second = await accounts.client.request('POST', '/v1/accounts/wallets', {
+      body: {
+        account: {
+          code: '1012-SHR-3',
+          name: 'Second drawer, Third Showroom',
+          subtype: 'wallet_cash',
+        },
+        branchId: branch,
+      },
+    });
+    expect(second.statusCode, second.body).toBe(201);
+    drawer = body<{ id: string }>(second).id;
 
     const float = await accounts.client.request('POST', '/v1/accounts/cash-entries', {
       body: {
@@ -1458,10 +1477,16 @@ describe('M30: a branch-scoped cash out follows petty cash’s rules', () => {
   it('holds one at or above the wallet-adjustment threshold for a second person', async () => {
     const response = await cashOut(manager.client, '150000', await uploadReceipt(manager.client));
     expect(response.statusCode, response.body).toBe(201);
-    expect(
-      body<{ status: string; journalId: string | null; approvalId: string | null }>(response),
-    ).toMatchObject({ status: 'pending_approval', journalId: null });
-    expect(body<{ approvalId: string | null }>(response).approvalId).not.toBeNull();
+    const held = body<{
+      entryId: string;
+      status: string;
+      journalId: string | null;
+      approvalId: string | null;
+    }>(response);
+    expect(held).toMatchObject({ status: 'pending_approval', journalId: null });
+    expect(held.approvalId).not.toBeNull();
+    heldEntryId = held.entryId;
+    heldApprovalId = held.approvalId ?? '';
   });
 
   it('posts one below the threshold once it carries a receipt', async () => {
@@ -1474,5 +1499,87 @@ describe('M30: a branch-scoped cash out follows petty cash’s rules', () => {
     const response = await cashOut(accounts.client, '150000');
     expect(response.statusCode, response.body).toBe(201);
     expect(body<{ status: string }>(response).status).toBe('posted');
+  });
+
+  it('is decided by someone else, and posts exactly Dr expense / Cr the till once approved', async () => {
+    // The requester is never the checker (0007's CHECK), and a manager of another branch
+    // cannot reach this branch's request.
+    const own = await manager.client.request('POST', `/v1/approvals/${heldApprovalId}/decide`, {
+      body: { decision: 'approved' },
+    });
+    expect(own.statusCode).toBeGreaterThanOrEqual(400);
+    const elsewhere = await branchManager.client.request(
+      'POST',
+      `/v1/approvals/${heldApprovalId}/decide`,
+      { body: { decision: 'approved' } },
+    );
+    expect(elsewhere.statusCode).toBeGreaterThanOrEqual(400);
+
+    const decided = await admin.client.request('POST', `/v1/approvals/${heldApprovalId}/decide`, {
+      body: { decision: 'approved' },
+    });
+    expect(decided.statusCode, decided.body).toBe(201);
+
+    const lines = await withSystem(
+      async (tx) =>
+        tx.execute<{ account_id: string; debit: string; credit: string; source_type: string }>(sql`
+          select l.account_id, l.debit_poisha::text as debit, l.credit_poisha::text as credit,
+                 j.source_type
+          from ledger.journals j
+          join ledger.journal_lines l on l.org_id = j.org_id and l.journal_id = j.id
+          join wallets.cash_entries e on e.org_id = j.org_id and e.journal_id = j.id
+          where e.org_id = ${ORG_A} and e.id = ${heldEntryId}
+          order by l.debit_poisha desc
+        `),
+      { orgId: ORG_A },
+    );
+    expect(lines.map((line) => ({ ...line }))).toEqual([
+      { account_id: accountId('5890'), debit: '150000', credit: '0', source_type: 'cash_out' },
+      { account_id: tillAccount, debit: '0', credit: '150000', source_type: 'cash_out' },
+    ]);
+
+    // ৳5,000 float in; ৳50 posted at once; ৳1,500 by accounts; ৳1,500 approved.
+    const visible = body<{ items: { id: string; balancePoisha: string }[] }>(
+      await accounts.client.request('GET', '/v1/accounts/wallets'),
+    );
+    expect(visible.items.find((wallet) => wallet.id === till)?.balancePoisha).toBe('195000');
+  });
+
+  it('does not let the branch switch off its own daily count (the ledger audit, N8)', async () => {
+    const response = await manager.client.request('PATCH', `/v1/accounts/wallets/${till}`, {
+      body: { requiresDailyClosing: false },
+    });
+    expect(response.statusCode, response.body).toBe(403);
+  });
+
+  it('refuses a branch manager a transfer charge, the side door to the same expense', async () => {
+    const response = await manager.client.request('POST', '/v1/accounts/transfers', {
+      body: {
+        transferId: randomUUID(),
+        fromWalletId: till,
+        toWalletId: drawer,
+        amountPoisha: '1',
+        chargePoisha: '50000',
+        chargeAccountId: accountId('5710'),
+      },
+    });
+    expect(response.statusCode, response.body).toBe(403);
+
+    // A plain transfer between the branch's own wallets is still theirs to make.
+    const plain = await manager.client.request('POST', '/v1/accounts/transfers', {
+      body: {
+        transferId: randomUUID(),
+        fromWalletId: till,
+        toWalletId: drawer,
+        amountPoisha: '5000',
+      },
+    });
+    expect(plain.statusCode, plain.body).toBe(201);
+
+    const visible = body<{ items: { id: string; balancePoisha: string }[] }>(
+      await accounts.client.request('GET', '/v1/accounts/wallets'),
+    );
+    expect(visible.items.find((wallet) => wallet.id === till)?.balancePoisha).toBe('190000');
+    expect(visible.items.find((wallet) => wallet.id === drawer)?.balancePoisha).toBe('5000');
   });
 });

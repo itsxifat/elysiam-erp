@@ -457,6 +457,9 @@ describe('the credential rate limits cannot be sidestepped with dot segments', (
     '/api/auth/x/../sign-in/email',
     '/api/auth/sign-in/./email',
     '/api/auth/x/%2e%2e/sign-in/email',
+    // WHATWG `URL` reads a backslash as a slash in an http URL (the ledger audit, N9).
+    '/api/auth/x\\..\\sign-in/email',
+    '//api/auth/sign-in/email',
   ])('refuses %s before Better Auth reads it as a sign-in', async (path) => {
     // A valid CSRF pair, so the only thing that can refuse is the path itself.
     const client = new Client(freshIp());

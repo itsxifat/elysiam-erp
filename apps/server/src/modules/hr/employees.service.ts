@@ -742,9 +742,16 @@ function assertPayrollFieldsAllowed(
 ): void {
   const payout = input.payoutMethod !== undefined || input.payoutRef !== undefined;
   const left = before.status === 'resigned' || before.status === 'terminated';
+  /*
+   * Any change to a leaving date already set counts, not only clearing it: payroll pays a
+   * leaver up to `leave_date`, so moving it to 2027 put a resigned employee back on full
+   * pay as surely as `null` did (the ledger audit, C-3).
+   */
   const reactivates =
     (left && input.status !== undefined && input.status !== before.status) ||
-    (before.leave_date !== null && input.leaveDate === null);
+    (before.leave_date !== null &&
+      input.leaveDate !== undefined &&
+      input.leaveDate !== before.leave_date);
   const relinks = input.userId !== undefined;
 
   if ((payout || reactivates || relinks) && !holdsOrgPayroll(context)) {
@@ -757,6 +764,17 @@ function assertPayrollFieldsAllowed(
     throw new HrError(
       'PAYROLL_SELF_DEALING',
       'Your own payout account is changed by someone else in HR.',
+    );
+  }
+  /*
+   * Nobody unlinks their own record or links a record to themselves (the ledger audit,
+   * W-1). The self-dealing checks read the link, so an hr user who unlinked their own row
+   * could pay themselves a loan a colleague recorded, then link it back.
+   */
+  if (relinks && (before.user_id === context.userId || input.userId === context.userId)) {
+    throw new HrError(
+      'PAYROLL_SELF_DEALING',
+      'The login on your own employee record is changed by someone else in HR.',
     );
   }
 }

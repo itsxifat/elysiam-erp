@@ -18,11 +18,12 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Banknote, Landmark, Smartphone, Wallet } from 'lucide-react';
+import { scopeFilterFor, uniformBranchScope } from '@elysium/contracts';
 import { useId, useMemo, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
-import { useAbility } from '../../auth/session.js';
+import { useAbility, useSession } from '../../auth/session.js';
 import { useLocale, useT } from '../../i18n/locale.js';
 import { ApiError } from '../../api.js';
 import {
@@ -74,7 +75,7 @@ import { useAccountsT, type AccountsMessageKey } from './messages.js';
  * the same one (`wallets.schemas.ts` refuses petty cash without a receipt); this
  * catches it before the round trip.
  */
-function cashEntryFormSchema(receiptRequired: string) {
+function cashEntryFormSchema(receiptRequired: string, cashOutNeedsReceipt: boolean) {
   return z
     .object({
       walletId: z.string().uuid(),
@@ -85,12 +86,20 @@ function cashEntryFormSchema(receiptRequired: string) {
       memo: z.string().trim().max(500).optional(),
     })
     .superRefine((value, context) => {
-      if (value.kind === 'petty_cash' && value.receiptFileId === undefined) {
+      if (needsReceipt(value.kind, cashOutNeedsReceipt) && value.receiptFileId === undefined) {
         context.addIssue({ code: 'custom', path: ['receiptFileId'], message: receiptRequired });
       }
     });
 }
 type CashEntryForm = z.infer<ReturnType<typeof cashEntryFormSchema>>;
+
+/**
+ * Whether this movement needs a receipt: petty cash always, and a cash out when the person
+ * reaches only their own branch's wallets (M30, D-362), as the server rules.
+ */
+function needsReceipt(kind: string | undefined, cashOutNeedsReceipt: boolean): boolean {
+  return kind === 'petty_cash' || (kind === 'cash_out' && cashOutNeedsReceipt);
+}
 
 /** A blank entry: what the dialog shows every time it opens. */
 const ENTRY_DEFAULTS = { kind: 'cash_in', amountPoisha: '', memo: '' } as const;
@@ -143,6 +152,24 @@ const STATUS_LABELS: Record<CashEntryRow['status'], AccountsMessageKey> = {
 
 export function AccountsPage() {
   const ability = useAbility();
+  const session = useSession();
+  /*
+   * A branch manager's cash out follows petty cash's rules (D-362). The scope comes from
+   * the shared matrix, so the form asks for the receipt exactly where the server will.
+   */
+  const cashOutNeedsReceipt =
+    session.context !== null &&
+    scopeFilterFor(
+      {
+        roles: session.roles,
+        isSuperAdmin: session.context.isSuperAdmin,
+        userId: session.context.userId,
+        branchIds: session.context.branchIds,
+        branchIdsByRole: uniformBranchScope(session.roles, session.context.branchIds),
+      },
+      'update',
+      'Wallet',
+    ).kind !== 'all';
   const t = useT();
   const a = useAccountsT();
   const { locale } = useLocale();
@@ -191,7 +218,10 @@ export function AccountsPage() {
   );
 
   const receiptRequired = a('accounts.receiptRequired');
-  const entrySchema = useMemo(() => cashEntryFormSchema(receiptRequired), [receiptRequired]);
+  const entrySchema = useMemo(
+    () => cashEntryFormSchema(receiptRequired, cashOutNeedsReceipt),
+    [receiptRequired, cashOutNeedsReceipt],
+  );
   const entryForm = useForm<CashEntryForm>({
     resolver: zodResolver(entrySchema),
     defaultValues: ENTRY_DEFAULTS,
@@ -586,7 +616,7 @@ export function AccountsPage() {
             <div role="group" aria-labelledby={receiptLabelId} className="space-y-1.5">
               <p id={receiptLabelId} className="text-sm font-medium text-foreground">
                 {a('accounts.fieldReceipt')}
-                {kind === 'petty_cash' ? (
+                {needsReceipt(kind, cashOutNeedsReceipt) ? (
                   <span className="ml-0.5 text-destructive" aria-hidden="true">
                     *
                   </span>
@@ -612,7 +642,11 @@ export function AccountsPage() {
                 }}
               />
               <p className="text-xs text-muted-foreground">
-                {a(kind === 'petty_cash' ? 'accounts.receiptHint' : 'accounts.receiptOptionalHint')}
+                {a(
+                  needsReceipt(kind, cashOutNeedsReceipt)
+                    ? 'accounts.receiptHint'
+                    : 'accounts.receiptOptionalHint',
+                )}
               </p>
               {receiptError === undefined ? null : (
                 <p role="alert" className="text-xs font-medium text-destructive">

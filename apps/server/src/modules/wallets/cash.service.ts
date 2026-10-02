@@ -232,6 +232,10 @@ export class CashService implements OnModuleInit {
       reason: input.memo ?? (input.kind === 'petty_cash' ? 'Petty cash' : 'Cash out'),
       ...(wallet.branch_id === null ? {} : { branchId: wallet.branch_id }),
       request,
+      // In this transaction (the ledger audit's W-2, M30): opened on its own, the approval
+      // committed before the entry that names it existed, so a checker quick enough found
+      // nothing to post and the entry waited for ever; a failed insert left an orphan.
+      tx,
     });
 
     await repo.insertCashEntry(tx, {

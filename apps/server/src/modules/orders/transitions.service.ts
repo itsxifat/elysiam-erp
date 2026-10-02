@@ -104,6 +104,12 @@ interface Posted {
 export interface DeliverOptions {
   readonly collectedPoisha?: string | undefined;
   readonly differenceReason?: string | undefined;
+  /**
+   * A person typed the collected amount (the order routes), so a shortfall needs a reason
+   * (M30, C5). The courier's own figure arrives without one, and its settlement is the
+   * check on it.
+   */
+  readonly shortfallNeedsReason?: true | undefined;
   /** Set for a partial delivery: what actually arrived, per SKU. */
   readonly lines?: readonly { readonly skuId: string; readonly deliveredQty: number }[] | undefined;
   readonly occurredAt?: Date | undefined;
@@ -611,6 +617,24 @@ export class TransitionsService {
       throw new OrdersError(
         'ORDER_TOTAL_INVALID',
         'A rider cannot collect a negative amount; record a refund instead.',
+      );
+    }
+    /*
+     * Less than the order's cash on delivery goes to Sales discounts (§7), and nothing
+     * bounded a person's say-so: an agent marking their own order delivered at ৳0 moved its
+     * revenue into discounts with no word of why (security review C5). A reason is now
+     * required, so the shortfall carries an explanation into the journal's memo and the
+     * audit log, where accounts and the settlement match will see it.
+     */
+    const expected = BigInt(split.expectedCollectionPoisha) - advanceApplied;
+    if (
+      options.deliver?.shortfallNeedsReason === true &&
+      collected < expected &&
+      (options.deliver.differenceReason ?? '').trim() === ''
+    ) {
+      throw new OrdersError(
+        'ORDER_REASON_REQUIRED',
+        'The rider collected less than the cash on delivery. Say why in the difference reason.',
       );
     }
 

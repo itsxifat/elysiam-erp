@@ -6,8 +6,8 @@ import {
   businessDate,
   computeExchangeReturn,
   computeOrderTotals,
+  basisPointsAsPercent,
   discountAllowed,
-  discountBasisPoints,
   formatOrderNo,
   mulQty,
   normalizeBdPhone,
@@ -18,7 +18,7 @@ import {
   poisha,
   sub,
   TRANSITIONS,
-  typedDiscount,
+  type DiscountedOrder,
   withinPostingWindow,
   type OrderStatus,
   type OrderTrigger,
@@ -1584,25 +1584,24 @@ export class OrdersService {
         sku.pricePoisha,
       ]),
     );
-    const typed = (order: PricedOrder) =>
-      typedDiscount(
-        order.lines.map((line) => ({
-          qty: line.qty,
-          // A SKU the catalogue no longer has is valued at what the order charges for it:
-          // it can neither raise nor lower the discount.
-          listPricePoisha: poisha(listPrice.get(line.skuId) ?? line.unitPricePoisha),
-          unitPricePoisha: poisha(line.unitPricePoisha),
-          lineDiscountPoisha: poisha(line.discountPoisha),
-        })),
-        poisha(order.orderDiscountPoisha),
-      );
+    const discounted = (order: PricedOrder): DiscountedOrder => ({
+      lines: order.lines.map((line) => ({
+        skuId: line.skuId,
+        qty: line.qty,
+        // A SKU the catalogue no longer has is valued at what the order charges for it:
+        // it can neither raise nor lower the discount.
+        listPricePoisha: poisha(listPrice.get(line.skuId) ?? line.unitPricePoisha),
+        unitPricePoisha: poisha(line.unitPricePoisha),
+        lineDiscountPoisha: poisha(line.discountPoisha),
+      })),
+      orderDiscountPoisha: poisha(order.orderDiscountPoisha),
+    });
 
     const ceilingBps = orderDiscountCeilingBps(context);
-    const discount = typed(after);
     if (
       discountAllowed({
-        after: discount,
-        ...(before === undefined ? {} : { before: typed(before) }),
+        after: discounted(after),
+        ...(before === undefined ? {} : { before: discounted(before) }),
         ceilingBps,
       })
     ) {
@@ -1610,8 +1609,8 @@ export class OrdersService {
     }
     throw new OrdersError(
       'ORDER_DISCOUNT_ABOVE_CEILING',
-      `This order is priced ${String(Math.ceil(discountBasisPoints(discount) / 100))}% below the catalogue; ` +
-        `your role may go to ${String(ceilingBps / 100)}%. An org admin can enter this price.`,
+      `A line or the order is priced more than ${basisPointsAsPercent(ceilingBps)}% below the ` +
+        'catalogue, which is as far as your role may go. An org admin can enter this price.',
     );
   }
 

@@ -224,8 +224,21 @@ export class FilesService {
     if (row.status === 'stored') return present(row);
 
     try {
-      const bytes = await this.driver.get(row.storageKey);
       const rule = mimeRuleFor(row.mime);
+      /*
+       * The size first, from the store's own metadata, before a byte is read (M30, B1).
+       * A presigned PUT does not bind the length, so an uploader could put gigabytes
+       * where they declared a kilobyte, and `get` read the whole object into memory
+       * before the limit was checked: a few finalizes in parallel and the API ran out of
+       * memory. An oversized object is deleted, so it cannot be finalized again or sit in
+       * the bucket.
+       */
+      const stored = await this.driver.head(row.storageKey);
+      if (stored !== null && stored.sizeBytes > rule.maxBytes) {
+        await this.driver.remove(row.storageKey);
+        assertWithinLimit(stored.sizeBytes, rule);
+      }
+      const bytes = await this.driver.get(row.storageKey);
       assertWithinLimit(bytes.byteLength, rule);
 
       const sniffed = sniffMime(bytes);

@@ -11,10 +11,13 @@ import { mulQty, type Poisha } from '../money/index.js';
  * idea for the desk.
  *
  * "Discount" here is everything the caller typed that takes the order below list price: a
- * unit price under the catalogue's, a line discount, and the order-level discount. A unit
- * price above the list counts against it, so a markup on one line can pay for a discount on
- * another. A promo code is not counted: its discount is priced by the server from rules
- * marketing set (D-204), not typed by the agent.
+ * unit price under the catalogue's, a line discount, and the order-level discount. It is held
+ * to the ceiling **on every line and on the order as a whole**, and a markup on one line never
+ * pays for a discount on another. The ledger audit showed why both matter: priced together, a
+ * line at double the list could carry a free one, and the buyer then refused the expensive
+ * line at the door (a partial delivery values each line at its own price) or exchanged it for
+ * a full credit. A promo code is not counted: the server prices it from marketing's rules
+ * (D-204), not from anything typed.
  */
 export const ORDER_DISCOUNT_CEILING_BPS: Readonly<Record<string, number>> = {
   // An org admin may give anything, including a free replacement.
@@ -26,6 +29,7 @@ export const ORDER_DISCOUNT_CEILING_BPS: Readonly<Record<string, number>> = {
 };
 
 export interface DiscountedLine {
+  readonly skuId: string;
   readonly qty: number;
   /** The catalogue's price for the SKU. */
   readonly listPricePoisha: Poisha;
@@ -34,49 +38,77 @@ export interface DiscountedLine {
   readonly lineDiscountPoisha: Poisha;
 }
 
+export interface DiscountedOrder {
+  readonly lines: readonly DiscountedLine[];
+  readonly orderDiscountPoisha: Poisha;
+}
+
 export interface TypedDiscount {
   /** The catalogue value of the lines. */
   readonly listPoisha: bigint;
-  /** List value minus what the order charges for its goods, before any promo code. */
+  /** How far each line is priced below its list, summed, plus the order discount. */
   readonly discountPoisha: bigint;
 }
 
-/** The order's typed discount against its catalogue value. */
-export function typedDiscount(
-  lines: readonly DiscountedLine[],
-  orderDiscountPoisha: Poisha,
-): TypedDiscount {
+/** How far one line is priced below its list; a markup counts as nothing, never as credit. */
+function lineShortfall(line: DiscountedLine): { list: bigint; short: bigint } {
+  const list = mulQty(line.listPricePoisha, line.qty);
+  const charged = mulQty(line.unitPricePoisha, line.qty) - line.lineDiscountPoisha;
+  const short = list - charged;
+  return { list, short: short > 0n ? short : 0n };
+}
+
+/** The order's typed discount against its catalogue value, with no line offsetting another. */
+export function typedDiscount(order: DiscountedOrder): TypedDiscount {
   let listPoisha = 0n;
-  let chargedPoisha = 0n;
-  for (const line of lines) {
-    listPoisha += mulQty(line.listPricePoisha, line.qty);
-    chargedPoisha += mulQty(line.unitPricePoisha, line.qty) - line.lineDiscountPoisha;
+  let discountPoisha = order.orderDiscountPoisha > 0n ? BigInt(order.orderDiscountPoisha) : 0n;
+  for (const line of order.lines) {
+    const { list, short } = lineShortfall(line);
+    listPoisha += list;
+    discountPoisha += short;
   }
-  chargedPoisha -= orderDiscountPoisha;
-  return { listPoisha, discountPoisha: listPoisha - chargedPoisha };
+  return { listPoisha, discountPoisha };
+}
+
+/** `part` is at most `ceilingBps` of `whole`, by cross-multiplication: nothing is rounded. */
+function within(part: bigint, whole: bigint, ceilingBps: number): boolean {
+  if (part <= 0n) return true;
+  if (whole <= 0n) return ceilingBps >= 10_000;
+  return part * 10_000n <= BigInt(ceilingBps) * whole;
 }
 
 /**
- * Whether a discount is within `ceilingBps` of its list value.
+ * Whether every line, and the order as a whole, is within `ceilingBps` of its list value.
  *
- * Compared as a cross-multiplication rather than a division, so nothing is rounded: a
- * discount of exactly the ceiling is within it, and one poisha more is not.
+ * Exactly the ceiling is within it, and one poisha more is not.
  */
-export function withinDiscountCeiling(discount: TypedDiscount, ceilingBps: number): boolean {
-  if (discount.discountPoisha <= 0n) return true;
-  if (discount.listPoisha <= 0n) return ceilingBps >= 10_000;
-  return discount.discountPoisha * 10_000n <= BigInt(ceilingBps) * discount.listPoisha;
+export function withinDiscountCeiling(order: DiscountedOrder, ceilingBps: number): boolean {
+  for (const line of order.lines) {
+    const { list, short } = lineShortfall(line);
+    if (!within(short, list, ceilingBps)) return false;
+  }
+  const total = typedDiscount(order);
+  return within(total.discountPoisha, total.listPoisha, ceilingBps);
 }
 
 /**
- * The discount as whole basis points, rounded up, for a message and for "no worse than it
- * already was". Never used to decide a boundary case: `withinDiscountCeiling` does that.
+ * Whether `after` only takes things away from `before`: the same SKUs or fewer, each at its
+ * old price and no larger line discount, no more units, and no larger order discount.
+ *
+ * An agent may drop a line or a unit from an order an org admin priced deeply. They may not
+ * reshape it: swapping in another SKU at the same total discount, say, would let them choose
+ * what goes out at the admin's price.
  */
-export function discountBasisPoints(discount: TypedDiscount): number {
-  if (discount.discountPoisha <= 0n || discount.listPoisha <= 0n) return 0;
-  const scaled = discount.discountPoisha * 10_000n;
-  const bps = (scaled + discount.listPoisha - 1n) / discount.listPoisha;
-  return Number(bps > 10_000n ? 10_000n : bps);
+export function onlyShrinks(before: DiscountedOrder, after: DiscountedOrder): boolean {
+  if (after.orderDiscountPoisha > before.orderDiscountPoisha) return false;
+  for (const line of after.lines) {
+    const old = before.lines.find((candidate) => candidate.skuId === line.skuId);
+    if (old === undefined) return false;
+    if (line.unitPricePoisha !== old.unitPricePoisha) return false;
+    if (line.lineDiscountPoisha > old.lineDiscountPoisha) return false;
+    if (line.qty > old.qty) return false;
+  }
+  return true;
 }
 
 /** Who is asking, as the request context holds it. */
@@ -103,18 +135,21 @@ export function orderDiscountCeilingBps(authority: OrderPricingAuthority): numbe
 }
 
 /**
- * Whether the caller may save an order priced like this.
- *
- * Within their ceiling, always. Above it, only an edit that adds nothing to the discount
- * the order already carried: an agent may change the address or drop a line on an order an
- * org admin priced deeply, but not deepen it.
+ * Whether the caller may save an order priced like this: within their ceiling, or an edit
+ * that only shrinks what the order already was (`onlyShrinks`).
  */
 export function discountAllowed(input: {
-  readonly after: TypedDiscount;
-  readonly before?: TypedDiscount;
+  readonly after: DiscountedOrder;
+  readonly before?: DiscountedOrder;
   readonly ceilingBps: number;
 }): boolean {
   if (withinDiscountCeiling(input.after, input.ceilingBps)) return true;
-  if (input.before === undefined) return false;
-  return input.after.discountPoisha <= input.before.discountPoisha;
+  return input.before !== undefined && onlyShrinks(input.before, input.after);
+}
+
+/** Basis points as a percentage for a message, in integer arithmetic: 2_000 → "20". */
+export function basisPointsAsPercent(bps: number): string {
+  const whole = Math.trunc(bps / 100);
+  const rest = bps % 100;
+  return rest === 0 ? String(whole) : `${String(whole)}.${String(rest).padStart(2, '0')}`;
 }

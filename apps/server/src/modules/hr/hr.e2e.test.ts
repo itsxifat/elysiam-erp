@@ -1112,6 +1112,13 @@ describe('M30: payroll money needs a second person and the payroll grant', () =>
     });
     expect(ownPayout.statusCode, ownPayout.body).toBe(403);
     expect(ownPayout.body).toContain('PAYROLL_SELF_DEALING');
+
+    // Nor unlinks their own record to get round the checks (the ledger audit, W-1).
+    const unlink = await hr.client.request('PATCH', `/v1/hr/employees/${self.id}`, {
+      body: { userId: null },
+    });
+    expect(unlink.statusCode, unlink.body).toBe(403);
+    expect(unlink.body).toContain('PAYROLL_SELF_DEALING');
   });
 
   it('keeps a branch manager to the showroom’s record, not where the salary goes', async () => {
@@ -1164,6 +1171,11 @@ describe('M30: payroll money needs a second person and the payroll grant', () =>
       body: { status: 'active', leaveDate: null },
     });
     expect(back.statusCode, back.body).toBe(403);
+    // Moving a leaver's date later is the same thing (the ledger audit, C-3).
+    const later = await branchManager.client.request('PATCH', `/v1/hr/employees/${cashHire.id}`, {
+      body: { leaveDate: '2027-12-31' },
+    });
+    expect(later.statusCode, later.body).toBe(403);
     const byHr = await hr.client.request('PATCH', `/v1/hr/employees/${cashHire.id}`, {
       body: { status: 'active', leaveDate: null },
     });
