@@ -87,7 +87,18 @@ export const createCustomerSchema = z
 
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 
-export const updateCustomerSchema = createCustomerSchema.partial().omit({ phone: true }).strict();
+export const updateCustomerSchema = createCustomerSchema
+  .partial()
+  .omit({ phone: true })
+  .extend({
+    /**
+     * `null` removes a date; leaving the field out keeps it (M16). A birthday typed on the
+     * wrong buyer must be removable, or the occasions job greets them every year for it.
+     */
+    birthday: z.string().date().nullable().optional(),
+    anniversary: z.string().date().nullable().optional(),
+  })
+  .strict();
 
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 

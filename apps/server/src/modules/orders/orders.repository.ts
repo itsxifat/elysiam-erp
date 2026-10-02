@@ -114,8 +114,9 @@ export async function updateCustomer(
   id: string,
   patch: {
     readonly name?: string | undefined;
-    readonly birthday?: string | undefined;
-    readonly anniversary?: string | undefined;
+    /** A date sets it, `null` clears it, undefined leaves it alone. */
+    readonly birthday?: string | null | undefined;
+    readonly anniversary?: string | null | undefined;
     readonly gender?: string | undefined;
     readonly ageBand?: string | undefined;
     readonly profession?: string | undefined;
@@ -126,8 +127,10 @@ export async function updateCustomer(
   const rows = await tx.execute<{ id: string }>(sql`
     update sales.customers set
       name = coalesce(${patch.name ?? null}, name),
-      birthday = coalesce(${patch.birthday ?? null}::date, birthday),
-      anniversary = coalesce(${patch.anniversary ?? null}::date, anniversary),
+      birthday = ${patch.birthday === undefined ? sql`birthday` : sql`${patch.birthday}::date`},
+      anniversary = ${
+        patch.anniversary === undefined ? sql`anniversary` : sql`${patch.anniversary}::date`
+      },
       gender = coalesce(${patch.gender ?? null}, gender),
       age_band = coalesce(${patch.ageBand ?? null}, age_band),
       profession = coalesce(${patch.profession ?? null}, profession),

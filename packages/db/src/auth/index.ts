@@ -42,7 +42,7 @@ import {
 export const TWO_FACTOR_REQUIRED_ROLES = ['org_admin', 'accounts', 'investor'] as const;
 
 export interface SmsProvider {
-  /** M16 replaces this with a real BD gateway (D-012). */
+  /** Bound to a recorder until a verified BD gateway carries OTPs too (D-012, D-212). */
   send(to: string, message: string): Promise<void>;
 }
 
@@ -84,8 +84,8 @@ export interface AuthOptions {
   /**
    * Called with a freshly minted password-set token (invite or reset).
    *
-   * A port, like `SmsProvider`: M16 makes it send an email, and until then the
-   * server keeps the token so `POST /v1/users` can hand it to the admin.
+   * A port, like `SmsProvider`. No email adapter exists yet (D-212), so the server
+   * keeps the token and `POST /v1/users` hands it to the admin.
    */
   readonly onPasswordToken?: (issued: {
     userId: string;

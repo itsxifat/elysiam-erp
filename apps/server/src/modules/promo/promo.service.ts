@@ -32,11 +32,10 @@ import type { CreatePromoCodeInput } from './promo.schemas.js';
  *
  * **A limit is kept by the database, not by a read.** `claimUse` is a conditional UPDATE
  * (`used_count < total_limit`), so two orders claiming the last use of a code resolve
- * against the row lock and the second is refused. The per-customer limit is checked
- * against the redemption ledger instead and is *not* race-proof for one buyer placing two
- * orders in the same instant: the total limit is what protects the brand's money, and a
- * buyer who gets two of a three-per-customer code is a different order of problem. The
- * unique index per (code, order) is what stops one order redeeming twice.
+ * against the row lock and the second is refused. The per-customer limit is read once
+ * when the code is priced and counted again in `redeem`, under that same row lock — so
+ * one buyer's two orders in the same instant cannot both take a buyer's last use (ledger
+ * audit W1). The unique index per (code, order) is what stops one order redeeming twice.
  */
 @Injectable()
 export class PromoService {

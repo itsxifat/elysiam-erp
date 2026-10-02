@@ -113,9 +113,11 @@ async function bootstrap(): Promise<void> {
   // Built before Nest, because the modules depend on it: it owns a connection
   // pool and a shutdown, so the composition root makes it rather than a module.
   //
-  // The real SMS gateway and email adapter arrive in M16 (D-012). Until then
-  // OTPs are recorded rather than sent, and an invite token is handed back to
-  // the admin who created the user instead of being emailed to them.
+  // M16 built the notify module's SMS gateway, but sign-in OTPs do not go through
+  // it yet (D-212): the gateway is unverified (D-012) and Better Auth's port returns
+  // nothing a delivery log could use. Until then OTPs are recorded rather than sent,
+  // and an invite token is handed back to the admin who created the user instead of
+  // being emailed to them — there is no email adapter.
   const tokens = new PasswordTokenStore();
   const { auth } = createAuth({
     baseUrl: env.API_PUBLIC_URL,

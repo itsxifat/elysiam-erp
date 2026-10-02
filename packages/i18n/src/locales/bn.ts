@@ -2177,6 +2177,12 @@ const bn: Record<MessageKey, string> = {
   'campaigns.log.state.suppressed': 'আটকানো',
   'campaigns.log.emptyTitle': 'এখনো কোনো মেসেজ নেই',
   'campaigns.log.emptyDetail': 'শুভেচ্ছা ও অর্ডার আপডেট কিউ হলে এখানে দেখাবে।',
+  'customers.profile.editDates': 'তারিখ বদলান',
+  'customers.profile.saveDates': 'তারিখ সংরক্ষণ করুন',
+  'customers.profile.cancel': 'বাতিল',
+  'customers.profile.datesHint':
+    'তারিখ মুছতে ঘর খালি রাখুন। শুভেচ্ছা যায় সেই দিন, ঢাকার সকাল ৯টায়।',
+  'customers.profile.datesFailed': 'তারিখ সংরক্ষণ হয়নি।',
 };
 
 export { bn };

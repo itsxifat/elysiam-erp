@@ -2227,6 +2227,12 @@ const en = {
   'campaigns.log.state.suppressed': 'Suppressed',
   'campaigns.log.emptyTitle': 'No messages yet',
   'campaigns.log.emptyDetail': 'Greetings and order updates appear here once they are queued.',
+  'customers.profile.editDates': 'Edit dates',
+  'customers.profile.saveDates': 'Save dates',
+  'customers.profile.cancel': 'Cancel',
+  'customers.profile.datesHint':
+    'Leave a date empty to remove it. Greetings go out on the day, at 09:00 Dhaka.',
+  'customers.profile.datesFailed': 'The dates were not saved.',
 } as const;
 
 /** Every key that exists. A call site passing anything else does not compile. */

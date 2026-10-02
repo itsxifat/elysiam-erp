@@ -101,8 +101,9 @@ export interface QueueDefinition {
    * one is keyed as the empty string, so on an `exclusive` queue only one keyless
    * job could ever be pending — which would stall a queue like `notify.send`.
    *
-   * Set when a queue is first created; changing it on an existing queue needs
-   * pg-boss's `updateQueue`, which nothing here calls (D-207).
+   * Set when a queue is first created, and never changed afterwards: pg-boss's
+   * `updateQueue` refuses a policy change. The worker reports a queue whose stored
+   * policy differs (`policyDrift`); `docs/runbooks/queue-policy.md` is the fix (D-207).
    */
   readonly policy?: 'standard' | 'exclusive';
 }

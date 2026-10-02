@@ -152,4 +152,11 @@ test('lapsed buyers and the profile: the provisioned buyer is found and opened',
   await expect(page.getByRole('region', { name: 'Totals' })).toContainText('2,400');
   await expect(page.getByRole('heading', { name: 'Recent orders' })).toBeVisible();
   await bothThemes('buyer-profile');
+
+  // Capture: the occasions job greets on these dates.
+  await page.getByRole('button', { name: 'Edit dates' }).click();
+  await page.getByLabel('Birthday').fill('1993-11-14');
+  await page.getByRole('button', { name: 'Save dates' }).click();
+  await expect(page.getByRole('button', { name: 'Edit dates' })).toBeVisible();
+  await expect(page.getByText('1993-11-14')).toBeVisible();
 });

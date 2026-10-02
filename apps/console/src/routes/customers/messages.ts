@@ -93,6 +93,11 @@ const CUSTOMERS_KEYS = [
   'customers.segment.hibernating',
   'customers.segment.needs_attention',
   'customers.segment.prospect',
+  'customers.profile.editDates',
+  'customers.profile.saveDates',
+  'customers.profile.cancel',
+  'customers.profile.datesHint',
+  'customers.profile.datesFailed',
 ] as const satisfies readonly MessageKey[];
 
 export type CustomersMessageKey = (typeof CUSTOMERS_KEYS)[number];

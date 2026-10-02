@@ -4,7 +4,7 @@
  * Separate from `@elysium/db`'s `SmsProvider`, which Better Auth calls for OTPs and which
  * returns `void`: the delivery log needs to know *how* a send went — accepted, refused
  * with a code a person can act on, or failed in a way worth retrying — and a `void` port
- * cannot say. Routing OTPs through this gateway as well is a follow-up (D-205).
+ * cannot say. Routing OTPs through this gateway as well is a follow-up (D-212).
  *
  * Every adapter is called **outside** a database transaction (invariant 6): the send job
  * reads the message in one transaction, calls the gateway with none open, and records

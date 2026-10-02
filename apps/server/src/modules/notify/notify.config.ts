@@ -30,7 +30,9 @@ export type NotifyConfig = z.infer<typeof schema>;
 export const NOTIFY_CONFIG = Symbol('NotifyConfig');
 
 export function notifyConfig(env: NodeJS.ProcessEnv = process.env): NotifyConfig {
-  return schema.parse(env);
+  // `KEY=` in a dotenv file is an empty string, not an absent key; read it as absent, as
+  // `intakeConfig` does, so a copied `.env.example` boots with the fake gateway.
+  return schema.parse(Object.fromEntries(Object.entries(env).filter(([, value]) => value !== '')));
 }
 
 /**

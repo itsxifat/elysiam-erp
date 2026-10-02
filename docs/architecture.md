@@ -226,7 +226,7 @@ See D-001 and D-002.
 | sales     | sales     | customers (org-scoped), orders, order lines, delivery zones                   |
 | delivery  | delivery  | courier accounts, consignments, status events, settlements                    |
 | fraud     | fraud     | phone signals, provider checks, rules; **cross-org by design** (§5)           |
-| crm       | crm       | buyer stats, segments, occasions                                              |
+| crm       | sales     | buyer stats, segments, occasions — built inside `orders` (D-211)              |
 | notify    | notify    | templates, messages, opt-outs                                                 |
 | promo     | promo     | promo codes, redemptions                                                      |
 | marketing | marketing | campaigns, ad spend, leads                                                    |
@@ -1043,8 +1043,8 @@ Jobs run on pg-boss, with queues named `module.action`.
 | `delivery.import_settlement`  | On upload or API fetch                                 | Needs approval before posting                |
 | `fraud.refresh_provider`      | On demand, and when the TTL expires                    | Throttled per provider                       |
 | `inventory.reconcile_levels`  | Nightly 02:00                                          | Drift alert                                  |
-| `crm.rfm`                     | Nightly 03:00                                          |                                              |
-| `crm.occasions`               | Daily 09:00                                            |                                              |
+| `crm.schedule_segments`       | Nightly 02:30, one `crm.score_segments` per brand      | Segments replaced, never accumulated (D-211) |
+| `crm.schedule_greetings`      | Daily 09:00, one `crm.greet_occasions` per brand       | One greeting per buyer per occasion per year |
 | `marketing.import_meta_spend` | Daily 06:00, plus manual                               | Yesterday plus today so far                  |
 | `marketing.capi_delivered`    | On delivery                                            |                                              |
 | `analytics.rollup`            | On events, plus a nightly recompute of the last 7 days |                                              |

@@ -98,6 +98,12 @@ function query(params: Record<string, string | number | undefined>): string {
 export const listCustomers = (q: string | undefined, limit: number, offset: number) =>
   api.get<{ items: Customer[] }>(`/v1/customers${query({ q, limit, offset })}`);
 
+/** Set (a date), clear (`null`) or leave (absent) a buyer's occasions. */
+export const updateOccasions = (
+  id: string,
+  body: { readonly birthday: string | null; readonly anniversary: string | null },
+) => api.patch<unknown>(`/v1/customers/${encodeURIComponent(id)}`, body);
+
 export const buyerProfile = (id: string) =>
   api.get<BuyerProfile>(`/v1/customers/${encodeURIComponent(id)}/profile`);
 

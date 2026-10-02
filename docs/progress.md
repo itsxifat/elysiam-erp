@@ -259,3 +259,75 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
 - Still landing: the M05 notifications inbox (header bell, panel, `inbox.ts` reducer and its tests) is written but not yet committed, with its own plan update.
 - Follow-ups: re-run both auditors (owner: claude); work down the module-boundary debt list — eight modules still read another's tables, each one a port waiting to be written (owner: claude); a UI-kit date field (owner: claude); party names in aging beyond suppliers (owner: claude); who operates a till, D-161 (owner: human); a RedX sandbox to close D-200 (owner: human); **no git remote, so CI has never run** (owner: human).
 - Next: M16, then M18, M20 and M14a.
+
+### 2026-10-02 · M16 · Buyer profiles, notifications, basic promo codes · done
+
+- Delivered:
+  - **Promo codes.** Percent, flat and free delivery, with total and per-buyer limits,
+    validity, channels, SKU or category scope, and personal codes. The order desk sends a
+    code word, and the server prices it on its own lines after the agent's discount, then
+    redeems in the order's transaction. A cancel before shipping gives the use back, and an
+    order a code priced keeps its price.
+  - **Notifications.** bn/en templates, opt-outs, quiet hours 21:00–09:00 Dhaka (checked when
+    queued and again when sent), a delivery log, a fake gateway and an unverified BulkSMSBD
+    adapter.
+  - **CRM.** Nightly RFM segments, a daily birthday and anniversary greeting (one code and one
+    message per buyer per occasion per year), the buyer profile with date capture, and the
+    lapsed-buyer list with CSV/XLSX export, which leaves out opted-out numbers.
+  - **Console.** `/customers` (search, profile, lapsed) and `/campaigns` (codes, templates,
+    opt-outs, log), plus the desk's promo field.
+- Verification: `pnpm verify` exit 0 (8m29s) before the acceptance-audit fixes, and again at
+  the final commit (see the Verification Report in the session). Acceptance checks 1–5 pass:
+  1. `crm.test.ts` and `crm.db.test.ts`;
+  2. `crm.db.test.ts` (run twice, a race, and a deterministic 23505);
+  3. `promo.test.ts` and `promo.db.test.ts`;
+  4. `notify.test.ts` and `notify.db.test.ts`;
+  5. `order-desk.stack.ts`.
+
+  Real-stack browser runs: `order-desk.stack.ts` 3/3 and `crm.stack.ts` 4/4 (axe in both themes,
+  screenshots in `docs/review/M16/`).
+
+- Auditors:
+  - ledger-auditor: 2 critical and 8 warnings, all fixed with tests. The re-check found 0 and
+    0, and its one "should not wait" item (`campaignId` without an FK) is fixed.
+  - acceptance-auditor: NOT READY with 7 gaps, all closed in the final commit:
+    - date capture in the console, with clearing;
+    - BulkSMSBD tests against a local stub;
+    - this entry;
+    - D-210 to D-212;
+    - architecture.md's CRM schema and jobs;
+    - stale "arrives in M16" comments.
+- Decisions/assumptions:
+  - D-203 to D-212, and an update to D-202.
+  - D-207 is a platform finding: a `singletonKey` was enforced on no queue, so courier
+    booking could double-book. Its remedy sentence is corrected.
+  - D-209 keeps the till on `NoPromoCodes`.
+- New dependencies: none.
+- Deviations from the milestone spec:
+  - The till does not take promo codes (D-209).
+  - The occasion offer is a constant (D-206).
+  - OTPs and invites are not routed through notify (D-212).
+- Also on this branch:
+  - **A fresh `.env` now boots the API, and a failed boot prints why.** Empty dotenv values are
+    read as unset, and Nest is set to `abortOnError: false`. The stack harness had been showing
+    only "never came up".
+  - Merged `m11-order-desk` (five commits, one decisions.md conflict).
+  - A parallel session committed into this worktree once (676bbe8). It is reconciled, and that
+    session moved to M14a in its own worktree.
+- Follow-ups:
+  - Run `docs/runbooks/queue-policy.md` on the shared dev database, whose courier queues are
+    still `standard`. Do it before any pilot. (owner: human)
+  - Promo code terms are frozen by the service only; add a trigger in a migration this branch
+    can claim. (ledger audit N2; owner: claude)
+  - Composite FKs for `promo.codes.campaign_id` when M18 lands, and the polymorphic
+    `notify.messages.ref_id`. (N3; owner: claude)
+  - Lock order between create and cancel for the same buyer and code. (N4; owner: claude)
+  - A sending lease, so one SMS cannot go out twice on a redelivered job. (N5; owner: claude)
+  - Sales can list every personal code and redemption, and resellers can read profiles; both
+    are ids only. (N6; owner: claude)
+  - Smaller edges: an FK 500 on a foreign `customerId`, `archived → active`, category scope
+    without parents, and `limit_reached` reported on a concurrent pause. (N8; owner: claude)
+  - The till's re-count must exclude its own sale when D-209 is built. (owner: claude)
+  - Route OTPs and invites through notify once a gateway is verified. (D-212; owner: claude)
+  - BulkSMSBD credentials, or the client's own gateway, to close D-012. (owner: human)
+- Next: M18, then M20 and M14a, which a parallel session is doing in its own worktree.

@@ -314,6 +314,26 @@ describe('the buyer profile', () => {
     expect(response.statusCode).toBe(404);
   });
 
+  it('captures a birthday and an anniversary through the API, and clears one', async () => {
+    const url = `/v1/customers/${buyers.neverDelivered}`;
+    const set = await marketing.client.request('PATCH', url, {
+      body: { birthday: '1994-03-21', anniversary: '2019-12-05' },
+    });
+    expect(set.statusCode, set.body).toBe(200);
+    let { body } = await get<
+      Profile & { customer: { birthday: string | null; anniversary: string | null } }
+    >(admin, `${url}/profile`);
+    expect(body.customer).toMatchObject({ birthday: '1994-03-21', anniversary: '2019-12-05' });
+
+    // Typed on the wrong buyer: `null` takes it away, and the other date stays.
+    const cleared = await marketing.client.request('PATCH', url, { body: { birthday: null } });
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    ({ body } = await get<
+      Profile & { customer: { birthday: string | null; anniversary: string | null } }
+    >(admin, `${url}/profile`));
+    expect(body.customer).toMatchObject({ birthday: null, anniversary: '2019-12-05' });
+  });
+
   it('has no average for a buyer with nothing delivered', async () => {
     const { body } = await get<Profile>(admin, `/v1/customers/${buyers.neverDelivered}/profile`);
     expect(body.averageOrderPoisha).toBeNull();

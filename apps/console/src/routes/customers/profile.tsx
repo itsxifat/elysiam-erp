@@ -8,10 +8,10 @@ import {
   Skeleton,
   StatusBadge,
 } from '@elysium/ui';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
 import { ArrowLeft, Cake, Heart } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
@@ -19,8 +19,8 @@ import { useLocale } from '../../i18n/locale.js';
 import { paramOf } from '../courier/courier-nav.js';
 import { isOrdersKey, useOrdersT } from '../orders/messages.js';
 import { ordersPath } from '../orders/paths.js';
-import { buyerProfile, type BuyerProfile } from './api.js';
-import { customersPath } from './customers-nav.js';
+import { buyerProfile, updateOccasions, type BuyerProfile } from './api.js';
+import { control, customersPath } from './customers-nav.js';
 import { isCustomersKey, useCustomersT } from './messages.js';
 
 /**
@@ -197,18 +197,7 @@ function ProfileBody({ profile }: { readonly profile: BuyerProfile }) {
         </Panel>
 
         <Panel title={t('customers.profile.occasions')}>
-          <dl className="space-y-2 px-4 py-3 text-sm">
-            <Occasion
-              icon={<Cake aria-hidden="true" className="size-4 text-muted-foreground" />}
-              label={t('customers.occasion.birthday')}
-              value={customer.birthday}
-            />
-            <Occasion
-              icon={<Heart aria-hidden="true" className="size-4 text-muted-foreground" />}
-              label={t('customers.occasion.anniversary')}
-              value={customer.anniversary}
-            />
-          </dl>
+          <OccasionDates customer={customer} />
           <div className="border-t border-border px-4 py-3">
             <h3 className="text-xs font-medium text-muted-foreground">
               {t('customers.profile.greetings')}
@@ -393,5 +382,116 @@ function Occasion({
         {value ?? <span className="text-muted-foreground">{t('customers.profile.notSet')}</span>}
       </dd>
     </div>
+  );
+}
+
+/**
+ * The buyer's birthday and anniversary, and — for a role that may update the buyer — the
+ * place they are captured (M16 Build: "birthday and anniversary capture"). The occasions
+ * job greets on these dates, so an empty field removes a date rather than leaving a wrong
+ * one in place.
+ */
+function OccasionDates({ customer }: { readonly customer: BuyerProfile['customer'] }) {
+  const t = useCustomersT();
+  const ability = useAbility();
+  const queryClient = useQueryClient();
+  const id = useId();
+  const [editing, setEditing] = useState(false);
+  const [birthday, setBirthday] = useState(customer.birthday ?? '');
+  const [anniversary, setAnniversary] = useState(customer.anniversary ?? '');
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateOccasions(customer.id, {
+        birthday: birthday === '' ? null : birthday,
+        anniversary: anniversary === '' ? null : anniversary,
+      }),
+    onSuccess: async () => {
+      setEditing(false);
+      await queryClient.invalidateQueries({ queryKey: ['customers', 'profile', customer.id] });
+    },
+  });
+
+  if (!editing) {
+    return (
+      <div className="space-y-2 px-4 py-3 text-sm">
+        <dl className="space-y-2">
+          <Occasion
+            icon={<Cake aria-hidden="true" className="size-4 text-muted-foreground" />}
+            label={t('customers.occasion.birthday')}
+            value={customer.birthday}
+          />
+          <Occasion
+            icon={<Heart aria-hidden="true" className="size-4 text-muted-foreground" />}
+            label={t('customers.occasion.anniversary')}
+            value={customer.anniversary}
+          />
+        </dl>
+        {ability.can('update', 'Customer') ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setBirthday(customer.birthday ?? '');
+              setAnniversary(customer.anniversary ?? '');
+              setEditing(true);
+            }}
+          >
+            {t('customers.profile.editDates')}
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="space-y-3 px-4 py-3 text-sm"
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate();
+      }}
+    >
+      <div className="grid grid-cols-2 gap-3">
+        <label htmlFor={`${id}-birthday`} className="space-y-1">
+          <span className="block text-xs font-medium text-muted-foreground">
+            {t('customers.occasion.birthday')}
+          </span>
+          <input
+            id={`${id}-birthday`}
+            type="date"
+            className={`${control} w-full`}
+            value={birthday}
+            onChange={(event) => setBirthday(event.target.value)}
+          />
+        </label>
+        <label htmlFor={`${id}-anniversary`} className="space-y-1">
+          <span className="block text-xs font-medium text-muted-foreground">
+            {t('customers.occasion.anniversary')}
+          </span>
+          <input
+            id={`${id}-anniversary`}
+            type="date"
+            className={`${control} w-full`}
+            value={anniversary}
+            onChange={(event) => setAnniversary(event.target.value)}
+          />
+        </label>
+      </div>
+      <p className="text-xs text-muted-foreground">{t('customers.profile.datesHint')}</p>
+      {save.isError ? (
+        <p role="alert" className="text-xs font-medium text-destructive">
+          {t('customers.profile.datesFailed')}
+        </p>
+      ) : null}
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={save.isPending}>
+          {t('customers.profile.saveDates')}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>
+          {t('customers.profile.cancel')}
+        </Button>
+      </div>
+    </form>
   );
 }
