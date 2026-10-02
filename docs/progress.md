@@ -1173,3 +1173,31 @@ share`), W-B (one person could void a loan's receipt: `LOAN_SELF_VOID` in the se
     (owner: claude)
   - Renumber 0098–0101 at integration. (owner: claude, integrator)
 - Next: integration with the other wave-2 branches.
+
+### 2026-10-02 · integration · Wave-2 gaps joined, the test site hosted · done
+
+- Delivered (branch `integration-wave2`):
+  - Merged M14b's preview deploy, `gaps-orders-settings`, the preview kit and
+    `gaps-users-auth`. Conflicts were side-by-side additions (routes, navigation, i18n, the
+    stack helpers, docs) and kept both sides; the logger keeps M14b's `createLogger(name,
+destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0098–0101
+    follow 0097 unchanged.
+  - Hosted on the owner's server (D-352): https://elyerp.enfinito.cloud, certbot TLS, the
+    database marked `elysium-preview` and seeded once with `preview:seed` (books agree). Two
+    deploy-script fixes came out of the first real run: nginx's workers could not read the
+    0700 release directory (500), and a rejected nginx config is now rolled back so the
+    shared host's other sites survive the next reload.
+  - The server's clock was 9 h 27 min fast (Ubuntu's NTS sources never answer from its
+    network), which would have refused every two-step code. With the owner's OK, chrony now
+    also uses a plain pool (`authselectmode ignore`); the runbook has the check.
+- Verification: `pnpm verify` exit 0 at `49b96b5` with all four merged: 179 test files,
+  2,808 tests (1 skipped); bundle, migrations, schema drift (100 migrations), route matrix
+  (319 routes, 311 matrix-tested, 8 public), i18n and api-client checks all pass. All nine
+  preview sign-ins accepted on the live site after deploying `49b96b5`.
+- Follow-ups:
+  - A supported way to create the first super admin on a brand-new database: invites need an
+    existing admin (D-057) and `db:dev-users` refuses non-local databases. Needed before real
+    go-live. (owner: claude, M30)
+  - The preview kit's own follow-ups (R2 presigned PUT, the seed refusing a real SMS
+    provider, the finalize race) and both gaps branches' follow-ups are in their entries above.
+- Next: M30 review and fixes.

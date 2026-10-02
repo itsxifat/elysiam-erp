@@ -1,12 +1,12 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-02, night** (M14b and M30 in progress; staff accounts added). This is the short, plain-language view. The
+Last updated: **2026-10-02, late night** (the test site is live at https://elyerp.enfinito.cloud; M30 is next). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Built     [###################-]  95%
+Built     [###################-]  96%
 ```
 
 - The plan has 33 milestones. Six are out on the owner's instruction: the Beownz reseller
@@ -14,7 +14,7 @@ Built     [###################-]  95%
   staff activity extension (M28) and the landing page builder (M29). So **27 count**.
 - A milestone counts 100% when it is built, tested and passed its audits. A part-built one counts
   for the share that is done.
-- Today: **25 done, 2 part-built (M14b about 60%, M30 about 15% and paused).**
+- Today: **25 done, 2 part-built (M14b about 75%, M30 about 15% and paused).**
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
 [What the owner needs to do](#what-the-owner-needs-to-do).
@@ -26,7 +26,7 @@ Built     [###################-]  95%
 | Foundation: sign-in, roles, five separate brands, audit log                 |  100% | Staff sign in, see only their brand and only what their role allows. Every change is logged. An admin manages staff on a Staff screen: invite, roles, deactivate a leaver, reset a password or a lost phone, with a second admin for anyone who can move money. |
 | Products and stock                                                          |  100% | Products, sizes, prices, stock per warehouse and showroom, cost tracking. Stock can never go below zero.                                                                                                                                                        |
 | Accounting and wallets                                                      |  100% | Cash, bKash and bank wallets, double-entry books, P&L, balance sheet, month close.                                                                                                                                                                              |
-| Orders                                                                      |  100% | Order desk for agents, website order intake, buyer list.                                                                                                                                                                                                        |
+| Orders                                                                      |  100% | Order desk for agents, website order intake, buyer list. Each order shows only its allowed next steps (confirm, pack, hand to courier, deliver, return, hold); courier updates move orders on by themselves; bulk pack.                                         |
 | Couriers and COD                                                            |  100% | Steadfast, Pathao, RedX booking, tracking page, COD cash matching, stuck-parcel list. Needs live accounts.                                                                                                                                                      |
 | Customers, SMS, promo codes                                                 |  100% | Buyer profiles, birthday offers, lapsed-buyer list, SMS templates, promo codes at the order desk.                                                                                                                                                               |
 | Showrooms (POS)                                                             |  100% | A till that works offline, Bangla receipts, day closing per branch.                                                                                                                                                                                             |
@@ -38,7 +38,7 @@ Built     [###################-]  95%
 | Targets and bonuses                                                         |  100% | Monthly targets per agent split by week, progress as orders come in, bonus rules approved by a second person and paid through payroll, pickup time and orders per hour. Team targets wait for the client's rule (D-273).                                        |
 | Dashboards and leaderboard                                                  |  100% | A daily summary per brand, an owner's dashboard per brand and an all-brands view for the super admin, a fair leaderboard that never shows another brand's revenue or profit, automatic problem alerts, exports. An AI summary exists but is off.                |
 | Company loans                                                               |  100% | Loans the company takes: flat or reducing-balance schedules, a reminder once per instalment, repayments split into principal and interest, approval above the threshold, statements. A mistaken loan is voided by a second person.                              |
-| Going live and hardening                                                    |   35% | Server deploy config, monitoring, health checks and runbooks mostly written; security review, load tests and guides under way.                                                                                                                                  |
+| Going live and hardening                                                    |   45% | The test site runs on the owner's server with demo data and one login per role. Monitoring, health checks and runbooks written. Security review, load tests and guides are M30's.                                                                               |
 | Fraud check, Chatwoot inbox, staff activity extension, landing page builder |     - | Removed by the owner on 2026-10-02. Not counted. The fraud check code was deleted.                                                                                                                                                                              |
 | Reseller platform (Beownz)                                                  |     - | Set aside by the owner. Not counted.                                                                                                                                                                                                                            |
 
@@ -62,7 +62,7 @@ Built     [###################-]  95%
 | M12  | Courier booking and COD                |  100% | Steadfast adapter not yet tried on a live account                                           |
 | M13  | Fraud check                            |     - | Removed by the owner; code deleted                                                          |
 | M14a | Data migration and opening balances    |  100% | Accountant must sign the pilot brand's report                                               |
-| M14b | Server deploy, monitoring, backups     |   60% | Being built; its last checks need a staging server from the owner                           |
+| M14b | Server deploy, monitoring, backups     |   75% | Test site live; backup and rollback drills still need a staging server                      |
 | M15  | Pathao, RedX, tracking page            |  100% | RedX needs a merchant account to confirm its status words                                   |
 | M16  | Buyer profiles, SMS, promo codes       |  100% | SMS gateway not chosen yet; a stand-in is used                                              |
 | M17  | Advance payments and return reasons    |  100% | Policy defaults need the client's OK                                                        |
@@ -83,52 +83,41 @@ Built     [###################-]  95%
 ## Being built now
 
 The owner set the order on 2026-10-02: **build everything, make it testable by a person, host it
-on the owner's server, then do M30's review and fixes.**
+on the owner's server, then do M30's review and fixes.** The first three steps are done:
 
-1. **M14b** server deploy: production images, deploy config, monitoring, backups, runbooks,
-   plus a simple one-server setup for the test site.
-2. **Missing buttons and screens** a tester would hit on day one:
-   - orders: Hold, Release, Pack, Ship and Handover buttons; courier updates moving an order to
-     Shipped;
-   - settings: approval limits, delivery zones, courier accounts, website order keys, till
-     registers;
-   - HR's Pay button;
-   - staff: a staff list, changing roles, removing a leaver, accepting an invite, password reset,
-     and resetting two-step login after a lost phone.
-3. **Preview kit**: demo data in every area, one login per role, a plain testing guide, and a
-   browser check that logs in as every role.
-4. **Hosting** on the owner's server, once the server details arrive.
-5. **M30** review and fixes (paused until after hosting). Already found and partly fixed: two
-   sign-in issues fixed; four money-control issues (cash out without a receipt, HR paying a staff
-   loan they recorded, a branch manager changing a salary account, unlimited sales discounts) are
-   written up and will be finished in M30.
+1. **Done: M14b** one-server test site on the owner's server, with HTTPS, a deploy script and
+   runbooks. Production deploy config and monitoring are written; the backup and rollback drills
+   wait for a staging server.
+2. **Done: the missing buttons and screens**: order steps, parcel panel, bulk pack, Settings,
+   HR's Pay button, and the Staff screen (invite, roles, leavers, password and two-step resets).
+3. **Done: the preview kit**: demo data in every area, one login per role, and the plain testing
+   guide (`docs/testing-guide.md`).
+4. **Next: M30** review and fixes. Already found: four money-control issues (cash out without a
+   receipt, HR paying a staff loan they recorded, a branch manager changing a salary account,
+   unlimited sales discounts), plus a command to create the very first super admin on a new
+   database, which real go-live needs.
 
 ## Time left (estimate)
 
-| Work                                                      | Time left               |
-| --------------------------------------------------------- | ----------------------- |
-| M14b, missing screens and preview kit (in parallel)       | about 2 to 3 hours      |
-| Joining everything and re-running every check             | about 1 to 2 hours      |
-| Hosting on the server (after the owner sends the details) | about 1 hour            |
-| M30 review and fixes                                      | about 3 to 4 hours      |
-| **Total**                                                 | **about 7 to 10 hours** |
-
-**The test site should be ready in about 4 to 6 hours** (the first three rows), if the server
-details arrive in time.
+| Work                 | Time left          |
+| -------------------- | ------------------ |
+| M30 review and fixes | about 3 to 4 hours |
 
 ## What the owner needs to do
 
 Nothing here blocks building; each one blocks going live.
 
-1. **A git remote** (GitHub or similar). Without it the automatic checks (CI) have never run.
-2. **Courier accounts**: Steadfast, Pathao and a RedX merchant account, to test against the real
+1. **Try the test site** with `docs/testing-guide.md` and say what feels wrong or missing.
+2. **Change the server password** (`passwd` on the server): it was shared in a chat.
+3. **A git remote** (GitHub or similar). Without it the automatic checks (CI) have never run.
+4. **Courier accounts**: Steadfast, Pathao and a RedX merchant account, to test against the real
    services.
-3. **An SMS gateway** the brands already use, or a choice of one (D-012).
-4. **Who may run a showroom till** (D-161), and three small showroom policy questions in
+5. **An SMS gateway** the brands already use, or a choice of one (D-012).
+6. **Who may run a showroom till** (D-161), and three small showroom policy questions in
    `decisions.md`.
-5. **The accountant**: review the chart of accounts, then sign the opening balances (M14a).
-6. **A staging server** for the deploy, backup and rollback drills (M14b).
-7. **Merging to `main`**: the finished work sits on stacked branches, and merging is left to the
+7. **The accountant**: review the chart of accounts, then sign the opening balances (M14a).
+8. **A staging server** for the deploy, backup and rollback drills (M14b).
+9. **Merging to `main`**: the finished work sits on stacked branches, and merging is left to the
    owner.
 
 ## How this file is kept
