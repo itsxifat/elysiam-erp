@@ -36,10 +36,11 @@ M07, M09, M10, M11, M12, M13, M15, M19 and M25 were built by parallel agents bet
 | M14a | Data migration, opening balances  | in progress (opening-balance posting rule only)       |
 | M15  | Multi-courier, tracking           | built, Pathao and RedX adapters unverified (D-200)    |
 | M16  | Buyer profiles, notify, promo     | done; both auditors READY                             |
+| M18  | Marketing                         | built and verified; Meta adapters unverified (D-257)  |
 | M19  | HR, attendance, payroll           | built, re-audit owed                                  |
 | M23  | Branches and showroom POS         | done; integrated, ledger audit fixed                  |
 | M25  | Investors                         | built, investor portal pages missing                  |
 
-Not started: M14b, M17 (now advance payments and return reasons only), M18, M20, M24, M26, M30. Removed from scope by the owner: M27 Chatwoot and M29 landing page builder (D-290), M13 fraud check with its code (D-291), M28 activity extension (D-292). M21 and M22, the Beownz reseller platform, are out of scope by the client's instruction.
+Not started: M14b, M17 (now advance payments and return reasons only), M20, M24, M26, M30. Removed from scope by the owner: M27 Chatwoot and M29 landing page builder (D-290), M13 fraud check with its code (D-291), M28 activity extension (D-292). M21 and M22, the Beownz reseller platform, are out of scope by the client's instruction.
 
 The plain-language summary with percentages is `docs/build-status.md`.

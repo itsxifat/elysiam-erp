@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { daysInclusive, dhakaToday, monthStart, percent, roas } from './format.js';
 
 describe('marketing ratios as shown', () => {
-  it('places the decimal point in ROAS without rounding twice', () => {
+  it('shows ROAS to two decimals, rounded half up once', () => {
     expect(roas('6625')).toBe('0.66×');
     expect(roas('10400')).toBe('1.04×');
+    expect(roas('17778')).toBe('1.78×');
+    expect(roas('6649')).toBe('0.66×');
     expect(roas('0')).toBe('0.00×');
     expect(roas(null)).toBe('—');
   });

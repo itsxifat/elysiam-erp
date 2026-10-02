@@ -5,13 +5,13 @@
  * rule; these only place the decimal point. No float ever holds a money amount here.
  */
 
-/** ROAS: 6,625 bps → "0.66×", 10,400 → "1.04×". Null (no spend) → "—". */
+/** ROAS: 6,625 bps → "0.66×", 17,778 → "1.78×". Null (no spend) → "—". */
 export function roas(bps: string | null): string {
   if (bps === null) return '—';
-  const value = BigInt(bps);
-  const whole = value / 10_000n;
-  const hundredths = (value % 10_000n) / 100n;
-  return `${whole.toString()}.${hundredths.toString().padStart(2, '0')}×`;
+  // Two decimals, rounded half up on the dropped digits, as `percent` rounds (bps are never
+  // negative here).
+  const hundredths = (BigInt(bps) + 50n) / 100n;
+  return `${(hundredths / 100n).toString()}.${(hundredths % 100n).toString().padStart(2, '0')}×`;
 }
 
 /** A rate: 2,500 bps → "25.0%", 1,429 → "14.3%". Null (nothing to divide by) → "—". */
