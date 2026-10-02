@@ -41,7 +41,6 @@ const OWNER: Readonly<Record<string, string>> = {
   catalog: 'catalog',
   courier: 'courier',
   files: 'files',
-  fraud: 'fraud',
   hr: 'hr',
   iam: 'iam',
   intake: 'intake',

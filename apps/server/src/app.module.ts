@@ -6,7 +6,6 @@ import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { CourierModule } from './modules/courier/courier.module.js';
 import { DemoModule } from './modules/demo/demo.module.js';
 import { FilesModule } from './modules/files/files.module.js';
-import { FraudModule } from './modules/fraud/fraud.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { HrModule } from './modules/hr/hr.module.js';
 import { IntakeModule } from './modules/intake/intake.module.js';
@@ -73,7 +72,6 @@ export class AppModule {
         InvestorsModule,
         HrModule,
         OrdersModule,
-        FraudModule,
         /*
          * After `OrdersModule`, and that is not cosmetic: M12 imports it for `ORDERS_API`
          * and binds its own `ORDERS_PORT`, `WALLETS_PORT` and `LEDGER_READ_PORT` inside

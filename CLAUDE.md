@@ -55,7 +55,7 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
 - `pnpm check:bundle` is the console's initial-route budget on its own: 250 KB gzipped, fonts excluded. Needs a console build first.
 - `pnpm check:routes` is the route-matrix gate on its own: every route declares an ability (or `@AuthenticatedOnly` / `@Public`), and every non-public route is in `apps/server/src/platform/auth/route-matrix.manifest.ts` with a fixture in the generated route-matrix suite. Needs a build first.
 - `pnpm api:client` regenerates the typed OpenAPI client. Live from M04.
-- `pnpm bench` is the shared benchmark harness; every latency acceptance check measures through it. `pnpm bench --list` names the module benches; `pnpm bench catalog` (M06 check 2) and `pnpm bench fraud` (M13 check 4) run under tsx against the dev stack's Postgres. With no argument it runs the harness's self-test.
+- `pnpm bench` is the shared benchmark harness; every latency acceptance check measures through it. `pnpm bench --list` names the module benches; `pnpm bench catalog` (M06 check 2) runs under tsx against the dev stack's Postgres. With no argument it runs the harness's self-test.
 - `pnpm fonts:fetch` re-vendors Inter and Hind Siliguri and recomputes the Bangla `size-adjust`.
 
 ## Invariants: never break these

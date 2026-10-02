@@ -96,7 +96,7 @@ packages/
   db/          Drizzle schema per module, migrations, RLS, seed
   api-client/  generated OpenAPI client plus TanStack Query hooks
   i18n/        bn + en messages and formatters
-  integrations/ courier, fraud, SMS, Meta and Chatwoot adapters
+  integrations/ courier, SMS and Meta adapters
   landing-blocks/ Puck components
 infra/         docker-compose.dev.yml, deploy config
 scripts/       verify helpers: check-migrations, bench, fetch-fonts, setup-env

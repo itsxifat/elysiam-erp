@@ -6,7 +6,7 @@ import type { Poisha } from '@elysium/domain';
  *
  * This module may not touch `inventory.*`. So the POS declares the narrow shape it
  * needs and inventory implements it — the same arrangement
- * `orders/ports/fraud-gate.port.ts` uses with M13.
+ * `orders/ports/promo.port.ts` uses with M16.
  *
  * `InventoryApiService` has `sellAtPos`, `receivePosReturn` and `availability`
  * with these signatures, so it satisfies this interface structurally and

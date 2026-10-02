@@ -21,7 +21,6 @@ import {
   claimOrder,
   confirmOrder,
   documentUrl,
-  fraudCheck,
   getOrder,
   listAgents,
   listAreas,
@@ -29,7 +28,7 @@ import {
   type TimelineEntry,
 } from './api.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
-import { FraudBadgeView, OrdersNav, OrderStatusBadge } from './parts.js';
+import { OrdersNav, OrderStatusBadge } from './parts.js';
 import { DEFAULT_ORDER_SEARCH } from './search.js';
 import { ordersPath } from './paths.js';
 
@@ -130,13 +129,6 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
     queryKey: ['orders', 'areas'],
     queryFn: listAreas,
     staleTime: Number.POSITIVE_INFINITY,
-  });
-  const fraud = useQuery({
-    queryKey: ['orders', 'fraud', order.shipTo.phone],
-    queryFn: () => fraudCheck(order.shipTo.phone),
-    enabled: ability.can('read', 'FraudSignal'),
-    retry: false,
-    staleTime: 60_000,
   });
 
   const names = useMemo(
@@ -354,13 +346,6 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
                 </dd>
               </div>
             </dl>
-          </section>
-
-          <section className="rounded-lg border border-border bg-card p-4">
-            <FraudBadgeView
-              state={fraud.isPending ? 'loading' : fraud.isError ? 'error' : 'ready'}
-              badge={fraud.data}
-            />
           </section>
 
           {order.notes === null && sourceEntries.length === 0 ? null : (

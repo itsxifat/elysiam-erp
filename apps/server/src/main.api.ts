@@ -195,9 +195,7 @@ async function bootstrap(): Promise<void> {
    * This line did not exist, and nothing noticed. `enqueue(tx, …)` needs a started
    * runtime in the process that calls it, and every test suite that enqueues starts its
    * own, so the whole suite was green while the running API threw on every request that
-   * queued work: a courier booking from an order transition failed inside the request,
-   * and the fraud refresh — which swallows the error so a badge still renders — was
-   * never queued at all. Started before `listen`, because the first request may be one
+   * queued work: a courier booking from an order transition failed inside the request. Started before `listen`, because the first request may be one
    * that enqueues.
    */
   const jobs = await startJobsClient(logger);

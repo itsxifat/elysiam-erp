@@ -271,7 +271,6 @@ export const TERMINAL_STATUSES: readonly OrderStatus[] = ORDER_STATUSES.filter(
 export type OrderErrorCode =
   | 'ORDER_TRANSITION_INVALID'
   | 'ORDER_REASON_REQUIRED'
-  | 'ORDER_FRAUD_BLOCKED'
   | 'ORDER_TOTAL_INVALID'
   | 'ORDER_LINES_INVALID'
   | 'ORDER_PHONE_INVALID';
@@ -304,25 +303,12 @@ export function triggersFrom(from: OrderStatus): readonly OrderTrigger[] {
   return TRANSITIONS.filter((entry) => entry.from === from).map((entry) => entry.trigger);
 }
 
-/**
- * §10's fraud decision, as this module needs it.
- *
- * Only `block` stops a confirm, and only an override with a reason gets past it (§9,
- * §10). `warn` and `require_advance` change what the desk shows and what it collects,
- * not whether the machine turns.
- */
-export type FraudDecision = 'allow' | 'warn' | 'require_advance' | 'block';
-
 export interface TransitionRequest {
   readonly from: OrderStatus;
   readonly trigger: OrderTrigger;
   readonly at: Date;
-  /** Required by the transitions marked `requiresReason`, and by any override. */
+  /** Required by the transitions marked `requiresReason`. */
   readonly reason?: string | null;
-  /** §10's decision as it stood when the agent pressed confirm. */
-  readonly fraudDecision?: FraudDecision | null;
-  /** An org_admin's explicit override of a `block` (§10). */
-  readonly fraudOverrideReason?: string | null;
   /** The org's courier booking policy (§9). `manual` enqueues nothing. */
   readonly bookingPolicy?: 'on_confirm' | 'on_pack' | 'manual';
   /** Whether a parcel already exists with the courier, which decides the cancel. */
@@ -347,13 +333,7 @@ const MAX_REASON = 500;
  * The refusals, in the order they are checked:
  *
  * 1. the pair is not in §9's table (`ORDER_TRANSITION_INVALID`);
- * 2. a transition that needs a reason was given none (`ORDER_REASON_REQUIRED`);
- * 3. the fraud decision is `block` and no override reason was supplied
- *    (`ORDER_FRAUD_BLOCKED`).
- *
- * The fraud check is last because the first two are about the request being
- * well-formed and this one is about policy — and a caller fixing a rejected confirm
- * should be told the structural problem before being told to go and find an admin.
+ * 2. a transition that needs a reason was given none (`ORDER_REASON_REQUIRED`).
  */
 export function transition(request: TransitionRequest): TransitionResult {
   const entry = transitionFor(request.from, request.trigger);
@@ -377,20 +357,6 @@ export function transition(request: TransitionRequest): TransitionResult {
       'ORDER_REASON_REQUIRED',
       `Moving an order from ${entry.from} to ${entry.to} needs a reason.`,
     );
-  }
-
-  if (request.trigger === 'confirm' && request.fraudDecision === 'block') {
-    const override = normaliseReason(request.fraudOverrideReason);
-    if (override === null) {
-      // §10: a block is overridden by org_admin with a reason, and by nobody else.
-      // Whether *this* caller holds that right is a permission question the server
-      // answers; the machine's job is to refuse a confirm that carries no override
-      // at all, so the permission check can never be the only thing standing there.
-      throw new OrderError(
-        'ORDER_FRAUD_BLOCKED',
-        'This buyer is blocked by the fraud rules; confirming needs an override with a reason.',
-      );
-    }
   }
 
   const policy = request.bookingPolicy ?? 'manual';

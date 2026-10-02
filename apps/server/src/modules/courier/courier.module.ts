@@ -54,7 +54,7 @@ import {
  * they are bound **in this file**, because Nest resolves a provider in the module that
  * declares the injection: a binding placed in `AppModule` would not reach `BookingService`
  * at all. Each one is bound to the exported service interface of the module that owns the
- * data, which is the same arrangement `orders.module.ts` uses for its fraud gate.
+ * data, which is the same arrangement `orders.module.ts` uses for its promo port.
  *
  * The bindings are `useFactory` with a typed parameter rather than `useExisting`, and that
  * is the only reason they are three lines each: `useExisting` is unchecked, so the day

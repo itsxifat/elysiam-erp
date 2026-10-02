@@ -6,7 +6,7 @@ import type { ActiveContext } from '../../../platform/http/context.js';
 /**
  * What the order desk needs from promo codes (M16; invariant 12).
  *
- * Declared here, in the consumer, as `fraud-gate.port.ts` is: this module states exactly
+ * Declared here, in the consumer: this module states exactly
  * what it asks for, and `orders.module.ts` binds it to `PROMO_API` with `useExisting`.
  * Nothing here knows how a code is stored or priced.
  *

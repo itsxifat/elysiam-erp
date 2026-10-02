@@ -38,13 +38,6 @@ const ENV = {
   AUTH_SECRET: 'route-matrix-check-secret-at-least-32-chars',
   TRUSTED_ORIGINS: 'http://localhost:5173',
   DATABASE_URL: 'postgres://erp_app:x@127.0.0.1:5432/unused',
-  /*
-   * M13's phone HMAC key. The fraud module refuses to construct without one — a fallback
-   * would silently turn every phone number into a new person (see `fraud.config.ts`) — so
-   * the gate has to supply a fake one like every other secret here, or registering
-   * `FraudModule` in `app.module.ts` would stop the gate booting the app at all.
-   */
-  FRAUD_PHONE_HASH_KEY: 'route-matrix-check-fraud-hash-key-32-chars',
 };
 
 /**

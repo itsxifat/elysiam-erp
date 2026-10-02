@@ -725,6 +725,8 @@ interface CourierAdapter {
 
 ## 10. Customers, fraud, notifications and promotions
 
+> The fraud check (M13, and the fraud half of M17) is removed from scope and its code deleted (D-291). The Fraud subsection below is kept for reference only.
+
 ### Fraud
 
 - `fraud.phone_signals` (cross-org):
@@ -918,7 +920,7 @@ interface CourierAdapter {
 
 ## 16. Message Hub and agent activity
 
-> The Message Hub (Chatwoot, M27) is removed from scope (D-290). Agent activity (M28) remains.
+> The Message Hub (Chatwoot, M27) and the agent activity extension (M28) are removed from scope (D-290, D-292).
 
 ### Message Hub
 

@@ -17,8 +17,8 @@ import type { CreateCustomerInput, CustomerQuery, UpdateCustomerInput } from './
  * The one decision in this file that everything else follows from: a customer is
  * identified by their phone number, normalised through `normalizeBdPhone`, and the
  * upsert is keyed on that. Get it wrong once and the same person becomes two rows with
- * two order histories — and §10's trust score is computed from a delivery ratio, so a
- * split buyer is a buyer whose fraud signal is half-evidence. The unique index and the
+ * two order histories, and a split buyer's delivery ratio is computed from half the
+ * evidence. The unique index and the
  * `customers_phone_e164` CHECK are the two backstops behind it.
  *
  * Invariant 10 applies to every log line and audit row in here. The phone number is the

@@ -87,7 +87,7 @@ function header(request: FastifyRequest, name: string): string | undefined {
 @Injectable()
 export class IntakeService {
   /**
-   * Built on first use, as `FraudService` does: `createLogger` parses the whole server
+   * Built on first use: `createLogger` parses the whole server
    * environment, and a constructor that did so would make this class unbuildable in a test
    * that hands it its collaborators directly.
    */

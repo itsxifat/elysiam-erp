@@ -115,26 +115,6 @@ describe('the order state machine (§9, invariant 7)', () => {
     ).toContain('release_reservation');
   });
 
-  it('refuses a confirm the fraud rules blocked, and allows it with an override', () => {
-    expect(() =>
-      transition({ from: 'pending', trigger: 'confirm', at: AT, fraudDecision: 'block' }),
-    ).toThrowError(/override/);
-    const forced = transition({
-      from: 'pending',
-      trigger: 'confirm',
-      at: AT,
-      fraudDecision: 'block',
-      fraudOverrideReason: 'known buyer, verified by phone',
-    });
-    expect(forced.to).toBe('confirmed');
-    // `warn` and `require_advance` change the desk, not the machine (§10).
-    for (const decision of ['allow', 'warn', 'require_advance'] as const) {
-      expect(
-        transition({ from: 'pending', trigger: 'confirm', at: AT, fraudDecision: decision }).to,
-      ).toBe('confirmed');
-    }
-  });
-
   it('fires the courier booking on whichever transition the org’s policy names', () => {
     const confirmOnConfirm = transition({
       from: 'pending',
@@ -210,10 +190,8 @@ describe('the order state machine (§9, invariant 7)', () => {
                 trigger,
                 at: AT,
                 // Supplied unconditionally so a refusal can only ever be the table's
-                // doing, never a missing reason or an unhandled fraud block.
+                // doing, never a missing reason.
                 reason: 'property test',
-                fraudOverrideReason: 'property test',
-                fraudDecision: 'allow',
               }).to;
             } catch (error) {
               expect(error).toBeInstanceOf(OrderError);

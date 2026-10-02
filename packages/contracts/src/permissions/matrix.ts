@@ -244,8 +244,6 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'create', 'update', 'delete'], subject: 'Order', scope: 'org' },
     { action: ['read', 'update'], subject: 'Customer', scope: 'org' },
     { action: 'export', subject: 'BuyerExport', scope: 'org' },
-    { action: 'read', subject: 'FraudSignal', scope: 'org' },
-    { action: 'update', subject: 'FraudOverride', scope: 'org' },
     { action: ['read', 'update'], subject: 'Wallet', scope: 'org' },
     { action: 'read', subject: 'LedgerReport', scope: 'org' },
     // §7: org_admin or accounts closes a period; reopening goes through a
@@ -300,7 +298,6 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'create', 'update'], subject: 'Supply', scope: 'org' },
     { action: 'read', subject: 'Order', scope: 'org' },
     { action: 'read', subject: 'Customer', scope: 'org' },
-    { action: 'read', subject: 'FraudSignal', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Wallet', scope: 'org' },
     { action: 'read', subject: 'LedgerReport', scope: 'org' },
     { action: ['read', 'update'], subject: 'LedgerPeriod', scope: 'org' },
@@ -337,7 +334,6 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'Stock', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Order', scope: 'own' },
     { action: ['read', 'create', 'update'], subject: 'Customer', scope: 'own' },
-    { action: 'read', subject: 'FraudSignal', scope: 'org' },
     // §6 says "apply codes", not edit pages. `update LandingPage` would have let
     // a sales agent rewrite a brand's storefront; applying a promo code is an
     // Order concern and is covered by the Order rules above.
@@ -430,7 +426,6 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'request'], subject: 'StockAdjustment', scope: 'branch' },
     { action: ['read', 'create', 'update'], subject: 'Order', scope: 'branch' },
     { action: ['read', 'update'], subject: 'Customer', scope: 'branch' },
-    { action: 'read', subject: 'FraudSignal', scope: 'branch' },
     { action: ['read', 'update'], subject: 'Wallet', scope: 'branch' },
     // §6: branch P&L without cost detail. The scope grants the report; the
     // COST_FIELDS strip is what keeps the cost out of it.
@@ -486,7 +481,6 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'Stock', scope: 'org' },
     { action: ['read', 'create'], subject: 'Order', scope: 'own' },
     { action: 'read', subject: 'Customer', scope: 'own' },
-    { action: 'read', subject: 'FraudSignal', scope: 'own' },
     { action: 'read', subject: 'ResellerAdmin', scope: 'own' },
     /*
      * `own`, not `org`. A reseller uploads their trade licence and their

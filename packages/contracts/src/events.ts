@@ -269,41 +269,6 @@ export const orderStatusChangedPayload = z
   .strict();
 
 /**
- * §10's fraud verdict on an order (M13).
- *
- * The payload is the narrowest in the catalog, and that is the point. This event
- * fires because a cross-org score said something about a buyer, and the evidence
- * behind that score belongs to up to five different companies — so what leaves the
- * process is the order it is about, the number, and the codes. Never the phone,
- * never the hash, never a count, never which brand contributed what.
- *
- * The hash is excluded deliberately even though it is not the number. It is a
- * stable identifier for one person across every brand, and a socket payload is the
- * one place in this system with no `serializeFor` in front of it — a hash on the
- * wire is a correlation key sitting in five browsers' memory. The desk does not
- * need it: it already knows which order it is looking at.
- *
- * `reasons` is codes, not sentences. The console renders them in Bangla or English
- * (D-036) from `packages/i18n`, and a sentence composed on the server would be an
- * English string in a Bangla UI.
- */
-export const orderFraudFlaggedPayload = z
-  .object({
-    id: uuid,
-    orderNo: z.string(),
-    /** 0–100. The number on the badge. */
-    trustScore: z.number().int().min(0).max(100),
-    /** `allow`, `warn`, `require_advance` or `block` — §10's bands. */
-    decision: z.enum(['allow', 'warn', 'require_advance', 'block']),
-    /** Reason codes from `@elysium/domain/fraud`, in the order they were applied. */
-    reasons: z.array(z.string()).max(12),
-    /** False when no configured provider answered: the score is internal-only (check 3). */
-    providerAvailable: z.boolean(),
-    at: z.string(),
-  })
-  .strict();
-
-/**
  * The catalog, as data.
  *
  * Only the events something already emits are here. §19 lists twenty-odd, and
@@ -362,9 +327,7 @@ export const EVENTS = {
     roles: ['org_admin'],
     superAdmin: true,
   }),
-  // M10's order events (§19). `order.fraud_flagged` arrives with M13, which is what
-  // produces a trust score — a schema for an event nothing emits is a guess about a
-  // payload, and the guess is what later becomes a field nobody meant to send.
+  // M10's order events (§19).
   'order.created': defineEvent('order.created', orderCreatedPayload, {
     roles: ['sales', 'org_admin'],
   }),
@@ -387,21 +350,6 @@ export const EVENTS = {
       ...(payload.resellerId === null ? [] : [resellerRoom(payload.resellerId)]),
       ...(payload.branchId === null ? [] : [`branch:${payload.branchId}`]),
     ],
-  }),
-  /*
-   * M13. §6's fraud row gives the badge to org_admin, sales, accounts and
-   * branch_manager, and `read FraudSignal` to all four — so those are the rooms.
-   *
-   * Warehouse is absent and so is reseller. The warehouse packs what the desk
-   * confirmed and has no decision to make on a score; a reseller holds
-   * `read FraudSignal|own`, which is a badge on their own order fetched through an
-   * endpoint where `serializeFor` applies, not a live feed of every verdict in the
-   * brand. A room is the coarsest grant in the system — everything broadcast to it
-   * reaches everyone in it — so it is the wrong instrument for an `own`-scoped
-   * permission.
-   */
-  'order.fraud_flagged': defineEvent('order.fraud_flagged', orderFraudFlaggedPayload, {
-    roles: ['sales', 'org_admin', 'accounts', 'branch_manager'],
   }),
   'delivery.booking_failed': defineEvent('delivery.booking_failed', deliveryBookingFailedPayload, {
     roles: ['org_admin'],

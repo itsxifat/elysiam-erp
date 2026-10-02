@@ -16,10 +16,6 @@ import {
   COURIER_ROUTE_FIXTURES,
   prepareCourierFixtures,
 } from '../../modules/courier/courier.route-fixtures.js';
-import {
-  FRAUD_ROUTE_FIXTURES,
-  prepareFraudFixtures,
-} from '../../modules/fraud/fraud.route-fixtures.js';
 import { HR_ROUTE_FIXTURES, prepareHrFixtures } from '../../modules/hr/hr.route-fixtures.js';
 import {
   INTAKE_ROUTE_FIXTURES,
@@ -143,7 +139,6 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...INVENTORY_ROUTE_FIXTURES,
   ...WALLETS_ROUTE_FIXTURES,
   ...ORDERS_ROUTE_FIXTURES,
-  ...FRAUD_ROUTE_FIXTURES,
   ...INVESTORS_ROUTE_FIXTURES,
   ...HR_ROUTE_FIXTURES,
   ...COURIER_ROUTE_FIXTURES,
@@ -222,7 +217,6 @@ beforeAll(async () => {
   await prepareInventoryFixtures();
   await prepareWalletsFixtures();
   await prepareOrderFixtures();
-  await prepareFraudFixtures();
   await prepareInvestorFixtures();
   await prepareHrFixtures();
   await prepareCourierFixtures();

@@ -14,7 +14,7 @@ import { type ParcelStatus } from './status.js';
  * negative answer, and it is the same bytes whatever the reason.
  *
  * With the right digits the page shows a *stage*, not our internal status. `on_hold` is a
- * fraud or stock hold, and telling a buyer their order is "on hold" invites exactly the call
+ * stock or desk hold, and telling a buyer their order is "on hold" invites exactly the call
  * the hold exists to avoid; it reads as "processing" here. Likewise the courier's own
  * vocabulary never reaches the page — only which of five steps the parcel has reached.
  */

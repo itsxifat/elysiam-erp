@@ -143,15 +143,8 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'marketing|export|BuyerExport|org',
   'org_admin|export|BuyerExport|org',
 
-  // | Fraud trust badge and reasons | org_admin org | sales yes | accounts read | branch_manager branch | reseller badge on own orders |
-  'accounts|read|FraudSignal|org',
-  'branch_manager|read|FraudSignal|branch',
-  'org_admin|read|FraudSignal|org',
-  'reseller|read|FraudSignal|own',
-  'sales|read|FraudSignal|org',
-
-  // | Fraud block override | org_admin org | everyone else — |
-  'org_admin|update|FraudOverride|org',
+  // §6's two fraud rows (trust badge, block override) are gone: the owner removed the
+  // fraud check from scope (D-291).
 
   // | Wallets, cash entries, petty cash | org_admin org | accounts org | branch_manager own branch wallets |
   'accounts|create|Wallet|org',

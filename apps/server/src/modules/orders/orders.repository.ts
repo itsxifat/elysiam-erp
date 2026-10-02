@@ -486,8 +486,6 @@ export interface OrderRow extends Record<string, unknown> {
   readonly cod_amount_poisha: string;
   readonly status: string;
   readonly hold_reason: string | null;
-  readonly trust_score: number | null;
-  readonly fraud_decision: string | null;
   readonly assigned_to: string | null;
   readonly created_by: string;
   readonly confirmed_at: string | null;
@@ -510,8 +508,7 @@ const ORDER_COLUMNS = sql`o.id, o.branch_id, o.order_no, o.channel::text as chan
   o.ship_name, o.ship_phone_e164, o.ship_district_id, o.ship_thana_id, o.ship_area,
   o.ship_address_line, o.delivery_zone_id, o.courier_id, o.location_id,
   o.items_poisha, o.discount_poisha, o.delivery_charge_poisha, o.advance_paid_poisha,
-  o.cod_amount_poisha, o.status::text as status, o.hold_reason, o.trust_score,
-  o.fraud_decision::text as fraud_decision, o.assigned_to, o.created_by,
+  o.cod_amount_poisha, o.status::text as status, o.hold_reason, o.assigned_to, o.created_by,
   o.confirmed_at, o.packed_at, o.handed_over_at, o.delivered_at, o.returned_at,
   o.cancelled_at, o.cancel_reason, o.reseller_id, o.exchange_of_order_id, o.promo_code_id,
   o.notes, o.created_at`;
@@ -801,7 +798,6 @@ export async function setStatus(
     readonly actorUserId: string | null;
     readonly reason: string | null;
     readonly at: Date;
-    readonly fraudOverrideReason?: string | null;
   },
 ): Promise<boolean> {
   /*
@@ -832,7 +828,6 @@ export async function setStatus(
       returned_at = case when ${input.next} = 'returned' then ${at}::timestamptz else returned_at end,
       cancelled_at = case when ${input.next} = 'cancelled' then ${at}::timestamptz else cancelled_at end,
       cancel_reason = case when ${input.next} = 'cancelled' then ${input.reason} else cancel_reason end,
-      fraud_override_reason = coalesce(${input.fraudOverrideReason ?? null}, fraud_override_reason),
       updated_at = now()
     where org_id = ${input.orgId} and id = ${input.orderId}
       and status = ${input.expected}::sales.order_status
@@ -858,24 +853,6 @@ export async function assignOrder(
     returning id
   `);
   return rows.length > 0;
-}
-
-export async function recordFraudAssessment(
-  tx: Tx,
-  input: {
-    readonly orgId: string;
-    readonly orderId: string;
-    readonly trustScore: number | null;
-    readonly decision: string | null;
-  },
-): Promise<void> {
-  await tx.execute(sql`
-    update sales.orders set
-      trust_score = ${input.trustScore},
-      fraud_decision = ${input.decision}::sales.fraud_decision,
-      updated_at = now()
-    where org_id = ${input.orgId} and id = ${input.orderId}
-  `);
 }
 
 export async function setLineDispatchCost(

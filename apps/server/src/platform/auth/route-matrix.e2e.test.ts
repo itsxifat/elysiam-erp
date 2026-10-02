@@ -28,10 +28,6 @@ import {
   prepareOrderFixtures,
 } from '../../modules/orders/orders.route-fixtures.js';
 import {
-  FRAUD_ROUTE_FIXTURES,
-  prepareFraudFixtures,
-} from '../../modules/fraud/fraud.route-fixtures.js';
-import {
   INVESTORS_ROUTE_FIXTURES,
   prepareInvestorFixtures,
 } from '../../modules/investors/investors.route-fixtures.js';
@@ -86,7 +82,6 @@ beforeAll(async () => {
   await prepareSupplyFixtures();
   await prepareOrderFixtures();
   await prepareIntakeFixtures();
-  await prepareFraudFixtures();
   await prepareInvestorFixtures();
   await prepareHrFixtures();
   await prepareCourierFixtures();
@@ -254,7 +249,6 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...SUPPLY_ROUTE_FIXTURES,
   ...ORDERS_ROUTE_FIXTURES,
   ...INTAKE_ROUTE_FIXTURES,
-  ...FRAUD_ROUTE_FIXTURES,
   ...INVESTORS_ROUTE_FIXTURES,
   ...HR_ROUTE_FIXTURES,
   ...COURIER_ROUTE_FIXTURES,

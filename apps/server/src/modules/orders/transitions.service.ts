@@ -128,7 +128,6 @@ export interface ReturnOptions {
 
 export interface MoveOptions {
   readonly reason?: string | null;
-  readonly fraudOverrideReason?: string | null;
   readonly occurredAt?: Date;
   readonly courierId?: string | null;
   readonly deliver?: DeliverOptions;
@@ -171,8 +170,6 @@ export class TransitionsService {
       trigger,
       at,
       reason: options.reason ?? null,
-      fraudDecision: (order.fraud_decision as 'allow' | 'block' | null) ?? null,
-      fraudOverrideReason: options.fraudOverrideReason ?? null,
       /*
        * §9's booking trigger, per org, read from `org.settings`.
        *
@@ -214,7 +211,6 @@ export class TransitionsService {
       actorUserId: context.userId,
       reason: result.reason,
       at,
-      fraudOverrideReason: options.fraudOverrideReason ?? null,
     });
     if (!moved) {
       // The row moved between the lock and here, which the lock should have made

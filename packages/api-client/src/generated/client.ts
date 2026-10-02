@@ -223,13 +223,6 @@ export const OPERATIONS = {
     ability: 'read:FileObject',
   },
   getV1FilesContent: { method: 'GET', path: '/v1/files/content', ability: 'public' },
-  getV1FraudCheck: { method: 'GET', path: '/v1/fraud/check', ability: 'read:FraudSignal' },
-  getV1FraudOrdersByOrderIdOverrides: {
-    method: 'GET',
-    path: '/v1/fraud/orders/{orderId}/overrides',
-    ability: 'read:FraudSignal',
-  },
-  getV1FraudRules: { method: 'GET', path: '/v1/fraud/rules', ability: 'read:FraudSignal' },
   getV1HrAttendance: { method: 'GET', path: '/v1/hr/attendance', ability: 'read:Employee' },
   getV1HrAttendanceImports: {
     method: 'GET',
@@ -612,12 +605,6 @@ export const OPERATIONS = {
     path: '/v1/files/{id}/finalize',
     ability: 'create:FileObject',
   },
-  postV1FraudFlags: { method: 'POST', path: '/v1/fraud/flags', ability: 'update:FraudOverride' },
-  postV1FraudFlagsByIdClear: {
-    method: 'POST',
-    path: '/v1/fraud/flags/{id}/clear',
-    ability: 'update:FraudOverride',
-  },
   postV1HrAttendanceImports: {
     method: 'POST',
     path: '/v1/hr/attendance/imports',
@@ -883,7 +870,6 @@ export const OPERATIONS = {
   },
   putV1DeliveryZones: { method: 'PUT', path: '/v1/delivery-zones', ability: 'update:Catalog' },
   putV1FilesContent: { method: 'PUT', path: '/v1/files/content', ability: 'public' },
-  putV1FraudRules: { method: 'PUT', path: '/v1/fraud/rules', ability: 'update:FraudOverride' },
   putV1HrAttendance: { method: 'PUT', path: '/v1/hr/attendance', ability: 'update:Employee' },
   putV1InventoryCountsByIdLines: {
     method: 'PUT',
@@ -1152,18 +1138,6 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/files/content */
     getV1FilesContent: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1FilesContent, undefined, options),
-    /** GET /v1/fraud/check */
-    getV1FraudCheck: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1FraudCheck, undefined, options),
-    /** GET /v1/fraud/orders/:orderId/overrides */
-    getV1FraudOrdersByOrderIdOverrides: (
-      input: { readonly path: { readonly orderId: string } },
-      options?: RequestOptions,
-    ): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1FraudOrdersByOrderIdOverrides, input, options),
-    /** GET /v1/fraud/rules */
-    getV1FraudRules: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1FraudRules, undefined, options),
     /** GET /v1/hr/attendance */
     getV1HrAttendance: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1HrAttendance, undefined, options),
@@ -1659,14 +1633,6 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.postV1FilesByIdFinalize, input, options),
-    /** POST /v1/fraud/flags */
-    postV1FraudFlags: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.postV1FraudFlags, undefined, options),
-    /** POST /v1/fraud/flags/:id/clear */
-    postV1FraudFlagsByIdClear: (
-      input: { readonly path: { readonly id: string } },
-      options?: RequestOptions,
-    ): Promise<unknown> => request(runtime, OPERATIONS.postV1FraudFlagsByIdClear, input, options),
     /** POST /v1/hr/attendance/imports */
     postV1HrAttendanceImports: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1HrAttendanceImports, undefined, options),
@@ -1982,9 +1948,6 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/files/content */
     putV1FilesContent: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1FilesContent, undefined, options),
-    /** PUT /v1/fraud/rules */
-    putV1FraudRules: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.putV1FraudRules, undefined, options),
     /** PUT /v1/hr/attendance */
     putV1HrAttendance: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1HrAttendance, undefined, options),

@@ -17,7 +17,6 @@ export * from './crm/index.js';
 export * from './demo/index.js';
 export * from './events/index.js';
 export * from './files/index.js';
-export * from './fraud/index.js';
 export * from './hr/index.js';
 export * from './http/index.js';
 export * from './iam/index.js';

@@ -183,7 +183,7 @@ export class OrdersController {
    * Confirm up to a hundred orders, each in its own transaction (M11 bulk confirm).
    *
    * `update Order`, the grant a single confirm declares, and every order in the batch goes
-   * through the same scope lock and the same fraud gate a single confirm does — a batch is
+   * through the same scope lock a single confirm does — a batch is
    * a loop over the one path, not a second path.
    */
   @RequireAbility('update', 'Order')
@@ -240,12 +240,11 @@ export class OrdersController {
   @RequireAbility('update', 'Order')
   @Post(':id/confirm')
   async confirm(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
-    const input = parse(confirmOrderSchema, body ?? {});
+    parse(confirmOrderSchema, body ?? {});
     return this.orders.confirm(
       requireContext(request),
       auditable(request),
       parse(orderIdSchema, id),
-      input,
     );
   }
 

@@ -75,7 +75,7 @@ export interface EnqueueOptions {
    * the key and enforces nothing: both jobs are written. That was true of every use
    * in this codebase until D-207 found it, so a caller that needs "at most once" must
    * either use an `exclusive` queue or be idempotent in its handler, as the courier
-   * and fraud handlers are.
+   * handlers are.
    */
   readonly singletonKey?: string;
   /** Higher runs first. Default 0. */

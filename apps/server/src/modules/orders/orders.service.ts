@@ -31,7 +31,6 @@ import { CATALOG_API, type CatalogApi, type CatalogSku } from '../catalog/catalo
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { CustomersService } from './customers.service.js';
-import { FRAUD_GATE, type FraudGate } from './ports/fraud-gate.port.js';
 import { PROMO_PORT, type PricedPromo, type PromoPort } from './ports/promo.port.js';
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
 import * as desk from './desk.repository.js';
@@ -85,11 +84,6 @@ import type {
  * each line — is deliberately absent from `OrderLineView`. Invariant 5's
  * `serializeFor()` is the backstop, not the mechanism; the mechanism is that the number
  * is never put in a response object.
- *
- * ## The fraud gate is a port, not an import
- *
- * `FRAUD_GATE` is declared in `ports/fraud-gate.port.ts` and defaults to permissive, so
- * orders work before M13 exists. See that file for why the dependency points this way.
  */
 
 // --- what the endpoints return -------------------------------------------------
@@ -135,8 +129,6 @@ export interface OrderView {
   };
   readonly holdReason: string | null;
   readonly cancelReason: string | null;
-  readonly trustScore: number | null;
-  readonly fraudDecision: string | null;
   readonly assignedTo: string | null;
   readonly createdBy: string;
   readonly exchangeOfOrderId: string | null;
@@ -210,8 +202,6 @@ function toOrderView(row: repo.OrderRow): OrderView {
     },
     holdReason: row.hold_reason,
     cancelReason: row.cancel_reason,
-    trustScore: row.trust_score,
-    fraudDecision: row.fraud_decision,
     assignedTo: row.assigned_to,
     createdBy: row.created_by,
     exchangeOfOrderId: row.exchange_of_order_id,
@@ -296,7 +286,6 @@ export class OrdersService {
     @Inject(CATALOG_API) private readonly catalog: CatalogApi,
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
     @Inject(LEDGER_API) private readonly ledger: LedgerApi,
-    @Inject(FRAUD_GATE) private readonly fraud: FraudGate,
     @Inject(PROMO_PORT) private readonly promo: PromoPort,
     private readonly customers: CustomersService,
     private readonly transitions: TransitionsService,
@@ -1009,64 +998,13 @@ export class OrdersService {
   // --- transitions --------------------------------------------------------------
 
   /**
-   * Confirm, which is the one transition with a gate in front of it.
-   *
-   * The order is locked, §10's live gate is asked, and only then does the domain machine
-   * run and reserve the stock. That order matters: a gate consulted *after* the
-   * reservation would hold units for an order it is about to refuse, and the rollback
-   * would be the only thing releasing them.
+   * Confirm: lock the order in scope, then let the domain machine run and reserve the stock.
    */
-  async confirm(
-    context: ActiveContext,
-    request: AuditableRequest,
-    id: string,
-    input: { fraudOverrideReason?: string },
-  ) {
+  async confirm(context: ActiveContext, request: AuditableRequest, id: string) {
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const order = await this.readInScope(tx, context, request, id);
-
-        const verdict = await this.fraud.assertConfirmAllowed(tx, {
-          orgId: context.orgId,
-          orderId: order.id,
-          phone: order.customer_phone,
-          // The caller's own ability context, so §6 decides who may override a block. A
-          // `canOverride` boolean here would let any caller assert its way past the matrix.
-          actor: {
-            roles: context.roles,
-            isSuperAdmin: context.isSuperAdmin,
-            userId: context.userId,
-            branchIds: context.branchIds,
-            branchIdsByRole: context.branchIdsByRole,
-          },
-          overrideReason: input.fraudOverrideReason ?? null,
-          request,
-        });
-
-        /*
-         * The verdict is written to the order *before* the machine is asked.
-         *
-         * §9's `transition()` reads `fraudDecision` off the row it was given, and the row
-         * this request read may be hours old — a buyer blocked since the order was taken
-         * would otherwise confirm on a stale `allow`. So the columns are updated, and the
-         * row handed to the machine carries the fresh decision rather than the one the
-         * desk saw.
-         */
-        await repo.recordFraudAssessment(tx, {
-          orgId: context.orgId,
-          orderId: order.id,
-          trustScore: verdict.trustScore,
-          decision: verdict.decision,
-        });
-        const assessed: repo.OrderRow = {
-          ...order,
-          trust_score: verdict.trustScore,
-          fraud_decision: verdict.decision,
-        };
-
-        const moved = await this.transitions.move(tx, context, request, assessed, 'confirm', {
-          fraudOverrideReason: input.fraudOverrideReason ?? null,
-        });
+        const moved = await this.transitions.move(tx, context, request, order, 'confirm', {});
         return toOrderView(moved.order);
       }),
     );

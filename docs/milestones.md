@@ -27,12 +27,12 @@
 | M10  | Order core                                       | 1      | MAX    | M07, M08           |
 | M11  | Order desk UI, buyer list, public order intake   | 1      | XHIGH  | M10                |
 | M12  | Courier v1 and COD reconciliation                | 1      | MAX    | M11                |
-| M13  | Fraud check v1                                   | 1      | XHIGH  | M10                |
-| M14a | Data migration and opening balances              | 1      | MAX    | M06–M13            |
+| M13  | ~~Fraud check v1~~ removed, code deleted (D-291) | 1      | XHIGH  | M10                |
+| M14a | Data migration and opening balances              | 1      | MAX    | M06–M12            |
 | M14b | Deployment, observability, go-live kit           | 1      | XHIGH  | M14a               |
 | M15  | Multi-courier, webhooks, tracking                | 2 (A)  | XHIGH  | M12                |
 | M16  | Buyer profiles, notifications, basic promo codes | 2 (A)  | XHIGH  | M11                |
-| M17  | Fraud v2 and advance-payment rules               | 2 (A)  | XHIGH  | M13, M16           |
+| M17  | Advance payments and return reasons (D-291)      | 2 (A)  | XHIGH  | M16                |
 | M18  | Marketing                                        | 3 (B)  | XHIGH  | M11                |
 | M19  | HR core, attendance, payroll                     | 3 (B)  | MAX    | M08                |
 | M20  | Targets, bonus rules, productivity               | 3 (B)  | XHIGH  | M19, M11           |
@@ -43,7 +43,7 @@
 | M25  | Investors                                        | 5      | MAX    | M08                |
 | M26  | Company loans                                    | 5      | XHIGH  | M08, M16           |
 | M27  | ~~Message Hub (Chatwoot)~~ removed (D-290)       | 5      | XHIGH  | M11, M13, M16      |
-| M28  | Agent activity extension                         | 5      | XHIGH  | M20                |
+| M28  | ~~Agent activity extension~~ removed (D-292)     | 5      | XHIGH  | M20                |
 | M29  | ~~Landing page builder~~ removed (D-290)         | 5      | XHIGH  | M11, M16           |
 | M30  | Hardening and launch readiness                   | Launch | MAX    | all                |
 
@@ -583,6 +583,8 @@ Phase 1 · Effort MAX · Depends on: M11 · Gate: G1 · Architecture: §7, §9, 
 
 ## M13: Fraud check v1
 
+**Removed from scope by the owner on 2026-10-02 (D-291). The code built for it was deleted on branch `remove-fraud`. Do not build.**
+
 Phase 1 · Effort XHIGH · Depends on: M10 · Gate: G2 · Architecture: §5, §10
 
 **Goal:** an agent sees how trustworthy a phone number is, across all five brands, before confirming.
@@ -609,7 +611,7 @@ Phase 1 · Effort XHIGH · Depends on: M10 · Gate: G2 · Architecture: §5, §1
 
 ## M14a: Data migration and opening balances
 
-Phase 1 · Effort MAX · Depends on: M06–M13 · Gate: G3 · Architecture: §7, §8, §25
+Phase 1 · Effort MAX · Depends on: M06–M12 · Gate: G3 · Architecture: §7, §8, §25
 
 **Goal:** the pilot brand starts with books and stock its accountant will sign.
 
@@ -621,7 +623,7 @@ Phase 1 · Effort MAX · Depends on: M06–M13 · Gate: G3 · Architecture: §7,
   - supplier dues and advances
   - wallet balances
   - courier COD still in transit
-  - customers, with historical order outcomes to seed fraud signals
+  - customers, with their historical order outcomes
 - An opening-balance journal dated the evening before go-live.
 - A reconciliation report for the accountant to sign off.
 - A demo org for training, seeded from anonymized data.
@@ -716,25 +718,24 @@ Phase 2 · Effort XHIGH · Depends on: M11 · Gate: G5 · Architecture: §10
 
 ---
 
-## M17: Fraud v2 and advance-payment rules (Track A)
+## M17: Advance payments and return reasons (Track A)
 
-Phase 2 · Effort XHIGH · Depends on: M13, M16 · Architecture: §7, §10
+Phase 2 · Effort XHIGH · Depends on: M16 · Architecture: §7, §10
+
+The fraud half of this milestone (more providers, address signals, the rule engine and
+`require_advance`) was removed with the fraud check (D-291). What remains is accounting.
 
 **Build**
 
-- More fraud providers, where available.
-- Address signals using trigram similarity.
-- A per-org rule engine. Conditions include zone, COD amount, trust band and first-time buyer; decisions include `require_advance`.
 - Advance recording: the agent captures the bKash transaction id and accounts verifies it (a gateway is optional, D-013).
 - The advance posts to customer advance and is applied on delivery.
 - Return-reason capture and analytics.
 
 **Acceptance checks**
 
-1. Rule evaluation tests.
-2. `require_advance` blocks confirm until a verified advance exists.
-3. Advance scenario (golden books): the advance is applied on delivery and refunded on cancel, per policy.
-4. Seeded repeat-return addresses are detected.
+1. Advance scenario (golden books): the advance is applied on delivery and refunded on cancel, per policy.
+2. An unverified advance never reaches the books.
+3. Return reasons are captured on every return and reported by reason.
 
 ---
 
@@ -971,6 +972,8 @@ Phase 5 · Effort XHIGH · Depends on: M11, M13, M16 · Gate: G10 · Architectur
 ---
 
 ## M28: Agent activity extension
+
+**Removed from scope by the owner on 2026-10-02 (D-292). Do not build.**
 
 Phase 5 · Effort XHIGH · Depends on: M20 · Gate: G11 · Architecture: §16
 

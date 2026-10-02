@@ -171,8 +171,7 @@ export type CreateOrderInput = z.infer<typeof createOrderSchema>;
  * Narrower than `createOrderSchema` on purpose, and the omissions are the design:
  *
  * * **No buyer.** Moving an order to a different customer would take its history with
- *   it — and §10's trust score is computed from a buyer's delivery ratio, so a
- *   reassigned order silently rewrites two people's fraud signal. A wrong buyer is
+ *   it, so a reassigned order silently rewrites two people's delivery history. A wrong buyer is
  *   fixed by cancelling and re-entering.
  * * **No branch.** The branch is what `branch` scope is evaluated against, so a caller
  *   who could change it could move an order out of their own reach and into somebody
@@ -332,12 +331,8 @@ export const buyerExportQuerySchema = buyerQuerySchema
 
 export type BuyerExportQuery = z.infer<typeof buyerExportQuerySchema>;
 
-export const confirmOrderSchema = z
-  .object({
-    /** §10: required when the fraud decision is `block`, and only org_admin may send it. */
-    fraudOverrideReason: reason.optional(),
-  })
-  .strict();
+/** Confirm carries no body; an empty object is accepted so existing clients keep working. */
+export const confirmOrderSchema = z.object({}).strict();
 
 export const holdOrderSchema = z.object({ reason }).strict();
 export const cancelOrderSchema = z.object({ reason }).strict();

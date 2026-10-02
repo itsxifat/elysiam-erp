@@ -118,8 +118,6 @@ export const ERROR_CODES = [
   'ORDER_NOT_FOUND',
   /** A transition §9 marks as needing a reason was given none. */
   'ORDER_REASON_REQUIRED',
-  /** §10's fraud rules block this buyer; confirming needs an org_admin override. */
-  'ORDER_FRAUD_BLOCKED',
   /** §9's COD formula refused: a negative result, or a discount beyond the items. */
   'ORDER_TOTAL_INVALID',
   'ORDER_LINES_INVALID',
@@ -191,37 +189,6 @@ export const ERROR_CODES = [
   'RETURN_RECEIPT_INVALID',
   /** Courier records are the evidence of cash a third party held (0050). */
   'COURIER_RECORD_IMMUTABLE',
-
-  /*
-   * Fraud (M13, §10).
-   *
-   * `ORDER_FRAUD_BLOCKED` is already above: it is the order module's refusal, raised
-   * by the state machine, and a client meets it when confirming. These are the fraud
-   * module's own, and the split matters — a 409 saying "this buyer is blocked" and a
-   * 403 saying "you are not an org_admin so you cannot override" call for opposite
-   * responses in the desk.
-   */
-  /** Somebody without `update FraudOverride` tried to override a block (check 5). */
-  'FRAUD_OVERRIDE_UNAUTHORISED',
-  /** An override arrived with no reason, or one too short to mean anything. */
-  'FRAUD_OVERRIDE_REASON_REQUIRED',
-  /** An override is the record of a decision and cannot be changed (0047). */
-  'FRAUD_OVERRIDE_IMMUTABLE',
-  /** A flag may only be cleared; saying something different means raising a new one (0047). */
-  'FRAUD_FLAG_IMMUTABLE',
-  'FRAUD_FLAG_NOT_FOUND',
-  /** Band floors that do not decrease strictly, so one band could never be reached (D-011). */
-  'FRAUD_RULES_INVALID',
-  /**
-   * A phone signal row is identified by its hash; the key cannot be rewritten (0047).
-   *
-   * The one unrecoverable corruption in this schema: the cross-org counters have no
-   * per-org copy to rebuild from, and the input cannot be recovered to tell which of
-   * two plausible rows was right.
-   */
-  'FRAUD_SIGNAL_KEY_IMMUTABLE',
-  /** An order keeps the phone hash it was assessed against (0047). */
-  'FRAUD_ORDER_PHONE_IMMUTABLE',
 
   /*
    * Investors (M25, §15).

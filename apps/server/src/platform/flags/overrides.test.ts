@@ -27,10 +27,10 @@ describe('parseFlagOverrides', () => {
 
   it('accepts the spellings of yes and no a human would reach for', () => {
     for (const on of ['on', 'ON', 'true', '1', 'yes', 'enabled']) {
-      expect(parseFlagOverrides(`fraud.phone_check=${on}`).get('fraud.phone_check'), on).toBe(true);
+      expect(parseFlagOverrides(`courier.auto_book=${on}`).get('courier.auto_book'), on).toBe(true);
     }
     for (const off of ['off', 'FALSE', '0', 'no', 'disabled']) {
-      expect(parseFlagOverrides(`fraud.phone_check=${off}`).get('fraud.phone_check'), off).toBe(
+      expect(parseFlagOverrides(`courier.auto_book=${off}`).get('courier.auto_book'), off).toBe(
         false,
       );
     }

@@ -33,7 +33,6 @@ import {
   createOrder,
   DESK_CHANNELS,
   findDuplicates,
-  fraudCheck,
   listAreas,
   lookupCustomer,
   searchSkus,
@@ -50,13 +49,7 @@ import {
   type DeskLine,
 } from './desk-logic.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
-import {
-  FraudBadgeView,
-  OrdersNav,
-  OrderStatusBadge,
-  ShortcutsHelp,
-  type Shortcut,
-} from './parts.js';
+import { OrdersNav, OrderStatusBadge, ShortcutsHelp, type Shortcut } from './parts.js';
 import { ordersPath } from './paths.js';
 
 /**
@@ -206,14 +199,6 @@ function Desk() {
     queryKey: ['orders', 'lookup', normalized],
     queryFn: () => lookupCustomer(normalized ?? ''),
     enabled: normalized !== null,
-    staleTime: 60_000,
-  });
-
-  const fraud = useQuery({
-    queryKey: ['orders', 'fraud', normalized],
-    queryFn: () => fraudCheck(normalized ?? ''),
-    enabled: normalized !== null && ability.can('read', 'FraudSignal'),
-    retry: false,
     staleTime: 60_000,
   });
 
@@ -1065,23 +1050,11 @@ function Desk() {
           </section>
         </form>
 
-        {/* The right-hand column: who, how risky, how much, and the buttons. */}
+        {/* The right-hand column: who, how much, and the buttons. */}
         <aside className="space-y-4" aria-label={t('orders.desk.summary')}>
-          <section className="space-y-3 rounded-lg border border-border bg-card p-4">
-            <FraudBadgeView
-              state={
-                normalized === null
-                  ? 'idle'
-                  : fraud.isPending
-                    ? 'loading'
-                    : fraud.isError
-                      ? 'error'
-                      : 'ready'
-              }
-              badge={fraud.data}
-            />
-            {customer === null ? null : (
-              <div className="space-y-1.5 border-t border-border pt-3">
+          {customer === null ? null : (
+            <section className="space-y-3 rounded-lg border border-border bg-card p-4">
+              <div className="space-y-1.5">
                 <p className="text-sm font-medium">{t('orders.desk.history')}</p>
                 <p className="text-xs text-muted-foreground tabular-nums">
                   {customer.stats.orders} {t('orders.desk.statOrders')} · {customer.stats.delivered}{' '}
@@ -1107,8 +1080,8 @@ function Desk() {
                   </ul>
                 )}
               </div>
-            )}
-          </section>
+            </section>
+          )}
 
           {duplicateItems.length === 0 ? null : (
             <section

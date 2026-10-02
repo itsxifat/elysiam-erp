@@ -73,8 +73,6 @@ export interface OrderSummary {
   readonly createdBy: string;
   readonly resellerId: string | null;
   readonly exchangeOfOrderId: string | null;
-  readonly trustScore: number | null;
-  readonly fraudDecision: string | null;
 }
 
 /**
@@ -82,7 +80,7 @@ export interface OrderSummary {
  *
  * M12 declares its own `OrdersPort` (`modules/courier/ports/orders.port.ts`) and depends
  * on that rather than on this file, the same way this module depends on its own
- * `FraudGate` port rather than on `modules/fraud`. The shapes below are therefore a
+ * ports rather than on other modules. The shapes below are therefore a
  * deliberate *copy* of that port's: importing it would point the arrow back and make the
  * two modules' service interfaces depend on each other, which is where invariant 12 stops
  * meaning anything. The copy is bounded — `courier.module.ts` binds `ORDERS_PORT` through
@@ -207,20 +205,6 @@ export interface OrdersApi {
 
   /** One order, or nothing. The read every other module starts from. */
   summary(tx: Tx, orgId: string, orderId: string): Promise<OrderSummary | undefined>;
-
-  /**
-   * Record §10's verdict on an order (M13).
-   *
-   * Only the score and the decision, and it changes nothing else: the decision is read
-   * by the domain machine when a confirm is attempted, and writing it is not itself a
-   * transition. M13 owns what the numbers mean; this owns the column.
-   */
-  recordFraudAssessment(
-    tx: Tx,
-    actor: OrdersActor,
-    orderId: string,
-    input: { trustScore: number | null; decision: string | null },
-  ): Promise<void>;
 
   /**
    * The courier parties these ids name (M10 owns `sales.couriers`).
@@ -368,8 +352,6 @@ export class OrdersApiService implements OrdersApi {
       createdBy: row.created_by,
       resellerId: row.reseller_id,
       exchangeOfOrderId: row.exchange_of_order_id,
-      trustScore: row.trust_score,
-      fraudDecision: row.fraud_decision,
     };
   }
 
@@ -380,20 +362,6 @@ export class OrdersApiService implements OrdersApi {
   ): Promise<readonly CourierParty[]> {
     const rows = await repo.couriersByIds(tx, orgId, [...new Set(ids)]);
     return rows.map((row) => ({ id: row.id, code: row.code, name: row.name }));
-  }
-
-  async recordFraudAssessment(
-    tx: Tx,
-    actor: OrdersActor,
-    orderId: string,
-    input: { trustScore: number | null; decision: string | null },
-  ): Promise<void> {
-    await repo.recordFraudAssessment(tx, {
-      orgId: actor.orgId,
-      orderId,
-      trustScore: input.trustScore,
-      decision: input.decision,
-    });
   }
 
   async availability(

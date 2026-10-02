@@ -10,7 +10,6 @@ import {
   jsonb,
   pgSchema,
   primaryKey,
-  smallint,
   text,
   timestamp,
   unique,
@@ -88,14 +87,6 @@ export const orderStatus = sales.enum('order_status', [
   'returned',
   'cancelled',
   'exchange',
-]);
-
-/** §10's decision bands. `block` needs an org_admin override with a reason. */
-export const fraudDecision = sales.enum('fraud_decision', [
-  'allow',
-  'warn',
-  'require_advance',
-  'block',
 ]);
 
 /**
@@ -233,17 +224,14 @@ export const deliveryZoneAreas = sales.table(
  * Keyed by `phone_e164`, normalised by `normalizeBdPhone` in @elysium/domain, and
  * unique per org. The unique index is the whole point: if `01712345678` and
  * `+8801712345678` could both exist, the same person would have two order histories and
- * a delivery ratio computed from half the evidence — which is the number §10's fraud
- * score is built on.
+ * a delivery ratio computed from half the evidence.
  *
  * "The same person appears as separate rows in different orgs" (§9). Deliberate: the
- * five brands are separate companies, and the only cross-org link is M13's fraud phone
- * hash (D-032), which is an HMAC and lives in its own schema.
+ * five brands are separate companies.
  *
  * The counters are maintained from order transitions rather than computed on read. A
  * `count(*)` over a buyer's orders is the honest version and it is also the one that
- * makes the order desk's fraud badge — which §10 requires inside 300 ms — a scan of
- * every order that buyer ever placed.
+ * makes the order desk's buyer lookup a scan of every order that buyer ever placed.
  */
 export const customers = sales.table(
   'customers',
@@ -451,11 +439,6 @@ export const orders = sales.table(
     status: orderStatus('status').notNull().default('pending'),
     holdReason: text('hold_reason'),
 
-    /** §10's score, 0–100, and the decision it produced. Filled from M13. */
-    trustScore: smallint('trust_score'),
-    fraudDecision: fraudDecision('fraud_decision'),
-    fraudOverrideReason: text('fraud_override_reason'),
-
     /** `iam.users.id` is text, so these are text. Null means the unassigned queue (§6). */
     assignedTo: text('assigned_to'),
     createdBy: text('created_by').notNull(),
@@ -553,10 +536,6 @@ export const orders = sales.table(
           + ${table.deliveryChargePoisha} - ${table.advancePaidPoisha}`,
     ),
     check('orders_discount_within_items', sql`${table.discountPoisha} <= ${table.itemsPoisha}`),
-    check(
-      'orders_trust_score_range',
-      sql`${table.trustScore} is null or (${table.trustScore} between 0 and 100)`,
-    ),
     // An exchange order points at another order; a normal one does not point at itself.
     check(
       'orders_exchange_not_self',

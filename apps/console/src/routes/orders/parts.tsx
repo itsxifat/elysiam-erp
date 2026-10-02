@@ -1,19 +1,18 @@
 import { Dialog, StatusBadge, cn } from '@elysium/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Radio, ShieldAlert, ShieldCheck, ShieldQuestion } from 'lucide-react';
+import { Radio } from 'lucide-react';
 import { useCallback, type ReactNode } from 'react';
 
 import { useAbility } from '../../auth/session.js';
 import { useRealtime, type RealtimeStatus } from '../../realtime/use-realtime.js';
-import type { FraudBadge as Badge, OrderStatus } from './api.js';
+import type { OrderStatus } from './api.js';
 import { ordersPath } from './paths.js';
 import { DEFAULT_ORDER_SEARCH } from './search.js';
 import { isOrdersKey, useOrdersT } from './messages.js';
 
 /**
- * Pieces every orders screen shares: the tab strip, the status badge, the trust badge, the
- * live indicator and the shortcuts list.
+ * Pieces every orders screen shares: the tab strip, the status badge, the live indicator and the shortcuts list.
  */
 
 // --- tabs -----------------------------------------------------------------------
@@ -86,89 +85,6 @@ export function OrderStatusBadge({ status }: { readonly status: OrderStatus }) {
   const t = useOrdersT();
   const key = `orders.status.${status}`;
   return <StatusBadge tone={STATUS_TONE[status]}>{isOrdersKey(key) ? t(key) : status}</StatusBadge>;
-}
-
-// --- trust ---------------------------------------------------------------------------
-
-const DECISION_TONE = {
-  allow: 'success',
-  warn: 'warning',
-  require_advance: 'warning',
-  block: 'danger',
-} as const;
-
-/**
- * M13's badge, as the desk renders it: the score, the decision, the reasons, and whether
- * the courier network answered.
- *
- * `providerAvailable: false` is said in words rather than left for the agent to infer from
- * a missing reason — a score computed from our own history alone is a weaker signal, and a
- * desk that cannot tell the two apart treats them the same.
- */
-export function FraudBadgeView({
-  state,
-  badge,
-}: {
-  readonly state: 'idle' | 'loading' | 'error' | 'ready';
-  readonly badge?: Badge | undefined;
-}) {
-  const t = useOrdersT();
-  if (state === 'idle') {
-    return <p className="text-xs text-muted-foreground">{t('orders.fraud.noPhone')}</p>;
-  }
-  if (state === 'loading') {
-    return (
-      <p className="text-xs text-muted-foreground" aria-live="polite">
-        {t('orders.fraud.checking')}
-      </p>
-    );
-  }
-  if (state === 'error' || badge === undefined) {
-    return (
-      <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-        <ShieldQuestion aria-hidden="true" className="size-4" />
-        {t('orders.fraud.unavailable')}
-      </p>
-    );
-  }
-
-  const Icon = badge.decision === 'allow' ? ShieldCheck : ShieldAlert;
-  const decisionKey = `orders.fraud.${badge.decision}`;
-  return (
-    <div className="space-y-1.5" data-testid="fraud-badge">
-      <div className="flex items-center gap-2">
-        <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
-        <span className="text-sm font-medium">{t('orders.fraud.title')}</span>
-        <span className="text-sm font-semibold tabular-nums">{badge.trustScore}</span>
-        <StatusBadge tone={DECISION_TONE[badge.decision]}>
-          {isOrdersKey(decisionKey) ? t(decisionKey) : badge.decision}
-        </StatusBadge>
-      </div>
-      {badge.providerAvailable ? null : (
-        <p className="text-xs text-muted-foreground">{t('orders.fraud.providerUnavailable')}</p>
-      )}
-      {badge.reasons.length === 0 ? null : (
-        <ul className="space-y-0.5 text-xs text-muted-foreground">
-          {badge.reasons
-            .filter((reason) => reason.code !== 'provider_unavailable')
-            .map((reason) => {
-              const key = `orders.fraud.reason.${reason.code}`;
-              return (
-                <li key={reason.code} className="flex justify-between gap-3">
-                  <span>{isOrdersKey(key) ? t(key) : reason.code}</span>
-                  {reason.delta === 0 ? null : (
-                    <span className="tabular-nums">
-                      {reason.delta > 0 ? '+' : ''}
-                      {reason.delta}
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-        </ul>
-      )}
-    </div>
-  );
 }
 
 // --- realtime ---------------------------------------------------------------------------

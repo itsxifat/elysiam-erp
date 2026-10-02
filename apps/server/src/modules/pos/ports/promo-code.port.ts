@@ -6,8 +6,7 @@ import type { Tx } from '@elysium/db';
  * Codes belong to M16's `promo` module, which prices and redeems them at the order
  * desk. The till still has the field, and the server still has the question, but this
  * port stays on its default until a sale can carry a code and its sync can redeem one
- * (D-209). Until then **no code is ever valid** — the permissive-refusal default, the
- * mirror image of `AllowAllFraudGate`. Accepting codes before anything can say
+ * (D-209). Until then **no code is ever valid** — the permissive-refusal default. Accepting codes before anything can say
  * what a code is worth would make every typed string a discount the ceiling in
  * `discount-policy.ts` never saw.
  *

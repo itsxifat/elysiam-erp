@@ -2,8 +2,8 @@ import { api } from '../../api.js';
 import { env } from '../../env.js';
 
 /**
- * `/v1/orders`, `/v1/customers`, `/v1/delivery-zones`, `/v1/fraud`, `/v1/catalog/skus` and
- * `/v1/buyers`, typed to what the controllers actually return (M10, M11, M13).
+ * `/v1/orders`, `/v1/customers`, `/v1/delivery-zones`, `/v1/catalog/skus` and
+ * `/v1/buyers`, typed to what the controllers actually return (M10, M11).
  *
  * Hand-written for the reason M06's catalog client gives: the generated client types every
  * result as `unknown`, and an `unknown` gets cast inside a page component, where nobody
@@ -81,8 +81,6 @@ export interface OrderRow {
   };
   readonly holdReason: string | null;
   readonly cancelReason: string | null;
-  readonly trustScore: number | null;
-  readonly fraudDecision: string | null;
   readonly assignedTo: string | null;
   readonly createdBy: string;
   readonly notes: string | null;
@@ -292,15 +290,6 @@ export interface Zone {
 }
 export const listAreas = () =>
   api.get<{ areas: Area[]; zones: Zone[] }>('/v1/delivery-zones/areas');
-
-export interface FraudBadge {
-  readonly trustScore: number;
-  readonly decision: 'allow' | 'warn' | 'require_advance' | 'block';
-  readonly reasons: readonly { readonly code: string; readonly delta: number }[];
-  readonly providerAvailable: boolean;
-}
-export const fraudCheck = (phone: string) =>
-  api.get<FraudBadge>(`/v1/fraud/check${query({ phone })}`);
 
 /** The catalog's SKU search: codes only, three characters or more (M06). */
 export interface SkuHit {

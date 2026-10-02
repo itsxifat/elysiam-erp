@@ -12,10 +12,6 @@
       "types": "./dist/courier/index.d.ts",
       "default": "./dist/courier/index.js"
     },
-    "./fraud": {
-      "types": "./dist/fraud/index.d.ts",
-      "default": "./dist/fraud/index.js"
-    },
     "./payroll": {
       "types": "./dist/payroll/index.d.ts",
       "default": "./dist/payroll/index.js"

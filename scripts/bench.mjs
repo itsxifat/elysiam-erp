@@ -2,8 +2,7 @@
 /**
  * One benchmark method, used by every latency acceptance check.
  *
- * M06 asserts SKU search under 200 ms p95, M13 a fraud lookup under 300 ms p95,
- * M11 an order-desk budget, M29 a Lighthouse score. If each milestone invents
+ * M06 asserts SKU search under 200 ms p95 and M11 an order-desk budget. If each milestone invents
  * its own timing loop, the numbers cannot be compared across sessions and a
  * regression hides inside a different sample count. So the method lives here:
  * fixed warmup, fixed sample count, percentiles from sorted samples, and the
@@ -17,7 +16,6 @@
  *   pnpm bench                the harness's own self-test
  *   pnpm bench --list         the checks it can run
  *   pnpm bench catalog        M06 check 2: SKU search p95 on 20k SKUs
- *   pnpm bench fraud          M13 check 4: a cached fraud lookup p95
  *
  * A named bench lives beside the module it measures and imports that module's
  * TypeScript directly, so it runs under tsx. Invoking one with plain `node`, as
@@ -48,10 +46,6 @@ export const BENCHES = {
   catalog: {
     check: 'M06 check 2: SKU search under 200 ms p95 on 20k seeded SKUs',
     file: 'apps/server/src/modules/catalog/catalog-search.bench.mjs',
-  },
-  fraud: {
-    check: 'M13 check 4: a cached fraud lookup under 300 ms p95',
-    file: 'apps/server/src/modules/fraud/fraud-lookup.bench.mjs',
   },
 };
 

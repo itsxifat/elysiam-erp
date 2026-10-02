@@ -147,11 +147,10 @@ export function scopeOf(request: object): ScopeFilter {
  * Declare that this subject has no row dimension, so `own` and `branch` cannot filter it.
  *
  * The backstop below exists because a handler that forgets to apply scope silently serves
- * every row in the org. But a few subjects genuinely have no rows to scope: `FraudSignal`
- * is a per-phone aggregate computed across all five brands (§10), keyed by an HMAC and
- * owned by nobody — there is no `created_by` to compare a reseller against and no
- * `branch_id` to compare a branch manager against. Without this the interceptor fired and
- * §6's own grant to those two roles answered 500.
+ * every row in the org. But a subject can genuinely have no rows to scope — an aggregate
+ * owned by nobody, with no `created_by` to compare a reseller against and no `branch_id`
+ * to compare a branch manager against. Without this the interceptor fires and §6's own
+ * grant to those roles answers 500.
  *
  * It takes a reason string because the only safe version of this escape hatch is one that
  * cannot be used without saying why, and one a reviewer can grep for. It is **not** for a

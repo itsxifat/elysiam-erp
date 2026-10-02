@@ -11,9 +11,6 @@ import { CourierModule } from './modules/courier/courier.module.js';
 import { registerCourierJobs } from './modules/courier/courier.worker.js';
 import { SettlementsService } from './modules/courier/settlements.service.js';
 import { CourierSyncService } from './modules/courier/sync.service.js';
-import { FraudModule } from './modules/fraud/fraud.module.js';
-import { FraudService } from './modules/fraud/fraud.service.js';
-import { registerFraudJobs } from './modules/fraud/fraud.worker.js';
 import { NotifyModule } from './modules/notify/notify.module.js';
 import { NotifyService } from './modules/notify/notify.service.js';
 import { registerNotifyJobs } from './modules/notify/notify.worker.js';
@@ -113,11 +110,11 @@ async function bootstrap(): Promise<void> {
    * job moves an order through the identical `TransitionsService`.
    *
    * Every module with queue handlers is imported by `WorkerModule` below, and its
-   * queues are listed in `job-queues.ts`. The nightly stock reconciliation and the
-   * fraud provider refresh were defined, scheduled and enqueued for weeks with no
+   * queues are listed in `job-queues.ts`. The nightly stock reconciliation was
+   * defined, scheduled and enqueued for weeks with no
    * handler here at all: the cron fired, the jobs piled up, and nothing ran them.
    */
-  @Module({ imports: [CourierModule, InventoryModule, FraudModule, NotifyModule, OrdersModule] })
+  @Module({ imports: [CourierModule, InventoryModule, NotifyModule, OrdersModule] })
   class WorkerModule {}
 
   // `abortOnError: false` for the reason `main.api.ts` gives: with the logger off, Nest's
@@ -158,7 +155,6 @@ async function bootstrap(): Promise<void> {
     logger,
   });
   await registerInventoryJobs({ jobs, reconcile: context.get(ReconcileService), report, logger });
-  await registerFraudJobs({ jobs, fraud: context.get(FraudService), report });
   await registerNotifyJobs({ jobs, notify: context.get(NotifyService), report });
   await registerCrmJobs({ jobs, crm: context.get(CrmService), report });
 

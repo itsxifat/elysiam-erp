@@ -19,8 +19,6 @@ import {
 } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 import { TransitionsService } from './transitions.service.js';
-import { FRAUD_API } from '../fraud/fraud.api.js';
-import { FraudModule } from '../fraud/fraud.module.js';
 import { PROMO_API } from '../promo/promo.api.js';
 import { PromoModule } from '../promo/promo.module.js';
 import { NOTIFY_API } from '../notify/notify.api.js';
@@ -30,7 +28,6 @@ import { BuyerProfileService } from './profile.service.js';
 import { ReengagementService } from './reengagement.service.js';
 import { NOTIFY_PORT } from './ports/notify.port.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
-import { FRAUD_GATE } from './ports/fraud-gate.port.js';
 import { PROMO_PORT } from './ports/promo.port.js';
 
 /**
@@ -54,20 +51,6 @@ import { PROMO_PORT } from './ports/promo.port.js';
  *   writes `ledger.journals` or `ledger.journal_lines`.
  * * **`FilesModule`** for `GotenbergClient` — §22's invoice and packing slip, rendered by
  *   the same headless Chromium and the same vendored Bangla fonts as M04's sample.
- *
- * ## The fraud gate
- *
- * `FRAUD_GATE` is a port this module declares (`ports/fraud-gate.port.ts`) and M13
- * satisfies. It was bound to `AllowAllFraudGate` while M13 did not exist, which is what
- * let M10 be built and tested without a fraud engine; now it is bound to M13's
- * `FRAUD_API`, whose service already matches the port structurally.
- *
- * The import goes orders → fraud rather than the other way. Nest resolves a provider in
- * the module that declares it, so a binding placed in `AppModule` would not replace the
- * one in this file — and binding it the other way round, by having `FraudModule` provide
- * this module's symbol, makes the two modules import each other and needs a `forwardRef`.
- * The port stays because it is what the module is *written* against: nothing here imports
- * a fraud type, and `AllowAllFraudGate` remains the binding every orders test uses.
  *
  * ## The courier booking registry
  *
@@ -97,7 +80,6 @@ import { PROMO_PORT } from './ports/promo.port.js';
     LedgerModule,
     FilesModule,
     ApprovalsModule,
-    FraudModule,
     PromoModule,
     NotifyModule,
   ],
@@ -118,7 +100,6 @@ import { PROMO_PORT } from './ports/promo.port.js';
     // they are screens, and another module that wanted them would want `ORDERS_API`.
     DeskService,
     BuyersService,
-    { provide: FRAUD_GATE, useExisting: FRAUD_API },
     // M16: the desk prices and redeems a code through its own port (D-204).
     { provide: PROMO_PORT, useExisting: PROMO_API },
     // M16: the CRM's greetings queue a message through their own port, in their own

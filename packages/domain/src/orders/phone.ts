@@ -6,7 +6,7 @@ import { OrderError } from './state.js';
  *
  * A customer is keyed by their phone number, so this function decides identity: two
  * spellings of the same number that normalise differently become two buyers, with two
- * order histories, two fraud records and a delivery ratio computed from half the
+ * order histories and a delivery ratio computed from half the
  * evidence. That is the failure this file exists to prevent, and it is why the
  * accepted input set is as wide as §9 asks — `+8801…`, `8801…`, `01…`, spaces,
  * dashes, brackets, and Bangla digits `০-৯` — while the output is always exactly

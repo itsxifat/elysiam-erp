@@ -2,7 +2,6 @@
 paths:
   - 'packages/integrations/**'
   - 'apps/server/src/modules/delivery/**'
-  - 'apps/server/src/modules/fraud/**'
   - 'apps/server/src/modules/notify/**'
   - 'apps/server/src/modules/marketing/**'
   - 'apps/server/src/modules/messaging/**'

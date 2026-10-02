@@ -45,8 +45,6 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   PERIOD_CLOSED: 409,
   IDEMPOTENCY_CONFLICT: 409,
   APPROVAL_REQUIRED: 409,
-  // 403: the buyer is blocked and this caller may not override it (§10).
-  ORDER_FRAUD_BLOCKED: 403,
 };
 
 export class OrdersError extends Error {

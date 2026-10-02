@@ -3,9 +3,8 @@
  *
  * Three suites build the Nest application: the HTTP harness, `app.module.test.ts` and
  * `http-surface.test.ts`. Each had its own copy of this list, and the copies were only
- * equal by coincidence — so the day M13 added a *required* variable
- * (`FRAUD_PHONE_HASH_KEY`, which refuses to default because a fallback key would silently
- * turn every phone number into a new person), two of the three stopped booting. The
+ * equal by coincidence — so the day a module added a *required*
+ * variable, two of the three stopped booting. The
  * failure was not readable either: Nest calls `process.abort()` on an initialisation
  * error, so the suite died with exit code 134 and no message at all.
  *
@@ -13,7 +12,7 @@
  * rather than a hunt through whichever suites happened to boot the app.
  *
  * `??=` throughout, so a suite that wants to test a *missing* or malformed value can set
- * it first and still be heard — the fraud module's own boot-refusal test depends on that.
+ * it first and still be heard.
  */
 /**
  * The secret the test application signs with.
@@ -40,10 +39,6 @@ export function setServerTestEnv(overrides: TestEnvOverrides = {}): void {
   process.env.API_PUBLIC_URL ??= origin;
   process.env.AUTH_SECRET ??= TEST_AUTH_SECRET;
   process.env.TRUSTED_ORIGINS ??= origin;
-  // Required, with no fallback in production for a good reason (D-108). A fixed value
-  // here keeps hashes stable across a run, which the cross-org isolation assertions rely
-  // on: two orgs have to derive the same hash from the same number.
-  process.env.FRAUD_PHONE_HASH_KEY ??= 'test-fraud-phone-hash-key-at-least-32-chars';
   /*
    * Optional for the application to *boot* — M12's config marks it so, because the `fake`
    * adapter needs no credentials — but required to store one, and the route-matrix suite

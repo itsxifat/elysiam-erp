@@ -15,8 +15,8 @@ import { useLocale } from '../../i18n/locale.js';
  * say in English — order, SKU, COD, courier — in English, because translating them slows a
  * desk agent down.
  *
- * Several keys end in a snake_case segment (`orders.status.on_hold`, `orders.fraud.reason.
- * recent_incident`) because the call sites build them from a server enum. A mapping table
+ * Several keys end in a snake_case segment (`orders.status.on_hold`,
+ * `orders.channel.walk_in`) because the call sites build them from a server enum. A mapping table
  * per enum is a second list to forget when a value is added.
  */
 const ORDERS_KEYS = [
@@ -61,25 +61,6 @@ const ORDERS_KEYS = [
   'orders.channel.phone',
   'orders.channel.walk_in',
   'orders.channel.reseller',
-  'orders.fraud.title',
-  'orders.fraud.checking',
-  'orders.fraud.unavailable',
-  'orders.fraud.noPhone',
-  'orders.fraud.providerUnavailable',
-  'orders.fraud.allow',
-  'orders.fraud.warn',
-  'orders.fraud.require_advance',
-  'orders.fraud.block',
-  'orders.fraud.reason.no_history',
-  'orders.fraud.reason.no_internal_history',
-  'orders.fraud.reason.internal_ratio',
-  'orders.fraud.reason.provider_ratio',
-  'orders.fraud.reason.internal_high_return_ratio',
-  'orders.fraud.reason.provider_high_return_ratio',
-  'orders.fraud.reason.recent_incident',
-  'orders.fraud.reason.incident_this_month',
-  'orders.fraud.reason.manual_flag',
-  'orders.fraud.reason.provider_unavailable',
   'orders.desk.title',
   'orders.desk.subtitle',
   'orders.desk.phone',

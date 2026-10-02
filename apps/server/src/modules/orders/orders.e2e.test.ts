@@ -23,7 +23,6 @@ import {
   type SeededSku,
 } from '../inventory/inventory.testing.js';
 import { renderOrderInvoiceHtml, renderPackingSlipHtml } from './documents.service.js';
-import { AllowAllFraudGate, FRAUD_GATE, type FraudGate } from './ports/fraud-gate.port.js';
 import { OrdersModule } from './orders.module.js';
 import { ORDERS_ROUTE_KEYS } from './orders.route-fixtures.js';
 import {
@@ -624,41 +623,20 @@ describe('the route gate (D-070), scoped to this module', () => {
   });
 });
 
-// --- §10's gate, now that M13 is in the tree ------------------------------------
+// --- confirm, with the fraud check removed (D-291) ------------------------------
 
-describe('the fraud gate port, bound to M13', () => {
-  it('is M13’s service, not the permissive default, and its verdict is what the order records', async () => {
-    /*
-     * Asserted by identity, not by behaviour.
-     *
-     * "Orders confirmed fine, so the gate must be wired" is exactly the reasoning that
-     * would hide M13's real gate having been silently replaced by `AllowAllFraudGate` — a
-     * fraud engine that is quietly absent looks identical to one that approves everybody.
-     * So the test names the class, and it changed here deliberately when `OrdersModule`
-     * began importing `FraudModule`: before that it asserted the default *was* bound,
-     * which is what made this line the place the switch had to be noticed.
-     */
-    const gate = harness.app.get<FraudGate>(FRAUD_GATE);
-    expect(gate).not.toBeInstanceOf(AllowAllFraudGate);
-    expect(gate.constructor.name).toBe('FraudApiService');
-
+describe('confirm without a fraud check', () => {
+  it('confirms on the machine alone, and the order carries no fraud verdict', async () => {
     const order = await takeOrder(admin);
     const confirmed = await admin.client.request('POST', `/v1/orders/${order.id}/confirm`);
     expect(confirmed.statusCode, confirmed.body).toBe(201);
 
-    // §9's machine reads these two columns, and the gate's verdict is what writes them —
-    // before the machine is asked, so a buyer blocked since the order was taken cannot
-    // confirm on a stale `allow`.
-    //
-    // The number is a fresh one with no history in any brand, so M13 scores it at its
-    // allow floor (D-011) rather than at the old stub's flat 100. Asserting the band and
-    // not the exact number: the score is tuning, the decision is the contract.
-    const detail = body<{ trustScore: number | null; fraudDecision: string | null }>(
+    const detail = body<Record<string, unknown>>(
       await admin.client.request('GET', `/v1/orders/${order.id}`),
     );
-    expect(detail.fraudDecision).toBe('allow');
-    expect(detail.trustScore).toBeGreaterThanOrEqual(70);
-    expect(detail.trustScore).toBeLessThanOrEqual(100);
+    expect(detail.status).toBe('confirmed');
+    expect(detail).not.toHaveProperty('trustScore');
+    expect(detail).not.toHaveProperty('fraudDecision');
   }, 120_000);
 });
 

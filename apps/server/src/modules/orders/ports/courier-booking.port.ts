@@ -12,9 +12,9 @@ import type { Tx } from '@elysium/db';
  *
  * ## Why a registry rather than a second module import
  *
- * The fraud gate's arrangement — a port here, bound to the other module's provider in
- * `orders.module.ts` — cannot solve this one. It works for fraud because the arrow only
- * goes one way: orders imports `FraudModule` and nothing in fraud injects anything of
+ * The promo port's arrangement — a port here, bound to the other module's provider in
+ * `orders.module.ts` — cannot solve this one. It works for promo because the arrow only
+ * goes one way: orders imports `PromoModule` and nothing in promo injects anything of
  * ours. Here both directions exist, and they are a **provider** cycle, not merely a module
  * one: `TransitionsService` → `BookingService` → `ORDERS_PORT` → `OrdersApiService` →
  * `OrdersService` → `TransitionsService`. No arrangement of `imports` breaks that, and

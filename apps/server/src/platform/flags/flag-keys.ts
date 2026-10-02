@@ -35,12 +35,6 @@ export const FEATURE_FLAGS = {
     milestone: 'M12',
     default: false,
   },
-  'fraud.phone_check': {
-    description:
-      'Run the cross-org phone-hash fraud check during order intake and show its verdict on the order desk.',
-    milestone: 'M13',
-    default: false,
-  },
   'reseller.portal': {
     description: 'Let this org’s resellers sign in to the partner portal and place orders.',
     milestone: 'M22',

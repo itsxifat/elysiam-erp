@@ -241,9 +241,8 @@ export class DeskService {
    * Confirm several orders, each on its own (M11 Build list: bulk confirm).
    *
    * One transaction per order, through exactly the path a single confirm takes — the scope
-   * lock, the live fraud gate, the domain machine, the reservation. Never one transaction
-   * for the batch: the orders are independent sales, and one scarce SKU or one blocked
-   * buyer must not roll back the forty that could go. Each refusal is reported against its
+   * lock, the domain machine, the reservation. Never one transaction for the batch: the
+   * orders are independent sales, and one scarce SKU must not roll back the forty that could go. Each refusal is reported against its
    * own id with the code a single confirm would have answered.
    *
    * Sequential rather than parallel, and that is about stock, not speed: two orders in one
@@ -262,7 +261,7 @@ export class DeskService {
     const results: BulkConfirmResult[] = [];
     for (const id of ids) {
       try {
-        const confirmed = await this.orders.confirm(context, request, id, {});
+        const confirmed = await this.orders.confirm(context, request, id);
         results.push({ id, ok: true, orderNo: confirmed.orderNo, status: confirmed.status });
       } catch (error) {
         if (!(error instanceof HttpException) || error.getStatus() >= 500) throw error;
