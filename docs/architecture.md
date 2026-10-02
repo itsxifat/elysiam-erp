@@ -423,6 +423,7 @@ This summary is authoritative until M02b writes the code matrix. After that, the
 | Company loans                      | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
 | Approvals (as checker)             | all                | org                                | —                       | payments                    | —            | payroll | branch items under threshold   | —                   | —                   | —        |
 | Leaderboard                        | all                | all orgs (normalized metrics only) | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Org dashboard (analytics)          | all + consolidated | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
 | Users, roles, settings             | all                | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
 
 ### Maker-checker actions
@@ -991,21 +992,24 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 
 ## 18. Analytics and leaderboard
 
-- **Rollups:** `analytics.daily_org`, `daily_branch`, `daily_channel`, `daily_campaign`, `daily_agent`. Workers upsert them from events, and a nightly job recomputes the last 7 days.
-- **Org dashboard:**
-  - orders: placed, confirmed, delivered, returned
+- **Rollups:** `analytics.daily_org`, `daily_branch`, `daily_channel`, `daily_campaign`, `daily_agent`, one row per org per Asia/Dhaka day (and per branch, channel, campaign or agent). The `analytics.rollup` job rebuilds an org's days from the owning modules' `*.api.ts` — delete and insert in one `withOrg()` transaction — on order events (per org per ten-second bucket), nightly for the last seven days, and on request for up to 92 days (D-320). Each figure counts on the day its event happened (D-321).
+- **Org dashboard** (`read Dashboard`, org_admin; D-325):
+  - orders: placed, confirmed, delivered, returned, cancelled after confirming
   - delivered revenue, and gross profit (cost roles only)
-  - AOV and return rate
+  - AOV, return rate and delivery success
   - CPO, CPDO, ROAS
-  - cash position, and stock value (cost roles only)
-  - top SKUs and agent performance
+  - cash position, and stock value (cost roles only), read live (D-330)
+  - by channel, showroom and campaign; best sellers; agent performance
+- **Consolidated dashboard:** Super Admin only, every brand's totals and the group total from `daily_org` through `erp_analytics` (§5 exception 3).
 - **Leaderboard (cross-org):**
-  - compares normalized metrics: month-over-month revenue growth %, delivery success rate, return rate, ROAS, CPDO, AOV growth, response time, pickup time
-  - ranks each metric, plus a composite score with configurable weights
-  - org admins see other orgs' **normalized metrics and ranks only**, never their raw financials (D-023)
+  - compares normalized metrics: month-over-month revenue growth %, delivery success rate, return rate, ROAS, CPDO, AOV growth, pickup time (D-322). Response time left with the Message Hub (D-290).
+  - ranks each metric, plus a composite score with configurable weights (D-323)
+  - org admins see other orgs' **normalized metrics and ranks only**, never their raw financials (D-023, built as D-324)
+  - computed on read from the rollups through `erp_analytics`; the only cross-org reads are the analytics module's (D-329)
 - **Insights:**
-  - rule-based suggestions, e.g. "return rate outside Dhaka is 9 pp above the group median → require an advance delivery charge for outside-Dhaka COD below trust score X"
-  - an optional LLM narrative behind a feature flag, generated only from the metrics JSON (no PII) and cached daily
+  - rule-based suggestions, pure functions in `packages/domain/src/analytics/insights.ts` (D-326), e.g. "return rate outside Dhaka is 9 pp above the group median → require an advance delivery charge for outside-Dhaka COD"
+  - an optional LLM narrative behind the flag `analytics.llm_narrative`, generated only from an allow-listed metrics payload (no PII) and cached daily; only a fake provider exists (D-327)
+- **Export:** the brand's daily rollup as CSV or XLSX (D-328).
 
 ---
 
@@ -1049,7 +1053,7 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 | `approval.requested`                    | `user:{each eligible checker}`                                                                                                                                    | request id, type, amount                   | Approvals inbox                          |
 | `approval.decided`                      | `user:{requester}`                                                                                                                                                | request id, decision                       | Status                                   |
 | `target.progress`                       | `user:{employee}`, `org:role:hr`                                                                                                                                  | target id, achieved, pct                   | Progress widgets                         |
-| `leaderboard.updated`                   | `org:role:org_admin` (all orgs), `super`                                                                                                                          | snapshot id                                | Leaderboard refresh                      |
+| `leaderboard.updated`                   | `org:role:org_admin` (all orgs), `super`                                                                                                                          | snapshot id                                | Not emitted: computed on read (D-324)    |
 | `payout.updated`                        | `reseller:{id}`, `org:role:accounts`                                                                                                                              | payout id, status                          | Reseller portal                          |
 | `investor.withdrawal.updated`           | `user:{investor user}`                                                                                                                                            | request id, status                         | Investor portal                          |
 | `pos.sale_synced` / `pos.sync_conflict` | `org:branch:{b}`                                                                                                                                                  | sale id / conflict id                      | POS status                               |
@@ -1078,7 +1082,8 @@ Jobs run on pg-boss, with queues named `module.action`.
 | `marketing.schedule_spend_import` | Daily 06:00, one `marketing.import_meta_spend` per brand | The last three days, re-imported (D-254)        |
 | `marketing.import_meta_spend`     | From the schedule, or on request                         | Idempotent per (campaign, day) (D-252)          |
 | `marketing.capi_delivered`        | Enqueued in the delivering transaction                   | One Purchase per order, sent once (D-262)       |
-| `analytics.rollup`                | On events, plus a nightly recompute of the last 7 days   |                                                 |
+| `analytics.rollup`                | On order events, per org per 10 s bucket                 | Rebuilds the org's days, idempotent (D-320)     |
+| `analytics.schedule_rollup`       | Nightly 03:00, one `analytics.rollup` per brand          | The last 7 days (D-320)                         |
 | `hr.refresh_target_progress`      | On an order status change, per brand per 10 s bucket     | Recomputes; `target.progress` on change (D-279) |
 | `loan.reminders`                  | Daily 10:00                                              |                                                 |
 | `notify.send`                     | On demand                                                | Respects quiet hours                            |
