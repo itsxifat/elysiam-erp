@@ -311,6 +311,14 @@ export class JobsRuntime {
     await this.boss.stop({ graceful: true, close: true });
   }
 
+  /** Queues whose stored policy is not the one their definition asks for (W7). */
+  private readonly drift: string[] = [];
+
+  /** For the boot log's reader and the tests: which queues have drifted, if any. */
+  policyDrift(): readonly string[] {
+    return [...this.drift];
+  }
+
   /**
    * Create every registered queue, its dead-letter queue, and its cron schedule.
    *
@@ -323,14 +331,6 @@ export class JobsRuntime {
    * fails on a fresh database and succeeds on an existing one — the worst kind
    * of ordering bug, because staging would never show it.
    */
-  /** Queues whose stored policy is not the one their definition asks for (W7). */
-  private readonly drift: string[] = [];
-
-  /** For the boot log's reader and the tests: which queues have drifted, if any. */
-  policyDrift(): readonly string[] {
-    return [...this.drift];
-  }
-
   private async registerQueues(): Promise<void> {
     for (const definition of this.definitions.values()) {
       const deadLetter = deadLetterNameFor(definition.name);

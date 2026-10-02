@@ -42,7 +42,6 @@ export const createPromoCodeSchema = z
     skuIds: z.array(uuid).max(500).optional(),
     categoryIds: z.array(uuid).max(100).optional(),
     customerId: uuid.optional(),
-    campaignId: uuid.optional(),
   })
   .strict()
   .superRefine((value, context) => {
