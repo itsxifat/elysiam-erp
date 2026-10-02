@@ -124,7 +124,14 @@ async function bootstrap(): Promise<void> {
   // that delivers an order runs in this process, and without the module loaded nobody would
   // be registered to queue the order's conversion (M18, D-262).
   @Module({
-    imports: [CourierModule, InventoryModule, NotifyModule, OrdersModule, MarketingModule, HrModule],
+    imports: [
+      CourierModule,
+      InventoryModule,
+      NotifyModule,
+      OrdersModule,
+      MarketingModule,
+      HrModule,
+    ],
   })
   class WorkerModule {}
 
