@@ -52,6 +52,10 @@ export const approvalType = approvals.enum('approval_type', [
   // transaction that adds it, so nothing in that file mentions either by name.
   'investor_distribution',
   'investor_withdrawal',
+  // M26: repaying a company loan is money leaving the company, held for a checker
+  // above the brand's threshold like a supplier payment (D-298). Added by migration
+  // 0094, and used as a literal nowhere in that file, for the reason above.
+  'loan_repayment',
 ]);
 
 /**

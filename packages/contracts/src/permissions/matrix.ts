@@ -75,6 +75,8 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
     // can auto-approve one however small it is.
     'investor_distribution',
     'investor_withdrawal',
+    // M26: repaying a company loan (D-298).
+    'loan_repayment',
   ],
   // §6: payments.
   /*
@@ -98,6 +100,8 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
     // A *distribution* is not: declaring profit is an equity decision, not a payment,
     // so it stays with org_admin.
     'investor_withdrawal',
+    // M26: a loan instalment repaid is a payment, the whole of §6's cell (D-298).
+    'loan_repayment',
   ],
   // §6: payroll.
   hr: ['payroll_run', 'bonus_rule'],
@@ -159,6 +163,7 @@ export const REQUESTER_TYPES: Readonly<Record<MembershipRole, readonly string[]>
     'period_reopen',
     'investor_distribution',
     'investor_withdrawal',
+    'loan_repayment',
   ],
   accounts: [
     'wallet_adjustment',
@@ -171,6 +176,7 @@ export const REQUESTER_TYPES: Readonly<Record<MembershipRole, readonly string[]>
     'period_reopen',
     'investor_distribution',
     'investor_withdrawal',
+    'loan_repayment',
   ],
   hr: ['payroll_run', 'bonus_rule'],
   branch_manager: ['stock_write_off', 'stock_gain', 'closing_variance', 'wallet_adjustment'],

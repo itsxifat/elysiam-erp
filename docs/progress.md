@@ -824,3 +824,121 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
     (owner: human)
   - A real narrative provider, if the client wants one (D-327). (owner: human)
 - Next: integration with M25, M26; then M14b and M30.
+
+### 2026-10-02 · M26 · Company loans · done
+
+- Delivered (branch `m26-company-loans`):
+  - **Lenders and loans (D-293, D-296).** A brand records who lent it money and the loan's
+    terms; the receipt posts Dr Wallet / Cr Loan payable (the lender) at once, with its
+    schedule, in one transaction.
+  - **Schedules (D-294).** Flat or reducing balance, monthly, in integer poisha; the principal
+    always sums to the loan exactly (fast-check, and a deferred trigger in the database).
+  - **Repayments through approvals (D-297 to D-299).** One whole instalment at a time, oldest
+    first, split into principal and interest. Under the brand's `loan_repayment` threshold it
+    posts at once; above it a second accounts user approves (and it posts) or rejects (and the
+    instalment can be paid again, through a new rejection hook in the approvals module).
+  - **Reminders (D-300).** A daily job reminds each brand N days before a due date, in the
+    notifications inbox and by SMS, exactly once per instalment.
+  - **Statements (D-301).** Schedule, repayments, totals, and the ledger's balance for the
+    lender beside the schedules'.
+  - **Void (D-304).** A loan recorded by mistake, with nothing paid on it, is voided by
+    reversing its receipt — by someone other than the person who recorded it; the database
+    allows that one change and no other, and a void and a repayment cannot both commit.
+  - **Console.** Loans list, record a loan (with a schedule preview), the statement with pay
+    and void, and the loan-due item in the notifications inbox. bn and en.
+- Verification: `pnpm verify` (under `heavy.mjs`, Testcontainers) exits 0 at `8bf5e46`, the
+  re-audit's fixes (148 test files, 2,430 tests, 1 skipped). Before the re-audit it exited 0 at `24a0459` (147 files,
+  2,416 tests) on the fourth run; the first three failed on
+  suites M26 does not touch: `dispatcher.db.test.ts`'s `afterAll` hook timing out, then
+  `out of shared memory` (`max_locks_per_transaction`) in 12 suites' migrations — both with
+  `TEST_DATABASE_URL` pointing every suite at the dev Postgres at once — and then, on
+  Testcontainers, `promo.db.test.ts`'s race test (the loser was refused while pricing
+  instead of while redeeming; exactly one use still won). Acceptance checks 1–4 pass:
+  1. `packages/domain/src/loans/loans.test.ts` › check 1 (1,500 realistic and 1,500 edge
+     loans), and 0090's deferred trigger refusing a schedule one poisha off
+     (`loans.e2e.test.ts`);
+  2. `loans.test.ts` › check 2: ৳10,000 at 12% over 3 months worked by hand, and the
+     ৳1,00,000 / 12% / 12-month table (instalment ৳8,884.88, interest ৳6,618.53);
+  3. `loans-reminders.db.test.ts` (real Postgres): once in the window, never twice across
+     reruns, racing runs and catch-up, plus a deterministic test of the unique index;
+  4. `loans.e2e.test.ts` › check 4 (HTTP): golden books, four journals with their keys, zero
+     trial balance; the under-threshold path; and, from the ledger audit, two payments racing
+     one instalment, two submits racing one loan id, a replay with other terms, the generic
+     route refusing the type, an approval that names no payment, the database refusing a
+     payment posted or rejected behind its approval's back, and the void; from the re-audit,
+     a void racing a repayment in both orders (a `Promise.all` race, and two deterministic
+     lock tests that hold one transaction open until the other waits on the loan row), each
+     asserting the winner's journals and the lender's balance, and the database refusing a
+     void by its recorder, on the wrong journal, with a payment waiting or posted, twice, or
+     edited.
+
+  Real-stack browser run (`e2e:stack`): 22 of 23. The notifications inbox spec
+  (`shell-quality.stack.ts:391`) passes. `money.stack.ts`'s first test failed because
+  `advances.stack.ts` runs first and puts ৳60 into the same Bank wallet; `money.stack.ts`
+  alone passes 6/6. There is no real-stack spec for the loan screens.
+
+- Auditors:
+  - ledger-auditor: W1 (an approval could be recorded as approved while posting nothing),
+    W2 (a repayment's state was tied to its approval and journal only in the service), W3 (no
+    way to correct a loan recorded by mistake) and N4 (a journal could be named by two rows)
+    are fixed: the executor and the rejection hook refuse instead of returning quietly,
+    `loan_repayment` is in `EXECUTOR_REQUIRED_TYPES`, 0092's triggers bind a payment to its
+    pending or approved request and its own instalment's journal, the void path (D-304), and
+    0091's unique indexes. Race and replay tests added.
+  - ledger re-audit at `24a0459`: 0 critical, 4 warnings, fixed in `3495569` — W-A (a void
+    and a repayment could both commit: 0093 makes a payment's insert read its loan `for
+share`), W-B (one person could void a loan's receipt: `LOAN_SELF_VOID` in the service and
+    the trigger), W-C (the console minted a new id per request, so a retry after a lost
+    response could record a second loan: one id per attempt), W-D (database refusal tests for
+    the void rules) — and N2 (a capitalised payment id). Second re-audit at `3495569`: 0
+    critical, 1 warning (the race tests did not assert the ledger's result), fixed in
+    `8bf5e46` with the note-level items (error codes in the lock tests, `pg_blocking_pids` in
+    the lock poll, one lowercased payment id for the audit trail, a 4xx ending the console's
+    attempt). Not taken: the trigger trusting `voided_by` rather than `app.user_id`, and a
+    void above the threshold going through approvals (follow-ups).
+  - acceptance-auditor: NOT READY with 2 gaps — the architecture's module row (fixed) and no
+    real-stack run of the touched inbox (run, passes). Re-audit: all four checks EVIDENCED,
+    NOT READY on one docs gap (no M26 row in `docs/plans/README.md`, and the plan's Status
+    without the audits), closed here.
+- Decisions/assumptions: D-293 to D-304 (ASSUMED: D-294, D-295, D-297, D-300). D-298 and
+  D-302 carry notes from the audit fixes; D-304 records the second-person rule, the lock, and
+  why 0093 is a new migration rather than an edit of 0092.
+- Migrations: `0089` (generated: schema and the enum value), `0090` (`--custom`: RLS, grants,
+  triggers), `0091` (generated: the void columns and unique journal indexes), `0092`
+  (`--custom`: the void trigger and the approval-bound payment triggers), `0093`
+  (`--custom`: the loan lock, the second-person void and the case-insensitive payment id).
+  They will collide with sibling branches' numbers at integration.
+- New dependencies: none.
+- Deviations from the milestone spec: none in scope. Added beyond the checks, from the ledger
+  audit: the void path (D-304).
+- Follow-ups:
+  - Partial payments, prepayment, early settlement and rescheduling (D-297). (owner: human,
+    then claude)
+  - Loans taken before go-live need an importer (D-296). (owner: claude)
+  - Reversing a posted repayment; only an unpaid loan can be voided (D-304). (owner: claude)
+  - Interest is expensed when paid, not accrued (D-295). (owner: human, a client question)
+  - Each brand must create a `loan.instalment_due` notify template; none is seeded, so every
+    SMS reminder is recorded `failed` until then. (owner: human)
+  - The SMS amount is Latin digits without lakh grouping inside a Bangla template. (owner:
+    claude)
+  - A repayment whose write loses a race leaves its approval pending; a checker can only
+    reject it, but it sits in the queue until then. (owner: claude)
+  - `loans.test.ts`'s realistic property takes 4–8 s: fine under the root config's 30 s
+    timeout, too slow for vitest's 5 s default if run from inside `packages/domain`. (owner:
+    claude)
+  - `money.stack.ts` assumes an untouched Bank wallet, and `advances.stack.ts` (M17) runs
+    first, so a full `e2e:stack` fails; assert deltas or give one spec its own wallet.
+    (owner: claude)
+  - `promo.db.test.ts` › "gives the last use to exactly one…" expects the loser to fail at
+    redeem; under load it fails at pricing. Accept either refusal. (owner: claude)
+  - `pnpm verify` with `TEST_DATABASE_URL` at the dev Postgres runs out of lock slots when
+    every suite migrates at once (`max_locks_per_transaction` 64); run it without, or raise
+    the setting in `infra/docker-compose.dev.yml`. (owner: human)
+  - A real-stack spec for the loan screens (record, pay, approve, void). (owner: claude)
+  - A void needs a second person but not an approval: any accounts user other than the
+    recorder can void a genuine loan of any size. Route voids above the `loan_repayment`
+    threshold through approvals if the owner wants it. (owner: human)
+  - 0093's self-void check compares `voided_by` with `created_by` as the application wrote
+    them; it could also require `voided_by = app.user_id`. (owner: claude)
+  - Renumber 0089–0093 at integration. (owner: claude, integrator)
+- Next: integration of M26 with its sibling branches.

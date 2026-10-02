@@ -392,6 +392,20 @@ export const ERROR_CODES = [
   'ANALYTICS_INVALID',
   /** The narrative provider did not answer, or answered with nothing usable. Nothing was cached. */
   'ANALYTICS_NARRATIVE_FAILED',
+
+  // Company loans (M26, §15)
+  'LOAN_NOT_FOUND',
+  'LOAN_LENDER_NOT_FOUND',
+  /** Terms that are not a loan, or that leave an instalment with nothing to pay (D-294). */
+  'LOAN_TERMS_INVALID',
+  /** A loan's instalments are not its tenure, or do not sum to its principal (0095). */
+  'LOAN_SCHEDULE_INVALID',
+  /** Not the next unpaid instalment, already paid or waiting, or not as scheduled (D-297). */
+  'LOAN_PAYMENT_INVALID',
+  /** A loan, its schedule and its reminders are a record; a payment moves once (0095). */
+  'LOAN_IMMUTABLE',
+  /** The person who recorded a loan cannot also void it; a second person does (D-304). */
+  'LOAN_SELF_VOID',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

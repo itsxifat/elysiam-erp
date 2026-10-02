@@ -27,6 +27,15 @@ export type InboxItem =
       readonly decision: 'approved' | 'rejected' | 'auto_approved';
       readonly at: number;
       readonly read: boolean;
+    }
+  | {
+      /** M26: a company loan instalment coming due; `id` is the instalment. */
+      readonly kind: 'loan_due';
+      readonly id: string;
+      readonly loanId: string;
+      readonly dueOn: string;
+      readonly at: number;
+      readonly read: boolean;
     };
 
 export interface Inbox {
@@ -70,6 +79,23 @@ export function unreadCount(inbox: Inbox): number {
 export function itemFromEvent(name: string, payload: unknown, at: number): InboxItem | null {
   if (typeof payload !== 'object' || payload === null) return null;
   const body = payload as Record<string, unknown>;
+  if (name === 'loan.instalment_due') {
+    if (
+      typeof body.instalmentId !== 'string' ||
+      typeof body.loanId !== 'string' ||
+      typeof body.dueOn !== 'string'
+    ) {
+      return null;
+    }
+    return {
+      kind: 'loan_due',
+      id: body.instalmentId,
+      loanId: body.loanId,
+      dueOn: body.dueOn,
+      at,
+      read: false,
+    };
+  }
   if (typeof body.id !== 'string') return null;
 
   if (name === 'approval.requested') {

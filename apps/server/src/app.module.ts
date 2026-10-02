@@ -14,6 +14,7 @@ import { IamModule } from './modules/iam/iam.module.js';
 import { InventoryModule } from './modules/inventory/inventory.module.js';
 import { InvestorsModule } from './modules/investors/investors.module.js';
 import { LedgerModule } from './modules/ledger/ledger.module.js';
+import { LoansModule } from './modules/loans/loans.module.js';
 import { MarketingModule } from './modules/marketing/marketing.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
 import { PosModule } from './modules/pos/pos.module.js';
@@ -91,6 +92,8 @@ export class AppModule {
         // M24. Last: it reads orders, marketing, HR, the ledger and inventory through their
         // APIs, and nothing reads it.
         AnalyticsModule,
+        // M26. Company loans; after notify, whose API its reminders queue through.
+        LoansModule,
         ...(withDemo ? [DemoModule] : []),
       ],
     };

@@ -44,6 +44,8 @@ export default defineConfig({
     'inventory',
     'investors',
     'ledger',
+    // M26. Lenders, company loans, their schedules, repayments and reminders.
+    'loans',
     // M18. Campaigns, spend, leads, the Meta link and the conversion log.
     'marketing',
     // M14a. The record of a brand's opening import and the opening of its books.

@@ -14,6 +14,7 @@ import { accountsRoutes } from './accounts/routes.js';
 import { analyticsRoutes } from './analytics/routes.js';
 import { branchesRoutes } from './branches/routes.js';
 import { investorsRoutes } from './investors/routes.js';
+import { loansRoutes } from './loans/routes.js';
 import { ordersRoutes } from './orders/routes.js';
 import { customersRoutes } from './customers/routes.js';
 import { campaignsRoutes } from './campaigns/routes.js';
@@ -124,6 +125,8 @@ const supply = supplyRoutes(rootRoute);
  */
 const hr = hrRoutes(rootRoute);
 const investors = investorsRoutes(rootRoute);
+/** M26 owns `/loans` and the loan statement. */
+const loans = loansRoutes(rootRoute);
 const orders = ordersRoutes(rootRoute);
 /** M16's buyer screens and campaigns: `/customers` and `/campaigns` stop being placeholders. */
 const customers = customersRoutes(rootRoute);
@@ -150,6 +153,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/payroll',
         '/performance',
         '/investors',
+        '/loans',
         '/orders',
         '/courier',
         '/accounts',
@@ -177,6 +181,7 @@ const routeTree = rootRoute.addChildren([
   ...supply,
   ...hr,
   ...investors,
+  ...loans,
   ...orders,
   ...customers,
   ...campaigns,

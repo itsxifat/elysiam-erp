@@ -59,6 +59,10 @@
     "./analytics": {
       "types": "./dist/analytics/index.d.ts",
       "default": "./dist/analytics/index.js"
+    },
+    "./loans": {
+      "types": "./dist/loans/index.d.ts",
+      "default": "./dist/loans/index.js"
     }
   },
   "files": [

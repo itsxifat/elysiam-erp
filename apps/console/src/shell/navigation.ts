@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Cog,
   Handshake,
+  Landmark,
   LayoutDashboard,
   Megaphone,
   Package,
@@ -154,6 +155,13 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.investors',
         icon: Wallet,
         required: { action: 'read', subject: 'Investor' },
+      },
+      // M26: company loans, for the two roles §6 gives them (org_admin and accounts).
+      {
+        to: '/loans',
+        labelKey: 'nav.loans',
+        icon: Landmark,
+        required: { action: 'read', subject: 'CompanyLoan' },
       },
       {
         to: '/approvals',

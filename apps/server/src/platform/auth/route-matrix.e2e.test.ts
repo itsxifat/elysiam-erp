@@ -55,6 +55,10 @@ import {
   INTAKE_ROUTE_FIXTURES,
   prepareIntakeFixtures,
 } from '../../modules/intake/intake.route-fixtures.js';
+import {
+  LOANS_ROUTE_FIXTURES,
+  prepareLoanFixtures,
+} from '../../modules/loans/loans.route-fixtures.js';
 import { describeRoutes, type RouteDeclaration } from './route-map.js';
 import { ROUTE_MATRIX_MANIFEST, routeKey } from './route-matrix.manifest.js';
 
@@ -93,6 +97,7 @@ beforeAll(async () => {
   await preparePosFixtures();
   await preparePromoFixtures();
   await prepareMarketingFixtures();
+  await prepareLoanFixtures();
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 }, 300_000);
 
@@ -263,6 +268,7 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...NOTIFY_ROUTE_FIXTURES,
   ...MARKETING_ROUTE_FIXTURES,
   ...ANALYTICS_ROUTE_FIXTURES,
+  ...LOANS_ROUTE_FIXTURES,
 };
 
 function testedRoutes(): RouteDeclaration[] {

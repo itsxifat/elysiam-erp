@@ -43,6 +43,10 @@ import {
   MARKETING_ROUTE_FIXTURES,
   prepareMarketingFixtures,
 } from '../../modules/marketing/marketing.route-fixtures.js';
+import {
+  LOANS_ROUTE_FIXTURES,
+  prepareLoanFixtures,
+} from '../../modules/loans/loans.route-fixtures.js';
 import { POS_ROUTE_FIXTURES, preparePosFixtures } from '../../modules/pos/pos.route-fixtures.js';
 import {
   PROMO_ROUTE_FIXTURES,
@@ -154,6 +158,7 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...NOTIFY_ROUTE_FIXTURES,
   ...MARKETING_ROUTE_FIXTURES,
   ...ANALYTICS_ROUTE_FIXTURES,
+  ...LOANS_ROUTE_FIXTURES,
 };
 
 /**
@@ -232,6 +237,7 @@ beforeAll(async () => {
   await preparePosFixtures();
   await preparePromoFixtures();
   await prepareMarketingFixtures();
+  await prepareLoanFixtures();
 
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 

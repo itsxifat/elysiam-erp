@@ -1,12 +1,12 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-02** (M14a, M17, M18, M20, M24 and M25 finished). This is the short, plain-language view. The
+Last updated: **2026-10-02** (M14a, M17, M18, M20, M24, M25 and M26 finished). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Built     [##################--]  89%
+Built     [###################-]  93%
 ```
 
 - The plan has 33 milestones. Six are out on the owner's instruction: the Beownz reseller
@@ -14,7 +14,7 @@ Built     [##################--]  89%
   staff activity extension (M28) and the landing page builder (M29). So **27 count**.
 - A milestone counts 100% when it is built, tested and passed its audits. A part-built one counts
   for the share that is done.
-- Today: **24 done, 2 being built (M26, M14b), 1 not started (M30).**
+- Today: **25 done, 1 being built (M14b), 1 not started (M30).**
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
 [What the owner needs to do](#what-the-owner-needs-to-do).
@@ -37,7 +37,7 @@ Built     [##################--]  89%
 | Marketing                                                                   |  100% | Campaigns, ad spend (typed or imported from Meta), which campaign brought each order, cost per delivered order, ROAS, leads. Meta link needs a real token.                                                                                       |
 | Targets and bonuses                                                         |  100% | Monthly targets per agent split by week, progress as orders come in, bonus rules approved by a second person and paid through payroll, pickup time and orders per hour. Team targets wait for the client's rule (D-273).                         |
 | Dashboards and leaderboard                                                  |  100% | A daily summary per brand, an owner's dashboard per brand and an all-brands view for the super admin, a fair leaderboard that never shows another brand's revenue or profit, automatic problem alerts, exports. An AI summary exists but is off. |
-| Company loans                                                               |    0% | Loans the company takes, schedules, reminders.                                                                                                                                                                                                   |
+| Company loans                                                               |  100% | Loans the company takes: flat or reducing-balance schedules, a reminder once per instalment, repayments split into principal and interest, approval above the threshold, statements. A mistaken loan is voided by a second person.               |
 | Going live and hardening                                                    |    0% | Server deploy, monitoring, backups, load tests, security review.                                                                                                                                                                                 |
 | Fraud check, Chatwoot inbox, staff activity extension, landing page builder |     - | Removed by the owner on 2026-10-02. Not counted. The fraud check code was deleted.                                                                                                                                                               |
 | Reseller platform (Beownz)                                                  |     - | Set aside by the owner. Not counted.                                                                                                                                                                                                             |
@@ -74,7 +74,7 @@ Built     [##################--]  89%
 | M23  | Showroom POS                           |  100% |                                                           |
 | M24  | Dashboards and leaderboard             |  100% | AI summary built but switched off                         |
 | M25  | Investors                              |  100% | Investor login pages added 2026-10-02                     |
-| M26  | Company loans                          |    0% |                                                           |
+| M26  | Company loans                          |  100% |                                                           |
 | M27  | Unified inbox (Chatwoot)               |     - | Removed by the owner                                      |
 | M28  | Staff activity extension               |     - | Removed by the owner                                      |
 | M29  | Landing pages                          |     - | Removed by the owner                                      |
@@ -82,11 +82,10 @@ Built     [##################--]  89%
 
 ## Being built now
 
-- **M26** company loans: fixing the money review's four warnings
 - **M14b** getting ready for a server: production images, deploy config, monitoring, backups,
   runbooks. Its last checks need a staging server from the owner.
 
-M14a, M17, M18, M20, M24 and M25's investor pages finished on 2026-10-02 and are joined on the
+M14a, M17, M18, M20, M24, M26 and M25's investor pages finished on 2026-10-02 and are joined on the
 branch `integration-wave2`, where every check passes (2,568 tests).
 
 ## What the owner needs to do

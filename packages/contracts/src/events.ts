@@ -315,6 +315,25 @@ export const targetProgressPayload = z
   })
   .strict();
 
+/**
+ * A company loan instalment is coming due, or is overdue and nobody was told (M26, §15).
+ *
+ * The in-app half of a loan reminder; the SMS half goes through the notify module. Once per
+ * instalment: the reminder row that causes it is unique per instalment. The amount is the
+ * instalment's, which every recipient — accounts and org_admin, the two roles holding
+ * `CompanyLoan` — already sees on the loan's statement. No lender name: the console
+ * fetches the loan.
+ */
+export const loanInstalmentDuePayload = z
+  .object({
+    loanId: uuid,
+    instalmentId: uuid,
+    seq: z.number().int(),
+    dueOn: z.string(),
+    amountPoisha: poishaString,
+  })
+  .strict();
+
 export const EVENTS = {
   'approval.requested': defineEvent('approval.requested', approvalRequestedPayload, {
     // §19: to every eligible checker. The dispatcher narrows that from
@@ -378,6 +397,10 @@ export const EVENTS = {
   'target.progress': defineEvent('target.progress', targetProgressPayload, {
     roles: ['hr'],
     extra: (payload) => payload.userIds.map(userRoom),
+  }),
+  // M26's loan reminder (§15): the two roles that hold `CompanyLoan`.
+  'loan.instalment_due': defineEvent('loan.instalment_due', loanInstalmentDuePayload, {
+    roles: ['accounts', 'org_admin'],
   }),
 } as const;
 

@@ -14,6 +14,9 @@ import { CourierModule } from './modules/courier/courier.module.js';
 import { registerCourierJobs } from './modules/courier/courier.worker.js';
 import { SettlementsService } from './modules/courier/settlements.service.js';
 import { CourierSyncService } from './modules/courier/sync.service.js';
+import { LoansModule } from './modules/loans/loans.module.js';
+import { registerLoansJobs } from './modules/loans/loans.worker.js';
+import { LoanRemindersService } from './modules/loans/reminders.service.js';
 import { MarketingModule } from './modules/marketing/marketing.module.js';
 import { registerMarketingJobs } from './modules/marketing/marketing.worker.js';
 import { MetaJobsService } from './modules/marketing/meta-jobs.service.js';
@@ -135,6 +138,8 @@ async function bootstrap(): Promise<void> {
       MarketingModule,
       HrModule,
       AnalyticsModule,
+      // M26: the daily loan reminders.
+      LoansModule,
     ],
   })
   class WorkerModule {}
@@ -194,6 +199,7 @@ async function bootstrap(): Promise<void> {
     rollup: context.get(RollupService),
     report,
   });
+  await registerLoansJobs({ jobs, reminders: context.get(LoanRemindersService), report });
 
   // Every registered queue gets its dead-letter watcher, whether or not this
   // release also registered a handler for the queue itself. A queue with a

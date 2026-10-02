@@ -328,6 +328,15 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/analytics/export',
   'GET /v1/analytics/consolidated',
   'GET /v1/analytics/leaderboard',
+  // M26: company loans, one subject (`CompanyLoan`, org_admin and accounts).
+  'GET /v1/loans/lenders',
+  'POST /v1/loans/lenders',
+  'POST /v1/loans/preview',
+  'GET /v1/loans',
+  'POST /v1/loans',
+  'GET /v1/loans/:id',
+  'POST /v1/loans/:id/payments',
+  'POST /v1/loans/:id/void',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

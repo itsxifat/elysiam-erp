@@ -70,6 +70,7 @@ const TYPE_KEYS: Readonly<Record<ApprovalType, ConsoleMessageKey>> = {
   threshold_change: 'approvals.type.threshold_change',
   investor_distribution: 'approvals.type.investor_distribution',
   investor_withdrawal: 'approvals.type.investor_withdrawal',
+  loan_repayment: 'approvals.type.loan_repayment',
 };
 
 /**
