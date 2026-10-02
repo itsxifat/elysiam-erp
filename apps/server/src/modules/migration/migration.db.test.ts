@@ -559,8 +559,10 @@ describe('concurrent steps on one brand', () => {
       service.commit(other, atCost('101.00')),
     ]);
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    const refused = results.find((result) => result.status === 'rejected');
-    expect((refused as PromiseRejectedResult | undefined)?.reason).toMatchObject({
+    const refused = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    expect(refused?.reason).toMatchObject({
       code: 'MIGRATION_IMPORT_REJECTED',
     });
 
