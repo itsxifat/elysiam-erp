@@ -2067,6 +2067,7 @@ const en = {
   'customers.lapsed.cutoff': 'Last order on or before',
   'customers.lapsed.exportCsv': 'Export CSV',
   'customers.lapsed.exportXlsx': 'Export Excel',
+  'customers.lapsed.exportAudience': 'Meta audience (hashed)',
   'customers.lapsed.emptyTitle': 'Nobody has lapsed',
   'customers.lapsed.emptyDetail': 'Try a shorter period or another segment.',
   'customers.lapsed.deniedTitle': 'This list needs export access',

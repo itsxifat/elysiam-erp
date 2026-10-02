@@ -456,7 +456,7 @@ export async function recordImport(
 ): Promise<void> {
   await tx.execute(sql`
     update marketing.meta_connections
-    set last_import_at = ${outcome.at}, last_import_status = ${outcome.status},
+    set last_import_at = ${outcome.at.toISOString()}::timestamptz, last_import_status = ${outcome.status},
         last_import_error = ${outcome.error}
     where org_id = ${orgId}
   `);
@@ -535,7 +535,7 @@ export async function stageCapiPayload(
   await tx.execute(sql`
     update marketing.capi_events
     set payload = ${JSON.stringify(staged.payload)}::jsonb, value_poisha = ${staged.valuePoisha},
-        event_time = ${staged.eventTime}, attempts = attempts + 1, updated_at = now()
+        event_time = ${staged.eventTime.toISOString()}::timestamptz, attempts = attempts + 1, updated_at = now()
     where org_id = ${orgId} and id = ${id}
   `);
 }
@@ -555,7 +555,9 @@ export async function finishCapiEvent(
     update marketing.capi_events
     set status = ${outcome.status},
         response = ${outcome.response === null ? null : JSON.stringify(outcome.response)}::jsonb,
-        last_error = ${outcome.error}, sent_at = ${outcome.sentAt}, updated_at = now()
+        last_error = ${outcome.error},
+        sent_at = ${outcome.sentAt === null ? null : outcome.sentAt.toISOString()}::timestamptz,
+        updated_at = now()
     where org_id = ${orgId} and id = ${id}
   `);
 }

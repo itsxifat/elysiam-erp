@@ -2020,6 +2020,7 @@ const bn: Record<MessageKey, string> = {
   'customers.lapsed.cutoff': 'শেষ অর্ডার এই তারিখে বা আগে',
   'customers.lapsed.exportCsv': 'CSV এক্সপোর্ট',
   'customers.lapsed.exportXlsx': 'Excel এক্সপোর্ট',
+  'customers.lapsed.exportAudience': 'Meta অডিয়েন্স (হ্যাশ করা)',
   'customers.lapsed.emptyTitle': 'কেউ বাদ পড়েননি',
   'customers.lapsed.emptyDetail': 'আরও কম দিন বা অন্য সেগমেন্ট দিয়ে চেষ্টা করুন।',
   'customers.lapsed.deniedTitle': 'এই তালিকার জন্য এক্সপোর্ট অনুমতি লাগে',
