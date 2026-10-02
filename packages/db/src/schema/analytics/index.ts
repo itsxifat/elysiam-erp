@@ -26,11 +26,14 @@ import { organizations } from '../org/index.js';
  *   transaction (D-320), so `erp_app` holds DELETE and nothing here is evidence of
  *   anything. Ids of branches, campaigns and agents are copied, not referenced: a rollup
  *   must survive the campaign it names being archived.
- * - **Cross-org reads are opt-in** (D-049, D-329). The five `daily_*` tables are readable
- *   by `erp_analytics` across every org — the leaderboard, the group medians and the
- *   consolidated dashboard read them through `withAnalytics()`. `narratives` is not.
+ * - **Cross-org reads are opt-in** (D-049, D-329). Only `daily_org` is readable by
+ *   `erp_analytics` across every org — the leaderboard, the group medians and the
+ *   consolidated dashboard read it through `withAnalytics()`. The other rollups and
+ *   `narratives` are single-brand.
  * - **Gross profit is the one cost-derived column** (`gross_profit_poisha`, in
- *   `COST_FIELDS`), and no column holds purchase cost itself (invariant 5).
+ *   `COST_FIELDS`). No column holds purchase cost itself (invariant 5), but revenue minus
+ *   gross profit is the cost of goods, so a cross-brand read for anyone but Super Admin
+ *   leaves the column out.
  */
 export const analytics = pgSchema('analytics');
 

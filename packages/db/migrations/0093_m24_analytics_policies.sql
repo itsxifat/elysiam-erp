@@ -9,10 +9,14 @@
 --   day and inserts it again in one `withOrg()` transaction, so a rerun replaces rather
 --   than adds, and a campaign mapping changed since (D-250) moves its orders between rows.
 --   Nothing here is evidence of anything; the evidence is in the tables they summarise.
--- * The same five, and only these, opt in to `analyticsReadsAllOrgs`: `erp_analytics` may
---   SELECT every org's rows. The leaderboard, the insight rules' group medians and the
---   super-admin consolidated dashboard read them through `withAnalytics()` (§5 exceptions
---   2 and 3). They hold counts and sums per day — no buyer, no phone, no address, no cost.
+-- * `analytics.daily_org` alone opts in to `analyticsReadsAllOrgs`: `erp_analytics` may
+--   SELECT every org's rows there and nowhere else in this schema (D-329). The leaderboard,
+--   the insight rules' group medians and the super-admin consolidated dashboard read it
+--   through `withAnalytics()` (§5 exceptions 2 and 3). It holds counts and sums per day — no
+--   buyer, phone or address — but it does hold `gross_profit_poisha`, so with delivered
+--   revenue beside it the role can derive every brand's daily cost of goods: the code that
+--   reads it across brands for anyone but Super Admin must leave that column out. The
+--   branch, channel, campaign and agent rollups stay single-brand: nothing compares them.
 -- * `analytics.narratives`: SELECT and INSERT. A day's narrative is written once and read
 --   back for the rest of the day; it is never edited and the analytics role cannot read
 --   it.
@@ -53,14 +57,6 @@ grant usage on schema "analytics" to "erp_app", "erp_analytics";
 --> statement-breakpoint
 grant select, insert, update, delete on "analytics"."daily_branch" to "erp_app";
 --> statement-breakpoint
-grant select on "analytics"."daily_branch" to "erp_analytics";
---> statement-breakpoint
-drop policy if exists "daily_branch_analytics_all_orgs" on "analytics"."daily_branch";
---> statement-breakpoint
-create policy "daily_branch_analytics_all_orgs" on "analytics"."daily_branch"
-  for select to "erp_analytics"
-  using (true);
---> statement-breakpoint
 alter table "analytics"."daily_channel" enable row level security;
 --> statement-breakpoint
 alter table "analytics"."daily_channel" force row level security;
@@ -74,14 +70,6 @@ create policy "daily_channel_org_isolation" on "analytics"."daily_channel"
 grant usage on schema "analytics" to "erp_app", "erp_analytics";
 --> statement-breakpoint
 grant select, insert, update, delete on "analytics"."daily_channel" to "erp_app";
---> statement-breakpoint
-grant select on "analytics"."daily_channel" to "erp_analytics";
---> statement-breakpoint
-drop policy if exists "daily_channel_analytics_all_orgs" on "analytics"."daily_channel";
---> statement-breakpoint
-create policy "daily_channel_analytics_all_orgs" on "analytics"."daily_channel"
-  for select to "erp_analytics"
-  using (true);
 --> statement-breakpoint
 alter table "analytics"."daily_campaign" enable row level security;
 --> statement-breakpoint
@@ -97,14 +85,6 @@ grant usage on schema "analytics" to "erp_app", "erp_analytics";
 --> statement-breakpoint
 grant select, insert, update, delete on "analytics"."daily_campaign" to "erp_app";
 --> statement-breakpoint
-grant select on "analytics"."daily_campaign" to "erp_analytics";
---> statement-breakpoint
-drop policy if exists "daily_campaign_analytics_all_orgs" on "analytics"."daily_campaign";
---> statement-breakpoint
-create policy "daily_campaign_analytics_all_orgs" on "analytics"."daily_campaign"
-  for select to "erp_analytics"
-  using (true);
---> statement-breakpoint
 alter table "analytics"."daily_agent" enable row level security;
 --> statement-breakpoint
 alter table "analytics"."daily_agent" force row level security;
@@ -118,14 +98,6 @@ create policy "daily_agent_org_isolation" on "analytics"."daily_agent"
 grant usage on schema "analytics" to "erp_app", "erp_analytics";
 --> statement-breakpoint
 grant select, insert, update, delete on "analytics"."daily_agent" to "erp_app";
---> statement-breakpoint
-grant select on "analytics"."daily_agent" to "erp_analytics";
---> statement-breakpoint
-drop policy if exists "daily_agent_analytics_all_orgs" on "analytics"."daily_agent";
---> statement-breakpoint
-create policy "daily_agent_analytics_all_orgs" on "analytics"."daily_agent"
-  for select to "erp_analytics"
-  using (true);
 --> statement-breakpoint
 alter table "analytics"."narratives" enable row level security;
 --> statement-breakpoint

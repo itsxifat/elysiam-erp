@@ -217,20 +217,25 @@ export class RollupService {
   // --- the jobs' halves ---------------------------------------------------------------
 
   /**
-   * The outbox subscriber's half: one recompute of today per brand per ten-second bucket.
-   * Idempotent by the bucket key, so the dispatcher's at-least-once delivery costs nothing.
+   * The outbox subscriber's half: one recompute per brand per ten-second bucket, of the day
+   * the event happened through today. Usually one day; two when an event from just before
+   * Dhaka midnight is dispatched just after it, so that day is not left stale until the
+   * nightly run. Idempotent by the bucket key, so the dispatcher's at-least-once delivery
+   * costs nothing.
    */
   async enqueueForEvent(event: DeliveredEvent, now: Date = new Date()): Promise<void> {
     const today = businessDate(now);
+    const happened = businessDate(event.occurredAt);
+    const from = happened < today ? happened : today;
     const bucket = rollupBucket(event.orgId, now);
     await withOrg({ orgId: event.orgId, userId: ROLLUP_ACTOR }, (tx) =>
       enqueue(
         tx,
         ANALYTICS_QUEUES.rollup,
-        { from: today, to: today },
+        { from, to: today },
         {
           orgId: event.orgId,
-          singletonKey: `${bucket.singletonKey}:${today}`,
+          singletonKey: `${bucket.singletonKey}:${from}:${today}`,
           startAfter: bucket.startAfter,
           ref: event.id,
         },

@@ -21,6 +21,7 @@ import {
   LEADERBOARD_METRICS,
   narrativePrompt,
   normalizedMetrics,
+  pickupMeanSeconds,
   rankBoard,
   returnRateBps,
   type BoardRow,
@@ -112,7 +113,7 @@ function normalizedView(metrics: NormalizedMetrics) {
 }
 
 /** A brand's month for the insight rules and the narrative, from one sums row. */
-function insightMonth(row: repo.OrgTotals): InsightMonth {
+function insightMonth(row: repo.RateFigures): InsightMonth {
   return {
     ordersConfirmed: row.orders_confirmed,
     ordersDelivered: row.orders_delivered,
@@ -250,10 +251,7 @@ export class AnalyticsService {
             ordersDelivered: row.orders_delivered,
             deliveredRevenuePoisha: row.delivered_revenue_poisha,
             pickupCount: row.pickup_count,
-            pickupMeanSeconds:
-              row.pickup_count === 0
-                ? null
-                : Math.round(Number(row.pickup_seconds) / row.pickup_count),
+            pickupMeanSeconds: pickupMeanSeconds(row.pickup_count, Number(row.pickup_seconds)),
           };
         }),
         topSkus,
@@ -299,8 +297,8 @@ export class AnalyticsService {
     const current = periodForMonth(month);
     const previous = periodForMonth(previousMonth(month));
     const [now, before] = await withAnalytics(async (tx) => [
-      await repo.brandSums(tx, current.startsOn, current.endsOn),
-      await repo.brandSums(tx, previous.startsOn, previous.endsOn),
+      await repo.brandRates(tx, current.startsOn, current.endsOn),
+      await repo.brandRates(tx, previous.startsOn, previous.endsOn),
     ]);
     const previousByOrg = new Map(before.map((row) => [row.org_id, row]));
     const months = now.map((row) => {
@@ -360,7 +358,9 @@ export class AnalyticsService {
       campaigns: await repo.campaignSums(tx, context.orgId, current.startsOn, current.endsOn),
     }));
     // The group: every brand's normalized rates, which D-023 lets any org admin see.
-    const group = await withAnalytics((tx) => repo.brandSums(tx, current.startsOn, current.endsOn));
+    const group = await withAnalytics((tx) =>
+      repo.brandRates(tx, current.startsOn, current.endsOn),
+    );
     const found = insights({
       current: insightMonth(own.current),
       previous: insightMonth(own.previous),
@@ -571,7 +571,7 @@ export class AnalyticsService {
   }
 }
 
-function kpiInputs(row: repo.OrgTotals) {
+function kpiInputs(row: repo.RateFigures) {
   return {
     ordersConfirmed: row.orders_confirmed,
     ordersDelivered: row.orders_delivered,

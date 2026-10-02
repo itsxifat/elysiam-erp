@@ -168,16 +168,14 @@ export const ANALYTICS_READABLE: readonly string[] = [
   'ledger.journals',
   'ledger.journal_lines',
   /*
-   * §5 exception 2, added by M24 (D-329): the rollups. The leaderboard, the insight rules'
-   * group medians and the consolidated dashboard compare brands, and these five tables are
-   * everything they read — counts and sums per day, no buyer, no phone, no cost. The
-   * narrative cache beside them (`analytics.narratives`) is deliberately absent.
+   * §5 exception 2, added by M24 (D-329): the brand-level rollup. The leaderboard, the
+   * insight rules' group medians and the consolidated dashboard compare brands, and this is
+   * everything they read — counts and sums per day, no buyer or phone. It carries gross
+   * profit, so revenue minus it is every brand's cost of goods: a cross-brand read for
+   * anyone but Super Admin leaves that column out (`brandRates`). The per-branch, channel,
+   * campaign and agent rollups and the narrative cache are deliberately absent.
    */
   'analytics.daily_org',
-  'analytics.daily_branch',
-  'analytics.daily_channel',
-  'analytics.daily_campaign',
-  'analytics.daily_agent',
 ];
 
 /**

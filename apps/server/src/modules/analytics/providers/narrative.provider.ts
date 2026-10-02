@@ -39,9 +39,13 @@ const multiple = (bps: string | null): string => {
   return `${(hundredths / 100n).toString()}.${(hundredths % 100n).toString().padStart(2, '0')}x`;
 };
 
+/** How many prompts the fake keeps: enough for a test, never a growing heap in production. */
+const KEPT_PROMPTS = 20;
+
 /**
  * A deterministic stand-in that writes its summary from the payload alone. It also keeps
- * every prompt it was given, so a test can read exactly what would have left the building.
+ * the last few prompts it was given, so a test can read exactly what would have left the
+ * building.
  */
 export class FakeNarrativeProvider implements NarrativeProvider {
   readonly name = 'fake';
@@ -49,6 +53,7 @@ export class FakeNarrativeProvider implements NarrativeProvider {
 
   generate(prompt: NarrativePrompt, payload: NarrativePayload): Promise<string> {
     this.prompts.push(prompt);
+    if (this.prompts.length > KEPT_PROMPTS) this.prompts.shift();
     const now = payload.current;
     const before = payload.previous;
     const lines = [

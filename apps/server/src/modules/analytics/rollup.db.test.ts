@@ -514,6 +514,17 @@ describe('check 1: every rollup table equals a direct query over its sources', (
     await expectRollupEqualsDirect(ORG_A);
   });
 
+  it('takes turns when recomputes of one brand overlap, and still equals the direct query', async () => {
+    // The event bucket, the nightly run and a manual refresh can all land at once; the
+    // per-brand advisory lock makes the second wait rather than collide with the first.
+    await Promise.all([
+      rollup.recompute(ORG_A, { from: FROM, to: TO }),
+      rollup.recompute(ORG_A, { from: '2026-09-01', to: TO }),
+      rollup.recompute(ORG_A, { from: FROM, to: '2026-09-02' }),
+    ]);
+    await expectRollupEqualsDirect(ORG_A);
+  });
+
   it('runs through the worker’s handler, as pg-boss would call it', async () => {
     const handlers = new Map<
       string,
@@ -555,20 +566,39 @@ describe('the rollups are tenant data, and only the analytics role reads across 
     expect([...seen].map((row) => row.org_id)).toEqual([ORG_A]);
   });
 
-  it('shows erp_analytics every brand, read-only, and not the narrative cache', async () => {
+  it('shows erp_analytics every brand’s daily_org, and nothing else in the schema', async () => {
     const seen = await withAnalytics((tx) =>
       tx.execute<Row>(sql`select distinct org_id from analytics.daily_org order by 1`),
     );
     expect([...seen].map((row) => row.org_id).sort()).toEqual([ORG_A, ORG_B].sort());
 
-    await expect(
-      withAnalytics((tx) => tx.execute(sql`select count(*) from analytics.narratives`)),
-    ).rejects.toThrow();
-    await expect(
-      withAnalytics((tx) =>
-        tx.execute(sql`delete from analytics.daily_org where org_id = ${ORG_A}`),
-      ),
-    ).rejects.toThrow();
+    // The other rollups are single-brand (D-329), and so is the narrative cache.
+    for (const table of [
+      'daily_branch',
+      'daily_channel',
+      'daily_campaign',
+      'daily_agent',
+      'narratives',
+    ]) {
+      await expect(
+        withAnalytics((tx) => tx.execute(sql.raw(`select count(*) from analytics.${table}`))),
+        table,
+      ).rejects.toThrow();
+    }
+  });
+
+  it('gives erp_analytics no write on any analytics table, by grant and not only read-only', async () => {
+    const privileges = await withSystem(async (tx) =>
+      tx.execute<Row>(sql`
+        select c.relname as table_name, p.privilege
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        cross join unnest(array['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) as p(privilege)
+        where n.nspname = 'analytics' and c.relkind = 'r'
+          and has_table_privilege('erp_analytics', c.oid, p.privilege)
+      `),
+    );
+    expect([...privileges]).toEqual([]);
   });
 
   it('refuses a row written for another brand', async () => {

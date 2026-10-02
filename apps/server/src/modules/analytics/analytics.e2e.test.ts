@@ -186,10 +186,12 @@ describe('check 2: leaderboard visibility follows D-023', () => {
     expect(peer?.metrics.revenueGrowth).toBe('70000');
     expect(peer?.ranks.revenueGrowth).toBe(1);
 
-    // And its raw figures are nowhere in the response, in any field.
+    // And its raw figures are nowhere in the response, in any field — nor anybody's gross
+    // profit, which with revenue would give a brand's cost of goods (D-329).
     for (const raw of [ORG_B_REVENUE, ORG_B_SPEND, ORG_B_PREVIOUS]) {
       expect(response.body).not.toContain(raw);
     }
+    expect(response.body).not.toMatch(/grossProfit/i);
   });
 
   it('is the same rule from the other side: B’s admin sees A normalized', async () => {
@@ -452,8 +454,9 @@ describe('the org dashboard, insights, refresh, export and the narrative', () =>
       medianBps: '8730',
       gapBps: '2480',
     });
-    // The group median is a normalized figure; no peer's raw figure comes with it.
+    // The group median is a normalized figure; no peer's raw figure or cost comes with it.
     expect(response.body).not.toContain(ORG_B_REVENUE);
+    expect(response.body).not.toMatch(/grossProfit/i);
   });
 
   it('answers the narrative as switched off until the brand turns the flag on', async () => {

@@ -37,7 +37,9 @@ export interface OrderDayFact {
   readonly deliveredRevenuePoisha: Poisha;
   /**
    * What the delivered units cost when they left stock. Purchase cost (invariant 5): it is
-   * used here only to derive gross profit and is never stored or returned.
+   * used here only to derive gross profit and is never stored or returned itself — though
+   * revenue minus the stored gross profit gives it back, which is why gross profit is a
+   * cost field.
    */
   readonly deliveredCostPoisha: Poisha;
 }
