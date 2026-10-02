@@ -224,7 +224,9 @@ are closed.
 Sign in as **HR**.
 
 1. **People**: six employees, four of them linked to a sign-in. **Add an employee**
-   creates one. National ID and phone are optional and are stored encrypted.
+   creates one, in a branch if you choose one. National ID and phone are optional and are
+   stored encrypted. **Edit** on a row changes the record, its payout details and its linked
+   sign-in.
 2. **Attendance**: last month's absences, late days and leave. Mark a day for someone.
    Days with nothing recorded count as present.
 3. **Payroll**:
@@ -295,9 +297,6 @@ in `docs/training/` walk through each of these.
 
 These still have no screen:
 
-- editing an employee after they are added (payout account, status, leaving date, linked
-  sign-in), and a branch on the "Add an employee" form;
-- linking an investor's portal sign-in to their investor record;
 - uploading a courier's settlement file (fetching from the courier works once a real
   courier account is on);
 - **Audit log**, which shows "coming soon". **Resellers** is set aside for now.

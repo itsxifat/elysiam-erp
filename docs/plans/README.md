@@ -46,7 +46,7 @@ M07, M09, M10, M11, M12, M13, M15, M19 and M25 were built by parallel agents bet
 | M26  | Company loans                      | built and verified; both auditors run (see the plan)   |
 | —    | Preview kit (`preview-kit.md`)     | done; ledger audit fixed and re-audited (see the plan) |
 
-Not a milestone: `gaps-orders-settings.md`, the console gaps M30's research found (order lifecycle buttons, courier statuses that ship an order, the settings screens, HR's pay picker; D-390 to D-396).
+Not a milestone: `gaps-orders-settings.md`, the console gaps M30's research found (order lifecycle buttons, courier statuses that ship an order, the settings screens, HR's pay picker; D-390 to D-396); and `m30-followups.md`, M30 part 1's open medium findings, its two named races and the console gaps its guides found (D-411 to D-419).
 
 | Plan            | Milestone                                   | State on 2026-10-02                                    |
 | --------------- | ------------------------------------------- | ------------------------------------------------------ |
@@ -78,6 +78,7 @@ Not a milestone: `gaps-orders-settings.md`, the console gaps M30's research foun
 | M26             | Company loans                               | built and verified; both auditors run (see the plan)   |
 | gaps-users-auth | Staff accounts and sign-in (M30 admin gaps) | built and verified; ledger audit and re-audit fixed    |
 | M30             | Hardening and launch readiness              | part 1 built; ledger audit fixed; part 2 needs staging |
+| m30-followups   | M30's open mediums, races and console gaps  | built and verified; ledger audit and re-audit fixed    |
 
 Part-built: M30 (part 2 waits for staging, D-360) and M14b. Removed from scope by the owner: M27 Chatwoot and M29 landing page builder (D-290), M13 fraud check with its code (D-291), M28 activity extension (D-292). M21 and M22, the Beownz reseller platform, are out of scope by the client's instruction.
 

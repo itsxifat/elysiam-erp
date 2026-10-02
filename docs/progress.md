@@ -1265,3 +1265,51 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
   - Owner decisions (owner: human): A4 (host-only session cookie), and whether the 20%
     ceilings fit (D-364, D-365).
 - Next: M30 part 2 once a staging server exists. Then the owner signs the go-live checklist.
+
+### 2026-10-03 · m30-followups · M30's open mediums, two races and four console gaps · built
+
+- Delivered (branch `m30-followups` from `integration-wave2` at `ad0a737`; plan
+  `docs/plans/m30-followups.md`):
+  - **Console gaps a tester hits.** "Add an employee" has a branch picker (a branch manager's
+    add answered 404); an Edit panel on each employee sends only what changed (payout details
+    and the linked sign-in for `update Payroll` holders); the investors list links a portal
+    sign-in; warehouse's supplier dropdown on `/supply/entries` is filled. Four narrow
+    picker routes behind the permission each screen's action needs, with ids and names only
+    and masked emails, through a new `IamApi` (D-419).
+  - **Medium findings.** A3: an SMS code never signs anyone in (D-411). A5: someone who has
+    worked for another brand is a super admin's to add (D-412, ASSUMED). B2: the generic file
+    download needs the purpose across the brand; investors' own route passes its row check
+    (D-413). C6: supply receipts, supplier payments and returns are dated today or yesterday
+    (D-414, ASSUMED). C7: the approval threshold counts the person's day (supplier payments
+    to any supplier; petty cash and branch cash outs), under a per-person lock (D-415,
+    ASSUMED). D3: a per-brand miss budget on the tracking page (D-416, ASSUMED; Turnstile not
+    built, it needs the brands' keys). B3 stays a deployment item.
+  - **Races.** B1: reads of an upload stop at the type's ceiling in both drivers, and the local
+    PUT and finalize share the row lock (D-417). W-2: a request the module decided to hold is
+    never auto-approved (`holdForChecker`, D-418); a supplier payment's request is now raised
+    in the payment's own transaction.
+  - Guides, the testing guide, the go-live checklist, `architecture.md` (§6 thresholds, §22
+    files), M30's plan and the build status are brought up to date. The route report and the
+    api client are regenerated (323 routes).
+- Verification:
+  - `pnpm verify` run 4: tests 184 of 185 files, 2,916 passed, 1 failed, 1 skipped. The
+    failure was a pre-existing race test in `promo.db.test.ts` that flaked under load; it now
+    waits at a barrier so the race is always the one under test.
+  - `pnpm verify` run 5, after the ledger audit's fixes, passed format, lint and typecheck and
+    was then stopped by Claude Code's memory guard before the tests (the PC ran low on
+    memory). Not restarted, as the guard asks.
+  - After the last change: build, bundle (245.1 KB of 250), migrations, schema drift, route
+    matrix (323 routes, 315 matrix-tested, 8 public), i18n and api-client checks PASS; lint and
+    format pass; every touched suite passes, one worker at a time (1,553 tests across 83
+    files, real Postgres).
+  - **A full `pnpm verify` is owed** when the machine has memory to spare.
+- Auditors: ledger-auditor 0 critical, 4 warnings, 10 notes; the warnings and five notes fixed;
+  re-check 0 critical, 0 warnings, its remaining notes fixed or recorded. acceptance-auditor
+  not run (not a milestone).
+- Decisions/assumptions: D-411 to D-419 (D-412, D-414, D-415 and D-416 ASSUMED, each with an
+  owner question).
+- Migrations: `0102` (custom: `iam.users_held_elsewhere`).
+- New dependencies: none.
+- Follow-ups: in the plan's status (Turnstile keys, the roles-path re-grant, R2 copy at
+  finalize, module-owned receipt downloads, a warehouse menu link, owner questions).
+- Next: the full `pnpm verify`, then M30 part 2 on staging.

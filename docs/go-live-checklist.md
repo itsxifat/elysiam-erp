@@ -131,14 +131,13 @@ its values are for development and are public, including its `AUTH_SECRET` and
       every request waits for a checker. Who: Org admin, Owner.
 - [ ] **Employees linked to their sign-ins.** Everyone with a sign-in is linked to their
       employee record. The checks that stop someone paying a staff loan to themselves or
-      changing their own payout account rely on it, and so do the agents' targets. There is
-      no screen for it yet; HR gives the operator the list and the operator links them. Who:
-      HR, Operator.
+      changing their own payout account rely on it, and so do the agents' targets. HR links
+      them in **People** → **Edit** → **Linked sign-in**. Who: HR.
 - [ ] **Employees placed in their branch.** Showroom staff have their branch set, so their
-      branch manager sees them. The add form has no branch field yet; the operator sets it.
-      Who: HR, Operator.
-- [ ] **Investors linked to their portal sign-ins** (no screen yet; the operator links them).
-      Who: Accounts, Operator.
+      branch manager sees them. HR sets it in **People** (**Branch** on the add form, or
+      **Edit**). Who: HR.
+- [ ] **Investors linked to their portal sign-ins** in **Investors** → **Portal sign-in**.
+      Who: Accounts.
 
 ## 4. Infrastructure
 

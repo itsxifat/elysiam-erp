@@ -71,9 +71,9 @@ off is a separate request that someone else approves.
 ## Goods from a supplier
 
 The receipt draft screen is not in your menu. It is at `/supply/entries` on the console
-address, and the page is open to your role. Today its supplier list is empty for your role,
-so a draft cannot be finished there. Until that is fixed, give accounts the supplier, the
-invoice number, and each item and quantity that arrived. Accounts records the supply entry.
+address, and the page is open to your role. Choose the **Supplier** and the location, type the
+invoice number and each item and quantity that arrived, and save the draft. You never see
+prices: accounts prices the draft and receives it.
 
 ## If something goes wrong
 
