@@ -1,0 +1,36 @@
+# Staging (M14b). Merged over deploy.yml by `-d staging`.
+#
+# One VM runs every role and accessory. Every host, name and URL below is a PLACEHOLDER
+# until the owner supplies staging (START-HERE.md gate G3): replace them, and nothing else
+# in this file needs to change. docs/runbooks/deploy.md says what each one is.
+
+servers:
+  api:
+    hosts:
+      - 10.10.0.11 # placeholder: the staging VM's address as Kamal's SSH reaches it
+  worker:
+    hosts:
+      - 10.10.0.11
+
+proxy:
+  host: api.staging.elysium.example # placeholder: the API's hostname, proxied by Cloudflare
+
+env:
+  clear:
+    # The parent domain of the console, portal, pos and API hostnames (§6, D-053).
+    APP_DOMAIN: staging.elysium.example
+    API_PUBLIC_URL: https://api.staging.elysium.example
+    # Exactly the Pages hostnames, comma-separated; anything else is refused (§25).
+    TRUSTED_ORIGINS: https://console.staging.elysium.example,https://portal.staging.elysium.example,https://pos.staging.elysium.example
+    # Its own namespace, so staging never shares realtime or rate-limit keys (§19).
+    REALTIME_ADAPTER_KEY: elysium:staging
+    R2_BUCKET: elysium-staging
+    SENTRY_ENVIRONMENT: staging
+    # Optional: an OTLP/HTTP collector. Empty means telemetry off (D-344).
+    OTEL_EXPORTER_OTLP_ENDPOINT: ''
+
+accessories:
+  valkey:
+    host: 10.10.0.11
+    # The private address only, never 0.0.0.0 (D-343).
+    port: 10.10.0.11:6379:6379

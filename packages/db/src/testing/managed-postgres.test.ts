@@ -1,13 +1,11 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { MIGRATIONS_FOLDER, runMigrations } from '../migrations.js';
 import { applyBootstrap, type RolePasswords } from '../roles.js';
 
 /**
@@ -25,8 +23,6 @@ import { applyBootstrap, type RolePasswords } from '../roles.js';
  * server's roles are other suites' fixtures.
  */
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_FOLDER = path.resolve(HERE, '../../migrations');
 const silenceNotices = (): void => undefined;
 
 const ADMIN = { user: 'managed_admin', password: 'managed_admin_test_password' };
@@ -134,19 +130,16 @@ describe('bootstrap.sql run by a managed admin who is not a superuser', () => {
     expect(who).toBe('erp_app');
   });
 
-  it('lets erp_owner apply every migration to the admin-owned database', async () => {
+  it('lets erp_owner apply every migration to the admin-owned database, one run at a time', async () => {
     const journal = JSON.parse(
       readFileSync(path.join(MIGRATIONS_FOLDER, 'meta', '_journal.json'), 'utf8'),
     ) as { entries: unknown[] };
 
-    const applied = await withConnection(urlFor('erp_owner', 'owner_second'), async (owner) => {
-      await migrate(drizzle(owner), { migrationsFolder: MIGRATIONS_FOLDER });
-      const [row] = await owner<{ count: number }[]>`
-        select count(*)::int as count from drizzle.__drizzle_migrations
-      `;
-      return row?.count;
-    });
-    expect(applied).toBe(journal.entries.length);
+    // The release step and a person at a terminal, at once (M14b): the advisory lock makes
+    // the second wait, then find nothing left to apply.
+    const ownerUrl = urlFor('erp_owner', 'owner_second');
+    const runs = await Promise.all([runMigrations(ownerUrl), runMigrations(ownerUrl)]);
+    expect(runs.map((run) => run.total)).toEqual([journal.entries.length, journal.entries.length]);
 
     // And the tenancy shape survived the move: the app role still cannot create in public.
     await expect(
@@ -155,6 +148,12 @@ describe('bootstrap.sql run by a managed admin who is not a superuser', () => {
       ),
     ).rejects.toThrow(/permission denied/i);
   }, 180_000);
+
+  it('refuses to migrate as any role but erp_owner', async () => {
+    await expect(runMigrations(urlFor('erp_app', 'app_second'))).rejects.toThrow(
+      /must run as erp_owner/,
+    );
+  });
 
   it('fails loudly when a role holds an attribute the admin cannot clear', async () => {
     // A role that has gained REPLICATION by some other route. The managed admin cannot take
