@@ -1,6 +1,6 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-02** (M14a, M17, M18 and M20 finished). This is the short, plain-language view. The
+Last updated: **2026-10-02** (M14a, M17, M18, M20 and M25 finished). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
@@ -14,7 +14,7 @@ Built     [#################---]  85%
   staff activity extension (M28) and the landing page builder (M29). So **27 count**.
 - A milestone counts 100% when it is built, tested and passed its audits. A part-built one counts
   for the share that is done.
-- Today: **22 done, 1 part-built (M25, its investor pages being built), 2 being built (M24, M26), 2 not started (M14b, M30).**
+- Today: **23 done, 2 being built (M24, M26), 2 not started (M14b, M30).**
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
 [What the owner needs to do](#what-the-owner-needs-to-do).
@@ -31,7 +31,7 @@ Built     [#################---]  85%
 | Customers, SMS, promo codes                                                 |  100% | Buyer profiles, birthday offers, lapsed-buyer list, SMS templates, promo codes at the order desk.                                                                                                                        |
 | Showrooms (POS)                                                             |  100% | A till that works offline, Bangla receipts, day closing per branch.                                                                                                                                                      |
 | HR and payroll                                                              |  100% | Employees, attendance, salary, staff loans, Bangla payslips.                                                                                                                                                             |
-| Investors                                                                   |   85% | Capital, profit share, withdrawals with approval. The investors' own login pages are not built yet.                                                                                                                      |
+| Investors                                                                   |  100% | Capital, profit share, withdrawals with approval. Investors sign in to their own pages with two-step login and see only their own money.                                                                                 |
 | Moving old data in                                                          |  100% | Products, stock with cost, supplier dues, wallet balances, courier COD and customers load once before go-live, checked first, all-or-nothing. The accountant gets a report to sign. A training brand with demo data.     |
 | Advance payments and return reasons                                         |  100% | bKash, Nagad or bank advance recorded by the agent and checked by accounts before it counts; used on delivery, refunded on cancel; a reason on every return, with a report.                                              |
 | Marketing                                                                   |  100% | Campaigns, ad spend (typed or imported from Meta), which campaign brought each order, cost per delivered order, ROAS, leads. Meta link needs a real token.                                                               |
@@ -73,7 +73,7 @@ Built     [#################---]  85%
 | M22  | Reseller portal                        |     - | Set aside                                                 |
 | M23  | Showroom POS                           |  100% |                                                           |
 | M24  | Dashboards and leaderboard             |    0% | Waits for M18 and M20                                     |
-| M25  | Investors                              |   85% | Investor login pages missing                              |
+| M25  | Investors                              |  100% | Investor login pages added 2026-10-02                     |
 | M26  | Company loans                          |    0% |                                                           |
 | M27  | Unified inbox (Chatwoot)               |     - | Removed by the owner                                      |
 | M28  | Staff activity extension               |     - | Removed by the owner                                      |
@@ -83,11 +83,10 @@ Built     [#################---]  85%
 ## Being built now
 
 - **M26** company loans: loans the company takes, repayment schedules, reminders, interest
-- **M25** the investors' own login pages (the last part of M25)
 - **M24** owner and super-admin dashboards, agent leaderboard, insights
 
-M14a, M17, M18 and M20 finished on 2026-10-02 and are joined on the branch `integration-wave2`,
-where every check passes (2,461 tests).
+M14a, M17, M18, M20 and M25's investor pages finished on 2026-10-02 and are joined on the
+branch `integration-wave2`, where every check passes (2,477 tests).
 
 ## What the owner needs to do
 
