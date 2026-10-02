@@ -355,8 +355,8 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
   - **The training org.** `pnpm demo:org` seeds it and runs the anonymised sample files
     through the real importers and the opening (D-223). It is left out of the consolidated
     reads, and notify sends nothing from it.
-- Verification: `pnpm verify` exits 0 at VERIFY_SHA (VERIFY_TIME; 131 test files, VERIFY_TESTS
-  tests). An earlier full run at `d497064` passed too (365 s; 2,205 passed, 1 skipped,
+- Verification: `pnpm verify` exits 0 at `5a289df` (259 s; 131 test files, 2,207 passed, 1
+  skipped, which is not M14a's). An earlier full run at `d497064` passed too (365 s; 2,205 passed, 1 skipped,
   not M14a's). Acceptance checks 1–5 pass in
   `apps/server/src/modules/migration/migration.db.test.ts`, with the domain halves in
   `packages/domain/src/migration/migration.test.ts` and
@@ -394,7 +394,7 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
       its owner, as instructed);
     - CLAUDE.md's `demo:org` line was incomplete.
 
-    Re-audit: ACCEPTANCE_RESULT.
+    Re-audit at `5a289df`: **READY**.
 - Decisions/assumptions: D-213 (amended: no re-opening), D-214 to D-224.
 - New dependencies: none.
 - Deviations from the milestone spec:
