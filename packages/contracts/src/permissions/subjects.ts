@@ -101,6 +101,14 @@ export const SUBJECTS = [
    * read through `erp_analytics` (§5 exception 2).
    */
   'Leaderboard',
+  /**
+   * §18's org dashboard and its rollups (M24, D-325): org_admin at `org`, and Super Admin
+   * for the consolidated view across brands. §6 has no row for it; the dashboard puts
+   * revenue, cash and stock value side by side, which is the org admin's picture, and
+   * every other role already has a dashboard of its own (marketing, accounts, the desk).
+   * `update` is recomputing the brand's rollups for a range.
+   */
+  'Dashboard',
   'ResellerAdmin',
   'Investor',
   'CompanyLoan',

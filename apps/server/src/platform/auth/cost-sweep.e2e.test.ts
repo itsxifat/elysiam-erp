@@ -8,6 +8,7 @@ import {
 import { seedAccountId } from '@elysium/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { ANALYTICS_ROUTE_FIXTURES } from '../../modules/analytics/analytics.route-fixtures.js';
 import {
   CATALOG_ROUTE_FIXTURES,
   prepareCatalogFixtures,
@@ -152,6 +153,7 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...PROMO_ROUTE_FIXTURES,
   ...NOTIFY_ROUTE_FIXTURES,
   ...MARKETING_ROUTE_FIXTURES,
+  ...ANALYTICS_ROUTE_FIXTURES,
 };
 
 /**

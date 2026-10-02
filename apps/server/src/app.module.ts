@@ -1,6 +1,7 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import type { Auth } from '@elysium/db';
 
+import { AnalyticsModule } from './modules/analytics/analytics.module.js';
 import { ApprovalsModule } from './modules/approvals/approvals.module.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { CourierModule } from './modules/courier/courier.module.js';
@@ -87,6 +88,9 @@ export class AppModule {
         // M18. After orders and promo, whose APIs it reads; it joins the orders module's
         // delivery observers at init (D-262).
         MarketingModule,
+        // M24. Last: it reads orders, marketing, HR, the ledger and inventory through their
+        // APIs, and nothing reads it.
+        AnalyticsModule,
         ...(withDemo ? [DemoModule] : []),
       ],
     };

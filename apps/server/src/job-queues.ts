@@ -1,4 +1,5 @@
 import { PLATFORM_QUEUES, type QueueDefinition } from './platform/jobs/queues.js';
+import { ANALYTICS_QUEUE_DEFINITIONS } from './modules/analytics/analytics.queues.js';
 import { COURIER_QUEUE_DEFINITIONS } from './modules/courier/courier.queues.js';
 import { HR_QUEUE_DEFINITIONS } from './modules/hr/performance.queues.js';
 import { NOTIFY_QUEUES } from './modules/notify/notify.queues.js';
@@ -26,4 +27,5 @@ export const ALL_QUEUES: readonly QueueDefinition[] = [
   ...CRM_QUEUE_DEFINITIONS,
   ...MARKETING_QUEUE_DEFINITIONS,
   ...HR_QUEUE_DEFINITIONS,
+  ...ANALYTICS_QUEUE_DEFINITIONS,
 ];

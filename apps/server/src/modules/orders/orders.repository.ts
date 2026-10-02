@@ -1426,3 +1426,114 @@ export async function linesOfOrders(
   `);
   return [...rows];
 }
+
+// --- M24: what the analytics rollup is built from ---------------------------------
+
+export interface AnalyticsFactRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly channel: string;
+  readonly branch_id: string | null;
+  readonly discount_poisha: string;
+  readonly delivery_charge_poisha: string;
+  readonly created_on: string;
+  readonly confirmed_on: string | null;
+  readonly delivered_on: string | null;
+  readonly returned_on: string | null;
+  readonly cancelled_on: string | null;
+  readonly outside_dhaka: boolean;
+}
+
+/**
+ * Every order that had something happen inside the range, with the Dhaka day of each
+ * thing (D-321): created, confirmed, delivered (in full or in part), returned, and
+ * cancelled — the last only for an order that had been confirmed first.
+ *
+ * "Outside Dhaka" is the ship-to district, not the brand's delivery zones: zones are each
+ * brand's own configuration, and a rule that compares brands needs one definition.
+ */
+export async function analyticsFactRows(
+  tx: Tx,
+  orgId: string,
+  from: string,
+  to: string,
+): Promise<AnalyticsFactRow[]> {
+  const start = sql`(${from}::date::timestamp at time zone 'Asia/Dhaka')`;
+  const end = sql`((${to}::date + 1)::timestamp at time zone 'Asia/Dhaka')`;
+  const within = (column: SQL) => sql`(${column} >= ${start} and ${column} < ${end})`;
+  const day = (column: SQL) => sql`(${column} at time zone 'Asia/Dhaka')::date::text`;
+  const rows = await tx.execute<AnalyticsFactRow>(sql`
+    select o.id, o.channel::text as channel, o.branch_id,
+           o.discount_poisha::text as discount_poisha,
+           o.delivery_charge_poisha::text as delivery_charge_poisha,
+           ${day(sql`o.created_at`)} as created_on,
+           ${day(sql`o.confirmed_at`)} as confirmed_on,
+           ${day(sql`o.delivered_at`)} as delivered_on,
+           ${day(sql`o.returned_at`)} as returned_on,
+           case when o.confirmed_at is not null then ${day(sql`o.cancelled_at`)} end
+             as cancelled_on,
+           o.ship_district_id is distinct from
+             (select d.id from ref.districts d where d.name_en = 'Dhaka') as outside_dhaka
+    from sales.orders o
+    where o.org_id = ${orgId}
+      and (${within(sql`o.created_at`)} or ${within(sql`o.confirmed_at`)}
+           or ${within(sql`o.delivered_at`)} or ${within(sql`o.returned_at`)}
+           or ${within(sql`o.cancelled_at`)})
+    order by o.id
+  `);
+  return [...rows];
+}
+
+export interface AnalyticsLineRow extends DeliveredLineRow {
+  /** Purchase cost (invariant 5), read here only to derive gross profit. */
+  readonly dispatch_unit_cost_poisha: string | null;
+}
+
+/** The lines of those orders: prices for revenue, dispatch cost for gross profit. */
+export async function analyticsLines(
+  tx: Tx,
+  orgId: string,
+  orderIds: readonly string[],
+): Promise<AnalyticsLineRow[]> {
+  if (orderIds.length === 0) return [];
+  const rows = await tx.execute<AnalyticsLineRow>(sql`
+    select l.order_id, l.qty, l.unit_price_poisha::text as unit_price_poisha,
+           l.discount_poisha::text as discount_poisha, l.delivered_qty,
+           l.dispatch_unit_cost_poisha::text as dispatch_unit_cost_poisha
+    from sales.order_lines l
+    where l.org_id = ${orgId}
+      and l.order_id = any (${sql.param([...orderIds])}::uuid[])
+    order by l.order_id, l.position
+  `);
+  return [...rows];
+}
+
+export interface TopSkuRow extends Record<string, unknown> {
+  readonly sku_id: string;
+  readonly sku_code: string;
+  readonly product_name: string;
+  readonly units: number;
+}
+
+/** The SKUs with the most units delivered inside the range, by delivery date (M24). */
+export async function topSkus(
+  tx: Tx,
+  orgId: string,
+  from: string,
+  to: string,
+  limit: number,
+): Promise<TopSkuRow[]> {
+  const rows = await tx.execute<TopSkuRow>(sql`
+    select l.sku_id, l.sku_code, min(l.product_name) as product_name,
+           sum(l.delivered_qty)::int as units
+    from sales.order_lines l
+    join sales.orders o on o.org_id = l.org_id and o.id = l.order_id
+    where l.org_id = ${orgId}
+      and l.delivered_qty > 0
+      and o.delivered_at >= (${from}::date::timestamp at time zone 'Asia/Dhaka')
+      and o.delivered_at < ((${to}::date + 1)::timestamp at time zone 'Asia/Dhaka')
+    group by l.sku_id, l.sku_code
+    order by units desc, l.sku_code
+    limit ${limit}
+  `);
+  return [...rows];
+}

@@ -4,6 +4,7 @@ import {
   Banknote,
   BarChart3,
   Boxes,
+  ChartLine,
   ClipboardList,
   Cog,
   Handshake,
@@ -69,6 +70,16 @@ export const NAVIGATION: readonly NavSection[] = [
     titleKey: 'nav.sectionWork',
     items: [
       { to: '/', labelKey: 'nav.overview', icon: LayoutDashboard, required: 'always' },
+      /*
+       * M24. `read Dashboard`, org_admin's (D-325): the brand dashboard, with the leaderboard
+       * and, for Super Admin, all brands as tabs inside the section.
+       */
+      {
+        to: '/analytics',
+        labelKey: 'nav.analytics',
+        icon: ChartLine,
+        required: { action: 'read', subject: 'Dashboard' },
+      },
       {
         to: '/orders',
         labelKey: 'nav.orders',

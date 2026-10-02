@@ -167,6 +167,15 @@ export const ANALYTICS_READABLE: readonly string[] = [
   'ledger.accounts',
   'ledger.journals',
   'ledger.journal_lines',
+  /*
+   * §5 exception 2, added by M24 (D-329): the brand-level rollup. The leaderboard, the
+   * insight rules' group medians and the consolidated dashboard compare brands, and this is
+   * everything they read — counts and sums per day, no buyer or phone. It carries gross
+   * profit, so revenue minus it is every brand's cost of goods: a cross-brand read for
+   * anyone but Super Admin leaves that column out (`brandRates`). The per-branch, channel,
+   * campaign and agent rollups and the narrative cache are deliberately absent.
+   */
+  'analytics.daily_org',
 ];
 
 /**

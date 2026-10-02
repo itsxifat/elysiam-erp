@@ -32,6 +32,9 @@ const MODULES = path.join(import.meta.dirname);
 
 /** Schema → the module that owns it. A schema missing here is nobody's and must be added. */
 const OWNER: Readonly<Record<string, string>> = {
+  // M24: the rollups and the narrative cache. Every figure in them arrives through its
+  // owner's `*.api.ts`, so this module carries no debt.
+  analytics: 'analytics',
   approvals: 'approvals',
   // Platform-owned: written through the audit interceptor and the outbox, never by a
   // module's own SQL. `platform` matches no module directory, so any module that reads
@@ -177,6 +180,13 @@ describe('modules do not read each other’s tables (invariant 12)', () => {
     // Six importers write into five other modules, every one through its `*.api.ts`.
     expect(DEBT.migration).toBeUndefined();
     expect(foreignTables('migration')).toEqual([]);
+  });
+
+  it('holds the analytics module to no debt at all (M24)', () => {
+    // Five sources — orders, marketing, HR, the ledger, inventory — every one through its
+    // `*.api.ts`, and the cross-org reads name only `analytics.*` and the global `org`.
+    expect(DEBT.analytics).toBeUndefined();
+    expect(foreignTables('analytics')).toEqual([]);
   });
 
   it('holds the courier module to no debt at all', () => {

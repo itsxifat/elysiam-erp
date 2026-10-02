@@ -743,3 +743,84 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
   - D-310 to D-315 do not collide with the main worktree today; check again at merge, as M26
     is being built in parallel. (owner: claude, integrator)
 - Next: integration of M25's portal into the wave-2 branch.
+
+### 2026-10-02 · M24 · Analytics, dashboards, leaderboard · done
+
+- Delivered:
+  - **Rollups.** A new `analytics` schema with five daily tables (brand, showroom, channel,
+    campaign, agent), rebuilt per brand from the owning modules' interfaces — orders, the new
+    `MarketingApi`, HR — never incremented (D-320, D-321). The worker recomputes the day on
+    order events (one job per brand per ten seconds), nightly for the last seven days, and the
+    org admin can recompute up to 92 days from the dashboard. Migrations 0092–0093.
+  - **The brand dashboard** (`/analytics`, a new `Dashboard` subject for org_admin, D-325):
+    orders placed to returned, delivered revenue, gross profit, AOV, return rate, delivery
+    success, spend, CPO, CPDO, ROAS, desk pickup, cash in wallets and stock value, by channel,
+    showroom and campaign, best sellers and agents, a daily revenue chart, and CSV/XLSX export
+    (D-328, D-330).
+  - **All brands** for Super Admin, through the read-only analytics role.
+  - **The leaderboard**: seven normalized metrics per brand per month, ranked, with a weighted
+    composite (weights are configuration). An org admin sees every brand's rates and ranks
+    and only their own brand's revenue (D-023 as D-322 to D-324).
+  - **Insight rules**: seven, as pure functions with thresholds (D-326), worded in bn and en.
+  - **LLM narrative**: off by default behind `analytics.llm_narrative`; an allow-list payload
+    with a guard, a daily cache and a fake provider. No real provider was built (D-327).
+- Verification: `pnpm verify` exit 0 at `ee833e0` (153 test files: 2,540 passed, 1 skipped)
+  and again at `6f54975` after the ledger audit's fixes (2,542 passed, 1 skipped). The final
+  run at `35d7027`, after the acceptance audit's gaps were closed: exit 0, 154 files, 2,552
+  passed, 1 skipped.
+  Acceptance checks 1–4 pass; the evidence table is in the plan:
+  1. `rollup.db.test.ts`: all five tables equal direct SQL over two seeded brands, after a
+     rerun, a partial rerun, overlapping recomputes, a spend correction and the worker's
+     handler. A deliberately broken rollup fails it. The triggers are tested too: the nightly
+     fan-out (one job per brand, collapsed on a rerun) and an order event's job (its own Dhaka
+     day through today, one per ten-second bucket, started after the bucket) in `pgboss.job`.
+  2. `analytics.e2e.test.ts`: two org admins, Super Admin and every other role, over HTTP.
+  3. `insights.test.ts`: every rule fired, held one basis point (or second) under its
+     threshold, and silenced by a small sample in each month it reads; removing any of the
+     sample guards fails a test. One rule also fires over HTTP against the group median.
+  4. `narrative.test.ts`: planted personal data, a 300-run property and the guard; the HTTP
+     test reads the prompt the fake provider received.
+- Auditors:
+  - ledger-auditor: 0 critical, 2 warnings, both fixed in `cb0f8cb`. W1: the first cut
+    opened all five rollups to `erp_analytics`; only `daily_org` is read across brands, so
+    only it is now. W2: gross profit beside revenue gives cost of goods, so the leaderboard and
+    the group medians read a variant without it. Its notes on overlapping recomputes, an
+    event's own day, the agents' pickup rounding and the fake's prompt list are done too.
+  - ledger-auditor re-check of `cb0f8cb`: **0 critical, 0 warnings**; its one new note (an
+    event's range unbounded after a 92-day outage) is fixed in `62a4b36`.
+  - acceptance-auditor: NOT READY with 4 gaps, all closed: three insight rules lacked a
+    sample or boundary case; the rollup's triggers (nightly fan-out, the event job) were
+    untested; the plan's status ended in a placeholder; and this entry did not say 0093 was
+    edited in place. Its re-audit at `35d7027`: **READY**.
+- Decisions/assumptions: D-320 to D-330. D-323 and D-326 are ASSUMED.
+- New dependencies: none. `@elysium/domain` gains an `./analytics` export.
+- Deviations from the milestone spec:
+  - Response time is not on the leaderboard: it was the Message Hub's figure (D-290).
+  - Pickup time is the mean, not M20's median, because a median cannot be summed from days
+    (D-322).
+  - No `leaderboard.updated` event: the board is computed on read (D-324).
+- Also on this branch: M18's dashboard attribution moved into `attribution.reader.ts`, shared
+  with the rollup; `FlagsModule` now has its first runtime reader.
+- Follow-ups:
+  - **Migration numbers.** 0092–0093 collide with M26's; the integration renumbers. (owner:
+    claude)
+  - 0093 was edited on this branch after it was first committed (`cb0f8cb`, the ledger
+    audit's W1). That is allowed because it is not on main, but the migrator does not compare
+    hashes, so a database that applied the first 0093 keeps `erp_analytics` reading all five
+    rollups (the tenancy guard then fails loudly). Reset any local database that ran this
+    branch before `cb0f8cb`; no shared database did. (owner: claude)
+  - A training brand's org admin still sees the real brands' leaderboard and group medians
+    (ledger audit note). Refuse both for a training brand if the client wants. (owner: claude)
+  - A delivered line with no dispatch cost counts as zero cost, which overstates gross profit
+    for such lines. Count and show them. (owner: claude)
+  - The CSV/XLSX writer is imported from `orders/export/tabular.ts`; move it to the platform.
+    (owner: claude)
+  - The rollup's order and marketing reads scan a brand's orders on each recompute; index or
+    narrow them if a brand's order count makes the ten-second job slow. (owner: claude)
+  - No Playwright spec for `/analytics`; the four checks are proved over HTTP and in the
+    domain. (owner: claude)
+  - Tell the client that a peer's ROAS and CPDO together give its average order value, and
+    that with few brands the group median can reveal a peer's rate (ledger audit note 1).
+    (owner: human)
+  - A real narrative provider, if the client wants one (D-327). (owner: human)
+- Next: integration with M25, M26; then M14b and M30.

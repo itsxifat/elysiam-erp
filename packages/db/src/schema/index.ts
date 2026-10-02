@@ -10,6 +10,7 @@
  * modules with a table of the same name would be ambiguous in a join anyway.
  */
 export * from './advances/index.js';
+export * from './analytics/index.js';
 export * from './approvals/index.js';
 export * from './audit/index.js';
 export * from './catalog/index.js';

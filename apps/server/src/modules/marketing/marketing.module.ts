@@ -10,6 +10,7 @@ import {
   metaGatewayFor,
   type MarketingConfig,
 } from './marketing.config.js';
+import { MARKETING_API, MarketingApiService } from './marketing.api.js';
 import { MarketingController } from './marketing.controller.js';
 import { MarketingService } from './marketing.service.js';
 import { MetaJobsService } from './meta-jobs.service.js';
@@ -41,7 +42,15 @@ const gatewayProvider: Provider = {
 @Module({
   imports: [OrdersModule, PromoModule, CatalogModule],
   controllers: [MarketingController],
-  providers: [configProvider, gatewayProvider, AuditService, MarketingService, MetaJobsService],
-  exports: [MetaJobsService, META_GATEWAY],
+  providers: [
+    configProvider,
+    gatewayProvider,
+    AuditService,
+    MarketingService,
+    MetaJobsService,
+    // M24: per-campaign, per-day inputs for the analytics rollup.
+    { provide: MARKETING_API, useClass: MarketingApiService },
+  ],
+  exports: [MetaJobsService, META_GATEWAY, MARKETING_API],
 })
 export class MarketingModule {}

@@ -11,6 +11,7 @@ import { catalogRoutes } from './catalog/routes.js';
 import { courierRoutes } from './courier/routes.js';
 import { hrRoutes } from './hr/routes.js';
 import { accountsRoutes } from './accounts/routes.js';
+import { analyticsRoutes } from './analytics/routes.js';
 import { branchesRoutes } from './branches/routes.js';
 import { investorsRoutes } from './investors/routes.js';
 import { ordersRoutes } from './orders/routes.js';
@@ -129,6 +130,8 @@ const customers = customersRoutes(rootRoute);
 const campaigns = campaignsRoutes(rootRoute);
 /** M18 owns `/marketing`: the dashboard, campaigns, spend, leads and the Meta link. */
 const marketing = marketingRoutes(rootRoute);
+/** M24 owns `/analytics`: the brand dashboard, the leaderboard and all brands. */
+const analytics = analyticsRoutes(rootRoute);
 const courier = courierRoutes(rootRoute);
 /** M23 owns `/branches` and the branch dashboard, defined in `./branches/routes.tsx`. */
 const branches = branchesRoutes(rootRoute);
@@ -154,6 +157,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/customers',
         '/campaigns',
         '/marketing',
+        '/analytics',
       ].includes(item.to),
   )
   .map((item) =>
@@ -177,6 +181,7 @@ const routeTree = rootRoute.addChildren([
   ...customers,
   ...campaigns,
   ...marketing,
+  ...analytics,
   ...courier,
   ...accounts,
   ...branches,

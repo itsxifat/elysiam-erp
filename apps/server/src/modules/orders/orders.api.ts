@@ -244,6 +244,37 @@ export interface ConversionFacts {
   readonly lines: readonly { readonly skuCode: string; readonly deliveredQty: number }[];
 }
 
+/**
+ * One order, as the analytics rollup needs it (M24, D-321): the Dhaka day each thing
+ * happened to it, where it came from, and two amounts computed here, where the lines are.
+ *
+ * `deliveredCostPoisha` is purchase cost (invariant 5). It leaves this module only so the
+ * rollup can subtract it from revenue; the rollup stores the difference (gross profit,
+ * which is in `COST_FIELDS`) and never the cost. No buyer, no phone, no address.
+ */
+export interface AnalyticsOrderFact {
+  readonly orderId: string;
+  readonly channel: string;
+  readonly branchId: string | null;
+  readonly createdOn: string;
+  readonly confirmedOn: string | null;
+  readonly deliveredOn: string | null;
+  readonly returnedOn: string | null;
+  /** Only for an order cancelled after it had been confirmed. */
+  readonly cancelledOn: string | null;
+  readonly outsideDhaka: boolean;
+  readonly deliveredRevenuePoisha: Poisha;
+  readonly deliveredCostPoisha: Poisha;
+}
+
+/** A SKU's delivered units in a period, for the dashboard's best sellers (M24). */
+export interface TopSku {
+  readonly skuId: string;
+  readonly skuCode: string;
+  readonly productName: string;
+  readonly units: number;
+}
+
 export interface OrdersApi {
   /**
    * Take an order inside the caller's transaction.
@@ -396,6 +427,24 @@ export interface OrdersApi {
     orgId: string,
     range: { readonly from: string; readonly to: string },
   ): Promise<readonly AgentDayResult[]>;
+
+  /**
+   * Every order that had something happen on a Dhaka date `from` to `to` (M24, D-321), for
+   * the analytics rollup. Revenue through `deliveredNetItems`, as the delivery journal.
+   */
+  analyticsFacts(
+    tx: Tx,
+    orgId: string,
+    range: { readonly from: string; readonly to: string },
+  ): Promise<readonly AnalyticsOrderFact[]>;
+
+  /** The SKUs with the most units delivered in the range, most first (M24). */
+  topSkus(
+    tx: Tx,
+    orgId: string,
+    range: { readonly from: string; readonly to: string },
+    limit: number,
+  ): Promise<readonly TopSku[]>;
 }
 
 /** The Nest injection token for `OrdersApi`. */
@@ -792,6 +841,58 @@ export class OrdersApiService implements OrdersApi {
       confirmedOrders: result.confirmed,
       deliveredOrders: result.delivered,
       deliveredRevenuePoisha: result.revenue,
+    }));
+  }
+
+  async analyticsFacts(
+    tx: Tx,
+    orgId: string,
+    range: { readonly from: string; readonly to: string },
+  ): Promise<readonly AnalyticsOrderFact[]> {
+    const rows = await repo.analyticsFactRows(tx, orgId, range.from, range.to);
+    const delivered = rows.filter((row) => row.delivered_on !== null).map((row) => row.id);
+    const linesByOrder = new Map<string, repo.AnalyticsLineRow[]>();
+    for (const line of await repo.analyticsLines(tx, orgId, delivered)) {
+      const list = linesByOrder.get(line.order_id) ?? [];
+      list.push(line);
+      linesByOrder.set(line.order_id, list);
+    }
+    return rows.map((row) => {
+      const lines = linesByOrder.get(row.id) ?? [];
+      const cost = lines.reduce(
+        (total, line) =>
+          total + BigInt(line.dispatch_unit_cost_poisha ?? '0') * BigInt(line.delivered_qty),
+        0n,
+      );
+      return {
+        orderId: row.id,
+        channel: row.channel,
+        branchId: row.branch_id,
+        createdOn: row.created_on,
+        confirmedOn: row.confirmed_on,
+        deliveredOn: row.delivered_on,
+        returnedOn: row.returned_on,
+        cancelledOn: row.cancelled_on,
+        outsideDhaka: row.outside_dhaka,
+        deliveredRevenuePoisha:
+          row.delivered_on === null ? poisha(0n) : deliveredNetItems(row, lines),
+        deliveredCostPoisha: poisha(row.delivered_on === null ? 0n : cost),
+      };
+    });
+  }
+
+  async topSkus(
+    tx: Tx,
+    orgId: string,
+    range: { readonly from: string; readonly to: string },
+    limit: number,
+  ): Promise<readonly TopSku[]> {
+    const rows = await repo.topSkus(tx, orgId, range.from, range.to, limit);
+    return rows.map((row) => ({
+      skuId: row.sku_id,
+      skuCode: row.sku_code,
+      productName: row.product_name,
+      units: row.units,
     }));
   }
 

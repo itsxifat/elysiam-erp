@@ -55,6 +55,10 @@
     "./targets": {
       "types": "./dist/targets/index.d.ts",
       "default": "./dist/targets/index.js"
+    },
+    "./analytics": {
+      "types": "./dist/analytics/index.d.ts",
+      "default": "./dist/analytics/index.js"
     }
   },
   "files": [

@@ -106,6 +106,32 @@ export const OPERATIONS = {
     ability: 'read:LedgerReport',
   },
   getV1AccountsWallets: { method: 'GET', path: '/v1/accounts/wallets', ability: 'read:Wallet' },
+  getV1AnalyticsConsolidated: {
+    method: 'GET',
+    path: '/v1/analytics/consolidated',
+    ability: 'read:Dashboard',
+  },
+  getV1AnalyticsDashboard: {
+    method: 'GET',
+    path: '/v1/analytics/dashboard',
+    ability: 'read:Dashboard',
+  },
+  getV1AnalyticsExport: { method: 'GET', path: '/v1/analytics/export', ability: 'read:Dashboard' },
+  getV1AnalyticsInsights: {
+    method: 'GET',
+    path: '/v1/analytics/insights',
+    ability: 'read:Dashboard',
+  },
+  getV1AnalyticsLeaderboard: {
+    method: 'GET',
+    path: '/v1/analytics/leaderboard',
+    ability: 'read:Leaderboard',
+  },
+  getV1AnalyticsNarrative: {
+    method: 'GET',
+    path: '/v1/analytics/narrative',
+    ability: 'read:Dashboard',
+  },
   getV1Buyers: { method: 'GET', path: '/v1/buyers', ability: 'export:BuyerExport' },
   getV1BuyersExport: { method: 'GET', path: '/v1/buyers/export', ability: 'export:BuyerExport' },
   getV1CatalogAttributes: {
@@ -573,6 +599,11 @@ export const OPERATIONS = {
     ability: 'update:Wallet',
   },
   postV1AccountsWallets: { method: 'POST', path: '/v1/accounts/wallets', ability: 'create:Wallet' },
+  postV1AnalyticsRollupsRefresh: {
+    method: 'POST',
+    path: '/v1/analytics/rollups/refresh',
+    ability: 'update:Dashboard',
+  },
   postV1CatalogAttributes: {
     method: 'POST',
     path: '/v1/catalog/attributes',
@@ -1171,6 +1202,24 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/accounts/wallets */
     getV1AccountsWallets: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsWallets, undefined, options),
+    /** GET /v1/analytics/consolidated */
+    getV1AnalyticsConsolidated: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AnalyticsConsolidated, undefined, options),
+    /** GET /v1/analytics/dashboard */
+    getV1AnalyticsDashboard: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AnalyticsDashboard, undefined, options),
+    /** GET /v1/analytics/export */
+    getV1AnalyticsExport: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AnalyticsExport, undefined, options),
+    /** GET /v1/analytics/insights */
+    getV1AnalyticsInsights: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AnalyticsInsights, undefined, options),
+    /** GET /v1/analytics/leaderboard */
+    getV1AnalyticsLeaderboard: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AnalyticsLeaderboard, undefined, options),
+    /** GET /v1/analytics/narrative */
+    getV1AnalyticsNarrative: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AnalyticsNarrative, undefined, options),
     /** GET /v1/buyers */
     getV1Buyers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1Buyers, undefined, options),
@@ -1757,6 +1806,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/accounts/wallets */
     postV1AccountsWallets: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1AccountsWallets, undefined, options),
+    /** POST /v1/analytics/rollups/refresh */
+    postV1AnalyticsRollupsRefresh: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1AnalyticsRollupsRefresh, undefined, options),
     /** POST /v1/catalog/attributes */
     postV1CatalogAttributes: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogAttributes, undefined, options),

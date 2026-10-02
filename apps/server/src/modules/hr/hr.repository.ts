@@ -112,6 +112,20 @@ export async function employeeByUser(
   return rows[0];
 }
 
+/** The employees these logins belong to (M24's agent names). Users who are not staff are absent. */
+export async function employeesByUsers(
+  tx: Tx,
+  orgId: string,
+  userIds: readonly string[],
+): Promise<EmployeeRow[]> {
+  if (userIds.length === 0) return [];
+  const rows = await tx.execute<EmployeeRow>(sql`
+    select ${EMPLOYEE_COLUMNS} from hr.employees e
+    where e.org_id = ${orgId} and e.user_id = any (${sql.param([...userIds])}::text[])
+  `);
+  return [...rows];
+}
+
 /**
  * Employees matching a set of codes, inside the caller's row scope.
  *
