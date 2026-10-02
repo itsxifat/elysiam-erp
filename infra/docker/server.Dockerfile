@@ -16,7 +16,9 @@
 # Nothing secret enters the image: .dockerignore keeps every .env out, and configuration
 # arrives as environment variables when the container starts.
 
-ARG NODE_IMAGE=node:24.21.0-bookworm-slim
+# Pinned by digest as well as tag (the index digest, so it holds for amd64 and arm64): a
+# re-pushed tag cannot change what production runs. Bump both together with .nvmrc.
+ARG NODE_IMAGE=node:24.21.0-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
 
 # --- build: install, compile, and cut a production-only copy ---------------------------
 FROM ${NODE_IMAGE} AS build

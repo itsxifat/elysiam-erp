@@ -1272,12 +1272,12 @@ Installable, with an offline shell and web push (Android first).
 
 ## 26. Observability and operations
 
-- **Logging:** pino structured logs carrying request id, org id and user id, with redaction.
-- **Errors:** Sentry on the server and all apps.
-- **Tracing:** OpenTelemetry traces and metrics.
+- **Logging:** pino structured logs carrying request id, org id and user id, with redaction: credential-named fields removed at any depth and every phone number in the written line masked (D-346).
+- **Errors:** Sentry on the server, errors only, through one `reportError` seam (5xx, dead-lettered jobs, failed boots), scrubbed before sending and off without `SENTRY_DSN`. The SPAs' browser reporting is deferred (D-344).
+- **Tracing:** OpenTelemetry traces and metrics over OTLP (incoming requests and outbound calls, URLs scrubbed), configured by the standard `OTEL_*` variables and off without an endpoint (D-344). Both start from `node --import ./dist/instrument.js`.
 - **Health endpoints:**
   - `/health/live`
-  - `/health/ready`, which checks the database, Valkey and pg-boss
+  - `/health/ready`, which checks the database (as `erp_app`), Valkey and pg-boss's schema; 503 names the failing check and nothing else (D-345). kamal-proxy gates a release on it.
 - **Failed jobs:** a view in the console for super_admin, with retry.
 - **Uptime and alerts:**
   - uptime monitoring
@@ -1307,15 +1307,15 @@ Installable, with an offline shell and web push (Android first).
   - Docker Compose runs Postgres 17, Valkey and Gotenberg (Chatwoot optional from Phase 5)
   - `pnpm dev` starts every app
 - **Staging and production** (Singapore region):
-  - managed PostgreSQL with point-in-time recovery
-  - two or more VMs running Docker (api, worker, Valkey, Gotenberg; Chatwoot later), deployed with Kamal
-  - console, portal and pos (static builds) on Cloudflare Pages
-  - `sites` on Vercel (D-026)
-  - Cloudflare in front: DNS, WAF, Turnstile, R2
+  - managed PostgreSQL with point-in-time recovery; the three roles are created by `bootstrap.sql` run by the provider's admin, which need not be a superuser (D-341)
+  - one server image for the API and the worker (`infra/docker/server.Dockerfile`, D-340); production on two VMs, `web` (API, Valkey, Gotenberg) and `jobs` (worker), staging on one, deployed with Kamal (`infra/kamal/`, D-343)
+  - console, portal and pos (static builds) on Cloudflare Pages by direct upload, each with a generated `_headers` (CSP and security headers, D-347)
+  - Cloudflare in front: DNS, WAF, TLS (Full (strict) with an Origin CA certificate), Turnstile, R2
   - keep production off shared agency servers
-- **Migrations** run as a release step using the owner role. The app runs as `erp_app`.
+- **Migrations** run as a release step using the owner role: `main.release.js`, run by Kamal's `pre-deploy` hook from the new image before anything boots, migrates under an advisory lock and installs the job queues (D-340). The app runs as `erp_app`; only the worker role holds the owner URL.
+- **Backups:** point-in-time recovery, plus a nightly `pg_dump` as `erp_backup` (BYPASSRLS, read-only), encrypted, to a second provider (D-342).
 - **Feature flags:** an `org.feature_flags` table (D-031), so unfinished modules can ship dark.
-- **Runbooks** in `docs/runbooks/`: deploy, rollback, restore, rotate secrets, courier outage, month-end close, Chatwoot setup.
+- **Runbooks** in `docs/runbooks/`: deploy, rollback, restore, secret rotation, courier outage, month-end close, go-live, monitoring, queue policy.
 
 ---
 
