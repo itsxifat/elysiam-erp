@@ -77,6 +77,8 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
     'investor_withdrawal',
     // M26: repaying a company loan (D-298).
     'loan_repayment',
+    // gaps-users-auth: a privileged person's sign-in reset needs a second admin (D-404).
+    'credential_reset',
   ],
   // §6: payments.
   /*
@@ -164,6 +166,8 @@ export const REQUESTER_TYPES: Readonly<Record<MembershipRole, readonly string[]>
     'investor_distribution',
     'investor_withdrawal',
     'loan_repayment',
+    // Raised only by the iam module's reset routes, never the generic one (D-404).
+    'credential_reset',
   ],
   accounts: [
     'wallet_adjustment',
@@ -228,6 +232,30 @@ export function checkerTier(
     tier = 'branch';
   }
   return tier;
+}
+
+/**
+ * Roles whose holder can decide some approval at org tier (D-404): org_admin,
+ * accounts and hr today, derived from `CHECKER_TYPES` so a role that becomes a checker
+ * joins it without anyone remembering this list.
+ *
+ * Whoever holds a person's sign-in can sign as them, so a password or second-factor
+ * reset of one of these is itself maker-checker: otherwise one admin could reset an
+ * accountant's password, sign in with the link, and approve their own payment. A
+ * branch manager decides only branch items under the brand's threshold (D-076) and is
+ * not on the list.
+ */
+export const ORG_TIER_CHECKER_ROLES: readonly MembershipRole[] = (
+  Object.keys(CHECKER_TYPES) as MembershipRole[]
+).filter((role) => (CHECKER_TYPES[role] ?? []).length > 0 && !BRANCH_TIER_CHECKERS.includes(role));
+
+/** Does resetting the sign-in of someone holding these roles need a second admin? (D-404) */
+export function resetNeedsSecondPerson(
+  roles: readonly MembershipRole[],
+  isSuperAdmin: boolean,
+): boolean {
+  if (isSuperAdmin) return true;
+  return roles.some((role) => ORG_TIER_CHECKER_ROLES.includes(role));
 }
 
 export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {

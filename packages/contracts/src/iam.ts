@@ -98,3 +98,92 @@ export const createUserSchema = z
     }
   });
 export type CreateUser = z.infer<typeof createUserSchema>;
+
+/*
+ * Staff management (gaps-users-auth, D-400 to D-409).
+ *
+ * The console's forms and the server's edge both validate with these, so a rule
+ * relaxed in one place is a type error in the other rather than a silent drift.
+ */
+
+/** A user id in a path. Ours are `usr_<uuid>`; anything else is a 404 before a query. */
+export const userIdParamSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,64}$/, 'No such person in this organization.');
+
+/** One role a person holds in a brand, and the branches it reaches. Empty means the whole org. */
+export const roleGrantSchema = z.object({
+  role: membershipRoleSchema,
+  branchIds: z.array(z.string().uuid()).max(100).default([]),
+});
+export type RoleGrant = z.infer<typeof roleGrantSchema>;
+
+/**
+ * A person's whole set of roles in the active brand, replacing what they hold.
+ *
+ * At least one: taking every role away is a deactivation, which has its own route,
+ * its own audit action and its own effect on sessions. One entry per role, because
+ * a membership is unique per (org, user, role). A branch manager names a branch for
+ * the reason `createUserSchema` gives.
+ */
+export const setRolesSchema = z
+  .object({
+    roles: z.array(roleGrantSchema).min(1).max(MEMBERSHIP_ROLES.length),
+  })
+  .superRefine((value, ctx) => {
+    const seen = new Set<string>();
+    value.roles.forEach((grant, index) => {
+      if (seen.has(grant.role)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['roles', index, 'role'],
+          message: 'Each role appears once.',
+        });
+      }
+      seen.add(grant.role);
+      if (grant.role === 'branch_manager' && grant.branchIds.length === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['roles', index, 'branchIds'],
+          message:
+            'A branch manager needs at least one branch. Empty means the whole organization.',
+        });
+      }
+    });
+  });
+export type SetRoles = z.infer<typeof setRolesSchema>;
+
+/** Deactivating a leaver. The reason goes to the audit log only. */
+export const deactivateUserSchema = z.object({
+  reason: z.string().trim().max(300).optional(),
+});
+export type DeactivateUser = z.infer<typeof deactivateUserSchema>;
+
+/**
+ * Asking for a new password link or a second-factor reset (D-402, D-403).
+ *
+ * A reason is required: it is what the second admin reads before approving a
+ * privileged reset (D-404), and what an investigator reads afterwards.
+ */
+export const credentialResetSchema = z.object({
+  reason: z.string().trim().min(3).max(300),
+});
+export type CredentialResetInput = z.infer<typeof credentialResetSchema>;
+
+/**
+ * Setting a password from an invite or reset link.
+ *
+ * Twelve characters is `minPasswordLength` in `createAuth()`; 128 is Better Auth's
+ * default maximum. The confirmation lives only in the form, so it is checked here
+ * and never sent.
+ */
+export const setPasswordSchema = z
+  .object({
+    password: z.string().min(12).max(128),
+    confirm: z.string(),
+  })
+  .refine((value) => value.password === value.confirm, {
+    path: ['confirm'],
+    message: 'The two passwords differ.',
+  });
+export type SetPassword = z.infer<typeof setPasswordSchema>;

@@ -56,6 +56,9 @@ export const approvalType = approvals.enum('approval_type', [
   // above the brand's threshold like a supplier payment (D-298). Added by migration
   // 0094, and used as a literal nowhere in that file, for the reason above.
   'loan_repayment',
+  // gaps-users-auth: a privileged person's sign-in reset needs a second admin (D-404).
+  // Added by migration 0098, and used as a literal nowhere in that file, for the reason above.
+  'credential_reset',
 ]);
 
 /**
@@ -69,6 +72,8 @@ export const NEVER_AUTO_APPROVE_TYPE_NAMES = [
   'bonus_rule',
   'threshold_change',
   'back_dated_entry',
+  // gaps-users-auth (D-404): a sign-in reset is a control, never small enough to skip.
+  'credential_reset',
 ] as const;
 
 export const NEVER_AUTO_APPROVE_SQL = sql.raw(

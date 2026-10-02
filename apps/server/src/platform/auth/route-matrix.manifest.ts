@@ -45,6 +45,12 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/me/active-org',
   'GET /v1/me/orgs',
   'POST /v1/users',
+  // gaps-users-auth: the staff screen.
+  'GET /v1/users',
+  'PUT /v1/users/:id/roles',
+  'POST /v1/users/:id/deactivate',
+  'POST /v1/users/:id/password-link',
+  'POST /v1/users/:id/two-factor/reset',
   'GET /v1/catalog/categories',
   'POST /v1/catalog/categories',
   'PATCH /v1/catalog/categories/:id',

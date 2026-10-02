@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { APIError } from 'better-auth/api';
 import { phoneNumber, twoFactor } from 'better-auth/plugins';
 import { and, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -177,6 +178,21 @@ export function createAuth(options: AuthOptions) {
       minPasswordLength: 12,
 
       /**
+       * A reset link works for an hour (D-402). An invite is minted the same way and then
+       * given three days by the iam module, which writes the longer expiry onto the row:
+       * Better Auth has one lifetime for both, and a new hire who opens their link the
+       * next morning should not find it dead.
+       */
+      resetPasswordTokenExpiresIn: PASSWORD_LINK_SECONDS,
+
+      /**
+       * Redeeming a link ends every session the person had (D-402). Whoever holds a
+       * session from before the reset — a stolen laptop, a colleague who watched them
+       * type — is exactly who the reset is for.
+       */
+      revokeSessionsOnPasswordReset: true,
+
+      /**
        * Where an invite or reset token goes.
        *
        * There is no email adapter yet (D-012, D-212), so the
@@ -192,6 +208,17 @@ export function createAuth(options: AuthOptions) {
         });
       },
     },
+
+    /**
+     * No public "send me a reset link" (D-402).
+     *
+     * There is no email adapter (D-212), so a link Better Auth mints has nowhere to go
+     * but the token store, from which the next admin action would collect it. Every link
+     * now comes from an audited admin action in the iam module, which calls
+     * `api.requestPasswordReset` from the server; this only closes the HTTP door, which
+     * let anyone on the internet mint reset rows for any address.
+     */
+    disabledPaths: ['/request-password-reset'],
 
     session: {
       expiresIn: 60 * 60 * 12,
@@ -260,7 +287,26 @@ export function createAuth(options: AuthOptions) {
            * sign-in returns `twoFactorRedirect` and no session at all, and the
            * session is created only by verify-totp / verify-backup-code.
            */
-          before: (session) => Promise.resolve({ data: session }),
+          before: async (session) => {
+            /*
+             * But an account that may not be used at all is refused here (D-401).
+             *
+             * Deactivating a leaver switches their memberships off and ends their
+             * sessions. Without this, they could simply sign in again: a session
+             * with no org reaches nothing tenant-scoped, but it is still a live
+             * credential, and it can enrol a second factor and call every
+             * `/api/auth` endpoint. Fails closed only on the two facts that mean
+             * "nobody should be signed in as this": the account disabled, or no
+             * active role in any brand. Super admins hold no membership by design.
+             */
+            if (!(await mayHoldSession(session.userId))) {
+              throw new APIError('FORBIDDEN', {
+                code: 'ACCOUNT_INACTIVE',
+                message: 'This account is not active. Ask your admin for access.',
+              });
+            }
+            return { data: session };
+          },
         },
       },
     },
@@ -320,6 +366,42 @@ export async function mustEnrolTwoFactor(userId: string): Promise<boolean> {
     held.map((row) => row.role),
     false,
   );
+}
+
+/** How long a password reset link works, in seconds (D-402). */
+export const PASSWORD_LINK_SECONDS = 60 * 60;
+
+/** How long an invite link works, in seconds (D-402). Written onto the row after minting. */
+export const INVITE_LINK_SECONDS = 72 * 60 * 60;
+
+/**
+ * May this user hold a session at all? (D-401)
+ *
+ * An enabled account with an active role in at least one active brand, or a super
+ * admin. Read through the same lenses as `mustEnrolTwoFactor`, for the same reason:
+ * `iam.memberships` is RLS-protected, and a connection with no user context sees no
+ * rows — which here would refuse everyone, and a control that fails that way gets
+ * switched off.
+ */
+export async function mayHoldSession(userId: string): Promise<boolean> {
+  const [user] = await withGlobal(async (tx) =>
+    tx.execute<{ is_active: boolean; is_super_admin: boolean }>(
+      sql`select is_active, is_super_admin from iam.users where id = ${userId}`,
+    ),
+  );
+  if (user === undefined || !user.is_active) return false;
+  if (user.is_super_admin) return true;
+
+  const [held] = await withUser({ userId }, async (tx) =>
+    tx.execute<{ found: boolean }>(sql`
+      select exists (
+        select 1 from iam.memberships m
+        join org.organizations o on o.id = m.org_id
+        where m.user_id = ${userId} and m.is_active and o.is_active
+      ) as found
+    `),
+  );
+  return held?.found === true;
 }
 
 /** Whether a set of roles requires a second factor (§6). */

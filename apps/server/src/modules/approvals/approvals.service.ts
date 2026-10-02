@@ -167,6 +167,9 @@ const EXECUTOR_REQUIRED_TYPES: readonly ApprovalType[] = [
   // M26: only the loans module's executor posts a repayment; approved without it, the
   // repayment would wait forever and block every later instalment (D-298).
   'loan_repayment',
+  // gaps-users-auth: only the iam module's executor resets a second factor or releases a
+  // password link; "approved" with nothing done would leave the person locked out (D-404).
+  'credential_reset',
 ];
 
 /**
@@ -186,6 +189,9 @@ export const MODULE_RAISED_TYPES: readonly ApprovalType[] = [
   'settlement_posting',
   // M26: the payload names a waiting repayment, and the amount is its instalment's (D-298).
   'loan_repayment',
+  // gaps-users-auth: the payload names whose sign-in is reset; only `/v1/users/:id/...`
+  // writes it, after checking who may reset whom (D-404).
+  'credential_reset',
 ];
 
 function magnitude(amount: bigint): bigint {
@@ -699,6 +705,63 @@ export class ApprovalsService {
     });
 
     return result;
+  }
+
+  /**
+   * Withdraw a pending request its owning module raised, because what it asked for no
+   * longer makes sense (gaps-users-auth: the person whose sign-in it would reset has been
+   * deactivated). Inside the caller's transaction, like an executor.
+   *
+   * Only for a type in `MODULE_RAISED_TYPES`: a request a person raised through the
+   * generic route is theirs to have decided, not a module's to withdraw. Returns false
+   * when the request is no longer pending — decided meanwhile, which is not an error.
+   */
+  async cancelRaisedByModule(
+    tx: Tx,
+    context: ActiveContext,
+    input: {
+      readonly id: string;
+      readonly type: ApprovalType;
+      readonly reason: string;
+      readonly request?: AuditableRequest | undefined;
+    },
+  ): Promise<boolean> {
+    if (!MODULE_RAISED_TYPES.includes(input.type)) {
+      throw new Error(`A ${input.type} request is not a module's to cancel.`);
+    }
+    const rows = await tx.execute<{ requested_by: string }>(sql`
+      update approvals.approval_requests
+      set status = 'cancelled'::approvals.approval_status,
+          decision_note = ${input.reason},
+          updated_at = now()
+      where id = ${input.id}
+        and type = ${input.type}::approvals.approval_type
+        and status = 'pending'
+      returning requested_by
+    `);
+    const row = rows[0];
+    if (row === undefined) return false;
+
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'update',
+      action: `approval.cancelled:${input.type}`,
+      entityType: 'ApprovalRequest',
+      entityId: input.id,
+      before: { status: 'pending' },
+      after: { status: 'cancelled', note: input.reason },
+      requestId: context.requestId,
+      ...(input.request === undefined ? {} : { request: input.request }),
+    });
+    await this.writeEvents(tx, context.orgId, [
+      {
+        name: 'approval.decided',
+        orgId: context.orgId,
+        payload: { id: input.id, decision: 'cancelled', requestedBy: row.requested_by },
+      },
+    ]);
+    return true;
   }
 
   /**

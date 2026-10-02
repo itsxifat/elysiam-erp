@@ -63,6 +63,10 @@
     "./loans": {
       "types": "./dist/loans/index.d.ts",
       "default": "./dist/loans/index.js"
+    },
+    "./iam": {
+      "types": "./dist/iam/index.d.ts",
+      "default": "./dist/iam/index.js"
     }
   },
   "files": [

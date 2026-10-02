@@ -673,6 +673,20 @@
       "when": 1790940108180,
       "tag": "0097_m26_loan_void_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1790952316684,
+      "tag": "0098_gaps_users_auth_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1790952350806,
+      "tag": "0099_gaps_users_auth_policies",
+      "breakpoints": true
     }
   ]
 }

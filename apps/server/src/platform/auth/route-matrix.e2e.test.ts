@@ -59,6 +59,7 @@ import {
   LOANS_ROUTE_FIXTURES,
   prepareLoanFixtures,
 } from '../../modules/loans/loans.route-fixtures.js';
+import { USERS_ROUTE_FIXTURES } from '../../modules/iam/users.route-fixtures.js';
 import { describeRoutes, type RouteDeclaration } from './route-map.js';
 import { ROUTE_MATRIX_MANIFEST, routeKey } from './route-matrix.manifest.js';
 
@@ -269,6 +270,7 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...MARKETING_ROUTE_FIXTURES,
   ...ANALYTICS_ROUTE_FIXTURES,
   ...LOANS_ROUTE_FIXTURES,
+  ...USERS_ROUTE_FIXTURES,
 };
 
 function testedRoutes(): RouteDeclaration[] {

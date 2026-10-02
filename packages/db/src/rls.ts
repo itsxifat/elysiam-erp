@@ -362,6 +362,13 @@ export const NO_DELETE_TABLES: readonly string[] = [
   // M26: a loan's terms never change; it may be voided once against the reversal of its
   // receipt, which 0096's trigger confines UPDATE to (D-304).
   'loans.loans',
+  /*
+   * gaps-users-auth. Every sign-in reset an admin asked for is kept: the reset limits
+   * count these rows (D-402), and "who reset this accountant's password, and who agreed"
+   * is the question asked after an incident. UPDATE for the lifecycle only, which 0099's
+   * trigger confines it to.
+   */
+  'iam.credential_resets',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */

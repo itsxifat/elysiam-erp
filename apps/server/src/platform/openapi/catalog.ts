@@ -5,11 +5,14 @@ import {
   cashInSchema,
   closePeriodSchema,
   createUserSchema,
+  credentialResetSchema,
   dateRangeSchema,
+  deactivateUserSchema,
   dayBookQuerySchema,
   ERROR_CODES,
   partyBalanceQuerySchema,
   reopenPeriodSchema,
+  setRolesSchema,
   switchOrgSchema,
   thresholdSchema,
   trialBalanceQuerySchema,
@@ -115,6 +118,30 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     operationId: 'createUser',
     summary: 'Invite a user into this organization with one or more roles.',
     body: named('CreateUser', createUserSchema, 'CreateUser'),
+  },
+  'GET /v1/users': {
+    operationId: 'listUsers',
+    summary: "This organization's staff, their roles and sign-in state, and open resets.",
+  },
+  'PUT /v1/users/:id/roles': {
+    operationId: 'setUserRoles',
+    summary: "Replace a person's roles and branch scope in this organization.",
+    body: named('SetRoles', setRolesSchema, 'SetRoles'),
+  },
+  'POST /v1/users/:id/deactivate': {
+    operationId: 'deactivateUser',
+    summary: 'Switch a leaver off here: their roles end, and so do their sessions.',
+    body: named('DeactivateUser', deactivateUserSchema, 'DeactivateUser'),
+  },
+  'POST /v1/users/:id/password-link': {
+    operationId: 'userPasswordLink',
+    summary: 'Issue, ask for, or collect a one-time link that sets a password.',
+    body: named('CredentialReset', credentialResetSchema, 'CredentialResetInput'),
+  },
+  'POST /v1/users/:id/two-factor/reset': {
+    operationId: 'resetUserTwoFactor',
+    summary: "Remove a person's second factor, so they enrol again at next sign-in.",
+    body: named('CredentialReset', credentialResetSchema, 'CredentialResetInput'),
   },
 
   'GET /v1/approvals': {

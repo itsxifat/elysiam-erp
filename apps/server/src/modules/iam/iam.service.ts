@@ -9,6 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import {
+  INVITE_LINK_SECONDS,
   withGlobal,
   withOrg,
   withUser,
@@ -261,13 +262,15 @@ export class IamService {
       },
     );
 
-    const inviteToken = created ? await this.issueInvite(email) : undefined;
+    const invite = created ? await this.issueInvite(resolvedUserId, email) : undefined;
 
     return {
       userId: resolvedUserId,
       membershipId,
       created,
-      ...(inviteToken === undefined ? {} : { inviteToken }),
+      ...(invite === undefined
+        ? {}
+        : { inviteToken: invite.token, inviteExpiresAt: invite.expiresAt.toISOString() }),
     };
   }
 
@@ -326,15 +329,36 @@ export class IamService {
    * expiry and the redemption endpoint are the library's rather than a second
    * implementation of the same thing with its own bugs.
    */
-  private async issueInvite(email: string): Promise<string | undefined> {
-    const issued = this.tokens.take(email);
-    if (issued !== undefined) return issued;
+  private async issueInvite(
+    userId: string,
+    email: string,
+  ): Promise<{ token: string; expiresAt: Date } | undefined> {
+    // One person, one working link (D-402): nothing minted earlier may still open.
+    await withGlobal(async (tx) =>
+      tx.execute(sql`
+        delete from iam.verifications
+        where identifier like 'reset-password:%' and value = ${userId}
+      `),
+    );
+    this.tokens.take(email);
 
     await this.auth.api.requestPasswordReset({
       body: { email, redirectTo: '/accept-invite' },
       headers: new Headers(),
     });
 
-    return this.tokens.take(email);
+    const token = this.tokens.take(email);
+    if (token === undefined) return undefined;
+
+    // Better Auth gives every link an hour; an invite gets three days (D-402).
+    const [row] = await withGlobal(async (tx) =>
+      tx.execute<{ expires_at: Date }>(sql`
+        update iam.verifications
+        set expires_at = now() + make_interval(secs => ${INVITE_LINK_SECONDS}), updated_at = now()
+        where identifier = ${`reset-password:${token}`}
+        returning expires_at
+      `),
+    );
+    return { token, expiresAt: row === undefined ? new Date() : new Date(row.expires_at) };
   }
 }

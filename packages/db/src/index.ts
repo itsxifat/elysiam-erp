@@ -78,10 +78,13 @@ export {
 } from './iam/branding.js';
 
 export {
+  INVITE_LINK_SECONDS,
   LIBRARY_RATE_RULES,
+  PASSWORD_LINK_SECONDS,
   RecordingSmsProvider,
   TWO_FACTOR_REQUIRED_ROLES,
   createAuth,
+  mayHoldSession,
   mustEnrolTwoFactor,
   requiresTwoFactor,
   type Auth,
