@@ -82,8 +82,12 @@ Built     [##############------]  70%
 
 ## Being built now
 
-Nothing. Work on M14a, M17, M18 and M20 was started and **paused by the owner on 2026-10-02**.
-Their half-done, uncommitted files sit in their own folders and nothing was merged.
+Restarted on 2026-10-02, four at once, each on its own branch:
+
+- **M14a** importing old data and opening balances
+- **M17** bKash advance payments and return reasons
+- **M18** ad spend and marketing numbers
+- **M20** sales targets and bonuses
 
 ## What the owner needs to do
 

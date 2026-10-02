@@ -334,3 +334,18 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
   - Route OTPs and invites through notify once a gateway is verified. (D-212; owner: claude)
   - BulkSMSBD credentials, or the client's own gateway, to close D-012. (owner: human)
 - Next: M18, then M20 and M14a, which a parallel session is doing in its own worktree.
+
+### 2026-10-02 · scope · The owner narrows the ERP, and the fraud check is deleted · done
+
+- Delivered:
+  - **`docs/build-status.md`**: a plain-language view of how much is built, by business area and by milestone, with a percentage. Kept current every session.
+  - **Scope cut by the owner** ("build the erp just"): the landing page builder (M29) and the Chatwoot inbox (M27) are out (D-290); the staff activity extension (M28) is out (D-292); the fraud check is out **and its code deleted** (D-291). 27 milestones remain in scope.
+  - **The fraud removal** (`remove-fraud`): M13's module, domain rules, six tables, the three fraud columns on orders, two permission subjects, an event, a flag, a bench and the order desk's trust badge. Confirming an order is now the state machine alone. Migration 0080 drops it all. M17 keeps only its accounting half: advance payments and return reasons.
+  - M14a and M16 had both taken D-208, and M14a's migration was numbered 0090; M14a now has D-213 and its migrations sit on top of the fraud removal.
+- Verification: `pnpm verify` exits 0 on `remove-fraud` at `5741b44` (256 routes, 79 migrations, schema drift clean, i18n 1,944 keys, bundle 227.1 KB). The first run failed one test, a stock property whose coverage check depended on 30 random runs reaching a committed release; its seed is now pinned.
+- Auditors: none run on the removal — it deletes a gate rather than adding one, and the full suite covers what remains. The ledger-auditor should still see the confirm path at the next integration.
+- Decisions/assumptions: D-290, D-291, D-292.
+- New dependencies: none.
+- Deviations from the milestone spec: M13 removed after being built; M17 rewritten to its accounting half.
+- Follow-ups: a machine-wide lock (`D:/Projects/erp-tools/heavy.mjs`, outside the repo) now serialises heavy runs between parallel builders (owner: claude); the `apps/sites`, `packages/landing-blocks` and `apps/extension` scaffolds are unused and can be deleted if the owner wants (owner: human).
+- Next: M14a, M17, M18 and M20 in parallel, each on its own branch stacked on `remove-fraud`; then integration, M24, M26 and M25's investor pages.
