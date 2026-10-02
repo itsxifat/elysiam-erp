@@ -9,6 +9,7 @@
     "pnpm": ">=12.5.1"
   },
   "scripts": {
+    "admin:bootstrap": "pnpm --filter @elysium/server run admin:bootstrap",
     "api:client": "pnpm --filter @elysium/api-client run generate",
     "bench": "node scripts/bench.mjs",
     "build": "turbo run build",
