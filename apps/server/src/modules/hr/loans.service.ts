@@ -143,6 +143,14 @@ export class LoansService {
             'That employee has left, so a new loan cannot be recorded against them.',
           );
         }
+        // M30 (C2): a loan to yourself is recorded by somebody else. With the check in
+        // `disburse` below, no one person both types a principal and receives it.
+        if (employee.user_id !== null && employee.user_id === context.userId) {
+          throw new HrError(
+            'PAYROLL_SELF_DEALING',
+            'A staff loan to yourself is recorded by someone else in HR or accounts.',
+          );
+        }
 
         const principalPoisha = poisha(BigInt(input.principalPoisha));
         // Refuses a schedule that cannot sum to the principal (an instalment of zero
@@ -214,6 +222,26 @@ export class LoansService {
           throw new HrError(
             'PAYROLL_LOAN_FROZEN',
             'That loan has already been disbursed or closed.',
+          );
+        }
+        /*
+         * Maker and checker on real cash (M30, C2; D-188's follow-up). The person who typed
+         * the principal does not also hand it over, and nobody pays a loan out to
+         * themselves: hr records, and accounts, an org admin or a second hr user disburses.
+         * The same split `LOAN_SELF_VOID` draws for company loans and
+         * `ADVANCE_SELF_VERIFY` for order advances.
+         */
+        if (loan.created_by === context.userId) {
+          throw new HrError(
+            'PAYROLL_SELF_DEALING',
+            'The person who recorded a staff loan cannot also pay it out. A second person does.',
+          );
+        }
+        const borrower = await repo.employeeById(tx, context.orgId, loan.employee_id);
+        if (borrower?.user_id != null && borrower.user_id === context.userId) {
+          throw new HrError(
+            'PAYROLL_SELF_DEALING',
+            'A staff loan to yourself is paid out by someone else.',
           );
         }
 

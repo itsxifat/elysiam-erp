@@ -1386,3 +1386,92 @@ describe('M08 gap-closure audit', () => {
     expect(seen.every((item) => item.branchId === otherBranch)).toBe(true);
   });
 });
+
+/*
+ * M30 security review, C1 (D-362). A branch manager holds `update Wallet` at their own
+ * branch. A cash out used to skip both of petty cash's controls, so till cash could be
+ * booked out to an operating expense with no receipt and no checker, and the daily
+ * closing balanced because its expected balance moved by the same amount. A cash out
+ * from someone whose reach is narrower than the brand is now held to petty cash's rules.
+ */
+describe('M30: a branch-scoped cash out follows petty cash’s rules', () => {
+  let manager: RoleClient;
+  let till = '';
+
+  beforeAll(async () => {
+    const branch = await withSystem(
+      async (tx) => {
+        const rows = await tx.execute<{ id: string }>(sql`
+          insert into org.branches (org_id, code, name, kind)
+          values (${ORG_A}, 'SHR-3', 'Third Showroom', 'showroom')
+          on conflict (org_id, code) do update set name = excluded.name
+          returning id
+        `);
+        return rows[0]?.id ?? '';
+      },
+      { orgId: ORG_A },
+    );
+    manager = await harness.asRole('branch_manager', ORG_A, { branchIds: [branch] });
+
+    const created = await accounts.client.request('POST', '/v1/accounts/wallets', {
+      body: {
+        account: { code: '1010-SHR-3', name: 'Hand cash, Third Showroom', subtype: 'wallet_cash' },
+        branchId: branch,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    till = body<{ id: string }>(created).id;
+
+    const float = await accounts.client.request('POST', '/v1/accounts/cash-entries', {
+      body: {
+        entryId: randomUUID(),
+        walletId: till,
+        kind: 'cash_in',
+        categoryAccountId: accountId('4300'),
+        amountPoisha: '500000',
+        memo: 'Opening float, Third Showroom',
+      },
+    });
+    expect(float.statusCode, float.body).toBe(201);
+  }, 120_000);
+
+  function cashOut(client: Client, amountPoisha: string, receiptFileId?: string) {
+    return client.request('POST', '/v1/accounts/cash-entries', {
+      body: {
+        entryId: randomUUID(),
+        walletId: till,
+        kind: 'cash_out',
+        categoryAccountId: accountId('5890'),
+        amountPoisha,
+        memo: 'Packaging',
+        ...(receiptFileId === undefined ? {} : { receiptFileId }),
+      },
+    });
+  }
+
+  it('refuses a branch manager’s cash out with no receipt', async () => {
+    const response = await cashOut(manager.client, '5000');
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.body).toContain('RECEIPT_REQUIRED');
+  });
+
+  it('holds one at or above the wallet-adjustment threshold for a second person', async () => {
+    const response = await cashOut(manager.client, '150000', await uploadReceipt(manager.client));
+    expect(response.statusCode, response.body).toBe(201);
+    expect(body<{ status: string; journalId: string | null; approvalId: string | null }>(response))
+      .toMatchObject({ status: 'pending_approval', journalId: null });
+    expect(body<{ approvalId: string | null }>(response).approvalId).not.toBeNull();
+  });
+
+  it('posts one below the threshold once it carries a receipt', async () => {
+    const response = await cashOut(manager.client, '5000', await uploadReceipt(manager.client));
+    expect(response.statusCode, response.body).toBe(201);
+    expect(body<{ status: string }>(response).status).toBe('posted');
+  });
+
+  it('leaves the finance team’s org-wide cash out as ordinary bookkeeping', async () => {
+    const response = await cashOut(accounts.client, '150000');
+    expect(response.statusCode, response.body).toBe(201);
+    expect(body<{ status: string }>(response).status).toBe('posted');
+  });
+});
