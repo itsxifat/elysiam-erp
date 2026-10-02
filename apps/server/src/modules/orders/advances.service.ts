@@ -8,6 +8,7 @@ import {
   DEFAULT_ADVANCE_POLICY,
   normalizeTransactionRef,
   parseAdvanceDisposition,
+  voidVerification,
   poisha,
   remainingOf,
   settlementsFor,
@@ -15,6 +16,7 @@ import {
   totalOf,
   type AccountSubtype,
   type AdvancePolicy,
+  type AdvanceStatus,
   type AdvanceSettlement,
   type HeldAdvance,
   type OrderStatus,
@@ -120,9 +122,7 @@ export class AdvancesService {
             'That advance is more than this order will collect.',
           );
         }
-        if (
-          (await advances.liveClaimFor(tx, context.orgId, input.method, reference)) !== undefined
-        ) {
+        if ((await advances.liveClaimFor(tx, context.orgId, reference)) !== undefined) {
           throw new OrdersError(
             'ADVANCE_DUPLICATE',
             'That transaction id already backs an advance in this brand.',
@@ -287,7 +287,9 @@ export class AdvancesService {
             outcome.disposition,
             poisha(cap),
           );
-          if (settlement !== undefined) await this.settle(tx, context, order, settlement);
+          if (settlement !== undefined) {
+            await this.settle(tx, context, order, settlement, new Date());
+          }
         }
 
         await this.audit.record(tx, {
@@ -407,6 +409,10 @@ export class AdvancesService {
             memo: `Order ${advance.order.order_no} advance refunded`,
           }),
         );
+        if (!posted.created) {
+          // Keyed on the advance: a refund journal already there means this one was paid.
+          throw new OrdersError('IDEMPOTENCY_CONFLICT', 'This refund has already been posted.');
+        }
         const marked = await advances.markRefunded(tx, {
           orgId: context.orgId,
           id: advance.row.id,
@@ -434,6 +440,85 @@ export class AdvancesService {
             walletAccountId: wallet.accountId,
             journalId: posted.journalId,
           },
+          request,
+        });
+        return this.viewOf(tx, context.orgId, advance.row.id);
+      }),
+    );
+  }
+
+  /**
+   * Undo a mistaken verification (D-236): the reversal of its received journal, and the COD
+   * back up, in one transaction.
+   *
+   * Invariant 2 fixes a posted mistake with a reversal journal, never an edit. Only while the
+   * COD is still ours to change (before the parcel moves, no booking holding the old figure)
+   * and before anything used the advance. The claim's reference is free again afterwards, so
+   * the agent can record the right one.
+   */
+  async void(context: ActiveContext, request: AuditableRequest, advanceId: string, reason: string) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const advance = await this.claimInScope(tx, context, request, advanceId);
+        const status = advance.order.status as OrderStatus;
+        const outcome = voidVerification({
+          advanceStatus: advance.row.status as AdvanceStatus,
+          appliedPoisha: poisha(BigInt(advance.row.applied_poisha)),
+          orderStatus: status,
+          parcelLive:
+            acceptsAdvanceClaim(status) &&
+            (await this.parcelLive(tx, context.orgId, advance.order.id)),
+        });
+        if (outcome === 'not_verified') {
+          throw new OrdersError(
+            'ADVANCE_INVALID',
+            `Only a verified advance nothing has used can be undone; this one is ${advance.row.status}.`,
+          );
+        }
+        if (outcome === 'parcel_in_flight') {
+          throw new OrdersError(
+            'ADVANCE_PARCEL_IN_FLIGHT',
+            'This parcel is booked or on the road with the lower COD. Cancel the booking first.',
+          );
+        }
+        const receivedJournalId = advance.row.received_journal_id;
+        if (receivedJournalId === null) throw new Error('a verified advance has no journal');
+
+        const unapplied = await repo.unapplyAdvance(tx, {
+          orgId: context.orgId,
+          orderId: advance.order.id,
+          amountPoisha: BigInt(advance.row.amount_poisha),
+        });
+        if (!unapplied) {
+          throw new OrdersError(
+            'ORDER_TOTAL_INVALID',
+            'This order no longer carries that advance.',
+          );
+        }
+        const reversal = await this.ledger.reverse(
+          tx,
+          { orgId: context.orgId, userId: context.userId },
+          receivedJournalId,
+          `Advance ${advance.row.transaction_ref} voided: ${reason}`,
+        );
+        const marked = await advances.markVoided(tx, {
+          orgId: context.orgId,
+          id: advance.row.id,
+          voidedBy: context.userId,
+          reason,
+          journalId: reversal.journalId,
+        });
+        if (!marked) {
+          throw new OrdersError('ADVANCE_INVALID', 'This advance moved while you looked at it.');
+        }
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'update',
+          action: 'order.advance_voided',
+          entityType: 'order',
+          entityId: advance.order.id,
+          after: { advanceId: advance.row.id, reason, journalId: reversal.journalId },
           request,
         });
         return this.viewOf(tx, context.orgId, advance.row.id);
@@ -488,6 +573,7 @@ export class AdvancesService {
     context: ActiveContext,
     order: repo.OrderRow,
     ending: 'cancel' | 'return',
+    occurredAt: Date,
   ): Promise<void> {
     const rows = await advances.lockHeldAdvances(tx, context.orgId, order.id);
     if (rows.length === 0) return;
@@ -495,7 +581,9 @@ export class AdvancesService {
     const disposition = ending === 'cancel' ? policy.onCancel : policy.onReturn;
     const cap = await advances.keepCap(tx, context.orgId, order.id);
     for (const settlement of settlementsFor(rows.map(held), disposition, poisha(cap))) {
-      await this.settle(tx, context, order, settlement);
+      // Dated with the ending itself, so a kept advance lands on the same business date as
+      // the return or the cancel that kept it.
+      await this.settle(tx, context, order, settlement, occurredAt);
     }
   }
 
@@ -510,6 +598,7 @@ export class AdvancesService {
     context: ActiveContext,
     order: Pick<repo.OrderRow, 'branch_id' | 'order_no'>,
     settlement: AdvanceSettlement,
+    occurredAt: Date,
   ): Promise<void> {
     let keptJournalId: string | null = null;
     if (settlement.keptPoisha > 0n) {
@@ -518,7 +607,7 @@ export class AdvancesService {
         { orgId: context.orgId, userId: context.userId },
         customerAdvanceDraft({
           advanceId: settlement.id,
-          occurredAt: new Date(),
+          occurredAt,
           direction: 'forfeited',
           otherIncome: await this.account(tx, context.orgId, 'other_income'),
           customerAdvance: await this.account(tx, context.orgId, 'customer_advance'),
@@ -639,6 +728,11 @@ export function toAdvanceView(row: advances.AdvanceRow) {
     amountPoisha: row.amount_poisha,
     appliedPoisha: row.applied_poisha,
     keptPoisha: row.kept_poisha,
+    // Still a liability: held, or owed back. The domain's arithmetic, not the screen's.
+    owedPoisha:
+      row.status === 'verified' || row.status === 'refund_due'
+        ? remainingOf(held(row)).toString()
+        : '0',
     status: row.status,
     note: row.note,
     recordedBy: row.recorded_by,
@@ -649,5 +743,7 @@ export function toAdvanceView(row: advances.AdvanceRow) {
     walletAccountId: row.wallet_account_id,
     settledAt: row.settled_at === null ? null : new Date(row.settled_at).toISOString(),
     refundRef: row.refund_ref,
+    voidReason: row.void_reason,
+    voidedAt: row.voided_at === null ? null : new Date(row.voided_at).toISOString(),
   };
 }

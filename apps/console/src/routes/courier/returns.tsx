@@ -24,6 +24,8 @@ import {
   type ReceiptProblem,
 } from './courier-ui.js';
 import { useCourierT, type CourierMessageKey } from './messages.js';
+import { RETURN_REASONS, type ReturnReason } from '../orders/returns-logic.js';
+import { useOrdersT, type OrdersMessageKey } from '../orders/messages.js';
 
 /**
  * Returns receiving, with per-line inspection (M12's returns path; §7, §8).
@@ -175,11 +177,14 @@ function ReceiveDialog({
   readonly onReceived: () => void;
 }) {
   const t = useCourierT();
+  const o = useOrdersT();
   const queryClient = useQueryClient();
 
   const [entries, setEntries] = useState<Record<string, { sellable: string; damaged: string }>>({});
   const [damagedLocationId, setDamagedLocationId] = useState('');
   const [reason, setReason] = useState('');
+  // M17 (D-234): why it came back, from the fixed list. Required, like the note.
+  const [returnReason, setReturnReason] = useState<ReturnReason | ''>('');
   const [inspectionNote, setInspectionNote] = useState('');
   const [problem, setProblem] = useState<ReceiptProblem | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -208,6 +213,7 @@ function ReceiveDialog({
     mutationFn: () =>
       receiveReturn(parcel.id, {
         reason: reason.trim(),
+        returnReason: returnReason === '' ? 'other' : returnReason,
         ...(inspectionNote.trim() === '' ? {} : { inspectionNote: inspectionNote.trim() }),
         ...(damagedLocationId === '' ? {} : { damagedLocationId }),
         lines: (lines.data?.lines ?? [])
@@ -230,7 +236,7 @@ function ReceiveDialog({
     const found = receiptProblem(lines.data?.lines ?? [], counted, damagedLocationId);
     setProblem(found);
     setServerError(null);
-    if (found === null && reason.trim() !== '') receive.mutate();
+    if (found === null && reason.trim() !== '' && returnReason !== '') receive.mutate();
   }
 
   const problemText: Record<ReceiptProblem, string> = {
@@ -254,7 +260,10 @@ function ReceiveDialog({
           <Button variant="outline" onClick={onClose}>
             {t('courier.cancel')}
           </Button>
-          <Button disabled={reason.trim() === '' || receive.isPending} onClick={submit}>
+          <Button
+            disabled={reason.trim() === '' || returnReason === '' || receive.isPending}
+            onClick={submit}
+          >
             {receive.isPending ? t('courier.saving') : t('courier.returns.receive')}
           </Button>
         </>
@@ -326,6 +335,23 @@ function ReceiveDialog({
             </tbody>
           </table>
         )}
+
+        <Field label={t('courier.returns.reasonCode')} id="return-reason-code">
+          <select
+            id="return-reason-code"
+            required
+            value={returnReason}
+            className={control}
+            onChange={(event) => setReturnReason(event.target.value as ReturnReason | '')}
+          >
+            <option value="">{t('courier.returns.chooseReason')}</option>
+            {RETURN_REASONS.map((code) => (
+              <option key={code} value={code}>
+                {o(`orders.reason.${code}` as OrdersMessageKey)}
+              </option>
+            ))}
+          </select>
+        </Field>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Field

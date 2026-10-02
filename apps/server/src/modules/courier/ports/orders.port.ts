@@ -133,8 +133,19 @@ export interface CourierParty {
 }
 
 export interface OrdersPort {
-  /** Null when the order is not this org's. */
-  bookingSnapshot(tx: Tx, orgId: string, orderId: string): Promise<OrderBookingSnapshot | null>;
+  /**
+   * Null when the order is not this org's.
+   *
+   * `forUpdate` locks the order for the caller's transaction (M17, D-231): the booking that
+   * copies the COD onto a consignment must serialise with an advance verification that
+   * lowers it, or the parcel goes out carrying the figure from before the advance.
+   */
+  bookingSnapshot(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    options?: { readonly forUpdate?: boolean },
+  ): Promise<OrderBookingSnapshot | null>;
 
   /**
    * The words for the courier ids this module stores (invariant 12).

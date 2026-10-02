@@ -309,6 +309,8 @@ export function receiveReturn(
   consignmentId: string,
   input: {
     reason: string;
+    /** M17 (D-234): the fixed list's code. */
+    returnReason: string;
     inspectionNote?: string;
     damagedLocationId?: string;
     lines: readonly { skuId: string; sellableQty: number; damagedQty: number }[];

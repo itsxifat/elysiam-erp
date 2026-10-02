@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { SEED_ORG_IDS, withOrg, withSystem } from '@elysium/db';
+import { SEED_ORG_IDS, withOrg, withSystem, type Tx } from '@elysium/db';
 import { businessDate, poisha } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -16,6 +16,7 @@ import {
   type SeededSku,
 } from '../inventory/inventory.testing.js';
 import { AdvancesService } from './advances.service.js';
+import { ORDERS_API, type OrdersApi } from './orders.api.js';
 import { OrdersModule } from './orders.module.js';
 import { OrdersService } from './orders.service.js';
 import {
@@ -682,4 +683,326 @@ describe('check 3: return reasons on every return, reported by reason', () => {
     ).toBe(1);
     expect(report.reasons.reduce((total, line) => total + line.shareBps, 0)).toBe(10_000);
   }, 300_000);
+});
+
+// --- the ledger audit's cases (W1 to W3) -------------------------------------------------
+
+/** A live parcel for the order, written as the courier module would have left it. */
+async function liveParcel(tx: Tx, place: Scene, orderId: string, codPoisha: string): Promise<void> {
+  const accounts = await tx.execute<{ id: string }>(sql`
+    insert into courier.courier_accounts (org_id, courier_id, provider_code, label, is_active)
+    values (${place.orgId}, ${place.courierId}, 'fake', 'M17 test account', true)
+    on conflict (org_id, courier_id) do update set is_active = true
+    returning id
+  `);
+  const accountId = accounts[0]?.id ?? '';
+  await tx.execute(sql`
+    insert into courier.consignments
+      (org_id, order_id, courier_account_id, courier_id, reference, cod_amount_poisha, created_by)
+    values (${place.orgId}, ${orderId}, ${accountId}, ${place.courierId}, ${`M17-${orderId.slice(0, 8)}`},
+            ${codPoisha}::bigint, ${AGENT})
+  `);
+}
+
+describe('a verification and a parcel already with a courier', () => {
+  it('waits while a parcel is booked, so the courier never holds a COD the books disagree with', async () => {
+    const place = await scene(ORG_PARTIAL, 'm17booked');
+    const orderId = await takeOrder(place);
+    const advanceId = await claim(place, orderId, '6000');
+    await move(place, orderId, 'confirm');
+    await withOrg({ orgId: place.orgId, userId: AGENT }, (tx) =>
+      liveParcel(tx, place, orderId, '156000'),
+    );
+
+    await expect(verify(place, advanceId)).rejects.toMatchObject({
+      response: { code: 'ADVANCE_PARCEL_IN_FLIGHT' },
+    });
+    expect(await orderAmounts(place.orgId, orderId)).toMatchObject({ cod: '156000' });
+    expect(await advanceJournals(place.orgId, orderId)).toBe(0);
+  }, 240_000);
+
+  it('serialises with a booking that started first: the booking wins, the verification waits', async () => {
+    const place = await scene(ORG_PARTIAL, 'm17race');
+    const ordersApi = harness.app.get<OrdersApi>(ORDERS_API);
+    const orderId = await takeOrder(place);
+    const advanceId = await claim(place, orderId, '6000');
+
+    let locked!: () => void;
+    const isLocked = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    // The booking reads the order with the lock `reserveConsignment` now takes, then holds
+    // its transaction open while the verification arrives.
+    const booking = withOrg({ orgId: place.orgId, userId: AGENT }, async (tx) => {
+      const snapshot = await ordersApi.bookingSnapshot(tx, place.orgId, orderId, {
+        forUpdate: true,
+      });
+      locked();
+      await gate;
+      await liveParcel(tx, place, orderId, String(snapshot?.codAmountPoisha ?? 0n));
+    });
+    await isLocked;
+    const verifying = verify(place, advanceId).then(
+      () => 'verified' as const,
+      (error: unknown) => error,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    release();
+    await booking;
+
+    // The verification waited for the booking, then found the parcel and refused.
+    expect(await verifying).toMatchObject({ response: { code: 'ADVANCE_PARCEL_IN_FLIGHT' } });
+    expect(await orderAmounts(place.orgId, orderId)).toMatchObject({ cod: '156000' });
+    expect(await advanceJournals(place.orgId, orderId)).toBe(0);
+  }, 240_000);
+});
+
+describe('undoing a mistaken verification (D-236)', () => {
+  it('reverses the journal, restores the COD, and frees the reference', async () => {
+    const place = await scene(ORG_KEEP, 'm17void');
+    const before = await balancesBySubtype(place.orgId);
+    const orderId = await takeOrder(place);
+    const advanceId = await claim(place, orderId, '6000');
+    await verify(place, advanceId);
+    expect(await orderAmounts(place.orgId, orderId)).toMatchObject({ cod: '150000' });
+
+    const voided = await advances.void(
+      context(place.orgId, ACCOUNTANT),
+      request(),
+      advanceId,
+      'Matched the wrong statement line',
+    );
+    expect(voided.status).toBe('voided');
+    expect(await orderAmounts(place.orgId, orderId)).toMatchObject({
+      advance: '0',
+      cod: '156000',
+    });
+    const after = await balancesBySubtype(place.orgId);
+    expect(balance(after, 'customer_advance')).toBe(balance(before, 'customer_advance'));
+    expect(balance(after, 'wallet_bkash')).toBe(balance(before, 'wallet_bkash'));
+    expect(await trialBalanceDifference(place.orgId)).toBe(0n);
+    // The received journal and its reversal; nothing edited.
+    const reversals = await withSystem(
+      async (tx) =>
+        tx.execute<{ n: number }>(sql`
+          select count(*)::int as n from ledger.journals
+          where org_id = ${place.orgId} and reverses_journal_id in (
+            select received_journal_id from sales.order_advances where id = ${advanceId})
+        `),
+      { orgId: place.orgId },
+    );
+    expect(reversals[0]?.n).toBe(1);
+
+    // Undone once; and the same reference can now be recorded again, correctly.
+    await expect(
+      advances.void(context(place.orgId, ACCOUNTANT), request(), advanceId, 'again'),
+    ).rejects.toThrow();
+    await expect(claim(place, orderId, '6000')).resolves.toBeTruthy();
+  }, 240_000);
+
+  it('refuses once the parcel is booked or the advance was used', async () => {
+    const place = await scene(ORG_KEEP, 'm17voidlate');
+    const orderId = await takeOrder(place);
+    const advanceId = await claim(place, orderId, '6000');
+    await verify(place, advanceId);
+    await move(place, orderId, 'confirm');
+    await withOrg({ orgId: place.orgId, userId: AGENT }, (tx) =>
+      liveParcel(tx, place, orderId, '150000'),
+    );
+    await expect(
+      advances.void(context(place.orgId, ACCOUNTANT), request(), advanceId, 'Too late'),
+    ).rejects.toMatchObject({ response: { code: 'ADVANCE_PARCEL_IN_FLIGHT' } });
+    expect(await advanceRow(place.orgId, advanceId)).toMatchObject({ status: 'verified' });
+  }, 240_000);
+});
+
+describe('concurrency', () => {
+  it('two people verifying one claim at once: one posts, one is refused', async () => {
+    const place = await scene(ORG_REFUND, 'm17twice');
+    const orderId = await takeOrder(place);
+    const advanceId = await claim(place, orderId, '6000');
+    const outcomes = await Promise.all([
+      advances.verify(context(place.orgId, ACCOUNTANT), request(), advanceId, place.wallet).then(
+        () => 'ok',
+        () => 'refused',
+      ),
+      advances
+        .verify(context(place.orgId, 'usr_m17_accounts_2'), request(), advanceId, place.wallet)
+        .then(
+          () => 'ok',
+          () => 'refused',
+        ),
+    ]);
+    expect(outcomes.sort()).toEqual(['ok', 'refused']);
+    expect(await advanceJournals(place.orgId, orderId)).toBe(1);
+    expect(await orderAmounts(place.orgId, orderId)).toMatchObject({ cod: '150000' });
+  }, 240_000);
+
+  it('a verification racing a cancel ends in the same books either way', async () => {
+    const place = await scene(ORG_REFUND, 'm17cancelrace');
+    const before = await balancesBySubtype(place.orgId);
+    const orderId = await takeOrder(place);
+    const advanceId = await claim(place, orderId, '6000');
+    await Promise.allSettled([
+      verify(place, advanceId),
+      move(place, orderId, 'cancel', { reason: 'Buyer cancelled' }),
+    ]);
+    // Whichever went first, the order is cancelled and the money is owed back.
+    expect(await orderAmounts(place.orgId, orderId)).toMatchObject({ status: 'cancelled' });
+    expect(await advanceRow(place.orgId, advanceId)).toMatchObject({ status: 'refund_due' });
+    const after = await balancesBySubtype(place.orgId);
+    expect(balance(after, 'customer_advance') - balance(before, 'customer_advance')).toBe(-6_000n);
+    expect(await trialBalanceDifference(place.orgId)).toBe(0n);
+  }, 240_000);
+});
+
+describe('the keep cap and the exchange credit', () => {
+  /*
+   * Two advances on one order that came back: the first, verified before shipping, keeps the
+   * whole ৳60 delivery charge at the return. The second was still pending; verified after
+   * the return, it finds nothing left to keep and is owed back in full.
+   */
+  it('keeps the delivery charge once across an order’s advances, even when verified late', async () => {
+    const place = await scene(ORG_RETURN, 'm17cap');
+    const orderId = await takeOrder(place);
+    const first = await claim(place, orderId, '6000');
+    const second = await claim(place, orderId, '4000');
+    await verify(place, first);
+    await move(place, orderId, 'confirm');
+    await move(place, orderId, 'ship', { courierId: place.courierId });
+    await move(place, orderId, 'start_return', { reason: 'Refused at the door' });
+    await move(place, orderId, 'receive_return', {
+      reason: 'Came back sealed',
+      returnReason: 'customer_refused',
+      ret: { reason: 'Came back sealed', locationId: place.location },
+    });
+    expect(await advanceRow(place.orgId, first)).toMatchObject({
+      status: 'forfeited',
+      kept: '6000',
+    });
+
+    await verify(place, second);
+    expect(await advanceRow(place.orgId, second)).toMatchObject({
+      status: 'refund_due',
+      kept: '0',
+    });
+  }, 240_000);
+
+  /*
+   * A replacement order carrying a ৳2,000 exchange credit and a ৳500 verified advance, two
+   * units at ৳1,500 and a ৳60 charge. One unit arrives: the delivery applies ৳1,560, all of
+   * it from the credit, so the cash advance is untouched and owed back at the return, and the
+   * ৳440 of credit left stays the buyer's store credit (M10).
+   */
+  it('applies an exchange credit before a cash advance', async () => {
+    const place = await scene(ORG_KEEP, 'm17credit');
+    const original = await takeOrder(place, 1, '200000');
+    await move(place, original, 'confirm');
+    await move(place, original, 'ship', { courierId: place.courierId });
+    await move(place, original, 'deliver');
+    const exchanged = await orders.exchange(context(place.orgId, AGENT), request(), original, {
+      reason: 'Wanted two of the other size',
+      returnReason: 'size_issue',
+      returnLines: [{ skuId: place.sku.id, qty: 1 }],
+      lines: [{ skuId: place.sku.id, qty: 2, unitPricePoisha: '150000' }],
+      deliveryChargePoisha: '6000',
+      locationId: place.location,
+    });
+    const replacement = exchanged.replacement.id;
+    const advanceId = await claim(place, replacement, '50000');
+    await verify(place, advanceId);
+    expect(await orderAmounts(place.orgId, replacement)).toMatchObject({
+      advance: '250000',
+      cod: '56000',
+    });
+
+    await move(place, replacement, 'confirm');
+    await move(place, replacement, 'ship', { courierId: place.courierId });
+    await move(place, replacement, 'deliver_partially', {
+      deliver: { lines: [{ skuId: place.sku.id, deliveredQty: 1 }], collectedPoisha: '0' },
+    });
+    expect(await advanceRow(place.orgId, advanceId)).toMatchObject({
+      status: 'verified',
+      applied: '0',
+    });
+    await move(place, replacement, 'receive_return', {
+      reason: 'The second one came back',
+      returnReason: 'changed_mind',
+      ret: { reason: 'The second one came back', locationId: place.location },
+    });
+    expect(await advanceRow(place.orgId, advanceId)).toMatchObject({
+      status: 'refund_due',
+      kept: '0',
+    });
+    await advances.refund(context(place.orgId, ACCOUNTANT), request(), advanceId, {});
+    expect(await advanceRow(place.orgId, advanceId)).toMatchObject({ status: 'refunded' });
+    expect(await trialBalanceDifference(place.orgId)).toBe(0n);
+    // The ৳440 of credit the delivery did not use is still the buyer's store credit (M10);
+    // the cash advance is back with them.
+    const left = await withSystem(
+      async (tx) =>
+        tx.execute<{ owed: string }>(sql`
+          select coalesce(sum(case when l.credit_poisha > 0 then l.credit_poisha
+                                   else -l.debit_poisha end), 0)::text as owed
+          from ledger.journal_lines l
+          join ledger.journals j on j.org_id = l.org_id and j.id = l.journal_id
+          join ledger.accounts a on a.org_id = l.org_id and a.id = l.account_id
+          where l.org_id = ${place.orgId} and a.subtype = 'customer_advance'
+            and (j.source_id = ${replacement} or j.source_id = ${original}
+                 or j.source_id = ${advanceId})
+        `),
+      { orgId: place.orgId },
+    );
+    expect(left[0]?.owed).toBe('44000');
+  }, 300_000);
+});
+
+describe('tenancy: one brand cannot see or write another brand’s advances or return reasons', () => {
+  it('hides the rows and refuses the writes across brands (RLS FORCE)', async () => {
+    const place = await scene(ORG_APPLY, 'm17rls');
+    const orderId = await takeOrder(place);
+    const advanceId = await claim(place, orderId, '6000');
+    const other = ORG_REFUND;
+
+    const seen = await withOrg({ orgId: other, userId: AGENT }, (tx) =>
+      tx.execute<{ n: number }>(sql`
+        select (select count(*) from sales.order_advances where id = ${advanceId})::int
+             + (select count(*) from sales.order_returns where org_id = ${place.orgId})::int as n
+      `),
+    );
+    expect(seen[0]?.n).toBe(0);
+    await expect(
+      withOrg({ orgId: other, userId: AGENT }, (tx) =>
+        tx.execute(sql`
+          insert into sales.order_advances
+            (org_id, order_id, method, transaction_ref, amount_poisha, recorded_by)
+          values (${place.orgId}, ${orderId}, 'bkash', 'RLS0000001', 100, ${AGENT})
+        `),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      withOrg({ orgId: other, userId: AGENT }, (tx) =>
+        tx.execute(sql`
+          insert into sales.order_returns
+            (org_id, order_id, kind, reason_code, business_date, recorded_by)
+          values (${place.orgId}, ${orderId}, 'return', 'other', current_date, ${AGENT})
+        `),
+      ),
+    ).rejects.toThrow();
+    // And an advance can only be born a claim: no row arrives already verified.
+    await expect(
+      withOrg({ orgId: place.orgId, userId: AGENT }, (tx) =>
+        tx.execute(sql`
+          insert into sales.order_advances
+            (org_id, order_id, method, transaction_ref, amount_poisha, recorded_by, status)
+          values (${place.orgId}, ${orderId}, 'bkash', 'RLS0000002', 100, ${AGENT}, 'applied')
+        `),
+      ),
+    ).rejects.toThrow();
+  }, 240_000);
 });

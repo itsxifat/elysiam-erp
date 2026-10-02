@@ -22,6 +22,10 @@ CREATE TABLE "sales"."order_advances" (
 	"refund_journal_id" uuid,
 	"refund_wallet_account_id" uuid,
 	"refund_ref" text,
+	"void_journal_id" uuid,
+	"void_reason" text,
+	"voided_by" text,
+	"voided_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "order_advances_org_id_id_key" UNIQUE("org_id","id"),
@@ -30,7 +34,7 @@ CREATE TABLE "sales"."order_advances" (
 	CONSTRAINT "order_advances_amounts" CHECK ("sales"."order_advances"."amount_poisha" > 0 and "sales"."order_advances"."amount_poisha" <= 9000000000000000
           and "sales"."order_advances"."applied_poisha" >= 0 and "sales"."order_advances"."kept_poisha" >= 0
           and "sales"."order_advances"."applied_poisha" + "sales"."order_advances"."kept_poisha" <= "sales"."order_advances"."amount_poisha"),
-	CONSTRAINT "order_advances_status" CHECK ("sales"."order_advances"."status" in ('pending', 'rejected', 'verified', 'applied', 'refund_due', 'refunded', 'forfeited')),
+	CONSTRAINT "order_advances_status" CHECK ("sales"."order_advances"."status" in ('pending', 'rejected', 'verified', 'applied', 'refund_due', 'refunded', 'forfeited', 'voided')),
 	CONSTRAINT "order_advances_four_eyes" CHECK (("sales"."order_advances"."status" = 'pending') = ("sales"."order_advances"."decided_by" is null)
           and ("sales"."order_advances"."decided_by" is null or "sales"."order_advances"."decided_by" <> "sales"."order_advances"."recorded_by")
           and ("sales"."order_advances"."decided_by" is null) = ("sales"."order_advances"."decided_at" is null)),
@@ -44,6 +48,7 @@ CREATE TABLE "sales"."order_advances" (
             when 'rejected' then "sales"."order_advances"."applied_poisha" = 0
             when 'verified' then "sales"."order_advances"."applied_poisha" < "sales"."order_advances"."amount_poisha"
             when 'applied' then "sales"."order_advances"."applied_poisha" = "sales"."order_advances"."amount_poisha"
+            when 'voided' then "sales"."order_advances"."applied_poisha" = 0 and "sales"."order_advances"."kept_poisha" = 0
             when 'forfeited' then "sales"."order_advances"."kept_poisha" > 0
               and "sales"."order_advances"."applied_poisha" + "sales"."order_advances"."kept_poisha" = "sales"."order_advances"."amount_poisha"
             else "sales"."order_advances"."applied_poisha" + "sales"."order_advances"."kept_poisha" < "sales"."order_advances"."amount_poisha"
@@ -53,8 +58,13 @@ CREATE TABLE "sales"."order_advances" (
           and ("sales"."order_advances"."status" = 'refunded') = ("sales"."order_advances"."refund_journal_id" is not null)
           and ("sales"."order_advances"."status" = 'refunded') = ("sales"."order_advances"."refund_wallet_account_id" is not null)
           and ("sales"."order_advances"."refund_ref" is null or "sales"."order_advances"."status" = 'refunded')),
+	CONSTRAINT "order_advances_voided" CHECK (("sales"."order_advances"."status" = 'voided') = ("sales"."order_advances"."void_journal_id" is not null)
+          and ("sales"."order_advances"."void_journal_id" is null) = ("sales"."order_advances"."voided_by" is null)
+          and ("sales"."order_advances"."voided_by" is null) = ("sales"."order_advances"."voided_at" is null)
+          and ("sales"."order_advances"."voided_by" is null) = ("sales"."order_advances"."void_reason" is null)),
 	CONSTRAINT "order_advances_text_lengths" CHECK (("sales"."order_advances"."note" is null or length("sales"."order_advances"."note") <= 500)
           and ("sales"."order_advances"."reject_reason" is null or length("sales"."order_advances"."reject_reason") between 1 and 500)
+          and ("sales"."order_advances"."void_reason" is null or length("sales"."order_advances"."void_reason") between 1 and 500)
           and ("sales"."order_advances"."refund_ref" is null or "sales"."order_advances"."refund_ref" ~ '^[A-Z0-9]{6,30}$'))
 );
 --> statement-breakpoint
@@ -81,12 +91,13 @@ ALTER TABLE "sales"."order_advances" ADD CONSTRAINT "order_advances_org_id_refun
 ALTER TABLE "sales"."order_advances" ADD CONSTRAINT "order_advances_org_id_received_journal_id_fk" FOREIGN KEY ("org_id","received_journal_id") REFERENCES "ledger"."journals"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sales"."order_advances" ADD CONSTRAINT "order_advances_org_id_kept_journal_id_fk" FOREIGN KEY ("org_id","kept_journal_id") REFERENCES "ledger"."journals"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sales"."order_advances" ADD CONSTRAINT "order_advances_org_id_refund_journal_id_fk" FOREIGN KEY ("org_id","refund_journal_id") REFERENCES "ledger"."journals"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sales"."order_advances" ADD CONSTRAINT "order_advances_org_id_void_journal_id_fk" FOREIGN KEY ("org_id","void_journal_id") REFERENCES "ledger"."journals"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sales"."order_returns" ADD CONSTRAINT "order_returns_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "org"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sales"."order_returns" ADD CONSTRAINT "order_returns_org_id_order_id_fk" FOREIGN KEY ("org_id","order_id") REFERENCES "sales"."orders"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "order_advances_org_idx" ON "sales"."order_advances" USING btree ("org_id");--> statement-breakpoint
 CREATE INDEX "order_advances_org_order_idx" ON "sales"."order_advances" USING btree ("org_id","order_id");--> statement-breakpoint
 CREATE INDEX "order_advances_org_status_idx" ON "sales"."order_advances" USING btree ("org_id","status");--> statement-breakpoint
-CREATE UNIQUE INDEX "order_advances_org_live_ref_idx" ON "sales"."order_advances" USING btree ("org_id","method","transaction_ref") WHERE "sales"."order_advances"."status" <> 'rejected';--> statement-breakpoint
+CREATE UNIQUE INDEX "order_advances_org_live_ref_idx" ON "sales"."order_advances" USING btree ("org_id","transaction_ref") WHERE "sales"."order_advances"."status" not in ('rejected', 'voided');--> statement-breakpoint
 CREATE INDEX "order_returns_org_idx" ON "sales"."order_returns" USING btree ("org_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "order_returns_org_order_idx" ON "sales"."order_returns" USING btree ("org_id","order_id");--> statement-breakpoint
 CREATE INDEX "order_returns_org_date_idx" ON "sales"."order_returns" USING btree ("org_id","business_date");

@@ -122,6 +122,7 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/order-advances/:id/verify',
   'POST /v1/order-advances/:id/reject',
   'POST /v1/order-advances/:id/refund',
+  'POST /v1/order-advances/:id/void',
   'GET /v1/orders/return-reasons',
   'POST /v1/orders/:id/exchange',
   'GET /v1/orders/:id/document',

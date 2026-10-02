@@ -377,6 +377,7 @@ export class TransitionsService {
           context,
           order,
           result.to === 'cancelled' ? 'cancel' : 'return',
+          options.occurredAt ?? new Date(),
         );
         return;
 

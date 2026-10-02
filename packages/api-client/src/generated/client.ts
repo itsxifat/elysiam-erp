@@ -762,6 +762,11 @@ export const OPERATIONS = {
     path: '/v1/order-advances/{id}/verify',
     ability: 'create:Wallet',
   },
+  postV1OrderAdvancesByIdVoid: {
+    method: 'POST',
+    path: '/v1/order-advances/{id}/void',
+    ability: 'create:Wallet',
+  },
   postV1Orders: { method: 'POST', path: '/v1/orders', ability: 'create:Order' },
   postV1OrdersBulkConfirm: {
     method: 'POST',
@@ -1823,6 +1828,11 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1OrderAdvancesByIdVerify, input, options),
+    /** POST /v1/order-advances/:id/void */
+    postV1OrderAdvancesByIdVoid: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrderAdvancesByIdVoid, input, options),
     /** POST /v1/orders */
     postV1Orders: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Orders, undefined, options),

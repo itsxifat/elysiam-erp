@@ -81,6 +81,14 @@ export const orderAdvances = sales.table(
     refundJournalId: uuid('refund_journal_id'),
     refundWalletAccountId: uuid('refund_wallet_account_id'),
     refundRef: text('refund_ref'),
+    /**
+     * A verification undone (D-236): the reversal journal of `received_journal_id`, who and
+     * why. Only before the parcel moves and before any of it was used.
+     */
+    voidJournalId: uuid('void_journal_id'),
+    voidReason: text('void_reason'),
+    voidedBy: text('voided_by'),
+    voidedAt: timestamp('voided_at', { withTimezone: true, mode: 'date' }),
     ...timestamps,
   },
   (table) => [
@@ -88,10 +96,11 @@ export const orderAdvances = sales.table(
     index('order_advances_org_idx').on(table.orgId),
     index('order_advances_org_order_idx').on(table.orgId, table.orderId),
     index('order_advances_org_status_idx').on(table.orgId, table.status),
-    // One bKash payment backs one live claim. A rejected claim frees its reference.
+    // One payment backs one live claim, whatever method it was typed under. A rejected or
+    // voided claim frees its reference.
     uniqueIndex('order_advances_org_live_ref_idx')
-      .on(table.orgId, table.method, table.transactionRef)
-      .where(sql`${table.status} <> 'rejected'`),
+      .on(table.orgId, table.transactionRef)
+      .where(sql`${table.status} not in ('rejected', 'voided')`),
     foreignKey({
       name: 'order_advances_org_id_order_id_fk',
       columns: [table.orgId, table.orderId],
@@ -122,6 +131,11 @@ export const orderAdvances = sales.table(
       columns: [table.orgId, table.refundJournalId],
       foreignColumns: [journals.orgId, journals.id],
     }).onDelete('restrict'),
+    foreignKey({
+      name: 'order_advances_org_id_void_journal_id_fk',
+      columns: [table.orgId, table.voidJournalId],
+      foreignColumns: [journals.orgId, journals.id],
+    }).onDelete('restrict'),
     check('order_advances_method', sql`${table.method} in ('bkash', 'nagad', 'bank')`),
     check('order_advances_ref_format', sql`${table.transactionRef} ~ '^[A-Z0-9]{6,30}$'`),
     check(
@@ -132,7 +146,7 @@ export const orderAdvances = sales.table(
     ),
     check(
       'order_advances_status',
-      sql`${table.status} in ('pending', 'rejected', 'verified', 'applied', 'refund_due', 'refunded', 'forfeited')`,
+      sql`${table.status} in ('pending', 'rejected', 'verified', 'applied', 'refund_due', 'refunded', 'forfeited', 'voided')`,
     ),
     // Decided means somebody other than the recorder decided it.
     check(
@@ -165,6 +179,7 @@ export const orderAdvances = sales.table(
             when 'rejected' then ${table.appliedPoisha} = 0
             when 'verified' then ${table.appliedPoisha} < ${table.amountPoisha}
             when 'applied' then ${table.appliedPoisha} = ${table.amountPoisha}
+            when 'voided' then ${table.appliedPoisha} = 0 and ${table.keptPoisha} = 0
             when 'forfeited' then ${table.keptPoisha} > 0
               and ${table.appliedPoisha} + ${table.keptPoisha} = ${table.amountPoisha}
             else ${table.appliedPoisha} + ${table.keptPoisha} < ${table.amountPoisha}
@@ -178,10 +193,19 @@ export const orderAdvances = sales.table(
           and (${table.status} = 'refunded') = (${table.refundWalletAccountId} is not null)
           and (${table.refundRef} is null or ${table.status} = 'refunded')`,
     ),
+    // A voided advance has its reversal journal, its reason and who undid it; nothing else does.
+    check(
+      'order_advances_voided',
+      sql`(${table.status} = 'voided') = (${table.voidJournalId} is not null)
+          and (${table.voidJournalId} is null) = (${table.voidedBy} is null)
+          and (${table.voidedBy} is null) = (${table.voidedAt} is null)
+          and (${table.voidedBy} is null) = (${table.voidReason} is null)`,
+    ),
     check(
       'order_advances_text_lengths',
       sql`(${table.note} is null or length(${table.note}) <= 500)
           and (${table.rejectReason} is null or length(${table.rejectReason}) between 1 and 500)
+          and (${table.voidReason} is null or length(${table.voidReason}) between 1 and 500)
           and (${table.refundRef} is null or ${table.refundRef} ~ '^[A-Z0-9]{6,30}$')`,
     ),
   ],

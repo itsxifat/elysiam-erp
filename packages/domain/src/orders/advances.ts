@@ -37,6 +37,8 @@ export const ADVANCE_STATUSES = [
   'refunded',
   /** All of what was left kept by the brand, per its policy: Other income. */
   'forfeited',
+  /** A verification undone before anything used it: reversed in the books (D-236). */
+  'voided',
 ] as const;
 export type AdvanceStatus = (typeof ADVANCE_STATUSES)[number];
 
@@ -128,6 +130,25 @@ export function advanceVerification(input: {
 /** Whether a claim may still be recorded against an order in this status. */
 export function acceptsAdvanceClaim(status: OrderStatus): boolean {
   return BEFORE_SHIPPING.includes(status);
+}
+
+/**
+ * Whether a verification can be undone (D-236), and if not, why.
+ *
+ * A mistake is fixed with a reversal journal (invariant 2), and the COD has to go back up in
+ * the same transaction. That is only honest while the COD is ours to change: before the
+ * parcel moves and with no booking holding the old figure. And only while nothing has used
+ * the advance: a delivery that applied part of it is history the reversal cannot rewrite.
+ */
+export function voidVerification(input: {
+  readonly advanceStatus: AdvanceStatus;
+  readonly appliedPoisha: Poisha;
+  readonly orderStatus: OrderStatus;
+  readonly parcelLive: boolean;
+}): 'ok' | 'not_verified' | 'parcel_in_flight' {
+  if (input.advanceStatus !== 'verified' || input.appliedPoisha !== 0n) return 'not_verified';
+  if (!BEFORE_SHIPPING.includes(input.orderStatus) || input.parcelLive) return 'parcel_in_flight';
+  return 'ok';
 }
 
 /** One verified advance, as far as its money is concerned. */

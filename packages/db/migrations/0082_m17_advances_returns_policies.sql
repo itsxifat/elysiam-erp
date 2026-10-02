@@ -46,6 +46,7 @@ grant select, insert on "sales"."order_returns" to "erp_app";
 --   verified   → verified                            (a partial delivery used some of it)
 --   verified   → applied | refund_due | forfeited    (the order ended)
 --   refund_due → refunded                            (the money went back)
+--   verified   → voided                              (a mistaken verification undone, D-236)
 create or replace function sales.assert_order_advance_change() returns trigger
 language plpgsql as $$
 declare
@@ -66,8 +67,11 @@ begin
   edge := old.status || '>' || new.status;
   if edge not in ('pending>verified', 'pending>rejected', 'verified>verified',
                   'verified>applied', 'verified>refund_due', 'verified>forfeited',
-                  'refund_due>refunded') then
+                  'refund_due>refunded', 'verified>voided') then
     raise exception 'ADVANCE_IMMUTABLE: an advance cannot go from % to %.', old.status, new.status;
+  end if;
+  if edge = 'verified>voided' and old.applied_poisha <> 0 then
+    raise exception 'ADVANCE_IMMUTABLE: a delivery used this advance, so it cannot be voided.';
   end if;
 
   -- The decision is made once, by whoever made it, into the wallet they named.
@@ -107,6 +111,13 @@ begin
     raise exception 'ADVANCE_IMMUTABLE: an advance is settled once.';
   end if;
 
+  -- A void is written once, by the move that voids.
+  if (new.void_journal_id, new.void_reason, new.voided_by, new.voided_at)
+     is distinct from (old.void_journal_id, old.void_reason, old.voided_by, old.voided_at)
+     and edge <> 'verified>voided' then
+    raise exception 'ADVANCE_IMMUTABLE: only voiding a verification writes a void.';
+  end if;
+
   return new;
 end;
 $$;
@@ -114,6 +125,29 @@ $$;
 create trigger order_advances_path
 before update or delete on sales.order_advances
 for each row execute function sales.assert_order_advance_change();
+--> statement-breakpoint
+
+-- Every advance is born a claim: pending, nothing applied or kept, no decision, no journal.
+-- The path above is then the only way to anything else, so no row can arrive already
+-- "verified" without the verification that posts its journal.
+create or replace function sales.assert_order_advance_born_pending() returns trigger
+language plpgsql as $$
+begin
+  if new.status <> 'pending' or new.applied_poisha <> 0 or new.kept_poisha <> 0
+     or num_nonnulls(new.decided_by, new.decided_at, new.reject_reason, new.wallet_account_id,
+                     new.received_journal_id, new.kept_journal_id, new.settled_by,
+                     new.settled_at, new.refund_journal_id, new.refund_wallet_account_id,
+                     new.refund_ref, new.void_journal_id, new.void_reason, new.voided_by,
+                     new.voided_at) > 0 then
+    raise exception 'ADVANCE_IMMUTABLE: an advance is recorded as a pending claim.';
+  end if;
+  return new;
+end;
+$$;
+--> statement-breakpoint
+create trigger order_advances_born_pending
+before insert on sales.order_advances
+for each row execute function sales.assert_order_advance_born_pending();
 --> statement-breakpoint
 
 -- A recorded return reason is permanent: the report is built from it.

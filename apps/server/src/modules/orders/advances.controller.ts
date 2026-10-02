@@ -111,6 +111,19 @@ export class AdvancesController {
     );
   }
 
+  /** Undo a mistaken verification with a reversal journal (D-236). */
+  @RequireAbility('create', 'Wallet')
+  @Post('order-advances/:id/void')
+  async void(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    const input = parse(rejectAdvanceSchema, body);
+    return this.advances.void(
+      requireContext(request),
+      auditable(request),
+      parse(orderIdSchema, id),
+      input.reason,
+    );
+  }
+
   @RequireAbility('create', 'Wallet')
   @Post('order-advances/:id/refund')
   async refund(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {

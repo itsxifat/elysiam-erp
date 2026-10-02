@@ -12,6 +12,7 @@ import {
   remainingOf,
   settlementsFor,
   totalOf,
+  voidVerification,
   type HeldAdvance,
 } from './advances.js';
 import { ORDER_STATUSES, type OrderStatus } from './state.js';
@@ -230,5 +231,30 @@ describe('the endings (D-232)', () => {
     expect(remainingOf(held('x', 100n, 40n))).toBe(60n as Poisha);
     expect(remainingOf({ ...held('x', 100n, 40n), keptPoisha: poisha(10n) })).toBe(50n as Poisha);
     expect(() => settlementsFor([], 'forfeit', poisha(-1n))).toThrow(MoneyError);
+  });
+});
+
+describe('undoing a verification (D-236)', () => {
+  it('is allowed only on an unused verified advance, before the parcel moves', () => {
+    const base = {
+      advanceStatus: 'verified',
+      appliedPoisha: poisha(0n),
+      orderStatus: 'confirmed',
+      parcelLive: false,
+    } as const;
+    expect(voidVerification(base)).toBe('ok');
+    expect(voidVerification({ ...base, parcelLive: true })).toBe('parcel_in_flight');
+    expect(voidVerification({ ...base, orderStatus: 'shipped' })).toBe('parcel_in_flight');
+    expect(voidVerification({ ...base, orderStatus: 'delivered' })).toBe('parcel_in_flight');
+    expect(voidVerification({ ...base, appliedPoisha: poisha(1n) })).toBe('not_verified');
+    for (const advanceStatus of [
+      'pending',
+      'rejected',
+      'applied',
+      'refund_due',
+      'voided',
+    ] as const) {
+      expect(voidVerification({ ...base, advanceStatus })).toBe('not_verified');
+    }
   });
 });

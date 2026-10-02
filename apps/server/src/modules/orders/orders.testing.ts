@@ -417,8 +417,9 @@ export async function stockAt(
  * One advance against an order, written directly (M17), for a fixture that needs a claim in
  * a given state without walking it there.
  *
- * `pending` is a row and nothing else. `refund_due` posts its received journal through the
- * real `LedgerService` first, because the row's CHECKs refuse a decided advance with no
+ * `pending` is a row and nothing else. `verified` and `refund_due` post their received journal
+ * through the real `LedgerService` first (a verified one's order must already carry the
+ * amount in its advance column, which `seedOrder`'s `advancePaidPoisha` does), because the row's CHECKs refuse a decided advance with no
  * journal behind it (check 2), and a fixture that could fake one would be testing a state
  * the system cannot reach. Those are the two states the accounts routes act on.
  */
@@ -426,7 +427,7 @@ export async function seedAdvance(
   orgId: string,
   input: {
     readonly orderId: string;
-    readonly status: 'pending' | 'refund_due';
+    readonly status: 'pending' | 'verified' | 'refund_due';
     readonly amountPoisha: bigint;
     readonly walletAccountId: string;
     readonly recordedBy?: string;
@@ -479,6 +480,7 @@ export async function seedAdvance(
         wallet_account_id = ${input.walletAccountId}, received_journal_id = ${posted.journalId}
       where org_id = ${orgId} and id = ${id}
     `);
+    if (input.status === 'verified') return id;
     await tx.execute(sql`
       update sales.order_advances set status = 'refund_due'
       where org_id = ${orgId} and id = ${id}

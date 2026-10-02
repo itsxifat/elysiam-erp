@@ -131,6 +131,7 @@ async function freshOrder(
     readonly reserve?: boolean;
     readonly withCourier?: boolean;
     readonly assignedTo?: string | null;
+    readonly advancePaidPoisha?: bigint;
   } = {},
 ): Promise<string> {
   const fixtures = state();
@@ -143,6 +144,9 @@ async function freshOrder(
     assignedTo: options.assignedTo ?? null,
     createdBy: FIXTURE_USER,
     ...(options.withCourier === true ? { courierId: fixtures.courierId } : {}),
+    ...(options.advancePaidPoisha === undefined
+      ? {}
+      : { advancePaidPoisha: options.advancePaidPoisha }),
   });
   return order.id;
 }
@@ -306,6 +310,21 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
       walletAccountId: state().walletAccountId,
     });
     return { url: `/v1/order-advances/${id}/refund`, body: {} };
+  },
+
+  'POST /v1/order-advances/:id/void': async () => {
+    // Verified on a pending order that carries it, with no parcel: undoable (D-236).
+    const orderId = await freshOrder('pending', { advancePaidPoisha: 10_000n });
+    const id = await seedAdvance(ORG_A, {
+      orderId,
+      status: 'verified',
+      amountPoisha: 10_000n,
+      walletAccountId: state().walletAccountId,
+    });
+    return {
+      url: `/v1/order-advances/${id}/void`,
+      body: { reason: 'Verified against the wrong statement line' },
+    };
   },
 
   'GET /v1/orders/return-reasons': () => ({

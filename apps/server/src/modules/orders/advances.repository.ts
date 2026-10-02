@@ -33,6 +33,9 @@ export interface AdvanceRow extends Record<string, unknown> {
   readonly refund_journal_id: string | null;
   readonly refund_wallet_account_id: string | null;
   readonly refund_ref: string | null;
+  readonly void_journal_id: string | null;
+  readonly void_reason: string | null;
+  readonly voided_at: string | null;
 }
 
 const ADVANCE_COLUMNS = sql`a.id, a.order_id, a.method, a.transaction_ref,
@@ -40,7 +43,7 @@ const ADVANCE_COLUMNS = sql`a.id, a.order_id, a.method, a.transaction_ref,
   a.note, a.recorded_by, a.recorded_at, a.decided_by, a.decided_at, a.reject_reason,
   a.wallet_account_id, a.received_journal_id, a.kept_poisha::text as kept_poisha,
   a.kept_journal_id, a.settled_by, a.settled_at, a.refund_journal_id,
-  a.refund_wallet_account_id, a.refund_ref`;
+  a.refund_wallet_account_id, a.refund_ref, a.void_journal_id, a.void_reason, a.voided_at`;
 
 export async function insertClaim(
   tx: Tx,
@@ -66,17 +69,19 @@ export async function insertClaim(
   return id;
 }
 
-/** A live claim on this reference, if there is one: anything but a rejected one. */
+/**
+ * A live claim on this reference, if there is one: anything but a rejected or voided one.
+ * Whatever method it was typed under: one payment is one payment.
+ */
 export async function liveClaimFor(
   tx: Tx,
   orgId: string,
-  method: string,
   transactionRef: string,
 ): Promise<{ id: string } | undefined> {
   const rows = await tx.execute<{ id: string }>(sql`
     select id from sales.order_advances
-    where org_id = ${orgId} and method = ${method} and transaction_ref = ${transactionRef}
-      and status <> 'rejected'
+    where org_id = ${orgId} and transaction_ref = ${transactionRef}
+      and status not in ('rejected', 'voided')
     limit 1
   `);
   return rows[0];
@@ -291,6 +296,28 @@ export async function markRefunded(
       refund_wallet_account_id = ${input.walletAccountId}, refund_ref = ${input.refundRef},
       updated_at = now()
     where org_id = ${input.orgId} and id = ${input.id} and status = 'refund_due'
+    returning id
+  `);
+  return rows.length > 0;
+}
+
+/** verified → voided (D-236): the verification undone, with its reversal journal. */
+export async function markVoided(
+  tx: Tx,
+  input: {
+    readonly orgId: string;
+    readonly id: string;
+    readonly voidedBy: string;
+    readonly reason: string;
+    readonly journalId: string;
+  },
+): Promise<boolean> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    update sales.order_advances set
+      status = 'voided', void_journal_id = ${input.journalId}, void_reason = ${input.reason},
+      voided_by = ${input.voidedBy}, voided_at = now(), updated_at = now()
+    where org_id = ${input.orgId} and id = ${input.id} and status = 'verified'
+      and applied_poisha = 0
     returning id
   `);
   return rows.length > 0;
