@@ -436,6 +436,81 @@ describe('a person’s status and delivery go through the parcel (ledger audit W
   });
 });
 
+describe('the ledger re-audit of D-392 (W-A, W-B, N-B)', () => {
+  it('receives a parcel the courier cancelled after pickup, on the parcel’s own route', async () => {
+    const order = await orderAt('packed');
+    const parcel = await bookedParcel(order.id, order.cod);
+    await courierSays(parcel, 'collected');
+    await courierSays(parcel, 'called_off');
+    // §9: once shipped, a cancellation is a return; the tracking now reads `cancelled`.
+    expect(await orderStatus(order.id)).toBe('return_in_transit');
+
+    const received = await admin.client.request(
+      'POST',
+      `/v1/courier/parcels/${parcel}/receive-return`,
+      {
+        body: {
+          reason: 'Came back unopened.',
+          returnReason: 'customer_refused',
+          lines: [{ skuId, sellableQty: 1, damagedQty: 0 }],
+        },
+      },
+    );
+    expect(received.statusCode, received.body).toBe(201);
+    expect(await orderStatus(order.id)).toBe('returned');
+    // Back on the shelf: nothing is left in transit for this order.
+    expect((await netBySubtype(order.id)).get('goods_in_transit') ?? 0n).toBe(0n);
+  });
+
+  it('carries a person’s reason for a short collection to the Sales discounts line', async () => {
+    const order = await orderAt('packed');
+    const parcel = await bookedParcel(order.id, order.cod);
+    const short = (order.cod - 10_000n).toString();
+    const response = await admin.client.request('POST', `/v1/courier/parcels/${parcel}/status`, {
+      body: {
+        status: 'delivered',
+        rawStatus: 'Set from the order detail',
+        reason: 'Buyer paid ৳100 less for a stain.',
+        collectedPoisha: short,
+        differenceReason: 'Buyer paid ৳100 less for a stain.',
+      },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const memos = await withSystem(
+      async (tx) =>
+        tx.execute<{ memo: string | null }>(sql`
+          select l.memo
+          from ledger.journal_lines l
+          join ledger.journals j on j.org_id = l.org_id and j.id = l.journal_id
+          join ledger.accounts a on a.org_id = l.org_id and a.id = l.account_id
+          where l.org_id = ${ORG_A} and j.idempotency_key = ${`order:${order.id}:delivered`}
+            and a.subtype = 'sales_discounts'
+        `),
+      { orgId: ORG_A },
+    );
+    expect(memos.map((row) => row.memo)).toEqual(['Buyer paid ৳100 less for a stain.']);
+    expect((await parcelOutcome(parcel))?.collected_poisha).toBe(short);
+  });
+
+  it('refuses a hand-set status that would move the order while its booking is queued', async () => {
+    const order = await orderAt('packed');
+    const parcel = await bookedParcel(order.id, order.cod);
+    await withSystem(
+      async (tx) =>
+        tx.execute(sql`
+          update courier.consignments set booking_state = 'pending', consignment_no = null
+          where org_id = ${ORG_A} and id = ${parcel}
+        `),
+      { orgId: ORG_A },
+    );
+    const response = await admin.client.request('POST', `/v1/courier/parcels/${parcel}/status`, {
+      body: { status: 'delivered', rawStatus: 'delivered', reason: 'Too early.' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(await orderStatus(order.id)).toBe('packed');
+  });
+});
+
 describe('confirming the handover ships the order, once (D-391)', () => {
   it('ships a packed order, and Ship afterwards is refused as already done', async () => {
     const order = await orderAt('packed');

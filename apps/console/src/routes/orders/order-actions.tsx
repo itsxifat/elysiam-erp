@@ -1,11 +1,10 @@
 import { Button, Dialog, poishaToTaka, takaToPoisha } from '@elysium/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import { useId, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
 import { setParcelStatus, type ParcelRow } from '../courier/api.js';
-import { courierPath } from '../courier/courier-nav.js';
+import { ReceiveDialog } from '../courier/returns.js';
 import {
   cancelOrder,
   confirmOrder,
@@ -40,8 +39,9 @@ import { RETURN_REASONS, type ReturnReason } from './returns-logic.js';
  * **An order with a parcel at a courier is delivered and received on the parcel.** Mark
  * delivered and Partial delivery then go through the parcel's own status route, which writes
  * the parcel's collection beside the order's journals — the order routes do not, and the
- * server refuses them for an order with a live parcel — and Receive return opens the courier
- * returns screen, where the inspection is per line (ledger audit of D-392, W2).
+ * server refuses them for an order with a live parcel. Start return moves the parcel's tracking
+ * with the order, and Receive return opens the courier's per-line inspection for this parcel
+ * (ledger audit of D-392, W2, and its re-audit's W-A).
  */
 
 const LABEL: Readonly<Record<OrderTrigger, OrdersMessageKey | null>> = {
@@ -105,17 +105,6 @@ export function OrderActions({
         if (label === null) return null;
         const primary = trigger === 'confirm' || trigger === 'pack' || trigger === 'ship';
         const quiet = trigger === 'cancel' || trigger === 'hold';
-        if (trigger === 'receive_return' && parcel !== null) {
-          return (
-            <Link
-              key={trigger}
-              to={courierPath('/courier/returns')}
-              className="inline-flex h-control-sm items-center rounded-md border border-border px-2.5 text-sm font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            >
-              {t(label)}
-            </Link>
-          );
-        }
         return (
           <Button
             key={trigger}
@@ -136,7 +125,16 @@ export function OrderActions({
           {t('orders.detail.actionFailed')} {failure}
         </p>
       )}
-      {open === null ? null : (
+      {open === 'receive_return' && parcel !== null ? (
+        <ReceiveDialog
+          parcel={parcel}
+          onClose={() => setOpen(null)}
+          onReceived={() => {
+            setOpen(null);
+            void queryClient.invalidateQueries({ queryKey: ['orders'] });
+          }}
+        />
+      ) : open === null ? null : (
         <ActionDialog order={order} trigger={open} parcel={parcel} onClose={() => setOpen(null)} />
       )}
     </>
@@ -207,6 +205,7 @@ function ActionDialog({
               rawStatus: MANUAL_RAW_STATUS,
               reason: differs ? reason.trim() : MANUAL_RAW_STATUS,
               collectedPoisha,
+              ...(differs ? { differenceReason: reason.trim() } : {}),
             });
         }
         return () =>
@@ -237,6 +236,7 @@ function ActionDialog({
               rawStatus: MANUAL_RAW_STATUS,
               reason: reason.trim().length >= 3 ? reason.trim() : MANUAL_RAW_STATUS,
               collectedPoisha,
+              ...(reason.trim().length >= 3 ? { differenceReason: reason.trim() } : {}),
               deliveredLines: lines,
             });
         }
@@ -248,6 +248,15 @@ function ActionDialog({
           });
       }
       case 'start_return':
+        if (parcel !== null) {
+          // The parcel's tracking moves with the order, so the returns list finds it.
+          return () =>
+            setParcelStatus(parcel.id, {
+              status: 'return_in_transit',
+              rawStatus: MANUAL_RAW_STATUS,
+              reason: reason.trim().length >= 3 ? reason.trim() : MANUAL_RAW_STATUS,
+            });
+        }
         return () => startReturn(order.id, reason.trim().length >= 3 ? reason.trim() : undefined);
       case 'receive_return':
         if (reason.trim().length < 3) return t('orders.action.reasonNeeded');

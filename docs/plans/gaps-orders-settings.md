@@ -73,4 +73,18 @@ human tester can drive the ERP end to end before it is hosted. Branch
 
 ## Status on 2026-10-02
 
-Planned. Nothing built yet.
+Built and verified on branch `gaps-orders-settings`; not yet merged.
+
+- Server: D-390 to D-396 as planned, plus the ledger audit's fixes — the parcel's collection
+  is written only by a delivery step that applied (C1); a person's status that moves the
+  order is refused outside §7's window and while the booking is queued (W1, N-A, N-B); an
+  order with a live parcel is delivered, returned and received on the parcel (W2, W-A); a
+  difference reason reaches the Sales discounts memo through the parcel route (W-B).
+- Console: lifecycle buttons from the server's `transitions`, parcel panel, bulk pack and
+  hand-over, the five settings tabs, HR's wallet picker; bn and en.
+- Tests: `packages/domain/src/courier/handover.test.ts` (properties over every status and
+  order status), `apps/server/src/modules/courier/handover.e2e.test.ts` (21 cases over HTTP
+  and the worker's webhook path, real Postgres, exact goods-in-transit and receivable
+  amounts), console unit tests, and `apps/console/e2e/order-lifecycle.stack.ts` (4/4 on the
+  real stack, axe in both themes, screenshots in `docs/review/gaps/`).
+- Follow-up: the delivery journal's courier versus the parcel's (decisions.md, N3).

@@ -558,32 +558,6 @@ export class CourierSyncService {
       // parcel's branch must be refused here rather than by a later constraint.
       assertInScope(request, { branchId: consignment.branch_id });
 
-      /*
-       * §7's window, for a status a person sets that would move the order (ledger audit of
-       * D-390, W1).
-       *
-       * Since D-390 this route can ship a packed order — a dispatch movement and the handover
-       * journal — as well as deliver it, dated at `occurredAt`. A person's date outside today
-       * or yesterday (or in the future) is refused here as the order routes and the handover
-       * refuse it; a back-dated entry needs §7's approval. A courier's own webhook and poll
-       * carry the courier's clock and are not refused (the period close still holds there).
-       * A tracking-only status moves no money and keeps any date.
-       */
-      if (!withinPostingWindow(at)) {
-        const order = await this.orders.statusOf(tx, context.orgId, consignment.order_id);
-        const moves =
-          order !== null &&
-          courierTriggersFor(input.status, order.status, {
-            collectedKnown: input.collectedPoisha !== undefined,
-          }).length > 0;
-        if (moves) {
-          throw new CourierError(
-            'APPROVAL_REQUIRED',
-            'A status that moves the order can only be dated today or yesterday; anything else needs a back-dated entry approval (§7).',
-          );
-        }
-      }
-
       const outcome = await this.applyStatusIn(tx, {
         orgId: context.orgId,
         consignment,
@@ -595,6 +569,7 @@ export class CourierSyncService {
         webhookDeliveryId: null,
         actorUserId: context.userId,
         reason: input.reason,
+        differenceReason: input.differenceReason,
         deliveredLines: input.deliveredLines,
         request,
         context,
@@ -705,6 +680,8 @@ export class CourierSyncService {
       webhookDeliveryId: string | null;
       actorUserId: string;
       reason: string | null;
+      /** A person's reason for a collection that differs from the COD (manual only). */
+      differenceReason?: string | undefined;
       deliveredLines?: readonly { skuId: string; deliveredQty: number }[] | undefined;
       request?: AuditableRequest | undefined;
       context?: ActiveContext | undefined;
@@ -751,6 +728,36 @@ export class CourierSyncService {
     const trigger = triggers.at(-1) ?? null;
     let destination: OrderStatus = order.status;
     for (const step of triggers) destination = transitionFor(destination, step)?.to ?? destination;
+
+    if (input.source === 'manual' && triggers.length > 0) {
+      /*
+       * Two refusals for a status a *person* sets that would move the order, decided on the
+       * same `triggers` that are applied below so a check and the move cannot disagree
+       * (ledger audit of D-390, W1 and its re-audit's N-A and N-B).
+       *
+       * §7's window: since D-390 this can ship a packed order — a dispatch movement and the
+       * handover journal — as well as deliver it, dated at `occurredAt`. A person's date
+       * outside today or yesterday (or in the future) needs §7's back-dated approval, as on
+       * the order routes and the handover. A courier's webhook and poll carry the courier's
+       * clock and are not refused here; the period close still holds for them.
+       *
+       * A booking still queued: the booking job would then book a rider for a box already
+       * delivered or on its way back. The booking goes through (or fails) in moments; a
+       * failed one is no longer live and the order can be moved by hand.
+       */
+      if (!withinPostingWindow(input.occurredAt)) {
+        throw new CourierError(
+          'APPROVAL_REQUIRED',
+          'A status that moves the order can only be dated today or yesterday; anything else needs a back-dated entry approval (§7).',
+        );
+      }
+      if (consignment.booking_state === 'pending') {
+        throw new CourierError(
+          'CONSIGNMENT_INVALID',
+          'This parcel’s booking with the courier has not gone through yet. Wait for it, or move the order once the booking has failed.',
+        );
+      }
+    }
 
     const event = await repo.insertConsignmentEvent(tx, {
       orgId: input.orgId,
@@ -866,6 +873,9 @@ export class CourierSyncService {
         reason: input.reason,
         ...(delivers
           ? { collectedPoisha: poisha(collected ?? BigInt(consignment.cod_amount_poisha)) }
+          : {}),
+        ...(delivers && input.differenceReason !== undefined
+          ? { differenceReason: input.differenceReason }
           : {}),
         ...(delivers && input.deliveredLines !== undefined
           ? { deliveredLines: input.deliveredLines }

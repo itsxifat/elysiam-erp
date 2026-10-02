@@ -292,6 +292,8 @@ export function setParcelStatus(
     readonly rawStatus: string;
     readonly reason: string;
     readonly collectedPoisha?: string;
+    /** Why the collection differs from the COD: it goes on the Sales discounts line (§7). */
+    readonly differenceReason?: string;
     readonly deliveredLines?: readonly { readonly skuId: string; readonly deliveredQty: number }[];
   },
 ): Promise<{ recorded: boolean; transitioned: boolean; orderTo: string | null }> {
