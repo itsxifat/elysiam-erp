@@ -676,16 +676,19 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
   - **Insight rules**: seven, as pure functions with thresholds (D-326), worded in bn and en.
   - **LLM narrative**: off by default behind `analytics.llm_narrative`; an allow-list payload
     with a guard, a daily cache and a fake provider. No real provider was built (D-327).
-- Verification: `pnpm verify` exit 0 at `ee833e0` (153 test files: 2,540 passed, 1 skipped).
-  After the ledger audit's fixes (`cb0f8cb`) the analytics, tenancy and domain suites pass
-  (7 files, 143 tests) and the final full run is recorded in the plan. Acceptance checks 1–4
-  pass; the evidence table is in `docs/plans/M24.md`:
+- Verification: `pnpm verify` exit 0 at `ee833e0` (153 test files: 2,540 passed, 1 skipped)
+  and again at `6f54975` after the ledger audit's fixes (2,542 passed, 1 skipped); the last
+  run, after the acceptance audit's gaps were closed, is recorded in `docs/plans/M24.md`.
+  Acceptance checks 1–4 pass; the evidence table is in the plan:
   1. `rollup.db.test.ts`: all five tables equal direct SQL over two seeded brands, after a
      rerun, a partial rerun, overlapping recomputes, a spend correction and the worker's
-     handler. A deliberately broken rollup fails it.
+     handler. A deliberately broken rollup fails it. The triggers are tested too: the nightly
+     fan-out (one job per brand, collapsed on a rerun) and an order event's job (its own Dhaka
+     day through today, one per ten-second bucket, started after the bucket) in `pgboss.job`.
   2. `analytics.e2e.test.ts`: two org admins, Super Admin and every other role, over HTTP.
-  3. `insights.test.ts`: every rule fired, held at its boundary, and silenced by a small
-     sample; and one rule fired over HTTP against the group median.
+  3. `insights.test.ts`: every rule fired, held one basis point (or second) under its
+     threshold, and silenced by a small sample in each month it reads; removing any of the
+     sample guards fails a test. One rule also fires over HTTP against the group median.
   4. `narrative.test.ts`: planted personal data, a 300-run property and the guard; the HTTP
      test reads the prompt the fake provider received.
 - Auditors:
@@ -694,7 +697,12 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
     only it is now. W2: gross profit beside revenue gives cost of goods, so the leaderboard and
     the group medians read a variant without it. Its notes on overlapping recomputes, an
     event's own day, the agents' pickup rounding and the fake's prompt list are done too.
-  - acceptance-auditor: see the plan's status.
+  - ledger-auditor re-check of `cb0f8cb`: **0 critical, 0 warnings**; its one new note (an
+    event's range unbounded after a 92-day outage) is fixed in `62a4b36`.
+  - acceptance-auditor: NOT READY with 4 gaps, all closed: three insight rules lacked a
+    sample or boundary case; the rollup's triggers (nightly fan-out, the event job) were
+    untested; the plan's status ended in a placeholder; and this entry did not say 0093 was
+    edited in place. Its re-audit is recorded in the plan.
 - Decisions/assumptions: D-320 to D-330. D-323 and D-326 are ASSUMED.
 - New dependencies: none. `@elysium/domain` gains an `./analytics` export.
 - Deviations from the milestone spec:
@@ -707,6 +715,11 @@ equity` (D-213). It runs once per brand and names the accountant who agreed the 
 - Follow-ups:
   - **Migration numbers.** 0092–0093 collide with M26's; the integration renumbers. (owner:
     claude)
+  - 0093 was edited on this branch after it was first committed (`cb0f8cb`, the ledger
+    audit's W1). That is allowed because it is not on main, but the migrator does not compare
+    hashes, so a database that applied the first 0093 keeps `erp_analytics` reading all five
+    rollups (the tenancy guard then fails loudly). Reset any local database that ran this
+    branch before `cb0f8cb`; no shared database did. (owner: claude)
   - A training brand's org admin still sees the real brands' leaderboard and group medians
     (ledger audit note). Refuse both for a training brand if the client wants. (owner: claude)
   - A delivered line with no dispatch cost counts as zero cost, which overstates gross profit

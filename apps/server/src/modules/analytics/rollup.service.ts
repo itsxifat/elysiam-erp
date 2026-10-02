@@ -21,8 +21,6 @@ import * as repo from './analytics.repository.js';
 /** Who the rollup acts as in `app.user_id` and the outbox (D-277). Never a person. */
 export const ROLLUP_ACTOR = 'usr_analytics_rollup';
 
-/** The most days one recompute covers: a quarter, as M18's dashboard caps a range. */
-
 /** The order events that can change a day's figures (§19). */
 export const ROLLUP_EVENT_NAMES = ['order.created', 'order.status_changed'] as const;
 

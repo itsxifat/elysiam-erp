@@ -313,7 +313,7 @@ create policy org_isolation on <schema>.<table>
 ### Cross-org by design (the only exceptions)
 
 1. `fraud.phone_signals` and `fraud.provider_checks`: aggregated counts keyed by an HMAC of the normalized phone number. Every org can read them. They contain no order details, names or addresses.
-2. `analytics.*` rollups, read through `erp_analytics`.
+2. The `analytics.daily_org` rollup, read through `erp_analytics` (D-329); the other rollups are single-brand.
 3. Super Admin consolidated views (wallet totals, P&L across orgs) through `erp_analytics`. These are read-only; **every write is scoped to exactly one org**.
 4. `iam` users and memberships: one user can belong to several orgs with different roles.
 5. The org list and reference data (districts and thanas) are global.

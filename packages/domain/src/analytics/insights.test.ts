@@ -140,6 +140,26 @@ describe('return_rate_rising', () => {
   });
 });
 
+describe('return_rate_rising at its edges', () => {
+  const previous = month({ ordersDelivered: 90, ordersReturned: 10 }); // 10.00%
+
+  it('fires at exactly 3 pp and not at 2.99 pp', () => {
+    // 1,300 / 10,000 = 13.00%; 1,299 / 10,000 = 12.99%.
+    expect(
+      codes(input({ current: month({ ordersDelivered: 8_700, ordersReturned: 1_300 }), previous })),
+    ).toEqual(['return_rate_rising']);
+    expect(
+      codes(input({ current: month({ ordersDelivered: 8_701, ordersReturned: 1_299 }), previous })),
+    ).toEqual([]);
+  });
+
+  it('stays quiet when this month is too small to compare', () => {
+    expect(
+      codes(input({ current: month({ ordersDelivered: 10, ordersReturned: 9 }), previous })),
+    ).toEqual([]);
+  });
+});
+
 describe('delivery_success_below_group', () => {
   it('fires when delivery success sits 5 pp or more under the group median', () => {
     // 70 / (70 + 20 + 10) = 70%; the group median is 80%.
@@ -157,6 +177,26 @@ describe('delivery_success_below_group', () => {
       medianBps: '8000',
       gapBps: '1000',
     });
+  });
+
+  it('fires at exactly 5 pp under the median', () => {
+    const result = insights(
+      input({
+        current: month({ ordersDelivered: 75, ordersReturned: 25 }), // 75.00%
+        group: { outsideDhakaReturnRateBps: [], deliverySuccessBps: [8_000n] },
+      }),
+    );
+    expect(result.map((insight) => insight.code)).toContain('delivery_success_below_group');
+  });
+
+  it('stays quiet on fewer than 20 finished orders, however far below', () => {
+    const result = insights(
+      input({
+        current: month({ ordersDelivered: 1, ordersReturned: 10, ordersCancelled: 8 }), // 19
+        group: { outsideDhakaReturnRateBps: [], deliverySuccessBps: [9_500n] },
+      }),
+    );
+    expect(result.map((insight) => insight.code)).not.toContain('delivery_success_below_group');
   });
 
   it('stays quiet at 4.99 pp under the median', () => {
@@ -243,6 +283,24 @@ describe('cpdo_rising', () => {
         }),
       ),
     ).toEqual([]);
+    // 24.99%: ৳249.98 now against ৳200.00 before.
+    expect(
+      codes(
+        input({
+          current: month({ ordersDelivered: 50, spendPoisha: 1_249_900n }),
+          previous: month({ ordersDelivered: 50, spendPoisha: 1_000_000n }),
+        }),
+      ),
+    ).toEqual([]);
+    // Last month too small to compare against, however cheap it was.
+    expect(
+      codes(
+        input({
+          current: month({ ordersDelivered: 40, spendPoisha: 9_000_000n }),
+          previous: month({ ordersDelivered: 19, spendPoisha: 100n }),
+        }),
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -294,6 +352,19 @@ describe('channel_returns', () => {
         params: { channel: 'whatsapp', rateBps: '3000', brandRateBps: '2000' },
       },
     ]);
+  });
+});
+
+describe('channel_returns at its edge', () => {
+  it('stays quiet when a channel is 9.99 pp above the brand', () => {
+    // Brand: 2,000 / 10,000 = 20.00%. Channel: 2,999 / 10,000 = 29.99%.
+    const result = insights(
+      input({
+        current: month({ ordersDelivered: 8_000, ordersReturned: 2_000 }),
+        channels: [{ channel: 'whatsapp', ordersDelivered: 7_001, ordersReturned: 2_999 }],
+      }),
+    );
+    expect(result.map((insight) => insight.code)).not.toContain('channel_returns');
   });
 });
 

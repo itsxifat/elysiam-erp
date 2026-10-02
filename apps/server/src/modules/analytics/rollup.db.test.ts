@@ -2,8 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 import { withAnalytics, withOrg, withSystem } from '@elysium/db';
 import { sql, type SQL } from 'drizzle-orm';
+import { pino } from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { ALL_QUEUES } from '../../job-queues.js';
+import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
 import {
   createBranch,
   ORG_A,
@@ -13,7 +16,7 @@ import {
 } from '../../testing/http-harness.js';
 import { seedProductWithSkus } from '../inventory/inventory.testing.js';
 import { seedCustomer } from '../orders/orders.testing.js';
-import { ANALYTICS_QUEUES } from './analytics.queues.js';
+import { ANALYTICS_QUEUES, rollupBucket } from './analytics.queues.js';
 import { registerAnalyticsJobs } from './analytics.worker.js';
 import { RollupService } from './rollup.service.js';
 
@@ -47,6 +50,7 @@ const DAYS = Array.from({ length: 10 }, (_, index) => {
 
 let harness: HttpHarness;
 let rollup: RollupService;
+let jobs: JobsRuntime;
 
 /** A small deterministic generator, so a failure reproduces exactly. */
 function generator(seed: number): () => number {
@@ -448,11 +452,21 @@ async function expectRollupEqualsDirect(orgId: string): Promise<void> {
 beforeAll(async () => {
   harness = await startHttpHarness('analytics-rollup');
   rollup = harness.app.get(RollupService);
+  // The worker role installs pg-boss's schema; no handler is attached, so a job enqueued by
+  // the triggers below sits in `pgboss.job` for the test to read and nothing runs it.
+  jobs = await JobsRuntime.start({
+    role: 'worker',
+    connectionString: harness.database.ownerUrl,
+    appRole: 'erp_app',
+    queues: ALL_QUEUES,
+    logger: pino({ level: 'silent' }),
+  });
   await seedWorld({ orgId: ORG_A, prefix: 'a', seed: 24_001, orders: 140 });
   await seedWorld({ orgId: ORG_B, prefix: 'b', seed: 24_002, orders: 60 });
 }, 600_000);
 
 afterAll(async () => {
+  await jobs?.stop();
   await harness?.close();
 }, 120_000);
 
@@ -555,6 +569,81 @@ describe('check 1: every rollup table equals a direct query over its sources', (
       payload: { from: FROM, to: TO },
     });
     await expectRollupEqualsDirect(ORG_B);
+  });
+});
+
+interface JobRow extends Record<string, unknown> {
+  readonly singleton_key: string | null;
+  readonly start_after: Date | string;
+  readonly org_id: string | null;
+  readonly from: string;
+  readonly to: string;
+}
+
+async function rollupJobs(where: SQL): Promise<JobRow[]> {
+  const rows = await withSystem(async (tx) =>
+    tx.execute<JobRow>(sql`
+      select singleton_key, start_after, data ->> 'orgId' as org_id,
+             data -> 'payload' ->> 'from' as "from", data -> 'payload' ->> 'to' as "to"
+      from pgboss.job
+      where name = ${ANALYTICS_QUEUES.rollup} and ${where}
+      order by singleton_key
+    `),
+  );
+  return [...rows];
+}
+
+describe('the jobs that run the rollup (D-320)', () => {
+  it('fans out the last seven days to every active brand at night, once a day', async () => {
+    const at = new Date('2026-09-10T21:00:00.000Z'); // 03:00 Dhaka on the 11th
+    const brands = await rollup.fanOut(at);
+    expect(brands).toBeGreaterThanOrEqual(5);
+
+    const queued = () => rollupJobs(sql`singleton_key like 'nightly:%:2026-09-11'`);
+    const first = await queued();
+    expect(first).toHaveLength(brands);
+    expect(new Set(first.map((job) => job.org_id))).toContain(ORG_A);
+    for (const job of first) {
+      expect(job).toMatchObject({ from: '2026-09-05', to: '2026-09-11' });
+      expect(job.singleton_key).toBe(`nightly:${job.org_id ?? ''}:2026-09-11`);
+    }
+
+    // The cron's own retry, or a second worker, collapses on the singleton key.
+    await rollup.fanOut(at);
+    expect(await queued()).toHaveLength(brands);
+  });
+
+  it('turns an order event into one recompute of its own day through today, after the burst', async () => {
+    // Created at 23:59:50 Dhaka on 1 Sept, dispatched ten seconds later, after midnight.
+    const occurredAt = new Date('2026-09-01T17:59:50.000Z');
+    const now = new Date('2026-09-01T18:00:00.000Z');
+    const event = {
+      id: randomUUID(),
+      orgId: ORG_B,
+      name: 'order.created',
+      payload: { id: randomUUID() },
+      rooms: [],
+      attempts: 0,
+      occurredAt,
+      actorUserId: null,
+    };
+    await rollup.enqueueForEvent(event, now);
+    // A second event in the same ten seconds is the same job.
+    await rollup.enqueueForEvent({ ...event, id: randomUUID() }, new Date(now.getTime() + 4_000));
+
+    const bucket = rollupBucket(ORG_B, now);
+    const found = await rollupJobs(sql`singleton_key like ${`rollup:${ORG_B}:%`}`);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({
+      org_id: ORG_B,
+      from: '2026-09-01',
+      to: '2026-09-02',
+      singleton_key: `${bucket.singletonKey}:2026-09-01:2026-09-02`,
+    });
+    // Started only after the bucket closed, so the burst's last commit is in it.
+    expect(new Date(found[0]?.start_after ?? 0).getTime()).toBeGreaterThanOrEqual(
+      bucket.startAfter.getTime(),
+    );
   });
 });
 

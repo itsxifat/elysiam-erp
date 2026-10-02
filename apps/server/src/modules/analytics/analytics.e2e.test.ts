@@ -200,7 +200,11 @@ describe('check 2: leaderboard visibility follows D-023', () => {
     const rows = body<{ rows: BoardRow[] }>(response).rows;
     expect(rows.find((row) => row.orgId === ORG_B)?.visibility).toBe('full');
     expect(rows.find((row) => row.orgId === ORG_A)?.visibility).toBe('normalized');
-    expect(response.body).not.toContain('"12000000"');
+    // A's July revenue and spend and its June revenue, all absent.
+    for (const raw of ['"12000000"', '"2400000"', '"10000000"']) {
+      expect(response.body).not.toContain(raw);
+    }
+    expect(response.body).not.toMatch(/grossProfit/i);
     expect(response.body).toContain(ORG_B_REVENUE);
   });
 
