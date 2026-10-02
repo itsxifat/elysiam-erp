@@ -17,6 +17,7 @@ import {
   type TestDatabase,
 } from '@elysium/db/testing';
 import { randomUUID } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
 
 import { base32 } from '@better-auth/utils/base32';
 import { sql } from 'drizzle-orm';
@@ -400,6 +401,134 @@ describe('the credential rate limits cannot be sidestepped with a trailing slash
     });
 
     expect(response.statusCode, response.body).toBe(404);
+  });
+});
+
+/*
+ * M30: the same door, by dot segments.
+ *
+ * `inject()` cannot send this request: light-my-request resolves `..` in the url before the
+ * router sees it. A browser or curl sends the path verbatim, so this goes over a real socket
+ * with `node:http`, which does too. Before the fix the router matched `/api/auth/*`, the rate
+ * limiter looked up the raw path and found no rule, and the bridge's `new URL()` resolved it
+ * to a real sign-in: credential stuffing past both buckets.
+ */
+describe('the credential rate limits cannot be sidestepped with dot segments', () => {
+  let port = 0;
+
+  beforeAll(async () => {
+    await server.listen({ port: 0, host: '127.0.0.1' });
+    const address = server.server.address();
+    port = typeof address === 'object' && address !== null ? address.port : 0;
+  });
+
+  function rawPost(
+    path: string,
+    body: unknown,
+    headers: Record<string, string>,
+  ): Promise<{ status: number; body: string }> {
+    return new Promise((resolve, reject) => {
+      const payload = JSON.stringify(body);
+      const call = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          method: 'POST',
+          path,
+          headers: {
+            ...headers,
+            'content-type': 'application/json',
+            'content-length': String(Buffer.byteLength(payload)),
+          },
+        },
+        (response) => {
+          let text = '';
+          response.setEncoding('utf8');
+          response.on('data', (chunk: string) => (text += chunk));
+          response.on('end', () => resolve({ status: response.statusCode ?? 0, body: text }));
+        },
+      );
+      call.on('error', reject);
+      call.end(payload);
+    });
+  }
+
+  it.each([
+    '/api/auth/x/../sign-in/email',
+    '/api/auth/sign-in/./email',
+    '/api/auth/x/%2e%2e/sign-in/email',
+    // WHATWG `URL` reads a backslash as a slash in an http URL (the ledger audit, N9).
+    '/api/auth/x\\..\\sign-in/email',
+    '//api/auth/sign-in/email',
+  ])('refuses %s before Better Auth reads it as a sign-in', async (path) => {
+    // A valid CSRF pair, so the only thing that can refuse is the path itself.
+    const client = new Client(freshIp());
+    await client.request('GET', '/health/live');
+
+    const response = await rawPost(
+      path,
+      { email: 'nobody@example.invalid', password: 'not-the-password' },
+      {
+        host: APP_DOMAIN,
+        origin: ORIGIN,
+        cookie: client.cookieHeader(),
+        [CSRF_HEADER]: client.csrfToken(),
+        'x-forwarded-for': freshIp(),
+      },
+    );
+
+    // 401 here would mean Better Auth checked the password: the bypass.
+    expect(response.status, response.body).toBe(404);
+  });
+
+  it('still serves the canonical sign-in path over the same socket', async () => {
+    const client = new Client(freshIp());
+    await client.request('GET', '/health/live');
+
+    const response = await rawPost(
+      '/api/auth/sign-in/email',
+      { email: 'nobody@example.invalid', password: 'not-the-password' },
+      {
+        host: APP_DOMAIN,
+        origin: ORIGIN,
+        cookie: client.cookieHeader(),
+        [CSRF_HEADER]: client.csrfToken(),
+        'x-forwarded-for': freshIp(),
+      },
+    );
+
+    expect(response.status, response.body).toBe(401);
+  });
+});
+
+/*
+ * M30: Better Auth's own limiter and its session rows see the address Fastify resolved, not
+ * the header the client sent. Two values in `x-forwarded-for` used to reach Better Auth
+ * verbatim, which trusts only a single-value header and answers "no address" otherwise —
+ * in production, one shared bucket for every caller.
+ */
+describe('Better Auth is told the resolved client address', () => {
+  it('records the address request.ip resolved, not the raw forwarded chain', async () => {
+    const client = new Client(freshIp());
+    const email = `xff_${Date.now()}_${Math.random().toString(36).slice(2, 7)}@example.invalid`;
+    const userId = await createUserRow(email, 'xff user');
+    await grantMembership({ userId, orgId: ORG_A, role: 'sales' });
+    await setPassword(client, email);
+
+    const signIn = await client.request('POST', '/api/auth/sign-in/email', {
+      body: { email, password: PASSWORD },
+      headers: { 'x-forwarded-for': '203.0.113.50, 198.51.100.9' },
+    });
+    expect(signIn.statusCode, signIn.body).toBeLessThan(400);
+
+    const rows = await withGlobal(async (tx) =>
+      tx.execute<{ ip_address: string | null }>(sql`
+        select ip_address from iam.sessions where user_id = ${userId}
+        order by created_at desc limit 1
+      `),
+    );
+    // The app trusts the proxy chain in this suite, so request.ip is the leftmost address.
+    expect(rows[0]?.ip_address).toBe('203.0.113.50');
   });
 });
 

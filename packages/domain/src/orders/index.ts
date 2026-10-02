@@ -18,3 +18,5 @@ export * from './numbering.js';
 // M17: advances that accounts verified, and why parcels come back (D-230 to D-234).
 export * from './advances.js';
 export * from './returns.js';
+// M30: how far below the catalogue an agent may price an order (D-364).
+export * from './discount-ceiling.js';

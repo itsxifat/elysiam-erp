@@ -202,7 +202,7 @@ test('petty cash without a receipt is stopped before it is sent (M08 check 2)', 
   page.on('request', watch);
   await dialog.getByRole('button', { name: 'Record' }).click();
   await expect(dialog.getByRole('alert')).toHaveText(
-    'Attach the receipt before recording petty cash.',
+    'Attach the receipt before recording this entry.',
   );
   page.off('request', watch);
   expect(sent).toBe(false);

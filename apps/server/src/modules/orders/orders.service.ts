@@ -6,15 +6,19 @@ import {
   businessDate,
   computeExchangeReturn,
   computeOrderTotals,
+  basisPointsAsPercent,
+  discountAllowed,
   formatOrderNo,
   mulQty,
   normalizeBdPhone,
+  orderDiscountCeilingBps,
   orderExchangeDraft,
   orderPeriodFor,
   orderPrefixFor,
   poisha,
   sub,
   TRANSITIONS,
+  type DiscountedOrder,
   withinPostingWindow,
   type OrderStatus,
   type OrderTrigger,
@@ -273,6 +277,17 @@ interface PricedLine {
   readonly discountPoisha: bigint;
 }
 
+/** An order's lines and its order-level discount, as the discount ceiling reads them. */
+interface PricedOrder {
+  readonly lines: readonly {
+    readonly skuId: string;
+    readonly qty: number;
+    readonly unitPricePoisha: bigint;
+    readonly discountPoisha: bigint;
+  }[];
+  readonly orderDiscountPoisha: bigint;
+}
+
 /** What `createIn` needs beyond the request body. */
 export interface CreateOrderOptions {
   /** The original order, when this is an exchange's replacement (§9). */
@@ -284,6 +299,13 @@ export interface CreateOrderOptions {
   /** The zone and charge to inherit when the body names none. */
   readonly fallbackDeliveryZoneId?: string | null;
   readonly fallbackDeliveryChargePoisha?: bigint;
+  /**
+   * The prices come from the system, not from a person at the desk, so the agent's discount
+   * ceiling (D-364) does not apply: the public intake (whose body cannot carry a price), a
+   * brand's migrated order history and the preview's seed. Set only by `OrdersApiService`;
+   * every HTTP path leaves it out and is checked.
+   */
+  readonly systemPricing?: true;
 }
 
 export interface CreatedOrder {
@@ -570,6 +592,12 @@ export class OrdersService {
     const shipTo = await this.resolveShipTo(tx, context, input, buyer, options);
     const zone = await this.resolveZone(tx, context, input, shipTo, options);
     const lines = await this.priceLines(tx, context, input.lines);
+    if (options.systemPricing !== true) {
+      await this.assertDiscountCeiling(tx, context, {
+        lines,
+        orderDiscountPoisha: BigInt(input.discountPoisha ?? 0n),
+      });
+    }
 
     const baseDeliveryChargePoisha =
       input.deliveryChargePoisha !== undefined
@@ -853,6 +881,26 @@ export class OrdersService {
             ? BigInt(patch.discountPoisha)
             : bigintMax(BigInt(order.discount_poisha) - existingLineDiscounts, 0n);
 
+        if (patch.lines !== undefined || patch.discountPoisha !== undefined) {
+          await this.assertDiscountCeiling(
+            tx,
+            context,
+            { lines, orderDiscountPoisha },
+            {
+              lines: existing.map((line) => ({
+                skuId: line.sku_id,
+                qty: line.qty,
+                unitPricePoisha: BigInt(line.unit_price_poisha),
+                discountPoisha: BigInt(line.discount_poisha),
+              })),
+              orderDiscountPoisha: bigintMax(
+                BigInt(order.discount_poisha) - existingLineDiscounts,
+                0n,
+              ),
+            },
+          );
+        }
+
         const deliveryChargePoisha =
           patch.deliveryChargePoisha === undefined
             ? BigInt(order.delivery_charge_poisha)
@@ -870,6 +918,7 @@ export class OrdersService {
           advancePaidPoisha: poisha(BigInt(order.advance_paid_poisha)),
         });
 
+        if (patch.shipTo !== undefined) await this.assertArea(tx, patch.shipTo);
         const shipTo: ShipTo =
           patch.shipTo === undefined
             ? {
@@ -1402,6 +1451,19 @@ export class OrdersService {
     return { id: upserted.id, name: upserted.name, phoneE164: upserted.phoneE164 };
   }
 
+  /** A district and thana the reference data has, the thana inside the district (D2). */
+  private async assertArea(
+    tx: Tx,
+    address: { readonly districtId: number; readonly thanaId: number },
+  ): Promise<void> {
+    if (!(await repo.areaExists(tx, address.districtId, address.thanaId))) {
+      throw new OrdersError(
+        'VALIDATION_FAILED',
+        'That thana is not one of the district’s. Choose the district, then a thana in it.',
+      );
+    }
+  }
+
   /**
    * The address snapshot the parcel is labelled with.
    *
@@ -1418,6 +1480,7 @@ export class OrdersService {
     options: CreateOrderOptions,
   ): Promise<ShipTo> {
     if (input.shipTo !== undefined) {
+      await this.assertArea(tx, input.shipTo);
       return {
         name: input.shipTo.name ?? buyer.name,
         phoneE164: normalizeBdPhone(buyer.phoneE164),
@@ -1495,6 +1558,60 @@ export class OrdersService {
       }
     }
     return undefined;
+  }
+
+  /**
+   * How far below the catalogue this caller may price an order (M30, C4; D-364).
+   *
+   * The desk's agents type prices and discounts, which is the ordinary case on a phone call,
+   * but nothing bounded them: a sales agent could book a line at nothing to an accomplice
+   * and the delivery would post full cost against no revenue. The typed discount (prices
+   * under the list, line and order discounts; never a promo code, which the server prices)
+   * is held to the caller's role ceiling. An edit that adds nothing to the discount the order
+   * already carried is always allowed, so an agent can still fix the address on an order an
+   * org admin priced deeply.
+   */
+  private async assertDiscountCeiling(
+    tx: Tx,
+    context: ActiveContext,
+    after: PricedOrder,
+    before?: PricedOrder,
+  ): Promise<void> {
+    const ids = [...new Set([...after.lines, ...(before?.lines ?? [])].map((line) => line.skuId))];
+    const listPrice = new Map(
+      (await this.catalog.skusByIds(tx, context.orgId, ids)).map((sku) => [
+        sku.id,
+        sku.pricePoisha,
+      ]),
+    );
+    const discounted = (order: PricedOrder): DiscountedOrder => ({
+      lines: order.lines.map((line) => ({
+        skuId: line.skuId,
+        qty: line.qty,
+        // A SKU the catalogue no longer has is valued at what the order charges for it:
+        // it can neither raise nor lower the discount.
+        listPricePoisha: poisha(listPrice.get(line.skuId) ?? line.unitPricePoisha),
+        unitPricePoisha: poisha(line.unitPricePoisha),
+        lineDiscountPoisha: poisha(line.discountPoisha),
+      })),
+      orderDiscountPoisha: poisha(order.orderDiscountPoisha),
+    });
+
+    const ceilingBps = orderDiscountCeilingBps(context);
+    if (
+      discountAllowed({
+        after: discounted(after),
+        ...(before === undefined ? {} : { before: discounted(before) }),
+        ceilingBps,
+      })
+    ) {
+      return;
+    }
+    throw new OrdersError(
+      'ORDER_DISCOUNT_ABOVE_CEILING',
+      `A line or the order is priced more than ${basisPointsAsPercent(ceilingBps)}% below the ` +
+        'catalogue, which is as far as your role may go. An org admin can enter this price.',
+    );
   }
 
   /**

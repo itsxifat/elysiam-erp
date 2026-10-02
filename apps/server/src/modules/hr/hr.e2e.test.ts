@@ -1038,3 +1038,147 @@ describe('HR and accounts permissions follow the matrix (check 4)', () => {
     }
   });
 });
+
+/*
+ * M30 security review, C2 and C3 (D-363). One person must not both type a staff loan and
+ * hand over the cash, nor point somebody's salary at an account of their choosing.
+ */
+describe('M30: payroll money needs a second person and the payroll grant', () => {
+  it('refuses to let whoever recorded a staff loan also disburse it', async () => {
+    const loan = body<{ id: string }>(
+      await hr.client.request('POST', '/v1/hr/loans', {
+        body: {
+          employeeId: bashir.id,
+          principalPoisha: '100000',
+          instalmentCount: 2,
+          firstMonth: '2026-11',
+        },
+      }),
+    ).id;
+
+    const byMaker = await hr.client.request('POST', `/v1/hr/loans/${loan}/disburse`, {
+      body: { walletAccountId: await bkashAccount() },
+    });
+    expect(byMaker.statusCode, byMaker.body).toBe(403);
+    expect(byMaker.body).toContain('PAYROLL_SELF_DEALING');
+
+    // A second hr user is a second person: the split is people, not roles.
+    const bySecond = await secondHr.client.request('POST', `/v1/hr/loans/${loan}/disburse`, {
+      body: { walletAccountId: await bkashAccount() },
+    });
+    expect(bySecond.statusCode, bySecond.body).toBe(201);
+  });
+
+  it('refuses a staff loan to yourself, and its disbursal by you', async () => {
+    const self = await createEmployee(admin, {
+      code: `M30-${randomUUID().slice(0, 6).toUpperCase()}`,
+      fullName: 'HR Officer',
+      joinDate: '2026-01-01',
+      payoutMethod: 'cash',
+      userId: hr.userId,
+    });
+
+    const toSelf = await hr.client.request('POST', '/v1/hr/loans', {
+      body: {
+        employeeId: self.id,
+        principalPoisha: '100000',
+        instalmentCount: 2,
+        firstMonth: '2026-11',
+      },
+    });
+    expect(toSelf.statusCode, toSelf.body).toBe(403);
+    expect(toSelf.body).toContain('PAYROLL_SELF_DEALING');
+
+    const recorded = await secondHr.client.request('POST', '/v1/hr/loans', {
+      body: {
+        employeeId: self.id,
+        principalPoisha: '100000',
+        instalmentCount: 2,
+        firstMonth: '2026-11',
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(201);
+    const byBorrower = await hr.client.request(
+      'POST',
+      `/v1/hr/loans/${body<{ id: string }>(recorded).id}/disburse`,
+      { body: { walletAccountId: await bkashAccount() } },
+    );
+    expect(byBorrower.statusCode, byBorrower.body).toBe(403);
+    expect(byBorrower.body).toContain('PAYROLL_SELF_DEALING');
+
+    // And nobody re-points their own salary.
+    const ownPayout = await hr.client.request('PATCH', `/v1/hr/employees/${self.id}`, {
+      body: { payoutMethod: 'bkash', payoutRef: '01700000000' },
+    });
+    expect(ownPayout.statusCode, ownPayout.body).toBe(403);
+    expect(ownPayout.body).toContain('PAYROLL_SELF_DEALING');
+
+    // Nor unlinks their own record to get round the checks (the ledger audit, W-1).
+    const unlink = await hr.client.request('PATCH', `/v1/hr/employees/${self.id}`, {
+      body: { userId: null },
+    });
+    expect(unlink.statusCode, unlink.body).toBe(403);
+    expect(unlink.body).toContain('PAYROLL_SELF_DEALING');
+  });
+
+  it('keeps a branch manager to the showroom’s record, not where the salary goes', async () => {
+    const payout = await branchManager.client.request('PATCH', `/v1/hr/employees/${chameli.id}`, {
+      body: { payoutMethod: 'bkash', payoutRef: '01799999999' },
+    });
+    expect(payout.statusCode, payout.body).toBe(403);
+
+    const link = await branchManager.client.request('PATCH', `/v1/hr/employees/${chameli.id}`, {
+      body: { userId: branchManager.userId },
+    });
+    expect(link.statusCode, link.body).toBe(403);
+
+    // The record a showroom keeps is still theirs to edit.
+    const designation = await branchManager.client.request(
+      'PATCH',
+      `/v1/hr/employees/${chameli.id}`,
+      { body: { designation: 'Senior sales associate' } },
+    );
+    expect(designation.statusCode, designation.body).toBe(200);
+
+    // A hire with an account number, or linked to a login, is HR's to add.
+    const withAccount = await branchManager.client.request('POST', '/v1/hr/employees', {
+      body: {
+        code: `M30-${randomUUID().slice(0, 6).toUpperCase()}`,
+        fullName: 'New Hire',
+        joinDate: '2026-01-01',
+        branchId: otherBranch,
+        payoutMethod: 'bkash',
+        payoutRef: '01788888888',
+      },
+    });
+    expect(withAccount.statusCode, withAccount.body).toBe(403);
+    const cashHire = await createEmployee(branchManager, {
+      code: `M30-${randomUUID().slice(0, 6).toUpperCase()}`,
+      fullName: 'New Hire',
+      joinDate: '2026-01-01',
+      branchId: otherBranch,
+      payoutMethod: 'cash',
+    });
+
+    // Marking someone resigned is ordinary; bringing them back is HR's.
+    const resigned = await branchManager.client.request(
+      'PATCH',
+      `/v1/hr/employees/${cashHire.id}`,
+      { body: { status: 'resigned', leaveDate: '2026-02-01' } },
+    );
+    expect(resigned.statusCode, resigned.body).toBe(200);
+    const back = await branchManager.client.request('PATCH', `/v1/hr/employees/${cashHire.id}`, {
+      body: { status: 'active', leaveDate: null },
+    });
+    expect(back.statusCode, back.body).toBe(403);
+    // Moving a leaver's date later is the same thing (the ledger audit, C-3).
+    const later = await branchManager.client.request('PATCH', `/v1/hr/employees/${cashHire.id}`, {
+      body: { leaveDate: '2027-12-31' },
+    });
+    expect(later.statusCode, later.body).toBe(403);
+    const byHr = await hr.client.request('PATCH', `/v1/hr/employees/${cashHire.id}`, {
+      body: { status: 'active', leaveDate: null },
+    });
+    expect(byHr.statusCode, byHr.body).toBe(200);
+  });
+});

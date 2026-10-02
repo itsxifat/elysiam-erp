@@ -11,7 +11,7 @@ import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
-import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
+import { assertInScope, scopeOf, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import * as repo from './wallets.repository.js';
 import { walletsHttpError } from './wallets.errors.js';
@@ -196,6 +196,22 @@ export class WalletsService {
         throw walletsHttpError('LEDGER_ACCOUNT_NOT_FOUND', 'No such wallet.');
       }
       assertInScope(request, { branchId: before.branch_id });
+
+      /*
+       * Whether a till is counted every day is not the branch's to switch off (the ledger
+       * audit's N8, M30): the closing is the check D-362 leans on, and the manager whose
+       * cash it counts could otherwise stop it being counted.
+       */
+      if (
+        patch.requiresDailyClosing !== undefined &&
+        patch.requiresDailyClosing !== before.requires_daily_closing &&
+        scopeOf(request).kind !== 'all'
+      ) {
+        throw walletsHttpError(
+          'FORBIDDEN',
+          'Whether a wallet is counted every day is set by accounts or an org admin.',
+        );
+      }
 
       // Closing takes a wallet off the cash screens and blocks every movement out
       // of it, so one still holding money would strand that money where nobody

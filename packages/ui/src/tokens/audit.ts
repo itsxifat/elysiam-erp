@@ -84,6 +84,18 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
     label: 'text on a hovered row',
   },
   {
+    foreground: '--primary-text',
+    background: '--background',
+    minimum: 4.5,
+    label: 'a link or selected value in the brand colour',
+  },
+  {
+    foreground: '--primary-text',
+    background: '--card',
+    minimum: 4.5,
+    label: 'a link in the brand colour inside a table or card',
+  },
+  {
     foreground: '--primary-foreground',
     background: '--primary',
     minimum: 4.5,

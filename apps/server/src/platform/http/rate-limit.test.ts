@@ -7,6 +7,7 @@ import {
   CREDENTIAL_RULES,
   identifierFrom,
   MemoryRateLimiter,
+  requestPath,
   type RateLimitRule,
 } from './rate-limit.js';
 
@@ -300,4 +301,39 @@ describe('identifierFrom', () => {
       expect(identifierFrom(body)).toBeNull();
     },
   );
+});
+
+/*
+ * M30: the rules are keyed by the path Better Auth will route, not the raw url. Fastify's
+ * router does not resolve dot segments and the bridge's `new URL()` does, so a raw-url
+ * lookup let `/api/auth/x/../sign-in/email` past both buckets while it still signed in.
+ */
+describe('a dot-segment spelling of a limited path', () => {
+  it.each([
+    '/api/auth/x/../sign-in/email',
+    '/api/auth/sign-in/./email',
+    '/api/auth/x/%2e%2e/sign-in/email?next=1',
+  ])('%s counts against the sign-in rule', async (url) => {
+    const limiter = new MemoryRateLimiter(fakeClock().now);
+    const victim = { email: 'victim@example.invalid' };
+
+    const decisions = [];
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      decisions.push(
+        await checkRateLimit(request({ ip: `203.0.113.${String(attempt)}`, url, body: victim }), {
+          limiter,
+          rules: RULES,
+        }),
+      );
+    }
+
+    expect(decisions.slice(0, 5).every((decision) => decision.allowed)).toBe(true);
+    expect(decisions[5]).toMatchObject({ allowed: false, bucket: 'identifier' });
+  });
+
+  it('resolves the path the way the bridge does', () => {
+    expect(requestPath('/api/auth/x/../sign-in/email')).toBe('/api/auth/sign-in/email');
+    expect(requestPath('/api/auth/x/%2e%2e/sign-in/email?a=b')).toBe('/api/auth/sign-in/email');
+    expect(requestPath('/api/auth/sign-in/email?a=b')).toBe('/api/auth/sign-in/email');
+  });
 });

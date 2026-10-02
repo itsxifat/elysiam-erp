@@ -1,7 +1,9 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { withSystem } from '@elysium/db';
+import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -399,5 +401,41 @@ describe('what may be uploaded', () => {
     expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(Object.keys(file.variants).sort()).toEqual(['card', 'full', 'thumb']);
     expect(file.variants.thumb?.mime).toBe('image/webp');
+  });
+});
+
+/*
+ * M30 security review, B1. A presigned PUT does not bind the length, and finalize read the
+ * whole object into memory before checking its size, so a few parallel finalizes of a
+ * multi-gigabyte "kilobyte" could take the API down. Finalize now reads the stored size
+ * first, and deletes an oversized object without reading it.
+ */
+describe('M30: finalize checks the stored size before reading a byte', () => {
+  it('refuses and deletes an object larger than its type allows', async () => {
+    const sales = await harness.asRole('sales', ORG_A);
+    const ticketResponse = await sales.client.request('POST', '/v1/files', {
+      body: { purpose: 'order-payment-proof', contentType: 'image/png', sizeBytes: 1024 },
+    });
+    expect(ticketResponse.statusCode, ticketResponse.body).toBe(201);
+    const { fileId } = JSON.parse(ticketResponse.body) as { fileId: string };
+
+    const [row] = await withSystem(
+      (tx) =>
+        tx.execute<{ storage_key: string }>(
+          sql`select storage_key from files.objects where id = ${fileId}`,
+        ),
+      { orgId: ORG_A },
+    );
+    const key = row?.storage_key ?? '';
+    // Written straight to the store, as an uploader ignoring the declared size would: one
+    // byte over the 12 MiB a PNG may be.
+    const file = path.join(process.env.STORAGE_LOCAL_ROOT ?? '', key);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, Buffer.alloc(12 * 1024 * 1024 + 1, 0x41));
+
+    const finalize = await sales.client.request('POST', `/v1/files/${fileId}/finalize`);
+    expect(finalize.statusCode, finalize.body).toBe(400);
+    expect(finalize.body).toMatch(/at most 12 MiB/);
+    await expect(stat(file)).rejects.toThrow();
   });
 });

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { scopeFilterFor } from '@elysium/contracts';
 import { withOrg, type Tx } from '@elysium/db';
 import { poisha } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
@@ -181,6 +182,18 @@ export class EmployeesService {
         // row about to be inserted, which is what `ScopeInterceptor` requires of a
         // create (D-061).
         assertInScope(request, { branchId: input.branchId ?? null });
+        // M30 (C3): where an employee's salary goes is payroll's to set (see `update`).
+        if (
+          (input.payoutMethod !== 'cash' ||
+            input.payoutRef !== undefined ||
+            input.userId !== undefined) &&
+          !holdsOrgPayroll(context)
+        ) {
+          throw new HrError(
+            'FORBIDDEN',
+            'Payout details and the linked login are set by HR. Add the employee with cash payout, and HR adds the rest.',
+          );
+        }
 
         /*
          * The id is generated before the insert, because the AAD binds each
@@ -256,6 +269,7 @@ export class EmployeesService {
         if (input.branchId !== undefined) {
           assertInScope(request, { branchId: input.branchId });
         }
+        assertPayrollFieldsAllowed(context, before, input);
 
         const owner = { orgId: context.orgId, employeeId: id };
         const secrets = this.sealAll(owner, input);
@@ -705,3 +719,64 @@ function structureView(
 
 /** Exported for the payroll service, which needs the same poisha coercion. */
 export const toPoisha = (value: string | bigint) => poisha(BigInt(value));
+
+/** Whether the caller holds `update Payroll` across the brand: hr and org_admin (§6). */
+function holdsOrgPayroll(context: ActiveContext): boolean {
+  return scopeFilterFor(context, 'update', 'Payroll').kind === 'all';
+}
+
+/**
+ * The fields of an employee that decide whose account a salary is paid into (M30, C3).
+ *
+ * `update Employee` is a branch manager's at their own branch (§6), for the record a
+ * showroom keeps: name, designation, attendance calendar. It used to reach the payout
+ * method and account too, so a manager could point a staffer's salary at their own bKash
+ * number, or bring back a resigned employee and collect the pay. Those fields now need
+ * `update Payroll`, which only hr and org_admin hold, and nobody changes the payout
+ * account of their own employee record: a second person does.
+ */
+function assertPayrollFieldsAllowed(
+  context: ActiveContext,
+  before: { status: string; leave_date: string | null; user_id: string | null },
+  input: UpdateEmployeeInput,
+): void {
+  const payout = input.payoutMethod !== undefined || input.payoutRef !== undefined;
+  const left = before.status === 'resigned' || before.status === 'terminated';
+  /*
+   * Any change to a leaving date already set counts, not only clearing it: payroll pays a
+   * leaver up to `leave_date`, so moving it to 2027 put a resigned employee back on full
+   * pay as surely as `null` did (the ledger audit, C-3).
+   */
+  const reactivates =
+    (left && input.status !== undefined && input.status !== before.status) ||
+    // A leaver with no leaving date yet is paid to whatever date is set now (the re-audit).
+    (left && input.leaveDate !== undefined && input.leaveDate !== before.leave_date) ||
+    (before.leave_date !== null &&
+      input.leaveDate !== undefined &&
+      input.leaveDate !== before.leave_date);
+  const relinks = input.userId !== undefined;
+
+  if ((payout || reactivates || relinks) && !holdsOrgPayroll(context)) {
+    throw new HrError(
+      'FORBIDDEN',
+      'Payout details, the linked login and bringing back someone who left are changed by HR.',
+    );
+  }
+  if (payout && before.user_id !== null && before.user_id === context.userId) {
+    throw new HrError(
+      'PAYROLL_SELF_DEALING',
+      'Your own payout account is changed by someone else in HR.',
+    );
+  }
+  /*
+   * Nobody unlinks their own record or links a record to themselves (the ledger audit,
+   * W-1). The self-dealing checks read the link, so an hr user who unlinked their own row
+   * could pay themselves a loan a colleague recorded, then link it back.
+   */
+  if (relinks && (before.user_id === context.userId || input.userId === context.userId)) {
+    throw new HrError(
+      'PAYROLL_SELF_DEALING',
+      'The login on your own employee record is changed by someone else in HR.',
+    );
+  }
+}

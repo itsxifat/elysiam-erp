@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from 'drizzle-orm';
 import { pino, type Logger } from 'pino';
 import { describe, expect, it } from 'vitest';
 
@@ -71,6 +72,41 @@ describe('the logger removes secrets', () => {
 
     expect(text()).not.toContain('sk_live_on_error');
     expect(text()).toContain('courier refused');
+  });
+});
+
+describe('a failed query keeps its SQL and loses its values (M30, A6)', () => {
+  it('withholds the bound parameters, the message tail and the driver detail', () => {
+    const { logger, text } = capture();
+    const cause = Object.assign(new Error('insert or update violates foreign key constraint'), {
+      code: '23503',
+      constraint: 'orders_ship_thana_fk',
+      detail: 'Key (ship_thana_id)=(99999) is not present in table "thanas".',
+    });
+    const error = new DrizzleQueryError(
+      'insert into sales.orders (ship_name, ship_address_line, ship_thana_id) values ($1, $2, $3)',
+      ['Rahima Khatun', 'House 4, Road 2, Hemayetpur', 99_999],
+      cause,
+    );
+    logger.error({ err: error }, 'request failed');
+
+    const written = text();
+    expect(written).not.toContain('Rahima');
+    expect(written).not.toContain('Hemayetpur');
+    expect(written).not.toContain('99999');
+    // What a person debugging needs is still there: the SQL and why it failed.
+    expect(written).toContain('insert into sales.orders');
+    expect(written).toContain('violates foreign key constraint');
+    expect(written).toContain('params: [withheld]');
+  });
+
+  it('keeps the stack frames after the withheld line', () => {
+    const { logger, lines } = capture();
+    const error = new DrizzleQueryError('select $1', ['reset-token-abc'], new Error('boom'));
+    logger.error({ err: error }, 'request failed');
+    const stack = String((lines()[0]?.err as { stack?: string } | undefined)?.stack ?? '');
+    expect(stack).not.toContain('reset-token-abc');
+    expect(stack).toMatch(/\n\s+at /);
   });
 });
 

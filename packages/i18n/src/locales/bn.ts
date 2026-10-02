@@ -519,11 +519,11 @@ const bn: Record<MessageKey, string> = {
   'accounts.fieldMemo': 'মন্তব্য',
   'accounts.fieldReceipt': 'রসিদের ছবি',
   'accounts.receiptHint':
-    'পেটি ক্যাশের জন্য বাধ্যতামূলক। যারা এই ওয়ালেট দেখতে পারেন, কেবল তারাই এটি খুলতে পারবেন।',
+    'পেটি ক্যাশ এবং শাখার ওয়ালেট থেকে নগদ যাওয়ার জন্য বাধ্যতামূলক। যারা এই ওয়ালেট দেখতে পারেন, কেবল তারাই এটি খুলতে পারবেন।',
   'accounts.receiptChoose': 'রসিদ যুক্ত করুন',
   'accounts.receiptOptionalHint':
     'ঐচ্ছিক। যারা এই ওয়ালেট দেখতে পারেন, কেবল তারাই এটি খুলতে পারবেন।',
-  'accounts.receiptRequired': 'পেটি ক্যাশ লেখার আগে রসিদ যুক্ত করুন।',
+  'accounts.receiptRequired': 'এই এন্ট্রি লেখার আগে রসিদ যুক্ত করুন।',
   'accounts.kindCashIn': 'নগদ আসা',
   'accounts.kindCashOut': 'নগদ যাওয়া',
   'accounts.kindPettyCash': 'পেটি ক্যাশ',

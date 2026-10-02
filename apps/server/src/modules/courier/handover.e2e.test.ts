@@ -45,6 +45,8 @@ import { CourierSyncService } from './sync.service.js';
  *    HR wallet list carries no balance.
  */
 
+const WEBHOOK_SECRET = 'a-webhook-secret-for-the-handover-suite';
+
 let harness: HttpHarness;
 let jobs: JobsRuntime | undefined;
 let admin: RoleClient;
@@ -97,6 +99,18 @@ beforeAll(async () => {
 
   admin = await harness.asRole('org_admin', ORG_A);
   hr = await harness.asRole('hr', ORG_A);
+
+  // The fake courier refuses every webhook without a secret (M30, D1), as the real ones do.
+  const secured = await admin.client.request('POST', '/v1/courier/accounts', {
+    body: {
+      courierId,
+      providerCode: 'fake',
+      label: 'Gaps courier',
+      webhookSecret: WEBHOOK_SECRET,
+      isActive: true,
+    },
+  });
+  expect(secured.statusCode, secured.body).toBeLessThan(300);
 }, 420_000);
 
 afterAll(async () => {
@@ -222,7 +236,7 @@ async function courierSays(parcelId: string, state: string): Promise<void> {
   const response = await harness.server.inject({
     method: 'POST',
     url: `/v1/courier/webhooks/${ORG_A}/fake`,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-fake-courier-secret': WEBHOOK_SECRET },
     payload: JSON.stringify({
       consignment_no: parcel?.consignment_no,
       state,
@@ -490,6 +504,40 @@ describe('the ledger re-audit of D-392 (W-A, W-B, N-B)', () => {
     );
     expect(memos.map((row) => row.memo)).toEqual(['Buyer paid ৳100 less for a stain.']);
     expect((await parcelOutcome(parcel))?.collected_poisha).toBe(short);
+  });
+
+  /*
+   * M30, D-365 (the ledger re-check's warning): a parcel's manual status is a person's
+   * figure as much as the desk's, so a short collection there needs a reason and stays
+   * within the person's ceiling. Warehouse records deliveries by hand and has a fifth.
+   */
+  it('holds a hand-set short collection to the person’s ceiling, as at the desk', async () => {
+    const warehouse = await harness.asRole('warehouse', ORG_A);
+    const order = await orderAt('packed');
+    const parcel = await bookedParcel(order.id, order.cod);
+    const delivered = (collectedPoisha: string, differenceReason?: string) =>
+      warehouse.client.request('POST', `/v1/courier/parcels/${parcel}/status`, {
+        body: {
+          status: 'delivered',
+          rawStatus: 'Set by the warehouse',
+          reason: 'The rider confirmed by phone.',
+          collectedPoisha,
+          ...(differenceReason === undefined ? {} : { differenceReason }),
+        },
+      });
+
+    const unexplained = await delivered((order.cod - 10_000n).toString());
+    expect(unexplained.statusCode, unexplained.body).toBe(400);
+    expect(unexplained.body).toContain('ORDER_REASON_REQUIRED');
+
+    const writtenOff = await delivered('0', 'Buyer paid nothing');
+    expect(writtenOff.statusCode, writtenOff.body).toBe(403);
+    expect(writtenOff.body).toContain('ORDER_DISCOUNT_ABOVE_CEILING');
+    expect(await orderStatus(order.id)).not.toBe('delivered');
+
+    const short = await delivered((order.cod - 10_000n).toString(), 'Buyer short by the change');
+    expect(short.statusCode, short.body).toBe(201);
+    expect(await orderStatus(order.id)).toBe('delivered');
   });
 
   it('refuses a hand-set status that would move the order while its booking is queued', async () => {

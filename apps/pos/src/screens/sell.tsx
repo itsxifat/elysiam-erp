@@ -367,7 +367,7 @@ export function Sell({
           }}
         >
           <Wallet aria-hidden />
-          {t('pos.sell.pay')} <kbd className="ml-1 text-xs opacity-80">F2</kbd>
+          {t('pos.sell.pay')} <kbd className="ml-1 text-xs">F2</kbd>
         </Button>
         <Button
           size="lg"

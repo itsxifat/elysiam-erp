@@ -58,6 +58,25 @@ export const CREDENTIAL_RULES: Readonly<Record<string, RateLimitRule>> = {
   '/api/auth/two-factor/verify-backup-code': { windowSeconds: 60, perIp: 10 },
 };
 
+/**
+ * The path a request names, read the way the code that finally serves it reads it (M30).
+ *
+ * The rules are keyed by path, and the raw `request.url` is not the path Better Auth acts
+ * on: the bridge in `auth-plugin.ts` hands it a WHATWG `URL`, which resolves `.` and `..`
+ * segments (and their `%2e` spellings), while Fastify's router does not normalise at all.
+ * Keyed by the raw url, `POST /api/auth/x/../sign-in/email` matched no rule here and was
+ * still a sign-in there: credential stuffing with both buckets skipped. Every lookup that
+ * decides something about an `/api/auth` request goes through this one function, so the
+ * limiter, the enrolment hatch and the bridge cannot read one request two ways.
+ */
+export function requestPath(url: string): string {
+  try {
+    return new URL(url, 'http://request.invalid').pathname;
+  } catch {
+    return url.split('?')[0] ?? '';
+  }
+}
+
 export interface RateLimitDecision {
   readonly allowed: boolean;
   /** Which bucket rejected, for the log. Never sent to the client. */
@@ -204,9 +223,10 @@ export async function checkRateLimit(
   if (options.enabled === false) return { allowed: true };
 
   const rules = options.rules ?? CREDENTIAL_RULES;
-  // Query strings never select an endpoint here; matching the raw url would let
-  // `?x=1` walk straight past the rule.
-  const path = request.url.split('?')[0] ?? '';
+  // Query strings never select an endpoint here, and neither do dot segments: the path is
+  // the one Better Auth will route (`requestPath`), so `?x=1` and `/x/../` cannot walk
+  // straight past the rule.
+  const path = requestPath(request.url);
   const rule = rules[path];
   if (rule === undefined) return { allowed: true };
 

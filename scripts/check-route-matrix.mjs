@@ -51,7 +51,13 @@ const ENV = {
 const fromServer = createRequire(new URL('apps/server/package.json', root));
 const load = (specifier) => import(pathToFileURL(fromServer.resolve(specifier)).href);
 
-async function main() {
+/**
+ * Boot the built application without listening and read its routes.
+ *
+ * Exported so `route-report.mjs` (M30 check 3) lists exactly the routes this gate
+ * checks, read the same way, rather than a second scan that could disagree with it.
+ */
+export async function inspectApplication() {
   // Here rather than at module scope, so importing the rules for their test
   // does not repoint that process's database at a fake URL.
   for (const [key, value] of Object.entries(ENV)) process.env[key] ??= value;
@@ -89,6 +95,12 @@ async function main() {
 
   const routes = describeRoutes(app);
   await app.close();
+
+  return { routes, manifest: ROUTE_MATRIX_MANIFEST, routeKey };
+}
+
+async function main() {
+  const { routes, manifest: ROUTE_MATRIX_MANIFEST, routeKey } = await inspectApplication();
 
   if (routes.length === 0) {
     console.error(

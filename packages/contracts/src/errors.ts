@@ -122,6 +122,11 @@ export const ERROR_CODES = [
   'ORDER_TOTAL_INVALID',
   'ORDER_LINES_INVALID',
   'ORDER_PHONE_INVALID',
+  /**
+   * M30: the order is priced further below the catalogue than the caller's role may go
+   * (D-364). An org admin enters it, or the agent asks for less.
+   */
+  'ORDER_DISCOUNT_ABOVE_CEILING',
   /** An order number, or an order's org, cannot change once written (0041). */
   'ORDER_IMMUTABLE',
   /** A shipped order's quantities, prices and discounts are fixed (0041). */
@@ -327,6 +332,11 @@ export const ERROR_CODES = [
   'BONUS_RULE_INVALID',
   /** A submitted or decided bonus rule version cannot change. */
   'BONUS_RULE_FROZEN',
+  /**
+   * M30: money for oneself, or paying out what one recorded. A staff loan to yourself, the
+   * disbursal of a loan you recorded, or your own payout account is done by a second person.
+   */
+  'PAYROLL_SELF_DEALING',
 
   // Showroom POS (M23)
   'POS_REGISTER_NOT_FOUND',

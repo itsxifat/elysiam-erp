@@ -67,6 +67,15 @@ export function walletTransferDraft(input: WalletTransferInput): JournalDraft {
   if (input.chargePoisha < 0n) {
     throw new LedgerError('POSTING_INPUT_INVALID', 'A transfer charge cannot be negative.');
   }
+  // A provider's fee is a fraction of what it moved. A "charge" larger than the transfer is
+  // an expense wearing a transfer's clothes, which is how till cash was booked to bank
+  // charges with no receipt and no checker (M30, the ledger audit's C-1).
+  if (input.chargePoisha > input.amountPoisha) {
+    throw new LedgerError(
+      'POSTING_INPUT_INVALID',
+      'A transfer charge cannot be larger than the amount transferred.',
+    );
+  }
   if (!ACCOUNT_SUBTYPES[input.from.subtype].wallet || !ACCOUNT_SUBTYPES[input.to.subtype].wallet) {
     throw new LedgerError('POSTING_INPUT_INVALID', 'Both sides of a transfer must be wallets.');
   }

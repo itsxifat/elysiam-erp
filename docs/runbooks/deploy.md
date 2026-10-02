@@ -149,8 +149,21 @@ warehouse and system accounts to the template's. Run it again only when a releas
 says so (it is how a brand gains a new system account, as M14a's `3350` did), and before
 the go-live migration (`go-live.md`).
 
-Create the first super admin with the invite flow from a trusted machine (D-057: the token
-comes back in the response; there is no email yet), and enrol 2FA at once.
+Create the first super admin once per new database (M30). Run this from the worker image,
+or `pnpm admin:bootstrap …` from a checkout with the server built and the database's URLs
+in the environment:
+
+```sh
+kamal app exec $K --roles worker \
+  "node dist/main.admin.js bootstrap --email <address> --name '<full name>' --console-url https://console.<APP_DOMAIN>"
+```
+
+It prints a one-time `/accept-invite#token=…` link, valid 72 hours. Send it to the person
+over a channel you trust; there is no email yet (D-212). They set a password and enrol 2FA
+at once, then invite everyone else from the Staff screen. The command refuses if any super
+admin already exists, and it never promotes an existing account. It is audited in every
+brand's log as `iam.super_admin.bootstrapped`. On the preview server, run
+`dcp run --rm --no-deps -T worker node dist/main.admin.js bootstrap … < /dev/null` instead.
 
 ### 6. Verify the release (acceptance check 1)
 

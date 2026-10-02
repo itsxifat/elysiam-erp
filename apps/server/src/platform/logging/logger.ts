@@ -96,10 +96,50 @@ export function scrubLogFields(fields: Record<string, unknown>): Record<string, 
   return scrubbed;
 }
 
-/** An Error as pino would write it, then scrubbed: message, stack and every own field. */
+/**
+ * Fields in which a database error quotes the values it was given (M30, security review A6).
+ *
+ * Drizzle's `DrizzleQueryError` keeps the bound parameters as `params` and repeats them in
+ * its message (`Failed query: … params: …`), and Postgres's `detail` quotes the row it
+ * refused (`Key (phone_e164)=(…) already exists`). Those are the buyer's name, address and
+ * phone, or a password-reset token: masking phone numbers in the finished line catches only
+ * the phone. The SQL text and the error's code and constraint stay, which is what a person
+ * debugging needs.
+ */
+const QUOTED_VALUE_FIELDS = new Set(['params', 'parameters', 'args', 'detail', 'where']);
+
+const WITHHELD = '[withheld]';
+
+/** `params: …` in a message or a stack, up to the first stack frame. */
+function withoutBoundValues(text: string): string {
+  return text.replace(/\nparams: [\s\S]*?(?=\n\s+at |$)/g, `\nparams: ${WITHHELD}`);
+}
+
+function stripBoundValues(value: unknown, depth = 0): unknown {
+  if (depth > 5 || typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return value;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(value)) {
+    if (QUOTED_VALUE_FIELDS.has(key)) out[key] = WITHHELD;
+    else if (typeof field === 'string' && (key === 'message' || key === 'stack')) {
+      out[key] = withoutBoundValues(field);
+    } else if (key === 'cause' || key === 'aggregateErrors') {
+      out[key] = Array.isArray(field)
+        ? field.map((entry) => stripBoundValues(entry, depth + 1))
+        : stripBoundValues(field, depth + 1);
+    } else out[key] = field;
+  }
+  return out;
+}
+
+/**
+ * An Error as pino would write it, then scrubbed: message, stack and every own field, with
+ * the values a failed query was given withheld.
+ */
 export function scrubError(error: unknown): unknown {
   if (!(error instanceof Error)) return redact(error);
-  return redact(stdSerializers.err(error));
+  return redact(stripBoundValues(stdSerializers.err(error)));
 }
 
 export interface LoggerSettings {

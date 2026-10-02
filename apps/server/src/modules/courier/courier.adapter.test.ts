@@ -236,6 +236,20 @@ describe('the fake courier', () => {
     expect(events?.[0]?.consignmentNo).toBe(created.consignmentNo);
   });
 
+  it('refuses every webhook when the account has no secret (M30, D1)', async () => {
+    const created = await adapter.createParcel(CONTEXT, parcel());
+    const raw = Buffer.from(JSON.stringify(adapter.webhookBody(created.consignmentNo)), 'utf8');
+    await expect(
+      adapter.parseWebhook({ ...CONTEXT, credentials: {} }, { headers: {}, raw }),
+    ).resolves.toBeNull();
+    await expect(
+      adapter.parseWebhook(
+        { ...CONTEXT, credentials: {} },
+        { headers: { 'x-fake-courier-secret': 'anything-at-all' }, raw },
+      ),
+    ).resolves.toBeNull();
+  });
+
   it('strips the recipient out of the payload it stores (invariant 10)', async () => {
     const created = await adapter.createParcel(CONTEXT, parcel());
     const body = adapter.webhookBody(created.consignmentNo);
@@ -243,8 +257,11 @@ describe('the fake courier', () => {
     expect(body.recipient_phone).toBe('+8801712345678');
 
     const events = await adapter.parseWebhook(
-      { ...CONTEXT, credentials: {} },
-      { headers: {}, raw: Buffer.from(JSON.stringify(body), 'utf8') },
+      { ...CONTEXT, credentials: { webhookSecret: 'the-real-secret-0123456789' } },
+      {
+        headers: { 'x-fake-courier-secret': 'the-real-secret-0123456789' },
+        raw: Buffer.from(JSON.stringify(body), 'utf8'),
+      },
     );
     // …and the payload we keep has neither the name nor the number in it.
     const kept = JSON.stringify(events?.[0]?.payload ?? {});

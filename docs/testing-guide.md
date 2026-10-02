@@ -287,9 +287,17 @@ order.
 **Settings** is live: sign in as **Org admin** to see its five tabs (approval limits,
 delivery zones, courier accounts, website order keys and showroom tills).
 
-These work behind the scenes but have no screen yet. They are arriving with the next update:
+**Staff** is live too. As **Org admin**, invite someone, change a role, deactivate a
+leaver, or issue a one-time link to reset a password or a lost phone's two-step login. A
+reset for some roles waits for a second org admin's approval. The person opens the link,
+which looks like `/accept-invite#token=…`, and chooses their own password. The role guides
+in `docs/training/` walk through each of these.
 
-- inviting staff and changing their roles (the sign-ins you were given were made for you);
-- the page a new staff member opens from their invitation;
-- password and two-step login resets for staff;
+These still have no screen:
+
+- editing an employee after they are added (payout account, status, leaving date, linked
+  sign-in), and a branch on the "Add an employee" form;
+- linking an investor's portal sign-in to their investor record;
+- uploading a courier's settlement file (fetching from the courier works once a real
+  courier account is on);
 - **Audit log**, which shows "coming soon". **Resellers** is set aside for now.

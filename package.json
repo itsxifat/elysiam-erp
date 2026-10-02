@@ -9,6 +9,7 @@
     "pnpm": ">=12.5.1"
   },
   "scripts": {
+    "admin:bootstrap": "pnpm --filter @elysium/server run admin:bootstrap",
     "api:client": "pnpm --filter @elysium/api-client run generate",
     "bench": "node scripts/bench.mjs",
     "build": "turbo run build",
@@ -30,7 +31,9 @@
     "format:check": "prettier --check .",
     "lint": "turbo run lint && eslint .",
     "lint:fix": "turbo run lint -- --fix && eslint . --fix",
+    "load:test": "node scripts/load-test.mjs",
     "migration": "pnpm --filter @elysium/server run migration",
+    "report:routes": "node scripts/route-report.mjs",
     "demo:org": "pnpm --filter @elysium/server run demo:org",
     "preview:local": "node scripts/preview-local.mjs",
     "preview:seed": "pnpm --filter @elysium/server run preview:seed",

@@ -803,3 +803,177 @@ async function someAddress(): Promise<{
     addressLine: 'House 7, Road 2, Dhanmondi, Dhaka',
   };
 }
+
+/*
+ * M30 security review, C4 (D-364). An agent's typed price had no floor: a sales agent could
+ * book a line at nothing to an accomplice, and the delivery would post full cost against no
+ * revenue with nobody else having seen the price. The fixture SKUs list at ৳1,500.
+ */
+describe('M30: the desk prices no deeper than the caller’s ceiling', () => {
+  let phoneSeq = 0;
+  /**
+   * A new buyer typed in by whoever places the order, so the describe stands on its own:
+   * a sales agent reaches only the buyers of their own orders (the ledger audit's N7).
+   */
+  function placeAs(actor: RoleClient, overrides: Record<string, unknown>) {
+    phoneSeq += 1;
+    return actor.client.request('POST', '/v1/orders', {
+      body: {
+        channel: 'phone',
+        customer: {
+          phone: `+8801755${String(100_000 + phoneSeq).padStart(6, '0')}`,
+          name: 'Ceiling Buyer',
+          address: { districtId: 47, thanaId: 365, addressLine: 'House 1, Road 1, Savar' },
+        },
+        locationId: location,
+        courierId,
+        deliveryChargePoisha: '6000',
+        ...overrides,
+      },
+    });
+  }
+
+  it('refuses a sales agent a free line, and lets an org admin enter it', async () => {
+    const free = { lines: [{ skuId: sku(0), qty: 1, unitPricePoisha: '0' }] };
+    const bySales = await placeAs(sales, free);
+    expect(bySales.statusCode, bySales.body).toBe(403);
+    expect(errorCode(bySales)).toBe('ORDER_DISCOUNT_ABOVE_CEILING');
+
+    const byAdmin = await placeAs(admin, free);
+    expect(byAdmin.statusCode, byAdmin.body).toBe(201);
+  });
+
+  it('allows exactly a fifth off and refuses one poisha more', async () => {
+    const atCeiling = await placeAs(sales, {
+      lines: [{ skuId: sku(0), qty: 1, unitPricePoisha: '120000' }],
+    });
+    expect(atCeiling.statusCode, atCeiling.body).toBe(201);
+
+    const over = await placeAs(sales, {
+      lines: [{ skuId: sku(0), qty: 1, unitPricePoisha: '119999' }],
+    });
+    expect(over.statusCode, over.body).toBe(403);
+  });
+
+  it('never lets a markup on one line carry a free one (the ledger audit, C-2)', async () => {
+    const response = await placeAs(sales, {
+      lines: [
+        { skuId: sku(0), qty: 1, unitPricePoisha: '300000' },
+        { skuId: sku(1), qty: 1, unitPricePoisha: '0' },
+      ],
+    });
+    expect(response.statusCode, response.body).toBe(403);
+    expect(errorCode(response)).toBe('ORDER_DISCOUNT_ABOVE_CEILING');
+  });
+
+  it('holds each line to the ceiling, not only the order', async () => {
+    // A fifth off in total, but two fifths off the second line.
+    const response = await placeAs(sales, {
+      lines: [
+        { skuId: sku(0), qty: 1, unitPricePoisha: '150000' },
+        { skuId: sku(1), qty: 1, unitPricePoisha: '90000' },
+      ],
+    });
+    expect(response.statusCode, response.body).toBe(403);
+  });
+
+  it('counts the line and order discounts together with the price', async () => {
+    const response = await placeAs(sales, {
+      lines: [{ skuId: sku(0), qty: 1, unitPricePoisha: '150000', discountPoisha: '15000' }],
+      discountPoisha: '15001',
+    });
+    expect(response.statusCode, response.body).toBe(403);
+    expect(errorCode(response)).toBe('ORDER_DISCOUNT_ABOVE_CEILING');
+  });
+
+  it('refuses an edit that keeps the discount while the goods shrink (the re-audit)', async () => {
+    // Ten at list less ৳3,000: exactly a fifth off, so accepted.
+    const placed = await placeAs(sales, {
+      lines: [{ skuId: sku(0), qty: 10, unitPricePoisha: '150000' }],
+      discountPoisha: '300000',
+    });
+    expect(placed.statusCode, placed.body).toBe(201);
+    const { id } = body<{ id: string }>(placed);
+
+    // Two units with the ৳3,000 kept would be the goods free.
+    const cut = await sales.client.request('PATCH', `/v1/orders/${id}`, {
+      body: { lines: [{ skuId: sku(0), qty: 2, unitPricePoisha: '150000' }] },
+    });
+    expect(cut.statusCode, cut.body).toBe(403);
+    expect(errorCode(cut)).toBe('ORDER_DISCOUNT_ABOVE_CEILING');
+  });
+
+  it('lets an agent shrink an order an admin priced deeply, but not deepen it', async () => {
+    const order = await takeOrder(admin, {
+      lines: [{ skuId: sku(0), qty: 2, unitPricePoisha: '75000' }],
+      assignedTo: sales.userId,
+    });
+
+    const deeper = await sales.client.request('PATCH', `/v1/orders/${order.id}`, {
+      body: { lines: [{ skuId: sku(0), qty: 3, unitPricePoisha: '75000' }] },
+    });
+    expect(deeper.statusCode, deeper.body).toBe(403);
+
+    // The same discount moved to another SKU is a reshape, not a shrink (the audit's W-3).
+    const swapped = await sales.client.request('PATCH', `/v1/orders/${order.id}`, {
+      body: { lines: [{ skuId: sku(1), qty: 2, unitPricePoisha: '75000' }] },
+    });
+    expect(swapped.statusCode, swapped.body).toBe(403);
+
+    const smaller = await sales.client.request('PATCH', `/v1/orders/${order.id}`, {
+      body: { lines: [{ skuId: sku(0), qty: 1, unitPricePoisha: '75000' }] },
+    });
+    expect(smaller.statusCode, smaller.body).toBe(200);
+  });
+});
+
+/*
+ * M30 security review, C5. Less than the cash on delivery posts the difference to Sales
+ * discounts, and a person's say-so needed no reason: an agent could mark their own order
+ * delivered at nothing and move its revenue into discounts unexplained.
+ */
+describe('M30: a short collection at the desk needs a reason', () => {
+  it('refuses a shortfall with no reason, and takes it with one', async () => {
+    const order = await takeOrder(admin, { assignedTo: sales.userId });
+    for (const step of ['confirm', 'pack']) {
+      const response = await admin.client.request('POST', `/v1/orders/${order.id}/${step}`);
+      expect(response.statusCode, `${step}: ${response.body}`).toBe(201);
+    }
+    const shipped = await warehouse.client.request('POST', `/v1/orders/${order.id}/ship`, {
+      body: { courierId, consignmentNo: `SF-M30-${order.id.slice(0, 8)}` },
+    });
+    expect(shipped.statusCode, shipped.body).toBe(201);
+
+    const unexplained = await sales.client.request('POST', `/v1/orders/${order.id}/deliver`, {
+      body: { collectedPoisha: '0' },
+    });
+    expect(unexplained.statusCode, unexplained.body).toBe(400);
+    expect(errorCode(unexplained)).toBe('ORDER_REASON_REQUIRED');
+
+    // A reason is not a licence: a desk-typed shortfall is held to the role's ceiling (D-365).
+    const writtenOff = await sales.client.request('POST', `/v1/orders/${order.id}/deliver`, {
+      body: { collectedPoisha: '0', differenceReason: 'Buyer paid nothing' },
+    });
+    expect(writtenOff.statusCode, writtenOff.body).toBe(403);
+    expect(errorCode(writtenOff)).toBe('ORDER_DISCOUNT_ABOVE_CEILING');
+
+    const explained = await sales.client.request('POST', `/v1/orders/${order.id}/deliver`, {
+      body: { collectedPoisha: '150000', differenceReason: 'Buyer short by the delivery charge' },
+    });
+    expect(explained.statusCode, explained.body).toBe(201);
+    expect(body<{ status: string }>(explained).status).toBe('delivered');
+
+    // An exchange's replacement is priced by the same person, so the same ceiling applies:
+    // a free replacement is the "line at nothing" again (the ledger audit, C-2).
+    const freeReplacement = await sales.client.request('POST', `/v1/orders/${order.id}/exchange`, {
+      body: {
+        reason: 'Wrong size',
+        returnReason: 'customer_refused',
+        returnLines: [{ skuId: sku(0), qty: 1 }],
+        lines: [{ skuId: sku(1), qty: 1, unitPricePoisha: '0' }],
+      },
+    });
+    expect(freeReplacement.statusCode, freeReplacement.body).toBe(403);
+    expect(errorCode(freeReplacement)).toBe('ORDER_DISCOUNT_ABOVE_CEILING');
+  });
+});

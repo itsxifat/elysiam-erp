@@ -16,7 +16,7 @@ import { z } from 'zod';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
-import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
+import { assertInScope, scopeOf, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { ApprovalsService, type ApprovalExecutor } from '../approvals/approvals.service.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
@@ -81,7 +81,22 @@ export class CashService implements OnModuleInit {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const wallet = await this.walletFor(tx, context, request, input.walletId);
       const category = await this.categoryFor(tx, context, input, wallet);
-      await this.assertReceipt(tx, context, input);
+      /*
+       * Petty cash's rules — a receipt, and maker-checker at the `wallet_adjustment`
+       * threshold — apply to petty cash, and to a cash out recorded by someone whose
+       * reach over wallets is narrower than the brand (M30, D-362).
+       *
+       * A cash out skipped both, which is right for the finance team booking the brand's
+       * bills and wrong for a branch manager, who holds `update Wallet` at their own
+       * branch: they could take till cash, book it as a cash out to an operating expense
+       * with no receipt and no checker, and the daily closing would balance because its
+       * expected balance moved by the same amount. Held to petty cash's rules, the same
+       * entry needs a receipt and, above the brand's threshold, a second person.
+       */
+      const pettyCashRules =
+        input.kind === 'petty_cash' ||
+        (input.kind === 'cash_out' && scopeOf(request).kind !== 'all');
+      await this.assertReceipt(tx, context, input, pettyCashRules);
 
       // A retried submit — the same client-generated entry id — answers from the
       // row that exists rather than posting a second journal.
@@ -91,13 +106,13 @@ export class CashService implements OnModuleInit {
       const occurredAt = now;
       const draft = this.draftFor(input, wallet, category, amount, occurredAt);
 
-      // Petty cash is the only kind that goes through maker-checker: §6's
-      // maker-checker list names "wallet adjustments", and a cash in from a known
+      // Petty cash (and a branch-scoped cash out, above) goes through maker-checker:
+      // §6's maker-checker list names "wallet adjustments", and a cash in from a known
       // income category or a cash out booked by the finance team is ordinary
       // bookkeeping. The amount is the requester's, so it is compared against the
       // org's threshold rather than trusted (D-068).
       const needsApproval =
-        input.kind === 'petty_cash' &&
+        pettyCashRules &&
         (await this.approvals.isRequired(context, {
           type: 'wallet_adjustment',
           amountPoisha: amount,
@@ -214,9 +229,13 @@ export class CashService implements OnModuleInit {
       type: 'wallet_adjustment',
       amountPoisha: amount,
       payload: { cashEntryId: input.entryId, walletId: wallet.id },
-      reason: input.memo ?? 'Petty cash',
+      reason: input.memo ?? (input.kind === 'petty_cash' ? 'Petty cash' : 'Cash out'),
       ...(wallet.branch_id === null ? {} : { branchId: wallet.branch_id }),
       request,
+      // In this transaction (the ledger audit's W-2, M30): opened on its own, the approval
+      // committed before the entry that names it existed, so a checker quick enough found
+      // nothing to post and the entry waited for ever; a failed insert left an orphan.
+      tx,
     });
 
     await repo.insertCashEntry(tx, {
@@ -426,9 +445,15 @@ export class CashService implements OnModuleInit {
     tx: Tx,
     context: ActiveContext,
     input: CashEntryInput,
+    required: boolean,
   ): Promise<void> {
-    if (input.kind === 'petty_cash' && input.receiptFileId === undefined) {
-      throw walletsHttpError('RECEIPT_REQUIRED', 'Petty cash needs a receipt photo.');
+    if (required && input.receiptFileId === undefined) {
+      throw walletsHttpError(
+        'RECEIPT_REQUIRED',
+        input.kind === 'petty_cash'
+          ? 'Petty cash needs a receipt photo.'
+          : 'A cash out from a branch wallet needs a receipt photo.',
+      );
     }
     if (input.receiptFileId === undefined) return;
 

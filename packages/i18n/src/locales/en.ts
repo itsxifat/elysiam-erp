@@ -556,10 +556,10 @@ const en = {
   'accounts.fieldMemo': 'Note',
   'accounts.fieldReceipt': 'Receipt photo',
   'accounts.receiptHint':
-    'Required for petty cash. Only people who can see this wallet can open it.',
+    'Required for petty cash, and for a cash out from a branch wallet. Only people who can see this wallet can open it.',
   'accounts.receiptChoose': 'Attach the receipt',
   'accounts.receiptOptionalHint': 'Optional. Only people who can see this wallet can open it.',
-  'accounts.receiptRequired': 'Attach the receipt before recording petty cash.',
+  'accounts.receiptRequired': 'Attach the receipt before recording this entry.',
   'accounts.kindCashIn': 'Cash in',
   'accounts.kindCashOut': 'Cash out',
   'accounts.kindPettyCash': 'Petty cash',

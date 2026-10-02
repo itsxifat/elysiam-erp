@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   NotFoundException,
 } from '@nestjs/common';
@@ -86,6 +87,8 @@ export const HR_ERROR_CODES = [
   'BONUS_RULE_INVALID',
   /** M20: a submitted or decided bonus rule version cannot change. */
   'BONUS_RULE_FROZEN',
+  /** M30: a loan to oneself, paying out a loan one recorded, or one's own payout account. */
+  'PAYROLL_SELF_DEALING',
 ] as const;
 
 export type HrErrorCode = (typeof HR_ERROR_CODES)[number];
@@ -124,6 +127,10 @@ const STATUS: Readonly<Partial<Record<PayrollApiCode, number>>> = {
   // wrong or the row is damaged, and a 400 would send them looking at their request
   // for a fault that is not in it.
   HR_FIELD_UNREADABLE: 500,
+  // 403: the request is well-formed and the caller holds the route's ability; what they
+  // may not do is this particular thing, for themselves or without the payroll grant (M30).
+  PAYROLL_SELF_DEALING: 403,
+  FORBIDDEN: 403,
 };
 
 export class HrError extends Error {
@@ -139,6 +146,8 @@ export class HrError extends Error {
 export function hrHttpError(code: PayrollApiCode, message: string): HttpException {
   const body = { code, message };
   switch (STATUS[code] ?? 400) {
+    case 403:
+      return new ForbiddenException(body);
     case 404:
       return new NotFoundException(body);
     case 409:

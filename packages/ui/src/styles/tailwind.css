@@ -51,6 +51,7 @@
 
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-text: var(--primary-text);
   --color-primary-hover: var(--primary-hover);
   --color-primary-active: var(--primary-active);
 
@@ -93,6 +94,16 @@
 
   --shadow-popover: var(--shadow-popover);
   --shadow-dialog: var(--shadow-dialog);
+}
+
+/*
+ * Brand-coloured text on a dark surface (M30's accessibility pass). `text-primary` and
+ * `bg-primary` share one variable, and the dark fill is too dim to read as text, so text alone
+ * takes `--primary-text` in the dark theme. Outside the utilities layer on purpose, so it wins
+ * over the utility it corrects.
+ */
+.dark .text-primary {
+  color: var(--primary-text);
 }
 
 @layer base {
