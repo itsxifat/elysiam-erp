@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { addDays, toIsoDate, type IsoDate } from '../dates/index.js';
 import { monthDays, toPayrollMonth, weekdayOf, type WorkCalendar } from '../payroll/index.js';
 import {
+  deskEventFrom,
   dhakaHour,
   evaluateBonus,
   monthWeeks,
+  movesTargets,
   nearestRank,
   parseBonusRule,
   pickupSamples,
@@ -520,5 +522,51 @@ describe('productivity per agent', () => {
 
   it('buckets hours in Asia/Dhaka, not UTC', () => {
     expect(dhakaHour(new Date('2026-10-05T18:30:00Z'))).toBe('2026-10-06 00');
+  });
+});
+
+describe('which outbox events are desk events', () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+
+  it.each([
+    [
+      'order.created',
+      { id, assignedTo: 'usr_a' },
+      { kind: 'created', orderId: id, assignee: 'usr_a' },
+    ],
+    ['order.created', { id, assignedTo: null }, { kind: 'created', orderId: id, assignee: null }],
+    [
+      'order.assigned',
+      { id, assignedTo: 'usr_b' },
+      { kind: 'assigned', orderId: id, assignee: 'usr_b' },
+    ],
+    [
+      'order.claimed',
+      { id, assignedTo: 'usr_a' },
+      { kind: 'claimed', orderId: id, assignee: 'usr_a' },
+    ],
+    [
+      'order.status_changed',
+      { id, to: 'confirmed' },
+      { kind: 'confirmed', orderId: id, assignee: null },
+    ],
+    [
+      'order.status_changed',
+      { id, to: 'cancelled' },
+      { kind: 'cancelled', orderId: id, assignee: null },
+    ],
+    ['order.status_changed', { id, to: 'shipped' }, null],
+    ['stock.low', { id }, null],
+  ] as const)('%s %j', (name, payload, expected) => {
+    expect(deskEventFrom(name, payload)).toEqual(expected);
+  });
+
+  it('moves targets only on the statuses a target counts', () => {
+    for (const to of ['confirmed', 'delivered', 'partially_delivered', 'returned', 'cancelled']) {
+      expect(movesTargets(to)).toBe(true);
+    }
+    for (const to of ['pending', 'on_hold', 'packed', 'shipped', 'return_in_transit', 'exchange']) {
+      expect(movesTargets(to)).toBe(false);
+    }
   });
 });

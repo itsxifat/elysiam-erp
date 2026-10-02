@@ -11,6 +11,9 @@ import { CourierModule } from './modules/courier/courier.module.js';
 import { registerCourierJobs } from './modules/courier/courier.worker.js';
 import { SettlementsService } from './modules/courier/settlements.service.js';
 import { CourierSyncService } from './modules/courier/sync.service.js';
+import { HrModule } from './modules/hr/hr.module.js';
+import { registerPerformanceJobs } from './modules/hr/performance.worker.js';
+import { TargetsService } from './modules/hr/targets.service.js';
 import { NotifyModule } from './modules/notify/notify.module.js';
 import { NotifyService } from './modules/notify/notify.service.js';
 import { registerNotifyJobs } from './modules/notify/notify.worker.js';
@@ -114,7 +117,7 @@ async function bootstrap(): Promise<void> {
    * defined, scheduled and enqueued for weeks with no
    * handler here at all: the cron fired, the jobs piled up, and nothing ran them.
    */
-  @Module({ imports: [CourierModule, InventoryModule, NotifyModule, OrdersModule] })
+  @Module({ imports: [CourierModule, InventoryModule, NotifyModule, OrdersModule, HrModule] })
   class WorkerModule {}
 
   // `abortOnError: false` for the reason `main.api.ts` gives: with the logger off, Nest's
@@ -157,6 +160,13 @@ async function bootstrap(): Promise<void> {
   await registerInventoryJobs({ jobs, reconcile: context.get(ReconcileService), report, logger });
   await registerNotifyJobs({ jobs, notify: context.get(NotifyService), report });
   await registerCrmJobs({ jobs, crm: context.get(CrmService), report });
+  // M20: desk events from the outbox, and the target progress recompute they trigger.
+  await registerPerformanceJobs({
+    jobs,
+    dispatcher,
+    targets: context.get(TargetsService),
+    report,
+  });
 
   // Every registered queue gets its dead-letter watcher, whether or not this
   // release also registered a handler for the queue itself. A queue with a

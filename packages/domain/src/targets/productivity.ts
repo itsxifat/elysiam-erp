@@ -295,3 +295,49 @@ export function productivity(
     };
   });
 }
+
+/**
+ * The desk event an outbox event is, or null for one productivity does not read (M20).
+ *
+ * §19's order events are the source: `order.created` (with or without an assignee),
+ * `order.assigned`, `order.claimed`, and `order.status_changed` into `confirmed` or
+ * `cancelled`. Every other status change — packed, shipped, delivered — is the warehouse's
+ * or the courier's, not the desk's, and says nothing about how fast an order was picked up.
+ */
+export function deskEventFrom(
+  name: string,
+  payload: {
+    readonly id: string;
+    readonly assignedTo?: string | null;
+    readonly to?: string;
+  },
+): {
+  readonly kind: DeskEventKind;
+  readonly orderId: string;
+  readonly assignee: string | null;
+} | null {
+  switch (name) {
+    case 'order.created':
+      return { kind: 'created', orderId: payload.id, assignee: payload.assignedTo ?? null };
+    case 'order.assigned':
+      return { kind: 'assigned', orderId: payload.id, assignee: payload.assignedTo ?? null };
+    case 'order.claimed':
+      return { kind: 'claimed', orderId: payload.id, assignee: payload.assignedTo ?? null };
+    case 'order.status_changed':
+      if (payload.to === 'confirmed' || payload.to === 'cancelled') {
+        return { kind: payload.to, orderId: payload.id, assignee: null };
+      }
+      return null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Whether a status change can move a target's progress (D-272): a confirmation, a
+ * delivery in full or in part, a return, or a cancellation (which un-counts a confirmed
+ * order). Anything else — packed, shipped, on hold — moves no target.
+ */
+export function movesTargets(to: string): boolean {
+  return ['confirmed', 'delivered', 'partially_delivered', 'returned', 'cancelled'].includes(to);
+}

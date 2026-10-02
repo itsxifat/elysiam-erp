@@ -1141,7 +1141,8 @@ export class PayrollService implements OnModuleInit {
   }
 }
 
-async function approvalStatus(tx: Tx, orgId: string, id: string): Promise<string | null> {
+/** An approval request's own status (also read by M20's bonus rules). */
+export async function approvalStatus(tx: Tx, orgId: string, id: string): Promise<string | null> {
   const rows = await tx.execute<{ status: string }>(sql`
     select status::text as status from approvals.approval_requests
     where org_id = ${orgId} and id = ${id}
