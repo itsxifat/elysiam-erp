@@ -5,12 +5,16 @@ import { toIsoDate, type IsoDate } from '../dates/index.js';
 import { parseTaka, poisha } from '../money/index.js';
 import {
   addMonthsClamped,
+  instalmentState,
   isReminderDue,
+  loanPosition,
   loanSchedule,
+  payableInstalment,
   LoansError,
   MAX_LOAN_TENURE_MONTHS,
   reducingInstalment,
   scheduleTotals,
+  type InstalmentFacts,
   type LoanInstalment,
   type LoanMethod,
 } from './index.js';
@@ -256,5 +260,42 @@ describe('due dates and the reminder window', () => {
     expect(isReminderDue(due, 3, toIsoDate('2026-11-09'))).toBe(true);
     expect(isReminderDue(due, 0, toIsoDate('2026-11-04'))).toBe(false);
     expect(isReminderDue(due, 0, toIsoDate('2026-11-05'))).toBe(true);
+  });
+});
+
+describe('where a loan stands', () => {
+  const row = (seq: number, payment: InstalmentFacts['payment']): InstalmentFacts => ({
+    seq,
+    dueOn: addMonthsClamped(toIsoDate('2026-11-05'), seq - 1),
+    principalPoisha: poisha(10_000),
+    interestPoisha: poisha(1_000),
+    payment,
+  });
+
+  it('pays the lowest unposted instalment, and nothing while one waits for a checker', () => {
+    expect(payableInstalment([row(2, null), row(1, 'posted')])).toEqual({ seq: 2 });
+    expect(payableInstalment([row(1, 'pending_approval'), row(2, null)])).toEqual({
+      seq: null,
+      reason: 'waiting',
+    });
+    expect(payableInstalment([row(1, 'posted')])).toEqual({ seq: null, reason: 'settled' });
+  });
+
+  it('derives paid and outstanding from posted payments only', () => {
+    expect(loanPosition([row(1, 'posted'), row(2, 'pending_approval'), row(3, null)])).toEqual({
+      paidInstalments: 1,
+      paidPrincipalPoisha: 10_000n,
+      paidInterestPoisha: 1_000n,
+      outstandingPrincipalPoisha: 20_000n,
+      outstandingInterestPoisha: 2_000n,
+    });
+  });
+
+  it('names each instalment’s state against today', () => {
+    const today = toIsoDate('2026-12-01');
+    expect(instalmentState(row(1, null), today)).toBe('overdue');
+    expect(instalmentState(row(2, null), today)).toBe('due');
+    expect(instalmentState(row(1, 'posted'), today)).toBe('paid');
+    expect(instalmentState(row(1, 'pending_approval'), today)).toBe('pending_approval');
   });
 });

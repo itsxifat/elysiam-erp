@@ -5,5 +5,6 @@
  * journals live in `../posting/company-loan.ts`; the tables, approvals and the reminder
  * job live in the server's `loans` module.
  */
+export * from './position.js';
 export * from './reminders.js';
 export * from './schedule.js';

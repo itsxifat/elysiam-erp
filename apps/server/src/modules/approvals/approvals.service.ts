@@ -140,6 +140,15 @@ export type ApprovalExecutor = (
 ) => Promise<void>;
 
 /**
+ * What a rejected request undoes, run by the module that owns its type (D-299).
+ *
+ * Inside the transaction that rejected it, like an executor, so a rejected repayment is
+ * never left looking like it is still waiting. Optional: most owning modules have nothing
+ * to release, and M25's withdrawals keep their own reject route.
+ */
+export type RejectionHandler = ApprovalExecutor;
+
+/**
  * Types whose approval means nothing without an executor. Approving one with
  * no executor registered is refused rather than recorded as done: a period
  * reopen that says "approved" while the period stays closed is worse than an
@@ -166,7 +175,12 @@ const EXECUTOR_REQUIRED_TYPES: readonly ApprovalType[] = ['period_reopen', 'sett
  * names *this* approval, and migration 0052 checks `payload->>'settlementId'` against the row —
  * so this entry is belt-and-braces rather than the defence itself.
  */
-export const MODULE_RAISED_TYPES: readonly ApprovalType[] = ['period_reopen', 'settlement_posting'];
+export const MODULE_RAISED_TYPES: readonly ApprovalType[] = [
+  'period_reopen',
+  'settlement_posting',
+  // M26: the payload names a waiting repayment, and the amount is its instalment's (D-298).
+  'loan_repayment',
+];
 
 function magnitude(amount: bigint): bigint {
   return amount < 0n ? -amount : amount;
@@ -175,6 +189,7 @@ function magnitude(amount: bigint): bigint {
 @Injectable()
 export class ApprovalsService {
   private readonly executors = new Map<ApprovalType, ApprovalExecutor>();
+  private readonly rejectionHandlers = new Map<ApprovalType, RejectionHandler>();
 
   constructor(private readonly audit: AuditService) {}
 
@@ -188,6 +203,14 @@ export class ApprovalsService {
       throw new Error(`An executor for ${type} is already registered.`);
     }
     this.executors.set(type, executor);
+  }
+
+  /** Register what rejecting a type releases (D-299). One per type, like an executor. */
+  registerRejectionHandler(type: ApprovalType, handler: RejectionHandler): void {
+    if (this.rejectionHandlers.has(type)) {
+      throw new Error(`A rejection handler for ${type} is already registered.`);
+    }
+    this.rejectionHandlers.set(type, handler);
   }
 
   private async execute(
@@ -641,20 +664,21 @@ export class ApprovalsService {
         await this.applyThreshold(tx, context, row.payload, input.id);
       }
 
+      const decided: ApprovedRequest = {
+        id: input.id,
+        type: row.type,
+        requestedBy: row.requested_by,
+        branchId: row.branch_id,
+        amountPoisha: row.amount_poisha === null ? null : BigInt(row.amount_poisha),
+        payload: row.payload,
+      };
       if (input.decision === 'approved') {
-        await this.execute(
-          tx,
-          context,
-          {
-            id: input.id,
-            type: row.type,
-            requestedBy: row.requested_by,
-            branchId: row.branch_id,
-            amountPoisha: row.amount_poisha === null ? null : BigInt(row.amount_poisha),
-            payload: row.payload,
-          },
-          input.request,
-        );
+        await this.execute(tx, context, decided, input.request);
+      } else {
+        const release = this.rejectionHandlers.get(row.type);
+        if (release !== undefined) {
+          await release(tx, { context, approval: decided, request: input.request });
+        }
       }
 
       // §19: `approval.decided` goes back to the requester.

@@ -373,6 +373,18 @@ export const ERROR_CODES = [
   'MARKETING_META_NOT_CONNECTED',
   /** This installation has no key to seal a Meta token with. */
   'MARKETING_CREDENTIALS_MISSING',
+
+  // Company loans (M26, §15)
+  'LOAN_NOT_FOUND',
+  'LOAN_LENDER_NOT_FOUND',
+  /** Terms that are not a loan, or that leave an instalment with nothing to pay (D-294). */
+  'LOAN_TERMS_INVALID',
+  /** A loan's instalments are not its tenure, or do not sum to its principal (0090). */
+  'LOAN_SCHEDULE_INVALID',
+  /** Not the next unpaid instalment, already paid or waiting, or not as scheduled (D-297). */
+  'LOAN_PAYMENT_INVALID',
+  /** A loan, its schedule and its reminders are a record; a payment moves once (0090). */
+  'LOAN_IMMUTABLE',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

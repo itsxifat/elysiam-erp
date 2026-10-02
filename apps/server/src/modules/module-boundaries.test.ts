@@ -47,6 +47,9 @@ const OWNER: Readonly<Record<string, string>> = {
   inventory: 'inventory',
   investors: 'investors',
   ledger: 'ledger',
+  // M26: lenders, company loans, schedules, repayments and reminders. Accounts, approvals
+  // and messages are reached only through `LedgerApi`, `ApprovalsService` and `NotifyApi`.
+  loans: 'loans',
   // M18: campaigns, spend, leads, the Meta link and the conversion log. The promo FK to
   // `marketing.campaigns` is a constraint, not a read.
   marketing: 'marketing',

@@ -238,6 +238,14 @@ export const APPEND_ONLY_TABLES: readonly string[] = [
   'hr.payroll_lines',
   'hr.payroll_line_components',
   'hr.payroll_loan_deductions',
+  /*
+   * M26's company loans (§15). A loan's terms and its schedule are what was signed, and
+   * the receipt journal was posted from them; a reminder went out or it did not.
+   * Migration 0090 refuses the UPDATE and the DELETE with a trigger as well.
+   */
+  'loans.loans',
+  'loans.instalments',
+  'loans.reminders',
 ];
 
 /**
@@ -336,6 +344,13 @@ export const NO_DELETE_TABLES: readonly string[] = [
   'hr.loan_instalments',
   'hr.payroll_runs',
   'hr.work_calendars',
+  /*
+   * M26. A lender is the party on every loan payable line, so it is renamed, never
+   * removed; a repayment needs UPDATE for exactly one transition (waiting, then posted or
+   * rejected), which 0090's trigger confines it to.
+   */
+  'loans.lenders',
+  'loans.payments',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */

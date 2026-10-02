@@ -610,6 +610,20 @@
       "when": 1790930657194,
       "tag": "0088_m17_advances_returns_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1790932047323,
+      "tag": "0089_m26_loans_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1790932065719,
+      "tag": "0090_m26_loans_policies",
+      "breakpoints": true
     }
   ]
 }

@@ -32,6 +32,13 @@ export const APPROVAL_TYPES = [
    */
   'investor_distribution',
   'investor_withdrawal',
+  /**
+   * M26: repaying a company loan. Money leaving the company, so §6's "payments"
+   * rule applies: held for a checker at or above the brand's threshold, like a
+   * supplier payment (D-298). The amount is the instalment the loans module
+   * scheduled, so it is server-derived and only that module raises one.
+   */
+  'loan_repayment',
 ] as const;
 
 export const approvalTypeSchema = z.enum(APPROVAL_TYPES);
@@ -91,6 +98,12 @@ export const SERVER_DERIVED_AMOUNT_TYPES: readonly ApprovalType[] = [
    */
   'investor_distribution',
   'investor_withdrawal',
+  /*
+   * M26. An instalment's amount comes from the loan's schedule, not from a person, so
+   * the loans module raises it with `amountDerivedByServer` and the threshold decides;
+   * typed through the generic route it would always be held (D-298).
+   */
+  'loan_repayment',
 ];
 
 /**

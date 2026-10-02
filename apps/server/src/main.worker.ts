@@ -11,6 +11,9 @@ import { CourierModule } from './modules/courier/courier.module.js';
 import { registerCourierJobs } from './modules/courier/courier.worker.js';
 import { SettlementsService } from './modules/courier/settlements.service.js';
 import { CourierSyncService } from './modules/courier/sync.service.js';
+import { LoansModule } from './modules/loans/loans.module.js';
+import { registerLoansJobs } from './modules/loans/loans.worker.js';
+import { LoanRemindersService } from './modules/loans/reminders.service.js';
 import { MarketingModule } from './modules/marketing/marketing.module.js';
 import { registerMarketingJobs } from './modules/marketing/marketing.worker.js';
 import { MetaJobsService } from './modules/marketing/meta-jobs.service.js';
@@ -121,7 +124,15 @@ async function bootstrap(): Promise<void> {
   // that delivers an order runs in this process, and without the module loaded nobody would
   // be registered to queue the order's conversion (M18, D-262).
   @Module({
-    imports: [CourierModule, InventoryModule, NotifyModule, OrdersModule, MarketingModule],
+    imports: [
+      CourierModule,
+      InventoryModule,
+      NotifyModule,
+      OrdersModule,
+      MarketingModule,
+      // M26: the daily loan reminders.
+      LoansModule,
+    ],
   })
   class WorkerModule {}
 
@@ -166,6 +177,7 @@ async function bootstrap(): Promise<void> {
   await registerNotifyJobs({ jobs, notify: context.get(NotifyService), report });
   await registerCrmJobs({ jobs, crm: context.get(CrmService), report });
   await registerMarketingJobs({ jobs, meta: context.get(MetaJobsService), report });
+  await registerLoansJobs({ jobs, reminders: context.get(LoanRemindersService), report });
 
   // Every registered queue gets its dead-letter watcher, whether or not this
   // release also registered a handler for the queue itself. A queue with a

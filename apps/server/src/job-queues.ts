@@ -4,6 +4,7 @@ import { NOTIFY_QUEUES } from './modules/notify/notify.queues.js';
 import { CRM_QUEUE_DEFINITIONS } from './modules/orders/crm.queues.js';
 import { INVENTORY_QUEUES } from './modules/inventory/reconcile.service.js';
 import { MARKETING_QUEUE_DEFINITIONS } from './modules/marketing/marketing.queues.js';
+import { LOANS_QUEUE_DEFINITIONS } from './modules/loans/loans.queues.js';
 
 /**
  * Every pg-boss queue the application defines, for both entrypoints.
@@ -24,4 +25,5 @@ export const ALL_QUEUES: readonly QueueDefinition[] = [
   ...NOTIFY_QUEUES,
   ...CRM_QUEUE_DEFINITIONS,
   ...MARKETING_QUEUE_DEFINITIONS,
+  ...LOANS_QUEUE_DEFINITIONS,
 ];
