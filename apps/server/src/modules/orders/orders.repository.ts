@@ -1209,23 +1209,32 @@ export async function marketingFactRows(
   return [...rows];
 }
 
-/** The lines of several orders at once, for delivered revenue. */
+/** What delivered revenue needs from an order's line: quantities and prices, no cost. */
+export interface RevenueLineRow extends Record<string, unknown> {
+  readonly order_id: string;
+  readonly qty: number;
+  readonly unit_price_poisha: string;
+  readonly discount_poisha: string;
+  readonly delivered_qty: number;
+}
+
+/**
+ * The lines of several orders at once, for delivered revenue (M18's dashboard).
+ *
+ * The ids travel as one array parameter: a period can hold more delivered orders than
+ * PostgreSQL's 65,535 bind parameters, which one parameter per id would hit.
+ */
 export async function linesForOrders(
   tx: Tx,
   orgId: string,
   orderIds: readonly string[],
-): Promise<(OrderLineRow & { readonly order_id: string })[]> {
+): Promise<RevenueLineRow[]> {
   if (orderIds.length === 0) return [];
-  const rows = await tx.execute<OrderLineRow & { readonly order_id: string }>(sql`
-    select l.order_id, l.id, l.sku_id, l.sku_code, l.product_name, l.qty, l.unit_price_poisha,
-           l.discount_poisha, l.delivered_qty, l.returned_qty, l.reseller_price_poisha,
-           l.dispatch_unit_cost_poisha, l.position
+  const rows = await tx.execute<RevenueLineRow>(sql`
+    select l.order_id, l.qty, l.unit_price_poisha, l.discount_poisha, l.delivered_qty
     from sales.order_lines l
     where l.org_id = ${orgId}
-      and l.order_id in (${sql.join(
-        orderIds.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      )})
+      and l.order_id = any (${sql.param([...orderIds])}::uuid[])
     order by l.order_id, l.position, l.created_at
   `);
   return [...rows];

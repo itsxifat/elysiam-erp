@@ -219,6 +219,21 @@ export class MetaSpendError extends Error {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+function checkInsightRow(row: MetaInsightRow): void {
+  if (row.accountCurrency.toUpperCase() !== 'BDT') {
+    throw new MetaSpendError(
+      'currency',
+      `The ad account reports in ${row.accountCurrency}; only BDT accounts are imported.`,
+    );
+  }
+  if (!ISO_DATE.test(row.dateStart) || row.dateStart !== row.dateStop) {
+    throw new MetaSpendError('not_daily', 'Meta returned a row that is not a single day.');
+  }
+  if (row.campaignId.trim() === '') {
+    throw new MetaSpendError('malformed', 'Meta returned a row with no campaign id.');
+  }
+}
+
 /**
  * One figure per Meta campaign per day, summed exactly from the ad-level rows.
  *
@@ -231,18 +246,7 @@ export function aggregateMetaSpend(rows: readonly MetaInsightRow[]): AggregatedM
   const groups = new Map<string, { row: MetaInsightRow; spends: string[] }>();
   const ads = new Map<string, Set<string>>();
   for (const row of rows) {
-    if (row.accountCurrency.toUpperCase() !== 'BDT') {
-      throw new MetaSpendError(
-        'currency',
-        `The ad account reports in ${row.accountCurrency}; only BDT accounts are imported.`,
-      );
-    }
-    if (!ISO_DATE.test(row.dateStart) || row.dateStart !== row.dateStop) {
-      throw new MetaSpendError('not_daily', 'Meta returned a row that is not a single day.');
-    }
-    if (row.campaignId.trim() === '') {
-      throw new MetaSpendError('malformed', 'Meta returned a row with no campaign id.');
-    }
+    checkInsightRow(row);
     const key = `${row.campaignId}|${row.dateStart}`;
     const group = groups.get(key) ?? { row, spends: [] };
     group.spends.push(row.spend);
@@ -278,6 +282,51 @@ export function aggregateMetaSpend(rows: readonly MetaInsightRow[]): AggregatedM
     days,
     adsByCampaign: new Map([...ads].map(([campaign, set]) => [campaign, [...set].sort()])),
   };
+}
+
+export interface CampaignSpendDay {
+  readonly campaignId: string;
+  readonly spendOn: string;
+  readonly amountPoisha: Poisha;
+}
+
+/**
+ * One figure per campaign of ours per day, for the import to write (D-252, D-254).
+ *
+ * A brand can map several Meta campaigns to one campaign, and a day's figure is per
+ * campaign, so their spend is added — summed exactly from the ad-level rows and rounded
+ * once, as one Meta campaign's day is. `campaignOf` names the campaign each Meta campaign
+ * id is mapped to; every id in `rows` must have one. Refuses the rows
+ * `aggregateMetaSpend` refuses.
+ */
+export function spendPerCampaign(
+  rows: readonly MetaInsightRow[],
+  campaignOf: (metaCampaignId: string) => string,
+): CampaignSpendDay[] {
+  const groups = new Map<string, { campaignId: string; spendOn: string; spends: string[] }>();
+  for (const row of rows) {
+    checkInsightRow(row);
+    const campaignId = campaignOf(row.campaignId);
+    const key = `${campaignId}|${row.dateStart}`;
+    const group = groups.get(key) ?? { campaignId, spendOn: row.dateStart, spends: [] };
+    group.spends.push(row.spend);
+    groups.set(key, group);
+  }
+  const days: CampaignSpendDay[] = [];
+  for (const { campaignId, spendOn, spends } of groups.values()) {
+    let amount: Poisha;
+    try {
+      amount = sumDecimalsToPoisha(spends);
+    } catch {
+      throw new MetaSpendError('malformed', 'Meta returned a spend that is not a number.');
+    }
+    days.push({ campaignId, spendOn, amountPoisha: amount });
+  }
+  return days.sort((a, b) =>
+    a.spendOn === b.spendOn
+      ? a.campaignId.localeCompare(b.campaignId)
+      : a.spendOn.localeCompare(b.spendOn),
+  );
 }
 
 /**

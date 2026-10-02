@@ -507,7 +507,7 @@ export class OrdersApiService implements OrdersApi {
   ): Promise<readonly MarketingOrderFact[]> {
     const rows = await repo.marketingFactRows(tx, orgId, period);
     const delivered = rows.filter((row) => row.delivered_at !== null).map((row) => row.id);
-    const linesByOrder = new Map<string, repo.OrderLineRow[]>();
+    const linesByOrder = new Map<string, repo.RevenueLineRow[]>();
     for (const line of await repo.linesForOrders(tx, orgId, delivered)) {
       const list = linesByOrder.get(line.order_id) ?? [];
       list.push(line);

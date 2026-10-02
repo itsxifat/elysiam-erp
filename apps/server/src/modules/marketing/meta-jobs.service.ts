@@ -6,6 +6,8 @@ import {
   buildPurchaseEvent,
   capiEventTimeAllowed,
   MetaSpendError,
+  spendPerCampaign,
+  type MetaInsightRow,
 } from '@elysium/domain/marketing';
 import { sql } from 'drizzle-orm';
 
@@ -21,7 +23,12 @@ import { MARKETING_CONFIG, type MarketingConfig } from './marketing.config.js';
 import { MarketingError } from './marketing.errors.js';
 import { MARKETING_QUEUES } from './marketing.queues.js';
 import * as repo from './marketing.repository.js';
-import { META_GATEWAY, MetaApiError, type MetaGateway } from './providers/meta-gateway.js';
+import {
+  META_GATEWAY,
+  MetaApiError,
+  type CapiResponse,
+  type MetaGateway,
+} from './providers/meta-gateway.js';
 
 /** Who the jobs act as in the audit log and on the rows they write. */
 const ACTOR = 'system:marketing';
@@ -34,9 +41,19 @@ export interface ImportResult {
   readonly days: number;
   readonly written: number;
   readonly keptManual: number;
+  /** Imported figures in the range that Meta's answer no longer supports, set to zero. */
+  readonly zeroed: number;
   readonly campaignsCreated: number;
   readonly error: string | null;
 }
+
+const EMPTY_IMPORT = {
+  days: 0,
+  written: 0,
+  keptManual: 0,
+  zeroed: 0,
+  campaignsCreated: 0,
+} as const;
 
 export type ConversionOutcome = 'sent' | 'failed' | 'skipped' | 'already_final';
 
@@ -181,22 +198,17 @@ export class MetaJobsService implements DeliveryObserver, OnModuleInit {
 
     if (staged.kind !== 'send') return staged.kind;
 
+    // Only the send is guarded. Once Meta has accepted the event, a failure to record that
+    // is not a failed send: it propagates, the job retries, and the retry sends the same
+    // `event_id` again, which Meta de-duplicates (D-256) before the row is recorded `sent`.
+    let response: CapiResponse;
     try {
-      const response = await this.gateway.sendEvents({
+      response = await this.gateway.sendEvents({
         pixelId: staged.pixelId,
         token: staged.token,
         events: [staged.event],
         testEventCode: staged.testEventCode,
       });
-      await withOrg(actor, (tx) =>
-        repo.finishCapiEvent(tx, orgId, eventId, {
-          status: 'sent',
-          response,
-          error: null,
-          sentAt: new Date(),
-        }),
-      );
-      return 'sent';
     } catch (cause) {
       const failure =
         cause instanceof MetaApiError
@@ -217,6 +229,16 @@ export class MetaJobsService implements DeliveryObserver, OnModuleInit {
       if (failure.retryable) throw failure;
       return 'failed';
     }
+
+    await withOrg(actor, (tx) =>
+      repo.finishCapiEvent(tx, orgId, eventId, {
+        status: 'sent',
+        response,
+        error: null,
+        sentAt: new Date(),
+      }),
+    );
+    return 'sent';
   }
 
   // --- the spend import ------------------------------------------------------------
@@ -229,6 +251,11 @@ export class MetaJobsService implements DeliveryObserver, OnModuleInit {
    * A Meta campaign the brand has not mapped yet becomes a campaign of its own, named as
    * Meta names it (D-254), and every ad id seen is mapped to its campaign so that a
    * click-to-message referral attributes without anybody typing ad ids.
+   *
+   * A Meta campaign's spend for a day lands on exactly one campaign: Meta campaigns mapped
+   * to the same campaign are added, an imported figure in the range that Meta's answer no
+   * longer supports is zeroed, and the import refuses to run while spend typed by hand for
+   * an unmapped Meta campaign sits in the range (D-252, D-254).
    */
   async importSpend(
     orgId: string,
@@ -240,7 +267,7 @@ export class MetaJobsService implements DeliveryObserver, OnModuleInit {
       await withOrg(actor, (tx) =>
         repo.recordImport(tx, orgId, { status: 'failed', error, at: now }),
       );
-      return { status: 'failed', days: 0, written: 0, keptManual: 0, campaignsCreated: 0, error };
+      return { ...EMPTY_IMPORT, status: 'failed', error };
     };
 
     const link = await withOrg(actor, (tx) => repo.connection(tx, orgId));
@@ -255,9 +282,10 @@ export class MetaJobsService implements DeliveryObserver, OnModuleInit {
       throw cause;
     }
 
+    let rows: MetaInsightRow[];
     let aggregated: ReturnType<typeof aggregateMetaSpend>;
     try {
-      const rows = await this.gateway.fetchInsights({
+      rows = await this.gateway.fetchInsights({
         adAccountId: link.ad_account_id,
         token,
         since: range.from,
@@ -276,18 +304,40 @@ export class MetaJobsService implements DeliveryObserver, OnModuleInit {
     }
 
     return withOrg(actor, async (tx) => {
+      // The connection row's lock makes a brand's imports take turns (two workers could
+      // otherwise both create a campaign for one new Meta campaign), and re-reading it
+      // keeps the fetched figures from landing after the brand changed its ad account.
+      const current = await repo.connection(tx, orgId, true);
+      if (current?.ad_account_id !== link.ad_account_id || current.token === null) {
+        const error = 'The ad account or token changed during the import; nothing was written.';
+        await repo.recordImport(tx, orgId, { status: 'failed', error, at: now });
+        return { ...EMPTY_IMPORT, status: 'failed', error };
+      }
+      // Spend typed by hand for a Meta campaign nobody mapped is spend the import is about
+      // to write again under a campaign of its own. Refuse, and say what to map (D-254).
+      const unmapped = await repo.unmappedManualMetaSpend(tx, orgId, range);
+      if (unmapped.length > 0) {
+        const error =
+          `Spend was entered by hand for ${unmapped.slice(0, 5).join(', ')}` +
+          `${unmapped.length > 5 ? ` and ${String(unmapped.length - 5)} more` : ''}, ` +
+          'not mapped to a Meta campaign id. Map each to its Meta campaign, or set its ' +
+          'platform to another if its ads are not in this ad account, then import again.';
+        await repo.recordImport(tx, orgId, { status: 'failed', error, at: now });
+        return { ...EMPTY_IMPORT, status: 'failed', error };
+      }
+
       const byMetaId = new Map(
         (await repo.listRefs(tx, orgId))
           .filter((ref) => ref.kind === 'meta_campaign')
           .map((ref) => [ref.value, ref.campaign_id]),
       );
       let campaignsCreated = 0;
-      const campaignFor = async (metaCampaignId: string, name: string): Promise<string> => {
-        const known = byMetaId.get(metaCampaignId);
-        if (known !== undefined) return known;
+      for (const day of aggregated.days) {
+        if (byMetaId.has(day.metaCampaignId)) continue;
+        const name = day.campaignName.trim();
         const id = await repo.insertCampaign(tx, {
           orgId,
-          name: (name.trim() === '' ? `Meta ${metaCampaignId}` : name.trim()).slice(0, 200),
+          name: (name === '' ? `Meta ${day.metaCampaignId}` : name).slice(0, 200),
           platform: 'meta',
           productIds: [],
           startsOn: null,
@@ -295,32 +345,55 @@ export class MetaJobsService implements DeliveryObserver, OnModuleInit {
           origin: 'meta_import',
           createdBy: ACTOR,
         });
-        await repo.insertRef(tx, {
+        const ref = await repo.insertRef(tx, {
           orgId,
           campaignId: id,
           kind: 'meta_campaign',
-          value: metaCampaignId,
+          value: day.metaCampaignId,
           createdBy: ACTOR,
         });
-        byMetaId.set(metaCampaignId, id);
+        // Somebody mapped this id by hand while the import ran. Roll back and let the
+        // job's retry write the spend where they mapped it.
+        if (ref === undefined) {
+          throw new Error('a Meta campaign was mapped while the spend import ran; retrying');
+        }
+        byMetaId.set(day.metaCampaignId, id);
         campaignsCreated += 1;
-        return id;
-      };
+      }
 
+      // One figure per campaign of ours: several Meta campaigns mapped to one are added.
+      const figures = spendPerCampaign(rows, (metaCampaignId) => {
+        const campaignId = byMetaId.get(metaCampaignId);
+        if (campaignId === undefined) throw new Error('a Meta campaign has no campaign');
+        return campaignId;
+      });
       let written = 0;
       let keptManual = 0;
-      for (const day of aggregated.days) {
-        const campaignId = await campaignFor(day.metaCampaignId, day.campaignName);
+      for (const figure of figures) {
         const outcome = await repo.upsertImportedSpend(tx, {
           orgId,
-          campaignId,
-          spendDate: day.spendOn,
-          amountPoisha: BigInt(day.amountPoisha),
+          campaignId: figure.campaignId,
+          spendDate: figure.spendOn,
+          amountPoisha: BigInt(figure.amountPoisha),
           enteredBy: ACTOR,
         });
         if (outcome === 'written') written += 1;
         else keptManual += 1;
       }
+      // Meta's answer covers the whole range, so an imported figure it no longer supports
+      // goes to zero — after a Meta campaign id moves to another campaign, its spend is
+      // written there and taken off the old one, never counted on both.
+      const zeroed = await repo.zeroStaleImports(tx, {
+        orgId,
+        from: range.from,
+        to: range.to,
+        written: figures.map((figure) => ({
+          campaignId: figure.campaignId,
+          spendDate: figure.spendOn,
+        })),
+        enteredBy: ACTOR,
+      });
+
       for (const [metaCampaignId, ads] of aggregated.adsByCampaign) {
         const campaignId = byMetaId.get(metaCampaignId);
         if (campaignId === undefined) continue;
@@ -345,13 +418,14 @@ export class MetaJobsService implements DeliveryObserver, OnModuleInit {
         entityType: 'CampaignSpend',
         entityId: link.id,
         before: null,
-        after: { from: range.from, to: range.to, written, keptManual, campaignsCreated },
+        after: { from: range.from, to: range.to, written, keptManual, zeroed, campaignsCreated },
       });
       return {
         status: 'ok',
-        days: aggregated.days.length,
+        days: figures.length,
         written,
         keptManual,
+        zeroed,
         campaignsCreated,
         error: null,
       };

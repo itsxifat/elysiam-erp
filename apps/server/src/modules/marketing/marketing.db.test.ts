@@ -4,7 +4,7 @@ import { withOrg, withSystem } from '@elysium/db';
 import { poisha } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 import { pino } from 'pino';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ALL_QUEUES } from '../../job-queues.js';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -601,6 +601,113 @@ describe('the Meta spend import is idempotent per (campaign, day) (check 2)', ()
       ),
     ).toMatch(/MARKETING_SPEND_IMMUTABLE/);
   });
+
+  async function campaignNamed(name: string) {
+    return (await marketing.listCampaigns(context(), undefined)).items.filter(
+      (item) => item.name === name,
+    );
+  }
+
+  it('adds the Meta campaigns mapped to one campaign, rather than one replacing the other', async () => {
+    const combined = await campaign('Combined', [
+      { kind: 'meta_campaign', value: '4401' },
+      { kind: 'meta_campaign', value: '4402' },
+    ]);
+    gateway.setInsights([
+      row('4401', 'Combined A', '2026-07-01', 'ad-41', '100.005'),
+      row('4402', 'Combined B', '2026-07-01', 'ad-42', '100.005'),
+    ]);
+    const result = await meta.importSpend(ORG_A, { from: '2026-07-01', to: '2026-07-01' });
+    expect(result).toMatchObject({ status: 'ok', written: 1, campaignsCreated: 0 });
+    // 100.005 + 100.005 summed exactly, rounded once.
+    expect(await spendRows(ORG_A, '2026-07-01', '2026-07-01')).toEqual([
+      { campaign_id: combined, spend_date: '2026-07-01', amount: '20001', source: 'meta' },
+    ]);
+  });
+
+  it('moves a Meta campaign’s spend when its id is mapped elsewhere, never counting it twice', async () => {
+    gateway.setInsights([
+      row('5501', 'Winter', '2026-07-10', 'ad-51', '300'),
+      row('5501', 'Winter', '2026-07-11', 'ad-51', '200'),
+    ]);
+    await meta.importSpend(ORG_A, { from: '2026-07-10', to: '2026-07-11' });
+    const [created] = await campaignNamed('Winter');
+    const ref = created?.refs.find((item) => item.kind === 'meta_campaign');
+    const launch = await campaign('Winter launch', []);
+    await marketing.removeRef(context(), request(), created?.id ?? '', ref?.id ?? '');
+    await marketing.addRef(context(), request(), launch, { kind: 'meta_campaign', value: '5501' });
+
+    const result = await meta.importSpend(ORG_A, { from: '2026-07-10', to: '2026-07-11' });
+    expect(result).toMatchObject({ status: 'ok', written: 2, zeroed: 2, campaignsCreated: 0 });
+    const rows = await spendRows(ORG_A, '2026-07-10', '2026-07-11');
+    const amountsOf = (id: string | undefined) =>
+      rows.filter((item) => item.campaign_id === id).map((item) => item.amount);
+    expect(amountsOf(launch)).toEqual(['30000', '20000']);
+    expect(amountsOf(created?.id)).toEqual(['0', '0']);
+    expect(rows.reduce((sum, item) => sum + BigInt(item.amount), 0n)).toBe(50_000n);
+  });
+
+  it('refuses to import over spend typed by hand for an unmapped Meta campaign, then imports once it is mapped', async () => {
+    const monsoon = await campaign('Monsoon', []);
+    await spend(monsoon, '2026-07-20', '70000');
+    gateway.setInsights([
+      row('6601', 'Monsoon (Meta)', '2026-07-20', 'ad-61', '700'),
+      row('6601', 'Monsoon (Meta)', '2026-07-21', 'ad-61', '100'),
+    ]);
+
+    const refused = await meta.importSpend(ORG_A, { from: '2026-07-20', to: '2026-07-21' });
+    expect(refused.status).toBe('failed');
+    expect(refused.error).toContain('Monsoon');
+    expect(await campaignNamed('Monsoon (Meta)')).toHaveLength(0);
+    expect(await spendRows(ORG_A, '2026-07-20', '2026-07-21')).toEqual([
+      { campaign_id: monsoon, spend_date: '2026-07-20', amount: '70000', source: 'manual' },
+    ]);
+
+    await marketing.addRef(context(), request(), monsoon, { kind: 'meta_campaign', value: '6601' });
+    const imported = await meta.importSpend(ORG_A, { from: '2026-07-20', to: '2026-07-21' });
+    expect(imported).toMatchObject({
+      status: 'ok',
+      written: 1,
+      keptManual: 1,
+      campaignsCreated: 0,
+    });
+    expect(await spendRows(ORG_A, '2026-07-20', '2026-07-21')).toEqual([
+      { campaign_id: monsoon, spend_date: '2026-07-20', amount: '70000', source: 'manual' },
+      { campaign_id: monsoon, spend_date: '2026-07-21', amount: '10000', source: 'meta' },
+    ]);
+  });
+
+  it('runs two imports of one brand in turn, so a new Meta campaign is created once', async () => {
+    gateway.setInsights([row('8801', 'Flash', '2026-07-25', 'ad-81', '100')]);
+    const results = await Promise.all([
+      meta.importSpend(ORG_A, { from: '2026-07-25', to: '2026-07-25' }),
+      meta.importSpend(ORG_A, { from: '2026-07-25', to: '2026-07-25' }),
+    ]);
+    expect(results.map((result) => result.status)).toEqual(['ok', 'ok']);
+    expect(results.reduce((sum, result) => sum + result.campaignsCreated, 0)).toBe(1);
+    expect(await campaignNamed('Flash')).toHaveLength(1);
+    expect(await spendRows(ORG_A, '2026-07-25', '2026-07-25')).toEqual([
+      expect.objectContaining({ amount: '10000', source: 'meta' }),
+    ]);
+  });
+
+  it('writes nothing when the brand changed its ad account while Meta was answering', async () => {
+    const fetch = vi.spyOn(gateway, 'fetchInsights').mockImplementationOnce(async (asked) => {
+      await marketing.saveConnection(context(), request(), { adAccountId: '9876543210' });
+      return FakeMetaGateway.prototype.fetchInsights.call(gateway, asked);
+    });
+    gateway.setInsights([row('8802', 'Mid-import', '2026-07-28', 'ad-82', '100')]);
+    try {
+      const result = await meta.importSpend(ORG_A, { from: '2026-07-28', to: '2026-07-28' });
+      expect(result.status).toBe('failed');
+      expect(result.error).toMatch(/changed during the import/);
+      expect(await spendRows(ORG_A, '2026-07-28', '2026-07-28')).toEqual([]);
+      expect(await campaignNamed('Mid-import')).toHaveLength(0);
+    } finally {
+      fetch.mockRestore();
+      await connect({ spendImportEnabled: true });
+    }
+  });
 });
 
 // --- check 3: the Conversions API sender ------------------------------------------------
@@ -742,6 +849,44 @@ describe('a delivered order’s Purchase is queued in the delivery and sent once
     expect(await meta.sendConversion(ORG_A, eventId ?? '')).toBe('sent');
     expect(await meta.sendConversion(ORG_A, eventId ?? '')).toBe('already_final');
     expect(gateway.sent).toHaveLength(1);
+  });
+
+  it('does not log a send Meta accepted as failed when recording it fails', async () => {
+    const sku = (await seedProductWithSkus(ORG_A, 'mktcapi4', 1)).skus[0]!;
+    const buyer = await seedCustomer(ORG_A, { phoneE164: '+8801612345678', name: 'Record Buyer' });
+    const id = await factOrder({
+      customerId: buyer,
+      status: 'delivered',
+      confirmedAt: new Date().toISOString(),
+      deliveredAt: new Date().toISOString(),
+      lines: [{ sku, qty: 1, unitPoisha: 90_000n, delivered: 1 }],
+    });
+    const eventId = await withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => {
+      await meta.orderDelivered(tx, { orgId: ORG_A, orderId: id });
+      return (
+        await tx.execute<{ id: string }>(sql`
+          select id from marketing.capi_events where org_id = ${ORG_A} and order_id = ${id}
+        `)
+      )[0]?.id;
+    });
+
+    // Meta accepts the event, then recording its answer fails: an answer the database
+    // cannot store stands in for the connection dropping between the two.
+    const send = vi.spyOn(gateway, 'sendEvents').mockImplementationOnce(async (asked) => {
+      await FakeMetaGateway.prototype.sendEvents.call(gateway, asked);
+      return { eventsReceived: 1n } as never;
+    });
+    try {
+      await expect(meta.sendConversion(ORG_A, eventId ?? '')).rejects.toThrow();
+    } finally {
+      send.mockRestore();
+    }
+    expect((await capiRows(id))[0]?.status).toBe('queued');
+
+    // The retry sends the same event id, which Meta de-duplicates, and records it as sent.
+    expect(await meta.sendConversion(ORG_A, eventId ?? '')).toBe('sent');
+    expect(gateway.sent.map((sent) => sent.events[0]?.event_id)).toEqual([id, id]);
+    expect((await capiRows(id))[0]?.status).toBe('sent');
   });
 
   it('skips an order delivered more than seven days ago, as Meta would refuse it', async () => {

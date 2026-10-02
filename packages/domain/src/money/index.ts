@@ -270,12 +270,16 @@ export function decimalToPoisha(input: string): Poisha {
  *
  * Meta's Conversions API takes `custom_data.value` as a number, so the amount has to
  * leave as one. It is built from the exact decimal text (`"1234.50"` → 1234.5), never by
- * dividing a float, and refused above 2^53 poisha — below that bound every amount with two
- * decimals has a double whose shortest decimal form is exactly that amount, which is what
- * `JSON.stringify` writes. Nothing inside the system ever reads the result back as money.
+ * dividing a float, and refused at 10^15 poisha (ten trillion taka) or more. Below that the
+ * amount has at most 15 significant digits, and every such decimal has a double whose
+ * shortest decimal form is exactly that amount (15 is the digits a double always keeps),
+ * which is what `JSON.stringify` writes. Nothing inside the system reads the result back
+ * as money.
  */
+const MAJOR_NUMBER_LIMIT = 1_000_000_000_000_000n;
+
 export function poishaToMajorNumber(amount: Poisha): number {
-  if (amount > BigInt(Number.MAX_SAFE_INTEGER) || amount < -BigInt(Number.MAX_SAFE_INTEGER)) {
+  if (amount >= MAJOR_NUMBER_LIMIT || amount <= -MAJOR_NUMBER_LIMIT) {
     throw new MoneyError('That amount is too large to send as a number.', 'MONEY_OVERFLOW');
   }
   const { negative, taka, poisha: rest } = takaParts(amount);

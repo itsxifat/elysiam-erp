@@ -323,7 +323,10 @@ export async function listRedemptions(
   return [...rows];
 }
 
-/** Code id → campaign id, for the codes that name a campaign (M18, D-251). */
+/**
+ * Code id → campaign id, for the codes that name a campaign (M18, D-251). The ids travel
+ * as one array parameter, so a long period's codes cannot run out of bind parameters.
+ */
 export async function campaignsOfCodes(
   tx: Tx,
   orgId: string,
@@ -333,10 +336,7 @@ export async function campaignsOfCodes(
   const rows = await tx.execute<{ id: string; campaign_id: string }>(sql`
     select id, campaign_id from promo.codes
     where org_id = ${orgId} and campaign_id is not null
-      and id in (${sql.join(
-        codeIds.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      )})
+      and id = any (${sql.param([...codeIds])}::uuid[])
   `);
   return new Map([...rows].map((row) => [row.id, row.campaign_id]));
 }

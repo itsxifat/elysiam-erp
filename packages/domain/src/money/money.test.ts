@@ -301,7 +301,7 @@ describe('decimal amounts from other systems (M18)', () => {
 
   it('writes poisha as the exact decimal number of taka', () => {
     fc.assert(
-      fc.property(fc.bigInt({ min: 0n, max: 900_719_925_474_099n }), (value) => {
+      fc.property(fc.bigInt({ min: 0n, max: 999_999_999_999_999n }), (value) => {
         const amount = poisha(value);
         const { taka, poisha: rest } = takaParts(amount);
         const exact = `${taka.toString()}.${rest.toString().padStart(2, '0')}`;
@@ -311,5 +311,13 @@ describe('decimal amounts from other systems (M18)', () => {
         );
       }),
     );
+  });
+
+  it('refuses to write an amount a double cannot carry exactly', () => {
+    expect(JSON.stringify(poishaToMajorNumber(poisha(999_999_999_999_999n)))).toBe(
+      '9999999999999.99',
+    );
+    expect(() => poishaToMajorNumber(poisha(1_000_000_000_000_000n))).toThrow(MoneyError);
+    expect(() => poishaToMajorNumber(poisha(-1_000_000_000_000_000n))).toThrow(MoneyError);
   });
 });

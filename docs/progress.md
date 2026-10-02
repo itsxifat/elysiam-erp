@@ -334,3 +334,15 @@ Add one entry per session, with the newest at the bottom. Keep entries short; gi
   - Route OTPs and invites through notify once a gateway is verified. (D-212; owner: claude)
   - BulkSMSBD credentials, or the client's own gateway, to close D-012. (owner: human)
 - Next: M18, then M20 and M14a, which a parallel session is doing in its own worktree.
+
+### 2026-10-02 · M18 · Marketing: campaigns, spend, attribution, Meta import and conversions · done
+
+- Delivered: per-brand campaigns mapped to Meta campaign and ad ids and UTM names; daily ad spend, typed by hand or imported from Meta Insights; leads; re-engagement segments with a hashed Meta audience file; the §11 dashboard (spend, CPO, CPDO, ROAS, the attribution split, a daily series) from real orders, with attribution resolved when read; one hashed Conversions API `Purchase` per delivered order, sent once. Console screens for each. Branch `m18-marketing`, stacked on `remove-fraud`.
+- Verification: `pnpm verify` exit 0; checks 1-4 PASS (evidence table in `docs/plans/M18.md`); the marketing database suite passes 26/26 against real Postgres.
+- Auditors: acceptance-auditor findings fixed in `560dddb`. ledger-auditor: 0 critical, 3 warnings, all fixed: the spend import could count spend twice (unmapped hand-typed spend, a moved Meta id, concurrent imports), and two Meta campaigns on one campaign overwrote each other; a conversion Meta accepted was logged as failed if recording it failed; the dashboard bound one parameter per order. Tests added for each.
+- Decisions/assumptions: D-250 to D-262; D-252, D-254 and D-256 extended after the ledger audit.
+- New dependencies: none.
+- Deviations from the milestone spec: none. Both Meta adapters are unverified and off (D-257).
+- Also: `idempotency.e2e.test.ts` gives its harness teardown 60 s, as the other harness suites do; it overran vitest's 10 s default under load.
+- Follow-ups: verify the Meta adapters with a brand's token, pixel and test event code (owner: human); check a campaign's `productIds` against the catalog, which nothing reads yet (owner: claude); decide whether the buyers-consented switch should be org_admin only rather than marketing (owner: human); service-level cross-org tests for the connection, conversions and spend beyond the RLS guard test (owner: claude).
+- Next: whatever the coordinating session schedules; not started are M14b, M17, M20, M24, M26 and M30.

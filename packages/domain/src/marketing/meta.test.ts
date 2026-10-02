@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { poisha } from '../money/index.js';
 import {
   aggregateMetaSpend,
+  spendPerCampaign,
   audiencePhoneHashes,
   buildPurchaseEvent,
   capiActionSource,
@@ -136,6 +137,34 @@ describe('aggregating Insights rows', () => {
     expect(() => aggregateMetaSpend([row({ accountCurrency: 'USD' })])).toThrow(MetaSpendError);
     expect(() => aggregateMetaSpend([row({ dateStop: '2026-10-02' })])).toThrow(MetaSpendError);
     expect(() => aggregateMetaSpend([row({ spend: '1e3' })])).toThrow(MetaSpendError);
+  });
+});
+
+describe('spend per campaign of ours', () => {
+  it('adds the Meta campaigns mapped to one campaign exactly, rounding once', () => {
+    const campaignOf = (metaId: string) => (metaId === '1404' ? 'puja' : 'eid');
+    const days = spendPerCampaign(
+      [
+        row({ campaignId: '1202', spend: '100.005' }),
+        row({ campaignId: '1303', spend: '100.005' }),
+        row({ campaignId: '1404', spend: '7' }),
+        row({ campaignId: '1202', dateStart: '2026-10-02', dateStop: '2026-10-02', spend: '1' }),
+      ],
+      campaignOf,
+    );
+    // 100.005 + 100.005 = 200.01 exactly; rounding each Meta campaign's half poisha first would not.
+    expect(days).toEqual([
+      { campaignId: 'eid', spendOn: '2026-10-01', amountPoisha: 20_001n },
+      { campaignId: 'puja', spendOn: '2026-10-01', amountPoisha: 700n },
+      { campaignId: 'eid', spendOn: '2026-10-02', amountPoisha: 100n },
+    ]);
+  });
+
+  it('refuses what the per-Meta-campaign aggregation refuses', () => {
+    expect(() => spendPerCampaign([row({ accountCurrency: 'USD' })], () => 'eid')).toThrow(
+      MetaSpendError,
+    );
+    expect(() => spendPerCampaign([row({ spend: 'abc' })], () => 'eid')).toThrow(MetaSpendError);
   });
 });
 

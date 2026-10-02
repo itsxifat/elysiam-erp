@@ -271,6 +271,80 @@ export async function upsertImportedSpend(
   return rows.length > 0 ? 'written' : 'kept_manual';
 }
 
+/**
+ * Imported figures in `[from, to]` that this import did not write, set to zero.
+ *
+ * Meta's answer for a range is the whole account's spend for those days, so an imported
+ * figure it no longer supports is stale — most often because a Meta campaign id was moved
+ * to another campaign, and its spend has just been written there. Zero rather than delete,
+ * because a figure is never deleted (0083). Figures a person entered are not touched.
+ *
+ * `written` lists the (campaign, day) pairs this import wrote or kept as manual. Returns
+ * how many figures were zeroed.
+ */
+export async function zeroStaleImports(
+  tx: Tx,
+  input: {
+    readonly orgId: string;
+    readonly from: string;
+    readonly to: string;
+    readonly written: readonly { readonly campaignId: string; readonly spendDate: string }[];
+    readonly enteredBy: string;
+  },
+): Promise<number> {
+  // The days travel as text: drizzle's postgres driver passes a `date[]` parameter through
+  // unserialised, where `text[]` is serialised as an array.
+  const kept =
+    input.written.length === 0
+      ? sql``
+      : sql`and not exists (
+          select 1
+          from unnest(${sql.param(input.written.map((row) => row.campaignId))}::uuid[],
+                      ${sql.param(input.written.map((row) => row.spendDate))}::text[])
+            as w(campaign_id, spend_date)
+          where w.campaign_id = s.campaign_id and w.spend_date::date = s.spend_date
+        )`;
+  const rows = await tx.execute<{ id: string }>(sql`
+    update marketing.ad_spend s
+    set amount_poisha = 0, entered_by = ${input.enteredBy}, updated_at = now()
+    where s.org_id = ${input.orgId} and s.source = 'meta' and s.amount_poisha <> 0
+      and s.spend_date between ${input.from}::date and ${input.to}::date
+      ${kept}
+    returning s.id
+  `);
+  return rows.length;
+}
+
+/**
+ * Names of Meta campaigns with spend a person typed in `[from, to]` that are not mapped to
+ * any Meta campaign id. The import refuses to run over them: it cannot tell which Meta
+ * campaign that spend belongs to, so it would write the same taka a second time under a
+ * campaign of its own (D-254).
+ */
+export async function unmappedManualMetaSpend(
+  tx: Tx,
+  orgId: string,
+  range: { readonly from: string; readonly to: string },
+): Promise<string[]> {
+  const rows = await tx.execute<{ name: string }>(sql`
+    select c.name
+    from marketing.campaigns c
+    where c.org_id = ${orgId} and c.platform = 'meta'
+      and exists (
+        select 1 from marketing.ad_spend s
+        where s.org_id = c.org_id and s.campaign_id = c.id and s.source = 'manual'
+          and s.amount_poisha > 0
+          and s.spend_date between ${range.from}::date and ${range.to}::date
+      )
+      and not exists (
+        select 1 from marketing.campaign_refs r
+        where r.org_id = c.org_id and r.campaign_id = c.id and r.kind = 'meta_campaign'
+      )
+    order by c.name
+  `);
+  return [...rows].map((row) => row.name);
+}
+
 // --- leads -------------------------------------------------------------------------
 
 export interface LeadRow extends Record<string, unknown> {
