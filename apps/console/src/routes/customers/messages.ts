@@ -81,6 +81,7 @@ const CUSTOMERS_KEYS = [
   'customers.lapsed.cutoff',
   'customers.lapsed.exportCsv',
   'customers.lapsed.exportXlsx',
+  'customers.lapsed.exportAudience',
   'customers.lapsed.emptyTitle',
   'customers.lapsed.emptyDetail',
   'customers.lapsed.deniedTitle',

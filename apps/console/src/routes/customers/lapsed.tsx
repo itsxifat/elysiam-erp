@@ -153,6 +153,10 @@ function Lapsed() {
               <Download aria-hidden="true" className="size-4" />
               {t('customers.lapsed.exportXlsx')}
             </a>
+            <a href={lapsedExportUrl(filters, 'meta_audience')} className={DOWNLOAD}>
+              <Download aria-hidden="true" className="size-4" />
+              {t('customers.lapsed.exportAudience')}
+            </a>
           </>
         }
       />
