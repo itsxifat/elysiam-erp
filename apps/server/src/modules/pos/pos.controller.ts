@@ -132,7 +132,7 @@ export class PosController {
     );
   }
 
-  /** Always "not available" until M16 binds the promotions port. */
+  /** Always "not available": the till does not redeem codes yet (D-209). */
   @RequireAbility('update', 'Wallet')
   @Post('promo-codes/check')
   @HttpCode(200)

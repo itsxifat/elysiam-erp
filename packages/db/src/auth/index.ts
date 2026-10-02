@@ -179,7 +179,7 @@ export function createAuth(options: AuthOptions) {
       /**
        * Where an invite or reset token goes.
        *
-       * M16 replaces this with the real email adapter (D-012). Until then the
+       * There is no email adapter yet (D-012, D-212), so the
        * token is handed back to the admin who created the user, which is how
        * onboarding works in a business that has not wired email yet: the admin
        * passes it on out of band.

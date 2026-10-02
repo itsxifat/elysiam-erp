@@ -189,7 +189,7 @@ export const memberships = iam.table(
     /**
      * Who granted this membership, when a person did (D-077). Null for a seed
      * or a fixture. Read by maker-checker: whoever granted a checker role —
-     * and, until M16 emails invites, received that user's invite token —
+     * and, while invites are not emailed (D-212), received that user's invite token —
      * may never be approved by them, directly or down the chain.
      */
     grantedBy: text('granted_by'),

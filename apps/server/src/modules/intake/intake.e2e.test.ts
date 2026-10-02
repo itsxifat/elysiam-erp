@@ -317,7 +317,11 @@ describe('check 3: a bad signature', () => {
         tamper: JSON.stringify({ ...body, notes: 'changed after signing' }),
       }),
       await postSigned(body, { timestamp: String(now - 301) }),
-      await postSigned(body, { timestamp: String(now + 301) }),
+      // Taken afresh and well clear of the edge: a future timestamp drifts *into* the
+      // window as time passes, and `now` above is several requests old by here. Under a
+      // loaded full run, `now + 301` arrived inside the window and was accepted. The exact
+      // edge is pinned by `signature.test.ts`; this asserts the HTTP answer.
+      await postSigned(body, { timestamp: String(Math.floor(Date.now() / 1000) + 360) }),
       await postSigned(body, { keyId: `${keyId.slice(0, -1)}${keyId.endsWith('a') ? 'b' : 'a'}` }),
       await postSigned(body, { keyId: 'not-a-key' }),
       // A key id naming another org finds nothing there: the lookup runs in that org's RLS.

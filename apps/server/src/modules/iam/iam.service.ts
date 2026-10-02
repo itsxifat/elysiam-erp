@@ -35,7 +35,7 @@ export const AUTH = Symbol('ELYSIUM_AUTH');
 /**
  * The tokens Better Auth minted but has nowhere to send yet.
  *
- * M16 replaces this with the real email adapter (D-012). Until then an invite
+ * There is no email adapter yet (D-012, D-212), so an invite
  * token is handed back to the admin who created the user, and this is where it
  * waits in between — taken exactly once, so it cannot be read twice by accident.
  */

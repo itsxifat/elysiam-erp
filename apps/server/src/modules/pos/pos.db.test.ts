@@ -1041,7 +1041,7 @@ describe('closing', () => {
 });
 
 describe('the promo code port', () => {
-  it('is the refusing default until M16 binds it', async () => {
+  it('is the refusing default while the till cannot redeem a code (D-209)', async () => {
     expect(harness.app.get(PROMO_CODES, { strict: false })).toBeInstanceOf(NoPromoCodes);
     const response = await cashier.client.request('POST', '/v1/pos/promo-codes/check', {
       body: { registerId, code: 'EID50', basketPoisha: '150000' },

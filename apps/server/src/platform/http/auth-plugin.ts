@@ -438,7 +438,7 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
  * `session.token` one level down, and the same on each element of an array of
  * sessions. Those are the three shapes. A blanket "delete every key called
  * token at any depth" would also eat the invite token `POST /v1/users` returns
- * and whatever push token M16 adds.
+ * and any push token a later milestone adds.
  *
  * Returns the input unchanged when there was nothing to remove, so the caller
  * can skip re-serializing — the common case costs one parse and no allocation.

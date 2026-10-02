@@ -38,7 +38,7 @@ let database: TestDatabase;
 let sms: RecordingSmsProvider;
 let authHandle: ReturnType<typeof createAuth>;
 
-/** Invite and reset tokens, since there is no email adapter until M16. */
+/** Invite and reset tokens, since there is no email adapter yet (D-212). */
 const issuedTokens = new Map<string, string>();
 
 beforeAll(async () => {

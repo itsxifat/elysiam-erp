@@ -59,7 +59,7 @@ let authHandle: ReturnType<typeof createAuth>;
  */
 const limiter = new MemoryRateLimiter();
 
-/** Where invite tokens land, since there is no email adapter until M16. */
+/** Where invite tokens land, since there is no email adapter yet (D-212). */
 const tokens = new PasswordTokenStore();
 
 beforeAll(async () => {
