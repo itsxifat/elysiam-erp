@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 
 import type { MembershipRole } from '@elysium/contracts';
-import { createAuth, RecordingSmsProvider, SEED_ORG_IDS } from '@elysium/db';
+import { createAuth, RecordingSmsProvider, SEED_ORG_IDS, withSystem } from '@elysium/db';
+import { sql } from 'drizzle-orm';
 import {
   createTestUser,
   grantMembership,
@@ -144,6 +145,21 @@ async function create(): Promise<void> {
   await seedWallet(orgId, '1010-HQ', { provider: 'Till' });
   await seedWallet(orgId, '1100', { provider: 'Bank' });
 
+  // M16 check 5: a code the desk can apply. 10% off, no minimum, no limit, so a rerun of the
+  // spec against the same stack still finds it applicable. Seeded rather than created
+  // through the API because the stack's agents hold `read LandingPage` (apply a code), not
+  // `create` — exactly the split §6 draws between the desk and marketing (D-203).
+  const promoCode = `E2E${run.slice(0, 6).toUpperCase()}`;
+  await withSystem(
+    (tx) =>
+      tx.execute(sql`
+        insert into promo.codes (org_id, code, kind, value_bps, created_by)
+        values (${orgId}, ${promoCode}, 'percent', 1000, 'usr_stack_provision')
+        on conflict (org_id, code) do nothing
+      `),
+    { orgId },
+  );
+
   process.stdout.write(
     `${JSON.stringify({
       databaseName: database.databaseName,
@@ -155,6 +171,7 @@ async function create(): Promise<void> {
       password,
       users,
       skuCodes: skus.map((sku) => sku.code),
+      promoCode,
     })}\n`,
   );
 

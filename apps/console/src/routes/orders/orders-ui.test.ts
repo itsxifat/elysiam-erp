@@ -1,7 +1,15 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { Area } from './api.js';
-import { addLine, deskPhone, filterAreas, previewTotals, toAsciiDigits } from './desk-logic.js';
+import {
+  addLine,
+  deskPhone,
+  filterAreas,
+  previewTotals,
+  previewWithPromo,
+  promoLines,
+  toAsciiDigits,
+} from './desk-logic.js';
 import { ordersEn, ordersMessages } from './messages.js';
 import { loadLocale } from '../../i18n/catalogue.js';
 
@@ -122,5 +130,47 @@ describe('previewTotals', () => {
     const merged = addLine([line(1, '100')], line(2, '100'));
     expect(merged).toHaveLength(1);
     expect(merged[0]?.qty).toBe(3);
+  });
+});
+
+describe('the desk preview with a promo code (M16)', () => {
+  const line = (qty: number, price: string) => ({
+    skuId: `sku-${price}`,
+    skuCode: 'X',
+    name: 'X',
+    qty,
+    unitPricePoisha: price,
+    availableQty: null,
+  });
+
+  it('adds the code to the typed discount and takes its delivery part off the charge', () => {
+    // The server's rule (orders.service.ts): order discount = typed + code, delivery =
+    // charge - code's delivery discount. A preview that added the delivery discount
+    // instead would read a COD to the buyer that the order never asks for.
+    const totals = previewWithPromo({
+      lines: [line(2, '150000')],
+      discountPoisha: '5000',
+      deliveryPoisha: '12000',
+      promo: { discountPoisha: '30000', deliveryDiscountPoisha: '12000' },
+    });
+    expect(totals.itemsPoisha).toBe('300000');
+    expect(totals.discountPoisha).toBe('35000');
+    expect(totals.deliveryPoisha).toBe('0');
+    expect(totals.codPoisha).toBe('265000');
+  });
+
+  it('is the plain preview when no code applies', () => {
+    const input = {
+      lines: [line(1, '100000')],
+      discountPoisha: '0',
+      deliveryPoisha: '6000',
+    };
+    expect(previewWithPromo({ ...input, promo: null })).toEqual(previewTotals(input));
+  });
+
+  it('sends each line as price times quantity, in poisha, past 2^53', () => {
+    expect(promoLines([line(3, '3002399751580331')])).toEqual([
+      { skuId: 'sku-3002399751580331', netPoisha: '9007199254740993' },
+    ]);
   });
 });

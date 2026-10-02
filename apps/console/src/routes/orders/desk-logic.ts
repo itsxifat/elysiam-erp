@@ -120,3 +120,42 @@ export function addLine(lines: readonly DeskLine[], next: DeskLine): DeskLine[] 
     index === existing ? { ...line, qty: Math.min(line.qty + next.qty, 999) } : line,
   );
 }
+
+/**
+ * The preview with a promo code in it, the way the server will save it.
+ *
+ * Mirrors `orders.service.ts`: the code's goods discount joins the agent's typed discount,
+ * and its delivery discount comes off the charge. Kept here, pure, so the rule the preview
+ * shows is tested without a browser — a preview that added the code to the delivery
+ * instead of subtracting it would show a COD the order never asks for.
+ */
+export function previewWithPromo(input: {
+  readonly lines: readonly DeskLine[];
+  readonly discountPoisha: string | null;
+  readonly deliveryPoisha: string | null;
+  readonly promo: {
+    readonly discountPoisha: string;
+    readonly deliveryDiscountPoisha: string;
+  } | null;
+}): TotalsPreview {
+  if (input.promo === null || input.discountPoisha === null || input.deliveryPoisha === null) {
+    return previewTotals(input);
+  }
+  return previewTotals({
+    lines: input.lines,
+    discountPoisha: (BigInt(input.discountPoisha) + BigInt(input.promo.discountPoisha)).toString(),
+    deliveryPoisha: (
+      BigInt(input.deliveryPoisha) - BigInt(input.promo.deliveryDiscountPoisha)
+    ).toString(),
+  });
+}
+
+/** Each line's net as the promo check wants it: price times quantity, in poisha. */
+export function promoLines(
+  lines: readonly DeskLine[],
+): { readonly skuId: string; readonly netPoisha: string }[] {
+  return lines.map((line) => ({
+    skuId: line.skuId,
+    netPoisha: (BigInt(line.unitPricePoisha) * BigInt(line.qty)).toString(),
+  }));
+}

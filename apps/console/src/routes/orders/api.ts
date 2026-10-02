@@ -167,6 +167,8 @@ export interface CreateOrderBody {
   readonly lines: readonly { readonly skuId: string; readonly qty: number }[];
   readonly deliveryChargePoisha?: string;
   readonly discountPoisha?: string;
+  /** The word the buyer gave. Never an id or an amount: the server prices it (D-204). */
+  readonly promoCode?: string;
   readonly notes?: string;
   readonly assignedTo?: string;
 }
@@ -179,6 +181,31 @@ export interface CreatedOrder {
 }
 
 export const createOrder = (body: CreateOrderBody) => api.post<CreatedOrder>('/v1/orders', body);
+
+/** What the live check says about a code, for this basket. Claims no use. */
+export type PromoCheck =
+  | {
+      readonly ok: true;
+      readonly codeId: string;
+      readonly discountPoisha: string;
+      readonly deliveryDiscountPoisha: string;
+    }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * `POST /v1/promo/check`: would this code work on this basket, and for how much.
+ *
+ * A preview only. The order's own transaction prices the code again from the lines the
+ * server priced itself and redeems it there, so what is saved can differ from this if the
+ * code ran out in between — which the save then reports.
+ */
+export const checkPromo = (body: {
+  readonly code: string;
+  readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
+  readonly deliveryChargePoisha: string;
+  readonly channel: string;
+  readonly customerId?: string;
+}) => api.post<PromoCheck>('/v1/promo/check', body);
 export const confirmOrder = (id: string) => api.post<OrderRow>(`/v1/orders/${id}/confirm`, {});
 export const claimOrder = (id: string) => api.post<OrderRow>(`/v1/orders/${id}/claim`);
 export const cancelOrder = (id: string, reason: string) =>

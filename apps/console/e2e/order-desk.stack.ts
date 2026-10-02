@@ -179,3 +179,83 @@ test('check 4: a new order appears in a second agent’s queue without a refresh
     await second.close();
   }
 });
+
+test('M16 check 5: a promo code applied in the order desk prices the order and is recorded', async ({
+  page,
+}) => {
+  const desk = user('desk');
+  await signIn(page, desk.email, '/orders/new');
+  await expect(page.getByRole('heading', { name: 'New order' })).toBeVisible();
+
+  const skuCode = stack().skuCodes[0] ?? '';
+  const skuFragment = skuCode.split('-')[1] ?? skuCode;
+  const code = stack().promoCode;
+
+  await page.getByRole('textbox', { name: /^Phone/ }).fill(throwawayPhone());
+  await page.getByRole('textbox', { name: /^Buyer name/ }).fill('Promo Buyer');
+  await page.getByRole('combobox', { name: /^Area/ }).fill('savar');
+  await page.getByRole('option', { name: /Savar, Dhaka/ }).click();
+  await page.getByRole('textbox', { name: /^Address/ }).fill('House 9, Road 4');
+  await page.getByRole('combobox', { name: /Find a SKU/ }).fill(skuFragment);
+  await page.getByRole('option', { name: new RegExp(skuCode) }).click();
+  await expect(page.getByRole('row', { name: new RegExp(skuCode) })).toBeVisible();
+
+  // The live check: the agent types the word, and the desk says it applies and what it
+  // takes off — 10% of the ৳1,500 line.
+  await page.getByRole('textbox', { name: 'Promo code' }).fill(code.toLowerCase());
+  const status = page.getByRole('status').filter({ hasText: 'Code applies' });
+  await expect(status).toBeVisible({ timeout: 10_000 });
+  const codeDiscount = page.getByRole('term').filter({ hasText: 'Code discount' });
+  await expect(codeDiscount).toBeVisible();
+
+  await page.keyboard.press('Control+Enter');
+  await expect(page.getByTestId('desk-outcome')).toContainText('Order confirmed', {
+    timeout: 20_000,
+  });
+
+  // What the server saved, not what the screen previewed: the discount it computed from the
+  // lines it priced itself (D-204), and a COD that is items less that discount plus delivery.
+  const orderNo = (await page.getByTestId('desk-order-no').textContent())?.trim() ?? '';
+  const listed = await page.request.get(
+    `${stack().apiUrl}/v1/orders?q=${encodeURIComponent(orderNo)}`,
+  );
+  const { items } = (await listed.json()) as { items: { id: string; orderNo: string }[] };
+  const orderId = items.find((item) => item.orderNo === orderNo)?.id ?? '';
+  expect(orderId).not.toBe('');
+
+  const read = await page.request.get(`${stack().apiUrl}/v1/orders/${orderId}`);
+  expect(read.ok()).toBe(true);
+  const { amounts } = (await read.json()) as {
+    amounts: {
+      itemsPoisha: string;
+      discountPoisha: string;
+      deliveryChargePoisha: string;
+      codAmountPoisha: string;
+    };
+  };
+  expect(amounts.itemsPoisha).toBe('150000');
+  expect(amounts.discountPoisha).toBe('15000');
+  expect(BigInt(amounts.codAmountPoisha)).toBe(
+    BigInt(amounts.itemsPoisha) -
+      BigInt(amounts.discountPoisha) +
+      BigInt(amounts.deliveryChargePoisha),
+  );
+
+  // And the redemption ledger has it: one use of the code, against this order, for the
+  // same amount — the books and the ledger are one number by construction.
+  const codes = await page.request.get(`${stack().apiUrl}/v1/promo/codes`);
+  const codeId =
+    ((await codes.json()) as { items: { id: string; code: string }[] }).items.find(
+      (item) => item.code === code,
+    )?.id ?? '';
+  const redemptions = await page.request.get(
+    `${stack().apiUrl}/v1/promo/codes/${codeId}/redemptions`,
+  );
+  const { items: spent } = (await redemptions.json()) as {
+    items: { orderId: string | null; discountPoisha: string; status: string }[];
+  };
+  expect(spent.find((entry) => entry.orderId === orderId)).toMatchObject({
+    discountPoisha: '15000',
+    status: 'applied',
+  });
+});

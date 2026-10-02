@@ -28,6 +28,7 @@ import { useAbility, useSession } from '../../auth/session.js';
 import { useLocale } from '../../i18n/locale.js';
 import {
   availability,
+  checkPromo,
   confirmOrder,
   createOrder,
   DESK_CHANNELS,
@@ -43,7 +44,8 @@ import {
   addLine,
   deskPhone,
   filterAreas,
-  previewTotals,
+  previewWithPromo,
+  promoLines,
   toAsciiDigits,
   type DeskLine,
 } from './desk-logic.js';
@@ -80,6 +82,33 @@ import { ordersPath } from './paths.js';
  * The totals on the right are a preview in `bigint` (`previewTotals`). The saved order's
  * figures come from the server's `computeOrderTotals` and replace them.
  */
+
+/** Where the typed promo code stands, as the field shows it. */
+type PromoState =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'checking' }
+  | {
+      readonly kind: 'ok';
+      readonly discountPoisha: string;
+      readonly deliveryDiscountPoisha: string;
+    }
+  | { readonly kind: 'refused'; readonly reason: string }
+  | { readonly kind: 'not_found' }
+  | { readonly kind: 'failed' };
+
+/** The domain's reasons, each with words; an unknown one falls back to "cannot apply". */
+const PROMO_REASONS: Readonly<Record<string, OrdersMessageKey>> = {
+  inactive: 'orders.desk.promoReason.inactive',
+  not_yet_valid: 'orders.desk.promoReason.not_yet_valid',
+  expired: 'orders.desk.promoReason.expired',
+  personal_code: 'orders.desk.promoReason.personal_code',
+  wrong_channel: 'orders.desk.promoReason.wrong_channel',
+  limit_reached: 'orders.desk.promoReason.limit_reached',
+  customer_limit_reached: 'orders.desk.promoReason.customer_limit_reached',
+  min_order_not_met: 'orders.desk.promoReason.min_order_not_met',
+  out_of_scope: 'orders.desk.promoReason.out_of_scope',
+  nothing_to_discount: 'orders.desk.promoReason.nothing_to_discount',
+};
 
 interface Outcome {
   readonly kind: 'confirmed' | 'saved' | 'saved_not_confirmed' | 'failed';
@@ -140,6 +169,17 @@ function Desk() {
   const [lines, setLines] = useState<DeskLine[]>([]);
   const [channel, setChannel] = useState<OrderChannel>('facebook');
   const [discountTaka, setDiscountTaka] = useState('');
+  /**
+   * The promo code as typed, and the same word once typing has paused. The live check
+   * keys on the settled word, so it asks the server once per pause rather than once per
+   * keystroke.
+   */
+  const [promoCode, setPromoCode] = useState('');
+  const [settledPromo, setSettledPromo] = useState('');
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettledPromo(promoCode.trim()), 350);
+    return () => window.clearTimeout(timer);
+  }, [promoCode]);
   const [deliveryTaka, setDeliveryTaka] = useState('');
   const [deliveryTouched, setDeliveryTouched] = useState(false);
   const [notes, setNotes] = useState('');
@@ -335,7 +375,59 @@ function Desk() {
 
   const discountPoisha = discountTaka.trim() === '' ? '0' : takaToPoisha(discountTaka);
   const deliveryPoisha = deliveryShown.trim() === '' ? '0' : takaToPoisha(deliveryShown);
-  const totals = previewTotals({ lines, discountPoisha, deliveryPoisha });
+
+  /*
+   * The code's live check (M16 check 5). A preview only: the order's own transaction
+   * prices the word again from the lines the server priced and redeems it there (D-204),
+   * so nothing the desk computes here is ever sent as an amount — only the word is.
+   */
+  const promoBasket = promoLines(lines);
+  const promoActive = settledPromo.length >= 3 && lines.length > 0 && deliveryPoisha !== null;
+  const promo = useQuery({
+    queryKey: [
+      'orders',
+      'promo',
+      settledPromo,
+      promoBasket,
+      deliveryPoisha,
+      channel,
+      customer?.id ?? null,
+    ],
+    queryFn: () =>
+      checkPromo({
+        code: settledPromo,
+        lines: promoBasket,
+        deliveryChargePoisha: deliveryPoisha ?? '0',
+        channel,
+        ...(customer === null ? {} : { customerId: customer.id }),
+      }),
+    enabled: promoActive,
+    retry: false,
+    staleTime: 10_000,
+  });
+  const promoState: PromoState =
+    promoCode.trim() === ''
+      ? { kind: 'none' }
+      : !promoActive || promoCode.trim() !== settledPromo || promo.isPending
+        ? { kind: 'checking' }
+        : promo.isError
+          ? promo.error instanceof ApiError && promo.error.status === 404
+            ? { kind: 'not_found' }
+            : { kind: 'failed' }
+          : promo.data.ok
+            ? {
+                kind: 'ok',
+                discountPoisha: promo.data.discountPoisha,
+                deliveryDiscountPoisha: promo.data.deliveryDiscountPoisha,
+              }
+            : { kind: 'refused', reason: promo.data.reason };
+
+  const totals = previewWithPromo({
+    lines,
+    discountPoisha,
+    deliveryPoisha,
+    promo: promoState.kind === 'ok' ? promoState : null,
+  });
   const moneyInvalid = discountPoisha === null || deliveryPoisha === null || totals.invalid;
 
   const ready =
@@ -344,7 +436,10 @@ function Desk() {
     area !== null &&
     addressLine.trim().length >= 3 &&
     lines.length > 0 &&
-    !moneyInvalid;
+    !moneyInvalid &&
+    // A code that does not apply would make the server refuse the whole order, so the
+    // desk holds the save until the agent removes it or fixes the basket.
+    (promoState.kind === 'none' || promoState.kind === 'ok');
 
   // --- saving ------------------------------------------------------------------------------
   const save = useMutation({
@@ -365,6 +460,7 @@ function Desk() {
           ? { deliveryChargePoisha: deliveryPoisha }
           : {}),
         ...(discountPoisha !== null && discountPoisha !== '0' ? { discountPoisha } : {}),
+        ...(promoState.kind === 'ok' ? { promoCode: settledPromo } : {}),
         ...(notes.trim() === '' ? {} : { notes: notes.trim() }),
         // The agent who takes the order owns it: it is theirs to confirm, pack-check and
         // chase, and leaving it unassigned would drop it into every colleague's queue.
@@ -875,6 +971,61 @@ function Desk() {
                 className="text-right tabular-nums"
               />
             </div>
+            <div className="space-y-1.5 sm:col-span-3">
+              <Label htmlFor={`${ids}-promo`}>{t('orders.desk.promoCode')}</Label>
+              <div className="flex items-start gap-2">
+                <Input
+                  id={`${ids}-promo`}
+                  value={promoCode}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
+                  aria-describedby={`${ids}-promo-status`}
+                  aria-invalid={
+                    promoState.kind === 'refused' ||
+                    promoState.kind === 'not_found' ||
+                    promoState.kind === 'failed'
+                  }
+                  className="max-w-xs font-mono uppercase"
+                />
+                {promoCode === '' ? null : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t('orders.desk.promoRemove')}
+                    onClick={() => setPromoCode('')}
+                  >
+                    <Trash2 aria-hidden="true" />
+                  </Button>
+                )}
+              </div>
+              <p
+                id={`${ids}-promo-status`}
+                role="status"
+                className={
+                  promoState.kind === 'ok'
+                    ? 'flex items-center gap-1.5 text-xs text-success'
+                    : promoState.kind === 'none' || promoState.kind === 'checking'
+                      ? 'text-xs text-muted-foreground'
+                      : 'text-xs text-destructive'
+                }
+              >
+                {promoState.kind === 'none' ? t('orders.desk.promoHint') : null}
+                {promoState.kind === 'checking' ? t('orders.desk.promoChecking') : null}
+                {promoState.kind === 'ok' ? (
+                  <>
+                    <CheckCircle2 aria-hidden="true" className="size-3.5" />
+                    {t('orders.desk.promoApplied')}
+                  </>
+                ) : null}
+                {promoState.kind === 'refused'
+                  ? t(PROMO_REASONS[promoState.reason] ?? 'orders.desk.promoReason.out_of_scope')
+                  : null}
+                {promoState.kind === 'not_found' ? t('orders.desk.promoNotFound') : null}
+                {promoState.kind === 'failed' ? t('orders.desk.promoFailed') : null}
+              </p>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor={`${ids}-delivery`}>{t('orders.desk.deliveryCharge')}</Label>
               <Input
@@ -993,6 +1144,20 @@ function Desk() {
                 poisha={totals.discountPoisha}
                 locale={locale}
               />
+              {promoState.kind === 'ok' && promoState.discountPoisha !== '0' ? (
+                <TotalRow
+                  label={t('orders.desk.promoDiscount')}
+                  poisha={promoState.discountPoisha}
+                  locale={locale}
+                />
+              ) : null}
+              {promoState.kind === 'ok' && promoState.deliveryDiscountPoisha !== '0' ? (
+                <TotalRow
+                  label={t('orders.desk.promoDelivery')}
+                  poisha={promoState.deliveryDiscountPoisha}
+                  locale={locale}
+                />
+              ) : null}
               <TotalRow
                 label={t('orders.desk.deliveryTotal')}
                 poisha={totals.deliveryPoisha}
@@ -1008,6 +1173,15 @@ function Desk() {
             {totals.invalid ? (
               <p className="text-xs text-destructive" role="alert">
                 {t('orders.desk.codNegative')}
+              </p>
+            ) : null}
+            {attempted &&
+            !ready &&
+            (promoState.kind === 'refused' ||
+              promoState.kind === 'not_found' ||
+              promoState.kind === 'failed') ? (
+              <p className="text-xs text-destructive" role="alert">
+                {t('orders.desk.promoBlocked')}
               </p>
             ) : null}
             {attempted && !ready ? (
