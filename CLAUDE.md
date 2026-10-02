@@ -7,7 +7,6 @@ One ERP for five sister fashion brands in Bangladesh (Elysium Lifestyle BD, Oura
 - a reseller platform (Beownz)
 - HR and payroll
 - investors
-- a unified inbox
 
 Each brand is an isolated org. Super Admin sees everything.
 
@@ -28,7 +27,7 @@ Each brand is an isolated org. Super Admin sees everything.
 - Data: PostgreSQL 17 with row-level security, Drizzle ORM, pg-boss for jobs.
 - Realtime, auth, permissions: Socket.IO + Valkey, Better Auth, CASL.
 - Staff and partner UIs: React + Vite, TanStack Router/Query/Table, shadcn/ui + Tailwind, lucide-react, React Hook Form + Zod.
-- Landing pages only: Next.js + Puck.
+- Landing pages (Next.js + Puck, `apps/sites`, `packages/landing-blocks`) and the Chatwoot inbox are removed from scope (D-290); the scaffolds stay unused.
 - Documents and files: Gotenberg for PDFs, Cloudflare R2 for storage.
 - Tests: Vitest, fast-check, Testcontainers, Playwright.
 
@@ -74,7 +73,7 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
 5. Purchase cost lives only in supply, inventory and ledger.
    - Responses go through `serializeFor()`.
    - Roles without `read:cost` never receive cost fields.
-6. No external call (courier, SMS, Meta, Chatwoot) runs inside a DB transaction. Enqueue a pg-boss job in the same transaction instead.
+6. No external call (courier, SMS, Meta) runs inside a DB transaction. Enqueue a pg-boss job in the same transaction instead.
 7. Order status changes only through the domain state machine in `packages/domain`.
 8. Business dates are Asia/Dhaka calendar dates. Store timestamps as `timestamptz`.
 9. Never edit a committed migration. Add a new one.

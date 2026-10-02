@@ -40,6 +40,6 @@ M07, M09, M10, M11, M12, M13, M15, M19 and M25 were built by parallel agents bet
 | M23  | Branches and showroom POS         | done; integrated, ledger audit fixed                  |
 | M25  | Investors                         | built, investor portal pages missing                  |
 
-Not started: M14b, M17, M18, M20, M24, M26 to M30. M21 and M22, the Beownz reseller platform, are out of scope by the client's instruction.
+Not started: M14b, M17, M18, M20, M24, M26, M28, M30. M27 (Chatwoot) and M29 (landing page builder) are removed from scope by the owner (D-290). M21 and M22, the Beownz reseller platform, are out of scope by the client's instruction.
 
 The plain-language summary with percentages is `docs/build-status.md`.

@@ -918,6 +918,8 @@ interface CourierAdapter {
 
 ## 16. Message Hub and agent activity
 
+> The Message Hub (Chatwoot, M27) is removed from scope (D-290). Agent activity (M28) remains.
+
 ### Message Hub
 
 Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
@@ -946,6 +948,8 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 ---
 
 ## 17. Landing pages
+
+> Removed from scope (D-290). Kept for reference only; do not build.
 
 - **Editor:** Puck in the console.
 - **Blocks** (`packages/landing-blocks`): Hero, ProductShowcase (live price and stock), VariantPicker + OrderForm, Countdown, Benefits, Testimonials, FAQ, TrustBadges, VideoEmbed, StickyOrderBar.

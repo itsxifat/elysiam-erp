@@ -42,9 +42,9 @@
 | M24  | Analytics, dashboards, leaderboard               | 4      | XHIGH  | M12, M18, M20, M23 |
 | M25  | Investors                                        | 5      | MAX    | M08                |
 | M26  | Company loans                                    | 5      | XHIGH  | M08, M16           |
-| M27  | Message Hub (Chatwoot)                           | 5      | XHIGH  | M11, M13, M16      |
+| M27  | ~~Message Hub (Chatwoot)~~ removed (D-290)       | 5      | XHIGH  | M11, M13, M16      |
 | M28  | Agent activity extension                         | 5      | XHIGH  | M20                |
-| M29  | Landing page builder and promotions              | 5      | XHIGH  | M11, M16           |
+| M29  | ~~Landing page builder~~ removed (D-290)         | 5      | XHIGH  | M11, M16           |
 | M30  | Hardening and launch readiness                   | Launch | MAX    | all                |
 
 ---
@@ -950,6 +950,8 @@ Phase 5 · Effort XHIGH · Depends on: M08, M16 · Architecture: §7, §15
 
 ## M27: Message Hub (Chatwoot)
 
+**Removed from scope by the owner on 2026-10-02 (D-290). Do not build.**
+
 Phase 5 · Effort XHIGH · Depends on: M11, M13, M16 · Gate: G10 · Architecture: §16
 
 **Build**
@@ -993,6 +995,8 @@ Phase 5 · Effort XHIGH · Depends on: M20 · Gate: G11 · Architecture: §16
 ---
 
 ## M29: Landing page builder and promotions
+
+**Removed from scope by the owner on 2026-10-02 (D-290). Do not build.**
 
 Phase 5 · Effort XHIGH · Depends on: M11, M16 · Gate: G12 · Architecture: §17, §10
 

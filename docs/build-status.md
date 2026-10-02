@@ -6,14 +6,14 @@ Last updated: **2026-10-02**. This is the short, plain-language view. The detail
 ## Overall
 
 ```
-Built     [#############-------]  64%
+Built     [##############------]  69%
 ```
 
-- The plan has 33 milestones. The two Beownz reseller milestones (M21, M22) are set aside on the
-  owner's instruction, so **31 count**.
+- The plan has 33 milestones. Four are out on the owner's instruction: the two Beownz reseller
+  milestones (M21, M22), the Chatwoot inbox (M27) and the landing page builder (M29). So **29 count**.
 - A milestone counts 100% when it is built, tested and passed its audits. A part-built one counts
   for the share that is done.
-- Today: **19 done, 2 part-built, 10 not started.**
+- Today: **19 done, 2 part-built, 8 not started.**
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
 [What the owner needs to do](#what-the-owner-needs-to-do).
@@ -37,10 +37,9 @@ Built     [#############-------]  64%
 | Targets and bonuses                                         |    0% | Monthly sales targets split by week, bonus rules feeding payroll.                                          |
 | Dashboards and leaderboard                                  |    0% | Owner and super-admin dashboards, agent leaderboard.                                                       |
 | Company loans                                               |    0% | Loans the company takes, schedules, reminders.                                                             |
-| Unified inbox (Chatwoot)                                    |    0% | Facebook/WhatsApp messages in one place, with an order form beside the chat.                               |
 | Staff activity extension                                    |    0% | Browser extension that records which sites agents work on.                                                 |
-| Landing pages                                               |    0% | Page builder for product landing pages with an order form.                                                 |
 | Going live and hardening                                    |    0% | Server deploy, monitoring, backups, load tests, security review.                                           |
+| Chatwoot inbox, landing page builder                        |     - | Removed by the owner on 2026-10-02. Not counted.                                                           |
 | Reseller platform (Beownz)                                  |     - | Set aside by the owner. Not counted.                                                                       |
 
 ## By milestone
@@ -76,15 +75,15 @@ Built     [#############-------]  64%
 | M24  | Dashboards and leaderboard             |    0% | Waits for M18 and M20                                     |
 | M25  | Investors                              |   85% | Investor login pages missing                              |
 | M26  | Company loans                          |    0% |                                                           |
-| M27  | Unified inbox (Chatwoot)               |    0% | Needs a Chatwoot server                                   |
+| M27  | Unified inbox (Chatwoot)               |     - | Removed by the owner                                      |
 | M28  | Staff activity extension               |    0% | Waits for M20, and a signed staff policy                  |
-| M29  | Landing pages                          |    0% |                                                           |
+| M29  | Landing pages                          |     - | Removed by the owner                                      |
 | M30  | Final hardening before launch          |    0% | Last                                                      |
 
 ## Being built now
 
-M14a (data migration), M17 (fraud v2, advance payments), M18 (marketing) and M20 (targets and
-bonuses), in parallel, each on its own branch.
+Nothing. Work on M14a, M17, M18 and M20 was started and **paused by the owner on 2026-10-02**.
+Their half-done, uncommitted files sit in their own folders and nothing was merged.
 
 ## What the owner needs to do
 
