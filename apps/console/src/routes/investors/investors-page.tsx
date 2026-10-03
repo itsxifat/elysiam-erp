@@ -7,6 +7,7 @@ import {
   Form,
   Money,
   MoneyField,
+  PageHeader,
   PermissionGate,
   SelectField,
   StatusBadge,
@@ -618,28 +619,28 @@ export function InvestorsPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">{a('investors.title')}</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">{a('investors.subtitle')}</p>
-        </div>
-        <PermissionGate allowed={mayRecord}>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
-              {a('investors.add')}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setCapitalOpen(true)}>
-              {a('investors.recordCapital')}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setRequestOpen(true)}>
-              {a('investors.request')}
-            </Button>
-            <Button size="sm" onClick={() => setDeclareOpen(true)}>
-              {a('investors.declare')}
-            </Button>
-          </div>
-        </PermissionGate>
-      </header>
+      <PageHeader
+        title={a('investors.title')}
+        description={a('investors.subtitle')}
+        actions={
+          <PermissionGate allowed={mayRecord}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+                {a('investors.add')}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setCapitalOpen(true)}>
+                {a('investors.recordCapital')}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setRequestOpen(true)}>
+                {a('investors.request')}
+              </Button>
+              <Button size="sm" onClick={() => setDeclareOpen(true)}>
+                {a('investors.declare')}
+              </Button>
+            </div>
+          </PermissionGate>
+        }
+      />
 
       {notice === null ? null : (
         <p

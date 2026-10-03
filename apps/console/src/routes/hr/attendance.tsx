@@ -1,4 +1,4 @@
-import { Button, EmptyState, PermissionGate, StatusBadge } from '@elysium/ui';
+import { Button, EmptyState, PageHeader, PermissionGate, Select, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -103,12 +103,11 @@ export function AttendancePage() {
       explain={{ title: t('hr.deniedTitle'), detail: t('hr.deniedPeople') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{t('hr.attendance')}</h1>
-          <p className="text-sm text-muted-foreground">{t('hr.attendanceHint')}</p>
-        </header>
-
-        <HrNav />
+        <PageHeader
+          title={t('hr.attendance')}
+          description={t('hr.attendanceHint')}
+          tabs={<HrNav />}
+        />
 
         <Field label={t('hr.month')} id="attendance-month">
           <input
@@ -213,20 +212,17 @@ function ManualEntry({
       }}
     >
       <Field label={t('hr.employee')} id="attendance-employee">
-        <select
+        <Select
           id="attendance-employee"
           value={employeeId}
           required
-          className={control}
-          onChange={(event) => setEmployeeId(event.target.value)}
-        >
-          <option value="">{t('hr.employee')}</option>
-          {employees.map((employee) => (
-            <option key={employee.id} value={employee.id}>
-              {employee.code} · {employee.fullName}
-            </option>
-          ))}
-        </select>
+          placeholder={t('hr.employee')}
+          onValueChange={setEmployeeId}
+          options={employees.map((employee) => ({
+            value: employee.id,
+            label: `${employee.code} · ${employee.fullName}`,
+          }))}
+        />
       </Field>
       <Field label={t('hr.colDate')} id="attendance-date">
         <input
@@ -243,18 +239,15 @@ function ManualEntry({
         />
       </Field>
       <Field label={t('hr.colAttendance')} id="attendance-status">
-        <select
+        <Select
           id="attendance-status"
           value={status}
-          className={control}
-          onChange={(event) => setStatus(event.target.value as AttendanceStatus)}
-        >
-          {STATUSES.map((one) => (
-            <option key={one} value={one}>
-              {t(`hr.attend.${one}` as HrMessageKey)}
-            </option>
-          ))}
-        </select>
+          onValueChange={(value) => setStatus(value as AttendanceStatus)}
+          options={STATUSES.map((one) => ({
+            value: one,
+            label: t(`hr.attend.${one}` as HrMessageKey),
+          }))}
+        />
       </Field>
       <div className="flex items-end gap-3">
         <Button

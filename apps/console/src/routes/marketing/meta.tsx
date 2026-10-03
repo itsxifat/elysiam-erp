@@ -4,6 +4,7 @@ import {
   DateTime,
   Money,
   PermissionGate,
+  Select,
   Skeleton,
   StatusBadge,
   dataTableColumns,
@@ -317,21 +318,19 @@ function ConversionLog() {
         caption={t('marketing.capi.title')}
         labels={labels}
         toolbar={
-          <select
+          <Select
+            variant="filter"
             aria-label={t('marketing.col.status')}
             value={status ?? ''}
-            className={`${control} w-auto`}
-            onChange={(event) =>
-              setStatus((event.target.value || undefined) as CapiStatus | undefined)
-            }
-          >
-            <option value="">{t('marketing.capi.allStatuses')}</option>
-            {CAPI_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {t(`marketing.capi.${value}` as MarketingMessageKey)}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => setStatus((value || undefined) as CapiStatus | undefined)}
+            options={[
+              { value: '', label: t('marketing.capi.allStatuses') },
+              ...CAPI_STATUSES.map((value) => ({
+                value,
+                label: t(`marketing.capi.${value}` as MarketingMessageKey),
+              })),
+            ]}
+          />
         }
       />
     </div>

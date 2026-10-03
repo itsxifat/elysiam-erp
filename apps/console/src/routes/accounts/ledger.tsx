@@ -1,4 +1,4 @@
-import { Button, Label, Money, PermissionGate, StatusBadge } from '@elysium/ui';
+import { Button, Label, Money, PermissionGate, Select, StatusBadge } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useId } from 'react';
@@ -277,21 +277,18 @@ function AccountView({ search, go }: ViewProps) {
           <Label htmlFor={id} className="block">
             {a('accounts.col.account')}
           </Label>
-          <select
+          <Select
             id={id}
+            size="sm"
+            className="w-72"
             value={accountId ?? ''}
-            onChange={(event) =>
-              go({ account: event.target.value === '' ? undefined : event.target.value })
-            }
-            className="h-control-sm w-72 rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          >
-            <option value="">{a('accounts.ledger.pickAccount')}</option>
-            {(accounts.data?.items ?? []).map((account) => (
-              <option key={account.id} value={account.id}>
-                {`${account.code} · ${account.name}`}
-              </option>
-            ))}
-          </select>
+            placeholder={a('accounts.ledger.pickAccount')}
+            onValueChange={(value) => go({ account: value === '' ? undefined : value })}
+            options={(accounts.data?.items ?? []).map((account) => ({
+              value: account.id,
+              label: `${account.code} · ${account.name}`,
+            }))}
+          />
         </div>
         <RangeBar
           from={range.from}

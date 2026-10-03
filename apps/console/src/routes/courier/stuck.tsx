@@ -5,6 +5,7 @@ import {
   ErrorState,
   Money,
   PermissionGate,
+  Select,
   Skeleton,
   StatusBadge,
 } from '@elysium/ui';
@@ -172,19 +173,19 @@ export function StuckParcelsPage() {
           </Field>
           {(accounts.data?.items.length ?? 0) > 0 ? (
             <Field label={t('courier.colCourier')} id="stuck-courier">
-              <select
+              <Select
                 id="stuck-courier"
+                className="w-48"
                 value={courierId}
-                className={`${control} w-48`}
-                onChange={(event) => setCourierId(event.target.value)}
-              >
-                <option value="">{t('courier.allCouriers')}</option>
-                {(accounts.data?.items ?? []).map((account) => (
-                  <option key={account.id} value={account.courierId}>
-                    {account.label}
-                  </option>
-                ))}
-              </select>
+                onValueChange={setCourierId}
+                options={[
+                  { value: '', label: t('courier.allCouriers') },
+                  ...(accounts.data?.items ?? []).map((account) => ({
+                    value: account.courierId,
+                    label: account.label,
+                  })),
+                ]}
+              />
             </Field>
           ) : null}
         </div>

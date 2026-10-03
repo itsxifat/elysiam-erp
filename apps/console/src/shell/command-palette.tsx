@@ -1,131 +1,278 @@
+import { Kbd } from '@elysium/ui';
 import { useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
-import { Languages, Moon, Sun } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowRight, CornerDownLeft, History, Languages, Moon, Search, Sun } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 
 import { useAbility } from '../auth/session.js';
 import { useLocale, useT } from '../i18n/locale.js';
-import { navigableItems } from './navigation.js';
+import {
+  navigableItems,
+  visiblePaletteActions,
+  visiblePalettePages,
+  type NavItem,
+} from './navigation.js';
 import { applyTheme, isDark } from '../theme.js';
 
 /**
- * The command palette (M05 checks 7 and 10).
+ * The command palette (M05 checks 7 and 10; D-450).
  *
- * `cmdk`, on the same Radix dialog as everything else, so the focus trap and
- * restore are the ones already proven rather than a second implementation. The
- * palette is the fastest path through a dense application for anybody who uses it
- * daily, and §24 makes the order desk and POS keyboard-first — this is the part
- * of that which every screen inherits for free.
+ * The fastest way through the console for anyone who knows what they want: type
+ * "new order", "transfer", "stuck" or a screen's name and press Enter. It reaches
+ * three kinds of thing:
  *
- * **Its entries come from the same CASL-filtered navigation as the sidebar.** That
- * is not a convenience: a palette with its own list would offer a sales agent a
- * jump to Accounts, and a keyboard shortcut to a 403 is worse than a link to one
- * because it is faster and the user cannot see where it went wrong.
+ * - **actions**, named as what people do ("Take a new order"), with the words they
+ *   actually type matched as keywords;
+ * - **every screen**, the sidebar's sections and the tabs inside them, each shown with
+ *   the section it lives in;
+ * - **preferences**, the theme and the language.
  *
- * The shortcut is Ctrl/Cmd+K and it is captured at the document, so it works
- * wherever focus happens to be. `preventDefault` matters: Cmd+K is the browser's
- * own search-bar focus on some platforms, and without it the palette opens behind
- * a focused address bar.
+ * With nothing typed it opens on the last few places it took you, so the second visit
+ * to a screen is two keystrokes.
+ *
+ * **Its entries come from the same CASL-filtered lists as the sidebar.** That is not a
+ * convenience: a palette with its own list would offer a sales agent a jump to
+ * Accounts, and a keyboard shortcut to a 403 is worse than a link to one because it
+ * is faster and the user cannot see where it went wrong.
+ *
+ * `cmdk`, on the same Radix dialog as everything else, so the focus trap and restore
+ * are the proven ones and the listbox semantics between the input and the list are
+ * wired for us. The palette is its own chunk; the shell owns the shortcut and the open
+ * state, and loads this the moment the first screen has rendered.
  */
-export function CommandPalette() {
-  const [open, setOpen] = useState(false);
+
+const RECENT_KEY = 'elysium-palette-recent';
+const RECENT_LIMIT = 4;
+
+function readRecent(): readonly string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function remember(to: string): void {
+  try {
+    const next = [to, ...readRecent().filter((entry) => entry !== to)].slice(0, RECENT_LIMIT);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    // Storage denied: no recents this visit, nothing else lost.
+  }
+}
+
+interface Entry {
+  readonly to: string;
+  readonly label: string;
+  readonly parent: string | null;
+  readonly icon: NavItem['icon'];
+}
+
+const ITEM_CLASS =
+  'group flex h-10 cursor-pointer items-center gap-3 rounded-lg px-3 text-sm text-foreground select-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground';
+const GROUP_CLASS =
+  'px-2 pb-1 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground';
+
+export function CommandPalette({
+  open,
+  onOpenChange,
+}: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
   const navigate = useNavigate();
   const ability = useAbility();
   const { locale, setLocale } = useLocale();
   const t = useT();
+  const [query, setQuery] = useState('');
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key.toLowerCase() !== 'k') return;
-      if (!event.metaKey && !event.ctrlKey) return;
-      event.preventDefault();
-      setOpen((value) => !value);
-    }
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
+  const sections: Entry[] = navigableItems(ability).map((item) => ({
+    to: item.to,
+    label: t(item.labelKey),
+    parent: null,
+    icon: item.icon,
+  }));
+  const pages: Entry[] = visiblePalettePages(ability).map((page) => ({
+    to: page.to,
+    label: t(page.labelKey),
+    parent: t(page.parentKey),
+    icon: page.icon,
+  }));
+  const screens = [...sections, ...pages];
+  const actions = visiblePaletteActions(ability);
+  const recent =
+    query === ''
+      ? readRecent().flatMap((to) => {
+          const found = screens.find((entry) => entry.to === to);
+          return found === undefined ? [] : [found];
+        })
+      : [];
 
-  const items = navigableItems(ability);
+  function close(next: boolean) {
+    onOpenChange(next);
+    if (!next) setQuery('');
+  }
 
   function run(action: () => void) {
     // Closed before the action, so a navigation does not leave the overlay
     // painted over the screen it just went to — which reads as a frozen app.
-    setOpen(false);
+    close(false);
     action();
   }
 
+  function go(to: string) {
+    run(() => {
+      remember(to);
+      void navigate({ to });
+    });
+  }
+
   return (
-    /*
-     * cmdk's own Radix dialog wrapper, rather than composing Radix here.
-     *
-     * It is the same `@radix-ui/react-dialog` underneath — so the focus trap and
-     * restore are the proven ones — and it wires the listbox semantics between the
-     * dialog and the command list for us. Composing it by hand means either
-     * importing Radix into the console as a second dependency on the same package
-     * version, or getting the `aria-activedescendant` relationship subtly wrong,
-     * which is the kind of error an axe scan does not catch and a screen-reader
-     * user hits immediately.
-     */
     <Command.Dialog
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={close}
       label={t('palette.title')}
-      overlayClassName="fixed inset-0 z-50 bg-foreground/40"
-      contentClassName="fixed top-24 left-1/2 z-50 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-dialog"
+      loop
+      overlayClassName="fixed inset-0 z-50 bg-overlay motion-safe:animate-fade"
+      contentClassName="fixed top-[12vh] left-1/2 z-50 w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-dialog motion-safe:animate-in"
     >
-      <Command.Input
-        placeholder={t('palette.placeholder')}
-        className="h-control-lg w-full border-b border-border bg-transparent px-4 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none"
-      />
-      <Command.List className="max-h-80 overflow-y-auto p-1">
-        <Command.Empty className="px-3 py-6 text-center text-sm text-muted-foreground">
+      <div className="flex items-center gap-3 border-b border-border px-4">
+        <Search aria-hidden="true" className="size-4.5 shrink-0 text-muted-foreground" />
+        <Command.Input
+          value={query}
+          onValueChange={setQuery}
+          placeholder={t('palette.placeholder')}
+          className="h-13 w-full bg-transparent text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none"
+        />
+        <Kbd>Esc</Kbd>
+      </div>
+
+      <Command.List className="max-h-[min(60vh,26rem)] overflow-y-auto pb-2">
+        <Command.Empty className="px-4 py-10 text-center text-sm text-muted-foreground">
           {t('palette.empty')}
         </Command.Empty>
 
-        <Command.Group
-          heading={t('palette.groupNavigate')}
-          className="px-1 py-1 text-xs text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5"
-        >
-          {items.map((item) => (
-            <Command.Item
-              key={item.to}
-              value={`${t(item.labelKey)} ${item.to}`}
-              onSelect={() => run(() => void navigate({ to: item.to }))}
-              className="flex h-control cursor-pointer items-center gap-2.5 rounded-sm px-2 text-sm text-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
-            >
-              <item.icon aria-hidden="true" className="size-4 text-muted-foreground" />
-              {t(item.labelKey)}
-            </Command.Item>
+        {recent.length === 0 ? null : (
+          <Command.Group heading={t('palette.groupRecent')} className={GROUP_CLASS}>
+            {recent.map((entry) => (
+              <Item
+                key={`recent-${entry.to}`}
+                value={`recent ${entry.label} ${entry.parent ?? ''} ${entry.to}`}
+                onSelect={() => go(entry.to)}
+                icon={<History aria-hidden="true" className="size-4 text-muted-foreground" />}
+                label={entry.label}
+                trail={entry.parent}
+              />
+            ))}
+          </Command.Group>
+        )}
+
+        {actions.length === 0 ? null : (
+          <Command.Group heading={t('palette.groupActions')} className={GROUP_CLASS}>
+            {actions.map((action) => (
+              <Item
+                key={action.id}
+                value={`${t(action.labelKey)} ${action.id}`}
+                keywords={[...action.keywords]}
+                onSelect={() => go(action.to)}
+                icon={<action.icon aria-hidden="true" className="size-4 text-primary" />}
+                label={t(action.labelKey)}
+                trail={null}
+              />
+            ))}
+          </Command.Group>
+        )}
+
+        <Command.Group heading={t('palette.groupNavigate')} className={GROUP_CLASS}>
+          {screens.map((entry) => (
+            <Item
+              key={entry.to}
+              value={`${entry.label} ${entry.parent ?? ''} ${entry.to}`}
+              onSelect={() => go(entry.to)}
+              icon={<entry.icon aria-hidden="true" className="size-4 text-muted-foreground" />}
+              label={entry.label}
+              trail={entry.parent}
+            />
           ))}
         </Command.Group>
 
-        <Command.Group
-          heading={t('palette.groupCommands')}
-          className="px-1 py-1 text-xs text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5"
-        >
-          <Command.Item
-            value={`${t('theme.toDark')} ${t('theme.toLight')}`}
+        <Command.Group heading={t('palette.groupPreferences')} className={GROUP_CLASS}>
+          <Item
+            value={`${t('theme.toDark')} ${t('theme.toLight')} theme dark light`}
             onSelect={() => run(() => applyTheme(isDark() ? 'light' : 'dark'))}
-            className="flex h-control cursor-pointer items-center gap-2.5 rounded-sm px-2 text-sm text-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
-          >
-            {isDark() ? (
-              <Sun aria-hidden="true" className="size-4 text-muted-foreground" />
-            ) : (
-              <Moon aria-hidden="true" className="size-4 text-muted-foreground" />
-            )}
-            {isDark() ? t('theme.toLight') : t('theme.toDark')}
-          </Command.Item>
-
-          <Command.Item
-            value={t(locale === 'bn' ? 'shell.localeToEnglish' : 'shell.localeToBangla')}
+            icon={
+              isDark() ? (
+                <Sun aria-hidden="true" className="size-4 text-muted-foreground" />
+              ) : (
+                <Moon aria-hidden="true" className="size-4 text-muted-foreground" />
+              )
+            }
+            label={isDark() ? t('theme.toLight') : t('theme.toDark')}
+            trail={null}
+          />
+          <Item
+            value={`${t(locale === 'bn' ? 'shell.localeToEnglish' : 'shell.localeToBangla')} language bangla english`}
             onSelect={() => run(() => setLocale(locale === 'bn' ? 'en' : 'bn'))}
-            className="flex h-control cursor-pointer items-center gap-2.5 rounded-sm px-2 text-sm text-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
-          >
-            <Languages aria-hidden="true" className="size-4 text-muted-foreground" />
-            {t(locale === 'bn' ? 'shell.localeToEnglish' : 'shell.localeToBangla')}
-          </Command.Item>
+            icon={<Languages aria-hidden="true" className="size-4 text-muted-foreground" />}
+            label={t(locale === 'bn' ? 'shell.localeToEnglish' : 'shell.localeToBangla')}
+            trail={null}
+          />
         </Command.Group>
       </Command.List>
+
+      <div className="flex items-center gap-4 border-t border-border bg-canvas px-4 py-2 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <Kbd>↑</Kbd>
+          <Kbd>↓</Kbd>
+          {t('palette.footerMove')}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Kbd>
+            <CornerDownLeft aria-hidden="true" className="size-3" />
+          </Kbd>
+          {t('palette.footerOpen')}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Kbd>Esc</Kbd>
+          {t('palette.footerClose')}
+        </span>
+      </div>
     </Command.Dialog>
+  );
+}
+
+function Item({
+  value,
+  keywords,
+  onSelect,
+  icon,
+  label,
+  trail,
+}: {
+  readonly value: string;
+  readonly keywords?: string[];
+  readonly onSelect: () => void;
+  readonly icon: ReactNode;
+  readonly label: string;
+  readonly trail: string | null;
+}) {
+  return (
+    <Command.Item
+      value={value}
+      {...(keywords === undefined ? {} : { keywords })}
+      onSelect={onSelect}
+      className={ITEM_CLASS}
+    >
+      <span className="flex size-6 shrink-0 items-center justify-center">{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {trail === null ? null : (
+        <span className="shrink-0 text-xs text-muted-foreground">{trail}</span>
+      )}
+      <ArrowRight
+        aria-hidden="true"
+        className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-data-[selected=true]:opacity-100"
+      />
+    </Command.Item>
   );
 }

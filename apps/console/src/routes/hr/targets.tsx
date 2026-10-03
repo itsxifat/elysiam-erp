@@ -2,7 +2,9 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  PageHeader,
   PermissionGate,
+  Select,
   StatusBadge,
   takaToPoisha,
 } from '@elysium/ui';
@@ -68,12 +70,11 @@ export function TargetsPage() {
       explain={{ title: t('perf.deniedTitle'), detail: t('perf.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{t('perf.targets')}</h1>
-          <p className="text-sm text-muted-foreground">{t('perf.targetsHint')}</p>
-        </header>
-
-        <PerformanceNav />
+        <PageHeader
+          title={t('perf.targets')}
+          description={t('perf.targetsHint')}
+          tabs={<PerformanceNav />}
+        />
 
         <PermissionGate allowed={mayCreate}>
           <NewTargetForm month={month} onCreated={invalidate} />
@@ -228,38 +229,27 @@ function NewTargetForm({
       }}
     >
       <Field label={t('perf.employee')} id="target-employee">
-        <select
+        <Select
           id="target-employee"
           value={employeeId}
           required
-          className={control}
-          onChange={(event) => setEmployeeId(event.target.value)}
-        >
-          <option value="">{t('perf.employee')}</option>
-          {(employees.data?.items ?? []).map((employee) => (
-            <option key={employee.id} value={employee.id}>
-              {employee.code} · {employee.fullName}
-            </option>
-          ))}
-        </select>
+          placeholder={t('perf.employee')}
+          onValueChange={setEmployeeId}
+          options={(employees.data?.items ?? []).map((employee) => ({
+            value: employee.id,
+            label: `${employee.code} · ${employee.fullName}`,
+          }))}
+        />
       </Field>
       <Field label={t('perf.metric')} id="target-metric">
-        <select
+        <Select
           id="target-metric"
           value={metric}
-          className={control}
-          onChange={(event) =>
-            setMetric(
-              TARGET_METRICS.find((one) => one === event.target.value) ?? 'confirmed_orders',
-            )
+          onValueChange={(value) =>
+            setMetric(TARGET_METRICS.find((one) => one === value) ?? 'confirmed_orders')
           }
-        >
-          {TARGET_METRICS.map((one) => (
-            <option key={one} value={one}>
-              {t(metricKey(one))}
-            </option>
-          ))}
-        </select>
+          options={TARGET_METRICS.map((one) => ({ value: one, label: t(metricKey(one)) }))}
+        />
       </Field>
       <Field label={t('perf.target')} id="target-value">
         <input

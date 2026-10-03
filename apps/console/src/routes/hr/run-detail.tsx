@@ -1,4 +1,4 @@
-import { Button, Money, PermissionGate, StatusBadge } from '@elysium/ui';
+import { Button, Money, PermissionGate, Select, StatusBadge } from '@elysium/ui';
 import { useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -428,33 +428,28 @@ function BonusPanel({
         }}
       >
         <Field label={t('hr.employee')} id="bonus-employee">
-          <select
+          <Select
             id="bonus-employee"
             value={employeeId}
             required
-            className={control}
-            onChange={(event) => setEmployeeId(event.target.value)}
-          >
-            <option value="">{t('hr.employee')}</option>
-            {(employees.data?.items ?? []).map((employee) => (
-              <option key={employee.id} value={employee.id}>
-                {employee.code} · {employee.fullName}
-              </option>
-            ))}
-          </select>
+            placeholder={t('hr.employee')}
+            onValueChange={setEmployeeId}
+            options={(employees.data?.items ?? []).map((employee) => ({
+              value: employee.id,
+              label: `${employee.code} · ${employee.fullName}`,
+            }))}
+          />
         </Field>
         <Field label={t('hr.field.kind')} id="bonus-kind">
-          <select
+          <Select
             id="bonus-kind"
             value={kind}
-            className={control}
-            onChange={(event) =>
-              setKind(event.target.value === 'deduction' ? 'deduction' : 'bonus')
-            }
-          >
-            <option value="bonus">{t('hr.kind.bonus')}</option>
-            <option value="deduction">{t('hr.kind.deduction')}</option>
-          </select>
+            onValueChange={(value) => setKind(value === 'deduction' ? 'deduction' : 'bonus')}
+            options={[
+              { value: 'bonus', label: t('hr.kind.bonus') },
+              { value: 'deduction', label: t('hr.kind.deduction') },
+            ]}
+          />
         </Field>
         <Field label={t('hr.field.label')} id="bonus-label">
           <input
@@ -521,20 +516,18 @@ function PayPanel({ runId, onPaid }: { readonly runId: string; readonly onPaid: 
       }}
     >
       <Field label={t('hr.field.wallet')} id="pay-wallet">
-        <select
+        <Select
           id="pay-wallet"
           value={walletAccountId}
           required
-          className={`${control} sm:w-72`}
-          onChange={(event) => setWalletAccountId(event.target.value)}
-        >
-          <option value="">{t('hr.field.wallet')}</option>
-          {(wallets.data?.items ?? []).map((wallet) => (
-            <option key={wallet.accountId} value={wallet.accountId}>
-              {wallet.name}
-            </option>
-          ))}
-        </select>
+          className="sm:w-72"
+          placeholder={t('hr.field.wallet')}
+          onValueChange={setWalletAccountId}
+          options={(wallets.data?.items ?? []).map((wallet) => ({
+            value: wallet.accountId,
+            label: wallet.name,
+          }))}
+        />
       </Field>
       {/* No amount field: the run pays exactly what was approved and posted (D-078). */}
       <Button type="submit" size="sm" disabled={walletAccountId === '' || pay.isPending}>

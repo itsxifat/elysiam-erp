@@ -23,18 +23,22 @@ import { cn } from '../lib/cn.js';
  */
 const badge = cva(
   cn(
-    'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5',
+    'inline-flex h-5.5 items-center gap-1.5 rounded-xs px-1.5',
     'text-xs font-medium whitespace-nowrap',
     '[&_svg]:size-3 [&_svg]:shrink-0',
+    // The dot: the tone's colour as a 6px mark beside the word (D-444). Hidden when the
+    // caller already gave the badge an icon, so a badge never carries two markers.
+    "before:size-1.5 before:shrink-0 before:rounded-full before:bg-current before:opacity-80 before:content-['']",
+    'has-[svg]:before:hidden',
   ),
   {
     variants: {
       tone: {
-        neutral: 'border-border bg-muted text-muted-foreground',
-        success: 'border-success/30 bg-success-subtle text-success-subtle-foreground',
-        warning: 'border-warning/30 bg-warning-subtle text-warning-subtle-foreground',
-        danger: 'border-destructive/30 bg-destructive-subtle text-destructive-subtle-foreground',
-        info: 'border-info/30 bg-info-subtle text-info-subtle-foreground',
+        neutral: 'bg-muted text-muted-foreground',
+        success: 'bg-success-subtle text-success-subtle-foreground',
+        warning: 'bg-warning-subtle text-warning-subtle-foreground',
+        danger: 'bg-destructive-subtle text-destructive-subtle-foreground',
+        info: 'bg-info-subtle text-info-subtle-foreground',
       },
     },
     defaultVariants: { tone: 'neutral' },

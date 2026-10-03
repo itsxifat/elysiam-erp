@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AlertTriangle, Inbox, Lock, RotateCw } from 'lucide-react';
+import { AlertTriangle, Inbox, Lock, RotateCw, type LucideIcon } from 'lucide-react';
 
 import { cn } from '../lib/cn.js';
 
@@ -22,6 +22,33 @@ interface StateProps {
   readonly detail?: string;
   readonly action?: ReactNode;
   readonly className?: string;
+  /**
+   * A lucide icon that names what is missing (a box for stock, a receipt for orders).
+   * Optional: the default is a quiet inbox. Never an illustration, never an emoji (D-440).
+   */
+  readonly icon?: LucideIcon;
+}
+
+/** The icon, set in a small tinted tile: the one mark an empty or error state carries. */
+function StateIcon({
+  icon: Icon,
+  tone = 'neutral',
+}: {
+  readonly icon: NonNullable<StateProps['icon']>;
+  readonly tone?: 'neutral' | 'danger';
+}) {
+  return (
+    <span
+      className={cn(
+        'flex size-10 items-center justify-center rounded-lg',
+        tone === 'danger'
+          ? 'bg-destructive-subtle text-destructive-subtle-foreground'
+          : 'bg-muted text-muted-foreground',
+      )}
+    >
+      <Icon aria-hidden className="size-5" />
+    </span>
+  );
 }
 
 /**
@@ -31,18 +58,20 @@ interface StateProps {
  * filter, so the detail line is not decoration: it is the difference between a
  * user clearing a filter and a user filing a bug.
  */
-export function EmptyState({ title, detail, action, className }: StateProps) {
+export function EmptyState({ title, detail, action, className, icon = Inbox }: StateProps) {
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center gap-3 rounded-lg border border-border px-6 py-12 text-center',
+        'flex flex-col items-center justify-center rounded-lg border border-border px-6 py-14 text-center',
         className,
       )}
     >
-      <Inbox aria-hidden className="size-6 text-muted-foreground" />
-      <p className="text-sm font-medium text-foreground">{title}</p>
-      {detail !== undefined && <p className="max-w-sm text-sm text-muted-foreground">{detail}</p>}
-      {action}
+      <StateIcon icon={icon} />
+      <p className="mt-4 text-sm font-medium text-foreground">{title}</p>
+      {detail !== undefined && (
+        <p className="mt-1 max-w-sm text-sm text-muted-foreground">{detail}</p>
+      )}
+      {action === undefined ? null : <div className="mt-5">{action}</div>}
     </div>
   );
 }
@@ -56,21 +85,21 @@ export function EmptyState({ title, detail, action, className }: StateProps) {
  * it into a browser belonging to whichever role happened to be looking. The
  * caller passes a `detail` it has decided is safe to show.
  */
-export function ErrorState({ title, detail, action, className }: StateProps) {
+export function ErrorState({ title, detail, action, className, icon = AlertTriangle }: StateProps) {
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center gap-3 rounded-lg border border-destructive/40 bg-destructive-subtle px-6 py-12 text-center',
+        'flex flex-col items-center justify-center rounded-lg border border-border px-6 py-14 text-center',
         className,
       )}
       role="alert"
     >
-      <AlertTriangle aria-hidden className="size-6 text-destructive" />
-      <p className="text-sm font-medium text-destructive-subtle-foreground">{title}</p>
+      <StateIcon icon={icon} tone="danger" />
+      <p className="mt-4 text-sm font-medium text-foreground">{title}</p>
       {detail !== undefined && (
-        <p className="max-w-sm text-sm text-destructive-subtle-foreground/80">{detail}</p>
+        <p className="mt-1 max-w-sm text-sm text-muted-foreground">{detail}</p>
       )}
-      {action}
+      {action === undefined ? null : <div className="mt-5">{action}</div>}
     </div>
   );
 }
@@ -88,17 +117,19 @@ export function ErrorState({ title, detail, action, className }: StateProps) {
  * nothing at all, because most denied things should simply be absent from the
  * page; this is for the cases where absence would be confusing.
  */
-export function PermissionDeniedState({ title, detail, className }: StateProps) {
+export function PermissionDeniedState({ title, detail, className, icon = Lock }: StateProps) {
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center gap-3 rounded-lg border border-border bg-muted px-6 py-12 text-center',
+        'flex flex-col items-center justify-center rounded-lg border border-border px-6 py-14 text-center',
         className,
       )}
     >
-      <Lock aria-hidden className="size-6 text-muted-foreground" />
-      <p className="text-sm font-medium text-foreground">{title}</p>
-      {detail !== undefined && <p className="max-w-sm text-sm text-muted-foreground">{detail}</p>}
+      <StateIcon icon={icon} />
+      <p className="mt-4 text-sm font-medium text-foreground">{title}</p>
+      {detail !== undefined && (
+        <p className="mt-1 max-w-sm text-sm text-muted-foreground">{detail}</p>
+      )}
     </div>
   );
 }
@@ -114,7 +145,7 @@ export function PermissionDeniedState({ title, detail, className }: StateProps) 
 export function Skeleton({ className }: { readonly className?: string }) {
   return (
     <div
-      className={cn('animate-pulse rounded-lg bg-muted', className)}
+      className={cn('animate-pulse rounded-md bg-muted motion-reduce:animate-none', className)}
       aria-hidden
       data-slot="skeleton"
     />

@@ -3,6 +3,9 @@ import {
   DataTable,
   DateTime,
   Money,
+  PageHeader,
+  SearchInput,
+  Select,
   StatusBadge,
   dataTableColumns,
   type DataTableColumn,
@@ -97,10 +100,7 @@ export function TablesPage() {
 
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="text-lg font-semibold tracking-tight">{t('demo.title')}</h1>
-        <p className="mt-0.5 max-w-2xl text-sm text-muted-foreground">{t('demo.subtitle')}</p>
-      </header>
+      <PageHeader title={t('demo.title')} description={t('demo.subtitle')} />
 
       <DataTable<DemoRow>
         caption={t('demo.caption')}
@@ -120,11 +120,12 @@ export function TablesPage() {
         }
         toolbar={
           <>
-            <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              {t('table.search')}
-              <input
-                type="search"
+            <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="sr-only">{t('table.search')}</span>
+              <SearchInput
                 value={search.q ?? ''}
+                placeholder={t('table.search')}
+                className="sm:w-56"
                 onChange={(event) =>
                   void navigate({
                     search: mergeSearch(search, {
@@ -132,29 +133,27 @@ export function TablesPage() {
                     }),
                   })
                 }
-                className="h-control-sm w-48 rounded-md border border-input bg-background px-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               />
             </label>
 
-            <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              {t('table.filterStatus')}
-              <select
-                value={search.status ?? ''}
-                onChange={(event) =>
-                  void navigate({
-                    search: mergeSearch(search, {
-                      status: event.target.value === '' ? undefined : event.target.value,
-                    }),
-                  })
-                }
-                className="h-control-sm rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                <option value="">{t('common.all')}</option>
-                <option value="open">{t('demo.status.open')}</option>
-                <option value="settled">{t('demo.status.settled')}</option>
-                <option value="returned">{t('demo.status.returned')}</option>
-              </select>
-            </label>
+            <Select
+              variant="filter"
+              aria-label={t('table.filterStatus')}
+              value={search.status ?? ''}
+              onValueChange={(value) =>
+                void navigate({
+                  search: mergeSearch(search, {
+                    status: value === '' ? undefined : value,
+                  }),
+                })
+              }
+              options={[
+                { value: '', label: t('common.all') },
+                { value: 'open', label: t('demo.status.open') },
+                { value: 'settled', label: t('demo.status.settled') },
+                { value: 'returned', label: t('demo.status.returned') },
+              ]}
+            />
 
             {filtered ? (
               <Button

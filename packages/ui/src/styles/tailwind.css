@@ -27,6 +27,9 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
+  --color-canvas: var(--canvas);
+  --color-canvas-foreground: var(--canvas-foreground);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
 
@@ -45,15 +48,20 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
 
+  --color-selected: var(--selected);
+  --color-selected-foreground: var(--selected-foreground);
+
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
 
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary-text: var(--primary-text);
   --color-primary-hover: var(--primary-hover);
   --color-primary-active: var(--primary-active);
+  --color-primary-subtle: var(--primary-subtle);
 
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
@@ -75,6 +83,11 @@
   --color-info-subtle: var(--info-subtle);
   --color-info-subtle-foreground: var(--info-subtle-foreground);
 
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-grid: var(--chart-grid);
+
+  --radius-xs: calc(var(--radius) - 6px);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -84,6 +97,35 @@
   --font-bangla: var(--font-bangla);
   --font-mono: var(--font-mono);
 
+  /*
+   * The type scale (D-442). One step per job, so a page cannot invent a size:
+   *   2xs  11px  keyboard hints, a count on a badge
+   *   xs   12px  labels, meta, table headers
+   *   sm   14px  body and table text
+   *   base 15px  section titles, dialog titles
+   *   lg   22px  page titles (every module's <h1> is `text-lg`, so they all moved here)
+   *   xl   24px  the one figure a detail page is about
+   *   2xl  28px  KPI figures
+   * Large sizes carry their own negative tracking: Inter set big reads loose.
+   */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.375rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.375rem;
+  --text-lg--line-height: 1.875rem;
+  --text-lg--letter-spacing: -0.02em;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 2rem;
+  --text-xl--letter-spacing: -0.022em;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.25rem;
+  --text-2xl--letter-spacing: -0.025em;
+
   --spacing-row: var(--row-height);
   --spacing-control: var(--control-height);
   /* The two other control heights the kit needs. Republished here rather than
@@ -91,9 +133,51 @@
      only spelling and a size cannot drift a pixel per component. */
   --spacing-control-sm: var(--control-height-sm);
   --spacing-control-lg: var(--control-height-lg);
+  --spacing-sidebar: var(--sidebar-width);
+  --spacing-sidebar-collapsed: var(--sidebar-width-collapsed);
+  --spacing-topbar: var(--topbar-height);
+
+  --container-form: var(--content-width-form);
+  --container-page: var(--content-width-page);
 
   --shadow-popover: var(--shadow-popover);
   --shadow-dialog: var(--shadow-dialog);
+
+  --ease-out: var(--ease-out);
+  --animate-in: elysium-in var(--duration-base) var(--ease-out);
+  --animate-fade: elysium-fade var(--duration-base) var(--ease-out);
+  --animate-sheet-in: elysium-sheet-in var(--duration-slow) var(--ease-out);
+  --animate-drawer-in: elysium-drawer-in var(--duration-slow) var(--ease-out);
+}
+
+/* Enter motion for floating layers: a short fade and a 4px rise. Nothing exits with
+   a flourish; a closing layer simply goes. Disabled wholesale by the reduced-motion
+   guard below. */
+@keyframes elysium-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+}
+
+@keyframes elysium-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes elysium-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+@keyframes elysium-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
 }
 
 /*
@@ -125,8 +209,30 @@
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    /* Inter at 14px sits a hair loose. Bangla never takes negative tracking (below),
+       because it pulls conjuncts into each other. */
+    letter-spacing: -0.006em;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+  }
+
+  html:lang(bn) body,
+  .font-bangla {
+    letter-spacing: 0;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background-color: var(--primary-subtle);
+    color: var(--foreground);
   }
 
   /* Every keyboard stop is visible. The order desk is driven by keyboard and an
@@ -143,6 +249,26 @@
   td[data-numeric] {
     font-variant-numeric: tabular-nums;
     text-align: right;
+  }
+
+  /* The native date controls the kit still uses (a business date is a native
+     `type="date"`, D-033) keep their digits in columns and a quieter picker icon. */
+  input[type='date'],
+  input[type='month'],
+  input[type='time'] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  input[type='date']::-webkit-calendar-picker-indicator,
+  input[type='month']::-webkit-calendar-picker-indicator {
+    opacity: 0.55;
+    cursor: pointer;
+  }
+
+  /* Scrollbars as quiet as the rest of the chrome. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--input) transparent;
   }
 
   @media (prefers-reduced-motion: reduce) {

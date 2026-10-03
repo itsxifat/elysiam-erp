@@ -1,4 +1,4 @@
-import { Button, Dialog, StatusBadge } from '@elysium/ui';
+import { Button, Dialog, Select, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useId, useState } from 'react';
@@ -177,19 +177,16 @@ function RegisterDialog({ onClose }: { readonly onClose: () => void }) {
     options: readonly { id: string; name: string }[],
   ) => (
     <Field id={`${id}-${key}`} label={label}>
-      <select
+      <Select
         id={`${id}-${key}`}
         value={value}
-        className={control}
-        onChange={(event) => set(event.target.value)}
-      >
-        <option value="">{t('settings.choose')}</option>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.name}
-          </option>
-        ))}
-      </select>
+        onValueChange={set}
+        options={[
+          // "Choose…" stays a choice: the bKash and card wallets are optional.
+          { value: '', label: t('settings.choose') },
+          ...options.map((option) => ({ value: option.id, label: option.name })),
+        ]}
+      />
     </Field>
   );
 

@@ -1,4 +1,12 @@
-import { Button, EmptyState, Money, PermissionGate, StatusBadge } from '@elysium/ui';
+import {
+  Button,
+  EmptyState,
+  Money,
+  PageHeader,
+  PermissionGate,
+  Select,
+  StatusBadge,
+} from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { takaToPoisha } from '@elysium/ui';
@@ -99,12 +107,7 @@ export function LoansPage() {
       explain={{ title: t('hr.deniedTitle'), detail: t('hr.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{t('hr.loans')}</h1>
-          <p className="text-sm text-muted-foreground">{t('hr.loansHint')}</p>
-        </header>
-
-        <HrNav />
+        <PageHeader title={t('hr.loans')} description={t('hr.loansHint')} tabs={<HrNav />} />
 
         <PermissionGate allowed={mayCreate}>
           <NewLoanForm employees={employees.data?.items ?? []} onCreated={invalidate} />
@@ -112,19 +115,17 @@ export function LoansPage() {
 
         <PermissionGate allowed={mayDisburse}>
           <Field label={t('hr.field.wallet')} id="loan-wallet">
-            <select
+            <Select
               id="loan-wallet"
               value={wallet}
-              className={`${control} sm:w-72`}
-              onChange={(event) => setWallet(event.target.value)}
-            >
-              <option value="">{t('hr.field.wallet')}</option>
-              {(wallets.data?.items ?? []).map((one) => (
-                <option key={one.accountId} value={one.accountId}>
-                  {one.name}
-                </option>
-              ))}
-            </select>
+              className="sm:w-72"
+              placeholder={t('hr.field.wallet')}
+              onValueChange={setWallet}
+              options={(wallets.data?.items ?? []).map((one) => ({
+                value: one.accountId,
+                label: one.name,
+              }))}
+            />
           </Field>
         </PermissionGate>
 
@@ -316,20 +317,17 @@ function NewLoanForm({
       }}
     >
       <Field label={t('hr.employee')} id="loan-employee">
-        <select
+        <Select
           id="loan-employee"
           value={employeeId}
           required
-          className={control}
-          onChange={(event) => setEmployeeId(event.target.value)}
-        >
-          <option value="">{t('hr.employee')}</option>
-          {employees.map((employee) => (
-            <option key={employee.id} value={employee.id}>
-              {employee.code} · {employee.fullName}
-            </option>
-          ))}
-        </select>
+          placeholder={t('hr.employee')}
+          onValueChange={setEmployeeId}
+          options={employees.map((employee) => ({
+            value: employee.id,
+            label: `${employee.code} · ${employee.fullName}`,
+          }))}
+        />
       </Field>
       <Field label={t('hr.field.principal')} id="loan-principal">
         <input

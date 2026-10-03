@@ -1,4 +1,12 @@
-import { EmptyState, ErrorState, Money, PermissionGate, Skeleton, StatusBadge } from '@elysium/ui';
+import {
+  EmptyState,
+  ErrorState,
+  Money,
+  PageHeader,
+  PermissionGate,
+  Skeleton,
+  StatusBadge,
+} from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 
@@ -28,10 +36,7 @@ export function BranchesPage() {
 
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="text-lg font-semibold tracking-tight">{t('branches.title')}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t('branches.subtitle')}</p>
-      </header>
+      <PageHeader title={t('branches.title')} description={t('branches.subtitle')} />
 
       <PermissionGate
         allowed={allowed}

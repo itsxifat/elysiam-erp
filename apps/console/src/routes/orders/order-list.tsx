@@ -2,18 +2,33 @@ import {
   Button,
   DataTable,
   DateTime,
+  FilterChips,
+  Input,
   Money,
+  PageHeader,
   PermissionGate,
+  SearchInput,
+  Select,
+  buttonVariants,
   dataTableColumns,
+  type ActiveFilter,
   type DataTableColumn,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { CheckCheck, FileText, PackageCheck, Plus, Tag, Truck } from 'lucide-react';
+import {
+  CheckCheck,
+  FileText,
+  PackageCheck,
+  Plus,
+  SlidersHorizontal,
+  Tag,
+  Truck,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
-import { useLocale } from '../../i18n/locale.js';
+import { useLocale, useT } from '../../i18n/locale.js';
 import {
   bulkConfirm,
   bulkTransition,
@@ -45,9 +60,6 @@ import { mergeOrderSearch, orderListSearchSchema } from './search.js';
  * shared link that arrived with forty orders pre-selected would be a trap.
  */
 
-const SELECT =
-  'h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring';
-
 export function OrderListPage() {
   const ability = useAbility();
   const t = useOrdersT();
@@ -63,6 +75,7 @@ export function OrderListPage() {
 
 function OrderList() {
   const t = useOrdersT();
+  const common = useT();
   const { locale } = useLocale();
   const ability = useAbility();
   const queryClient = useQueryClient();
@@ -70,6 +83,14 @@ function OrderList() {
   const [search, setSearch] = useSchemaSearch(orderListSearchSchema);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+  // Agent, zone and dates are a second row, shown on request or while one is set: most
+  // visits filter by status and nothing else (D-452).
+  const advancedSet =
+    search.agent !== undefined ||
+    search.zone !== undefined ||
+    search.from !== undefined ||
+    search.to !== undefined;
+  const [moreFilters, setMoreFilters] = useState(advancedSet);
 
   const agentFilter = search.agent;
   const queue = agentFilter === 'unassigned' || agentFilter === 'mine' ? agentFilter : undefined;
@@ -170,7 +191,7 @@ function OrderList() {
             aria-label={t('orders.bulk.selectAll')}
             checked={allChosen}
             onChange={() => setSelected(allChosen ? new Set() : new Set([...selected, ...pageIds]))}
-            className="size-4 rounded border-border focus-visible:ring-2 focus-visible:ring-ring"
+            className="size-4 accent-primary"
           />
         ),
         cell: (cell) => (
@@ -179,7 +200,7 @@ function OrderList() {
             aria-label={`${t('orders.bulk.selectRow')} ${cell.row.original.orderNo}`}
             checked={selected.has(cell.row.original.id)}
             onChange={() => toggle(cell.row.original.id)}
-            className="size-4 rounded border-border focus-visible:ring-2 focus-visible:ring-ring"
+            className="size-4 accent-primary"
           />
         ),
       }),
@@ -188,7 +209,7 @@ function OrderList() {
         cell: (cell) => (
           <Link
             to={ordersPath(`/orders/${cell.row.original.id}`)}
-            className="font-medium tabular-nums underline-offset-4 hover:underline"
+            className="font-medium text-foreground tabular-nums underline-offset-4 hover:text-primary hover:underline"
           >
             {cell.getValue()}
           </Link>
@@ -240,7 +261,11 @@ function OrderList() {
       column.accessor((row) => row.timestamps.createdAt, {
         id: 'created',
         header: t('orders.col.created'),
-        cell: (cell) => <DateTime value={cell.getValue()} />,
+        cell: (cell) => (
+          <span className="text-muted-foreground">
+            <DateTime value={cell.getValue()} />
+          </span>
+        ),
       }),
     ]);
     // `selected` and `allChosen` change the checkbox cells; the rest is stable per locale.
@@ -249,33 +274,123 @@ function OrderList() {
 
   const mayConfirm = ability.can('update', 'Order');
 
-  return (
-    <div className="space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">{t('orders.list.title')}</h1>
-          <LiveIndicator status={live} />
-        </div>
-        {ability.can('create', 'Order') ? (
-          <Link
-            to={ordersPath('/orders/new')}
-            className="inline-flex h-control items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
-          >
-            <Plus aria-hidden="true" className="size-4" />
-            {t('orders.desk.title')}
-          </Link>
-        ) : null}
-      </header>
+  const statusOptions = [
+    { value: '', label: t('orders.filter.allStatuses') },
+    ...ORDER_STATUSES.map((status) => ({
+      value: status,
+      label: t(`orders.status.${status}` as OrdersMessageKey),
+    })),
+  ];
+  const channelOptions = [
+    { value: '', label: t('orders.filter.allChannels') },
+    ...ORDER_CHANNELS.map((channel) => ({
+      value: channel,
+      label: t(`orders.channel.${channel}` as OrdersMessageKey),
+    })),
+  ];
+  const agentOptions = [
+    { value: '', label: t('orders.filter.allAgents') },
+    { value: 'mine', label: t('orders.filter.mine') },
+    { value: 'unassigned', label: t('orders.filter.unassigned') },
+    ...(agents.data?.items ?? []).map((agent) => ({ value: agent.userId, label: agent.name })),
+  ];
+  const zoneOptions = [
+    { value: '', label: t('orders.filter.allZones') },
+    ...(areas.data?.zones ?? []).map((zone) => ({
+      value: zone.id,
+      label: locale === 'bn' ? zone.nameBn : zone.nameEn,
+    })),
+  ];
+  const labelOf = (options: readonly { value: string; label: string }[], value: string) =>
+    options.find((option) => option.value === value)?.label ?? value;
 
-      <OrdersNav />
+  // The filters that are on, as chips: what is narrowing the list, readable at a glance.
+  const active: ActiveFilter[] = [
+    ...(search.status === undefined
+      ? []
+      : [
+          {
+            key: 'status',
+            label: t('orders.col.status'),
+            value: labelOf(statusOptions, search.status),
+            onRemove: () => setSearch(mergeOrderSearch(search, { status: undefined })),
+          },
+        ]),
+    ...(search.channel === undefined
+      ? []
+      : [
+          {
+            key: 'channel',
+            label: t('orders.col.channel'),
+            value: labelOf(channelOptions, search.channel),
+            onRemove: () => setSearch(mergeOrderSearch(search, { channel: undefined })),
+          },
+        ]),
+    ...(search.agent === undefined
+      ? []
+      : [
+          {
+            key: 'agent',
+            label: t('orders.col.agent'),
+            value: labelOf(agentOptions, search.agent),
+            onRemove: () => setSearch(mergeOrderSearch(search, { agent: undefined })),
+          },
+        ]),
+    ...(search.zone === undefined
+      ? []
+      : [
+          {
+            key: 'zone',
+            label: t('orders.col.zone'),
+            value: labelOf(zoneOptions, search.zone),
+            onRemove: () => setSearch(mergeOrderSearch(search, { zone: undefined })),
+          },
+        ]),
+    ...(search.from === undefined
+      ? []
+      : [
+          {
+            key: 'from',
+            label: t('orders.filter.from'),
+            value: search.from,
+            onRemove: () => setSearch(mergeOrderSearch(search, { from: undefined })),
+          },
+        ]),
+    ...(search.to === undefined
+      ? []
+      : [
+          {
+            key: 'to',
+            label: t('orders.filter.to'),
+            value: search.to,
+            onRemove: () => setSearch(mergeOrderSearch(search, { to: undefined })),
+          },
+        ]),
+  ];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={t('orders.list.title')}
+        meta={<LiveIndicator status={live} />}
+        actions={
+          ability.can('create', 'Order') ? (
+            <Link to={ordersPath('/orders/new')} className={buttonVariants({ variant: 'primary' })}>
+              <Plus aria-hidden="true" />
+              {t('orders.desk.title')}
+            </Link>
+          ) : undefined
+        }
+        tabs={<OrdersNav />}
+      />
 
       {chosen.length === 0 ? null : (
         <div
-          className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2"
+          className="flex flex-wrap items-center gap-2 rounded-lg bg-selected px-3 py-2 motion-safe:animate-in"
           role="region"
           aria-label={t('orders.bulk.selected')}
         >
-          <span className="text-sm tabular-nums">
+          <span className="mr-2 text-sm font-medium tabular-nums">
             {chosen.length} {t('orders.bulk.selected')}
           </span>
           {mayConfirm ? (
@@ -361,113 +476,124 @@ function OrderList() {
           sortDescending: t('orders.sortDescending'),
         }}
         toolbar={
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="sr-only" htmlFor="orders-search">
-              {t('orders.filter.search')}
-            </label>
-            <input
-              id="orders-search"
-              type="search"
-              defaultValue={search.q ?? ''}
-              placeholder={t('orders.filter.search')}
-              className="h-8 w-56 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onChange={(event) => {
-                const value = event.target.value.trim();
-                setSearch(mergeOrderSearch(search, { q: value.length >= 2 ? value : undefined }));
-              }}
+          <div className="flex w-full flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="sr-only" htmlFor="orders-search">
+                {t('orders.filter.search')}
+              </label>
+              <SearchInput
+                id="orders-search"
+                defaultValue={search.q ?? ''}
+                placeholder={t('orders.filter.search')}
+                onChange={(event) => {
+                  const value = event.target.value.trim();
+                  setSearch(mergeOrderSearch(search, { q: value.length >= 2 ? value : undefined }));
+                }}
+              />
+              <Select
+                variant="filter"
+                aria-label={t('orders.col.status')}
+                value={search.status ?? ''}
+                options={statusOptions}
+                onValueChange={(value) =>
+                  setSearch(
+                    mergeOrderSearch(search, {
+                      status: (value || undefined) as OrderStatus | undefined,
+                    }),
+                  )
+                }
+              />
+              <Select
+                variant="filter"
+                aria-label={t('orders.col.channel')}
+                value={search.channel ?? ''}
+                options={channelOptions}
+                onValueChange={(value) =>
+                  setSearch(
+                    mergeOrderSearch(search, {
+                      channel: (value || undefined) as OrderChannel | undefined,
+                    }),
+                  )
+                }
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-expanded={moreFilters}
+                aria-controls="orders-more-filters"
+                onClick={() => setMoreFilters((value) => !value)}
+                className="text-muted-foreground"
+              >
+                <SlidersHorizontal aria-hidden="true" />
+                {moreFilters ? common('common.fewerFilters') : common('common.moreFilters')}
+              </Button>
+            </div>
+
+            {moreFilters ? (
+              <div
+                id="orders-more-filters"
+                className="flex flex-wrap items-center gap-2 motion-safe:animate-in"
+              >
+                <Select
+                  variant="filter"
+                  aria-label={t('orders.col.agent')}
+                  value={search.agent ?? ''}
+                  options={agentOptions}
+                  onValueChange={(value) =>
+                    setSearch(mergeOrderSearch(search, { agent: value || undefined }))
+                  }
+                />
+                <Select
+                  variant="filter"
+                  aria-label={t('orders.col.zone')}
+                  value={search.zone ?? ''}
+                  options={zoneOptions}
+                  onValueChange={(value) =>
+                    setSearch(mergeOrderSearch(search, { zone: value || undefined }))
+                  }
+                />
+                <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  {t('orders.filter.from')}
+                  <Input
+                    type="date"
+                    value={search.from ?? ''}
+                    className="w-40"
+                    onChange={(event) =>
+                      setSearch(mergeOrderSearch(search, { from: event.target.value || undefined }))
+                    }
+                  />
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  {t('orders.filter.to')}
+                  <Input
+                    type="date"
+                    value={search.to ?? ''}
+                    className="w-40"
+                    onChange={(event) =>
+                      setSearch(mergeOrderSearch(search, { to: event.target.value || undefined }))
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            <FilterChips
+              filters={active}
+              removeLabel={common('common.removeFilter')}
+              clearAllLabel={common('common.clearFilters')}
+              onClearAll={() =>
+                setSearch(
+                  mergeOrderSearch(search, {
+                    status: undefined,
+                    channel: undefined,
+                    agent: undefined,
+                    zone: undefined,
+                    from: undefined,
+                    to: undefined,
+                  }),
+                )
+              }
             />
-            <select
-              aria-label={t('orders.col.status')}
-              value={search.status ?? ''}
-              className={SELECT}
-              onChange={(event) =>
-                setSearch(
-                  mergeOrderSearch(search, {
-                    status: (event.target.value || undefined) as OrderStatus | undefined,
-                  }),
-                )
-              }
-            >
-              <option value="">{t('orders.filter.allStatuses')}</option>
-              {ORDER_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {t(`orders.status.${status}` as OrdersMessageKey)}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label={t('orders.col.channel')}
-              value={search.channel ?? ''}
-              className={SELECT}
-              onChange={(event) =>
-                setSearch(
-                  mergeOrderSearch(search, {
-                    channel: (event.target.value || undefined) as OrderChannel | undefined,
-                  }),
-                )
-              }
-            >
-              <option value="">{t('orders.filter.allChannels')}</option>
-              {ORDER_CHANNELS.map((channel) => (
-                <option key={channel} value={channel}>
-                  {t(`orders.channel.${channel}` as OrdersMessageKey)}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label={t('orders.col.agent')}
-              value={search.agent ?? ''}
-              className={SELECT}
-              onChange={(event) =>
-                setSearch(mergeOrderSearch(search, { agent: event.target.value || undefined }))
-              }
-            >
-              <option value="">{t('orders.filter.allAgents')}</option>
-              <option value="mine">{t('orders.filter.mine')}</option>
-              <option value="unassigned">{t('orders.filter.unassigned')}</option>
-              {(agents.data?.items ?? []).map((agent) => (
-                <option key={agent.userId} value={agent.userId}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label={t('orders.col.zone')}
-              value={search.zone ?? ''}
-              className={SELECT}
-              onChange={(event) =>
-                setSearch(mergeOrderSearch(search, { zone: event.target.value || undefined }))
-              }
-            >
-              <option value="">{t('orders.filter.allZones')}</option>
-              {(areas.data?.zones ?? []).map((zone) => (
-                <option key={zone.id} value={zone.id}>
-                  {locale === 'bn' ? zone.nameBn : zone.nameEn}
-                </option>
-              ))}
-            </select>
-            <label className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-              {t('orders.filter.from')}
-              <input
-                type="date"
-                value={search.from ?? ''}
-                className={SELECT}
-                onChange={(event) =>
-                  setSearch(mergeOrderSearch(search, { from: event.target.value || undefined }))
-                }
-              />
-            </label>
-            <label className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-              {t('orders.filter.to')}
-              <input
-                type="date"
-                value={search.to ?? ''}
-                className={SELECT}
-                onChange={(event) =>
-                  setSearch(mergeOrderSearch(search, { to: event.target.value || undefined }))
-                }
-              />
-            </label>
           </div>
         }
       />

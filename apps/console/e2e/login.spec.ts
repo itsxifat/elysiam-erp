@@ -310,8 +310,11 @@ test('a user with one org never sees a switcher', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Switch organisation' })).toHaveCount(0);
-  // It still says where you are — it just is not a control.
-  await expect(page.getByRole('banner').getByText('Oura', { exact: true })).toBeVisible();
+  // It still says where you are — it just is not a control. The brand heads the sidebar
+  // since the design refresh (D-449).
+  await expect(
+    page.getByRole('complementary', { name: 'Workspace' }).getByText('Oura', { exact: true }),
+  ).toBeVisible();
 });
 
 test('the login is operable from the keyboard alone', async ({ page }) => {

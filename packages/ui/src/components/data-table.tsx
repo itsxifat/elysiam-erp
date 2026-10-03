@@ -67,6 +67,14 @@ export interface DataTableColumnMeta {
   readonly numeric?: boolean;
   /** Offer a sort control. The sort itself is the server's (see above). */
   readonly sortable?: boolean;
+  /**
+   * The row's actions. Right-aligned, and on a device with a pointer they show when the
+   * row is pointed at or focused, so a table of forty rows is not forty rows of buttons
+   * (D-448). On touch they are always shown.
+   */
+  readonly actions?: boolean;
+  /** Let a long value wrap instead of holding the row to one line. */
+  readonly wrap?: boolean;
 }
 
 /**
@@ -236,15 +244,21 @@ export function DataTable<TData extends RowData>({
         <ColumnVisibilityMenu table={table} label={labels.columns} />
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full border-collapse text-sm">
+      {/*
+       * The table scrolls inside its own frame on a wide screen, so its header can stick
+       * while the rows move and the pager below stays in reach (D-448). On a phone the
+       * page scrolls instead: two nested scroll areas on a small screen are a trap.
+       */}
+      <div className="overflow-auto rounded-lg border border-border bg-card md:max-h-[calc(100dvh-14rem)]">
+        <table className="w-full border-separate border-spacing-0 text-sm">
           <caption className="sr-only">{caption}</caption>
           <thead>
             {table.getHeaderGroups().map((group) => (
-              <tr key={group.id} className="border-b border-border bg-muted/50">
+              <tr key={group.id}>
                 {group.headers.map((header) => {
-                  const sortable = header.column.columnDef.meta?.sortable === true;
-                  const numeric = header.column.columnDef.meta?.numeric === true;
+                  const meta = header.column.columnDef.meta;
+                  const sortable = meta?.sortable === true;
+                  const numeric = meta?.numeric === true;
                   const active = sort?.columnId === header.column.id ? sort : null;
 
                   return (
@@ -262,8 +276,9 @@ export function DataTable<TData extends RowData>({
                               : 'descending'
                       }
                       className={cn(
-                        'h-row px-3 text-left align-middle text-xs font-medium tracking-wide text-muted-foreground',
+                        'sticky top-0 z-10 h-10 border-b border-border bg-card px-3 text-left align-middle text-xs font-medium whitespace-nowrap text-muted-foreground first:pl-4 last:pr-4',
                         numeric && 'text-right',
+                        meta?.actions === true && 'text-right',
                       )}
                     >
                       {header.isPlaceholder ? null : sortable ? (
@@ -276,7 +291,8 @@ export function DataTable<TData extends RowData>({
                           type="button"
                           onClick={() => cycleSort(header.column.id)}
                           className={cn(
-                            'inline-flex items-center gap-1.5 rounded-sm text-xs font-medium text-muted-foreground',
+                            'group/sort -mx-1 inline-flex items-center gap-1 rounded-sm px-1 text-xs font-medium',
+                            active === null ? 'text-muted-foreground' : 'text-foreground',
                             'motion-safe:duration-fast hover:text-foreground motion-safe:transition-colors',
                             'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                           )}
@@ -290,7 +306,10 @@ export function DataTable<TData extends RowData>({
                             })`}
                           </span>
                           {active === null ? (
-                            <ArrowUpDown aria-hidden="true" className="size-3 opacity-50" />
+                            <ArrowUpDown
+                              aria-hidden="true"
+                              className="size-3 opacity-40 group-hover/sort:opacity-80"
+                            />
                           ) : active.direction === 'asc' ? (
                             <ArrowUp aria-hidden="true" className="size-3" />
                           ) : (
@@ -313,10 +332,18 @@ export function DataTable<TData extends RowData>({
                  jumps when the page lands. A centred spinner over a table both
                  hides the headers and guarantees a reflow. */
               Array.from({ length: Math.min(page.pageSize, 8) }, (_, index) => (
-                <tr key={index} className="border-b border-border last:border-0">
+                <tr key={index}>
                   {Array.from({ length: Math.max(columnCount, 1) }, (__, cell) => (
-                    <td key={cell} className="h-row px-3 align-middle">
-                      <Skeleton className="h-3 w-24" />
+                    <td
+                      key={cell}
+                      className="h-row border-b border-border px-3 align-middle first:pl-4 last:pr-4"
+                    >
+                      <Skeleton
+                        className={cn(
+                          'h-3',
+                          cell === 0 ? 'w-20' : cell % 3 === 1 ? 'w-28' : 'w-16',
+                        )}
+                      />
                     </td>
                   ))}
                 </tr>
@@ -335,19 +362,25 @@ export function DataTable<TData extends RowData>({
               table.getRowModel().rows.map((row) => (
                 <tr
                   key={row.id}
-                  className="motion-safe:duration-fast border-b border-border last:border-0 hover:bg-muted/50 motion-safe:transition-colors"
+                  className="group/row motion-safe:duration-fast hover:bg-accent/60 motion-safe:transition-colors [&:last-child>td]:border-b-0"
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <td
-                      key={cell.id}
-                      {...(cell.column.columnDef.meta?.numeric === true
-                        ? { 'data-numeric': '' }
-                        : {})}
-                      className="h-row px-3 align-middle text-foreground"
-                    >
-                      <table.FlexRender cell={cell} />
-                    </td>
-                  ))}
+                  {row.getVisibleCells().map((cell) => {
+                    const meta = cell.column.columnDef.meta;
+                    return (
+                      <td
+                        key={cell.id}
+                        {...(meta?.numeric === true ? { 'data-numeric': '' } : {})}
+                        className={cn(
+                          'h-row border-b border-border px-3 align-middle text-foreground first:pl-4 last:pr-4',
+                          meta?.wrap === true ? 'py-2' : 'whitespace-nowrap',
+                          meta?.actions === true &&
+                            'text-right [@media(hover:hover)]:[&>*]:opacity-0 [@media(hover:hover)]:group-focus-within/row:[&>*]:opacity-100 [@media(hover:hover)]:group-hover/row:[&>*]:opacity-100',
+                        )}
+                      >
+                        <table.FlexRender cell={cell} />
+                      </td>
+                    );
+                  })}
                 </tr>
               ))
             )}
@@ -359,7 +392,7 @@ export function DataTable<TData extends RowData>({
         <p className="text-xs text-muted-foreground tabular-nums" role="status">
           {labels.pageStatus}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <Button
             variant="outline"
             size="sm"
@@ -405,11 +438,12 @@ function ColumnVisibilityMenu<TData extends RowData>({
   return (
     <div className="relative">
       <Button
-        variant="outline"
+        variant="ghost"
         size="sm"
         aria-expanded={open}
         aria-haspopup="true"
         onClick={() => setOpen((value) => !value)}
+        className="text-muted-foreground"
       >
         <Columns3 aria-hidden="true" />
         {label}
@@ -419,7 +453,7 @@ function ColumnVisibilityMenu<TData extends RowData>({
         <div
           role="group"
           aria-label={label}
-          className="absolute right-0 z-20 mt-1 min-w-48 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-popover"
+          className="absolute right-0 z-30 mt-1.5 min-w-52 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover motion-safe:animate-in"
           onKeyDown={(event) => {
             if (event.key === 'Escape') setOpen(false);
           }}
@@ -427,11 +461,11 @@ function ColumnVisibilityMenu<TData extends RowData>({
           {table.getAllLeafColumns().map((column) => (
             <label
               key={column.id}
-              className="flex h-control-sm cursor-pointer items-center gap-2 rounded-sm px-2 text-sm hover:bg-accent hover:text-accent-foreground"
+              className="flex h-control-sm cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm hover:bg-accent hover:text-accent-foreground"
             >
               <input
                 type="checkbox"
-                className="accent-primary"
+                className="size-3.5 accent-primary"
                 checked={column.getIsVisible()}
                 onChange={() => column.toggleVisibility()}
               />

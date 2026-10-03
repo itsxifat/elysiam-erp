@@ -1,4 +1,12 @@
-import { Button, EmptyState, ErrorState, Money, PermissionGate, StatusBadge } from '@elysium/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  Money,
+  PageHeader,
+  PermissionGate,
+  StatusBadge,
+} from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -87,12 +95,11 @@ export function BonusRulesPage() {
       explain={{ title: t('perf.deniedTitle'), detail: t('perf.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{t('perf.bonusRules')}</h1>
-          <p className="text-sm text-muted-foreground">{t('perf.bonusRulesHint')}</p>
-        </header>
-
-        <PerformanceNav />
+        <PageHeader
+          title={t('perf.bonusRules')}
+          description={t('perf.bonusRulesHint')}
+          tabs={<PerformanceNav />}
+        />
 
         <PermissionGate allowed={mayWrite}>
           <NewRuleForm onCreated={invalidate} />

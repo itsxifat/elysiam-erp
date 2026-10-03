@@ -22,10 +22,9 @@ import { cn } from '../lib/cn.js';
  * is one value for every dialog in the system rather than whatever each screen
  * felt like.
  *
- * The overlay is `bg-foreground/40` rather than a literal black: in dark mode a
- * black scrim over a near-black surface is invisible, so the dialog appears to
- * float over a live page the user can still click. Deriving it from the
- * foreground token means it inverts with the theme.
+ * The overlay is the `--overlay` token rather than a literal black: each theme
+ * sets its own scrim, light enough on white not to read as a power cut and deep
+ * enough on charcoal that the dialog does not seem to float over a live page.
  */
 
 export interface DialogProps {
@@ -56,15 +55,15 @@ export function Dialog({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className={cn('fixed inset-0 z-50 bg-foreground/40')} />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-overlay motion-safe:animate-fade" />
         <DialogPrimitive.Content
           className={cn(
             'fixed top-1/2 left-1/2 z-50 w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2',
             // A long form on a short laptop screen scrolls inside the dialog rather
             // than running off both edges of a box that cannot scroll.
             'max-h-[calc(100dvh-2rem)] overflow-y-auto',
-            'rounded-lg border border-border bg-card p-5 text-card-foreground shadow-dialog',
-            'motion-safe:duration-base motion-safe:ease-out',
+            'rounded-xl border border-border bg-popover p-6 text-popover-foreground shadow-dialog',
+            'focus-visible:outline-none motion-safe:animate-in',
             className,
           )}
         >
@@ -80,15 +79,20 @@ export function Dialog({
               )}
             </div>
             <DialogPrimitive.Close asChild>
-              <Button variant="ghost" size="icon" aria-label={closeLabel}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={closeLabel}
+                className="-mt-1 -mr-2"
+              >
                 <X aria-hidden="true" />
               </Button>
             </DialogPrimitive.Close>
           </div>
 
-          {children === undefined ? null : <div className="mt-4">{children}</div>}
+          {children === undefined ? null : <div className="mt-5">{children}</div>}
           {footer === undefined ? null : (
-            <div className="mt-6 flex items-center justify-end gap-2">{footer}</div>
+            <div className="mt-6 flex flex-wrap items-center justify-end gap-2">{footer}</div>
           )}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

@@ -1,4 +1,4 @@
-import { Button, EmptyState, ErrorState, PermissionGate } from '@elysium/ui';
+import { Button, EmptyState, ErrorState, PageHeader, PermissionGate } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -43,12 +43,11 @@ export function MyPerformancePage() {
       explain={{ title: t('perf.deniedTitle'), detail: t('perf.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{t('perf.myTitle')}</h1>
-          <p className="text-sm text-muted-foreground">{t('perf.myHint')}</p>
-        </header>
-
-        <PerformanceNav />
+        <PageHeader
+          title={t('perf.myTitle')}
+          description={t('perf.myHint')}
+          tabs={<PerformanceNav />}
+        />
 
         <div className="w-40">
           <Field label={t('perf.month')} id="me-month">

@@ -3,6 +3,7 @@ import {
   DataTable,
   DateTime,
   PermissionGate,
+  Select,
   dataTableColumns,
   normalizeBdPhone,
   type DataTableColumn,
@@ -166,20 +167,19 @@ function Leads() {
         header: t('marketing.col.status'),
         cell: (cell) =>
           canEdit ? (
-            <select
+            <Select
               aria-label={t('marketing.col.status')}
-              className={`${control} w-auto`}
+              size="sm"
+              className="w-auto min-w-32"
               value={cell.getValue()}
-              onChange={(event) =>
-                move.mutate({ id: cell.row.original.id, status: event.target.value as LeadStatus })
+              onValueChange={(value) =>
+                move.mutate({ id: cell.row.original.id, status: value as LeadStatus })
               }
-            >
-              {LEAD_STATUSES.map((value) => (
-                <option key={value} value={value}>
-                  {t(`marketing.lead.${value}` as MarketingMessageKey)}
-                </option>
-              ))}
-            </select>
+              options={LEAD_STATUSES.map((value) => ({
+                value,
+                label: t(`marketing.lead.${value}` as MarketingMessageKey),
+              }))}
+            />
           ) : (
             t(`marketing.lead.${cell.getValue()}` as MarketingMessageKey)
           ),
@@ -238,20 +238,15 @@ function Leads() {
             />
           </Field>
           <Field label={t('marketing.col.channel')} id={`${id}-channel`}>
-            <select
+            <Select
               id={`${id}-channel`}
-              className={control}
               value={form.channel}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, channel: event.target.value }))
-              }
-            >
-              {LEAD_CHANNELS.map((value) => (
-                <option key={value} value={value}>
-                  {t(`marketing.channel.${value}` as MarketingMessageKey)}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setForm((current) => ({ ...current, channel: value }))}
+              options={LEAD_CHANNELS.map((value) => ({
+                value,
+                label: t(`marketing.channel.${value}` as MarketingMessageKey),
+              }))}
+            />
           </Field>
           <Field
             label={t('marketing.dimension.size')}
@@ -267,21 +262,20 @@ function Leads() {
             />
           </Field>
           <Field label={t('marketing.dimension.age_band')} id={`${id}-age`}>
-            <select
+            <Select
               id={`${id}-age`}
-              className={control}
               value={form.ageBand}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, ageBand: event.target.value as AgeBand | '' }))
+              onValueChange={(value) =>
+                setForm((current) => ({ ...current, ageBand: value as AgeBand | '' }))
               }
-            >
-              <option value="">—</option>
-              {AGE_BANDS.map((value) => (
-                <option key={value} value={value}>
-                  {t(`marketing.age.${value}` as MarketingMessageKey)}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: '—' },
+                ...AGE_BANDS.map((value) => ({
+                  value,
+                  label: t(`marketing.age.${value}` as MarketingMessageKey),
+                })),
+              ]}
+            />
           </Field>
           <Field
             label={t('marketing.dimension.profession')}
@@ -326,21 +320,19 @@ function Leads() {
         caption={t('marketing.nav.leads')}
         labels={labels}
         toolbar={
-          <select
+          <Select
+            variant="filter"
             aria-label={t('marketing.col.status')}
             value={status ?? ''}
-            className={`${control} w-auto`}
-            onChange={(event) =>
-              setStatus((event.target.value || undefined) as LeadStatus | undefined)
-            }
-          >
-            <option value="">{t('marketing.leads.allStatuses')}</option>
-            {LEAD_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {t(`marketing.lead.${value}` as MarketingMessageKey)}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => setStatus((value || undefined) as LeadStatus | undefined)}
+            options={[
+              { value: '', label: t('marketing.leads.allStatuses') },
+              ...LEAD_STATUSES.map((value) => ({
+                value,
+                label: t(`marketing.lead.${value}` as MarketingMessageKey),
+              })),
+            ]}
+          />
         }
       />
     </div>
@@ -406,18 +398,16 @@ function Segments() {
         caption={t('marketing.nav.segments')}
         labels={labels}
         toolbar={
-          <select
+          <Select
+            variant="filter"
             aria-label={t('marketing.segments.by')}
             value={dimension}
-            className={`${control} w-auto`}
-            onChange={(event) => setDimension(event.target.value as LeadDimension)}
-          >
-            {LEAD_DIMENSIONS.map((value) => (
-              <option key={value} value={value}>
-                {t(`marketing.dimension.${value}` as MarketingMessageKey)}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => setDimension(value as LeadDimension)}
+            options={LEAD_DIMENSIONS.map((value) => ({
+              value,
+              label: t(`marketing.dimension.${value}` as MarketingMessageKey),
+            }))}
+          />
         }
       />
     </div>

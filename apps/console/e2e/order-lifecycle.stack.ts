@@ -165,7 +165,10 @@ test('an org admin opens every settings tab from the sidebar', async () => {
   await bothThemes(admin, 'settings-couriers');
   await admin.getByRole('button', { name: 'Set up a courier' }).click();
   const courierForm = admin.getByRole('dialog', { name: 'Courier account' });
-  await courierForm.getByLabel('Adapter').selectOption('steadfast');
+  // The kit's Select (D-443): open the combobox, then pick from its listbox, which is drawn in
+  // a portal outside the dialog.
+  await courierForm.getByRole('combobox', { name: 'Adapter' }).click();
+  await admin.getByRole('option', { name: 'steadfast', exact: true }).click();
   // The adapter's own credential names, as password fields, and the honesty note (D-176).
   await expect(courierForm.locator('input[type="password"]').first()).toBeVisible();
   await expect(

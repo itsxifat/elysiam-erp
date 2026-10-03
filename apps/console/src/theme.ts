@@ -1,3 +1,5 @@
+import { reapplyBrand } from './brand.js';
+
 export type ThemePreference = 'light' | 'dark' | 'system';
 
 const STORAGE_KEY = 'elysium-theme';
@@ -15,6 +17,8 @@ export function applyTheme(preference: ThemePreference): void {
     (preference === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   document.documentElement.classList.toggle('dark', dark);
+  // The brand's accent is solved per theme; solve it again for this one.
+  reapplyBrand();
 
   try {
     if (preference === 'system') localStorage.removeItem(STORAGE_KEY);

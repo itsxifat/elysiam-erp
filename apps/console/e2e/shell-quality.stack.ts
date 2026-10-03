@@ -174,13 +174,15 @@ test('check 2: table filters live in the URL and survive a reload', async ({ bro
   await expect(page.getByRole('heading', { name: 'Table demo' })).toBeVisible();
 
   await page.getByRole('searchbox', { name: 'Search' }).fill('ORD');
-  await page.getByRole('combobox', { name: 'Status' }).selectOption('settled');
+  // The status filter is the kit's Select (D-443): a combobox that opens a listbox.
+  await page.getByRole('combobox', { name: 'Status' }).click();
+  await page.getByRole('option', { name: 'Settled' }).click();
   await expect(page).toHaveURL(/[?&]q=ORD/);
   await expect(page).toHaveURL(/[?&]status=settled/);
 
   await page.reload();
   await expect(page.getByRole('searchbox', { name: 'Search' })).toHaveValue('ORD');
-  await expect(page.getByRole('combobox', { name: 'Status' })).toHaveValue('settled');
+  await expect(page.getByRole('combobox', { name: 'Status' })).toHaveText('Settled');
   await context.close();
 });
 
@@ -367,10 +369,12 @@ test('check 7: keyboard only — every tab stop shows focus, and the palette nav
       /^Overview$/,
       /^Orders$/,
       /^Customers$/,
-      /^Open the command palette/,
+      // The palette's way in reads as a search field since the design refresh (D-449),
+      // and Sign out lives in the account menu.
+      /^Search or jump to/,
       /^Switch to Bangla$/,
       /^Switch to dark theme$/,
-      /^Sign out$/,
+      /^Account$/,
     ],
     'shell',
   );
