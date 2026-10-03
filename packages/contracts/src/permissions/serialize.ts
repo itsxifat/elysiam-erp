@@ -31,6 +31,18 @@ const RESELLER_FIELD_SET: ReadonlySet<string> = new Set(RESELLER_VISIBLE_FIELDS)
 /** Subjects a reseller sees through the allow-list rather than the deny-list. */
 const RESELLER_ALLOWLISTED: ReadonlySet<Subject> = new Set<Subject>(['Catalog', 'CostedItem']);
 
+/** Roles a brand's partners hold, as opposed to its staff (§6). */
+const PARTNER_ROLES: ReadonlySet<MembershipRole> = new Set<MembershipRole>([
+  'reseller',
+  'investor',
+]);
+
+/** A reseller with no staff role: the caller the allow-list is for. */
+function actsAsReseller(context: SerializeContext): boolean {
+  if (context.isSuperAdmin || !context.roles.includes('reseller')) return false;
+  return context.roles.every((role) => PARTNER_ROLES.has(role));
+}
+
 /**
  * A plain object, and nothing that merely resembles one.
  *
@@ -253,8 +265,11 @@ function pruneAllowed(
 export function serializeFor<T>(context: SerializeContext, subject: Subject, data: T): T {
   // A reseller gets an allow-list, and it is checked first: the deny-list would
   // also hide cost, but "everything except the fields we remembered to hide" is
-  // the wrong default for a partner who is not staff.
-  if (context.roles.includes('reseller') && !context.isSuperAdmin) {
+  // the wrong default for a partner who is not staff. Only someone here as a
+  // partner alone reads through it (D-450): a person who also holds a staff role
+  // reads the catalog as staff, with cost still hidden unless a staff role reads
+  // it. Narrowing them to the reseller's view broke the staff screens they use.
+  if (actsAsReseller(context)) {
     if (RESELLER_ALLOWLISTED.has(subject)) {
       // Then the cost deny-list over what survived. An allow-listed key exposes
       // its whole subtree, and `attributes: { wacPoisha }` walked straight out

@@ -641,6 +641,48 @@ describe('a reseller sees an allow-list, not a deny-list', () => {
   });
 });
 
+describe('a reseller who also holds a staff role (D-450)', () => {
+  const product = {
+    id: 'p1',
+    name: 'Tee',
+    status: 'active',
+    categoryId: 'c1',
+    pricePoisha: 65_000,
+    wacPoisha: 30_000,
+  };
+
+  it('still narrows a reseller with no staff role, and a reseller who is also an investor', () => {
+    for (const roles of [['reseller'], ['reseller', 'investor']] as const) {
+      const out = serializeFor({ roles, isSuperAdmin: false }, 'Catalog', product);
+      expect(Object.keys(out).sort()).toEqual(['id', 'name']);
+    }
+  });
+
+  it('reads the catalog as staff, so the staff screens get their fields', () => {
+    const out = serializeFor(
+      { roles: ['sales', 'reseller'], isSuperAdmin: false },
+      'Catalog',
+      product,
+    );
+    expect(out).toMatchObject({ status: 'active', categoryId: 'c1', pricePoisha: 65_000 });
+  });
+
+  it('still hides cost when no staff role it holds reads cost', () => {
+    const out = serializeFor(
+      { roles: ['sales', 'marketing', 'reseller', 'investor'], isSuperAdmin: false },
+      'Catalog',
+      product,
+    );
+    expect(findCostFields(out)).toEqual([]);
+  });
+
+  it('shows cost when a staff role it holds reads cost, exactly as without the reseller role', () => {
+    const roles = ['org_admin', 'accounts', 'reseller', 'investor'] as const;
+    const out = serializeFor({ roles, isSuperAdmin: false }, 'Catalog', product);
+    expect(out).toEqual(product);
+  });
+});
+
 describe('serializeFor, over arbitrary payloads', () => {
   /** Any JSON-ish structure, with cost field names sprinkled through it. */
   const payload = fc.letrec((tie) => ({
