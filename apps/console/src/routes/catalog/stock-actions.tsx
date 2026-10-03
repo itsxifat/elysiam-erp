@@ -13,7 +13,7 @@ import {
   type StockRow,
 } from '../stock/api.js';
 import { createDraft, createEntry, listSupplierOptions } from '../supply/api.js';
-import { parseQty, positiveCost, requestKey } from './variant-grid.js';
+import { isReplayConflict, parseQty, positiveCost, requestKey } from './variant-grid.js';
 
 /**
  * The product page's three stock actions (D-420): receive, adjust and transfer, each a
@@ -215,7 +215,7 @@ export function ReceiveStockDialog({
       if (mayPrice) {
         const lines = chosen.map((line) => ({ ...line, unitCostPoisha: costPoisha ?? '0' }));
         await createEntry({
-          supplyId: key.for(JSON.stringify([supplierId, chosenLocation, lines])),
+          supplyId: key.current(),
           supplierId,
           locationId: chosenLocation,
           ...(invoice.trim() === '' ? {} : { invoiceNumber: invoice.trim() }),
@@ -224,13 +224,17 @@ export function ReceiveStockDialog({
         return 'entry' as const;
       }
       await createDraft({
-        draftId: key.for(JSON.stringify([supplierId, chosenLocation, chosen])),
+        draftId: key.current(),
         supplierId,
         locationId: chosenLocation,
         ...(invoice.trim() === '' ? {} : { invoiceNumber: invoice.trim() }),
         lines: chosen,
       });
       return 'draft' as const;
+    },
+    // Told an earlier save went through with other goods: the next press is a new receipt.
+    onError: (error) => {
+      if (isReplayConflict(error)) key.settle();
     },
     onSuccess: (kind) => {
       key.settle();
@@ -244,11 +248,8 @@ export function ReceiveStockDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) {
-          setDone(null);
-          // A receipt reopened later is a new one (ledger re-audit NEW-1).
-          key.settle();
-        }
+        // The key survives closing: an unanswered save may have gone through (D-432).
+        if (!next) setDone(null);
         onOpenChange(next);
       }}
       title={t('cs.receive.title')}

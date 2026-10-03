@@ -19,6 +19,7 @@ import {
 import { ChipGroup, Field, PhotoUploader } from './parts.js';
 import { slugify } from './slug.js';
 import {
+  isReplayConflict,
   parseQty,
   positiveCost,
   requestKey,
@@ -181,7 +182,7 @@ export function CatalogNewProductPage() {
         if (mayPrice) {
           const priced = lines.map((line) => ({ ...line, unitCostPoisha: costPoisha ?? '0' }));
           await createEntry({
-            supplyId: key.for(JSON.stringify([supplierId, chosenLocation, priced])),
+            supplyId: key.current(),
             supplierId,
             locationId: chosenLocation,
             memo: t('cs.new.openingMemo'),
@@ -189,7 +190,7 @@ export function CatalogNewProductPage() {
           });
         } else {
           await createDraft({
-            draftId: key.for(JSON.stringify([supplierId, chosenLocation, lines])),
+            draftId: key.current(),
             supplierId,
             locationId: chosenLocation,
             lines,
@@ -197,6 +198,10 @@ export function CatalogNewProductPage() {
         }
       }
       return product;
+    },
+    // Told an earlier save went through with other goods: the next press is a new receipt.
+    onError: (error) => {
+      if (isReplayConflict(error)) key.settle();
     },
     onSuccess: (product) =>
       void navigate({ to: '/catalog/$productId', params: { productId: product.id } }),

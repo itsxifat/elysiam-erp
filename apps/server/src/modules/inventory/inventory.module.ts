@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { ApprovalsModule } from '../approvals/approvals.module.js';
+import { CatalogModule } from '../catalog/catalog.module.js';
 import { LedgerModule } from '../ledger/ledger.module.js';
 import { AdjustmentsService } from './adjustments.service.js';
 import { CountsService } from './counts.service.js';
@@ -29,7 +30,7 @@ import { TransfersService } from './transfers.service.js';
  * second module deciding when to post.
  */
 @Module({
-  imports: [LedgerModule, ApprovalsModule],
+  imports: [LedgerModule, ApprovalsModule, CatalogModule],
   controllers: [InventoryController],
   providers: [
     MovementsService,

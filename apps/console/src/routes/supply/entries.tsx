@@ -6,7 +6,7 @@ import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import { searchSkus } from '../catalog/api.js';
-import { requestKey } from '../catalog/variant-grid.js';
+import { isReplayConflict, requestKey } from '../catalog/variant-grid.js';
 import {
   createDraft,
   createEntry,
@@ -161,13 +161,7 @@ export function SupplyEntriesPage() {
   const submitEntry = useMutation({
     mutationFn: () =>
       createEntry({
-        supplyId: key.for(
-          JSON.stringify([
-            supplierId,
-            locationId,
-            lines.map((line) => [line.skuId, line.qty, line.unitCostTaka]),
-          ]),
-        ),
+        supplyId: key.current(),
         supplierId,
         locationId,
         ...(invoiceNumber.trim() === '' ? {} : { invoiceNumber: invoiceNumber.trim() }),
@@ -177,6 +171,10 @@ export function SupplyEntriesPage() {
           unitCostPoisha: takaToPoisha(line.unitCostTaka) ?? '',
         })),
       }),
+    onError: (error) => {
+      // Told an earlier save went through with other goods: the next press is new.
+      if (isReplayConflict(error)) key.settle();
+    },
     onSuccess: () => {
       setDone('entry');
       reset();
@@ -186,14 +184,16 @@ export function SupplyEntriesPage() {
   const submitDraft = useMutation({
     mutationFn: () =>
       createDraft({
-        draftId: key.for(
-          JSON.stringify([supplierId, locationId, lines.map((line) => [line.skuId, line.qty])]),
-        ),
+        draftId: key.current(),
         supplierId,
         locationId,
         ...(invoiceNumber.trim() === '' ? {} : { invoiceNumber: invoiceNumber.trim() }),
         lines: lines.map((line) => ({ skuId: line.skuId, qty: Number(line.qty) })),
       }),
+    onError: (error) => {
+      // Told an earlier save went through with other goods: the next press is new.
+      if (isReplayConflict(error)) key.settle();
+    },
     onSuccess: () => {
       setDone('draft');
       reset();

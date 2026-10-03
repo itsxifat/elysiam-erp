@@ -955,3 +955,45 @@ export async function setSkuStatus(
   `);
   return rows[0];
 }
+
+/**
+ * Each SKU's values as a person says them, size then colour then the rest (`M / Red`),
+ * for the stock screens (D-427). Absent for a SKU with no values.
+ */
+export async function variantLabels(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+): Promise<Map<string, string>> {
+  if (skuIds.length === 0) return new Map();
+  const rows = await tx.execute<{ sku_id: string; label: string }>(sql`
+    select v.sku_id,
+           string_agg(
+             av.label, ' / '
+             order by case a.kind::text when 'size' then 0 when 'colour' then 1 else 2 end,
+                      a.position, a.code
+           ) as label
+    from catalog.sku_values v
+    join catalog.attributes a on a.org_id = v.org_id and a.id = v.attribute_id
+    join catalog.attribute_values av on av.org_id = v.org_id and av.id = v.value_id
+    where v.org_id = ${orgId} and v.sku_id = any (${sql.param([...skuIds])}::uuid[])
+    group by v.sku_id
+  `);
+  return new Map(rows.map((row) => [row.sku_id, row.label]));
+}
+
+/** A category and every category below it, through the maintained path (D-427). */
+export async function categorySubtree(
+  tx: Tx,
+  orgId: string,
+  categoryId: string,
+): Promise<string[]> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select cat.id
+    from catalog.categories cat
+    join catalog.categories root on root.org_id = cat.org_id and root.id = ${categoryId}::uuid
+    where cat.org_id = ${orgId}
+      and (cat.id = root.id or starts_with(cat.path, root.path || '/'))
+  `);
+  return rows.map((row) => row.id);
+}

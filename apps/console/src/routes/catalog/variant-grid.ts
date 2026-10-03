@@ -85,40 +85,39 @@ export const PRODUCT_TEMPLATE =
   'Linen Panjabi,PNJ,2450,M|L|XL,White|Cream,active,Soft linen for Eid\n';
 
 /**
- * The idempotency key of one thing a person is trying to save (ledger audit H1).
+ * The idempotency key of one receipt a person is trying to save (D-432).
  *
- * The same key is sent on every attempt until one succeeds, so a retry after a lost
- * response replays the receipt the server already has instead of posting a second one:
- * the supply routes treat a known `supplyId` or `draftId` as the same request. Only a
- * success starts a new key.
+ * The same key is sent on every attempt, through edits and through closing and
+ * reopening the dialog, until the server has answered for it: a success, or a 409
+ * `IDEMPOTENCY_CONFLICT`. Keeping it is always safe, because the supply routes replay a
+ * known key only for the same supplier, location and lines, refuse it for anything else,
+ * and insert normally when nothing was saved under it. Renewing it on an edit was not:
+ * a first save whose response was lost, then an edit, posted a second receipt (ledger
+ * re-audit). The person starts a new receipt only by succeeding or by being told an
+ * earlier one already went through.
  */
 export interface RequestKey {
   readonly current: () => string;
-  /**
-   * The key for this content: the same while the content is the same, a new one the
-   * moment it changes. Pass the receipt's supplier, location and lines, not its invoice
-   * number or note, so adding a challan number to a retry still replays (ledger re-audit
-   * N-1; the server refuses a known key with different goods, D-432).
-   */
-  readonly for: (content: string) => string;
   readonly settle: () => void;
 }
 
 export function requestKey(make: () => string = () => crypto.randomUUID()): RequestKey {
   let value = make();
-  let sent: string | null = null;
   return {
     current: () => value,
-    for: (content) => {
-      if (sent !== null && sent !== content) value = make();
-      sent = content;
-      return value;
-    },
     settle: () => {
       value = make();
-      sent = null;
     },
   };
+}
+
+/** The server's answer to a known key with different goods (D-432). */
+export function isReplayConflict(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'IDEMPOTENCY_CONFLICT'
+  );
 }
 
 /** A positive cost in taka, as poisha, or null: zero or blank is not a cost here. */

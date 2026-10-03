@@ -573,7 +573,7 @@ function assertSameReceipt(
   if (!same) {
     throw new SupplyError(
       'IDEMPOTENCY_CONFLICT',
-      'That entry was already saved with different goods, supplier or location. Check Supply entries, then start a new one.',
+      'An earlier save of this entry went through with different goods, supplier or location. Check Supply entries; saving again records this as a new entry.',
     );
   }
 }

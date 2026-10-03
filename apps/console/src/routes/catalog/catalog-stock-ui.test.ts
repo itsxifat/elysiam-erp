@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PRODUCT_TEMPLATE,
   codeFrom,
+  isReplayConflict,
   parseQty,
   positiveCost,
   requestKey,
@@ -86,16 +87,11 @@ describe('requestKey (ledger audit H1)', () => {
     expect(key.current()).toBe('key-2');
   });
 
-  it('starts a new key when the receipt itself changes, not for the same content', () => {
-    let next = 0;
-    const key = requestKey(() => `key-${String((next += 1))}`);
-    const first = key.for('["sup","wh",[["a",2]]]');
-    expect(key.for('["sup","wh",[["a",2]]]')).toBe(first);
-    // Different goods after a failure are a different receipt, so a new key: the server
-    // would refuse the old key with different goods.
-    const second = key.for('["sup","wh",[["a",3]]]');
-    expect(second).not.toBe(first);
-    expect(key.for('["sup","wh",[["a",3]]]')).toBe(second);
+  it('knows the server telling it an earlier save already went through', () => {
+    expect(isReplayConflict({ code: 'IDEMPOTENCY_CONFLICT' })).toBe(true);
+    expect(isReplayConflict({ code: 'VALIDATION_FAILED' })).toBe(false);
+    expect(isReplayConflict(new Error('offline'))).toBe(false);
+    expect(isReplayConflict(null)).toBe(false);
   });
 
   it('makes a fresh uuid by default', () => {

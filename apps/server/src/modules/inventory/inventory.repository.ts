@@ -379,7 +379,7 @@ export interface StockViewRow extends Record<string, unknown> {
   readonly sku_code: string;
   readonly product_id: string;
   readonly product_name: string;
-  /** The SKU's values in axis order, e.g. `M / Red`; empty for an unvaried SKU. */
+  /** Filled by the service from `CatalogApi.variantLabels`; empty here. */
   readonly variant_label: string;
   readonly sku_status: string;
   readonly location_id: string;
@@ -411,7 +411,8 @@ export async function listStock(
     readonly locationId?: string | undefined;
     readonly skuQuery?: string | undefined;
     readonly productId?: string | undefined;
-    readonly categoryId?: string | undefined;
+    /** The category and those below it, resolved by the catalog (`CatalogApi`). */
+    readonly categoryIds?: readonly string[] | undefined;
     readonly lowOnly: boolean;
     readonly limit: number;
     readonly offset: number;
@@ -419,18 +420,7 @@ export async function listStock(
 ): Promise<StockViewRow[]> {
   const rows = await tx.execute<StockViewRow>(sql`
     select s.id as sku_id, s.code as sku_code, p.id as product_id, p.name as product_name,
-           coalesce((
-             select string_agg(
-               av.label, ' / '
-               -- Size, then colour, then the rest: how a person says it ("M / Red").
-               order by case sv_a.kind::text when 'size' then 0 when 'colour' then 1 else 2 end,
-                        sv_a.position, sv_a.code
-             )
-             from catalog.sku_values sv
-             join catalog.attribute_values av on av.org_id = sv.org_id and av.id = sv.value_id
-             join catalog.attributes sv_a on sv_a.org_id = sv.org_id and sv_a.id = sv.attribute_id
-             where sv.org_id = s.org_id and sv.sku_id = s.id
-           ), '') as variant_label,
+           ''::text as variant_label,
            s.status::text as sku_status,
            l.id as location_id, l.code as location_code, l.name as location_name,
            l.branch_id,
@@ -452,16 +442,9 @@ export async function listStock(
       }
       and ${filters.productId === undefined ? sql`true` : sql`p.id = ${filters.productId}::uuid`}
       and ${
-        filters.categoryId === undefined
+        filters.categoryIds === undefined
           ? sql`true`
-          : // The category and its descendants, through the maintained materialised path.
-            sql`p.category_id in (
-              select cat.id from catalog.categories cat
-              join catalog.categories root
-                on root.org_id = cat.org_id and root.id = ${filters.categoryId}::uuid
-              where cat.org_id = sl.org_id
-                and (cat.id = root.id or starts_with(cat.path, root.path || '/'))
-            )`
+          : sql`p.category_id = any (${sql.param([...filters.categoryIds])}::uuid[])`
       }
       and ${filters.lowOnly ? sql`sl.reorder_level > 0 and sl.on_hand - sl.reserved <= sl.reorder_level` : sql`true`}
     order by s.code, l.code

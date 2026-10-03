@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { withOrg } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 
@@ -6,6 +6,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import * as repo from './inventory.repository.js';
 import { mapStockErrors, StockError } from './inventory.errors.js';
 import type {
@@ -65,7 +66,10 @@ export interface StockRowView {
 
 @Injectable()
 export class StockService {
-  constructor(private readonly audit: AuditService) {}
+  constructor(
+    private readonly audit: AuditService,
+    @Inject(CATALOG_API) private readonly catalog: CatalogApi,
+  ) {}
 
   // --- locations --------------------------------------------------------------
 
@@ -216,16 +220,25 @@ export class StockService {
   ): Promise<{ items: StockRowView[]; page: number; pageSize: number }> {
     const scope = scopeWhere(request, { branchId: sql`l.branch_id` });
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      // The category's subtree and the variant labels come from the catalog through its
+      // interface (invariant 12), inside this transaction.
+      const categoryIds =
+        query.categoryId === undefined
+          ? undefined
+          : await this.catalog.categorySubtree(tx, context.orgId, query.categoryId);
       const rows = await repo.listStock(tx, context.orgId, {
         scope,
         locationId: query.locationId,
         skuQuery: query.q,
         productId: query.productId,
-        categoryId: query.categoryId,
+        categoryIds,
         lowOnly: query.low === true,
         limit: query.pageSize,
         offset: (query.page - 1) * query.pageSize,
       });
+      const labels = await this.catalog.variantLabels(tx, context.orgId, [
+        ...new Set(rows.map((row) => row.sku_id)),
+      ]);
       return {
         page: query.page,
         pageSize: query.pageSize,
@@ -234,7 +247,7 @@ export class StockService {
           skuCode: row.sku_code,
           productId: row.product_id,
           productName: row.product_name,
-          variantLabel: row.variant_label,
+          variantLabel: labels.get(row.sku_id) ?? '',
           skuStatus: row.sku_status,
           locationId: row.location_id,
           locationCode: row.location_code,
