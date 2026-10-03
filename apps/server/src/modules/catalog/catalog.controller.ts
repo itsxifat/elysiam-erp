@@ -21,6 +21,7 @@ import { CatalogService } from './catalog.service.js';
 import { mapCatalogErrors } from './catalog.errors.js';
 import { CatalogImportService } from './import.service.js';
 import { LabelsService } from './labels.service.js';
+import { ProductImportService } from './product-import.service.js';
 import {
   attachImageSchema,
   catalogIdSchema,
@@ -31,13 +32,17 @@ import {
   extendMatrixSchema,
   labelSheetSchema,
   priceImportSchema,
+  productImportSchema,
   productQuerySchema,
   reorderImagesSchema,
   setBarcodeSchema,
   setPricesSchema,
   skuQuerySchema,
+  updateAttributeSchema,
+  updateAttributeValueSchema,
   updateCategorySchema,
   updateProductSchema,
+  updateSkuSchema,
 } from './catalog.schemas.js';
 
 function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
@@ -73,6 +78,7 @@ export class CatalogController {
     private readonly catalog: CatalogService,
     private readonly imports: CatalogImportService,
     private readonly labels: LabelsService,
+    private readonly productImports: ProductImportService,
   ) {}
 
   // --- categories -----------------------------------------------------------
@@ -130,6 +136,38 @@ export class CatalogController {
     const input = parse(createAttributeValueSchema, body);
     return mapCatalogErrors(() =>
       this.catalog.createAttributeValue(requireContext(request), attributeId, input),
+    );
+  }
+
+  /** Rename an attribute or move it in the list (D-424). Its code never changes. */
+  @RequireAbility('update', 'Catalog')
+  @Patch('attributes/:id')
+  async updateAttribute(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const attributeId = parse(catalogIdSchema, id);
+    const input = parse(updateAttributeSchema, body);
+    return mapCatalogErrors(() =>
+      this.catalog.updateAttribute(requireContext(request), attributeId, input),
+    );
+  }
+
+  /** Fix a value's label (a typo in "Maroon") or move it (D-424). Its code never changes. */
+  @RequireAbility('update', 'Catalog')
+  @Patch('attributes/:id/values/:valueId')
+  async updateAttributeValue(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Param('valueId') valueId: string,
+    @Body() body: unknown,
+  ) {
+    const attributeId = parse(catalogIdSchema, id);
+    const value = parse(catalogIdSchema, valueId);
+    const input = parse(updateAttributeValueSchema, body);
+    return mapCatalogErrors(() =>
+      this.catalog.updateAttributeValue(requireContext(request), attributeId, value, input),
     );
   }
 
@@ -225,6 +263,15 @@ export class CatalogController {
     return mapCatalogErrors(() => this.catalog.setBarcode(requireContext(request), skuId, input));
   }
 
+  /** Archive a SKU or bring it back (D-423). Its stock and history stay where they are. */
+  @RequireAbility('update', 'Catalog')
+  @Patch('skus/:id')
+  async updateSku(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    const skuId = parse(catalogIdSchema, id);
+    const input = parse(updateSkuSchema, body);
+    return mapCatalogErrors(() => this.catalog.updateSku(requireContext(request), skuId, input));
+  }
+
   // --- images ---------------------------------------------------------------
 
   @RequireAbility('update', 'Catalog')
@@ -293,6 +340,26 @@ export class CatalogController {
   async commitImport(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(priceImportSchema, body);
     return mapCatalogErrors(() => this.imports.commit(requireContext(request), input));
+  }
+
+  /**
+   * The new-products spreadsheet, step one: report every problem, change nothing (D-425).
+   * `read Catalog` like the price dry run, so anybody can check a file before handing it
+   * to the person who may import it.
+   */
+  @RequireAbility('read', 'Catalog')
+  @Post('imports/products/dry-run')
+  async dryRunProductImport(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(productImportSchema, body);
+    return mapCatalogErrors(() => this.productImports.dryRun(requireContext(request), input));
+  }
+
+  /** Step two: create every product in the file, or none (D-425). */
+  @RequireAbility('create', 'Catalog')
+  @Post('imports/products')
+  async commitProductImport(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(productImportSchema, body);
+    return mapCatalogErrors(() => this.productImports.commit(requireContext(request), input));
   }
 
   // --- labels ---------------------------------------------------------------

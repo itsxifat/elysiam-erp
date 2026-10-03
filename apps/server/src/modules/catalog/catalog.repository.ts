@@ -903,3 +903,97 @@ export async function valuesOfSkus(
 
 /** A scope filter the handler must apply, as `scopeWhere` produced it. */
 export type ScopeSql = SQL;
+
+// --- catalog-stock-ux: renames, SKU status, the product importer -------------
+
+export async function updateAttribute(
+  tx: Tx,
+  orgId: string,
+  id: string,
+  input: { readonly name?: string | undefined; readonly position?: number | undefined },
+): Promise<AttributeRow | undefined> {
+  const rows = await tx.execute<AttributeRow>(sql`
+    update catalog.attributes set
+      name = coalesce(${input.name ?? null}, name),
+      position = coalesce(${input.position ?? null}::integer, position),
+      updated_at = now()
+    where org_id = ${orgId} and id = ${id}
+    returning id, code, name, kind::text as kind, is_variant, position
+  `);
+  return rows[0];
+}
+
+export async function updateAttributeValue(
+  tx: Tx,
+  orgId: string,
+  attributeId: string,
+  valueId: string,
+  input: { readonly label?: string | undefined; readonly position?: number | undefined },
+): Promise<AttributeValueRow | undefined> {
+  const rows = await tx.execute<AttributeValueRow>(sql`
+    update catalog.attribute_values set
+      label = coalesce(${input.label ?? null}, label),
+      position = coalesce(${input.position ?? null}::integer, position),
+      updated_at = now()
+    where org_id = ${orgId} and attribute_id = ${attributeId} and id = ${valueId}
+    returning id, attribute_id, code, label, position
+  `);
+  return rows[0];
+}
+
+export async function setSkuStatus(
+  tx: Tx,
+  orgId: string,
+  skuId: string,
+  status: 'active' | 'archived',
+): Promise<SkuRow | undefined> {
+  const rows = await tx.execute<SkuRow>(sql`
+    update catalog.skus set status = ${status}::catalog.sku_status, updated_at = now()
+    where org_id = ${orgId} and id = ${skuId}
+    returning id, org_id, product_id, code, variant_key, barcode, price_poisha,
+              status::text as status, position
+  `);
+  return rows[0];
+}
+
+/**
+ * Each SKU's values as a person says them, size then colour then the rest (`M / Red`),
+ * for the stock screens (D-427). Absent for a SKU with no values.
+ */
+export async function variantLabels(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+): Promise<Map<string, string>> {
+  if (skuIds.length === 0) return new Map();
+  const rows = await tx.execute<{ sku_id: string; label: string }>(sql`
+    select v.sku_id,
+           string_agg(
+             av.label, ' / '
+             order by case a.kind::text when 'size' then 0 when 'colour' then 1 else 2 end,
+                      a.position, a.code
+           ) as label
+    from catalog.sku_values v
+    join catalog.attributes a on a.org_id = v.org_id and a.id = v.attribute_id
+    join catalog.attribute_values av on av.org_id = v.org_id and av.id = v.value_id
+    where v.org_id = ${orgId} and v.sku_id = any (${sql.param([...skuIds])}::uuid[])
+    group by v.sku_id
+  `);
+  return new Map(rows.map((row) => [row.sku_id, row.label]));
+}
+
+/** A category and every category below it, through the maintained path (D-427). */
+export async function categorySubtree(
+  tx: Tx,
+  orgId: string,
+  categoryId: string,
+): Promise<string[]> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select cat.id
+    from catalog.categories cat
+    join catalog.categories root on root.org_id = cat.org_id and root.id = ${categoryId}::uuid
+    where cat.org_id = ${orgId}
+      and (cat.id = root.id or starts_with(cat.path, root.path || '/'))
+  `);
+  return rows.map((row) => row.id);
+}

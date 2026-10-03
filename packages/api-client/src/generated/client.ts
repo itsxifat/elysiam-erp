@@ -569,6 +569,16 @@ export const OPERATIONS = {
     path: '/v1/accounts/wallets/{id}',
     ability: 'update:Wallet',
   },
+  patchV1CatalogAttributesById: {
+    method: 'PATCH',
+    path: '/v1/catalog/attributes/{id}',
+    ability: 'update:Catalog',
+  },
+  patchV1CatalogAttributesByIdValuesByValueId: {
+    method: 'PATCH',
+    path: '/v1/catalog/attributes/{id}/values/{valueId}',
+    ability: 'update:Catalog',
+  },
   patchV1CatalogCategoriesById: {
     method: 'PATCH',
     path: '/v1/catalog/categories/{id}',
@@ -577,6 +587,11 @@ export const OPERATIONS = {
   patchV1CatalogProductsById: {
     method: 'PATCH',
     path: '/v1/catalog/products/{id}',
+    ability: 'update:Catalog',
+  },
+  patchV1CatalogSkusById: {
+    method: 'PATCH',
+    path: '/v1/catalog/skus/{id}',
     ability: 'update:Catalog',
   },
   patchV1CustomersById: { method: 'PATCH', path: '/v1/customers/{id}', ability: 'update:Customer' },
@@ -667,6 +682,16 @@ export const OPERATIONS = {
   postV1CatalogImportsPricesDryRun: {
     method: 'POST',
     path: '/v1/catalog/imports/prices/dry-run',
+    ability: 'read:Catalog',
+  },
+  postV1CatalogImportsProducts: {
+    method: 'POST',
+    path: '/v1/catalog/imports/products',
+    ability: 'create:Catalog',
+  },
+  postV1CatalogImportsProductsDryRun: {
+    method: 'POST',
+    path: '/v1/catalog/imports/products/dry-run',
     ability: 'read:Catalog',
   },
   postV1CatalogLabels: { method: 'POST', path: '/v1/catalog/labels', ability: 'read:Catalog' },
@@ -1835,6 +1860,18 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1AccountsWalletsById, input, options),
+    /** PATCH /v1/catalog/attributes/:id */
+    patchV1CatalogAttributesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1CatalogAttributesById, input, options),
+    /** PATCH /v1/catalog/attributes/:id/values/:valueId */
+    patchV1CatalogAttributesByIdValuesByValueId: (
+      input: { readonly path: { readonly id: string; readonly valueId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1CatalogAttributesByIdValuesByValueId, input, options),
     /** PATCH /v1/catalog/categories/:id */
     patchV1CatalogCategoriesById: (
       input: { readonly path: { readonly id: string } },
@@ -1846,6 +1883,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1CatalogProductsById, input, options),
+    /** PATCH /v1/catalog/skus/:id */
+    patchV1CatalogSkusById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1CatalogSkusById, input, options),
     /** PATCH /v1/customers/:id */
     patchV1CustomersById: (
       input: { readonly path: { readonly id: string } },
@@ -1939,6 +1981,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/catalog/imports/prices/dry-run */
     postV1CatalogImportsPricesDryRun: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogImportsPricesDryRun, undefined, options),
+    /** POST /v1/catalog/imports/products */
+    postV1CatalogImportsProducts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogImportsProducts, undefined, options),
+    /** POST /v1/catalog/imports/products/dry-run */
+    postV1CatalogImportsProductsDryRun: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogImportsProductsDryRun, undefined, options),
     /** POST /v1/catalog/labels */
     postV1CatalogLabels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogLabels, undefined, options),

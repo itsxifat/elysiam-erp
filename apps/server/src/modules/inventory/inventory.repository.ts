@@ -125,6 +125,69 @@ export async function inTransitLocation(tx: Tx, orgId: string): Promise<Location
   return rows[0];
 }
 
+/** The brand's in-transit location whether or not it is switched on (D-428). */
+export async function anyInTransitLocation(
+  tx: Tx,
+  orgId: string,
+): Promise<LocationRow | undefined> {
+  const rows = await tx.execute<LocationRow>(sql`
+    select ${LOCATION_COLUMNS}
+    from org.locations l
+    where l.org_id = ${orgId} and l.kind = 'in_transit'
+    order by l.is_active desc, l.code
+    limit 1
+  `);
+  return rows[0];
+}
+
+/** Take the location's row lock for the rest of the transaction. True if it exists. */
+export async function lockLocation(tx: Tx, orgId: string, id: string): Promise<boolean> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select id from org.locations where org_id = ${orgId} and id = ${id} for update
+  `);
+  return rows.length === 1;
+}
+
+/**
+ * Whether a location still holds anything: stock on hand or held for an order, or a
+ * transfer on its way from or to it (ledger audit L3). A location switched off with any
+ * of these strands it, because migration 0033 refuses every movement at an inactive one.
+ */
+export async function locationInUse(tx: Tx, orgId: string, id: string): Promise<boolean> {
+  const rows = await tx.execute<{ used: boolean }>(sql`
+    select exists (
+      select 1 from inventory.stock_levels
+      where org_id = ${orgId} and location_id = ${id} and (on_hand > 0 or reserved > 0)
+    ) or exists (
+      select 1 from inventory.stock_transfers
+      where org_id = ${orgId} and status = 'dispatched'
+        and (from_location_id = ${id} or to_location_id = ${id} or transit_location_id = ${id})
+    ) as used
+  `);
+  return rows[0]?.used === true;
+}
+
+/** The code a brand's in-transit location gets when the first transfer creates it (D-428). */
+export const AUTO_IN_TRANSIT_CODE = 'IN-TRANSIT';
+
+/**
+ * Create the brand's in-transit location if it has none (D-428).
+ *
+ * `on conflict do nothing` rather than a check-then-insert: two first transfers at the
+ * same moment both find none, and the loser of the insert must read the winner's row
+ * rather than fail on the unique code. Returns whether this call created it, so the
+ * caller can audit the creation exactly once.
+ */
+export async function insertInTransitLocation(tx: Tx, orgId: string): Promise<string | undefined> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    insert into org.locations (org_id, branch_id, code, name, kind)
+    values (${orgId}, null, ${AUTO_IN_TRANSIT_CODE}, 'In transit', 'in_transit'::org.location_kind)
+    on conflict (org_id, code) do nothing
+    returning id
+  `);
+  return rows[0]?.id;
+}
+
 // --- levels -------------------------------------------------------------------
 
 export interface LevelRow extends Record<string, unknown> {
@@ -314,7 +377,11 @@ export async function levelFor(
 export interface StockViewRow extends Record<string, unknown> {
   readonly sku_id: string;
   readonly sku_code: string;
+  readonly product_id: string;
   readonly product_name: string;
+  /** Filled by the service from `CatalogApi.variantLabels`; empty here. */
+  readonly variant_label: string;
+  readonly sku_status: string;
   readonly location_id: string;
   readonly location_code: string;
   readonly location_name: string;
@@ -343,13 +410,18 @@ export async function listStock(
     readonly scope: SQL;
     readonly locationId?: string | undefined;
     readonly skuQuery?: string | undefined;
+    readonly productId?: string | undefined;
+    /** The category and those below it, resolved by the catalog (`CatalogApi`). */
+    readonly categoryIds?: readonly string[] | undefined;
     readonly lowOnly: boolean;
     readonly limit: number;
     readonly offset: number;
   },
 ): Promise<StockViewRow[]> {
   const rows = await tx.execute<StockViewRow>(sql`
-    select s.id as sku_id, s.code as sku_code, p.name as product_name,
+    select s.id as sku_id, s.code as sku_code, p.id as product_id, p.name as product_name,
+           ''::text as variant_label,
+           s.status::text as sku_status,
            l.id as location_id, l.code as location_code, l.name as location_name,
            l.branch_id,
            sl.on_hand, sl.reserved, sl.on_hand - sl.reserved as available, sl.reorder_level,
@@ -367,6 +439,12 @@ export async function listStock(
         filters.skuQuery === undefined
           ? sql`true`
           : sql`(s.code ilike ${`%${filters.skuQuery}%`} or p.name ilike ${`%${filters.skuQuery}%`})`
+      }
+      and ${filters.productId === undefined ? sql`true` : sql`p.id = ${filters.productId}::uuid`}
+      and ${
+        filters.categoryIds === undefined
+          ? sql`true`
+          : sql`p.category_id = any (${sql.param([...filters.categoryIds])}::uuid[])`
       }
       and ${filters.lowOnly ? sql`sl.reorder_level > 0 and sl.on_hand - sl.reserved <= sl.reorder_level` : sql`true`}
     order by s.code, l.code
@@ -404,6 +482,9 @@ export interface MovementRow extends Record<string, unknown> {
   readonly sku_id: string;
   readonly sku_code: string;
   readonly location_id: string;
+  readonly location_code: string;
+  readonly location_name: string;
+  readonly location_kind: string;
   readonly kind: string;
   readonly qty_delta: number;
   readonly unit_cost_poisha: string | null;
@@ -483,6 +564,7 @@ export async function listMovements(
   filters: {
     readonly scope: SQL;
     readonly skuId?: string | undefined;
+    readonly productId?: string | undefined;
     readonly locationId?: string | undefined;
     readonly from?: string | undefined;
     readonly to?: string | undefined;
@@ -491,7 +573,9 @@ export async function listMovements(
   },
 ): Promise<MovementRow[]> {
   const rows = await tx.execute<MovementRow>(sql`
-    select m.id, m.sku_id, s.code as sku_code, m.location_id, m.kind::text as kind,
+    select m.id, m.sku_id, s.code as sku_code, m.location_id,
+           l.code as location_code, l.name as location_name,
+           l.kind::text as location_kind, m.kind::text as kind,
            m.qty_delta, m.unit_cost_poisha::text as unit_cost_poisha,
            m.ref_type, m.ref_id, m.business_date::text as business_date,
            m.memo, m.created_by, m.created_at
@@ -501,6 +585,7 @@ export async function listMovements(
     where m.org_id = ${orgId}
       and ${filters.scope}
       and ${filters.skuId === undefined ? sql`true` : sql`m.sku_id = ${filters.skuId}::uuid`}
+      and ${filters.productId === undefined ? sql`true` : sql`s.product_id = ${filters.productId}::uuid`}
       and ${filters.locationId === undefined ? sql`true` : sql`m.location_id = ${filters.locationId}::uuid`}
       and ${filters.from === undefined ? sql`true` : sql`m.business_date >= ${filters.from}::date`}
       and ${filters.to === undefined ? sql`true` : sql`m.business_date <= ${filters.to}::date`}

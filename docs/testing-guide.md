@@ -129,18 +129,32 @@ Sign in as **Accounts** (or Warehouse for the first two items).
 
 Sign in as **Org admin** for products, **Warehouse** for stock.
 
-1. **Catalog** lists the products. Open one to see its sizes, each with its own code and
-   price. **New product** creates one; **Categories and attributes** holds the sizes and
-   categories.
-2. **Stock** shows how many of each item are in the warehouse and the showroom, and how
-   many are held for orders.
-3. **Stock → Transfers**: one transfer sent the showroom its opening stock. Make one:
-   - choose from where to where and the items;
-   - press **Dispatch**;
-   - sign in as **Branch manager** and **Receive** it at the showroom.
-4. **Stock → Adjustments**: report damaged or found stock. It is sent for approval before
-   it changes anything. One write-off (a torn T-shirt) is waiting for the org admin.
-5. **Stock counts**: count a shelf and compare it with the system.
+1. **Catalog** lists the products; filter by category or status, or search by name.
+   - **Categories, sizes and colours** (top right) is the catalog setup: add a category (or one
+     inside another), a size list (S, M, L, XL) and a colour list, and the brand's warehouses
+     and showrooms. Click a size or colour to fix its spelling. Codes are suggested for you.
+   - **Import** loads many products at once: download the template, fill one row per product
+     (sizes as `M|L|XL`), press **Check the file**, read any problems by line, then import.
+2. **New product** is one form: name, category and price, then click the sizes and colours.
+   The variant grid appears below. Give any variant its own price, and type opening stock if
+   you have it: choose the supplier and the cost per piece, and it is received in the same
+   step. Photos are optional. **Create product** opens the product's page.
+3. A **product's page** has everything for that product:
+   - its sizes and colours with stock at each location, the price, and **Out of stock** or
+     **Low** badges;
+   - **Receive stock** (from a supplier, with cost), **Adjust** (damaged, lost or found; sent
+     for approval), **Transfer** (to a showroom; received there on **Stock → Transfers**),
+     **Edit** (name, category, status) and **Archive**;
+   - **Edit prices** to change one variant's price (the history is kept below), **Archive**
+     on a variant to stop selling it, **Add sizes or colours**, photos, the stock history and
+     barcode labels.
+4. **Stock** shows how many of each item are at each location; filter by location, category
+   or low stock, and click a product to act on it. Quick buttons: Receive stock, Transfer,
+   Adjust, Count stock.
+5. **Stock → Transfers**: one transfer sent the showroom its opening stock. Sign in as
+   **Branch manager** and **Receive** a transfer at the showroom.
+6. **Stock → Adjustments**: one write-off (a torn T-shirt) is waiting for the org admin.
+7. **Stock counts**: count a shelf and compare it with the system.
 
 ## 4. Suppliers and purchases
 
@@ -148,7 +162,9 @@ Sign in as **Accounts**.
 
 1. **Supply** lists the suppliers and what the brand owes each one.
 2. **Supply entries** shows the purchases. **New supply entry** records goods received with
-   their prices. It adds the stock and the money owed at once.
+   their prices (in taka). It adds the stock and the money owed at once. Any product can be
+   picked, including one that has never been in stock; for one product, **Receive stock** on
+   its page is quicker.
 3. **Payments**: one payment to Demo Textile Mills went through. One to Demo Stitching
    House is waiting for a second person to approve (section 7).
 

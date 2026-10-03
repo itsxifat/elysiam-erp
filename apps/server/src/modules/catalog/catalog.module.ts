@@ -6,6 +6,7 @@ import { CatalogController } from './catalog.controller.js';
 import { CatalogService } from './catalog.service.js';
 import { CatalogImportService } from './import.service.js';
 import { LabelsService } from './labels.service.js';
+import { ProductImportService } from './product-import.service.js';
 
 /**
  * The catalog (architecture §8, M06).
@@ -24,6 +25,7 @@ import { LabelsService } from './labels.service.js';
   providers: [
     CatalogService,
     CatalogImportService,
+    ProductImportService,
     LabelsService,
     { provide: CATALOG_API, useClass: CatalogApiService },
   ],

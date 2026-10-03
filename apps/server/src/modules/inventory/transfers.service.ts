@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { withOrg } from '@elysium/db';
+import { withOrg, type Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -55,6 +55,57 @@ export class TransfersService {
     private readonly audit: AuditService,
   ) {}
 
+  /**
+   * The brand's in-transit location, created on the first transfer when it has none
+   * (D-428). §8 passes every transfer through one, and an owner should never have to
+   * know that before moving stock to a showroom. Created in the dispatch's transaction,
+   * so a refused transfer leaves no location behind, and audited like a location made
+   * on the setup screen.
+   */
+  private async inTransit(tx: Tx, context: ActiveContext, request: AuditableRequest) {
+    const existing = await repo.inTransitLocation(tx, context.orgId);
+    if (existing !== undefined) return existing;
+
+    // One in-transit location per brand (§8): a switched-off one is pointed at, not
+    // replaced by a second (ledger audit L2).
+    const off = await repo.anyInTransitLocation(tx, context.orgId);
+    if (off !== undefined) {
+      throw new StockError(
+        'STOCK_LOCATION_INVALID',
+        `The in-transit location ${off.code} is switched off. Switch it back on in Catalog setup to send stock.`,
+      );
+    }
+
+    /*
+     * `on conflict do nothing` under READ COMMITTED (withOrg sets no other level): the
+     * second of two first transfers waits for the first's insert, finds the row taken,
+     * and its re-read below sees the committed location. Under REPEATABLE READ it would
+     * fail with a serialization error instead, so this depends on the default level.
+     */
+    const created = await repo.insertInTransitLocation(tx, context.orgId);
+    if (created !== undefined) {
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'create',
+        action: 'inventory.location.created',
+        entityType: 'Location',
+        entityId: created,
+        before: null,
+        after: {
+          code: repo.AUTO_IN_TRANSIT_CODE,
+          name: 'In transit',
+          kind: 'in_transit',
+          branchId: null,
+          reason: 'first transfer',
+        },
+        requestId: context.requestId,
+        request,
+      });
+    }
+    return repo.inTransitLocation(tx, context.orgId);
+  }
+
   /** Step one: out of the source, into in-transit. */
   async dispatch(
     context: ActiveContext,
@@ -83,11 +134,12 @@ export class TransfersService {
         // to return stock to the warehouse.
         assertInScope(request, { branchId: from.branch_id });
 
-        const transit = await repo.inTransitLocation(tx, context.orgId);
+        const transit = await this.inTransit(tx, context, request);
         if (transit === undefined) {
+          // The code is taken by a location of another kind, so none could be made.
           throw new StockError(
             'STOCK_LOCATION_INVALID',
-            'This brand has no in-transit location; create one before transferring stock (§8).',
+            `A location already uses the code ${repo.AUTO_IN_TRANSIT_CODE}, so the in-transit location could not be created (§8).`,
           );
         }
 

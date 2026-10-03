@@ -100,6 +100,15 @@ export interface CatalogApi {
     actor: { readonly orgId: string; readonly userId: string },
     products: readonly ImportProduct[],
   ): Promise<{ readonly products: number; readonly skus: number }>;
+
+  /**
+   * Each SKU's size, colour and other values as one label (`M / Red`), for the stock
+   * screens (D-427). A SKU with no values is absent from the map.
+   */
+  variantLabels(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<Map<string, string>>;
+
+  /** A category's id and every id below it; empty when the brand has no such category. */
+  categorySubtree(tx: Tx, orgId: string, categoryId: string): Promise<string[]>;
 }
 
 export interface SkuFacets {
@@ -256,6 +265,18 @@ export class CatalogApiService implements CatalogApi {
     }
 
     return { products: products.length, skus: skuCount };
+  }
+
+  async variantLabels(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+  ): Promise<Map<string, string>> {
+    return repo.variantLabels(tx, orgId, skuIds);
+  }
+
+  async categorySubtree(tx: Tx, orgId: string, categoryId: string): Promise<string[]> {
+    return repo.categorySubtree(tx, orgId, categoryId);
   }
 }
 

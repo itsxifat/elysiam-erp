@@ -23,7 +23,7 @@ export default defineConfig({
   reporter: [['list']],
   globalSetup: './stack/global-setup.ts',
   use: {
-    baseURL: 'http://localhost:5183',
+    baseURL: `http://localhost:${process.env.E2E_CONSOLE_PORT ?? '5183'}`,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

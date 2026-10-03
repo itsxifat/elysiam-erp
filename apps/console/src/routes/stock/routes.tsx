@@ -1,6 +1,16 @@
 import { createRoute, lazyRouteComponent, type AnyRoute } from '@tanstack/react-router';
 
+import { z } from 'zod';
+
 import { tableSearchSchema } from '../../lib/table-search.js';
+
+/**
+ * `/stock`'s search: the table's own, plus a category (plan `catalog-stock-ux`). `type`
+ * stays the location and `status=low` the low-stock switch, so old links still work.
+ */
+export const stockSearchSchema = tableSearchSchema.extend({
+  category: z.string().uuid().optional().catch(undefined),
+});
 
 /**
  * M07's four stock routes, as a factory the router calls.
@@ -29,7 +39,7 @@ export function stockRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
   const levels = createRoute({
     getParentRoute: () => rootRoute,
     path: '/stock',
-    validateSearch: tableSearchSchema,
+    validateSearch: stockSearchSchema,
     component: lazyRouteComponent(() => import('./stock-levels.js'), 'StockLevelsPage'),
   });
 
