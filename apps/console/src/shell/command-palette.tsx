@@ -139,8 +139,9 @@ export function CommandPalette({
     >
       <div className="flex items-center gap-3 border-b border-border px-4">
         <Search aria-hidden="true" className="size-4.5 shrink-0 text-muted-foreground" />
+        {/* Uncontrolled: cmdk filters and re-selects in the same pass as the keystroke, so an
+            Enter right after typing opens the best match rather than the previous one. */}
         <Command.Input
-          value={query}
           onValueChange={setQuery}
           placeholder={t('palette.placeholder')}
           className="h-13 w-full bg-transparent text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none"
@@ -168,6 +169,19 @@ export function CommandPalette({
           </Command.Group>
         )}
 
+        <Command.Group heading={t('palette.groupNavigate')} className={GROUP_CLASS}>
+          {screens.map((entry) => (
+            <Item
+              key={entry.to}
+              value={`${entry.label} ${entry.parent ?? ''} ${entry.to}`}
+              onSelect={() => go(entry.to)}
+              icon={<entry.icon aria-hidden="true" className="size-4 text-muted-foreground" />}
+              label={entry.label}
+              trail={entry.parent}
+            />
+          ))}
+        </Command.Group>
+
         {actions.length === 0 ? null : (
           <Command.Group heading={t('palette.groupActions')} className={GROUP_CLASS}>
             {actions.map((action) => (
@@ -183,19 +197,6 @@ export function CommandPalette({
             ))}
           </Command.Group>
         )}
-
-        <Command.Group heading={t('palette.groupNavigate')} className={GROUP_CLASS}>
-          {screens.map((entry) => (
-            <Item
-              key={entry.to}
-              value={`${entry.label} ${entry.parent ?? ''} ${entry.to}`}
-              onSelect={() => go(entry.to)}
-              icon={<entry.icon aria-hidden="true" className="size-4 text-muted-foreground" />}
-              label={entry.label}
-              trail={entry.parent}
-            />
-          ))}
-        </Command.Group>
 
         <Command.Group heading={t('palette.groupPreferences')} className={GROUP_CLASS}>
           <Item

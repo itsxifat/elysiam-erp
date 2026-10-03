@@ -372,8 +372,8 @@ test('check 7: keyboard only — every tab stop shows focus, and the palette nav
       // The palette's way in reads as a search field since the design refresh (D-449),
       // and Sign out lives in the account menu.
       /^Search or jump to/,
-      /^Switch to Bangla$/,
       /^Switch to dark theme$/,
+      /^Switch to Bangla$/,
       /^Account$/,
     ],
     'shell',

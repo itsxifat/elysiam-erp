@@ -26,8 +26,14 @@ const NotificationInbox = lazy(() =>
 const loadPalette = () =>
   import('./command-palette.js').then((module) => ({ default: module.CommandPalette }));
 const CommandPalette = lazy(loadPalette);
+/*
+ * Fetched as this module loads rather than when the topbar first renders, so it is
+ * usually in before anyone reaches it; until then the topbar holds a stand-in with the
+ * same name in the same place, so the tab order never changes under the keyboard.
+ */
+const accountMenuChunk = import('./account-menu.js');
 const AccountMenu = lazy(() =>
-  import('./account-menu.js').then((module) => ({ default: module.AccountMenu })),
+  accountMenuChunk.then((module) => ({ default: module.AccountMenu })),
 );
 const MobileNav = lazy(() =>
   import('./mobile-nav.js').then((module) => ({ default: module.MobileNav })),
@@ -274,9 +280,14 @@ function Topbar({
 
       <Suspense
         fallback={
-          <span className="flex size-8 items-center justify-center">
+          <button
+            type="button"
+            aria-label={t('shell.userMenu')}
+            aria-haspopup="menu"
+            className="flex size-8 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+          >
             <Monogram name="" size="md" className="rounded-full" />
-          </span>
+          </button>
         }
       >
         <AccountMenu />

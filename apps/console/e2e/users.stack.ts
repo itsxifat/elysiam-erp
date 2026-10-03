@@ -106,7 +106,7 @@ let admin2: Page;
 
 test.beforeAll(async ({ browser }) => {
   admin = await freshPage(browser);
-  await signIn(admin, user('admin').email);
+  await signIn(admin, user('staffadmin').email);
   await enrolSecondFactor(admin);
   await expect(admin.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
 

@@ -24,6 +24,7 @@ export type StackRole =
   | 'marketing'
   | 'checker'
   | 'admin'
+  | 'staffadmin'
   | 'admin2'
   | 'locked'
   | 'merchandiser';

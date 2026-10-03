@@ -320,19 +320,20 @@ function Entry({
         <span className={cn('truncate', labelClass)}>{label}</span>
       </Link>
       {/* The rail's tooltip: the label, beside the icon. It repeats the link's name, so
-          it is hidden from assistive technology. */}
+          it is hidden from assistive technology, and drawn from an attribute rather than a
+          text node, so the label exists once in the page's text. */}
       {mode === 'drawer' ? null : (
         <span
           aria-hidden="true"
+          data-tip={label}
           className={cn(
             'pointer-events-none absolute top-1/2 left-full z-50 ml-2 -translate-y-1/2 rounded-md bg-foreground px-2 py-1 text-xs font-medium whitespace-nowrap text-background opacity-0 shadow-popover',
+            'after:content-[attr(data-tip)]',
             'motion-safe:duration-fast motion-safe:transition-opacity',
             'group-has-[:focus-visible]/entry:opacity-100 [@media(hover:hover)]:group-hover/entry:opacity-100',
             mode === 'auto' && 'xl:hidden',
           )}
-        >
-          {label}
-        </span>
+        />
       )}
     </li>
   );
