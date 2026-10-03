@@ -7,7 +7,7 @@ import {
   tabClassName,
 } from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
-import { Fragment, type ComponentProps, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 
 import { useAbility, useSession } from '../../auth/session.js';
 import { useAnalyticsT } from './messages.js';
@@ -99,8 +99,42 @@ export function Section({
   return (
     <section aria-label={title} className="rounded-lg border border-border bg-card">
       <h2 className="px-4 pt-4 pb-3 text-base font-semibold tracking-tight">{title}</h2>
-      <div className="overflow-x-auto">{children}</div>
+      <ScrollFrame label={title}>{children}</ScrollFrame>
     </section>
+  );
+}
+
+/**
+ * A table's horizontal scroll, reachable by keyboard when it scrolls (WCAG 2.1.1): a
+ * read-only table has nothing focusable, so the frame itself becomes the tab stop.
+ */
+function ScrollFrame({
+  label,
+  children,
+}: {
+  readonly label: string;
+  readonly children: ReactNode;
+}) {
+  const frame = useRef<HTMLDivElement>(null);
+  const [scrollable, setScrollable] = useState(false);
+  useEffect(() => {
+    const element = frame.current;
+    if (element === null) return;
+    const measure = () => setScrollable(element.scrollWidth > element.clientWidth + 1);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(element);
+    if (element.firstElementChild !== null) observer?.observe(element.firstElementChild);
+    return () => observer?.disconnect();
+  }, []);
+  return (
+    <div
+      ref={frame}
+      {...(scrollable ? { tabIndex: 0, role: 'region', 'aria-label': label } : {})}
+      className="overflow-x-auto rounded-b-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    >
+      {children}
+    </div>
   );
 }
 

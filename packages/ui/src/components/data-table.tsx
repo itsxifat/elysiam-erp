@@ -201,6 +201,9 @@ export function DataTable<TData extends RowData>({
   }));
   const frame = useRef<HTMLDivElement>(null);
   const [clipped, setClipped] = useState(false);
+  // A frame that scrolls is a tab stop of its own (WCAG 2.1.1): a read-only table has no
+  // focusable cell, and a keyboard user must still be able to scroll it.
+  const [scrollable, setScrollable] = useState(false);
 
   /*
    * Whether more of the table sits past the right edge. When it does, the edge fades,
@@ -211,11 +214,17 @@ export function DataTable<TData extends RowData>({
     if (element === null) return;
     const measure = () => {
       setClipped(element.scrollLeft + element.clientWidth < element.scrollWidth - 1);
+      setScrollable(
+        element.scrollWidth > element.clientWidth + 1 ||
+          element.scrollHeight > element.clientHeight + 1,
+      );
     };
     measure();
     element.addEventListener('scroll', measure, { passive: true });
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     observer?.observe(element);
+    // The table grows inside a frame of fixed height; watch it too.
+    if (element.firstElementChild !== null) observer?.observe(element.firstElementChild);
     return () => {
       element.removeEventListener('scroll', measure);
       observer?.disconnect();
@@ -286,7 +295,8 @@ export function DataTable<TData extends RowData>({
       <div
         ref={frame}
         data-clipped={clipped ? 'end' : undefined}
-        className="overflow-auto rounded-lg border border-border bg-card data-[clipped=end]:fade-x-end md:max-h-[calc(100dvh-14rem)]"
+        {...(scrollable ? { tabIndex: 0, role: 'region', 'aria-label': caption } : {})}
+        className="overflow-auto rounded-lg border border-border bg-card focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[clipped=end]:fade-x-end md:max-h-[calc(100dvh-14rem)]"
       >
         <table className="w-full border-separate border-spacing-0 text-sm">
           <caption className="sr-only">{caption}</caption>
