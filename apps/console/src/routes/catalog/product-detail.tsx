@@ -259,6 +259,8 @@ export function CatalogProductPage() {
         {data === undefined ? null : (
           <>
             <EditProductDialog
+              // Remounted on every open, so it starts from the product as it is now.
+              key={open === 'edit' ? 'edit-open' : 'edit-closed'}
               open={open === 'edit'}
               onOpenChange={(next) => setOpen(next ? 'edit' : null)}
               product={data}

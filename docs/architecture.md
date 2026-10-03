@@ -648,7 +648,8 @@ where org_id = $org and sku_id = $sku and location_id = $loc and on_hand - reser
 - **Adjustments and counts:**
   - A count session freezes a snapshot and staff enter counted quantities.
   - The variance becomes adjustment movements, which need approval.
-- **Transfers** are two steps: `transfer_out` to the `in_transit` location, then `transfer_in` at the destination.
+- **Transfers** are two steps: `transfer_out` to the `in_transit` location, then `transfer_in` at the destination. A brand's first transfer creates its org-level `IN-TRANSIT` location when it has none (D-428).
+- **A new product's first stock** is a supply receipt (supplier, cost per piece), entered from the product page or the new-product form; there is no opening-balance path after go-live (D-421).
 - **Low stock:** each SKU has a reorder level per location. Crossing it emits `stock.low`.
 - **Worked WAC example (use it in tests):**
   - Starting position: on-hand 10 @ ৳500.00 (50,000 poisha).
