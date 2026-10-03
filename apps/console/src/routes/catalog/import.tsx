@@ -1,4 +1,12 @@
-import { Button, ErrorState, Money, PermissionGate } from '@elysium/ui';
+import {
+  Button,
+  ErrorState,
+  Money,
+  PageHeader,
+  PermissionGate,
+  cn,
+  tabClassName,
+} from '@elysium/ui';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -8,6 +16,7 @@ import { useCatalogT } from './messages.js';
 import { ProductImport } from './product-import.js';
 import { useT } from '../../i18n/locale.js';
 import { Link } from '@tanstack/react-router';
+import { ArrowLeft } from 'lucide-react';
 import { DEFAULT_PAGE_SIZE } from '../../lib/table-search.js';
 
 /**
@@ -18,23 +27,31 @@ import { DEFAULT_PAGE_SIZE } from '../../lib/table-search.js';
 export function CatalogImportPage() {
   const t = useT();
   const [tab, setTab] = useState<'products' | 'prices'>('products');
-  const tabClass =
-    'rounded-md px-2.5 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-selected:bg-muted aria-selected:font-medium aria-selected:text-foreground';
+  // The kit's underline tabs, selected by `aria-selected` (these are in-page tabs, not links).
+  const tabClass = cn(
+    tabClassName,
+    'aria-selected:border-foreground aria-selected:font-medium aria-selected:text-foreground',
+  );
   return (
     <div className="space-y-5">
-      <nav aria-label={t('cs.breadcrumb')} className="text-xs text-muted-foreground">
-        <Link
-          to="/catalog"
-          search={{ page: 1, pageSize: DEFAULT_PAGE_SIZE }}
-          className="underline-offset-4 hover:underline"
-        >
-          {t('catalog.title')}
-        </Link>
-      </nav>
-      <header className="space-y-1">
-        <h1 className="text-lg font-semibold tracking-tight">{t('cs.import.title')}</h1>
-      </header>
-      <div role="tablist" aria-label={t('cs.import.title')} className="flex gap-1">
+      <div className="space-y-3">
+        <nav aria-label={t('cs.breadcrumb')} className="text-sm text-muted-foreground">
+          <Link
+            to="/catalog"
+            search={{ page: 1, pageSize: DEFAULT_PAGE_SIZE }}
+            className="inline-flex items-center gap-1.5 rounded-sm hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <ArrowLeft aria-hidden className="size-4" />
+            {t('catalog.title')}
+          </Link>
+        </nav>
+        <PageHeader title={t('cs.import.title')} />
+      </div>
+      <div
+        role="tablist"
+        aria-label={t('cs.import.title')}
+        className="flex gap-5 border-b border-border"
+      >
         <button
           type="button"
           role="tab"
@@ -127,17 +144,17 @@ function PriceImport() {
     >
       <div className="space-y-5">
         <header>
-          <h2 className="text-sm font-semibold">{ct('catalog.import')}</h2>
+          <h2 className="text-base font-semibold tracking-tight">{ct('catalog.import')}</h2>
           <p className="max-w-2xl text-sm text-muted-foreground">{ct('catalog.importHelp')}</p>
         </header>
 
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs font-medium">
+          <label className="flex flex-col gap-1.5 text-sm font-medium">
             {ct('catalog.importFile')}
             <input
               type="file"
               accept=".csv,text/csv"
-              className="text-sm file:me-3 file:rounded-md file:border file:border-border file:bg-muted file:px-2 file:py-1 file:text-sm"
+              className="text-sm text-muted-foreground file:me-3 file:h-control-sm file:cursor-pointer file:rounded-md file:border file:border-input file:bg-background file:px-3 file:text-sm file:font-medium file:text-foreground hover:file:bg-accent"
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 setReport(null);
@@ -178,18 +195,18 @@ function PriceImport() {
 
         {report !== null && (
           <div className="space-y-4">
-            <dl className="flex flex-wrap gap-6 text-sm">
+            <dl className="flex flex-wrap gap-8 rounded-lg border border-border bg-card px-5 py-4 text-sm">
               <div>
                 <dt className="text-xs text-muted-foreground">{ct('catalog.importRows')}</dt>
-                <dd className="tabular-nums">{report.totalRows}</dd>
+                <dd className="mt-0.5 text-xl font-medium tabular-nums">{report.totalRows}</dd>
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">{ct('catalog.importWillChange')}</dt>
-                <dd className="tabular-nums">{report.willChange}</dd>
+                <dd className="mt-0.5 text-xl font-medium tabular-nums">{report.willChange}</dd>
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">{ct('catalog.importUnchanged')}</dt>
-                <dd className="tabular-nums">{report.unchanged}</dd>
+                <dd className="mt-0.5 text-xl font-medium tabular-nums">{report.unchanged}</dd>
               </div>
             </dl>
 
@@ -199,71 +216,85 @@ function PriceImport() {
                   {ct('catalog.importProblems')}
                 </h3>
                 <p className="text-sm text-muted-foreground">{ct('catalog.importBlocked')}</p>
-                <table className="w-full text-sm">
-                  <caption className="sr-only">{ct('catalog.importProblems')}</caption>
-                  <thead>
-                    <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                      <th scope="col" className="w-16 py-1.5">
-                        {ct('catalog.importLine')}
-                      </th>
-                      <th scope="col" className="w-32 py-1.5">
-                        {ct('catalog.importColumn')}
-                      </th>
-                      <th scope="col" className="py-1.5">
-                        {ct('catalog.importMessage')}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.problems.map((problem, index) => (
-                      <tr
-                        key={`${String(problem.line)}-${problem.column ?? ''}-${String(index)}`}
-                        className="border-b border-border/60"
-                      >
-                        <td className="py-1.5 tabular-nums">{problem.line}</td>
-                        <td className="py-1.5 font-mono text-xs">{problem.column ?? '—'}</td>
-                        <td className="py-1.5">{problem.message}</td>
+                <div className="overflow-x-auto rounded-lg border border-border bg-card">
+                  <table className="w-full text-sm">
+                    <caption className="sr-only">{ct('catalog.importProblems')}</caption>
+                    <thead>
+                      <tr className="border-b border-border bg-muted/50 text-left text-xs text-muted-foreground">
+                        <th scope="col" className="h-10 w-16 px-3 font-medium whitespace-nowrap">
+                          {ct('catalog.importLine')}
+                        </th>
+                        <th scope="col" className="h-10 w-32 px-3 font-medium whitespace-nowrap">
+                          {ct('catalog.importColumn')}
+                        </th>
+                        <th scope="col" className="h-10 px-3 font-medium whitespace-nowrap">
+                          {ct('catalog.importMessage')}
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {report.problems.map((problem, index) => (
+                        <tr
+                          key={`${String(problem.line)}-${problem.column ?? ''}-${String(index)}`}
+                          className="border-b border-border last:border-b-0"
+                        >
+                          <td className="px-3 py-2 tabular-nums">{problem.line}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
+                            {problem.column ?? '—'}
+                          </td>
+                          <td className="px-3 py-2">{problem.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </section>
             )}
 
             {report.preview.length > 0 && (
-              <table className="w-full text-sm">
-                <caption className="sr-only">{ct('catalog.importDryRun')}</caption>
-                <thead>
-                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th scope="col" className="py-1.5">
-                      {ct('catalog.colCode')}
-                    </th>
-                    <th scope="col" className="py-1.5 text-right">
-                      {ct('catalog.priceFrom')}
-                    </th>
-                    <th scope="col" className="py-1.5 text-right">
-                      {ct('catalog.priceTo')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.preview.map((row) => (
-                    <tr key={row.sku} className="border-b border-border/60">
-                      <td className="py-1.5 font-mono text-xs">{row.sku}</td>
-                      <td className="py-1.5 text-right">
-                        {row.fromPricePoisha === null ? (
-                          '—'
-                        ) : (
-                          <Money poisha={row.fromPricePoisha} />
-                        )}
-                      </td>
-                      <td className="py-1.5 text-right">
-                        <Money poisha={row.toPricePoisha} />
-                      </td>
+              <div className="overflow-x-auto rounded-lg border border-border bg-card">
+                <table className="w-full text-sm">
+                  <caption className="sr-only">{ct('catalog.importDryRun')}</caption>
+                  <thead>
+                    <tr className="border-b border-border bg-muted/50 text-left text-xs text-muted-foreground">
+                      <th scope="col" className="h-10 px-3 font-medium whitespace-nowrap">
+                        {ct('catalog.colCode')}
+                      </th>
+                      <th
+                        scope="col"
+                        className="h-10 px-3 text-right font-medium whitespace-nowrap"
+                      >
+                        {ct('catalog.priceFrom')}
+                      </th>
+                      <th
+                        scope="col"
+                        className="h-10 px-3 text-right font-medium whitespace-nowrap"
+                      >
+                        {ct('catalog.priceTo')}
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {report.preview.map((row) => (
+                      <tr key={row.sku} className="border-b border-border last:border-b-0">
+                        <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
+                          {row.sku}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {row.fromPricePoisha === null ? (
+                            '—'
+                          ) : (
+                            <Money poisha={row.fromPricePoisha} />
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <Money poisha={row.toPricePoisha} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         )}

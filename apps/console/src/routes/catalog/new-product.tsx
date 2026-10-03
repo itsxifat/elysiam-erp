@@ -1,4 +1,14 @@
-import { Button, Money, PermissionGate, takaToPoisha, type UploadedFile } from '@elysium/ui';
+import {
+  Button,
+  Money,
+  PageHeader,
+  PermissionGate,
+  Select,
+  cn,
+  controlClassName,
+  takaToPoisha,
+  type UploadedFile,
+} from '@elysium/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -207,25 +217,24 @@ export function CatalogNewProductPage() {
       void navigate({ to: '/catalog/$productId', params: { productId: product.id } }),
   });
 
-  const control =
-    'h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  const control = cn(controlClassName, 'w-full');
+  const cell = cn(controlClassName, 'text-right tabular-nums');
+  const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
+  const headingClass = 'text-base font-semibold tracking-tight';
 
   return (
     <PermissionGate
       allowed={mayWrite}
       explain={{ title: t('catalog.deniedTitle'), detail: t('catalog.deniedDetail') }}
     >
-      <div className="max-w-3xl space-y-6">
-        <header className="space-y-1">
-          <h1 className="text-lg font-semibold tracking-tight">{t('catalog.newProduct')}</h1>
-          <p className="text-sm text-muted-foreground">{t('cs.new.help')}</p>
-        </header>
+      <div className="max-w-form space-y-6">
+        <PageHeader title={t('catalog.newProduct')} description={t('cs.new.help')} />
 
-        <section aria-labelledby="basics-heading" className="space-y-3">
-          <h2 id="basics-heading" className="text-sm font-semibold">
+        <section aria-labelledby="basics-heading" className={sectionClass}>
+          <h2 id="basics-heading" className={headingClass}>
             {t('cs.new.basics')}
           </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             <Field label={t('catalog.productName')} className="sm:col-span-2">
               <input
                 value={name}
@@ -235,21 +244,20 @@ export function CatalogNewProductPage() {
               />
             </Field>
             <Field label={t('catalog.productCategory')}>
-              <select
+              <Select
                 value={categoryId}
-                onChange={(event) => setCategoryId(event.target.value)}
-                className={control}
-              >
-                <option value="">{t('cs.noCategory')}</option>
-                {(categories.data?.items ?? [])
-                  .filter((category) => category.isActive)
-                  .map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {'  '.repeat(category.depth)}
-                      {category.name}
-                    </option>
-                  ))}
-              </select>
+                onValueChange={setCategoryId}
+                options={[
+                  { value: '', label: t('cs.noCategory') },
+                  ...(categories.data?.items ?? [])
+                    .filter((category) => category.isActive)
+                    .map((category) => ({
+                      value: category.id,
+                      // A sub-category sits under its parent, indented as the list nests.
+                      label: `${'\u00a0'.repeat(category.depth * 2)}${category.name}`,
+                    })),
+                ]}
+              />
             </Field>
             <Field label={t('cs.sellingPrice')}>
               <input
@@ -257,18 +265,18 @@ export function CatalogNewProductPage() {
                 value={taka}
                 onChange={(event) => setTaka(event.target.value)}
                 aria-invalid={taka.trim() !== '' && pricePoisha === null}
-                className={`${control} text-right tabular-nums`}
+                className={cn(cell, 'w-full')}
               />
             </Field>
             <Field label={t('catalog.productStatus')}>
-              <select
+              <Select
                 value={status}
-                onChange={(event) => setStatus(event.target.value as 'draft' | 'active')}
-                className={control}
-              >
-                <option value="active">{t('cs.status.activeHelp')}</option>
-                <option value="draft">{t('cs.status.draftHelp')}</option>
-              </select>
+                onValueChange={(value) => setStatus(value as 'draft' | 'active')}
+                options={[
+                  { value: 'active', label: t('cs.status.activeHelp') },
+                  { value: 'draft', label: t('cs.status.draftHelp') },
+                ]}
+              />
             </Field>
             <Field label={t('cs.description')} className="sm:col-span-2">
               <textarea
@@ -276,18 +284,21 @@ export function CatalogNewProductPage() {
                 maxLength={4000}
                 rows={2}
                 onChange={(event) => setDescription(event.target.value)}
-                className="rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={cn(controlClassName, 'h-auto w-full py-2')}
               />
             </Field>
           </div>
         </section>
 
-        <section aria-labelledby="variants-heading" className="space-y-3">
+        <section aria-labelledby="variants-heading" className={sectionClass}>
           <div className="flex items-baseline justify-between gap-3">
-            <h2 id="variants-heading" className="text-sm font-semibold">
+            <h2 id="variants-heading" className={headingClass}>
               {t('cs.new.sizesColours')}
             </h2>
-            <Link to="/catalog/structure" className="text-xs underline underline-offset-4">
+            <Link
+              to="/catalog/structure"
+              className="rounded-sm text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
               {t('cs.manageLists')}
             </Link>
           </div>
@@ -316,115 +327,111 @@ export function CatalogNewProductPage() {
             />
           ))}
 
-          <table className="w-full text-sm">
-            <caption className="sr-only">{t('cs.new.grid')}</caption>
-            <thead>
-              <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                <th scope="col" className="py-1.5">
-                  {t('cs.col.variant')}
-                </th>
-                <th scope="col" className="w-36 py-1.5 text-right">
-                  {t('cs.col.price')}
-                </th>
-                {mayReceive ? (
-                  <th scope="col" className="w-32 py-1.5 text-right">
-                    {t('cs.col.openingQty')}
+          <div className="overflow-hidden rounded-lg border border-border">
+            <table className="w-full text-sm">
+              <caption className="sr-only">{t('cs.new.grid')}</caption>
+              <thead>
+                <tr className="border-b border-border bg-muted/50 text-left text-xs text-muted-foreground">
+                  <th scope="col" className="h-10 px-4 font-medium">
+                    {t('cs.col.variant')}
                   </th>
-                ) : null}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, index) => (
-                <tr key={row.key} className="border-b border-border/60">
-                  <td className="py-1.5 font-medium">
-                    {row.label === '' ? t('cs.new.oneVariant') : row.label}
-                  </td>
-                  <td className="py-1.5 text-right">
-                    {row.valueIds.length === 0 ? (
-                      // A plain product: its price is the selling price above.
-                      <span className="text-muted-foreground tabular-nums">{taka || '—'}</span>
-                    ) : (
-                      <>
-                        <label className="sr-only" htmlFor={`price-${String(index)}`}>
-                          {`${t('cs.col.price')} ${row.label}`}
-                        </label>
-                        <input
-                          id={`price-${String(index)}`}
-                          inputMode="decimal"
-                          value={rowPrice[row.key] ?? ''}
-                          placeholder={taka}
-                          disabled={created !== null}
-                          onChange={(event) =>
-                            setRowPrice((current) => ({
-                              ...current,
-                              [row.key]: event.target.value,
-                            }))
-                          }
-                          className={`${control} w-28 text-right tabular-nums`}
-                        />
-                      </>
-                    )}
-                  </td>
+                  <th scope="col" className="h-10 w-36 px-4 text-right font-medium">
+                    {t('cs.col.price')}
+                  </th>
                   {mayReceive ? (
-                    <td className="py-1.5 text-right">
-                      <label className="sr-only" htmlFor={`qty-${String(index)}`}>
-                        {`${t('cs.col.openingQty')} ${row.label}`}
-                      </label>
-                      <input
-                        id={`qty-${String(index)}`}
-                        inputMode="numeric"
-                        value={rowQty[row.key] ?? ''}
-                        placeholder="0"
-                        disabled={created !== null}
-                        onChange={(event) =>
-                          setRowQty((current) => ({ ...current, [row.key]: event.target.value }))
-                        }
-                        className={`${control} w-24 text-right tabular-nums`}
-                      />
-                    </td>
+                    <th scope="col" className="h-10 w-32 px-4 text-right font-medium">
+                      {t('cs.col.openingQty')}
+                    </th>
                   ) : null}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => (
+                  <tr key={row.key} className="border-b border-border last:border-b-0">
+                    <td className="px-4 py-2 font-medium">
+                      {row.label === '' ? t('cs.new.oneVariant') : row.label}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {row.valueIds.length === 0 ? (
+                        // A plain product: its price is the selling price above.
+                        <span className="text-muted-foreground tabular-nums">{taka || '—'}</span>
+                      ) : (
+                        <>
+                          <label className="sr-only" htmlFor={`price-${String(index)}`}>
+                            {`${t('cs.col.price')} ${row.label}`}
+                          </label>
+                          <input
+                            id={`price-${String(index)}`}
+                            inputMode="decimal"
+                            value={rowPrice[row.key] ?? ''}
+                            placeholder={taka}
+                            disabled={created !== null}
+                            onChange={(event) =>
+                              setRowPrice((current) => ({
+                                ...current,
+                                [row.key]: event.target.value,
+                              }))
+                            }
+                            className={cn(cell, 'w-28')}
+                          />
+                        </>
+                      )}
+                    </td>
+                    {mayReceive ? (
+                      <td className="px-4 py-2 text-right">
+                        <label className="sr-only" htmlFor={`qty-${String(index)}`}>
+                          {`${t('cs.col.openingQty')} ${row.label}`}
+                        </label>
+                        <input
+                          id={`qty-${String(index)}`}
+                          inputMode="numeric"
+                          value={rowQty[row.key] ?? ''}
+                          placeholder="0"
+                          disabled={created !== null}
+                          onChange={(event) =>
+                            setRowQty((current) => ({ ...current, [row.key]: event.target.value }))
+                          }
+                          className={cn(cell, 'w-24')}
+                        />
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <p className="text-xs text-muted-foreground">{t('cs.new.gridHelp')}</p>
         </section>
 
         {wantsStock ? (
-          <section aria-labelledby="stock-heading" className="space-y-3">
-            <h2 id="stock-heading" className="text-sm font-semibold">
+          <section aria-labelledby="stock-heading" className={sectionClass}>
+            <h2 id="stock-heading" className={headingClass}>
               {t('cs.new.openingStock')}
             </h2>
             <p className="text-sm text-muted-foreground">
               {t(mayPrice ? 'cs.new.openingHelp' : 'cs.receive.helpDraft')}
             </p>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-3">
               <Field label={t('cs.location')}>
-                <select
+                <Select
                   value={chosenLocation}
-                  onChange={(event) => setLocationId(event.target.value)}
-                  className={control}
-                >
-                  {receivable.map((location) => (
-                    <option key={location.id} value={location.id}>
-                      {location.name}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={setLocationId}
+                  options={receivable.map((location) => ({
+                    value: location.id,
+                    label: location.name,
+                  }))}
+                />
               </Field>
               <Field label={t('cs.supplier')}>
-                <select
+                <Select
                   value={supplierId}
-                  onChange={(event) => setSupplierId(event.target.value)}
-                  className={control}
-                >
-                  <option value="">{t('cs.chooseSupplier')}</option>
-                  {(suppliers.data?.items ?? []).map((supplier) => (
-                    <option key={supplier.id} value={supplier.id}>
-                      {supplier.name} ({supplier.code})
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={setSupplierId}
+                  placeholder={t('cs.chooseSupplier')}
+                  options={(suppliers.data?.items ?? []).map((supplier) => ({
+                    value: supplier.id,
+                    label: `${supplier.name} (${supplier.code})`,
+                  }))}
+                />
               </Field>
               {mayPrice ? (
                 <Field label={t('cs.costPerPiece')}>
@@ -432,7 +439,7 @@ export function CatalogNewProductPage() {
                     inputMode="decimal"
                     value={costTaka}
                     onChange={(event) => setCostTaka(event.target.value)}
-                    className={`${control} text-right tabular-nums`}
+                    className={cn(cell, 'w-full')}
                   />
                 </Field>
               ) : null}
@@ -441,7 +448,7 @@ export function CatalogNewProductPage() {
               <p className="text-sm text-muted-foreground">{t('cs.noSuppliers')}</p>
             ) : null}
             {mayPrice && costPoisha !== null ? (
-              <p className="text-sm">
+              <p className="text-sm text-muted-foreground tabular-nums">
                 {`${String(units)} ${t('cs.units')} · `}
                 <Money poisha={(BigInt(costPoisha) * BigInt(units)).toString()} />
               </p>
@@ -449,8 +456,8 @@ export function CatalogNewProductPage() {
           </section>
         ) : null}
 
-        <section aria-labelledby="photos-heading" className="space-y-3">
-          <h2 id="photos-heading" className="text-sm font-semibold">
+        <section aria-labelledby="photos-heading" className={sectionClass}>
+          <h2 id="photos-heading" className={headingClass}>
             {t('cs.photos.title')}
           </h2>
           <p className="text-sm text-muted-foreground">{t('cs.photos.optional')}</p>
@@ -482,7 +489,8 @@ export function CatalogNewProductPage() {
           </p>
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-2">
+        {/* The long form's actions stay in reach at the foot of the screen (D-447). */}
+        <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-border bg-background py-3">
           <Button disabled={!ready || save.isPending} onClick={() => save.mutate()}>
             {created !== null ? t('cs.new.retry') : t('cs.new.create')}
           </Button>
@@ -498,7 +506,7 @@ export function CatalogNewProductPage() {
             <Link
               to="/catalog/$productId"
               params={{ productId: created.id }}
-              className="text-sm underline underline-offset-4"
+              className="rounded-sm text-sm text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
               {t('cs.new.openCreated')}
             </Link>

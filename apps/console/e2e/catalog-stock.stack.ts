@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import { enrolSecondFactor, signIn, user } from './stack/helpers.js';
 
@@ -35,6 +35,34 @@ async function shot(name: string): Promise<void> {
   await page.screenshot({ path: path.join(REVIEW_DIR, `${name}.png`), fullPage: true });
 }
 
+/**
+ * Pick an option from one of the kit's selects (D-443): open the list, then click the
+ * option by its visible name. The list renders in a portal, so the option is looked up on
+ * the page, not inside the control's region or dialog. A screen still on a native
+ * `<select>` is answered the native way, so the spec holds while screens move over.
+ */
+async function choose(control: Locator, option: string | RegExp): Promise<void> {
+  if ((await control.evaluate((element) => element.tagName)) === 'SELECT') {
+    if (typeof option === 'string') {
+      await control.selectOption({ label: option });
+      return;
+    }
+    const value = await control
+      .locator('option', { hasText: option })
+      .first()
+      .getAttribute('value');
+    await control.selectOption(value ?? '');
+    return;
+  }
+  await control.click();
+  await page
+    .getByRole(
+      'option',
+      typeof option === 'string' ? { name: option, exact: true } : { name: option },
+    )
+    .click();
+}
+
 async function noBlockingViolations(label: string): Promise<void> {
   const result = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -64,7 +92,7 @@ test('catalog setup: sizes, colours, a category and a showroom, linked from Cata
   const lists = page.getByRole('region', { name: 'Sizes, colours and other lists' });
   const addList = async (name: string, kind: 'size' | 'colour', values: readonly string[]) => {
     await lists.getByLabel('List name').fill(name);
-    await lists.getByLabel('Kind').selectOption(kind);
+    await choose(lists.getByLabel('Kind'), kind === 'size' ? 'Size' : 'Colour');
     await lists.getByRole('button', { name: 'Add list' }).click();
     const card = lists.getByRole('listitem').filter({ hasText: name }).first();
     await expect(card).toBeVisible();
@@ -95,7 +123,7 @@ test('catalog setup: sizes, colours, a category and a showroom, linked from Cata
 
   const locations = page.getByRole('region', { name: 'Stock locations' });
   await locations.getByLabel('Location name').fill(SHOWROOM);
-  await locations.getByLabel('Kind').selectOption('showroom');
+  await choose(locations.getByLabel('Kind'), 'Showroom');
   await locations.getByRole('button', { name: 'Add location' }).click();
   await expect(locations.getByRole('listitem').filter({ hasText: SHOWROOM })).toBeVisible();
 
@@ -117,7 +145,7 @@ test('new product: sizes and colours as chips, a variant price and opening stock
   await expect(page.getByRole('heading', { name: 'New product', level: 1 })).toBeVisible();
 
   await page.getByLabel('Name', { exact: true }).fill(PRODUCT);
-  await page.getByLabel('Category', { exact: true }).selectOption({ label: CATEGORY });
+  await choose(page.getByLabel('Category', { exact: true }), CATEGORY);
   await page.getByLabel('Selling price (৳)').fill('2450');
 
   const size = page.getByRole('group', { name: 'Size' });
@@ -134,7 +162,7 @@ test('new product: sizes and colours as chips, a variant price and opening stock
   await page.getByLabel('Opening stock L / Navy Blue').fill('5');
 
   const opening = page.getByRole('region', { name: 'Opening stock' });
-  await opening.getByLabel('Supplier').selectOption({ label: `${SUPPLIER} (${SUPPLIER_CODE})` });
+  await choose(opening.getByLabel('Supplier'), `${SUPPLIER} (${SUPPLIER_CODE})`);
   await opening.getByLabel('Cost per piece (৳)').fill('1200');
   await expect(opening).toContainText('15 pieces');
 
@@ -183,7 +211,7 @@ test('transfer to the showroom, then receive it there', async () => {
   await page.getByRole('button', { name: 'Transfer', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Transfer stock' });
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel('To').selectOption({ label: SHOWROOM });
+  await choose(dialog.getByLabel('To', { exact: true }), SHOWROOM);
   await dialog.getByLabel('Quantity M / Red').fill('3');
   await shot('05-transfer');
   await dialog.getByRole('button', { name: 'Send', exact: true }).click();
@@ -205,7 +233,7 @@ test('receive a second delivery from the product page', async () => {
 
   await page.getByRole('button', { name: 'Receive stock' }).click();
   const dialog = page.getByRole('dialog', { name: 'Receive stock from a supplier' });
-  await dialog.getByLabel('Supplier').selectOption({ label: `${SUPPLIER} (${SUPPLIER_CODE})` });
+  await choose(dialog.getByLabel('Supplier'), `${SUPPLIER} (${SUPPLIER_CODE})`);
   await dialog.getByLabel('Cost per piece (৳)').fill('1180.50');
   await dialog.getByLabel('Quantity M / Navy Blue').fill('4');
   await expect(dialog).toContainText('৳4,722');
@@ -225,11 +253,7 @@ test('receive a second delivery from the product page', async () => {
   // A low-stock alert at the warehouse: 7 available against an alert at 8 shows Low.
   await page.getByRole('button', { name: 'Low-stock alerts' }).click();
   const alerts = page.getByRole('dialog', { name: 'Low-stock alerts' });
-  const warehouse = alerts.getByLabel('Location');
-  const warehouseValue = await warehouse
-    .locator('option', { hasText: 'Main Warehouse' })
-    .getAttribute('value');
-  await warehouse.selectOption(warehouseValue ?? '');
+  await choose(alerts.getByLabel('Location'), /Main Warehouse/);
   await alerts.getByLabel('Alert at M / Red').fill('8');
   await alerts.getByRole('button', { name: 'Save' }).click();
   await expect(alerts.getByRole('status')).toContainText('Saved');
@@ -241,7 +265,7 @@ test('receive a second delivery from the product page', async () => {
 test('the Stock page: by category, linked to the product, with quick actions', async () => {
   await page.goto('/stock');
   await expect(page.getByRole('link', { name: 'Receive stock' })).toBeVisible();
-  await page.getByLabel('All categories').selectOption({ label: CATEGORY });
+  await choose(page.getByLabel('All categories'), CATEGORY);
   const table = page.getByRole('table');
   await expect(table.getByRole('link', { name: PRODUCT }).first()).toBeVisible();
   await expect(table.getByRole('row', { name: new RegExp(SHOWROOM) })).toContainText('M / Red');

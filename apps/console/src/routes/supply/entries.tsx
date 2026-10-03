@@ -1,5 +1,16 @@
-import { Button, Money, PermissionGate, StatusBadge, takaToPoisha } from '@elysium/ui';
+import {
+  Button,
+  EmptyState,
+  Money,
+  PermissionGate,
+  SearchInput,
+  Section,
+  Select,
+  StatusBadge,
+  takaToPoisha,
+} from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { PackageOpen, Plus } from 'lucide-react';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
@@ -19,7 +30,19 @@ import {
   receiveEntry,
 } from './api.js';
 import { useSupplyT, type SupplyMessageKey } from './messages.js';
-import { control, Field, numericControl, SupplyNav } from './supply-nav.js';
+import {
+  control,
+  Field,
+  LoadingRows,
+  numericControl,
+  SupplyHeader,
+  TableFrame,
+  TD,
+  TD_NUMERIC,
+  TH,
+  TH_NUMERIC,
+  TR,
+} from './supply-nav.js';
 
 /**
  * Supply entries: the qty-only draft and the priced receipt (D-005).
@@ -244,378 +267,387 @@ export function SupplyEntriesPage() {
   const pending = submitEntry.isPending || submitDraft.isPending;
   const error = submitEntry.error ?? submitDraft.error;
 
+  const supplierOptions = (suppliers.data?.items ?? []).map((row) => ({
+    value: row.id,
+    label: `${row.code} · ${row.name}`,
+  }));
+  const locationOptions = (locations.data?.items ?? [])
+    .filter((place) => place.kind === 'warehouse' || place.kind === 'showroom')
+    .map((place) => ({ value: place.id, label: `${place.code} · ${place.name}` }));
+  const skuOptions = options.map((row) => ({ value: row.skuId, label: row.label }));
+  const entryRows = entries.data?.items ?? [];
+
   return (
     <PermissionGate
       allowed={mayRead || mayDraft}
       explain={{ title: st('supply.deniedTitle'), detail: st('supply.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{st('supply.entries')}</h1>
-          <p className="text-sm text-muted-foreground">
-            {mayPrice ? st('supply.newEntryHint') : st('supply.newDraftHint')}
-          </p>
-        </header>
-
-        <SupplyNav />
+        <SupplyHeader
+          title={st('supply.entries')}
+          description={mayPrice ? st('supply.newEntryHint') : st('supply.newDraftHint')}
+        />
 
         <PermissionGate allowed={mayDraft || mayPrice}>
-          <form
-            className="space-y-3 rounded-lg border border-border bg-card p-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setDone(null);
-              if (mayPrice) submitEntry.mutate();
-              else submitDraft.mutate();
-            }}
-          >
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Field label={st('supply.supplier')} id="entry-supplier">
-                <select
-                  id="entry-supplier"
-                  value={supplierId}
-                  required
-                  className={control}
-                  onChange={(event) => setSupplierId(event.target.value)}
-                >
-                  <option value="">{st('supply.supplier')}</option>
-                  {(suppliers.data?.items ?? []).map((row) => (
-                    <option key={row.id} value={row.id}>
-                      {row.code} · {row.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+          <Section title={mayPrice ? st('supply.newEntry') : st('supply.newDraft')}>
+            <form
+              className="space-y-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setDone(null);
+                if (mayPrice) submitEntry.mutate();
+                else submitDraft.mutate();
+              }}
+            >
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field label={st('supply.supplier')} id="entry-supplier">
+                  <Select
+                    id="entry-supplier"
+                    value={supplierId}
+                    required
+                    placeholder={st('supply.supplier')}
+                    options={supplierOptions}
+                    onValueChange={setSupplierId}
+                  />
+                </Field>
 
-              <Field label={st('supply.location')} id="entry-location">
-                <select
-                  id="entry-location"
-                  value={locationId}
-                  required
-                  className={control}
-                  onChange={(event) => setLocationId(event.target.value)}
-                >
-                  <option value="">{st('supply.location')}</option>
-                  {(locations.data?.items ?? [])
-                    .filter((place) => place.kind === 'warehouse' || place.kind === 'showroom')
-                    .map((place) => (
-                      <option key={place.id} value={place.id}>
-                        {place.code} · {place.name}
-                      </option>
-                    ))}
-                </select>
-              </Field>
+                <Field label={st('supply.location')} id="entry-location">
+                  <Select
+                    id="entry-location"
+                    value={locationId}
+                    required
+                    placeholder={st('supply.location')}
+                    options={locationOptions}
+                    onValueChange={setLocationId}
+                  />
+                </Field>
 
-              <Field label={st('supply.invoice')} id="entry-invoice">
-                <input
-                  id="entry-invoice"
-                  value={invoiceNumber}
-                  maxLength={64}
-                  className={control}
-                  onChange={(event) => setInvoiceNumber(event.target.value)}
+                <Field label={st('supply.invoice')} id="entry-invoice">
+                  <input
+                    id="entry-invoice"
+                    value={invoiceNumber}
+                    maxLength={64}
+                    className={control}
+                    onChange={(event) => setInvoiceNumber(event.target.value)}
+                  />
+                </Field>
+              </div>
+
+              <Field label={t('cs.findItem')} id="entry-find">
+                <SearchInput
+                  id="entry-find"
+                  value={find}
+                  maxLength={80}
+                  placeholder={t('cs.findItemHint')}
+                  className="sm:w-full"
+                  onChange={(event) => setFind(event.target.value)}
                 />
               </Field>
-            </div>
 
-            <Field label={t('cs.findItem')} id="entry-find">
-              <input
-                id="entry-find"
-                type="search"
-                value={find}
-                maxLength={80}
-                placeholder={t('cs.findItemHint')}
-                className={control}
-                onChange={(event) => setFind(event.target.value)}
-              />
-            </Field>
-
-            <table className="w-full text-sm">
-              <caption className="sr-only">{st('supply.lines')}</caption>
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th scope="col" className="py-2">
-                    {st('supply.sku')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {st('supply.qty')}
-                  </th>
-                  {mayPrice ? (
-                    <th scope="col" className="py-2 text-right">
-                      {t('cs.unitCostTaka')}
-                    </th>
-                  ) : null}
-                  <th scope="col" className="py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((line, index) => (
-                  <tr key={line.key} className="border-b border-border/60">
-                    <td className="py-2">
-                      <label className="sr-only" htmlFor={`${line.key}-sku`}>
+              <TableFrame label={st('supply.lines')}>
+                <table className="w-full border-separate border-spacing-0 text-sm">
+                  <caption className="sr-only">{st('supply.lines')}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className={TH}>
                         {st('supply.sku')}
-                      </label>
-                      <select
-                        id={`${line.key}-sku`}
-                        value={line.skuId}
-                        required
-                        disabled={locationId === ''}
-                        className={control}
-                        onChange={(event) =>
-                          setLines((current) =>
-                            current.map((row, position) =>
-                              position === index ? { ...row, skuId: event.target.value } : row,
-                            ),
-                          )
-                        }
-                      >
-                        <option value="">{st('supply.sku')}</option>
-                        {options.map((row) => (
-                          <option key={row.skuId} value={row.skuId}>
-                            {row.label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-2">
-                      <label className="sr-only" htmlFor={`${line.key}-qty`}>
+                      </th>
+                      <th scope="col" className={`${TH_NUMERIC} w-32`}>
                         {st('supply.qty')}
-                      </label>
-                      <input
-                        id={`${line.key}-qty`}
-                        type="number"
-                        min={1}
-                        step={1}
-                        value={line.qty}
-                        required
-                        className={numericControl}
-                        onChange={(event) =>
-                          setLines((current) =>
-                            current.map((row, position) =>
-                              position === index ? { ...row, qty: event.target.value } : row,
-                            ),
-                          )
-                        }
-                      />
-                    </td>
-                    {mayPrice ? (
-                      <td className="py-2">
-                        <label className="sr-only" htmlFor={`${line.key}-cost`}>
+                      </th>
+                      {mayPrice ? (
+                        <th scope="col" className={`${TH_NUMERIC} w-44`}>
                           {t('cs.unitCostTaka')}
-                        </label>
-                        <input
-                          id={`${line.key}-cost`}
-                          // Taka, up to two decimals; `takaToPoisha` converts it with
-                          // integer arithmetic (invariant 1).
-                          inputMode="decimal"
-                          value={line.unitCostTaka}
-                          required
-                          className={numericControl}
-                          onChange={(event) =>
-                            setLines((current) =>
-                              current.map((row, position) =>
-                                position === index
-                                  ? { ...row, unitCostTaka: event.target.value }
-                                  : row,
-                              ),
-                            )
-                          }
-                        />
-                      </td>
-                    ) : null}
-                    <td className="py-2 text-right">
-                      {lines.length > 1 ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            setLines((current) =>
-                              current.filter((_, position) => position !== index),
-                            )
-                          }
-                        >
-                          {st('supply.removeLine')}
-                        </Button>
+                        </th>
                       ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <th scope="col" className={`${TH} w-px`}>
+                        <span className="sr-only">{st('supply.removeLine')}</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.map((line, index) => (
+                      <tr key={line.key} className={TR}>
+                        <td className={`${TD} py-2`}>
+                          <label className="sr-only" htmlFor={`${line.key}-sku`}>
+                            {st('supply.sku')}
+                          </label>
+                          <Select
+                            id={`${line.key}-sku`}
+                            value={line.skuId}
+                            required
+                            disabled={locationId === ''}
+                            placeholder={st('supply.sku')}
+                            options={skuOptions}
+                            onValueChange={(value) =>
+                              setLines((current) =>
+                                current.map((row, position) =>
+                                  position === index ? { ...row, skuId: value } : row,
+                                ),
+                              )
+                            }
+                          />
+                        </td>
+                        <td className={`${TD} py-2`}>
+                          <label className="sr-only" htmlFor={`${line.key}-qty`}>
+                            {st('supply.qty')}
+                          </label>
+                          <input
+                            id={`${line.key}-qty`}
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={line.qty}
+                            required
+                            className={numericControl}
+                            onChange={(event) =>
+                              setLines((current) =>
+                                current.map((row, position) =>
+                                  position === index ? { ...row, qty: event.target.value } : row,
+                                ),
+                              )
+                            }
+                          />
+                        </td>
+                        {mayPrice ? (
+                          <td className={`${TD} py-2`}>
+                            <label className="sr-only" htmlFor={`${line.key}-cost`}>
+                              {t('cs.unitCostTaka')}
+                            </label>
+                            <input
+                              id={`${line.key}-cost`}
+                              // Taka, up to two decimals; `takaToPoisha` converts it with
+                              // integer arithmetic (invariant 1).
+                              inputMode="decimal"
+                              value={line.unitCostTaka}
+                              required
+                              className={numericControl}
+                              onChange={(event) =>
+                                setLines((current) =>
+                                  current.map((row, position) =>
+                                    position === index
+                                      ? { ...row, unitCostTaka: event.target.value }
+                                      : row,
+                                  ),
+                                )
+                              }
+                            />
+                          </td>
+                        ) : null}
+                        <td className={`${TD} py-2 text-right`}>
+                          {lines.length > 1 ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                setLines((current) =>
+                                  current.filter((_, position) => position !== index),
+                                )
+                              }
+                            >
+                              {st('supply.removeLine')}
+                            </Button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableFrame>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setLines((current) => [...current, blankLine()])}
-              >
-                {st('supply.addLine')}
-              </Button>
-              {mayPrice ? (
-                <p className="text-sm text-muted-foreground">
-                  {st('supply.total')}: <Money poisha={totalPoisha.toString()} />
-                </p>
-              ) : null}
-              <Button type="submit" size="sm" disabled={!canSubmit || pending}>
-                {mayPrice ? st('supply.priceAndReceive') : st('supply.newDraft')}
-              </Button>
-              {done !== null ? (
-                <p role="status" className="text-sm text-muted-foreground">
-                  {done === 'entry' ? st('supply.entryPosted') : st('supply.draftSaved')}
-                </p>
-              ) : null}
-              {error != null ? (
-                <p role="alert" className="text-sm text-destructive">
-                  {error instanceof ApiError ? error.message : st('supply.saveFailed')}
-                </p>
-              ) : null}
-            </div>
-          </form>
+              <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setLines((current) => [...current, blankLine()])}
+                >
+                  <Plus aria-hidden="true" />
+                  {st('supply.addLine')}
+                </Button>
+                {mayPrice ? (
+                  <p className="text-sm text-muted-foreground">
+                    {st('supply.total')}:{' '}
+                    <span className="font-medium text-foreground">
+                      <Money poisha={totalPoisha.toString()} />
+                    </span>
+                  </p>
+                ) : null}
+                <Button type="submit" className="ml-auto" disabled={!canSubmit || pending}>
+                  {mayPrice ? st('supply.priceAndReceive') : st('supply.newDraft')}
+                </Button>
+                {done !== null ? (
+                  <p role="status" className="w-full text-sm text-muted-foreground">
+                    {done === 'entry' ? st('supply.entryPosted') : st('supply.draftSaved')}
+                  </p>
+                ) : null}
+                {error != null ? (
+                  <p role="alert" className="w-full text-sm text-destructive">
+                    {error instanceof ApiError ? error.message : st('supply.saveFailed')}
+                  </p>
+                ) : null}
+              </div>
+            </form>
+          </Section>
         </PermissionGate>
 
         {pricing === null ? null : (
-          <form
-            className="space-y-3 rounded-lg border border-border bg-card p-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              price.mutate();
-            }}
-          >
-            <h2 className="text-sm font-semibold">{st('supply.priceAndReceive')}</h2>
-            <table className="w-full text-sm">
-              <caption className="sr-only">{st('supply.lines')}</caption>
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th scope="col" className="py-2">
-                    {st('supply.sku')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {st('supply.qty')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {t('cs.unitCostTaka')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {(draft.data?.lines ?? []).map((line) => (
-                  <tr key={line.id} className="border-b border-border/60">
-                    <td className="py-2">
-                      {line.skuCode} · {line.productName}
-                    </td>
-                    <td className="py-2 text-right tabular-nums">{line.qty}</td>
-                    <td className="py-2">
-                      <label className="sr-only" htmlFor={`price-${line.id}`}>
+          <Section title={st('supply.priceAndReceive')}>
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                price.mutate();
+              }}
+            >
+              <TableFrame label={st('supply.lines')}>
+                <table className="w-full border-separate border-spacing-0 text-sm">
+                  <caption className="sr-only">{st('supply.lines')}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className={TH}>
+                        {st('supply.sku')}
+                      </th>
+                      <th scope="col" className={TH_NUMERIC}>
+                        {st('supply.qty')}
+                      </th>
+                      <th scope="col" className={`${TH_NUMERIC} w-44`}>
                         {t('cs.unitCostTaka')}
-                      </label>
-                      <input
-                        id={`price-${line.id}`}
-                        inputMode="decimal"
-                        required
-                        value={prices[line.skuId] ?? ''}
-                        className={numericControl}
-                        onChange={(event) =>
-                          setPrices((current) => ({
-                            ...current,
-                            [line.skuId]: event.target.value,
-                          }))
-                        }
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" size="sm" disabled={price.isPending}>
-                {st('supply.receive')}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setPricing(null);
-                  setPrices({});
-                }}
-              >
-                {st('supply.removeLine')}
-              </Button>
-              {price.error !== null ? (
-                <p role="alert" className="text-sm text-destructive">
-                  {price.error instanceof ApiError ? price.error.message : st('supply.saveFailed')}
-                </p>
-              ) : null}
-            </div>
-          </form>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(draft.data?.lines ?? []).map((line) => (
+                      <tr key={line.id} className={TR}>
+                        <td className={TD}>
+                          <span className="font-medium tabular-nums">{line.skuCode}</span>
+                          <span className="text-muted-foreground"> · {line.productName}</span>
+                        </td>
+                        <td className={TD_NUMERIC}>{line.qty}</td>
+                        <td className={`${TD} py-2`}>
+                          <label className="sr-only" htmlFor={`price-${line.id}`}>
+                            {t('cs.unitCostTaka')}
+                          </label>
+                          <input
+                            id={`price-${line.id}`}
+                            inputMode="decimal"
+                            required
+                            value={prices[line.skuId] ?? ''}
+                            className={numericControl}
+                            onChange={(event) =>
+                              setPrices((current) => ({
+                                ...current,
+                                [line.skuId]: event.target.value,
+                              }))
+                            }
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableFrame>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="submit" disabled={price.isPending}>
+                  {st('supply.receive')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setPricing(null);
+                    setPrices({});
+                  }}
+                >
+                  {st('supply.removeLine')}
+                </Button>
+                {price.error !== null ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {price.error instanceof ApiError
+                      ? price.error.message
+                      : st('supply.saveFailed')}
+                  </p>
+                ) : null}
+              </div>
+            </form>
+          </Section>
         )}
 
         <PermissionGate allowed={mayRead}>
-          <section aria-label={st('supply.entries')} className="space-y-2">
-            <table className="w-full text-sm">
-              <caption className="sr-only">{st('supply.entries')}</caption>
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th scope="col" className="py-2">
-                    {st('supply.colDate')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {st('supply.supplier')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {st('supply.invoice')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {st('supply.colStatus')}
-                  </th>
-                  <th scope="col" className="py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {(entries.data?.items ?? []).map((row) => (
-                  <tr key={row.id} className="border-b border-border/60">
-                    <td className="py-2 tabular-nums">{row.businessDate ?? '—'}</td>
-                    <td className="py-2">{row.supplierName}</td>
-                    <td className="py-2 tabular-nums">{row.invoiceNumber ?? '—'}</td>
-                    <td className="py-2">
-                      <StatusBadge tone={STATUS_TONE[row.status]}>
-                        {st(`supply.status.${row.status}` as SupplyMessageKey)}
-                      </StatusBadge>
-                    </td>
-                    <td className="py-2 text-right">
-                      {row.status === 'draft' && mayPrice ? (
-                        <span className="flex justify-end gap-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setPricing(row.id);
-                              setPrices({});
-                            }}
-                          >
-                            {st('supply.receive')}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            disabled={remove.isPending}
-                            onClick={() => remove.mutate(row.id)}
-                          >
-                            {st('supply.deleteDraft')}
-                          </Button>
-                        </span>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {(entries.data?.items ?? []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">{st('supply.empty')}</p>
-            ) : null}
+          <section aria-label={st('supply.entries')}>
+            {entries.isPending ? (
+              <LoadingRows />
+            ) : entryRows.length === 0 ? (
+              <EmptyState icon={PackageOpen} title={st('supply.empty')} />
+            ) : (
+              <TableFrame label={st('supply.entries')}>
+                <table className="w-full border-separate border-spacing-0 text-sm">
+                  <caption className="sr-only">{st('supply.entries')}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className={TH}>
+                        {st('supply.colDate')}
+                      </th>
+                      <th scope="col" className={TH}>
+                        {st('supply.supplier')}
+                      </th>
+                      <th scope="col" className={TH}>
+                        {st('supply.invoice')}
+                      </th>
+                      <th scope="col" className={TH}>
+                        {st('supply.colStatus')}
+                      </th>
+                      <th scope="col" className={TH}>
+                        <span className="sr-only">{st('supply.receive')}</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entryRows.map((row) => (
+                      <tr key={row.id} className={TR}>
+                        <td className={`${TD} text-muted-foreground tabular-nums`}>
+                          {row.businessDate ?? '—'}
+                        </td>
+                        <td className={`${TD} font-medium`}>{row.supplierName}</td>
+                        <td className={`${TD} tabular-nums`}>{row.invoiceNumber ?? '—'}</td>
+                        <td className={TD}>
+                          <StatusBadge tone={STATUS_TONE[row.status]}>
+                            {st(`supply.status.${row.status}` as SupplyMessageKey)}
+                          </StatusBadge>
+                        </td>
+                        <td className={`${TD} text-right`}>
+                          {row.status === 'draft' && mayPrice ? (
+                            <span className="flex justify-end gap-1">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setPricing(row.id);
+                                  setPrices({});
+                                }}
+                              >
+                                {st('supply.receive')}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                disabled={remove.isPending}
+                                onClick={() => remove.mutate(row.id)}
+                              >
+                                {st('supply.deleteDraft')}
+                              </Button>
+                            </span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableFrame>
+            )}
           </section>
         </PermissionGate>
       </div>

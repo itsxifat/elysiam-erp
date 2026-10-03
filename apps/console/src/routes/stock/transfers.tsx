@@ -1,9 +1,11 @@
-import { Button, PermissionGate, StatusBadge } from '@elysium/ui';
+import { Button, EmptyState, PermissionGate, Select, Sheet, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeftRight, Plus } from 'lucide-react';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
+import { useT } from '../../i18n/locale.js';
 import {
   dispatchTransfer,
   listLocations,
@@ -11,7 +13,17 @@ import {
   listTransfers,
   receiveTransfer,
 } from './api.js';
-import { StockNav } from './stock-nav.js';
+import {
+  control,
+  Field,
+  StockHeader,
+  TableFrame,
+  TD,
+  TD_NUM,
+  TH,
+  TH_NUM,
+  TR,
+} from './stock-nav.js';
 import { useStockT, type StockMessageKey } from './messages.js';
 
 /**
@@ -32,7 +44,11 @@ import { useStockT, type StockMessageKey } from './messages.js';
 export function StockTransfersPage() {
   const ability = useAbility();
   const st = useStockT();
+  const t = useT();
   const queryClient = useQueryClient();
+  // Sending stock opens in a sheet from the page's one action (D-447); receiving stays
+  // on each row of the list, where the person at the destination looks for it.
+  const [formOpen, setFormOpen] = useState(false);
 
   const mayRead = ability.can('read', 'Stock');
   const mayTransfer = ability.can('request', 'StockAdjustment');
@@ -81,7 +97,8 @@ export function StockTransfersPage() {
     onSuccess: refresh,
   });
 
-  const failure = [dispatch.error, receive.error].find((error) => error != null);
+  // Sending's failure is said inside its sheet; the page says receiving's.
+  const failure = receive.error;
   const selectable = (locations.data?.items ?? []).filter(
     // In-transit is where a transfer passes through, not an end of one — the server
     // refuses it, and offering it would be offering a 409.
@@ -94,102 +111,34 @@ export function StockTransfersPage() {
       explain={{ title: st('stock.deniedTitle'), detail: st('stock.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{st('stock.transfers')}</h1>
-          <p className="text-sm text-muted-foreground">{st('stock.transfersHint')}</p>
-        </header>
-
-        <StockNav />
+        <StockHeader
+          title={st('stock.transfers')}
+          description={st('stock.transfersHint')}
+          actions={
+            <PermissionGate allowed={mayTransfer}>
+              <Button onClick={() => setFormOpen(true)}>
+                <Plus aria-hidden="true" />
+                {st('stock.newTransfer')}
+              </Button>
+            </PermissionGate>
+          }
+        />
 
         <PermissionGate allowed={mayTransfer}>
-          <form
-            className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              dispatch.mutate();
-            }}
-          >
-            <div className="space-y-1">
-              <label htmlFor="transfer-from" className="text-xs font-medium text-muted-foreground">
-                {st('stock.from')}
-              </label>
-              <select
-                id="transfer-from"
-                value={fromLocationId}
-                required
-                className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) => setFrom(event.target.value)}
-              >
-                <option value="">{st('stock.allLocations')}</option>
-                {selectable.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.code} · {location.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label htmlFor="transfer-to" className="text-xs font-medium text-muted-foreground">
-                {st('stock.to')}
-              </label>
-              <select
-                id="transfer-to"
-                value={toLocationId}
-                required
-                className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) => setTo(event.target.value)}
-              >
-                <option value="">{st('stock.allLocations')}</option>
-                {selectable
-                  .filter((location) => location.id !== fromLocationId)
-                  .map((location) => (
-                    <option key={location.id} value={location.id}>
-                      {location.code} · {location.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label htmlFor="transfer-sku" className="text-xs font-medium text-muted-foreground">
-                {st('stock.sku')}
-              </label>
-              <select
-                id="transfer-sku"
-                value={skuId}
-                required
-                disabled={fromLocationId === ''}
-                className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                onChange={(event) => setSkuId(event.target.value)}
-              >
-                <option value="">{st('stock.sku')}</option>
-                {(stockHere.data?.items ?? []).map((row) => (
-                  <option key={row.skuId} value={row.skuId}>
-                    {row.skuCode} ({row.available})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label htmlFor="transfer-qty" className="text-xs font-medium text-muted-foreground">
-                {st('stock.qty')}
-              </label>
-              <div className="flex gap-2">
-                <input
-                  id="transfer-qty"
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={qty}
-                  required
-                  className="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onChange={(event) => setQty(event.target.value)}
-                />
+          <Sheet
+            open={formOpen}
+            onOpenChange={setFormOpen}
+            title={st('stock.newTransfer')}
+            description={st('stock.transfersHint')}
+            closeLabel={t('common.close')}
+            footer={
+              <>
+                <Button variant="outline" onClick={() => setFormOpen(false)}>
+                  {t('common.cancel')}
+                </Button>
                 <Button
                   type="submit"
-                  size="sm"
+                  form="stock-transfer-form"
                   disabled={
                     fromLocationId === '' ||
                     toLocationId === '' ||
@@ -199,9 +148,81 @@ export function StockTransfersPage() {
                 >
                   {st('stock.dispatch')}
                 </Button>
-              </div>
-            </div>
-          </form>
+              </>
+            }
+          >
+            <form
+              id="stock-transfer-form"
+              className="grid gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                dispatch.mutate();
+              }}
+            >
+              <Field label={st('stock.from')} id="transfer-from">
+                <Select
+                  id="transfer-from"
+                  value={fromLocationId}
+                  placeholder={st('stock.allLocations')}
+                  options={selectable.map((location) => ({
+                    value: location.id,
+                    label: `${location.code} · ${location.name}`,
+                  }))}
+                  onValueChange={setFrom}
+                />
+              </Field>
+
+              <Field label={st('stock.to')} id="transfer-to">
+                <Select
+                  id="transfer-to"
+                  value={toLocationId}
+                  placeholder={st('stock.allLocations')}
+                  options={selectable
+                    .filter((location) => location.id !== fromLocationId)
+                    .map((location) => ({
+                      value: location.id,
+                      label: `${location.code} · ${location.name}`,
+                    }))}
+                  onValueChange={setTo}
+                />
+              </Field>
+
+              <Field label={st('stock.sku')} id="transfer-sku">
+                <Select
+                  id="transfer-sku"
+                  value={skuId}
+                  placeholder={st('stock.sku')}
+                  disabled={fromLocationId === ''}
+                  options={(stockHere.data?.items ?? []).map((row) => ({
+                    value: row.skuId,
+                    label: `${row.skuCode} (${String(row.available)})`,
+                  }))}
+                  onValueChange={setSkuId}
+                />
+              </Field>
+
+              <Field label={st('stock.qty')} id="transfer-qty">
+                <input
+                  id="transfer-qty"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={qty}
+                  required
+                  className={`${control} w-28 tabular-nums`}
+                  onChange={(event) => setQty(event.target.value)}
+                />
+              </Field>
+
+              {dispatch.error != null ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {dispatch.error instanceof ApiError
+                    ? dispatch.error.message
+                    : st('stock.saveFailed')}
+                </p>
+              ) : null}
+            </form>
+          </Sheet>
         </PermissionGate>
 
         {failure != null ? (
@@ -210,69 +231,72 @@ export function StockTransfersPage() {
           </p>
         ) : null}
 
-        <section aria-label={st('stock.transfers')} className="space-y-2">
-          <table className="w-full text-sm">
-            <caption className="sr-only">{st('stock.transfers')}</caption>
-            <thead>
-              <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                <th scope="col" className="py-2">
-                  {st('stock.from')}
-                </th>
-                <th scope="col" className="py-2">
-                  {st('stock.to')}
-                </th>
-                <th scope="col" className="py-2 text-right">
-                  {st('stock.qty')}
-                </th>
-                <th scope="col" className="py-2">
-                  {st('stock.colStatus')}
-                </th>
-                <th scope="col" className="py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {(transfers.data?.items ?? []).map((row) => {
-                const code = (id: string) =>
-                  locations.data?.items.find((location) => location.id === id)?.code ?? id;
-                const units = row.lines.reduce((total, line) => total + line.qty, 0);
-                return (
-                  <tr key={row.id} className="border-b border-border/60">
-                    <td className="py-2">{code(row.fromLocationId)}</td>
-                    <td className="py-2">{code(row.toLocationId)}</td>
-                    <td className="py-2 text-right tabular-nums">{units}</td>
-                    <td className="py-2">
-                      <StatusBadge
-                        tone={
-                          row.status === 'dispatched'
-                            ? 'info'
-                            : row.status === 'received'
-                              ? 'success'
-                              : 'neutral'
-                        }
-                      >
-                        {st(`stock.status.${row.status}` as StockMessageKey)}
-                      </StatusBadge>
-                    </td>
-                    <td className="py-2 text-right">
-                      <PermissionGate allowed={mayTransfer && row.status === 'dispatched'}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={receive.isPending}
-                          onClick={() => receive.mutate(row.id)}
-                        >
-                          {st('stock.receive')}
-                        </Button>
-                      </PermissionGate>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <section aria-label={st('stock.transfers')}>
           {(transfers.data?.items ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">{st('stock.emptyTitle')}</p>
-          ) : null}
+            <EmptyState icon={ArrowLeftRight} title={st('stock.emptyTitle')} />
+          ) : (
+            <TableFrame label={st('stock.transfers')}>
+              <table className="w-full border-separate border-spacing-0 text-sm">
+                <caption className="sr-only">{st('stock.transfers')}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" className={TH}>
+                      {st('stock.from')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {st('stock.to')}
+                    </th>
+                    <th scope="col" className={TH_NUM}>
+                      {st('stock.qty')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {st('stock.colStatus')}
+                    </th>
+                    <th scope="col" className={TH} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {(transfers.data?.items ?? []).map((row) => {
+                    const code = (id: string) =>
+                      locations.data?.items.find((location) => location.id === id)?.code ?? id;
+                    const units = row.lines.reduce((total, line) => total + line.qty, 0);
+                    return (
+                      <tr key={row.id} className={TR}>
+                        <td className={`${TD} font-medium`}>{code(row.fromLocationId)}</td>
+                        <td className={`${TD} font-medium`}>{code(row.toLocationId)}</td>
+                        <td className={TD_NUM}>{units}</td>
+                        <td className={TD}>
+                          <StatusBadge
+                            tone={
+                              row.status === 'dispatched'
+                                ? 'info'
+                                : row.status === 'received'
+                                  ? 'success'
+                                  : 'neutral'
+                            }
+                          >
+                            {st(`stock.status.${row.status}` as StockMessageKey)}
+                          </StatusBadge>
+                        </td>
+                        <td className={`${TD} text-right`}>
+                          <PermissionGate allowed={mayTransfer && row.status === 'dispatched'}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={receive.isPending}
+                              onClick={() => receive.mutate(row.id)}
+                            >
+                              {st('stock.receive')}
+                            </Button>
+                          </PermissionGate>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </TableFrame>
+          )}
         </section>
       </div>
     </PermissionGate>

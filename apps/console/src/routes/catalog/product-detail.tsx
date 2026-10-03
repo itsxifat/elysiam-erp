@@ -1,17 +1,21 @@
 import {
   Button,
+  Checkbox,
   ConfirmDialog,
   DateTime,
   Dialog,
   Money,
   PermissionGate,
+  Select,
   StatusBadge,
+  cn,
+  controlClassName,
   takaToPoisha,
   poishaToTaka,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, getRouteApi } from '@tanstack/react-router';
-import { ArrowDown, ArrowUp, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Pencil, Trash2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
@@ -148,19 +152,20 @@ export function CatalogProductPage() {
       explain={{ title: t('catalog.deniedTitle'), detail: t('catalog.deniedDetail') }}
     >
       <div className="space-y-6">
-        <nav aria-label={t('cs.breadcrumb')} className="text-xs text-muted-foreground">
+        <nav aria-label={t('cs.breadcrumb')} className="-mb-3 text-sm text-muted-foreground">
           <Link
             to="/catalog"
             search={{ page: 1, pageSize: DEFAULT_PAGE_SIZE }}
-            className="underline-offset-4 hover:underline"
+            className="inline-flex items-center gap-1.5 rounded-sm hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
+            <ArrowLeft aria-hidden className="size-4" />
             {t('catalog.title')}
           </Link>
         </nav>
 
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-lg font-semibold tracking-tight">
                 {data?.name ?? t('catalog.title')}
               </h1>
@@ -201,7 +206,8 @@ export function CatalogProductPage() {
               </Button>
             </PermissionGate>
             <PermissionGate allowed={mayWrite}>
-              <Button variant="outline" onClick={() => setOpen('edit')}>
+              <Button variant="ghost" onClick={() => setOpen('edit')}>
+                <Pencil aria-hidden="true" />
                 {t('cs.edit')}
               </Button>
               <Button variant="ghost" onClick={() => setOpen('archive')}>
@@ -220,7 +226,7 @@ export function CatalogProductPage() {
         <PermissionGate allowed={mayStock}>
           <section
             aria-label={t('cs.hub.summary')}
-            className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-4"
+            className="grid overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4 sm:divide-x sm:divide-border"
           >
             <Tile label={t('cs.hub.available')} value={String(available)} />
             <Tile label={t('cs.hub.onHand')} value={String(onHand)} />
@@ -332,9 +338,9 @@ function labelOf(sku: CatalogSku): string {
 
 function Tile({ label, value }: { readonly label: string; readonly value: ReactNode }) {
   return (
-    <div>
+    <div className="px-5 py-4">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-base font-semibold tabular-nums">{value}</p>
+      <p className="mt-1 text-xl font-medium tabular-nums">{value}</p>
     </div>
   );
 }
@@ -430,7 +436,7 @@ function VariantGrid({
   return (
     <section aria-labelledby="variants-heading" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="variants-heading" className="text-sm font-semibold">
+        <h2 id="variants-heading" className="text-base font-semibold tracking-tight">
           {t('cs.hub.variantsStock')}
         </h2>
         <PermissionGate allowed={mayWrite && skus.length > 0}>
@@ -472,33 +478,52 @@ function VariantGrid({
       {skus.length === 0 && product !== undefined ? (
         <p className="text-sm text-muted-foreground">{t('cs.hub.noVariants')}</p>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <table className="w-full text-sm">
             <caption className="sr-only">{t('cs.hub.variantsStock')}</caption>
             <thead>
-              <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                <th scope="col" className="px-3 py-2">
+              <tr className="border-b border-border bg-muted/50 text-left">
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
                   {t('cs.col.variant')}
                 </th>
-                <th scope="col" className="px-3 py-2">
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
                   {t('catalog.colCode')}
                 </th>
-                <th scope="col" className="px-3 py-2 text-right">
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
                   {t('cs.col.price')}
                 </th>
                 {showStock
                   ? columns.map((location) => (
-                      <th key={location.id} scope="col" className="px-3 py-2 text-right">
+                      <th
+                        key={location.id}
+                        scope="col"
+                        className="h-10 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
+                      >
                         {location.name}
                       </th>
                     ))
                   : null}
                 {showStock ? (
-                  <th scope="col" className="px-3 py-2 text-right">
+                  <th
+                    scope="col"
+                    className="h-10 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
+                  >
                     {t('cs.col.available')}
                   </th>
                 ) : null}
-                <th scope="col" className="px-3 py-2">
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
                   <span className="sr-only">{t('cs.col.actions')}</span>
                 </th>
               </tr>
@@ -511,8 +536,11 @@ function VariantGrid({
                   (row) => row.reorderLevel > 0 && row.available <= row.reorderLevel,
                 );
                 return (
-                  <tr key={sku.id} className="border-b border-border/60 last:border-0">
-                    <td className="px-3 py-2">
+                  <tr
+                    key={sku.id}
+                    className="border-b border-border last:border-b-0 hover:bg-accent/60"
+                  >
+                    <td className="h-row px-4">
                       <span className="font-medium">{labelOf(sku) || t('cs.new.oneVariant')}</span>
                       {sku.status === 'archived' ? (
                         <span className="ms-2">
@@ -520,8 +548,10 @@ function VariantGrid({
                         </span>
                       ) : null}
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs">{sku.skuCode}</td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="h-row px-4 text-xs text-muted-foreground tabular-nums">
+                      {sku.skuCode}
+                    </td>
+                    <td className="h-row px-4 text-right">
                       {editing ? (
                         <>
                           <label className="sr-only" htmlFor={`price-${sku.id}`}>
@@ -537,7 +567,10 @@ function VariantGrid({
                                 [sku.id]: event.target.value,
                               }))
                             }
-                            className="h-8 w-28 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className={cn(
+                              controlClassName,
+                              'h-control-sm w-28 text-right tabular-nums',
+                            )}
                           />
                         </>
                       ) : (
@@ -548,7 +581,7 @@ function VariantGrid({
                       ? columns.map((location) => {
                           const level = cell(sku.id, location.id);
                           return (
-                            <td key={location.id} className="px-3 py-2 text-right tabular-nums">
+                            <td key={location.id} className="h-row px-4 text-right tabular-nums">
                               {level === undefined ? (
                                 <span className="text-muted-foreground">0</span>
                               ) : (
@@ -566,7 +599,7 @@ function VariantGrid({
                         })
                       : null}
                     {showStock ? (
-                      <td className="px-3 py-2 text-right">
+                      <td className="h-row px-4 text-right">
                         <span className="inline-flex items-center gap-2 tabular-nums">
                           {free}
                           {sku.status === 'active' && free === 0 ? (
@@ -577,7 +610,7 @@ function VariantGrid({
                         </span>
                       </td>
                     ) : null}
-                    <td className="px-3 py-2 text-right">
+                    <td className="h-row px-4 text-right">
                       <PermissionGate allowed={mayWrite}>
                         <Button size="sm" variant="ghost" onClick={() => setArchiving(sku)}>
                           {sku.status === 'active' ? t('cs.archive') : t('cs.restore')}
@@ -669,9 +702,9 @@ function AddVariants({
   return (
     <section
       aria-labelledby="add-variants-heading"
-      className="space-y-3 rounded-md border border-border p-4"
+      className="space-y-4 rounded-lg border border-border bg-card p-5"
     >
-      <h2 id="add-variants-heading" className="text-sm font-semibold">
+      <h2 id="add-variants-heading" className="text-base font-semibold tracking-tight">
         {t('cs.hub.addVariants')}
       </h2>
       <p className="text-sm text-muted-foreground">{t('cs.hub.addVariantsHelp')}</p>
@@ -758,9 +791,9 @@ function Photos({
   return (
     <section
       aria-labelledby="photos-heading"
-      className="space-y-3 rounded-md border border-border p-4"
+      className="space-y-4 rounded-lg border border-border bg-card p-5"
     >
-      <h2 id="photos-heading" className="text-sm font-semibold">
+      <h2 id="photos-heading" className="text-base font-semibold tracking-tight">
         {t('cs.photos.title')}
       </h2>
       {images.length === 0 ? (
@@ -847,8 +880,7 @@ function EditProductDialog({
     },
   });
 
-  const control =
-    'h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  const control = cn(controlClassName, 'w-full');
 
   return (
     <Dialog
@@ -868,7 +900,7 @@ function EditProductDialog({
         </>
       }
     >
-      <div className="space-y-3">
+      <div className="space-y-4">
         <Field label={t('catalog.productName')}>
           <input
             value={name}
@@ -878,30 +910,29 @@ function EditProductDialog({
           />
         </Field>
         <Field label={t('catalog.productCategory')}>
-          <select
+          <Select
             value={categoryId}
-            onChange={(event) => setCategoryId(event.target.value)}
-            className={control}
-          >
-            <option value="">{t('cs.noCategory')}</option>
-            {(categories.data?.items ?? []).map((category) => (
-              <option key={category.id} value={category.id}>
-                {'  '.repeat(category.depth)}
-                {category.name}
-              </option>
-            ))}
-          </select>
+            onValueChange={setCategoryId}
+            options={[
+              { value: '', label: t('cs.noCategory') },
+              ...(categories.data?.items ?? []).map((category) => ({
+                value: category.id,
+                // A sub-category sits under its parent, indented as the list nests.
+                label: `${'\u00a0'.repeat(category.depth * 2)}${category.name}`,
+              })),
+            ]}
+          />
         </Field>
         <Field label={t('catalog.productStatus')}>
-          <select
+          <Select
             value={status}
-            onChange={(event) => setStatus(event.target.value as CatalogProduct['status'])}
-            className={control}
-          >
-            <option value="active">{t('cs.status.activeHelp')}</option>
-            <option value="draft">{t('cs.status.draftHelp')}</option>
-            <option value="archived">{t('catalog.status.archived')}</option>
-          </select>
+            onValueChange={(value) => setStatus(value as CatalogProduct['status'])}
+            options={[
+              { value: 'active', label: t('cs.status.activeHelp') },
+              { value: 'draft', label: t('cs.status.draftHelp') },
+              { value: 'archived', label: t('catalog.status.archived') },
+            ]}
+          />
         </Field>
         <Field label={t('cs.description')}>
           <textarea
@@ -909,7 +940,7 @@ function EditProductDialog({
             maxLength={4000}
             rows={3}
             onChange={(event) => setDescription(event.target.value)}
-            className="rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn(controlClassName, 'h-auto w-full py-2')}
           />
         </Field>
         {save.error !== null ? (
@@ -961,48 +992,66 @@ function StockHistory({
 
   return (
     <section aria-labelledby="history-heading" className="space-y-3">
-      <h2 id="history-heading" className="text-sm font-semibold">
+      <h2 id="history-heading" className="text-base font-semibold tracking-tight">
         {t('cs.hub.history')}
       </h2>
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="rounded-lg border border-border px-5 py-4 text-sm text-muted-foreground">
           {history.isPending ? t('cs.loading') : t('cs.hub.noHistory')}
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <table className="w-full text-sm">
             <caption className="sr-only">{t('cs.hub.history')}</caption>
             <thead>
-              <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                <th scope="col" className="py-1.5">
+              <tr className="border-b border-border bg-muted/50 text-left">
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
                   {t('cs.col.when')}
                 </th>
-                <th scope="col" className="py-1.5">
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
                   {t('cs.col.what')}
                 </th>
-                <th scope="col" className="py-1.5">
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
                   {t('cs.col.variant')}
                 </th>
-                <th scope="col" className="py-1.5">
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
                   {t('cs.location')}
                 </th>
-                <th scope="col" className="py-1.5 text-right">
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
                   {t('cs.col.qty')}
                 </th>
               </tr>
             </thead>
             <tbody>
               {items.map((row) => (
-                <tr key={row.id} className="border-b border-border/60">
-                  <td className="py-1.5">
+                <tr
+                  key={row.id}
+                  className="border-b border-border last:border-b-0 hover:bg-accent/60"
+                >
+                  <td className="h-row px-4 whitespace-nowrap text-muted-foreground">
                     <DateTime value={row.createdAt} />
                   </td>
-                  <td className="py-1.5">
+                  <td className="h-row px-4">
                     {row.kind in KINDS ? t(KINDS[row.kind as keyof typeof KINDS]) : row.kind}
                   </td>
-                  <td className="py-1.5">{label(row.skuId, row.skuCode)}</td>
-                  <td className="py-1.5">{row.locationName}</td>
-                  <td className="py-1.5 text-right tabular-nums">
+                  <td className="h-row px-4">{label(row.skuId, row.skuCode)}</td>
+                  <td className="h-row px-4">{row.locationName}</td>
+                  <td className="h-row px-4 text-right tabular-nums">
                     {row.qtyDelta > 0 ? `+${String(row.qtyDelta)}` : String(row.qtyDelta)}
                   </td>
                 </tr>
@@ -1029,61 +1078,79 @@ function PriceHistory({ variants }: { readonly variants: readonly VariantInfo[] 
   return (
     <section aria-labelledby="price-history-heading" className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 id="price-history-heading" className="text-sm font-semibold">
+        <h2 id="price-history-heading" className="text-base font-semibold tracking-tight">
           {t('catalog.priceHistory')}
         </h2>
-        <select
+        <Select
+          variant="filter"
+          size="sm"
           aria-label={t('cs.col.variant')}
           value={chosen ?? ''}
-          onChange={(event) => setSkuId(event.target.value)}
-          className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {variants.map((variant) => (
-            <option key={variant.id} value={variant.id}>
-              {variant.label === '' ? variant.skuCode : `${variant.label} · ${variant.skuCode}`}
-            </option>
-          ))}
-        </select>
+          onValueChange={setSkuId}
+          options={variants.map((variant) => ({
+            value: variant.id,
+            label: variant.label === '' ? variant.skuCode : `${variant.label} · ${variant.skuCode}`,
+          }))}
+        />
       </div>
 
       {(history.data?.items ?? []).length === 0 ? (
-        <p className="text-sm text-muted-foreground">{t('catalog.priceNoHistory')}</p>
+        <p className="rounded-lg border border-border px-5 py-4 text-sm text-muted-foreground">
+          {t('catalog.priceNoHistory')}
+        </p>
       ) : (
-        <table className="w-full text-sm">
-          <caption className="sr-only">{t('catalog.priceHistory')}</caption>
-          <thead>
-            <tr className="border-b border-border text-left text-xs text-muted-foreground">
-              <th scope="col" className="px-2 py-1.5">
-                {t('catalog.priceWhen')}
-              </th>
-              <th scope="col" className="px-2 py-1.5 text-right">
-                {t('catalog.priceFrom')}
-              </th>
-              <th scope="col" className="px-2 py-1.5 text-right">
-                {t('catalog.priceTo')}
-              </th>
-              <th scope="col" className="px-2 py-1.5">
-                {t('catalog.priceReason')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {(history.data?.items ?? []).map((row, index) => (
-              <tr key={`${row.changedAt}-${String(index)}`} className="border-b border-border/60">
-                <td className="px-2 py-1.5">
-                  <DateTime value={row.changedAt} />
-                </td>
-                <td className="px-2 py-1.5 text-right">
-                  {row.fromPricePoisha === null ? '—' : <Money poisha={row.fromPricePoisha} />}
-                </td>
-                <td className="px-2 py-1.5 text-right">
-                  <Money poisha={row.toPricePoisha} />
-                </td>
-                <td className="px-2 py-1.5 text-muted-foreground">{row.reason ?? ''}</td>
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
+          <table className="w-full text-sm">
+            <caption className="sr-only">{t('catalog.priceHistory')}</caption>
+            <thead>
+              <tr className="border-b border-border bg-muted/50 text-left">
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
+                  {t('catalog.priceWhen')}
+                </th>
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
+                  {t('catalog.priceFrom')}
+                </th>
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
+                  {t('catalog.priceTo')}
+                </th>
+                <th
+                  scope="col"
+                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
+                  {t('catalog.priceReason')}
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {(history.data?.items ?? []).map((row, index) => (
+                <tr
+                  key={`${row.changedAt}-${String(index)}`}
+                  className="border-b border-border last:border-b-0 hover:bg-accent/60"
+                >
+                  <td className="h-row px-4 whitespace-nowrap text-muted-foreground">
+                    <DateTime value={row.changedAt} />
+                  </td>
+                  <td className="h-row px-4 text-right">
+                    {row.fromPricePoisha === null ? '—' : <Money poisha={row.fromPricePoisha} />}
+                  </td>
+                  <td className="h-row px-4 text-right">
+                    <Money poisha={row.toPricePoisha} />
+                  </td>
+                  <td className="h-row px-4 text-muted-foreground">{row.reason ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );
@@ -1111,9 +1178,9 @@ function Labels({ skus }: { readonly skus: readonly CatalogSku[] }) {
   return (
     <section
       aria-labelledby="labels-heading"
-      className="space-y-3 rounded-md border border-border p-4"
+      className="space-y-4 rounded-lg border border-border bg-card p-5"
     >
-      <h2 id="labels-heading" className="text-sm font-semibold">
+      <h2 id="labels-heading" className="text-base font-semibold tracking-tight">
         {t('catalog.labels')}
       </h2>
       <p className="text-sm text-muted-foreground">{t('catalog.labelsHelp')}</p>
@@ -1125,20 +1192,14 @@ function Labels({ skus }: { readonly skus: readonly CatalogSku[] }) {
             max={200}
             value={copies}
             onChange={(event) => setCopies(Math.min(200, Math.max(1, Number(event.target.value))))}
-            className="h-8 w-20 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn(controlClassName, 'w-24 text-right tabular-nums')}
           />
         </Field>
-        <label className="flex items-center gap-1.5 text-sm">
-          <input
-            type="checkbox"
-            checked={showPrice}
-            onChange={(event) => setShowPrice(event.target.checked)}
-            className="size-4 rounded border-border accent-primary focus-visible:ring-2 focus-visible:ring-ring"
-          />
+        <label className="flex h-control items-center gap-2 text-sm">
+          <Checkbox checked={showPrice} onCheckedChange={(next) => setShowPrice(next === true)} />
           {t('catalog.labelsShowPrice')}
         </label>
         <Button
-          size="sm"
           variant="outline"
           disabled={skus.length === 0 || download.isPending}
           onClick={() => download.mutate()}

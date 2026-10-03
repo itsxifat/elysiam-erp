@@ -1,5 +1,14 @@
-import { Button, Money, PermissionGate, StatusBadge } from '@elysium/ui';
+import {
+  Button,
+  EmptyState,
+  Money,
+  PermissionGate,
+  Section,
+  Select,
+  StatusBadge,
+} from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Banknote } from 'lucide-react';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
@@ -14,7 +23,19 @@ import {
   type PaymentRow,
 } from './api.js';
 import { useSupplyT, type SupplyMessageKey } from './messages.js';
-import { control, Field, numericControl, SupplyNav } from './supply-nav.js';
+import {
+  control,
+  Field,
+  LoadingRows,
+  numericControl,
+  SupplyHeader,
+  TableFrame,
+  TD,
+  TD_NUMERIC,
+  TH,
+  TH_NUMERIC,
+  TR,
+} from './supply-nav.js';
 
 /**
  * Supplier advances, payments, and setting an advance against a received entry (§7).
@@ -127,264 +148,256 @@ export function SupplyPaymentsPage() {
       BigInt(row.amountPoisha) > BigInt(row.appliedPoisha),
   );
 
+  const rows = payments.data?.items ?? [];
+
   return (
     <PermissionGate
       allowed={mayRead}
       explain={{ title: st('supply.deniedTitle'), detail: st('supply.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{st('supply.payments')}</h1>
-          <p className="text-sm text-muted-foreground">{st('supply.applyAdvanceHint')}</p>
-        </header>
-
-        <SupplyNav />
+        <SupplyHeader title={st('supply.payments')} description={st('supply.applyAdvanceHint')} />
 
         <PermissionGate allowed={mayPay}>
-          <form
-            className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-5"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setOutcome(null);
-              pay.mutate();
-            }}
-          >
-            <Field label={st('supply.supplier')} id="payment-supplier">
-              <select
-                id="payment-supplier"
-                value={supplierId}
-                required
-                className={control}
-                onChange={(event) => setSupplierId(event.target.value)}
+          <div className="grid gap-6 xl:grid-cols-5">
+            <Section title={st('supply.pay')} className="xl:col-span-3">
+              <form
+                className="grid gap-4 sm:grid-cols-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setOutcome(null);
+                  pay.mutate();
+                }}
               >
-                <option value="">{st('supply.supplier')}</option>
-                {(suppliers.data?.items ?? []).map((row) => (
-                  <option key={row.id} value={row.id}>
-                    {row.code} · {row.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
+                <Field label={st('supply.supplier')} id="payment-supplier">
+                  <Select
+                    id="payment-supplier"
+                    value={supplierId}
+                    required
+                    placeholder={st('supply.supplier')}
+                    options={(suppliers.data?.items ?? []).map((row) => ({
+                      value: row.id,
+                      label: `${row.code} · ${row.name}`,
+                    }))}
+                    onValueChange={setSupplierId}
+                  />
+                </Field>
 
-            <Field label={st('supply.wallet')} id="payment-wallet">
-              <select
-                id="payment-wallet"
-                value={walletAccountId}
-                required
-                className={control}
-                onChange={(event) => setWalletAccountId(event.target.value)}
+                <Field label={st('supply.wallet')} id="payment-wallet">
+                  <Select
+                    id="payment-wallet"
+                    value={walletAccountId}
+                    required
+                    placeholder={st('supply.wallet')}
+                    options={(wallets.data?.items ?? [])
+                      .filter((row) => row.isActive)
+                      .map((row) => ({
+                        value: row.ledgerAccountId,
+                        label: `${row.code} · ${row.name}`,
+                      }))}
+                    onValueChange={setWalletAccountId}
+                  />
+                </Field>
+
+                <Field label={st('supply.kind')} id="payment-kind">
+                  <Select
+                    id="payment-kind"
+                    value={kind}
+                    options={[
+                      { value: 'payment', label: st('supply.kind.payment') },
+                      { value: 'advance', label: st('supply.kind.advance') },
+                    ]}
+                    onValueChange={(value) => setKind(value === 'advance' ? 'advance' : 'payment')}
+                  />
+                </Field>
+
+                <Field label={st('supply.amount')} id="payment-amount">
+                  <input
+                    id="payment-amount"
+                    inputMode="numeric"
+                    pattern="\d*"
+                    value={amountPoisha}
+                    required
+                    className={numericControl}
+                    onChange={(event) => setAmountPoisha(event.target.value)}
+                  />
+                </Field>
+
+                <Field label={st('supply.memo')} id="payment-memo">
+                  <input
+                    id="payment-memo"
+                    value={memo}
+                    maxLength={500}
+                    className={control}
+                    onChange={(event) => setMemo(event.target.value)}
+                  />
+                </Field>
+
+                <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4 sm:col-span-2">
+                  <Button
+                    type="submit"
+                    disabled={
+                      supplierId === '' ||
+                      walletAccountId === '' ||
+                      !/^[1-9]\d*$/.test(amountPoisha) ||
+                      pay.isPending
+                    }
+                  >
+                    {st('supply.pay')}
+                  </Button>
+                  {amountPoisha !== '' && /^\d+$/.test(amountPoisha) ? (
+                    <p className="text-sm font-medium">
+                      <Money poisha={amountPoisha} />
+                    </p>
+                  ) : null}
+                  {outcome !== null ? (
+                    <p role="status" className="w-full text-sm text-muted-foreground">
+                      {outcome === 'posted' ? st('supply.paymentPosted') : st('supply.paymentHeld')}
+                    </p>
+                  ) : null}
+                  {pay.error !== null ? (
+                    <p role="alert" className="w-full text-sm text-destructive">
+                      {pay.error instanceof ApiError ? pay.error.message : st('supply.saveFailed')}
+                    </p>
+                  ) : null}
+                </div>
+              </form>
+            </Section>
+
+            <Section title={st('supply.applyAdvance')} className="xl:col-span-2">
+              <form
+                className="grid gap-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  apply.mutate();
+                }}
               >
-                <option value="">{st('supply.wallet')}</option>
-                {(wallets.data?.items ?? [])
-                  .filter((row) => row.isActive)
-                  .map((row) => (
-                    <option key={row.id} value={row.ledgerAccountId}>
-                      {row.code} · {row.name}
-                    </option>
-                  ))}
-              </select>
-            </Field>
+                <Field label={st('supply.kind.advance')} id="apply-advance">
+                  <Select
+                    id="apply-advance"
+                    value={advanceId}
+                    required
+                    placeholder={st('supply.kind.advance')}
+                    options={openAdvances.map((row) => ({
+                      value: row.id,
+                      label: `${row.supplierName} · ${row.businessDate}`,
+                    }))}
+                    onValueChange={setAdvanceId}
+                  />
+                </Field>
 
-            <Field label={st('supply.kind')} id="payment-kind">
-              <select
-                id="payment-kind"
-                value={kind}
-                className={control}
-                onChange={(event) =>
-                  setKind(event.target.value === 'advance' ? 'advance' : 'payment')
-                }
-              >
-                <option value="payment">{st('supply.kind.payment')}</option>
-                <option value="advance">{st('supply.kind.advance')}</option>
-              </select>
-            </Field>
+                <Field label={st('supply.entry')} id="apply-entry">
+                  <Select
+                    id="apply-entry"
+                    value={supplyId}
+                    required
+                    placeholder={st('supply.entry')}
+                    options={(entries.data?.items ?? []).map((row) => ({
+                      value: row.id,
+                      label: `${row.supplierName} · ${row.invoiceNumber ?? row.businessDate ?? row.id}`,
+                    }))}
+                    onValueChange={setSupplyId}
+                  />
+                </Field>
 
-            <Field label={st('supply.amount')} id="payment-amount">
-              <input
-                id="payment-amount"
-                inputMode="numeric"
-                pattern="\d*"
-                value={amountPoisha}
-                required
-                className={numericControl}
-                onChange={(event) => setAmountPoisha(event.target.value)}
-              />
-            </Field>
+                <Field label={st('supply.amount')} id="apply-amount">
+                  <input
+                    id="apply-amount"
+                    inputMode="numeric"
+                    pattern="\d*"
+                    value={applyPoisha}
+                    required
+                    className={numericControl}
+                    onChange={(event) => setApplyPoisha(event.target.value)}
+                  />
+                </Field>
 
-            <Field label={st('supply.memo')} id="payment-memo">
-              <input
-                id="payment-memo"
-                value={memo}
-                maxLength={500}
-                className={control}
-                onChange={(event) => setMemo(event.target.value)}
-              />
-            </Field>
-
-            <div className="flex flex-wrap items-center gap-3 sm:col-span-5">
-              <Button
-                type="submit"
-                size="sm"
-                disabled={
-                  supplierId === '' ||
-                  walletAccountId === '' ||
-                  !/^[1-9]\d*$/.test(amountPoisha) ||
-                  pay.isPending
-                }
-              >
-                {st('supply.pay')}
-              </Button>
-              {amountPoisha !== '' && /^\d+$/.test(amountPoisha) ? (
-                <p className="text-sm text-muted-foreground">
-                  <Money poisha={amountPoisha} />
-                </p>
-              ) : null}
-              {outcome !== null ? (
-                <p role="status" className="text-sm text-muted-foreground">
-                  {outcome === 'posted' ? st('supply.paymentPosted') : st('supply.paymentHeld')}
-                </p>
-              ) : null}
-              {pay.error !== null ? (
-                <p role="alert" className="text-sm text-destructive">
-                  {pay.error instanceof ApiError ? pay.error.message : st('supply.saveFailed')}
-                </p>
-              ) : null}
-            </div>
-          </form>
-
-          <form
-            className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              apply.mutate();
-            }}
-          >
-            <div className="sm:col-span-4">
-              <h2 className="text-sm font-semibold">{st('supply.applyAdvance')}</h2>
-              <p className="text-sm text-muted-foreground">{st('supply.applyAdvanceHint')}</p>
-            </div>
-
-            <Field label={st('supply.kind.advance')} id="apply-advance">
-              <select
-                id="apply-advance"
-                value={advanceId}
-                required
-                className={control}
-                onChange={(event) => setAdvanceId(event.target.value)}
-              >
-                <option value="">{st('supply.kind.advance')}</option>
-                {openAdvances.map((row) => (
-                  <option key={row.id} value={row.id}>
-                    {row.supplierName} · {row.businessDate}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label={st('supply.entry')} id="apply-entry">
-              <select
-                id="apply-entry"
-                value={supplyId}
-                required
-                className={control}
-                onChange={(event) => setSupplyId(event.target.value)}
-              >
-                <option value="">{st('supply.entry')}</option>
-                {(entries.data?.items ?? []).map((row) => (
-                  <option key={row.id} value={row.id}>
-                    {row.supplierName} · {row.invoiceNumber ?? row.businessDate ?? row.id}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label={st('supply.amount')} id="apply-amount">
-              <input
-                id="apply-amount"
-                inputMode="numeric"
-                pattern="\d*"
-                value={applyPoisha}
-                required
-                className={numericControl}
-                onChange={(event) => setApplyPoisha(event.target.value)}
-              />
-            </Field>
-
-            <div className="flex items-end gap-3">
-              <Button
-                type="submit"
-                size="sm"
-                disabled={
-                  advanceId === '' ||
-                  supplyId === '' ||
-                  !/^[1-9]\d*$/.test(applyPoisha) ||
-                  apply.isPending
-                }
-              >
-                {st('supply.applyAdvance')}
-              </Button>
-            </div>
-            {apply.error !== null ? (
-              <p role="alert" className="text-sm text-destructive sm:col-span-4">
-                {apply.error instanceof ApiError ? apply.error.message : st('supply.saveFailed')}
-              </p>
-            ) : null}
-          </form>
+                <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={
+                      advanceId === '' ||
+                      supplyId === '' ||
+                      !/^[1-9]\d*$/.test(applyPoisha) ||
+                      apply.isPending
+                    }
+                  >
+                    {st('supply.applyAdvance')}
+                  </Button>
+                  {apply.error !== null ? (
+                    <p role="alert" className="w-full text-sm text-destructive">
+                      {apply.error instanceof ApiError
+                        ? apply.error.message
+                        : st('supply.saveFailed')}
+                    </p>
+                  ) : null}
+                </div>
+              </form>
+            </Section>
+          </div>
         </PermissionGate>
 
-        <section aria-label={st('supply.payments')} className="space-y-2">
-          <table className="w-full text-sm">
-            <caption className="sr-only">{st('supply.payments')}</caption>
-            <thead>
-              <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                <th scope="col" className="py-2">
-                  {st('supply.colDate')}
-                </th>
-                <th scope="col" className="py-2">
-                  {st('supply.supplier')}
-                </th>
-                <th scope="col" className="py-2">
-                  {st('supply.kind')}
-                </th>
-                <th scope="col" className="py-2">
-                  {st('supply.wallet')}
-                </th>
-                <th scope="col" className="py-2 text-right">
-                  {st('supply.amount')}
-                </th>
-                <th scope="col" className="py-2 text-right">
-                  {st('supply.colApplied')}
-                </th>
-                <th scope="col" className="py-2">
-                  {st('supply.colStatus')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {(payments.data?.items ?? []).map((row) => (
-                <tr key={row.id} className="border-b border-border/60">
-                  <td className="py-2 tabular-nums">{row.businessDate}</td>
-                  <td className="py-2">{row.supplierName}</td>
-                  <td className="py-2">{st(`supply.kind.${row.kind}` as SupplyMessageKey)}</td>
-                  <td className="py-2">{row.walletName}</td>
-                  <td className="py-2 text-right">
-                    <Money poisha={row.amountPoisha} />
-                  </td>
-                  <td className="py-2 text-right">
-                    {row.kind === 'advance' ? <Money poisha={row.appliedPoisha} /> : '—'}
-                  </td>
-                  <td className="py-2">
-                    <StatusBadge tone={STATUS_TONE[row.status]}>
-                      {st(`supply.payStatus.${row.status}` as SupplyMessageKey)}
-                    </StatusBadge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {(payments.data?.items ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">{st('supply.empty')}</p>
-          ) : null}
+        <section aria-label={st('supply.payments')}>
+          {payments.isPending ? (
+            <LoadingRows />
+          ) : rows.length === 0 ? (
+            <EmptyState icon={Banknote} title={st('supply.empty')} />
+          ) : (
+            <TableFrame label={st('supply.payments')}>
+              <table className="w-full border-separate border-spacing-0 text-sm">
+                <caption className="sr-only">{st('supply.payments')}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" className={TH}>
+                      {st('supply.colDate')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {st('supply.supplier')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {st('supply.kind')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {st('supply.wallet')}
+                    </th>
+                    <th scope="col" className={TH_NUMERIC}>
+                      {st('supply.amount')}
+                    </th>
+                    <th scope="col" className={TH_NUMERIC}>
+                      {st('supply.colApplied')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {st('supply.colStatus')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.id} className={TR}>
+                      <td className={`${TD} text-muted-foreground tabular-nums`}>
+                        {row.businessDate}
+                      </td>
+                      <td className={`${TD} font-medium`}>{row.supplierName}</td>
+                      <td className={TD}>{st(`supply.kind.${row.kind}` as SupplyMessageKey)}</td>
+                      <td className={`${TD} text-muted-foreground`}>{row.walletName}</td>
+                      <td className={TD_NUMERIC}>
+                        <Money poisha={row.amountPoisha} />
+                      </td>
+                      <td className={TD_NUMERIC}>
+                        {row.kind === 'advance' ? <Money poisha={row.appliedPoisha} /> : '—'}
+                      </td>
+                      <td className={TD}>
+                        <StatusBadge tone={STATUS_TONE[row.status]}>
+                          {st(`supply.payStatus.${row.status}` as SupplyMessageKey)}
+                        </StatusBadge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableFrame>
+          )}
         </section>
       </div>
     </PermissionGate>

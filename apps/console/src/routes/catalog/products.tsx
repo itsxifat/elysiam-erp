@@ -1,14 +1,20 @@
 import {
   DataTable,
+  FilterChips,
   Money,
+  PageHeader,
   PermissionGate,
+  SearchInput,
+  Select,
   StatusBadge,
   buttonVariants,
   dataTableColumns,
+  type ActiveFilter,
   type DataTableColumn,
 } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Link, getRouteApi } from '@tanstack/react-router';
+import { FileUp, Plus, Settings2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
@@ -99,7 +105,7 @@ export function CatalogProductsPage() {
           <Link
             to="/catalog/$productId"
             params={{ productId: cell.row.original.id }}
-            className="font-medium text-foreground underline-offset-4 hover:underline"
+            className="font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
           >
             {cell.getValue()}
           </Link>
@@ -107,7 +113,7 @@ export function CatalogProductsPage() {
       }),
       column.accessor('categoryName', {
         header: ct('catalog.colCategory'),
-        cell: (cell) => cell.getValue() ?? '—',
+        cell: (cell) => <span className="text-muted-foreground">{cell.getValue() ?? '—'}</span>,
       }),
       column.accessor('status', {
         header: ct('catalog.colStatus'),
@@ -149,42 +155,79 @@ export function CatalogProductsPage() {
     ]);
   }, [ct]);
 
+  const categoryOptions = [
+    { value: '', label: ct('catalog.allCategories') },
+    ...(categories.data?.items ?? []).map((category) => ({
+      value: category.id,
+      // A sub-category sits under its parent, indented as the list nests.
+      label: `${'\u00a0'.repeat(category.depth * 2)}${category.name}`,
+    })),
+  ];
+  const statusOptions = [
+    { value: '', label: ct('catalog.allStatuses') },
+    { value: 'draft', label: ct('catalog.status.draft') },
+    { value: 'active', label: ct('catalog.status.active') },
+    { value: 'archived', label: ct('catalog.status.archived') },
+  ];
+  const labelOf = (options: readonly { value: string; label: string }[], value: string) =>
+    (options.find((option) => option.value === value)?.label ?? value).trim();
+  const active: ActiveFilter[] = [
+    ...(search.type === undefined
+      ? []
+      : [
+          {
+            key: 'category',
+            label: ct('catalog.colCategory'),
+            value: labelOf(categoryOptions, search.type),
+            onRemove: () => void navigate({ search: mergeSearch(search, { type: undefined }) }),
+          },
+        ]),
+    ...(search.status === undefined
+      ? []
+      : [
+          {
+            key: 'status',
+            label: ct('catalog.colStatus'),
+            value: labelOf(statusOptions, search.status),
+            onRemove: () => void navigate({ search: mergeSearch(search, { status: undefined }) }),
+          },
+        ]),
+  ];
+
   return (
     <PermissionGate
       allowed={mayRead}
       explain={{ title: ct('catalog.deniedTitle'), detail: ct('catalog.deniedDetail') }}
     >
-      <div className="space-y-5">
-        <header className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">{ct('catalog.title')}</h1>
-            <p className="text-sm text-muted-foreground">{ct('catalog.products')}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {/* The catalog's setup and its importer live one click from the list
-                (plan `catalog-stock-ux`): before, neither was linked from anywhere. */}
-            <Link
-              to="/catalog/structure"
-              className={buttonVariants({ size: 'sm', variant: 'ghost' })}
-            >
-              {t('cs.setup.link')}
-            </Link>
-            <PermissionGate allowed={mayWrite}>
-              <Link
-                to="/catalog/import"
-                className={buttonVariants({ size: 'sm', variant: 'outline' })}
-              >
-                {t('cs.import.link')}
+      <div className="space-y-6">
+        <PageHeader
+          title={ct('catalog.title')}
+          description={ct('catalog.products')}
+          actions={
+            <>
+              {/* The catalog's setup and its importer live one click from the list
+                  (plan `catalog-stock-ux`): before, neither was linked from anywhere. Quiet,
+                  so New product stays the one obvious action. */}
+              <Link to="/catalog/structure" className={buttonVariants({ variant: 'ghost' })}>
+                <Settings2 aria-hidden="true" />
+                {t('cs.setup.link')}
               </Link>
-              {/* A Link styled as a button rather than a Button wrapping a Link: the
-                  kit's Button renders a real <button>, and nesting an anchor inside one
-                  is invalid HTML that keyboard and screen-reader users hit first. */}
-              <Link to="/catalog/new" className={buttonVariants({ size: 'sm' })}>
-                {ct('catalog.newProduct')}
-              </Link>
-            </PermissionGate>
-          </div>
-        </header>
+              <PermissionGate allowed={mayWrite}>
+                <Link to="/catalog/import" className={buttonVariants({ variant: 'ghost' })}>
+                  <FileUp aria-hidden="true" />
+                  {t('cs.import.link')}
+                </Link>
+                {/* A Link styled as a button rather than a Button wrapping a Link: the
+                    kit's Button renders a real <button>, and nesting an anchor inside one
+                    is invalid HTML that keyboard and screen-reader users hit first. */}
+                <Link to="/catalog/new" className={buttonVariants({ variant: 'primary' })}>
+                  <Plus aria-hidden="true" />
+                  {ct('catalog.newProduct')}
+                </Link>
+              </PermissionGate>
+            </>
+          }
+        />
 
         <DataTable
           columns={columns}
@@ -215,64 +258,57 @@ export function CatalogProductsPage() {
             sortDescending: ct('catalog.sortDescending'),
           }}
           toolbar={
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="sr-only" htmlFor="catalog-search">
-                {ct('catalog.search')}
-              </label>
-              <input
-                id="catalog-search"
-                type="search"
-                defaultValue={search.q ?? ''}
-                placeholder={ct('catalog.search')}
-                aria-describedby="catalog-search-hint"
-                className="h-8 w-56 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) => {
-                  const value = event.target.value.trim();
-                  // Below the floor the param is cleared rather than sent, so the
-                  // table shows everything instead of erroring.
+            <div className="flex w-full flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="sr-only" htmlFor="catalog-search">
+                  {ct('catalog.search')}
+                </label>
+                <SearchInput
+                  id="catalog-search"
+                  defaultValue={search.q ?? ''}
+                  placeholder={ct('catalog.search')}
+                  aria-describedby="catalog-search-hint"
+                  onChange={(event) => {
+                    const value = event.target.value.trim();
+                    // Below the floor the param is cleared rather than sent, so the
+                    // table shows everything instead of erroring.
+                    void navigate({
+                      search: mergeSearch(search, { q: value.length >= 3 ? value : undefined }),
+                    });
+                  }}
+                />
+                <Select
+                  variant="filter"
+                  aria-label={ct('catalog.allCategories')}
+                  value={search.type ?? ''}
+                  options={categoryOptions}
+                  onValueChange={(value) =>
+                    void navigate({ search: mergeSearch(search, { type: value || undefined }) })
+                  }
+                />
+                <Select
+                  variant="filter"
+                  aria-label={ct('catalog.allStatuses')}
+                  value={search.status ?? ''}
+                  options={statusOptions}
+                  onValueChange={(value) =>
+                    void navigate({ search: mergeSearch(search, { status: value || undefined }) })
+                  }
+                />
+                <span id="catalog-search-hint" className="text-xs text-muted-foreground">
+                  {ct('catalog.searchHint')}
+                </span>
+              </div>
+              <FilterChips
+                filters={active}
+                removeLabel={t('common.removeFilter')}
+                clearAllLabel={t('common.clearFilters')}
+                onClearAll={() =>
                   void navigate({
-                    search: mergeSearch(search, { q: value.length >= 3 ? value : undefined }),
-                  });
-                }}
+                    search: mergeSearch(search, { type: undefined, status: undefined }),
+                  })
+                }
               />
-              <span id="catalog-search-hint" className="text-xs text-muted-foreground">
-                {ct('catalog.searchHint')}
-              </span>
-
-              <select
-                aria-label={ct('catalog.allCategories')}
-                value={search.type ?? ''}
-                className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) =>
-                  void navigate({
-                    search: mergeSearch(search, { type: event.target.value || undefined }),
-                  })
-                }
-              >
-                <option value="">{ct('catalog.allCategories')}</option>
-                {(categories.data?.items ?? []).map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {' '.repeat(category.depth * 2)}
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                aria-label={ct('catalog.allStatuses')}
-                value={search.status ?? ''}
-                className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) =>
-                  void navigate({
-                    search: mergeSearch(search, { status: event.target.value || undefined }),
-                  })
-                }
-              >
-                <option value="">{ct('catalog.allStatuses')}</option>
-                <option value="draft">{ct('catalog.status.draft')}</option>
-                <option value="active">{ct('catalog.status.active')}</option>
-                <option value="archived">{ct('catalog.status.archived')}</option>
-              </select>
             </div>
           }
         />

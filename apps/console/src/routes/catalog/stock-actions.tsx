@@ -1,4 +1,4 @@
-import { Button, Dialog, Money, takaToPoisha } from '@elysium/ui';
+import { Button, Dialog, Money, Select, cn, controlClassName, takaToPoisha } from '@elysium/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 
@@ -39,8 +39,12 @@ export interface VariantInfo {
   readonly status: 'active' | 'archived';
 }
 
-const control =
-  'h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring';
+const control = cn(controlClassName, 'w-full');
+/** A quantity box in a table: the kit's control, narrow and right-aligned. */
+const qtyControl = cn(
+  controlClassName,
+  'h-control-sm w-24 text-right tabular-nums aria-[invalid=true]:border-destructive',
+);
 const wide = 'w-[min(44rem,calc(100vw-2rem))]';
 
 function errorText(error: unknown, fallback: string): string {
@@ -63,57 +67,70 @@ function QtyTable({
 }) {
   const t = useT();
   return (
-    <table className="w-full text-sm">
-      <caption className="sr-only">{t('cs.qty.caption')}</caption>
-      <thead>
-        <tr className="border-b border-border text-left text-xs text-muted-foreground">
-          <th scope="col" className="py-1.5">
-            {t('cs.col.variant')}
-          </th>
-          {limit === undefined ? null : (
-            <th scope="col" className="py-1.5 text-right">
-              {t('cs.col.available')}
+    <div className="overflow-hidden rounded-lg border border-border">
+      <table className="w-full text-sm">
+        <caption className="sr-only">{t('cs.qty.caption')}</caption>
+        <thead>
+          <tr className="border-b border-border bg-muted/50 text-left">
+            <th
+              scope="col"
+              className="h-10 px-3 text-xs font-medium whitespace-nowrap text-muted-foreground"
+            >
+              {t('cs.col.variant')}
             </th>
-          )}
-          <th scope="col" className="w-28 py-1.5 text-right">
-            {t('cs.col.qty')}
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {variants.map((variant) => {
-          const max = limit?.(variant.id);
-          const text = quantities[variant.id] ?? '';
-          const qty = parseQty(text);
-          const over = max !== undefined && qty !== null && qty > max;
-          return (
-            <tr key={variant.id} className="border-b border-border/60">
-              <td className="py-1.5">
-                <span className="font-medium">{variant.label === '' ? '—' : variant.label}</span>
-                <span className="ms-2 font-mono text-xs text-muted-foreground">
-                  {variant.skuCode}
-                </span>
-              </td>
-              {max === undefined ? null : <td className="py-1.5 text-right tabular-nums">{max}</td>}
-              <td className="py-1.5 text-right">
-                <label className="sr-only" htmlFor={`${idPrefix}-${variant.id}`}>
-                  {`${t('cs.col.qty')} ${variant.label || variant.skuCode}`}
-                </label>
-                <input
-                  id={`${idPrefix}-${variant.id}`}
-                  inputMode="numeric"
-                  value={text}
-                  placeholder="0"
-                  aria-invalid={over || (text.trim() !== '' && qty === null)}
-                  onChange={(event) => onChange(variant.id, event.target.value)}
-                  className={`${control} w-24 text-right tabular-nums aria-[invalid=true]:border-destructive`}
-                />
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+            {limit === undefined ? null : (
+              <th
+                scope="col"
+                className="h-10 px-3 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
+              >
+                {t('cs.col.available')}
+              </th>
+            )}
+            <th
+              scope="col"
+              className="h-10 w-28 px-3 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
+            >
+              {t('cs.col.qty')}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {variants.map((variant) => {
+            const max = limit?.(variant.id);
+            const text = quantities[variant.id] ?? '';
+            const qty = parseQty(text);
+            const over = max !== undefined && qty !== null && qty > max;
+            return (
+              <tr key={variant.id} className="border-b border-border last:border-b-0">
+                <td className="px-3 py-2">
+                  <span className="font-medium">{variant.label === '' ? '—' : variant.label}</span>
+                  <span className="ms-2 text-xs text-muted-foreground tabular-nums">
+                    {variant.skuCode}
+                  </span>
+                </td>
+                {max === undefined ? null : (
+                  <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">{max}</td>
+                )}
+                <td className="px-3 py-2 text-right">
+                  <label className="sr-only" htmlFor={`${idPrefix}-${variant.id}`}>
+                    {`${t('cs.col.qty')} ${variant.label || variant.skuCode}`}
+                  </label>
+                  <input
+                    id={`${idPrefix}-${variant.id}`}
+                    inputMode="numeric"
+                    value={text}
+                    placeholder="0"
+                    aria-invalid={over || (text.trim() !== '' && qty === null)}
+                    onChange={(event) => onChange(variant.id, event.target.value)}
+                    className={qtyControl}
+                  />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -142,8 +159,8 @@ function Field({
   readonly children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs font-medium">
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-sm font-medium text-foreground">
         {label}
       </label>
       {children}
@@ -270,33 +287,24 @@ export function ReceiveStockDialog({
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={t('cs.supplier')} id="receive-supplier">
-            <select
+            <Select
               id="receive-supplier"
               value={supplierId}
-              onChange={(event) => setSupplierId(event.target.value)}
-              className={control}
-            >
-              <option value="">{t('cs.chooseSupplier')}</option>
-              {(suppliers.data?.items ?? []).map((supplier) => (
-                <option key={supplier.id} value={supplier.id}>
-                  {supplier.name} ({supplier.code})
-                </option>
-              ))}
-            </select>
+              onValueChange={setSupplierId}
+              placeholder={t('cs.chooseSupplier')}
+              options={(suppliers.data?.items ?? []).map((supplier) => ({
+                value: supplier.id,
+                label: `${supplier.name} (${supplier.code})`,
+              }))}
+            />
           </Field>
           <Field label={t('cs.location')} id="receive-location">
-            <select
+            <Select
               id="receive-location"
               value={chosenLocation}
-              onChange={(event) => setLocationId(event.target.value)}
-              className={control}
-            >
-              {receivable.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </select>
+              onValueChange={setLocationId}
+              options={receivable.map((location) => ({ value: location.id, label: location.name }))}
+            />
           </Field>
           {mayPrice ? (
             <Field label={t('cs.costPerPiece')} id="receive-cost" hint={t('cs.costHint')}>
@@ -305,7 +313,7 @@ export function ReceiveStockDialog({
                 inputMode="decimal"
                 value={costTaka}
                 onChange={(event) => setCostTaka(event.target.value)}
-                className={`${control} text-right tabular-nums`}
+                className={cn(control, 'text-right tabular-nums')}
               />
             </Field>
           ) : null}
@@ -438,22 +446,18 @@ export function AdjustStockDialog({
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={t('cs.location')} id="adjust-location">
-            <select
+            <Select
               id="adjust-location"
               value={chosenLocation}
-              onChange={(event) => setLocationId(event.target.value)}
-              className={control}
-            >
-              {choosable.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </select>
+              onValueChange={setLocationId}
+              options={choosable.map((location) => ({ value: location.id, label: location.name }))}
+            />
           </Field>
-          <fieldset className="flex flex-col gap-1">
-            <legend className="text-xs font-medium">{t('cs.adjust.direction')}</legend>
-            <div className="flex gap-4 pt-1.5">
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="text-sm font-medium text-foreground">
+              {t('cs.adjust.direction')}
+            </legend>
+            <div className="flex h-control items-center gap-4">
               {(['loss', 'gain'] as const).map((value) => (
                 <label key={value} className="flex items-center gap-1.5 text-sm">
                   <input
@@ -474,7 +478,9 @@ export function AdjustStockDialog({
         </div>
 
         <fieldset className="space-y-1.5">
-          <legend className="text-xs font-medium">{t('cs.adjust.reason')}</legend>
+          <legend className="mb-1.5 text-sm font-medium text-foreground">
+            {t('cs.adjust.reason')}
+          </legend>
           <div className="flex flex-wrap gap-1.5">
             {REASONS.filter((reason) =>
               direction === 'loss' ? reason !== 'found' : reason === 'found' || reason === 'count',
@@ -500,7 +506,7 @@ export function AdjustStockDialog({
             maxLength={400}
             placeholder={t('cs.adjust.note')}
             onChange={(event) => setNote(event.target.value)}
-            className={`${control} w-full`}
+            className={control}
           />
         </fieldset>
 
@@ -617,34 +623,22 @@ export function TransferStockDialog({
         ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={t('cs.transfer.from')} id="transfer-from">
-            <select
+            <Select
               id="transfer-from"
               value={from}
-              onChange={(event) => setFromId(event.target.value)}
-              className={control}
-            >
-              {ends.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </select>
+              onValueChange={setFromId}
+              options={ends.map((location) => ({ value: location.id, label: location.name }))}
+            />
           </Field>
           <Field label={t('cs.transfer.to')} id="transfer-to">
-            <select
+            <Select
               id="transfer-to"
               value={to}
-              onChange={(event) => setToId(event.target.value)}
-              className={control}
-            >
-              {ends
+              onValueChange={setToId}
+              options={ends
                 .filter((location) => location.id !== from)
-                .map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.name}
-                  </option>
-                ))}
-            </select>
+                .map((location) => ({ value: location.id, label: location.name }))}
+            />
           </Field>
         </div>
         <Field label={t('cs.transfer.memo')} id="transfer-memo">
@@ -779,58 +773,60 @@ export function ReorderDialog({
     >
       <div className="space-y-4">
         <Field label={t('cs.location')} id="reorder-location">
-          <select
+          <Select
             id="reorder-location"
             value={chosenLocation}
-            onChange={(event) => {
-              setLocationId(event.target.value);
+            onValueChange={(value) => {
+              setLocationId(value);
               setLevels({});
             }}
-            className={control}
-          >
-            {choosable.map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.name}
-              </option>
-            ))}
-          </select>
+            options={choosable.map((location) => ({ value: location.id, label: location.name }))}
+          />
         </Field>
-        <table className="w-full text-sm">
-          <caption className="sr-only">{t('cs.reorder.title')}</caption>
-          <thead>
-            <tr className="border-b border-border text-left text-xs text-muted-foreground">
-              <th scope="col" className="py-1.5">
-                {t('cs.col.variant')}
-              </th>
-              <th scope="col" className="w-32 py-1.5 text-right">
-                {t('cs.reorder.col')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {variants.map((variant) => (
-              <tr key={variant.id} className="border-b border-border/60">
-                <td className="py-1.5 font-medium">
-                  {variant.label === '' ? variant.skuCode : variant.label}
-                </td>
-                <td className="py-1.5 text-right">
-                  <label className="sr-only" htmlFor={`reorder-${variant.id}`}>
-                    {`${t('cs.reorder.col')} ${variant.label || variant.skuCode}`}
-                  </label>
-                  <input
-                    id={`reorder-${variant.id}`}
-                    inputMode="numeric"
-                    value={levels[variant.id] ?? String(current(variant.id))}
-                    onChange={(event) =>
-                      setLevels((state) => ({ ...state, [variant.id]: event.target.value }))
-                    }
-                    className={`${control} w-24 text-right tabular-nums`}
-                  />
-                </td>
+        <div className="overflow-hidden rounded-lg border border-border">
+          <table className="w-full text-sm">
+            <caption className="sr-only">{t('cs.reorder.title')}</caption>
+            <thead>
+              <tr className="border-b border-border bg-muted/50 text-left">
+                <th
+                  scope="col"
+                  className="h-10 px-3 text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
+                  {t('cs.col.variant')}
+                </th>
+                <th
+                  scope="col"
+                  className="h-10 w-32 px-3 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
+                  {t('cs.reorder.col')}
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {variants.map((variant) => (
+                <tr key={variant.id} className="border-b border-border last:border-b-0">
+                  <td className="px-3 py-2 font-medium">
+                    {variant.label === '' ? variant.skuCode : variant.label}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <label className="sr-only" htmlFor={`reorder-${variant.id}`}>
+                      {`${t('cs.reorder.col')} ${variant.label || variant.skuCode}`}
+                    </label>
+                    <input
+                      id={`reorder-${variant.id}`}
+                      inputMode="numeric"
+                      value={levels[variant.id] ?? String(current(variant.id))}
+                      onChange={(event) =>
+                        setLevels((state) => ({ ...state, [variant.id]: event.target.value }))
+                      }
+                      className={qtyControl}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         {saved ? (
           <p role="status" className="text-sm text-muted-foreground">
             {t('cs.reorder.saved')}

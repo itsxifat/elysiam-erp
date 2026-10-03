@@ -1,13 +1,34 @@
-import { Button, DateTime, Money, PermissionGate } from '@elysium/ui';
-import { useParams } from '@tanstack/react-router';
+import {
+  Button,
+  DateTime,
+  EmptyState,
+  Monogram,
+  Money,
+  PermissionGate,
+  Section,
+  StatusBadge,
+} from '@elysium/ui';
+import { Link, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, ScrollText } from 'lucide-react';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
+import { DatePicker } from '../../ui/date-picker.js';
 import { addContact, addNote, getStatement, getSupplier } from './api.js';
 import { useSupplyT } from './messages.js';
-import { control, Field, SupplyNav } from './supply-nav.js';
+import {
+  control,
+  Field,
+  SupplyHeader,
+  TableFrame,
+  TD,
+  TD_NUMERIC,
+  TH,
+  TH_NUMERIC,
+  TR,
+} from './supply-nav.js';
 
 /**
  * One supplier: the profile, the people, the notes, the documents, and the statement.
@@ -72,6 +93,7 @@ export function SupplierDetailPage() {
   });
 
   const row = supplier.data;
+  const statementRows = statement.data?.items ?? [];
 
   return (
     <PermissionGate
@@ -79,141 +101,172 @@ export function SupplierDetailPage() {
       explain={{ title: st('supply.deniedTitle'), detail: st('supply.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">
-            {row === undefined ? st('supply.supplier') : `${row.code} · ${row.name}`}
-          </h1>
-          <p className="text-sm text-muted-foreground">{st('supply.statementHint')}</p>
-        </header>
-
-        <SupplyNav />
+        <SupplyHeader
+          eyebrow={
+            <Link
+              to="/supply"
+              className="inline-flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <ArrowLeft aria-hidden="true" className="size-3.5" />
+              {st('supply.suppliers')}
+            </Link>
+          }
+          title={row === undefined ? st('supply.supplier') : `${row.code} · ${row.name}`}
+          description={st('supply.statementHint')}
+        />
 
         {row === undefined ? null : (
-          <section className="grid gap-4 rounded-lg border border-border bg-card p-4 sm:grid-cols-4">
+          <dl className="grid overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4 sm:divide-x sm:divide-border">
             <Detail label={st('supply.phone')}>{row.phone ?? '—'}</Detail>
             <Detail label={st('supply.terms')}>{row.paymentTermsDays ?? '—'}</Detail>
-            <Detail label={st('supply.colDue')}>
-              {row.duePoisha === undefined ? '—' : <Money poisha={row.duePoisha} />}
+            <Detail label={st('supply.colDue')} figure>
+              {row.duePoisha === undefined ? (
+                '—'
+              ) : (
+                <Money poisha={row.duePoisha} align="start" compact />
+              )}
             </Detail>
-            <Detail label={st('supply.colAdvance')}>
-              {row.advancePoisha === undefined ? '—' : <Money poisha={row.advancePoisha} />}
+            <Detail label={st('supply.colAdvance')} figure>
+              {row.advancePoisha === undefined ? (
+                '—'
+              ) : (
+                <Money poisha={row.advancePoisha} align="start" compact />
+              )}
             </Detail>
-          </section>
+          </dl>
         )}
 
-        <section aria-label={st('supply.contacts')} className="space-y-2">
-          <h2 className="text-sm font-semibold">{st('supply.contacts')}</h2>
-          <ul className="space-y-1 text-sm">
-            {(row?.contacts ?? []).map((person) => (
-              <li key={person.id} className="flex flex-wrap items-center gap-2">
-                <span>{person.name}</span>
-                <span className="text-muted-foreground">{person.role ?? '—'}</span>
-                <span className="text-muted-foreground tabular-nums">{person.phone ?? '—'}</span>
-                {person.isPrimary ? (
-                  <span className="text-xs text-muted-foreground">({st('supply.primary')})</span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-          {(row?.contacts ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">{st('supply.empty')}</p>
-          ) : null}
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Section title={st('supply.contacts')}>
+            <section aria-label={st('supply.contacts')} className="space-y-4">
+              {(row?.contacts ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">{st('supply.empty')}</p>
+              ) : (
+                <ul className="divide-y divide-border text-sm">
+                  {(row?.contacts ?? []).map((person) => (
+                    <li key={person.id} className="flex flex-wrap items-center gap-3 py-2.5">
+                      <Monogram name={person.name} size="sm" className="rounded-full" />
+                      <span className="font-medium">{person.name}</span>
+                      <span className="text-muted-foreground">{person.role ?? '—'}</span>
+                      <span className="text-muted-foreground tabular-nums">
+                        {person.phone ?? '—'}
+                      </span>
+                      {person.isPrimary ? (
+                        <StatusBadge tone="info">{st('supply.primary')}</StatusBadge>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
 
-          <PermissionGate allowed={mayUpdate}>
-            <form
-              className="flex flex-wrap items-end gap-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                contact.mutate();
-              }}
-            >
-              <Field label={st('supply.name')} id="contact-name">
-                <input
-                  id="contact-name"
-                  value={contactName}
-                  required
-                  maxLength={120}
-                  className={`${control} sm:w-56`}
-                  onChange={(event) => setContactName(event.target.value)}
-                />
-              </Field>
-              <Field label={st('supply.role')} id="contact-role">
-                <input
-                  id="contact-role"
-                  value={contactRole}
-                  maxLength={60}
-                  className={`${control} sm:w-40`}
-                  onChange={(event) => setContactRole(event.target.value)}
-                />
-              </Field>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={contactName.trim() === '' || contact.isPending}
-              >
-                {st('supply.addContact')}
-              </Button>
-            </form>
-          </PermissionGate>
-        </section>
+              <PermissionGate allowed={mayUpdate}>
+                <form
+                  className="grid items-end gap-3 border-t border-border pt-4 sm:grid-cols-[1fr_1fr_auto]"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    contact.mutate();
+                  }}
+                >
+                  <Field label={st('supply.name')} id="contact-name">
+                    <input
+                      id="contact-name"
+                      value={contactName}
+                      required
+                      maxLength={120}
+                      className={control}
+                      onChange={(event) => setContactName(event.target.value)}
+                    />
+                  </Field>
+                  <Field label={st('supply.role')} id="contact-role">
+                    <input
+                      id="contact-role"
+                      value={contactRole}
+                      maxLength={60}
+                      className={control}
+                      onChange={(event) => setContactRole(event.target.value)}
+                    />
+                  </Field>
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={contactName.trim() === '' || contact.isPending}
+                  >
+                    {st('supply.addContact')}
+                  </Button>
+                </form>
+              </PermissionGate>
+            </section>
+          </Section>
 
-        <section aria-label={st('supply.notes')} className="space-y-2">
-          <h2 className="text-sm font-semibold">{st('supply.notes')}</h2>
-          <ul className="space-y-2 text-sm">
-            {(row?.notes ?? []).map((entry) => (
-              <li key={entry.id} className="rounded-md border border-border p-2">
-                <p>{entry.body}</p>
-                <p className="text-xs text-muted-foreground">
-                  <DateTime value={entry.createdAt} />
-                </p>
-              </li>
-            ))}
-          </ul>
-          {(row?.notes ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">{st('supply.empty')}</p>
-          ) : null}
+          <Section title={st('supply.notes')}>
+            <section aria-label={st('supply.notes')} className="space-y-4">
+              {(row?.notes ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">{st('supply.empty')}</p>
+              ) : (
+                <ul className="divide-y divide-border text-sm">
+                  {(row?.notes ?? []).map((entry) => (
+                    <li key={entry.id} className="space-y-0.5 py-2.5">
+                      <p>{entry.body}</p>
+                      <p className="text-xs text-muted-foreground">
+                        <DateTime value={entry.createdAt} />
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
-          <PermissionGate allowed={mayUpdate}>
-            <form
-              className="flex flex-wrap items-end gap-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                noteMutation.mutate();
-              }}
-            >
-              <Field label={st('supply.addNote')} id="supplier-note" hint={st('supply.noteHint')}>
-                <input
-                  id="supplier-note"
-                  value={note}
-                  required
-                  maxLength={2000}
-                  className={`${control} sm:w-96`}
-                  onChange={(event) => setNote(event.target.value)}
-                />
-              </Field>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={note.trim() === '' || noteMutation.isPending}
-              >
-                {st('supply.save')}
-              </Button>
-            </form>
-          </PermissionGate>
-        </section>
+              <PermissionGate allowed={mayUpdate}>
+                <form
+                  className="grid items-end gap-3 border-t border-border pt-4 sm:grid-cols-[1fr_auto]"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    noteMutation.mutate();
+                  }}
+                >
+                  <Field
+                    label={st('supply.addNote')}
+                    id="supplier-note"
+                    hint={st('supply.noteHint')}
+                  >
+                    <input
+                      id="supplier-note"
+                      value={note}
+                      required
+                      maxLength={2000}
+                      className={control}
+                      onChange={(event) => setNote(event.target.value)}
+                    />
+                  </Field>
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    className="sm:mb-6"
+                    disabled={note.trim() === '' || noteMutation.isPending}
+                  >
+                    {st('supply.save')}
+                  </Button>
+                </form>
+              </PermissionGate>
+            </section>
+          </Section>
+        </div>
 
         <PermissionGate allowed={mayReadCost}>
-          <section aria-label={st('supply.statement')} className="space-y-2">
-            <h2 className="text-sm font-semibold">{st('supply.statement')}</h2>
-            <Field label={st('supply.colDate')} id="statement-to">
-              <input
-                id="statement-to"
-                type="date"
-                value={to}
-                className={`${control} sm:w-44`}
-                onChange={(event) => setTo(event.target.value)}
-              />
-            </Field>
+          <section aria-label={st('supply.statement')} className="space-y-4">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <h2 className="text-base font-semibold tracking-tight">{st('supply.statement')}</h2>
+              <Field label={st('supply.colDate')} id="statement-to">
+                <DatePicker
+                  id="statement-to"
+                  value={to}
+                  size="sm"
+                  className="w-44"
+                  onValueChange={(value) => {
+                    if (value !== '') setTo(value);
+                  }}
+                />
+              </Field>
+            </div>
 
             {statement.error !== null ? (
               <p role="alert" className="text-sm text-destructive">
@@ -223,71 +276,73 @@ export function SupplierDetailPage() {
               </p>
             ) : null}
 
-            <div className="flex flex-wrap gap-6 text-sm">
-              <Detail label={`${st('supply.opening')} · ${st('supply.colDue')}`}>
-                <Money poisha={statement.data?.openingDuePoisha ?? '0'} />
+            <dl className="grid overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-3 sm:divide-x sm:divide-border">
+              <Detail label={`${st('supply.opening')} · ${st('supply.colDue')}`} figure>
+                <Money poisha={statement.data?.openingDuePoisha ?? '0'} align="start" compact />
               </Detail>
-              <Detail label={`${st('supply.closing')} · ${st('supply.colDue')}`}>
-                <Money poisha={statement.data?.closingDuePoisha ?? '0'} />
+              <Detail label={`${st('supply.closing')} · ${st('supply.colDue')}`} figure>
+                <Money poisha={statement.data?.closingDuePoisha ?? '0'} align="start" compact />
               </Detail>
-              <Detail label={`${st('supply.closing')} · ${st('supply.colAdvance')}`}>
-                <Money poisha={statement.data?.closingAdvancePoisha ?? '0'} />
+              <Detail label={`${st('supply.closing')} · ${st('supply.colAdvance')}`} figure>
+                <Money poisha={statement.data?.closingAdvancePoisha ?? '0'} align="start" compact />
               </Detail>
-            </div>
+            </dl>
 
-            <table className="w-full text-sm">
-              <caption className="sr-only">{st('supply.statement')}</caption>
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th scope="col" className="py-2">
-                    {st('supply.colDate')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {st('supply.colSource')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {st('supply.colAccount')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {st('supply.colMemo')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {st('supply.colDebit')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {st('supply.colCredit')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {st('supply.colRunning')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {(statement.data?.items ?? []).map((line) => (
-                  <tr
-                    key={`${line.journalId}-${line.lineNo}`}
-                    className="border-b border-border/60"
-                  >
-                    <td className="py-2 tabular-nums">{line.businessDate}</td>
-                    <td className="py-2">{line.sourceType}</td>
-                    <td className="py-2">{line.account}</td>
-                    <td className="py-2">{line.memo ?? '—'}</td>
-                    <td className="py-2 text-right">
-                      <Money poisha={line.debitPoisha} />
-                    </td>
-                    <td className="py-2 text-right">
-                      <Money poisha={line.creditPoisha} />
-                    </td>
-                    <td className="py-2 text-right">
-                      <Money poisha={line.runningDuePoisha} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {(statement.data?.items ?? []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">{st('supply.empty')}</p>
-            ) : null}
+            {statementRows.length === 0 ? (
+              <EmptyState icon={ScrollText} title={st('supply.empty')} />
+            ) : (
+              <TableFrame label={st('supply.statement')}>
+                <table className="w-full border-separate border-spacing-0 text-sm">
+                  <caption className="sr-only">{st('supply.statement')}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className={TH}>
+                        {st('supply.colDate')}
+                      </th>
+                      <th scope="col" className={TH}>
+                        {st('supply.colSource')}
+                      </th>
+                      <th scope="col" className={TH}>
+                        {st('supply.colAccount')}
+                      </th>
+                      <th scope="col" className={TH}>
+                        {st('supply.colMemo')}
+                      </th>
+                      <th scope="col" className={TH_NUMERIC}>
+                        {st('supply.colDebit')}
+                      </th>
+                      <th scope="col" className={TH_NUMERIC}>
+                        {st('supply.colCredit')}
+                      </th>
+                      <th scope="col" className={TH_NUMERIC}>
+                        {st('supply.colRunning')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {statementRows.map((line) => (
+                      <tr key={`${line.journalId}-${line.lineNo}`} className={TR}>
+                        <td className={`${TD} text-muted-foreground tabular-nums`}>
+                          {line.businessDate}
+                        </td>
+                        <td className={TD}>{line.sourceType}</td>
+                        <td className={TD}>{line.account}</td>
+                        <td className={`${TD} text-muted-foreground`}>{line.memo ?? '—'}</td>
+                        <td className={TD_NUMERIC}>
+                          <Money poisha={line.debitPoisha} />
+                        </td>
+                        <td className={TD_NUMERIC}>
+                          <Money poisha={line.creditPoisha} />
+                        </td>
+                        <td className={`${TD_NUMERIC} font-medium`}>
+                          <Money poisha={line.runningDuePoisha} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableFrame>
+            )}
             {statement.data?.truncated === true ? (
               <p className="text-sm text-muted-foreground">{st('supply.truncated')}</p>
             ) : null}
@@ -300,15 +355,20 @@ export function SupplierDetailPage() {
 
 function Detail({
   label,
+  figure = false,
   children,
 }: {
   readonly label: string;
+  /** A balance: set larger, as the figure the card is about. */
+  readonly figure?: boolean;
   readonly children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="text-sm tabular-nums">{children}</p>
+    <div className="space-y-1 px-5 py-4">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className={figure ? 'text-xl font-medium tabular-nums' : 'text-sm tabular-nums'}>
+        {children}
+      </dd>
     </div>
   );
 }

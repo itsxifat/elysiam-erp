@@ -1,14 +1,25 @@
 import {
+  Button,
+  Checkbox,
   DataTable,
+  FilterChips,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
   Money,
   PermissionGate,
+  SearchInput,
+  Select,
   StatusBadge,
   buttonVariants,
   dataTableColumns,
+  type ActiveFilter,
   type DataTableColumn,
 } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Link, getRouteApi } from '@tanstack/react-router';
+import { MoreHorizontal, PackagePlus } from 'lucide-react';
 import { useMemo } from 'react';
 
 import { useAbility } from '../../auth/session.js';
@@ -16,7 +27,7 @@ import { useT } from '../../i18n/locale.js';
 import { formatSort, mergeSearch, parseSort } from '../../lib/table-search.js';
 import { listCategories } from '../catalog/api.js';
 import { listLocations, listStock, stockValuation, type StockRow } from './api.js';
-import { StockNav } from './stock-nav.js';
+import { StockHeader } from './stock-nav.js';
 import { useStockT } from './messages.js';
 
 /**
@@ -122,7 +133,7 @@ export function StockLevelsPage() {
           <Link
             to="/catalog/$productId"
             params={{ productId: cell.row.original.productId }}
-            className="font-medium text-foreground underline-offset-4 hover:underline"
+            className="font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
           >
             {cell.getValue()}
           </Link>
@@ -135,7 +146,9 @@ export function StockLevelsPage() {
       column.accessor('skuCode', {
         header: st('stock.colSku'),
         meta: { sortable: true },
-        cell: (cell) => <span className="font-mono text-xs">{cell.getValue()}</span>,
+        cell: (cell) => (
+          <span className="font-mono text-xs text-muted-foreground">{cell.getValue()}</span>
+        ),
       }),
       column.accessor('locationCode', {
         header: st('stock.colLocation'),
@@ -193,66 +206,118 @@ export function StockLevelsPage() {
     ]);
   }, [mayReadCost, st, t, transit]);
 
+  const mayTransfer = ability.can('request', 'StockAdjustment');
+  const locationOptions = [
+    { value: '', label: st('stock.allLocations') },
+    ...(locations.data?.items ?? []).map((location) => ({
+      value: location.id,
+      label: `${location.code} · ${location.name}`,
+    })),
+  ];
+  const categoryOptions = [
+    { value: '', label: t('cs.stock.allCategories') },
+    ...(categories.data?.items ?? []).map((category) => ({
+      value: category.id,
+      // Nested categories indent with no-break spaces, which the list keeps.
+      label: `${'\u00a0\u00a0'.repeat(category.depth)}${category.name}`,
+    })),
+  ];
+  const labelOf = (options: readonly { value: string; label: string }[], value: string) =>
+    (options.find((option) => option.value === value)?.label ?? value).trim();
+
+  // The filters that are narrowing the list, as chips with a remove each (D-452).
+  const active: ActiveFilter[] = [
+    ...(search.type === undefined
+      ? []
+      : [
+          {
+            key: 'location',
+            label: st('stock.colLocation'),
+            value: labelOf(locationOptions, search.type),
+            onRemove: () =>
+              void navigate({ search: mergeSearch(search, { type: undefined, page: 1 }) }),
+          },
+        ]),
+    ...(search.category === undefined
+      ? []
+      : [
+          {
+            key: 'category',
+            label: t('catalog.colCategory'),
+            value: labelOf(categoryOptions, search.category),
+            onRemove: () =>
+              void navigate({
+                search: { ...mergeSearch(search, { page: 1 }), category: undefined },
+              }),
+          },
+        ]),
+  ];
+
   return (
     <PermissionGate
       allowed={mayRead}
       explain={{ title: st('stock.deniedTitle'), detail: st('stock.deniedDetail') }}
     >
-      <div className="space-y-5">
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">{st('stock.title')}</h1>
-            <p className="text-sm text-muted-foreground">{t('cs.stock.help')}</p>
-          </div>
-          {/* Quick actions: receiving is the common one, so it is the primary. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <PermissionGate allowed={ability.can('create', 'Supply')}>
-              <Link to="/supply/entries" className={buttonVariants({ size: 'sm' })}>
-                {t('cs.receive.action')}
-              </Link>
-            </PermissionGate>
-            <PermissionGate allowed={ability.can('request', 'StockAdjustment')}>
-              <Link
-                to="/stock/transfers"
-                className={buttonVariants({ size: 'sm', variant: 'outline' })}
-              >
-                {t('cs.transfer.action')}
-              </Link>
-              <Link
-                to="/stock/adjustments"
-                className={buttonVariants({ size: 'sm', variant: 'outline' })}
-              >
-                {t('cs.adjust.action')}
-              </Link>
-              <Link to="/stock/counts" className={buttonVariants({ size: 'sm', variant: 'ghost' })}>
-                {t('cs.stock.count')}
-              </Link>
-            </PermissionGate>
-          </div>
-        </header>
-
-        <StockNav />
+      <div className="space-y-6">
+        <StockHeader
+          title={st('stock.title')}
+          description={t('cs.stock.help')}
+          actions={
+            // Receiving is the common one, so it is the primary; the rest sit in a menu
+            // (and in the tabs below), so the header carries one obvious action (D-445).
+            <>
+              <PermissionGate allowed={ability.can('create', 'Supply')}>
+                <Link to="/supply/entries" className={buttonVariants({ variant: 'primary' })}>
+                  <PackagePlus aria-hidden="true" />
+                  {t('cs.receive.action')}
+                </Link>
+              </PermissionGate>
+              <PermissionGate allowed={mayTransfer}>
+                <Menu>
+                  <MenuTrigger asChild>
+                    <Button variant="outline" size="icon" aria-label={t('common.more')}>
+                      <MoreHorizontal aria-hidden="true" />
+                    </Button>
+                  </MenuTrigger>
+                  <MenuContent>
+                    <MenuItem asChild>
+                      <Link to="/stock/transfers">{t('cs.transfer.action')}</Link>
+                    </MenuItem>
+                    <MenuItem asChild>
+                      <Link to="/stock/adjustments">{t('cs.adjust.action')}</Link>
+                    </MenuItem>
+                    <MenuItem asChild>
+                      <Link to="/stock/counts">{t('cs.stock.count')}</Link>
+                    </MenuItem>
+                  </MenuContent>
+                </Menu>
+              </PermissionGate>
+            </>
+          }
+        />
 
         <PermissionGate allowed={mayReadCost}>
-          <section
+          <dl
             aria-label={st('stock.valuation')}
-            className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2"
+            className="grid overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-2 sm:divide-x sm:divide-border"
           >
-            <div>
-              <p className="text-xs text-muted-foreground">{st('stock.valuationUnits')}</p>
-              <p className="text-base font-semibold tabular-nums">{valuation.data?.units ?? '—'}</p>
+            <div className="px-5 py-4">
+              <dt className="text-xs text-muted-foreground">{st('stock.valuationUnits')}</dt>
+              <dd className="mt-1 text-xl font-medium tabular-nums">
+                {valuation.data?.units ?? '—'}
+              </dd>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground">{st('stock.valuationTotal')}</p>
-              <p className="text-base font-semibold">
+            <div className="px-5 py-4">
+              <dt className="text-xs text-muted-foreground">{st('stock.valuationTotal')}</dt>
+              <dd className="mt-1 text-xl font-medium">
                 {valuation.data === undefined ? (
                   '—'
                 ) : (
-                  <Money poisha={valuation.data.stockValuePoisha} />
+                  <Money poisha={valuation.data.stockValuePoisha} align="start" compact />
                 )}
-              </p>
+              </dd>
             </div>
-          </section>
+          </dl>
         </PermissionGate>
 
         <DataTable
@@ -280,6 +345,9 @@ export function StockLevelsPage() {
           error={rows.error}
           onRetry={() => void rows.refetch()}
           caption={st('stock.levels')}
+          // Reserved and the reorder level are one click away under Columns, so the table
+          // fits a laptop (D-458); Available already nets out what is reserved.
+          initialColumnVisibility={{ reserved: false, reorderLevel: false }}
           labels={{
             columns: st('stock.columns'),
             previous: st('stock.previous'),
@@ -294,83 +362,82 @@ export function StockLevelsPage() {
             sortDescending: st('stock.sortDescending'),
           }}
           toolbar={
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="sr-only" htmlFor="stock-search">
-                {st('stock.search')}
-              </label>
-              <input
-                id="stock-search"
-                type="search"
-                defaultValue={search.q ?? ''}
-                placeholder={st('stock.search')}
-                className="h-8 w-56 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) => {
-                  const value = event.target.value.trim();
-                  void navigate({
-                    search: mergeSearch(search, { q: value === '' ? undefined : value, page: 1 }),
-                  });
-                }}
-              />
-
-              <select
-                aria-label={st('stock.allLocations')}
-                value={search.type ?? ''}
-                className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) =>
-                  void navigate({
-                    search: mergeSearch(search, {
-                      type: event.target.value || undefined,
-                      page: 1,
-                    }),
-                  })
-                }
-              >
-                <option value="">{st('stock.allLocations')}</option>
-                {(locations.data?.items ?? []).map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.code} · {location.name}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                aria-label={t('cs.stock.allCategories')}
-                value={search.category ?? ''}
-                className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) =>
-                  void navigate({
-                    search: {
-                      ...mergeSearch(search, { page: 1 }),
-                      category: event.target.value === '' ? undefined : event.target.value,
-                    },
-                  })
-                }
-              >
-                <option value="">{t('cs.stock.allCategories')}</option>
-                {(categories.data?.items ?? []).map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {'  '.repeat(category.depth)}
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-
-              <label className="inline-flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={lowOnly}
-                  className="size-4 rounded border-border text-primary focus-visible:ring-2 focus-visible:ring-ring"
-                  onChange={(event) =>
+            <div className="flex w-full flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="sr-only" htmlFor="stock-search">
+                  {st('stock.search')}
+                </label>
+                <SearchInput
+                  id="stock-search"
+                  defaultValue={search.q ?? ''}
+                  placeholder={st('stock.search')}
+                  onChange={(event) => {
+                    const value = event.target.value.trim();
                     void navigate({
                       search: mergeSearch(search, {
-                        status: event.target.checked ? 'low' : undefined,
+                        q: value === '' ? undefined : value,
                         page: 1,
                       }),
+                    });
+                  }}
+                />
+
+                <Select
+                  variant="filter"
+                  aria-label={st('stock.allLocations')}
+                  value={search.type ?? ''}
+                  options={locationOptions}
+                  onValueChange={(value) =>
+                    void navigate({
+                      search: mergeSearch(search, { type: value || undefined, page: 1 }),
                     })
                   }
                 />
-                {st('stock.lowOnly')}
-              </label>
+
+                <Select
+                  variant="filter"
+                  aria-label={t('cs.stock.allCategories')}
+                  value={search.category ?? ''}
+                  options={categoryOptions}
+                  onValueChange={(value) =>
+                    void navigate({
+                      search: {
+                        ...mergeSearch(search, { page: 1 }),
+                        category: value === '' ? undefined : value,
+                      },
+                    })
+                  }
+                />
+
+                <label className="inline-flex h-control items-center gap-2 px-1 text-sm">
+                  <Checkbox
+                    checked={lowOnly}
+                    onCheckedChange={(checked) =>
+                      void navigate({
+                        search: mergeSearch(search, {
+                          status: checked === true ? 'low' : undefined,
+                          page: 1,
+                        }),
+                      })
+                    }
+                  />
+                  {st('stock.lowOnly')}
+                </label>
+              </div>
+
+              <FilterChips
+                filters={active}
+                removeLabel={t('common.removeFilter')}
+                clearAllLabel={t('common.clearFilters')}
+                onClearAll={() =>
+                  void navigate({
+                    search: {
+                      ...mergeSearch(search, { type: undefined, page: 1 }),
+                      category: undefined,
+                    },
+                  })
+                }
+              />
             </div>
           }
         />

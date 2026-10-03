@@ -35,7 +35,7 @@ export function ChipGroup({
 }) {
   return (
     <fieldset className="space-y-1.5">
-      <legend className="text-xs font-medium text-muted-foreground">{legend}</legend>
+      <legend className="mb-1.5 text-sm font-medium text-foreground">{legend}</legend>
       <div className="flex flex-wrap gap-1.5">
         {values.map((value) => {
           const on = chosen.includes(value.id);
@@ -112,7 +112,7 @@ export function Thumb({ fileId, alt }: { readonly fileId: string; readonly alt: 
     staleTime: 4 * 60_000,
   });
   return (
-    <div className="flex size-24 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
+    <div className="flex size-24 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
       {url.data === undefined ? (
         <ImageOff aria-hidden className="size-5 text-muted-foreground" />
       ) : (
@@ -143,8 +143,8 @@ export function Field({
 }) {
   const id = useId();
   return (
-    <div className={`flex flex-col gap-1 ${className ?? ''}`}>
-      <label htmlFor={id} className="text-xs font-medium">
+    <div className={`flex flex-col gap-1.5 ${className ?? ''}`}>
+      <label htmlFor={id} className="text-sm font-medium text-foreground">
         {label}
       </label>
       {cloneElement(children, { id })}

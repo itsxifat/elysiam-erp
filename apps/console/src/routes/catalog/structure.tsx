@@ -1,6 +1,16 @@
-import { Button, Dialog, PermissionGate, StatusBadge } from '@elysium/ui';
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  PageHeader,
+  PermissionGate,
+  Select,
+  StatusBadge,
+  controlClassName,
+} from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { ArrowLeft } from 'lucide-react';
 import { cloneElement, useId, useState, type ReactElement } from 'react';
 
 import { ApiError } from '../../api.js';
@@ -75,20 +85,20 @@ export function CatalogStructurePage() {
       allowed={mayRead}
       explain={{ title: t('catalog.deniedTitle'), detail: t('catalog.deniedDetail') }}
     >
-      <div className="max-w-4xl space-y-8">
-        <nav aria-label={t('cs.breadcrumb')} className="text-xs text-muted-foreground">
-          <Link
-            to="/catalog"
-            search={{ page: 1, pageSize: DEFAULT_PAGE_SIZE }}
-            className="underline-offset-4 hover:underline"
-          >
-            {t('catalog.title')}
-          </Link>
-        </nav>
-        <header className="space-y-1">
-          <h1 className="text-lg font-semibold tracking-tight">{t('cs.setup.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('cs.setup.help')}</p>
-        </header>
+      <div className="max-w-4xl space-y-6">
+        <div className="space-y-3">
+          <nav aria-label={t('cs.breadcrumb')} className="text-sm text-muted-foreground">
+            <Link
+              to="/catalog"
+              search={{ page: 1, pageSize: DEFAULT_PAGE_SIZE }}
+              className="inline-flex items-center gap-1.5 rounded-sm hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <ArrowLeft aria-hidden className="size-4" />
+              {t('catalog.title')}
+            </Link>
+          </nav>
+          <PageHeader title={t('cs.setup.title')} description={t('cs.setup.help')} />
+        </div>
 
         <Categories
           items={categories.data?.items ?? []}
@@ -115,8 +125,8 @@ export function CatalogStructurePage() {
   );
 }
 
-const control =
-  'h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring';
+/** The kit's control; width comes from where it sits (a dialog's column, a form row). */
+const control = controlClassName;
 
 /** A label joined to its one control by id (see `Field` in parts.tsx for why). */
 function Field({
@@ -128,8 +138,8 @@ function Field({
 }) {
   const id = useId();
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs font-medium">
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-sm font-medium text-foreground">
         {label}
       </label>
       {cloneElement(children, { id })}
@@ -183,22 +193,25 @@ function Categories({
   });
 
   return (
-    <section aria-labelledby="categories-heading" className="space-y-3">
-      <h2 id="categories-heading" className="text-sm font-semibold">
+    <section
+      aria-labelledby="categories-heading"
+      className="space-y-4 rounded-lg border border-border bg-card p-5"
+    >
+      <h2 id="categories-heading" className="text-base font-semibold tracking-tight">
         {t('catalog.categories')}
       </h2>
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('cs.setup.noCategories')}</p>
       ) : (
-        <ul className="divide-y divide-border rounded-md border border-border">
+        <ul className="divide-y divide-border rounded-lg border border-border">
           {items.map((category) => (
-            <li key={category.id} className="flex min-h-9 items-center gap-3 px-3 py-1 text-sm">
+            <li key={category.id} className="flex min-h-row items-center gap-3 px-4 py-1.5 text-sm">
               <span
                 aria-hidden
                 className={['w-0', 'w-4', 'w-8', 'w-12'][Math.min(category.depth, 3)] ?? 'w-0'}
               />
               <span className="font-medium">{category.name}</span>
-              <span className="font-mono text-xs text-muted-foreground">{category.code}</span>
+              <span className="text-xs text-muted-foreground tabular-nums">{category.code}</span>
               {category.isActive ? null : (
                 <StatusBadge tone="neutral">{t('cs.inactive')}</StatusBadge>
               )}
@@ -214,7 +227,7 @@ function Categories({
       )}
 
       <PermissionGate allowed={mayCreate}>
-        <div className="flex flex-wrap items-end gap-3 rounded-md border border-border p-3">
+        <div className="flex flex-wrap items-end gap-3 rounded-lg bg-muted/50 p-4">
           <Field label={t('cs.setup.categoryName')}>
             <input
               value={name}
@@ -224,21 +237,21 @@ function Categories({
             />
           </Field>
           <Field label={t('cs.setup.parent')}>
-            <select
+            <Select
               value={parentId}
-              onChange={(event) => setParentId(event.target.value)}
-              className={control}
-            >
-              <option value="">{t('cs.setup.topLevel')}</option>
-              {items
-                .filter((category) => category.depth < 3)
-                .map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {'  '.repeat(category.depth)}
-                    {category.name}
-                  </option>
-                ))}
-            </select>
+              onValueChange={setParentId}
+              className="min-w-44"
+              options={[
+                { value: '', label: t('cs.setup.topLevel') },
+                ...items
+                  .filter((category) => category.depth < 3)
+                  .map((category) => ({
+                    value: category.id,
+                    // A sub-category sits under its parent, indented as the list nests.
+                    label: `${'\u00a0'.repeat(category.depth * 2)}${category.name}`,
+                  })),
+              ]}
+            />
           </Field>
           <Field label={t('cs.setup.code')}>
             <input
@@ -336,27 +349,20 @@ function EditCategory({
           />
         </Field>
         <Field label={t('cs.setup.parent')}>
-          <select
+          <Select
             value={parentId}
-            onChange={(event) => setParentId(event.target.value)}
-            className={control}
-          >
-            <option value="">{t('cs.setup.topLevel')}</option>
-            {choosable.map((other) => (
-              <option key={other.id} value={other.id}>
-                {'  '.repeat(other.depth)}
-                {other.name}
-              </option>
-            ))}
-          </select>
+            onValueChange={setParentId}
+            options={[
+              { value: '', label: t('cs.setup.topLevel') },
+              ...choosable.map((other) => ({
+                value: other.id,
+                label: `${'\u00a0'.repeat(other.depth * 2)}${other.name}`,
+              })),
+            ]}
+          />
         </Field>
         <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={active}
-            onChange={(event) => setActive(event.target.checked)}
-            className="size-4 rounded border-border accent-primary focus-visible:ring-2 focus-visible:ring-ring"
-          />
+          <Checkbox checked={active} onCheckedChange={(next) => setActive(next === true)} />
           {t('cs.setup.inUse')}
         </label>
         <Problem error={save.error} />
@@ -410,15 +416,18 @@ function Lists({
   });
 
   return (
-    <section aria-labelledby="lists-heading" className="space-y-3">
-      <h2 id="lists-heading" className="text-sm font-semibold">
+    <section
+      aria-labelledby="lists-heading"
+      className="space-y-4 rounded-lg border border-border bg-card p-5"
+    >
+      <h2 id="lists-heading" className="text-base font-semibold tracking-tight">
         {t('cs.setup.lists')}
       </h2>
       <p className="text-sm text-muted-foreground">{t('cs.setup.listsHelp')}</p>
 
       <ul className="space-y-3">
         {items.map((attribute) => (
-          <li key={attribute.id} className="space-y-2 rounded-md border border-border p-3">
+          <li key={attribute.id} className="space-y-3 rounded-lg border border-border p-4">
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="font-medium">{attribute.name}</span>
               <StatusBadge tone="neutral">{t(`catalog.kind.${attribute.kind}`)}</StatusBadge>
@@ -464,7 +473,7 @@ function Lists({
                 ) : (
                   <span
                     key={value.id}
-                    className="rounded border border-border px-1.5 py-0.5 text-xs"
+                    className="rounded-xs bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
                   >
                     {value.label}
                   </span>
@@ -483,7 +492,7 @@ function Lists({
       </ul>
 
       <PermissionGate allowed={mayCreate}>
-        <div className="flex flex-wrap items-end gap-3 rounded-md border border-border p-3">
+        <div className="flex flex-wrap items-end gap-3 rounded-lg bg-muted/50 p-4">
           <Field label={t('cs.setup.listName')}>
             <input
               value={name}
@@ -494,23 +503,19 @@ function Lists({
             />
           </Field>
           <Field label={t('catalog.attributeKind')}>
-            <select
+            <Select
               value={kind}
-              onChange={(event) => setKind(event.target.value as 'size' | 'colour' | 'custom')}
-              className={control}
-            >
-              <option value="size">{t('catalog.kind.size')}</option>
-              <option value="colour">{t('catalog.kind.colour')}</option>
-              <option value="custom">{t('catalog.kind.custom')}</option>
-            </select>
-          </Field>
-          <label className="flex items-center gap-1.5 pb-1 text-sm">
-            <input
-              type="checkbox"
-              checked={isVariant}
-              onChange={(event) => setIsVariant(event.target.checked)}
-              className="size-4 rounded border-border accent-primary focus-visible:ring-2 focus-visible:ring-ring"
+              onValueChange={(value) => setKind(value as 'size' | 'colour' | 'custom')}
+              className="min-w-36"
+              options={[
+                { value: 'size', label: t('catalog.kind.size') },
+                { value: 'colour', label: t('catalog.kind.colour') },
+                { value: 'custom', label: t('catalog.kind.custom') },
+              ]}
             />
+          </Field>
+          <label className="flex h-control items-center gap-2 text-sm">
+            <Checkbox checked={isVariant} onCheckedChange={(next) => setIsVariant(next === true)} />
             {t('catalog.isVariant')}
           </label>
           <Button
@@ -707,16 +712,19 @@ function Locations({
   const shown = items;
 
   return (
-    <section aria-labelledby="locations-heading" className="space-y-3">
-      <h2 id="locations-heading" className="text-sm font-semibold">
+    <section
+      aria-labelledby="locations-heading"
+      className="space-y-4 rounded-lg border border-border bg-card p-5"
+    >
+      <h2 id="locations-heading" className="text-base font-semibold tracking-tight">
         {t('cs.setup.locations')}
       </h2>
       <p className="text-sm text-muted-foreground">{t('cs.setup.locationsHelp')}</p>
-      <ul className="divide-y divide-border rounded-md border border-border">
+      <ul className="divide-y divide-border rounded-lg border border-border">
         {shown.map((location) => (
-          <li key={location.id} className="flex min-h-9 items-center gap-3 px-3 py-1 text-sm">
+          <li key={location.id} className="flex min-h-row items-center gap-3 px-4 py-1.5 text-sm">
             <span className="font-medium">{location.name}</span>
-            <span className="font-mono text-xs text-muted-foreground">{location.code}</span>
+            <span className="text-xs text-muted-foreground tabular-nums">{location.code}</span>
             <StatusBadge tone="neutral">{t(`cs.locationKind.${location.kind}`)}</StatusBadge>
             {location.isActive ? null : (
               <StatusBadge tone="neutral">{t('cs.inactive')}</StatusBadge>
@@ -732,7 +740,7 @@ function Locations({
       </ul>
 
       <PermissionGate allowed={mayCreate}>
-        <div className="flex flex-wrap items-end gap-3 rounded-md border border-border p-3">
+        <div className="flex flex-wrap items-end gap-3 rounded-lg bg-muted/50 p-4">
           <Field label={t('cs.setup.locationName')}>
             <input
               value={name}
@@ -743,28 +751,24 @@ function Locations({
             />
           </Field>
           <Field label={t('cs.setup.locationKind')}>
-            <select
+            <Select
               value={kind}
-              onChange={(event) => setKind(event.target.value as 'warehouse' | 'showroom')}
-              className={control}
-            >
-              <option value="showroom">{t('cs.locationKind.showroom')}</option>
-              <option value="warehouse">{t('cs.locationKind.warehouse')}</option>
-            </select>
+              onValueChange={(value) => setKind(value as 'warehouse' | 'showroom')}
+              className="min-w-36"
+              options={[
+                { value: 'showroom', label: t('cs.locationKind.showroom') },
+                { value: 'warehouse', label: t('cs.locationKind.warehouse') },
+              ]}
+            />
           </Field>
           {kind === 'showroom' ? (
             <Field label={t('cs.setup.branch')}>
-              <select
+              <Select
                 value={chosenBranch}
-                onChange={(event) => setBranchId(event.target.value)}
-                className={control}
-              >
-                {branchList.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={setBranchId}
+                className="min-w-44"
+                options={branchList.map((branch) => ({ value: branch.id, label: branch.name }))}
+              />
             </Field>
           ) : null}
           <Field label={t('cs.setup.code')}>
@@ -852,12 +856,7 @@ function EditLocation({
           />
         </Field>
         <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={active}
-            onChange={(event) => setActive(event.target.checked)}
-            className="size-4 rounded border-border accent-primary focus-visible:ring-2 focus-visible:ring-ring"
-          />
+          <Checkbox checked={active} onCheckedChange={(next) => setActive(next === true)} />
           {t('cs.setup.inUse')}
         </label>
         <Problem error={save.error} />

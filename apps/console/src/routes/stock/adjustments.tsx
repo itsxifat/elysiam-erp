@@ -1,9 +1,20 @@
-import { Button, Money, PermissionGate, StatusBadge } from '@elysium/ui';
+import {
+  Button,
+  EmptyState,
+  Money,
+  PermissionGate,
+  Section,
+  Select,
+  Sheet,
+  StatusBadge,
+} from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ClipboardList, Plus } from 'lucide-react';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
+import { useT } from '../../i18n/locale.js';
 import {
   listAdjustments,
   listLocations,
@@ -12,7 +23,17 @@ import {
   requestAdjustment,
   type AdjustmentRow,
 } from './api.js';
-import { StockNav } from './stock-nav.js';
+import {
+  control,
+  Field,
+  StockHeader,
+  TableFrame,
+  TD,
+  TD_NUM,
+  TH,
+  TH_NUM,
+  TR,
+} from './stock-nav.js';
 import { useStockT, type StockMessageKey } from './messages.js';
 
 /**
@@ -44,7 +65,11 @@ const STATUS_TONE: Readonly<Record<AdjustmentRow['status'], 'warning' | 'success
 export function StockAdjustmentsPage() {
   const ability = useAbility();
   const st = useStockT();
+  const t = useT();
   const queryClient = useQueryClient();
+  // The request form opens in a sheet from the page's one action (D-447): the list of
+  // adjustments is what most visits are for.
+  const [formOpen, setFormOpen] = useState(false);
 
   const mayRead = ability.can('read', 'StockAdjustment');
   const mayRequest = ability.can('request', 'StockAdjustment');
@@ -119,96 +144,112 @@ export function StockAdjustmentsPage() {
       explain={{ title: st('stock.deniedTitle'), detail: st('stock.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{st('stock.adjustments')}</h1>
-          <p className="text-sm text-muted-foreground">{st('stock.adjustmentsHint')}</p>
-        </header>
-
-        <StockNav />
+        <StockHeader
+          title={st('stock.adjustments')}
+          description={st('stock.adjustmentsHint')}
+          actions={
+            <PermissionGate allowed={mayRequest}>
+              <Button onClick={() => setFormOpen(true)}>
+                <Plus aria-hidden="true" />
+                {st('stock.newAdjustment')}
+              </Button>
+            </PermissionGate>
+          }
+        />
 
         <PermissionGate allowed={mayRequest}>
-          <form
-            className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              submit.mutate();
-            }}
+          <Sheet
+            open={formOpen}
+            onOpenChange={setFormOpen}
+            title={st('stock.newAdjustment')}
+            description={st('stock.adjustmentsHint')}
+            closeLabel={t('common.close')}
+            footer={
+              <>
+                <Button variant="outline" onClick={() => setFormOpen(false)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" form="stock-adjustment-form" disabled={!canSubmit}>
+                  {st('stock.submit')}
+                </Button>
+              </>
+            }
           >
-            <Field label={st('stock.location')} id="adjustment-location">
-              <select
-                id="adjustment-location"
-                value={locationId}
-                required
-                className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) => setLocationId(event.target.value)}
-              >
-                <option value="">{st('stock.allLocations')}</option>
-                {(locations.data?.items ?? []).map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.code} · {location.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <form
+              id="stock-adjustment-form"
+              className="grid gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submit.mutate();
+              }}
+            >
+              <Field label={st('stock.location')} id="adjustment-location">
+                <Select
+                  id="adjustment-location"
+                  value={locationId}
+                  placeholder={st('stock.allLocations')}
+                  options={(locations.data?.items ?? []).map((location) => ({
+                    value: location.id,
+                    label: `${location.code} · ${location.name}`,
+                  }))}
+                  onValueChange={setLocationId}
+                />
+              </Field>
 
-            <Field label={st('stock.direction')} id="adjustment-direction">
-              <select
-                id="adjustment-direction"
-                value={direction}
-                className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) => setDirection(event.target.value === 'gain' ? 'gain' : 'loss')}
-              >
-                <option value="loss">{st('stock.direction.loss')}</option>
-                <option value="gain">{st('stock.direction.gain')}</option>
-              </select>
-            </Field>
+              <Field label={st('stock.direction')} id="adjustment-direction">
+                <Select
+                  id="adjustment-direction"
+                  value={direction}
+                  options={[
+                    { value: 'loss', label: st('stock.direction.loss') },
+                    { value: 'gain', label: st('stock.direction.gain') },
+                  ]}
+                  onValueChange={(value) => setDirection(value === 'gain' ? 'gain' : 'loss')}
+                />
+              </Field>
 
-            <Field label={st('stock.sku')} id="adjustment-sku">
-              <select
-                id="adjustment-sku"
-                value={skuId}
-                required
-                disabled={locationId === ''}
-                className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                onChange={(event) => setSkuId(event.target.value)}
-              >
-                <option value="">{st('stock.sku')}</option>
-                {(stockHere.data?.items ?? []).map((row) => (
-                  <option key={row.skuId} value={row.skuId}>
-                    {row.skuCode} · {row.productName} ({row.available})
-                  </option>
-                ))}
-              </select>
-            </Field>
+              <Field label={st('stock.sku')} id="adjustment-sku">
+                <Select
+                  id="adjustment-sku"
+                  value={skuId}
+                  placeholder={st('stock.sku')}
+                  disabled={locationId === ''}
+                  options={(stockHere.data?.items ?? []).map((row) => ({
+                    value: row.skuId,
+                    label: `${row.skuCode} · ${row.productName} (${String(row.available)})`,
+                  }))}
+                  onValueChange={setSkuId}
+                />
+              </Field>
 
-            <Field label={st('stock.qty')} id="adjustment-qty">
-              <input
-                id="adjustment-qty"
-                type="number"
-                min={1}
-                step={1}
-                value={qty}
-                required
-                className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) => setQty(event.target.value)}
-              />
-            </Field>
+              <Field label={st('stock.qty')} id="adjustment-qty">
+                <input
+                  id="adjustment-qty"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={qty}
+                  required
+                  className={`${control} tabular-nums`}
+                  onChange={(event) => setQty(event.target.value)}
+                />
+              </Field>
 
-            <Field label={st('stock.reason')} id="adjustment-reason" hint={st('stock.reasonHint')}>
-              <input
+              <Field
+                label={st('stock.reason')}
                 id="adjustment-reason"
-                value={reason}
-                required
-                maxLength={500}
-                className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) => setReason(event.target.value)}
-              />
-            </Field>
+                hint={st('stock.reasonHint')}
+              >
+                <input
+                  id="adjustment-reason"
+                  value={reason}
+                  required
+                  maxLength={500}
+                  className={control}
+                  onChange={(event) => setReason(event.target.value)}
+                />
+              </Field>
 
-            <div className="flex items-end gap-3 sm:col-span-2">
-              <Button type="submit" size="sm" disabled={!canSubmit}>
-                {st('stock.submit')}
-              </Button>
               {raised !== null ? (
                 <p role="status" className="text-sm text-muted-foreground">
                   {st('stock.awaitingApproval')}
@@ -219,68 +260,82 @@ export function StockAdjustmentsPage() {
                   {submit.error instanceof ApiError ? submit.error.message : st('stock.saveFailed')}
                 </p>
               ) : null}
-            </div>
-          </form>
+            </form>
+          </Sheet>
         </PermissionGate>
 
+        {/* Said on the page as well, so the person who closed the sheet still sees that
+            nothing moves until a second person approves. */}
+        {raised !== null && !formOpen ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            {st('stock.awaitingApproval')}
+          </p>
+        ) : null}
+
         <PermissionGate allowed={mayRead}>
-          <section aria-label={st('stock.adjustments')} className="space-y-2">
-            <table className="w-full text-sm">
-              <caption className="sr-only">{st('stock.adjustments')}</caption>
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th scope="col" className="py-2">
-                    {st('stock.colDate')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {st('stock.direction')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {st('stock.colReason')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {st('stock.colValue')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {st('stock.colStatus')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {(adjustments.data?.items ?? []).map((row) => (
-                  <tr key={row.id} className="border-b border-border/60">
-                    <td className="py-2 tabular-nums">{row.businessDate}</td>
-                    <td className="py-2">
-                      {st(`stock.direction.${row.direction}` as StockMessageKey)}
-                    </td>
-                    <td className="py-2">{row.reason}</td>
-                    <td className="py-2 text-right">
-                      {row.stockValuePoisha === undefined ? (
-                        '—'
-                      ) : (
-                        <Money poisha={row.stockValuePoisha} />
-                      )}
-                    </td>
-                    <td className="py-2">
-                      <StatusBadge tone={STATUS_TONE[row.status]}>
-                        {st(`stock.status.${row.status}` as StockMessageKey)}
-                      </StatusBadge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <section aria-label={st('stock.adjustments')}>
             {(adjustments.data?.items ?? []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">{st('stock.emptyTitle')}</p>
-            ) : null}
+              <EmptyState icon={ClipboardList} title={st('stock.emptyTitle')} />
+            ) : (
+              <TableFrame label={st('stock.adjustments')}>
+                <table className="w-full border-separate border-spacing-0 text-sm">
+                  <caption className="sr-only">{st('stock.adjustments')}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className={TH}>
+                        {st('stock.colDate')}
+                      </th>
+                      <th scope="col" className={TH}>
+                        {st('stock.direction')}
+                      </th>
+                      <th scope="col" className={TH}>
+                        {st('stock.colReason')}
+                      </th>
+                      <th scope="col" className={TH_NUM}>
+                        {st('stock.colValue')}
+                      </th>
+                      <th scope="col" className={TH}>
+                        {st('stock.colStatus')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(adjustments.data?.items ?? []).map((row) => (
+                      <tr key={row.id} className={TR}>
+                        <td className={`${TD} text-muted-foreground tabular-nums`}>
+                          {row.businessDate}
+                        </td>
+                        <td className={TD}>
+                          {st(`stock.direction.${row.direction}` as StockMessageKey)}
+                        </td>
+                        <td className={`${TD} whitespace-normal`}>{row.reason}</td>
+                        <td className={TD_NUM}>
+                          {row.stockValuePoisha === undefined ? (
+                            '—'
+                          ) : (
+                            <Money poisha={row.stockValuePoisha} />
+                          )}
+                        </td>
+                        <td className={TD}>
+                          <StatusBadge tone={STATUS_TONE[row.status]}>
+                            {st(`stock.status.${row.status}` as StockMessageKey)}
+                          </StatusBadge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableFrame>
+            )}
           </section>
 
-          <section aria-label={st('stock.reconciliations')} className="space-y-2">
-            <h2 className="text-sm font-semibold">{st('stock.reconciliations')}</h2>
-            <p className="text-sm text-muted-foreground">{st('stock.reconciliationsHint')}</p>
-            <ul className="space-y-1 text-sm">
+          <Section
+            title={st('stock.reconciliations')}
+            description={st('stock.reconciliationsHint')}
+          >
+            <ul aria-label={st('stock.reconciliations')} className="divide-y divide-border text-sm">
               {(reconciliations.data?.items ?? []).map((row) => (
-                <li key={row.id} className="flex items-center gap-3">
+                <li key={row.id} className="flex items-center gap-3 py-2.5">
                   <span className="tabular-nums">{row.businessDate}</span>
                   <span className="text-muted-foreground">
                     {st('stock.colChecked')}: {row.levelsChecked}
@@ -295,31 +350,9 @@ export function StockAdjustmentsPage() {
                 </li>
               ))}
             </ul>
-          </section>
+          </Section>
         </PermissionGate>
       </div>
     </PermissionGate>
-  );
-}
-
-function Field({
-  label,
-  id,
-  hint,
-  children,
-}: {
-  readonly label: string;
-  readonly id: string;
-  readonly hint?: string;
-  readonly children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
-        {label}
-      </label>
-      {children}
-      {hint === undefined ? null : <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
   );
 }

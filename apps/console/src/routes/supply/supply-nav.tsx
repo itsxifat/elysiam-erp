@@ -1,4 +1,14 @@
+import {
+  PageHeader,
+  Skeleton,
+  TabList,
+  cn,
+  controlClassName,
+  tabActiveClassName,
+  tabClassName,
+} from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { useSupplyT } from './messages.js';
 
@@ -14,16 +24,15 @@ import { useSupplyT } from './messages.js';
  *
  * `activeProps` rather than a manual comparison against the current path: the router
  * already knows which one is active, and a hand-rolled check is the thing that goes stale
- * when a path changes.
+ * when a path changes. The look is the shared underline tabs (D-445).
  */
 export function SupplyNav() {
   const st = useSupplyT();
-  const tab =
-    'rounded-md px-2.5 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-  const active = { className: `${tab} bg-muted font-medium text-foreground` };
+  const tab = tabClassName;
+  const active = { className: tabActiveClassName };
 
   return (
-    <nav aria-label={st('supply.title')} className="flex flex-wrap gap-1">
+    <TabList label={st('supply.title')}>
       <Link to="/supply" className={tab} activeProps={active} activeOptions={{ exact: true }}>
         {st('supply.suppliers')}
       </Link>
@@ -36,7 +45,30 @@ export function SupplyNav() {
       <Link to="/supply/payments" className={tab} activeProps={active}>
         {st('supply.payments')}
       </Link>
-    </nav>
+    </TabList>
+  );
+}
+
+/** A supply page's header: its title, one sentence, its action, and the section's tabs. */
+export function SupplyHeader({
+  title,
+  description,
+  actions,
+  eyebrow,
+}: {
+  readonly title: ReactNode;
+  readonly description: ReactNode;
+  readonly actions?: ReactNode;
+  readonly eyebrow?: ReactNode;
+}) {
+  return (
+    <PageHeader
+      title={title}
+      description={description}
+      {...(actions === undefined ? {} : { actions })}
+      {...(eyebrow === undefined ? {} : { eyebrow })}
+      tabs={<SupplyNav />}
+    />
   );
 }
 
@@ -53,8 +85,8 @@ export function Field({
   readonly children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1">
-      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="block text-sm font-medium text-foreground">
         {label}
       </label>
       {children}
@@ -63,8 +95,69 @@ export function Field({
   );
 }
 
-/** The one input class the supply forms share, so density stays consistent. */
-export const control =
-  'h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
+/** The one input class the supply forms share: the kit's control, as wide as its column. */
+export const control = `${controlClassName} w-full disabled:opacity-50`;
 
 export const numericControl = `${control} tabular-nums text-right`;
+
+// --- tables ----------------------------------------------------------------------------
+
+/** The kit DataTable's rhythm, for the supply screens' own tables (D-448). */
+export const TH =
+  'h-10 border-b border-border px-4 text-left align-middle text-xs font-medium whitespace-nowrap text-muted-foreground';
+export const TH_NUMERIC = cn(TH, 'text-right');
+export const TD = 'h-row border-b border-border px-4 align-middle';
+export const TD_NUMERIC = cn(TD, 'text-right whitespace-nowrap tabular-nums');
+export const TR =
+  'motion-safe:duration-fast hover:bg-accent/60 motion-safe:transition-colors [&:last-child>td]:border-b-0';
+
+/**
+ * A table's frame: a hairline card that scrolls sideways on a narrow screen. While it
+ * scrolls it is a labelled tab stop of its own (WCAG 2.1.1), because a read-only table has
+ * nothing focusable for a keyboard user to scroll it with.
+ */
+export function TableFrame({
+  label,
+  children,
+  className,
+}: {
+  readonly label: string;
+  readonly children: ReactNode;
+  readonly className?: string;
+}) {
+  const frame = useRef<HTMLDivElement>(null);
+  const [scrollable, setScrollable] = useState(false);
+  useEffect(() => {
+    const element = frame.current;
+    if (element === null) return;
+    const measure = () => setScrollable(element.scrollWidth > element.clientWidth + 1);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(element);
+    if (element.firstElementChild !== null) observer?.observe(element.firstElementChild);
+    return () => observer?.disconnect();
+  }, []);
+  return (
+    <div
+      ref={frame}
+      {...(scrollable ? { tabIndex: 0, role: 'region', 'aria-label': label } : {})}
+      className={cn(
+        'overflow-x-auto rounded-lg border border-border bg-card focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Rows shaped like the table they stand in for, while it loads. */
+export function LoadingRows({ rows = 3 }: { readonly rows?: number }) {
+  return (
+    <div className="space-y-2 rounded-lg border border-border bg-card p-4" aria-hidden="true">
+      {Array.from({ length: rows }, (_, index) => (
+        <Skeleton key={index} className="h-6 w-full" />
+      ))}
+    </div>
+  );
+}

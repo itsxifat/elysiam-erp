@@ -1,5 +1,6 @@
-import { Button, PermissionGate, StatusBadge } from '@elysium/ui';
+import { Button, EmptyState, PermissionGate, Select, StatusBadge, cn } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronRight, ClipboardCheck } from 'lucide-react';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
@@ -13,7 +14,17 @@ import {
   recordCounts,
   submitCount,
 } from './api.js';
-import { StockNav } from './stock-nav.js';
+import {
+  control,
+  Field,
+  StockHeader,
+  TableFrame,
+  TD,
+  TD_NUM,
+  TH,
+  TH_NUM,
+  TR,
+} from './stock-nav.js';
 import { useStockT, type StockMessageKey } from './messages.js';
 
 /**
@@ -112,42 +123,28 @@ export function StockCountsPage() {
       explain={{ title: st('stock.deniedTitle'), detail: st('stock.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{st('stock.counts')}</h1>
-          <p className="text-sm text-muted-foreground">{st('stock.countsHint')}</p>
-        </header>
-
-        <StockNav />
+        <StockHeader title={st('stock.counts')} description={st('stock.countsHint')} />
 
         <PermissionGate allowed={mayCount}>
+          {/* Starting a count is one choice and one button: no sheet needed. */}
           <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-4">
-            <div className="space-y-1">
-              <label htmlFor="count-location" className="text-xs font-medium text-muted-foreground">
-                {st('stock.location')}
-              </label>
-              <select
+            <Field label={st('stock.location')} id="count-location" className="w-full sm:w-72">
+              <Select
                 id="count-location"
                 value={locationId}
-                className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) => setLocationId(event.target.value)}
-              >
-                <option value="">{st('stock.allLocations')}</option>
-                {(locations.data?.items ?? [])
+                placeholder={st('stock.allLocations')}
+                options={(locations.data?.items ?? [])
                   // A count is of a shelf, so in-transit is not a place to count:
                   // the stock there is in a van and nobody can see it.
                   .filter((location) => location.kind !== 'in_transit')
-                  .map((location) => (
-                    <option key={location.id} value={location.id}>
-                      {location.code} · {location.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <Button
-              size="sm"
-              disabled={locationId === '' || start.isPending}
-              onClick={() => start.mutate()}
-            >
+                  .map((location) => ({
+                    value: location.id,
+                    label: `${location.code} · ${location.name}`,
+                  }))}
+                onValueChange={setLocationId}
+              />
+            </Field>
+            <Button disabled={locationId === '' || start.isPending} onClick={() => start.mutate()}>
               {st('stock.openCount')}
             </Button>
           </div>
@@ -159,116 +156,129 @@ export function StockCountsPage() {
           </p>
         ) : null}
 
-        <section aria-label={st('stock.counts')} className="space-y-2">
-          <ul className="space-y-1 text-sm">
-            {(sessions.data?.items ?? []).map((row) => (
-              <li key={row.id} className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="font-medium text-foreground underline-offset-4 hover:underline"
-                  onClick={() => {
-                    setOpenSessionId(row.id);
-                    setEntered({});
-                  }}
-                >
-                  {locations.data?.items.find((location) => location.id === row.locationId)?.code ??
-                    row.locationId}
-                </button>
-                <StatusBadge
-                  tone={
-                    row.status === 'open'
-                      ? 'info'
-                      : row.status === 'submitted'
-                        ? 'warning'
-                        : 'neutral'
-                  }
-                >
-                  {st(`stock.status.${row.status}` as StockMessageKey)}
-                </StatusBadge>
-              </li>
-            ))}
-          </ul>
+        <section aria-label={st('stock.counts')}>
           {(sessions.data?.items ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">{st('stock.emptyTitle')}</p>
-          ) : null}
+            <EmptyState icon={ClipboardCheck} title={st('stock.emptyTitle')} />
+          ) : (
+            <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card text-sm">
+              {(sessions.data?.items ?? []).map((row) => (
+                <li key={row.id}>
+                  <button
+                    type="button"
+                    aria-current={row.id === openSessionId ? 'true' : undefined}
+                    className={cn(
+                      'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+                      'hover:bg-accent/60 motion-safe:transition-colors',
+                      'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset',
+                      row.id === openSessionId && 'bg-selected',
+                    )}
+                    onClick={() => {
+                      setOpenSessionId(row.id);
+                      setEntered({});
+                    }}
+                  >
+                    <span className="font-medium text-foreground">
+                      {locations.data?.items.find((location) => location.id === row.locationId)
+                        ?.code ?? row.locationId}
+                    </span>
+                    <StatusBadge
+                      tone={
+                        row.status === 'open'
+                          ? 'info'
+                          : row.status === 'submitted'
+                            ? 'warning'
+                            : 'neutral'
+                      }
+                    >
+                      {st(`stock.status.${row.status}` as StockMessageKey)}
+                    </StatusBadge>
+                    <ChevronRight
+                      aria-hidden="true"
+                      className="ml-auto size-4 text-muted-foreground"
+                    />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         {current === undefined ? null : (
-          <section
-            aria-label={st('stock.colCounted')}
-            className="space-y-3 rounded-lg border border-border bg-card p-4"
-          >
-            <table className="w-full text-sm">
-              <caption className="sr-only">{st('stock.counts')}</caption>
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th scope="col" className="py-2">
-                    {st('stock.colSku')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {st('stock.colSnapshot')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {st('stock.colCounted')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {st('stock.colVariance')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {current.lines.map((line) => (
-                  <tr key={line.skuId} className="border-b border-border/60">
-                    <td className="py-2 font-medium tabular-nums">{line.skuCode}</td>
-                    <td className="py-2 text-right tabular-nums">{line.snapshotQty}</td>
-                    <td className="py-2 text-right">
-                      <label className="sr-only" htmlFor={`count-${line.skuId}`}>
-                        {`${st('stock.colCounted')} ${line.skuCode}`}
-                      </label>
-                      <input
-                        id={`count-${line.skuId}`}
-                        type="number"
-                        min={0}
-                        step={1}
-                        disabled={current.status !== 'open' || !mayCount}
-                        value={entered[line.skuId] ?? line.countedQty?.toString() ?? ''}
-                        className="h-8 w-20 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                        onChange={(event) =>
-                          setEntered((previous) => ({
-                            ...previous,
-                            [line.skuId]: event.target.value,
-                          }))
-                        }
-                      />
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      {line.varianceQty === null ? (
-                        <span className="text-muted-foreground">{st('stock.uncounted')}</span>
-                      ) : (
-                        // A sign, not a colour alone: §24's accessibility floor asks
-                        // for a label beside every status colour.
-                        <span
-                          className={
-                            line.varianceQty === 0
-                              ? ''
-                              : line.varianceQty < 0
-                                ? 'text-destructive'
-                                : 'text-success'
-                          }
-                        >
-                          {line.varianceQty > 0 ? `+${String(line.varianceQty)}` : line.varianceQty}
-                        </span>
-                      )}
-                    </td>
+          <section aria-label={st('stock.colCounted')} className="space-y-3">
+            <TableFrame label={st('stock.counts')}>
+              <table className="w-full border-separate border-spacing-0 text-sm">
+                <caption className="sr-only">{st('stock.counts')}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" className={TH}>
+                      {st('stock.colSku')}
+                    </th>
+                    <th scope="col" className={TH_NUM}>
+                      {st('stock.colSnapshot')}
+                    </th>
+                    <th scope="col" className={TH_NUM}>
+                      {st('stock.colCounted')}
+                    </th>
+                    <th scope="col" className={TH_NUM}>
+                      {st('stock.colVariance')}
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {current.lines.map((line) => (
+                    <tr key={line.skuId} className={TR}>
+                      <td className={`${TD} font-medium tabular-nums`}>{line.skuCode}</td>
+                      <td className={TD_NUM}>{line.snapshotQty}</td>
+                      <td className={`${TD} text-right`}>
+                        <label className="sr-only" htmlFor={`count-${line.skuId}`}>
+                          {`${st('stock.colCounted')} ${line.skuCode}`}
+                        </label>
+                        <input
+                          id={`count-${line.skuId}`}
+                          type="number"
+                          min={0}
+                          step={1}
+                          disabled={current.status !== 'open' || !mayCount}
+                          value={entered[line.skuId] ?? line.countedQty?.toString() ?? ''}
+                          className={cn(control, 'h-control-sm w-24 text-right tabular-nums')}
+                          onChange={(event) =>
+                            setEntered((previous) => ({
+                              ...previous,
+                              [line.skuId]: event.target.value,
+                            }))
+                          }
+                        />
+                      </td>
+                      <td className={TD_NUM}>
+                        {line.varianceQty === null ? (
+                          <span className="text-muted-foreground">{st('stock.uncounted')}</span>
+                        ) : (
+                          // A sign, not a colour alone: §24's accessibility floor asks
+                          // for a label beside every status colour.
+                          <span
+                            className={
+                              line.varianceQty === 0
+                                ? ''
+                                : line.varianceQty < 0
+                                  ? 'text-destructive'
+                                  : 'text-success'
+                            }
+                          >
+                            {line.varianceQty > 0
+                              ? `+${String(line.varianceQty)}`
+                              : line.varianceQty}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableFrame>
 
             <PermissionGate allowed={mayCount}>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
-                  size="sm"
                   variant="outline"
                   disabled={current.status !== 'open' || save.isPending}
                   onClick={() => save.mutate()}
@@ -276,7 +286,6 @@ export function StockCountsPage() {
                   {st('stock.colCounted')}
                 </Button>
                 <Button
-                  size="sm"
                   variant="outline"
                   disabled={current.status !== 'open' || finish.isPending}
                   onClick={() => finish.mutate()}
@@ -284,7 +293,6 @@ export function StockCountsPage() {
                   {st('stock.countSubmit')}
                 </Button>
                 <Button
-                  size="sm"
                   disabled={current.status !== 'submitted' || send.isPending}
                   onClick={() => send.mutate()}
                 >

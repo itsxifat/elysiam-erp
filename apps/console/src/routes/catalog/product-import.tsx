@@ -52,7 +52,7 @@ export function ProductImport() {
     >
       <div className="space-y-5">
         <section aria-labelledby="product-import-heading" className="space-y-2">
-          <h2 id="product-import-heading" className="text-sm font-semibold">
+          <h2 id="product-import-heading" className="text-base font-semibold tracking-tight">
             {t('cs.import.products')}
           </h2>
           <ol className="max-w-2xl list-decimal space-y-1 ps-5 text-sm text-muted-foreground">
@@ -63,7 +63,7 @@ export function ProductImport() {
           <a
             href={csvDataUrl(PRODUCT_TEMPLATE)}
             download="products-template.csv"
-            className="inline-flex items-center gap-1.5 text-sm underline underline-offset-4"
+            className="inline-flex items-center gap-1.5 rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             <Download aria-hidden className="size-4" />
             {t('cs.import.template')}
@@ -71,12 +71,12 @@ export function ProductImport() {
         </section>
 
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs font-medium">
+          <label className="flex flex-col gap-1.5 text-sm font-medium">
             {t('catalog.importFile')}
             <input
               type="file"
               accept=".csv,text/csv"
-              className="text-sm file:me-3 file:rounded-md file:border file:border-border file:bg-muted file:px-2 file:py-1 file:text-sm"
+              className="text-sm text-muted-foreground file:me-3 file:h-control-sm file:cursor-pointer file:rounded-md file:border file:border-input file:bg-background file:px-3 file:text-sm file:font-medium file:text-foreground hover:file:bg-accent"
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 setReport(null);
@@ -108,7 +108,10 @@ export function ProductImport() {
         )}
 
         {created !== null ? (
-          <div role="status" className="space-y-2 rounded-md border border-border p-3 text-sm">
+          <div
+            role="status"
+            className="space-y-2 rounded-lg border border-border bg-card p-4 text-sm"
+          >
             <p className="font-medium">
               {`${String(created.created)} ${t('cs.import.created')} · ${String(created.skuCount)} ${t('cs.import.skus')}`}
             </p>
@@ -118,7 +121,7 @@ export function ProductImport() {
                   <Link
                     to="/catalog/$productId"
                     params={{ productId: product.id }}
-                    className="underline underline-offset-4"
+                    className="text-primary underline-offset-4 hover:underline"
                   >
                     {product.name}
                   </Link>
@@ -141,88 +144,100 @@ export function ProductImport() {
                 <h3 id="import-problems-heading" className="text-sm font-semibold text-destructive">
                   {t('catalog.importProblems')}
                 </h3>
-                <table className="w-full text-sm">
-                  <caption className="sr-only">{t('catalog.importProblems')}</caption>
-                  <thead>
-                    <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                      <th scope="col" className="w-16 py-1.5">
-                        {t('catalog.importLine')}
-                      </th>
-                      <th scope="col" className="w-32 py-1.5">
-                        {t('catalog.importColumn')}
-                      </th>
-                      <th scope="col" className="py-1.5">
-                        {t('catalog.importMessage')}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.problems.map((problem, index) => (
-                      <tr
-                        key={`${String(problem.line)}-${problem.column ?? ''}-${String(index)}`}
-                        className="border-b border-border/60"
-                      >
-                        <td className="py-1.5 tabular-nums">{problem.line}</td>
-                        <td className="py-1.5 font-mono text-xs">{problem.column ?? '—'}</td>
-                        <td className="py-1.5">{problem.message}</td>
+                <div className="overflow-x-auto rounded-lg border border-border bg-card">
+                  <table className="w-full text-sm">
+                    <caption className="sr-only">{t('catalog.importProblems')}</caption>
+                    <thead>
+                      <tr className="border-b border-border bg-muted/50 text-left text-xs text-muted-foreground">
+                        <th scope="col" className="h-10 w-16 px-3 font-medium whitespace-nowrap">
+                          {t('catalog.importLine')}
+                        </th>
+                        <th scope="col" className="h-10 w-32 px-3 font-medium whitespace-nowrap">
+                          {t('catalog.importColumn')}
+                        </th>
+                        <th scope="col" className="h-10 px-3 font-medium whitespace-nowrap">
+                          {t('catalog.importMessage')}
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {report.problems.map((problem, index) => (
+                        <tr
+                          key={`${String(problem.line)}-${problem.column ?? ''}-${String(index)}`}
+                          className="border-b border-border last:border-b-0"
+                        >
+                          <td className="px-3 py-2 tabular-nums">{problem.line}</td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
+                            {problem.column ?? '—'}
+                          </td>
+                          <td className="px-3 py-2">{problem.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </section>
             ) : null}
 
             {report.preview.length > 0 ? (
-              <table className="w-full text-sm">
-                <caption className="sr-only">{t('cs.import.preview')}</caption>
-                <thead>
-                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th scope="col" className="w-16 py-1.5">
-                      {t('catalog.importLine')}
-                    </th>
-                    <th scope="col" className="py-1.5">
-                      {t('catalog.colProduct')}
-                    </th>
-                    <th scope="col" className="py-1.5">
-                      {t('catalog.colCategory')}
-                    </th>
-                    <th scope="col" className="py-1.5">
-                      {t('cs.import.sizes')}
-                    </th>
-                    <th scope="col" className="py-1.5">
-                      {t('cs.import.colours')}
-                    </th>
-                    <th scope="col" className="py-1.5 text-right">
-                      {t('catalog.colSkus')}
-                    </th>
-                    <th scope="col" className="py-1.5 text-right">
-                      {t('cs.col.price')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.preview.map((row) => (
-                    <tr key={row.line} className="border-b border-border/60">
-                      <td className="py-1.5 tabular-nums">{row.line}</td>
-                      <td className="py-1.5">
-                        <span className="font-medium">{row.name}</span>
-                        {row.status === 'draft' ? (
-                          <span className="ms-2">
-                            <StatusBadge tone="info">{t('catalog.status.draft')}</StatusBadge>
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="py-1.5">{row.categoryName ?? '—'}</td>
-                      <td className="py-1.5">{row.sizes.join(', ') || '—'}</td>
-                      <td className="py-1.5">{row.colours.join(', ') || '—'}</td>
-                      <td className="py-1.5 text-right tabular-nums">{row.variantCount}</td>
-                      <td className="py-1.5 text-right">
-                        <Money poisha={row.pricePoisha} />
-                      </td>
+              <div className="overflow-x-auto rounded-lg border border-border bg-card">
+                <table className="w-full text-sm">
+                  <caption className="sr-only">{t('cs.import.preview')}</caption>
+                  <thead>
+                    <tr className="border-b border-border bg-muted/50 text-left text-xs text-muted-foreground">
+                      <th scope="col" className="h-10 w-16 px-3 font-medium whitespace-nowrap">
+                        {t('catalog.importLine')}
+                      </th>
+                      <th scope="col" className="h-10 px-3 font-medium whitespace-nowrap">
+                        {t('catalog.colProduct')}
+                      </th>
+                      <th scope="col" className="h-10 px-3 font-medium whitespace-nowrap">
+                        {t('catalog.colCategory')}
+                      </th>
+                      <th scope="col" className="h-10 px-3 font-medium whitespace-nowrap">
+                        {t('cs.import.sizes')}
+                      </th>
+                      <th scope="col" className="h-10 px-3 font-medium whitespace-nowrap">
+                        {t('cs.import.colours')}
+                      </th>
+                      <th
+                        scope="col"
+                        className="h-10 px-3 text-right font-medium whitespace-nowrap"
+                      >
+                        {t('catalog.colSkus')}
+                      </th>
+                      <th
+                        scope="col"
+                        className="h-10 px-3 text-right font-medium whitespace-nowrap"
+                      >
+                        {t('cs.col.price')}
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {report.preview.map((row) => (
+                      <tr key={row.line} className="border-b border-border last:border-b-0">
+                        <td className="px-3 py-2 tabular-nums">{row.line}</td>
+                        <td className="px-3 py-2">
+                          <span className="font-medium">{row.name}</span>
+                          {row.status === 'draft' ? (
+                            <span className="ms-2">
+                              <StatusBadge tone="info">{t('catalog.status.draft')}</StatusBadge>
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2">{row.categoryName ?? '—'}</td>
+                        <td className="px-3 py-2">{row.sizes.join(', ') || '—'}</td>
+                        <td className="px-3 py-2">{row.colours.join(', ') || '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{row.variantCount}</td>
+                        <td className="px-3 py-2 text-right">
+                          <Money poisha={row.pricePoisha} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : null}
           </div>
         ) : null}
