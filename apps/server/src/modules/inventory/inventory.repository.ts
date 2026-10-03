@@ -125,6 +125,27 @@ export async function inTransitLocation(tx: Tx, orgId: string): Promise<Location
   return rows[0];
 }
 
+/** The code a brand's in-transit location gets when the first transfer creates it (D-428). */
+export const AUTO_IN_TRANSIT_CODE = 'IN-TRANSIT';
+
+/**
+ * Create the brand's in-transit location if it has none (D-428).
+ *
+ * `on conflict do nothing` rather than a check-then-insert: two first transfers at the
+ * same moment both find none, and the loser of the insert must read the winner's row
+ * rather than fail on the unique code. Returns whether this call created it, so the
+ * caller can audit the creation exactly once.
+ */
+export async function insertInTransitLocation(tx: Tx, orgId: string): Promise<string | undefined> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    insert into org.locations (org_id, branch_id, code, name, kind)
+    values (${orgId}, null, ${AUTO_IN_TRANSIT_CODE}, 'In transit', 'in_transit'::org.location_kind)
+    on conflict (org_id, code) do nothing
+    returning id
+  `);
+  return rows[0]?.id;
+}
+
 // --- levels -------------------------------------------------------------------
 
 export interface LevelRow extends Record<string, unknown> {
@@ -314,7 +335,11 @@ export async function levelFor(
 export interface StockViewRow extends Record<string, unknown> {
   readonly sku_id: string;
   readonly sku_code: string;
+  readonly product_id: string;
   readonly product_name: string;
+  /** The SKU's values in axis order, e.g. `M / Red`; empty for an unvaried SKU. */
+  readonly variant_label: string;
+  readonly sku_status: string;
   readonly location_id: string;
   readonly location_code: string;
   readonly location_name: string;
@@ -343,13 +368,28 @@ export async function listStock(
     readonly scope: SQL;
     readonly locationId?: string | undefined;
     readonly skuQuery?: string | undefined;
+    readonly productId?: string | undefined;
+    readonly categoryId?: string | undefined;
     readonly lowOnly: boolean;
     readonly limit: number;
     readonly offset: number;
   },
 ): Promise<StockViewRow[]> {
   const rows = await tx.execute<StockViewRow>(sql`
-    select s.id as sku_id, s.code as sku_code, p.name as product_name,
+    select s.id as sku_id, s.code as sku_code, p.id as product_id, p.name as product_name,
+           coalesce((
+             select string_agg(
+               av.label, ' / '
+               -- Size, then colour, then the rest: how a person says it ("M / Red").
+               order by case sv_a.kind::text when 'size' then 0 when 'colour' then 1 else 2 end,
+                        sv_a.position, sv_a.code
+             )
+             from catalog.sku_values sv
+             join catalog.attribute_values av on av.org_id = sv.org_id and av.id = sv.value_id
+             join catalog.attributes sv_a on sv_a.org_id = sv.org_id and sv_a.id = sv.attribute_id
+             where sv.org_id = s.org_id and sv.sku_id = s.id
+           ), '') as variant_label,
+           s.status::text as sku_status,
            l.id as location_id, l.code as location_code, l.name as location_name,
            l.branch_id,
            sl.on_hand, sl.reserved, sl.on_hand - sl.reserved as available, sl.reorder_level,
@@ -367,6 +407,17 @@ export async function listStock(
         filters.skuQuery === undefined
           ? sql`true`
           : sql`(s.code ilike ${`%${filters.skuQuery}%`} or p.name ilike ${`%${filters.skuQuery}%`})`
+      }
+      and ${filters.productId === undefined ? sql`true` : sql`p.id = ${filters.productId}::uuid`}
+      and ${
+        filters.categoryId === undefined
+          ? sql`true`
+          : // The category and its descendants, through the maintained materialised path.
+            sql`p.category_id in (
+              select c.id from catalog.categories c
+              join catalog.categories root on root.org_id = c.org_id and root.id = ${filters.categoryId}::uuid
+              where c.org_id = sl.org_id and (c.id = root.id or c.path like root.path || '/%')
+            )`
       }
       and ${filters.lowOnly ? sql`sl.reorder_level > 0 and sl.on_hand - sl.reserved <= sl.reorder_level` : sql`true`}
     order by s.code, l.code
@@ -404,6 +455,8 @@ export interface MovementRow extends Record<string, unknown> {
   readonly sku_id: string;
   readonly sku_code: string;
   readonly location_id: string;
+  readonly location_code: string;
+  readonly location_name: string;
   readonly kind: string;
   readonly qty_delta: number;
   readonly unit_cost_poisha: string | null;
@@ -483,6 +536,7 @@ export async function listMovements(
   filters: {
     readonly scope: SQL;
     readonly skuId?: string | undefined;
+    readonly productId?: string | undefined;
     readonly locationId?: string | undefined;
     readonly from?: string | undefined;
     readonly to?: string | undefined;
@@ -491,7 +545,8 @@ export async function listMovements(
   },
 ): Promise<MovementRow[]> {
   const rows = await tx.execute<MovementRow>(sql`
-    select m.id, m.sku_id, s.code as sku_code, m.location_id, m.kind::text as kind,
+    select m.id, m.sku_id, s.code as sku_code, m.location_id,
+           l.code as location_code, l.name as location_name, m.kind::text as kind,
            m.qty_delta, m.unit_cost_poisha::text as unit_cost_poisha,
            m.ref_type, m.ref_id, m.business_date::text as business_date,
            m.memo, m.created_by, m.created_at
@@ -501,6 +556,7 @@ export async function listMovements(
     where m.org_id = ${orgId}
       and ${filters.scope}
       and ${filters.skuId === undefined ? sql`true` : sql`m.sku_id = ${filters.skuId}::uuid`}
+      and ${filters.productId === undefined ? sql`true` : sql`s.product_id = ${filters.productId}::uuid`}
       and ${filters.locationId === undefined ? sql`true` : sql`m.location_id = ${filters.locationId}::uuid`}
       and ${filters.from === undefined ? sql`true` : sql`m.business_date >= ${filters.from}::date`}
       and ${filters.to === undefined ? sql`true` : sql`m.business_date <= ${filters.to}::date`}

@@ -45,7 +45,11 @@ import type {
 export interface StockRowView {
   readonly skuId: string;
   readonly skuCode: string;
+  readonly productId: string;
   readonly productName: string;
+  /** The SKU's size, colour… in axis order (`M / Red`); empty for an unvaried SKU. */
+  readonly variantLabel: string;
+  readonly skuStatus: string;
   readonly locationId: string;
   readonly locationCode: string;
   readonly locationName: string;
@@ -202,6 +206,8 @@ export class StockService {
         scope,
         locationId: query.locationId,
         skuQuery: query.q,
+        productId: query.productId,
+        categoryId: query.categoryId,
         lowOnly: query.low === true,
         limit: query.pageSize,
         offset: (query.page - 1) * query.pageSize,
@@ -212,7 +218,10 @@ export class StockService {
         items: rows.map((row) => ({
           skuId: row.sku_id,
           skuCode: row.sku_code,
+          productId: row.product_id,
           productName: row.product_name,
+          variantLabel: row.variant_label,
+          skuStatus: row.sku_status,
           locationId: row.location_id,
           locationCode: row.location_code,
           locationName: row.location_name,
@@ -254,6 +263,7 @@ export class StockService {
         await repo.listMovements(tx, context.orgId, {
           scope,
           skuId: query.skuId,
+          productId: query.productId,
           locationId: query.locationId,
           from: query.from,
           to: query.to,
@@ -265,6 +275,8 @@ export class StockService {
         skuId: row.sku_id,
         skuCode: row.sku_code,
         locationId: row.location_id,
+        locationCode: row.location_code,
+        locationName: row.location_name,
         kind: row.kind,
         qtyDelta: row.qty_delta,
         // Cost, and named so `serializeFor` removes it for a warehouse packer.

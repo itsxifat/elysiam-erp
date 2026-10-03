@@ -99,6 +99,32 @@ export const createAttributeValueSchema = z.object({
 });
 export type CreateAttributeValueInput = z.infer<typeof createAttributeValueSchema>;
 
+/**
+ * Rename an attribute or move it in the list (D-424). `code` is absent on purpose:
+ * it is the attribute's key in every import file and report.
+ */
+export const updateAttributeSchema = z
+  .object({
+    name: nameSchema.max(60).optional(),
+    position: z.number().int().min(0).max(9999).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, 'Nothing to change.');
+export type UpdateAttributeInput = z.infer<typeof updateAttributeSchema>;
+
+/**
+ * Fix a value's label or move it (D-424). `code` is absent on purpose: it is a segment
+ * of every SKU code already built from this value, and those are printed on labels.
+ */
+export const updateAttributeValueSchema = z
+  .object({
+    label: z.string().trim().min(1).max(60).optional(),
+    position: z.number().int().min(0).max(9999).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, 'Nothing to change.');
+export type UpdateAttributeValueInput = z.infer<typeof updateAttributeValueSchema>;
+
 // --- products and the variant matrix ---------------------------------------
 
 /**
@@ -132,6 +158,20 @@ export const createProductSchema = z.object({
    */
   axes: z.array(variantAxisSchema).max(4).default([]),
   generateSkus: z.boolean().default(true),
+  /**
+   * A price for some of the generated variants, named by their value ids (D-422).
+   * Every other variant starts at `pricePoisha`. Refused when it names a combination
+   * the axes do not produce, so a typed price is never silently dropped.
+   */
+  variantPrices: z
+    .array(
+      z.object({
+        valueIds: z.array(catalogIdSchema).min(1).max(4),
+        pricePoisha: pricePoishaSchema,
+      }),
+    )
+    .max(500)
+    .optional(),
 });
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
@@ -182,6 +222,13 @@ export const setBarcodeSchema = z.object({
     .nullable(),
 });
 export type SetBarcodeInput = z.infer<typeof setBarcodeSchema>;
+
+/**
+ * Archive a SKU or bring it back (D-423). Stock stays where it is: an archived SKU
+ * cannot be sold, but it can still be transferred, counted and written off.
+ */
+export const updateSkuSchema = z.object({ status: z.enum(['active', 'archived']) }).strict();
+export type UpdateSkuInput = z.infer<typeof updateSkuSchema>;
 
 // --- images -----------------------------------------------------------------
 
@@ -236,6 +283,17 @@ export const priceImportSchema = z.object({
   reason: z.string().trim().max(200).optional(),
 });
 export type PriceImportInput = z.infer<typeof priceImportSchema>;
+
+/** The new-products spreadsheet (D-425): the file as text, like the price importer. */
+export const productImportSchema = z
+  .object({
+    csv: z
+      .string()
+      .min(1, 'The file is empty.')
+      .max(2_000_000, 'That file is too large to import.'),
+  })
+  .strict();
+export type ProductImportInput = z.infer<typeof productImportSchema>;
 
 // --- labels -----------------------------------------------------------------
 

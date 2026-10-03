@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { withOrg } from '@elysium/db';
+import { withOrg, type Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -55,6 +55,41 @@ export class TransfersService {
     private readonly audit: AuditService,
   ) {}
 
+  /**
+   * The brand's in-transit location, created on the first transfer when it has none
+   * (D-428). §8 passes every transfer through one, and an owner should never have to
+   * know that before moving stock to a showroom. Created in the dispatch's transaction,
+   * so a refused transfer leaves no location behind, and audited like a location made
+   * on the setup screen.
+   */
+  private async inTransit(tx: Tx, context: ActiveContext, request: AuditableRequest) {
+    const existing = await repo.inTransitLocation(tx, context.orgId);
+    if (existing !== undefined) return existing;
+
+    const created = await repo.insertInTransitLocation(tx, context.orgId);
+    if (created !== undefined) {
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'create',
+        action: 'inventory.location.created',
+        entityType: 'Location',
+        entityId: created,
+        before: null,
+        after: {
+          code: repo.AUTO_IN_TRANSIT_CODE,
+          name: 'In transit',
+          kind: 'in_transit',
+          branchId: null,
+          reason: 'first transfer',
+        },
+        requestId: context.requestId,
+        request,
+      });
+    }
+    return repo.inTransitLocation(tx, context.orgId);
+  }
+
   /** Step one: out of the source, into in-transit. */
   async dispatch(
     context: ActiveContext,
@@ -83,11 +118,11 @@ export class TransfersService {
         // to return stock to the warehouse.
         assertInScope(request, { branchId: from.branch_id });
 
-        const transit = await repo.inTransitLocation(tx, context.orgId);
+        const transit = await this.inTransit(tx, context, request);
         if (transit === undefined) {
           throw new StockError(
             'STOCK_LOCATION_INVALID',
-            'This brand has no in-transit location; create one before transferring stock (§8).',
+            'This brand has no active in-transit location, and one named IN-TRANSIT exists but is switched off. Switch it back on in Catalog setup (§8).',
           );
         }
 

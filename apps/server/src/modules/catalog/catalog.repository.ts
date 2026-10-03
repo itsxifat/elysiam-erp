@@ -903,3 +903,55 @@ export async function valuesOfSkus(
 
 /** A scope filter the handler must apply, as `scopeWhere` produced it. */
 export type ScopeSql = SQL;
+
+// --- catalog-stock-ux: renames, SKU status, the product importer -------------
+
+export async function updateAttribute(
+  tx: Tx,
+  orgId: string,
+  id: string,
+  input: { readonly name?: string | undefined; readonly position?: number | undefined },
+): Promise<AttributeRow | undefined> {
+  const rows = await tx.execute<AttributeRow>(sql`
+    update catalog.attributes set
+      name = coalesce(${input.name ?? null}, name),
+      position = coalesce(${input.position ?? null}::integer, position),
+      updated_at = now()
+    where org_id = ${orgId} and id = ${id}
+    returning id, code, name, kind::text as kind, is_variant, position
+  `);
+  return rows[0];
+}
+
+export async function updateAttributeValue(
+  tx: Tx,
+  orgId: string,
+  attributeId: string,
+  valueId: string,
+  input: { readonly label?: string | undefined; readonly position?: number | undefined },
+): Promise<AttributeValueRow | undefined> {
+  const rows = await tx.execute<AttributeValueRow>(sql`
+    update catalog.attribute_values set
+      label = coalesce(${input.label ?? null}, label),
+      position = coalesce(${input.position ?? null}::integer, position),
+      updated_at = now()
+    where org_id = ${orgId} and attribute_id = ${attributeId} and id = ${valueId}
+    returning id, attribute_id, code, label, position
+  `);
+  return rows[0];
+}
+
+export async function setSkuStatus(
+  tx: Tx,
+  orgId: string,
+  skuId: string,
+  status: 'active' | 'archived',
+): Promise<SkuRow | undefined> {
+  const rows = await tx.execute<SkuRow>(sql`
+    update catalog.skus set status = ${status}::catalog.sku_status, updated_at = now()
+    where org_id = ${orgId} and id = ${skuId}
+    returning id, org_id, product_id, code, variant_key, barcode, price_poisha,
+              status::text as status, position
+  `);
+  return rows[0];
+}

@@ -66,3 +66,21 @@ export {
   type PriceImportReport,
   type PriceImportRow,
 } from './price-import.js';
+
+export { variantPrices, type VariantPriceOverride } from './variant-prices.js';
+
+export {
+  productSlug,
+  reviewProductImport,
+  splitValueList,
+  uniqueSlug,
+  PRODUCT_IMPORT_MAX_ROWS,
+  PRODUCT_IMPORT_OPTIONAL,
+  PRODUCT_IMPORT_REQUIRED,
+  PRODUCT_IMPORT_TEMPLATE,
+  type KnownAxis,
+  type KnownCategory,
+  type ProductImportContext,
+  type ProductImportReport,
+  type ProductImportRow,
+} from './product-import.js';
