@@ -277,6 +277,7 @@ export class StockService {
         locationId: row.location_id,
         locationCode: row.location_code,
         locationName: row.location_name,
+        locationKind: row.location_kind,
         kind: row.kind,
         qtyDelta: row.qty_delta,
         // Cost, and named so `serializeFor` removes it for a warehouse packer.

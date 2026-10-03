@@ -62,6 +62,12 @@ export function StockLevelsPage() {
     staleTime: 5 * 60_000,
   });
 
+  const transit = new Set(
+    (locations.data?.items ?? [])
+      .filter((location) => location.kind === 'in_transit')
+      .map((location) => location.id),
+  );
+
   const categories = useQuery({
     queryKey: ['catalog', 'categories'],
     queryFn: listCategories,
@@ -142,7 +148,7 @@ export function StockLevelsPage() {
           return (
             <span className="inline-flex items-center gap-2 tabular-nums">
               {cell.getValue()}
-              {row.available === 0 ? (
+              {row.available === 0 && !transit.has(row.locationId) ? (
                 <StatusBadge tone="danger">{t('cs.hub.out')}</StatusBadge>
               ) : low ? (
                 <StatusBadge tone="warning">{st('stock.lowOnly')}</StatusBadge>
@@ -247,7 +253,10 @@ export function StockLevelsPage() {
 
         <DataTable
           columns={columns}
-          data={rows.data?.items ?? []}
+          data={(rows.data?.items ?? []).filter(
+            // An empty in-transit row is bookkeeping, not stock anybody can look for.
+            (row) => row.onHand > 0 || !transit.has(row.locationId),
+          )}
           getRowId={(row) => `${row.skuId}:${row.locationId}`}
           page={{
             page: search.page,

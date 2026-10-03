@@ -16,7 +16,7 @@ import {
   listCategories,
   type CatalogProduct,
 } from './api.js';
-import { ChipGroup, PhotoUploader } from './parts.js';
+import { ChipGroup, Field, PhotoUploader } from './parts.js';
 import { slugify } from './slug.js';
 import { parseQty, variantRows, type VariantRow } from './variant-grid.js';
 
@@ -203,17 +203,15 @@ export function CatalogNewProductPage() {
             {t('cs.new.basics')}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs font-medium sm:col-span-2">
-              {t('catalog.productName')}
+            <Field label={t('catalog.productName')} className="sm:col-span-2">
               <input
                 value={name}
                 maxLength={200}
                 onChange={(event) => setName(event.target.value)}
                 className={control}
               />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium">
-              {t('catalog.productCategory')}
+            </Field>
+            <Field label={t('catalog.productCategory')}>
               <select
                 value={categoryId}
                 onChange={(event) => setCategoryId(event.target.value)}
@@ -229,9 +227,8 @@ export function CatalogNewProductPage() {
                     </option>
                   ))}
               </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium">
-              {t('cs.sellingPrice')}
+            </Field>
+            <Field label={t('cs.sellingPrice')}>
               <input
                 inputMode="decimal"
                 value={taka}
@@ -239,9 +236,8 @@ export function CatalogNewProductPage() {
                 aria-invalid={taka.trim() !== '' && pricePoisha === null}
                 className={`${control} text-right tabular-nums`}
               />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium">
-              {t('catalog.productStatus')}
+            </Field>
+            <Field label={t('catalog.productStatus')}>
               <select
                 value={status}
                 onChange={(event) => setStatus(event.target.value as 'draft' | 'active')}
@@ -250,9 +246,8 @@ export function CatalogNewProductPage() {
                 <option value="active">{t('cs.status.activeHelp')}</option>
                 <option value="draft">{t('cs.status.draftHelp')}</option>
               </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium sm:col-span-2">
-              {t('cs.description')}
+            </Field>
+            <Field label={t('cs.description')} className="sm:col-span-2">
               <textarea
                 value={description}
                 maxLength={4000}
@@ -260,7 +255,7 @@ export function CatalogNewProductPage() {
                 onChange={(event) => setDescription(event.target.value)}
                 className="rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
-            </label>
+            </Field>
           </div>
         </section>
 
@@ -367,8 +362,7 @@ export function CatalogNewProductPage() {
               {t(mayPrice ? 'cs.new.openingHelp' : 'cs.receive.helpDraft')}
             </p>
             <div className="grid gap-3 sm:grid-cols-3">
-              <label className="flex flex-col gap-1 text-xs font-medium">
-                {t('cs.location')}
+              <Field label={t('cs.location')}>
                 <select
                   value={chosenLocation}
                   onChange={(event) => setLocationId(event.target.value)}
@@ -380,9 +374,8 @@ export function CatalogNewProductPage() {
                     </option>
                   ))}
                 </select>
-              </label>
-              <label className="flex flex-col gap-1 text-xs font-medium">
-                {t('cs.supplier')}
+              </Field>
+              <Field label={t('cs.supplier')}>
                 <select
                   value={supplierId}
                   onChange={(event) => setSupplierId(event.target.value)}
@@ -395,17 +388,16 @@ export function CatalogNewProductPage() {
                     </option>
                   ))}
                 </select>
-              </label>
+              </Field>
               {mayPrice ? (
-                <label className="flex flex-col gap-1 text-xs font-medium">
-                  {t('cs.costPerPiece')}
+                <Field label={t('cs.costPerPiece')}>
                   <input
                     inputMode="decimal"
                     value={costTaka}
                     onChange={(event) => setCostTaka(event.target.value)}
                     className={`${control} text-right tabular-nums`}
                   />
-                </label>
+                </Field>
               ) : null}
             </div>
             {(suppliers.data?.items ?? []).length === 0 && suppliers.isSuccess ? (

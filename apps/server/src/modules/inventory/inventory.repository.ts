@@ -457,6 +457,7 @@ export interface MovementRow extends Record<string, unknown> {
   readonly location_id: string;
   readonly location_code: string;
   readonly location_name: string;
+  readonly location_kind: string;
   readonly kind: string;
   readonly qty_delta: number;
   readonly unit_cost_poisha: string | null;
@@ -546,7 +547,8 @@ export async function listMovements(
 ): Promise<MovementRow[]> {
   const rows = await tx.execute<MovementRow>(sql`
     select m.id, m.sku_id, s.code as sku_code, m.location_id,
-           l.code as location_code, l.name as location_name, m.kind::text as kind,
+           l.code as location_code, l.name as location_name,
+           l.kind::text as location_kind, m.kind::text as kind,
            m.qty_delta, m.unit_cost_poisha::text as unit_cost_poisha,
            m.ref_type, m.ref_id, m.business_date::text as business_date,
            m.memo, m.created_by, m.created_at

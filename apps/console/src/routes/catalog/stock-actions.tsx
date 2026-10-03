@@ -466,7 +466,7 @@ export function AdjustStockDialog({
                 key={reason}
                 type="button"
                 size="sm"
-                variant={reasonKind === reason ? 'secondary' : 'outline'}
+                variant={reasonKind === reason ? 'primary' : 'outline'}
                 aria-pressed={reasonKind === reason}
                 onClick={() => setReasonKind(reason)}
               >

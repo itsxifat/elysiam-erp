@@ -36,7 +36,7 @@ import {
   type CatalogProduct,
   type CatalogSku,
 } from './api.js';
-import { ChipGroup, PhotoUploader, Thumb } from './parts.js';
+import { ChipGroup, Field, PhotoUploader, Thumb } from './parts.js';
 import {
   AdjustStockDialog,
   ReceiveStockDialog,
@@ -339,7 +339,7 @@ function VariantGrid({
 }: {
   readonly product: CatalogProduct | undefined;
   readonly rows: readonly StockRow[];
-  readonly locations: readonly { id: string; name: string; code: string }[];
+  readonly locations: readonly { id: string; name: string; code: string; kind: string }[];
   readonly showStock: boolean;
   readonly mayWrite: boolean;
   readonly onDone: () => void;
@@ -350,10 +350,13 @@ function VariantGrid({
   const [archiving, setArchiving] = useState<CatalogSku | null>(null);
   const skus = product?.skus ?? [];
 
-  // Every active warehouse and showroom, plus anywhere this product has stock.
+  // Every active warehouse, then every showroom, then anywhere else this product has
+  // stock right now (in transit, damaged). An empty in-transit column is noise.
   const columns = [
-    ...locations,
+    ...locations.filter((location) => location.kind === 'warehouse'),
+    ...locations.filter((location) => location.kind !== 'warehouse'),
     ...rows
+      .filter((row) => row.onHand > 0)
       .filter((row) => !locations.some((location) => location.id === row.locationId))
       .filter(
         (row, index, all) =>
@@ -827,17 +830,15 @@ function EditProductDialog({
       }
     >
       <div className="space-y-3">
-        <label className="flex flex-col gap-1 text-xs font-medium">
-          {t('catalog.productName')}
+        <Field label={t('catalog.productName')}>
           <input
             value={name}
             maxLength={200}
             onChange={(event) => setName(event.target.value)}
             className={control}
           />
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium">
-          {t('catalog.productCategory')}
+        </Field>
+        <Field label={t('catalog.productCategory')}>
           <select
             value={categoryId}
             onChange={(event) => setCategoryId(event.target.value)}
@@ -851,9 +852,8 @@ function EditProductDialog({
               </option>
             ))}
           </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium">
-          {t('catalog.productStatus')}
+        </Field>
+        <Field label={t('catalog.productStatus')}>
           <select
             value={status}
             onChange={(event) => setStatus(event.target.value as CatalogProduct['status'])}
@@ -863,9 +863,8 @@ function EditProductDialog({
             <option value="draft">{t('cs.status.draftHelp')}</option>
             <option value="archived">{t('catalog.status.archived')}</option>
           </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium">
-          {t('cs.description')}
+        </Field>
+        <Field label={t('cs.description')}>
           <textarea
             value={description}
             maxLength={4000}
@@ -873,7 +872,7 @@ function EditProductDialog({
             onChange={(event) => setDescription(event.target.value)}
             className="rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-        </label>
+        </Field>
         {save.error !== null ? (
           <p role="alert" className="text-sm text-destructive">
             {save.error instanceof ApiError ? save.error.message : t('cs.saveFailed')}
@@ -913,7 +912,9 @@ function StockHistory({
     queryKey: ['stock', 'movements', productId],
     queryFn: () => listMovements({ productId, pageSize: 50 }),
   });
-  const items = history.data?.items ?? [];
+  // A transfer's two legs through in-transit are bookkeeping; the person wants "out of
+  // the warehouse" and "into the showroom".
+  const items = (history.data?.items ?? []).filter((row) => row.locationKind !== 'in_transit');
   const label = (skuId: string, code: string) => {
     const found = variants.find((variant) => variant.id === skuId)?.label ?? '';
     return found === '' ? code : found;
@@ -1013,16 +1014,16 @@ function PriceHistory({ variants }: { readonly variants: readonly VariantInfo[] 
           <caption className="sr-only">{t('catalog.priceHistory')}</caption>
           <thead>
             <tr className="border-b border-border text-left text-xs text-muted-foreground">
-              <th scope="col" className="py-1.5">
+              <th scope="col" className="px-2 py-1.5">
                 {t('catalog.priceWhen')}
               </th>
-              <th scope="col" className="py-1.5 text-right">
+              <th scope="col" className="px-2 py-1.5 text-right">
                 {t('catalog.priceFrom')}
               </th>
-              <th scope="col" className="py-1.5 text-right">
+              <th scope="col" className="px-2 py-1.5 text-right">
                 {t('catalog.priceTo')}
               </th>
-              <th scope="col" className="py-1.5">
+              <th scope="col" className="px-2 py-1.5">
                 {t('catalog.priceReason')}
               </th>
             </tr>
@@ -1030,16 +1031,16 @@ function PriceHistory({ variants }: { readonly variants: readonly VariantInfo[] 
           <tbody>
             {(history.data?.items ?? []).map((row, index) => (
               <tr key={`${row.changedAt}-${String(index)}`} className="border-b border-border/60">
-                <td className="py-1.5">
+                <td className="px-2 py-1.5">
                   <DateTime value={row.changedAt} />
                 </td>
-                <td className="py-1.5 text-right">
+                <td className="px-2 py-1.5 text-right">
                   {row.fromPricePoisha === null ? '—' : <Money poisha={row.fromPricePoisha} />}
                 </td>
-                <td className="py-1.5 text-right">
+                <td className="px-2 py-1.5 text-right">
                   <Money poisha={row.toPricePoisha} />
                 </td>
-                <td className="py-1.5 text-muted-foreground">{row.reason ?? ''}</td>
+                <td className="px-2 py-1.5 text-muted-foreground">{row.reason ?? ''}</td>
               </tr>
             ))}
           </tbody>
@@ -1078,8 +1079,7 @@ function Labels({ skus }: { readonly skus: readonly CatalogSku[] }) {
       </h2>
       <p className="text-sm text-muted-foreground">{t('catalog.labelsHelp')}</p>
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-xs font-medium">
-          {t('catalog.labelsCopies')}
+        <Field label={t('catalog.labelsCopies')}>
           <input
             type="number"
             min={1}
@@ -1088,7 +1088,7 @@ function Labels({ skus }: { readonly skus: readonly CatalogSku[] }) {
             onChange={(event) => setCopies(Math.min(200, Math.max(1, Number(event.target.value))))}
             className="h-8 w-20 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-        </label>
+        </Field>
         <label className="flex items-center gap-1.5 text-sm">
           <input
             type="checkbox"

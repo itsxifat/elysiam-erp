@@ -7,7 +7,7 @@ import {
 } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { ImageOff } from 'lucide-react';
-import { useState } from 'react';
+import { cloneElement, useId, useState, type ReactElement } from 'react';
 
 import { api } from '../../api.js';
 import { useT } from '../../i18n/locale.js';
@@ -115,6 +115,37 @@ export function Thumb({ fileId, alt }: { readonly fileId: string; readonly alt: 
       ) : (
         <img src={url.data.url} alt={alt} className="size-full object-cover" />
       )}
+    </div>
+  );
+}
+
+/**
+ * A label above its control, joined by id rather than by wrapping.
+ *
+ * Wrapping a select or a text box in its label makes the control's current value part
+ * of its accessible name ("Category No category"), so a screen reader announces the
+ * value twice and the name changes as the person types.
+ */
+export function Field({
+  label,
+  hint,
+  className,
+  children,
+}: {
+  readonly label: string;
+  readonly hint?: string | undefined;
+  readonly className?: string | undefined;
+  /** One control; it is given the id the label points at. */
+  readonly children: ReactElement<{ id?: string }>;
+}) {
+  const id = useId();
+  return (
+    <div className={`flex flex-col gap-1 ${className ?? ''}`}>
+      <label htmlFor={id} className="text-xs font-medium">
+        {label}
+      </label>
+      {cloneElement(children, { id })}
+      {hint === undefined ? null : <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }

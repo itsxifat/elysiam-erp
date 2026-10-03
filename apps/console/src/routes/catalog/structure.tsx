@@ -1,7 +1,7 @@
 import { Button, Dialog, PermissionGate, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { useState, type ReactNode } from 'react';
+import { cloneElement, useId, useState, type ReactElement } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
@@ -118,12 +118,22 @@ export function CatalogStructurePage() {
 const control =
   'h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
-function Field({ label, children }: { readonly label: string; readonly children: ReactNode }) {
+/** A label joined to its one control by id (see `Field` in parts.tsx for why). */
+function Field({
+  label,
+  children,
+}: {
+  readonly label: string;
+  readonly children: ReactElement<{ id?: string }>;
+}) {
+  const id = useId();
   return (
-    <label className="flex flex-col gap-1 text-xs font-medium">
-      {label}
-      {children}
-    </label>
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="text-xs font-medium">
+        {label}
+      </label>
+      {cloneElement(children, { id })}
+    </div>
   );
 }
 
@@ -385,7 +395,14 @@ function Lists({
 
   const create = useMutation({
     mutationFn: () =>
-      createAttribute({ code: attributeCode(name), name: name.trim(), kind, isVariant }),
+      createAttribute({
+        code: attributeCode(name),
+        name: name.trim(),
+        kind,
+        isVariant,
+        // Last in the list, so lists show in the order they were added.
+        position: items.length,
+      }),
     onSuccess: () => {
       setName('');
       onDone();
@@ -455,7 +472,11 @@ function Lists({
               )}
             </div>
             <PermissionGate allowed={mayCreate}>
-              <NewValue attributeId={attribute.id} onDone={onDone} />
+              <NewValue
+                attributeId={attribute.id}
+                position={attribute.values.length}
+                onDone={onDone}
+              />
             </PermissionGate>
           </li>
         ))}
@@ -527,9 +548,12 @@ function Lists({
 
 function NewValue({
   attributeId,
+  position,
   onDone,
 }: {
   readonly attributeId: string;
+  /** Last in the list, so S, M, L, XL read in the order they were typed. */
+  readonly position: number;
   readonly onDone: () => void;
 }) {
   const t = useT();
@@ -538,7 +562,8 @@ function NewValue({
   const suggested = code ?? codeFrom(label, 8);
 
   const create = useMutation({
-    mutationFn: () => createAttributeValue(attributeId, { code: suggested, label: label.trim() }),
+    mutationFn: () =>
+      createAttributeValue(attributeId, { code: suggested, label: label.trim(), position }),
     onSuccess: () => {
       setLabel('');
       setCode(null);

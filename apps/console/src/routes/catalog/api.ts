@@ -288,13 +288,14 @@ export function createAttribute(input: {
   readonly name: string;
   readonly kind: 'size' | 'colour' | 'custom';
   readonly isVariant: boolean;
+  readonly position?: number;
 }): Promise<{ id: string; code: string }> {
   return api.post('/v1/catalog/attributes', input);
 }
 
 export function createAttributeValue(
   attributeId: string,
-  input: { readonly code: string; readonly label: string },
+  input: { readonly code: string; readonly label: string; readonly position?: number },
 ): Promise<{ id: string; code: string }> {
   return api.post(`/v1/catalog/attributes/${attributeId}/values`, input);
 }

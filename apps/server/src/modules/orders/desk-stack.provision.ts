@@ -122,9 +122,13 @@ async function create(): Promise<void> {
     },
     // gaps-users-auth: two org admins for the staff screen — one asks for a reset, the
     // other approves it — and an accountant whose lost phone is the reset (users.stack.ts).
-    { label: 'admin', grants: [{ orgId, role: 'org_admin' }] },
+    // The first of the two is the `admin` above: the wave-2 merge listed it twice, and
+    // the second insert of the same address failed the whole provisioning.
     { label: 'admin2', grants: [{ orgId, role: 'org_admin' }] },
     { label: 'locked', grants: [{ orgId, role: 'accounts' }] },
+    // catalog-stock-ux: an org admin of its own for the product and stock screens
+    // (catalog-stock.stack.ts), so its two-step enrolment never races another suite's.
+    { label: 'merchandiser', grants: [{ orgId, role: 'org_admin' }] },
   ];
 
   const users: { role: string; email: string; userId: string }[] = [];

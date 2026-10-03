@@ -263,6 +263,7 @@ export interface MovementRow {
   readonly locationId: string;
   readonly locationCode: string;
   readonly locationName: string;
+  readonly locationKind: 'warehouse' | 'showroom' | 'damaged' | 'in_transit';
   readonly kind: string;
   readonly qtyDelta: number;
   readonly refType: string;
