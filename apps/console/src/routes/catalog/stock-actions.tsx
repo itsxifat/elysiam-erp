@@ -213,17 +213,18 @@ export function ReceiveStockDialog({
     mutationFn: async () => {
       const chosen = lines ?? [];
       if (mayPrice) {
+        const lines = chosen.map((line) => ({ ...line, unitCostPoisha: costPoisha ?? '0' }));
         await createEntry({
-          supplyId: key.current(),
+          supplyId: key.for(JSON.stringify([supplierId, chosenLocation, lines])),
           supplierId,
           locationId: chosenLocation,
           ...(invoice.trim() === '' ? {} : { invoiceNumber: invoice.trim() }),
-          lines: chosen.map((line) => ({ ...line, unitCostPoisha: costPoisha ?? '0' })),
+          lines,
         });
         return 'entry' as const;
       }
       await createDraft({
-        draftId: key.current(),
+        draftId: key.for(JSON.stringify([supplierId, chosenLocation, chosen])),
         supplierId,
         locationId: chosenLocation,
         ...(invoice.trim() === '' ? {} : { invoiceNumber: invoice.trim() }),
@@ -243,7 +244,11 @@ export function ReceiveStockDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) setDone(null);
+        if (!next) {
+          setDone(null);
+          // A receipt reopened later is a new one (ledger re-audit NEW-1).
+          key.settle();
+        }
         onOpenChange(next);
       }}
       title={t('cs.receive.title')}

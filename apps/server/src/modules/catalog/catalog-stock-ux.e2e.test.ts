@@ -309,13 +309,29 @@ describe('a product with sizes, colours and its own price per variant (D-422)', 
       qty: 10 + index,
       unitCostPoisha: '150000',
     }));
-    await call(
-      admin,
-      'POST',
-      '/v1/supply/entries',
-      { supplyId: randomUUID(), supplierId: supplier, locationId: mainWarehouse, lines },
-      201,
-    );
+    const receipt = {
+      supplyId: randomUUID(),
+      supplierId: supplier,
+      locationId: mainWarehouse,
+      lines,
+    };
+    await call(admin, 'POST', '/v1/supply/entries', receipt, 201);
+
+    // D-432: the same key and the same goods replay (an added challan number is still the
+    // same delivery); the same key with other goods or another location is refused rather
+    // than answered with the first receipt.
+    const replay = await admin.client.request('POST', '/v1/supply/entries', {
+      body: { ...receipt, invoiceNumber: 'CH-1001' },
+    });
+    expect(replay.statusCode, replay.body).toBe(201);
+    for (const changed of [
+      { ...receipt, lines: lines.map((line) => ({ ...line, qty: line.qty + 1 })) },
+      { ...receipt, locationId: secondWarehouse },
+    ]) {
+      const refused = await admin.client.request('POST', '/v1/supply/entries', { body: changed });
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(body<{ code: string }>(refused).code).toBe('IDEMPOTENCY_CONFLICT');
+    }
 
     interface Row {
       skuId: string;

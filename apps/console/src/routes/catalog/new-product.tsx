@@ -179,16 +179,17 @@ export function CatalogNewProductPage() {
           return { skuId, qty: entry.qty };
         });
         if (mayPrice) {
+          const priced = lines.map((line) => ({ ...line, unitCostPoisha: costPoisha ?? '0' }));
           await createEntry({
-            supplyId: key.current(),
+            supplyId: key.for(JSON.stringify([supplierId, chosenLocation, priced])),
             supplierId,
             locationId: chosenLocation,
             memo: t('cs.new.openingMemo'),
-            lines: lines.map((line) => ({ ...line, unitCostPoisha: costPoisha ?? '0' })),
+            lines: priced,
           });
         } else {
           await createDraft({
-            draftId: key.current(),
+            draftId: key.for(JSON.stringify([supplierId, chosenLocation, lines])),
             supplierId,
             locationId: chosenLocation,
             lines,

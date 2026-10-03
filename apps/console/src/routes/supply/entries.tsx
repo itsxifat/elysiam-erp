@@ -161,7 +161,13 @@ export function SupplyEntriesPage() {
   const submitEntry = useMutation({
     mutationFn: () =>
       createEntry({
-        supplyId: key.current(),
+        supplyId: key.for(
+          JSON.stringify([
+            supplierId,
+            locationId,
+            lines.map((line) => [line.skuId, line.qty, line.unitCostTaka]),
+          ]),
+        ),
         supplierId,
         locationId,
         ...(invoiceNumber.trim() === '' ? {} : { invoiceNumber: invoiceNumber.trim() }),
@@ -180,7 +186,9 @@ export function SupplyEntriesPage() {
   const submitDraft = useMutation({
     mutationFn: () =>
       createDraft({
-        draftId: key.current(),
+        draftId: key.for(
+          JSON.stringify([supplierId, locationId, lines.map((line) => [line.skuId, line.qty])]),
+        ),
         supplierId,
         locationId,
         ...(invoiceNumber.trim() === '' ? {} : { invoiceNumber: invoiceNumber.trim() }),

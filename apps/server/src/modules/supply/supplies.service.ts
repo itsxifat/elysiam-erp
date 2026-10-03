@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { canReadCost } from '@elysium/contracts';
 import { withOrg, type Tx } from '@elysium/db';
-import { businessDate, poisha, type Poisha } from '@elysium/domain';
+import { businessDate, poisha, sameReceipt, type Poisha } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -166,6 +166,12 @@ export class SuppliesService {
         const existing = await repo.supplyById(tx, context.orgId, input.draftId);
         if (existing !== undefined) {
           const lines = await repo.supplyLines(tx, context.orgId, input.draftId);
+          // A replay answers only the same draft (D-432): same supplier, location, lines.
+          assertSameReceipt(existing, lines, {
+            supplierId: input.supplierId,
+            locationId: input.locationId,
+            lines: input.lines.map((line) => ({ ...line, unitCostPoisha: null })),
+          });
           return { id: existing.id, status: existing.status, lineCount: lines.length };
         }
 
@@ -442,7 +448,16 @@ export class SuppliesService {
     return mapSupplyErrors(async () => {
       await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const existing = await repo.supplyById(tx, context.orgId, input.supplyId);
-        if (existing !== undefined) return;
+        if (existing !== undefined) {
+          // A replay answers only the same receipt (D-432). Without this, a retry that
+          // asked for different goods would be told it saved while nothing posted.
+          assertSameReceipt(existing, await repo.supplyLines(tx, context.orgId, input.supplyId), {
+            supplierId: input.supplierId,
+            locationId: input.locationId,
+            lines: input.lines,
+          });
+          return;
+        }
         // Refused before the draft exists, so a date outside §7's window leaves nothing
         // behind (C6, D-414). `receive` checks again, after its replay.
         postingInstant(input.occurredAt, now);
@@ -519,5 +534,46 @@ export class SuppliesService {
         'Your role records quantities; accounts enters the prices (D-005).',
       );
     }
+  }
+}
+
+/**
+ * Refuse a replayed id that asks for a different receipt (D-432, `sameReceipt` in
+ * @elysium/domain): the supplier, the location and the lines must be the ones stored.
+ */
+function assertSameReceipt(
+  stored: repo.SupplyRow,
+  storedLines: readonly repo.SupplyLineRow[],
+  requested: {
+    readonly supplierId: string;
+    readonly locationId: string;
+    readonly lines: readonly { skuId: string; qty: number; unitCostPoisha?: string | null }[];
+  },
+): void {
+  const same = sameReceipt(
+    {
+      supplierId: stored.supplier_id,
+      locationId: stored.location_id,
+      lines: storedLines.map((line) => ({
+        skuId: line.sku_id,
+        qty: line.qty,
+        unitCostPoisha: line.unit_cost_poisha,
+      })),
+    },
+    {
+      supplierId: requested.supplierId,
+      locationId: requested.locationId,
+      lines: requested.lines.map((line) => ({
+        skuId: line.skuId,
+        qty: line.qty,
+        unitCostPoisha: line.unitCostPoisha ?? null,
+      })),
+    },
+  );
+  if (!same) {
+    throw new SupplyError(
+      'IDEMPOTENCY_CONFLICT',
+      'That entry was already saved with different goods, supplier or location. Check Supply entries, then start a new one.',
+    );
   }
 }

@@ -13,6 +13,40 @@ import {
 } from './product-import.js';
 import { variantCombinations, VariantMatrixError, type VariantAxis } from './variant-matrix.js';
 import { variantPrices } from './variant-prices.js';
+import { sameReceipt } from '../inventory/receipt-replay.js';
+
+describe('sameReceipt (D-432)', () => {
+  const stored = {
+    supplierId: 'sup',
+    locationId: 'wh',
+    lines: [
+      { skuId: 'a', qty: 2, unitCostPoisha: '100' },
+      { skuId: 'b', qty: 1, unitCostPoisha: '250' },
+    ],
+  };
+
+  it('is the same receipt whatever the line order', () => {
+    expect(sameReceipt(stored, { ...stored, lines: [...stored.lines].reverse() })).toBe(true);
+  });
+
+  it('is a different receipt when the supplier, location, a quantity or a cost differs', () => {
+    expect(sameReceipt(stored, { ...stored, supplierId: 'other' })).toBe(false);
+    expect(sameReceipt(stored, { ...stored, locationId: 'sr' })).toBe(false);
+    expect(
+      sameReceipt(stored, {
+        ...stored,
+        lines: [{ skuId: 'a', qty: 3, unitCostPoisha: '100' }, stored.lines[1] ?? stored.lines[0]!],
+      }),
+    ).toBe(false);
+    expect(
+      sameReceipt(stored, {
+        ...stored,
+        lines: [stored.lines[0]!, { skuId: 'b', qty: 1, unitCostPoisha: '260' }],
+      }),
+    ).toBe(false);
+    expect(sameReceipt(stored, { ...stored, lines: [stored.lines[0]!] })).toBe(false);
+  });
+});
 
 const SIZE: VariantAxis = {
   attributeId: 'a-size',
@@ -198,22 +232,32 @@ describe('reviewProductImport (D-425)', () => {
     expect(splitValueList('')).toEqual([]);
   });
 
-  it('refuses a value that matches two entries rather than guessing', () => {
-    const report = reviewProductImport(parseCsv('name,price_taka,colours\nTee,500,RED\n'), {
+  it('lets an exact code win, and refuses a name two values share', () => {
+    const colours = {
+      attributeId: 'a-colour',
+      name: 'Colour',
+      values: [
+        { id: 'red', code: 'RED', label: 'Red' },
+        { id: 'maroon', code: 'MRN', label: 'red' },
+        { id: 'crimson-1', code: 'CR1', label: 'Crimson' },
+        { id: 'crimson-2', code: 'CR2', label: 'Crimson' },
+      ],
+    };
+    const won = reviewProductImport(parseCsv('name,price_taka,colours\nTee,500,RED\n'), {
       ...CONTEXT,
-      colours: {
-        attributeId: 'a-colour',
-        name: 'Colour',
-        values: [
-          { id: 'red', code: 'RED', label: 'Red' },
-          { id: 'maroon', code: 'MRN', label: 'red' },
-        ],
-      },
+      colours,
     });
-    expect(report.problems.map((p) => `${String(p.line)}:${p.column ?? ''}`)).toEqual([
+    expect(won.problems).toEqual([]);
+    expect(won.rows[0]?.axes).toEqual([{ attributeId: 'a-colour', valueIds: ['red'] }]);
+
+    const refused = reviewProductImport(parseCsv('name,price_taka,colours\nTee,500,crimson\n'), {
+      ...CONTEXT,
+      colours,
+    });
+    expect(refused.problems.map((p) => `${String(p.line)}:${p.column ?? ''}`)).toEqual([
       '2:colours',
     ]);
-    expect(report.problems[0]?.message).toMatch(/more than one/);
+    expect(refused.problems[0]?.message).toMatch(/more than one value/);
   });
 
   it('caps the SKUs one file may make', () => {

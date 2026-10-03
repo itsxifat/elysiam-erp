@@ -104,7 +104,16 @@ export function CatalogProductPage() {
         items.push(...batch.items);
         if (batch.items.length < 200) break;
       }
-      return { items };
+      // A row inserted between two page requests shifts the offsets; keep one of each.
+      const seen = new Set<string>();
+      return {
+        items: items.filter((row) => {
+          const id = `${row.skuId}:${row.locationId}`;
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        }),
+      };
     },
     enabled: mayStock,
   });

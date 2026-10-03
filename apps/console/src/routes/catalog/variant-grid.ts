@@ -94,15 +94,29 @@ export const PRODUCT_TEMPLATE =
  */
 export interface RequestKey {
   readonly current: () => string;
+  /**
+   * The key for this content: the same while the content is the same, a new one the
+   * moment it changes. Pass the receipt's supplier, location and lines, not its invoice
+   * number or note, so adding a challan number to a retry still replays (ledger re-audit
+   * N-1; the server refuses a known key with different goods, D-432).
+   */
+  readonly for: (content: string) => string;
   readonly settle: () => void;
 }
 
 export function requestKey(make: () => string = () => crypto.randomUUID()): RequestKey {
   let value = make();
+  let sent: string | null = null;
   return {
     current: () => value,
+    for: (content) => {
+      if (sent !== null && sent !== content) value = make();
+      sent = content;
+      return value;
+    },
     settle: () => {
       value = make();
+      sent = null;
     },
   };
 }

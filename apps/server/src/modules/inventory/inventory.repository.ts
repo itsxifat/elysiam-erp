@@ -140,6 +140,14 @@ export async function anyInTransitLocation(
   return rows[0];
 }
 
+/** Take the location's row lock for the rest of the transaction. True if it exists. */
+export async function lockLocation(tx: Tx, orgId: string, id: string): Promise<boolean> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select id from org.locations where org_id = ${orgId} and id = ${id} for update
+  `);
+  return rows.length === 1;
+}
+
 /**
  * Whether a location still holds anything: stock on hand or held for an order, or a
  * transfer on its way from or to it (ledger audit L3). A location switched off with any

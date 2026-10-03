@@ -177,6 +177,10 @@ export class StockService {
         if (
           patch.isActive === false &&
           before.is_active &&
+          // Locked first, so two switch-offs or a switch-off and a rename serialise. A
+          // movement committing at the same instant is not held back by it (migration
+          // 0033's check reads the row unlocked); recorded as a follow-up.
+          (await repo.lockLocation(tx, context.orgId, id)) &&
           (await repo.locationInUse(tx, context.orgId, id))
         ) {
           throw new StockError(

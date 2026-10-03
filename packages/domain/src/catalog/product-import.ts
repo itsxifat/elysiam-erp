@@ -301,15 +301,18 @@ function reviewRow(row: CsvRow, state: RowState): ProductImportRow | undefined {
     const ids: string[] = [];
     for (const text of listed) {
       const key = normal(text);
-      const matches = axis.values.filter(
-        (candidate) => normal(candidate.code) === key || normal(candidate.label) === key,
-      );
+      // A code is exact and unique within its list, so it wins; labels are the fallback.
+      const byCode = axis.values.filter((candidate) => normal(candidate.code) === key);
+      const matches =
+        byCode.length > 0
+          ? byCode
+          : axis.values.filter((candidate) => normal(candidate.label) === key);
       // One value's code can be another's label; guessing would build the wrong variant.
       if (matches.length > 1) {
         problems.push({
           line,
           column,
-          message: `"${text}" matches more than one value in the ${axis.name} list. Use the value's code.`,
+          message: `"${text}" is the name of more than one value in the ${axis.name} list. Use the value's code.`,
         });
         continue;
       }
