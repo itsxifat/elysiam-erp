@@ -49,6 +49,19 @@ export function MenuItem({
   readonly destructive?: boolean;
   readonly shortcut?: ReactNode;
 }) {
+  // `asChild` (a link as the item) takes exactly one child: Radix's Slot refuses a
+  // second, so the shortcut hint is for plain items only.
+  const content =
+    props.asChild === true ? (
+      children
+    ) : (
+      <>
+        {children}
+        {shortcut === undefined ? null : (
+          <span className="ml-auto pl-4 text-xs text-muted-foreground">{shortcut}</span>
+        )}
+      </>
+    );
   return (
     <MenuPrimitive.Item
       className={cn(
@@ -62,10 +75,7 @@ export function MenuItem({
       )}
       {...props}
     >
-      {children}
-      {shortcut === undefined ? null : (
-        <span className="ml-auto pl-4 text-xs text-muted-foreground">{shortcut}</span>
-      )}
+      {content}
     </MenuPrimitive.Item>
   );
 }

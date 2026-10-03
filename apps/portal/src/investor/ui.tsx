@@ -1,4 +1,4 @@
-import { Button, cn, type ButtonProps } from '@elysium/ui';
+import { Button, cn, controlClassName, type ButtonProps } from '@elysium/ui';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { forwardRef, useId, type InputHTMLAttributes, type ReactNode } from 'react';
 
@@ -40,9 +40,9 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
         aria-invalid={error === undefined ? undefined : true}
         aria-describedby={describedBy === '' ? undefined : describedBy}
         className={cn(
-          'h-control-lg w-full rounded-md border bg-background px-3 text-base text-foreground placeholder:text-muted-foreground',
-          FOCUS,
-          error === undefined ? 'border-input' : 'border-destructive',
+          controlClassName,
+          'h-control-lg w-full text-base',
+          error === undefined ? '' : 'border-destructive',
           className,
         )}
         {...rest}
@@ -111,7 +111,7 @@ export function Section({
   return (
     <section aria-labelledby={id} className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
+        <div className="space-y-0.5">
           <h2 id={id} className="text-base font-semibold tracking-tight">
             {title}
           </h2>
@@ -153,18 +153,18 @@ export function Table<Row>({
       role="region"
       aria-label={caption}
       tabIndex={0}
-      className={cn('overflow-x-auto rounded-lg border border-border', FOCUS)}
+      className={cn('overflow-x-auto rounded-lg border border-border bg-card', FOCUS)}
     >
       <table className="w-full border-collapse text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead>
-          <tr className="bg-muted text-muted-foreground">
+          <tr className="text-muted-foreground">
             {columns.map((column) => (
               <th
                 key={column.header}
                 scope="col"
                 className={cn(
-                  'h-row px-3 font-medium whitespace-nowrap',
+                  'h-10 px-4 text-xs font-medium whitespace-nowrap',
                   column.numeric === true ? 'text-right' : 'text-left',
                 )}
               >
@@ -175,12 +175,15 @@ export function Table<Row>({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={rowKey(row)} className="border-t border-border">
+            <tr
+              key={rowKey(row)}
+              className="border-t border-border hover:bg-accent/60 motion-safe:transition-colors"
+            >
               {columns.map((column) => (
                 <td
                   key={column.header}
                   className={cn(
-                    'h-row px-3 whitespace-nowrap',
+                    'h-row px-4 whitespace-nowrap',
                     column.numeric === true ? 'text-right tabular-nums' : 'text-left',
                   )}
                 >

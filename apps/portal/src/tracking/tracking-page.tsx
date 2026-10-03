@@ -1,6 +1,6 @@
 import { fontClassFor, formatDate, type Locale } from '@elysium/i18n';
-import { Money } from '@elysium/ui';
-import { Check, Circle, Languages, Loader2, Moon, PackageSearch, Sun } from 'lucide-react';
+import { Button, Money, cn, controlClassName } from '@elysium/ui';
+import { Check, Loader2, Moon, PackageSearch, Sun } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 
 import { applyTheme, isDark } from '../theme.js';
@@ -65,22 +65,31 @@ export function TrackingPage({ brand }: { readonly brand: string | null }) {
     }
   }
 
+  /*
+   * A buyer on a phone, usually from a link in an SMS (D-459): one narrow card on the warm
+   * canvas, two fields and one button, and the answer as a timeline under it. Nothing else
+   * competes for the screen.
+   */
   return (
-    <div className="min-h-dvh bg-background text-foreground">
-      <header className="flex h-14 items-center justify-between border-b border-border px-4 sm:px-6">
-        <span className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-          <PackageSearch aria-hidden="true" className="size-4 text-primary" />
+    <div className="min-h-dvh bg-canvas text-foreground">
+      <header className="mx-auto flex h-14 max-w-md items-center justify-between px-4">
+        <span className="flex items-center gap-2.5 text-sm font-semibold tracking-tight">
+          <span
+            aria-hidden="true"
+            className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground"
+          >
+            <PackageSearch className="size-4" />
+          </span>
           {t('tracking.title')}
         </span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           <button
             type="button"
             onClick={() => setLocale(locale === 'bn' ? 'en' : 'bn')}
             aria-label={t('tracking.languageLabel')}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${FOCUS}`}
+            className={`inline-flex h-9 items-center rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${FOCUS}`}
           >
-            <Languages aria-hidden="true" className="size-4" />
-            {t('tracking.language')}
+            <span lang={locale === 'bn' ? 'en' : 'bn'}>{t('tracking.language')}</span>
           </button>
           <button
             type="button"
@@ -89,7 +98,7 @@ export function TrackingPage({ brand }: { readonly brand: string | null }) {
               setDark(!dark);
             }}
             aria-label={dark ? t('tracking.themeLight') : t('tracking.themeDark')}
-            className={`inline-flex size-8 items-center justify-center rounded-md border border-border transition-colors hover:bg-accent hover:text-accent-foreground ${FOCUS}`}
+            className={`inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${FOCUS}`}
           >
             {dark ? (
               <Sun aria-hidden="true" className="size-4" />
@@ -100,18 +109,25 @@ export function TrackingPage({ brand }: { readonly brand: string | null }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-lg space-y-6 px-4 py-8 sm:px-6">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">{t('tracking.title')}</h1>
+      <main className="mx-auto max-w-md space-y-5 px-4 pt-6 pb-16">
+        <div className="space-y-1 px-1">
+          <h1 className="text-lg font-semibold tracking-tight">{t('tracking.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('tracking.subtitle')}</p>
         </div>
 
         {brand === null ? (
-          <p role="status" className="rounded-lg border border-border bg-muted px-4 py-3 text-sm">
+          <p
+            role="status"
+            className="rounded-xl border border-border bg-card px-5 py-4 text-sm text-muted-foreground"
+          >
             {t('tracking.noBrand')}
           </p>
         ) : (
-          <form onSubmit={(event) => void submit(event)} className="space-y-4" noValidate>
+          <form
+            onSubmit={(event) => void submit(event)}
+            className="space-y-5 rounded-xl border border-border bg-card p-5 sm:p-6"
+            noValidate
+          >
             <div className="space-y-1.5">
               <label htmlFor={ids.order} className="block text-sm font-medium">
                 {t('tracking.orderNo')}
@@ -125,7 +141,7 @@ export function TrackingPage({ brand }: { readonly brand: string | null }) {
                 maxLength={60}
                 aria-describedby={ids.orderHint}
                 onChange={(event) => setOrderNo(event.target.value)}
-                className={`h-11 w-full rounded-md border border-input bg-background px-3 text-base tabular-nums ${FOCUS}`}
+                className={cn(controlClassName, 'min-h-11 w-full text-base tabular-nums')}
               />
               <p id={ids.orderHint} className="text-xs text-muted-foreground">
                 {t('tracking.orderNoHint')}
@@ -143,17 +159,16 @@ export function TrackingPage({ brand }: { readonly brand: string | null }) {
                 maxLength={8}
                 aria-describedby={ids.phoneHint}
                 onChange={(event) => setPhoneLast4(event.target.value)}
-                className={`h-11 w-32 rounded-md border border-input bg-background px-3 text-base tracking-widest tabular-nums ${FOCUS}`}
+                className={cn(
+                  controlClassName,
+                  'min-h-11 w-36 text-base tracking-widest tabular-nums',
+                )}
               />
               <p id={ids.phoneHint} className="text-xs text-muted-foreground">
                 {t('tracking.phoneLast4Hint')}
               </p>
             </div>
-            <button
-              type="submit"
-              disabled={busy}
-              className={`inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-60 ${FOCUS}`}
-            >
+            <Button type="submit" size="lg" disabled={busy} className="min-h-11 w-full text-base">
               {busy ? (
                 <Loader2
                   aria-hidden="true"
@@ -161,7 +176,7 @@ export function TrackingPage({ brand }: { readonly brand: string | null }) {
                 />
               ) : null}
               {busy ? t('tracking.checking') : t('tracking.submit')}
-            </button>
+            </Button>
           </form>
         )}
 
@@ -171,7 +186,7 @@ export function TrackingPage({ brand }: { readonly brand: string | null }) {
           ) : (
             <p
               role={result.kind === 'not_found' ? 'status' : 'alert'}
-              className="rounded-lg border border-border bg-muted px-4 py-3 text-sm"
+              className="rounded-xl border border-border bg-card px-5 py-4 text-sm"
             >
               {t(
                 result.kind === 'not_found'
@@ -203,42 +218,60 @@ function Answer({
   return (
     <section
       aria-label={`${t('tracking.resultHeading')} ${answer.orderNo}`}
-      className="space-y-5 rounded-lg border border-border p-4"
+      className="space-y-5 rounded-xl border border-border bg-card p-5 motion-safe:animate-in sm:p-6"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-base font-semibold tabular-nums">
           {t('tracking.resultHeading')} {answer.orderNo}
         </h2>
-        <span className="text-sm font-medium text-primary">
+        <span className="rounded-xs bg-primary-subtle px-2 py-0.5 text-sm font-medium text-primary-text">
           {t(`tracking.stage.${answer.stage}` as TrackingMessageKey)}
         </span>
       </div>
 
-      <ol className="space-y-3">
+      {/* A vertical timeline: done steps in a quiet tone, where the parcel is now in the
+          accent, what is still to come faint (D-459). */}
+      <ol className="relative">
         {answer.steps.map((step, index) => {
           const current =
             step.reached &&
             (index === answer.steps.length - 1 || !answer.steps[index + 1]?.reached);
+          const last = index === answer.steps.length - 1;
           return (
-            <li key={step.step} className="flex items-center gap-3 text-sm">
+            <li key={step.step} className="relative flex gap-3 pb-5 last:pb-0">
+              {last ? null : (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'absolute top-6 bottom-0 left-[11px] w-px',
+                    step.reached && answer.steps[index + 1]?.reached === true
+                      ? 'bg-muted-foreground'
+                      : 'bg-border',
+                  )}
+                />
+              )}
               <span
                 aria-hidden="true"
-                className={`inline-flex size-6 shrink-0 items-center justify-center rounded-full border ${
-                  step.reached
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border text-muted-foreground'
-                }`}
+                className={cn(
+                  'relative z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-full',
+                  current && !ended
+                    ? 'bg-primary text-primary-foreground ring-4 ring-primary-subtle'
+                    : step.reached
+                      ? 'bg-muted-foreground text-background'
+                      : 'border border-input bg-card',
+                )}
               >
-                {step.reached ? <Check className="size-3.5" /> : <Circle className="size-2.5" />}
+                {step.reached ? <Check className="size-3.5" strokeWidth={3} /> : null}
               </span>
               <span
-                className={
+                className={cn(
+                  'pt-0.5 text-sm',
                   step.reached
                     ? current && !ended
-                      ? 'font-semibold'
-                      : ''
-                    : 'text-muted-foreground'
-                }
+                      ? 'font-semibold text-foreground'
+                      : 'text-foreground'
+                    : 'text-muted-foreground',
+                )}
               >
                 {t(`tracking.stage.${step.step}` as TrackingMessageKey)}
               </span>

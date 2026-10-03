@@ -1,4 +1,4 @@
-import { Button, ErrorState, Skeleton, StatusBadge } from '@elysium/ui';
+import { Button, ErrorState, Skeleton, StatusBadge, cn } from '@elysium/ui';
 import { CloudOff, LogOut, Moon, RefreshCw, Sun } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
@@ -305,7 +305,7 @@ function Till() {
 
   return (
     <>
-      <div className="flex min-h-dvh flex-col bg-background text-foreground print:hidden">
+      <div className="flex min-h-dvh flex-col bg-canvas text-foreground print:hidden">
         <a
           href="#main"
           className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:ring-2 focus:ring-ring"
@@ -385,11 +385,11 @@ function TopBar({
           : { tone: 'success' as const, label: t('pos.status.online') };
 
   return (
-    <header className="flex min-h-14 flex-wrap items-center gap-3 border-b border-border px-4 py-2">
-      <div className="flex items-baseline gap-2">
+    <header className="flex min-h-16 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-canvas px-4 py-2">
+      <div className="flex min-w-0 flex-col">
         <span className="text-sm font-semibold tracking-tight">{t('pos.app.name')}</span>
         {session === null ? null : (
-          <span className="text-xs text-muted-foreground">
+          <span className="truncate text-xs text-muted-foreground">
             {session.register.branchName} · {session.register.code}
             {session.openShift === null
               ? ''
@@ -398,25 +398,33 @@ function TopBar({
         )}
       </div>
 
+      {/* The till's four screens as one segmented control: 44px targets, the one you are
+          on lifted onto the page surface (D-460). */}
       {selling ? (
-        <nav className="flex gap-1" aria-label={t('pos.app.name')}>
+        <nav className="flex gap-1 rounded-lg bg-muted p-1" aria-label={t('pos.app.name')}>
           {TABS.map((entry) => (
-            <Button
+            <button
               key={entry.tab}
-              size="lg"
-              variant={tab === entry.tab ? 'secondary' : 'ghost'}
+              type="button"
               aria-current={tab === entry.tab ? 'page' : undefined}
               onClick={() => {
                 onTab(entry.tab);
               }}
+              className={cn(
+                'h-11 rounded-md px-4 text-sm font-medium transition-colors',
+                'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                tab === entry.tab
+                  ? 'bg-background text-foreground ring-1 ring-border'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
             >
               {t(entry.label)}
-            </Button>
+            </button>
           ))}
         </nav>
       ) : null}
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-1.5">
         <span role="status" data-testid="connection" data-online={online}>
           <StatusBadge tone={status.tone}>
             {online ? null : <CloudOff aria-hidden />}
@@ -437,13 +445,20 @@ function TopBar({
             </StatusBadge>
           </span>
         ) : null}
-        <Button size="lg" variant="outline" onClick={onSync} disabled={!online}>
+        <Button
+          size="lg"
+          variant="outline"
+          className="min-h-11"
+          onClick={onSync}
+          disabled={!online}
+        >
           <RefreshCw aria-hidden />
           {t('pos.action.syncNow')}
         </Button>
         <Button
           size="lg"
           variant="ghost"
+          className="min-h-11 text-muted-foreground hover:text-foreground"
           aria-label={t('pos.locale.label')}
           onClick={() => {
             setLocale(locale === 'en' ? 'bn' : 'en');
@@ -454,7 +469,7 @@ function TopBar({
         <Button
           size="icon"
           variant="ghost"
-          className="h-control-lg w-control-lg"
+          className="min-h-11 min-w-11"
           aria-label={dark ? t('pos.theme.toLight') : t('pos.theme.toDark')}
           onClick={() => {
             applyTheme(dark ? 'light' : 'dark');
@@ -467,6 +482,7 @@ function TopBar({
           <Button
             size="lg"
             variant="ghost"
+            className="min-h-11"
             onClick={onSignOut}
             // Unsynced sales belong to this cashier's shift; the next person's session
             // could not send them. They must reach the server before the till changes hands.

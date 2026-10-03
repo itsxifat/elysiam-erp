@@ -45,72 +45,76 @@ export function Queue({
         <p className="mt-1 text-sm text-muted-foreground">{t('pos.queue.detail')}</p>
       </header>
       {newestFirst.length === 0 ? (
-        <EmptyState title={t('pos.queue.empty')} />
+        <EmptyState className="bg-card" title={t('pos.queue.empty')} />
       ) : (
-        <table className="w-full text-sm" data-testid="queue">
-          <tbody>
-            {newestFirst.map((entry) => {
-              const receipt = entry.receipt as ReceiptData;
-              return (
-                <tr key={entry.id} className="border-t border-border" data-status={entry.status}>
-                  <td className="h-row px-3 font-mono">{receipt.receiptNo}</td>
-                  <td className="h-row px-3 text-muted-foreground">
-                    {t(entry.kind === 'sale' ? 'pos.queue.kindSale' : 'pos.queue.kindReturn')}
-                  </td>
-                  <td className="h-row px-3">
-                    <Money poisha={receipt.netPoisha} locale={locale} />
-                  </td>
-                  <td className="h-row px-3">
-                    <StatusBadge
-                      tone={
-                        entry.status === 'failed'
-                          ? 'danger'
-                          : entry.status === 'queued'
-                            ? 'warning'
-                            : entry.outcome === 'held'
-                              ? 'info'
-                              : 'success'
-                      }
-                    >
-                      {entry.status === 'synced' &&
-                      entry.outcome !== null &&
-                      OUTCOME_KEY[entry.outcome] !== undefined
-                        ? t(OUTCOME_KEY[entry.outcome] ?? 'pos.queue.statusSynced')
-                        : t(STATUS_KEY[entry.status])}
-                    </StatusBadge>
-                    {entry.error === null ? null : (
-                      <span className="ml-2 text-xs text-destructive">{entry.error}</span>
-                    )}
-                  </td>
-                  <td className="h-row px-3 text-right">
-                    {entry.status === 'failed' ? (
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+          <table className="w-full text-sm" data-testid="queue">
+            <tbody>
+              {newestFirst.map((entry) => {
+                const receipt = entry.receipt as ReceiptData;
+                return (
+                  <tr key={entry.id} className="border-t border-border" data-status={entry.status}>
+                    <td className="h-row px-3 font-mono">{receipt.receiptNo}</td>
+                    <td className="h-row px-3 text-muted-foreground">
+                      {t(entry.kind === 'sale' ? 'pos.queue.kindSale' : 'pos.queue.kindReturn')}
+                    </td>
+                    <td className="h-row px-3">
+                      <Money poisha={receipt.netPoisha} locale={locale} />
+                    </td>
+                    <td className="h-row px-3">
+                      <StatusBadge
+                        tone={
+                          entry.status === 'failed'
+                            ? 'danger'
+                            : entry.status === 'queued'
+                              ? 'warning'
+                              : entry.outcome === 'held'
+                                ? 'info'
+                                : 'success'
+                        }
+                      >
+                        {entry.status === 'synced' &&
+                        entry.outcome !== null &&
+                        OUTCOME_KEY[entry.outcome] !== undefined
+                          ? t(OUTCOME_KEY[entry.outcome] ?? 'pos.queue.statusSynced')
+                          : t(STATUS_KEY[entry.status])}
+                      </StatusBadge>
+                      {entry.error === null ? null : (
+                        <span className="ml-2 text-xs text-destructive">{entry.error}</span>
+                      )}
+                    </td>
+                    <td className="h-row px-3 text-right">
+                      {entry.status === 'failed' ? (
+                        <Button
+                          size="lg"
+                          className="min-h-11"
+                          variant="outline"
+                          onClick={() => {
+                            void requeue(entry.id).then(onRetry);
+                          }}
+                        >
+                          <RefreshCw aria-hidden />
+                          {t('pos.queue.retry')}
+                        </Button>
+                      ) : null}
                       <Button
                         size="lg"
-                        variant="outline"
+                        className="min-h-11"
+                        variant="ghost"
                         onClick={() => {
-                          void requeue(entry.id).then(onRetry);
+                          onReprint(receipt);
                         }}
                       >
-                        <RefreshCw aria-hidden />
-                        {t('pos.queue.retry')}
+                        <Printer aria-hidden />
+                        {t('pos.queue.reprint')}
                       </Button>
-                    ) : null}
-                    <Button
-                      size="lg"
-                      variant="ghost"
-                      onClick={() => {
-                        onReprint(receipt);
-                      }}
-                    >
-                      <Printer aria-hidden />
-                      {t('pos.queue.reprint')}
-                    </Button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </main>
   );
@@ -220,7 +224,7 @@ export function CloseShift({
             onChange={(event) => {
               setCounted(event.target.value);
             }}
-            className="h-control-lg text-right tabular-nums"
+            className="min-h-11 text-right tabular-nums"
           />
         </div>
         <div className="space-y-1.5">
@@ -232,7 +236,7 @@ export function CloseShift({
             onChange={(event) => {
               setNote(event.target.value);
             }}
-            className="h-control-lg"
+            className="min-h-11"
           />
         </div>
         {error === null ? null : (
@@ -243,7 +247,7 @@ export function CloseShift({
         <Button
           type="submit"
           size="lg"
-          className="w-full"
+          className="min-h-11 w-full"
           disabled={busy || !online || blocked !== null}
         >
           {t('pos.shift.close')}

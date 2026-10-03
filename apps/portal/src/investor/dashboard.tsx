@@ -1,7 +1,7 @@
 import { today, type Locale } from '@elysium/i18n';
 import { Button, EmptyState, ErrorState, Money, Skeleton, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { FileText, Info } from 'lucide-react';
+import { FileText, Info, Landmark, TrendingUp } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 import {
@@ -88,6 +88,7 @@ export function Dashboard({
   if (self.data === null) {
     return (
       <EmptyState
+        className="bg-card"
         title={t('portal.investor.noProfileTitle')}
         detail={t('portal.investor.noProfileDetail')}
       />
@@ -103,14 +104,15 @@ export function Dashboard({
   return (
     <div className="space-y-10">
       <div className="space-y-1">
-        <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight">
+        <h1 className="flex flex-wrap items-center gap-2 text-lg font-semibold tracking-tight">
           {me.name}
           {me.status === 'exited' ? (
             <StatusBadge tone="neutral">{t('investors.statusExited')}</StatusBadge>
           ) : null}
         </h1>
         <p className="text-sm text-muted-foreground">
-          {brandName} · {t('investors.colCode')} <span className="tabular-nums">{me.code}</span>
+          {brandName} · {t('investors.colCode')}{' '}
+          <span className="font-medium text-foreground tabular-nums">{me.code}</span>
         </p>
       </div>
 
@@ -151,8 +153,8 @@ export function Dashboard({
         title={t('investors.withdrawalsHeading')}
         caption={t('portal.investor.withdrawalsCaption')}
       >
-        <p className="flex items-start gap-2 rounded-lg border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
-          <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+        <p className="flex items-start gap-2.5 rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+          <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary" />
           <span>{t('portal.investor.withdrawHint')}</span>
         </p>
         <Listing
@@ -286,15 +288,36 @@ export function Dashboard({
   );
 }
 
-const POSITION_TILES: readonly { label: PortalMessageKey; field: keyof InvestorRow['position'] }[] =
-  [
-    { label: 'investors.capitalLabel', field: 'capitalPoisha' },
-    { label: 'investors.lockedLabel', field: 'lockedPoisha' },
-    { label: 'investors.withdrawableLabel', field: 'withdrawableCapitalPoisha' },
-    { label: 'investors.declaredLabel', field: 'declaredPoisha' },
-    { label: 'investors.profitPaidLabel', field: 'profitPaidPoisha' },
-    { label: 'investors.payableLabel', field: 'payablePoisha' },
-  ];
+/**
+ * The position in two groups, as an investor thinks of it: the capital they put in, and the
+ * profit it has earned. Each group leads with its headline figure, large, and the two that
+ * explain it beside each other underneath. Every figure keeps its paisa: this is a
+ * statement of someone's money, not a dashboard estimate.
+ */
+const POSITION_GROUPS: readonly {
+  readonly heading: PortalMessageKey;
+  readonly icon: typeof Landmark;
+  readonly tiles: readonly { label: PortalMessageKey; field: keyof InvestorRow['position'] }[];
+}[] = [
+  {
+    heading: 'investors.kindCapital',
+    icon: Landmark,
+    tiles: [
+      { label: 'investors.capitalLabel', field: 'capitalPoisha' },
+      { label: 'investors.lockedLabel', field: 'lockedPoisha' },
+      { label: 'investors.withdrawableLabel', field: 'withdrawableCapitalPoisha' },
+    ],
+  },
+  {
+    heading: 'investors.kindProfit',
+    icon: TrendingUp,
+    tiles: [
+      { label: 'investors.declaredLabel', field: 'declaredPoisha' },
+      { label: 'investors.profitPaidLabel', field: 'profitPaidPoisha' },
+      { label: 'investors.payableLabel', field: 'payablePoisha' },
+    ],
+  },
+];
 
 function PositionTiles({
   t,
@@ -308,16 +331,35 @@ function PositionTiles({
   return (
     <section aria-label={t('portal.investor.positionHeading')}>
       <h2 className="sr-only">{t('portal.investor.positionHeading')}</h2>
-      <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-3">
-        {POSITION_TILES.map((tile) => (
-          <div key={tile.field} className="space-y-1 bg-card px-4 py-4">
-            <dt className="text-xs text-muted-foreground">{t(tile.label)}</dt>
-            <dd className="text-lg font-semibold tracking-tight">
-              <Money poisha={position[tile.field]} locale={locale} align="start" />
-            </dd>
+      <div className="grid gap-4 md:grid-cols-2">
+        {POSITION_GROUPS.map((group) => (
+          <div key={group.heading} className="rounded-lg border border-border bg-card p-5">
+            <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <group.icon aria-hidden="true" className="size-4" />
+              {t(group.heading)}
+            </p>
+            <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4">
+              {group.tiles.map((tile, index) => (
+                <div
+                  key={tile.field}
+                  className={
+                    index === 0 ? 'col-span-2 space-y-1' : 'space-y-1 border-t border-border pt-3'
+                  }
+                >
+                  <dt className="text-xs text-muted-foreground">{t(tile.label)}</dt>
+                  <dd
+                    className={
+                      index === 0 ? 'text-2xl font-medium tracking-tight' : 'text-base font-medium'
+                    }
+                  >
+                    <Money poisha={position[tile.field]} locale={locale} align="start" />
+                  </dd>
+                </div>
+              ))}
+            </dl>
           </div>
         ))}
-      </dl>
+      </div>
     </section>
   );
 }
@@ -372,9 +414,14 @@ function Documents({
           {
             header: t('investors.colTitle'),
             cell: (row) => (
-              <span className="flex items-center gap-2">
-                <FileText aria-hidden="true" className="size-4 text-muted-foreground" />
-                {row.title}
+              <span className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+                >
+                  <FileText className="size-4" />
+                </span>
+                <span className="font-medium">{row.title}</span>
               </span>
             ),
           },
@@ -390,7 +437,7 @@ function Documents({
               const busy = open.isPending && open.variables.documentId === row.id;
               return (
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   disabled={open.isPending}
                   aria-label={`${t('investors.open')}: ${row.title}`}
@@ -429,13 +476,16 @@ function Listing<Data, Row>({
     return query.isPending ? <Skeleton className="h-24 w-full" /> : null;
   }
   const list = rows(query.data);
-  if (list.length === 0) return <EmptyState title={empty.title} detail={empty.detail} />;
+  if (list.length === 0) {
+    return <EmptyState className="bg-card py-10" title={empty.title} detail={empty.detail} />;
+  }
   return <>{render(list)}</>;
 }
 
 function LoadFailed({ t, retry }: { readonly t: Translate; readonly retry: () => void }) {
   return (
     <ErrorState
+      className="bg-card"
       title={t('portal.investor.errorTitle')}
       detail={t('portal.investor.errorDetail')}
       action={
@@ -452,7 +502,10 @@ function DashboardSkeleton({ t }: { readonly t: Translate }) {
     <div className="space-y-6" aria-busy="true">
       <span className="sr-only">{t('common.loading')}</span>
       <Skeleton className="h-7 w-56" />
-      <Skeleton className="h-36 w-full" />
+      <div className="grid gap-4 md:grid-cols-2">
+        <Skeleton className="h-44 w-full" />
+        <Skeleton className="h-44 w-full" />
+      </div>
       <Skeleton className="h-40 w-full" />
     </div>
   );

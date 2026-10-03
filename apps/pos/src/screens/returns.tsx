@@ -169,10 +169,15 @@ export function Returns({
             onChange={(event) => {
               setReceiptNo(event.target.value);
             }}
-            className="h-control-lg font-mono uppercase"
+            className="min-h-11 font-mono uppercase"
           />
         </div>
-        <Button type="submit" size="lg" disabled={busy || receiptNo.trim() === ''}>
+        <Button
+          type="submit"
+          size="lg"
+          className="min-h-11"
+          disabled={busy || receiptNo.trim() === ''}
+        >
           <Search aria-hidden />
           {t('pos.returns.find')}
         </Button>
@@ -187,62 +192,68 @@ export function Returns({
 
       {sale === null ? null : (
         <section className="space-y-4" aria-label={sale.receiptNo}>
-          <table className="w-full text-sm">
-            <thead className="bg-muted text-muted-foreground">
-              <tr>
-                <th className="h-row px-3 text-left font-medium">{t('pos.sell.item')}</th>
-                <th className="h-row px-3 text-right font-medium">{t('pos.returns.sold')}</th>
-                <th className="h-row px-3 text-right font-medium">{t('pos.returns.returnable')}</th>
-                <th className="h-row px-3 text-center font-medium">{t('pos.returns.returnQty')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sale.lines.map((line) => {
-                const current = qty[line.lineNo] ?? 0;
-                return (
-                  <tr key={line.lineNo} className="border-t border-border">
-                    <td className="px-3 py-2">
-                      <span className="block font-medium">{line.name}</span>
-                      <span className="block font-mono text-xs text-muted-foreground">
-                        {line.skuCode}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{line.qty}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{line.returnableQty}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center justify-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-control-lg w-control-lg"
-                          aria-label={`${t('pos.sell.decrease')}: ${line.name}`}
-                          disabled={current <= 0}
-                          onClick={() => {
-                            setQty({ ...qty, [line.lineNo]: current - 1 });
-                          }}
-                        >
-                          <Minus aria-hidden />
-                        </Button>
-                        <span className="w-8 text-center tabular-nums">{current}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-control-lg w-control-lg"
-                          aria-label={`${t('pos.sell.increase')}: ${line.name}`}
-                          disabled={current >= line.returnableQty}
-                          onClick={() => {
-                            setQty({ ...qty, [line.lineNo]: current + 1 });
-                          }}
-                        >
-                          <Plus aria-hidden />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-muted-foreground">
+                <tr>
+                  <th className="h-row px-3 text-left font-medium">{t('pos.sell.item')}</th>
+                  <th className="h-row px-3 text-right font-medium">{t('pos.returns.sold')}</th>
+                  <th className="h-row px-3 text-right font-medium">
+                    {t('pos.returns.returnable')}
+                  </th>
+                  <th className="h-row px-3 text-center font-medium">
+                    {t('pos.returns.returnQty')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sale.lines.map((line) => {
+                  const current = qty[line.lineNo] ?? 0;
+                  return (
+                    <tr key={line.lineNo} className="border-t border-border">
+                      <td className="px-3 py-2">
+                        <span className="block font-medium">{line.name}</span>
+                        <span className="block font-mono text-xs text-muted-foreground">
+                          {line.skuCode}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{line.qty}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{line.returnableQty}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="min-h-11 min-w-11"
+                            aria-label={`${t('pos.sell.decrease')}: ${line.name}`}
+                            disabled={current <= 0}
+                            onClick={() => {
+                              setQty({ ...qty, [line.lineNo]: current - 1 });
+                            }}
+                          >
+                            <Minus aria-hidden />
+                          </Button>
+                          <span className="w-8 text-center tabular-nums">{current}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="min-h-11 min-w-11"
+                            aria-label={`${t('pos.sell.increase')}: ${line.name}`}
+                            disabled={current >= line.returnableQty}
+                            onClick={() => {
+                              setQty({ ...qty, [line.lineNo]: current + 1 });
+                            }}
+                          >
+                            <Plus aria-hidden />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">{t('pos.returns.refundBy')}</legend>
@@ -251,6 +262,7 @@ export function Returns({
                 <Button
                   key={option}
                   size="lg"
+                  className="min-h-11"
                   variant={tender === option ? 'primary' : 'outline'}
                   aria-pressed={tender === option}
                   onClick={() => {
@@ -278,7 +290,7 @@ export function Returns({
               onChange={(event) => {
                 setReason(event.target.value);
               }}
-              className="h-control-lg"
+              className="min-h-11"
             />
           </div>
 
@@ -295,6 +307,7 @@ export function Returns({
             <div className="flex gap-2">
               <Button
                 size="lg"
+                className="min-h-11"
                 variant="outline"
                 disabled={busy || chosen.length === 0}
                 onClick={() => void record(true)}
@@ -303,6 +316,7 @@ export function Returns({
               </Button>
               <Button
                 size="lg"
+                className="min-h-11"
                 disabled={busy || chosen.length === 0}
                 onClick={() => void record(false)}
               >

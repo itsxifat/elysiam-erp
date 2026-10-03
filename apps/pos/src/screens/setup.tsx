@@ -29,11 +29,15 @@ export function Panel({
   return (
     <main
       id="main"
-      className="mx-auto flex min-h-[calc(100dvh-3.5rem)] max-w-md flex-col justify-center px-6 py-10"
+      className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-md flex-col justify-center px-6 py-10"
     >
-      <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-      {detail === undefined ? null : <p className="mt-1 text-sm text-muted-foreground">{detail}</p>}
-      <div className="mt-6 space-y-4">{children}</div>
+      <div className="rounded-xl border border-border bg-card p-7">
+        <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
+        {detail === undefined ? null : (
+          <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
+        )}
+        <div className="mt-6 space-y-3">{children}</div>
+      </div>
     </main>
   );
 }
@@ -93,7 +97,7 @@ export function SignIn({ onSignedIn }: { readonly onSignedIn: () => void }) {
               onChange={(event) => {
                 setCode(event.target.value);
               }}
-              className="h-control-lg"
+              className="min-h-11"
             />
           </div>
         ) : (
@@ -110,7 +114,7 @@ export function SignIn({ onSignedIn }: { readonly onSignedIn: () => void }) {
                 onChange={(event) => {
                   setEmail(event.target.value);
                 }}
-                className="h-control-lg"
+                className="min-h-11"
               />
             </div>
             <div className="space-y-1.5">
@@ -124,13 +128,13 @@ export function SignIn({ onSignedIn }: { readonly onSignedIn: () => void }) {
                 onChange={(event) => {
                   setPassword(event.target.value);
                 }}
-                className="h-control-lg"
+                className="min-h-11"
               />
             </div>
           </>
         )}
         {error === null ? null : <Alert>{error}</Alert>}
-        <Button type="submit" size="lg" className="w-full" disabled={busy}>
+        <Button type="submit" size="lg" className="min-h-11 w-full" disabled={busy}>
           <KeyRound aria-hidden />
           {needsCode ? t('pos.signIn.verify') : t('pos.signIn.submit')}
         </Button>
@@ -188,7 +192,7 @@ export function PickOrg({ onPicked }: { readonly onPicked: () => void }) {
           key={org.orgId}
           size="lg"
           variant="outline"
-          className="w-full justify-start"
+          className="min-h-11 w-full justify-start"
           onClick={() => {
             void endpoints.setActiveOrg(org.orgId).then(onPicked);
           }}
@@ -236,7 +240,7 @@ export function PickRegister({
           key={register.id}
           size="lg"
           variant="outline"
-          className="w-full justify-between"
+          className="min-h-11 w-full justify-between"
           onClick={() => {
             onPicked(register);
           }}
@@ -310,12 +314,12 @@ export function OpenShift({
             onChange={(event) => {
               setFloat(event.target.value);
             }}
-            className="h-control-lg text-right tabular-nums"
+            className="min-h-11 text-right tabular-nums"
           />
         </div>
         {!online ? <Alert>{t('pos.shift.needsOnline')}</Alert> : null}
         {error === null ? null : <Alert>{error}</Alert>}
-        <Button type="submit" size="lg" className="w-full" disabled={busy || !online}>
+        <Button type="submit" size="lg" className="min-h-11 w-full" disabled={busy || !online}>
           {t('pos.shift.open')}
         </Button>
       </form>

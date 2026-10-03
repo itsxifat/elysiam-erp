@@ -1,7 +1,15 @@
 import { CUSTOMER_LOCALE, fontClassFor, isLocale, type Locale } from '@elysium/i18n';
-import { Button, EmptyState, ErrorState, PermissionDeniedState, Skeleton } from '@elysium/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  Monogram,
+  PermissionDeniedState,
+  Skeleton,
+  cn,
+} from '@elysium/ui';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Landmark, Languages, LogOut, Moon, Sun } from 'lucide-react';
+import { Landmark, LogOut, Moon, Sun } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { flushSync } from 'react-dom';
 
@@ -193,54 +201,82 @@ function Portal() {
   const state = session.data;
   const signedIn = state !== undefined && state.kind !== 'anonymous';
 
+  const activeBrand =
+    state?.kind === 'investor'
+      ? (state.brands.find((brand) => brand.orgId === state.context.orgId)?.displayName ?? null)
+      : null;
+
+  /*
+   * The portal sits on the warm canvas, its content in white cards at a reading width
+   * (D-459). The top bar is slim and quiet: whose portal this is on the left, the
+   * language, the theme and sign out on the right, all as plain icon or text buttons.
+   */
   return (
-    <div className="min-h-dvh bg-background text-foreground">
-      <header className="flex h-14 items-center justify-between gap-2 border-b border-border px-4 sm:px-6">
-        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight">
-          <Landmark aria-hidden="true" className="size-4 shrink-0 text-primary" />
-          <span className="truncate">{t('portal.investor.title')}</span>
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setLocale(locale === 'bn' ? 'en' : 'bn')}
-            aria-label={t('portal.languageLabel')}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${FOCUS}`}
-          >
-            <Languages aria-hidden="true" className="size-4" />
-            {t('portal.language')}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              applyTheme(dark ? 'light' : 'dark');
-              setDark(!dark);
-            }}
-            aria-label={dark ? t('portal.themeLight') : t('portal.themeDark')}
-            className={`inline-flex size-8 items-center justify-center rounded-md border border-border transition-colors hover:bg-accent hover:text-accent-foreground ${FOCUS}`}
-          >
-            {dark ? (
-              <Sun aria-hidden="true" className="size-4" />
+    <div className="min-h-dvh bg-canvas text-foreground">
+      <header className="sticky top-0 z-30 border-b border-border bg-canvas">
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-2 px-4 sm:px-6">
+          <span className="flex min-w-0 items-center gap-2.5">
+            {activeBrand === null ? (
+              <span
+                aria-hidden="true"
+                className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground"
+              >
+                <Landmark className="size-4" />
+              </span>
             ) : (
-              <Moon aria-hidden="true" className="size-4" />
+              <Monogram name={activeBrand} tone="brand" />
             )}
-          </button>
-          {signedIn ? (
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold tracking-tight">
+                {t('portal.investor.title')}
+              </span>
+              {activeBrand === null ? null : (
+                <span className="block truncate text-xs text-muted-foreground">{activeBrand}</span>
+              )}
+            </span>
+          </span>
+          <div className="flex items-center gap-0.5">
             <button
               type="button"
-              onClick={() => void signOut()}
-              aria-label={t('auth.signOut')}
-              title={t('auth.signOut')}
-              className={`inline-flex size-8 items-center justify-center rounded-md border border-border transition-colors hover:bg-accent hover:text-accent-foreground ${FOCUS}`}
+              onClick={() => setLocale(locale === 'bn' ? 'en' : 'bn')}
+              aria-label={t('portal.languageLabel')}
+              className={`inline-flex h-8 items-center rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${FOCUS}`}
             >
-              <LogOut aria-hidden="true" className="size-4" />
+              <span lang={locale === 'bn' ? 'en' : 'bn'}>{t('portal.language')}</span>
             </button>
-          ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                applyTheme(dark ? 'light' : 'dark');
+                setDark(!dark);
+              }}
+              aria-label={dark ? t('portal.themeLight') : t('portal.themeDark')}
+              title={dark ? t('portal.themeLight') : t('portal.themeDark')}
+              className={`inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${FOCUS}`}
+            >
+              {dark ? (
+                <Sun aria-hidden="true" className="size-4" />
+              ) : (
+                <Moon aria-hidden="true" className="size-4" />
+              )}
+            </button>
+            {signedIn ? (
+              <button
+                type="button"
+                onClick={() => void signOut()}
+                aria-label={t('auth.signOut')}
+                title={t('auth.signOut')}
+                className={`inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${FOCUS}`}
+              >
+                <LogOut aria-hidden="true" className="size-4" />
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
 
       {session.isPending ? (
-        <main className="mx-auto max-w-5xl space-y-4 px-4 py-8 sm:px-6" aria-busy="true">
+        <main className="mx-auto max-w-5xl space-y-4 px-4 py-10 sm:px-6" aria-busy="true">
           <span className="sr-only">{t('common.loading')}</span>
           <Skeleton className="h-8 w-56" />
           <Skeleton className="h-28 w-full" />
@@ -249,6 +285,7 @@ function Portal() {
       ) : session.isError || state === undefined ? (
         <main className="mx-auto max-w-lg px-4 py-12 sm:px-6">
           <ErrorState
+            className="bg-card"
             title={t('portal.investor.errorTitle')}
             detail={t('portal.investor.errorDetail')}
             action={
@@ -263,12 +300,13 @@ function Portal() {
       ) : state.kind === 'not_investor' ? (
         <main className="mx-auto max-w-lg px-4 py-12 sm:px-6">
           <PermissionDeniedState
+            className="bg-card"
             title={t('portal.investor.notInvestorTitle')}
             detail={t('portal.investor.notInvestorDetail')}
           />
         </main>
       ) : (
-        <main className="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6">
+        <main className="mx-auto max-w-5xl space-y-8 px-4 py-10 sm:px-6">
           <BrandSwitcher
             t={t}
             brands={state.brands}
@@ -280,6 +318,7 @@ function Portal() {
           />
           {state.chooseBrand && switching === null ? (
             <EmptyState
+              className="bg-card"
               title={t('portal.investor.chooseBrandTitle')}
               detail={t('portal.investor.chooseBrandDetail')}
             />
@@ -333,7 +372,7 @@ function BrandSwitcher({
   return (
     <nav aria-label={t('portal.investor.brands')} className="space-y-2">
       <p className="text-xs font-medium text-muted-foreground">{t('portal.investor.brands')}</p>
-      <ul className="flex flex-wrap gap-2">
+      <ul className="flex flex-wrap gap-1.5">
         {brands.map((brand) => {
           const current = brand.orgId === activeOrgId;
           return (
@@ -345,13 +384,15 @@ function BrandSwitcher({
                 onClick={() => {
                   if (!current) onSwitch(brand.orgId);
                 }}
-                className={`inline-flex h-control items-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors disabled:opacity-60 ${FOCUS} ${
+                className={cn(
+                  'inline-flex h-control items-center gap-2 rounded-lg border pr-3 pl-1.5 text-sm font-medium transition-colors disabled:opacity-60',
+                  FOCUS,
                   current
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border hover:bg-accent hover:text-accent-foreground'
-                }`}
+                    ? 'border-transparent bg-selected text-selected-foreground'
+                    : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground',
+                )}
               >
-                <Building2 aria-hidden="true" className="size-4" />
+                <Monogram name={brand.displayName} size="sm" tone={current ? 'brand' : 'neutral'} />
                 {switching === brand.orgId ? t('portal.investor.switching') : brand.displayName}
               </button>
             </li>
