@@ -1,4 +1,14 @@
-import { Button, Input, Label, Money, Skeleton } from '@elysium/ui';
+import {
+  Button,
+  Input,
+  Label,
+  Money,
+  Skeleton,
+  PageHeader,
+  TabList,
+  tabActiveClassName,
+  tabClassName,
+} from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
 import { useId, type ReactNode } from 'react';
 
@@ -17,9 +27,8 @@ import type { IsoDate, RangePreset } from './report-dates.js';
  * first time one of them gains a column.
  */
 
-const TAB =
-  'rounded-md px-2.5 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-const ACTIVE = { className: `${TAB} bg-muted font-medium text-foreground` };
+const TAB = tabClassName;
+const ACTIVE = { className: tabActiveClassName };
 
 const SOURCES: Readonly<Record<string, AccountsMessageKey>> = {
   cash_in: 'accounts.source.cash_in',
@@ -63,7 +72,7 @@ export function AccountsNav() {
   const reports = ability.can('read', 'LedgerReport');
 
   return (
-    <nav aria-label={a('accounts.title')} className="flex flex-wrap gap-1">
+    <TabList label={a('accounts.title')}>
       <Link to="/accounts" className={TAB} activeProps={ACTIVE} activeOptions={{ exact: true }}>
         {a('accounts.nav.cash')}
       </Link>
@@ -109,7 +118,7 @@ export function AccountsNav() {
           {a('accounts.nav.consolidated')}
         </Link>
       ) : null}
-    </nav>
+    </TabList>
   );
 }
 
@@ -124,16 +133,12 @@ export function AccountsHeader({
   readonly actions?: ReactNode;
 }) {
   return (
-    <header className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
-        </div>
-        {actions}
-      </div>
-      <AccountsNav />
-    </header>
+    <PageHeader
+      title={title}
+      description={subtitle}
+      {...(actions === undefined ? {} : { actions })}
+      tabs={<AccountsNav />}
+    />
   );
 }
 
@@ -151,9 +156,9 @@ export function Block({
 }) {
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border px-5 py-4">
         <div>
-          <h2 className="text-sm font-semibold">{title}</h2>
+          <h2 className="text-base font-semibold tracking-tight">{title}</h2>
           {caption === undefined ? null : (
             <p className="mt-0.5 text-xs text-muted-foreground">{caption}</p>
           )}

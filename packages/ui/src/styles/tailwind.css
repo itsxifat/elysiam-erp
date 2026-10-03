@@ -190,6 +190,17 @@
   color: var(--primary-text);
 }
 
+/* A scroll area with more past its right edge fades that edge, so a cut-off column reads
+   as "scroll for more". A mask, not a coloured overlay, so it works on any surface. */
+@utility fade-x-end {
+  mask-image: linear-gradient(to left, transparent 0, #000 2.5rem);
+}
+
+/* The same cue for a list that runs on below its lower edge (the sidebar). */
+@utility fade-y-end {
+  mask-image: linear-gradient(to top, transparent 0, #000 2.5rem);
+}
+
 @layer base {
   *,
   ::after,

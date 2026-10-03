@@ -3162,9 +3162,9 @@ const bn: Record<MessageKey, string> = {
   'common.removeFilter': 'ফিল্টার সরান',
   'common.clearSearch': 'খোঁজা মুছুন',
   'common.more': 'আরও',
-  // The design refresh (D-440 onward): the shell, the palette and the overview.
   'common.moreFilters': 'আরও ফিল্টার',
   'common.fewerFilters': 'কম ফিল্টার',
+  'common.export': 'রপ্তানি',
 };
 
 export { bn };

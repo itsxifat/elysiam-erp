@@ -28,7 +28,7 @@ export function SearchInput({ className, onClear, clearLabel, value, ...rest }: 
         {...(value === undefined ? {} : { value })}
         className={cn(
           controlClassName,
-          'pl-9 [&::-webkit-search-cancel-button]:hidden',
+          'w-full pl-9 [&::-webkit-search-cancel-button]:hidden',
           onClear !== undefined && 'pr-8',
         )}
         {...rest}

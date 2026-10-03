@@ -289,9 +289,11 @@ export function Monogram({
 
 /** "Elysium Lifestyle BD" is EL; "Orvo" is OR; a Bangla name keeps its first letter. */
 export function initials(name: string): string {
+  // Words that start with a letter or digit only: "(preview seed)" is not a name.
   const words = name
     .trim()
     .split(/\s+/)
+    .map((word) => word.replace(/^[^\p{L}\p{N}]+/u, ''))
     .filter((word) => word !== '');
   const first = words[0] ?? '';
   if (words.length === 1) return Array.from(first).slice(0, 2).join('').toUpperCase();

@@ -209,7 +209,9 @@ function Figures() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label={t('analytics.metric.revenue')}
-          value={<Money poisha={now.deliveredRevenuePoisha} locale={locale} align="start" />}
+          value={
+            <Money poisha={now.deliveredRevenuePoisha} locale={locale} align="start" compact />
+          }
           trend={series.map((day) => Number(day.deliveredRevenuePoisha))}
           {...(before === undefined
             ? {}
@@ -236,7 +238,7 @@ function Figures() {
         />
         <StatCard
           label={t('analytics.metric.cash')}
-          value={<Money poisha={current.data.cashPoisha} locale={locale} align="start" />}
+          value={<Money poisha={current.data.cashPoisha} locale={locale} align="start" compact />}
           hint={t('analytics.metric.cashHint')}
         />
       </div>
@@ -252,7 +254,7 @@ function MoreFigures() {
   if (data === undefined) return null;
   const totals = data.totals;
   const money = (value: string | null | undefined) =>
-    value === null || value === undefined ? '—' : <Money poisha={value} locale={locale} />;
+    value === null || value === undefined ? '—' : <Money poisha={value} locale={locale} compact />;
 
   return (
     <Section title={t('overview.moreFigures')} description={t('overview.last7Days')}>

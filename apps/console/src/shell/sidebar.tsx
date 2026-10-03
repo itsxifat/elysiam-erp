@@ -1,7 +1,7 @@
 import { cn } from '@elysium/ui';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { ChevronDown, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { OrgSwitcher } from '../auth/org-switcher.js';
 import { useSession } from '../auth/session.js';
@@ -79,6 +79,25 @@ export function SidebarContent({ mode, onNavigate, onToggleRail }: SidebarConten
 
   const footerItems = sections.flatMap((section) => section.items.filter((item) => item.footer));
 
+  // Whether the list runs on past its lower edge, for the fade that says so.
+  const list = useRef<HTMLDivElement>(null);
+  const [clipped, setClipped] = useState(false);
+  useEffect(() => {
+    const element = list.current;
+    if (element === null) return;
+    const measure = () => {
+      setClipped(element.scrollTop + element.clientHeight < element.scrollHeight - 1);
+    };
+    measure();
+    element.addEventListener('scroll', measure, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(element);
+    return () => {
+      element.removeEventListener('scroll', measure);
+      observer?.disconnect();
+    };
+  }, []);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className={cn('px-3 pt-3 pb-2', mode === 'rail' && 'px-2')}>
@@ -90,68 +109,82 @@ export function SidebarContent({ mode, onNavigate, onToggleRail }: SidebarConten
         />
       </div>
 
-      <nav
-        aria-label={t('nav.primary')}
-        className={cn(
-          'min-h-0 flex-1 space-y-4 overflow-y-auto px-3 pt-2 pb-4',
-          mode === 'rail' && 'px-2',
-        )}
-      >
-        {sections.map((section) => (
-          <Group
-            key={section.titleKey}
-            section={section}
-            items={section.items.filter((item) => item.footer !== true)}
-            pathname={pathname}
-            folded={folded.has(section.titleKey)}
-            onToggle={() => toggle(section.titleKey)}
-            mode={mode}
-            labelClass={label}
-            headingClass={showOnlyFull}
-            {...(onNavigate === undefined ? {} : { onNavigate })}
-          />
-        ))}
+      {/*
+       * The list scrolls; the footer (Settings, and folding the sidebar) stays put on a
+       * solid ground under a hairline, so the last entry is never half under it. When
+       * there is more below, the list's lower edge fades to say so.
+       */}
+      <nav aria-label={t('nav.primary')} className="flex min-h-0 flex-1 flex-col">
+        <div
+          ref={list}
+          data-clipped={clipped ? 'end' : undefined}
+          className={cn(
+            'min-h-0 flex-1 space-y-4 overflow-y-auto px-3 pt-2 pb-4 data-[clipped=end]:fade-y-end',
+            mode === 'rail' && 'px-2',
+          )}
+        >
+          {sections.map((section) => (
+            <Group
+              key={section.titleKey}
+              section={section}
+              items={section.items.filter((item) => item.footer !== true)}
+              pathname={pathname}
+              folded={folded.has(section.titleKey)}
+              onToggle={() => toggle(section.titleKey)}
+              mode={mode}
+              labelClass={label}
+              headingClass={showOnlyFull}
+              {...(onNavigate === undefined ? {} : { onNavigate })}
+            />
+          ))}
+        </div>
 
-        {footerItems.length === 0 ? null : (
-          <ul className="space-y-0.5 border-t border-border pt-3">
-            {footerItems.map((item) => (
-              <Entry
-                key={item.to}
-                item={item}
-                active={isActive(item, pathname)}
-                labelClass={label}
-                mode={mode}
-                {...(onNavigate === undefined ? {} : { onNavigate })}
-              />
-            ))}
-          </ul>
-        )}
-      </nav>
-
-      {onToggleRail === undefined ? null : (
-        <div className={cn('border-t border-border px-3 py-2', mode === 'rail' && 'px-2')}>
-          <button
-            type="button"
-            onClick={onToggleRail}
-            aria-label={mode === 'rail' ? t('nav.expand') : t('nav.collapse')}
+        {footerItems.length === 0 && onToggleRail === undefined ? null : (
+          <div
             className={cn(
-              'hidden h-8 w-full items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground xl:flex',
-              'motion-safe:duration-fast hover:bg-selected/70 hover:text-foreground motion-safe:transition-colors',
-              'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-              mode === 'rail' && 'justify-center px-0',
+              'flex shrink-0 gap-1 border-t border-border bg-canvas px-3 py-2',
+              mode === 'rail' ? 'flex-col px-2' : 'items-center',
+              mode === 'auto' && 'flex-col xl:flex-row',
             )}
           >
-            {mode === 'rail' ? (
-              <PanelLeftOpen aria-hidden="true" className="size-4" />
-            ) : (
-              <PanelLeftClose aria-hidden="true" className="size-4" />
+            {footerItems.length === 0 ? null : (
+              <ul className="min-w-0 flex-1 space-y-0.5">
+                {footerItems.map((item) => (
+                  <Entry
+                    key={item.to}
+                    item={item}
+                    active={isActive(item, pathname)}
+                    labelClass={label}
+                    mode={mode}
+                    {...(onNavigate === undefined ? {} : { onNavigate })}
+                  />
+                ))}
+              </ul>
             )}
-            <span className={label} aria-hidden="true">
-              {t('nav.collapse')}
-            </span>
-          </button>
-        </div>
-      )}
+            {onToggleRail === undefined ? null : (
+              <button
+                type="button"
+                onClick={onToggleRail}
+                aria-label={mode === 'rail' ? t('nav.expand') : t('nav.collapse')}
+                title={mode === 'rail' ? t('nav.expand') : t('nav.collapse')}
+                className={cn(
+                  'hidden size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground xl:flex',
+                  'motion-safe:duration-fast hover:bg-selected/70 hover:text-foreground motion-safe:transition-colors',
+                  'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                  footerItems.length === 0 && mode !== 'rail' && 'ml-auto',
+                  mode === 'rail' && 'self-center',
+                )}
+              >
+                {mode === 'rail' ? (
+                  <PanelLeftOpen aria-hidden="true" className="size-4" />
+                ) : (
+                  <PanelLeftClose aria-hidden="true" className="size-4" />
+                )}
+              </button>
+            )}
+          </div>
+        )}
+      </nav>
     </div>
   );
 }

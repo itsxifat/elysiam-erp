@@ -107,6 +107,7 @@ export {
   type StatDelta,
 } from './components/stat.js';
 export { Sheet, type SheetProps } from './components/sheet.js';
+export { Checkbox, type CheckboxProps } from './components/checkbox.js';
 export {
   Menu,
   MenuContent,

@@ -3225,9 +3225,9 @@ const en = {
   'common.removeFilter': 'Remove filter',
   'common.clearSearch': 'Clear the search',
   'common.more': 'More',
-  // The design refresh (D-440 onward): the shell, the palette and the overview.
   'common.moreFilters': 'More filters',
   'common.fewerFilters': 'Fewer filters',
+  'common.export': 'Export',
 } as const;
 
 /** Every key that exists. A call site passing anything else does not compile. */

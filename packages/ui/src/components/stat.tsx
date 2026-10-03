@@ -51,15 +51,23 @@ export function StatCard({ label, value, delta, trend, hint, footer, className }
       <p className="mt-2 text-2xl font-medium tabular-nums">{value}</p>
       <div className="mt-1 flex min-h-8 items-end justify-between gap-4">
         <p className="text-xs text-muted-foreground">{hint ?? delta?.caption ?? ''}</p>
-        {trend !== undefined && trend.length > 1 ? (
-          <Sparkline points={trend} className="h-8 w-24 shrink-0" />
-        ) : null}
+        {hasShape(trend) ? <Sparkline points={trend} className="h-8 w-24 shrink-0" /> : null}
       </div>
       {footer === undefined ? null : (
         <div className="mt-4 border-t border-border pt-3 text-sm">{footer}</div>
       )}
     </div>
   );
+}
+
+/**
+ * A sparkline earns its place only when there is a shape to show: three days or more
+ * with something in them. A flat line that jumps on the last day reads as a broken
+ * chart, not as a trend.
+ */
+function hasShape(trend: readonly number[] | undefined): trend is readonly number[] {
+  if (trend === undefined || trend.length < 3) return false;
+  return trend.filter((point) => point !== 0).length >= 3;
 }
 
 /** A change, as an arrow and a figure. The arrow carries the direction; the colour its tone. */

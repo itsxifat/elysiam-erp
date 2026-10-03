@@ -2,6 +2,8 @@ import {
   DataTable,
   DateTime,
   PermissionGate,
+  Select,
+  controlClassName,
   dataTableColumns,
   type DataTableColumn,
 } from '@elysium/ui';
@@ -36,8 +38,7 @@ import { BUYER_PAGE_SIZE, buyerSearchSchema, type BuyerSearch } from './search.j
  * The export is a link, not a script download: the browser saves the file the server names,
  * with the cookie it already has, and the server logs who took which list.
  */
-const INPUT =
-  'h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring';
+const INPUT = controlClassName;
 
 export function BuyerListPage() {
   const ability = useAbility();
@@ -197,21 +198,21 @@ function Buyers() {
                 onChange={(event) => update({ [name]: event.target.value.trim() || undefined })}
               />
             ))}
-            <select
+            <Select
+              variant="filter"
               aria-label={t('orders.col.channel')}
               value={search.channel ?? ''}
-              className={INPUT}
-              onChange={(event) =>
-                update({ channel: (event.target.value || undefined) as OrderChannel | undefined })
+              onValueChange={(value) =>
+                update({ channel: (value || undefined) as OrderChannel | undefined })
               }
-            >
-              <option value="">{t('orders.filter.allChannels')}</option>
-              {ORDER_CHANNELS.map((channel) => (
-                <option key={channel} value={channel}>
-                  {t(`orders.channel.${channel}` as OrdersMessageKey)}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: t('orders.filter.allChannels') },
+                ...ORDER_CHANNELS.map((channel) => ({
+                  value: channel,
+                  label: t(`orders.channel.${channel}` as OrdersMessageKey),
+                })),
+              ]}
+            />
             <label className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
               {t('orders.filter.from')}
               <input

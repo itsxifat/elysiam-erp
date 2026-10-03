@@ -135,4 +135,4 @@ export function Field({
 }
 
 /** The input class the courier forms share, so density matches the rest of the console. */
-export const control = controlClassName;
+export const control = `${controlClassName} w-full`;

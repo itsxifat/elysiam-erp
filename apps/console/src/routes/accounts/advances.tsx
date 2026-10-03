@@ -49,7 +49,7 @@ interface Acting {
   readonly row: QueueRow;
 }
 
-const control = controlClassName;
+const control = `${controlClassName} w-full disabled:opacity-50`;
 /** The two queues as a segmented control: one view of the page, not a route each. */
 const TAB =
   'h-7 rounded-md px-3 text-sm text-muted-foreground motion-safe:transition-colors motion-safe:duration-fast hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';

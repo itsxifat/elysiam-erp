@@ -154,4 +154,4 @@ export function Field({
   );
 }
 
-export const control = cn(controlClassName, 'aria-[invalid=true]:border-destructive');
+export const control = cn(controlClassName, 'w-full aria-[invalid=true]:border-destructive');

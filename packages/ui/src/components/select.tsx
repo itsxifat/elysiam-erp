@@ -100,7 +100,7 @@ export function Select({
           'data-placeholder:text-muted-foreground',
           '[&>span]:min-w-0 [&>span]:truncate',
           size === 'sm' && 'h-control-sm px-2.5',
-          variant === 'filter' && 'w-auto min-w-36',
+          variant === 'filter' ? 'w-auto min-w-36' : 'w-full',
           active && 'border-ring/50 bg-primary-subtle text-foreground',
           className,
         )}

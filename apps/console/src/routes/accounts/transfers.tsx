@@ -1,4 +1,4 @@
-import { Button, Input, Label, Money, PermissionGate, StatusBadge } from '@elysium/ui';
+import { Button, Input, Label, Money, PermissionGate, Select, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowRight } from 'lucide-react';
@@ -281,19 +281,16 @@ function WalletSelect({
       <Label htmlFor={id} required>
         {label}
       </Label>
-      <select
+      <Select
         id={id}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-control w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
-      >
-        <option value="">{placeholder}</option>
-        {wallets.map((wallet) => (
-          <option key={wallet.id} value={wallet.id}>
-            {`${wallet.code} · ${wallet.name}`}
-          </option>
-        ))}
-      </select>
+        placeholder={placeholder}
+        onValueChange={onChange}
+        options={wallets.map((wallet) => ({
+          value: wallet.id,
+          label: `${wallet.code} · ${wallet.name}`,
+        }))}
+      />
     </div>
   );
 }

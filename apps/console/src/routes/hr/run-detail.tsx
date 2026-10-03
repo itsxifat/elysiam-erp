@@ -1,4 +1,4 @@
-import { Button, Money, PermissionGate, Select, StatusBadge } from '@elysium/ui';
+import { Button, Money, PageHeader, PermissionGate, Select, StatusBadge } from '@elysium/ui';
 import { useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -24,6 +24,16 @@ import {
 import { control, Field, HrNav, numericControl, RUN_TONE } from './hr-nav.js';
 import { useHrT, type HrMessageKey } from './messages.js';
 import { RunTargetBonuses } from './run-bonuses.js';
+
+/* Tables in the kit DataTable's frame and rhythm (D-448). */
+const FRAME = 'overflow-x-auto rounded-lg border border-border bg-card';
+const TH =
+  'h-10 border-b border-border px-4 text-left text-xs font-medium whitespace-nowrap text-muted-foreground';
+const TH_NUMERIC = `${TH} text-right`;
+const TD = 'h-row border-b border-border px-4 whitespace-nowrap';
+const TD_NUMERIC = `${TD} text-right tabular-nums`;
+const TR =
+  'motion-safe:duration-fast hover:bg-accent/60 motion-safe:transition-colors [&:last-child>td]:border-b-0';
 
 /**
  * One payroll run: what it will pay, who agreed to it, and what it did (§12, §7).
@@ -104,32 +114,31 @@ export function PayrollRunPage() {
       explain={{ title: t('hr.deniedTitle'), detail: t('hr.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header className="space-y-1">
-          <h1 className="text-lg font-semibold tracking-tight">
-            {t('hr.runDetail')} — <span className="tabular-nums">{run.data?.month ?? ''}</span>
-          </h1>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            {status === undefined ? null : (
+        <PageHeader
+          title={
+            <>
+              {t('hr.runDetail')} — <span className="tabular-nums">{run.data?.month ?? ''}</span>
+            </>
+          }
+          meta={
+            status === undefined ? undefined : (
               <StatusBadge tone={RUN_TONE[status] ?? 'neutral'}>
                 {t(`hr.run.${status}` as HrMessageKey)}
               </StatusBadge>
-            )}
-            <span>
-              {t('hr.unrecordedPolicy')}:{' '}
-              {t(
-                run.data?.unrecordedPolicy === 'absent'
-                  ? 'hr.unrecorded.absent'
-                  : 'hr.unrecorded.present',
-              )}
-            </span>
-          </div>
-        </header>
+            )
+          }
+          description={`${t('hr.unrecordedPolicy')}: ${t(
+            run.data?.unrecordedPolicy === 'absent'
+              ? 'hr.unrecorded.absent'
+              : 'hr.unrecorded.present',
+          )}`}
+          tabs={<HrNav />}
+        />
 
-        <HrNav />
-
+        {/* The run's figures as one statement, columns split by hairlines (D-453). */}
         <section
           aria-label={t('hr.totals')}
-          className="grid gap-4 rounded-lg border border-border bg-card p-4 sm:grid-cols-4"
+          className="grid overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4 sm:divide-x sm:divide-border"
         >
           <Metric label={t('hr.colStaff')} value={String(run.data?.employeeCount ?? 0)} />
           <MoneyMetric label={t('hr.colGross')} poisha={run.data?.grossPoisha} />
@@ -160,16 +169,11 @@ export function PayrollRunPage() {
         {isDraft ? (
           <PermissionGate allowed={mayPrepare}>
             <BonusPanel runId={runId} onChanged={invalidate} />
-            <div className="flex flex-wrap items-center gap-3">
-              <Button size="sm" disabled={submit.isPending} onClick={() => submit.mutate()}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button disabled={submit.isPending} onClick={() => submit.mutate()}>
                 {t('hr.submitRun')}
               </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={close.isPending}
-                onClick={() => close.mutate()}
-              >
+              <Button variant="outline" disabled={close.isPending} onClick={() => close.mutate()}>
                 {t('hr.cancelRun')}
               </Button>
               {submit.error === null ? null : (
@@ -218,88 +222,92 @@ export function PayrollRunPage() {
           </p>
         ) : null}
 
-        <section aria-label={t('hr.payslips')} className="space-y-2">
-          <h2 className="text-sm font-semibold">{t('hr.payslips')}</h2>
+        <section aria-label={t('hr.payslips')} className="space-y-3">
+          <h2 className="text-base font-semibold tracking-tight">{t('hr.payslips')}</h2>
           {rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="rounded-lg border border-border px-5 py-8 text-center text-sm text-muted-foreground">
               {isDraft ? t('hr.emptyTitle') : t('hr.payslipsAfterApproval')}
             </p>
           ) : (
-            <table className="w-full text-sm">
-              <caption className="sr-only">{t('hr.payslips')}</caption>
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th scope="col" className="py-2">
-                    {t('hr.employee')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {t('hr.colBasic')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {t('hr.colAllowances')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {t('hr.colBonus')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {t('hr.colAbsence')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {t('hr.colLoan')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {t('hr.colNet')}
-                  </th>
-                  <th scope="col" className="py-2 text-right">
-                    {t('hr.colPresent')}
-                  </th>
-                  <th scope="col" className="py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((payslip) => (
-                  <tr key={payslip.employeeId} className="h-9 border-b border-border/60">
-                    <td className="py-2">
-                      <span className="text-muted-foreground tabular-nums">
-                        {payslip.employeeCode}
-                      </span>{' '}
-                      {payslip.employeeName}
-                    </td>
-                    <td className="py-2 text-right">
-                      <Money poisha={payslip.basicPoisha} symbol={false} />
-                    </td>
-                    <td className="py-2 text-right">
-                      <Money poisha={payslip.allowancesPoisha} symbol={false} />
-                    </td>
-                    <td className="py-2 text-right">
-                      <Money poisha={payslip.bonusPoisha} symbol={false} />
-                    </td>
-                    <td className="py-2 text-right">
-                      <Money poisha={payslip.absenceDeductionPoisha} symbol={false} />
-                    </td>
-                    <td className="py-2 text-right">
-                      <Money poisha={payslip.loanDeductionPoisha} symbol={false} />
-                    </td>
-                    <td className="py-2 text-right font-medium">
-                      <Money poisha={payslip.netPoisha} symbol={false} />
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      {payslip.presentDays}/{payslip.workingDays}
-                    </td>
-                    <td className="py-2 text-right">
-                      {isApproved ? (
-                        <a
-                          href={payslipPdfUrl(runId, payslip.employeeId)}
-                          className="rounded-md px-2 py-1 text-sm text-primary underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                        >
-                          {t('hr.downloadPayslip')}
-                        </a>
-                      ) : null}
-                    </td>
+            <div className={FRAME}>
+              <table className="w-full border-separate border-spacing-0 text-sm">
+                <caption className="sr-only">{t('hr.payslips')}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" className={TH}>
+                      {t('hr.employee')}
+                    </th>
+                    <th scope="col" className={TH_NUMERIC}>
+                      {t('hr.colBasic')}
+                    </th>
+                    <th scope="col" className={TH_NUMERIC}>
+                      {t('hr.colAllowances')}
+                    </th>
+                    <th scope="col" className={TH_NUMERIC}>
+                      {t('hr.colBonus')}
+                    </th>
+                    <th scope="col" className={TH_NUMERIC}>
+                      {t('hr.colAbsence')}
+                    </th>
+                    <th scope="col" className={TH_NUMERIC}>
+                      {t('hr.colLoan')}
+                    </th>
+                    <th scope="col" className={TH_NUMERIC}>
+                      {t('hr.colNet')}
+                    </th>
+                    <th scope="col" className={TH_NUMERIC}>
+                      {t('hr.colPresent')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      <span className="sr-only">{t('hr.downloadPayslip')}</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {rows.map((payslip) => (
+                    <tr key={payslip.employeeId} className={TR}>
+                      <td className={TD}>
+                        <span className="text-muted-foreground tabular-nums">
+                          {payslip.employeeCode}
+                        </span>{' '}
+                        {payslip.employeeName}
+                      </td>
+                      <td className={TD_NUMERIC}>
+                        <Money poisha={payslip.basicPoisha} symbol={false} />
+                      </td>
+                      <td className={TD_NUMERIC}>
+                        <Money poisha={payslip.allowancesPoisha} symbol={false} />
+                      </td>
+                      <td className={TD_NUMERIC}>
+                        <Money poisha={payslip.bonusPoisha} symbol={false} />
+                      </td>
+                      <td className={TD_NUMERIC}>
+                        <Money poisha={payslip.absenceDeductionPoisha} symbol={false} />
+                      </td>
+                      <td className={TD_NUMERIC}>
+                        <Money poisha={payslip.loanDeductionPoisha} symbol={false} />
+                      </td>
+                      <td className={`${TD_NUMERIC} font-medium`}>
+                        <Money poisha={payslip.netPoisha} symbol={false} />
+                      </td>
+                      <td className={`${TD_NUMERIC} text-muted-foreground`}>
+                        {payslip.presentDays}/{payslip.workingDays}
+                      </td>
+                      <td className={`${TD} text-right`}>
+                        {isApproved ? (
+                          <a
+                            href={payslipPdfUrl(runId, payslip.employeeId)}
+                            className="rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                          >
+                            {t('hr.downloadPayslip')}
+                          </a>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       </div>
@@ -309,9 +317,9 @@ export function PayrollRunPage() {
 
 function Metric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-1 px-5 py-4">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-base font-medium tabular-nums">{value}</p>
+      <p className="text-xl font-medium tabular-nums">{value}</p>
     </div>
   );
 }
@@ -326,12 +334,10 @@ function MoneyMetric({
   readonly emphasis?: boolean;
 }) {
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-1 px-5 py-4">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p
-        className={`text-base tabular-nums ${emphasis === true ? 'font-semibold' : 'font-medium'}`}
-      >
-        <Money poisha={poisha ?? '0'} />
+      <p className={`text-xl tabular-nums ${emphasis === true ? 'font-semibold' : 'font-medium'}`}>
+        <Money poisha={poisha ?? '0'} align="start" compact />
       </p>
     </div>
   );
@@ -386,16 +392,16 @@ function BonusPanel({
   return (
     <section
       aria-label={t('hr.bonuses')}
-      className="space-y-3 rounded-lg border border-border bg-card p-4"
+      className="space-y-4 rounded-lg border border-border bg-card p-5"
     >
-      <h2 className="text-sm font-semibold">{t('hr.bonuses')}</h2>
+      <h2 className="text-base font-semibold tracking-tight">{t('hr.bonuses')}</h2>
 
       {(inputs.data?.items ?? []).length === 0 ? null : (
         <table className="w-full text-sm">
           <caption className="sr-only">{t('hr.bonuses')}</caption>
           <tbody>
             {(inputs.data?.items ?? []).map((input) => (
-              <tr key={input.id} className="h-9 border-b border-border/60">
+              <tr key={input.id} className="h-row border-b border-border">
                 <td className="py-2">
                   {byId.get(input.employeeId)?.fullName ?? input.employeeId.slice(0, 8)}
                 </td>
@@ -421,7 +427,7 @@ function BonusPanel({
       )}
 
       <form
-        className="grid gap-3 sm:grid-cols-5"
+        className="grid gap-4 sm:grid-cols-5"
         onSubmit={(event) => {
           event.preventDefault();
           add.mutate();
@@ -474,7 +480,7 @@ function BonusPanel({
         <div className="flex items-end">
           <Button
             type="submit"
-            size="sm"
+            variant="outline"
             disabled={
               employeeId === '' || label.trim() === '' || amount.trim() === '' || add.isPending
             }
@@ -509,7 +515,7 @@ function PayPanel({ runId, onPaid }: { readonly runId: string; readonly onPaid: 
 
   return (
     <form
-      className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-4"
+      className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-5"
       onSubmit={(event) => {
         event.preventDefault();
         pay.mutate();
@@ -530,7 +536,7 @@ function PayPanel({ runId, onPaid }: { readonly runId: string; readonly onPaid: 
         />
       </Field>
       {/* No amount field: the run pays exactly what was approved and posted (D-078). */}
-      <Button type="submit" size="sm" disabled={walletAccountId === '' || pay.isPending}>
+      <Button type="submit" disabled={walletAccountId === '' || pay.isPending}>
         {t('hr.payRun')}
       </Button>
       {pay.error === null ? null : (

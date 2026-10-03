@@ -9,9 +9,10 @@ import {
   type RowData,
 } from '@tanstack/react-table';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3 } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from './button.js';
+import { Checkbox } from './checkbox.js';
 import { EmptyState, ErrorState, Skeleton } from './states.js';
 import { cn } from '../lib/cn.js';
 
@@ -167,6 +168,12 @@ export interface DataTableProps<TData extends RowData> {
   /** Accessible name for the table itself, e.g. "Approval requests". */
   readonly caption: string;
   readonly className?: string;
+  /**
+   * Columns hidden until the viewer asks for them (D-458): a table fits its page by
+   * default, and the detail a few people want stays one click away under Columns.
+   * Keyed by column id, `false` to hide.
+   */
+  readonly initialColumnVisibility?: Readonly<Record<string, boolean>>;
 }
 
 /** A frozen empty page, so a loading table does not remount its model. */
@@ -187,8 +194,33 @@ export function DataTable<TData extends RowData>({
   labels,
   caption,
   className,
+  initialColumnVisibility,
 }: DataTableProps<TData>) {
-  const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>({});
+  const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>(() => ({
+    ...initialColumnVisibility,
+  }));
+  const frame = useRef<HTMLDivElement>(null);
+  const [clipped, setClipped] = useState(false);
+
+  /*
+   * Whether more of the table sits past the right edge. When it does, the edge fades,
+   * so a hidden column reads as "scroll for more" rather than as a cut-off value.
+   */
+  useEffect(() => {
+    const element = frame.current;
+    if (element === null) return;
+    const measure = () => {
+      setClipped(element.scrollLeft + element.clientWidth < element.scrollWidth - 1);
+    };
+    measure();
+    element.addEventListener('scroll', measure, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(element);
+    return () => {
+      element.removeEventListener('scroll', measure);
+      observer?.disconnect();
+    };
+  }, []);
 
   const table = useTable<DataTableFeatures, TData>({
     features: dataTableFeatures,
@@ -239,17 +271,23 @@ export function DataTable<TData extends RowData>({
 
   return (
     <div className={cn('space-y-3', className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">{toolbar}</div>
-        <ColumnVisibilityMenu table={table} label={labels.columns} />
-      </div>
+      {toolbar === undefined ? null : (
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{toolbar}</div>
+          <ColumnVisibilityMenu table={table} label={labels.columns} />
+        </div>
+      )}
 
       {/*
        * The table scrolls inside its own frame on a wide screen, so its header can stick
        * while the rows move and the pager below stays in reach (D-448). On a phone the
        * page scrolls instead: two nested scroll areas on a small screen are a trap.
        */}
-      <div className="overflow-auto rounded-lg border border-border bg-card md:max-h-[calc(100dvh-14rem)]">
+      <div
+        ref={frame}
+        data-clipped={clipped ? 'end' : undefined}
+        className="overflow-auto rounded-lg border border-border bg-card data-[clipped=end]:fade-x-end md:max-h-[calc(100dvh-14rem)]"
+      >
         <table className="w-full border-separate border-spacing-0 text-sm">
           <caption className="sr-only">{caption}</caption>
           <thead>
@@ -389,9 +427,16 @@ export function DataTable<TData extends RowData>({
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground tabular-nums" role="status">
-          {labels.pageStatus}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-muted-foreground tabular-nums" role="status">
+            {labels.pageStatus}
+          </p>
+          {/* With no toolbar above, the column choice sits down here rather than alone on
+              a row of its own. */}
+          {toolbar === undefined ? (
+            <ColumnVisibilityMenu table={table} label={labels.columns} placement="top" />
+          ) : null}
+        </div>
         <div className="flex items-center gap-1.5">
           <Button
             variant="outline"
@@ -429,9 +474,11 @@ export function DataTable<TData extends RowData>({
 function ColumnVisibilityMenu<TData extends RowData>({
   table,
   label,
+  placement = 'bottom',
 }: {
   readonly table: ReturnType<typeof useTable<DataTableFeatures, TData>>;
   readonly label: string;
+  readonly placement?: 'bottom' | 'top';
 }) {
   const [open, setOpen] = useState(false);
 
@@ -453,7 +500,10 @@ function ColumnVisibilityMenu<TData extends RowData>({
         <div
           role="group"
           aria-label={label}
-          className="absolute right-0 z-30 mt-1.5 min-w-52 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover motion-safe:animate-in"
+          className={cn(
+            'absolute z-30 min-w-52 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover motion-safe:animate-in',
+            placement === 'bottom' ? 'right-0 mt-1.5' : 'bottom-full left-0 mb-1.5',
+          )}
           onKeyDown={(event) => {
             if (event.key === 'Escape') setOpen(false);
           }}
@@ -463,11 +513,9 @@ function ColumnVisibilityMenu<TData extends RowData>({
               key={column.id}
               className="flex h-control-sm cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm hover:bg-accent hover:text-accent-foreground"
             >
-              <input
-                type="checkbox"
-                className="size-3.5 accent-primary"
+              <Checkbox
                 checked={column.getIsVisible()}
-                onChange={() => column.toggleVisibility()}
+                onCheckedChange={() => column.toggleVisibility()}
               />
               {typeof column.columnDef.header === 'string' ? column.columnDef.header : column.id}
             </label>

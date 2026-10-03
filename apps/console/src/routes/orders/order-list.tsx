@@ -1,5 +1,6 @@
 import {
   Button,
+  Checkbox,
   DataTable,
   DateTime,
   FilterChips,
@@ -186,21 +187,19 @@ function OrderList() {
       column.display({
         id: 'select',
         header: () => (
-          <input
-            type="checkbox"
+          <Checkbox
             aria-label={t('orders.bulk.selectAll')}
-            checked={allChosen}
-            onChange={() => setSelected(allChosen ? new Set() : new Set([...selected, ...pageIds]))}
-            className="size-4 accent-primary"
+            checked={allChosen ? true : chosen.length > 0 ? 'indeterminate' : false}
+            onCheckedChange={() =>
+              setSelected(allChosen ? new Set() : new Set([...selected, ...pageIds]))
+            }
           />
         ),
         cell: (cell) => (
-          <input
-            type="checkbox"
+          <Checkbox
             aria-label={`${t('orders.bulk.selectRow')} ${cell.row.original.orderNo}`}
             checked={selected.has(cell.row.original.id)}
-            onChange={() => toggle(cell.row.original.id)}
-            className="size-4 accent-primary"
+            onCheckedChange={() => toggle(cell.row.original.id)}
           />
         ),
       }),
@@ -209,20 +208,32 @@ function OrderList() {
         cell: (cell) => (
           <Link
             to={ordersPath(`/orders/${cell.row.original.id}`)}
-            className="font-medium text-foreground tabular-nums underline-offset-4 hover:text-primary hover:underline"
+            className="font-semibold text-foreground tabular-nums underline-offset-4 hover:text-primary hover:underline"
           >
             {cell.getValue()}
           </Link>
         ),
       }),
+      // The buyer with their phone beneath it, so the list fits a laptop without a
+      // column of its own for the number (D-458). The phone column stays under Columns.
       column.accessor((row) => row.customer.name, {
         id: 'customer',
         header: t('orders.col.customer'),
+        cell: (cell) => (
+          <span className="block leading-tight">
+            <span className="block">{cell.getValue()}</span>
+            <span className="block text-xs text-muted-foreground tabular-nums">
+              {cell.row.original.shipTo.phone}
+            </span>
+          </span>
+        ),
       }),
       column.accessor((row) => row.shipTo.phone, {
         id: 'phone',
         header: t('orders.col.phone'),
-        cell: (cell) => <span className="tabular-nums">{cell.getValue()}</span>,
+        cell: (cell) => (
+          <span className="text-muted-foreground tabular-nums">{cell.getValue()}</span>
+        ),
       }),
       column.accessor('status', {
         header: t('orders.col.status'),
@@ -248,7 +259,7 @@ function OrderList() {
           return id === null ? (
             <span className="text-muted-foreground">{t('orders.detail.unassigned')}</span>
           ) : (
-            (agentName.get(id) ?? id)
+            <span className="text-muted-foreground">{agentName.get(id) ?? id}</span>
           );
         },
       }),
@@ -256,14 +267,14 @@ function OrderList() {
         id: 'cod',
         header: t('orders.col.cod'),
         meta: { numeric: true },
-        cell: (cell) => <Money poisha={cell.getValue()} locale={locale} />,
+        cell: (cell) => <Money poisha={cell.getValue()} locale={locale} className="font-medium" />,
       }),
       column.accessor((row) => row.timestamps.createdAt, {
         id: 'created',
         header: t('orders.col.created'),
         cell: (cell) => (
           <span className="text-muted-foreground">
-            <DateTime value={cell.getValue()} />
+            <DateTime value={cell.getValue()} compact />
           </span>
         ),
       }),
@@ -462,6 +473,9 @@ function OrderList() {
         error={orders.error}
         onRetry={() => void orders.refetch()}
         caption={t('orders.list.caption')}
+        // The zone and the phone column are one click away under Columns: the table fits a
+        // laptop by default.
+        initialColumnVisibility={{ zone: false, phone: false }}
         labels={{
           columns: t('orders.columns'),
           previous: t('orders.previous'),

@@ -1,10 +1,21 @@
-import { Money, PermissionGate, Skeleton } from '@elysium/ui';
+import {
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
+  MetricList,
+  Money,
+  PermissionGate,
+  Section as KitSection,
+  Skeleton,
+  StatCard,
+} from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, Info, RefreshCw, TriangleAlert } from 'lucide-react';
 import { lazy, Suspense, useId, useState, type ReactNode } from 'react';
 
 import { useAbility } from '../../auth/session.js';
-import { useLocale } from '../../i18n/locale.js';
+import { useLocale, useT } from '../../i18n/locale.js';
 import {
   CELL,
   HEAD,
@@ -15,7 +26,6 @@ import {
   BUTTON,
   Section,
   Template,
-  Tile,
 } from './analytics-nav.js';
 import {
   exportUrl,
@@ -64,6 +74,7 @@ export function AnalyticsDashboardPage() {
 
 function Dashboard() {
   const t = useAnalyticsT();
+  const common = useT();
   const { locale } = useLocale();
   const ability = useAbility();
   const queries = useQueryClient();
@@ -102,6 +113,9 @@ function Dashboard() {
     },
   });
 
+  // Figures (the cards and the statements) drop ".00" on whole taka; tables keep it (D-455).
+  const figure = (value: string | null | undefined) =>
+    value === null || value === undefined ? '—' : <Money poisha={value} locale={locale} compact />;
   const money = (value: string | null | undefined) =>
     value === null || value === undefined ? '—' : <Money poisha={value} locale={locale} />;
   const seconds = (value: number | null) =>
@@ -147,14 +161,23 @@ function Dashboard() {
                 if (event.target.value !== '') setPeriod({ ...period, to: event.target.value });
               }}
             />
-            <a href={exportUrl(period.from, period.to, 'csv')} className={BUTTON}>
-              <Download aria-hidden="true" className="size-4" />
-              {t('analytics.exportCsv')}
-            </a>
-            <a href={exportUrl(period.from, period.to, 'xlsx')} className={BUTTON}>
-              <Download aria-hidden="true" className="size-4" />
-              {t('analytics.exportXlsx')}
-            </a>
+            {/* The two exports are secondary: one button, a menu of formats (D-445). */}
+            <Menu>
+              <MenuTrigger className={BUTTON}>
+                <Download aria-hidden="true" className="size-4" />
+                {common('common.export')}
+              </MenuTrigger>
+              <MenuContent>
+                <MenuItem asChild>
+                  <a href={exportUrl(period.from, period.to, 'csv')}>{t('analytics.exportCsv')}</a>
+                </MenuItem>
+                <MenuItem asChild>
+                  <a href={exportUrl(period.from, period.to, 'xlsx')}>
+                    {t('analytics.exportXlsx')}
+                  </a>
+                </MenuItem>
+              </MenuContent>
+            </Menu>
           </>
         }
       />
@@ -209,60 +232,118 @@ function Dashboard() {
         </div>
       ) : null}
 
-      <section aria-label={t('analytics.title')} className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Tile
-          label={t('analytics.metric.revenue')}
-          value={money(totals?.deliveredRevenuePoisha)}
-          hint={t('analytics.metric.revenueHint')}
-        />
-        {totals?.grossProfitPoisha === undefined ? null : (
-          <Tile label={t('analytics.metric.grossProfit')} value={money(totals.grossProfitPoisha)} />
-        )}
-        <Tile
-          label={`${t('analytics.metric.placed')} / ${t('analytics.metric.confirmed')} / ${t('analytics.metric.delivered')}`}
-          value={
-            totals === undefined
-              ? '—'
-              : `${String(totals.ordersPlaced)} / ${String(totals.ordersConfirmed)} / ${String(totals.ordersDelivered)}`
-          }
-        />
-        <Tile
-          label={`${t('analytics.metric.returned')} / ${t('analytics.metric.cancelled')}`}
-          value={
-            totals === undefined
-              ? '—'
-              : `${String(totals.ordersReturned)} / ${String(totals.ordersCancelled)}`
-          }
-        />
-        <Tile label={t('analytics.metric.aov')} value={money(totals?.aovPoisha)} />
-        <Tile
-          label={t('analytics.metric.returnRate')}
-          value={totals === undefined ? '—' : percent(totals.returnRateBps)}
-        />
-        <Tile
-          label={t('analytics.metric.deliverySuccess')}
-          value={totals === undefined ? '—' : percent(totals.deliverySuccessBps)}
-          hint={t('analytics.metric.deliverySuccessHint')}
-        />
-        <Tile label={t('analytics.metric.spend')} value={money(totals?.spendPoisha)} />
-        <Tile label={t('analytics.metric.cpo')} value={money(totals?.cpoPoisha)} />
-        <Tile label={t('analytics.metric.cpdo')} value={money(totals?.cpdoPoisha)} />
-        <Tile
-          label={t('analytics.metric.roas')}
-          value={totals === undefined ? '—' : roas(totals.roasBps)}
-        />
-        <Tile
-          label={t('analytics.metric.pickup')}
-          value={totals === undefined ? '—' : seconds(totals.pickupMeanSeconds)}
-        />
-        <Tile
-          label={t('analytics.metric.cash')}
-          value={money(data?.cashPoisha)}
-          hint={t('analytics.metric.cashHint')}
-        />
-        {data?.stockValuePoisha === undefined ? null : (
-          <Tile label={t('analytics.metric.stockValue')} value={money(data.stockValuePoisha)} />
-        )}
+      {/* The figures, with a hierarchy (D-453): the four a person opens this page for,
+          large and with their shape over the period, then the rest as statements. */}
+      <section aria-label={t('analytics.title')} className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label={t('analytics.metric.revenue')}
+            value={figure(totals?.deliveredRevenuePoisha)}
+            hint={t('analytics.metric.revenueHint')}
+            {...(data === undefined
+              ? {}
+              : { trend: data.series.map((day) => Number(day.deliveredRevenuePoisha)) })}
+          />
+          {totals?.grossProfitPoisha === undefined ? (
+            <StatCard label={t('analytics.metric.aov')} value={figure(totals?.aovPoisha)} />
+          ) : (
+            <StatCard
+              label={t('analytics.metric.grossProfit')}
+              value={figure(totals.grossProfitPoisha)}
+            />
+          )}
+          <StatCard
+            label={t('analytics.metric.confirmed')}
+            value={totals === undefined ? '—' : String(totals.ordersConfirmed)}
+            hint={
+              totals === undefined
+                ? undefined
+                : `${t('analytics.metric.placed')} ${String(totals.ordersPlaced)} · ${t('analytics.metric.delivered')} ${String(totals.ordersDelivered)}`
+            }
+            {...(data === undefined
+              ? {}
+              : { trend: data.series.map((day) => day.ordersConfirmed) })}
+          />
+          <StatCard
+            label={t('analytics.metric.deliverySuccess')}
+            value={totals === undefined ? '—' : percent(totals.deliverySuccessBps)}
+            hint={t('analytics.metric.deliverySuccessHint')}
+          />
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <KitSection title={common('nav.orders')}>
+            <MetricList
+              items={[
+                {
+                  label: t('analytics.metric.placed'),
+                  value: totals === undefined ? '—' : String(totals.ordersPlaced),
+                },
+                {
+                  label: t('analytics.metric.delivered'),
+                  value: totals === undefined ? '—' : String(totals.ordersDelivered),
+                },
+                {
+                  label: t('analytics.metric.returned'),
+                  value: totals === undefined ? '—' : String(totals.ordersReturned),
+                },
+                {
+                  label: t('analytics.metric.cancelled'),
+                  value: totals === undefined ? '—' : String(totals.ordersCancelled),
+                },
+                {
+                  label: t('analytics.metric.returnRate'),
+                  value: totals === undefined ? '—' : percent(totals.returnRateBps),
+                },
+                { label: t('analytics.metric.aov'), value: figure(totals?.aovPoisha) },
+              ]}
+            />
+          </KitSection>
+          <KitSection title={common('nav.marketing')}>
+            <MetricList
+              items={[
+                { label: t('analytics.metric.spend'), value: figure(totals?.spendPoisha) },
+                { label: t('analytics.metric.cpo'), value: figure(totals?.cpoPoisha) },
+                { label: t('analytics.metric.cpdo'), value: figure(totals?.cpdoPoisha) },
+                {
+                  label: t('analytics.metric.roas'),
+                  value: totals === undefined ? '—' : roas(totals.roasBps),
+                },
+                {
+                  label: t('analytics.metric.pickup'),
+                  value: totals === undefined ? '—' : seconds(totals.pickupMeanSeconds),
+                },
+              ]}
+            />
+          </KitSection>
+          <KitSection title={common('nav.sectionMoney')}>
+            <MetricList
+              items={[
+                {
+                  label: t('analytics.metric.cash'),
+                  value: figure(data?.cashPoisha),
+                  hint: t('analytics.metric.cashHint'),
+                },
+                ...(data?.stockValuePoisha === undefined
+                  ? []
+                  : [
+                      {
+                        label: t('analytics.metric.stockValue'),
+                        value: figure(data.stockValuePoisha),
+                      },
+                    ]),
+                ...(totals?.grossProfitPoisha === undefined
+                  ? []
+                  : [
+                      {
+                        label: t('analytics.metric.grossProfit'),
+                        value: figure(totals.grossProfitPoisha),
+                      },
+                    ]),
+              ]}
+            />
+          </KitSection>
+        </div>
       </section>
 
       <InsightsPanel month={month} items={insights.data?.items} failed={insights.isError} />

@@ -200,7 +200,8 @@ function Topbar({
       <nav aria-label={t('shell.breadcrumb')} className="min-w-0 flex-1">
         {here === null ? null : (
           <ol className="flex min-w-0 items-center gap-1.5 text-sm">
-            {here.section.untitled === true ? null : (
+            {here.section.untitled === true ||
+            t(here.section.titleKey) === t(here.item.labelKey) ? null : (
               <li className="hidden items-center gap-1.5 text-muted-foreground sm:flex">
                 {t(here.section.titleKey)}
                 <ChevronRight aria-hidden="true" className="size-3.5 opacity-60" />

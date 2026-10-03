@@ -1,4 +1,11 @@
-import { Button, EmptyState, ErrorState, PermissionGate, Skeleton } from '@elysium/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  PermissionGate,
+  Skeleton,
+  controlClassName,
+} from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 
@@ -56,7 +63,7 @@ export function ReturnReasonsPage() {
               type="date"
               value={from}
               max={to}
-              className="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={controlClassName}
               onChange={(event) => setFrom(event.target.value)}
             />
           </label>
@@ -70,7 +77,7 @@ export function ReturnReasonsPage() {
               type="date"
               value={to}
               min={from}
-              className="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={controlClassName}
               onChange={(event) => setTo(event.target.value)}
             />
           </label>

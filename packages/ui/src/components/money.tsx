@@ -44,6 +44,11 @@ export interface MoneyProps {
   readonly className?: string;
   /** Left-align, for the rare case where the amount is prose rather than a column. */
   readonly align?: 'start' | 'end';
+  /**
+   * A KPI or a summary figure: a whole-taka amount without ".00" (D-455). Never in a
+   * table, a ledger or a form, where every amount keeps its paisa.
+   */
+  readonly compact?: boolean;
 }
 
 export function Money({
@@ -53,6 +58,7 @@ export function Money({
   withheld = false,
   className,
   align = 'end',
+  compact = false,
 }: MoneyProps) {
   if (withheld) {
     return (
@@ -68,7 +74,7 @@ export function Money({
 
   return (
     <span className={cn('tabular-nums', alignClass(align), className)}>
-      {formatMoney(poisha, { locale, symbol })}
+      {formatMoney(poisha, { locale, symbol, trimWholePaisa: compact })}
     </span>
   );
 }
