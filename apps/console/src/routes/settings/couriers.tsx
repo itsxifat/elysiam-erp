@@ -1,4 +1,4 @@
-import { Button, Dialog, StatusBadge } from '@elysium/ui';
+import { Button, Dialog, Select, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useId, useState } from 'react';
@@ -239,38 +239,26 @@ function AccountDialog({
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           <Field id={`${id}-courier`} label={t('settings.couriers.colCourier')}>
-            <select
+            <Select
               id={`${id}-courier`}
               value={courierId}
               disabled={account !== null}
-              className={control}
-              onChange={(event) => setCourierId(event.target.value)}
-            >
-              <option value="">{t('settings.choose')}</option>
-              {couriers.map((courier) => (
-                <option key={courier.id} value={courier.id}>
-                  {courier.name}
-                </option>
-              ))}
-            </select>
+              placeholder={t('settings.choose')}
+              onValueChange={setCourierId}
+              options={couriers.map((courier) => ({ value: courier.id, label: courier.name }))}
+            />
           </Field>
           <Field id={`${id}-provider`} label={t('settings.couriers.colProvider')}>
-            <select
+            <Select
               id={`${id}-provider`}
               value={providerCode}
-              className={control}
-              onChange={(event) => {
-                setProviderCode(event.target.value);
+              placeholder={t('settings.choose')}
+              onValueChange={(value) => {
+                setProviderCode(value);
                 setCredentials({});
               }}
-            >
-              <option value="">{t('settings.choose')}</option>
-              {providers.map((entry) => (
-                <option key={entry.code} value={entry.code}>
-                  {entry.code}
-                </option>
-              ))}
-            </select>
+              options={providers.map((entry) => ({ value: entry.code, label: entry.code }))}
+            />
           </Field>
           {provider !== undefined && !provider.verified ? (
             <p role="note" className="text-xs text-warning-subtle-foreground sm:col-span-2">
@@ -287,15 +275,15 @@ function AccountDialog({
             />
           </Field>
           <Field id={`${id}-mode`} label={t('settings.couriers.colMode')}>
-            <select
+            <Select
               id={`${id}-mode`}
               value={mode}
-              className={control}
-              onChange={(event) => setMode(event.target.value as 'sandbox' | 'live')}
-            >
-              <option value="sandbox">{t('settings.couriers.modeSandbox')}</option>
-              <option value="live">{t('settings.couriers.modeLive')}</option>
-            </select>
+              onValueChange={(value) => setMode(value === 'live' ? 'live' : 'sandbox')}
+              options={[
+                { value: 'sandbox', label: t('settings.couriers.modeSandbox') },
+                { value: 'live', label: t('settings.couriers.modeLive') },
+              ]}
+            />
           </Field>
           <div className="sm:col-span-2">
             <Field id={`${id}-base`} label={t('settings.couriers.fieldBaseUrl')}>
@@ -360,21 +348,19 @@ function AccountDialog({
             />
           </Field>
           <Field id={`${id}-wallet`} label={t('settings.couriers.fieldWallet')}>
-            <select
+            <Select
               id={`${id}-wallet`}
               value={walletId}
-              className={control}
-              onChange={(event) => setWalletId(event.target.value)}
-            >
-              <option value="">{t('settings.choose')}</option>
-              {(wallets.data?.items ?? [])
-                .filter((wallet) => wallet.subtype !== 'wallet_cash')
-                .map((wallet) => (
-                  <option key={wallet.id} value={wallet.id}>
-                    {wallet.name}
-                  </option>
-                ))}
-            </select>
+              placeholder={t('settings.choose')}
+              onValueChange={setWalletId}
+              options={[
+                // The wallet is optional: "Choose…" stays a choice that clears it.
+                { value: '', label: t('settings.choose') },
+                ...(wallets.data?.items ?? [])
+                  .filter((wallet) => wallet.subtype !== 'wallet_cash')
+                  .map((wallet) => ({ value: wallet.id, label: wallet.name })),
+              ]}
+            />
           </Field>
           <label className="flex items-center gap-2 text-sm sm:col-span-2" htmlFor={`${id}-active`}>
             <input

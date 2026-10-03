@@ -2,6 +2,7 @@ import {
   Button,
   DataTable,
   PermissionGate,
+  Select,
   StatusBadge,
   dataTableColumns,
   type DataTableColumn,
@@ -26,6 +27,7 @@ import {
 } from './api.js';
 import { MarketingHeader, useMarketingTableLabels } from './marketing-nav.js';
 import { useMarketingT, type MarketingMessageKey } from './messages.js';
+import { DatePicker } from '../../ui/date-picker.js';
 
 /**
  * Campaigns and the external ids that attribute orders to them (§11; M18).
@@ -240,44 +242,34 @@ function Campaigns() {
             </Field>
           </div>
           <Field label={t('marketing.col.platform')} id={`${id}-platform`}>
-            <select
+            <Select
               id={`${id}-platform`}
-              className={control}
               value={platform}
-              onChange={(event) => setPlatform(event.target.value as Platform)}
-            >
-              {PLATFORMS.map((value) => (
-                <option key={value} value={value}>
-                  {t(`marketing.platform.${value}` as MarketingMessageKey)}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setPlatform(value as Platform)}
+              options={PLATFORMS.map((value) => ({
+                value,
+                label: t(`marketing.platform.${value}` as MarketingMessageKey),
+              }))}
+            />
           </Field>
           <Field
             label={t('marketing.campaigns.startsOn')}
             id={`${id}-start`}
             hint={t('marketing.optional')}
           >
-            <input
-              id={`${id}-start`}
-              type="date"
-              className={control}
-              value={startsOn}
-              onChange={(event) => setStartsOn(event.target.value)}
-            />
+            <DatePicker id={`${id}-start`} value={startsOn} clearable onValueChange={setStartsOn} />
           </Field>
           <Field
             label={t('marketing.campaigns.endsOn')}
             id={`${id}-end`}
             hint={t('marketing.optional')}
           >
-            <input
+            <DatePicker
               id={`${id}-end`}
-              type="date"
-              className={control}
               value={endsOn}
-              min={startsOn === '' ? undefined : startsOn}
-              onChange={(event) => setEndsOn(event.target.value)}
+              clearable
+              {...(startsOn === '' ? {} : { min: startsOn })}
+              onValueChange={setEndsOn}
             />
           </Field>
           <div className="md:col-span-3">
@@ -328,38 +320,31 @@ function Campaigns() {
         >
           <div className="min-w-48">
             <Field label={t('marketing.col.campaign')} id={`${id}-map-campaign`}>
-              <select
+              <Select
                 id={`${id}-map-campaign`}
-                className={control}
                 value={mapping.campaignId}
-                onChange={(event) =>
-                  setMapping((current) => ({ ...current, campaignId: event.target.value }))
+                onValueChange={(value) =>
+                  setMapping((current) => ({ ...current, campaignId: value }))
                 }
-              >
-                <option value="">—</option>
-                {items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: '—' },
+                  ...items.map((item) => ({ value: item.id, label: item.name })),
+                ]}
+              />
             </Field>
           </div>
           <Field label={t('marketing.campaigns.kind')} id={`${id}-map-kind`}>
-            <select
+            <Select
               id={`${id}-map-kind`}
-              className={control}
               value={mapping.kind}
-              onChange={(event) =>
-                setMapping((current) => ({ ...current, kind: event.target.value as RefKind }))
+              onValueChange={(value) =>
+                setMapping((current) => ({ ...current, kind: value as RefKind }))
               }
-            >
-              {REF_KINDS.map((kind) => (
-                <option key={kind} value={kind}>
-                  {t(`marketing.ref.${kind}` as MarketingMessageKey)}
-                </option>
-              ))}
-            </select>
+              options={REF_KINDS.map((kind) => ({
+                value: kind,
+                label: t(`marketing.ref.${kind}` as MarketingMessageKey),
+              }))}
+            />
           </Field>
           <div className="min-w-48 flex-1">
             <Field label={t('marketing.campaigns.value')} id={`${id}-map-value`}>

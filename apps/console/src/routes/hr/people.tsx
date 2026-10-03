@@ -1,10 +1,23 @@
 import { effectiveScope } from '@elysium/contracts';
-import { Button, EmptyState, ErrorState, Money, PermissionGate, StatusBadge } from '@elysium/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  Money,
+  PageHeader,
+  PermissionGate,
+  SearchInput,
+  Select,
+  Sheet,
+  StatusBadge,
+} from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { UserPlus, Users } from 'lucide-react';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility, useSession } from '../../auth/session.js';
+import { useT } from '../../i18n/locale.js';
 import {
   createEmployee,
   listBranchOptions,
@@ -27,6 +40,10 @@ import {
 import { control, Field, HrNav, numericControl } from './hr-nav.js';
 import { useHrT, type HrMessageKey } from './messages.js';
 import { takaToPoisha } from '@elysium/ui';
+import { DatePicker } from '../../ui/date-picker.js';
+
+/** Join and leaving dates: a migrated record can go back decades, and a date can be next year. */
+const STAFF_YEARS = { from: 1990, to: new Date().getUTCFullYear() + 1 } as const;
 
 /**
  * The staff list, and the two forms that create a person and set their pay (§12, §6).
@@ -70,8 +87,20 @@ const STATUS_TONE: Readonly<Record<EmploymentStatus, 'success' | 'warning' | 'ne
 const PAYOUT_METHODS: readonly PayoutMethod[] = ['cash', 'bank', 'bkash', 'nagad'];
 const STATUSES: readonly EmploymentStatus[] = ['active', 'suspended', 'resigned', 'terminated'];
 
+/*
+ * The staff table in the kit DataTable's frame and rhythm (D-448): a card with a hairline,
+ * quiet headers, 40px rows and a hover step. A plain table rather than the DataTable,
+ * because the rows open panels below the list rather than paging.
+ */
+const TH =
+  'h-10 border-b border-border px-4 text-left text-xs font-medium whitespace-nowrap text-muted-foreground';
+const TD = 'h-row border-b border-border px-4 whitespace-nowrap';
+const TR =
+  'motion-safe:duration-fast hover:bg-accent/60 motion-safe:transition-colors [&:last-child>td]:border-b-0';
+
 export function PeoplePage() {
   const t = useHrT();
+  const common = useT();
   const ability = useAbility();
   const queryClient = useQueryClient();
 
@@ -93,6 +122,7 @@ export function PeoplePage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>('');
   const [panel, setPanel] = useState<{ kind: 'salary' | 'edit'; id: string } | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const branchOptions = useQuery({
     queryKey: ['hr', 'branch-options'],
@@ -124,42 +154,56 @@ export function PeoplePage() {
       explain={{ title: t('hr.deniedTitle'), detail: t('hr.deniedPeople') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{t('hr.people')}</h1>
-          <p className="text-sm text-muted-foreground">{t('hr.peopleHint')}</p>
-        </header>
+        <PageHeader
+          title={t('hr.people')}
+          description={t('hr.peopleHint')}
+          actions={
+            mayCreate ? (
+              <Button onClick={() => setAdding(true)}>
+                <UserPlus aria-hidden="true" />
+                {t('hr.newEmployee')}
+              </Button>
+            ) : undefined
+          }
+          tabs={<HrNav />}
+        />
 
-        <HrNav />
-
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label={t('hr.search')} id="people-search">
-            <input
-              id="people-search"
-              value={search}
-              className={`${control} sm:w-72`}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </Field>
-          <Field label={t('hr.colStatus')} id="people-status">
-            <select
-              id="people-status"
-              value={status}
-              className={`${control} sm:w-44`}
-              onChange={(event) => setStatus(event.target.value)}
-            >
-              <option value="">{t('hr.allStatuses')}</option>
-              {STATUSES.map((one) => (
-                <option key={one} value={one}>
-                  {t(`hr.status.${one}` as HrMessageKey)}
-                </option>
-              ))}
-            </select>
-          </Field>
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="people-search" className="sr-only">
+            {t('hr.search')}
+          </label>
+          <SearchInput
+            id="people-search"
+            className="sm:w-80"
+            value={search}
+            placeholder={t('hr.search')}
+            onChange={(event) => setSearch(event.target.value)}
+            onClear={() => setSearch('')}
+            clearLabel={common('common.clearSearch')}
+          />
+          <Select
+            variant="filter"
+            aria-label={t('hr.colStatus')}
+            value={status}
+            onValueChange={setStatus}
+            options={[
+              { value: '', label: t('hr.allStatuses') },
+              ...STATUSES.map((one) => ({
+                value: one,
+                label: t(`hr.status.${one}` as HrMessageKey),
+              })),
+            ]}
+          />
         </div>
 
-        <PermissionGate allowed={mayCreate}>
-          <NewEmployeeForm branches={branches} orgWide={orgWide} />
-        </PermissionGate>
+        {mayCreate ? (
+          <NewEmployeeSheet
+            open={adding}
+            onOpenChange={setAdding}
+            branches={branches}
+            orgWide={orgWide}
+          />
+        ) : null}
 
         {employees.isError ? (
           <ErrorState
@@ -176,87 +220,108 @@ export function PeoplePage() {
           // reads its own record sees an empty list because of row scope, not because the
           // brand has no staff, and telling it to add someone is both wrong and impossible.
           <EmptyState
+            icon={Users}
             title={t('hr.emptyTitle')}
             detail={t(mayCreate ? 'hr.emptyPeople' : 'hr.emptyPeopleReadOnly')}
+            {...(mayCreate
+              ? {
+                  action: (
+                    <Button size="sm" onClick={() => setAdding(true)}>
+                      <UserPlus aria-hidden="true" />
+                      {t('hr.newEmployee')}
+                    </Button>
+                  ),
+                }
+              : {})}
           />
         ) : (
-          <section aria-label={t('hr.people')} className="space-y-2">
-            <table className="w-full text-sm">
-              <caption className="sr-only">{t('hr.people')}</caption>
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th scope="col" className="py-2">
-                    {t('hr.colCode')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {t('hr.colName')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {t('hr.colDesignation')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {t('hr.colJoined')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {t('hr.colPayout')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {t('hr.colPhone')}
-                  </th>
-                  <th scope="col" className="py-2">
-                    {t('hr.colStatus')}
-                  </th>
-                  <th scope="col" className="py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((employee) => (
-                  <tr key={employee.id} className="h-9 border-b border-border/60">
-                    <td className="py-2 tabular-nums">{employee.code}</td>
-                    <td className="py-2">{employee.fullName}</td>
-                    <td className="py-2 text-muted-foreground">{employee.designation ?? '—'}</td>
-                    <td className="py-2 tabular-nums">{employee.joinDate}</td>
-                    <td className="py-2">
-                      {t(`hr.payout.${employee.payoutMethod}` as HrMessageKey)}
-                      {employee.payoutRefMasked === null ? null : (
-                        <span className="ml-1 text-muted-foreground tabular-nums">
-                          {employee.payoutRefMasked}
-                        </span>
-                      )}
-                    </td>
-                    {/* Masked at rest, never unmasked on the way out (invariant 10). */}
-                    <td className="py-2 text-muted-foreground tabular-nums">
-                      {employee.phoneMasked ?? '—'}
-                    </td>
-                    <td className="py-2">
-                      <StatusBadge tone={STATUS_TONE[employee.status]}>
-                        {t(`hr.status.${employee.status}` as HrMessageKey)}
-                      </StatusBadge>
-                    </td>
-                    <td className="py-2 text-right whitespace-nowrap">
-                      {mayUpdate ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-expanded={panel?.kind === 'edit' && panel.id === employee.id}
-                          onClick={() => toggle('edit', employee.id)}
-                        >
-                          {t('hr.edit')}
-                        </Button>
-                      ) : null}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-expanded={panel?.kind === 'salary' && panel.id === employee.id}
-                        onClick={() => toggle('salary', employee.id)}
-                      >
-                        {t('hr.salary')}
-                      </Button>
-                    </td>
+          <section aria-label={t('hr.people')} className="space-y-4">
+            <div className="overflow-x-auto rounded-lg border border-border bg-card">
+              <table className="w-full border-separate border-spacing-0 text-sm">
+                <caption className="sr-only">{t('hr.people')}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" className={TH}>
+                      {t('hr.colCode')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {t('hr.colName')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {t('hr.colDesignation')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {t('hr.colJoined')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {t('hr.colPayout')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {t('hr.colPhone')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {t('hr.colStatus')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      <span className="sr-only">{t('hr.edit')}</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {items.map((employee) => (
+                    <tr key={employee.id} className={TR}>
+                      <td className={`${TD} font-medium tabular-nums`}>{employee.code}</td>
+                      <td className={TD}>{employee.fullName}</td>
+                      <td className={`${TD} text-muted-foreground`}>
+                        {employee.designation ?? '—'}
+                      </td>
+                      <td className={`${TD} text-muted-foreground tabular-nums`}>
+                        {employee.joinDate}
+                      </td>
+                      <td className={TD}>
+                        {t(`hr.payout.${employee.payoutMethod}` as HrMessageKey)}
+                        {employee.payoutRefMasked === null ? null : (
+                          <span className="ml-1 text-muted-foreground tabular-nums">
+                            {employee.payoutRefMasked}
+                          </span>
+                        )}
+                      </td>
+                      {/* Masked at rest, never unmasked on the way out (invariant 10). */}
+                      <td className={`${TD} text-muted-foreground tabular-nums`}>
+                        {employee.phoneMasked ?? '—'}
+                      </td>
+                      <td className={TD}>
+                        <StatusBadge tone={STATUS_TONE[employee.status]}>
+                          {t(`hr.status.${employee.status}` as HrMessageKey)}
+                        </StatusBadge>
+                      </td>
+                      <td className={`${TD} text-right`}>
+                        <div className="flex items-center justify-end gap-1">
+                          {mayUpdate ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              aria-expanded={panel?.kind === 'edit' && panel.id === employee.id}
+                              onClick={() => toggle('edit', employee.id)}
+                            >
+                              {t('hr.edit')}
+                            </Button>
+                          ) : null}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-expanded={panel?.kind === 'salary' && panel.id === employee.id}
+                            onClick={() => toggle('salary', employee.id)}
+                          >
+                            {t('hr.salary')}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
             {panel?.kind === 'salary' ? (
               <SalaryPanel
@@ -281,14 +346,24 @@ export function PeoplePage() {
   );
 }
 
-function NewEmployeeForm({
+/**
+ * Adding a person, in a sheet over the list (D-447): the form is long and asked for now
+ * and then, so it no longer sits open above the table every visit. The list stays in view
+ * behind it, and the sheet closes once the person is added.
+ */
+function NewEmployeeSheet({
+  open,
+  onOpenChange,
   branches,
   orgWide,
 }: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
   readonly branches: readonly BranchOption[];
   readonly orgWide: boolean;
 }) {
   const t = useHrT();
+  const common = useT();
   const queryClient = useQueryClient();
 
   /*
@@ -329,6 +404,7 @@ function NewEmployeeForm({
       setNationalId('');
       setPhone('');
       void queryClient.invalidateQueries({ queryKey: ['hr', 'employees'] });
+      onOpenChange(false);
     },
   });
 
@@ -341,125 +417,135 @@ function NewEmployeeForm({
     !submit.isPending;
 
   return (
-    <form
-      className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit.mutate();
-      }}
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('hr.newEmployee')}
+      description={t('hr.peopleHint')}
+      closeLabel={common('common.close')}
+      size="md"
+      footer={
+        <>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t('hr.cancel')}
+          </Button>
+          <Button type="submit" form="new-employee-form" disabled={!ready}>
+            {t('hr.newEmployee')}
+          </Button>
+        </>
+      }
     >
-      <Field label={t('hr.field.code')} id="employee-code">
-        <input
-          id="employee-code"
-          value={code}
-          required
-          maxLength={32}
-          className={control}
-          onChange={(event) => setCode(event.target.value)}
-        />
-      </Field>
-      <Field label={t('hr.field.name')} id="employee-name">
-        <input
-          id="employee-name"
-          value={fullName}
-          required
-          maxLength={160}
-          className={control}
-          onChange={(event) => setFullName(event.target.value)}
-        />
-      </Field>
-      <Field label={t('hr.field.designation')} id="employee-designation">
-        <input
-          id="employee-designation"
-          value={designation}
-          maxLength={80}
-          className={control}
-          onChange={(event) => setDesignation(event.target.value)}
-        />
-      </Field>
-      <Field label={t('hr.field.branch')} id="employee-branch">
-        <BranchSelect
-          id="employee-branch"
-          value={branchId}
-          branches={branches}
-          orgWide={orgWide}
-          required={!orgWide}
-          onChange={setChosenBranch}
-        />
-      </Field>
-      <Field label={t('hr.field.joinDate')} id="employee-join">
-        <input
-          id="employee-join"
-          type="date"
-          value={joinDate}
-          required
-          className={control}
-          onChange={(event) => setJoinDate(event.target.value)}
-        />
-      </Field>
-      <Field label={t('hr.field.payoutMethod')} id="employee-payout">
-        <select
-          id="employee-payout"
-          value={payoutMethod}
-          className={control}
-          onChange={(event) => setPayoutMethod(event.target.value as PayoutMethod)}
-        >
-          {PAYOUT_METHODS.map((method) => (
-            <option key={method} value={method}>
-              {t(`hr.payout.${method}` as HrMessageKey)}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label={t('hr.field.payoutRef')} id="employee-payout-ref" hint={t('hr.privacyHint')}>
-        <input
-          id="employee-payout-ref"
-          value={payoutRef}
-          // Required by the server for anything other than cash, and disabled here so the
-          // form does not invite a number that would be refused.
-          required={payoutMethod !== 'cash'}
-          disabled={payoutMethod === 'cash'}
-          maxLength={40}
-          inputMode="numeric"
-          autoComplete="off"
-          className={numericControl}
-          onChange={(event) => setPayoutRef(event.target.value)}
-        />
-      </Field>
-      <Field label={t('hr.field.nationalId')} id="employee-nid" hint={t('hr.privacyHint')}>
-        <input
-          id="employee-nid"
-          value={nationalId}
-          maxLength={40}
-          inputMode="numeric"
-          autoComplete="off"
-          className={numericControl}
-          onChange={(event) => setNationalId(event.target.value)}
-        />
-      </Field>
-      <Field label={t('hr.field.phone')} id="employee-phone" hint={t('hr.privacyHint')}>
-        <input
-          id="employee-phone"
-          value={phone}
-          maxLength={40}
-          inputMode="tel"
-          autoComplete="off"
-          className={numericControl}
-          onChange={(event) => setPhone(event.target.value)}
-        />
-      </Field>
+      <form
+        id="new-employee-form"
+        className="grid gap-4 sm:grid-cols-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (ready) submit.mutate();
+        }}
+      >
+        <Field label={t('hr.field.code')} id="employee-code">
+          <input
+            id="employee-code"
+            value={code}
+            required
+            maxLength={32}
+            className={control}
+            onChange={(event) => setCode(event.target.value)}
+          />
+        </Field>
+        <Field label={t('hr.field.name')} id="employee-name">
+          <input
+            id="employee-name"
+            value={fullName}
+            required
+            maxLength={160}
+            className={control}
+            onChange={(event) => setFullName(event.target.value)}
+          />
+        </Field>
+        <Field label={t('hr.field.designation')} id="employee-designation">
+          <input
+            id="employee-designation"
+            value={designation}
+            maxLength={80}
+            className={control}
+            onChange={(event) => setDesignation(event.target.value)}
+          />
+        </Field>
+        <Field label={t('hr.field.branch')} id="employee-branch">
+          <BranchSelect
+            id="employee-branch"
+            value={branchId}
+            branches={branches}
+            orgWide={orgWide}
+            required={!orgWide}
+            onChange={setChosenBranch}
+          />
+        </Field>
+        <Field label={t('hr.field.joinDate')} id="employee-join">
+          <DatePicker
+            id="employee-join"
+            value={joinDate}
+            years={STAFF_YEARS}
+            onValueChange={setJoinDate}
+          />
+        </Field>
+        <Field label={t('hr.field.payoutMethod')} id="employee-payout">
+          <Select
+            id="employee-payout"
+            value={payoutMethod}
+            onValueChange={(value) => setPayoutMethod(value as PayoutMethod)}
+            options={PAYOUT_METHODS.map((method) => ({
+              value: method,
+              label: t(`hr.payout.${method}` as HrMessageKey),
+            }))}
+          />
+        </Field>
+        <Field label={t('hr.field.payoutRef')} id="employee-payout-ref" hint={t('hr.privacyHint')}>
+          <input
+            id="employee-payout-ref"
+            value={payoutRef}
+            // Required by the server for anything other than cash, and disabled here so the
+            // form does not invite a number that would be refused.
+            required={payoutMethod !== 'cash'}
+            disabled={payoutMethod === 'cash'}
+            maxLength={40}
+            inputMode="numeric"
+            autoComplete="off"
+            className={numericControl}
+            onChange={(event) => setPayoutRef(event.target.value)}
+          />
+        </Field>
+        <Field label={t('hr.field.nationalId')} id="employee-nid" hint={t('hr.privacyHint')}>
+          <input
+            id="employee-nid"
+            value={nationalId}
+            maxLength={40}
+            inputMode="numeric"
+            autoComplete="off"
+            className={numericControl}
+            onChange={(event) => setNationalId(event.target.value)}
+          />
+        </Field>
+        <Field label={t('hr.field.phone')} id="employee-phone" hint={t('hr.privacyHint')}>
+          <input
+            id="employee-phone"
+            value={phone}
+            maxLength={40}
+            inputMode="tel"
+            autoComplete="off"
+            className={numericControl}
+            onChange={(event) => setPhone(event.target.value)}
+          />
+        </Field>
 
-      <div className="flex items-end gap-3 sm:col-span-3">
-        <Button type="submit" size="sm" disabled={!ready}>
-          {t('hr.newEmployee')}
-        </Button>
         {submit.error === null ? null : (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive sm:col-span-2">
             {submit.error instanceof ApiError ? submit.error.message : t('hr.saveFailed')}
           </p>
         )}
-      </div>
-    </form>
+      </form>
+    </Sheet>
   );
 }
 
@@ -488,27 +574,23 @@ function BranchSelect({
   const t = useHrT();
   const unlisted = value !== '' && !branches.some((branch) => branch.id === value);
   return (
-    <select
+    <Select
       id={id}
       value={value}
       required={required}
-      className={control}
-      onChange={(event) => onChange(event.target.value)}
-    >
-      {orgWide ? (
-        <option value="">{t('hr.noBranch')}</option>
-      ) : (
-        <option value="" disabled>
-          {t('hr.chooseBranch')}
-        </option>
-      )}
-      {unlisted ? <option value={value}>{t('hr.unlistedBranch')}</option> : null}
-      {branches.map((branch) => (
-        <option key={branch.id} value={branch.id}>
-          {branch.code} · {branch.name}
-        </option>
-      ))}
-    </select>
+      onValueChange={onChange}
+      // "No branch" is a real choice for an org-wide caller; for a branch manager the empty
+      // value is only the prompt to choose one of theirs.
+      {...(orgWide ? {} : { placeholder: t('hr.chooseBranch') })}
+      options={[
+        ...(orgWide ? [{ value: '', label: t('hr.noBranch') }] : []),
+        ...(unlisted ? [{ value, label: t('hr.unlistedBranch') }] : []),
+        ...branches.map((branch) => ({
+          value: branch.id,
+          label: `${branch.code} · ${branch.name}`,
+        })),
+      ]}
+    />
   );
 }
 
@@ -600,17 +682,17 @@ function EditPanel({
   return (
     <section
       aria-label={`${t('hr.editTitle')} — ${employee.fullName}`}
-      className="space-y-3 rounded-lg border border-border bg-card p-4"
+      className="space-y-4 rounded-lg border border-border bg-card p-5"
     >
-      <header>
-        <h2 className="text-sm font-semibold">
+      <header className="space-y-0.5">
+        <h2 className="text-base font-semibold tracking-tight">
           {t('hr.editTitle')} — {employee.fullName}
         </h2>
-        <p className="text-xs text-muted-foreground">{t('hr.editHint')}</p>
+        <p className="text-sm text-muted-foreground">{t('hr.editHint')}</p>
       </header>
 
       <form
-        className="grid gap-3 sm:grid-cols-3"
+        className="grid gap-4 sm:grid-cols-3"
         onSubmit={(event) => {
           event.preventDefault();
           save.mutate();
@@ -655,44 +737,38 @@ function EditPanel({
           />
         </Field>
         <Field label={t('hr.colStatus')} id={`${prefix}-status`}>
-          <select
+          <Select
             id={`${prefix}-status`}
             value={form.status}
-            className={control}
-            onChange={(event) => set('status', event.target.value as EmploymentStatus)}
-          >
-            {STATUSES.map((one) => (
-              <option key={one} value={one}>
-                {t(`hr.status.${one}` as HrMessageKey)}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => set('status', value as EmploymentStatus)}
+            options={STATUSES.map((one) => ({
+              value: one,
+              label: t(`hr.status.${one}` as HrMessageKey),
+            }))}
+          />
         </Field>
         <Field label={t('hr.field.leaveDate')} id={`${prefix}-leave`}>
-          <input
+          <DatePicker
             id={`${prefix}-leave`}
-            type="date"
             value={form.leaveDate}
-            className={control}
-            onChange={(event) => set('leaveDate', event.target.value)}
+            clearable
+            years={STAFF_YEARS}
+            onValueChange={(next) => set('leaveDate', next)}
           />
         </Field>
 
         {mayEditPayroll ? (
           <>
             <Field label={t('hr.field.payoutMethod')} id={`${prefix}-payout`}>
-              <select
+              <Select
                 id={`${prefix}-payout`}
                 value={form.payoutMethod}
-                className={control}
-                onChange={(event) => set('payoutMethod', event.target.value as PayoutMethod)}
-              >
-                {PAYOUT_METHODS.map((method) => (
-                  <option key={method} value={method}>
-                    {t(`hr.payout.${method}` as HrMessageKey)}
-                  </option>
-                ))}
-              </select>
+                onValueChange={(value) => set('payoutMethod', value as PayoutMethod)}
+                options={PAYOUT_METHODS.map((method) => ({
+                  value: method,
+                  label: t(`hr.payout.${method}` as HrMessageKey),
+                }))}
+              />
             </Field>
             <Field
               label={t('hr.field.payoutRef')}
@@ -711,27 +787,29 @@ function EditPanel({
               />
             </Field>
             <Field label={t('hr.field.login')} id={`${prefix}-login`}>
-              <select
+              <Select
                 id={`${prefix}-login`}
                 value={form.userId}
-                className={control}
-                onChange={(event) => set('userId', event.target.value)}
-              >
-                <option value="">{t('hr.notLinked')}</option>
-                {currentLoginUnlisted ? (
-                  <option value={form.userId}>{t('hr.unlistedLogin')}</option>
-                ) : null}
-                {loginItems.map((login) => {
-                  const elsewhere =
-                    login.linkedEmployeeId !== null && login.linkedEmployeeId !== employee.id;
-                  return (
-                    <option key={login.userId} value={login.userId} disabled={elsewhere}>
-                      {login.name} · {login.emailMasked}
-                      {elsewhere ? ` (${t('hr.linkedElsewhere')})` : ''}
-                    </option>
-                  );
-                })}
-              </select>
+                onValueChange={(value) => set('userId', value)}
+                options={[
+                  { value: '', label: t('hr.notLinked') },
+                  ...(currentLoginUnlisted
+                    ? [{ value: form.userId, label: t('hr.unlistedLogin') }]
+                    : []),
+                  ...loginItems.map((login) => {
+                    // A sign-in already linked to someone else is shown, and not offered.
+                    const elsewhere =
+                      login.linkedEmployeeId !== null && login.linkedEmployeeId !== employee.id;
+                    return {
+                      value: login.userId,
+                      label: `${login.name} · ${login.emailMasked}${
+                        elsewhere ? ` (${t('hr.linkedElsewhere')})` : ''
+                      }`,
+                      disabled: elsewhere,
+                    };
+                  }),
+                ]}
+              />
             </Field>
           </>
         ) : null}
@@ -765,10 +843,10 @@ function EditPanel({
         </Field>
 
         <div className="flex flex-wrap items-end gap-3 sm:col-span-3">
-          <Button type="submit" size="sm" disabled={save.isPending}>
+          <Button type="submit" disabled={save.isPending}>
             {t('hr.save')}
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={onClose}>
+          <Button type="button" variant="outline" onClick={onClose}>
             {t('hr.cancel')}
           </Button>
           {problem === null ? null : (
@@ -848,13 +926,13 @@ function SalaryPanel({
   return (
     <section
       aria-label={t('hr.salary')}
-      className="space-y-3 rounded-lg border border-border bg-card p-4"
+      className="space-y-4 rounded-lg border border-border bg-card p-5"
     >
-      <header>
-        <h2 className="text-sm font-semibold">
+      <header className="space-y-0.5">
+        <h2 className="text-base font-semibold tracking-tight">
           {t('hr.salary')} — {employee.fullName}
         </h2>
-        <p className="text-xs text-muted-foreground">{t('hr.salaryHint')}</p>
+        <p className="text-sm text-muted-foreground">{t('hr.salaryHint')}</p>
       </header>
 
       <table className="w-full text-sm">
@@ -877,7 +955,7 @@ function SalaryPanel({
         </thead>
         <tbody>
           {(structures.data?.items ?? []).flatMap((structure) => [
-            <tr key={structure.id} className="h-9 border-b border-border/60">
+            <tr key={structure.id} className="h-row border-b border-border">
               <td className="py-2 tabular-nums">{structure.effectiveFrom}</td>
               <td className="py-2">{t('hr.field.basic')}</td>
               <td className="py-2 text-right">
@@ -888,7 +966,7 @@ function SalaryPanel({
             ...structure.components.map((component) => (
               <tr
                 key={`${structure.id}-${component.code}`}
-                className="h-9 border-b border-border/60"
+                className="h-row border-b border-border"
               >
                 <td className="py-2" />
                 <td className="py-2 text-muted-foreground">
@@ -909,21 +987,14 @@ function SalaryPanel({
 
       <PermissionGate allowed={mayEdit}>
         <form
-          className="grid gap-3 sm:grid-cols-4"
+          className="grid gap-4 border-t border-border pt-4 sm:grid-cols-4"
           onSubmit={(event) => {
             event.preventDefault();
             save.mutate();
           }}
         >
           <Field label={t('hr.field.effectiveFrom')} id="salary-from">
-            <input
-              id="salary-from"
-              type="date"
-              value={effectiveFrom}
-              required
-              className={control}
-              onChange={(event) => setEffectiveFrom(event.target.value)}
-            />
+            <DatePicker id="salary-from" value={effectiveFrom} onValueChange={setEffectiveFrom} />
           </Field>
           <Field label={t('hr.field.basic')} id="salary-basic">
             <input
@@ -956,7 +1027,6 @@ function SalaryPanel({
           <div className="flex items-end gap-3 sm:col-span-4">
             <Button
               type="submit"
-              size="sm"
               disabled={effectiveFrom === '' || basic.trim() === '' || save.isPending}
             >
               {t('hr.save')}

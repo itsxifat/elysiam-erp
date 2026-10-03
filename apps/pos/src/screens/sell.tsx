@@ -164,15 +164,15 @@ export function Sell({
 
   return (
     <div
-      className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[1fr_22rem]"
+      className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[1fr_24rem]"
       onKeyDown={onKey}
     >
       <section
-        className="flex min-h-0 flex-col border-border lg:border-r"
+        className="flex min-h-0 flex-col border-border bg-background lg:border-r"
         aria-label={t('pos.sell.item')}
       >
         <form
-          className="flex items-end gap-2 border-b border-border p-4"
+          className="flex items-start gap-2 border-b border-border p-5"
           onSubmit={(event) => {
             event.preventDefault();
             add();
@@ -190,7 +190,7 @@ export function Sell({
                 setNotFound(false);
               }}
               aria-describedby="scan-hint"
-              className="h-control-lg font-mono"
+              className="min-h-12 font-mono text-base"
             />
             <p id="scan-hint" className="text-xs text-muted-foreground">
               {notFound ? (
@@ -202,7 +202,12 @@ export function Sell({
               )}
             </p>
           </div>
-          <Button type="submit" size="lg" aria-label={t('pos.sell.add')}>
+          <Button
+            type="submit"
+            size="lg"
+            className="mt-7 min-h-12 min-w-12 p-0"
+            aria-label={t('pos.sell.add')}
+          >
             <ScanLine aria-hidden />
           </Button>
         </form>
@@ -226,17 +231,22 @@ export function Sell({
             </div>
           ) : cart.lines.length === 0 ? (
             <div className="p-4">
-              <EmptyState title={t('pos.sell.emptyTitle')} detail={t('pos.sell.emptyDetail')} />
+              <EmptyState
+                icon={ScanLine}
+                className="border-dashed py-20"
+                title={t('pos.sell.emptyTitle')}
+                detail={t('pos.sell.emptyDetail')}
+              />
             </div>
           ) : (
             <table className="w-full text-sm" data-testid="cart">
-              <thead className="sticky top-0 bg-muted text-muted-foreground">
-                <tr>
-                  <th className="h-row px-4 text-left font-medium">{t('pos.sell.item')}</th>
-                  <th className="h-row px-2 text-center font-medium">{t('pos.sell.qty')}</th>
-                  <th className="h-row px-2 text-right font-medium">{t('pos.sell.price')}</th>
-                  <th className="h-row px-2 text-right font-medium">{t('pos.sell.discount')}</th>
-                  <th className="h-row px-4 text-right font-medium">{t('pos.sell.lineTotal')}</th>
+              <thead className="sticky top-0 bg-background text-xs text-muted-foreground">
+                <tr className="border-b border-border">
+                  <th className="h-10 px-5 text-left font-medium">{t('pos.sell.item')}</th>
+                  <th className="h-10 px-2 text-center font-medium">{t('pos.sell.qty')}</th>
+                  <th className="h-10 px-2 text-right font-medium">{t('pos.sell.price')}</th>
+                  <th className="h-10 px-2 text-right font-medium">{t('pos.sell.discount')}</th>
+                  <th className="h-10 px-4 text-right font-medium">{t('pos.sell.lineTotal')}</th>
                   <th className="h-row w-10 px-2">
                     <span className="sr-only">{t('pos.sell.remove')}</span>
                   </th>
@@ -250,9 +260,9 @@ export function Sell({
                     onClick={() => {
                       setSelected(index);
                     }}
-                    className={`border-t border-border ${index === selected ? 'bg-accent text-accent-foreground' : ''}`}
+                    className={`border-t border-border first:border-t-0 ${index === selected ? 'bg-selected text-selected-foreground' : ''}`}
                   >
-                    <td className="px-4 py-2">
+                    <td className="px-5 py-2.5">
                       <span className="block font-medium">{line.name}</span>
                       <span className="block font-mono text-xs text-muted-foreground">
                         {line.code}
@@ -263,7 +273,7 @@ export function Sell({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-control-lg w-control-lg"
+                          className="min-h-11 min-w-11"
                           aria-label={t('pos.sell.decrease')}
                           disabled={line.qty <= 1}
                           onClick={() => {
@@ -276,7 +286,7 @@ export function Sell({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-control-lg w-control-lg"
+                          className="min-h-11 min-w-11"
                           aria-label={t('pos.sell.increase')}
                           onClick={() => {
                             dispatch({ type: 'setQty', index, qty: line.qty + 1 });
@@ -293,7 +303,7 @@ export function Sell({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-control-lg"
+                        className="min-h-11"
                         onClick={() => {
                           setDiscounting(index);
                         }}
@@ -316,7 +326,7 @@ export function Sell({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-control-lg w-control-lg"
+                        className="min-h-11 min-w-11"
                         aria-label={`${t('pos.sell.remove')}: ${line.name}`}
                         onClick={() => {
                           dispatch({ type: 'remove', index });
@@ -331,48 +341,55 @@ export function Sell({
             </table>
           )}
         </div>
-        <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
+        <p className="border-t border-border px-5 py-2.5 text-xs text-muted-foreground">
           {t('pos.sell.shortcuts')}
         </p>
       </section>
 
-      <aside className="flex flex-col gap-4 p-4" aria-label={t('pos.sell.total')}>
-        <dl className="grid grid-cols-[1fr_auto] gap-y-2 text-sm">
-          <dt className="text-muted-foreground">{t('pos.sell.subtotal')}</dt>
-          <dd>
-            <Money poisha={totals.grossPoisha} locale={locale} />
-          </dd>
-          <dt className="text-muted-foreground">{t('pos.sell.discounts')}</dt>
-          <dd>
-            <Money poisha={totals.discountPoisha} locale={locale} />
-          </dd>
-          <dt className="border-t border-border pt-2 text-base font-semibold">
-            {t('pos.sell.total')}
-          </dt>
-          <dd
-            className="border-t border-border pt-2 text-2xl font-semibold"
-            data-testid="cart-total"
-          >
-            <Money poisha={totals.netPoisha} locale={locale} />
-          </dd>
-          <dt className="text-muted-foreground">{t('pos.sell.units')}</dt>
-          <dd className="text-right tabular-nums">{totals.units}</dd>
-        </dl>
+      {/* The basket's money and the one action that matters, on the canvas beside the
+          lines: the total large, "Pay" a full-width ink bar (D-460). */}
+      <aside className="flex flex-col gap-4 bg-canvas p-5" aria-label={t('pos.sell.total')}>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <dl className="grid grid-cols-[1fr_auto] gap-y-2.5 text-sm">
+            <dt className="text-muted-foreground">{t('pos.sell.subtotal')}</dt>
+            <dd>
+              <Money poisha={totals.grossPoisha} locale={locale} />
+            </dd>
+            <dt className="text-muted-foreground">{t('pos.sell.discounts')}</dt>
+            <dd>
+              <Money poisha={totals.discountPoisha} locale={locale} />
+            </dd>
+            <dt className="text-muted-foreground">{t('pos.sell.units')}</dt>
+            <dd className="text-right tabular-nums">{totals.units}</dd>
+            <dt className="col-span-2 mt-2 border-t border-border pt-4 text-sm font-medium">
+              {t('pos.sell.total')}
+            </dt>
+            <dd
+              className="col-span-2 text-right text-3xl font-semibold tracking-tight"
+              data-testid="cart-total"
+            >
+              <Money poisha={totals.netPoisha} locale={locale} />
+            </dd>
+          </dl>
+        </div>
         <Button
           size="lg"
-          className="w-full"
+          className="min-h-14 w-full text-base"
           disabled={cart.lines.length === 0}
           onClick={() => {
             setPaying(true);
           }}
         >
           <Wallet aria-hidden />
-          {t('pos.sell.pay')} <kbd className="ml-1 text-xs">F2</kbd>
+          {t('pos.sell.pay')}{' '}
+          <kbd className="ml-1 rounded-xs bg-primary-foreground/15 px-1.5 py-0.5 font-sans text-xs">
+            F2
+          </kbd>
         </Button>
         <Button
           size="lg"
           variant="outline"
-          className="w-full"
+          className="min-h-12 w-full"
           disabled={cart.lines.length === 0}
           onClick={() => {
             dispatch({ type: 'clear' });
@@ -423,6 +440,7 @@ export function Sell({
             <>
               <Button
                 size="lg"
+                className="min-h-11"
                 variant="outline"
                 onClick={() => {
                   printReceipt();
@@ -433,6 +451,7 @@ export function Sell({
               </Button>
               <Button
                 size="lg"
+                className="min-h-11"
                 autoFocus
                 onClick={() => {
                   setLastReceipt(null);
@@ -487,7 +506,7 @@ function PromoCode({
 
   return (
     <form
-      className="space-y-1.5 border-t border-border pt-4"
+      className="mt-auto space-y-1.5 border-t border-border pt-4"
       onSubmit={(event) => {
         event.preventDefault();
         void check();
@@ -502,9 +521,15 @@ function PromoCode({
           onChange={(event) => {
             setCode(event.target.value);
           }}
-          className="h-control-lg"
+          className="min-h-11 bg-card"
         />
-        <Button type="submit" size="lg" variant="outline" disabled={code.trim() === ''}>
+        <Button
+          type="submit"
+          size="lg"
+          variant="outline"
+          className="min-h-11"
+          disabled={code.trim() === ''}
+        >
           {t('pos.discount.promoCheck')}
         </Button>
       </div>
@@ -559,11 +584,12 @@ function DiscountDialog({
       onClose={onCancel}
       footer={
         <>
-          <Button size="lg" variant="outline" onClick={onCancel}>
+          <Button size="lg" className="min-h-11" variant="outline" onClick={onCancel}>
             {t('pos.action.cancel')}
           </Button>
           <Button
             size="lg"
+            className="min-h-11"
             onClick={() => {
               if (typed === null || typed > grossPoisha) {
                 setError(t('pos.discount.invalid'));
@@ -589,7 +615,7 @@ function DiscountDialog({
               setPercent(event.target.value);
               setAmount('');
             }}
-            className="h-control-lg text-right tabular-nums"
+            className="min-h-11 text-right tabular-nums"
           />
         </div>
         <div className="space-y-1.5">
@@ -602,7 +628,7 @@ function DiscountDialog({
               setAmount(event.target.value);
               setPercent('');
             }}
-            className="h-control-lg text-right tabular-nums"
+            className="min-h-11 text-right tabular-nums"
           />
         </div>
       </div>
@@ -672,11 +698,12 @@ function PayDialog({
       onClose={onCancel}
       footer={
         <>
-          <Button size="lg" variant="outline" onClick={onCancel}>
+          <Button size="lg" className="min-h-11" variant="outline" onClick={onCancel}>
             {t('pos.action.cancel')}
           </Button>
           <Button
             size="lg"
+            className="min-h-11"
             disabled={problem !== null || busy}
             onClick={() => {
               setBusy(true);
@@ -699,6 +726,7 @@ function PayDialog({
       <div className="mt-3 flex flex-wrap gap-2">
         <Button
           size="lg"
+          className="min-h-11"
           variant="outline"
           onClick={() => {
             all('cash');
@@ -709,6 +737,7 @@ function PayDialog({
         {takes('bkash') ? (
           <Button
             size="lg"
+            className="min-h-11"
             variant="outline"
             onClick={() => {
               all('bkash');
@@ -720,6 +749,7 @@ function PayDialog({
         {takes('card') ? (
           <Button
             size="lg"
+            className="min-h-11"
             variant="outline"
             onClick={() => {
               all('card');
@@ -819,7 +849,7 @@ function TakaField({
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        className="h-control-lg text-right tabular-nums"
+        className="min-h-11 text-right tabular-nums"
       />
     </div>
   );
@@ -846,7 +876,7 @@ function TextField({
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        className="h-control-lg"
+        className="min-h-11"
       />
     </div>
   );

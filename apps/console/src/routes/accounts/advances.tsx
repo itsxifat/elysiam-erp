@@ -6,8 +6,11 @@ import {
   ErrorState,
   Money,
   PermissionGate,
+  Select,
   Skeleton,
   StatusBadge,
+  cn,
+  controlClassName,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -46,10 +49,10 @@ interface Acting {
   readonly row: QueueRow;
 }
 
-const control =
-  'h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
+const control = `${controlClassName} w-full disabled:opacity-50`;
+/** The two queues as a segmented control: one view of the page, not a route each. */
 const TAB =
-  'rounded-md px-2.5 py-1 text-sm text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  'h-7 rounded-md px-3 text-sm text-muted-foreground motion-safe:transition-colors motion-safe:duration-fast hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 export function AdvancesPage() {
   const a = useAccountsT();
@@ -79,14 +82,18 @@ export function AdvancesPage() {
           subtitle={a('accounts.advances.subtitle')}
         />
 
-        <div role="tablist" aria-label={a('accounts.advances.title')} className="flex gap-1">
+        <div
+          role="tablist"
+          aria-label={a('accounts.advances.title')}
+          className="inline-flex gap-0.5 rounded-lg bg-muted p-0.5"
+        >
           {(['pending', 'refund_due'] as const).map((value) => (
             <button
               key={value}
               type="button"
               role="tab"
               aria-selected={tab === value}
-              className={tab === value ? `${TAB} bg-muted font-medium text-foreground` : TAB}
+              className={cn(TAB, tab === value && 'bg-background font-medium text-foreground')}
               onClick={() => setTab(value)}
             >
               {a(value === 'pending' ? 'accounts.advances.toVerify' : 'accounts.advances.toRefund')}
@@ -318,26 +325,30 @@ function ActDialog({
           <Money poisha={kind === 'refund' ? row.owedPoisha : row.amountPoisha} locale={locale} />
         </p>
         {kind === 'reject' ? null : (
-          <label className="block space-y-1.5" htmlFor={`${id}-wallet`}>
-            <span className="font-medium">
+          <div className="space-y-1.5">
+            <label className="block font-medium" htmlFor={`${id}-wallet`}>
               {kind === 'verify'
                 ? a('accounts.advances.wallet')
                 : a('accounts.advances.refundWallet')}
-            </span>
-            <select
+            </label>
+            <Select
               id={`${id}-wallet`}
               value={walletAccountId}
-              className={control}
-              onChange={(event) => setWallet(event.target.value)}
-            >
-              <option value="">{a('accounts.advances.pickWallet')}</option>
-              {active.map((wallet) => (
-                <option key={wallet.ledgerAccountId} value={wallet.ledgerAccountId}>
-                  {wallet.code} · {wallet.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              placeholder={a('accounts.advances.pickWallet')}
+              onValueChange={setWallet}
+              options={[
+                // A refund may leave the wallet to the one the advance arrived in; a
+                // verification must name one, so it offers no empty choice.
+                ...(kind === 'refund'
+                  ? [{ value: '', label: a('accounts.advances.pickWallet') }]
+                  : []),
+                ...active.map((wallet) => ({
+                  value: wallet.ledgerAccountId,
+                  label: `${wallet.code} · ${wallet.name}`,
+                })),
+              ]}
+            />
+          </div>
         )}
         {kind === 'verify' ? null : (
           <label className="block space-y-1.5" htmlFor={`${id}-text`}>

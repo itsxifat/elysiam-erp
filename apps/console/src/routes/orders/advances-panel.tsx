@@ -1,4 +1,13 @@
-import { Button, Dialog, Money, Skeleton, StatusBadge, takaToPoisha } from '@elysium/ui';
+import {
+  Button,
+  Dialog,
+  Money,
+  Select,
+  Skeleton,
+  StatusBadge,
+  controlClassName,
+  takaToPoisha,
+} from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 
@@ -41,8 +50,7 @@ export const ADVANCE_TONE: Readonly<
 const OPEN_STATUSES: readonly string[] = ['pending', 'confirmed', 'on_hold', 'packed'];
 
 /** The courier forms' input class, so the density matches the rest of the console. */
-const control =
-  'h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
+const control = `${controlClassName} w-full disabled:opacity-50`;
 
 export function AdvancesPanel({ order }: { readonly order: OrderDetail }) {
   const t = useOrdersT();
@@ -174,18 +182,15 @@ function RecordDialog({
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block space-y-1.5 text-sm" htmlFor={`${id}-method`}>
           <span className="font-medium">{t('orders.advances.method')}</span>
-          <select
+          <Select
             id={`${id}-method`}
             value={method}
-            className={control}
-            onChange={(event) => setMethod(event.target.value as AdvanceMethod)}
-          >
-            {ADVANCE_METHODS.map((value) => (
-              <option key={value} value={value}>
-                {t(`orders.advances.method.${value}` as OrdersMessageKey)}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => setMethod(value as AdvanceMethod)}
+            options={ADVANCE_METHODS.map((value) => ({
+              value,
+              label: t(`orders.advances.method.${value}` as OrdersMessageKey),
+            }))}
+          />
         </label>
         <label className="block space-y-1.5 text-sm" htmlFor={`${id}-amount`}>
           <span className="font-medium">{t('orders.advances.amount')}</span>

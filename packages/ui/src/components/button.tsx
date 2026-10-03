@@ -29,9 +29,9 @@ import { cn } from '../lib/cn.js';
  */
 const button = cva(
   cn(
-    'inline-flex shrink-0 items-center justify-center gap-2 rounded-md whitespace-nowrap',
+    'inline-flex shrink-0 items-center justify-center gap-2 rounded-md whitespace-nowrap select-none',
     'text-sm font-medium',
-    'motion-safe:duration-fast motion-safe:transition-colors motion-safe:ease-out',
+    'motion-safe:duration-fast motion-safe:transition-[background-color,border-color,color,box-shadow] motion-safe:ease-out',
     'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
     'disabled:pointer-events-none disabled:opacity-50',
     '[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
@@ -39,21 +39,34 @@ const button = cva(
   {
     variants: {
       variant: {
+        /** The one action a screen is for. Ink fill, never a gradient (D-440). */
         primary:
           'bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-muted',
-        outline: 'border border-border bg-transparent hover:bg-muted',
-        ghost: 'bg-transparent hover:bg-muted',
-        destructive: 'bg-destructive text-destructive-foreground hover:opacity-90',
+        /** A second action that still deserves a fill: a quiet neutral step. */
+        secondary:
+          'bg-secondary text-secondary-foreground hover:bg-selected active:bg-selected [&_svg]:text-muted-foreground',
+        /** The default for everything else: a hairline edge on the page. */
+        outline:
+          'border border-input bg-background text-foreground hover:bg-accent active:bg-selected [&_svg]:text-muted-foreground',
+        /** Chrome and row actions: no edge until you point at it. */
+        ghost:
+          'bg-transparent text-foreground hover:bg-accent active:bg-selected [&_svg]:text-muted-foreground hover:[&_svg]:text-foreground',
+        destructive:
+          'bg-destructive text-destructive-foreground hover:opacity-90 active:opacity-100',
+        /** An inline action that reads as a link but behaves as a button. */
+        link: 'h-auto bg-transparent px-0 text-primary underline-offset-4 hover:underline',
       },
       size: {
-        sm: 'h-control-sm px-2.5',
-        md: 'h-control px-3',
+        sm: 'h-control-sm gap-1.5 px-2.5 text-sm',
+        md: 'h-control px-3.5',
         lg: 'h-control-lg px-4',
         /** Icon-only. The caller must still pass an accessible name (§24). */
         icon: 'h-control w-control p-0',
+        /** Icon-only, compact: toolbars and row actions. */
+        'icon-sm': 'h-control-sm w-control-sm p-0',
       },
     },
+    compoundVariants: [{ variant: 'link', className: 'h-auto px-0' }],
     defaultVariants: { variant: 'primary', size: 'md' },
   },
 );

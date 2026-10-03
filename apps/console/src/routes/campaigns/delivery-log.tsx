@@ -2,6 +2,7 @@ import {
   DataTable,
   DateTime,
   PermissionGate,
+  Select,
   StatusBadge,
   dataTableColumns,
   type DataTableColumn,
@@ -11,7 +12,7 @@ import { useMemo, useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
 import { listMessages, MESSAGE_STATES, type MessageState, type SentMessage } from './api.js';
-import { CampaignsHeader, control, singlePage, useCampaignTableLabels } from './campaigns-nav.js';
+import { CampaignsHeader, singlePage, useCampaignTableLabels } from './campaigns-nav.js';
 import { useCampaignsT, type CampaignsMessageKey } from './messages.js';
 
 /**
@@ -109,21 +110,19 @@ function DeliveryLog() {
         caption={t('campaigns.nav.log')}
         labels={labels}
         toolbar={
-          <select
+          <Select
+            variant="filter"
             aria-label={t('campaigns.log.col.state')}
             value={state ?? ''}
-            className={`${control} w-auto`}
-            onChange={(event) =>
-              setState((event.target.value || undefined) as MessageState | undefined)
-            }
-          >
-            <option value="">{t('campaigns.log.allStates')}</option>
-            {MESSAGE_STATES.map((value) => (
-              <option key={value} value={value}>
-                {t(`campaigns.log.state.${value}` as CampaignsMessageKey)}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => setState((value || undefined) as MessageState | undefined)}
+            options={[
+              { value: '', label: t('campaigns.log.allStates') },
+              ...MESSAGE_STATES.map((value) => ({
+                value,
+                label: t(`campaigns.log.state.${value}` as CampaignsMessageKey),
+              })),
+            ]}
+          />
         }
       />
     </div>

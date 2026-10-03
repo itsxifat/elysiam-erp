@@ -107,10 +107,11 @@ test('accounts verifies it from the queue, and the order shows it verified', asy
 
   await row.getByRole('button', { name: 'Verify' }).click();
   const dialog = checker.getByRole('dialog');
-  // The bank wallet the stack provisions (code 1100), whatever its display name is.
-  const bank = await dialog.locator('option', { hasText: '1100' }).getAttribute('value');
-  expect(bank).toBeTruthy();
-  await dialog.getByLabel('Wallet it arrived in').selectOption(bank ?? '');
+  // The bank wallet the stack provisions (code 1100), whatever its display name is. The wallet
+  // picker is the kit's Select (D-443): open it, then choose from its listbox, which is drawn
+  // in a portal outside the dialog.
+  await dialog.getByRole('combobox', { name: /Wallet it arrived in/ }).click();
+  await checker.getByRole('option', { name: /1100/ }).click();
   await shot(checker, 'advances-verify-dialog');
   await dialog.getByRole('button', { name: 'Verify' }).click();
   await expect(checker.getByText('Saved.')).toBeVisible();

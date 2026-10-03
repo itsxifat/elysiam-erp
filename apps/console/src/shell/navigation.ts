@@ -1,5 +1,7 @@
 import type { Action, AppAbility, Subject } from '@elysium/contracts';
+import type { MessageKey } from '@elysium/i18n';
 import {
+  ArrowLeftRight,
   BadgeCheck,
   Banknote,
   BarChart3,
@@ -10,17 +12,23 @@ import {
   Handshake,
   Landmark,
   LayoutDashboard,
+  ListChecks,
   Megaphone,
   Package,
   PackageCheck,
+  PackagePlus,
+  PackageSearch,
   ScrollText,
   ShoppingCart,
+  SquarePen,
   Store,
   Table2,
   TrendingUp,
   Target,
   Truck,
   UserCog,
+  UserPlus,
+  UserSearch,
   Users,
   Wallet,
   type LucideIcon,
@@ -53,12 +61,18 @@ import { SETTINGS_TABS } from '../routes/settings/tabs.js';
  * navigation entry: a sales agent whose `read Order` is scoped to their own
  * orders should still see Orders. Passing a row here would hide the section from
  * everyone whose grant is scoped, which is most people.
+ *
+ * **The groups follow the work, not the milestones (D-449).** Home, Sell, Products and
+ * stock, Money, People and Admin: the questions an owner asks of a fashion brand, in
+ * the order a day goes. Settings sits apart at the foot of the sidebar.
  */
 
 interface Grant {
   readonly action: Action;
   readonly subject: Subject;
 }
+
+type Required = Grant | readonly Grant[] | 'always';
 
 export interface NavItem {
   readonly to: string;
@@ -68,17 +82,22 @@ export interface NavItem {
    * The permission that makes this screen reachable — or, for a section of tabs that each
    * declare their own (Settings), the list of them: the entry shows when any one is held.
    */
-  readonly required: Grant | readonly Grant[] | 'always';
+  readonly required: Required;
+  /** Rendered at the foot of the sidebar rather than in its group (Settings). */
+  readonly footer?: boolean;
 }
 
 export interface NavSection {
   readonly titleKey: ConsoleMessageKey;
   readonly items: readonly NavItem[];
+  /** The first group is the home screens: always open, no heading. */
+  readonly untitled?: boolean;
 }
 
 export const NAVIGATION: readonly NavSection[] = [
   {
-    titleKey: 'nav.sectionWork',
+    titleKey: 'nav.sectionHome',
+    untitled: true,
     items: [
       { to: '/', labelKey: 'nav.overview', icon: LayoutDashboard, required: 'always' },
       /*
@@ -92,6 +111,17 @@ export const NAVIGATION: readonly NavSection[] = [
         required: { action: 'read', subject: 'Dashboard' },
       },
       {
+        to: '/approvals',
+        labelKey: 'nav.approvals',
+        icon: BadgeCheck,
+        required: { action: 'read', subject: 'ApprovalRequest' },
+      },
+    ],
+  },
+  {
+    titleKey: 'nav.sectionSell',
+    items: [
+      {
         to: '/orders',
         labelKey: 'nav.orders',
         icon: ShoppingCart,
@@ -103,6 +133,36 @@ export const NAVIGATION: readonly NavSection[] = [
         icon: Users,
         required: { action: 'read', subject: 'Customer' },
       },
+      {
+        to: '/courier',
+        labelKey: 'nav.courier',
+        icon: PackageCheck,
+        // The parcels, stuck queue and returns screens are order work; settlements and
+        // the performance report gate themselves on their own grants inside the section.
+        required: { action: 'read', subject: 'Order' },
+      },
+      /*
+       * M18. `read CampaignSpend`, the wider of the section's two subjects: accounts holds
+       * it for spend entry (§6) and nothing else here, so an accountant sees Marketing with
+       * one tab, Spend. Marketing and org_admin hold both.
+       */
+      {
+        to: '/marketing',
+        labelKey: 'nav.marketing',
+        icon: TrendingUp,
+        required: { action: 'read', subject: 'CampaignSpend' },
+      },
+      {
+        to: '/campaigns',
+        labelKey: 'nav.campaigns',
+        icon: Megaphone,
+        required: { action: 'read', subject: 'Campaign' },
+      },
+    ],
+  },
+  {
+    titleKey: 'nav.sectionStock',
+    items: [
       {
         to: '/catalog',
         labelKey: 'nav.catalog',
@@ -120,14 +180,6 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.supply',
         icon: Truck,
         required: { action: 'read', subject: 'Supply' },
-      },
-      {
-        to: '/courier',
-        labelKey: 'nav.courier',
-        icon: PackageCheck,
-        // The parcels, stuck queue and returns screens are order work; settlements and
-        // the performance report gate themselves on their own grants inside the section.
-        required: { action: 'read', subject: 'Order' },
       },
     ],
   },
@@ -173,12 +225,6 @@ export const NAVIGATION: readonly NavSection[] = [
         icon: Landmark,
         required: { action: 'read', subject: 'CompanyLoan' },
       },
-      {
-        to: '/approvals',
-        labelKey: 'nav.approvals',
-        icon: BadgeCheck,
-        required: { action: 'read', subject: 'ApprovalRequest' },
-      },
     ],
   },
   {
@@ -219,29 +265,6 @@ export const NAVIGATION: readonly NavSection[] = [
     titleKey: 'nav.sectionAdmin',
     items: [
       /*
-       * M18. `read CampaignSpend`, the wider of the section's two subjects: accounts holds
-       * it for spend entry (§6) and nothing else here, so an accountant sees Marketing with
-       * one tab, Spend. Marketing and org_admin hold both.
-       */
-      {
-        to: '/marketing',
-        labelKey: 'nav.marketing',
-        icon: TrendingUp,
-        required: { action: 'read', subject: 'CampaignSpend' },
-      },
-      {
-        to: '/campaigns',
-        labelKey: 'nav.campaigns',
-        icon: Megaphone,
-        required: { action: 'read', subject: 'Campaign' },
-      },
-      {
-        to: '/audit',
-        labelKey: 'nav.audit',
-        icon: ScrollText,
-        required: { action: 'read', subject: 'AuditLog' },
-      },
-      /*
        * gaps-users-auth. `read User`, org_admin's (and super admin's through `manage all`):
        * the brand's people, their roles and sign-in, and the resets waiting for a second
        * admin.
@@ -251,6 +274,12 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.users',
         icon: UserCog,
         required: { action: 'read', subject: 'User' },
+      },
+      {
+        to: '/audit',
+        labelKey: 'nav.audit',
+        icon: ScrollText,
+        required: { action: 'read', subject: 'AuditLog' },
       },
       /*
        * Settings is a section of tabs, each gated on the grant its own routes declare
@@ -263,6 +292,7 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.settings',
         icon: Cog,
         required: SETTINGS_TABS.map((tab) => tab.required),
+        footer: true,
       },
       /*
        * M05's DataTable showcase, with invented rows. Development builds only: shown
@@ -276,11 +306,19 @@ export const NAVIGATION: readonly NavSection[] = [
   },
 ];
 
-export function canSee(ability: AppAbility, item: NavItem): boolean {
-  const required = item.required;
-  if (required === 'always') return true;
-  const grants: readonly Grant[] = 'action' in required ? [required] : required;
+function grantsOf(required: Required): readonly Grant[] | 'always' {
+  if (required === 'always') return 'always';
+  return 'action' in required ? [required] : required;
+}
+
+function allowed(ability: AppAbility, required: Required): boolean {
+  const grants = grantsOf(required);
+  if (grants === 'always') return true;
   return grants.some((grant) => ability.can(grant.action, grant.subject));
+}
+
+export function canSee(ability: AppAbility, item: NavItem): boolean {
+  return allowed(ability, item.required);
 }
 
 /**
@@ -294,7 +332,7 @@ export function canSee(ability: AppAbility, item: NavItem): boolean {
  */
 export function visibleNavigation(ability: AppAbility): readonly NavSection[] {
   return NAVIGATION.map((section) => ({
-    titleKey: section.titleKey,
+    ...section,
     items: section.items.filter((item) => canSee(ability, item)),
   })).filter((section) => section.items.length > 0);
 }
@@ -302,4 +340,301 @@ export function visibleNavigation(ability: AppAbility): readonly NavSection[] {
 /** Flat, for the command palette. */
 export function navigableItems(ability: AppAbility): readonly NavItem[] {
   return visibleNavigation(ability).flatMap((section) => section.items);
+}
+
+/** The section and entry a path belongs to, for the topbar's breadcrumb. */
+export function locate(
+  pathname: string,
+): { readonly section: NavSection; readonly item: NavItem } | null {
+  let best: { section: NavSection; item: NavItem } | null = null;
+  for (const section of NAVIGATION) {
+    for (const item of section.items) {
+      const hit =
+        item.to === '/'
+          ? pathname === '/'
+          : pathname === item.to || pathname.startsWith(`${item.to}/`);
+      if (hit && (best === null || item.to.length > best.item.to.length)) best = { section, item };
+    }
+  }
+  return best;
+}
+
+// --- the command palette's catalogue (D-450) ----------------------------------
+
+/**
+ * A screen inside a section, for the palette: "Transfers" under Accounts, "Stuck
+ * parcels" under Couriers. The sidebar shows the sections; the palette reaches every
+ * screen in one step, which is what "easy to point" means for someone who knows
+ * where they are going.
+ */
+export interface PalettePage {
+  readonly to: string;
+  readonly labelKey: MessageKey;
+  /** The sidebar entry it lives under, shown beside it. */
+  readonly parentKey: ConsoleMessageKey;
+  readonly icon: LucideIcon;
+  readonly required: Required;
+}
+
+export const PALETTE_PAGES: readonly PalettePage[] = [
+  {
+    to: '/orders/queue',
+    labelKey: 'orders.nav.queue',
+    parentKey: 'nav.orders',
+    icon: ListChecks,
+    required: { action: 'read', subject: 'Order' },
+  },
+  {
+    to: '/orders/buyers',
+    labelKey: 'orders.nav.buyers',
+    parentKey: 'nav.orders',
+    icon: Users,
+    required: { action: 'read', subject: 'Order' },
+  },
+  {
+    to: '/orders/returns',
+    labelKey: 'orders.nav.returns',
+    parentKey: 'nav.orders',
+    icon: PackageSearch,
+    required: { action: 'read', subject: 'Order' },
+  },
+  {
+    to: '/customers/lapsed',
+    labelKey: 'customers.nav.lapsed',
+    parentKey: 'nav.customers',
+    icon: Users,
+    required: { action: 'read', subject: 'Customer' },
+  },
+  {
+    to: '/courier/stuck',
+    labelKey: 'courier.nav.stuck',
+    parentKey: 'nav.courier',
+    icon: PackageSearch,
+    required: { action: 'read', subject: 'Order' },
+  },
+  {
+    to: '/courier/settlements',
+    labelKey: 'courier.nav.settlements',
+    parentKey: 'nav.courier',
+    icon: Banknote,
+    required: { action: 'read', subject: 'CourierSettlement' },
+  },
+  {
+    to: '/courier/returns',
+    labelKey: 'courier.nav.returns',
+    parentKey: 'nav.courier',
+    icon: PackageSearch,
+    required: { action: 'read', subject: 'Order' },
+  },
+  {
+    to: '/stock/adjustments',
+    labelKey: 'stock.adjustments',
+    parentKey: 'nav.stock',
+    icon: Boxes,
+    required: { action: 'read', subject: 'Stock' },
+  },
+  {
+    to: '/stock/transfers',
+    labelKey: 'stock.transfers',
+    parentKey: 'nav.stock',
+    icon: ArrowLeftRight,
+    required: { action: 'read', subject: 'Stock' },
+  },
+  {
+    to: '/stock/counts',
+    labelKey: 'stock.counts',
+    parentKey: 'nav.stock',
+    icon: ClipboardList,
+    required: { action: 'read', subject: 'Stock' },
+  },
+  {
+    to: '/supply/entries',
+    labelKey: 'supply.entries',
+    parentKey: 'nav.supply',
+    icon: Truck,
+    required: { action: 'read', subject: 'Supply' },
+  },
+  {
+    to: '/supply/payments',
+    labelKey: 'supply.payments',
+    parentKey: 'nav.supply',
+    icon: Banknote,
+    required: { action: 'read', subject: 'Supply' },
+  },
+  {
+    to: '/accounts/transfers',
+    labelKey: 'accounts.nav.transfers',
+    parentKey: 'nav.accounts',
+    icon: ArrowLeftRight,
+    required: { action: 'read', subject: 'LedgerReport' },
+  },
+  {
+    to: '/accounts/wallets',
+    labelKey: 'accounts.nav.wallets',
+    parentKey: 'nav.accounts',
+    icon: Wallet,
+    required: { action: 'read', subject: 'LedgerReport' },
+  },
+  {
+    to: '/accounts/reports',
+    labelKey: 'accounts.nav.reports',
+    parentKey: 'nav.accounts',
+    icon: ScrollText,
+    required: { action: 'read', subject: 'LedgerReport' },
+  },
+  {
+    to: '/accounts/ledger',
+    labelKey: 'accounts.nav.ledger',
+    parentKey: 'nav.accounts',
+    icon: ScrollText,
+    required: { action: 'read', subject: 'LedgerReport' },
+  },
+  {
+    to: '/accounts/advances',
+    labelKey: 'accounts.nav.advances',
+    parentKey: 'nav.accounts',
+    icon: Banknote,
+    required: { action: 'read', subject: 'LedgerReport' },
+  },
+  {
+    to: '/people/attendance',
+    labelKey: 'hr.attendance',
+    parentKey: 'nav.people',
+    icon: ClipboardList,
+    required: { action: 'read', subject: 'Employee' },
+  },
+  {
+    to: '/payroll/loans',
+    labelKey: 'hr.loans',
+    parentKey: 'nav.payroll',
+    icon: Banknote,
+    required: { action: 'read', subject: 'Payroll' },
+  },
+  {
+    to: '/performance/targets',
+    labelKey: 'perf.targets',
+    parentKey: 'nav.performance',
+    icon: Target,
+    required: { action: 'read', subject: 'Target' },
+  },
+  {
+    to: '/analytics/leaderboard',
+    labelKey: 'analytics.nav.leaderboard',
+    parentKey: 'nav.analytics',
+    icon: ChartLine,
+    required: { action: 'read', subject: 'Leaderboard' },
+  },
+  ...SETTINGS_TABS.map((tab): PalettePage => ({
+    to: tab.path,
+    labelKey: tab.labelKey,
+    parentKey: 'nav.settings',
+    icon: Cog,
+    required: tab.required,
+  })),
+];
+
+/**
+ * The things people come to the console to do, named as actions: "Take a new order",
+ * not "Order desk". Each opens the screen where the action starts, and each asks the
+ * same ability the screen's own route declares, so the palette never offers a 403.
+ */
+export interface PaletteAction {
+  readonly id: string;
+  readonly to: string;
+  readonly labelKey: MessageKey;
+  readonly icon: LucideIcon;
+  readonly required: Required;
+  /** Extra words people type for it ("sell", "invoice"). Matched, never shown. */
+  readonly keywords: readonly string[];
+}
+
+export const PALETTE_ACTIONS: readonly PaletteAction[] = [
+  {
+    id: 'new-order',
+    to: '/orders/new',
+    labelKey: 'palette.actionNewOrder',
+    icon: SquarePen,
+    required: { action: 'create', subject: 'Order' },
+    keywords: ['new order', 'sell', 'order desk', 'নতুন অর্ডার'],
+  },
+  {
+    id: 'order-queue',
+    to: '/orders/queue',
+    labelKey: 'palette.actionOrderQueue',
+    icon: ListChecks,
+    required: { action: 'read', subject: 'Order' },
+    keywords: ['queue', 'confirm', 'call'],
+  },
+  {
+    id: 'add-product',
+    to: '/catalog/new',
+    labelKey: 'palette.actionAddProduct',
+    icon: PackagePlus,
+    required: { action: 'create', subject: 'Catalog' },
+    keywords: ['add product', 'new product', 'item', 'sku'],
+  },
+  {
+    id: 'find-buyer',
+    to: '/customers',
+    labelKey: 'palette.actionFindBuyer',
+    icon: UserSearch,
+    required: { action: 'read', subject: 'Customer' },
+    keywords: ['customer', 'buyer', 'phone'],
+  },
+  {
+    id: 'move-money',
+    to: '/accounts/transfers',
+    labelKey: 'palette.actionMoveMoney',
+    icon: ArrowLeftRight,
+    required: [{ action: 'update', subject: 'Wallet' }],
+    keywords: ['transfer', 'bkash', 'bank', 'cash', 'wallet'],
+  },
+  {
+    id: 'record-supply',
+    to: '/supply/entries',
+    labelKey: 'palette.actionRecordSupply',
+    icon: Truck,
+    required: { action: 'create', subject: 'Supply' },
+    keywords: ['purchase', 'supplier', 'buy', 'goods received'],
+  },
+  {
+    id: 'transfer-stock',
+    to: '/stock/transfers',
+    labelKey: 'palette.actionTransferStock',
+    icon: Boxes,
+    required: { action: 'request', subject: 'StockAdjustment' },
+    keywords: ['move stock', 'showroom', 'warehouse'],
+  },
+  {
+    id: 'review-approvals',
+    to: '/approvals',
+    labelKey: 'palette.actionReviewApprovals',
+    icon: BadgeCheck,
+    required: { action: 'approve', subject: 'ApprovalRequest' },
+    keywords: ['approve', 'reject', 'pending'],
+  },
+  {
+    id: 'stuck-parcels',
+    to: '/courier/stuck',
+    labelKey: 'palette.actionStuckParcels',
+    icon: PackageSearch,
+    required: { action: 'read', subject: 'Order' },
+    keywords: ['courier', 'parcel', 'late', 'stuck'],
+  },
+  {
+    id: 'invite-staff',
+    to: '/users',
+    labelKey: 'palette.actionInviteStaff',
+    icon: UserPlus,
+    required: { action: 'create', subject: 'User' },
+    keywords: ['invite', 'staff', 'user', 'employee', 'add user'],
+  },
+];
+
+export function visiblePalettePages(ability: AppAbility): readonly PalettePage[] {
+  return PALETTE_PAGES.filter((page) => allowed(ability, page.required));
+}
+
+export function visiblePaletteActions(ability: AppAbility): readonly PaletteAction[] {
+  return PALETTE_ACTIONS.filter((action) => allowed(ability, action.required));
 }

@@ -1,13 +1,35 @@
-import { Button, EmptyState, ErrorState, Money, PermissionGate, StatusBadge } from '@elysium/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  Money,
+  PageHeader,
+  PermissionGate,
+  Select,
+  Sheet,
+  StatusBadge,
+} from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CalendarPlus, Wallet } from 'lucide-react';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
+import { useT } from '../../i18n/locale.js';
 import { createRun, listRuns } from './api.js';
 import { control, Field, HrNav, hrPath, RUN_TONE } from './hr-nav.js';
 import { useHrT, type HrMessageKey } from './messages.js';
+import { MonthPicker } from '../../ui/date-picker.js';
+
+/* The runs table in the kit DataTable's frame and rhythm (D-448). */
+const TH =
+  'h-10 border-b border-border px-4 text-left text-xs font-medium whitespace-nowrap text-muted-foreground';
+const TH_NUMERIC = `${TH} text-right`;
+const TD = 'h-row border-b border-border px-4 whitespace-nowrap';
+const TD_NUMERIC = `${TD} text-right tabular-nums`;
+const TR =
+  'motion-safe:duration-fast hover:bg-accent/60 motion-safe:transition-colors [&:last-child>td]:border-b-0';
 
 /**
  * The payroll runs list (§12; M19's Build list).
@@ -39,6 +61,7 @@ export function PayrollPage() {
   });
 
   const items = runs.data?.items ?? [];
+  const [starting, setStarting] = useState(false);
 
   return (
     <PermissionGate
@@ -46,18 +69,27 @@ export function PayrollPage() {
       explain={{ title: t('hr.deniedTitle'), detail: t('hr.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{t('hr.payroll')}</h1>
-          <p className="text-sm text-muted-foreground">{t('hr.payrollHint')}</p>
-        </header>
+        <PageHeader
+          title={t('hr.payroll')}
+          description={t('hr.payrollHint')}
+          actions={
+            mayCreate ? (
+              <Button onClick={() => setStarting(true)}>
+                <CalendarPlus aria-hidden="true" />
+                {t('hr.newRun')}
+              </Button>
+            ) : undefined
+          }
+          tabs={<HrNav />}
+        />
 
-        <HrNav />
-
-        <PermissionGate allowed={mayCreate}>
-          <NewRunForm
+        {mayCreate ? (
+          <NewRunSheet
+            open={starting}
+            onOpenChange={setStarting}
             onCreated={() => void queryClient.invalidateQueries({ queryKey: ['hr', 'runs'] })}
           />
-        </PermissionGate>
+        ) : null}
 
         {runs.isError ? (
           <ErrorState
@@ -70,57 +102,76 @@ export function PayrollPage() {
             }
           />
         ) : items.length === 0 && !runs.isLoading ? (
-          <EmptyState title={t('hr.emptyTitle')} detail={t('hr.emptyRuns')} />
+          <EmptyState
+            icon={Wallet}
+            title={t('hr.emptyTitle')}
+            detail={t('hr.emptyRuns')}
+            {...(mayCreate
+              ? {
+                  action: (
+                    <Button size="sm" onClick={() => setStarting(true)}>
+                      <CalendarPlus aria-hidden="true" />
+                      {t('hr.newRun')}
+                    </Button>
+                  ),
+                }
+              : {})}
+          />
         ) : (
-          <section aria-label={t('hr.payroll')}>
-            <table className="w-full text-sm">
+          <section
+            aria-label={t('hr.payroll')}
+            className="overflow-x-auto rounded-lg border border-border bg-card"
+          >
+            <table className="w-full border-separate border-spacing-0 text-sm">
               <caption className="sr-only">{t('hr.payroll')}</caption>
               <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th scope="col" className="py-2">
+                <tr>
+                  <th scope="col" className={TH}>
                     {t('hr.colMonth')}
                   </th>
-                  <th scope="col" className="py-2 text-right">
+                  <th scope="col" className={TH_NUMERIC}>
                     {t('hr.colStaff')}
                   </th>
-                  <th scope="col" className="py-2 text-right">
+                  <th scope="col" className={TH_NUMERIC}>
                     {t('hr.colGross')}
                   </th>
-                  <th scope="col" className="py-2 text-right">
+                  <th scope="col" className={TH_NUMERIC}>
                     {t('hr.colDeductions')}
                   </th>
-                  <th scope="col" className="py-2 text-right">
+                  <th scope="col" className={TH_NUMERIC}>
                     {t('hr.colNet')}
                   </th>
-                  <th scope="col" className="py-2">
+                  <th scope="col" className={TH}>
                     {t('hr.colStatus')}
                   </th>
-                  <th scope="col" className="py-2" />
+                  <th scope="col" className={TH}>
+                    <span className="sr-only">{t('hr.open')}</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((run) => (
-                  <tr key={run.id} className="h-9 border-b border-border/60">
-                    <td className="py-2 tabular-nums">{run.month}</td>
-                    <td className="py-2 text-right tabular-nums">{run.employeeCount}</td>
-                    <td className="py-2 text-right">
+                  <tr key={run.id} className={TR}>
+                    <td className={`${TD} font-medium tabular-nums`}>{run.month}</td>
+                    <td className={TD_NUMERIC}>{run.employeeCount}</td>
+                    <td className={TD_NUMERIC}>
                       <Money poisha={run.grossPoisha} />
                     </td>
-                    <td className="py-2 text-right">
+                    <td className={`${TD_NUMERIC} text-muted-foreground`}>
                       <Money poisha={run.deductionsPoisha} />
                     </td>
-                    <td className="py-2 text-right font-medium">
+                    <td className={`${TD_NUMERIC} font-medium`}>
                       <Money poisha={run.netPoisha} />
                     </td>
-                    <td className="py-2">
+                    <td className={TD}>
                       <StatusBadge tone={RUN_TONE[run.status] ?? 'neutral'}>
                         {t(`hr.run.${run.status}` as HrMessageKey)}
                       </StatusBadge>
                     </td>
-                    <td className="py-2 text-right">
+                    <td className={`${TD} text-right`}>
                       <Link
                         to={hrPath(`/payroll/runs/${run.id}`)}
-                        className="rounded-md px-2 py-1 text-sm text-primary underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                        className="rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                       >
                         {t('hr.open')}
                       </Link>
@@ -147,8 +198,21 @@ function currentMonth(): string {
     .slice(0, 7);
 }
 
-function NewRunForm({ onCreated }: { readonly onCreated: () => void }) {
+/**
+ * Starting a month's run, in a sheet (D-447): three fields asked for once a month, so they
+ * no longer sit open above the list of runs.
+ */
+function NewRunSheet({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onCreated: () => void;
+}) {
   const t = useHrT();
+  const common = useT();
   const [month, setMonth] = useState(currentMonth());
   const [policy, setPolicy] = useState<'present' | 'absent'>('present');
   const [memo, setMemo] = useState('');
@@ -163,63 +227,72 @@ function NewRunForm({ onCreated }: { readonly onCreated: () => void }) {
     onSuccess: () => {
       setMemo('');
       onCreated();
+      onOpenChange(false);
     },
   });
 
   return (
-    <form
-      className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        create.mutate();
-      }}
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('hr.newRun')}
+      description={t('hr.payrollHint')}
+      closeLabel={common('common.close')}
+      size="sm"
+      footer={
+        <>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t('hr.cancel')}
+          </Button>
+          <Button type="submit" form="new-run-form" disabled={month === '' || create.isPending}>
+            {t('hr.newRun')}
+          </Button>
+        </>
+      }
     >
-      <Field label={t('hr.colMonth')} id="run-month">
-        <input
-          id="run-month"
-          type="month"
-          value={month}
-          required
-          className={control}
-          onChange={(event) => setMonth(event.target.value)}
-        />
-      </Field>
-      {/*
-        The unrecorded-day policy is set per run and shown on the form rather than buried in
-        settings, because it is the single assumption that most changes what people are paid
-        (D-186) — and the person starting the run is the person who knows whether the
-        biometric export for that month is complete.
-      */}
-      <Field label={t('hr.unrecordedPolicy')} id="run-policy">
-        <select
-          id="run-policy"
-          value={policy}
-          className={control}
-          onChange={(event) => setPolicy(event.target.value === 'absent' ? 'absent' : 'present')}
-        >
-          <option value="present">{t('hr.unrecorded.present')}</option>
-          <option value="absent">{t('hr.unrecorded.absent')}</option>
-        </select>
-      </Field>
-      <Field label={t('hr.field.note')} id="run-memo">
-        <input
-          id="run-memo"
-          value={memo}
-          maxLength={500}
-          className={control}
-          onChange={(event) => setMemo(event.target.value)}
-        />
-      </Field>
-      <div className="flex items-end gap-3">
-        <Button type="submit" size="sm" disabled={month === '' || create.isPending}>
-          {t('hr.newRun')}
-        </Button>
-      </div>
-      {create.error === null ? null : (
-        <p role="alert" className="text-sm text-destructive sm:col-span-4">
-          {create.error instanceof ApiError ? create.error.message : t('hr.saveFailed')}
-        </p>
-      )}
-    </form>
+      <form
+        id="new-run-form"
+        className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (month !== '' && !create.isPending) create.mutate();
+        }}
+      >
+        <Field label={t('hr.colMonth')} id="run-month">
+          <MonthPicker id="run-month" value={month} onValueChange={setMonth} />
+        </Field>
+        {/*
+          The unrecorded-day policy is set per run and shown on the form rather than buried in
+          settings, because it is the single assumption that most changes what people are paid
+          (D-186) — and the person starting the run is the person who knows whether the
+          biometric export for that month is complete.
+        */}
+        <Field label={t('hr.unrecordedPolicy')} id="run-policy">
+          <Select
+            id="run-policy"
+            value={policy}
+            onValueChange={(value) => setPolicy(value === 'absent' ? 'absent' : 'present')}
+            options={[
+              { value: 'present', label: t('hr.unrecorded.present') },
+              { value: 'absent', label: t('hr.unrecorded.absent') },
+            ]}
+          />
+        </Field>
+        <Field label={t('hr.field.note')} id="run-memo">
+          <input
+            id="run-memo"
+            value={memo}
+            maxLength={500}
+            className={control}
+            onChange={(event) => setMemo(event.target.value)}
+          />
+        </Field>
+        {create.error === null ? null : (
+          <p role="alert" className="text-sm text-destructive">
+            {create.error instanceof ApiError ? create.error.message : t('hr.saveFailed')}
+          </p>
+        )}
+      </form>
+    </Sheet>
   );
 }

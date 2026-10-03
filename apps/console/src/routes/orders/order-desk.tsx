@@ -9,6 +9,9 @@ import {
   cn,
   poishaToTaka,
   takaToPoisha,
+  Kbd,
+  PageHeader,
+  Select,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -568,19 +571,19 @@ function Desk() {
   const duplicateItems = duplicates.data?.items ?? [];
 
   return (
-    <div className="space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">{t('orders.desk.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('orders.desk.subtitle')}</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => setHelpOpen(true)}>
-          <Keyboard aria-hidden="true" />
-          {t('orders.keys.open')}
-        </Button>
-      </header>
-
-      <OrdersNav />
+    <div className="space-y-6">
+      <PageHeader
+        title={t('orders.desk.title')}
+        description={t('orders.desk.subtitle')}
+        actions={
+          <Button variant="ghost" size="sm" onClick={() => setHelpOpen(true)}>
+            <Keyboard aria-hidden="true" />
+            {t('orders.keys.open')}
+            <Kbd>?</Kbd>
+          </Button>
+        }
+        tabs={<OrdersNav />}
+      />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <form
@@ -592,7 +595,10 @@ function Desk() {
           }}
         >
           {/* The buyer ---------------------------------------------------------------- */}
-          <section className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2">
+          <section className="grid gap-4 rounded-lg border border-border bg-card p-5 sm:grid-cols-2">
+            <h2 className="text-sm font-semibold tracking-tight text-foreground sm:col-span-2">
+              {t('orders.detail.buyer')}
+            </h2>
             <div className="space-y-1.5">
               <Label htmlFor={`${ids}-phone`} required>
                 {t('orders.desk.phone')}
@@ -648,7 +654,10 @@ function Desk() {
           </section>
 
           {/* Where it goes ----------------------------------------------------------- */}
-          <section className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2">
+          <section className="grid gap-4 rounded-lg border border-border bg-card p-5 sm:grid-cols-2">
+            <h2 className="text-sm font-semibold tracking-tight text-foreground sm:col-span-2">
+              {t('orders.detail.shipTo')}
+            </h2>
             <div className="relative space-y-1.5 sm:col-span-2">
               <Label htmlFor={`${ids}-area`} required>
                 {t('orders.desk.area')}
@@ -774,7 +783,10 @@ function Desk() {
           </section>
 
           {/* What they want ---------------------------------------------------------- */}
-          <section className="space-y-3 rounded-lg border border-border bg-card p-4">
+          <section className="space-y-4 rounded-lg border border-border bg-card p-5">
+            <h2 className="text-sm font-semibold tracking-tight text-foreground">
+              {t('orders.desk.items')}
+            </h2>
             <div className="relative space-y-1.5">
               <Label htmlFor={`${ids}-sku`}>{t('orders.desk.skuSearch')}</Label>
               <Input
@@ -939,21 +951,18 @@ function Desk() {
           </section>
 
           {/* How it came and anything else ---------------------------------------------- */}
-          <section className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-3">
+          <section className="grid gap-4 rounded-lg border border-border bg-card p-5 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor={`${ids}-channel`}>{t('orders.desk.channel')}</Label>
-              <select
+              <Select
                 id={`${ids}-channel`}
                 value={channel}
-                onChange={(event) => setChannel(event.target.value as OrderChannel)}
-                className="h-control w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                {DESK_CHANNELS.map((option) => (
-                  <option key={option} value={option}>
-                    {t(`orders.channel.${option}` as OrdersMessageKey)}
-                  </option>
-                ))}
-              </select>
+                onValueChange={(value) => setChannel(value as OrderChannel)}
+                options={DESK_CHANNELS.map((option) => ({
+                  value: option,
+                  label: t(`orders.channel.${option}` as OrdersMessageKey),
+                }))}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor={`${ids}-discount`}>{t('orders.desk.discount')}</Label>
@@ -1053,9 +1062,9 @@ function Desk() {
         {/* The right-hand column: who, how much, and the buttons. */}
         <aside className="space-y-4" aria-label={t('orders.desk.summary')}>
           {customer === null ? null : (
-            <section className="space-y-3 rounded-lg border border-border bg-card p-4">
+            <section className="space-y-3 rounded-lg border border-border bg-card p-5">
               <div className="space-y-1.5">
-                <p className="text-sm font-medium">{t('orders.desk.history')}</p>
+                <p className="text-sm font-semibold">{t('orders.desk.history')}</p>
                 <p className="text-xs text-muted-foreground tabular-nums">
                   {customer.stats.orders} {t('orders.desk.statOrders')} · {customer.stats.delivered}{' '}
                   {t('orders.desk.statDelivered')} · {customer.stats.returned}{' '}
@@ -1115,8 +1124,8 @@ function Desk() {
             </section>
           )}
 
-          <section className="space-y-2 rounded-lg border border-border bg-card p-4">
-            <dl className="space-y-1 text-sm">
+          <section className="space-y-3 rounded-lg border border-border bg-card p-5">
+            <dl className="space-y-1.5 text-sm">
               <TotalRow
                 label={t('orders.desk.itemsTotal')}
                 poisha={totals.itemsPoisha}
@@ -1181,7 +1190,7 @@ function Desk() {
                     {/* Full-strength text, set apart by the monospace face rather than
                         by fading it: at 80% opacity on the accent it failed AA
                         contrast (M05 check 6). */}
-                    <kbd className="ml-auto font-mono text-xs">Ctrl+Enter</kbd>
+                    <kbd className="ml-auto font-sans text-xs font-medium">Ctrl+Enter</kbd>
                   </Button>
                 ) : null}
                 <Button
@@ -1191,7 +1200,9 @@ function Desk() {
                   onClick={() => submit(false)}
                 >
                   {t('orders.desk.savePending')}
-                  <kbd className="ml-auto font-mono text-xs">Ctrl+S</kbd>
+                  <kbd className="ml-auto font-sans text-xs font-medium text-muted-foreground">
+                    Ctrl+S
+                  </kbd>
                 </Button>
               </div>
             ) : (

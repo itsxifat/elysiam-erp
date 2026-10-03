@@ -5,6 +5,8 @@ import {
   ErrorState,
   Money,
   PermissionGate,
+  SearchInput,
+  Select,
   Skeleton,
   StatusBadge,
 } from '@elysium/ui';
@@ -15,7 +17,7 @@ import { useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
 import { fileUrl, labelsPath, listAccounts, listParcels, type ParcelStatus } from './api.js';
-import { courierPath, control, CourierHeader } from './courier-nav.js';
+import { courierPath, CourierHeader } from './courier-nav.js';
 import { BOOKING_TONE, PARCEL_TONE } from './courier-ui.js';
 import { useCourierT, type CourierMessageKey } from './messages.js';
 
@@ -134,54 +136,52 @@ export function CourierParcelsPage() {
           }
         />
 
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <label className="sr-only" htmlFor="courier-parcel-search">
             {t('courier.search')}
           </label>
-          <input
+          <SearchInput
             id="courier-parcel-search"
-            type="search"
             value={q}
             placeholder={t('courier.search')}
-            className={`${control} w-64`}
             onChange={(event) => {
               setQ(event.target.value);
               setPage(1);
             }}
           />
-          <select
+          <Select
+            variant="filter"
             aria-label={t('courier.allStatuses')}
             value={status}
-            className={`${control} w-48`}
-            onChange={(event) => {
-              setStatus(event.target.value);
+            onValueChange={(value) => {
+              setStatus(value);
               setPage(1);
             }}
-          >
-            <option value="">{t('courier.allStatuses')}</option>
-            {STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {t(`courier.status.${value}` as CourierMessageKey)}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: '', label: t('courier.allStatuses') },
+              ...STATUSES.map((value) => ({
+                value,
+                label: t(`courier.status.${value}` as CourierMessageKey),
+              })),
+            ]}
+          />
           {(accounts.data?.items.length ?? 0) > 0 ? (
-            <select
+            <Select
+              variant="filter"
               aria-label={t('courier.allCouriers')}
               value={courierId}
-              className={`${control} w-48`}
-              onChange={(event) => {
-                setCourierId(event.target.value);
+              onValueChange={(value) => {
+                setCourierId(value);
                 setPage(1);
               }}
-            >
-              <option value="">{t('courier.allCouriers')}</option>
-              {(accounts.data?.items ?? []).map((account) => (
-                <option key={account.id} value={account.courierId}>
-                  {account.label}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: t('courier.allCouriers') },
+                ...(accounts.data?.items ?? []).map((account) => ({
+                  value: account.courierId,
+                  label: account.label,
+                })),
+              ]}
+            />
           ) : null}
           <p className="text-xs text-muted-foreground">{t('courier.labels.hint')}</p>
         </div>

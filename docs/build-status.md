@@ -1,6 +1,10 @@
 # How much of the ERP is built
 
+<<<<<<< integration-wave2
 Last updated: **2026-10-03** (M30 part 1 built, then its follow-ups: the remaining medium security findings fixed, two narrow races closed, and four screens a tester missed added; then products and stock made easy after the owner's feedback; part 2 waits for a staging server). This is the short, plain-language view. The
+=======
+Last updated: **2026-10-03** (M30 part 1 built, then its follow-ups: the remaining medium security findings fixed, two narrow races closed, and four screens a tester missed added; part 2 waits for a staging server. Then the owner-requested design refresh of the console, the investor portal and the till: a calmer look, a grouped sidebar, a search-everything palette and a real overview). This is the short, plain-language view. The
+>>>>>>> 314cd0f
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
@@ -53,7 +57,7 @@ Built     [###################-]  98%
 | M02b | Roles, audit log, approvals            |  100% |                                                                                                  |
 | M03  | Ledger (the books)                     |  100% |                                                                                                  |
 | M04  | Background jobs, files, PDFs           |  100% |                                                                                                  |
-| M05  | Console screens and design kit         |  100% |                                                                                                  |
+| M05  | Console screens and design kit         |  100% | Redesigned 2026-10-03 at the owner's request (`plans/design-refresh.md`)                         |
 | M06  | Products                               |  100% |                                                                                                  |
 | M07  | Stock and costing                      |  100% |                                                                                                  |
 | M08  | Accounts and wallets                   |  100% |                                                                                                  |

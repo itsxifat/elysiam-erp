@@ -6,6 +6,7 @@ import {
   Money,
   PermissionGate,
   Skeleton,
+  buttonVariants,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
@@ -28,7 +29,7 @@ import { AdvancesPanel } from './advances-panel.js';
 import { OrderActions } from './order-actions.js';
 import { ParcelPanel } from './parcel-panel.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
-import { OrdersNav, OrderStatusBadge } from './parts.js';
+import { OrderStatusBadge } from './parts.js';
 import { DEFAULT_ORDER_SEARCH } from './search.js';
 import { ordersPath } from './paths.js';
 
@@ -76,12 +77,11 @@ function Detail() {
       <Link
         to={ordersPath('/orders')}
         search={DEFAULT_ORDER_SEARCH as never}
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:underline"
+        className="-mb-2 inline-flex items-center gap-1.5 rounded-sm text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         <ArrowLeft aria-hidden="true" className="size-4" />
         {t('orders.detail.back')}
       </Link>
-      <OrdersNav />
       {order.isPending ? (
         <div className="space-y-3" aria-busy="true" aria-label={t('orders.loading')}>
           <Skeleton className="h-8 w-64" />
@@ -161,10 +161,10 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
   const sourceEntries = Object.entries(source).filter(([, value]) => typeof value === 'string');
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <h1 className="flex items-center gap-3 text-lg font-semibold tracking-tight">
             <span className="tabular-nums">{order.orderNo}</span>
             <OrderStatusBadge status={order.status} />
           </h1>
@@ -190,18 +190,18 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
             href={documentUrl(order.id, 'invoice')}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2.5 text-sm font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
           >
-            <FileText aria-hidden="true" className="size-4" />
+            <FileText aria-hidden="true" />
             {t('orders.detail.printInvoice')}
           </a>
           <a
             href={documentUrl(order.id, 'label')}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2.5 text-sm font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
           >
-            <Tag aria-hidden="true" className="size-4" />
+            <Tag aria-hidden="true" />
             {t('orders.detail.printLabel')}
           </a>
         </div>
@@ -215,7 +215,7 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="space-y-5">
-          <section className="grid gap-4 rounded-lg border border-border bg-card p-4 sm:grid-cols-2">
+          <section className="grid gap-5 rounded-lg border border-border bg-card p-5 sm:grid-cols-2">
             <div>
               <h2 className="text-xs font-medium text-muted-foreground">
                 {t('orders.detail.buyer')}
@@ -223,7 +223,7 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
               {/* The buyer's profile (M16): their history across every order, not just this one. */}
               <Link
                 to={ordersPath(`/customers/${order.customer.id}`)}
-                className="text-sm font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                className="mt-1 inline-block text-sm font-medium underline-offset-4 hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 {order.customer.name}
               </Link>
@@ -233,7 +233,7 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
               <h2 className="text-xs font-medium text-muted-foreground">
                 {t('orders.detail.shipTo')}
               </h2>
-              <p className="text-sm">{order.shipTo.addressLine}</p>
+              <p className="mt-1 text-sm">{order.shipTo.addressLine}</p>
               <p className="text-sm text-muted-foreground">
                 {[
                   order.shipTo.area,
@@ -254,22 +254,24 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
             </div>
           </section>
 
-          <section className="rounded-lg border border-border bg-card p-4">
-            <h2 className="mb-2 text-sm font-medium">{t('orders.detail.lines')}</h2>
+          <section className="rounded-lg border border-border bg-card p-5">
+            <h2 className="mb-3 text-base font-semibold tracking-tight">
+              {t('orders.detail.lines')}
+            </h2>
             <table className="w-full text-sm">
               <caption className="sr-only">{t('orders.detail.lines')}</caption>
               <thead>
                 <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th className="py-1.5 font-medium">{t('orders.desk.items')}</th>
-                  <th className="py-1.5 text-right font-medium">{t('orders.desk.qty')}</th>
-                  <th className="py-1.5 text-right font-medium">{t('orders.desk.unitPrice')}</th>
-                  <th className="py-1.5 text-right font-medium">{t('orders.desk.lineTotal')}</th>
+                  <th className="pb-2 font-medium">{t('orders.desk.items')}</th>
+                  <th className="pb-2 text-right font-medium">{t('orders.desk.qty')}</th>
+                  <th className="pb-2 text-right font-medium">{t('orders.desk.unitPrice')}</th>
+                  <th className="pb-2 text-right font-medium">{t('orders.desk.lineTotal')}</th>
                 </tr>
               </thead>
               <tbody>
                 {order.lines.map((line) => (
-                  <tr key={line.id} className="h-row border-b border-border last:border-b-0">
-                    <td>
+                  <tr key={line.id} className="border-b border-border last:border-b-0">
+                    <td className="py-2.5">
                       <span className="block font-medium tabular-nums">{line.skuCode}</span>
                       <span className="block text-xs text-muted-foreground">
                         {line.productName}
@@ -294,16 +296,25 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
             </table>
           </section>
 
-          <section className="rounded-lg border border-border bg-card p-4">
-            <h2 className="mb-2 text-sm font-medium">{t('orders.detail.timeline')}</h2>
-            <ol className="space-y-2">
+          <section className="rounded-lg border border-border bg-card p-5">
+            <h2 className="mb-4 text-base font-semibold tracking-tight">
+              {t('orders.detail.timeline')}
+            </h2>
+            {/* A vertical line of events, newest last: what happened, then when and by whom. */}
+            <ol className="relative ml-1.5 space-y-5 border-l border-border pl-5">
               {order.timeline.map((entry) => (
-                <li key={entry.id} className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                  <DateTime value={entry.at} className="text-xs text-muted-foreground" />
-                  <TimelineText entry={entry} />
-                  <span className="text-xs text-muted-foreground">
-                    {t('orders.timeline.by')} {nameOf(entry.actorUserId)}
-                  </span>
+                <li key={entry.id} className="relative">
+                  <span
+                    aria-hidden="true"
+                    className="absolute top-1.5 -left-6 size-2 rounded-full bg-muted-foreground ring-4 ring-card"
+                  />
+                  <div className="text-sm">
+                    <TimelineText entry={entry} />
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    <DateTime value={entry.at} /> · {t('orders.timeline.by')}{' '}
+                    {nameOf(entry.actorUserId)}
+                  </p>
                 </li>
               ))}
             </ol>
@@ -311,9 +322,9 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
         </div>
 
         <aside className="space-y-4">
-          <section className="space-y-2 rounded-lg border border-border bg-card p-4">
-            <h2 className="text-sm font-medium">{t('orders.detail.amounts')}</h2>
-            <dl className="space-y-1 text-sm">
+          <section className="space-y-3 rounded-lg border border-border bg-card p-5">
+            <h2 className="text-base font-semibold tracking-tight">{t('orders.detail.amounts')}</h2>
+            <dl className="space-y-1.5 text-sm">
               <Row label={t('orders.desk.itemsTotal')} poisha={order.amounts.itemsPoisha} />
               <Row label={t('orders.desk.discountTotal')} poisha={order.amounts.discountPoisha} />
               <Row
@@ -321,9 +332,9 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
                 poisha={order.amounts.deliveryChargePoisha}
               />
               <Row label={t('orders.detail.advance')} poisha={order.amounts.advancePaidPoisha} />
-              <div className="flex items-baseline justify-between border-t border-border pt-2">
+              <div className="mt-1 flex items-baseline justify-between border-t border-border pt-3">
                 <dt className="font-medium">{t('orders.desk.cod')}</dt>
-                <dd className="text-base font-semibold">
+                <dd className="text-xl font-semibold">
                   <Money poisha={order.amounts.codAmountPoisha} locale={locale} />
                 </dd>
               </div>
@@ -335,7 +346,7 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
           <AdvancesPanel order={order} />
 
           {order.notes === null && sourceEntries.length === 0 ? null : (
-            <section className="space-y-2 rounded-lg border border-border bg-card p-4 text-sm">
+            <section className="space-y-3 rounded-lg border border-border bg-card p-5 text-sm">
               {order.notes === null ? null : (
                 <div>
                   <h2 className="text-xs font-medium text-muted-foreground">

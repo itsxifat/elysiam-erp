@@ -5,6 +5,7 @@ import {
   ErrorState,
   Money,
   PermissionGate,
+  Select,
   Skeleton,
   StatusBadge,
 } from '@elysium/ui';
@@ -343,20 +344,17 @@ export function ReceiveDialog({
         )}
 
         <Field label={t('courier.returns.reasonCode')} id="return-reason-code">
-          <select
+          <Select
             id="return-reason-code"
             required
             value={returnReason}
-            className={control}
-            onChange={(event) => setReturnReason(event.target.value as ReturnReason | '')}
-          >
-            <option value="">{t('courier.returns.chooseReason')}</option>
-            {RETURN_REASONS.map((code) => (
-              <option key={code} value={code}>
-                {o(`orders.reason.${code}` as OrdersMessageKey)}
-              </option>
-            ))}
-          </select>
+            placeholder={t('courier.returns.chooseReason')}
+            onValueChange={(value) => setReturnReason(value as ReturnReason | '')}
+            options={RETURN_REASONS.map((code) => ({
+              value: code,
+              label: o(`orders.reason.${code}` as OrdersMessageKey),
+            }))}
+          />
         </Field>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -365,19 +363,18 @@ export function ReceiveDialog({
             id="return-damaged-location"
             hint={t('courier.returns.damagedLocationHint')}
           >
-            <select
+            <Select
               id="return-damaged-location"
               value={damagedLocationId}
-              className={control}
-              onChange={(event) => setDamagedLocationId(event.target.value)}
-            >
-              <option value="">—</option>
-              {damagedLocations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.code} · {location.name}
-                </option>
-              ))}
-            </select>
+              onValueChange={setDamagedLocationId}
+              options={[
+                { value: '', label: '—' },
+                ...damagedLocations.map((location) => ({
+                  value: location.id,
+                  label: `${location.code} · ${location.name}`,
+                })),
+              ]}
+            />
           </Field>
           <Field label={t('courier.returns.reasonLabel')} id="return-reason">
             <input
@@ -395,7 +392,7 @@ export function ReceiveDialog({
             rows={2}
             maxLength={1000}
             value={inspectionNote}
-            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25 focus-visible:outline-none"
             onChange={(event) => setInspectionNote(event.target.value)}
           />
         </Field>

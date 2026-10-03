@@ -27,10 +27,12 @@ export interface DateTimeProps {
   readonly value: Date | string;
   /** Render the Dhaka calendar date alone, for business dates. */
   readonly dateOnly?: boolean;
+  /** Without the year, for a table column of recent rows: "03 Oct, 12:14" (D-456). */
+  readonly compact?: boolean;
   readonly className?: string;
 }
 
-export function DateTime({ value, dateOnly = false, className }: DateTimeProps) {
+export function DateTime({ value, dateOnly = false, compact = false, className }: DateTimeProps) {
   const instant = typeof value === 'string' ? new Date(value) : value;
 
   if (Number.isNaN(instant.getTime())) {
@@ -45,7 +47,7 @@ export function DateTime({ value, dateOnly = false, className }: DateTimeProps) 
 
   const formatted = new Intl.DateTimeFormat('en-GB', {
     timeZone: DHAKA,
-    year: 'numeric',
+    ...(compact ? {} : { year: 'numeric' as const }),
     month: 'short',
     day: '2-digit',
     ...(dateOnly ? {} : { hour: '2-digit', minute: '2-digit', hour12: false }),

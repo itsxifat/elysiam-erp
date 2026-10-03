@@ -1,21 +1,33 @@
-import { Money, PermissionGate, Skeleton } from '@elysium/ui';
+import {
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+  MenuTrigger,
+  MetricList,
+  Money,
+  PermissionGate,
+  Section as KitSection,
+  Skeleton,
+  StatCard,
+} from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Info, RefreshCw, TriangleAlert } from 'lucide-react';
-import { lazy, Suspense, useId, useState, type ReactNode } from 'react';
+import { Database, Download, Info, RefreshCw, TriangleAlert } from 'lucide-react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
 
 import { useAbility } from '../../auth/session.js';
-import { useLocale } from '../../i18n/locale.js';
+import { useLocale, useT } from '../../i18n/locale.js';
+import { DateRangePicker } from '../../ui/date-picker.js';
 import {
   CELL,
   HEAD,
   HEAD_NUMERIC,
-  INPUT,
   NUMERIC,
   AnalyticsHeader,
   BUTTON,
   Section,
   Template,
-  Tile,
 } from './analytics-nav.js';
 import {
   exportUrl,
@@ -64,10 +76,10 @@ export function AnalyticsDashboardPage() {
 
 function Dashboard() {
   const t = useAnalyticsT();
+  const common = useT();
   const { locale } = useLocale();
   const ability = useAbility();
   const queries = useQueryClient();
-  const id = useId();
   const today = dhakaToday();
   const [period, setPeriod] = useState({ from: monthStart(today), to: today });
   const [notice, setNotice] = useState<string | null>(null);
@@ -102,6 +114,9 @@ function Dashboard() {
     },
   });
 
+  // Figures (the cards and the statements) drop ".00" on whole taka; tables keep it (D-455).
+  const figure = (value: string | null | undefined) =>
+    value === null || value === undefined ? '—' : <Money poisha={value} locale={locale} compact />;
   const money = (value: string | null | undefined) =>
     value === null || value === undefined ? '—' : <Money poisha={value} locale={locale} />;
   const seconds = (value: number | null) =>
@@ -121,40 +136,74 @@ function Dashboard() {
         caption={t('analytics.dashboard.subtitle')}
         actions={
           <>
-            <label htmlFor={`${id}-from`} className="text-xs font-medium text-muted-foreground">
-              {t('analytics.period.from')}
-            </label>
-            <input
-              id={`${id}-from`}
-              type="date"
-              className={INPUT}
-              value={period.from}
-              max={period.to}
-              onChange={(event) => {
-                if (event.target.value !== '') setPeriod({ ...period, from: event.target.value });
+            <DateRangePicker
+              aria-label={`${t('analytics.period.from')} – ${t('analytics.period.to')}`}
+              value={period}
+              max={today}
+              onValueChange={(next) => {
+                if (next.from !== '' && next.to !== '') setPeriod(next);
               }}
             />
-            <label htmlFor={`${id}-to`} className="text-xs font-medium text-muted-foreground">
-              {t('analytics.period.to')}
-            </label>
-            <input
-              id={`${id}-to`}
-              type="date"
-              className={INPUT}
-              value={period.to}
-              min={period.from}
-              onChange={(event) => {
-                if (event.target.value !== '') setPeriod({ ...period, to: event.target.value });
-              }}
-            />
-            <a href={exportUrl(period.from, period.to, 'csv')} className={BUTTON}>
-              <Download aria-hidden="true" className="size-4" />
-              {t('analytics.exportCsv')}
-            </a>
-            <a href={exportUrl(period.from, period.to, 'xlsx')} className={BUTTON}>
-              <Download aria-hidden="true" className="size-4" />
-              {t('analytics.exportXlsx')}
-            </a>
+            {/*
+             * The operator's corner (D-460): the exports, recomputing the days and when they
+             * were last computed sit behind one quiet menu, so the page leads with figures.
+             */}
+            <Menu>
+              <MenuTrigger className={BUTTON}>
+                <Database aria-hidden="true" className="size-4" />
+                {common('analytics.dataMenu')}
+              </MenuTrigger>
+              <MenuContent className="w-72">
+                {data === undefined ? null : (
+                  <MenuLabel className="text-xs font-normal tabular-nums">
+                    {fill(t('analytics.coverage'), {
+                      computed: String(data.coverage.computedDays),
+                      days: String(data.coverage.days),
+                    })}
+                    {data.coverage.computedAt === null
+                      ? null
+                      : ` · ${fill(t('analytics.coverage.at'), {
+                          at: new Date(data.coverage.computedAt).toLocaleString(
+                            locale === 'bn' ? 'bn-BD' : 'en-GB',
+                            { timeZone: 'Asia/Dhaka', dateStyle: 'medium', timeStyle: 'short' },
+                          ),
+                        })}`}
+                  </MenuLabel>
+                )}
+                <MenuItem asChild>
+                  <a href={exportUrl(period.from, period.to, 'csv')}>
+                    <Download aria-hidden="true" />
+                    {t('analytics.exportCsv')}
+                  </a>
+                </MenuItem>
+                <MenuItem asChild>
+                  <a href={exportUrl(period.from, period.to, 'xlsx')}>
+                    <Download aria-hidden="true" />
+                    {t('analytics.exportXlsx')}
+                  </a>
+                </MenuItem>
+                {ability.can('update', 'Dashboard') ? (
+                  <>
+                    <MenuSeparator />
+                    <MenuItem
+                      disabled={refresh.isPending || !valid || days > 92}
+                      onSelect={() => {
+                        setNotice(null);
+                        refresh.mutate();
+                      }}
+                    >
+                      <RefreshCw aria-hidden="true" />
+                      {refresh.isPending ? t('analytics.refreshing') : t('analytics.refresh')}
+                    </MenuItem>
+                    {days > 92 ? (
+                      <MenuLabel className="text-xs font-normal">
+                        {t('analytics.refreshTooLong')}
+                      </MenuLabel>
+                    ) : null}
+                  </>
+                ) : null}
+              </MenuContent>
+            </Menu>
           </>
         }
       />
@@ -165,40 +214,11 @@ function Dashboard() {
         </p>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-        {data === undefined ? null : (
-          <span className="tabular-nums">
-            {fill(t('analytics.coverage'), {
-              computed: String(data.coverage.computedDays),
-              days: String(data.coverage.days),
-            })}
-            {data.coverage.computedAt === null
-              ? null
-              : ` · ${fill(t('analytics.coverage.at'), {
-                  at: new Date(data.coverage.computedAt).toLocaleString(
-                    locale === 'bn' ? 'bn-BD' : 'en-GB',
-                    { timeZone: 'Asia/Dhaka', dateStyle: 'medium', timeStyle: 'short' },
-                  ),
-                })}`}
-          </span>
-        )}
-        {ability.can('update', 'Dashboard') ? (
-          <button
-            type="button"
-            className={BUTTON}
-            disabled={refresh.isPending || !valid || days > 92}
-            title={days > 92 ? t('analytics.refreshTooLong') : undefined}
-            onClick={() => {
-              setNotice(null);
-              refresh.mutate();
-            }}
-          >
-            <RefreshCw aria-hidden="true" className="size-4" />
-            {refresh.isPending ? t('analytics.refreshing') : t('analytics.refresh')}
-          </button>
-        ) : null}
-        {notice === null ? null : <span role="status">{notice}</span>}
-      </div>
+      {notice === null ? null : (
+        <p role="status" className="text-sm text-muted-foreground">
+          {notice}
+        </p>
+      )}
 
       {board.isError ? (
         <div role="alert" className="flex items-center gap-3 text-sm">
@@ -209,60 +229,118 @@ function Dashboard() {
         </div>
       ) : null}
 
-      <section aria-label={t('analytics.title')} className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Tile
-          label={t('analytics.metric.revenue')}
-          value={money(totals?.deliveredRevenuePoisha)}
-          hint={t('analytics.metric.revenueHint')}
-        />
-        {totals?.grossProfitPoisha === undefined ? null : (
-          <Tile label={t('analytics.metric.grossProfit')} value={money(totals.grossProfitPoisha)} />
-        )}
-        <Tile
-          label={`${t('analytics.metric.placed')} / ${t('analytics.metric.confirmed')} / ${t('analytics.metric.delivered')}`}
-          value={
-            totals === undefined
-              ? '—'
-              : `${String(totals.ordersPlaced)} / ${String(totals.ordersConfirmed)} / ${String(totals.ordersDelivered)}`
-          }
-        />
-        <Tile
-          label={`${t('analytics.metric.returned')} / ${t('analytics.metric.cancelled')}`}
-          value={
-            totals === undefined
-              ? '—'
-              : `${String(totals.ordersReturned)} / ${String(totals.ordersCancelled)}`
-          }
-        />
-        <Tile label={t('analytics.metric.aov')} value={money(totals?.aovPoisha)} />
-        <Tile
-          label={t('analytics.metric.returnRate')}
-          value={totals === undefined ? '—' : percent(totals.returnRateBps)}
-        />
-        <Tile
-          label={t('analytics.metric.deliverySuccess')}
-          value={totals === undefined ? '—' : percent(totals.deliverySuccessBps)}
-          hint={t('analytics.metric.deliverySuccessHint')}
-        />
-        <Tile label={t('analytics.metric.spend')} value={money(totals?.spendPoisha)} />
-        <Tile label={t('analytics.metric.cpo')} value={money(totals?.cpoPoisha)} />
-        <Tile label={t('analytics.metric.cpdo')} value={money(totals?.cpdoPoisha)} />
-        <Tile
-          label={t('analytics.metric.roas')}
-          value={totals === undefined ? '—' : roas(totals.roasBps)}
-        />
-        <Tile
-          label={t('analytics.metric.pickup')}
-          value={totals === undefined ? '—' : seconds(totals.pickupMeanSeconds)}
-        />
-        <Tile
-          label={t('analytics.metric.cash')}
-          value={money(data?.cashPoisha)}
-          hint={t('analytics.metric.cashHint')}
-        />
-        {data?.stockValuePoisha === undefined ? null : (
-          <Tile label={t('analytics.metric.stockValue')} value={money(data.stockValuePoisha)} />
-        )}
+      {/* The figures, with a hierarchy (D-453): the four a person opens this page for,
+          large and with their shape over the period, then the rest as statements. */}
+      <section aria-label={t('analytics.title')} className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label={t('analytics.metric.revenue')}
+            value={figure(totals?.deliveredRevenuePoisha)}
+            hint={t('analytics.metric.revenueHint')}
+            {...(data === undefined
+              ? {}
+              : { trend: data.series.map((day) => Number(day.deliveredRevenuePoisha)) })}
+          />
+          {totals?.grossProfitPoisha === undefined ? (
+            <StatCard label={t('analytics.metric.aov')} value={figure(totals?.aovPoisha)} />
+          ) : (
+            <StatCard
+              label={t('analytics.metric.grossProfit')}
+              value={figure(totals.grossProfitPoisha)}
+            />
+          )}
+          <StatCard
+            label={t('analytics.metric.confirmed')}
+            value={totals === undefined ? '—' : String(totals.ordersConfirmed)}
+            hint={
+              totals === undefined
+                ? undefined
+                : `${t('analytics.metric.placed')} ${String(totals.ordersPlaced)} · ${t('analytics.metric.delivered')} ${String(totals.ordersDelivered)}`
+            }
+            {...(data === undefined
+              ? {}
+              : { trend: data.series.map((day) => day.ordersConfirmed) })}
+          />
+          <StatCard
+            label={t('analytics.metric.deliverySuccess')}
+            value={totals === undefined ? '—' : percent(totals.deliverySuccessBps)}
+            hint={t('analytics.metric.deliverySuccessHint')}
+          />
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <KitSection title={common('nav.orders')}>
+            <MetricList
+              items={[
+                {
+                  label: t('analytics.metric.placed'),
+                  value: totals === undefined ? '—' : String(totals.ordersPlaced),
+                },
+                {
+                  label: t('analytics.metric.delivered'),
+                  value: totals === undefined ? '—' : String(totals.ordersDelivered),
+                },
+                {
+                  label: t('analytics.metric.returned'),
+                  value: totals === undefined ? '—' : String(totals.ordersReturned),
+                },
+                {
+                  label: t('analytics.metric.cancelled'),
+                  value: totals === undefined ? '—' : String(totals.ordersCancelled),
+                },
+                {
+                  label: t('analytics.metric.returnRate'),
+                  value: totals === undefined ? '—' : percent(totals.returnRateBps),
+                },
+                { label: t('analytics.metric.aov'), value: figure(totals?.aovPoisha) },
+              ]}
+            />
+          </KitSection>
+          <KitSection title={common('nav.marketing')}>
+            <MetricList
+              items={[
+                { label: t('analytics.metric.spend'), value: figure(totals?.spendPoisha) },
+                { label: t('analytics.metric.cpo'), value: figure(totals?.cpoPoisha) },
+                { label: t('analytics.metric.cpdo'), value: figure(totals?.cpdoPoisha) },
+                {
+                  label: t('analytics.metric.roas'),
+                  value: totals === undefined ? '—' : roas(totals.roasBps),
+                },
+                {
+                  label: t('analytics.metric.pickup'),
+                  value: totals === undefined ? '—' : seconds(totals.pickupMeanSeconds),
+                },
+              ]}
+            />
+          </KitSection>
+          <KitSection title={common('nav.sectionMoney')}>
+            <MetricList
+              items={[
+                {
+                  label: t('analytics.metric.cash'),
+                  value: figure(data?.cashPoisha),
+                  hint: t('analytics.metric.cashHint'),
+                },
+                ...(data?.stockValuePoisha === undefined
+                  ? []
+                  : [
+                      {
+                        label: t('analytics.metric.stockValue'),
+                        value: figure(data.stockValuePoisha),
+                      },
+                    ]),
+                ...(totals?.grossProfitPoisha === undefined
+                  ? []
+                  : [
+                      {
+                        label: t('analytics.metric.grossProfit'),
+                        value: figure(totals.grossProfitPoisha),
+                      },
+                    ]),
+              ]}
+            />
+          </KitSection>
+        </div>
       </section>
 
       <InsightsPanel month={month} items={insights.data?.items} failed={insights.isError} />

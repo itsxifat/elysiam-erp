@@ -39,6 +39,14 @@ describe('check 8: formatMoney', () => {
     expect(formatMoney(12345678, { symbol: false })).toBe('1,23,456.78');
   });
 
+  it('drops ".00" from a whole amount on request, and only from a whole amount', () => {
+    expect(formatMoney(844000n, { trimWholePaisa: true })).toBe('৳8,440');
+    expect(formatMoney(844050n, { trimWholePaisa: true })).toBe('৳8,440.50');
+    expect(formatMoney(-100n, { trimWholePaisa: true })).toBe('-৳1');
+    expect(formatMoney(0n, { trimWholePaisa: true })).toBe('৳0');
+    expect(formatMoney(844000n)).toBe('৳8,440.00');
+  });
+
   it('refuses fractions of a poisha rather than rounding them', () => {
     expect(() => formatMoney(12.5)).toThrow(RangeError);
     expect(() => formatMoney('12.5')).toThrow(RangeError);

@@ -42,8 +42,9 @@ From then on, each sign-in asks for the current 6-digit code from the app. If se
 people set this up at the same moment from one office, the system may say "Too many
 attempts. Wait a minute and try again". Wait a minute and try again.
 
-**Language and look.** The console starts in English. The icon at the top right switches
-to Bangla, and the moon icon switches to the dark theme. The portal and the tracking page
+**Language and look.** The console starts in English. The **বাংলা** button at the top right
+switches to Bangla, and the moon icon switches to the dark theme. **Ctrl K** (or the search box
+at the top) jumps to any screen or action: try "new order", "transfer" or "stuck". The portal and the tracking page
 start in Bangla; the language button at the top switches them to English.
 
 **If something looks wrong**, note the screen, the sign-in you used and what you did. A

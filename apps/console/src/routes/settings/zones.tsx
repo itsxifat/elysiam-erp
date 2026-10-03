@@ -1,4 +1,12 @@
-import { Button, Dialog, Money, poishaToTaka, StatusBadge, takaToPoisha } from '@elysium/ui';
+import {
+  Button,
+  Dialog,
+  Money,
+  poishaToTaka,
+  Select,
+  StatusBadge,
+  takaToPoisha,
+} from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useId, useState } from 'react';
@@ -228,26 +236,22 @@ function ZoneDialog({
           />
         </Field>
         <Field id={`${id}-courier`} label={t('settings.zones.colCourier')}>
-          <select
+          <Select
             id={`${id}-courier`}
             value={courierId}
-            className={control}
-            onChange={(event) => setCourierId(event.target.value)}
-          >
-            <option value="">{t('settings.zones.noCourier')}</option>
-            {couriers.map((courier) => (
-              <option key={courier.id} value={courier.id}>
-                {courier.name}
-              </option>
-            ))}
-          </select>
+            onValueChange={setCourierId}
+            options={[
+              { value: '', label: t('settings.zones.noCourier') },
+              ...couriers.map((courier) => ({ value: courier.id, label: courier.name })),
+            ]}
+          />
         </Field>
         <label className="flex items-center gap-2 self-end text-sm" htmlFor={`${id}-active`}>
           <input
             id={`${id}-active`}
             type="checkbox"
             checked={active}
-            className="size-4 rounded border-border focus-visible:ring-2 focus-visible:ring-ring"
+            className="size-4 accent-primary"
             onChange={(event) => setActive(event.target.checked)}
           />
           {t('settings.active')}

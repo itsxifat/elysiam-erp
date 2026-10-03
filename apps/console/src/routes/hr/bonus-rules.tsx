@@ -1,4 +1,12 @@
-import { Button, EmptyState, ErrorState, Money, PermissionGate, StatusBadge } from '@elysium/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  Money,
+  PageHeader,
+  PermissionGate,
+  StatusBadge,
+} from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -23,6 +31,7 @@ import {
   percentText,
   TargetFigure,
 } from './performance-shared.js';
+import { MonthPicker } from '../../ui/date-picker.js';
 
 /**
  * Bonus rules (§12; M20; D-274, D-275).
@@ -87,12 +96,11 @@ export function BonusRulesPage() {
       explain={{ title: t('perf.deniedTitle'), detail: t('perf.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{t('perf.bonusRules')}</h1>
-          <p className="text-sm text-muted-foreground">{t('perf.bonusRulesHint')}</p>
-        </header>
-
-        <PerformanceNav />
+        <PageHeader
+          title={t('perf.bonusRules')}
+          description={t('perf.bonusRulesHint')}
+          tabs={<PerformanceNav />}
+        />
 
         <PermissionGate allowed={mayWrite}>
           <NewRuleForm onCreated={invalidate} />
@@ -312,12 +320,12 @@ function VersionRow({
         <StatusBadge tone={VERSION_TONE[version.status] ?? 'neutral'}>
           {t(`perf.version.${version.status}` as PerfMessageKey)}
         </StatusBadge>
-        <input
+        <MonthPicker
           aria-label={t('perf.month')}
-          type="month"
+          size="sm"
           value={month}
-          className={`${control} w-36`}
-          onChange={(event) => setMonth(event.target.value)}
+          className="w-40"
+          onValueChange={setMonth}
         />
         <Button size="sm" variant="secondary" onClick={() => setPreviewMonth(month)}>
           {t('perf.preview')}

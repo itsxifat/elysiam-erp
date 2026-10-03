@@ -1,4 +1,4 @@
-import { Button, Dialog, poishaToTaka, takaToPoisha } from '@elysium/ui';
+import { Button, Dialog, Select, controlClassName, poishaToTaka, takaToPoisha } from '@elysium/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useId, useState, type ReactNode } from 'react';
 
@@ -61,8 +61,7 @@ const LABEL: Readonly<Record<OrderTrigger, OrdersMessageKey | null>> = {
 /** The two that move the order straight on; everything else asks something first. */
 const IMMEDIATE: ReadonlySet<OrderTrigger> = new Set(['confirm', 'pack', 'release_hold']);
 
-const control =
-  'h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
+const control = `${controlClassName} w-full disabled:opacity-50`;
 const area =
   'w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
 
@@ -382,19 +381,16 @@ function ActionDialog({
           ? field(
               'code',
               t('orders.action.returnReason'),
-              <select
+              <Select
                 id={`${id}-code`}
                 value={returnReason}
-                className={control}
-                onChange={(event) => setReturnReason(event.target.value as ReturnReason | '')}
-              >
-                <option value="">{t('orders.action.choose')}</option>
-                {RETURN_REASONS.map((code) => (
-                  <option key={code} value={code}>
-                    {t(`orders.reason.${code}` as OrdersMessageKey)}
-                  </option>
-                ))}
-              </select>,
+                placeholder={t('orders.action.choose')}
+                onValueChange={(value) => setReturnReason(value as ReturnReason | '')}
+                options={RETURN_REASONS.map((code) => ({
+                  value: code,
+                  label: t(`orders.reason.${code}` as OrdersMessageKey),
+                }))}
+              />,
             )
           : null}
 

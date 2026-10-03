@@ -71,12 +71,12 @@ export function NotificationInbox() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={name} className="relative">
+        <Button variant="ghost" size="icon-sm" aria-label={name} className="relative">
           <Bell aria-hidden="true" />
           {unread === 0 ? null : (
             <span
               aria-hidden="true"
-              className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-xs leading-none font-medium text-primary-foreground tabular-nums"
+              className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-2xs leading-none font-medium text-primary-foreground tabular-nums"
             >
               {unread > 9 ? '9+' : String(unread)}
             </span>

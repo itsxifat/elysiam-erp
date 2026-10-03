@@ -2,7 +2,9 @@ import {
   DataTable,
   DateTime,
   Money,
+  Monogram,
   PermissionGate,
+  SearchInput,
   dataTableColumns,
   type DataTableColumn,
 } from '@elysium/ui';
@@ -13,7 +15,7 @@ import { useMemo } from 'react';
 import { useAbility } from '../../auth/session.js';
 import { useSchemaSearch } from '../orders/paths.js';
 import { listCustomers, type Customer } from './api.js';
-import { control, CustomersHeader, customersPath, useTableLabels } from './customers-nav.js';
+import { CustomersHeader, customersPath, useTableLabels } from './customers-nav.js';
 import { useCustomersT } from './messages.js';
 import { CUSTOMER_PAGE_SIZE, customerSearchSchema, type CustomerSearch } from './routes.js';
 
@@ -61,15 +63,18 @@ function Customers() {
         cell: (cell) => (
           <Link
             to={customersPath(`/customers/${cell.row.original.id}`)}
-            className="font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="inline-flex items-center gap-2.5 font-medium underline-offset-4 hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
+            <Monogram name={cell.getValue()} size="sm" className="rounded-full" />
             {cell.getValue()}
           </Link>
         ),
       }),
       column.accessor('phone', {
         header: t('customers.col.phone'),
-        cell: (cell) => <span className="tabular-nums">{cell.getValue()}</span>,
+        cell: (cell) => (
+          <span className="text-muted-foreground tabular-nums">{cell.getValue()}</span>
+        ),
       }),
       column.accessor((row) => row.stats.orders, {
         id: 'orders',
@@ -92,7 +97,11 @@ function Customers() {
         header: t('customers.col.lastOrder'),
         cell: (cell) => {
           const value = cell.getValue();
-          return value === null ? '—' : <DateTime value={value} dateOnly />;
+          return value === null ? (
+            '—'
+          ) : (
+            <DateTime value={value} dateOnly className="text-muted-foreground" />
+          );
         },
       }),
     ]);
@@ -102,7 +111,7 @@ function Customers() {
   const labels = useTableLabels(t('customers.emptyTitle'), t('customers.emptyDetail'), search.page);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <CustomersHeader title={t('customers.title')} caption={t('customers.subtitle')} />
       <DataTable
         columns={columns}
@@ -123,12 +132,10 @@ function Customers() {
         caption={t('customers.title')}
         labels={labels}
         toolbar={
-          <input
-            type="search"
+          <SearchInput
             aria-label={t('customers.search')}
             placeholder={t('customers.search')}
             defaultValue={search.q ?? ''}
-            className={`${control} w-64`}
             onChange={(event) => {
               const value = event.target.value.trim();
               // The server needs two characters; one would only flash an error.

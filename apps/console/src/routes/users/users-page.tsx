@@ -5,7 +5,10 @@ import {
   DataTable,
   DateTime,
   Dialog,
+  Monogram,
+  PageHeader,
   PermissionGate,
+  Select,
   StatusBadge,
   dataTableColumns,
   type DataTableColumn,
@@ -48,8 +51,6 @@ import { useUsersT, type UsersMessageKey } from './messages.js';
 const SINGLE_PAGE = { page: 1, pageSize: 500, total: null, hasNext: false } as const;
 const CHECKBOX =
   'size-4 shrink-0 rounded-sm border-input accent-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
-const SELECT =
-  'h-control w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
 
 const STATUS: Record<
   StaffStatus,
@@ -134,15 +135,18 @@ export function UsersPage() {
         cell: (cell) => {
           const row = cell.row.original;
           return (
-            <div className="min-w-0">
-              <p className="flex flex-wrap items-center gap-1.5 font-medium">
-                {row.name}
-                {row.isSelf ? <StatusBadge tone="neutral">{u('users.you')}</StatusBadge> : null}
-                {row.isSuperAdmin ? (
-                  <StatusBadge tone="info">{u('users.superAdmin')}</StatusBadge>
-                ) : null}
-              </p>
-              <p className="truncate text-xs text-muted-foreground">{row.email}</p>
+            <div className="flex min-w-0 items-center gap-3 py-1.5">
+              <Monogram name={row.name} size="md" className="rounded-full" />
+              <div className="min-w-0">
+                <p className="flex flex-wrap items-center gap-1.5 font-medium">
+                  {row.name}
+                  {row.isSelf ? <StatusBadge tone="neutral">{u('users.you')}</StatusBadge> : null}
+                  {row.isSuperAdmin ? (
+                    <StatusBadge tone="info">{u('users.superAdmin')}</StatusBadge>
+                  ) : null}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">{row.email}</p>
+              </div>
             </div>
           );
         },
@@ -244,18 +248,18 @@ export function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">{u('users.title')}</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">{u('users.subtitle')}</p>
-        </div>
-        <PermissionGate allowed={mayInvite}>
-          <Button size="sm" onClick={() => setInviteOpen(true)}>
-            <UserPlus aria-hidden="true" />
-            {u('users.invite')}
-          </Button>
-        </PermissionGate>
-      </header>
+      <PageHeader
+        title={u('users.title')}
+        description={u('users.subtitle')}
+        actions={
+          <PermissionGate allowed={mayInvite}>
+            <Button onClick={() => setInviteOpen(true)}>
+              <UserPlus aria-hidden="true" />
+              {u('users.invite')}
+            </Button>
+          </PermissionGate>
+        }
+      />
 
       <p role="status" aria-live="polite" className={notice === null ? 'sr-only' : NOTICE}>
         {notice ?? ''}
@@ -1038,21 +1042,15 @@ function InviteDialog({
           <label htmlFor="invite-role" className="block text-sm font-medium">
             {u('users.fieldRole')}
           </label>
-          <select
+          <Select
             id="invite-role"
-            className={SELECT}
             value={role}
+            placeholder={u('users.pickRole')}
             aria-invalid={errors.role === undefined ? undefined : true}
             aria-describedby={errors.role === undefined ? undefined : 'invite-role-error'}
-            onChange={(event) => setRole(event.target.value as MembershipRole | '')}
-          >
-            <option value="">{u('users.pickRole')}</option>
-            {orderedRoles().map((option) => (
-              <option key={option} value={option}>
-                {u(roleKey(option))}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => setRole(value as MembershipRole | '')}
+            options={orderedRoles().map((option) => ({ value: option, label: u(roleKey(option)) }))}
+          />
           {errors.role === undefined ? null : (
             <p id="invite-role-error" className="text-xs text-destructive">
               {errors.role}

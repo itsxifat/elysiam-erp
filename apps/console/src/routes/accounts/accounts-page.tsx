@@ -7,6 +7,7 @@ import {
   Form,
   Money,
   MoneyField,
+  PageHeader,
   PermissionGate,
   SelectField,
   StatusBadge,
@@ -17,7 +18,7 @@ import {
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Banknote, Landmark, Smartphone, Wallet } from 'lucide-react';
+import { Banknote, Landmark, Plus, Smartphone, Wallet } from 'lucide-react';
 import { scopeFilterFor, uniformBranchScope } from '@elysium/contracts';
 import { useId, useMemo, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -419,23 +420,24 @@ export function AccountsPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">{a('accounts.title')}</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">{a('accounts.subtitle')}</p>
-        </div>
-        <PermissionGate allowed={mayWrite}>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setClosingOpen(true)}>
-              {a('accounts.countCash')}
-            </Button>
-            <Button size="sm" onClick={() => setEntryDialog(true)}>
-              {a('accounts.recordCash')}
-            </Button>
-          </div>
-        </PermissionGate>
-      </header>
-      <AccountsNav />
+      <PageHeader
+        title={a('accounts.title')}
+        description={a('accounts.subtitle')}
+        actions={
+          <PermissionGate allowed={mayWrite}>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setClosingOpen(true)}>
+                {a('accounts.countCash')}
+              </Button>
+              <Button onClick={() => setEntryDialog(true)}>
+                <Plus aria-hidden="true" />
+                {a('accounts.recordCash')}
+              </Button>
+            </div>
+          </PermissionGate>
+        }
+        tabs={<AccountsNav />}
+      />
 
       {notice === null ? null : (
         <p
@@ -448,18 +450,18 @@ export function AccountsPage() {
 
       <section aria-labelledby="wallets-heading" className="space-y-3">
         <div className="flex items-baseline justify-between gap-4">
-          <h2 id="wallets-heading" className="text-sm font-medium">
+          <h2 id="wallets-heading" className="text-base font-semibold tracking-tight">
             {a('accounts.walletsHeading')}
           </h2>
           <div className="text-right">
             <p className="text-xs text-muted-foreground">{a('accounts.totalCash')}</p>
-            <p className="text-base font-semibold">
-              <Money poisha={walletQuery.data?.totalPoisha ?? '0'} locale={locale} />
+            <p className="text-xl font-medium">
+              <Money poisha={walletQuery.data?.totalPoisha ?? '0'} locale={locale} compact />
             </p>
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {(walletQuery.data?.items ?? []).map((wallet) => (
             <WalletCard key={wallet.id} wallet={wallet} locale={locale} label={a} />
           ))}
@@ -473,10 +475,10 @@ export function AccountsPage() {
 
       {mayReadReports && pnlQuery.data !== undefined ? (
         <section aria-labelledby="pnl-heading" className="space-y-2">
-          <h2 id="pnl-heading" className="text-sm font-medium">
+          <h2 id="pnl-heading" className="text-base font-semibold tracking-tight">
             {a('accounts.pnlHeading')}
           </h2>
-          <dl className="grid gap-3 sm:grid-cols-3">
+          <dl className="grid overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-3 sm:divide-x sm:divide-border">
             <Tile
               label={a('accounts.pnlIncome')}
               poisha={pnlQuery.data.incomePoisha}
@@ -496,7 +498,7 @@ export function AccountsPage() {
       ) : null}
 
       <section aria-labelledby="entries-heading" className="space-y-3">
-        <h2 id="entries-heading" className="text-sm font-medium">
+        <h2 id="entries-heading" className="text-base font-semibold tracking-tight">
           {a('accounts.entriesHeading')}
         </h2>
         <DataTable<CashEntryRow>
@@ -528,7 +530,7 @@ export function AccountsPage() {
       </section>
 
       <section aria-labelledby="closings-heading" className="space-y-3">
-        <h2 id="closings-heading" className="text-sm font-medium">
+        <h2 id="closings-heading" className="text-base font-semibold tracking-tight">
           {a('accounts.closingsHeading')}
         </h2>
         <DataTable<ClosingRow>
@@ -716,10 +718,12 @@ function WalletCard({
   const kindKey = WALLET_LABELS[wallet.subtype];
 
   return (
-    <article className="rounded-md border border-border p-3">
+    <article className="rounded-lg border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
+        <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+            <Icon aria-hidden="true" className="size-4" />
+          </span>
           {/* The wallet's own history: every line, with what it was against. */}
           <Link
             to="/accounts/wallets/$accountId"
@@ -734,12 +738,12 @@ function WalletCard({
           <StatusBadge tone="neutral">{label('accounts.inactive')}</StatusBadge>
         )}
       </div>
-      <p className="mt-0.5 text-xs text-muted-foreground">
+      <p className="mt-2 text-xs text-muted-foreground">
         {kindKey === undefined ? wallet.subtype : label(kindKey)}
         {wallet.accountRefMasked === null ? '' : ` · ${wallet.accountRefMasked}`}
       </p>
-      <p className="mt-2 text-lg font-semibold">
-        <Money poisha={wallet.balancePoisha} locale={locale} />
+      <p className="mt-1 text-xl font-medium">
+        <Money poisha={wallet.balancePoisha} locale={locale} align="start" compact />
       </p>
     </article>
   );
@@ -755,10 +759,10 @@ function Tile({
   readonly locale: 'en' | 'bn';
 }) {
   return (
-    <div className="rounded-md border border-border p-3">
+    <div className="px-5 py-4">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 text-base font-semibold">
-        <Money poisha={poisha} locale={locale} />
+      <dd className="mt-1 text-xl font-medium">
+        <Money poisha={poisha} locale={locale} align="start" compact />
       </dd>
     </div>
   );

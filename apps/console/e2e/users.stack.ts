@@ -137,7 +137,9 @@ test('an admin invites someone, who sets a password from the link and signs in',
   const dialog = admin.getByRole('dialog');
   await dialog.getByLabel('Email').fill(hire.email);
   await dialog.getByLabel('Full name').fill(hire.name);
-  await dialog.getByLabel('Role', { exact: true }).selectOption('sales');
+  // The kit's select since the design refresh (D-443): open it, then choose.
+  await dialog.getByRole('combobox', { name: 'Role', exact: true }).click();
+  await admin.getByRole('option', { name: 'Sales', exact: true }).click();
   await noBlockingViolations(admin, 'invite dialog');
   await shot(admin, 'invite-dialog');
   await dialog.getByRole('button', { name: 'Invite', exact: true }).click();

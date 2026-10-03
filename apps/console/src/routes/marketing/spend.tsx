@@ -3,6 +3,7 @@ import {
   DataTable,
   Money,
   PermissionGate,
+  Select,
   StatusBadge,
   dataTableColumns,
   takaToPoisha,
@@ -18,6 +19,7 @@ import { enterSpend, listSpend, requestImport, spendCampaigns, type SpendRow } f
 import { daysInclusive, dhakaToday, monthStart } from './format.js';
 import { MarketingHeader, PeriodPicker, useMarketingTableLabels } from './marketing-nav.js';
 import { useMarketingT } from './messages.js';
+import { DatePicker } from '../../ui/date-picker.js';
 
 /**
  * Ad spend, one figure per campaign per day (§11; M18 check 2 made visible).
@@ -171,37 +173,28 @@ function Spend() {
         >
           <div className="min-w-48">
             <Field label={t('marketing.col.campaign')} id={`${id}-campaign`}>
-              <select
+              <Select
                 id={`${id}-campaign`}
-                className={control}
                 required
                 value={entry.campaignId}
-                onChange={(event) =>
-                  setEntry((current) => ({ ...current, campaignId: event.target.value }))
+                onValueChange={(value) =>
+                  setEntry((current) => ({ ...current, campaignId: value }))
                 }
-              >
-                <option value="">—</option>
-                {(choices.data?.items ?? [])
-                  .filter((item) => item.status === 'active')
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-              </select>
+                options={[
+                  { value: '', label: '—' },
+                  ...(choices.data?.items ?? [])
+                    .filter((item) => item.status === 'active')
+                    .map((item) => ({ value: item.id, label: item.name })),
+                ]}
+              />
             </Field>
           </div>
           <Field label={t('marketing.col.date')} id={`${id}-date`}>
-            <input
+            <DatePicker
               id={`${id}-date`}
-              type="date"
-              className={`${control} tabular-nums`}
-              required
               max={today}
               value={entry.spendDate}
-              onChange={(event) =>
-                setEntry((current) => ({ ...current, spendDate: event.target.value }))
-              }
+              onValueChange={(next) => setEntry((current) => ({ ...current, spendDate: next }))}
             />
           </Field>
           <div className="w-36">

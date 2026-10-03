@@ -62,15 +62,21 @@ for one brand only, its name is shown without a button.
 
 ## Theme and language
 
-The buttons at the top right of the console:
+The controls at the top right of the console:
 
-- the language button switches between English and Bangla (the console starts in English);
+- **Search or jump to…** (or **Ctrl K**) opens a search box: type a screen ("transfers"), or
+  what you want to do ("new order", "add product", "invite"), and press Enter;
+- the bell shows what is waiting for you;
 - the moon or sun button switches between the dark and light themes;
-- the last button signs you out.
+- the **বাংলা** / **English** button switches the language (the console starts in English);
+- the round button with your initials opens your account menu, with **Sign out**.
+
+The menu on the left groups the screens (Sell, Products and stock, Money, People, Admin). Click
+a group's name to fold it away; the button at the bottom left folds the whole menu to icons.
+Settings is at the bottom of the menu.
 
 The investor portal and the buyers' tracking page start in Bangla, and the language button at
-the top switches them. The till has its own language and theme buttons. In the console,
-**Ctrl K** opens a search box that jumps to any screen you can use.
+the top switches them. The till has its own language and theme buttons.
 
 ## Forgotten password or lost phone
 

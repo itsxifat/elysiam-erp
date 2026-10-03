@@ -4,8 +4,11 @@ import {
   ConfirmDialog,
   DataTable,
   Money,
+  PageHeader,
   PermissionGate,
+  Select,
   StatusBadge,
+  cn,
   dataTableColumns,
   type DataTableColumn,
 } from '@elysium/ui';
@@ -198,17 +201,26 @@ export function ApprovalsPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">{t('approvals.title')}</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">{t('approvals.subtitle')}</p>
-        </div>
-        <StatusBadge tone={status === 'connected' ? 'success' : 'neutral'}>
-          <Radio aria-hidden="true" />
-          {status === 'connected' ? t('approvals.live') : t('approvals.reconnecting')}
-        </StatusBadge>
-      </header>
+    <div className="space-y-6">
+      <PageHeader
+        title={t('approvals.title')}
+        description={t('approvals.subtitle')}
+        meta={
+          <span
+            role="status"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+          >
+            <Radio
+              aria-hidden="true"
+              className={cn(
+                'size-3.5',
+                status === 'connected' ? 'text-success' : 'text-muted-foreground',
+              )}
+            />
+            {status === 'connected' ? t('approvals.live') : t('approvals.reconnecting')}
+          </span>
+        }
+      />
 
       <DataTable<ApprovalRow>
         caption={t('approvals.caption')}
@@ -349,7 +361,7 @@ function useCursorWalk() {
   };
 }
 
-/** A labelled native select for a list filter. Keyboard-native, no popover. */
+/** A list filter: the kit's select, its name printed inside it (D-443). */
 function FilterSelect({
   label,
   value,
@@ -364,20 +376,13 @@ function FilterSelect({
   readonly onChange: (value: string) => void;
 }) {
   return (
-    <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-      {label}
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-control-sm rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      >
-        <option value="">{allLabel}</option>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <Select
+      variant="filter"
+      aria-label={label}
+      value={value}
+      onValueChange={onChange}
+      leading={<span className="text-xs font-medium">{label}</span>}
+      options={[{ value: '', label: allLabel }, ...options]}
+    />
   );
 }

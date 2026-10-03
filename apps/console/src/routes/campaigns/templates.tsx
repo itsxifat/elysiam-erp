@@ -3,6 +3,7 @@ import {
   DataTable,
   Dialog,
   PermissionGate,
+  Select,
   StatusBadge,
   dataTableColumns,
   type DataTableColumn,
@@ -233,18 +234,15 @@ function TemplateDialog({
           />
         </Field>
         <Field label={t('campaigns.templates.col.category')} id={`${id}-category`}>
-          <select
+          <Select
             id={`${id}-category`}
-            className={control}
             value={category}
-            onChange={(event) => setCategory(event.target.value as EditableTemplateCategory)}
-          >
-            {EDITABLE_TEMPLATE_CATEGORIES.map((value) => (
-              <option key={value} value={value}>
-                {t(`campaigns.templates.category.${value}` as CampaignsMessageKey)}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => setCategory(value as EditableTemplateCategory)}
+            options={EDITABLE_TEMPLATE_CATEGORIES.map((value) => ({
+              value,
+              label: t(`campaigns.templates.category.${value}` as CampaignsMessageKey),
+            }))}
+          />
         </Field>
         <div className="sm:col-span-2">
           <Field

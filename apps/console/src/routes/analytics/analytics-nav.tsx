@@ -1,3 +1,11 @@
+import {
+  PageHeader,
+  TabList,
+  cn,
+  controlClassName,
+  tabActiveClassName,
+  tabClassName,
+} from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
 import { Fragment, type ComponentProps, type ReactNode } from 'react';
 
@@ -18,9 +26,8 @@ export function AnalyticsNav() {
   const ability = useAbility();
   const session = useSession();
 
-  const tab =
-    'rounded-md px-2.5 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-  const active = { className: `${tab} bg-muted font-medium text-foreground` };
+  const tab = tabClassName;
+  const active = { className: tabActiveClassName };
 
   const tabs = [
     {
@@ -44,7 +51,7 @@ export function AnalyticsNav() {
   ];
 
   return (
-    <nav aria-label={t('analytics.title')} className="flex flex-wrap gap-1">
+    <TabList label={t('analytics.title')}>
       {tabs
         .filter((entry) => entry.show)
         .map((entry) => (
@@ -58,7 +65,7 @@ export function AnalyticsNav() {
             {entry.label}
           </Link>
         ))}
-    </nav>
+    </TabList>
   );
 }
 
@@ -72,18 +79,12 @@ export function AnalyticsHeader({
   readonly actions?: ReactNode;
 }) {
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="max-w-3xl space-y-1">
-          <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-          <p className="text-sm text-muted-foreground">{caption}</p>
-        </div>
-        {actions === undefined ? null : (
-          <div className="flex flex-wrap items-center gap-2">{actions}</div>
-        )}
-      </header>
-      <AnalyticsNav />
-    </div>
+    <PageHeader
+      title={title}
+      description={caption}
+      {...(actions === undefined ? {} : { actions })}
+      tabs={<AnalyticsNav />}
+    />
   );
 }
 
@@ -97,7 +98,7 @@ export function Section({
 }) {
   return (
     <section aria-label={title} className="rounded-lg border border-border bg-card">
-      <h2 className="border-b border-border px-4 py-2.5 text-sm font-semibold">{title}</h2>
+      <h2 className="px-4 pt-4 pb-3 text-base font-semibold tracking-tight">{title}</h2>
       <div className="overflow-x-auto">{children}</div>
     </section>
   );
@@ -114,9 +115,9 @@ export function Tile({
   readonly hint?: string;
 }) {
   return (
-    <div className="space-y-1 rounded-lg border border-border bg-card p-4">
+    <div className="space-y-1.5 rounded-lg border border-border bg-card p-5">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="text-xl font-semibold tabular-nums">{value}</p>
+      <p className="text-2xl font-medium tabular-nums">{value}</p>
       {hint === undefined ? null : <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
@@ -145,11 +146,14 @@ export function Template({
   );
 }
 
-export const CELL = 'h-row px-4 text-left';
-export const NUMERIC = 'h-row px-4 text-right tabular-nums';
-export const HEAD = 'h-row px-4 text-left text-xs font-medium text-muted-foreground';
-export const HEAD_NUMERIC = 'h-row px-4 text-right text-xs font-medium text-muted-foreground';
-export const INPUT =
-  'h-8 rounded-md border border-border bg-background px-2 text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring';
+export const CELL = 'h-row border-t border-border px-4 text-left whitespace-nowrap';
+export const NUMERIC =
+  'h-row border-t border-border px-4 text-right tabular-nums whitespace-nowrap';
+export const HEAD =
+  'h-9 px-4 text-left text-xs font-medium whitespace-nowrap text-muted-foreground';
+export const HEAD_NUMERIC =
+  'h-9 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground';
+/** The kit's control chrome at the small height, for the date pickers in a header. */
+export const INPUT = cn(controlClassName, 'h-control-sm px-2.5 tabular-nums');
 export const BUTTON =
-  'inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2.5 text-sm font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50';
+  'inline-flex h-control-sm items-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-sm font-medium text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50 [&_svg]:text-muted-foreground';

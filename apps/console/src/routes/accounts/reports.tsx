@@ -1,4 +1,4 @@
-import { Button, Label, Money, PermissionGate, StatusBadge } from '@elysium/ui';
+import { Button, Label, Money, PermissionGate, Select, StatusBadge } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useId } from 'react';
@@ -110,19 +110,20 @@ function BranchSelect({
       <Label htmlFor={id} className="block">
         {a('accounts.reports.branch')}
       </Label>
-      <select
+      <Select
         id={id}
+        size="sm"
+        variant="filter"
         value={value ?? ''}
-        onChange={(event) => onChange(event.target.value === '' ? undefined : event.target.value)}
-        className="h-control-sm rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      >
-        <option value="">{a('accounts.reports.allBranches')}</option>
-        {(branches.data?.items ?? []).map((branch) => (
-          <option key={branch.id} value={branch.id}>
-            {branch.name}
-          </option>
-        ))}
-      </select>
+        onValueChange={(next) => onChange(next === '' ? undefined : next)}
+        options={[
+          { value: '', label: a('accounts.reports.allBranches') },
+          ...(branches.data?.items ?? []).map((branch) => ({
+            value: branch.id,
+            label: branch.name,
+          })),
+        ]}
+      />
     </div>
   );
 }

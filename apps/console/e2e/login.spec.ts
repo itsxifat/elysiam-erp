@@ -210,11 +210,11 @@ test('check 3: an unknown host falls back to the generic login', async ({ page }
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   await expect(page.getByText('Elysium', { exact: true }).first()).toBeVisible();
 
-  // No org, so no override: the shipped accent stays.
+  // No org, so no override: the shipped accent stays (the ink's hue since D-441).
   const hue = await page.evaluate(() =>
     document.documentElement.style.getPropertyValue('--brand-h'),
   );
-  expect(hue).toBe('259');
+  expect(hue).toBe('270');
 });
 
 test('check 6: every mutation carries the CSRF token the server issued', async ({ page }) => {
@@ -310,8 +310,11 @@ test('a user with one org never sees a switcher', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Switch organisation' })).toHaveCount(0);
-  // It still says where you are — it just is not a control.
-  await expect(page.getByRole('banner').getByText('Oura', { exact: true })).toBeVisible();
+  // It still says where you are — it just is not a control. The brand heads the sidebar
+  // since the design refresh (D-449).
+  await expect(
+    page.getByRole('complementary', { name: 'Workspace' }).getByText('Oura', { exact: true }),
+  ).toBeVisible();
 });
 
 test('the login is operable from the keyboard alone', async ({ page }) => {

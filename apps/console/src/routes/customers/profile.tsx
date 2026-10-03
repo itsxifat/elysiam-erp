@@ -20,8 +20,12 @@ import { paramOf } from '../courier/courier-nav.js';
 import { isOrdersKey, useOrdersT } from '../orders/messages.js';
 import { ordersPath } from '../orders/paths.js';
 import { buyerProfile, updateOccasions, type BuyerProfile } from './api.js';
-import { control, customersPath } from './customers-nav.js';
+import { customersPath } from './customers-nav.js';
 import { isCustomersKey, useCustomersT } from './messages.js';
+import { DatePicker } from '../../ui/date-picker.js';
+
+/** A birthday or an anniversary can be decades back: the calendar lists the years. */
+const OCCASION_YEARS = { from: 1930, to: new Date().getUTCFullYear() } as const;
 
 /**
  * One buyer's profile (M16; §10 "Buyer stats").
@@ -457,24 +461,24 @@ function OccasionDates({ customer }: { readonly customer: BuyerProfile['customer
           <span className="block text-xs font-medium text-muted-foreground">
             {t('customers.occasion.birthday')}
           </span>
-          <input
+          <DatePicker
             id={`${id}-birthday`}
-            type="date"
-            className={`${control} w-full`}
             value={birthday}
-            onChange={(event) => setBirthday(event.target.value)}
+            clearable
+            years={OCCASION_YEARS}
+            onValueChange={setBirthday}
           />
         </label>
         <label htmlFor={`${id}-anniversary`} className="space-y-1">
           <span className="block text-xs font-medium text-muted-foreground">
             {t('customers.occasion.anniversary')}
           </span>
-          <input
+          <DatePicker
             id={`${id}-anniversary`}
-            type="date"
-            className={`${control} w-full`}
             value={anniversary}
-            onChange={(event) => setAnniversary(event.target.value)}
+            clearable
+            years={OCCASION_YEARS}
+            onValueChange={setAnniversary}
           />
         </label>
       </div>

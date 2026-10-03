@@ -7,7 +7,7 @@ import {
   type RecoveryCode,
   type TotpCode,
 } from '@elysium/contracts';
-import { Button, Skeleton } from '@elysium/ui';
+import { Button, Checkbox, Skeleton } from '@elysium/ui';
 import { Check, Copy, Download, KeyRound, Landmark, ShieldCheck } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
@@ -73,23 +73,24 @@ export function SignIn({
         : t('auth.twoFactor.title');
 
   return (
-    <div className="grid min-h-[calc(100dvh-3.5rem)] place-items-center bg-muted px-4 py-10">
+    <div className="grid min-h-[calc(100dvh-3.5rem)] place-items-center px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center gap-3 text-center">
           <div
             aria-hidden="true"
-            className="grid size-10 place-items-center rounded-md bg-primary text-primary-foreground"
+            className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground"
           >
             <Landmark className="size-5" />
           </div>
-          <div>
+          <div className="space-y-0.5">
             <p className="text-sm font-semibold tracking-tight">{t('portal.investor.title')}</p>
             <p className="text-xs text-muted-foreground">{t('portal.investor.subtitle')}</p>
           </div>
         </div>
 
-        <div className="mt-6 rounded-lg border border-border bg-card p-6 text-card-foreground shadow-popover">
-          <h1 className="text-base font-semibold tracking-tight">{heading}</h1>
+        {/* A card on the canvas: a hairline, no shadow (D-459). */}
+        <div className="mt-8 rounded-xl border border-border bg-card p-7 text-card-foreground">
+          <h1 className="text-lg font-semibold tracking-tight">{heading}</h1>
 
           {step === 'credentials' ? (
             <CredentialsStep
@@ -382,11 +383,10 @@ function EnrolStep({
             {t('auth.enrol.download')}
           </Button>
           <label className="flex cursor-pointer items-start gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={acknowledged}
-              onChange={(event) => setAcknowledged(event.target.checked)}
-              className={`mt-px size-4 shrink-0 rounded-sm border-input accent-primary ${FOCUS}`}
+              onCheckedChange={(state) => setAcknowledged(state === true)}
+              className="mt-px"
             />
             <span>{t('auth.enrol.acknowledge')}</span>
           </label>

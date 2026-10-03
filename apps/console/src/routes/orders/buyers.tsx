@@ -2,8 +2,12 @@ import {
   DataTable,
   DateTime,
   PermissionGate,
+  Select,
+  controlClassName,
   dataTableColumns,
   type DataTableColumn,
+  PageHeader,
+  buttonVariants,
 } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -23,6 +27,7 @@ import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { OrdersNav } from './parts.js';
 import { ordersPath, useSchemaSearch } from './paths.js';
 import { BUYER_PAGE_SIZE, buyerSearchSchema, type BuyerSearch } from './search.js';
+import { DateRangePicker } from '../../ui/date-picker.js';
 
 /**
  * The buyer list and its export (M11 Build list; acceptance check 2).
@@ -36,8 +41,7 @@ import { BUYER_PAGE_SIZE, buyerSearchSchema, type BuyerSearch } from './search.j
  * The export is a link, not a script download: the browser saves the file the server names,
  * with the cookie it already has, and the server logs who took which list.
  */
-const INPUT =
-  'h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring';
+const INPUT = controlClassName;
 
 export function BuyerListPage() {
   const ability = useAbility();
@@ -116,37 +120,36 @@ function Buyers() {
 
   return (
     <div className="space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">{t('orders.buyers.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('orders.buyers.subtitle')}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            className="text-sm text-muted-foreground tabular-nums"
-            role="status"
-            data-testid="buyer-count"
-          >
-            {total === null ? '—' : `${String(total)} ${t('orders.buyers.count')}`}
-          </span>
-          <a
-            href={buyersExportUrl(filters, 'csv')}
-            className="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2.5 text-sm font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          >
-            <Download aria-hidden="true" className="size-4" />
-            {t('orders.buyers.exportCsv')}
-          </a>
-          <a
-            href={buyersExportUrl(filters, 'xlsx')}
-            className="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2.5 text-sm font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          >
-            <Download aria-hidden="true" className="size-4" />
-            {t('orders.buyers.exportXlsx')}
-          </a>
-        </div>
-      </header>
-
-      <OrdersNav />
+      <PageHeader
+        title={t('orders.buyers.title')}
+        description={t('orders.buyers.subtitle')}
+        tabs={<OrdersNav />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className="text-sm text-muted-foreground tabular-nums"
+              role="status"
+              data-testid="buyer-count"
+            >
+              {total === null ? '—' : `${String(total)} ${t('orders.buyers.count')}`}
+            </span>
+            <a
+              href={buyersExportUrl(filters, 'csv')}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              <Download aria-hidden="true" />
+              {t('orders.buyers.exportCsv')}
+            </a>
+            <a
+              href={buyersExportUrl(filters, 'xlsx')}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              <Download aria-hidden="true" />
+              {t('orders.buyers.exportXlsx')}
+            </a>
+          </div>
+        }
+      />
 
       <DataTable
         columns={columns}
@@ -197,39 +200,29 @@ function Buyers() {
                 onChange={(event) => update({ [name]: event.target.value.trim() || undefined })}
               />
             ))}
-            <select
+            <Select
+              variant="filter"
               aria-label={t('orders.col.channel')}
               value={search.channel ?? ''}
-              className={INPUT}
-              onChange={(event) =>
-                update({ channel: (event.target.value || undefined) as OrderChannel | undefined })
+              onValueChange={(value) =>
+                update({ channel: (value || undefined) as OrderChannel | undefined })
               }
-            >
-              <option value="">{t('orders.filter.allChannels')}</option>
-              {ORDER_CHANNELS.map((channel) => (
-                <option key={channel} value={channel}>
-                  {t(`orders.channel.${channel}` as OrdersMessageKey)}
-                </option>
-              ))}
-            </select>
-            <label className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-              {t('orders.filter.from')}
-              <input
-                type="date"
-                value={search.from ?? ''}
-                className={INPUT}
-                onChange={(event) => update({ from: event.target.value || undefined })}
-              />
-            </label>
-            <label className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-              {t('orders.filter.to')}
-              <input
-                type="date"
-                value={search.to ?? ''}
-                className={INPUT}
-                onChange={(event) => update({ to: event.target.value || undefined })}
-              />
-            </label>
+              options={[
+                { value: '', label: t('orders.filter.allChannels') },
+                ...ORDER_CHANNELS.map((channel) => ({
+                  value: channel,
+                  label: t(`orders.channel.${channel}` as OrdersMessageKey),
+                })),
+              ]}
+            />
+            <DateRangePicker
+              aria-label={`${t('orders.filter.from')} – ${t('orders.filter.to')}`}
+              value={{ from: search.from ?? '', to: search.to ?? '' }}
+              clearable
+              onValueChange={(range) =>
+                update({ from: range.from || undefined, to: range.to || undefined })
+              }
+            />
           </div>
         }
       />

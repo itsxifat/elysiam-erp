@@ -1,3 +1,4 @@
+import { cn, controlClassName } from '@elysium/ui';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import {
   forwardRef,
@@ -84,9 +85,12 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
         id={fieldId}
         aria-invalid={error === undefined ? undefined : true}
         aria-describedby={describedBy === '' ? undefined : describedBy}
-        className={`h-(--control-height) w-full rounded-md border bg-background px-3 text-sm text-foreground transition-colors placeholder:text-muted-foreground ${FOCUS_RING} ${
-          error === undefined ? 'border-input' : 'border-destructive'
-        } ${className}`}
+        className={cn(
+          controlClassName,
+          'w-full',
+          error === undefined ? null : 'border-destructive',
+          className,
+        )}
         {...rest}
       />
       {hint === undefined ? null : (

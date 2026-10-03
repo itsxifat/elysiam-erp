@@ -1,11 +1,10 @@
-import * as SelectPrimitive from '@radix-ui/react-select';
-import { Check, ChevronDown, Loader2 } from 'lucide-react';
+import { Check, Loader2 } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useController, useFormContext, type FieldPath, type FieldValues } from 'react-hook-form';
 
 import { FormField } from './form.js';
 import { Input } from './input.js';
-import { cn } from '../lib/cn.js';
+import { Select, type SelectOption } from './select.js';
 
 /**
  * The five field types every module screen needs (M05 Build list).
@@ -323,11 +322,7 @@ export function DateField<TValues extends FieldValues>({
 
 // --- select -----------------------------------------------------------------
 
-export interface SelectOption {
-  readonly value: string;
-  readonly label: string;
-  readonly disabled?: boolean;
-}
+export type { SelectOption } from './select.js';
 
 export function SelectField<TValues extends FieldValues>({
   name,
@@ -353,59 +348,17 @@ export function SelectField<TValues extends FieldValues>({
       {...(className === undefined ? {} : { className })}
     >
       {(rendered) => (
-        <SelectPrimitive.Root
+        <Select
+          id={rendered.id}
+          aria-describedby={rendered['aria-describedby']}
+          aria-invalid={rendered['aria-invalid']}
+          aria-errormessage={rendered['aria-errormessage']}
           value={typeof field.value === 'string' ? field.value : ''}
           onValueChange={field.onChange}
+          options={options}
+          placeholder={placeholder}
           {...(disabled === true ? { disabled: true } : {})}
-        >
-          <SelectPrimitive.Trigger
-            id={rendered.id}
-            aria-describedby={rendered['aria-describedby']}
-            aria-invalid={rendered['aria-invalid']}
-            aria-errormessage={rendered['aria-errormessage']}
-            className={cn(
-              'flex h-control w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 text-sm',
-              'motion-safe:duration-fast motion-safe:transition-colors motion-safe:ease-out',
-              'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
-              'disabled:cursor-not-allowed disabled:opacity-60',
-              'aria-invalid:border-destructive',
-              'data-placeholder:text-muted-foreground',
-            )}
-          >
-            <SelectPrimitive.Value placeholder={placeholder} />
-            <SelectPrimitive.Icon>
-              <ChevronDown aria-hidden="true" className="size-4 text-muted-foreground" />
-            </SelectPrimitive.Icon>
-          </SelectPrimitive.Trigger>
-
-          <SelectPrimitive.Portal>
-            <SelectPrimitive.Content
-              position="popper"
-              sideOffset={4}
-              className="z-50 max-h-72 min-w-(--radix-select-trigger-width) overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-popover"
-            >
-              <SelectPrimitive.Viewport className="p-1">
-                {options.map((option) => (
-                  <SelectPrimitive.Item
-                    key={option.value}
-                    value={option.value}
-                    {...(option.disabled === true ? { disabled: true } : {})}
-                    className={cn(
-                      'flex h-control-sm cursor-pointer items-center justify-between gap-2 rounded-sm px-2 text-sm outline-none',
-                      'data-highlighted:bg-accent data-highlighted:text-accent-foreground',
-                      'data-disabled:pointer-events-none data-disabled:opacity-50',
-                    )}
-                  >
-                    <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
-                    <SelectPrimitive.ItemIndicator>
-                      <Check aria-hidden="true" className="size-4" />
-                    </SelectPrimitive.ItemIndicator>
-                  </SelectPrimitive.Item>
-                ))}
-              </SelectPrimitive.Viewport>
-            </SelectPrimitive.Content>
-          </SelectPrimitive.Portal>
-        </SelectPrimitive.Root>
+        />
       )}
     </FormField>
   );

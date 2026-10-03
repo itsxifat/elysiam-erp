@@ -3,6 +3,7 @@ import {
   DateTime,
   Money,
   PermissionGate,
+  Select,
   dataTableColumns,
   type DataTableColumn,
 } from '@elysium/ui';
@@ -213,21 +214,21 @@ function Lapsed() {
                 }}
               />
             </label>
-            <select
+            <Select
+              variant="filter"
               aria-label={t('customers.col.segment')}
               value={search.segment ?? ''}
-              className={control}
-              onChange={(event) =>
-                update({ segment: (event.target.value || undefined) as RfmSegment | undefined })
+              onValueChange={(value) =>
+                update({ segment: (value || undefined) as RfmSegment | undefined })
               }
-            >
-              <option value="">{t('customers.lapsed.allSegments')}</option>
-              {RFM_SEGMENTS.map((segment) => (
-                <option key={segment} value={segment}>
-                  {segmentLabel(segment)}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: t('customers.lapsed.allSegments') },
+                ...RFM_SEGMENTS.map((segment) => ({
+                  value: segment,
+                  label: segmentLabel(segment),
+                })),
+              ]}
+            />
             {lapsed.data === undefined ? null : (
               <span className="text-xs text-muted-foreground">
                 {t('customers.lapsed.cutoff')}{' '}

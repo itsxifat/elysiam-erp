@@ -28,8 +28,8 @@ export function PopoverContent({
         align={align}
         sideOffset={sideOffset}
         className={cn(
-          'z-50 rounded-lg border border-border bg-popover text-popover-foreground shadow-dialog outline-none',
-          'motion-safe:duration-base motion-safe:ease-out',
+          'z-50 rounded-lg border border-border bg-popover text-popover-foreground shadow-popover outline-none',
+          'motion-safe:animate-in',
           className,
         )}
         {...props}

@@ -18,6 +18,12 @@ export interface FormatMoneyOptions {
   readonly locale?: Locale;
   /** Omit the ৳ sign, for table cells whose header already names the currency. */
   readonly symbol?: boolean;
+  /**
+   * Drop ".00" from a whole-taka amount (৳8,440, not ৳8,440.00) for a KPI or a summary
+   * figure (D-455). An amount with paisa keeps both digits, so nothing is ever rounded;
+   * tables, ledgers and forms keep the default, full precision.
+   */
+  readonly trimWholePaisa?: boolean;
 }
 
 function toPoisha(value: bigint | number | string): bigint {
@@ -53,7 +59,8 @@ export function formatMoney(
   const whole = groupSouthAsian((magnitude / 100n).toString());
   const fraction = (magnitude % 100n).toString().padStart(2, '0');
   const symbol = options.symbol === false ? '' : '৳';
-  const text = `${negative ? '-' : ''}${symbol}${whole}.${fraction}`;
+  const paisa = options.trimWholePaisa === true && fraction === '00' ? '' : `.${fraction}`;
+  const text = `${negative ? '-' : ''}${symbol}${whole}${paisa}`;
 
   return localiseDigits(text, options.locale ?? 'en');
 }

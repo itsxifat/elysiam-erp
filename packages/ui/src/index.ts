@@ -69,7 +69,67 @@ export {
   Spinner,
 } from './components/states.js';
 
-export { Input, Label, type InputProps, type LabelProps } from './components/input.js';
+export {
+  Input,
+  Label,
+  controlClassName,
+  type InputProps,
+  type LabelProps,
+} from './components/input.js';
+export { Select, SelectContent, SelectItem, type SelectProps } from './components/select.js';
+export {
+  SearchInput,
+  FilterChips,
+  type ActiveFilter,
+  type SearchInputProps,
+} from './components/filters.js';
+export {
+  Card,
+  DescriptionList,
+  Hint,
+  Kbd,
+  Monogram,
+  PageHeader,
+  Section,
+  TabList,
+  Toolbar,
+  initials,
+  tabActiveClassName,
+  tabClassName,
+  type PageHeaderProps,
+} from './components/layout.js';
+export {
+  Delta,
+  MetricList,
+  Sparkline,
+  StatCard,
+  type StatCardProps,
+  type StatDelta,
+} from './components/stat.js';
+export { Sheet, type SheetProps } from './components/sheet.js';
+export { Checkbox, type CheckboxProps } from './components/checkbox.js';
+export {
+  DatePicker,
+  DateRangePicker,
+  MonthPicker,
+  type DatePickerLabels,
+  type DatePickerProps,
+  type DateRange,
+  type DateRangePickerProps,
+  type MonthPickerProps,
+  type PickerLocale,
+  type RangePreset,
+  type YearSpan,
+} from './components/date-picker.js';
+export {
+  Menu,
+  MenuContent,
+  MenuGroup,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+  MenuTrigger,
+} from './components/menu.js';
 export {
   Dialog,
   ConfirmDialog,

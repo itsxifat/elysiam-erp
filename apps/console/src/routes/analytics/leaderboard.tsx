@@ -10,7 +10,6 @@ import {
   CELL,
   HEAD,
   HEAD_NUMERIC,
-  INPUT,
   NUMERIC,
   Section,
   Template,
@@ -23,6 +22,7 @@ import {
 } from './api.js';
 import { dhakaToday, duration, percent, roas, signedPercent } from './format.js';
 import { fill, useAnalyticsT, type AnalyticsMessageKey } from './messages.js';
+import { MonthPicker } from '../../ui/date-picker.js';
 
 const METRIC_LABEL: Readonly<Record<LeaderboardMetric, AnalyticsMessageKey>> = {
   revenueGrowth: 'analytics.metric.revenueGrowth',
@@ -101,13 +101,13 @@ function Board() {
             <label htmlFor={`${id}-month`} className="text-xs font-medium text-muted-foreground">
               {t('analytics.leaderboard.month')}
             </label>
-            <input
+            <MonthPicker
               id={`${id}-month`}
-              type="month"
-              className={INPUT}
+              size="sm"
+              className="w-44"
               value={month}
-              onChange={(event) => {
-                if (/^\d{4}-\d{2}$/.test(event.target.value)) setMonth(event.target.value);
+              onValueChange={(next) => {
+                if (/^\d{4}-\d{2}$/.test(next)) setMonth(next);
               }}
             />
           </>

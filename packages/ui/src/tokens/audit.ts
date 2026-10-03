@@ -156,11 +156,55 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
     minimum: 4.5,
     label: 'informational status badge',
   },
+  // The design refresh's surfaces (D-440): the chrome's ground, the selected entry and the
+  // accent tint. Each carries text, so each holds body-text contrast.
+  {
+    foreground: '--canvas-foreground',
+    background: '--canvas',
+    minimum: 4.5,
+    label: 'navigation text on the sidebar',
+  },
+  {
+    foreground: '--muted-foreground',
+    background: '--canvas',
+    minimum: 4.5,
+    label: 'navigation group label on the sidebar',
+  },
+  {
+    foreground: '--muted-foreground',
+    background: '--card',
+    minimum: 4.5,
+    label: 'secondary text inside a card',
+  },
+  {
+    foreground: '--selected-foreground',
+    background: '--selected',
+    minimum: 4.5,
+    label: 'the active navigation entry or a chosen filter',
+  },
+  {
+    foreground: '--muted-foreground',
+    background: '--accent',
+    minimum: 4.5,
+    label: 'secondary text on a hovered row',
+  },
+  {
+    foreground: '--primary-text',
+    background: '--primary-subtle',
+    minimum: 4.5,
+    label: 'a selected tab or chip on the accent tint',
+  },
   {
     foreground: '--border',
     background: '--background',
     minimum: 1.3,
     label: 'hairline separating regions is actually visible',
+  },
+  {
+    foreground: '--input',
+    background: '--background',
+    minimum: 1.5,
+    label: "a field's edge reads as a field",
   },
   {
     foreground: '--ring',

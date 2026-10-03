@@ -126,10 +126,11 @@ test('cash in, then a transfer with a bank charge, moves both wallets exactly', 
   await expect(page.getByRole('heading', { name: 'Transfers', level: 1 })).toBeVisible();
   await noBlockingViolations('transfers');
 
+  // The wallet pickers are the kit's select since the design refresh (D-443): open the
+  // list, then choose the wallet by its code.
   const pick = async (label: string, code: string) => {
-    const select = page.getByLabel(label);
-    const value = await select.locator('option', { hasText: code }).getAttribute('value');
-    await select.selectOption(value ?? '');
+    await page.getByRole('combobox', { name: label }).click();
+    await page.getByRole('option', { name: new RegExp(code) }).click();
   };
   await pick('From wallet', '1010-HQ');
   await pick('To wallet', '1100');

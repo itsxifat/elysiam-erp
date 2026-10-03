@@ -1,9 +1,9 @@
-import { Button, EmptyState, ErrorState, PermissionGate } from '@elysium/ui';
+import { Button, EmptyState, ErrorState, PageHeader, PermissionGate } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
-import { control, Field } from './hr-nav.js';
+import { Field } from './hr-nav.js';
 import { getMyPerformance, type Target } from './performance-api.js';
 import { usePerfT } from './performance-messages.js';
 import {
@@ -14,6 +14,7 @@ import {
   ProgressBar,
   TargetFigure,
 } from './performance-shared.js';
+import { MonthPicker } from '../../ui/date-picker.js';
 
 /**
  * The agent's own dashboard (M20): this month's targets, week by week, and their own desk
@@ -43,22 +44,15 @@ export function MyPerformancePage() {
       explain={{ title: t('perf.deniedTitle'), detail: t('perf.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{t('perf.myTitle')}</h1>
-          <p className="text-sm text-muted-foreground">{t('perf.myHint')}</p>
-        </header>
-
-        <PerformanceNav />
+        <PageHeader
+          title={t('perf.myTitle')}
+          description={t('perf.myHint')}
+          tabs={<PerformanceNav />}
+        />
 
         <div className="w-40">
           <Field label={t('perf.month')} id="me-month">
-            <input
-              id="me-month"
-              type="month"
-              value={month}
-              className={control}
-              onChange={(event) => setMonth(event.target.value)}
-            />
+            <MonthPicker id="me-month" value={month} onValueChange={setMonth} />
           </Field>
         </div>
 

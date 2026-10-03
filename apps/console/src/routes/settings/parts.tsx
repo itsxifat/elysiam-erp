@@ -1,4 +1,13 @@
-import { Button, EmptyState, ErrorState, PermissionGate, Skeleton } from '@elysium/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  PermissionGate,
+  Skeleton,
+  PageHeader,
+  controlClassName,
+  cn,
+} from '@elysium/ui';
 import { Link, Navigate } from '@tanstack/react-router';
 import type { ComponentProps, ReactNode } from 'react';
 
@@ -19,8 +28,7 @@ import { visibleTabs, type SettingsTab } from './tabs.js';
 export type SettingsPath = ComponentProps<typeof Link>['to'];
 export const settingsPath = (path: string): SettingsPath => path;
 
-export const control =
-  'h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
+export const control = `${controlClassName} w-full disabled:opacity-50`;
 
 export function SettingsPage({
   tab,
@@ -33,32 +41,41 @@ export function SettingsPage({
   const ability = useAbility();
   const tabs = visibleTabs(ability);
   const allowed = tabs.some((entry) => entry.path === tab);
-  const tabClass =
-    'rounded-md px-2.5 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  // Settings reads like a settings screen (D-454): its sections down the left, the one
+  // being edited beside them at a form's measure, rather than a strip of tabs.
+  const itemClass = cn(
+    'flex h-8 items-center rounded-md px-2.5 text-sm text-muted-foreground',
+    'motion-safe:duration-fast hover:bg-accent hover:text-foreground motion-safe:transition-colors',
+    'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+    'aria-[current=page]:bg-selected aria-[current=page]:font-medium aria-[current=page]:text-selected-foreground',
+  );
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-lg font-semibold tracking-tight">{t('settings.title')}</h1>
-      {tabs.length === 0 ? null : (
-        <nav aria-label={t('settings.title')} className="flex flex-wrap gap-1">
-          {tabs.map((entry) => (
-            <Link
-              key={entry.path}
-              to={settingsPath(entry.path)}
-              className={tabClass}
-              activeProps={{ className: `${tabClass} bg-muted font-medium text-foreground` }}
-            >
-              {t(entry.labelKey)}
-            </Link>
-          ))}
-        </nav>
-      )}
-      <PermissionGate
-        allowed={allowed}
-        explain={{ title: t('settings.deniedTitle'), detail: t('settings.deniedDetail') }}
-      >
-        {children}
-      </PermissionGate>
+    <div className="space-y-6">
+      <PageHeader title={t('settings.title')} />
+      <div className="grid gap-8 md:grid-cols-[13rem_minmax(0,1fr)]">
+        {tabs.length === 0 ? null : (
+          <nav aria-label={t('settings.title')} className="md:sticky md:top-20 md:self-start">
+            <ul className="flex gap-1 overflow-x-auto md:flex-col">
+              {tabs.map((entry) => (
+                <li key={entry.path} className="shrink-0">
+                  <Link to={settingsPath(entry.path)} className={itemClass}>
+                    {t(entry.labelKey)}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+        <div className="max-w-form min-w-0 space-y-5">
+          <PermissionGate
+            allowed={allowed}
+            explain={{ title: t('settings.deniedTitle'), detail: t('settings.deniedDetail') }}
+          >
+            {children}
+          </PermissionGate>
+        </div>
+      </div>
     </div>
   );
 }
@@ -70,8 +87,8 @@ export function SettingsIndexPage() {
   const [first] = visibleTabs(ability);
   if (first !== undefined) return <Navigate to={settingsPath(first.path)} replace />;
   return (
-    <div className="space-y-5">
-      <h1 className="text-lg font-semibold tracking-tight">{t('settings.title')}</h1>
+    <div className="space-y-6">
+      <PageHeader title={t('settings.title')} />
       <PermissionGate
         allowed={false}
         explain={{ title: t('settings.deniedTitle'), detail: t('settings.deniedDetail') }}
@@ -154,6 +171,6 @@ export function messageOf(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-export const tableClass = 'w-full text-sm';
+export const tableClass = 'w-full text-sm [&_td]:pr-3 [&_th]:h-9 [&_th]:pr-3';
 export const headClass = 'border-b border-border text-left text-xs text-muted-foreground';
-export const rowClass = 'h-row border-b border-border last:border-b-0';
+export const rowClass = 'h-row border-b border-border last:border-b-0 hover:bg-accent/40';

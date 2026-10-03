@@ -1,3 +1,4 @@
+import { TabList, controlClassName, tabActiveClassName, tabClassName } from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
 import type { ComponentProps } from 'react';
 
@@ -45,12 +46,11 @@ export function HrNav() {
   const ability = useAbility();
   const mayReadPayroll = ability.can('read', 'Payroll');
 
-  const tab =
-    'rounded-md px-2.5 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-  const active = { className: `${tab} bg-muted font-medium text-foreground` };
+  const tab = tabClassName;
+  const active = { className: tabActiveClassName };
 
   return (
-    <nav aria-label={t('hr.people')} className="flex flex-wrap gap-1">
+    <TabList label={t('hr.people')}>
       <Link
         to={hrPath('/people')}
         className={tab}
@@ -77,7 +77,7 @@ export function HrNav() {
           </Link>
         </>
       ) : null}
-    </nav>
+    </TabList>
   );
 }
 
@@ -94,11 +94,11 @@ export function Field({
   readonly children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       {/* `block`: a <label> is inline, so beside a fixed-width control (the filter row)
           it sat on the same line touching the input — unreadable in Bangla, where the
           labels run longer. Full-width grid controls hid it by wrapping. */}
-      <label htmlFor={id} className="block text-xs font-medium text-muted-foreground">
+      <label htmlFor={id} className="block text-sm font-medium text-foreground">
         {label}
       </label>
       {children}
@@ -107,9 +107,12 @@ export function Field({
   );
 }
 
-/** The one input class the HR forms share, so density stays consistent (§24). */
-export const control =
-  'h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
+/**
+ * The one input class the HR forms share, so density stays consistent (§24): the kit's
+ * control chrome (36px, the accent edge and halo on focus), the same as every Select
+ * beside it (D-440).
+ */
+export const control = `${controlClassName} w-full disabled:opacity-50`;
 
 export const numericControl = `${control} tabular-nums text-right`;
 

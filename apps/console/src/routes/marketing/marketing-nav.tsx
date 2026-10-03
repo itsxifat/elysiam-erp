@@ -1,8 +1,10 @@
+import { PageHeader, TabList, tabActiveClassName, tabClassName } from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
 import type { ComponentProps, ReactNode } from 'react';
 
 import { useAbility } from '../../auth/session.js';
 import { useMarketingT } from './messages.js';
+import { DateRangePicker } from '../../ui/date-picker.js';
 
 /** A marketing path, widened once until the routes are in the router's type (see `courierPath`). */
 export type MarketingPath = ComponentProps<typeof Link>['to'];
@@ -19,9 +21,8 @@ export function MarketingNav() {
   const ability = useAbility();
   const campaign = ability.can('read', 'Campaign');
 
-  const tab =
-    'rounded-md px-2.5 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-  const active = { className: `${tab} bg-muted font-medium text-foreground` };
+  const tab = tabClassName;
+  const active = { className: tabActiveClassName };
 
   const tabs = [
     { path: '/marketing', label: t('marketing.nav.dashboard'), show: campaign, exact: true },
@@ -48,7 +49,7 @@ export function MarketingNav() {
   ];
 
   return (
-    <nav aria-label={t('marketing.title')} className="flex flex-wrap gap-1">
+    <TabList label={t('marketing.title')}>
       {tabs
         .filter((entry) => entry.show)
         .map((entry) => (
@@ -62,7 +63,7 @@ export function MarketingNav() {
             {entry.label}
           </Link>
         ))}
-    </nav>
+    </TabList>
   );
 }
 
@@ -76,18 +77,12 @@ export function MarketingHeader({
   readonly actions?: ReactNode;
 }) {
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="max-w-3xl space-y-1">
-          <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-          <p className="text-sm text-muted-foreground">{caption}</p>
-        </div>
-        {actions === undefined ? null : (
-          <div className="flex flex-wrap items-center gap-2">{actions}</div>
-        )}
-      </header>
-      <MarketingNav />
-    </div>
+    <PageHeader
+      title={title}
+      description={caption}
+      {...(actions === undefined ? {} : { actions })}
+      tabs={<MarketingNav />}
+    />
   );
 }
 
@@ -122,36 +117,16 @@ export function PeriodPicker({
   readonly idPrefix: string;
 }) {
   const t = useMarketingT();
-  const input =
-    'h-8 rounded-md border border-border bg-background px-2 text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  // One control for the period (D-459): the start and the end, or a preset.
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <label htmlFor={`${idPrefix}-from`} className="text-xs font-medium text-muted-foreground">
-        {t('marketing.period.from')}
-      </label>
-      <input
-        id={`${idPrefix}-from`}
-        type="date"
-        className={input}
-        value={from}
-        max={to}
-        onChange={(event) => {
-          if (event.target.value !== '') onChange({ from: event.target.value, to });
-        }}
-      />
-      <label htmlFor={`${idPrefix}-to`} className="text-xs font-medium text-muted-foreground">
-        {t('marketing.period.to')}
-      </label>
-      <input
-        id={`${idPrefix}-to`}
-        type="date"
-        className={input}
-        value={to}
-        min={from}
-        onChange={(event) => {
-          if (event.target.value !== '') onChange({ from, to: event.target.value });
-        }}
-      />
-    </div>
+    <DateRangePicker
+      id={`${idPrefix}-period`}
+      size="sm"
+      aria-label={`${t('marketing.period.from')} – ${t('marketing.period.to')}`}
+      value={{ from, to }}
+      onValueChange={(range) => {
+        if (range.from !== '' && range.to !== '') onChange(range);
+      }}
+    />
   );
 }

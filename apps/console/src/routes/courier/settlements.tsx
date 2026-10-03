@@ -5,6 +5,7 @@ import {
   ErrorState,
   Money,
   PermissionGate,
+  Select,
   Skeleton,
   StatusBadge,
 } from '@elysium/ui';
@@ -16,7 +17,7 @@ import { useState } from 'react';
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { fetchRuns, fetchSettlements, listAccounts, listSettlements } from './api.js';
-import { control, courierPath, CourierHeader } from './courier-nav.js';
+import { courierPath, CourierHeader } from './courier-nav.js';
 import { SETTLEMENT_TONE } from './courier-ui.js';
 import { useCourierT, type CourierMessageKey } from './messages.js';
 
@@ -92,21 +93,18 @@ export function CourierSettlementsPage() {
           actions={
             mayFetch ? (
               <div className="flex items-center gap-2">
-                <select
+                <Select
+                  variant="filter"
                   aria-label={t('courier.colCourier')}
                   value={courierId}
-                  className={`${control} w-48`}
-                  onChange={(event) => setCourierId(event.target.value)}
-                >
-                  <option value="">{t('courier.allCouriers')}</option>
-                  {(accounts.data?.items ?? [])
-                    .filter((account) => account.isActive)
-                    .map((account) => (
-                      <option key={account.id} value={account.courierId}>
-                        {account.label}
-                      </option>
-                    ))}
-                </select>
+                  onValueChange={setCourierId}
+                  options={[
+                    { value: '', label: t('courier.allCouriers') },
+                    ...(accounts.data?.items ?? [])
+                      .filter((account) => account.isActive)
+                      .map((account) => ({ value: account.courierId, label: account.label })),
+                  ]}
+                />
                 <Button
                   size="sm"
                   variant="outline"

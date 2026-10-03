@@ -1,3 +1,10 @@
+import {
+  PageHeader,
+  TabList,
+  controlClassName,
+  tabActiveClassName,
+  tabClassName,
+} from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
 import type { ComponentProps, ReactNode } from 'react';
 
@@ -18,9 +25,8 @@ export function CustomersNav() {
   const t = useCustomersT();
   const ability = useAbility();
 
-  const tab =
-    'rounded-md px-2.5 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-  const active = { className: `${tab} bg-muted font-medium text-foreground` };
+  const tab = tabClassName;
+  const active = { className: tabActiveClassName };
 
   const tabs = [
     {
@@ -38,7 +44,7 @@ export function CustomersNav() {
   ];
 
   return (
-    <nav aria-label={t('customers.title')} className="flex flex-wrap gap-1">
+    <TabList label={t('customers.title')}>
       {tabs
         .filter((entry) => entry.show)
         .map((entry) => (
@@ -52,7 +58,7 @@ export function CustomersNav() {
             {entry.label}
           </Link>
         ))}
-    </nav>
+    </TabList>
   );
 }
 
@@ -66,18 +72,12 @@ export function CustomersHeader({
   readonly actions?: ReactNode;
 }) {
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="max-w-3xl space-y-1">
-          <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-          <p className="text-sm text-muted-foreground">{caption}</p>
-        </div>
-        {actions === undefined ? null : (
-          <div className="flex flex-wrap items-center gap-2">{actions}</div>
-        )}
-      </header>
-      <CustomersNav />
-    </div>
+    <PageHeader
+      title={title}
+      description={caption}
+      {...(actions === undefined ? {} : { actions })}
+      tabs={<CustomersNav />}
+    />
   );
 }
 
@@ -99,5 +99,4 @@ export function useTableLabels(emptyTitle: string, emptyDetail: string, page: nu
   };
 }
 
-export const control =
-  'h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
+export const control = `${controlClassName} disabled:opacity-50`;

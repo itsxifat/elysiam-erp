@@ -1,4 +1,4 @@
-import { Button, DateTime, Dialog, StatusBadge } from '@elysium/ui';
+import { Button, DateTime, Dialog, Select, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound } from 'lucide-react';
 import { useId, useState } from 'react';
@@ -237,15 +237,15 @@ function IssueDialog({ onClose }: { readonly onClose: () => void }) {
           />
         </Field>
         <Field id={`${id}-channel`} label={t('settings.siteKeys.colChannel')}>
-          <select
+          <Select
             id={`${id}-channel`}
             value={channel}
-            className={control}
-            onChange={(event) => setChannel(event.target.value as 'landing_page' | 'website')}
-          >
-            <option value="landing_page">{t('orders.channel.landing_page')}</option>
-            <option value="website">{t('orders.channel.website')}</option>
-          </select>
+            onValueChange={(value) => setChannel(value === 'website' ? 'website' : 'landing_page')}
+            options={[
+              { value: 'landing_page', label: t('orders.channel.landing_page') },
+              { value: 'website', label: t('orders.channel.website') },
+            ]}
+          />
         </Field>
       </div>
       {problem === null ? null : (

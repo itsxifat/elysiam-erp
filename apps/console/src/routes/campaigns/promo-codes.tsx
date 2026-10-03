@@ -4,6 +4,7 @@ import {
   Dialog,
   Money,
   PermissionGate,
+  Select,
   StatusBadge,
   dataTableColumns,
   type DataTableColumn,
@@ -247,21 +248,19 @@ function PromoCodes() {
         caption={t('campaigns.nav.codes')}
         labels={labels}
         toolbar={
-          <select
+          <Select
+            variant="filter"
             aria-label={t('campaigns.codes.col.status')}
             value={status ?? ''}
-            className={`${control} w-auto`}
-            onChange={(event) =>
-              setStatus((event.target.value || undefined) as PromoStatus | undefined)
-            }
-          >
-            <option value="">{t('campaigns.codes.allStatuses')}</option>
-            {PROMO_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {t(`campaigns.codes.status.${value}` as CampaignsMessageKey)}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => setStatus((value || undefined) as PromoStatus | undefined)}
+            options={[
+              { value: '', label: t('campaigns.codes.allStatuses') },
+              ...PROMO_STATUSES.map((value) => ({
+                value,
+                label: t(`campaigns.codes.status.${value}` as CampaignsMessageKey),
+              })),
+            ]}
+          />
         }
       />
       {creating ? <NewCodeDialog onClose={() => setCreating(false)} /> : null}
@@ -374,18 +373,15 @@ function NewCodeDialog({ onClose }: { readonly onClose: () => void }) {
           />
         </Field>
         <Field label={t('campaigns.codes.form.kind')} id={`${id}-kind`}>
-          <select
+          <Select
             id={`${id}-kind`}
-            className={control}
             value={values.kind}
-            onChange={(event) => set('kind', event.target.value as PromoKind)}
-          >
-            {PROMO_KINDS.map((kind) => (
-              <option key={kind} value={kind}>
-                {t(`campaigns.codes.kind.${kind}` as CampaignsMessageKey)}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => set('kind', value as PromoKind)}
+            options={PROMO_KINDS.map((kind) => ({
+              value: kind,
+              label: t(`campaigns.codes.kind.${kind}` as CampaignsMessageKey),
+            }))}
+          />
         </Field>
 
         {values.kind === 'percent' ? (

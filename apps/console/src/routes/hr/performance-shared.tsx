@@ -1,4 +1,4 @@
-import { Money } from '@elysium/ui';
+import { Money, TabList, tabActiveClassName, tabClassName } from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
 
 import { useAbility } from '../../auth/session.js';
@@ -17,12 +17,11 @@ import { usePerfT, type PerfMessageKey } from './performance-messages.js';
 export function PerformanceNav() {
   const t = usePerfT();
   const ability = useAbility();
-  const tab =
-    'rounded-md px-2.5 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-  const active = { className: `${tab} bg-muted font-medium text-foreground` };
+  const tab = tabClassName;
+  const active = { className: tabActiveClassName };
 
   return (
-    <nav aria-label={t('perf.title')} className="flex flex-wrap gap-1">
+    <TabList label={t('perf.title')}>
       <Link
         to={hrPath('/performance')}
         className={tab}
@@ -42,7 +41,7 @@ export function PerformanceNav() {
           {t('perf.bonusRules')}
         </Link>
       ) : null}
-    </nav>
+    </TabList>
   );
 }
 

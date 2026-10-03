@@ -1,4 +1,12 @@
-import { Dialog, StatusBadge, cn } from '@elysium/ui';
+import {
+  Dialog,
+  Kbd,
+  StatusBadge,
+  TabList,
+  cn,
+  tabActiveClassName,
+  tabClassName,
+} from '@elysium/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Radio } from 'lucide-react';
@@ -17,9 +25,8 @@ import { isOrdersKey, useOrdersT } from './messages.js';
 
 // --- tabs -----------------------------------------------------------------------
 
-const TAB =
-  'rounded-md px-2.5 py-1 text-sm text-muted-foreground motion-safe:transition-colors motion-safe:duration-fast hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-const ACTIVE = { className: `${TAB} bg-muted font-medium text-foreground` };
+const TAB = tabClassName;
+const ACTIVE = { className: tabActiveClassName };
 
 /**
  * The four orders screens as tabs, each shown only to a caller whose §6 grant reaches it —
@@ -30,7 +37,7 @@ export function OrdersNav() {
   const t = useOrdersT();
   const ability = useAbility();
   return (
-    <nav aria-label={t('orders.title')} className="flex flex-wrap gap-1">
+    <TabList label={t('orders.title')}>
       {ability.can('create', 'Order') ? (
         <Link to={ordersPath('/orders/new')} className={TAB} activeProps={ACTIVE}>
           {t('orders.nav.desk')}
@@ -61,7 +68,7 @@ export function OrdersNav() {
           {t('orders.nav.buyers')}
         </Link>
       ) : null}
-    </nav>
+    </TabList>
   );
 }
 
@@ -171,12 +178,7 @@ export function ShortcutsHelp({
           <div key={shortcut.keys.join('+')} className="contents">
             <dt className="flex gap-1">
               {shortcut.keys.map((key) => (
-                <kbd
-                  key={key}
-                  className="rounded-sm border border-border bg-muted px-1.5 py-0.5 font-mono text-xs"
-                >
-                  {key}
-                </kbd>
+                <Kbd key={key}>{key}</Kbd>
               ))}
             </dt>
             <dd className="text-muted-foreground">{shortcut.label}</dd>

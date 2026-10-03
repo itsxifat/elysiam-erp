@@ -33,21 +33,27 @@ import { cn } from '../lib/cn.js';
  */
 export type InputProps = ComponentPropsWithRef<'input'>;
 
+/**
+ * The control chrome every field shares: the input, the select trigger, the search box.
+ * One string, so a select and an input in the same filter row cannot drift apart by a
+ * shade. Focus turns the edge to the accent and adds a soft halo, the field reading as
+ * "you are here" without the offset ring a button needs.
+ *
+ * No width: a field in a form takes the row (`Input` adds `w-full`), a filter sizes to
+ * its content, and a class string built on this one says which.
+ */
+export const controlClassName = cn(
+  'h-control rounded-md border border-input bg-background px-3 text-sm text-foreground',
+  'placeholder:text-muted-foreground',
+  'motion-safe:duration-fast motion-safe:transition-[border-color,box-shadow] motion-safe:ease-out',
+  'hover:border-ring/60',
+  'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25 focus-visible:outline-none',
+  'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-input',
+  'aria-invalid:border-destructive aria-invalid:focus-visible:ring-destructive/25',
+);
+
 export function Input({ className, ...rest }: InputProps) {
-  return (
-    <input
-      className={cn(
-        'h-control w-full rounded-md border border-input bg-background px-3 text-sm text-foreground',
-        'placeholder:text-muted-foreground',
-        'motion-safe:duration-fast motion-safe:transition-colors motion-safe:ease-out',
-        'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
-        'disabled:cursor-not-allowed disabled:opacity-60',
-        'aria-invalid:border-destructive aria-invalid:ring-destructive/30',
-        className,
-      )}
-      {...rest}
-    />
-  );
+  return <input className={cn(controlClassName, 'w-full', className)} {...rest} />;
 }
 
 export interface LabelProps {

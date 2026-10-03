@@ -6,6 +6,7 @@ import {
   Form,
   Money,
   MoneyField,
+  PageHeader,
   PermissionGate,
   SelectField,
   StatusBadge,
@@ -395,22 +396,22 @@ export function LoansPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">{l('loans.title')}</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">{l('loans.subtitle')}</p>
-        </div>
-        <PermissionGate allowed={mayRecord}>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setLenderOpen(true)}>
-              {l('loans.newLender')}
-            </Button>
-            <Button size="sm" onClick={() => setLoanOpen(true)}>
-              {l('loans.newLoan')}
-            </Button>
-          </div>
-        </PermissionGate>
-      </header>
+      <PageHeader
+        title={l('loans.title')}
+        description={l('loans.subtitle')}
+        actions={
+          <PermissionGate allowed={mayRecord}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setLenderOpen(true)}>
+                {l('loans.newLender')}
+              </Button>
+              <Button size="sm" onClick={() => setLoanOpen(true)}>
+                {l('loans.newLoan')}
+              </Button>
+            </div>
+          </PermissionGate>
+        }
+      />
 
       <section aria-labelledby="loans-heading" className="space-y-3">
         <h2 id="loans-heading" className="text-sm font-medium">

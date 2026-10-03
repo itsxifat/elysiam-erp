@@ -55,12 +55,12 @@ export function LoginScreen({ branding, onAuthenticated }: LoginScreenProps) {
         : t('auth.twoFactor.title');
 
   return (
-    <div className="grid min-h-dvh place-items-center bg-muted px-4 py-10">
+    <div className="grid min-h-dvh place-items-center bg-canvas px-4 py-10">
       <div className="w-full max-w-sm">
         <BrandMark branding={branding} />
 
-        <div className="mt-6 rounded-lg border border-border bg-card p-6 shadow-popover">
-          <h1 className="text-base font-semibold tracking-tight text-card-foreground">{heading}</h1>
+        <div className="mt-8 rounded-xl border border-border bg-card p-7 shadow-popover">
+          <h1 className="text-lg font-semibold tracking-tight text-card-foreground">{heading}</h1>
 
           {step === 'credentials' ? (
             <CredentialsStep
