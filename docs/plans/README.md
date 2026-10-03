@@ -46,7 +46,7 @@ M07, M09, M10, M11, M12, M13, M15, M19 and M25 were built by parallel agents bet
 | M26  | Company loans                      | built and verified; both auditors run (see the plan)   |
 | —    | Preview kit (`preview-kit.md`)     | done; ledger audit fixed and re-audited (see the plan) |
 
-Not a milestone: `gaps-orders-settings.md`, the console gaps M30's research found (order lifecycle buttons, courier statuses that ship an order, the settings screens, HR's pay picker; D-390 to D-396); `m30-followups.md`, M30 part 1's open medium findings, its two named races and the console gaps its guides found (D-411 to D-419); and `catalog-stock-ux.md`, the owner's "no easy way" to add products, manage stock and the catalog: a product page that is the hub, a one-form new product, catalog setup, a product importer and easier stock screens (D-420 to D-431).
+Not a milestone: `gaps-orders-settings.md`, the console gaps M30's research found (order lifecycle buttons, courier statuses that ship an order, the settings screens, HR's pay picker; D-390 to D-396); `m30-followups.md`, M30 part 1's open medium findings, its two named races and the console gaps its guides found (D-411 to D-419); and `catalog-stock-ux.md`, the owner's "no easy way" to add products, manage stock and the catalog: a product page that is the hub, a one-form new product, catalog setup, a product importer and easier stock screens (D-420 to D-432); built and verified 2026-10-03, ledger-auditor 0 critical, 0 warnings, not merged.
 
 | Plan            | Milestone                                   | State on 2026-10-02                                    |
 | --------------- | ------------------------------------------- | ------------------------------------------------------ |

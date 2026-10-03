@@ -116,6 +116,41 @@ supply receipt.
 
 D-420 to D-432, recorded in `docs/decisions.md`.
 
+## Audit (after)
+
+| #   | Task                                                    | After | Where                                                                                                   |
+| --- | ------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------- |
+| 1   | Create a product with sizes, colours, prices and photos | Easy  | Catalog → New product: one form, chips, variant grid with price and opening stock, photos               |
+| 2   | Edit name, price, category, photos                      | Easy  | Product page: Edit; Edit prices in the grid; Photos with thumbnails                                     |
+| 3   | Add a size or colour later                              | Easy  | Product page: Add sizes or colours (chips, existing ones pre-selected)                                  |
+| 4   | Archive or reactivate a product or SKU                  | Easy  | Product page: Archive / Reactivate; Archive / Restore on each variant                                   |
+| 5   | Change price, with history                              | Easy  | Product page: Edit prices (per variant), Price history below                                            |
+| 6   | Manage categories (rename, nest)                        | Easy  | Catalog → Categories, sizes and colours: add, Edit (rename, move, switch off)                           |
+| 7   | Manage attributes and values                            | Easy  | Same screen: add a list or value (code suggested), click a value to fix its label                       |
+| 8   | Import many products from a spreadsheet                 | Easy  | Catalog → Import → New products: template, check, problems by line, import                              |
+| 9   | Receive new stock from a supplier, with cost            | Easy  | Product page: Receive stock (supplier, cost per piece in taka, quantity per variant); Supply entries    |
+| 10  | Receive opening stock                                   | Easy  | New product form: opening stock per variant (a supply receipt, D-421); before go-live, M14a's importer  |
+| 11  | Adjust stock with reason and approval                   | Easy  | Product page: Adjust (location, lost or found, reason chips, quantity per variant), sent for approval   |
+| 12  | Transfer warehouse to showroom, send and receive        | Easy  | Setup: add the showroom; Product page: Transfer; Stock → Transfers: Receive                             |
+| 13  | Stock count                                             | Easy  | Stock → Count stock (unchanged)                                                                         |
+| 14  | Stock per product, size, location; low stock            | Easy  | Product page grid; Stock page with category and low-stock filters; Low-stock alerts on the product page |
+| 15  | A product's stock movement history                      | Easy  | Product page: Stock history                                                                             |
+| 16  | Print barcodes or labels                                | Easy  | Product page: Barcode labels                                                                            |
+
 ## Status on 2026-10-03
 
-Planned. Building.
+Built and verified on `catalog-stock-ux`; not merged.
+
+- Every task in the audit is easy (table above). The stack spec `catalog-stock.stack.ts` walks
+  setup, new product with sizes, colours and opening stock, adjust, transfer and receive, a
+  second delivery, a low-stock alert and the Stock page, 7 of 7 passing with axe clean.
+- `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at `f29dd3b`: 188 test files, 2,962 passed, 1 skipped; format, lint, typecheck, build, bundle (247.8 KB of 250), migrations, schema drift, route matrix (328 routes, 320 matrix-tested, 8 public), i18n and api-client all pass. A first run with the default 12 workers died of out-of-memory (Docker restarted); a second failed only the module-boundary guard, fixed in `f29dd3b`.
+- ledger-auditor: first pass 0 critical, 1 high (a retried receipt posted twice), 2 medium, 7 low, 8 notes; all fixed or recorded; re-checks found one medium in each of the next two rounds (a kept key replaying an edited receipt, then renewal on edit reopening the double post), both fixed; final re-check at `f29dd3b` 0 critical, 0 warnings, 3 notes.
+- Found on the way: the stack provision listed `admin` twice, which failed provisioning, so no
+  stack spec could run on `integration-wave2` (fixed, D-431); the product list's category filter
+  was missing from its query key, so choosing a category did not refetch (fixed).
+- Follow-ups: a transfer idempotency key (D-432); in-transaction audit rows for catalog
+  mutations; inventory's remaining joins to `catalog.products` and `catalog.skus` behind `CatalogApi`; a row lock in migration 0033's movement-location check; a banner after an unanswered save; watch the 250 KB bundle budget
+  (247.8 KB now) when the redesign merges.
+- Owner questions: stock with no supplier after go-live (D-421); archiving a SKU that still has
+  stock (D-423); Active by default (D-426).
