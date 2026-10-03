@@ -1314,3 +1314,74 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
 - Follow-ups: in the plan's status (Turnstile keys, the roles-path re-grant, R2 copy at
   finalize, module-owned receipt downloads, a warehouse menu link, owner questions).
 - Next: M30 part 2 on staging.
+
+### 2026-10-03 · catalog-stock-ux · Products, stock and the catalog made easy · built
+
+- Why: the owner tried the test site and said adding a product, managing stock and managing
+  the catalog had "no easy option and even in some case there is no way". The audit (plan
+  `docs/plans/catalog-stock-ux.md`) found 4 of 16 everyday tasks impossible, 8 hard, 4 easy.
+  The impossible ones: receiving a new product's first stock (the supply form listed only SKUs
+  already at the location), editing a product, archiving a SKU, a product spreadsheet import,
+  a transfer to a showroom (no showroom or in-transit location could be made), a product's
+  stock history and setting a low-stock level.
+- Delivered (branch `catalog-stock-ux` from `integration-wave2` at `8556f42`):
+  - **Product page is the hub** (D-420): variants with stock per location (warehouses, then
+    showrooms), Out of stock and Low badges, inline price editing with history, photos as
+    thumbnails, Add sizes or colours as chips, stock history, labels; actions Receive stock
+    (primary), Adjust, Transfer, Low-stock alerts, Edit, Archive, and Archive or Restore per
+    variant. Each action is one request through the route that owns it.
+  - **New product in one form** (D-421, D-426): name, category, price, status (Active by
+    default), sizes and colours as chips drawing the variant grid, a price per variant,
+    opening stock per variant received from a supplier at a cost per piece (a supply entry,
+    or a quantity-only draft without `read Cost`), optional photos.
+  - **Catalog setup** (D-424, D-429): categories (add, rename, nest, switch off), size and
+    colour lists (add, fix a label; codes suggested and fixed once saved), stock locations
+    (add a warehouse or a showroom under a branch, rename, switch off). Linked from Catalog.
+  - **Import** (D-425): a New products tab with a template, per-row problems and an
+    all-or-nothing import, beside the existing Prices tab.
+  - **Stock page**: category filter, product links, a variant column, quick actions (Receive
+    stock, Transfer, Adjust, Count stock); empty in-transit rows hidden.
+  - **Supply entries** (D-430): any catalog item can be received; cost typed in taka.
+  - **Server**: `variantPrices` on product create (D-422); `PATCH /v1/catalog/skus/:id`
+    (D-423); `PATCH /v1/catalog/attributes/:id` and `.../values/:valueId` (D-424);
+    `POST /v1/catalog/imports/products(/dry-run)` (D-425); stock and movements by product and
+    category (D-427); the first transfer creates the in-transit location (D-428). Pure rules in
+    `packages/domain/src/catalog/{variant-prices,product-import}.ts`. No migration, no new
+    posting rule, no new movement kind.
+  - **Stack suite** (D-431): `catalog-stock.stack.ts`; a `merchandiser` org admin; the
+    duplicate `admin` entry the wave-2 merge left in the provision removed (it failed
+    provisioning, so no stack spec could run); ports overridable.
+  - **From the audits**: receipts keep their idempotency key until a success or a 409, and
+    the supply routes refuse a replayed key with different goods (`sameReceipt`, D-432);
+    zero cost per piece refused in the receive dialogs; a location holding stock or a
+    transfer cannot be switched off; one in-transit location per brand; the importer caps
+    a file at 5,000 SKUs and refuses ambiguous values; inventory reads variant labels and
+    category subtrees through `CatalogApi` (invariant 12).
+  - **Low-stock alerts** on the product page: the reorder-level route existed but no screen
+    set it, so "Low" never showed.
+- Audit after: all 16 tasks easy (table in the plan).
+- Verification:
+  - New tests: `packages/domain/src/catalog/catalog-ux.test.ts` (variant prices, the
+    importer, slugs; fast-check), `apps/server/src/modules/catalog/catalog-stock-ux.e2e.test.ts`
+    (11 tests over HTTP on real Postgres: variant prices, SKU archive, renames, stock and
+    history by product and category with cost withheld from the warehouse role, the importer,
+    two first transfers at once, the switched-off in-transit location, the location
+    deactivation guard), `apps/console/src/routes/catalog/catalog-stock-ui.test.ts`, route-matrix
+    fixtures for the five new routes.
+  - `catalog-stock.stack.ts` against the real stack: 7 of 7 pass, axe clean on setup, new
+    product, product page, stock and import (run with `E2E_CONSOLE_PORT=5283 E2E_API_PORT=3210`
+    because another worktree's preview held 5183).
+  - `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at `f29dd3b`: 188 test files, 2,962 passed, 1 skipped; format, lint, typecheck, build, bundle (247.8 KB of 250), migrations, schema drift, route matrix (328 routes, 320 matrix-tested, 8 public), i18n and api-client all pass. A first run with the default 12 workers died of out-of-memory (Docker restarted); a second failed only the module-boundary guard, fixed in `f29dd3b`.
+- Auditors: ledger-auditor: first pass 0 critical, 1 high (a retried receipt posted twice), 2 medium, 7 low, 8 notes; all fixed or recorded; re-checks found one medium in each of the next two rounds (a kept key replaying an edited receipt, then renewal on edit reopening the double post), both fixed; final re-check at `f29dd3b` 0 critical, 0 warnings, 3 notes. acceptance-auditor not run (not a milestone).
+- Decisions/assumptions: D-420 to D-432 (D-421, D-423, D-425 and D-426 ASSUMED).
+- Migrations: none. New dependencies: none.
+- Owner questions: stock already in hand that came from no supplier, after go-live (D-421);
+  whether a SKU with stock may be archived (D-423, allowed now); Active as the default for new
+  products (D-426).
+- Follow-ups: an idempotency key on transfer dispatch (D-432); in-transaction audit rows for
+  catalog mutations (today the after-commit interceptor writes them); inventory's remaining joins to
+  `catalog.products` and `catalog.skus` (pre-existing debt) behind `CatalogApi`; a row lock in
+  migration 0033's movement-location check so a switch-off cannot race a movement; a banner
+  after an unanswered save ("an earlier save may have gone through"); the console bundle is at 247.8 KB of 250, so the
+  redesign should watch the budget.
+- Next: merge into the wave-2 integration after the redesign lands; then M30 part 2 on staging.

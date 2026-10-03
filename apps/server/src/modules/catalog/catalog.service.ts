@@ -2,7 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
 
 import type { ActiveContext } from '../../platform/http/context.js';
-import { buildSkuCode, matrixPlan, poisha, type Poisha, type VariantAxis } from '@elysium/domain';
+import {
+  buildSkuCode,
+  matrixPlan,
+  poisha,
+  variantCombinations,
+  variantPrices,
+  type Poisha,
+  type VariantAxis,
+} from '@elysium/domain';
 
 import { CatalogError } from './catalog.errors.js';
 import * as repo from './catalog.repository.js';
@@ -18,8 +26,11 @@ import type {
   SetBarcodeInput,
   SetPricesInput,
   SkuQuery,
+  UpdateAttributeInput,
+  UpdateAttributeValueInput,
   UpdateCategoryInput,
   UpdateProductInput,
+  UpdateSkuInput,
 } from './catalog.schemas.js';
 
 /**
@@ -219,6 +230,36 @@ export class CatalogService {
     });
   }
 
+  /** Rename an attribute or move it (D-424). The code never changes. */
+  async updateAttribute(context: ActiveContext, id: string, input: UpdateAttributeInput) {
+    return withOrg(context, async (tx) => {
+      const row = await repo.updateAttribute(tx, context.orgId, id, input);
+      if (row === undefined) throw notFound('attribute');
+      return {
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        kind: row.kind,
+        isVariant: row.is_variant,
+        position: row.position,
+      };
+    });
+  }
+
+  /** Fix a value's label or move it (D-424). The code is inside every SKU code built from it. */
+  async updateAttributeValue(
+    context: ActiveContext,
+    attributeId: string,
+    valueId: string,
+    input: UpdateAttributeValueInput,
+  ) {
+    return withOrg(context, async (tx) => {
+      const row = await repo.updateAttributeValue(tx, context.orgId, attributeId, valueId, input);
+      if (row === undefined) throw notFound('attribute value');
+      return { id: row.id, code: row.code, label: row.label, position: row.position };
+    });
+  }
+
   // --- products -------------------------------------------------------------
 
   /**
@@ -231,42 +272,77 @@ export class CatalogService {
    * wanted or a wizard that cannot save halfway.
    */
   async createProduct(context: ActiveContext, input: CreateProductInput): Promise<ProductView> {
-    return withOrg(context, async (tx) => {
-      const price = poisha(input.pricePoisha);
-      const { sequence, orgCode } = await repo.takeSequence(tx, context.orgId);
+    return withOrg(context, (tx) => this.createProductIn(tx, context, input));
+  }
 
-      const categoryCode =
-        input.categoryId == null
-          ? undefined
-          : (await repo.categoryById(tx, context.orgId, input.categoryId))?.code;
-      if (input.categoryId != null && categoryCode === undefined) throw notFound('category');
+  /**
+   * The one path that creates a product, inside the caller's transaction.
+   *
+   * The new-product form and the spreadsheet importer (D-425) both come through here,
+   * so an imported product gets its sequence, its SKU codes and its variant prices
+   * exactly as a typed one does — and a file of forty products is one transaction.
+   */
+  async createProductIn(
+    tx: Tx,
+    context: ActiveContext,
+    input: CreateProductInput,
+  ): Promise<ProductView> {
+    const price = poisha(input.pricePoisha);
+    const { sequence, orgCode } = await repo.takeSequence(tx, context.orgId);
 
-      const product = await repo.insertProduct(tx, context.orgId, {
-        categoryId: input.categoryId ?? null,
-        sequence,
-        name: input.name,
-        slug: input.slug,
-        description: input.description ?? null,
-        status: input.status,
-        createdBy: context.userId,
-      });
+    const categoryCode =
+      input.categoryId == null
+        ? undefined
+        : (await repo.categoryById(tx, context.orgId, input.categoryId))?.code;
+    if (input.categoryId != null && categoryCode === undefined) throw notFound('category');
 
-      if (input.generateSkus) {
-        const axes = await this.resolveAxes(tx, context.orgId, input.axes);
-        await this.addVariants(tx, context.orgId, {
-          productId: product.id,
-          orgCode,
-          categoryCode,
-          sequence,
-          axes,
-          existingKeys: [],
-          price,
-          startPosition: 0,
-        });
-      }
-
-      return this.viewOf(tx, context.orgId, product);
+    const product = await repo.insertProduct(tx, context.orgId, {
+      categoryId: input.categoryId ?? null,
+      sequence,
+      name: input.name,
+      slug: input.slug,
+      description: input.description ?? null,
+      status: input.status,
+      createdBy: context.userId,
     });
+
+    const overrides = input.variantPrices ?? [];
+    if (!input.generateSkus && overrides.length > 0) {
+      throw new CatalogError(
+        'CATALOG_VARIANT_INVALID',
+        'Variant prices need variants: send the sizes and colours with them.',
+      );
+    }
+
+    if (input.generateSkus) {
+      const axes = await this.resolveAxes(tx, context.orgId, input.axes);
+      // D-422: a typed price for some variants, the product price for the rest. A
+      // price naming a combination these axes do not make is refused, not dropped.
+      const prices =
+        overrides.length === 0
+          ? undefined
+          : variantPrices(
+              variantCombinations(axes),
+              price,
+              overrides.map((entry) => ({
+                valueIds: entry.valueIds,
+                pricePoisha: poisha(entry.pricePoisha),
+              })),
+            );
+      await this.addVariants(tx, context.orgId, {
+        productId: product.id,
+        orgCode,
+        categoryCode,
+        sequence,
+        axes,
+        existingKeys: [],
+        price,
+        prices,
+        startPosition: 0,
+      });
+    }
+
+    return this.viewOf(tx, context.orgId, product);
   }
 
   async updateProduct(context: ActiveContext, id: string, input: UpdateProductInput) {
@@ -459,6 +535,21 @@ export class CatalogService {
     });
   }
 
+  /**
+   * Archive a SKU or bring it back (D-423).
+   *
+   * Nothing else about the SKU changes: its stock stays where it is and can still be
+   * transferred, counted or written off, and its history stays joined to it. Archived
+   * only means it cannot be sold — the order desk and the till already refuse one.
+   */
+  async updateSku(context: ActiveContext, skuId: string, input: UpdateSkuInput) {
+    return withOrg(context, async (tx) => {
+      const row = await repo.setSkuStatus(tx, context.orgId, skuId, input.status);
+      if (row === undefined) throw notFound('SKU');
+      return { id: row.id, skuCode: row.code, status: row.status };
+    });
+  }
+
   // --- images ---------------------------------------------------------------
 
   async attachImage(context: ActiveContext, productId: string, input: AttachImageInput) {
@@ -592,6 +683,8 @@ export class CatalogService {
       readonly axes: readonly VariantAxis[];
       readonly existingKeys: readonly string[];
       readonly price: Poisha;
+      /** Per-variant prices by variant key (D-422); a variant not in it takes `price`. */
+      readonly prices?: ReadonlyMap<string, Poisha> | undefined;
       readonly startPosition: number;
     },
   ): Promise<{ created: string[]; unchanged: number; orphaned: string[] }> {
@@ -621,7 +714,7 @@ export class CatalogService {
           variantCodes: combination.codes,
         }),
         variantKey: combination.key,
-        pricePoisha: input.price,
+        pricePoisha: input.prices?.get(combination.key) ?? input.price,
         position: input.startPosition + index,
         values: combination.pairs,
       })),

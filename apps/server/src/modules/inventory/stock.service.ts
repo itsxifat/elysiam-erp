@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { withOrg } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 
@@ -6,6 +6,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import * as repo from './inventory.repository.js';
 import { mapStockErrors, StockError } from './inventory.errors.js';
 import type {
@@ -45,7 +46,11 @@ import type {
 export interface StockRowView {
   readonly skuId: string;
   readonly skuCode: string;
+  readonly productId: string;
   readonly productName: string;
+  /** The SKU's size, colour… in axis order (`M / Red`); empty for an unvaried SKU. */
+  readonly variantLabel: string;
+  readonly skuStatus: string;
   readonly locationId: string;
   readonly locationCode: string;
   readonly locationName: string;
@@ -61,7 +66,10 @@ export interface StockRowView {
 
 @Injectable()
 export class StockService {
-  constructor(private readonly audit: AuditService) {}
+  constructor(
+    private readonly audit: AuditService,
+    @Inject(CATALOG_API) private readonly catalog: CatalogApi,
+  ) {}
 
   // --- locations --------------------------------------------------------------
 
@@ -170,6 +178,20 @@ export class StockService {
         const before = await repo.locationById(tx, context.orgId, id);
         if (before === undefined) throw new StockError('STOCK_NOT_FOUND', 'No such location.');
         assertInScope(request, { branchId: before.branch_id });
+        if (
+          patch.isActive === false &&
+          before.is_active &&
+          // Locked first, so two switch-offs or a switch-off and a rename serialise. A
+          // movement committing at the same instant is not held back by it (migration
+          // 0033's check reads the row unlocked); recorded as a follow-up.
+          (await repo.lockLocation(tx, context.orgId, id)) &&
+          (await repo.locationInUse(tx, context.orgId, id))
+        ) {
+          throw new StockError(
+            'STOCK_LOCATION_INVALID',
+            'This location still holds stock, stock held for orders or a transfer on its way. Move or receive it first; a switched-off location can take no movement.',
+          );
+        }
 
         await repo.updateLocation(tx, context.orgId, id, patch);
         await this.audit.record(tx, {
@@ -198,21 +220,35 @@ export class StockService {
   ): Promise<{ items: StockRowView[]; page: number; pageSize: number }> {
     const scope = scopeWhere(request, { branchId: sql`l.branch_id` });
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      // The category's subtree and the variant labels come from the catalog through its
+      // interface (invariant 12), inside this transaction.
+      const categoryIds =
+        query.categoryId === undefined
+          ? undefined
+          : await this.catalog.categorySubtree(tx, context.orgId, query.categoryId);
       const rows = await repo.listStock(tx, context.orgId, {
         scope,
         locationId: query.locationId,
         skuQuery: query.q,
+        productId: query.productId,
+        categoryIds,
         lowOnly: query.low === true,
         limit: query.pageSize,
         offset: (query.page - 1) * query.pageSize,
       });
+      const labels = await this.catalog.variantLabels(tx, context.orgId, [
+        ...new Set(rows.map((row) => row.sku_id)),
+      ]);
       return {
         page: query.page,
         pageSize: query.pageSize,
         items: rows.map((row) => ({
           skuId: row.sku_id,
           skuCode: row.sku_code,
+          productId: row.product_id,
           productName: row.product_name,
+          variantLabel: labels.get(row.sku_id) ?? '',
+          skuStatus: row.sku_status,
           locationId: row.location_id,
           locationCode: row.location_code,
           locationName: row.location_name,
@@ -254,6 +290,7 @@ export class StockService {
         await repo.listMovements(tx, context.orgId, {
           scope,
           skuId: query.skuId,
+          productId: query.productId,
           locationId: query.locationId,
           from: query.from,
           to: query.to,
@@ -265,6 +302,9 @@ export class StockService {
         skuId: row.sku_id,
         skuCode: row.sku_code,
         locationId: row.location_id,
+        locationCode: row.location_code,
+        locationName: row.location_name,
+        locationKind: row.location_kind,
         kind: row.kind,
         qtyDelta: row.qty_delta,
         // Cost, and named so `serializeFor` removes it for a warehouse packer.

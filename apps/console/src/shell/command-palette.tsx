@@ -15,7 +15,7 @@ import {
 import { applyTheme, isDark } from '../theme.js';
 
 /**
- * The command palette (M05 checks 7 and 10; D-450).
+ * The command palette (M05 checks 7 and 10; D-463).
  *
  * The fastest way through the console for anyone who knows what they want: type
  * "new order", "transfer", "stuck" or a screen's name and press Enter. It reaches

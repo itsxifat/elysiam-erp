@@ -4,7 +4,7 @@ Not a milestone. The owner's words, verbatim: "the ui and design is shit as ai s
 the damn design and ui also, it must be premium and clean, sophisticated not hazard, and easy to
 handle easy to point. not complex as a erp should be but with advance tech and design sense."
 
-Branch `design-refresh` from `integration-wave2` at `8556f42`. Decisions D-440 to D-462.
+Branch `design-refresh` from `integration-wave2` at `8556f42`. Decisions D-440 to D-449 and D-451 to D-463 (D-450 is an unrelated hotfix's).
 
 ## Direction (D-440)
 
@@ -69,7 +69,7 @@ New: `Select` (D-443), `SearchInput`, `FilterChips`, `PageHeader`, `TabList` wit
   drawer on a phone. The brand switcher heads it; Settings and the fold button sit in a solid
   footer. The topbar has a breadcrumb, a search field that opens the palette, the inbox, the theme
   switch, বাংলা/English and the account menu (Sign out moved there).
-- **Command palette** (D-450): actions named as what people do, with the words they type as
+- **Command palette** (D-463): actions named as what people do, with the words they type as
   keywords; every screen and section tab with its section; recent places; theme and language.
   CASL-filtered like the sidebar. Lazy, with the shortcut owned by the shell (D-451).
 - **Overview** (D-453): a greeting; four KPIs for the last seven days with their trend and the

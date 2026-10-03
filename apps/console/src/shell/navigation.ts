@@ -359,7 +359,7 @@ export function locate(
   return best;
 }
 
-// --- the command palette's catalogue (D-450) ----------------------------------
+// --- the command palette's catalogue (D-463) ----------------------------------
 
 /**
  * A screen inside a section, for the palette: "Transfers" under Accounts, "Stuck

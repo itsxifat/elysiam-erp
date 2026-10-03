@@ -171,6 +171,17 @@ export const CATALOG_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call>
     body: { code: `V${token(7)}`, label: 'Route matrix value' },
   }),
 
+  // D-424: renames leave the code alone, so a second admitted role renames to the same
+  // name and still answers 200.
+  'PATCH /v1/catalog/attributes/:id': () => ({
+    url: `/v1/catalog/attributes/${state().attributeId}`,
+    body: { name: 'Route matrix colour' },
+  }),
+  'PATCH /v1/catalog/attributes/:id/values/:valueId': () => ({
+    url: `/v1/catalog/attributes/${state().attributeId}/values/${state().spareValueId}`,
+    body: { label: 'Green' },
+  }),
+
   'GET /v1/catalog/products': () => ({ url: '/v1/catalog/products' }),
   'GET /v1/catalog/products/:id': () => ({ url: `/v1/catalog/products/${state().productId}` }),
   'POST /v1/catalog/products': () => ({
@@ -212,6 +223,12 @@ export const CATALOG_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call>
     body: { barcode: `RM-${token(10)}` },
   }),
 
+  // D-423: `active` again and again is still a real, audited write.
+  'PATCH /v1/catalog/skus/:id': () => ({
+    url: `/v1/catalog/skus/${state().skuId}`,
+    body: { status: 'active' },
+  }),
+
   /*
    * The three image routes point at ids that do not exist, and that is the
    * design rather than a shortcut. An image is a finalized, public `files.objects`
@@ -245,6 +262,28 @@ export const CATALOG_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call>
   'POST /v1/catalog/imports/prices': () => ({
     url: '/v1/catalog/imports/prices',
     body: { csv: priceCsv('1590'), reason: 'Route matrix import' },
+  }),
+
+  /*
+   * The new-products importer (D-425): a fresh name per call, because a name already in
+   * the catalog is a problem the importer reports, and the second admitted role would
+   * then read a 422 as a permission failure.
+   */
+  'POST /v1/catalog/imports/products/dry-run': () => ({
+    url: '/v1/catalog/imports/products/dry-run',
+    body: {
+      csv: `name,price_taka
+Route matrix import ${token()},1500
+`,
+    },
+  }),
+  'POST /v1/catalog/imports/products': () => ({
+    url: '/v1/catalog/imports/products',
+    body: {
+      csv: `name,price_taka
+Route matrix import ${token()},1500
+`,
+    },
   }),
 
   /*

@@ -56,6 +56,10 @@ export const stockQuerySchema = z
     locationId: stockIdSchema.optional(),
     /** Matches a SKU code or a product name. */
     q: z.string().trim().min(1).max(80).optional(),
+    /** One product's SKUs: the product page's stock grid (D-427). */
+    productId: stockIdSchema.optional(),
+    /** A category and everything under it. */
+    categoryId: stockIdSchema.optional(),
     low: z.coerce.boolean().optional(),
     page: z.coerce.number().int().min(1).max(10_000).default(1),
     pageSize: z.coerce.number().int().min(1).max(200).default(50),
@@ -65,6 +69,8 @@ export const stockQuerySchema = z
 export const movementQuerySchema = z
   .object({
     skuId: stockIdSchema.optional(),
+    /** Every SKU of one product: the product page's stock history (D-427). */
+    productId: stockIdSchema.optional(),
     locationId: stockIdSchema.optional(),
     from: z
       .string()

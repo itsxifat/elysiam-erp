@@ -27,8 +27,12 @@ import { createInterface } from 'node:readline';
  * and Valkey from `infra/docker-compose.dev.yml`, and `apps/server/.env`.
  */
 
-export const API_PORT = 3110;
-export const CONSOLE_PORT = 5183;
+/**
+ * The ports, overridable for a machine where another worktree's preview already holds
+ * one (`E2E_API_PORT`, `E2E_CONSOLE_PORT`). The defaults are what every spec assumes.
+ */
+export const API_PORT = Number(process.env.E2E_API_PORT ?? 3110);
+export const CONSOLE_PORT = Number(process.env.E2E_CONSOLE_PORT ?? 5183);
 export const API_URL = `http://localhost:${String(API_PORT)}`;
 export const CONSOLE_URL = `http://localhost:${String(CONSOLE_PORT)}`;
 
