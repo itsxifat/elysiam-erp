@@ -42,7 +42,8 @@ export function OrgSwitcher({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const active = orgs.find((org) => org.orgId === activeOrgId) ?? null;
-  const name = active?.displayName ?? t('org.none');
+  // A super admin starts in no brand: the switcher itself says to choose one.
+  const name = active?.displayName ?? (orgs.length > 1 ? t('org.chooseOne') : t('org.none'));
   const text =
     compact === 'always' ? 'sr-only' : compact === 'below-xl' ? 'sr-only xl:not-sr-only' : '';
 
@@ -113,7 +114,7 @@ export function OrgSwitcher({
           compact === 'below-xl' && 'justify-center px-0 xl:justify-start xl:px-1.5',
         )}
       >
-        <Monogram name={name} tone="brand" />
+        <Monogram name={active?.displayName ?? ''} tone="brand" />
         <span className={cn('min-w-0 flex-1', text)}>
           <span className="block truncate text-sm font-semibold tracking-tight text-foreground">
             {busy ? t('org.switching') : name}
