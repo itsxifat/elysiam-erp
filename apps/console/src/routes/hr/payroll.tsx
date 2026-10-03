@@ -20,6 +20,7 @@ import { useT } from '../../i18n/locale.js';
 import { createRun, listRuns } from './api.js';
 import { control, Field, HrNav, hrPath, RUN_TONE } from './hr-nav.js';
 import { useHrT, type HrMessageKey } from './messages.js';
+import { MonthPicker } from '../../ui/date-picker.js';
 
 /* The runs table in the kit DataTable's frame and rhythm (D-448). */
 const TH =
@@ -258,14 +259,7 @@ function NewRunSheet({
         }}
       >
         <Field label={t('hr.colMonth')} id="run-month">
-          <input
-            id="run-month"
-            type="month"
-            value={month}
-            required
-            className={control}
-            onChange={(event) => setMonth(event.target.value)}
-          />
+          <MonthPicker id="run-month" value={month} onValueChange={setMonth} />
         </Field>
         {/*
           The unrecorded-day policy is set per run and shown on the form rather than buried in

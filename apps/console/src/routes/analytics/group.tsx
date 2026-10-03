@@ -10,13 +10,13 @@ import {
   CELL,
   HEAD,
   HEAD_NUMERIC,
-  INPUT,
   NUMERIC,
   Section,
 } from './analytics-nav.js';
 import { getConsolidated, type Consolidated } from './api.js';
 import { daysInclusive, dhakaToday, monthStart, percent, roas } from './format.js';
 import { useAnalyticsT } from './messages.js';
+import { DateRangePicker } from '../../ui/date-picker.js';
 
 type BrandLine = Consolidated['group'] & { readonly orgName: string };
 
@@ -85,34 +85,15 @@ function Group() {
         title={t('analytics.nav.group')}
         caption={t('analytics.group.subtitle')}
         actions={
-          <>
-            <label htmlFor={`${id}-from`} className="text-xs font-medium text-muted-foreground">
-              {t('analytics.period.from')}
-            </label>
-            <input
-              id={`${id}-from`}
-              type="date"
-              className={INPUT}
-              value={period.from}
-              max={period.to}
-              onChange={(event) => {
-                if (event.target.value !== '') setPeriod({ ...period, from: event.target.value });
-              }}
-            />
-            <label htmlFor={`${id}-to`} className="text-xs font-medium text-muted-foreground">
-              {t('analytics.period.to')}
-            </label>
-            <input
-              id={`${id}-to`}
-              type="date"
-              className={INPUT}
-              value={period.to}
-              min={period.from}
-              onChange={(event) => {
-                if (event.target.value !== '') setPeriod({ ...period, to: event.target.value });
-              }}
-            />
-          </>
+          <DateRangePicker
+            id={`${id}-period`}
+            size="sm"
+            aria-label={`${t('analytics.period.from')} – ${t('analytics.period.to')}`}
+            value={period}
+            onValueChange={(range) => {
+              if (range.from !== '' && range.to !== '') setPeriod(range);
+            }}
+          />
         }
       />
 

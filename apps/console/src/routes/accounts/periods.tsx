@@ -8,6 +8,7 @@ import { AccountsHeader, Block, Empty, LoadFailed, LoadingRows } from './account
 import { closePeriod, dhakaToday, listPeriods, requestReopen, type Period } from './api.js';
 import { useAccountsT, type AccountsMessageKey } from './messages.js';
 import { isMonth, monthOf, previousMonth } from './report-dates.js';
+import { MonthPicker } from '../../ui/date-picker.js';
 
 /**
  * Accounting periods (M03, §7): close a month, and ask for a closed one to reopen.
@@ -120,13 +121,12 @@ export function PeriodsPage() {
             >
               <div className="space-y-1.5">
                 <Label htmlFor={`${formId}-month`}>{a('accounts.periods.month')}</Label>
-                <Input
+                <MonthPicker
                   id={`${formId}-month`}
-                  type="month"
                   value={month}
                   max={lastMonth}
                   className="w-44"
-                  onChange={(event) => setMonth(event.target.value)}
+                  onValueChange={setMonth}
                 />
               </div>
               <Button type="submit" disabled={close.isPending || !isMonth(month)}>

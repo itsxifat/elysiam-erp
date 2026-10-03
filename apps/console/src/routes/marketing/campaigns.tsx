@@ -27,6 +27,7 @@ import {
 } from './api.js';
 import { MarketingHeader, useMarketingTableLabels } from './marketing-nav.js';
 import { useMarketingT, type MarketingMessageKey } from './messages.js';
+import { DatePicker } from '../../ui/date-picker.js';
 
 /**
  * Campaigns and the external ids that attribute orders to them (§11; M18).
@@ -256,26 +257,19 @@ function Campaigns() {
             id={`${id}-start`}
             hint={t('marketing.optional')}
           >
-            <input
-              id={`${id}-start`}
-              type="date"
-              className={control}
-              value={startsOn}
-              onChange={(event) => setStartsOn(event.target.value)}
-            />
+            <DatePicker id={`${id}-start`} value={startsOn} clearable onValueChange={setStartsOn} />
           </Field>
           <Field
             label={t('marketing.campaigns.endsOn')}
             id={`${id}-end`}
             hint={t('marketing.optional')}
           >
-            <input
+            <DatePicker
               id={`${id}-end`}
-              type="date"
-              className={control}
               value={endsOn}
-              min={startsOn === '' ? undefined : startsOn}
-              onChange={(event) => setEndsOn(event.target.value)}
+              clearable
+              {...(startsOn === '' ? {} : { min: startsOn })}
+              onValueChange={setEndsOn}
             />
           </Field>
           <div className="md:col-span-3">

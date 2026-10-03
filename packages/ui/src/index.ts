@@ -109,6 +109,19 @@ export {
 export { Sheet, type SheetProps } from './components/sheet.js';
 export { Checkbox, type CheckboxProps } from './components/checkbox.js';
 export {
+  DatePicker,
+  DateRangePicker,
+  MonthPicker,
+  type DatePickerLabels,
+  type DatePickerProps,
+  type DateRange,
+  type DateRangePickerProps,
+  type MonthPickerProps,
+  type PickerLocale,
+  type RangePreset,
+  type YearSpan,
+} from './components/date-picker.js';
+export {
   Menu,
   MenuContent,
   MenuGroup,

@@ -5,9 +5,10 @@ import { Fragment, useMemo, useState } from 'react';
 import { useAbility } from '../../auth/session.js';
 import { useLocale } from '../../i18n/locale.js';
 import { deliveryZones, performance, type PerformanceRow } from './api.js';
-import { control, CourierHeader, Field } from './courier-nav.js';
+import { CourierHeader, Field } from './courier-nav.js';
 import { daysBefore, percentOfBps, todayInDhaka } from './courier-ui.js';
 import { useCourierT } from './messages.js';
+import { DateRangePicker } from '../../ui/date-picker.js';
 
 /**
  * Courier performance by zone (M15): delivery rate, return rate and average days to deliver.
@@ -69,28 +70,17 @@ export function CourierPerformancePage() {
         />
 
         <div className="flex flex-wrap items-end gap-3">
-          <Field label={t('courier.performance.from')} id="performance-from">
-            <input
-              id="performance-from"
-              type="date"
-              value={from}
-              max={to}
-              className={`${control} w-44 tabular-nums`}
-              onChange={(event) => {
-                if (event.target.value !== '') setFrom(event.target.value);
-              }}
-            />
-          </Field>
-          <Field label={t('courier.performance.to')} id="performance-to">
-            <input
-              id="performance-to"
-              type="date"
-              value={to}
-              min={from}
+          <Field
+            label={`${t('courier.performance.from')} – ${t('courier.performance.to')}`}
+            id="performance-period"
+          >
+            <DateRangePicker
+              id="performance-period"
+              value={{ from, to }}
               max={today}
-              className={`${control} w-44 tabular-nums`}
-              onChange={(event) => {
-                if (event.target.value !== '') setTo(event.target.value);
+              onValueChange={(range) => {
+                if (range.from !== '') setFrom(range.from);
+                if (range.to !== '') setTo(range.to);
               }}
             />
           </Field>

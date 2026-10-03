@@ -14,7 +14,7 @@ import { useState } from 'react';
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { listEmployees } from './api.js';
-import { control, Field, numericControl } from './hr-nav.js';
+import { Field, numericControl } from './hr-nav.js';
 import {
   cancelTarget,
   createTarget,
@@ -31,6 +31,7 @@ import {
   ProgressBar,
   TargetFigure,
 } from './performance-shared.js';
+import { MonthPicker } from '../../ui/date-picker.js';
 
 /**
  * Targets for a month (§12; M20).
@@ -83,13 +84,7 @@ export function TargetsPage() {
         <div className="flex flex-wrap items-end gap-3">
           <div className="w-40">
             <Field label={t('perf.month')} id="targets-month">
-              <input
-                id="targets-month"
-                type="month"
-                value={month}
-                className={control}
-                onChange={(event) => setMonth(event.target.value)}
-              />
+              <MonthPicker id="targets-month" value={month} onValueChange={setMonth} />
             </Field>
           </div>
           <PermissionGate allowed={mayUpdate}>

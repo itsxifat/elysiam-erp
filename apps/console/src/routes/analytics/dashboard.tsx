@@ -2,6 +2,8 @@ import {
   Menu,
   MenuContent,
   MenuItem,
+  MenuLabel,
+  MenuSeparator,
   MenuTrigger,
   MetricList,
   Money,
@@ -11,16 +13,16 @@ import {
   StatCard,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Info, RefreshCw, TriangleAlert } from 'lucide-react';
-import { lazy, Suspense, useId, useState, type ReactNode } from 'react';
+import { Database, Download, Info, RefreshCw, TriangleAlert } from 'lucide-react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
 
 import { useAbility } from '../../auth/session.js';
 import { useLocale, useT } from '../../i18n/locale.js';
+import { DateRangePicker } from '../../ui/date-picker.js';
 import {
   CELL,
   HEAD,
   HEAD_NUMERIC,
-  INPUT,
   NUMERIC,
   AnalyticsHeader,
   BUTTON,
@@ -78,7 +80,6 @@ function Dashboard() {
   const { locale } = useLocale();
   const ability = useAbility();
   const queries = useQueryClient();
-  const id = useId();
   const today = dhakaToday();
   const [period, setPeriod] = useState({ from: monthStart(today), to: today });
   const [notice, setNotice] = useState<string | null>(null);
@@ -135,47 +136,72 @@ function Dashboard() {
         caption={t('analytics.dashboard.subtitle')}
         actions={
           <>
-            <label htmlFor={`${id}-from`} className="text-xs font-medium text-muted-foreground">
-              {t('analytics.period.from')}
-            </label>
-            <input
-              id={`${id}-from`}
-              type="date"
-              className={INPUT}
-              value={period.from}
-              max={period.to}
-              onChange={(event) => {
-                if (event.target.value !== '') setPeriod({ ...period, from: event.target.value });
+            <DateRangePicker
+              aria-label={`${t('analytics.period.from')} – ${t('analytics.period.to')}`}
+              value={period}
+              max={today}
+              onValueChange={(next) => {
+                if (next.from !== '' && next.to !== '') setPeriod(next);
               }}
             />
-            <label htmlFor={`${id}-to`} className="text-xs font-medium text-muted-foreground">
-              {t('analytics.period.to')}
-            </label>
-            <input
-              id={`${id}-to`}
-              type="date"
-              className={INPUT}
-              value={period.to}
-              min={period.from}
-              onChange={(event) => {
-                if (event.target.value !== '') setPeriod({ ...period, to: event.target.value });
-              }}
-            />
-            {/* The two exports are secondary: one button, a menu of formats (D-445). */}
+            {/*
+             * The operator's corner (D-460): the exports, recomputing the days and when they
+             * were last computed sit behind one quiet menu, so the page leads with figures.
+             */}
             <Menu>
               <MenuTrigger className={BUTTON}>
-                <Download aria-hidden="true" className="size-4" />
-                {common('common.export')}
+                <Database aria-hidden="true" className="size-4" />
+                {common('analytics.dataMenu')}
               </MenuTrigger>
-              <MenuContent>
+              <MenuContent className="w-72">
+                {data === undefined ? null : (
+                  <MenuLabel className="text-xs font-normal tabular-nums">
+                    {fill(t('analytics.coverage'), {
+                      computed: String(data.coverage.computedDays),
+                      days: String(data.coverage.days),
+                    })}
+                    {data.coverage.computedAt === null
+                      ? null
+                      : ` · ${fill(t('analytics.coverage.at'), {
+                          at: new Date(data.coverage.computedAt).toLocaleString(
+                            locale === 'bn' ? 'bn-BD' : 'en-GB',
+                            { timeZone: 'Asia/Dhaka', dateStyle: 'medium', timeStyle: 'short' },
+                          ),
+                        })}`}
+                  </MenuLabel>
+                )}
                 <MenuItem asChild>
-                  <a href={exportUrl(period.from, period.to, 'csv')}>{t('analytics.exportCsv')}</a>
+                  <a href={exportUrl(period.from, period.to, 'csv')}>
+                    <Download aria-hidden="true" />
+                    {t('analytics.exportCsv')}
+                  </a>
                 </MenuItem>
                 <MenuItem asChild>
                   <a href={exportUrl(period.from, period.to, 'xlsx')}>
+                    <Download aria-hidden="true" />
                     {t('analytics.exportXlsx')}
                   </a>
                 </MenuItem>
+                {ability.can('update', 'Dashboard') ? (
+                  <>
+                    <MenuSeparator />
+                    <MenuItem
+                      disabled={refresh.isPending || !valid || days > 92}
+                      onSelect={() => {
+                        setNotice(null);
+                        refresh.mutate();
+                      }}
+                    >
+                      <RefreshCw aria-hidden="true" />
+                      {refresh.isPending ? t('analytics.refreshing') : t('analytics.refresh')}
+                    </MenuItem>
+                    {days > 92 ? (
+                      <MenuLabel className="text-xs font-normal">
+                        {t('analytics.refreshTooLong')}
+                      </MenuLabel>
+                    ) : null}
+                  </>
+                ) : null}
               </MenuContent>
             </Menu>
           </>
@@ -188,40 +214,11 @@ function Dashboard() {
         </p>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-        {data === undefined ? null : (
-          <span className="tabular-nums">
-            {fill(t('analytics.coverage'), {
-              computed: String(data.coverage.computedDays),
-              days: String(data.coverage.days),
-            })}
-            {data.coverage.computedAt === null
-              ? null
-              : ` · ${fill(t('analytics.coverage.at'), {
-                  at: new Date(data.coverage.computedAt).toLocaleString(
-                    locale === 'bn' ? 'bn-BD' : 'en-GB',
-                    { timeZone: 'Asia/Dhaka', dateStyle: 'medium', timeStyle: 'short' },
-                  ),
-                })}`}
-          </span>
-        )}
-        {ability.can('update', 'Dashboard') ? (
-          <button
-            type="button"
-            className={BUTTON}
-            disabled={refresh.isPending || !valid || days > 92}
-            title={days > 92 ? t('analytics.refreshTooLong') : undefined}
-            onClick={() => {
-              setNotice(null);
-              refresh.mutate();
-            }}
-          >
-            <RefreshCw aria-hidden="true" className="size-4" />
-            {refresh.isPending ? t('analytics.refreshing') : t('analytics.refresh')}
-          </button>
-        ) : null}
-        {notice === null ? null : <span role="status">{notice}</span>}
-      </div>
+      {notice === null ? null : (
+        <p role="status" className="text-sm text-muted-foreground">
+          {notice}
+        </p>
+      )}
 
       {board.isError ? (
         <div role="alert" className="flex items-center gap-3 text-sm">

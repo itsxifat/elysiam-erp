@@ -40,6 +40,10 @@ import {
 import { control, Field, HrNav, numericControl } from './hr-nav.js';
 import { useHrT, type HrMessageKey } from './messages.js';
 import { takaToPoisha } from '@elysium/ui';
+import { DatePicker } from '../../ui/date-picker.js';
+
+/** Join and leaving dates: a migrated record can go back decades, and a date can be next year. */
+const STAFF_YEARS = { from: 1990, to: new Date().getUTCFullYear() + 1 } as const;
 
 /**
  * The staff list, and the two forms that create a person and set their pay (§12, §6).
@@ -479,13 +483,11 @@ function NewEmployeeSheet({
           />
         </Field>
         <Field label={t('hr.field.joinDate')} id="employee-join">
-          <input
+          <DatePicker
             id="employee-join"
-            type="date"
             value={joinDate}
-            required
-            className={control}
-            onChange={(event) => setJoinDate(event.target.value)}
+            years={STAFF_YEARS}
+            onValueChange={setJoinDate}
           />
         </Field>
         <Field label={t('hr.field.payoutMethod')} id="employee-payout">
@@ -746,12 +748,12 @@ function EditPanel({
           />
         </Field>
         <Field label={t('hr.field.leaveDate')} id={`${prefix}-leave`}>
-          <input
+          <DatePicker
             id={`${prefix}-leave`}
-            type="date"
             value={form.leaveDate}
-            className={control}
-            onChange={(event) => set('leaveDate', event.target.value)}
+            clearable
+            years={STAFF_YEARS}
+            onValueChange={(next) => set('leaveDate', next)}
           />
         </Field>
 
@@ -992,14 +994,7 @@ function SalaryPanel({
           }}
         >
           <Field label={t('hr.field.effectiveFrom')} id="salary-from">
-            <input
-              id="salary-from"
-              type="date"
-              value={effectiveFrom}
-              required
-              className={control}
-              onChange={(event) => setEffectiveFrom(event.target.value)}
-            />
+            <DatePicker id="salary-from" value={effectiveFrom} onValueChange={setEffectiveFrom} />
           </Field>
           <Field label={t('hr.field.basic')} id="salary-basic">
             <input

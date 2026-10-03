@@ -35,6 +35,7 @@ import {
   type ReviewRow,
 } from './api.js';
 import { useBranchesT, type BranchesMessageKey } from './messages.js';
+import { DatePicker } from '../../ui/date-picker.js';
 
 /**
  * One showroom: what it sold, how it was paid, what is waiting, and the day close
@@ -859,13 +860,12 @@ function ClosingSection({
             <Label htmlFor={`${formId}-date`} required>
               {t('branch.closing.date')}
             </Label>
-            <Input
+            <DatePicker
               id={`${formId}-date`}
-              type="date"
               max={today}
               value={businessDate}
-              onChange={(event) => {
-                setBusinessDate(event.target.value);
+              onValueChange={(next) => {
+                setBusinessDate(next);
                 // A different day is a different closing, never a retry of this one.
                 setClosingId(crypto.randomUUID());
               }}

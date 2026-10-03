@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
-import { control, Field } from './hr-nav.js';
+import { Field } from './hr-nav.js';
 import { getMyPerformance, type Target } from './performance-api.js';
 import { usePerfT } from './performance-messages.js';
 import {
@@ -14,6 +14,7 @@ import {
   ProgressBar,
   TargetFigure,
 } from './performance-shared.js';
+import { MonthPicker } from '../../ui/date-picker.js';
 
 /**
  * The agent's own dashboard (M20): this month's targets, week by week, and their own desk
@@ -51,13 +52,7 @@ export function MyPerformancePage() {
 
         <div className="w-40">
           <Field label={t('perf.month')} id="me-month">
-            <input
-              id="me-month"
-              type="month"
-              value={month}
-              className={control}
-              onChange={(event) => setMonth(event.target.value)}
-            />
+            <MonthPicker id="me-month" value={month} onValueChange={setMonth} />
           </Field>
         </div>
 

@@ -31,6 +31,7 @@ import {
   percentText,
   TargetFigure,
 } from './performance-shared.js';
+import { MonthPicker } from '../../ui/date-picker.js';
 
 /**
  * Bonus rules (§12; M20; D-274, D-275).
@@ -319,12 +320,12 @@ function VersionRow({
         <StatusBadge tone={VERSION_TONE[version.status] ?? 'neutral'}>
           {t(`perf.version.${version.status}` as PerfMessageKey)}
         </StatusBadge>
-        <input
+        <MonthPicker
           aria-label={t('perf.month')}
-          type="month"
+          size="sm"
           value={month}
-          className={`${control} w-36`}
-          onChange={(event) => setMonth(event.target.value)}
+          className="w-40"
+          onValueChange={setMonth}
         />
         <Button size="sm" variant="secondary" onClick={() => setPreviewMonth(month)}>
           {t('perf.preview')}

@@ -14,6 +14,7 @@ import {
 } from './api.js';
 import { control, Field, HrNav } from './hr-nav.js';
 import { useHrT, type HrMessageKey } from './messages.js';
+import { DatePicker, MonthPicker } from '../../ui/date-picker.js';
 
 /**
  * Attendance: one day at a time, or a whole month from the biometric export (§12, §21).
@@ -110,12 +111,11 @@ export function AttendancePage() {
         />
 
         <Field label={t('hr.month')} id="attendance-month">
-          <input
+          <MonthPicker
             id="attendance-month"
-            type="month"
             value={month}
-            className={`${control} sm:w-48`}
-            onChange={(event) => setMonth(event.target.value)}
+            className="sm:w-48"
+            onValueChange={setMonth}
           />
         </Field>
 
@@ -225,17 +225,14 @@ function ManualEntry({
         />
       </Field>
       <Field label={t('hr.colDate')} id="attendance-date">
-        <input
+        <DatePicker
           id="attendance-date"
-          type="date"
           value={date}
-          required
-          // Bounded to the month on screen, so a typo cannot land a day in another month
+          // Bounded to the month on screen, so a slip cannot land a day in another month
           // that nobody is looking at.
           min={`${month}-01`}
           max={`${month}-31`}
-          className={control}
-          onChange={(event) => setDate(event.target.value)}
+          onValueChange={setDate}
         />
       </Field>
       <Field label={t('hr.colAttendance')} id="attendance-status">

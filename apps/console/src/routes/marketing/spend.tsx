@@ -19,6 +19,7 @@ import { enterSpend, listSpend, requestImport, spendCampaigns, type SpendRow } f
 import { daysInclusive, dhakaToday, monthStart } from './format.js';
 import { MarketingHeader, PeriodPicker, useMarketingTableLabels } from './marketing-nav.js';
 import { useMarketingT } from './messages.js';
+import { DatePicker } from '../../ui/date-picker.js';
 
 /**
  * Ad spend, one figure per campaign per day (§11; M18 check 2 made visible).
@@ -189,16 +190,11 @@ function Spend() {
             </Field>
           </div>
           <Field label={t('marketing.col.date')} id={`${id}-date`}>
-            <input
+            <DatePicker
               id={`${id}-date`}
-              type="date"
-              className={`${control} tabular-nums`}
-              required
               max={today}
               value={entry.spendDate}
-              onChange={(event) =>
-                setEntry((current) => ({ ...current, spendDate: event.target.value }))
-              }
+              onValueChange={(next) => setEntry((current) => ({ ...current, spendDate: next }))}
             />
           </Field>
           <div className="w-36">

@@ -1,6 +1,5 @@
 import {
   Button,
-  Input,
   Label,
   Money,
   Skeleton,
@@ -17,6 +16,7 @@ import { useLocale } from '../../i18n/locale.js';
 import type { Statement } from './api.js';
 import { useAccountsT, type AccountsMessageKey } from './messages.js';
 import type { IsoDate, RangePreset } from './report-dates.js';
+import { DatePicker } from '../../ui/date-picker.js';
 
 /**
  * Pieces every money screen shares: the section's tabs, a titled block, the range
@@ -226,14 +226,14 @@ export function DateInput({
       <Label htmlFor={id} className="block">
         {label}
       </Label>
-      <Input
+      <DatePicker
         id={id}
-        type="date"
+        size="sm"
         value={value}
-        max={max}
-        className="h-control-sm w-40"
-        onChange={(event) => {
-          if (event.target.value !== '') onChange(event.target.value);
+        {...(max === undefined ? {} : { max })}
+        className="w-40"
+        onValueChange={(next) => {
+          if (next !== '') onChange(next);
         }}
       />
     </div>

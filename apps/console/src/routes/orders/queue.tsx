@@ -6,6 +6,7 @@ import {
   Money,
   PermissionGate,
   Skeleton,
+  PageHeader,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -74,13 +75,12 @@ function Queue() {
 
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="text-lg font-semibold tracking-tight">{t('orders.queue.title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('orders.queue.subtitle')}</p>
-        <LiveIndicator status={live} />
-      </header>
-
-      <OrdersNav />
+      <PageHeader
+        title={t('orders.queue.title')}
+        description={t('orders.queue.subtitle')}
+        meta={<LiveIndicator status={live} />}
+        tabs={<OrdersNav />}
+      />
 
       {lost === null ? null : (
         <p role="status" className="text-sm text-muted-foreground">

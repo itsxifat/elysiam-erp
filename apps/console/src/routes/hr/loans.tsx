@@ -23,6 +23,7 @@ import {
 } from './api.js';
 import { control, Field, HrNav, numericControl } from './hr-nav.js';
 import { useHrT, type HrMessageKey } from './messages.js';
+import { MonthPicker } from '../../ui/date-picker.js';
 
 /**
  * Staff loans and their schedules (§12, §7).
@@ -355,14 +356,7 @@ function NewLoanForm({
         />
       </Field>
       <Field label={t('hr.field.firstMonth')} id="loan-first-month">
-        <input
-          id="loan-first-month"
-          type="month"
-          value={firstMonth}
-          required
-          className={control}
-          onChange={(event) => setFirstMonth(event.target.value)}
-        />
+        <MonthPicker id="loan-first-month" value={firstMonth} onValueChange={setFirstMonth} />
       </Field>
       <Field label={t('hr.field.note')} id="loan-note">
         <input

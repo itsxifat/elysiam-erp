@@ -69,11 +69,11 @@ export function SetPasswordScreen({
   const confirmError = form.formState.errors.confirm;
 
   return (
-    <div className="grid min-h-dvh place-items-center bg-muted px-4 py-10">
+    <div className="grid min-h-dvh place-items-center bg-canvas px-4 py-10">
       <div className="w-full max-w-sm">
         <BrandMark branding={branding} />
 
-        <main className="mt-6 rounded-lg border border-border bg-card p-6 shadow-popover">
+        <main className="mt-8 rounded-xl border border-border bg-card p-7 shadow-popover">
           {done ? (
             <div className="space-y-4">
               <h1 className="flex items-center gap-2 text-base font-semibold tracking-tight text-card-foreground">

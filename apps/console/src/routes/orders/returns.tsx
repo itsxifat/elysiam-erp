@@ -1,11 +1,4 @@
-import {
-  Button,
-  EmptyState,
-  ErrorState,
-  PermissionGate,
-  Skeleton,
-  controlClassName,
-} from '@elysium/ui';
+import { Button, EmptyState, ErrorState, PermissionGate, Skeleton, PageHeader } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 
@@ -14,6 +7,7 @@ import { formatShare, monthStartOf, todayInDhaka } from './returns-logic.js';
 import { returnReasonReport } from './advances-api.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { OrdersNav } from './parts.js';
+import { DateRangePicker } from '../../ui/date-picker.js';
 
 /**
  * Returns by reason (M17 check 3, D-234).
@@ -44,43 +38,22 @@ export function ReturnReasonsPage() {
       explain={{ title: t('orders.deniedTitle'), detail: t('orders.deniedDetail') }}
     >
       <div className="space-y-5">
-        <header className="space-y-3">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">{t('orders.returns.heading')}</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">{t('orders.returns.caption')}</p>
-          </div>
-          <OrdersNav />
-        </header>
+        <PageHeader
+          title={t('orders.returns.heading')}
+          description={t('orders.returns.caption')}
+          tabs={<OrdersNav />}
+        />
 
         <div className="flex flex-wrap items-end gap-3">
-          <label
-            className="space-y-1 text-xs font-medium text-muted-foreground"
-            htmlFor={`${id}-from`}
-          >
-            <span className="block">{t('orders.returns.from')}</span>
-            <input
-              id={`${id}-from`}
-              type="date"
-              value={from}
-              max={to}
-              className={controlClassName}
-              onChange={(event) => setFrom(event.target.value)}
-            />
-          </label>
-          <label
-            className="space-y-1 text-xs font-medium text-muted-foreground"
-            htmlFor={`${id}-to`}
-          >
-            <span className="block">{t('orders.returns.to')}</span>
-            <input
-              id={`${id}-to`}
-              type="date"
-              value={to}
-              min={from}
-              className={controlClassName}
-              onChange={(event) => setTo(event.target.value)}
-            />
-          </label>
+          <DateRangePicker
+            id={`${id}-period`}
+            aria-label={`${t('orders.returns.from')} – ${t('orders.returns.to')}`}
+            value={{ from, to }}
+            onValueChange={(range) => {
+              setFrom(range.from);
+              setTo(range.to);
+            }}
+          />
         </div>
 
         {report.isPending ? (

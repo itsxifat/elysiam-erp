@@ -4,7 +4,6 @@ import {
   DataTable,
   DateTime,
   FilterChips,
-  Input,
   Money,
   PageHeader,
   PermissionGate,
@@ -47,6 +46,7 @@ import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { LiveIndicator, OrdersNav, OrderStatusBadge, useOrderEvents } from './parts.js';
 import { ordersPath, useSchemaSearch } from './paths.js';
 import { mergeOrderSearch, orderListSearchSchema } from './search.js';
+import { DateRangePicker } from '../../ui/date-picker.js';
 
 /**
  * Every order the caller may see, filtered (M11 Build list: status, channel, date, agent,
@@ -566,28 +566,19 @@ function OrderList() {
                     setSearch(mergeOrderSearch(search, { zone: value || undefined }))
                   }
                 />
-                <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                  {t('orders.filter.from')}
-                  <Input
-                    type="date"
-                    value={search.from ?? ''}
-                    className="w-40"
-                    onChange={(event) =>
-                      setSearch(mergeOrderSearch(search, { from: event.target.value || undefined }))
-                    }
-                  />
-                </label>
-                <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                  {t('orders.filter.to')}
-                  <Input
-                    type="date"
-                    value={search.to ?? ''}
-                    className="w-40"
-                    onChange={(event) =>
-                      setSearch(mergeOrderSearch(search, { to: event.target.value || undefined }))
-                    }
-                  />
-                </label>
+                <DateRangePicker
+                  aria-label={`${t('orders.filter.from')} – ${t('orders.filter.to')}`}
+                  value={{ from: search.from ?? '', to: search.to ?? '' }}
+                  clearable
+                  onValueChange={(range) =>
+                    setSearch(
+                      mergeOrderSearch(search, {
+                        from: range.from || undefined,
+                        to: range.to || undefined,
+                      }),
+                    )
+                  }
+                />
               </div>
             ) : null}
 

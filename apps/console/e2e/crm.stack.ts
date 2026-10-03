@@ -155,7 +155,14 @@ test('lapsed buyers and the profile: the provisioned buyer is found and opened',
 
   // Capture: the occasions job greets on these dates.
   await page.getByRole('button', { name: 'Edit dates' }).click();
-  await page.getByLabel('Birthday').fill('1993-11-14');
+  // The kit's date picker since the design refresh (D-459): month and year from its
+  // lists, then the day.
+  await page.getByLabel('Birthday').click();
+  await page.getByRole('combobox', { name: 'Month' }).click();
+  await page.getByRole('option', { name: 'Nov', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Year' }).click();
+  await page.getByRole('option', { name: '1993', exact: true }).click();
+  await page.getByRole('button', { name: /14 November 1993/ }).click();
   await page.getByRole('button', { name: 'Save dates' }).click();
   await expect(page.getByRole('button', { name: 'Edit dates' })).toBeVisible();
   await expect(page.getByText('1993-11-14')).toBeVisible();

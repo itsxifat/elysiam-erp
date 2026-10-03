@@ -46,7 +46,7 @@ M07, M09, M10, M11, M12, M13, M15, M19 and M25 were built by parallel agents bet
 | M26  | Company loans                      | built and verified; both auditors run (see the plan)   |
 | —    | Preview kit (`preview-kit.md`)     | done; ledger audit fixed and re-audited (see the plan) |
 
-Not a milestone: `gaps-orders-settings.md`, the console gaps M30's research found (order lifecycle buttons, courier statuses that ship an order, the settings screens, HR's pay picker; D-390 to D-396); and `m30-followups.md`, M30 part 1's open medium findings, its two named races and the console gaps its guides found (D-411 to D-419).
+Not a milestone: `gaps-orders-settings.md`, the console gaps M30's research found (order lifecycle buttons, courier statuses that ship an order, the settings screens, HR's pay picker; D-390 to D-396); and `m30-followups.md`, M30 part 1's open medium findings, its two named races and the console gaps its guides found (D-411 to D-419). `design-refresh.md` is the owner-requested redesign of the console, the investor portal and the till: the tokens, the shell, the command palette, the kit components and the main screens (D-440 to D-462).
 
 | Plan            | Milestone                                   | State on 2026-10-02                                    |
 | --------------- | ------------------------------------------- | ------------------------------------------------------ |

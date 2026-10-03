@@ -1,16 +1,10 @@
-import {
-  PageHeader,
-  TabList,
-  cn,
-  controlClassName,
-  tabActiveClassName,
-  tabClassName,
-} from '@elysium/ui';
+import { PageHeader, TabList, tabActiveClassName, tabClassName } from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
 import type { ComponentProps, ReactNode } from 'react';
 
 import { useAbility } from '../../auth/session.js';
 import { useMarketingT } from './messages.js';
+import { DateRangePicker } from '../../ui/date-picker.js';
 
 /** A marketing path, widened once until the routes are in the router's type (see `courierPath`). */
 export type MarketingPath = ComponentProps<typeof Link>['to'];
@@ -123,35 +117,16 @@ export function PeriodPicker({
   readonly idPrefix: string;
 }) {
   const t = useMarketingT();
-  const input = cn(controlClassName, 'w-auto tabular-nums');
+  // One control for the period (D-459): the start and the end, or a preset.
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <label htmlFor={`${idPrefix}-from`} className="text-xs font-medium text-muted-foreground">
-        {t('marketing.period.from')}
-      </label>
-      <input
-        id={`${idPrefix}-from`}
-        type="date"
-        className={input}
-        value={from}
-        max={to}
-        onChange={(event) => {
-          if (event.target.value !== '') onChange({ from: event.target.value, to });
-        }}
-      />
-      <label htmlFor={`${idPrefix}-to`} className="text-xs font-medium text-muted-foreground">
-        {t('marketing.period.to')}
-      </label>
-      <input
-        id={`${idPrefix}-to`}
-        type="date"
-        className={input}
-        value={to}
-        min={from}
-        onChange={(event) => {
-          if (event.target.value !== '') onChange({ from, to: event.target.value });
-        }}
-      />
-    </div>
+    <DateRangePicker
+      id={`${idPrefix}-period`}
+      size="sm"
+      aria-label={`${t('marketing.period.from')} – ${t('marketing.period.to')}`}
+      value={{ from, to }}
+      onValueChange={(range) => {
+        if (range.from !== '' && range.to !== '') onChange(range);
+      }}
+    />
   );
 }

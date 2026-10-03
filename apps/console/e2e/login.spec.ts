@@ -210,11 +210,11 @@ test('check 3: an unknown host falls back to the generic login', async ({ page }
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   await expect(page.getByText('Elysium', { exact: true }).first()).toBeVisible();
 
-  // No org, so no override: the shipped accent stays.
+  // No org, so no override: the shipped accent stays (the ink's hue since D-441).
   const hue = await page.evaluate(() =>
     document.documentElement.style.getPropertyValue('--brand-h'),
   );
-  expect(hue).toBe('259');
+  expect(hue).toBe('270');
 });
 
 test('check 6: every mutation carries the CSRF token the server issued', async ({ page }) => {

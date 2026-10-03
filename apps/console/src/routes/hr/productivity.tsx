@@ -3,10 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
-import { control, Field } from './hr-nav.js';
+import { Field } from './hr-nav.js';
 import { getProductivity } from './performance-api.js';
 import { usePerfT } from './performance-messages.js';
 import { currentMonth, minutesText, PerformanceNav, today } from './performance-shared.js';
+import { DateRangePicker } from '../../ui/date-picker.js';
 
 /**
  * The order desk's productivity report (§12; M20; D-276).
@@ -50,30 +51,16 @@ export function ProductivityPage() {
             setRange({ from, to });
           }}
         >
-          <div className="w-40">
-            <Field label={t('perf.from')} id="productivity-from">
-              <input
-                id="productivity-from"
-                type="date"
-                value={from}
-                required
-                className={control}
-                onChange={(event) => setFrom(event.target.value)}
-              />
-            </Field>
-          </div>
-          <div className="w-40">
-            <Field label={t('perf.to')} id="productivity-to">
-              <input
-                id="productivity-to"
-                type="date"
-                value={to}
-                required
-                className={control}
-                onChange={(event) => setTo(event.target.value)}
-              />
-            </Field>
-          </div>
+          <Field label={`${t('perf.from')} – ${t('perf.to')}`} id="productivity-period">
+            <DateRangePicker
+              id="productivity-period"
+              value={{ from, to }}
+              onValueChange={(range) => {
+                setFrom(range.from);
+                setTo(range.to);
+              }}
+            />
+          </Field>
           <Button type="submit" size="sm" variant="secondary">
             {t('perf.show')}
           </Button>
