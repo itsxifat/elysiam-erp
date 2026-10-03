@@ -221,6 +221,20 @@ test('receive a second delivery from the product page', async () => {
   await expect(mRed).toContainText('3');
   await expect(variants.getByRole('row', { name: /M \/ Navy Blue/ })).toContainText('4');
   await expect(page.getByRole('region', { name: 'Stock history' })).toContainText('Transferred in');
+
+  // A low-stock alert at the warehouse: 7 available against an alert at 8 shows Low.
+  await page.getByRole('button', { name: 'Low-stock alerts' }).click();
+  const alerts = page.getByRole('dialog', { name: 'Low-stock alerts' });
+  const warehouse = alerts.getByLabel('Location');
+  const warehouseValue = await warehouse
+    .locator('option', { hasText: 'Main Warehouse' })
+    .getAttribute('value');
+  await warehouse.selectOption(warehouseValue ?? '');
+  await alerts.getByLabel('Alert at M / Red').fill('8');
+  await alerts.getByRole('button', { name: 'Save' }).click();
+  await expect(alerts.getByRole('status')).toContainText('Saved');
+  await alerts.getByRole('button', { name: 'Cancel' }).click();
+  await expect(mRed).toContainText('Low');
   await shot('08-product-hub-after');
 });
 

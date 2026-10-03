@@ -289,6 +289,15 @@ export function listMovements(input: {
   );
 }
 
+/** A SKU's low-stock level at one location (`PUT /v1/inventory/reorder-levels`). */
+export function setReorderLevel(input: {
+  readonly skuId: string;
+  readonly locationId: string;
+  readonly reorderLevel: number;
+}): Promise<unknown> {
+  return api.put('/v1/inventory/reorder-levels', input);
+}
+
 export function listAllLocations(): Promise<{ items: StockLocation[] }> {
   return api.get('/v1/inventory/locations?includeInactive=true');
 }

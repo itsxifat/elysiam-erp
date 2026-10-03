@@ -40,6 +40,7 @@ import { ChipGroup, Field, PhotoUploader, Thumb } from './parts.js';
 import {
   AdjustStockDialog,
   ReceiveStockDialog,
+  ReorderDialog,
   TransferStockDialog,
   type VariantInfo,
 } from './stock-actions.js';
@@ -65,7 +66,7 @@ import { total } from './variant-grid.js';
 
 const route = getRouteApi('/catalog/$productId');
 
-type Dialogs = 'receive' | 'adjust' | 'transfer' | 'edit' | 'archive' | null;
+type Dialogs = 'receive' | 'adjust' | 'transfer' | 'reorder' | 'edit' | 'archive' | null;
 
 export function CatalogProductPage() {
   const ability = useAbility();
@@ -218,6 +219,7 @@ export function CatalogProductPage() {
           )}
           showStock={mayStock}
           mayWrite={mayWrite}
+          onReorder={() => setOpen('reorder')}
           onDone={refresh}
         />
 
@@ -245,6 +247,13 @@ export function CatalogProductPage() {
         <AdjustStockDialog
           open={open === 'adjust'}
           onOpenChange={(next) => setOpen(next ? 'adjust' : null)}
+          variants={variants}
+          stock={rows}
+          onDone={refresh}
+        />
+        <ReorderDialog
+          open={open === 'reorder'}
+          onOpenChange={(next) => setOpen(next ? 'reorder' : null)}
           variants={variants}
           stock={rows}
           onDone={refresh}
@@ -337,8 +346,10 @@ function VariantGrid({
   locations,
   showStock,
   mayWrite,
+  onReorder,
   onDone,
 }: {
+  readonly onReorder: () => void;
   readonly product: CatalogProduct | undefined;
   readonly rows: readonly StockRow[];
   readonly locations: readonly { id: string; name: string; code: string; kind: string }[];
@@ -425,9 +436,16 @@ function VariantGrid({
               </Button>
             </div>
           ) : (
-            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-              {t('cs.hub.editPrices')}
-            </Button>
+            <div className="flex items-center gap-2">
+              {showStock ? (
+                <Button size="sm" variant="ghost" onClick={onReorder}>
+                  {t('cs.reorder.action')}
+                </Button>
+              ) : null}
+              <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                {t('cs.hub.editPrices')}
+              </Button>
+            </div>
           )}
         </PermissionGate>
       </div>

@@ -736,6 +736,12 @@ const en = {
     'How many of each item are at each location. Click a product to receive, adjust or transfer it.',
   'cs.stock.allCategories': 'All categories',
   'cs.stock.count': 'Count stock',
+  'cs.reorder.action': 'Low-stock alerts',
+  'cs.reorder.title': 'Low-stock alerts',
+  'cs.reorder.help':
+    'A variant shows Low when what is available at this location falls to this number or below. 0 turns the alert off.',
+  'cs.reorder.col': 'Alert at',
+  'cs.reorder.saved': 'Saved.',
 
   // Accounts — wallets, cash entries and day-end closings (M08).
   'accounts.title': 'Accounts',

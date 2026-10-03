@@ -5,7 +5,13 @@ import { useState, type ReactNode } from 'react';
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
-import { dispatchTransfer, listLocations, requestAdjustment, type StockRow } from '../stock/api.js';
+import {
+  dispatchTransfer,
+  listLocations,
+  requestAdjustment,
+  setReorderLevel,
+  type StockRow,
+} from '../stock/api.js';
 import { createDraft, createEntry, listSupplierOptions } from '../supply/api.js';
 import { parseQty } from './variant-grid.js';
 
@@ -661,6 +667,167 @@ export function TransferStockDialog({
         {submit.error !== null ? (
           <p role="alert" className="text-sm text-destructive">
             {errorText(submit.error, t('cs.saveFailed'))}
+          </p>
+        ) : null}
+      </div>
+    </Dialog>
+  );
+}
+
+// --- low-stock alerts -------------------------------------------------------------
+
+/**
+ * The level at which each variant counts as low at one location. The route existed
+ * (`PUT /v1/inventory/reorder-levels`) but nothing could set it, so "Low" never showed.
+ * One request per changed variant; 0 switches the alert off.
+ */
+export function ReorderDialog({
+  open,
+  onOpenChange,
+  variants,
+  stock,
+  onDone,
+}: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly variants: readonly VariantInfo[];
+  readonly stock: readonly StockRow[];
+  readonly onDone: () => void;
+}) {
+  const t = useT();
+  const [locationId, setLocationId] = useState('');
+  const [levels, setLevels] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState(false);
+
+  const locations = useQuery({
+    queryKey: ['stock', 'locations'],
+    queryFn: listLocations,
+    enabled: open,
+    staleTime: 5 * 60_000,
+  });
+  const choosable = (locations.data?.items ?? []).filter(
+    (location) =>
+      location.isActive && (location.kind === 'warehouse' || location.kind === 'showroom'),
+  );
+  const chosenLocation = locationId !== '' ? locationId : (choosable[0]?.id ?? '');
+  const current = (skuId: string) =>
+    stock.find((row) => row.skuId === skuId && row.locationId === chosenLocation)?.reorderLevel ??
+    0;
+
+  const changes = variants.flatMap((variant) => {
+    const text = levels[variant.id];
+    if (text === undefined) return [];
+    const trimmed = text.trim();
+    const value = trimmed === '' ? 0 : /^\d{1,7}$/.test(trimmed) ? Number(trimmed) : null;
+    return value === null || value === current(variant.id)
+      ? []
+      : [{ skuId: variant.id, reorderLevel: value }];
+  });
+  const invalid = variants.some((variant) => {
+    const text = (levels[variant.id] ?? '').trim();
+    return text !== '' && !/^\d{1,7}$/.test(text);
+  });
+
+  const save = useMutation({
+    mutationFn: async () => {
+      for (const change of changes) {
+        await setReorderLevel({ ...change, locationId: chosenLocation });
+      }
+    },
+    onSuccess: () => {
+      setSaved(true);
+      setLevels({});
+      onDone();
+    },
+  });
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setSaved(false);
+        onOpenChange(next);
+      }}
+      title={t('cs.reorder.title')}
+      description={t('cs.reorder.help')}
+      closeLabel={t('cs.close')}
+      className={wide}
+      footer={
+        <>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t('cs.cancel')}
+          </Button>
+          <Button
+            disabled={changes.length === 0 || invalid || chosenLocation === '' || save.isPending}
+            onClick={() => save.mutate()}
+          >
+            {t('cs.save')}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Field label={t('cs.location')} id="reorder-location">
+          <select
+            id="reorder-location"
+            value={chosenLocation}
+            onChange={(event) => {
+              setLocationId(event.target.value);
+              setLevels({});
+            }}
+            className={control}
+          >
+            {choosable.map((location) => (
+              <option key={location.id} value={location.id}>
+                {location.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <table className="w-full text-sm">
+          <caption className="sr-only">{t('cs.reorder.title')}</caption>
+          <thead>
+            <tr className="border-b border-border text-left text-xs text-muted-foreground">
+              <th scope="col" className="py-1.5">
+                {t('cs.col.variant')}
+              </th>
+              <th scope="col" className="w-32 py-1.5 text-right">
+                {t('cs.reorder.col')}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {variants.map((variant) => (
+              <tr key={variant.id} className="border-b border-border/60">
+                <td className="py-1.5 font-medium">
+                  {variant.label === '' ? variant.skuCode : variant.label}
+                </td>
+                <td className="py-1.5 text-right">
+                  <label className="sr-only" htmlFor={`reorder-${variant.id}`}>
+                    {`${t('cs.reorder.col')} ${variant.label || variant.skuCode}`}
+                  </label>
+                  <input
+                    id={`reorder-${variant.id}`}
+                    inputMode="numeric"
+                    value={levels[variant.id] ?? String(current(variant.id))}
+                    onChange={(event) =>
+                      setLevels((state) => ({ ...state, [variant.id]: event.target.value }))
+                    }
+                    className={`${control} w-24 text-right tabular-nums`}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {saved ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            {t('cs.reorder.saved')}
+          </p>
+        ) : null}
+        {save.error !== null ? (
+          <p role="alert" className="text-sm text-destructive">
+            {errorText(save.error, t('cs.saveFailed'))}
           </p>
         ) : null}
       </div>

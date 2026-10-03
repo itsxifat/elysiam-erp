@@ -62,10 +62,14 @@ export function StockLevelsPage() {
     staleTime: 5 * 60_000,
   });
 
-  const transit = new Set(
-    (locations.data?.items ?? [])
-      .filter((location) => location.kind === 'in_transit')
-      .map((location) => location.id),
+  const transit = useMemo(
+    () =>
+      new Set(
+        (locations.data?.items ?? [])
+          .filter((location) => location.kind === 'in_transit')
+          .map((location) => location.id),
+      ),
+    [locations.data],
   );
 
   const categories = useQuery({
@@ -187,7 +191,7 @@ export function StockLevelsPage() {
         },
       }),
     ]);
-  }, [mayReadCost, st, t]);
+  }, [mayReadCost, st, t, transit]);
 
   return (
     <PermissionGate

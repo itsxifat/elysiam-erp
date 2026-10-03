@@ -695,6 +695,12 @@ const bn: Record<MessageKey, string> = {
     'প্রতিটি লোকেশনে প্রতিটি আইটেম কয়টি আছে। স্টক গ্রহণ, সমন্বয় বা ট্রান্সফার করতে প্রোডাক্টে ক্লিক করুন।',
   'cs.stock.allCategories': 'সব ক্যাটাগরি',
   'cs.stock.count': 'স্টক গণনা',
+  'cs.reorder.action': 'কম স্টকের সতর্কতা',
+  'cs.reorder.title': 'কম স্টকের সতর্কতা',
+  'cs.reorder.help':
+    'এই লোকেশনে বিক্রয়যোগ্য পরিমাণ এই সংখ্যা বা তার নিচে নামলে ভ্যারিয়েন্টটি কম দেখাবে। ০ দিলে সতর্কতা বন্ধ।',
+  'cs.reorder.col': 'সতর্কতা যখন',
+  'cs.reorder.saved': 'সংরক্ষিত।',
 
   // Accounts — wallets, cash entries and day-end closings (M08).
   'accounts.title': 'হিসাব',
