@@ -66,6 +66,22 @@ export class TransfersService {
     const existing = await repo.inTransitLocation(tx, context.orgId);
     if (existing !== undefined) return existing;
 
+    // One in-transit location per brand (§8): a switched-off one is pointed at, not
+    // replaced by a second (ledger audit L2).
+    const off = await repo.anyInTransitLocation(tx, context.orgId);
+    if (off !== undefined) {
+      throw new StockError(
+        'STOCK_LOCATION_INVALID',
+        `The in-transit location ${off.code} is switched off. Switch it back on in Catalog setup to send stock.`,
+      );
+    }
+
+    /*
+     * `on conflict do nothing` under READ COMMITTED (withOrg sets no other level): the
+     * second of two first transfers waits for the first's insert, finds the row taken,
+     * and its re-read below sees the committed location. Under REPEATABLE READ it would
+     * fail with a serialization error instead, so this depends on the default level.
+     */
     const created = await repo.insertInTransitLocation(tx, context.orgId);
     if (created !== undefined) {
       await this.audit.record(tx, {
@@ -120,9 +136,10 @@ export class TransfersService {
 
         const transit = await this.inTransit(tx, context, request);
         if (transit === undefined) {
+          // The code is taken by a location of another kind, so none could be made.
           throw new StockError(
             'STOCK_LOCATION_INVALID',
-            'This brand has no active in-transit location, and one named IN-TRANSIT exists but is switched off. Switch it back on in Catalog setup (§8).',
+            `A location already uses the code ${repo.AUTO_IN_TRANSIT_CODE}, so the in-transit location could not be created (§8).`,
           );
         }
 

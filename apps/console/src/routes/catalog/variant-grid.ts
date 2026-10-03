@@ -83,3 +83,31 @@ export function csvDataUrl(text: string): string {
 export const PRODUCT_TEMPLATE =
   'name,category,price_taka,sizes,colours,status,description\n' +
   'Linen Panjabi,PNJ,2450,M|L|XL,White|Cream,active,Soft linen for Eid\n';
+
+/**
+ * The idempotency key of one thing a person is trying to save (ledger audit H1).
+ *
+ * The same key is sent on every attempt until one succeeds, so a retry after a lost
+ * response replays the receipt the server already has instead of posting a second one:
+ * the supply routes treat a known `supplyId` or `draftId` as the same request. Only a
+ * success starts a new key.
+ */
+export interface RequestKey {
+  readonly current: () => string;
+  readonly settle: () => void;
+}
+
+export function requestKey(make: () => string = () => crypto.randomUUID()): RequestKey {
+  let value = make();
+  return {
+    current: () => value,
+    settle: () => {
+      value = make();
+    },
+  };
+}
+
+/** A positive cost in taka, as poisha, or null: zero or blank is not a cost here. */
+export function positiveCost(poisha: string | null): string | null {
+  return poisha === null || /^0+$/.test(poisha) ? null : poisha;
+}

@@ -192,9 +192,63 @@ describe('reviewProductImport (D-425)', () => {
     expect(report.problems[0]?.message).toMatch(/no size list/);
   });
 
-  it('splits value lists on |, ;, / and commas', () => {
-    expect(splitValueList(' S | M;L/XL, XXL ')).toEqual(['S', 'M', 'L', 'XL', 'XXL']);
+  it('splits value lists on |, ; and commas, and keeps a two-tone colour whole', () => {
+    expect(splitValueList(' S | M;L, XXL ')).toEqual(['S', 'M', 'L', 'XXL']);
+    expect(splitValueList('Black/White|Red')).toEqual(['Black/White', 'Red']);
     expect(splitValueList('')).toEqual([]);
+  });
+
+  it('refuses a value that matches two entries rather than guessing', () => {
+    const report = reviewProductImport(parseCsv('name,price_taka,colours\nTee,500,RED\n'), {
+      ...CONTEXT,
+      colours: {
+        attributeId: 'a-colour',
+        name: 'Colour',
+        values: [
+          { id: 'red', code: 'RED', label: 'Red' },
+          { id: 'maroon', code: 'MRN', label: 'red' },
+        ],
+      },
+    });
+    expect(report.problems.map((p) => `${String(p.line)}:${p.column ?? ''}`)).toEqual([
+      '2:colours',
+    ]);
+    expect(report.problems[0]?.message).toMatch(/more than one/);
+  });
+
+  it('caps the SKUs one file may make', () => {
+    const many = {
+      attributeId: 'a-size',
+      name: 'Size',
+      values: Array.from({ length: 25 }, (_, index) => ({
+        id: `s${String(index)}`,
+        code: `S${String(index)}`,
+        label: `S${String(index)}`,
+      })),
+    };
+    const colours = {
+      attributeId: 'a-colour',
+      name: 'Colour',
+      values: Array.from({ length: 20 }, (_, index) => ({
+        id: `c${String(index)}`,
+        code: `C${String(index)}`,
+        label: `C${String(index)}`,
+      })),
+    };
+    const sizes = many.values.map((value) => value.code).join('|');
+    const colourList = colours.values.map((value) => value.code).join('|');
+    // 11 products × 25 sizes × 20 colours = 5,500 SKUs, over the 5,000 ceiling.
+    const rows = Array.from(
+      { length: 11 },
+      (_, index) => `Tee ${String(index)},500,${sizes},${colourList}`,
+    );
+    const report = reviewProductImport(
+      parseCsv(['name,price_taka,sizes,colours', ...rows].join('\n')),
+      { ...CONTEXT, sizes: many, colours },
+    );
+    expect(report.problems).toHaveLength(1);
+    expect(report.problems[0]?.line).toBe(1);
+    expect(report.problems[0]?.message).toMatch(/5500 SKUs/);
   });
 });
 

@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   ORG_A,
   ORG_B,
+  auditRowsFor,
   startHttpHarness,
   type HttpHarness,
   type RoleClient,
@@ -533,5 +534,132 @@ describe('the new-products spreadsheet (D-425)', () => {
     });
     expect(again.statusCode).toBe(422);
     expect(await productCount('Cotton Kurta')).toBe(1);
+  });
+});
+
+describe('the first transfer in a brand with no in-transit location (D-428)', () => {
+  let from = '';
+  let to = '';
+  let skuId = '';
+  let transitId = '';
+  const transferIds: string[] = [];
+
+  async function transitLocations(): Promise<{ id: string; is_active: boolean }[]> {
+    return withSystem(
+      async (tx) => [
+        ...(await tx.execute<{ id: string; is_active: boolean }>(sql`
+          select id, is_active from org.locations
+          where org_id = ${ORG_B} and kind = 'in_transit'
+        `)),
+      ],
+      { orgId: ORG_B },
+    );
+  }
+
+  beforeAll(async () => {
+    from = await warehouseId(ORG_B);
+    to = (
+      await call<{ id: string }>(
+        otherAdmin,
+        'POST',
+        '/v1/inventory/locations',
+        { code: 'WH-UXB', name: 'Second warehouse B', kind: 'warehouse' },
+        201,
+      )
+    ).id;
+    const supplierB = await call<{ id: string }>(
+      otherAdmin,
+      'POST',
+      '/v1/supply/suppliers',
+      { code: 'SUP-UXB', name: 'Brand B supplier' },
+      201,
+    );
+    const product = await call<Product>(
+      otherAdmin,
+      'POST',
+      '/v1/catalog/products',
+      { name: 'Plain Scarf B', slug: 'plain-scarf-b-ux', pricePoisha: '50000', status: 'active' },
+      201,
+    );
+    skuId = product.skus[0]?.id ?? '';
+    await call(
+      otherAdmin,
+      'POST',
+      '/v1/supply/entries',
+      {
+        supplyId: randomUUID(),
+        supplierId: supplierB.id,
+        locationId: from,
+        lines: [{ skuId, qty: 10, unitCostPoisha: '20000' }],
+      },
+      201,
+    );
+  });
+
+  it('two first transfers at once make one location, audited once', async () => {
+    expect(await transitLocations()).toEqual([]);
+    const responses = await Promise.all(
+      [1, 2].map(() =>
+        otherAdmin.client.request('POST', '/v1/inventory/transfers', {
+          body: { fromLocationId: from, toLocationId: to, lines: [{ skuId, qty: 1 }] },
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.statusCode)).toEqual([201, 201]);
+    transferIds.push(...responses.map((response) => body<{ id: string }>(response).id));
+
+    const transit = await transitLocations();
+    expect(transit).toHaveLength(1);
+    transitId = transit[0]?.id ?? '';
+    const audit = await auditRowsFor(ORG_B, transitId);
+    expect(audit.filter((row) => row.action === 'inventory.location.created')).toHaveLength(1);
+  });
+
+  it('a location still holding stock or a transfer cannot be switched off', async () => {
+    // Two transfers are on their way through in-transit, and the source holds stock.
+    for (const id of [transitId, from]) {
+      const refused = await otherAdmin.client.request('PATCH', `/v1/inventory/locations/${id}`, {
+        body: { isActive: false },
+      });
+      expect(refused.statusCode, refused.body).toBe(400);
+      expect(body<{ code: string }>(refused).code).toBe('STOCK_LOCATION_INVALID');
+    }
+  });
+
+  it('a switched-off in-transit location is pointed at, not replaced by a second', async () => {
+    for (const id of transferIds) {
+      await call(otherAdmin, 'POST', `/v1/inventory/transfers/${id}/receive`, undefined, 201);
+    }
+    // Empty now, so it may be switched off.
+    await call(
+      otherAdmin,
+      'PATCH',
+      `/v1/inventory/locations/${transitId}`,
+      { isActive: false },
+      200,
+    );
+
+    const refused = await otherAdmin.client.request('POST', '/v1/inventory/transfers', {
+      body: { fromLocationId: from, toLocationId: to, lines: [{ skuId, qty: 1 }] },
+    });
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect(body<{ code: string }>(refused).code).toBe('STOCK_LOCATION_INVALID');
+    expect(refused.body).toMatch(/switched off/);
+    expect(await transitLocations()).toEqual([{ id: transitId, is_active: false }]);
+
+    await call(
+      otherAdmin,
+      'PATCH',
+      `/v1/inventory/locations/${transitId}`,
+      { isActive: true },
+      200,
+    );
+    await call(
+      otherAdmin,
+      'POST',
+      '/v1/inventory/transfers',
+      { fromLocationId: from, toLocationId: to, lines: [{ skuId, qty: 1 }] },
+      201,
+    );
   });
 });

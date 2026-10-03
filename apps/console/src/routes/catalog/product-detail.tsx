@@ -95,7 +95,17 @@ export function CatalogProductPage() {
   });
   const stock = useQuery({
     queryKey: ['stock', 'product', productId],
-    queryFn: () => listStock({ productId, page: 1, pageSize: 200 }),
+    // Every row, not the first 200: a product may have 500 variants at several
+    // locations, and a missing row would read as zero stock (ledger audit M1).
+    queryFn: async () => {
+      const items: StockRow[] = [];
+      for (let page = 1; page <= 50; page += 1) {
+        const batch = await listStock({ productId, page, pageSize: 200 });
+        items.push(...batch.items);
+        if (batch.items.length < 200) break;
+      }
+      return { items };
+    },
     enabled: mayStock,
   });
   const locations = useQuery({

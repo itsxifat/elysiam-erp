@@ -18,7 +18,13 @@ import {
 } from './api.js';
 import { ChipGroup, Field, PhotoUploader } from './parts.js';
 import { slugify } from './slug.js';
-import { parseQty, variantRows, type VariantRow } from './variant-grid.js';
+import {
+  parseQty,
+  positiveCost,
+  requestKey,
+  variantRows,
+  type VariantRow,
+} from './variant-grid.js';
 
 /**
  * New product, in one form (plan `catalog-stock-ux`, D-421, D-426).
@@ -57,6 +63,8 @@ export function CatalogNewProductPage() {
   const [costTaka, setCostTaka] = useState('');
   const [photos, setPhotos] = useState<UploadedFile[]>([]);
   const [created, setCreated] = useState<CatalogProduct | null>(null);
+  // The opening receipt's key, kept across retries (ledger audit H1).
+  const [key] = useState(() => requestKey());
 
   const categories = useQuery({
     queryKey: ['catalog', 'categories'],
@@ -96,7 +104,8 @@ export function CatalogNewProductPage() {
   const rows = variantRows(choice);
 
   const pricePoisha = takaToPoisha(taka);
-  const costPoisha = takaToPoisha(costTaka);
+  // A stray 0 would receive every variant free and drag the average down (audit L6).
+  const costPoisha = positiveCost(takaToPoisha(costTaka));
   const receivable = (locations.data?.items ?? []).filter(
     (location) =>
       location.isActive && (location.kind === 'warehouse' || location.kind === 'showroom'),
@@ -142,6 +151,9 @@ export function CatalogNewProductPage() {
               valueIds: axis.values.map((value) => value.id),
             })),
           variantPrices: rows.flatMap((row) => {
+            // A plain product's one row has no values to name; its price is the
+            // product's (audit L1).
+            if (row.valueIds.length === 0) return [];
             const own = takaToPoisha(rowPrice[row.key] ?? '');
             return own === null || own === pricePoisha
               ? []
@@ -151,19 +163,24 @@ export function CatalogNewProductPage() {
       // Kept, so a retry after a failed photo or stock step does not create it twice.
       setCreated(product);
 
+      // One at a time, each dropped from the list once attached, so a retry after a
+      // failure attaches only what is left (audit L7).
       for (const photo of photos) {
         await attachImage(product.id, { fileId: photo.id });
+        setPhotos((current) => current.filter((entry) => entry.id !== photo.id));
       }
-      setPhotos([]);
 
       if (wantsStock) {
-        const lines = stockLines.flatMap((entry) => {
+        const lines = stockLines.map((entry) => {
           const skuId = skuFor(product, entry.row);
-          return skuId === undefined ? [] : [{ skuId, qty: entry.qty }];
+          // Refused rather than dropped: the grid is locked once the product exists,
+          // so a row without its SKU means something is wrong (audit L7).
+          if (skuId === undefined) throw new Error(t('cs.new.rowMissing'));
+          return { skuId, qty: entry.qty };
         });
         if (mayPrice) {
           await createEntry({
-            supplyId: crypto.randomUUID(),
+            supplyId: key.current(),
             supplierId,
             locationId: chosenLocation,
             memo: t('cs.new.openingMemo'),
@@ -171,7 +188,7 @@ export function CatalogNewProductPage() {
           });
         } else {
           await createDraft({
-            draftId: crypto.randomUUID(),
+            draftId: key.current(),
             supplierId,
             locationId: chosenLocation,
             lines,
@@ -277,6 +294,8 @@ export function CatalogNewProductPage() {
               legend={axis.name}
               values={axis.values}
               chosen={chosen[axis.id] ?? []}
+              // Locked once the product exists: its variants are made (audit L7).
+              disabled={created !== null}
               onToggle={(valueId) =>
                 setChosen((current) => {
                   const list = current[axis.id] ?? [];
@@ -315,19 +334,30 @@ export function CatalogNewProductPage() {
                     {row.label === '' ? t('cs.new.oneVariant') : row.label}
                   </td>
                   <td className="py-1.5 text-right">
-                    <label className="sr-only" htmlFor={`price-${String(index)}`}>
-                      {`${t('cs.col.price')} ${row.label}`}
-                    </label>
-                    <input
-                      id={`price-${String(index)}`}
-                      inputMode="decimal"
-                      value={rowPrice[row.key] ?? ''}
-                      placeholder={taka}
-                      onChange={(event) =>
-                        setRowPrice((current) => ({ ...current, [row.key]: event.target.value }))
-                      }
-                      className={`${control} w-28 text-right tabular-nums`}
-                    />
+                    {row.valueIds.length === 0 ? (
+                      // A plain product: its price is the selling price above.
+                      <span className="text-muted-foreground tabular-nums">{taka || '—'}</span>
+                    ) : (
+                      <>
+                        <label className="sr-only" htmlFor={`price-${String(index)}`}>
+                          {`${t('cs.col.price')} ${row.label}`}
+                        </label>
+                        <input
+                          id={`price-${String(index)}`}
+                          inputMode="decimal"
+                          value={rowPrice[row.key] ?? ''}
+                          placeholder={taka}
+                          disabled={created !== null}
+                          onChange={(event) =>
+                            setRowPrice((current) => ({
+                              ...current,
+                              [row.key]: event.target.value,
+                            }))
+                          }
+                          className={`${control} w-28 text-right tabular-nums`}
+                        />
+                      </>
+                    )}
                   </td>
                   {mayReceive ? (
                     <td className="py-1.5 text-right">
@@ -339,6 +369,7 @@ export function CatalogNewProductPage() {
                         inputMode="numeric"
                         value={rowQty[row.key] ?? ''}
                         placeholder="0"
+                        disabled={created !== null}
                         onChange={(event) =>
                           setRowQty((current) => ({ ...current, [row.key]: event.target.value }))
                         }

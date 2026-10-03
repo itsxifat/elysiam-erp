@@ -6,6 +6,7 @@ import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import { searchSkus } from '../catalog/api.js';
+import { requestKey } from '../catalog/variant-grid.js';
 import {
   createDraft,
   createEntry,
@@ -146,7 +147,12 @@ export function SupplyEntriesPage() {
     return sum + qty * cost;
   }, 0n);
 
+  // One key per entry or draft being saved, kept across retries (ledger audit H1): a
+  // retry after a lost response replays the first receipt instead of posting a second.
+  const [key] = useState(() => requestKey());
+
   function reset(): void {
+    key.settle();
     setLines([blankLine()]);
     setInvoiceNumber('');
     void queryClient.invalidateQueries({ queryKey: ['supply'] });
@@ -155,7 +161,7 @@ export function SupplyEntriesPage() {
   const submitEntry = useMutation({
     mutationFn: () =>
       createEntry({
-        supplyId: crypto.randomUUID(),
+        supplyId: key.current(),
         supplierId,
         locationId,
         ...(invoiceNumber.trim() === '' ? {} : { invoiceNumber: invoiceNumber.trim() }),
@@ -174,7 +180,7 @@ export function SupplyEntriesPage() {
   const submitDraft = useMutation({
     mutationFn: () =>
       createDraft({
-        draftId: crypto.randomUUID(),
+        draftId: key.current(),
         supplierId,
         locationId,
         ...(invoiceNumber.trim() === '' ? {} : { invoiceNumber: invoiceNumber.trim() }),

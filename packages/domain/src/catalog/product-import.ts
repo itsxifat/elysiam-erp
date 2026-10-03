@@ -41,6 +41,13 @@ const COLOUR_ALIASES = ['colours', 'colors'] as const;
 /** One file's ceiling. A brand's whole range fits; a file of 5,000 products is a migration. */
 export const PRODUCT_IMPORT_MAX_ROWS = 500;
 
+/**
+ * SKUs one file may make. The import is one transaction holding the brand's SKU counter,
+ * so a file of 500 products × 500 variants would block every other product creation in
+ * the brand for minutes (ledger audit L4).
+ */
+export const PRODUCT_IMPORT_MAX_SKUS = 5000;
+
 /** The template the console offers for download. The second line is an example. */
 export const PRODUCT_IMPORT_TEMPLATE =
   'name,category,price_taka,sizes,colours,status,description\n' +
@@ -90,10 +97,14 @@ export interface ProductImportReport {
   readonly problems: readonly ImportProblem[];
 }
 
-/** Split `S|M|L`, `S; M; L`, `S/M/L` or (inside quotes) `S, M, L` into values. */
+/**
+ * Split `S|M|L`, `S; M; L` or (inside quotes) `S, M, L` into values. Not on `/`: a
+ * two-tone colour such as `Black/White` is one value, and splitting it would quietly
+ * build two other colours (ledger audit L5).
+ */
 export function splitValueList(text: string): string[] {
   return text
-    .split(/[|;,/]/)
+    .split(/[|;,]/)
     .map((part) => part.trim())
     .filter((part) => part !== '');
 }
@@ -161,6 +172,15 @@ export function reviewProductImport(
       problems,
     });
     if (parsed !== undefined && problems.length === before) rows.push(parsed);
+  }
+
+  const skus = rows.reduce((total, row) => total + row.variantCount, 0);
+  if (skus > PRODUCT_IMPORT_MAX_SKUS) {
+    problems.push({
+      line: 1,
+      column: null,
+      message: `That file makes ${String(skus)} SKUs; import at most ${String(PRODUCT_IMPORT_MAX_SKUS)} at a time. Split it into smaller files.`,
+    });
   }
   return { rows, problems };
 }
@@ -281,9 +301,19 @@ function reviewRow(row: CsvRow, state: RowState): ProductImportRow | undefined {
     const ids: string[] = [];
     for (const text of listed) {
       const key = normal(text);
-      const value = axis.values.find(
+      const matches = axis.values.filter(
         (candidate) => normal(candidate.code) === key || normal(candidate.label) === key,
       );
+      // One value's code can be another's label; guessing would build the wrong variant.
+      if (matches.length > 1) {
+        problems.push({
+          line,
+          column,
+          message: `"${text}" matches more than one value in the ${axis.name} list. Use the value's code.`,
+        });
+        continue;
+      }
+      const value = matches[0];
       if (value === undefined) {
         problems.push({
           line,

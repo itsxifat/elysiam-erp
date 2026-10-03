@@ -581,6 +581,8 @@ const en = {
   'cs.new.createdButStock':
     'The product was created; its photos or stock were not. Try again, or add them from the product page.',
   'cs.new.openCreated': 'Open the product',
+  'cs.new.rowMissing':
+    'A variant in the grid has no matching product code. Open the product and receive its stock there.',
   'cs.photos.title': 'Photos',
   'cs.photos.optional': 'Optional. JPEG, PNG or WebP. The first photo is the main one.',
   'cs.photos.none': 'No photos yet.',

@@ -174,6 +174,16 @@ export class StockService {
         const before = await repo.locationById(tx, context.orgId, id);
         if (before === undefined) throw new StockError('STOCK_NOT_FOUND', 'No such location.');
         assertInScope(request, { branchId: before.branch_id });
+        if (
+          patch.isActive === false &&
+          before.is_active &&
+          (await repo.locationInUse(tx, context.orgId, id))
+        ) {
+          throw new StockError(
+            'STOCK_LOCATION_INVALID',
+            'This location still holds stock, stock held for orders or a transfer on its way. Move or receive it first; a switched-off location can take no movement.',
+          );
+        }
 
         await repo.updateLocation(tx, context.orgId, id, patch);
         await this.audit.record(tx, {

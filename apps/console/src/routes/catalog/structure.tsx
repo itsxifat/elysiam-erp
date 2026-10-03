@@ -702,10 +702,9 @@ function Locations({
     },
   });
 
-  const shown = items.filter(
-    (location) =>
-      location.kind === 'warehouse' || location.kind === 'showroom' || location.kind === 'damaged',
-  );
+  // Every kind, in-transit included, so a switched-off one can be switched back on
+  // (ledger audit L2).
+  const shown = items;
 
   return (
     <section aria-labelledby="locations-heading" className="space-y-3">

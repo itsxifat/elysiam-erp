@@ -25,11 +25,13 @@ export function ChipGroup({
   values,
   chosen,
   onToggle,
+  disabled,
 }: {
   readonly legend: string;
   readonly values: readonly { readonly id: string; readonly label: string }[];
   readonly chosen: readonly string[];
   readonly onToggle: (id: string) => void;
+  readonly disabled?: boolean;
 }) {
   return (
     <fieldset className="space-y-1.5">
@@ -44,6 +46,7 @@ export function ChipGroup({
               size="sm"
               variant={on ? 'primary' : 'outline'}
               aria-pressed={on}
+              disabled={disabled === true}
               onClick={() => onToggle(value.id)}
             >
               {value.label}

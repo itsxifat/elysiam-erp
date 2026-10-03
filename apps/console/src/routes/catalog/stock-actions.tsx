@@ -13,7 +13,7 @@ import {
   type StockRow,
 } from '../stock/api.js';
 import { createDraft, createEntry, listSupplierOptions } from '../supply/api.js';
-import { parseQty } from './variant-grid.js';
+import { parseQty, positiveCost, requestKey } from './variant-grid.js';
 
 /**
  * The product page's three stock actions (D-420): receive, adjust and transfer, each a
@@ -175,6 +175,8 @@ export function ReceiveStockDialog({
   const [invoice, setInvoice] = useState('');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [done, setDone] = useState<'entry' | 'draft' | null>(null);
+  // One key per receipt being saved, kept across retries (ledger audit H1).
+  const [key] = useState(() => requestKey());
 
   const suppliers = useQuery({
     queryKey: ['supply', 'suppliers', 'options'],
@@ -196,7 +198,9 @@ export function ReceiveStockDialog({
     locationId !== '' ? locationId : (receivable.find((l) => l.kind === 'warehouse')?.id ?? '');
 
   const lines = linesFrom(quantities);
-  const costPoisha = takaToPoisha(costTaka);
+  // One cost covers every variant, so a stray 0 would receive the whole batch free
+  // and drag the average down; free stock goes through Supply entries (D-096).
+  const costPoisha = positiveCost(takaToPoisha(costTaka));
   const units = (lines ?? []).reduce((sum, line) => sum + line.qty, 0);
   const ready =
     supplierId !== '' &&
@@ -210,7 +214,7 @@ export function ReceiveStockDialog({
       const chosen = lines ?? [];
       if (mayPrice) {
         await createEntry({
-          supplyId: crypto.randomUUID(),
+          supplyId: key.current(),
           supplierId,
           locationId: chosenLocation,
           ...(invoice.trim() === '' ? {} : { invoiceNumber: invoice.trim() }),
@@ -219,7 +223,7 @@ export function ReceiveStockDialog({
         return 'entry' as const;
       }
       await createDraft({
-        draftId: crypto.randomUUID(),
+        draftId: key.current(),
         supplierId,
         locationId: chosenLocation,
         ...(invoice.trim() === '' ? {} : { invoiceNumber: invoice.trim() }),
@@ -228,6 +232,7 @@ export function ReceiveStockDialog({
       return 'draft' as const;
     },
     onSuccess: (kind) => {
+      key.settle();
       setDone(kind);
       setQuantities({});
       onDone();

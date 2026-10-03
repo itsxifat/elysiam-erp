@@ -3,7 +3,7 @@
 Not a milestone. The owner tried the test site and said adding a product, managing stock and
 managing the catalog had "no easy option and even in some case there is no way". This pass
 makes every product and stock task a brand's staff do every day short and obvious. Branch
-`catalog-stock-ux`, from `integration-wave2` at `8556f42`. Decision ids D-420 to D-431.
+`catalog-stock-ux`, from `integration-wave2` at `8556f42`. Decision ids D-420 to D-432.
 
 > Planned on 2026-10-03 under continuous build mode (no approval pause; the plan is still
 > written first). Another builder is redesigning the look in parallel and owns `packages/ui`,
@@ -114,7 +114,7 @@ supply receipt.
 
 ## Decisions
 
-D-420 to D-431, recorded in `docs/decisions.md`.
+D-420 to D-432, recorded in `docs/decisions.md`.
 
 ## Status on 2026-10-03
 

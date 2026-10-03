@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { PRODUCT_TEMPLATE, codeFrom, parseQty, total, variantRows } from './variant-grid.js';
+import {
+  PRODUCT_TEMPLATE,
+  codeFrom,
+  parseQty,
+  positiveCost,
+  requestKey,
+  total,
+  variantRows,
+} from './variant-grid.js';
 
 /** The pure parts of the new-product form and the product page (plan `catalog-stock-ux`). */
 describe('variantRows', () => {
@@ -61,6 +69,34 @@ describe('parseQty and total', () => {
   it('adds stock numbers', () => {
     expect(total([3, 0, 7])).toBe(10);
     expect(total([])).toBe(0);
+  });
+});
+
+describe('requestKey (ledger audit H1)', () => {
+  it('sends the same key on every attempt until one succeeds', () => {
+    let next = 0;
+    const key = requestKey(() => `key-${String((next += 1))}`);
+    const first = key.current();
+    // The first attempt fails (a lost response); the retry carries the same key, so the
+    // server replays the receipt it may already hold instead of posting a second one.
+    expect(key.current()).toBe(first);
+    expect(key.current()).toBe(first);
+    key.settle();
+    expect(key.current()).not.toBe(first);
+    expect(key.current()).toBe('key-2');
+  });
+
+  it('makes a fresh uuid by default', () => {
+    expect(requestKey().current()).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+describe('positiveCost', () => {
+  it('refuses a zero cost and passes a real one', () => {
+    expect(positiveCost('0')).toBeNull();
+    expect(positiveCost('000')).toBeNull();
+    expect(positiveCost(null)).toBeNull();
+    expect(positiveCost('118050')).toBe('118050');
   });
 });
 

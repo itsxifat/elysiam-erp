@@ -21,7 +21,7 @@ import { z } from 'zod';
  * ## No cost
  *
  * Invariant 5. There is no cost field in any schema here, and
- * `catalog.no-cost.test.ts` walks every exported schema to prove it — a schema
+ * the route-matrix cost sweep (`cost-sweep.e2e.test.ts`) proves no response carries one — a schema
  * that accepted `unitCostPoisha` would be a cost column in everything but name,
  * because the service would have to store it somewhere.
  */

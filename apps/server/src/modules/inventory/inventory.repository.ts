@@ -125,6 +125,40 @@ export async function inTransitLocation(tx: Tx, orgId: string): Promise<Location
   return rows[0];
 }
 
+/** The brand's in-transit location whether or not it is switched on (D-428). */
+export async function anyInTransitLocation(
+  tx: Tx,
+  orgId: string,
+): Promise<LocationRow | undefined> {
+  const rows = await tx.execute<LocationRow>(sql`
+    select ${LOCATION_COLUMNS}
+    from org.locations l
+    where l.org_id = ${orgId} and l.kind = 'in_transit'
+    order by l.is_active desc, l.code
+    limit 1
+  `);
+  return rows[0];
+}
+
+/**
+ * Whether a location still holds anything: stock on hand or held for an order, or a
+ * transfer on its way from or to it (ledger audit L3). A location switched off with any
+ * of these strands it, because migration 0033 refuses every movement at an inactive one.
+ */
+export async function locationInUse(tx: Tx, orgId: string, id: string): Promise<boolean> {
+  const rows = await tx.execute<{ used: boolean }>(sql`
+    select exists (
+      select 1 from inventory.stock_levels
+      where org_id = ${orgId} and location_id = ${id} and (on_hand > 0 or reserved > 0)
+    ) or exists (
+      select 1 from inventory.stock_transfers
+      where org_id = ${orgId} and status = 'dispatched'
+        and (from_location_id = ${id} or to_location_id = ${id} or transit_location_id = ${id})
+    ) as used
+  `);
+  return rows[0]?.used === true;
+}
+
 /** The code a brand's in-transit location gets when the first transfer creates it (D-428). */
 export const AUTO_IN_TRANSIT_CODE = 'IN-TRANSIT';
 
@@ -414,9 +448,11 @@ export async function listStock(
           ? sql`true`
           : // The category and its descendants, through the maintained materialised path.
             sql`p.category_id in (
-              select c.id from catalog.categories c
-              join catalog.categories root on root.org_id = c.org_id and root.id = ${filters.categoryId}::uuid
-              where c.org_id = sl.org_id and (c.id = root.id or c.path like root.path || '/%')
+              select cat.id from catalog.categories cat
+              join catalog.categories root
+                on root.org_id = cat.org_id and root.id = ${filters.categoryId}::uuid
+              where cat.org_id = sl.org_id
+                and (cat.id = root.id or starts_with(cat.path, root.path || '/'))
             )`
       }
       and ${filters.lowOnly ? sql`sl.reorder_level > 0 and sl.on_hand - sl.reserved <= sl.reorder_level` : sql`true`}
