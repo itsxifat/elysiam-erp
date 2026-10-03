@@ -217,6 +217,10 @@ test('a lost phone: an accountant is reset only after a second admin approves', 
 }) => {
   const locked = user('locked');
   const accountant = await freshPage(browser);
+  // Better Auth allows three two-factor calls per address in ten seconds, and the two admins
+  // enrolled just before this one: wait the window out, as an office behind one address would
+  // (the preview run's `spaceEnrolment` does the same).
+  await accountant.waitForTimeout(11_000);
   await signIn(accountant, locked.email);
   await enrolSecondFactor(accountant);
   await expect(accountant.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
