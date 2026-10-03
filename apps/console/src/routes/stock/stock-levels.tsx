@@ -3,16 +3,18 @@ import {
   Money,
   PermissionGate,
   StatusBadge,
+  buttonVariants,
   dataTableColumns,
   type DataTableColumn,
 } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
-import { getRouteApi } from '@tanstack/react-router';
+import { Link, getRouteApi } from '@tanstack/react-router';
 import { useMemo } from 'react';
 
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import { formatSort, mergeSearch, parseSort } from '../../lib/table-search.js';
+import { listCategories } from '../catalog/api.js';
 import { listLocations, listStock, stockValuation, type StockRow } from './api.js';
 import { StockNav } from './stock-nav.js';
 import { useStockT } from './messages.js';
@@ -60,12 +62,29 @@ export function StockLevelsPage() {
     staleTime: 5 * 60_000,
   });
 
+  const categories = useQuery({
+    queryKey: ['catalog', 'categories'],
+    queryFn: listCategories,
+    enabled: mayRead && ability.can('read', 'Catalog'),
+    staleTime: 5 * 60_000,
+  });
+
   const rows = useQuery({
-    queryKey: ['stock', 'levels', search.q, search.type, lowOnly, search.page, search.pageSize],
+    queryKey: [
+      'stock',
+      'levels',
+      search.q,
+      search.type,
+      search.category,
+      lowOnly,
+      search.page,
+      search.pageSize,
+    ],
     queryFn: () =>
       listStock({
         q: search.q,
         locationId: search.type,
+        categoryId: search.category,
         low: lowOnly,
         page: search.page,
         pageSize: search.pageSize,
@@ -85,12 +104,29 @@ export function StockLevelsPage() {
   const columns = useMemo<readonly DataTableColumn<StockRow>[]>(() => {
     const column = dataTableColumns<StockRow>();
     const base = [
+      // The product first, linked to its page — where receiving, adjusting and
+      // transferring it are one click each (plan `catalog-stock-ux`, D-420).
+      column.accessor('productName', {
+        header: st('stock.colProduct'),
+        cell: (cell) => (
+          <Link
+            to="/catalog/$productId"
+            params={{ productId: cell.row.original.productId }}
+            className="font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            {cell.getValue()}
+          </Link>
+        ),
+      }),
+      column.accessor('variantLabel', {
+        header: t('cs.col.variant'),
+        cell: (cell) => cell.getValue() || '—',
+      }),
       column.accessor('skuCode', {
         header: st('stock.colSku'),
         meta: { sortable: true },
-        cell: (cell) => <span className="font-medium tabular-nums">{cell.getValue()}</span>,
+        cell: (cell) => <span className="font-mono text-xs">{cell.getValue()}</span>,
       }),
-      column.accessor('productName', { header: st('stock.colProduct') }),
       column.accessor('locationCode', {
         header: st('stock.colLocation'),
         cell: (cell) => cell.row.original.locationName,
@@ -106,7 +142,11 @@ export function StockLevelsPage() {
           return (
             <span className="inline-flex items-center gap-2 tabular-nums">
               {cell.getValue()}
-              {low ? <StatusBadge tone="warning">{st('stock.lowOnly')}</StatusBadge> : null}
+              {row.available === 0 ? (
+                <StatusBadge tone="danger">{t('cs.hub.out')}</StatusBadge>
+              ) : low ? (
+                <StatusBadge tone="warning">{st('stock.lowOnly')}</StatusBadge>
+              ) : null}
             </span>
           );
         },
@@ -141,7 +181,7 @@ export function StockLevelsPage() {
         },
       }),
     ]);
-  }, [mayReadCost, st]);
+  }, [mayReadCost, st, t]);
 
   return (
     <PermissionGate
@@ -149,9 +189,36 @@ export function StockLevelsPage() {
       explain={{ title: st('stock.deniedTitle'), detail: st('stock.deniedDetail') }}
     >
       <div className="space-y-5">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">{st('stock.title')}</h1>
-          <p className="text-sm text-muted-foreground">{st('stock.levels')}</p>
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">{st('stock.title')}</h1>
+            <p className="text-sm text-muted-foreground">{t('cs.stock.help')}</p>
+          </div>
+          {/* Quick actions: receiving is the common one, so it is the primary. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <PermissionGate allowed={ability.can('create', 'Supply')}>
+              <Link to="/supply/entries" className={buttonVariants({ size: 'sm' })}>
+                {t('cs.receive.action')}
+              </Link>
+            </PermissionGate>
+            <PermissionGate allowed={ability.can('request', 'StockAdjustment')}>
+              <Link
+                to="/stock/transfers"
+                className={buttonVariants({ size: 'sm', variant: 'outline' })}
+              >
+                {t('cs.transfer.action')}
+              </Link>
+              <Link
+                to="/stock/adjustments"
+                className={buttonVariants({ size: 'sm', variant: 'outline' })}
+              >
+                {t('cs.adjust.action')}
+              </Link>
+              <Link to="/stock/counts" className={buttonVariants({ size: 'sm', variant: 'ghost' })}>
+                {t('cs.stock.count')}
+              </Link>
+            </PermissionGate>
+          </div>
         </header>
 
         <StockNav />
@@ -249,6 +316,28 @@ export function StockLevelsPage() {
                 {(locations.data?.items ?? []).map((location) => (
                   <option key={location.id} value={location.id}>
                     {location.code} · {location.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label={t('cs.stock.allCategories')}
+                value={search.category ?? ''}
+                className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  void navigate({
+                    search: {
+                      ...mergeSearch(search, { page: 1 }),
+                      category: event.target.value === '' ? undefined : event.target.value,
+                    },
+                  })
+                }
+              >
+                <option value="">{t('cs.stock.allCategories')}</option>
+                {(categories.data?.items ?? []).map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {'  '.repeat(category.depth)}
+                    {category.name}
                   </option>
                 ))}
               </select>

@@ -86,7 +86,11 @@ export interface StockLocation {
 export interface StockRow {
   readonly skuId: string;
   readonly skuCode: string;
+  readonly productId: string;
   readonly productName: string;
+  /** Size, colour… as a person says it (`M / Red`); empty for a plain SKU. */
+  readonly variantLabel: string;
+  readonly skuStatus: 'active' | 'archived';
   readonly locationId: string;
   readonly locationCode: string;
   readonly locationName: string;
@@ -161,6 +165,8 @@ export function listLocations(): Promise<{ items: StockLocation[] }> {
 export function listStock(input: {
   readonly locationId?: string | undefined;
   readonly q?: string | undefined;
+  readonly productId?: string | undefined;
+  readonly categoryId?: string | undefined;
   readonly low?: boolean | undefined;
   readonly page: number;
   readonly pageSize: number;
@@ -169,6 +175,8 @@ export function listStock(input: {
     `/v1/inventory/stock${query({
       locationId: input.locationId,
       q: input.q,
+      productId: input.productId,
+      categoryId: input.categoryId,
       low: input.low === true ? true : undefined,
       page: input.page,
       pageSize: input.pageSize,
@@ -246,4 +254,63 @@ export function closeCount(
 
 export function listReconciliations(): Promise<{ items: Reconciliation[] }> {
   return api.get('/v1/inventory/reconciliations');
+}
+
+export interface MovementRow {
+  readonly id: string;
+  readonly skuId: string;
+  readonly skuCode: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  readonly locationName: string;
+  readonly kind: string;
+  readonly qtyDelta: number;
+  readonly refType: string;
+  readonly businessDate: string;
+  readonly memo: string | null;
+  readonly createdAt: string;
+}
+
+/** A product's stock history (D-427), newest first. */
+export function listMovements(input: {
+  readonly productId?: string | undefined;
+  readonly skuId?: string | undefined;
+  readonly page?: number;
+  readonly pageSize?: number;
+}): Promise<{ items: MovementRow[] }> {
+  return api.get(
+    `/v1/inventory/movements${query({
+      productId: input.productId,
+      skuId: input.skuId,
+      page: input.page ?? 1,
+      pageSize: input.pageSize ?? 50,
+    })}`,
+  );
+}
+
+export function listAllLocations(): Promise<{ items: StockLocation[] }> {
+  return api.get('/v1/inventory/locations?includeInactive=true');
+}
+
+export function createLocation(input: {
+  readonly code: string;
+  readonly name: string;
+  readonly kind: 'warehouse' | 'showroom';
+  readonly branchId?: string | undefined;
+}): Promise<StockLocation> {
+  return api.post('/v1/inventory/locations', input);
+}
+
+export function updateLocation(
+  id: string,
+  patch: { readonly name?: string; readonly isActive?: boolean },
+): Promise<unknown> {
+  return api.patch(`/v1/inventory/locations/${id}`, patch);
+}
+
+/** Branches a showroom can belong to (`GET /v1/hr/branch-options`, D-419). */
+export function listBranchOptions(): Promise<{
+  items: { id: string; code: string; name: string }[];
+}> {
+  return api.get('/v1/hr/branch-options');
 }

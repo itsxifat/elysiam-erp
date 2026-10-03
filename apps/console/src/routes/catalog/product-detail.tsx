@@ -1,25 +1,24 @@
 import {
   Button,
-  DataTable,
+  ConfirmDialog,
   DateTime,
-  FileUpload,
+  Dialog,
   Money,
   PermissionGate,
   StatusBadge,
-  dataTableColumns,
   takaToPoisha,
-  type DataTableColumn,
-  type UploadTicket,
-  type UploadedFile,
+  poishaToTaka,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getRouteApi } from '@tanstack/react-router';
-import { Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Link, getRouteApi } from '@tanstack/react-router';
+import { ArrowDown, ArrowUp, Trash2 } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 
-import { api } from '../../api.js';
+import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
+import { DEFAULT_PAGE_SIZE } from '../../lib/table-search.js';
+import { listLocations, listMovements, listStock, type StockRow } from '../stock/api.js';
 import {
   addVariants,
   attachImage,
@@ -27,223 +26,603 @@ import {
   getProduct,
   labelSheetPdf,
   listAttributes,
+  listCategories,
   priceHistory,
   reorderImages,
   setPrices,
+  updateProduct,
+  updateSku,
+  type CatalogAttribute,
+  type CatalogProduct,
   type CatalogSku,
 } from './api.js';
-import { useCatalogT } from './messages.js';
+import { ChipGroup, PhotoUploader, Thumb } from './parts.js';
+import {
+  AdjustStockDialog,
+  ReceiveStockDialog,
+  TransferStockDialog,
+  type VariantInfo,
+} from './stock-actions.js';
+import { total } from './variant-grid.js';
 
 /**
- * One product: its variant matrix, its prices, its images and its labels
- * (M06 Build list).
+ * One product, and everything done to it (plan `catalog-stock-ux`, D-420).
  *
- * ## The matrix panel adds; it never replaces
+ * The product page is the hub: its variants with their stock at every location, their
+ * prices and photos, and the actions on them — **Receive stock** first, because it is
+ * what a product page is opened for most, then adjust, transfer, edit, labels and
+ * archive. Each action is a dialog that sends one request through the route that owns
+ * it; nothing here writes stock or cost itself (invariants 3 and 5).
  *
- * The control is labelled "Add variants" and its help text says what it does,
- * because the mental model matters here more than the widget does. An operator who
- * believes this screen *sets* the matrix will untick XXL to discontinue it and
- * expect the SKUs to go — and check 1 exists because those SKUs have stock,
- * movements, order lines and printed labels behind them. So the endpoint only ever
- * adds, and when the selection no longer covers an existing variant the screen says
- * so plainly and leaves it alone.
+ * The variant list only ever adds (M06 check 1): "Add sizes or colours" extends the
+ * matrix, and a variant that is no longer wanted is archived, which keeps its stock,
+ * history and printed labels joined to it.
  *
- * ## Prices
- *
- * Every price on this screen is an integer-poisha string (§23) rendered through
- * `<Money>` and edited in **taka** through `takaToPoisha`, which is integer
- * arithmetic — the alternative is `parseFloat(taka) * 100`, which the
- * `elysium/no-float-money` lint rule bans outright (D-090).
- *
- * The bulk edit is one request for every SKU shown, because the endpoint applies
- * all of them in one transaction or none (M06 check 4's sibling property). A
- * per-row save button would look friendlier and would leave half a product
- * repriced when the tab was closed.
- *
- * There is no cost column anywhere on this screen, and no field in the API types
- * that could become one (invariant 5).
+ * Prices are integer-poisha strings, shown through `<Money>` and edited in taka through
+ * `takaToPoisha`. There is no cost on this page: cost lives in supply, inventory and the
+ * ledger (invariant 5), and the stock grid shows quantities only.
  */
 
 const route = getRouteApi('/catalog/$productId');
 
+type Dialogs = 'receive' | 'adjust' | 'transfer' | 'edit' | 'archive' | null;
+
 export function CatalogProductPage() {
   const ability = useAbility();
   const t = useT();
-  const ct = useCatalogT();
   const { productId } = route.useParams();
   const queryClient = useQueryClient();
 
   const mayRead = ability.can('read', 'Catalog');
   const mayWrite = ability.can('update', 'Catalog');
+  const mayStock = ability.can('read', 'Stock');
+  const mayReceive = ability.can('create', 'Supply');
+  const mayAdjust = ability.can('request', 'StockAdjustment');
+
+  const [open, setOpen] = useState<Dialogs>(null);
 
   const product = useQuery({
     queryKey: ['catalog', 'product', productId],
     queryFn: () => getProduct(productId),
     enabled: mayRead,
   });
-
-  const attributes = useQuery({
-    queryKey: ['catalog', 'attributes'],
-    queryFn: listAttributes,
+  const categories = useQuery({
+    queryKey: ['catalog', 'categories'],
+    queryFn: listCategories,
     enabled: mayRead,
     staleTime: 5 * 60_000,
   });
+  const stock = useQuery({
+    queryKey: ['stock', 'product', productId],
+    queryFn: () => listStock({ productId, page: 1, pageSize: 200 }),
+    enabled: mayStock,
+  });
+  const locations = useQuery({
+    queryKey: ['stock', 'locations'],
+    queryFn: listLocations,
+    enabled: mayStock,
+    staleTime: 5 * 60_000,
+  });
 
-  const invalidate = () =>
-    void queryClient.invalidateQueries({ queryKey: ['catalog', 'product', productId] });
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['catalog'] });
+    void queryClient.invalidateQueries({ queryKey: ['stock'] });
+  };
 
-  const columns = useMemo<readonly DataTableColumn<CatalogSku>[]>(() => {
-    const column = dataTableColumns<CatalogSku>();
-    return column.columns([
-      column.accessor('skuCode', {
-        header: ct('catalog.colCode'),
-        meta: { sortable: true },
-        cell: (cell) => <span className="font-mono text-xs">{cell.getValue()}</span>,
-      }),
-      column.display({
-        id: 'variant',
-        header: ct('catalog.colVariant'),
-        cell: (cell) =>
-          cell.row.original.attributes.map((pair) => pair.valueLabel).join(' / ') || '—',
-      }),
-      column.accessor('pricePoisha', {
-        header: ct('catalog.colPrice'),
-        meta: { numeric: true },
-        cell: (cell) => <Money poisha={cell.getValue()} />,
-      }),
-      column.accessor('barcode', {
-        header: ct('catalog.colBarcode'),
-        cell: (cell) => <span className="font-mono text-xs">{cell.getValue() ?? '—'}</span>,
-      }),
-      column.accessor('status', {
-        header: ct('catalog.colStatus'),
-        cell: (cell) => (
-          <StatusBadge tone={cell.getValue() === 'active' ? 'success' : 'neutral'}>
-            {ct(`catalog.status.${cell.getValue()}`)}
-          </StatusBadge>
-        ),
-      }),
-    ]);
-  }, [ct]);
-
-  const skus = product.data?.skus ?? [];
+  const data = product.data;
+  const skus = data?.skus ?? [];
+  const variants: VariantInfo[] = skus.map((sku) => ({
+    id: sku.id,
+    skuCode: sku.skuCode,
+    label: labelOf(sku),
+    status: sku.status,
+  }));
+  const rows = stock.data?.items ?? [];
+  const category = categories.data?.items.find((entry) => entry.id === data?.categoryId);
+  const available = total(rows.map((row) => row.available));
+  const onHand = total(rows.map((row) => row.onHand));
 
   return (
     <PermissionGate
       allowed={mayRead}
-      explain={{ title: ct('catalog.deniedTitle'), detail: ct('catalog.deniedDetail') }}
+      explain={{ title: t('catalog.deniedTitle'), detail: t('catalog.deniedDetail') }}
     >
       <div className="space-y-6">
-        <header>
-          <h1 className="text-lg font-semibold tracking-tight">
-            {product.data?.name ?? ct('catalog.title')}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {product.data === undefined
-              ? ''
-              : `${ct('catalog.code')} ${String(product.data.sequence).padStart(4, '0')}`}
-          </p>
+        <nav aria-label={t('cs.breadcrumb')} className="text-xs text-muted-foreground">
+          <Link
+            to="/catalog"
+            search={{ page: 1, pageSize: DEFAULT_PAGE_SIZE }}
+            className="underline-offset-4 hover:underline"
+          >
+            {t('catalog.title')}
+          </Link>
+        </nav>
+
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-lg font-semibold tracking-tight">
+                {data?.name ?? t('catalog.title')}
+              </h1>
+              {data === undefined ? null : (
+                <StatusBadge
+                  tone={
+                    data.status === 'active'
+                      ? 'success'
+                      : data.status === 'archived'
+                        ? 'neutral'
+                        : 'info'
+                  }
+                >
+                  {t(`catalog.status.${data.status}`)}
+                </StatusBadge>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {data === undefined
+                ? ''
+                : [
+                    `${t('catalog.code')} ${String(data.sequence).padStart(4, '0')}`,
+                    category?.name ?? t('cs.noCategory'),
+                  ].join(' · ')}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <PermissionGate allowed={mayReceive && data?.status !== 'archived'}>
+              <Button onClick={() => setOpen('receive')}>{t('cs.receive.action')}</Button>
+            </PermissionGate>
+            <PermissionGate allowed={mayAdjust}>
+              <Button variant="outline" onClick={() => setOpen('adjust')}>
+                {t('cs.adjust.action')}
+              </Button>
+              <Button variant="outline" onClick={() => setOpen('transfer')}>
+                {t('cs.transfer.action')}
+              </Button>
+            </PermissionGate>
+            <PermissionGate allowed={mayWrite}>
+              <Button variant="outline" onClick={() => setOpen('edit')}>
+                {t('cs.edit')}
+              </Button>
+              <Button variant="ghost" onClick={() => setOpen('archive')}>
+                {data?.status === 'archived' ? t('cs.reactivate') : t('cs.archive')}
+              </Button>
+            </PermissionGate>
+          </div>
         </header>
 
-        <section aria-labelledby="variants-heading" className="space-y-3">
-          <h2 id="variants-heading" className="text-sm font-semibold">
-            {ct('catalog.variantMatrix')}
-          </h2>
-          <DataTable
-            columns={columns}
-            data={skus}
-            getRowId={(row) => row.id}
-            page={{
-              page: 1,
-              pageSize: Math.max(skus.length, 1),
-              total: skus.length,
-              hasNext: false,
-            }}
-            onPageChange={() => undefined}
-            sort={null}
-            onSortChange={() => undefined}
-            loading={product.isPending}
-            error={product.error}
-            onRetry={() => void product.refetch()}
-            caption={ct('catalog.variants')}
-            labels={{
-              columns: ct('catalog.columns'),
-              previous: ct('catalog.previous'),
-              next: ct('catalog.next'),
-              emptyTitle: ct('catalog.emptyTitle'),
-              emptyDetail: ct('catalog.addVariantsHelp'),
-              errorTitle: ct('catalog.errorTitle'),
-              errorDetail: ct('catalog.errorDetail'),
-              retry: ct('catalog.retry'),
-              pageStatus: `${t('table.page')} 1`,
-              sortAscending: ct('catalog.sortAscending'),
-              sortDescending: ct('catalog.sortDescending'),
-            }}
-          />
-        </section>
+        {product.error !== null ? (
+          <p role="alert" className="text-sm text-destructive">
+            {product.error instanceof ApiError ? product.error.message : t('cs.loadFailed')}
+          </p>
+        ) : null}
+
+        <PermissionGate allowed={mayStock}>
+          <section
+            aria-label={t('cs.hub.summary')}
+            className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-4"
+          >
+            <Tile label={t('cs.hub.available')} value={String(available)} />
+            <Tile label={t('cs.hub.onHand')} value={String(onHand)} />
+            <Tile label={t('cs.hub.variants')} value={String(skus.length)} />
+            <Tile label={t('cs.hub.price')} value={<PriceRange skus={skus} />} />
+          </section>
+        </PermissionGate>
+
+        <VariantGrid
+          product={data}
+          rows={rows}
+          locations={(locations.data?.items ?? []).filter(
+            (location) =>
+              location.isActive && (location.kind === 'warehouse' || location.kind === 'showroom'),
+          )}
+          showStock={mayStock}
+          mayWrite={mayWrite}
+          onDone={refresh}
+        />
 
         <PermissionGate allowed={mayWrite}>
-          <AddVariants
-            productId={productId}
-            axes={attributes.data?.items ?? []}
-            onDone={invalidate}
-          />
-          <BulkPrice skus={skus} onDone={invalidate} />
-          <Images productId={productId} images={product.data?.images ?? []} onDone={invalidate} />
+          <AddVariants productId={productId} product={data} onDone={refresh} />
+          <Photos productId={productId} images={data?.images ?? []} onDone={refresh} />
+        </PermissionGate>
+
+        <PermissionGate allowed={mayStock}>
+          <StockHistory productId={productId} variants={variants} />
+        </PermissionGate>
+
+        <PriceHistory variants={variants} />
+
+        <PermissionGate allowed={mayRead}>
           <Labels skus={skus} />
         </PermissionGate>
 
-        <PriceHistory skus={skus} />
+        <ReceiveStockDialog
+          open={open === 'receive'}
+          onOpenChange={(next) => setOpen(next ? 'receive' : null)}
+          variants={variants}
+          onDone={refresh}
+        />
+        <AdjustStockDialog
+          open={open === 'adjust'}
+          onOpenChange={(next) => setOpen(next ? 'adjust' : null)}
+          variants={variants}
+          stock={rows}
+          onDone={refresh}
+        />
+        <TransferStockDialog
+          open={open === 'transfer'}
+          onOpenChange={(next) => setOpen(next ? 'transfer' : null)}
+          variants={variants}
+          stock={rows}
+          onDone={refresh}
+        />
+        {data === undefined ? null : (
+          <>
+            <EditProductDialog
+              open={open === 'edit'}
+              onOpenChange={(next) => setOpen(next ? 'edit' : null)}
+              product={data}
+              onDone={refresh}
+            />
+            <ConfirmDialog
+              open={open === 'archive'}
+              onOpenChange={(next) => setOpen(next ? 'archive' : null)}
+              title={data.status === 'archived' ? t('cs.reactivateTitle') : t('cs.archiveTitle')}
+              description={
+                data.status === 'archived' ? t('cs.reactivateHelp') : t('cs.archiveHelp')
+              }
+              confirmLabel={data.status === 'archived' ? t('cs.reactivate') : t('cs.archive')}
+              cancelLabel={t('cs.cancel')}
+              closeLabel={t('cs.close')}
+              destructive={data.status !== 'archived'}
+              onConfirm={async () => {
+                await updateProduct(data.id, {
+                  status: data.status === 'archived' ? 'active' : 'archived',
+                });
+                refresh();
+              }}
+            />
+          </>
+        )}
       </div>
     </PermissionGate>
   );
 }
 
-/** Extend the matrix. See the note at the top of the file about why it only adds. */
-function AddVariants({
-  productId,
-  axes,
+function labelOf(sku: CatalogSku): string {
+  const rank = (code: string, name: string) => {
+    const text = `${code} ${name}`.toLowerCase();
+    return text.includes('size') ? 0 : text.includes('colo') ? 1 : 2;
+  };
+  return [...sku.attributes]
+    .sort((a, b) => rank(a.code, a.name) - rank(b.code, b.name))
+    .map((pair) => pair.valueLabel)
+    .join(' / ');
+}
+
+function Tile({ label, value }: { readonly label: string; readonly value: ReactNode }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-base font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+function PriceRange({ skus }: { readonly skus: readonly CatalogSku[] }) {
+  const prices = skus
+    .filter((sku) => sku.status === 'active')
+    .map((sku) => BigInt(sku.pricePoisha));
+  if (prices.length === 0) return <>{'—'}</>;
+  const low = prices.reduce((a, b) => (b < a ? b : a));
+  const high = prices.reduce((a, b) => (b > a ? b : a));
+  return low === high ? (
+    <Money poisha={low.toString()} />
+  ) : (
+    <span>
+      <Money poisha={low.toString()} />
+      {'–'}
+      <Money poisha={high.toString()} symbol={false} />
+    </span>
+  );
+}
+
+// --- the variant grid ------------------------------------------------------------
+
+function VariantGrid({
+  product,
+  rows,
+  locations,
+  showStock,
+  mayWrite,
   onDone,
 }: {
-  readonly productId: string;
-  readonly axes: readonly {
-    id: string;
-    name: string;
-    isVariant: boolean;
-    values: readonly { id: string; label: string }[];
-  }[];
+  readonly product: CatalogProduct | undefined;
+  readonly rows: readonly StockRow[];
+  readonly locations: readonly { id: string; name: string; code: string }[];
+  readonly showStock: boolean;
+  readonly mayWrite: boolean;
   readonly onDone: () => void;
 }) {
-  const ct = useCatalogT();
-  const [selected, setSelected] = useState<ReadonlyMap<string, readonly string[]>>(new Map());
-  const [result, setResult] = useState<{ created: number; orphaned: number } | null>(null);
+  const t = useT();
+  const [editing, setEditing] = useState(false);
+  const [prices, setPricesState] = useState<Record<string, string>>({});
+  const [archiving, setArchiving] = useState<CatalogSku | null>(null);
+  const skus = product?.skus ?? [];
 
-  const mutation = useMutation({
-    mutationFn: () =>
-      addVariants(productId, {
-        axes: [...selected]
-          .filter(([, values]) => values.length > 0)
-          .map(([attributeId, valueIds]) => ({ attributeId, valueIds })),
-      }),
-    onSuccess: (data) => {
-      setResult({ created: data.created.length, orphaned: data.orphaned.length });
+  // Every active warehouse and showroom, plus anywhere this product has stock.
+  const columns = [
+    ...locations,
+    ...rows
+      .filter((row) => !locations.some((location) => location.id === row.locationId))
+      .filter(
+        (row, index, all) =>
+          all.findIndex((other) => other.locationId === row.locationId) === index,
+      )
+      .map((row) => ({ id: row.locationId, name: row.locationName, code: row.locationCode })),
+  ];
+  const cell = (skuId: string, locationId: string) =>
+    rows.find((row) => row.skuId === skuId && row.locationId === locationId);
+
+  const changed = skus.flatMap((sku) => {
+    const text = prices[sku.id];
+    if (text === undefined || text.trim() === '') return [];
+    const value = takaToPoisha(text);
+    return value === null || value === sku.pricePoisha
+      ? []
+      : [{ skuId: sku.id, pricePoisha: value }];
+  });
+  const invalid = skus.some((sku) => {
+    const text = prices[sku.id];
+    return text !== undefined && text.trim() !== '' && takaToPoisha(text) === null;
+  });
+
+  const save = useMutation({
+    mutationFn: () => setPrices({ prices: changed, reason: t('cs.hub.priceReason') }),
+    onSuccess: () => {
+      setEditing(false);
+      setPricesState({});
       onDone();
     },
   });
 
-  const toggle = (attributeId: string, valueId: string) => {
-    setSelected((current) => {
-      const next = new Map(current);
-      const values = current.get(attributeId) ?? [];
-      next.set(
-        attributeId,
-        values.includes(valueId) ? values.filter((id) => id !== valueId) : [...values, valueId],
-      );
-      return next;
-    });
-  };
+  const archive = useMutation({
+    mutationFn: (sku: CatalogSku) =>
+      updateSku(sku.id, sku.status === 'active' ? 'archived' : 'active'),
+    onSuccess: onDone,
+  });
 
-  const chosen = [...selected.values()].filter((values) => values.length > 0);
+  return (
+    <section aria-labelledby="variants-heading" className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="variants-heading" className="text-sm font-semibold">
+          {t('cs.hub.variantsStock')}
+        </h2>
+        <PermissionGate allowed={mayWrite && skus.length > 0}>
+          {editing ? (
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setEditing(false);
+                  setPricesState({});
+                }}
+              >
+                {t('cs.cancel')}
+              </Button>
+              <Button
+                size="sm"
+                disabled={changed.length === 0 || invalid || save.isPending}
+                onClick={() => save.mutate()}
+              >
+                {t('cs.hub.savePrices')}
+              </Button>
+            </div>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+              {t('cs.hub.editPrices')}
+            </Button>
+          )}
+        </PermissionGate>
+      </div>
+
+      {skus.length === 0 && product !== undefined ? (
+        <p className="text-sm text-muted-foreground">{t('cs.hub.noVariants')}</p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="w-full text-sm">
+            <caption className="sr-only">{t('cs.hub.variantsStock')}</caption>
+            <thead>
+              <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                <th scope="col" className="px-3 py-2">
+                  {t('cs.col.variant')}
+                </th>
+                <th scope="col" className="px-3 py-2">
+                  {t('catalog.colCode')}
+                </th>
+                <th scope="col" className="px-3 py-2 text-right">
+                  {t('cs.col.price')}
+                </th>
+                {showStock
+                  ? columns.map((location) => (
+                      <th key={location.id} scope="col" className="px-3 py-2 text-right">
+                        {location.name}
+                      </th>
+                    ))
+                  : null}
+                {showStock ? (
+                  <th scope="col" className="px-3 py-2 text-right">
+                    {t('cs.col.available')}
+                  </th>
+                ) : null}
+                <th scope="col" className="px-3 py-2">
+                  <span className="sr-only">{t('cs.col.actions')}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {skus.map((sku) => {
+                const mine = rows.filter((row) => row.skuId === sku.id);
+                const free = total(mine.map((row) => row.available));
+                const low = mine.some(
+                  (row) => row.reorderLevel > 0 && row.available <= row.reorderLevel,
+                );
+                return (
+                  <tr key={sku.id} className="border-b border-border/60 last:border-0">
+                    <td className="px-3 py-2">
+                      <span className="font-medium">{labelOf(sku) || t('cs.new.oneVariant')}</span>
+                      {sku.status === 'archived' ? (
+                        <span className="ms-2">
+                          <StatusBadge tone="neutral">{t('catalog.status.archived')}</StatusBadge>
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs">{sku.skuCode}</td>
+                    <td className="px-3 py-2 text-right">
+                      {editing ? (
+                        <>
+                          <label className="sr-only" htmlFor={`price-${sku.id}`}>
+                            {`${t('cs.col.price')} ${sku.skuCode}`}
+                          </label>
+                          <input
+                            id={`price-${sku.id}`}
+                            inputMode="decimal"
+                            value={prices[sku.id] ?? poishaToTaka(sku.pricePoisha)}
+                            onChange={(event) =>
+                              setPricesState((current) => ({
+                                ...current,
+                                [sku.id]: event.target.value,
+                              }))
+                            }
+                            className="h-8 w-28 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          />
+                        </>
+                      ) : (
+                        <Money poisha={sku.pricePoisha} />
+                      )}
+                    </td>
+                    {showStock
+                      ? columns.map((location) => {
+                          const level = cell(sku.id, location.id);
+                          return (
+                            <td key={location.id} className="px-3 py-2 text-right tabular-nums">
+                              {level === undefined ? (
+                                <span className="text-muted-foreground">0</span>
+                              ) : (
+                                <span title={`${t('cs.hub.onHand')} ${String(level.onHand)}`}>
+                                  {level.available}
+                                  {level.reserved > 0 ? (
+                                    <span className="ms-1 text-xs text-muted-foreground">
+                                      {`(+${String(level.reserved)} ${t('cs.hub.held')})`}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })
+                      : null}
+                    {showStock ? (
+                      <td className="px-3 py-2 text-right">
+                        <span className="inline-flex items-center gap-2 tabular-nums">
+                          {free}
+                          {sku.status === 'active' && free === 0 ? (
+                            <StatusBadge tone="danger">{t('cs.hub.out')}</StatusBadge>
+                          ) : low ? (
+                            <StatusBadge tone="warning">{t('cs.hub.low')}</StatusBadge>
+                          ) : null}
+                        </span>
+                      </td>
+                    ) : null}
+                    <td className="px-3 py-2 text-right">
+                      <PermissionGate allowed={mayWrite}>
+                        <Button size="sm" variant="ghost" onClick={() => setArchiving(sku)}>
+                          {sku.status === 'active' ? t('cs.archive') : t('cs.restore')}
+                        </Button>
+                      </PermissionGate>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {save.error !== null || archive.error !== null ? (
+        <p role="alert" className="text-sm text-destructive">
+          {(save.error ?? archive.error) instanceof ApiError
+            ? (save.error ?? archive.error)?.message
+            : t('cs.saveFailed')}
+        </p>
+      ) : null}
+
+      <ConfirmDialog
+        open={archiving !== null}
+        onOpenChange={(next) => {
+          if (!next) setArchiving(null);
+        }}
+        title={archiving?.status === 'active' ? t('cs.hub.archiveSku') : t('cs.hub.restoreSku')}
+        description={
+          archiving?.status === 'active' ? t('cs.hub.archiveSkuHelp') : t('cs.hub.restoreSkuHelp')
+        }
+        confirmLabel={archiving?.status === 'active' ? t('cs.archive') : t('cs.restore')}
+        cancelLabel={t('cs.cancel')}
+        closeLabel={t('cs.close')}
+        onConfirm={async () => {
+          if (archiving !== null) await archive.mutateAsync(archiving);
+        }}
+      />
+    </section>
+  );
+}
+
+// --- add sizes or colours ----------------------------------------------------------
+
+function AddVariants({
+  productId,
+  product,
+  onDone,
+}: {
+  readonly productId: string;
+  readonly product: CatalogProduct | undefined;
+  readonly onDone: () => void;
+}) {
+  const t = useT();
+  const attributes = useQuery({
+    queryKey: ['catalog', 'attributes'],
+    queryFn: listAttributes,
+    staleTime: 5 * 60_000,
+  });
+  const [chosen, setChosen] = useState<Record<string, string[]> | null>(null);
+  const [result, setResult] = useState<number | null>(null);
+
+  // Start from what the product already has, so adding XXL is one click.
+  const existing = (axis: CatalogAttribute) => [
+    ...new Set(
+      (product?.skus ?? []).flatMap((sku) =>
+        sku.attributes.filter((pair) => pair.attributeId === axis.id).map((pair) => pair.valueId),
+      ),
+    ),
+  ];
+  const axes = (attributes.data?.items ?? []).filter(
+    (axis) => axis.isVariant && axis.values.length > 0,
+  );
+  const current = (axis: CatalogAttribute) => chosen?.[axis.id] ?? existing(axis);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      addVariants(productId, {
+        axes: axes
+          .map((axis) => ({ attributeId: axis.id, valueIds: current(axis) }))
+          .filter((axis) => axis.valueIds.length > 0),
+      }),
+    onSuccess: (data) => {
+      setResult(data.created.length);
+      setChosen(null);
+      onDone();
+    },
+  });
 
   return (
     <section
@@ -251,129 +630,56 @@ function AddVariants({
       className="space-y-3 rounded-md border border-border p-4"
     >
       <h2 id="add-variants-heading" className="text-sm font-semibold">
-        {ct('catalog.addVariants')}
+        {t('cs.hub.addVariants')}
       </h2>
-      <p className="text-sm text-muted-foreground">{ct('catalog.addVariantsHelp')}</p>
-
-      {axes
-        .filter((axis) => axis.isVariant)
-        .map((axis) => (
-          <fieldset key={axis.id} className="space-y-1">
-            <legend className="text-xs font-medium text-muted-foreground">{axis.name}</legend>
-            <div className="flex flex-wrap gap-3">
-              {axis.values.map((value) => (
-                <label key={value.id} className="flex items-center gap-1.5 text-sm">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-border accent-primary focus-visible:ring-2 focus-visible:ring-ring"
-                    checked={(selected.get(axis.id) ?? []).includes(value.id)}
-                    onChange={() => toggle(axis.id, value.id)}
-                  />
-                  {value.label}
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        ))}
-
+      <p className="text-sm text-muted-foreground">{t('cs.hub.addVariantsHelp')}</p>
+      {axes.map((axis) => (
+        <ChipGroup
+          key={axis.id}
+          legend={axis.name}
+          values={axis.values}
+          chosen={current(axis)}
+          onToggle={(valueId) => {
+            const list = current(axis);
+            // An existing value cannot be taken off here; archive its variants instead.
+            if (list.includes(valueId) && existing(axis).includes(valueId)) return;
+            setChosen((state) => ({
+              ...(state ?? {}),
+              [axis.id]: list.includes(valueId)
+                ? list.filter((id) => id !== valueId)
+                : [...list, valueId],
+            }));
+          }}
+        />
+      ))}
       <div className="flex items-center gap-3">
         <Button
           size="sm"
-          disabled={chosen.length === 0 || mutation.isPending}
+          disabled={chosen === null || mutation.isPending}
           onClick={() => mutation.mutate()}
         >
-          {ct('catalog.addVariants')}
+          {t('cs.hub.addVariantsSubmit')}
         </Button>
-        {result !== null && (
-          <p className="text-sm text-muted-foreground">
-            {result.created === 0
-              ? ct('catalog.variantsNoneAdded')
-              : `${String(result.created)} ${ct('catalog.variantsAdded')}`}
+        {result !== null ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            {result === 0
+              ? t('catalog.variantsNoneAdded')
+              : `${String(result)} ${t('catalog.variantsAdded')}`}
           </p>
-        )}
+        ) : null}
       </div>
-
-      {/* Orphans are stated, never acted on. */}
-      {result !== null && result.orphaned > 0 && (
-        <p className="text-sm text-warning-subtle-foreground">{ct('catalog.variantsOrphaned')}</p>
-      )}
+      {mutation.error !== null ? (
+        <p role="alert" className="text-sm text-destructive">
+          {mutation.error instanceof ApiError ? mutation.error.message : t('cs.saveFailed')}
+        </p>
+      ) : null}
     </section>
   );
 }
 
-/** One price for every SKU shown, applied all at once or not at all. */
-function BulkPrice({
-  skus,
-  onDone,
-}: {
-  readonly skus: readonly CatalogSku[];
-  readonly onDone: () => void;
-}) {
-  const ct = useCatalogT();
-  const [taka, setTaka] = useState('');
-  const [reason, setReason] = useState('');
+// --- photos ---------------------------------------------------------------------
 
-  /*
-   * `takaToPoisha` is integer arithmetic and returns null for anything that is not
-   * taka with up to two decimals. `parseFloat(taka) * 100` is 1998.9999999999998
-   * for 19.99, and the `elysium/no-float-money` rule bans it outright (D-090).
-   */
-  const pricePoisha = takaToPoisha(taka);
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      setPrices({
-        prices: skus.map((sku) => ({ skuId: sku.id, pricePoisha: pricePoisha ?? '' })),
-        reason: reason === '' ? undefined : reason,
-      }),
-    onSuccess: () => {
-      setTaka('');
-      onDone();
-    },
-  });
-
-  return (
-    <section
-      aria-labelledby="bulk-price-heading"
-      className="space-y-3 rounded-md border border-border p-4"
-    >
-      <h2 id="bulk-price-heading" className="text-sm font-semibold">
-        {ct('catalog.bulkPrice')}
-      </h2>
-      <p className="text-sm text-muted-foreground">{ct('catalog.bulkPriceHelp')}</p>
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-xs font-medium">
-          {ct('catalog.productPrice')}
-          <input
-            inputMode="decimal"
-            value={taka}
-            onChange={(event) => setTaka(event.target.value)}
-            className="h-8 w-32 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium">
-          {ct('catalog.priceReason')}
-          <input
-            value={reason}
-            maxLength={200}
-            onChange={(event) => setReason(event.target.value)}
-            className="h-8 w-64 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        </label>
-        <Button
-          size="sm"
-          disabled={pricePoisha === null || skus.length === 0 || mutation.isPending}
-          onClick={() => mutation.mutate()}
-        >
-          {ct('catalog.save')}
-        </Button>
-      </div>
-    </section>
-  );
-}
-
-/** Product images: upload through §22's presigned PUT, then order them. */
-function Images({
+function Photos({
   productId,
   images,
   onDone,
@@ -382,8 +688,7 @@ function Images({
   readonly images: readonly { id: string; fileId: string; altText: string | null }[];
   readonly onDone: () => void;
 }) {
-  const ct = useCatalogT();
-
+  const t = useT();
   const attach = useMutation({
     mutationFn: (fileId: string) => attachImage(productId, { fileId }),
     onSuccess: onDone,
@@ -405,157 +710,275 @@ function Images({
     const held = swapped[index] ?? '';
     swapped[index] = swapped[target] ?? '';
     swapped[target] = held;
-    // The whole order, every time: the endpoint refuses a partial list rather
-    // than renumbering some images and leaving the rest where they were.
     reorder.mutate(swapped);
   };
 
   return (
     <section
-      aria-labelledby="images-heading"
+      aria-labelledby="photos-heading"
       className="space-y-3 rounded-md border border-border p-4"
     >
-      <h2 id="images-heading" className="text-sm font-semibold">
-        {ct('catalog.images')}
+      <h2 id="photos-heading" className="text-sm font-semibold">
+        {t('cs.photos.title')}
       </h2>
-      <p className="text-sm text-muted-foreground">{ct('catalog.imagesHelp')}</p>
-
-      <ol className="space-y-1.5">
-        {images.map((image, index) => (
-          <li key={image.id} className="flex items-center gap-2 text-sm">
-            <span className="w-5 text-right text-muted-foreground tabular-nums">{index + 1}</span>
-            <span className="font-mono text-xs">{image.fileId.slice(0, 8)}</span>
-            <span className="flex-1 truncate text-muted-foreground">{image.altText ?? ''}</span>
-            {/* Buttons rather than drag-and-drop as the only path: a keyboard user
-                cannot drag, and `.claude/rules/frontend.md` puts a visible focus
-                ring and keyboard reach on every interactive element. */}
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label={ct('catalog.imageMoveUp')}
-              disabled={index === 0 || reorder.isPending}
-              onClick={() => move(index, -1)}
-            >
-              {'↑'}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label={ct('catalog.imageMoveDown')}
-              disabled={index === images.length - 1 || reorder.isPending}
-              onClick={() => move(index, 1)}
-            >
-              {'↓'}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label={ct('catalog.imageRemove')}
-              disabled={detach.isPending}
-              onClick={() => detach.mutate(image.id)}
-            >
-              <Trash2 aria-hidden className="size-4" />
-            </Button>
-          </li>
-        ))}
-      </ol>
-
-      <FileUpload
-        accept="image/webp,image/jpeg,image/png"
-        createTicket={(input) =>
-          api.post<UploadTicket>('/v1/files', {
-            ...input,
-            // `public` and `product-image`: the catalog's attach endpoint accepts
-            // nothing else, and the files module refuses a public upload for any
-            // purpose that may not be public.
-            visibility: 'public',
-            purpose: 'product-image',
-          })
-        }
-        finalize={(fileId) => api.post<UploadedFile>(`/v1/files/${fileId}/finalize`)}
-        onUploaded={(file) => attach.mutate(file.id)}
-        labels={{
-          choose: ct('catalog.images'),
-          uploading: ct('catalog.importRows'),
-          uploaded: ct('catalog.images'),
-          remove: ct('catalog.imageRemove'),
-          failed: ct('catalog.errorDetail'),
-          tooLarge: ct('catalog.errorDetail'),
-        }}
-      />
+      {images.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t('cs.photos.none')}</p>
+      ) : (
+        <ol className="flex flex-wrap gap-3">
+          {images.map((image, index) => (
+            <li key={image.id} className="space-y-1">
+              <Thumb fileId={image.fileId} alt={image.altText ?? t('cs.photos.alt')} />
+              <div className="flex justify-center gap-0.5">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t('catalog.imageMoveUp')}
+                  disabled={index === 0 || reorder.isPending}
+                  onClick={() => move(index, -1)}
+                >
+                  <ArrowUp aria-hidden className="size-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t('catalog.imageMoveDown')}
+                  disabled={index === images.length - 1 || reorder.isPending}
+                  onClick={() => move(index, 1)}
+                >
+                  <ArrowDown aria-hidden className="size-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t('catalog.imageRemove')}
+                  disabled={detach.isPending}
+                  onClick={() => detach.mutate(image.id)}
+                >
+                  <Trash2 aria-hidden className="size-4" />
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+      <PhotoUploader onUploaded={(file) => attach.mutate(file.id)} />
     </section>
   );
 }
 
-/** The barcode label sheet. */
-function Labels({ skus }: { readonly skus: readonly CatalogSku[] }) {
-  const ct = useCatalogT();
-  const [copies, setCopies] = useState(1);
-  const [showPrice, setShowPrice] = useState(false);
+// --- edit -----------------------------------------------------------------------
 
-  const download = useMutation({
+function EditProductDialog({
+  open,
+  onOpenChange,
+  product,
+  onDone,
+}: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly product: CatalogProduct;
+  readonly onDone: () => void;
+}) {
+  const t = useT();
+  const [name, setName] = useState(product.name);
+  const [categoryId, setCategoryId] = useState(product.categoryId ?? '');
+  const [description, setDescription] = useState(product.description ?? '');
+  const [status, setStatus] = useState(product.status);
+  const categories = useQuery({
+    queryKey: ['catalog', 'categories'],
+    queryFn: listCategories,
+    enabled: open,
+    staleTime: 5 * 60_000,
+  });
+
+  const save = useMutation({
     mutationFn: () =>
-      labelSheetPdf(
-        skus.map((sku) => ({ skuId: sku.id, copies })),
-        showPrice,
-      ),
-    onSuccess: (blob) => {
-      // An object URL opened in a new tab, revoked once the browser has it. The
-      // alternative — a GET endpoint the browser navigates to — would put the SKU
-      // list in a query string and lose the CSRF header with it.
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener');
-      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      updateProduct(product.id, {
+        name: name.trim(),
+        categoryId: categoryId === '' ? null : categoryId,
+        description: description.trim() === '' ? null : description.trim(),
+        status,
+      }),
+    onSuccess: () => {
+      onDone();
+      onOpenChange(false);
     },
   });
 
+  const control =
+    'h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring';
+
   return (
-    <section
-      aria-labelledby="labels-heading"
-      className="space-y-3 rounded-md border border-border p-4"
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('cs.editTitle')}
+      description={t('cs.editHelp')}
+      closeLabel={t('cs.close')}
+      footer={
+        <>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t('cs.cancel')}
+          </Button>
+          <Button disabled={name.trim() === '' || save.isPending} onClick={() => save.mutate()}>
+            {t('cs.save')}
+          </Button>
+        </>
+      }
     >
-      <h2 id="labels-heading" className="text-sm font-semibold">
-        {ct('catalog.labels')}
-      </h2>
-      <p className="text-sm text-muted-foreground">{ct('catalog.labelsHelp')}</p>
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="space-y-3">
         <label className="flex flex-col gap-1 text-xs font-medium">
-          {ct('catalog.labelsCopies')}
+          {t('catalog.productName')}
           <input
-            type="number"
-            min={1}
-            max={200}
-            value={copies}
-            onChange={(event) => setCopies(Math.max(1, Number(event.target.value)))}
-            className="h-8 w-20 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={name}
+            maxLength={200}
+            onChange={(event) => setName(event.target.value)}
+            className={control}
           />
         </label>
-        <label className="flex items-center gap-1.5 text-sm">
-          <input
-            type="checkbox"
-            checked={showPrice}
-            onChange={(event) => setShowPrice(event.target.checked)}
-            className="h-4 w-4 rounded border-border accent-primary focus-visible:ring-2 focus-visible:ring-ring"
-          />
-          {ct('catalog.labelsShowPrice')}
+        <label className="flex flex-col gap-1 text-xs font-medium">
+          {t('catalog.productCategory')}
+          <select
+            value={categoryId}
+            onChange={(event) => setCategoryId(event.target.value)}
+            className={control}
+          >
+            <option value="">{t('cs.noCategory')}</option>
+            {(categories.data?.items ?? []).map((category) => (
+              <option key={category.id} value={category.id}>
+                {'  '.repeat(category.depth)}
+                {category.name}
+              </option>
+            ))}
+          </select>
         </label>
-        <Button
-          size="sm"
-          disabled={skus.length === 0 || download.isPending}
-          onClick={() => download.mutate()}
-        >
-          {ct('catalog.labelsDownload')}
-        </Button>
+        <label className="flex flex-col gap-1 text-xs font-medium">
+          {t('catalog.productStatus')}
+          <select
+            value={status}
+            onChange={(event) => setStatus(event.target.value as CatalogProduct['status'])}
+            className={control}
+          >
+            <option value="active">{t('cs.status.activeHelp')}</option>
+            <option value="draft">{t('cs.status.draftHelp')}</option>
+            <option value="archived">{t('catalog.status.archived')}</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-medium">
+          {t('cs.description')}
+          <textarea
+            value={description}
+            maxLength={4000}
+            rows={3}
+            onChange={(event) => setDescription(event.target.value)}
+            className="rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </label>
+        {save.error !== null ? (
+          <p role="alert" className="text-sm text-destructive">
+            {save.error instanceof ApiError ? save.error.message : t('cs.saveFailed')}
+          </p>
+        ) : null}
       </div>
+    </Dialog>
+  );
+}
+
+// --- history --------------------------------------------------------------------
+
+const KINDS = {
+  opening_balance: 'cs.kind.opening_balance',
+  supply_receipt: 'cs.kind.supply_receipt',
+  supplier_return: 'cs.kind.supplier_return',
+  dispatch: 'cs.kind.dispatch',
+  customer_return: 'cs.kind.customer_return',
+  pos_sale: 'cs.kind.pos_sale',
+  pos_return: 'cs.kind.pos_return',
+  transfer_out: 'cs.kind.transfer_out',
+  transfer_in: 'cs.kind.transfer_in',
+  adjustment_gain: 'cs.kind.adjustment_gain',
+  adjustment_loss: 'cs.kind.adjustment_loss',
+  count_correction: 'cs.kind.count_correction',
+} as const;
+
+function StockHistory({
+  productId,
+  variants,
+}: {
+  readonly productId: string;
+  readonly variants: readonly VariantInfo[];
+}) {
+  const t = useT();
+  const history = useQuery({
+    queryKey: ['stock', 'movements', productId],
+    queryFn: () => listMovements({ productId, pageSize: 50 }),
+  });
+  const items = history.data?.items ?? [];
+  const label = (skuId: string, code: string) => {
+    const found = variants.find((variant) => variant.id === skuId)?.label ?? '';
+    return found === '' ? code : found;
+  };
+
+  return (
+    <section aria-labelledby="history-heading" className="space-y-3">
+      <h2 id="history-heading" className="text-sm font-semibold">
+        {t('cs.hub.history')}
+      </h2>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {history.isPending ? t('cs.loading') : t('cs.hub.noHistory')}
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <caption className="sr-only">{t('cs.hub.history')}</caption>
+            <thead>
+              <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                <th scope="col" className="py-1.5">
+                  {t('cs.col.when')}
+                </th>
+                <th scope="col" className="py-1.5">
+                  {t('cs.col.what')}
+                </th>
+                <th scope="col" className="py-1.5">
+                  {t('cs.col.variant')}
+                </th>
+                <th scope="col" className="py-1.5">
+                  {t('cs.location')}
+                </th>
+                <th scope="col" className="py-1.5 text-right">
+                  {t('cs.col.qty')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((row) => (
+                <tr key={row.id} className="border-b border-border/60">
+                  <td className="py-1.5">
+                    <DateTime value={row.createdAt} />
+                  </td>
+                  <td className="py-1.5">
+                    {row.kind in KINDS ? t(KINDS[row.kind as keyof typeof KINDS]) : row.kind}
+                  </td>
+                  <td className="py-1.5">{label(row.skuId, row.skuCode)}</td>
+                  <td className="py-1.5">{row.locationName}</td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {row.qtyDelta > 0 ? `+${String(row.qtyDelta)}` : String(row.qtyDelta)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
 
-/** The price history of whichever SKU is chosen. */
-function PriceHistory({ skus }: { readonly skus: readonly CatalogSku[] }) {
-  const ct = useCatalogT();
-  const [skuId, setSkuId] = useState<string>('');
-  const chosen = skuId === '' ? skus[0]?.id : skuId;
+function PriceHistory({ variants }: { readonly variants: readonly VariantInfo[] }) {
+  const t = useT();
+  const [skuId, setSkuId] = useState('');
+  const chosen = skuId === '' ? variants[0]?.id : skuId;
 
   const history = useQuery({
     queryKey: ['catalog', 'price-history', chosen],
@@ -564,41 +987,43 @@ function PriceHistory({ skus }: { readonly skus: readonly CatalogSku[] }) {
   });
 
   return (
-    <section aria-labelledby="history-heading" className="space-y-3">
-      <h2 id="history-heading" className="text-sm font-semibold">
-        {ct('catalog.priceHistory')}
-      </h2>
-      <select
-        aria-label={ct('catalog.colCode')}
-        value={chosen ?? ''}
-        onChange={(event) => setSkuId(event.target.value)}
-        className="h-8 rounded-md border border-border bg-background px-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {skus.map((sku) => (
-          <option key={sku.id} value={sku.id}>
-            {sku.skuCode}
-          </option>
-        ))}
-      </select>
+    <section aria-labelledby="price-history-heading" className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 id="price-history-heading" className="text-sm font-semibold">
+          {t('catalog.priceHistory')}
+        </h2>
+        <select
+          aria-label={t('cs.col.variant')}
+          value={chosen ?? ''}
+          onChange={(event) => setSkuId(event.target.value)}
+          className="h-8 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {variants.map((variant) => (
+            <option key={variant.id} value={variant.id}>
+              {variant.label === '' ? variant.skuCode : `${variant.label} · ${variant.skuCode}`}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {(history.data?.items ?? []).length === 0 ? (
-        <p className="text-sm text-muted-foreground">{ct('catalog.priceNoHistory')}</p>
+        <p className="text-sm text-muted-foreground">{t('catalog.priceNoHistory')}</p>
       ) : (
         <table className="w-full text-sm">
-          <caption className="sr-only">{ct('catalog.priceHistory')}</caption>
+          <caption className="sr-only">{t('catalog.priceHistory')}</caption>
           <thead>
             <tr className="border-b border-border text-left text-xs text-muted-foreground">
               <th scope="col" className="py-1.5">
-                {ct('catalog.priceWhen')}
+                {t('catalog.priceWhen')}
               </th>
               <th scope="col" className="py-1.5 text-right">
-                {ct('catalog.priceFrom')}
+                {t('catalog.priceFrom')}
               </th>
               <th scope="col" className="py-1.5 text-right">
-                {ct('catalog.priceTo')}
+                {t('catalog.priceTo')}
               </th>
               <th scope="col" className="py-1.5">
-                {ct('catalog.priceReason')}
+                {t('catalog.priceReason')}
               </th>
             </tr>
           </thead>
@@ -620,6 +1045,73 @@ function PriceHistory({ skus }: { readonly skus: readonly CatalogSku[] }) {
           </tbody>
         </table>
       )}
+    </section>
+  );
+}
+
+/** The barcode label sheet, one or more labels per variant. */
+function Labels({ skus }: { readonly skus: readonly CatalogSku[] }) {
+  const t = useT();
+  const [copies, setCopies] = useState(1);
+  const [showPrice, setShowPrice] = useState(true);
+
+  const download = useMutation({
+    mutationFn: () =>
+      labelSheetPdf(
+        skus.filter((sku) => sku.status === 'active').map((sku) => ({ skuId: sku.id, copies })),
+        showPrice,
+      ),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    },
+  });
+
+  return (
+    <section
+      aria-labelledby="labels-heading"
+      className="space-y-3 rounded-md border border-border p-4"
+    >
+      <h2 id="labels-heading" className="text-sm font-semibold">
+        {t('catalog.labels')}
+      </h2>
+      <p className="text-sm text-muted-foreground">{t('catalog.labelsHelp')}</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-xs font-medium">
+          {t('catalog.labelsCopies')}
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={copies}
+            onChange={(event) => setCopies(Math.min(200, Math.max(1, Number(event.target.value))))}
+            className="h-8 w-20 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-sm">
+          <input
+            type="checkbox"
+            checked={showPrice}
+            onChange={(event) => setShowPrice(event.target.checked)}
+            className="size-4 rounded border-border accent-primary focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          {t('catalog.labelsShowPrice')}
+        </label>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={skus.length === 0 || download.isPending}
+          onClick={() => download.mutate()}
+        >
+          {t('catalog.labelsDownload')}
+        </Button>
+      </div>
+      {download.error !== null ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t('cs.labelsFailed')}
+        </p>
+      ) : null}
     </section>
   );
 }

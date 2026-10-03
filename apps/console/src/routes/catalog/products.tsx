@@ -64,7 +64,15 @@ export function CatalogProductsPage() {
   });
 
   const query = useQuery({
-    queryKey: ['catalog', 'products', search.q, search.status, search.pageSize, cursor ?? null],
+    queryKey: [
+      'catalog',
+      'products',
+      search.q,
+      search.type,
+      search.status,
+      search.pageSize,
+      cursor ?? null,
+    ],
     queryFn: () =>
       listProducts({
         q: search.q,
@@ -152,14 +160,30 @@ export function CatalogProductsPage() {
             <h1 className="text-lg font-semibold tracking-tight">{ct('catalog.title')}</h1>
             <p className="text-sm text-muted-foreground">{ct('catalog.products')}</p>
           </div>
-          <PermissionGate allowed={mayWrite}>
-            {/* A Link styled as a button rather than a Button wrapping a Link: the
-                kit's Button renders a real <button>, and nesting an anchor inside one
-                is invalid HTML that keyboard and screen-reader users hit first. */}
-            <Link to="/catalog/new" className={buttonVariants({ size: 'sm' })}>
-              {ct('catalog.newProduct')}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* The catalog's setup and its importer live one click from the list
+                (plan `catalog-stock-ux`): before, neither was linked from anywhere. */}
+            <Link
+              to="/catalog/structure"
+              className={buttonVariants({ size: 'sm', variant: 'ghost' })}
+            >
+              {t('cs.setup.link')}
             </Link>
-          </PermissionGate>
+            <PermissionGate allowed={mayWrite}>
+              <Link
+                to="/catalog/import"
+                className={buttonVariants({ size: 'sm', variant: 'outline' })}
+              >
+                {t('cs.import.link')}
+              </Link>
+              {/* A Link styled as a button rather than a Button wrapping a Link: the
+                  kit's Button renders a real <button>, and nesting an anchor inside one
+                  is invalid HTML that keyboard and screen-reader users hit first. */}
+              <Link to="/catalog/new" className={buttonVariants({ size: 'sm' })}>
+                {ct('catalog.newProduct')}
+              </Link>
+            </PermissionGate>
+          </div>
         </header>
 
         <DataTable

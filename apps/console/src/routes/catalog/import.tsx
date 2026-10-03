@@ -5,6 +5,69 @@ import { useState } from 'react';
 import { useAbility } from '../../auth/session.js';
 import { commitPriceImport, dryRunPriceImport, type ImportReport } from './api.js';
 import { useCatalogT } from './messages.js';
+import { ProductImport } from './product-import.js';
+import { useT } from '../../i18n/locale.js';
+import { Link } from '@tanstack/react-router';
+import { DEFAULT_PAGE_SIZE } from '../../lib/table-search.js';
+
+/**
+ * Import: new products from a spreadsheet (D-425), or new prices for existing SKUs
+ * (M06 check 4). Two tabs on one page, because both start the same way — download the
+ * template, fill it in, check it — and an owner looking for "import" should find both.
+ */
+export function CatalogImportPage() {
+  const t = useT();
+  const [tab, setTab] = useState<'products' | 'prices'>('products');
+  const tabClass =
+    'rounded-md px-2.5 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-selected:bg-muted aria-selected:font-medium aria-selected:text-foreground';
+  return (
+    <div className="space-y-5">
+      <nav aria-label={t('cs.breadcrumb')} className="text-xs text-muted-foreground">
+        <Link
+          to="/catalog"
+          search={{ page: 1, pageSize: DEFAULT_PAGE_SIZE }}
+          className="underline-offset-4 hover:underline"
+        >
+          {t('catalog.title')}
+        </Link>
+      </nav>
+      <header className="space-y-1">
+        <h1 className="text-lg font-semibold tracking-tight">{t('cs.import.title')}</h1>
+      </header>
+      <div role="tablist" aria-label={t('cs.import.title')} className="flex gap-1">
+        <button
+          type="button"
+          role="tab"
+          id="tab-products"
+          aria-selected={tab === 'products'}
+          aria-controls="panel-import"
+          className={tabClass}
+          onClick={() => setTab('products')}
+        >
+          {t('cs.import.products')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="tab-prices"
+          aria-selected={tab === 'prices'}
+          aria-controls="panel-import"
+          className={tabClass}
+          onClick={() => setTab('prices')}
+        >
+          {t('cs.import.prices')}
+        </button>
+      </div>
+      <div
+        role="tabpanel"
+        id="panel-import"
+        aria-labelledby={tab === 'products' ? 'tab-products' : 'tab-prices'}
+      >
+        {tab === 'products' ? <ProductImport /> : <PriceImport />}
+      </div>
+    </div>
+  );
+}
 
 /**
  * The price importer's two steps (M06 acceptance check 4).
@@ -26,7 +89,7 @@ import { useCatalogT } from './messages.js';
  * operator is standing there waiting for the report, so a presign, an upload and a
  * poll would be three round trips for something that fits in one.
  */
-export function CatalogImportPage() {
+function PriceImport() {
   const ability = useAbility();
   const ct = useCatalogT();
 
@@ -64,7 +127,7 @@ export function CatalogImportPage() {
     >
       <div className="space-y-5">
         <header>
-          <h1 className="text-lg font-semibold tracking-tight">{ct('catalog.import')}</h1>
+          <h2 className="text-sm font-semibold">{ct('catalog.import')}</h2>
           <p className="max-w-2xl text-sm text-muted-foreground">{ct('catalog.importHelp')}</p>
         </header>
 
@@ -132,9 +195,9 @@ export function CatalogImportPage() {
 
             {report.problems.length > 0 && (
               <section aria-labelledby="problems-heading" className="space-y-2">
-                <h2 id="problems-heading" className="text-sm font-semibold text-destructive">
+                <h3 id="problems-heading" className="text-sm font-semibold text-destructive">
                   {ct('catalog.importProblems')}
-                </h2>
+                </h3>
                 <p className="text-sm text-muted-foreground">{ct('catalog.importBlocked')}</p>
                 <table className="w-full text-sm">
                   <caption className="sr-only">{ct('catalog.importProblems')}</caption>

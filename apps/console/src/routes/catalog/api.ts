@@ -162,10 +162,116 @@ export function createProduct(input: {
   readonly name: string;
   readonly slug: string;
   readonly categoryId?: string | undefined;
+  readonly description?: string | undefined;
   readonly pricePoisha: string;
   readonly status: 'draft' | 'active';
+  /** The sizes and colours chosen; empty makes one plain SKU. */
+  readonly axes?: readonly { readonly attributeId: string; readonly valueIds: readonly string[] }[];
+  /** Prices that differ from `pricePoisha`, named by their value ids (D-422). */
+  readonly variantPrices?: readonly {
+    readonly valueIds: readonly string[];
+    readonly pricePoisha: string;
+  }[];
 }): Promise<CatalogProduct> {
-  return api.post('/v1/catalog/products', { ...input, axes: [], generateSkus: false });
+  const { axes, variantPrices, ...rest } = input;
+  return api.post('/v1/catalog/products', {
+    ...rest,
+    axes: axes ?? [],
+    generateSkus: true,
+    ...(variantPrices === undefined || variantPrices.length === 0 ? {} : { variantPrices }),
+  });
+}
+
+export function updateProduct(
+  id: string,
+  patch: {
+    readonly name?: string;
+    readonly categoryId?: string | null;
+    readonly description?: string | null;
+    readonly status?: 'draft' | 'active' | 'archived';
+  },
+): Promise<CatalogProduct> {
+  return api.patch(`/v1/catalog/products/${id}`, patch);
+}
+
+/** Archive a SKU or bring it back (D-423). */
+export function updateSku(
+  id: string,
+  status: 'active' | 'archived',
+): Promise<{ id: string; skuCode: string; status: string }> {
+  return api.patch(`/v1/catalog/skus/${id}`, { status });
+}
+
+export function updateCategory(
+  id: string,
+  patch: {
+    readonly name?: string;
+    readonly parentId?: string | null;
+    readonly isActive?: boolean;
+  },
+): Promise<CatalogCategory> {
+  return api.patch(`/v1/catalog/categories/${id}`, patch);
+}
+
+export function updateAttribute(id: string, patch: { readonly name: string }): Promise<unknown> {
+  return api.patch(`/v1/catalog/attributes/${id}`, patch);
+}
+
+export function updateAttributeValue(
+  attributeId: string,
+  valueId: string,
+  patch: { readonly label: string },
+): Promise<unknown> {
+  return api.patch(`/v1/catalog/attributes/${attributeId}/values/${valueId}`, patch);
+}
+
+export interface ProductImportReport {
+  readonly totalRows: number;
+  readonly willCreate: number;
+  readonly skuCount: number;
+  readonly problems: readonly ImportProblem[];
+  readonly canCommit: boolean;
+  readonly reason: string | null;
+  readonly preview: readonly {
+    readonly line: number;
+    readonly name: string;
+    readonly categoryName: string | null;
+    readonly pricePoisha: string;
+    readonly status: 'draft' | 'active';
+    readonly sizes: readonly string[];
+    readonly colours: readonly string[];
+    readonly variantCount: number;
+  }[];
+}
+
+export function dryRunProductImport(csv: string): Promise<ProductImportReport> {
+  return api.post('/v1/catalog/imports/products/dry-run', { csv });
+}
+
+export function commitProductImport(
+  csv: string,
+): Promise<{ created: number; skuCount: number; products: { id: string; name: string }[] }> {
+  return api.post('/v1/catalog/imports/products', { csv });
+}
+
+/** A short-lived address for a product photo (`GET /v1/files/:id/download`). */
+export function imageUrl(fileId: string): Promise<{ url: string }> {
+  return api.get(`/v1/files/${fileId}/download`);
+}
+
+export interface SkuSearchRow {
+  readonly id: string;
+  readonly productId: string;
+  readonly name: string;
+  readonly skuCode: string;
+  readonly status: 'active' | 'archived';
+}
+
+/** SKUs across the whole catalog, for pickers. Under three characters it lists by code. */
+export function searchSkus(q: string, limit = 50): Promise<{ items: SkuSearchRow[] }> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (q.trim().length >= 3) params.set('q', q.trim());
+  return api.get(`/v1/catalog/skus?${params.toString()}`);
 }
 
 export function createCategory(input: {
