@@ -292,14 +292,15 @@ press **Track**.
 The buyer sees where the parcel is, in Bangla or English, and nothing else about the
 order.
 
-## 12. Dashboards and the whole group
+## 12. Dashboards
 
 1. As **Org admin**, **Analytics** shows the brand's orders, delivered revenue, profit,
-   return rate, ad spend and return on ad spend for any dates. **Leaderboard** ranks the
-   five brands for a month. **Export CSV** and **Export XLSX** download the figures.
-2. As **Super admin**, switch brands with the brand name at the top left. **Analytics → All
-   brands** and **Accounts → All brands** show the five brands side by side. Only the
-   other brands' set-up is filled in. The demo work is all in Elysium Lifestyle BD.
+   return rate, ad spend and return on ad spend for any dates. **Export CSV** and
+   **Export XLSX** download the figures. The insights compare the month with the brand's own
+   three months before it.
+2. As **Super admin**, switch brands with the brand name at the top left. Only the other
+   brands' set-up is filled in. The demo work is all in Elysium Lifestyle BD. Every brand's
+   ERP stands alone since M31: the views across brands belong to the mother ERP (M32).
 
 ## Not on screen yet
 

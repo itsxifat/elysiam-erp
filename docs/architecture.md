@@ -42,6 +42,7 @@ When you assume something, add a row to `docs/decisions.md`.
 27. Testing strategy
 28. Environments and deployment
 29. Performance targets
+30. One ERP per brand and the mother ERP
 
 ---
 
@@ -175,6 +176,8 @@ Explain these to the client. Each is logged in decisions.md.
 
 The system is a TypeScript modular monolith: one codebase and one PostgreSQL database, deployed as separate processes.
 
+> **Since M31 (D-469, D-470), production runs one deployment per brand:** the same codebase, its own processes and its own database, holding that one brand (and at most the training org). Row-level security and `org_id` stay. The cross-brand views moved to a separate mother ERP. See §30.
+
 - **`api`** (NestJS on Fastify): REST + OpenAPI, authentication, and the Socket.IO realtime gateway.
 - **`worker`** (same codebase, different entrypoint): pg-boss consumers and cron schedules. It owns **all** outbound integration calls.
 - **Frontends:**
@@ -294,11 +297,11 @@ create policy org_isolation on <schema>.<table>
 
 ### Database roles
 
-| Role            | Used by                                                                               | Rights                                                                                                                                                                    |
-| --------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `erp_owner`     | Migrations and seeds only; the app never connects as it                               | Owns all objects. **NOSUPERUSER and NOBYPASSRLS** (D-042): a superuser bypasses FORCE RLS, which would make every policy above a no-op for the role that owns the tables. |
-| `erp_app`       | The running app                                                                       | No BYPASSRLS. INSERT/SELECT only on append-only tables (ledger, stock movements, audit, outbox).                                                                          |
-| `erp_analytics` | Only the analytics module and super-admin consolidated reads, through a separate pool | SELECT only, with policies that allow all orgs                                                                                                                            |
+| Role            | Used by                                                                                                                                              | Rights                                                                                                                                                                    |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `erp_owner`     | Migrations and seeds only; the app never connects as it                                                                                              | Owns all objects. **NOSUPERUSER and NOBYPASSRLS** (D-042): a superuser bypasses FORCE RLS, which would make every policy above a no-op for the role that owns the tables. |
+| `erp_app`       | The running app                                                                                                                                      | No BYPASSRLS. INSERT/SELECT only on append-only tables (ledger, stock movements, audit, outbox).                                                                          |
+| `erp_analytics` | Read-only access across orgs, through a separate pool; since M31 nothing in a brand's ERP uses it, and the mother ERP reads a brand through it (§30) | SELECT only, with policies that allow all orgs                                                                                                                            |
 
 ### Access helpers
 
@@ -314,7 +317,7 @@ create policy org_isolation on <schema>.<table>
 
 1. `fraud.phone_signals` and `fraud.provider_checks`: aggregated counts keyed by an HMAC of the normalized phone number. Every org can read them. They contain no order details, names or addresses.
 2. The `analytics.daily_org` rollup, read through `erp_analytics` (D-329); the other rollups are single-brand.
-3. Super Admin consolidated views (wallet totals, P&L across orgs) through `erp_analytics`. These are read-only; **every write is scoped to exactly one org**.
+3. ~~Super Admin consolidated views (wallet totals, P&L across orgs) through `erp_analytics`.~~ Removed from the brand's ERP by M31 (D-471): each brand runs on its own database, and the mother ERP builds the combined views from each brand's read-only role (§30). Every write is still scoped to exactly one org.
 4. `iam` users and memberships: one user can belong to several orgs with different roles.
 5. The org list and reference data (districts and thanas) are global.
 
@@ -404,34 +407,33 @@ The hostname comes from the **caller**, not from the API's own `Host` header (D-
 
 This summary is authoritative until M02b writes the code matrix. After that, the code is authoritative and any change needs a decision row.
 
-| Capability                         | super_admin        | org_admin                          | sales                   | accounts                    | marketing    | hr      | branch_manager                 | warehouse           | reseller            | investor |
-| ---------------------------------- | ------------------ | ---------------------------------- | ----------------------- | --------------------------- | ------------ | ------- | ------------------------------ | ------------------- | ------------------- | -------- |
-| Catalog read (no cost)             | all                | org                                | org                     | org                         | org          | —       | org                            | org                 | limited fields      | —        |
-| Catalog write, prices              | all                | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
-| Cost, WAC, stock value, margins    | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
-| Stock availability                 | all                | org                                | org                     | org                         | org          | —       | org                            | org                 | Beownz only         | —        |
-| Stock adjust / transfer / count    | all                | org + approve                      | —                       | read                        | —            | —       | request (branch)               | request             | —                   | —        |
-| Supply entries, suppliers          | all                | org                                | —                       | org                         | —            | —       | —                              | qty-only drafts     | —                   | —        |
-| Orders                             | all                | org                                | own + unassigned queue  | read                        | read         | —       | branch                         | pack, ship, returns | own (portal)        | —        |
-| Customers, buyer history           | all                | org                                | customers of own orders | read                        | org          | —       | branch                         | —                   | own end customers   | —        |
-| Buyer list export                  | all                | org                                | —                       | —                           | org          | —       | —                              | —                   | —                   | —        |
-| Fraud trust badge and reasons      | all                | org                                | yes                     | read                        | —            | —       | branch                         | —                   | badge on own orders | —        |
-| Fraud block override               | all                | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
-| Wallets, cash entries, petty cash  | all                | org                                | —                       | org                         | —            | —       | own branch wallets             | —                   | —                   | —        |
-| Ledger reports, P&L, balance sheet | all + consolidated | org                                | —                       | org                         | —            | —       | branch P&L without cost detail | —                   | —                   | —        |
-| Period close, reopen request       | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
-| Courier settlements                | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
-| Campaigns, ad spend, leads         | all                | org                                | —                       | spend entry                 | org          | —       | —                              | —                   | —                   | —        |
-| Landing pages, promo codes         | all                | org                                | apply codes             | —                           | org          | —       | apply at POS                   | —                   | —                   | —        |
-| Employees, attendance, payroll     | all                | org                                | own                     | payroll posting and payment | own          | org     | branch staff                   | own                 | —                   | —        |
-| Targets and bonus rules            | all                | org                                | own progress            | —                           | own progress | org     | branch progress                | —                   | —                   | —        |
-| Reseller admin, payouts            | all                | Beownz org                         | —                       | Beownz org                  | —            | —       | —                              | —                   | own                 | —        |
-| Investors                          | all                | org (read)                         | —                       | org                         | —            | —       | —                              | —                   | —                   | own      |
-| Company loans                      | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
-| Approvals (as checker)             | all                | org                                | —                       | payments                    | —            | payroll | branch items under threshold   | —                   | —                   | —        |
-| Leaderboard                        | all                | all orgs (normalized metrics only) | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
-| Org dashboard (analytics)          | all + consolidated | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
-| Users, roles, settings             | all                | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Capability                         | super_admin | org_admin     | sales                   | accounts                    | marketing    | hr      | branch_manager                 | warehouse           | reseller            | investor |
+| ---------------------------------- | ----------- | ------------- | ----------------------- | --------------------------- | ------------ | ------- | ------------------------------ | ------------------- | ------------------- | -------- |
+| Catalog read (no cost)             | all         | org           | org                     | org                         | org          | —       | org                            | org                 | limited fields      | —        |
+| Catalog write, prices              | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Cost, WAC, stock value, margins    | all         | org           | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Stock availability                 | all         | org           | org                     | org                         | org          | —       | org                            | org                 | Beownz only         | —        |
+| Stock adjust / transfer / count    | all         | org + approve | —                       | read                        | —            | —       | request (branch)               | request             | —                   | —        |
+| Supply entries, suppliers          | all         | org           | —                       | org                         | —            | —       | —                              | qty-only drafts     | —                   | —        |
+| Orders                             | all         | org           | own + unassigned queue  | read                        | read         | —       | branch                         | pack, ship, returns | own (portal)        | —        |
+| Customers, buyer history           | all         | org           | customers of own orders | read                        | org          | —       | branch                         | —                   | own end customers   | —        |
+| Buyer list export                  | all         | org           | —                       | —                           | org          | —       | —                              | —                   | —                   | —        |
+| Fraud trust badge and reasons      | all         | org           | yes                     | read                        | —            | —       | branch                         | —                   | badge on own orders | —        |
+| Fraud block override               | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Wallets, cash entries, petty cash  | all         | org           | —                       | org                         | —            | —       | own branch wallets             | —                   | —                   | —        |
+| Ledger reports, P&L, balance sheet | all         | org           | —                       | org                         | —            | —       | branch P&L without cost detail | —                   | —                   | —        |
+| Period close, reopen request       | all         | org           | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Courier settlements                | all         | org           | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Campaigns, ad spend, leads         | all         | org           | —                       | spend entry                 | org          | —       | —                              | —                   | —                   | —        |
+| Landing pages, promo codes         | all         | org           | apply codes             | —                           | org          | —       | apply at POS                   | —                   | —                   | —        |
+| Employees, attendance, payroll     | all         | org           | own                     | payroll posting and payment | own          | org     | branch staff                   | own                 | —                   | —        |
+| Targets and bonus rules            | all         | org           | own progress            | —                           | own progress | org     | branch progress                | —                   | —                   | —        |
+| Reseller admin, payouts            | all         | Beownz org    | —                       | Beownz org                  | —            | —       | —                              | —                   | own                 | —        |
+| Investors                          | all         | org (read)    | —                       | org                         | —            | —       | —                              | —                   | —                   | own      |
+| Company loans                      | all         | org           | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Approvals (as checker)             | all         | org           | —                       | payments                    | —            | payroll | branch items under threshold   | —                   | —                   | —        |
+| Org dashboard (analytics)          | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Users, roles, settings             | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
 
 ### Maker-checker actions
 
@@ -577,12 +579,12 @@ All reports filter by org, branch and a range of business dates. They apply the 
 
 - day book
 - cash book per wallet
-- wallet balances, plus a consolidated view for super_admin
+- wallet balances (the consolidated view across brands moved to the mother ERP with M31, D-471)
 - account ledger
 - party statements: supplier, courier, reseller, investor, employee, lender
 - receivable and payable aging (0–7, 8–30, 31–60, 60+ days), by open item: a settlement clears the oldest amount still open, and money paid ahead is shown apart, never aged (D-193)
 - trial balance
-- P&L by org, by branch, and consolidated
+- P&L by org and by branch (consolidated across brands: the mother ERP, §30)
 - balance sheet
 - stock valuation (cost roles only)
 - COD reconciliation: delivered vs settled vs outstanding, by courier
@@ -1016,14 +1018,14 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
   - CPO, CPDO, ROAS
   - cash position, and stock value (cost roles only), read live (D-330)
   - by channel, showroom and campaign; best sellers; agent performance
-- **Consolidated dashboard:** Super Admin only, every brand's totals and the group total from `daily_org` through `erp_analytics` (§5 exception 3).
-- **Leaderboard (cross-org):**
+- **Consolidated dashboard and leaderboard: moved to the mother ERP (M31, D-471).** A brand's ERP runs on its own database and knows no other brand, so `GET /v1/analytics/consolidated` and `GET /v1/analytics/leaderboard` are gone, with their screens and the `Leaderboard` permission. What follows describes them as M24 built them; M32 rebuilds them in the mother. The ranking's pure functions stay in `packages/domain/src/analytics/leaderboard.ts`.
+- **Leaderboard (cross-org, M24; now the mother's):**
   - compares normalized metrics: month-over-month revenue growth %, delivery success rate, return rate, ROAS, CPDO, AOV growth, pickup time (D-322). Response time left with the Message Hub (D-290).
   - ranks each metric, plus a composite score with configurable weights (D-323)
   - org admins see other orgs' **normalized metrics and ranks only**, never their raw financials (D-023, built as D-324)
   - computed on read from the rollups through `erp_analytics`; the only cross-org reads are the analytics module's (D-329)
 - **Insights:**
-  - rule-based suggestions, pure functions in `packages/domain/src/analytics/insights.ts` (D-326), e.g. "return rate outside Dhaka is 9 pp above the group median → require an advance delivery charge for outside-Dhaka COD"
+  - rule-based suggestions, pure functions in `packages/domain/src/analytics/insights.ts` (D-326), e.g. "return rate outside Dhaka is 9 pp above your usual → require an advance delivery charge for outside-Dhaka COD". Since M31 a month is measured against the brand's own three months before it (`insightBaseline`), never against other brands (D-471); the narrative's payload (v2) carries no rank
   - an optional LLM narrative behind the flag `analytics.llm_narrative`, generated only from an allow-listed metrics payload (no PII) and cached daily; only a fake provider exists (D-327)
 - **Export:** the brand's daily rollup as CSV or XLSX (D-328).
 
@@ -1054,28 +1056,28 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 
 ### Catalog
 
-| Event                                   | Rooms                                                                                                                                                             | Payload                                    | Purpose                                  |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------- |
-| `order.created`                         | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, order_no, channel, total, created_at   | New-order alert; starts the pickup timer |
-| `order.assigned` / `order.claimed`      | `org:role:sales`, `user:{assignee}`                                                                                                                               | id, assignee                               | Queue ownership                          |
-| `order.status_changed`                  | `org:role:sales`, `org:role:warehouse`<br>`org:role:accounts` (delivered and returned only)<br>`reseller:{id}` (reseller orders)<br>`org:branch:{b}` (POS orders) | id, from, to, at                           | Live lists and dashboards                |
-| `order.fraud_flagged`                   | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, trust_score, decision                  | Review queue                             |
-| `delivery.updated`                      | `org:role:sales`, `reseller:{id}`                                                                                                                                 | order id, normalized status, at            | Tracking view                            |
-| `delivery.booking_failed`               | `org:role:sales`, `org:role:org_admin`                                                                                                                            | order id, courier, error code              | Fix and retry                            |
-| `settlement.imported`                   | `org:role:accounts`                                                                                                                                               | batch id, totals, exception count          | Reconciliation                           |
-| `stock.available_changed`               | `org:role:sales`, `org:role:warehouse`; Beownz resellers for Beownz SKUs (throttled)                                                                              | sku id, location id, available             | Live availability                        |
-| `stock.low`                             | `org:role:org_admin`, `org:role:warehouse`                                                                                                                        | sku id, location, available, reorder level | Replenishment                            |
-| `wallet.balance_changed`                | `org:role:accounts`, `org:branch:{b}` (branch wallets)                                                                                                            | account id, balance                        | Cash position                            |
-| `approval.requested`                    | `user:{each eligible checker}`                                                                                                                                    | request id, type, amount                   | Approvals inbox                          |
-| `approval.decided`                      | `user:{requester}`                                                                                                                                                | request id, decision                       | Status                                   |
-| `target.progress`                       | `user:{employee}`, `org:role:hr`                                                                                                                                  | target id, achieved, pct                   | Progress widgets                         |
-| `leaderboard.updated`                   | `org:role:org_admin` (all orgs), `super`                                                                                                                          | snapshot id                                | Not emitted: computed on read (D-324)    |
-| `payout.updated`                        | `reseller:{id}`, `org:role:accounts`                                                                                                                              | payout id, status                          | Reseller portal                          |
-| `investor.withdrawal.updated`           | `user:{investor user}`                                                                                                                                            | request id, status                         | Investor portal                          |
-| `pos.sale_synced` / `pos.sync_conflict` | `org:branch:{b}`                                                                                                                                                  | sale id / conflict id                      | POS status                               |
-| `loan.instalment_due`                   | `org:role:accounts`, `org:role:org_admin`                                                                                                                         | loan id, instalment id, seq, due, amount   | Loan reminder in the inbox (D-300)       |
-| `notification.created`                  | `user:{id}`                                                                                                                                                       | notification id, title key                 | In-app inbox                             |
-| `job.failed`                            | `org:role:org_admin`, `super`                                                                                                                                     | job type, ref, error code                  | Operations                               |
+| Event                                   | Rooms                                                                                                                                                             | Payload                                    | Purpose                                   |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------- |
+| `order.created`                         | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, order_no, channel, total, created_at   | New-order alert; starts the pickup timer  |
+| `order.assigned` / `order.claimed`      | `org:role:sales`, `user:{assignee}`                                                                                                                               | id, assignee                               | Queue ownership                           |
+| `order.status_changed`                  | `org:role:sales`, `org:role:warehouse`<br>`org:role:accounts` (delivered and returned only)<br>`reseller:{id}` (reseller orders)<br>`org:branch:{b}` (POS orders) | id, from, to, at                           | Live lists and dashboards                 |
+| `order.fraud_flagged`                   | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, trust_score, decision                  | Review queue                              |
+| `delivery.updated`                      | `org:role:sales`, `reseller:{id}`                                                                                                                                 | order id, normalized status, at            | Tracking view                             |
+| `delivery.booking_failed`               | `org:role:sales`, `org:role:org_admin`                                                                                                                            | order id, courier, error code              | Fix and retry                             |
+| `settlement.imported`                   | `org:role:accounts`                                                                                                                                               | batch id, totals, exception count          | Reconciliation                            |
+| `stock.available_changed`               | `org:role:sales`, `org:role:warehouse`; Beownz resellers for Beownz SKUs (throttled)                                                                              | sku id, location id, available             | Live availability                         |
+| `stock.low`                             | `org:role:org_admin`, `org:role:warehouse`                                                                                                                        | sku id, location, available, reorder level | Replenishment                             |
+| `wallet.balance_changed`                | `org:role:accounts`, `org:branch:{b}` (branch wallets)                                                                                                            | account id, balance                        | Cash position                             |
+| `approval.requested`                    | `user:{each eligible checker}`                                                                                                                                    | request id, type, amount                   | Approvals inbox                           |
+| `approval.decided`                      | `user:{requester}`                                                                                                                                                | request id, decision                       | Status                                    |
+| `target.progress`                       | `user:{employee}`, `org:role:hr`                                                                                                                                  | target id, achieved, pct                   | Progress widgets                          |
+| `leaderboard.updated`                   | —                                                                                                                                                                 | —                                          | Removed with the leaderboard (M31, D-471) |
+| `payout.updated`                        | `reseller:{id}`, `org:role:accounts`                                                                                                                              | payout id, status                          | Reseller portal                           |
+| `investor.withdrawal.updated`           | `user:{investor user}`                                                                                                                                            | request id, status                         | Investor portal                           |
+| `pos.sale_synced` / `pos.sync_conflict` | `org:branch:{b}`                                                                                                                                                  | sale id / conflict id                      | POS status                                |
+| `loan.instalment_due`                   | `org:role:accounts`, `org:role:org_admin`                                                                                                                         | loan id, instalment id, seq, due, amount   | Loan reminder in the inbox (D-300)        |
+| `notification.created`                  | `user:{id}`                                                                                                                                                       | notification id, title key                 | In-app inbox                              |
+| `job.failed`                            | `org:role:org_admin`, `super`                                                                                                                                     | job type, ref, error code                  | Operations                                |
 
 ---
 
@@ -1333,7 +1335,8 @@ Installable, with an offline shell and web push (Android first).
 - **Backups:** point-in-time recovery, plus a nightly `pg_dump` as `erp_backup` (BYPASSRLS, read-only), encrypted, to a second provider (D-342).
 - **Feature flags:** an `org.feature_flags` table (D-031), so unfinished modules can ship dark.
 - **Preview:** before staging exists, the whole ERP can run on one Docker host (`infra/docker-compose.preview.yml`: Postgres, Valkey, Gotenberg, API, worker and a one-shot release step, behind the host's own nginx, which serves the SPAs and the API on one origin over HTTPS; `infra/preview/deploy.sh` deploys a commit), for people to try it; it is not production (D-352).
-- **Runbooks** in `docs/runbooks/`: deploy, rollback, restore, secret rotation, courier outage, month-end close, go-live, monitoring, queue policy, preview server.
+- **One ERP per brand (M31, D-474):** on the brands server each brand is its own Compose project `erp-<slug>` (`infra/brand/`), with its own Postgres 17, Valkey, Gotenberg, API, worker, files volume, `.env.brand`, nginx site and certificate. See §30.
+- **Runbooks** in `docs/runbooks/`: deploy, rollback, restore, secret rotation, courier outage, month-end close, go-live, monitoring, queue policy, preview server, brand deploy.
 
 ---
 
@@ -1347,3 +1350,50 @@ Installable, with an offline shell and web push (Android first).
 | Public intake API                                    | p95 < 500 ms at 20 req/s sustained                   |
 | Reports over 12 months of one org                    | p95 < 3 s (use rollups)                              |
 | Console first load                                   | < 2.5 s on 4G; initial route bundle ≤ 250 KB gzipped |
+
+---
+
+## 30. One ERP per brand and the mother ERP
+
+The owner's instruction of 2026-10-05 (D-469): every business gets its own ERP, with its own server processes, database and domain, and none of them ever presents itself as a child, connects to another brand or gives a clue that a mother ERP exists. A separate mother ERP lets the owner see and handle every brand. The code stays one codebase; this section is what changed for the brand's ERP (M31) and, below, the mother's (M32).
+
+### A deployment is one brand (D-470)
+
+- `ERP_BRAND_SLUG` names the deployment's brand. The API and the worker read every `org.organizations` row before they start and refuse unless the database holds that brand and no other real one; the training org (`is_training`) may sit beside it (`checkBrandDeployment`, `platform/brand/deployment.ts`). A switched-off second brand counts. The error names the problem for the operator.
+- Unset keeps the many-brand mode the tests and local development use; nothing else changes with it.
+- `pnpm db:seed --brand <slug>` (or `SEED_BRANDS`) seeds one brand: its chart of accounts with a hand-cash wallet, its head office and warehouse, and its delivery zones. `preview:seed --brand <slug>` and `preview:local --brand <slug>` do the same for a preview and keep its books checks.
+- With the slug set, the login branding answers that brand whatever host or slug is asked about, and the trusted origins are `TRUSTED_ORIGINS` alone (no per-brand hostnames).
+- Row-level security and `org_id` stay: they cost nothing with one brand per database, keep the training org apart, and removing them would be a rewrite with no gain.
+
+### What left the brand's ERP (D-471)
+
+`GET /v1/analytics/consolidated`, `GET /v1/analytics/leaderboard`, `GET /v1/accounts/reports/consolidated-wallets` and `GET /v1/accounts/reports/consolidated-profit-and-loss`, with their service paths, route-matrix entries, fixtures, OpenAPI operations and client methods; the console's all-brands dashboard, leaderboard and all-brands accounts screens, their tabs, palette entry and messages; the `Leaderboard` permission subject (the matrix now holds no `all` scope for any membership role). They answer 404. The insight rules measure a month against the brand's own three months before it, and the narrative carries no rank among brands. `erp_analytics` stays: it is how the mother reads a brand.
+
+### White label (D-472)
+
+Nothing a brand's staff, shoppers or website developer can see names the product's old name or another brand. The brand's own name comes from its `org.organizations` row at run time:
+
+- the authenticator app's issuer and the sign-in text (`createAuth({ brandName })`), page titles (`document.title` from the branding or the till's receipt header), the login screens' name and legal line (nothing when no brand is known), recovery-code file names (`<slug>-recovery-codes.txt`), the payslip;
+- browser-visible names are neutral: the CSRF cookie and header `erp_csrf` / `x-csrf-token`; local storage `erp-theme`, `erp-locale`, `erp-pos-locale`, `erp-portal-locale`, `erp-sidebar`, `erp-nav-groups`, `erp-palette-recent` (an older build's value is moved across once, matched by its shape, `packages/ui/src/lib/storage.ts`); the till's IndexedDB `erp-pos` (an older build's database on the origin is copied in one transaction and deleted only after it commits; the till's browser test holds a queued sale through the move) and shell cache `erp-pos-shell-v1`; the intake headers `X-Api-Key`, `X-Api-Timestamp`, `X-Api-Signature` (the first integration's names still read); the OpenAPI title `ERP API` and its `x-ability` / `x-body-type` keys;
+- copy that only made sense with several brands in one database is reworded;
+- `pnpm check:white-label` (in `pnpm verify`) scans the built console, till and portal and the shared locale files for the old name (Latin and Bangla) and the brands' names, and fails on a published source map.
+
+Internal names that never reach a browser stay: the `@elysium/*` packages, Nest symbols, deterministic-id namespaces and the HMAC derivation labels (changing one would invalidate every issued file URL and site key).
+
+### The owner sign-in link (D-473)
+
+The owner reaches a brand without a password of their own there:
+
+- **Format** (`packages/domain/src/iam/owner-link.ts`, shared with the minter): `<payload>.<signature>`, base64url; the payload is `{ v, aud, sub, name, jti, iat, exp }`; Ed25519 over the payload's base64url text; at most 120 seconds long, 30 seconds of clock skew.
+- **Brand side** (`modules/iam/owner-link.*`): `POST /v1/auth/owner-link { token }`, public, off (404) unless `OWNER_LINK_PUBLIC_KEY` (base64 SPKI DER, Ed25519) is set, which also needs `ERP_BRAND_SLUG`; rate-limited per address. It verifies the signature, then audience = `ERP_BRAND_SLUG` and the window, then spends the `jti` in `iam.owner_link_uses` (`on conflict do nothing`; pruned after a day), then finds or makes the owner through `iam.ensure_owner_identity` (an owner-role function, migration 0104: the application role can set neither `is_super_admin` nor `is_owner`), then opens the session inside Better Auth (`createOwnerSession`, a server-only endpoint no HTTP path reaches) so its row and cookie are a normal sign-in's, lands it in the brand and audits `auth.owner_link_signed_in`. Every refusal is the same 401; the reason is logged.
+- **An owner** (D-476) is a super admin with `is_owner`, no password and no membership (a trigger refuses one): never on the Staff screen, never given a role or an invite, and shown as "Owner" on orders and resets to everyone but another owner (`IamApi.ownersAmong`). An address that belongs to a staff account or a local super admin is never taken over.
+- **The session** (`iam.sessions.owner_link`) passes the enrolment wall — the mother enforced the second factor — lasts two hours from creation and is never extended: the cookie is a "don't remember me" one, and `resolveIdentity` refuses an owner-link session older than two hours whatever its expiry says.
+- Nothing in the brand's code or copy names a mother ERP: it is an "owner sign-in link".
+
+### Deployment shape (D-474, D-475)
+
+`infra/brand/`: `docker-compose.brand.yml` (project `erp-<slug>`), `.env.brand.example`, `new-brand.sh <slug> <admin-host>` (fresh secrets, the next free loopback port), `nginx-brand.conf` (the admin host: console `/`, portal `/portal/`, till `/pos/`, and `/v1`, `/api/auth`, `/public/v1`, `/storefront`, `/media`, `/health`, `/socket.io` to the API), `deploy.sh` and `server-deploy.sh` (one brand or all), and `nginx-website-admin-redirect.conf`. The admin host defaults to `admin.<brand domain>`, and the website's `/admin` redirects there. Cookies are scoped to the admin host (`APP_DOMAIN`), never the website's domain. `docs/runbooks/brand-deploy.md`.
+
+### The mother ERP (M32)
+
+_To be written by M32: `apps/mother-server` and `apps/mother-console`, its own database and owners, the brand registry with read-only connections and owner-link keys, the pulled rollups, the overview, leaderboard and accounts across brands, and minting owner links against the format above._
