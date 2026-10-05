@@ -570,6 +570,7 @@ W = the wallet account used.
 | Loan instalment paid                  | Dr Loan payable (principal) + Dr Interest expense / Cr W, one whole instalment, keyed per instalment; interest expensed when paid (D-295, D-297)                                                                                   |
 | Stock write-off / count loss          | Dr Inventory write-off / Cr Inventory (approval required)                                                                                                                                                                          |
 | Stock gain                            | Dr Inventory / Cr Inventory adjustment gain (approval required)                                                                                                                                                                    |
+| Stock in hand at the start (M38a)     | Dr Inventory / Cr Opening balance equity (Σ qty × cost per piece), one journal per entry keyed `stock_in_hand:<entry>:posted`, only while the brand's opening stock window is open (D-602)                                         |
 
 Accounting policies:
 
@@ -601,6 +602,7 @@ A brand that has traded for years opens its books here once, before go-live (D-2
 - A SKU opens at one cost (D-216), so the journal's inventory line equals the inventory module's valuation to the poisha.
 - The reconciliation puts imported, journal and module figures side by side per line (D-222); the accountant's sign-off is recorded once, only when every line agrees.
 - Run by the implementation team through `pnpm migration` and `pnpm demo:org` (D-214), not a screen. The training org (`is_training`) is seeded from anonymised files through the same importers and is left out of consolidated reads (D-223).
+- A brand that starts fresh instead (D-561) counts its stock in through **stock in hand** (§8, D-602): one journal per entry against the same `3350 Opening balance equity`, never M14a's one opening journal.
 
 ### Periods and dates
 
@@ -630,6 +632,9 @@ A brand that has traded for years opens its books here once, before go-live (D-2
   - `org_id, sku_id, location_id, qty`
   - `ref_type, ref_id`
   - `status`: `active | consumed | released`
+- `inventory.opening_stock_windows` (M38a): one row per brand, `status open | closed`, who closed it and when, the approval that reopened it last; no row means open (D-602).
+- `inventory.stock_in_hand_entries` and `…_lines` (M38a): a location and its lines (SKU, qty, `unit_cost_poisha`, null on a draft); `draft | posted`, the journal once posted; the id is the client's key (D-602).
+- `inventory.count_scans` (M38a, append-only): one row per scan on a count, keyed by the scanning device (D-606).
 
 ### Rules
 
@@ -654,7 +659,8 @@ where org_id = $org and sku_id = $sku and location_id = $loc and on_hand - reser
   - A count session freezes a snapshot and staff enter counted quantities.
   - The variance becomes adjustment movements, which need approval.
 - **Transfers** are two steps: `transfer_out` to the `in_transit` location, then `transfer_in` at the destination. A brand's first transfer creates its org-level `IN-TRANSIT` location when it has none (D-428).
-- **A new product's first stock** is a supply receipt (supplier, cost per piece), entered from the product page or the new-product form; there is no opening-balance path after go-live (D-421).
+- **Stock already in hand** (M38a, D-602): while the brand's **opening stock window** is open (a new brand starts open), stock it already holds is entered per location at a cost per piece (> 0): `opening_balance` movements at that cost, blended into WAC exactly as a receipt, and one journal per entry, Dr Inventory / Cr Opening balance equity. Warehouse saves quantity-only drafts; `read:cost` prices and posts (D-005's split). An org admin closes the window once everything is counted in (audited); from then on it is refused (`OPENING_STOCK_CLOSED`, by the service and by triggers), and reopening is an `opening_stock_reopen` approval a second admin decides (D-608).
+- **A new product's first stock** is either stock in hand (while the window is open) or a supply receipt (supplier, cost per piece), from the new-product form or the product page (D-421, D-601). After the window closes, stock arrives only from suppliers, transfers, returns and approved adjustments.
 - **Low stock:** each SKU has a reorder level per location. Crossing it emits `stock.low`.
 - **Worked WAC example (use it in tests):**
   - Starting position: on-hand 10 @ ৳500.00 (50,000 poisha).
@@ -662,6 +668,13 @@ where org_id = $org and sku_id = $sku and location_id = $loc and on_hand - reser
   - New WAC = (10×50000 + 30×54000) / 40 = 53,000 poisha (৳530.00).
   - Dispatch 5 at 53,000.
   - A supplier return of 3 from the second lot credits the supplier 3×54,000 and removes inventory at 3×53,000. The 3,000-poisha difference goes to purchase price variance (credit).
+
+### Barcodes, stickers and scanning (M38a)
+
+- **Barcodes** (D-603): every SKU is created with an internal EAN-13 — `2` (GS1's in-store prefix), an eleven-digit per-brand sequence from `catalog.sku_settings.last_barcode_sequence` (one upsert, never read then written), the check digit — unless a supplier's barcode is given. Pure arithmetic in `@elysium/domain/barcode` (`internalEan13`, `isValidEan13`, `ean13Svg`); `catalog.internal_ean13()` repeats it in SQL for the backfill. A typed barcode in the internal range is refused.
+- **Lookup** (D-609): `GET /v1/catalog/lookup?code=` resolves a barcode or a SKU code to the product, the variant, the selling price and (with `read Stock`) where its pieces are; no cost without `read:cost`.
+- **Stickers** (D-604): `POST /v1/catalog/labels` with a `medium` — thermal rolls `38x25`, `40x30`, `50x25` mm (one sticker per PDF page, the page the sticker's size, no margin) or A4 sheets `3x8` and `4x10` with a start position — at most 1,000 a PDF. Each carries the brand's short name (from its org row), the product name, the variant, the price on request, the EAN-13 with its digits and the SKU code; bars are whole modules sized in thermal dots. Offered with one sticker per piece wherever pieces arrive.
+- **Scanning** (D-605, D-606): the console tells a scanner from typing (≥ 8 characters, ≤ 35 ms apart, ended by Enter, not inside a text box); a scan opens the product at its variant, or, on a stock screen, adds the line or one more piece. A count is counted by scanning (`POST /v1/inventory/counts/:id/scans`, one piece per scan, idempotent per scan); a typed correction over a counted figure carries a note. "Scan with camera" uses the browser's `BarcodeDetector` where there is one.
 
 ---
 

@@ -7,14 +7,15 @@ role guides link to its sections rather than repeat them.
 
 ## Which guide is yours
 
-| Guide                               | For                                                                | Where you work   |
-| ----------------------------------- | ------------------------------------------------------------------ | ---------------- |
-| [Sales agent](sales-agent.md)       | Order desk staff who take, confirm and follow orders               | Console          |
-| [Accounts](accounts.md)             | The finance team: cash, suppliers, courier money, investors, loans | Console          |
-| [Warehouse](warehouse.md)           | Packing, parcels, handing over to couriers, returns and stock      | Console          |
-| [Branch manager](branch-manager.md) | Showroom managers: the till, the day's cash, showroom staff        | Till and console |
-| [HR](hr.md)                         | Staff records, attendance, payroll, staff loans and targets        | Console          |
-| [Org admin](org-admin.md)           | Each brand's administrator: staff accounts, settings and approvals | Console          |
+| Guide                                             | For                                                                | Where you work   |
+| ------------------------------------------------- | ------------------------------------------------------------------ | ---------------- |
+| [Sales agent](sales-agent.md)                     | Order desk staff who take, confirm and follow orders               | Console          |
+| [Accounts](accounts.md)                           | The finance team: cash, suppliers, courier money, investors, loans | Console          |
+| [Warehouse](warehouse.md)                         | Packing, parcels, handing over to couriers, returns and stock      | Console          |
+| [Branch manager](branch-manager.md)               | Showroom managers: the till, the day's cash, showroom staff        | Till and console |
+| [HR](hr.md)                                       | Staff records, attendance, payroll, staff loans and targets        | Console          |
+| [Org admin](org-admin.md)                         | Each brand's administrator: staff accounts, settings and approvals | Console          |
+| [Stickers and scanning](stickers-and-scanning.md) | Adding products and stock in hand, barcode stickers, the scanner   | Console          |
 
 - A **super admin** works like an org admin in every brand and also sees the group views.
   Read the org admin guide.
