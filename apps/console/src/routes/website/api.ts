@@ -191,3 +191,153 @@ export function saveCategoryWebFields(
 export function previewUrl(fileId: string): Promise<{ url: string }> {
   return api.get(`/v1/files/${fileId}/download`);
 }
+
+// --- M34: Payments, Email and Customers (D-528, D-529, D-533) -------------------------------
+
+export interface PaymentSettings {
+  /** STOREFRONT_CREDENTIALS_KEY is set on the server, so a password can be kept at all. */
+  readonly keyConfigured: boolean;
+  readonly configured: boolean;
+  readonly enabled: boolean;
+  readonly mode: 'sandbox' | 'live';
+  readonly storeId: string;
+  readonly hasPassword: boolean;
+  readonly passwordFingerprint: string | null;
+  /** False while the adapter has not been seen to work against the real gateway. */
+  readonly verified: boolean;
+  readonly ipnUrl: string;
+  readonly wallet: { readonly code: string; readonly name: string };
+  readonly updatedAt: string | null;
+}
+
+export interface PaymentSession {
+  readonly id: string;
+  readonly orderId: string;
+  readonly orderNo: string | null;
+  readonly tranId: string;
+  readonly mode: string;
+  readonly status: string;
+  readonly amountPoisha: string;
+  readonly validatedAmountPoisha: string | null;
+  readonly cardType: string | null;
+  readonly risky: boolean;
+  readonly failureReason: string | null;
+  readonly advanceId: string | null;
+  readonly createdAt: string;
+  readonly settledAt: string | null;
+}
+
+export function getPaymentSettings(): Promise<PaymentSettings> {
+  return api.get('/v1/storefront/payments');
+}
+
+export function savePaymentSettings(input: {
+  readonly enabled: boolean;
+  readonly mode: 'sandbox' | 'live';
+  readonly storeId: string;
+  readonly storePassword?: string;
+}): Promise<PaymentSettings> {
+  return api.put('/v1/storefront/payments', input);
+}
+
+export function listPaymentSessions(): Promise<{ items: readonly PaymentSession[] }> {
+  return api.get('/v1/storefront/payments/sessions?limit=50');
+}
+
+export interface EmailSettings {
+  readonly keyConfigured: boolean;
+  readonly configured: boolean;
+  readonly enabled: boolean;
+  readonly host: string;
+  readonly port: number;
+  readonly secure: boolean;
+  readonly username: string;
+  readonly hasPassword: boolean;
+  readonly passwordFingerprint: string | null;
+  readonly fromName: string;
+  readonly fromEmail: string;
+  readonly updatedAt: string | null;
+}
+
+export interface EmailLogRow {
+  readonly id: string;
+  readonly templateKey: string;
+  readonly to: string;
+  readonly subject: string;
+  readonly state: string;
+  readonly attempts: number;
+  readonly error: string | null;
+  readonly sentAt: string | null;
+  readonly createdAt: string;
+}
+
+export function getEmailSettings(): Promise<EmailSettings> {
+  return api.get('/v1/storefront/email');
+}
+
+export function saveEmailSettings(input: {
+  readonly enabled: boolean;
+  readonly host: string;
+  readonly port: number;
+  readonly secure: boolean;
+  readonly username: string;
+  readonly password?: string;
+  readonly fromName: string;
+  readonly fromEmail: string;
+}): Promise<EmailSettings> {
+  return api.put('/v1/storefront/email', input);
+}
+
+export function sendTestEmail(to: string): Promise<{ sent: boolean; error: string | null }> {
+  return api.post('/v1/storefront/email/test', { to });
+}
+
+export function listEmails(): Promise<{ items: readonly EmailLogRow[] }> {
+  return api.get('/v1/storefront/email/log?limit=50');
+}
+
+export interface WebsiteAccount {
+  readonly id: string;
+  readonly email: string;
+  readonly emailVerified: boolean;
+  readonly name: string;
+  readonly phone: string | null;
+  readonly customerId: string | null;
+  readonly googleLinked: boolean;
+  readonly source: string;
+  readonly orderCount: number;
+  readonly lastSignInAt: string | null;
+  readonly createdAt: string;
+}
+
+export function listAccounts(query: {
+  readonly q?: string;
+  readonly customerId?: string;
+  readonly offset?: number;
+}): Promise<{ items: readonly WebsiteAccount[]; total: number }> {
+  const params = new URLSearchParams();
+  if (query.q !== undefined && query.q.trim().length >= 2) params.set('q', query.q.trim());
+  if (query.customerId !== undefined) params.set('customerId', query.customerId);
+  params.set('limit', '50');
+  params.set('offset', String(query.offset ?? 0));
+  return api.get(`/v1/storefront/accounts?${params.toString()}`);
+}
+
+export interface OrderWebsite {
+  readonly website: {
+    readonly paymentMethod: 'cod' | 'sslcommerz';
+    readonly email: string | null;
+    readonly locale: string;
+    readonly account: {
+      readonly id: string;
+      readonly email: string;
+      readonly name: string;
+      readonly emailVerified: boolean;
+    } | null;
+    readonly payments: readonly PaymentSession[];
+  } | null;
+}
+
+export function orderWebsite(orderId: string): Promise<OrderWebsite> {
+  return api.get(`/v1/storefront/orders/${orderId}`);
+}

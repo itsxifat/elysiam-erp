@@ -42,6 +42,22 @@ export const WEBSITE_TABS: readonly WebsiteTab[] = [
     labelKey: 'web.nav.connection',
     required: { action: 'read', subject: 'Storefront' },
   },
+  // M34: the gateway, the email server and the shoppers' accounts.
+  {
+    path: '/website/payments',
+    labelKey: 'web.nav.payments',
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    path: '/website/email',
+    labelKey: 'web.nav.email',
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    path: '/website/customers',
+    labelKey: 'web.nav.customers',
+    required: { action: 'read', subject: 'Storefront' },
+  },
 ];
 
 export function visibleWebsiteTabs(ability: AppAbility): readonly WebsiteTab[] {
