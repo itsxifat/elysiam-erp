@@ -1,4 +1,13 @@
-import { Button, Dialog, Money, Select, cn, controlClassName, takaToPoisha } from '@elysium/ui';
+import {
+  Button,
+  Dialog,
+  Money,
+  Select,
+  cn,
+  controlClassName,
+  poishaToTaka,
+  takaToPoisha,
+} from '@elysium/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 
@@ -6,6 +15,7 @@ import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/stock-tools.js';
+import '../../i18n/catalog-pricing.js';
 import {
   dispatchTransfer,
   draftStockInHand,
@@ -17,6 +27,7 @@ import {
   type StockRow,
 } from '../stock/api.js';
 import { createDraft, createEntry, listSupplierOptions } from '../supply/api.js';
+import { skuCosts, type PrefillSource } from './pricing-api.js';
 import { ScanField } from './scan-field.js';
 import {
   addScannedPiece,
@@ -42,6 +53,13 @@ import {
  * - **Transfer** dispatches one transfer; the stock arrives when the other end receives it.
  *
  * Cost is typed in taka and converted by `takaToPoisha`, which is integer arithmetic.
+ *
+ * M39b (D-637): Receive takes a cost **per variant** (an XL costs more than an M), prefilled
+ * for a cost role from each variant's standard buying price for the chosen supplier, else its
+ * standard for any supplier, else the last price it was bought at; the common cost fills any
+ * variant still blank. Each line posts at its own cost, so each variant's average moves by
+ * its own figure. A scanned sticker of an archived variant is refused here, as the grid does
+ * not show one.
  */
 
 export interface VariantInfo {
@@ -61,11 +79,14 @@ export interface VariantInfo {
 function ScanIntoQuantities({
   variants,
   setQuantities,
+  refuseArchived = false,
 }: {
   readonly variants: readonly VariantInfo[];
   readonly setQuantities: (
     update: (current: Record<string, string>) => Record<string, string>,
   ) => void;
+  /** A receipt takes no archived variant (M39b): its row is not on the screen. */
+  readonly refuseArchived?: boolean;
 }) {
   const t = useT();
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
@@ -77,6 +98,10 @@ function ScanIntoQuantities({
         const variant = variantForCode(variants, code);
         if (variant === undefined) {
           setMessage({ text: t('st.scan.notThisProduct'), error: true });
+          return;
+        }
+        if (refuseArchived && variant.status === 'archived') {
+          setMessage({ text: t('cp.receive.archivedScan'), error: true });
           return;
         }
         setQuantities((current) => addScannedPiece(current, variant.id));
@@ -102,20 +127,37 @@ function errorText(error: unknown, fallback: string): string {
 }
 
 /** One quantity box per variant; `limit` caps it (what is available to send). */
+/** A cost per piece per variant (M39b, D-637): its boxes, and where each prefill came from. */
+interface CostColumn {
+  readonly values: Readonly<Record<string, string>>;
+  readonly onChange: (skuId: string, value: string) => void;
+  readonly placeholder: string;
+  readonly sources: ReadonlyMap<string, PrefillSource>;
+  /** Variants with pieces but no cost yet. */
+  readonly missing: ReadonlySet<string>;
+}
+
 function QtyTable({
   variants,
   quantities,
   onChange,
   limit,
   idPrefix,
+  costs,
 }: {
   readonly variants: readonly VariantInfo[];
   readonly quantities: Readonly<Record<string, string>>;
   readonly onChange: (skuId: string, value: string) => void;
   readonly limit?: ((skuId: string) => number) | undefined;
   readonly idPrefix: string;
+  readonly costs?: CostColumn | undefined;
 }) {
   const t = useT();
+  const sourceLabel = {
+    'supplier-standard': t('cp.receive.source.supplier-standard'),
+    standard: t('cp.receive.source.standard'),
+    last: t('cp.receive.source.last'),
+  } as const;
   return (
     <div className="overflow-hidden rounded-lg border border-border">
       <table className="w-full text-sm">
@@ -142,6 +184,14 @@ function QtyTable({
             >
               {t('cs.col.qty')}
             </th>
+            {costs === undefined ? null : (
+              <th
+                scope="col"
+                className="h-10 w-36 px-3 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
+              >
+                {t('st.col.costPerPiece')}
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -175,6 +225,31 @@ function QtyTable({
                     className={qtyControl}
                   />
                 </td>
+                {costs === undefined ? null : (
+                  <td className="px-3 py-2 text-right">
+                    <label className="sr-only" htmlFor={`${idPrefix}-cost-${variant.id}`}>
+                      {`${t('st.col.costPerPiece')} ${variant.label || variant.skuCode}`}
+                    </label>
+                    <input
+                      id={`${idPrefix}-cost-${variant.id}`}
+                      inputMode="decimal"
+                      value={costs.values[variant.id] ?? ''}
+                      placeholder={costs.placeholder}
+                      aria-invalid={
+                        costs.missing.has(variant.id) ||
+                        ((costs.values[variant.id] ?? '').trim() !== '' &&
+                          positiveCost(takaToPoisha(costs.values[variant.id] ?? '')) === null)
+                      }
+                      onChange={(event) => costs.onChange(variant.id, event.target.value)}
+                      className={cn(qtyControl, 'w-28')}
+                    />
+                    {costs.sources.has(variant.id) ? (
+                      <span className="block text-xs text-muted-foreground">
+                        {sourceLabel[costs.sources.get(variant.id) ?? 'last']}
+                      </span>
+                    ) : null}
+                  </td>
+                )}
               </tr>
             );
           })}
@@ -246,6 +321,8 @@ export function ReceiveStockDialog({
   const [costTaka, setCostTaka] = useState('');
   const [invoice, setInvoice] = useState('');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
+  // The costs the person typed (M39b, D-637); a variant not typed shows its prefill.
+  const [costs, setCosts] = useState<Record<string, string>>({});
   const [done, setDone] = useState<'entry' | 'draft' | null>(null);
   // One key per receipt being saved, kept across retries (ledger audit H1).
   const [key] = useState(() => requestKey());
@@ -277,17 +354,60 @@ export function ReceiveStockDialog({
   const chosenLocation =
     locationId !== '' ? locationId : (receivable.find((l) => l.kind === 'warehouse')?.id ?? '');
 
+  // The prefill (D-637, D-638): standard for this supplier, else any, else the last price.
+  // Shown in a box until the person types over it; never copied into state, so a new supplier
+  // re-prefills every box the person has not typed in.
+  const activeIds = variants.filter((variant) => variant.status === 'active').map((v) => v.id);
+  const prefill = useQuery({
+    queryKey: ['supply', 'sku-costs', 'prefill', activeIds.join(','), inHand ? '' : supplierId],
+    queryFn: () => skuCosts(activeIds, inHand ? undefined : supplierId),
+    enabled: open && mayPrice && activeIds.length > 0,
+  });
+  const prefilled = new Map(
+    (prefill.data?.items ?? []).flatMap((item) =>
+      item.prefillUnitCostPoisha === null || item.prefillSource === null
+        ? []
+        : [
+            [
+              item.skuId,
+              { text: poishaToTaka(item.prefillUnitCostPoisha), source: item.prefillSource },
+            ] as const,
+          ],
+    ),
+  );
+  const shownCosts: Record<string, string> = Object.fromEntries(
+    activeIds.map((id) => [id, costs[id] ?? prefilled.get(id)?.text ?? '']),
+  );
+  const sources = new Map<string, PrefillSource>(
+    [...prefilled.entries()]
+      .filter(([id]) => costs[id] === undefined)
+      .map(([id, entry]) => [id, entry.source]),
+  );
+
   const lines = linesFrom(quantities);
-  // One cost covers every variant, so a stray 0 would receive the whole batch free
-  // and drag the average down; free stock goes through Supply entries (D-096).
+  // The common cost fills any variant left blank; a stray 0 is no cost, so a whole batch is
+  // never received free by accident (free stock goes through Supply entries, D-096).
   const costPoisha = positiveCost(takaToPoisha(costTaka));
+  const costOf = (skuId: string): string | null => {
+    const own = (shownCosts[skuId] ?? '').trim();
+    return own === '' ? costPoisha : positiveCost(takaToPoisha(own));
+  };
   const units = (lines ?? []).reduce((sum, line) => sum + line.qty, 0);
+  const missing = new Set(
+    mayPrice ? (lines ?? []).filter((line) => costOf(line.skuId) === null).map((l) => l.skuId) : [],
+  );
+  const value = mayPrice
+    ? (lines ?? []).reduce((sum, line) => {
+        const cost = costOf(line.skuId);
+        return cost === null ? sum : sum + BigInt(cost) * BigInt(line.qty);
+      }, 0n)
+    : 0n;
   const ready =
     (inHand || supplierId !== '') &&
     chosenLocation !== '' &&
     lines !== null &&
     lines.length > 0 &&
-    (!mayPrice || costPoisha !== null);
+    (!mayPrice || missing.size === 0);
 
   const submit = useMutation({
     mutationFn: async () => {
@@ -297,7 +417,7 @@ export function ReceiveStockDialog({
           await postStockInHand({
             entryId: key.current(),
             locationId: chosenLocation,
-            lines: chosen.map((line) => ({ ...line, unitCostPoisha: costPoisha ?? '0' })),
+            lines: chosen.map((line) => ({ ...line, unitCostPoisha: costOf(line.skuId) ?? '0' })),
           });
           return { kind: 'entry' as const, lines: chosen };
         }
@@ -309,7 +429,11 @@ export function ReceiveStockDialog({
         return { kind: 'draft' as const, lines: chosen };
       }
       if (mayPrice) {
-        const lines = chosen.map((line) => ({ ...line, unitCostPoisha: costPoisha ?? '0' }));
+        // Each variant at its own cost (D-637).
+        const lines = chosen.map((line) => ({
+          ...line,
+          unitCostPoisha: costOf(line.skuId) ?? '0',
+        }));
         await createEntry({
           supplyId: key.current(),
           supplierId,
@@ -336,6 +460,7 @@ export function ReceiveStockDialog({
       key.settle();
       setDone(result.kind);
       setQuantities({});
+      setCosts({});
       onDone();
       onReceived?.(result.lines);
     },
@@ -413,7 +538,11 @@ export function ReceiveStockDialog({
             />
           </Field>
           {mayPrice ? (
-            <Field label={t('cs.costPerPiece')} id="receive-cost" hint={t('cs.costHint')}>
+            <Field
+              label={t('cp.receive.sameForAll')}
+              id="receive-cost"
+              hint={t('cp.receive.sameForAllHint')}
+            >
               <input
                 id="receive-cost"
                 inputMode="decimal"
@@ -439,19 +568,35 @@ export function ReceiveStockDialog({
           <p className="text-sm text-muted-foreground">{t('cs.noSuppliers')}</p>
         ) : null}
 
-        <ScanIntoQuantities variants={variants} setQuantities={setQuantities} />
+        <ScanIntoQuantities variants={variants} setQuantities={setQuantities} refuseArchived />
 
         <QtyTable
           idPrefix="receive"
           variants={variants.filter((variant) => variant.status === 'active')}
           quantities={quantities}
           onChange={(skuId, value) => setQuantities((current) => ({ ...current, [skuId]: value }))}
+          costs={
+            mayPrice
+              ? {
+                  values: shownCosts,
+                  placeholder: costTaka,
+                  sources,
+                  missing,
+                  onChange: (skuId, text) => setCosts((current) => ({ ...current, [skuId]: text })),
+                }
+              : undefined
+          }
         />
 
-        {mayPrice && costPoisha !== null && units > 0 ? (
-          <p className="text-sm">
-            {t('cs.receive.total')}{' '}
-            <Money poisha={(BigInt(costPoisha) * BigInt(units)).toString()} />
+        {mayPrice && sources.size > 0 ? (
+          <p className="text-xs text-muted-foreground">{t('cp.receive.prefilled')}</p>
+        ) : null}
+        {mayPrice && units > 0 && missing.size > 0 ? (
+          <p className="text-sm text-destructive">{t('cp.receive.costMissing')}</p>
+        ) : null}
+        {mayPrice && units > 0 && missing.size === 0 ? (
+          <p className="text-sm" data-testid="receive-total">
+            {t('cs.receive.total')} <Money poisha={value.toString()} />
           </p>
         ) : null}
         {done !== null ? (

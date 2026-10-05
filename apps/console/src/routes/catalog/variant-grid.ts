@@ -147,3 +147,149 @@ export function addScannedPiece(
   const current = parseQty(quantities[skuId] ?? '') ?? 0;
   return { ...quantities, [skuId]: String(current + 1) };
 }
+
+// --- M39b: prices per variant (D-635 to D-639) ------------------------------------------
+
+/**
+ * A positive selling price in poisha, or null: blank, zero, a minus sign or text is not a
+ * price (the server refuses all of them; the form says so first, D-635).
+ */
+export function positivePrice(poisha: string | null): string | null {
+  return poisha === null || !/^[1-9]\d*$/.test(poisha) ? null : poisha;
+}
+
+/** What one grid cell holds: the text typed, and the price it reads as (null for none). */
+export interface PriceText {
+  readonly text: string;
+  readonly poisha: string | null;
+  /** Something was typed that is not a positive price. */
+  readonly invalid: boolean;
+}
+
+/**
+ * The price each row of the new-product grid will be created at (D-635): the row's own, else
+ * its size's quick fill, else its colour's, else the main price. Precedence as
+ * `@elysium/domain/pricing`'s `gridPrice`, here over the rows' value ids.
+ */
+export function resolveRowPrices(
+  rows: readonly VariantRow[],
+  input: {
+    readonly own: Readonly<Record<string, string | null>>;
+    readonly bySize: Readonly<Record<string, string | null>>;
+    readonly byColour: Readonly<Record<string, string | null>>;
+    readonly main: string | null;
+  },
+): Map<string, string | null> {
+  const resolved = new Map<string, string | null>();
+  for (const row of rows) {
+    const size = row.valueIds.map((id) => input.bySize[id] ?? null).find((p) => p !== null);
+    const colour = row.valueIds.map((id) => input.byColour[id] ?? null).find((p) => p !== null);
+    resolved.set(row.key, input.own[row.key] ?? size ?? colour ?? input.main);
+  }
+  return resolved;
+}
+
+/**
+ * Copy one row's typed cells to every row below it (D-635): the person types XL's price,
+ * cost and pieces once and copies them down instead of typing them again.
+ */
+export function copyDown(
+  values: Readonly<Record<string, string>>,
+  rows: readonly VariantRow[],
+  fromKey: string,
+): Record<string, string> {
+  const index = rows.findIndex((row) => row.key === fromKey);
+  if (index === -1) return { ...values };
+  const source = values[fromKey] ?? '';
+  const next = { ...values };
+  for (const row of rows.slice(index + 1)) next[row.key] = source;
+  return next;
+}
+
+/** Set one value on every chosen row (the grid's "set for the selected variants"). */
+export function fillRows(
+  values: Readonly<Record<string, string>>,
+  keys: Iterable<string>,
+  text: string,
+): Record<string, string> {
+  const next = { ...values };
+  for (const key of keys) next[key] = text;
+  return next;
+}
+
+/** A whole number of grams from 1 to 100 kg, or null; blank is `undefined` (no weight). */
+export function parseGrams(text: string): number | null | undefined {
+  const trimmed = text.trim();
+  if (trimmed === '') return undefined;
+  if (!/^\d{1,6}$/.test(trimmed)) return null;
+  const grams = Number(trimmed);
+  return grams >= 1 && grams <= 100_000 ? grams : null;
+}
+
+/** One existing variant as the sizes-and-colours section reads it. */
+export interface ExistingVariant {
+  readonly id: string;
+  readonly valueIds: readonly string[];
+  readonly status: 'active' | 'archived';
+  readonly pricePoisha: string;
+}
+
+/** What saving the sizes-and-colours section will do (D-639). */
+export interface ExtendPlan {
+  /** New combinations, by sorted value-id key, each with its value ids. */
+  readonly add: readonly { readonly key: string; readonly valueIds: readonly string[] }[];
+  /** Active variants carrying a value that was unticked: stop selling them. */
+  readonly archive: readonly string[];
+  /** Archived variants whose values are all ticked again: sell them again. */
+  readonly restore: readonly string[];
+  /**
+   * Variants that do not have a value on an axis being added (a size-only product gaining
+   * colours): they will not match the new ones; offered for archiving.
+   */
+  readonly orphans: readonly string[];
+}
+
+/**
+ * Plan the sizes-and-colours change from the ticked values per axis (D-639). Mirrors the
+ * server's `matrixPlan` by value-id sets, so the dialog can show and price the new rows before
+ * anything is saved. Axes with nothing ticked are left out, as on creation.
+ */
+export function planExtend(
+  existing: readonly ExistingVariant[],
+  chosen: readonly { readonly attributeId: string; readonly valueIds: readonly string[] }[],
+  valueAxis: ReadonlyMap<string, string>,
+): ExtendPlan {
+  const used = chosen.filter((axis) => axis.valueIds.length > 0);
+  let combos: string[][] = [[]];
+  for (const axis of used) {
+    combos = combos.flatMap((combo) => axis.valueIds.map((id) => [...combo, id]));
+  }
+  const keyOf = (ids: readonly string[]) => [...ids].sort().join('|');
+  const existingKeys = new Set(existing.map((variant) => keyOf(variant.valueIds)));
+  const add =
+    used.length === 0
+      ? []
+      : combos
+          .filter((combo) => !existingKeys.has(keyOf(combo)))
+          .map((combo) => ({ key: keyOf(combo), valueIds: combo }));
+
+  const ticked = new Set(used.flatMap((axis) => axis.valueIds));
+  const chosenAxes = new Set(used.map((axis) => axis.attributeId));
+  const axesOf = (variant: ExistingVariant) =>
+    new Set(variant.valueIds.map((id) => valueAxis.get(id) ?? ''));
+  const archive: string[] = [];
+  const restore: string[] = [];
+  const orphans: string[] = [];
+  for (const variant of existing) {
+    const allTicked = variant.valueIds.every((id) => ticked.has(id));
+    const own = axesOf(variant);
+    const missingAxis = [...chosenAxes].some((axis) => !own.has(axis));
+    if (variant.status === 'active') {
+      if (!allTicked) archive.push(variant.id);
+      else if (missingAxis) orphans.push(variant.id);
+    } else if (allTicked && !missingAxis && variant.valueIds.length > 0) {
+      restore.push(variant.id);
+    }
+  }
+  return { add, archive, restore, orphans };
+}

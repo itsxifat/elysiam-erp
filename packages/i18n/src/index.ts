@@ -26,6 +26,11 @@
 import { DEFAULT_LOCALE, type Locale } from './locale.js';
 import { bn } from './locales/bn.js';
 import { en, type MessageKey as CoreMessageKey } from './locales/en.js';
+import { bn as catalogPricingBn } from './locales/sections/catalog-pricing.bn.js';
+import {
+  en as catalogPricingEn,
+  type CatalogPricingKey,
+} from './locales/sections/catalog-pricing.en.js';
 import { bn as stockToolsBn } from './locales/sections/stock-tools.bn.js';
 import { en as stockToolsEn, type StockToolsKey } from './locales/sections/stock-tools.en.js';
 import { bn as websiteBn } from './locales/sections/website.bn.js';
@@ -63,8 +68,8 @@ export {
  * instead of in the first download. On the server, and in `messages`, it is simply part of
  * its locale.
  */
-export type MessageKey = CoreMessageKey | StockToolsKey | WebsiteKey;
-export type { CoreMessageKey, StockToolsKey, WebsiteKey };
+export type MessageKey = CoreMessageKey | StockToolsKey | WebsiteKey | CatalogPricingKey;
+export type { CatalogPricingKey, CoreMessageKey, StockToolsKey, WebsiteKey };
 
 /**
  * Every catalogue, by locale.
@@ -76,8 +81,8 @@ export type { CoreMessageKey, StockToolsKey, WebsiteKey };
  * surprise in one process and not another.
  */
 export const messages: Record<Locale, Record<MessageKey, string>> = {
-  en: { ...en, ...stockToolsEn, ...websiteEn },
-  bn: { ...bn, ...stockToolsBn, ...websiteBn },
+  en: { ...en, ...stockToolsEn, ...websiteEn, ...catalogPricingEn },
+  bn: { ...bn, ...stockToolsBn, ...websiteBn, ...catalogPricingBn },
 };
 
 /**
