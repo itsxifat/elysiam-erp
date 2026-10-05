@@ -1934,7 +1934,7 @@ dry-run|commit --file <users.json>`.
 
 ### 2026-10-05 · M36 · The new Elysium website on its ERP · built (website repo)
 
-- Delivered in `D:\\Projects\\elysium` on branch `erp-storefront` (seven commits from
+- Delivered in `D:\Projects\elysium` on branch `erp-storefront` (seven commits from
   f379c9d to aba9ecb): the site reads and writes only through the brand ERP's signed storefront
   API; the admin panel, the Mongo models, `mongoose`, the demo kit, Cloudinary, the ncom and
   Steadfast routes, scanner, upload and image routes, fraud and courier code and the landing

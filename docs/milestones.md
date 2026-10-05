@@ -1166,7 +1166,7 @@ Phase 6 · Effort MAX · Depends on: M34, M35 · Amended on 2026-10-05 (D-561: s
 
 **Build**
 
-- The website (`D:\\Projects\\elysium`, branch `erp-storefront`) reads and writes only through the brand ERP's signed storefront API; its admin panel, database, demo kit and landing pages go; `/admin` redirects to the ERP.
+- The website (`D:\Projects\elysium`, branch `erp-storefront`) reads and writes only through the brand ERP's signed storefront API; its admin panel, database, demo kit and landing pages go; `/admin` redirects to the ERP.
 - Nothing old is imported except, optionally, the customers (M34's `pnpm migration legacy-customers`).
 - A deploy kit for `demo.elysium-lifestyle.bd` on the brands server.
 
