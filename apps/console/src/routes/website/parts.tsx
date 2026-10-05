@@ -298,14 +298,7 @@ export function MoveButtons({
   );
 }
 
-/** A list moved from one place to another, as a new array. */
-export function moved<T>(list: readonly T[], from: number, to: number): T[] {
-  const next = [...list];
-  const [item] = next.splice(from, 1);
-  if (item === undefined) return next;
-  next.splice(Math.max(0, Math.min(to, next.length)), 0, item);
-  return next;
-}
+export { moved } from './reorder.js';
 
 /**
  * Native drag and drop for a list's rows, no library: the row being dragged and the row

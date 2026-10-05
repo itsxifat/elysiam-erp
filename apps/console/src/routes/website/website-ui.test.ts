@@ -2,7 +2,7 @@ import { defineAbilityFor, type MembershipRole } from '@elysium/contracts';
 import { describe, expect, it } from 'vitest';
 
 import { NAVIGATION } from '../../shell/navigation.js';
-import { moved } from './parts.js';
+import { moved } from './reorder.js';
 import { visibleWebsiteTabs, WEBSITE_TABS } from './tabs.js';
 
 function ability(role: MembershipRole) {
