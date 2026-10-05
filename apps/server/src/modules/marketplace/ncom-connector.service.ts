@@ -589,7 +589,7 @@ export class NcomConnectorService {
           .flatMap((image) => {
             const url = urls.get(image.fileId);
             // Plain http is refused at ncom's end and blocked as mixed content besides.
-            return url !== undefined && url.startsWith('https://') ? [{ url, alt: row.name }] : [];
+            return url?.startsWith('https://') === true ? [{ url, alt: row.name }] : [];
           }),
         available,
         resolution,

@@ -169,7 +169,7 @@ export class NcomOrdersService {
       return { status: 400, body: { error: 'Missing order' } };
     }
     if (envelope.topic === 'order.updated' || envelope.topic === 'order.cancelled') {
-      return this.applyChange(context, envelope, order as NcomOrder, key);
+      return this.applyChange(context, envelope, order, key);
     }
     const lines = (order as NcomOrder).lines;
     if (!Array.isArray(lines) || lines.length === 0) {
@@ -183,7 +183,7 @@ export class NcomOrdersService {
     );
     if (existing !== undefined) return this.deduped(context.orgId, existing);
     try {
-      return await this.place(context, envelope, order as NcomOrder, key);
+      return await this.place(context, envelope, order, key);
     } catch (error) {
       if (isUnique(error)) {
         const winner = await withOrg({ orgId: context.orgId }, (tx) =>
@@ -227,7 +227,7 @@ export class NcomOrdersService {
         // ncom's to fulfil (D-556), refused for good so its dashboard shows it.
         throw new NcomRefusal(400, { error: 'Order has no line this shop sells' });
       }
-      const address = (order.shippingAddress ?? {}) as Record<string, unknown>;
+      const address = order.shippingAddress ?? {};
       const customer = order.customer ?? {};
       let phone: string;
       try {
@@ -445,7 +445,7 @@ export class NcomOrdersService {
 
       // An edit: their lines, their money and their address, through the desk's own edit.
       const rebuilt = await this.rebuild(tx, orgId, incoming);
-      const address = (incoming.shippingAddress ?? {}) as Record<string, unknown>;
+      const address = incoming.shippingAddress ?? {};
       const editWarnings: string[] = [...rebuilt.warnings];
       const money = ncomOrderMoney({
         ours: rebuilt.ours.map((line) => ({

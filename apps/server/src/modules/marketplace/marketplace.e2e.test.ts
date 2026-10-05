@@ -616,7 +616,7 @@ describe('back to ncom: the outbox', () => {
       seen.push({
         url,
         headers: init.headers as Record<string, string>,
-        body: String(init.body),
+        body: typeof init.body === 'string' ? init.body : '',
       });
       return Promise.resolve(new Response('{}', { status: answer }));
     };
@@ -742,12 +742,12 @@ describe('Website → Marketplace', () => {
     expect(JSON.parse(view.body)).toMatchObject({
       settings: {
         connectorKeyId: CONNECTOR_KEY,
-        connectorSecretFingerprint: expect.stringMatching(/^[0-9a-f]{12}$/),
+        connectorSecretFingerprint: expect.stringMatching(/^[0-9a-f]{12}$/) as unknown,
       },
     });
     const marketing = await harness.asRole('marketing', ORG_A);
     const refused = await marketing.client.request('PUT', '/v1/marketplace/ncom', {
-      body: JSON.parse(view.body).settings as unknown,
+      body: (JSON.parse(view.body) as { settings: unknown }).settings,
     });
     expect(refused.statusCode).toBe(403);
   });

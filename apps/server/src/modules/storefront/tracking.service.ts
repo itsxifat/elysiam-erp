@@ -133,9 +133,7 @@ function proxyOf(value: unknown): Record<keyof typeof DEFAULT_PROXY, string> {
     Record<keyof typeof DEFAULT_PROXY, unknown>
   >;
   const pick = (key: keyof typeof DEFAULT_PROXY): string =>
-    typeof given[key] === 'string' && given[key] !== ''
-      ? (given[key] as string)
-      : DEFAULT_PROXY[key];
+    typeof given[key] === 'string' && given[key] !== '' ? given[key] : DEFAULT_PROXY[key];
   return {
     metaScriptPath: pick('metaScriptPath'),
     metaCollectPath: pick('metaCollectPath'),

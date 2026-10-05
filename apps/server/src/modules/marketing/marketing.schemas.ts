@@ -1,4 +1,8 @@
-import { businessDateSchema, nonNegativePoishaSchema, ORDER_CHANNELS } from '@elysium/contracts';
+import {
+  businessDateSchema,
+  nonNegativePoishaSchema,
+  type ORDER_CHANNELS,
+} from '@elysium/contracts';
 import {
   AGE_BANDS,
   CAMPAIGN_REF_KINDS,

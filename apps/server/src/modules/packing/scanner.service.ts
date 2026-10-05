@@ -103,7 +103,7 @@ export class ScannerService {
     const device = await withOrg({ orgId }, (tx) =>
       repo.deviceByToken(tx, orgId, deviceTokenHash(token)),
     );
-    if (device === undefined || device.revoked_at !== null) return null;
+    if (device?.revoked_at !== null) return null;
     if (new Date(device.expires_at).getTime() <= Date.now()) return null;
     const context = await resolveContext({ userId: device.user_id, orgId, requestId });
     if (context === null) return null;
