@@ -42,7 +42,10 @@ async function shot(name: string): Promise<void> {
 async function choose(control: Locator, option: string | RegExp): Promise<void> {
   await control.click();
   await page
-    .getByRole('option', typeof option === 'string' ? { name: option, exact: true } : { name: option })
+    .getByRole(
+      'option',
+      typeof option === 'string' ? { name: option, exact: true } : { name: option },
+    )
     .click();
 }
 
@@ -131,7 +134,9 @@ test('exactly one sticker per piece, printed as a thermal roll PDF at the sticke
   for (const value of VALUES) {
     await expect(dialog.getByLabel(`Stickers ${PRODUCT} · ${value}`)).toHaveValue(PIECES[value]);
   }
-  await expect(dialog.getByRole('checkbox', { name: 'Print the price on the sticker' })).toBeChecked();
+  await expect(
+    dialog.getByRole('checkbox', { name: 'Print the price on the sticker' }),
+  ).toBeChecked();
   await noBlockingViolations('stickers dialog');
   await shot('03-stickers-dialog');
 
