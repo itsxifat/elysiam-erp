@@ -1701,3 +1701,101 @@ A brand's ERP runs on a database of its own …`; on one brand beside the traini
   from this branch.
 - Deploying Elysium's ERP to `erp.elysium-lifestyle.bd` was blocked by Claude Code's permission
   check; the steps are with the owner (option to allow it, or run them).
+
+### 2026-10-05 · M34 · Buying on the website: checkout, accounts, SSLCommerz, email · built
+
+- Delivered (branch `m34-buying`, from `integration-wave2`, merged again at 4e500db and 9d1a4cd):
+  - **Cart and checkout** (D-520, D-521, D-532, D-539): `POST /storefront/v1/cart/quote` and
+    `POST /storefront/v1/checkout` (signed over the idempotency key and the raw body, D-535).
+    One pure rule (`quoteCart`) prices the quote and the checkout: shelf or flash price,
+    M35a's discounts (codes and automatic), the website's zone fee and free shipping. The
+    checkout re-prices (`409 CART_REPRICED` with the new quote), creates a `pending` website
+    order, holds its stock at one web location with the atomic reserve (`409 OUT_OF_STOCK`),
+    redeems the discounts, claims the flash units and returns a one-time view token. The
+    state machine knows a held order (`stockHeld`): confirming it reserves nothing more, a
+    pending cancel releases the hold.
+  - **Shopper accounts** (D-522, D-523, D-533, D-534): register with a six-digit email code
+    (HMAC'd, 15 minutes, 5 tries), sign-in (bcrypt 12; the old site's hashes still work),
+    Google (linked only to a verified address), forgot and reset password (SHA-256 tokens, one
+    hour, once), profile with saved addresses, change password, the account's orders. Guest
+    orders join the account by verified email only. Limits per shopper address and email.
+  - **The shopper's order** (D-524): by view token or account, the shopper's status words, the
+    money, how it is paid, the address, the lines and the courier's tracking code.
+  - **SSLCommerz** (D-525 to D-528, D-537): Website → Payments (store id, sealed password,
+    sandbox or live, the IPN address, the online payments). The worker opens the session and
+    checks every payment with the Order Validation API (exact amount, BDT, this transaction);
+    an accepted one is a verified advance (Dr SSLCommerz clearing 1120 / Cr Customer advance)
+    and lowers the COD. Unpaid online orders cancel after 60 minutes. UNVERIFIED adapter.
+  - **Email** (D-529, D-530): an SMTP channel in `notify` per brand (Website → Email, a test
+    button, the log); Bangla and English templates for the code, the reset link and order
+    placed, confirmed, shipped, delivered, cancelled; written in the transaction, sent by
+    the worker with the body sealed until it goes.
+  - **Flash sales on the website** (D-538): `GET /storefront/v1/flash-sales` and `/:slug`, only
+    SKUs the website sells, scheduled sales without prices.
+  - **The old site's customers** (D-531): `pnpm migration legacy-customers --org <slug>
+dry-run|commit --file <users.json>`.
+  - **Console**: Website → Payments, Email and Customers; the order page's website card; the
+    buyer profile's website account.
+  - Docs: `docs/storefront-api.md` "Buying (M34)", architecture §31 "Buying (M34)" and the §7
+    row, `docs/runbooks/website-buying.md`, CLAUDE.md Commands, the plan's Status.
+- Verification:
+  - `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at `f3398a2`: 212 test files, 3,280 passed, 1 skipped (the known skip); format, lint,
+    typecheck, build, bundle (249.9 KB of 250: two strings shortened to fit), white label,
+    migrations, schema drift (114 migrations), route matrix (390 routes, 352 matrix-tested, 38
+    public), i18n and api-client all pass.
+  - Acceptance checks 1-4 and 6 in `apps/server/src/modules/storefront/buying.e2e.test.ts` (29
+    tests on real Postgres): quote = order = COD and `409 CART_REPRICED`; the last-unit race
+    (one 201, one `409 OUT_OF_STOCK`, stock never below zero); a short SSLCommerz payment
+    refused and audited (and its money owed back) and a correct one booked once from the IPN
+    with exact balances and a zero trial balance; register, verify, sign in, reset, Google;
+    twenty checkouts against a five-unit flash sale (five at the sale price, the rest
+    `409 CART_REPRICED`, no sale-priced line without a claim, a cancel gives the unit back);
+    a typed code and an automatic discount through the checkout (redemptions, attribution,
+    release on cancel). Domain: `packages/domain/src/storefront/buying.test.ts` (31, fast-check)
+    and the held-order rows in `orders.test.ts`.
+  - `website-buying.stack.ts` against the real stack (ports 3216/5289): 4 passed, axe clean;
+    screenshots in `docs/review/M34/`.
+- Auditors:
+  - ledger-auditor: 1 critical (a sandbox store's test-card payments would have been booked
+    as real money), 8 warnings (a payment being checked could be expired; late gateway money
+    kept under the cancel policy; refused-but-taken money left out of the ledger; the clearing
+    wallet found by code; guest orders claimable by an unverified phone; console lists wider
+    than sales' own scope; an unkeyed password fingerprint; untested money paths) and 8 notes.
+    All fixed in f692e6e and 8eba94d (migration 0115). Re-check: 0 critical, 1 warning (a key
+    the worker cannot open refused the payment instead of retrying) and five notes, fixed in
+    872f94e; the one note left (a not-valid check returns the session to `ready` rather than
+    its earlier state) is cosmetic.
+  - acceptance-auditor: NOT READY with five gaps (the API client not regenerated after the
+    scope change, check 5 unrecorded, no progress entry, no test of discounts through the
+    checkout, the new key missing from the deploy configs), fixed in 62794f3 and 91c9426 and
+    this entry, plus the bundle budget in f3398a2. Not re-run.
+- Decisions/assumptions: D-520 to D-539 (ASSUMED: D-520, D-522, D-527, D-528, D-529, D-531,
+  D-534, D-538); an "Unverified integrations" row for the SSLCommerz adapter.
+- New dependencies:
+  - `bcryptjs` 3.0.3 — bcrypt in pure JavaScript (no native build on Windows or Alpine) that
+    also checks the old site's `$2a$`/`$2b$`/`$2y$` hashes, so imported shoppers keep their
+    passwords.
+  - `nodemailer` 10.0.12 — SMTP to each brand's own mail server, the mailer the old site
+    already used.
+- Migrations: `0113_m34_buying_schema.sql`, `0114_m34_buying_policies.sql`,
+  `0115_m34_session_validating.sql`. 0113 and 0114 were regenerated after the first merge
+  (renumbered after M35a's 0112); a local database that ran an earlier copy needs a fresh
+  migrate.
+- Deviations from the milestone spec: flash prices and the full discount engine moved into
+  scope at the coordinator's request (plan item 8, check 6); the customers import is the
+  optional command of D-561. A sandbox SSLCommerz store takes payments only where
+  `STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX=true` (staging, preview, tests).
+- Follow-ups:
+  - The first SSLCommerz sandbox run, then marking the adapter verified (owner: human).
+  - Gateway fees from SSLCommerz's settlement report into the clearing wallet (owner: claude).
+  - `BRAND_STOREFRONT_CREDENTIALS_KEY` in Elysium's `.env.brand` before Website → Payments and
+    Email are used there (owner: human).
+  - Owner questions: splitting an order no single web location can fill (D-521); holding
+    risky payments (D-525); whether M36's website must send `client.ip` (D-534).
+  - The order page's website card and the buyer profile's card are covered by API tests but
+    not by the stack spec.
+  - The console's initial route is at 249.9 KB of 250: the next strings in the English catalogue
+    need the section catalogues lazy-loaded first (owner: claude).
+  - Kamal's deploy leaves `STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX` off for staging too; set it
+    per environment if staging should take sandbox payments (owner: human).
+- Next: integrate M34 into `integration-wave2`; M36 builds the website on these routes.
