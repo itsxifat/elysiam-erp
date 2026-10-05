@@ -10,6 +10,7 @@ import { useT } from '../../i18n/locale.js';
 import { getSettings, listSizeCharts, saveProductWebFields } from '../website/api.js';
 import { NamedSection } from '../website/parts.js';
 import type { CatalogProduct } from './api.js';
+import '../../i18n/website.js';
 
 /**
  * The product page's Website card (M33, D-500): whether the product is on the website and

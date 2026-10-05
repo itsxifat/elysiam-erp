@@ -5,6 +5,7 @@ import { useLocale } from '../../i18n/locale.js';
 import { orderWebsite } from '../website/api.js';
 import { useWebsiteT, type WebsiteMessageKey } from '../website/messages.js';
 import { useOrdersT } from './messages.js';
+import '../../i18n/website.js';
 
 const TONE: Readonly<Record<string, 'success' | 'warning' | 'danger' | 'neutral'>> = {
   paid: 'success',

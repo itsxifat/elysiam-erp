@@ -26,6 +26,7 @@ import {
   useDragReorder,
   WebsitePage,
 } from './parts.js';
+import '../../i18n/website.js';
 
 /**
  * Website → Hero slides (M33, D-504): the home page's slides in the order they play, each

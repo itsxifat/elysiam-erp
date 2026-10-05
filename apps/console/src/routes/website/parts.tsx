@@ -21,6 +21,7 @@ import { useAbility, useOrgWide } from '../../auth/session.js';
 import { previewUrl } from './api.js';
 import { useWebsiteT } from './messages.js';
 import { visibleWebsiteTabs, type WebsiteTab } from './tabs.js';
+import '../../i18n/website.js';
 
 /**
  * The Website section's frame and the pieces its screens share (M33).

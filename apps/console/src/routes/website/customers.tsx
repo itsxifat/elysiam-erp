@@ -7,6 +7,7 @@ import { customersPath } from '../customers/customers-nav.js';
 import { listAccounts, type WebsiteAccount } from './api.js';
 import { useWebsiteT } from './messages.js';
 import { control, Empty, Field, Loadable, NamedSection, WebsitePage } from './parts.js';
+import '../../i18n/website.js';
 
 /**
  * Website → Customers (M34, D-522, D-533): the website's accounts, whether each verified its

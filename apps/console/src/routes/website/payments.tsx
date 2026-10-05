@@ -13,6 +13,7 @@ import {
 } from './api.js';
 import { useWebsiteT, type WebsiteMessageKey } from './messages.js';
 import { control, Empty, Field, Loadable, NamedSection, Problem, WebsitePage } from './parts.js';
+import '../../i18n/website.js';
 
 /**
  * Website → Payments (M34, D-525, D-528): the brand's SSLCommerz account and the online

@@ -36,9 +36,18 @@ import { fileURLToPath } from 'node:url';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export const DEFAULT_DISTS = ['apps/console/dist', 'apps/pos/dist', 'apps/portal/dist'];
+const SECTIONS = 'packages/i18n/src/locales/sections';
+
+/** The core catalogues and every section catalogue (D-607): all of them reach a browser. */
 export const DEFAULT_SOURCES = [
   'packages/i18n/src/locales/en.ts',
   'packages/i18n/src/locales/bn.ts',
+  ...(existsSync(path.join(REPO_ROOT, SECTIONS))
+    ? readdirSync(path.join(REPO_ROOT, SECTIONS))
+        .filter((name) => name.endsWith('.ts'))
+        .sort()
+        .map((name) => `${SECTIONS}/${name}`)
+    : []),
 ];
 
 /** What a browser downloads. Images and fonts carry no text worth scanning. */

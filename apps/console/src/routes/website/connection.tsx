@@ -8,6 +8,7 @@ import { env } from '../../env.js';
 import { issueKey, listKeys, revokeKey, type IssuedSiteKey, type SiteKey } from './api.js';
 import { useWebsiteT } from './messages.js';
 import { control, Empty, Field, Loadable, Problem, WebsitePage } from './parts.js';
+import '../../i18n/website.js';
 
 /**
  * Website → Connection (M33, D-506): the keys the website's server reads the catalog with.

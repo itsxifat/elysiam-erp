@@ -39,6 +39,7 @@ import {
 import { CategoryWebsiteDialog } from './category-website.js';
 import { slugify } from './slug.js';
 import { codeFrom } from './variant-grid.js';
+import '../../i18n/website.js';
 
 /**
  * Catalog setup: categories, the size and colour lists, and the brand's stock locations

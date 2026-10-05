@@ -13,6 +13,7 @@ import {
 } from './api.js';
 import { useWebsiteT } from './messages.js';
 import { control, Empty, Field, Loadable, NamedSection, Problem, WebsitePage } from './parts.js';
+import '../../i18n/website.js';
 
 /**
  * Website → Size charts (M33, D-502): a grid editor for the charts a product page shows

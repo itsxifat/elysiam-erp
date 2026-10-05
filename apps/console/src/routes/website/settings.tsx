@@ -26,6 +26,7 @@ import {
   Problem,
   WebsitePage,
 } from './parts.js';
+import '../../i18n/website.js';
 
 /**
  * Website → Settings (M33, D-503): the site's information, social links, announcement bar,

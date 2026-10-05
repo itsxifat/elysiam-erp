@@ -24,6 +24,14 @@
     "./locales/sections/stock-tools.bn": {
       "types": "./dist/locales/sections/stock-tools.bn.d.ts",
       "default": "./dist/locales/sections/stock-tools.bn.js"
+    },
+    "./locales/sections/website.en": {
+      "types": "./dist/locales/sections/website.en.d.ts",
+      "default": "./dist/locales/sections/website.en.js"
+    },
+    "./locales/sections/website.bn": {
+      "types": "./dist/locales/sections/website.bn.d.ts",
+      "default": "./dist/locales/sections/website.bn.js"
     }
   },
   "files": [

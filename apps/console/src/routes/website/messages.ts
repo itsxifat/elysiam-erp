@@ -2,6 +2,7 @@ import type { MessageKey } from '@elysium/i18n';
 
 import { sectionCatalogue } from '../../i18n/messages.js';
 import { useLocale } from '../../i18n/locale.js';
+import '../../i18n/website.js';
 
 /**
  * The strings the Website section renders (M33). The values live in

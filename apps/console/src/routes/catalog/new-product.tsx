@@ -47,6 +47,7 @@ import {
   variantRows,
   type VariantRow,
 } from './variant-grid.js';
+import '../../i18n/website.js';
 
 /**
  * New product, in one form (plan `catalog-stock-ux` D-421, D-426; M38a D-601, D-602).

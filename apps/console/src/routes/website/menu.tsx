@@ -26,6 +26,7 @@ import {
   useDragReorder,
   WebsitePage,
 } from './parts.js';
+import '../../i18n/website.js';
 
 /**
  * Website → Menu (M33, D-504): the website's top menu, two levels deep. A category item

@@ -13,6 +13,7 @@ import {
 } from './api.js';
 import { useWebsiteT, type WebsiteMessageKey } from './messages.js';
 import { control, Empty, Field, Loadable, NamedSection, Problem, WebsitePage } from './parts.js';
+import '../../i18n/website.js';
 
 /**
  * Website → Email (M34, D-529): the brand's own email server, which sends shoppers their email

@@ -8,6 +8,7 @@ import { useT } from '../../i18n/locale.js';
 import { saveCategoryWebFields } from '../website/api.js';
 import { ImagePicker, Preview } from '../website/parts.js';
 import type { CatalogCategory } from './api.js';
+import '../../i18n/website.js';
 
 const control = `${controlClassName} w-full disabled:opacity-50`;
 
