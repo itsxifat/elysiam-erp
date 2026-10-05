@@ -92,19 +92,19 @@ without rewriting the path or the query string, or every signature fails.
 The shop: products that are **active** and **shown on the website**, with at least one active
 size, newest first unless told otherwise.
 
-| Parameter                          | Meaning                                                                                   |
-| ---------------------------------- | ----------------------------------------------------------------------------------------- |
-| `category`                         | A category slug or id; the list covers it and every visible category under it             |
-| `gender`                           | `men`, `women`, `kids` or `unisex`                                                        |
-| `tags`                             | Comma-separated; a product must carry every one                                           |
-| `size`                             | A size label or code (`M`, `XL`): products with an active SKU in that size                |
-| `minPricePoisha`, `maxPricePoisha` | Integer poisha; a product matches when any of its sizes is in range                       |
-| `featured`, `newArrival`, `onSale` | `true` or `false`. `onSale` matches nothing until M35's flash sales                       |
-| `q`                                | Search words; every word must match the name, slug, SKU codes, tags, material or category |
-| `sort`                             | `newest` (default), `oldest`, `price-asc`, `price-desc`, `featured`, `name`               |
-| `limit`                            | 1 to 60, default 24                                                                       |
-| `cursor`                           | The `nextCursor` of the previous page (same sort)                                         |
-| `page`                             | 1 to 100, for a numbered shop; ignored when a cursor is sent                              |
+| Parameter                          | Meaning                                                                                                  |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `category`                         | A category slug or id; the list covers it and every visible category under it                            |
+| `gender`                           | `men`, `women`, `kids` or `unisex`                                                                       |
+| `tags`                             | Comma-separated; a product must carry every one                                                          |
+| `size`                             | A size label or code (`M`, `XL`): products with an active SKU in that size                               |
+| `minPricePoisha`, `maxPricePoisha` | Integer poisha; a product matches when any of its sizes is in range                                      |
+| `featured`, `newArrival`, `onSale` | `true` or `false`. `onSale`: a size with a regular price above its price, or in a live flash sale (M39b) |
+| `q`                                | Search words; every word must match the name, slug, SKU codes, tags, material or category                |
+| `sort`                             | `newest` (default), `oldest`, `price-asc`, `price-desc`, `featured`, `name`                              |
+| `limit`                            | 1 to 60, default 24                                                                                      |
+| `cursor`                           | The `nextCursor` of the previous page (same sort)                                                        |
+| `page`                             | 1 to 100, for a numbered shop; ignored when a cursor is sent                                             |
 
 A malformed parameter is `400 VALIDATION_FAILED` naming it; an unknown parameter is ignored.
 
@@ -145,6 +145,12 @@ A malformed parameter is `400 VALIDATION_FAILED` naming it; an unknown parameter
 }
 ```
 
+On a card (M39b, D-640), `price.min` and `price.max` are what a shopper pays **now** across the
+sizes (a live flash price included, the same price the cart charges); `compareAt` is the
+struck-through figure beside the lowest of them (a size's regular price, or with a flash price
+the higher of the shelf price and the regular price), or null; `onSale` is true when any size is
+discounted. Sorting by price uses the shelf prices.
+
 ### `GET /catalog/products/{slug}`
 
 One product, or where it moved:
@@ -159,7 +165,12 @@ One product, or where it moved:
 - hidden, archived or unknown: `404 NOT_FOUND`.
 
 Each variant: `{ "skuId", "sku", "size", "colour", "attributes": [{ "name", "value" }], "price",
-"compareAt", "availableQty", "inStock" }`. `availableQty` is live: on hand less what is held for
+"compareAt", "availableQty", "inStock" }`. `price` is what the shopper pays now (a live flash
+price when one undercuts the shelf price); `compareAt` is struck through: with a flash price the
+higher of the shelf price and the variant's regular price, without one its regular price, else
+null (M39b). Each image carries `colour` (the colour it shows, or null for every colour), and
+`galleries` groups them: `[{ "colour": null, "images": [ … ] }, { "colour": "Red", "images": [ … ] }]`,
+every-colour photos first, so the page can switch photos when a shopper picks a colour. `availableQty` is live: on hand less what is held for
 orders, at the stock locations the brand sells the website from (Website → Settings), and never
 below zero. The answer may be thirty seconds old in your cache; M34's checkout holds the stock.
 
@@ -317,7 +328,8 @@ Prices a cart. Call it whenever the cart, the address or a code changes; it writ
 `unavailable[].reason` is `not_found`, `not_on_website`, `sold_out` or `not_enough_stock`
 (`availableQty` says how many are left); those lines are in no total. `codes[].reason` is null
 when applied, else the discount engine's reason (`not_found`, `expired`, `minimum_not_met`, …).
-`compareAt` is the shelf price when a flash price applies (or the product's compare-at price).
+`compareAt` is struck through beside the line: with a flash price the higher of the shelf price
+and the variant's regular price, without one its regular price (M39b), else null.
 `total` = items − discount + delivery − deliveryDiscount, never below zero. Free shipping is on
 when Website → Settings switches it on and the items reach the threshold (no threshold: always).
 
