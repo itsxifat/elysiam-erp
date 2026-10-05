@@ -6,7 +6,7 @@ detail is in `progress.md` (session log), `plans/` (one file per milestone) and 
 ## Overall
 
 ```
-Everything     [#################---]  86%   (31 of 35 milestones)
+Everything     [#################---]  86%   (31 of 36 milestones)
 First plan     [###################-]  98%   (M00 to M30)
 Wave 3         [############--------]  61%   (M31 to M38)
 ```
