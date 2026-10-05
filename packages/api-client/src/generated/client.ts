@@ -122,6 +122,11 @@ export const OPERATIONS = {
     path: '/v1/promo/flash-sales/{id}',
     ability: 'delete:LandingPage',
   },
+  deleteV1StorefrontCampaignLinksById: {
+    method: 'DELETE',
+    path: '/v1/storefront/campaign-links/{id}',
+    ability: 'delete:Storefront',
+  },
   deleteV1StorefrontHeroSlidesById: {
     method: 'DELETE',
     path: '/v1/storefront/hero-slides/{id}',
@@ -147,10 +152,28 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}',
     ability: 'delete:Supply',
   },
+  getApiAdminScannerShipment: {
+    method: 'GET',
+    path: '/api/admin/scanner/shipment',
+    ability: 'public',
+  },
   getApproval: { method: 'GET', path: '/v1/approvals/{id}', ability: 'read:ApprovalRequest' },
   getMediaByOrgIdByFileIdByVariant: {
     method: 'GET',
     path: '/media/{orgId}/{fileId}/{variant}',
+    ability: 'public',
+  },
+  getNcomByOrgIdV1: { method: 'GET', path: '/ncom/{orgId}/v1', ability: 'public' },
+  getNcomByOrgIdV1Categories: {
+    method: 'GET',
+    path: '/ncom/{orgId}/v1/categories',
+    ability: 'public',
+  },
+  getNcomByOrgIdV1Ping: { method: 'GET', path: '/ncom/{orgId}/v1/ping', ability: 'public' },
+  getNcomByOrgIdV1Products: { method: 'GET', path: '/ncom/{orgId}/v1/products', ability: 'public' },
+  getNcomByOrgIdV1ProductsById: {
+    method: 'GET',
+    path: '/ncom/{orgId}/v1/products/{id}',
     ability: 'public',
   },
   getStorefrontV1AccountsById: {
@@ -188,6 +211,11 @@ export const OPERATIONS = {
     path: '/storefront/v1/catalog/search',
     ability: 'public',
   },
+  getStorefrontV1CustomLinksByCode: {
+    method: 'GET',
+    path: '/storefront/v1/custom-links/{code}',
+    ability: 'public',
+  },
   getStorefrontV1FlashSales: {
     method: 'GET',
     path: '/storefront/v1/flash-sales',
@@ -213,6 +241,11 @@ export const OPERATIONS = {
   getStorefrontV1SizeChartsById: {
     method: 'GET',
     path: '/storefront/v1/size-charts/{id}',
+    ability: 'public',
+  },
+  getStorefrontV1TrackingConfig: {
+    method: 'GET',
+    path: '/storefront/v1/tracking/config',
     ability: 'public',
   },
   getV1AccountsCashEntries: {
@@ -636,6 +669,17 @@ export const OPERATIONS = {
     path: '/v1/marketing/spend/campaigns',
     ability: 'read:CampaignSpend',
   },
+  getV1MarketplaceNcom: { method: 'GET', path: '/v1/marketplace/ncom', ability: 'read:Storefront' },
+  getV1MarketplaceNcomHolds: {
+    method: 'GET',
+    path: '/v1/marketplace/ncom/holds',
+    ability: 'read:Storefront',
+  },
+  getV1MarketplaceNcomOrders: {
+    method: 'GET',
+    path: '/v1/marketplace/ncom/orders',
+    ability: 'read:Storefront',
+  },
   getV1NotifyMessages: { method: 'GET', path: '/v1/notify/messages', ability: 'read:Campaign' },
   getV1NotifyOptOuts: { method: 'GET', path: '/v1/notify/opt-outs', ability: 'read:Campaign' },
   getV1NotifyTemplates: { method: 'GET', path: '/v1/notify/templates', ability: 'read:Campaign' },
@@ -732,10 +776,23 @@ export const OPERATIONS = {
     path: '/v1/promo/flash-sales/{id}/usage',
     ability: 'update:LandingPage',
   },
+  getV1ScannerDevices: { method: 'GET', path: '/v1/scanner/devices', ability: 'read:Order' },
+  getV1ScannerLookup: { method: 'GET', path: '/v1/scanner/lookup', ability: 'read:Order' },
+  getV1ScannerShipment: { method: 'GET', path: '/v1/scanner/shipment', ability: 'public' },
   getV1StorefrontAccounts: {
     method: 'GET',
     path: '/v1/storefront/accounts',
     ability: 'read:Customer',
+  },
+  getV1StorefrontCampaignLinks: {
+    method: 'GET',
+    path: '/v1/storefront/campaign-links',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontCampaignLinksById: {
+    method: 'GET',
+    path: '/v1/storefront/campaign-links/{id}',
+    ability: 'read:Storefront',
   },
   getV1StorefrontEmail: { method: 'GET', path: '/v1/storefront/email', ability: 'read:Storefront' },
   getV1StorefrontEmailLog: {
@@ -792,6 +849,16 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/storefront/size-charts/{id}/usage',
     ability: 'update:Storefront',
+  },
+  getV1StorefrontTracking: {
+    method: 'GET',
+    path: '/v1/storefront/tracking',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontTrackingEvents: {
+    method: 'GET',
+    path: '/v1/storefront/tracking/events',
+    ability: 'read:Storefront',
   },
   getV1SupplyEntries: { method: 'GET', path: '/v1/supply/entries', ability: 'read:Supply' },
   getV1SupplyEntriesById: {
@@ -937,6 +1004,12 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}',
     ability: 'update:Supply',
   },
+  postApiAdminScannerLogin: { method: 'POST', path: '/api/admin/scanner/login', ability: 'public' },
+  postNcomByOrgIdOrders: { method: 'POST', path: '/ncom/{orgId}/orders', ability: 'public' },
+  postNcomByOrgIdV1Release: { method: 'POST', path: '/ncom/{orgId}/v1/release', ability: 'public' },
+  postNcomByOrgIdV1Reserve: { method: 'POST', path: '/ncom/{orgId}/v1/reserve', ability: 'public' },
+  postNcomByOrgIdV1Stock: { method: 'POST', path: '/ncom/{orgId}/v1/stock', ability: 'public' },
+  postNcomByOrgIdWebhook: { method: 'POST', path: '/ncom/{orgId}/webhook', ability: 'public' },
   postPublicV1Orders: { method: 'POST', path: '/public/v1/orders', ability: 'public' },
   postStorefrontIpnSslcommerzByOrgId: {
     method: 'POST',
@@ -989,6 +1062,12 @@ export const OPERATIONS = {
     ability: 'public',
   },
   postStorefrontV1Checkout: { method: 'POST', path: '/storefront/v1/checkout', ability: 'public' },
+  postStorefrontV1CustomLinksByCodeViews: {
+    method: 'POST',
+    path: '/storefront/v1/custom-links/{code}/views',
+    ability: 'public',
+  },
+  postStorefrontV1Events: { method: 'POST', path: '/storefront/v1/events', ability: 'public' },
   postStorefrontV1PaymentsSslcommerzInit: {
     method: 'POST',
     path: '/storefront/v1/payments/sslcommerz/init',
@@ -1407,6 +1486,11 @@ export const OPERATIONS = {
     path: '/v1/marketing/meta/import',
     ability: 'create:CampaignSpend',
   },
+  postV1MarketplaceNcomHoldsByIdRelease: {
+    method: 'POST',
+    path: '/v1/marketplace/ncom/holds/{id}/release',
+    ability: 'update:WebsiteCredentials',
+  },
   postV1NotifyOptOuts: { method: 'POST', path: '/v1/notify/opt-outs', ability: 'update:Campaign' },
   postV1OrderAdvancesByIdRefund: {
     method: 'POST',
@@ -1493,6 +1577,7 @@ export const OPERATIONS = {
     path: '/v1/orders/{id}/start-return',
     ability: 'update:Order',
   },
+  postV1PackingLabels: { method: 'POST', path: '/v1/packing/labels', ability: 'read:Order' },
   postV1PosBranchesByIdClosings: {
     method: 'POST',
     path: '/v1/pos/branches/{id}/closings',
@@ -1542,6 +1627,19 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/promo/flash-sales/{id}/restore',
     ability: 'update:LandingPage',
+  },
+  postV1ScannerDevices: { method: 'POST', path: '/v1/scanner/devices', ability: 'read:Order' },
+  postV1ScannerDevicesByIdRevoke: {
+    method: 'POST',
+    path: '/v1/scanner/devices/{id}/revoke',
+    ability: 'read:Order',
+  },
+  postV1ScannerSignIn: { method: 'POST', path: '/v1/scanner/sign-in', ability: 'public' },
+  postV1ScannerSignOut: { method: 'POST', path: '/v1/scanner/sign-out', ability: 'public' },
+  postV1StorefrontCampaignLinks: {
+    method: 'POST',
+    path: '/v1/storefront/campaign-links',
+    ability: 'create:Storefront',
   },
   postV1StorefrontEmailTest: {
     method: 'POST',
@@ -1653,11 +1751,21 @@ export const OPERATIONS = {
     path: '/v1/marketing/spend',
     ability: 'create:CampaignSpend',
   },
+  putV1MarketplaceNcom: {
+    method: 'PUT',
+    path: '/v1/marketplace/ncom',
+    ability: 'update:WebsiteCredentials',
+  },
   putV1NotifyTemplates: { method: 'PUT', path: '/v1/notify/templates', ability: 'update:Campaign' },
   putV1PromoFlashSalesById: {
     method: 'PUT',
     path: '/v1/promo/flash-sales/{id}',
     ability: 'update:LandingPage',
+  },
+  putV1StorefrontCampaignLinksById: {
+    method: 'PUT',
+    path: '/v1/storefront/campaign-links/{id}',
+    ability: 'update:Storefront',
   },
   putV1StorefrontCategoriesById: {
     method: 'PUT',
@@ -1702,6 +1810,11 @@ export const OPERATIONS = {
   putV1StorefrontSizeChartsById: {
     method: 'PUT',
     path: '/v1/storefront/size-charts/{id}',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontTracking: {
+    method: 'PUT',
+    path: '/v1/storefront/tracking',
     ability: 'update:Storefront',
   },
   reopenPeriod: {
@@ -1878,6 +1991,12 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1PromoFlashSalesById, input, options),
+    /** DELETE /v1/storefront/campaign-links/:id */
+    deleteV1StorefrontCampaignLinksById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1StorefrontCampaignLinksById, input, options),
     /** DELETE /v1/storefront/hero-slides/:id */
     deleteV1StorefrontHeroSlidesById: (
       input: { readonly path: { readonly id: string } },
@@ -1906,6 +2025,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1SupplySuppliersById, input, options),
+    /** GET /api/admin/scanner/shipment */
+    getApiAdminScannerShipment: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getApiAdminScannerShipment, undefined, options),
     /** One approval request, with its decision lineage. */
     getApproval: (
       input: { readonly path: { readonly id: string } },
@@ -1923,6 +2045,32 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getMediaByOrgIdByFileIdByVariant, input, options),
+    /** GET /ncom/:orgId/v1 */
+    getNcomByOrgIdV1: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getNcomByOrgIdV1, input, options),
+    /** GET /ncom/:orgId/v1/categories */
+    getNcomByOrgIdV1Categories: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getNcomByOrgIdV1Categories, input, options),
+    /** GET /ncom/:orgId/v1/ping */
+    getNcomByOrgIdV1Ping: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getNcomByOrgIdV1Ping, input, options),
+    /** GET /ncom/:orgId/v1/products */
+    getNcomByOrgIdV1Products: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getNcomByOrgIdV1Products, input, options),
+    /** GET /ncom/:orgId/v1/products/:id */
+    getNcomByOrgIdV1ProductsById: (
+      input: { readonly path: { readonly id: string; readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getNcomByOrgIdV1ProductsById, input, options),
     /** GET /storefront/v1/accounts/:id */
     getStorefrontV1AccountsById: (
       input: { readonly path: { readonly id: string } },
@@ -1955,6 +2103,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /storefront/v1/catalog/search */
     getStorefrontV1CatalogSearch: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getStorefrontV1CatalogSearch, undefined, options),
+    /** GET /storefront/v1/custom-links/:code */
+    getStorefrontV1CustomLinksByCode: (
+      input: { readonly path: { readonly code: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1CustomLinksByCode, input, options),
     /** GET /storefront/v1/flash-sales */
     getStorefrontV1FlashSales: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getStorefrontV1FlashSales, undefined, options),
@@ -1985,6 +2139,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getStorefrontV1SizeChartsById, input, options),
+    /** GET /storefront/v1/tracking/config */
+    getStorefrontV1TrackingConfig: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1TrackingConfig, undefined, options),
     /** GET /v1/accounts/cash-entries */
     getV1AccountsCashEntries: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsCashEntries, undefined, options),
@@ -2425,6 +2582,15 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/marketing/spend/campaigns */
     getV1MarketingSpendCampaigns: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1MarketingSpendCampaigns, undefined, options),
+    /** GET /v1/marketplace/ncom */
+    getV1MarketplaceNcom: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketplaceNcom, undefined, options),
+    /** GET /v1/marketplace/ncom/holds */
+    getV1MarketplaceNcomHolds: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketplaceNcomHolds, undefined, options),
+    /** GET /v1/marketplace/ncom/orders */
+    getV1MarketplaceNcomOrders: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketplaceNcomOrders, undefined, options),
     /** GET /v1/notify/messages */
     getV1NotifyMessages: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1NotifyMessages, undefined, options),
@@ -2559,9 +2725,27 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1PromoFlashSalesByIdUsage, input, options),
+    /** GET /v1/scanner/devices */
+    getV1ScannerDevices: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1ScannerDevices, undefined, options),
+    /** GET /v1/scanner/lookup */
+    getV1ScannerLookup: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1ScannerLookup, undefined, options),
+    /** GET /v1/scanner/shipment */
+    getV1ScannerShipment: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1ScannerShipment, undefined, options),
     /** GET /v1/storefront/accounts */
     getV1StorefrontAccounts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1StorefrontAccounts, undefined, options),
+    /** GET /v1/storefront/campaign-links */
+    getV1StorefrontCampaignLinks: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontCampaignLinks, undefined, options),
+    /** GET /v1/storefront/campaign-links/:id */
+    getV1StorefrontCampaignLinksById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontCampaignLinksById, input, options),
     /** GET /v1/storefront/email */
     getV1StorefrontEmail: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1StorefrontEmail, undefined, options),
@@ -2607,6 +2791,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1StorefrontSizeChartsByIdUsage, input, options),
+    /** GET /v1/storefront/tracking */
+    getV1StorefrontTracking: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontTracking, undefined, options),
+    /** GET /v1/storefront/tracking/events */
+    getV1StorefrontTrackingEvents: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontTrackingEvents, undefined, options),
     /** GET /v1/supply/entries */
     getV1SupplyEntries: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplyEntries, undefined, options),
@@ -2817,6 +3007,34 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1SupplySuppliersById, input, options),
+    /** POST /api/admin/scanner/login */
+    postApiAdminScannerLogin: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postApiAdminScannerLogin, undefined, options),
+    /** POST /ncom/:orgId/orders */
+    postNcomByOrgIdOrders: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postNcomByOrgIdOrders, input, options),
+    /** POST /ncom/:orgId/v1/release */
+    postNcomByOrgIdV1Release: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postNcomByOrgIdV1Release, input, options),
+    /** POST /ncom/:orgId/v1/reserve */
+    postNcomByOrgIdV1Reserve: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postNcomByOrgIdV1Reserve, input, options),
+    /** POST /ncom/:orgId/v1/stock */
+    postNcomByOrgIdV1Stock: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postNcomByOrgIdV1Stock, input, options),
+    /** POST /ncom/:orgId/webhook */
+    postNcomByOrgIdWebhook: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postNcomByOrgIdWebhook, input, options),
     /** POST /public/v1/orders */
     postPublicV1Orders: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postPublicV1Orders, undefined, options),
@@ -2859,6 +3077,15 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /storefront/v1/checkout */
     postStorefrontV1Checkout: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postStorefrontV1Checkout, undefined, options),
+    /** POST /storefront/v1/custom-links/:code/views */
+    postStorefrontV1CustomLinksByCodeViews: (
+      input: { readonly path: { readonly code: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1CustomLinksByCodeViews, input, options),
+    /** POST /storefront/v1/events */
+    postStorefrontV1Events: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1Events, undefined, options),
     /** POST /storefront/v1/payments/sslcommerz/init */
     postStorefrontV1PaymentsSslcommerzInit: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postStorefrontV1PaymentsSslcommerzInit, undefined, options),
@@ -3291,6 +3518,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/marketing/meta/import */
     postV1MarketingMetaImport: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1MarketingMetaImport, undefined, options),
+    /** POST /v1/marketplace/ncom/holds/:id/release */
+    postV1MarketplaceNcomHoldsByIdRelease: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1MarketplaceNcomHoldsByIdRelease, input, options),
     /** POST /v1/notify/opt-outs */
     postV1NotifyOptOuts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1NotifyOptOuts, undefined, options),
@@ -3398,6 +3631,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdStartReturn, input, options),
+    /** POST /v1/packing/labels */
+    postV1PackingLabels: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingLabels, undefined, options),
     /** POST /v1/pos/branches/:id/closings */
     postV1PosBranchesByIdClosings: (
       input: { readonly path: { readonly id: string } },
@@ -3458,6 +3694,24 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PromoFlashSalesByIdRestore, input, options),
+    /** POST /v1/scanner/devices */
+    postV1ScannerDevices: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1ScannerDevices, undefined, options),
+    /** POST /v1/scanner/devices/:id/revoke */
+    postV1ScannerDevicesByIdRevoke: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1ScannerDevicesByIdRevoke, input, options),
+    /** POST /v1/scanner/sign-in */
+    postV1ScannerSignIn: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1ScannerSignIn, undefined, options),
+    /** POST /v1/scanner/sign-out */
+    postV1ScannerSignOut: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1ScannerSignOut, undefined, options),
+    /** POST /v1/storefront/campaign-links */
+    postV1StorefrontCampaignLinks: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontCampaignLinks, undefined, options),
     /** POST /v1/storefront/email/test */
     postV1StorefrontEmailTest: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1StorefrontEmailTest, undefined, options),
@@ -3577,6 +3831,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/marketing/spend */
     putV1MarketingSpend: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1MarketingSpend, undefined, options),
+    /** PUT /v1/marketplace/ncom */
+    putV1MarketplaceNcom: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1MarketplaceNcom, undefined, options),
     /** PUT /v1/notify/templates */
     putV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1NotifyTemplates, undefined, options),
@@ -3585,6 +3842,12 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.putV1PromoFlashSalesById, input, options),
+    /** PUT /v1/storefront/campaign-links/:id */
+    putV1StorefrontCampaignLinksById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontCampaignLinksById, input, options),
     /** PUT /v1/storefront/categories/:id */
     putV1StorefrontCategoriesById: (
       input: { readonly path: { readonly id: string } },
@@ -3625,6 +3888,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1StorefrontSizeChartsById, input, options),
+    /** PUT /v1/storefront/tracking */
+    putV1StorefrontTracking: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontTracking, undefined, options),
     /** Ask to reopen a closed month. Needs an approval. */
     reopenPeriod: (
       input: { readonly body: ReopenPeriodInput },
