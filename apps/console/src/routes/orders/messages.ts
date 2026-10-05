@@ -120,6 +120,8 @@ const ORDERS_KEYS = [
   'orders.desk.promoReason.min_order_not_met',
   'orders.desk.promoReason.out_of_scope',
   'orders.desk.promoReason.nothing_to_discount',
+  'orders.desk.promoReason.first_order_only',
+  'orders.desk.promoReason.min_quantity_not_met',
   'orders.desk.deliveryTotal',
   'orders.desk.cod',
   'orders.desk.codNegative',

@@ -20,8 +20,8 @@ export const campaignsPath = (path: string): CampaignsPath => path;
 /**
  * The campaign screens as tabs, each shown only to a role that can open it.
  *
- * Promo codes are the `LandingPage` subject (D-203); templates, opt-outs and the delivery
- * log are `Campaign` (D-205). Today the same roles hold both, but the tabs ask the routes'
+ * Discounts and flash sales are the `LandingPage` subject (D-203, D-542); templates,
+ * opt-outs and the delivery log are `Campaign` (D-205). Today the same roles hold both, but the tabs ask the routes'
  * own questions so a later split does not show anybody a tab that answers 403.
  */
 export function CampaignsNav() {
@@ -37,6 +37,12 @@ export function CampaignsNav() {
       label: t('campaigns.nav.codes'),
       show: ability.can('read', 'LandingPage'),
       exact: true,
+    },
+    {
+      path: '/campaigns/flash-sales',
+      label: t('campaigns.nav.flash'),
+      show: ability.can('read', 'LandingPage'),
+      exact: false,
     },
     {
       path: '/campaigns/templates',

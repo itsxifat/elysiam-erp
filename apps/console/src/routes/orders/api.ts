@@ -228,7 +228,11 @@ export type PromoCheck =
  */
 export const checkPromo = (body: {
   readonly code: string;
-  readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
+  readonly lines: readonly {
+    readonly skuId: string;
+    readonly qty?: number;
+    readonly netPoisha: string;
+  }[];
   readonly orderDiscountPoisha?: string;
   readonly deliveryChargePoisha: string;
   readonly channel: string;
