@@ -28,6 +28,7 @@ export default defineConfig(({ mode }) => {
     resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },
     server: { port: 5175, strictPort: true },
     build: {
+      sourcemap: false,
       rollupOptions: {
         // Two entries: the app, and the service worker. A worker's scope is the
         // directory it is served from, so `sw.js` must sit at the root, unhashed,
@@ -41,7 +42,8 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    // Production sourcemaps come back in M14b, wired to Sentry upload. Enabling
-    // them now only adds a Tailwind sourcemap warning to every CI run.
+    // No source maps in a build that ships: a map carries the original source, package names
+    // and comments included, to anyone with the browser's tools (D-472). Sentry, when it
+    // comes, uploads hidden maps that are not published. `check:white-label` fails on one.
   };
 });

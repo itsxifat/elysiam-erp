@@ -6,7 +6,7 @@ import { env } from '../env.js';
  * ## Why a CSRF token for a page with no account
  *
  * The API's CSRF hook runs before any route and refuses every state-changing request that
- * does not echo its `elysium_csrf` cookie in a header — public routes included. The tracking
+ * does not echo its `erp_csrf` cookie in a header — public routes included. The tracking
  * lookup is a `POST` (so the four digits never sit in a URL, an access log or a browser's
  * history), so the page first makes a cheap `GET` that the hook answers by setting the cookie,
  * then echoes it. The cookie lives on the parent domain the portal and the API share (D-053),
@@ -14,8 +14,8 @@ import { env } from '../env.js';
  * `/v1/track` lands, the priming `GET` becomes unnecessary but stays harmless.
  */
 
-const CSRF_COOKIE = 'elysium_csrf';
-const CSRF_HEADER = 'x-elysium-csrf';
+const CSRF_COOKIE = 'erp_csrf';
+const CSRF_HEADER = 'x-csrf-token';
 
 export type TrackingStage =
   | 'received'

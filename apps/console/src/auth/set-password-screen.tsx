@@ -142,9 +142,12 @@ export function SetPasswordScreen({
           )}
         </main>
 
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          {branding?.brand?.legalName ?? 'Elysium'}
-        </p>
+        {/* The brand's own legal name, from its row; nothing at all when no brand is known. */}
+        {typeof branding?.brand?.legalName === 'string' ? (
+          <p className="mt-6 text-center text-xs text-muted-foreground">
+            {branding.brand.legalName}
+          </p>
+        ) : null}
       </div>
     </div>
   );

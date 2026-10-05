@@ -65,7 +65,7 @@ const bn: Record<MessageKey, string> = {
   'org.none': 'কোনো প্রতিষ্ঠান সক্রিয় নেই।',
   'org.chooseOne': 'এগিয়ে যেতে একটি প্রতিষ্ঠান বেছে নিন।',
 
-  'workspace.title': 'এলিসিয়াম কনসোল',
+  'workspace.title': 'কনসোল',
   'workspace.placeholder':
     'M05 এই পাতার জায়গায় আসল অ্যাপ্লিকেশন শেল আনবে। ততক্ষণ এটি দেখায় সার্ভার এই অনুরোধ সম্পর্কে কী বলছে — যা M02a-এর পুরোটাই।',
   'workspace.organisation': 'প্রতিষ্ঠান',
@@ -1314,15 +1314,15 @@ const bn: Record<MessageKey, string> = {
   'portal.investor.subtitle': 'আপনার বিনিয়োগ, লাভ ও কাগজপত্র',
   'portal.investor.enrolSubtitle':
     'বিনিয়োগকারীদের সাইন ইনে দ্বিতীয় ধাপ বাধ্যতামূলক। চালু করতে প্রায় এক মিনিট লাগবে।',
-  'portal.investor.brands': 'আপনার ব্র্যান্ড',
+  'portal.investor.brands': 'যেখানে আপনার বিনিয়োগ',
   'portal.investor.switching': 'বদলানো হচ্ছে…',
-  'portal.investor.switchFailed': 'ব্র্যান্ডটি খোলা গেল না। আবার চেষ্টা করুন।',
-  'portal.investor.chooseBrandTitle': 'আপনার একটি ব্র্যান্ড বেছে নিন',
+  'portal.investor.switchFailed': 'খোলা গেল না। আবার চেষ্টা করুন।',
+  'portal.investor.chooseBrandTitle': 'কোথায় দেখবেন বেছে নিন',
   'portal.investor.chooseBrandDetail':
-    'আপনার লগইন এমন একটি ব্র্যান্ডে খোলা, যেখানে আপনি বিনিয়োগ নয়, কাজ করেন — হয়তো স্টাফ কনসোলে। আপনার হিসাব দেখতে ওপরে একটি ব্র্যান্ড বেছে নিন।',
+    'আপনার লগইন এমন জায়গায় খোলা, যেখানে আপনি বিনিয়োগ নয়, কাজ করেন — হয়তো স্টাফ কনসোলে। আপনার হিসাব দেখতে ওপর থেকে বেছে নিন।',
   'portal.investor.notInvestorTitle': 'এই পোর্টাল বিনিয়োগকারীদের জন্য',
   'portal.investor.notInvestorDetail':
-    'আপনার লগইনে কোনো ব্র্যান্ডে বিনিয়োগকারী ভূমিকা নেই। স্টাফরা কনসোলে কাজ করেন।',
+    'আপনার লগইনে কোনো বিনিয়োগকারী ভূমিকা নেই। স্টাফরা কনসোলে কাজ করেন।',
   'portal.investor.noProfileTitle': 'এই ব্র্যান্ডে আপনার বিনিয়োগকারী প্রোফাইল নেই',
   'portal.investor.noProfileDetail':
     'আপনার প্রোফাইল এই লগইনের সঙ্গে যুক্ত করতে ব্র্যান্ডের অ্যাকাউন্টস টিমকে বলুন।',
@@ -2004,7 +2004,7 @@ const bn: Record<MessageKey, string> = {
   'branch.closing.countInvalid': 'টাকায় লিখুন, যেমন ১২৫০০ বা ১২৫০০.৫০।',
 
   // The showroom till (M23). `pos.receipt.*` is customer-facing: Bangla by default.
-  'pos.app.name': 'এলিজিয়াম পিওএস',
+  'pos.app.name': 'টিল',
   'pos.app.skipToContent': 'বিক্রয় পাতায় যান',
   'pos.status.online': 'অনলাইন',
   'pos.status.offline': 'অফলাইন — বিক্রি এই টিলে সংরক্ষিত থাকছে',
@@ -3256,7 +3256,7 @@ const bn: Record<MessageKey, string> = {
     'এটি আপনি। নিজের অ্যাক্সেস বদলাতে বা সাইন-ইন রিসেট করতে আরেকজন অ্যাডমিনকে বলুন।',
   'users.protectedNote': 'এই ব্যক্তিকে শুধু একজন সুপার অ্যাডমিন বদলাতে পারেন।',
   'users.otherBrandNote':
-    'তিনি অন্য একটি ব্র্যান্ডেও কাজ করেন, তাই তাঁর সাইন-ইন শুধু সুপার অ্যাডমিন রিসেট করতে পারেন।',
+    'তাঁর সাইন-ইন দিয়ে আরেকটি ওয়ার্কস্পেসও খোলে, তাই শুধু সুপার অ্যাডমিন এটি রিসেট করতে পারেন।',
   'users.deactivatedNote':
     'এখানে নিষ্ক্রিয়। আবার অ্যাক্সেস দিতে একটি ভূমিকা টিক দিয়ে সংরক্ষণ করুন।',
   'users.deactivate': 'নিষ্ক্রিয় করুন',
@@ -3294,7 +3294,7 @@ const bn: Record<MessageKey, string> = {
   'users.pickRole': 'একটি ভূমিকা বেছে নিন',
   'users.inviteSubmit': 'আমন্ত্রণ জানান',
   'users.alreadyHasAccount':
-    'অন্য একটি ব্র্যান্ড থেকে তাঁর অ্যাকাউন্ট আছে, সেটি দিয়েই সাইন ইন করতে পারবেন। ভূমিকা যোগ হয়েছে।',
+    'তাঁর আগে থেকেই অ্যাকাউন্ট আছে, সেটি দিয়েই সাইন ইন করতে পারবেন। ভূমিকা যোগ হয়েছে।',
   'users.invalidEmail': 'একটি ইমেইল ঠিকানা দিন।',
   'users.nameRequired': 'তাঁর নাম লিখুন।',
   // The design refresh (D-440 onward): the shell, the palette and the overview.

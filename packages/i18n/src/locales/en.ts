@@ -74,7 +74,7 @@ const en = {
   'org.chooseOne': 'Choose an organisation to continue.',
 
   // The placeholder shell, replaced by M05.
-  'workspace.title': 'Elysium Console',
+  'workspace.title': 'Console',
   'workspace.placeholder':
     'M05 replaces this page with the real application shell. Until then it shows what the server says about this request, which is the whole of M02a.',
   'workspace.organisation': 'Organisation',
@@ -1361,15 +1361,15 @@ const en = {
   'portal.investor.subtitle': 'Your investments, profit and documents',
   'portal.investor.enrolSubtitle':
     'Investors must use a second step when signing in. Setting it up takes about a minute.',
-  'portal.investor.brands': 'Your brands',
+  'portal.investor.brands': 'Where you invest',
   'portal.investor.switching': 'Switching…',
-  'portal.investor.switchFailed': 'That brand could not be opened. Try again.',
-  'portal.investor.chooseBrandTitle': 'Choose one of your brands',
+  'portal.investor.switchFailed': 'That could not be opened. Try again.',
+  'portal.investor.chooseBrandTitle': 'Choose where to look',
   'portal.investor.chooseBrandDetail':
-    'Your sign-in is open in a brand where you work rather than invest, perhaps in the staff console. Choose a brand above to see your figures.',
+    'Your sign-in is open where you work rather than invest, perhaps in the staff console. Choose above to see your figures.',
   'portal.investor.notInvestorTitle': 'This portal is for investors',
   'portal.investor.notInvestorDetail':
-    'Your sign-in holds no investor role in any brand. Staff work in the console.',
+    'Your sign-in holds no investor role. Staff work in the console.',
   'portal.investor.noProfileTitle': 'No investor profile in this brand',
   'portal.investor.noProfileDetail':
     'Ask the brand’s accounts team to link your profile to this sign-in.',
@@ -2054,7 +2054,7 @@ const en = {
   'branch.closing.countInvalid': 'Enter the count as taka, for example 12500 or 12500.50.',
 
   // The showroom till (M23). `pos.receipt.*` is customer-facing: Bangla by default.
-  'pos.app.name': 'Elysium POS',
+  'pos.app.name': 'Till',
   'pos.app.skipToContent': 'Skip to the till',
   'pos.status.online': 'Online',
   'pos.status.offline': 'Offline — sales are kept on this till',
@@ -3320,7 +3320,7 @@ const en = {
   'users.selfNote': 'This is you. Ask another admin to change your access or reset your sign-in.',
   'users.protectedNote': 'Only a super admin can change this person.',
   'users.otherBrandNote':
-    'They also work in another brand, so only a super admin can reset their sign-in.',
+    'Their sign-in also opens another workspace, so only a super admin can reset it.',
   'users.deactivatedNote': 'Deactivated here. Tick a role and save to give them access again.',
   'users.deactivate': 'Deactivate',
   'users.deactivateTitle': 'Deactivate this person?',
@@ -3360,7 +3360,7 @@ const en = {
   'users.pickRole': 'Choose a role',
   'users.inviteSubmit': 'Invite',
   'users.alreadyHasAccount':
-    'They already have an account from another brand and can sign in with it. The role is added.',
+    'They already have an account and can sign in with it. The role is added.',
   'users.invalidEmail': 'Enter an email address.',
   'users.nameRequired': 'Enter their name.',
   // The design refresh (D-440 onward): the shell, the palette and the overview.

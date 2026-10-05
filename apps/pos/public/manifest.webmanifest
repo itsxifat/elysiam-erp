@@ -1,6 +1,6 @@
 {
-  "name": "Elysium POS",
-  "short_name": "POS",
+  "name": "Showroom till",
+  "short_name": "Till",
   "description": "Showroom point of sale",
   "start_url": "./",
   "scope": "./",

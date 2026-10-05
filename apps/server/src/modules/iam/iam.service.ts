@@ -269,7 +269,7 @@ export class IamService {
         ) {
           throw usersHttpError(
             'USER_PROTECTED',
-            'This person already has an account with another brand. A super admin adds them here.',
+            'This person already has an account here. Only a super admin can add a role to it.',
           );
         }
         const inserted = await tx.execute<{ id: string }>(sql`

@@ -1,6 +1,6 @@
-export type ThemePreference = 'light' | 'dark' | 'system';
+import { readStored, STORAGE_KEYS, writeStored } from '@elysium/ui';
 
-const STORAGE_KEY = 'elysium-theme';
+export type ThemePreference = 'light' | 'dark' | 'system';
 
 /**
  * Dark mode is a class on <html> (architecture §24). Values live once in
@@ -16,21 +16,13 @@ export function applyTheme(preference: ThemePreference): void {
 
   document.documentElement.classList.toggle('dark', dark);
 
-  try {
-    if (preference === 'system') localStorage.removeItem(STORAGE_KEY);
-    else localStorage.setItem(STORAGE_KEY, preference);
-  } catch {
-    // Private browsing denies storage; the theme still applies for this session.
-  }
+  // Private browsing denies storage; the theme still applies for this session.
+  writeStored(STORAGE_KEYS.theme, preference === 'system' ? null : preference);
 }
 
 export function readThemePreference(): ThemePreference {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === 'light' || saved === 'dark') return saved;
-  } catch {
-    // Fall through to the OS preference.
-  }
+  const saved = readStored(STORAGE_KEYS.theme);
+  if (saved === 'light' || saved === 'dark') return saved;
   return 'system';
 }
 

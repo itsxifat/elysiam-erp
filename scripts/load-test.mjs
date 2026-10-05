@@ -131,8 +131,8 @@ const cookieHeader = (jar) => [...jar].map(([name, value]) => `${name}=${value}`
 async function call(jar, method, url, body) {
   const headers = { origin: ORIGIN, accept: 'application/json' };
   if (jar.size > 0) headers.cookie = cookieHeader(jar);
-  const csrf = jar.get('elysium_csrf');
-  if (csrf !== undefined) headers['x-elysium-csrf'] = csrf;
+  const csrf = jar.get('erp_csrf');
+  if (csrf !== undefined) headers['x-csrf-token'] = csrf;
   if (body !== undefined) headers['content-type'] = 'application/json';
   const response = await fetch(`${API_URL}${url}`, {
     method,
@@ -152,7 +152,7 @@ async function signIn(email, password, orgId) {
   const entered = await call(jar, 'POST', '/v1/me/active-org', { orgId });
   if (entered.status !== 201) throw new Error(`active-org failed: ${String(entered.status)}`);
   await call(jar, 'GET', '/v1/me');
-  const csrf = jar.get('elysium_csrf');
+  const csrf = jar.get('erp_csrf');
   if (csrf === undefined) throw new Error('no CSRF cookie after sign-in');
   return { jar, cookie: cookieHeader(jar), csrf };
 }

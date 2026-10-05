@@ -43,12 +43,12 @@ async function noBlockingViolations(label: string): Promise<void> {
 async function bothThemes(name: string): Promise<void> {
   await noBlockingViolations(`${name} (light)`);
   await shot(`${name}-light`);
-  await page.evaluate(() => localStorage.setItem('elysium-theme', 'dark'));
+  await page.evaluate(() => localStorage.setItem('erp-theme', 'dark'));
   await page.reload();
   await page.waitForLoadState('networkidle');
   await noBlockingViolations(`${name} (dark)`);
   await shot(`${name}-dark`);
-  await page.evaluate(() => localStorage.setItem('elysium-theme', 'light'));
+  await page.evaluate(() => localStorage.setItem('erp-theme', 'light'));
   await page.reload();
   await page.waitForLoadState('networkidle');
 }

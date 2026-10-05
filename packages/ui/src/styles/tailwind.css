@@ -144,36 +144,36 @@
   --shadow-dialog: var(--shadow-dialog);
 
   --ease-out: var(--ease-out);
-  --animate-in: elysium-in var(--duration-base) var(--ease-out);
-  --animate-fade: elysium-fade var(--duration-base) var(--ease-out);
-  --animate-sheet-in: elysium-sheet-in var(--duration-slow) var(--ease-out);
-  --animate-drawer-in: elysium-drawer-in var(--duration-slow) var(--ease-out);
+  --animate-in: erp-in var(--duration-base) var(--ease-out);
+  --animate-fade: erp-fade var(--duration-base) var(--ease-out);
+  --animate-sheet-in: erp-sheet-in var(--duration-slow) var(--ease-out);
+  --animate-drawer-in: erp-drawer-in var(--duration-slow) var(--ease-out);
 }
 
 /* Enter motion for floating layers: a short fade and a 4px rise. Nothing exits with
    a flourish; a closing layer simply goes. Disabled wholesale by the reduced-motion
    guard below. */
-@keyframes elysium-in {
+@keyframes erp-in {
   from {
     opacity: 0;
     transform: translateY(4px) scale(0.99);
   }
 }
 
-@keyframes elysium-fade {
+@keyframes erp-fade {
   from {
     opacity: 0;
   }
 }
 
-@keyframes elysium-sheet-in {
+@keyframes erp-sheet-in {
   from {
     opacity: 0;
     transform: translateX(16px);
   }
 }
 
-@keyframes elysium-drawer-in {
+@keyframes erp-drawer-in {
   from {
     opacity: 0;
     transform: translateX(-16px);

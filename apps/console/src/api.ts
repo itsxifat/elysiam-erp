@@ -9,8 +9,8 @@ import { env } from './env.js';
  * us — carry cookies cross-origin, and echo the CSRF token back as a header.
  */
 
-export const CSRF_COOKIE = 'elysium_csrf';
-export const CSRF_HEADER = 'x-elysium-csrf';
+export const CSRF_COOKIE = 'erp_csrf';
+export const CSRF_HEADER = 'x-csrf-token';
 
 /** Methods the server treats as unable to change state, so never CSRF-checked. */
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);

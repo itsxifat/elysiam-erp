@@ -59,7 +59,7 @@ async function stubApi(page: Page, options: StubOptions = {}) {
     const method = request.method();
 
     if (method !== 'GET' && method !== 'OPTIONS') {
-      state.csrfHeaders.push(request.headers()['x-elysium-csrf']);
+      state.csrfHeaders.push(request.headers()['x-csrf-token']);
     }
 
     // The page's own origin, echoed exactly. `*` is rejected by the browser
@@ -69,7 +69,7 @@ async function stubApi(page: Page, options: StubOptions = {}) {
     const cors = {
       'access-control-allow-origin': origin,
       'access-control-allow-credentials': 'true',
-      'access-control-allow-headers': 'content-type,x-elysium-csrf',
+      'access-control-allow-headers': 'content-type,x-csrf-token',
       'access-control-allow-methods': 'GET,POST,OPTIONS',
     };
 
@@ -83,7 +83,7 @@ async function stubApi(page: Page, options: StubOptions = {}) {
         headers: {
           ...cors,
           // The token the double-submit check expects back as a header.
-          'set-cookie': 'elysium_csrf=test-csrf-token; Path=/; SameSite=Lax',
+          'set-cookie': 'erp_csrf=test-csrf-token; Path=/; SameSite=Lax',
         },
         body: JSON.stringify(body),
       });
@@ -131,8 +131,7 @@ async function stubApi(page: Page, options: StubOptions = {}) {
 
     if (path === '/api/auth/two-factor/enable') {
       return json({
-        totpURI:
-          'otpauth://totp/Elysium:admin@example.invalid?secret=JBSWY3DPEHPK3PXP&issuer=Elysium',
+        totpURI: 'otpauth://totp/ERP:admin@example.invalid?secret=JBSWY3DPEHPK3PXP&issuer=ERP',
         backupCodes: Array.from(
           { length: 10 },
           (_, index) => `RECOVERY${String(index).padStart(2, '0')}`,
@@ -208,7 +207,9 @@ test('check 3: an unknown host falls back to the generic login', async ({ page }
   await page.goto('/');
 
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
-  await expect(page.getByText('Elysium', { exact: true }).first()).toBeVisible();
+  // No brand is named at all on the generic login (D-472): the neutral word, and no legal name.
+  await expect(page.getByText('Console', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/elysium/i)).toHaveCount(0);
 
   // No org, so no override: the shipped accent stays (the ink's hue since D-441).
   const hue = await page.evaluate(() =>

@@ -5,8 +5,11 @@ import {
   ErrorState,
   Monogram,
   PermissionDeniedState,
+  readStored,
   Skeleton,
+  STORAGE_KEYS,
   cn,
+  writeStored,
 } from '@elysium/ui';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Landmark, LogOut, Moon, Sun } from 'lucide-react';
@@ -44,8 +47,6 @@ import { FOCUS } from './ui.js';
  * as the session is not that user's: on a shared browser, the next person to sign in after a
  * session ends must not be shown the last one's figures from cache.
  */
-
-const LOCALE_KEY = 'elysium-portal-locale';
 
 function createQueryClient(): QueryClient {
   return new QueryClient({
@@ -114,12 +115,9 @@ async function loadSession(): Promise<SessionState> {
 }
 
 function readLocale(): Locale {
-  try {
-    const saved = localStorage.getItem(LOCALE_KEY);
-    if (saved !== null && isLocale(saved)) return saved;
-  } catch {
-    // Storage can be denied; Bangla it is.
-  }
+  // Storage can be denied; Bangla it is.
+  const saved = readStored(STORAGE_KEYS.portalLocale);
+  if (saved !== null && isLocale(saved)) return saved;
   return CUSTOMER_LOCALE;
 }
 
@@ -153,11 +151,8 @@ function Portal() {
     root.classList.toggle('font-bangla', fontClassFor(locale) === 'font-bangla');
     root.classList.toggle('font-sans', fontClassFor(locale) === 'font-sans');
     document.title = t('portal.investor.title');
-    try {
-      localStorage.setItem(LOCALE_KEY, locale);
-    } catch {
-      // The choice still holds for this visit.
-    }
+    // Storage denied: the choice still holds for this visit.
+    writeStored(STORAGE_KEYS.portalLocale, locale);
   }, [locale, t]);
 
   async function refreshSession(): Promise<void> {
