@@ -70,12 +70,7 @@ export {
  * its locale.
  */
 export type MessageKey =
-  | CoreMessageKey
-  | StockToolsKey
-  | WebsiteKey
-  | ManageKey
-  | WebMarketingKey
-  | PackingKey;
+  CoreMessageKey | StockToolsKey | WebsiteKey | ManageKey | WebMarketingKey | PackingKey;
 export type { CoreMessageKey, ManageKey, PackingKey, StockToolsKey, WebMarketingKey, WebsiteKey };
 
 /**

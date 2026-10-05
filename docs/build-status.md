@@ -1,22 +1,22 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-05, night** (Elysium's own ERP is online at `https://erp.elysium-lifestyle.bd` with product upload, stock in hand, barcode stickers, the scanner, the website's catalog and content, discounts, flash sales, and the website's checkout, accounts, SSLCommerz and emails; the new website itself and its landing pages, tracking and ncom link are being built). This is the short, plain-language view. The
+Last updated: **2026-10-06** (M35b joined: campaign links, the Facebook pixel and Google Analytics with server events, the ncom.bd link, the packing scanner app and order label sheets are built and merged with M39a's delete and archive; they go live on Elysium's ERP with the next deploy). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Everything     [#################---]  88%   (32 of 36 milestones)
+Everything     [##################--]  92%   (about 33.5 of 36 milestones)
 First plan     [###################-]  98%   (M00 to M30)
-Wave 3         [############--------]  61%   (M31 to M38)
+Wave 3         [###############-----]  77%   (M31 to M39)
 ```
 
 - The first plan had 33 milestones; six are out on the owner's instruction (M13, M21, M22, M27,
   M28, M29), so **27 count** from it. **Wave 3 adds 9** (D-469, D-600, D-620), so **36 count** in all.
 - A milestone counts 100% when it is built, tested and passed its audits; a part-built one counts
   for the share that is done.
-- Today: **29 done** (M31, M33, M34 added today), **5 part-built** (M14b, M30, M32 paused, M35
-  half done, M38 half done), **2 not started** (M36 is being built, M37 has begun with Elysium's
+- Today: **30 done** (M35 finished with M35b on 2026-10-06), **4 part-built** (M14b, M30, M32
+  paused, M38 half done), **2 not started** (M36 is being built, M37 has begun with Elysium's
   ERP online).
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
@@ -90,7 +90,7 @@ Wave 3         [############--------]  61%   (M31 to M38)
 | M32  | The mother ERP                               |   70% | Paused until the website is done                                                                                                                 |
 | M33  | Website products and content                 |  100% | Done; live in Elysium's ERP                                                                                                                      |
 | M34  | Website checkout, accounts, payment          |  100% | Done; live in Elysium's ERP (SSLCommerz needs the store's keys)                                                                                  |
-| M35  | Website offers, landing pages, ncom          |   50% | Discounts and flash sales done; landing pages, links, tracking, ncom being built (M35b)                                                          |
+| M35  | Website offers, tracking, ncom               |  100% | Done: discounts and flash sales live; campaign links, tracking, ncom, scanner app and labels joined, live with the next deploy                   |
 | M36  | The new Elysium website on the ERP           |  100% | Done; live at demo.elysium-lifestyle.bd (campaign links and tracking arrive with M35b)                                                           |
 | M37  | Servers, addresses, go-live                  |   25% | Elysium's ERP live on the brands server; the website and the final domains to come                                                               |
 | M38  | Barcode stickers, strict stock, scan-to-pack |   50% | Stickers, stock in hand and the scanner done and live (M38a); packing station and video next (M38b)                                              |
@@ -102,10 +102,12 @@ Wave 3         [############--------]  61%   (M31 to M38)
    their stock in hand and cost, print a barcode sticker per piece (label roll or A4), scan
    anywhere; the website's settings, banners, menu, size charts, discounts, flash sales,
    payments and email screens are there too.
-2. **Being built:** M39 (from the owner's first use: delete or archive everywhere; selling and buying prices per variant, bulk price changes, duplicate product, regular price struck through on the website), M35b (campaign links, Facebook pixel and
-   Google Analytics with server events, the ncom.bd link, the packing scanner app's sign-in,
-   order label sheets) and M36 (the new website, run entirely from the ERP, at
-   `demo.elysium-lifestyle.bd`, empty at the start).
+2. **Joined, live with the next deploy:** M35b (campaign links, Facebook pixel and Google
+   Analytics with server events, the ncom.bd link, the packing scanner app's sign-in, order
+   label sheets), merged with M39a's delete and archive: a category or product a campaign link
+   uses, and a SKU or place an ncom hold names, is kept and named.
+   **Being built:** M39b (selling and buying prices per variant, bulk price changes, duplicate
+   product, regular price struck through on the website).
 3. **Then:** M38b (scan every item at packing, packing video kept 7 days after delivery), then
    the mother ERP resumes (M32), then the final addresses (M37).
 

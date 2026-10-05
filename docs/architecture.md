@@ -695,8 +695,9 @@ used it), and the answer says what uses it. Branches and ledger accounts are nev
   lists, values, products, SKUs), `LocationReferences`, `DiscountReferences` (discounts and flash
   sales). Every module that points at those rows registers a checker when it starts and counts
   **its own** rows (invariant 12): inventory, orders, the till, supply, couriers, promotions,
-  the website and marketing for the catalog; orders, the till, supply, couriers and the website
-  for locations; orders and the website for discounts. `GET …/:id/usage` returns the counts by
+  the website, marketing and the ncom.bd marketplace for the catalog; orders, the till, supply,
+  couriers, the website and the marketplace for locations; orders and the website for
+  discounts. (M35b's campaign links and ncom holds joined at integration.) `GET …/:id/usage` returns the counts by
   reason with a few names (`UsageReport` in `@elysium/contracts`); the delete asks again.
 - **Inside the delete's transaction:** lock the rows (`for update`, in id order); count the
   owner's own uses, then every checker's; refuse with `*_IN_USE` (409) and the counts in words;
@@ -1659,8 +1660,15 @@ the account routes answer with an account id and the website keeps its own sessi
   size chart are forgotten in the same transaction. A location the website sells from is kept
   until Website → Settings stops using it.
 - **Flash sales**: an archived sale is switched off, leaves the list and every website read.
-- M35b's campaign links (`storefront.custom_links`) count as the website's references to a
-  category and its highlighted products when that branch joins.
+- **Campaign links** (M35b's `storefront.custom_links`, joined at integration) keep the
+  category a link opens (its foreign key) and the products it highlights (its id list), switched
+  off or not: the usage names the link by title and code (`campaign_links`), and neither a
+  delete nor "Empty and delete" goes ahead, because a link already shared in ads is never
+  re-pointed or trimmed by a delete. The person edits or deletes the link first, or archives.
+- **ncom.bd** (§31's marketplace): a hold, live or ended, keeps the SKUs it held and the place
+  it held them at (`marketplace_holds`, the marketplace module's checker); ncom's product
+  listing leaves out an archived category's products, as the website does.
+
 ### Campaign links, tracking, the marketplace and packing (M35b)
 
 D-551 to D-556. Four pieces the old website ran, now the ERP's:
