@@ -2287,3 +2287,61 @@ dry-run|commit --file <users.json>`.
 - M35b's integration is renumbering its migrations after 0121 (0122–0124).
 - Follow-up for the website repo: show the storefront's new regular (compare-at) prices and
   per-colour photos, and point its "On sale" link at the shop's on-sale filter.
+
+### 2026-10-06 · integration · M35b joined (after M39a and M39b) · done, not deployed
+
+- Branch `int-m35b` from `integration-wave2` at aebe7f5 (M39a live), then `integration-wave2`
+  at e72c5ec merged in when M39b went live first (67349fc). `m35b-web-marketing` (3a26f2c)
+  merged in a8f3aaf. Conflicts were side-by-side additions, all kept: CLAUDE.md's stack-spec
+  line and the ncom checkers, `CatalogApi` (M39a's size-chart reassignment, M35b's marketplace
+  reads, M39b's SKU weights, statuses and directory), `OrdersApi` (`CampaignMatch` and the
+  packing facts), the storefront module's controllers, storefront-public (M39b's shown prices,
+  M35b's exported `CategoryRef`), error codes, the contracts and i18n barrels (manage,
+  catalog-pricing, web-marketing, packing sections), the route-matrix manifest and both auth
+  sweeps' fixtures, architecture §31, progress, build status. The API client is regenerated
+  from the merged server (`pnpm api:client`, 496 operations, exactly both sides').
+- **Migrations renumbered** after the frozen, live 0118–0119 (M39a) and 0120–0121 (M39b):
+  `0122_m35b_web_marketing_schema.sql` (regenerated, byte-identical to the branch's 0118),
+  `0123_m35b_web_marketing_policies.sql` and `0124_m35b_holds_final_events_purge.sql` (the
+  branch's 0119 and 0120, copied; 0124's header still says "0119's rules", meaning 0123).
+  `check-migrations --base integration-wave2`: 193 unchanged. A dev database that ran the
+  branch's own 0118–0120 must be rebuilt (its journal stamps would skip M39's).
+- **The references join** (9d3927c, c713d3b; decisions 2026-10-06 integration rows): the
+  website's checker counts a campaign link's category (its foreign key) and highlighted products
+  (`campaign_links`, not movable: a shared link is never re-pointed or trimmed by a delete);
+  the marketplace module registers with `CatalogReferences` and `LocationReferences` for ncom
+  holds, live or ended (`marketplace_holds`); ncom's product listing and category list leave
+  out an archived category's products and subtree as the website does (D-623). Tests on real
+  Postgres in `web-marketing.e2e.test.ts` and `marketplace.e2e.test.ts`; the `pg_constraint`
+  coverage tests list `storefront.custom_links` and `marketplace.ncom_holds`.
+- Verification at 67349fc: `pnpm verify` exit 0 — 232 test files, 3,581 passed, 1 skipped;
+  bundle 248.9 of 250 KB; white-label (244 files), migrations, schema drift (123), route matrix
+  (497 routes, 439 matrix-tested, 58 public), i18n (4,088 keys), api-client PASS. Stack:
+  `web-marketing.stack.ts`, `delete-archive.stack.ts` and `variant-pricing.stack.ts`, 24 of 24
+  (screenshots retaken in `docs/review/M35b/` and `docs/review/M39/`); `delete-archive`'s list
+  order assertion now polls (it raced the refetch once).
+- Auditors on the merge: ledger-auditor 0 critical, 1 warning (the green verify was on an
+  uncommitted tree; since committed and re-verified) and notes, fixed in c713d3b (the "Empty and
+  delete" hint names a campaign link; ncom categories walk their ancestors; the hold-by-SKU
+  count uses jsonb containment; migration numbers in comments and decisions) or below.
+  acceptance-auditor on M35b items 4–8 and checks 4–6: the five earlier gaps closed, checks 4,
+  5 and 6 and the join evidenced; its two integration gaps (the failed stack run, this entry)
+  closed by the green re-run and this entry. Ledger re-audit of the M39b merge (67349fc): 0
+  critical, 1 warning — an archived variant can meet a live ncom hold (the single-variant
+  archive checks no held stock; a reserve reads `sellable` before locking), recorded as a
+  2026-10-06 integration decision row with its fix, not changed at the merge; its notes: a doc
+  comment moved, the rest below. Migrations 0118–0121 byte-identical to live, 0122–0124 to
+  M35b's originals, snapshot chain intact; `catalog-deletes.e2e.test.ts` 28/28 on the merged
+  order.
+- Follow-ups: a campaign link saved at the same moment as a product delete can keep the deleted
+  product's id (no foreign key on the highlighted list; M39a's soft references share the gap;
+  the website skips it, a re-save says "No such product") — lock the products `for key share`
+  in `assertRefs` (owner: claude); a campaign link may still be pointed at an archived category
+  (owner: claude); `check-migrations` compares with `main`, so pass `--base` at the live
+  commit on integration branches (owner: claude); the archived-variant / ncom-hold gap above:
+  the single archive through the held-stock check, SKUs locked before every reserve, ncom and
+  checkout holds named in `CATALOG_SKU_HELD` (owner: claude); should ncom see flash prices and
+  M39b's per-variant weights (owner: human); the cost-sweep fixture for
+  `GET /v1/inventory/stock/products` asks for a random product (owner: claude).
+- Next: the coordinator fast-forwards `integration-wave2` and deploys (migrations 0122–0124
+  become frozen).

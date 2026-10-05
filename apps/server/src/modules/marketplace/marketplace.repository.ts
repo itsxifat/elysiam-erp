@@ -561,7 +561,6 @@ export async function outboxOf(tx: Tx, orgId: string, limit: number): Promise<Ou
 
 // --- webhooks -------------------------------------------------------------------------------
 
-/** Claims an event id; false when it was claimed before (a retry). */
 /** Drops webhook claims older than 90 days, long past any redelivery (migration 0124). */
 export async function purgeEvents(tx: Tx, orgId: string): Promise<number> {
   const rows = await tx.execute<{ event_id: string }>(sql`
@@ -572,6 +571,7 @@ export async function purgeEvents(tx: Tx, orgId: string): Promise<number> {
   return rows.length;
 }
 
+/** Claims an event id; false when it was claimed before (a retry). */
 export async function claimEvent(
   tx: Tx,
   orgId: string,
