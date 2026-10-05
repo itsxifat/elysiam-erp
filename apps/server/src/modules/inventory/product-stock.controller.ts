@@ -22,9 +22,11 @@ const productStockQuerySchema = z
 
 /**
  * `GET /v1/inventory/stock/products?productIds=…` (M39b, D-642): pieces on hand and free to
- * sell per product, for the product list's stock column. `read Stock`, inside the caller's
- * branch scope like the stock page (a branch manager sees their showroom's pieces). Quantities
- * only: nothing here is a cost (invariant 5).
+ * sell per product, for the product list's stock column. `read Stock`, under the caller's row
+ * scope for that ability exactly as the stock page applies it: §6 gives a branch manager the
+ * whole brand's stock to read (a showroom offers transfers from other branches), so their column
+ * counts every location; a rule scoped to branches would narrow it to theirs. Quantities only:
+ * nothing here is a cost (invariant 5).
  */
 @Controller('v1/inventory')
 export class ProductStockController {

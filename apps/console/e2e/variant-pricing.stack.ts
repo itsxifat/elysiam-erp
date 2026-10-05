@@ -254,7 +254,13 @@ test('check 6: duplicate makes the same variants and prices, with no stock', asy
   const variants = page.getByRole('table', { name: 'Variants and stock' });
   await expect(variants.getByRole('row')).toHaveCount(13);
   await expect(variants.getByRole('row', { name: /^XL \/ White/ })).toContainText('৳1,859');
-  await expect(page.getByRole('region', { name: 'Stock summary' })).toContainText('0');
+  // No stock came with the copy: each summary tile's figure, read beside its own label.
+  const summary = page.getByRole('region', { name: 'Stock summary' });
+  const tile = (label: string) =>
+    summary.getByText(label, { exact: true }).locator('xpath=following-sibling::p[1]');
+  await expect(tile('Available to sell')).toHaveText('0');
+  await expect(tile('On hand')).toHaveText('0');
+  await expect(tile('Variants')).toHaveText('12');
   await noBlockingViolations('duplicate');
   await shot('b-06-duplicate');
 });

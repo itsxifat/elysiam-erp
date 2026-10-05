@@ -1241,6 +1241,27 @@ describe('ledger audit follow-ups (W1, W4, W5, N4, N10)', () => {
     expect(rows.map((row) => row.action)).toEqual(
       expect.arrayContaining(['supply.standard_costs.checked', 'supply.standard_costs.imported']),
     );
+    // The service's own rows hold counts and nothing else: no file, no column name, no figure.
+    for (const row of rows) {
+      const after = row.after as Record<string, unknown>;
+      expect(Object.values(after).every((value) => typeof value === 'number')).toBe(true);
+      const body = JSON.stringify(after);
+      for (const leak of ['csv', 'standard_cost_taka', '987.65', sku.skuCode]) {
+        expect(body).not.toContain(leak);
+      }
+    }
+    // The interceptor's net stood down for these routes: no `http:` row keeps the request body.
+    const netted = await withSystem(
+      async (tx) =>
+        tx.execute<{ action: string }>(sql`
+          select action from audit.audit_log
+          where org_id = ${ORG_A} and action like 'http:% /v1/supply/sku-costs%'
+        `),
+      { orgId: ORG_A },
+    );
+    expect(netted.map((row) => row.action)).toEqual([]);
+    // And the figure is nowhere in the brand's log. (The catalog price spreadsheet's own text is
+    // kept by the net, which is a selling price, not a cost: a recorded follow-up.)
     const everything = await withSystem(
       async (tx) =>
         tx.execute<{ body: string }>(sql`
