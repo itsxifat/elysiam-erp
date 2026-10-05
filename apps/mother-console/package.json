@@ -9,7 +9,8 @@
     "dev": "vite --port 5190 --strictPort",
     "lint": "eslint .",
     "preview": "vite preview --port 5190 --strictPort",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e2e:stack": "playwright test -c e2e/stack.config.ts"
   },
   "dependencies": {
     "@elysium/domain": "workspace:*",
@@ -23,7 +24,9 @@
     "react-dom": "catalog:"
   },
   "devDependencies": {
+    "@axe-core/playwright": "catalog:",
     "@elysium/config": "workspace:*",
+    "@playwright/test": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@testing-library/react": "catalog:",
     "@types/node": "catalog:",

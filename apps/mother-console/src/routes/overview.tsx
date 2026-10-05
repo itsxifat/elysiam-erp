@@ -314,7 +314,10 @@ function BrandTable({ data }: { readonly data: OverviewWire }) {
           <caption className="sr-only">{t('overview.orders')}</caption>
           <thead>
             <tr className="border-b border-border text-xs text-muted-foreground">
-              <th scope="col" className="sticky left-0 bg-card px-4 py-2.5 text-left font-medium">
+              <th
+                scope="col"
+                className="sticky left-0 min-w-52 bg-card px-4 py-2.5 text-left font-medium"
+              >
                 {t('overview.brand')}
               </th>
               {COLUMNS.map((column) => (

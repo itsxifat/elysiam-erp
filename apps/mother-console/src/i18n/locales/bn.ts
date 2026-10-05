@@ -212,6 +212,7 @@ const bn: Record<MessageKey, string> = {
   'brand.available': 'আছে',
   'brand.reorder': 'রি-অর্ডার সীমা',
   'brand.wallet': 'ওয়ালেট',
+  'brand.walletKind': 'ধরন',
   'brand.balance': 'ব্যালেন্স',
   'brand.courier': 'কুরিয়ার',
   'brand.held': 'কাছে আছে',

@@ -324,6 +324,7 @@ function Channels({ data }: { readonly data: BrandFiguresWire }) {
       ) : (
         <SimpleTable
           caption={t('brand.byChannel')}
+          numeric={[1, 2, 3]}
           head={[
             t('brand.channel'),
             t('metric.ordersDelivered'),
@@ -356,6 +357,7 @@ function Campaigns({ data }: { readonly data: BrandFiguresWire }) {
       ) : (
         <SimpleTable
           caption={t('brand.byCampaign')}
+          numeric={[1, 2, 3]}
           head={[
             t('brand.campaign'),
             t('metric.spend'),
@@ -384,6 +386,7 @@ function Live({ live }: { readonly live: BrandLiveWire }) {
       <Section title={t('brand.latestOrders')} bodyClassName="p-0">
         <SimpleTable
           caption={t('brand.latestOrders')}
+          numeric={[3]}
           head={[t('brand.order'), t('brand.status'), t('brand.placed'), t('brand.value')]}
           empty={t('brand.empty')}
           rows={live.latestOrders.map((order) => ({
@@ -406,6 +409,7 @@ function Live({ live }: { readonly live: BrandLiveWire }) {
       <Section title={t('brand.topProducts')} bodyClassName="p-0">
         <SimpleTable
           caption={t('brand.topProducts')}
+          numeric={[2]}
           head={[t('brand.sku'), t('brand.product'), t('brand.units')]}
           empty={t('brand.empty')}
           rows={live.topProducts.map((row) => ({
@@ -423,6 +427,7 @@ function Live({ live }: { readonly live: BrandLiveWire }) {
       <Section title={t('brand.lowStock')} bodyClassName="p-0">
         <SimpleTable
           caption={t('brand.lowStock')}
+          numeric={[2, 3]}
           head={[t('brand.sku'), t('brand.location'), t('brand.available'), t('brand.reorder')]}
           empty={t('brand.empty')}
           rows={live.lowStock.map((row) => ({
@@ -441,7 +446,8 @@ function Live({ live }: { readonly live: BrandLiveWire }) {
       <Section title={t('brand.wallets')} bodyClassName="p-0">
         <SimpleTable
           caption={t('brand.wallets')}
-          head={[t('brand.wallet'), t('accounts.detail'), t('brand.balance')]}
+          numeric={[2]}
+          head={[t('brand.wallet'), t('brand.walletKind'), t('brand.balance')]}
           empty={t('brand.empty')}
           rows={live.wallets.map((row) => ({
             key: row.code,
@@ -458,6 +464,7 @@ function Live({ live }: { readonly live: BrandLiveWire }) {
       <Section title={t('brand.courierCod')} bodyClassName="p-0">
         <SimpleTable
           caption={t('brand.courierCod')}
+          numeric={[1]}
           head={[t('brand.courier'), t('brand.held')]}
           empty={t('brand.empty')}
           rows={live.courierCod.map((row) => ({
@@ -473,6 +480,7 @@ function Live({ live }: { readonly live: BrandLiveWire }) {
       >
         <SimpleTable
           caption={t('brand.staffList')}
+          numeric={[]}
           head={[t('brand.name'), t('brand.role'), t('brand.branch'), t('brand.status')]}
           empty={t('brand.empty')}
           rows={live.staff.people.map((person) => ({

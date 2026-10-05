@@ -211,6 +211,7 @@ const en = {
   'brand.available': 'Available',
   'brand.reorder': 'Reorder at',
   'brand.wallet': 'Wallet',
+  'brand.walletKind': 'Kind',
   'brand.balance': 'Balance',
   'brand.courier': 'Courier',
   'brand.held': 'Held',
