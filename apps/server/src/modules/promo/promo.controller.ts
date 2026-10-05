@@ -36,7 +36,8 @@ const auditable = (request: FastifyRequest): AuditableRequest =>
   request as unknown as AuditableRequest;
 
 /**
- * Promo codes over HTTP (architecture §10, §23; M16).
+ * Discounts over HTTP (architecture §10, §23; M16, M35a). The path keeps M16's name, `codes`,
+ * though since M35a it lists automatic discounts too (D-541).
  *
  * **The subject is `LandingPage`**, and that is a decision rather than a transcription.
  * §6 has one row covering both — "Landing pages, promo codes" — so a brand's marketing
@@ -68,6 +69,7 @@ export class PromoController {
     return mapPromoErrors(() =>
       this.promo.list(requireContext(request), {
         ...(filters.status === undefined ? {} : { status: filters.status }),
+        ...(filters.method === undefined ? {} : { method: filters.method }),
         limit: filters.limit,
       }),
     );

@@ -150,12 +150,16 @@ export function previewWithPromo(input: {
   });
 }
 
-/** Each line's net as the promo check wants it: price times quantity, in poisha. */
+/**
+ * Each line as the promo check wants it: price times quantity, in poisha, and the units,
+ * which buy-X-get-Y and minimum-quantity discounts count (M35a).
+ */
 export function promoLines(
   lines: readonly DeskLine[],
-): { readonly skuId: string; readonly netPoisha: string }[] {
+): { readonly skuId: string; readonly qty: number; readonly netPoisha: string }[] {
   return lines.map((line) => ({
     skuId: line.skuId,
+    qty: line.qty,
     netPoisha: (BigInt(line.unitPricePoisha) * BigInt(line.qty)).toString(),
   }));
 }

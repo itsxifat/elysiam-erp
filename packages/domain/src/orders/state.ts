@@ -115,6 +115,13 @@ export const ORDER_EFFECTS = [
    */
   'release_promo',
   /**
+   * M35a, D-542: a flash sale's units go back to the sale. On every cancel (all of them) and
+   * on a received return (the units that came back), never on a delivery: what was
+   * delivered stays sold at the sale price. Once, however often: each claim is released by
+   * a conditional update.
+   */
+  'release_flash_units',
+  /**
    * M17, D-233: the delivery journal relieved Customer advance by the applicable amount, and
    * each verified advance records its share of it, oldest first. After `post_revenue` /
    * `post_partial_revenue`, which is what computes the amount.
@@ -168,7 +175,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     from: 'pending',
     to: 'cancelled',
     trigger: 'cancel',
-    effects: ['release_promo', 'settle_advances'],
+    effects: ['release_promo', 'release_flash_units', 'settle_advances'],
     requiresReason: true,
   },
   {
@@ -198,6 +205,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
       'enqueue_courier_cancel',
       'update_customer_stats',
       'release_promo',
+      'release_flash_units',
       'settle_advances',
     ],
     requiresReason: true,
@@ -211,6 +219,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
       'enqueue_courier_cancel',
       'update_customer_stats',
       'release_promo',
+      'release_flash_units',
       'settle_advances',
     ],
     requiresReason: true,
@@ -257,6 +266,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     effects: [
       'receive_return_stock',
       'post_return',
+      'release_flash_units',
       'update_customer_stats',
       'settle_advances',
       'record_return_reason',
@@ -267,7 +277,13 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     from: 'partially_delivered',
     to: 'returned',
     trigger: 'receive_return',
-    effects: ['receive_return_stock', 'post_return', 'settle_advances', 'record_return_reason'],
+    effects: [
+      'receive_return_stock',
+      'post_return',
+      'release_flash_units',
+      'settle_advances',
+      'record_return_reason',
+    ],
     requiresReason: true,
   },
   {

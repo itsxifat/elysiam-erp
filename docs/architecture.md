@@ -807,16 +807,16 @@ interface CourierAdapter {
 
 ### Promotions (`promo`)
 
-- Codes are `percent | flat | free_delivery` and support:
-  - minimum order and maximum discount
-  - usage limits, total and per customer
-  - a validity window
-  - scope to SKUs or categories and to channels
-  - a campaign link
-  - personal single-use codes
-- A redemption ledger records each use.
-- Validation is a pure function.
-- Codes are applied in the order desk (Phase 2), at the POS (Phase 4) and on landing pages (Phase 5).
+- **Discounts** (`promo.codes`, M16, extended in M35a, D-540, D-541):
+  - method `code` (the buyer types it) or `automatic` (the website applies it whenever it is eligible; the desk does not, D-544)
+  - kinds `percent | flat | free_delivery | buy_x_get_y | tiered` (tiers in `promo.discount_tiers`)
+  - minimum order and quantity, first order only (D-543), a ceiling, usage limits total and per buyer, a date window and an instant window
+  - scope to SKUs, products or categories (a category covers its sub-categories) and to channels
+  - stacking with priority, a campaign link, personal single-use codes
+- **One engine** (`packages/domain/src/promo/discounts.ts`, D-540): the old website's `computeDiscounts` in integer poisha. The best single discount, or every stackable one together when that gives at least as much; each stacked discount comes off its own lines only. Every percentage rounds once, half away from zero, through `percentOf`. M16's `validatePromo` is a view of it; a differential test holds it to the old engine.
+- A redemption ledger records each use. A use is taken with a conditional UPDATE (`used_count < total_limit`) in the order's transaction; the per-buyer limit and the first-order rule are re-checked under that row lock. A cancel gives the uses back once.
+- **Flash sales** (`promo.flash_sales`, `promo.flash_sale_items`, `promo.flash_claims`, D-542): per SKU a sale price and a unit limit or all stock. The cheapest live offer below the shelf price wins, then the one ending soonest. Checkout claims units per order line with a conditional UPDATE (`units_sold + qty <= unit_limit`, live by the database clock) inside a savepoint, all or nothing; the order's cancel and received return give units back exactly once (`release_flash_units`).
+- Applied at the order desk (codes, Phase 2), the website (M34), and later the POS and landing pages. Console: Campaigns → Discounts and Flash sales (D-549).
 
 ---
 

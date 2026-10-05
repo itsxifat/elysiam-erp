@@ -1598,3 +1598,84 @@ A brand's ERP runs on a database of its own …`; on one brand beside the traini
   reload after this deploys (CSRF rename); a realtime test of the two-hour cap (it shares
   `resolveIdentity`, owner: claude); the old intake header names retire with the old site (M36).
 - Next: integration with M32 and M33; M37 deploys the brands.
+
+### 2026-10-05 · M35a · Offers: the old website's discount engine and flash sales, in the ERP · built
+
+- Why: the old website's admin ran its own discounts and flash sales (wave 3, D-469); M34's
+  checkout needs the pricing rules before it can price a cart, so M35 was split and its offers
+  built first (plan `docs/plans/M35.md`, items 1 and 2).
+- Delivered (branch `m35a-offers` from `integration-wave2` at `0c056cf`, not merged):
+  - **One discount engine** (D-540): `packages/domain/src/promo/discounts.ts`, the old site's
+    `computeDiscounts` in integer poisha (code and automatic; percent, flat, free delivery, buy X
+    get Y, tiered; SKU, product and category-ancestry scope; minimums, first order, windows,
+    limits, ceiling; best single or the stack, priority). M16's `validatePromo` is a view of it.
+    Each stacked discount comes off its own lines only (the old engine over-gave on scoped
+    stacks). `legacy.ts` reads the old site's documents; `flash.ts` ports the offer ranking and
+    line planner.
+  - **Differential test**: the old engine copied verbatim as an oracle
+    (`promo/oracle/old-site-discounts.js`, commit 333393e) against the port on 5,000 generated
+    carts (whole percents, equal to the poisha outside three documented departures) and 2,000
+    with fractional percents (within a poisha per discount), plus eleven named cases. Recorded
+    carts from the old database were not reachable (D-540).
+  - **Schema** 0103 to 0106: `promo.codes` extended, `promo.discount_tiers`,
+    `promo.flash_sales`, `promo.flash_sale_items`, `promo.flash_claims` (one per order line, a
+    six-column foreign key to a whole line of its own order charged the sale price, and a key on
+    `sales.order_lines` to point it at); RLS ENABLE and FORCE, no DELETE grants, the claim
+    trigger, the title backfill brand by brand.
+  - **Server** (D-541, D-542, D-548): `PromoApi.quoteDiscounts`, `redeem` (a savepoint),
+    `liveFlashOffers`, `claimFlashUnits` (conditional UPDATE per line in a savepoint, database
+    clock), `releaseFlashUnits`, `storefrontFlashSales`, `storefrontFlashSale`, `holdsOnOrder`;
+    `release_flash_units` on every cancel and received return; an order edit refused around
+    claims and applied discounts; first order through `BuyerHistoryRegistry` (D-543),
+    re-checked under the code's lock; editor routes `/v1/promo/flash-sales` on `LandingPage`
+    with route-matrix fixtures; `FilesApi.isPublicAsset` for banners (D-547). The desk sends
+    line quantities and names the two new refusal reasons; automatic discounts stay off at the
+    desk (D-544).
+  - **Console** (D-549): Campaigns → Discounts (the promo-code screen renamed, a form per kind,
+    scope pickers, conditions, Dhaka-time schedule D-545, limits, stacking, priority) and Flash
+    sales (list with live sold counts, switch on and off, duplicate; editor with product picker,
+    per-size sale price and units or all stock, banner, slug, window). bn and en; lazy.
+- Verification:
+  - New tests: `discounts.test.ts`, `discounts.differential.test.ts`, `flash.test.ts` (domain,
+    fast-check), `offers.db.test.ts` (25 on real Postgres: the five-of-twenty race on lines
+    charged the sale price, the cancel through the real route, the savepoints, the claim's
+    conditions and line tie, a return after a partial delivery through the real transitions,
+    per-line release, the claim trigger, the edit refusal, the storefront read seam, the editor
+    over HTTP with banner checks and audit, quotes and redemptions, the first-order race,
+    sub-category scope, a buy-X-get-Y code at the desk, the 0105 backfill), console
+    `campaigns-ui.test.ts`, the effect rows in `orders.test.ts`.
+  - M16's promo tests green (`promo.db.test.ts`, `promo.test.ts` unchanged; the desk's unit
+    test gains `qty`; `crm.stack.ts` follows the rename).
+  - `offers.stack.ts` and `crm.stack.ts` against the real stack (ports 3214/5287): 2 and 4
+    passed, axe clean in both themes; screenshots in `docs/review/M35a/` (M16's refreshed).
+  - `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at `3e3387c`: 193 test
+    files, 3,079 passed, 1 skipped; format, lint, typecheck, build, bundle (245.6 KB of 250; M35a's
+    strings are 1.8 KB of it), migrations, schema drift (105 migrations), route matrix (334
+    routes, 326 matrix-tested, 8 public), i18n and api-client all pass.
+- Auditors:
+  - ledger-auditor: 0 critical, 13 warnings (one high: stacked scoped discounts could over-give).
+    Fixed W1-W6, W8-W10, W12, W13 and N1-N2 in `c4d212f`, W11 (the desk's two new refusal
+    reasons) in `ff470a7`; W7 recorded as D-546 (owner question).
+  - Re-check: 0 critical, 2 warnings (an order edit would 500 around claims; a claim was not
+    tied to its own order's line), both fixed in `592a728`; its notes on stacked redemptions (a
+    savepoint), lock order (D-548), flash-sale edits (offer order) and legacy amounts fixed too;
+    the first-order gap across different discounts accepted in D-543.
+  - acceptance-auditor on items 1 and 2: NOT READY with six gaps; addressed in `3e3387c` (claims
+    tied to the line's price, the evidence substitution recorded in D-540 and the plan, the
+    storefront read seam with its routes left to M33/M34, the plan's ids and checks, this
+    entry). Not re-run after the fixes.
+- Decisions/assumptions: D-540 to D-549 (D-543, D-544, D-546 ASSUMED).
+- Migrations: `0103_m35a_offers_schema.sql`, `0104_m35a_offers_policies.sql`,
+  `0105_m35a_offers_integrity.sql`, `0106_m35a_flash_claim_lines.sql`. M31 (0103-0106), M32
+  (0103) and M33 (0103-0104) use the same numbers: renumber at integration. 0105 and 0106 were
+  amended on this unmerged branch; a local database that applied an earlier version needs a
+  fresh migrate. New dependencies: none.
+- Owner questions: an approval step, a ceiling or a below-cost refusal for discounts and flash
+  sales (D-546).
+- Follow-ups: the storefront module's `GET /storefront/v1/flash-sales` and `/:slug` on the read
+  seam, and the Website section's link to Campaigns (M33/M34); M34 calls the checkout surface in
+  D-548's order and chooses an order's `promo_code_id` when discounts stack; M36 maps the old
+  site's discounts and flash sales (legacy product-wide caps need per-size limits) and can add
+  recorded carts to the differential test; palette entries for Discounts and Flash sales; a kit
+  date-and-time picker for the schedules; the console bundle has about 4 KB left.
+- Next: integrate with M31 to M33; M34 prices checkout through this.

@@ -1004,3 +1004,32 @@ export async function categorySubtree(
   `);
   return rows.map((row) => row.id);
 }
+
+/**
+ * Each category with itself and every category above it, through the maintained path
+ * (M35a): a discount for a category covers its sub-categories, so a line in "Silk sarees"
+ * is in scope of a discount for "Sarees". An unknown id is absent from the map.
+ */
+export async function categoryLineage(
+  tx: Tx,
+  orgId: string,
+  categoryIds: readonly string[],
+): Promise<Map<string, string[]>> {
+  if (categoryIds.length === 0) return new Map();
+  const rows = await tx.execute<{ id: string; ancestor_id: string }>(sql`
+    select cat.id, up.id as ancestor_id
+    from catalog.categories cat
+    join catalog.categories up
+      on up.org_id = cat.org_id
+     and (up.id = cat.id or starts_with(cat.path, up.path || '/'))
+    where cat.org_id = ${orgId} and cat.id = any (${sql.param([...categoryIds])}::uuid[])
+    order by cat.id, length(up.path) desc
+  `);
+  const lineage = new Map<string, string[]>();
+  for (const row of rows) {
+    const ancestors = lineage.get(row.id) ?? [];
+    ancestors.push(row.ancestor_id);
+    lineage.set(row.id, ancestors);
+  }
+  return lineage;
+}

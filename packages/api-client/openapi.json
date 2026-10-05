@@ -520,6 +520,11 @@
               "PROMO_CODE_TAKEN",
               "PROMO_INVALID",
               "PROMO_REDEMPTION_IMMUTABLE",
+              "FLASH_SALE_NOT_FOUND",
+              "FLASH_SALE_UNAVAILABLE",
+              "FLASH_SALE_SLUG_TAKEN",
+              "FLASH_SALE_INVALID",
+              "FLASH_CLAIM_IMMUTABLE",
               "NOTIFY_TEMPLATE_INVALID",
               "NOTIFY_MESSAGE_IMMUTABLE",
               "CRM_OCCASION_IMMUTABLE",
@@ -756,7 +761,7 @@
         "operationId": "getMediaByOrgIdByFileIdByVariant",
         "summary": "GET /media/:orgId/:fileId/:variant",
         "tags": ["media"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "parameters": [
           {
             "name": "orgId",
@@ -905,7 +910,7 @@
         "operationId": "getStorefrontV1CatalogCategories",
         "summary": "GET /storefront/v1/catalog/categories",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -954,7 +959,7 @@
         "operationId": "getStorefrontV1CatalogProducts",
         "summary": "GET /storefront/v1/catalog/products",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1003,7 +1008,7 @@
         "operationId": "getStorefrontV1CatalogProductsBySlug",
         "summary": "GET /storefront/v1/catalog/products/:slug",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "parameters": [
           {
             "name": "slug",
@@ -1072,7 +1077,7 @@
         "operationId": "getStorefrontV1CatalogSearch",
         "summary": "GET /storefront/v1/catalog/search",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1121,7 +1126,7 @@
         "operationId": "getStorefrontV1GeoDistricts",
         "summary": "GET /storefront/v1/geo/districts",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1170,7 +1175,7 @@
         "operationId": "getStorefrontV1GeoThanas",
         "summary": "GET /storefront/v1/geo/thanas",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1219,7 +1224,7 @@
         "operationId": "getStorefrontV1Site",
         "summary": "GET /storefront/v1/site",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1268,7 +1273,7 @@
         "operationId": "getStorefrontV1SizeChartsById",
         "summary": "GET /storefront/v1/size-charts/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "parameters": [
           {
             "name": "id",
@@ -25829,12 +25834,548 @@
         }
       }
     },
+    "/v1/promo/flash-sales": {
+      "get": {
+        "operationId": "getV1PromoFlashSales",
+        "summary": "GET /v1/promo/flash-sales",
+        "tags": ["promo"],
+        "x-ability": "read:LandingPage",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postV1PromoFlashSales",
+        "summary": "POST /v1/promo/flash-sales",
+        "tags": ["promo"],
+        "x-ability": "create:LandingPage",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/promo/flash-sales/{id}": {
+      "get": {
+        "operationId": "getV1PromoFlashSalesById",
+        "summary": "GET /v1/promo/flash-sales/:id",
+        "tags": ["promo"],
+        "x-ability": "read:LandingPage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patchV1PromoFlashSalesById",
+        "summary": "PATCH /v1/promo/flash-sales/:id",
+        "tags": ["promo"],
+        "x-ability": "update:LandingPage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putV1PromoFlashSalesById",
+        "summary": "PUT /v1/promo/flash-sales/:id",
+        "tags": ["promo"],
+        "x-ability": "update:LandingPage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/promo/flash-sales/{id}/duplicate": {
+      "post": {
+        "operationId": "postV1PromoFlashSalesByIdDuplicate",
+        "summary": "POST /v1/promo/flash-sales/:id/duplicate",
+        "tags": ["promo"],
+        "x-ability": "create:LandingPage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/storefront/categories/{id}": {
       "put": {
         "operationId": "putV1StorefrontCategoriesById",
         "summary": "PUT /v1/storefront/categories/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -25935,7 +26476,7 @@
         "operationId": "getV1StorefrontHeroSlides",
         "summary": "GET /v1/storefront/hero-slides",
         "tags": ["storefront"],
-        "x-elysium-ability": "read:Storefront",
+        "x-ability": "read:Storefront",
         "responses": {
           "200": {
             "description": "Success.",
@@ -26001,7 +26542,7 @@
         "operationId": "postV1StorefrontHeroSlides",
         "summary": "POST /v1/storefront/hero-slides",
         "tags": ["storefront"],
-        "x-elysium-ability": "create:Storefront",
+        "x-ability": "create:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -26084,7 +26625,7 @@
         "operationId": "deleteV1StorefrontHeroSlidesById",
         "summary": "DELETE /v1/storefront/hero-slides/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "delete:Storefront",
+        "x-ability": "delete:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -26183,7 +26724,7 @@
         "operationId": "putV1StorefrontHeroSlidesById",
         "summary": "PUT /v1/storefront/hero-slides/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -26284,7 +26825,7 @@
         "operationId": "putV1StorefrontHeroSlidesOrder",
         "summary": "PUT /v1/storefront/hero-slides/order",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -26367,7 +26908,7 @@
         "operationId": "getV1StorefrontNavItems",
         "summary": "GET /v1/storefront/nav-items",
         "tags": ["storefront"],
-        "x-elysium-ability": "read:Storefront",
+        "x-ability": "read:Storefront",
         "responses": {
           "200": {
             "description": "Success.",
@@ -26433,7 +26974,7 @@
         "operationId": "postV1StorefrontNavItems",
         "summary": "POST /v1/storefront/nav-items",
         "tags": ["storefront"],
-        "x-elysium-ability": "create:Storefront",
+        "x-ability": "create:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -26516,7 +27057,7 @@
         "operationId": "deleteV1StorefrontNavItemsById",
         "summary": "DELETE /v1/storefront/nav-items/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "delete:Storefront",
+        "x-ability": "delete:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -26615,7 +27156,7 @@
         "operationId": "putV1StorefrontNavItemsById",
         "summary": "PUT /v1/storefront/nav-items/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -26716,7 +27257,7 @@
         "operationId": "putV1StorefrontNavItemsLayout",
         "summary": "PUT /v1/storefront/nav-items/layout",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -26799,7 +27340,7 @@
         "operationId": "putV1StorefrontProductsById",
         "summary": "PUT /v1/storefront/products/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -26900,7 +27441,7 @@
         "operationId": "getV1StorefrontSettings",
         "summary": "GET /v1/storefront/settings",
         "tags": ["storefront"],
-        "x-elysium-ability": "read:Storefront",
+        "x-ability": "read:Storefront",
         "responses": {
           "200": {
             "description": "Success.",
@@ -26966,7 +27507,7 @@
         "operationId": "patchV1StorefrontSettings",
         "summary": "PATCH /v1/storefront/settings",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -27049,7 +27590,7 @@
         "operationId": "getV1StorefrontSiteKeys",
         "summary": "GET /v1/storefront/site-keys",
         "tags": ["storefront"],
-        "x-elysium-ability": "read:Storefront",
+        "x-ability": "read:Storefront",
         "responses": {
           "200": {
             "description": "Success.",
@@ -27115,7 +27656,7 @@
         "operationId": "postV1StorefrontSiteKeys",
         "summary": "POST /v1/storefront/site-keys",
         "tags": ["storefront"],
-        "x-elysium-ability": "create:Storefront",
+        "x-ability": "create:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -27198,7 +27739,7 @@
         "operationId": "postV1StorefrontSiteKeysByIdRevoke",
         "summary": "POST /v1/storefront/site-keys/:id/revoke",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -27299,7 +27840,7 @@
         "operationId": "getV1StorefrontSizeCharts",
         "summary": "GET /v1/storefront/size-charts",
         "tags": ["storefront"],
-        "x-elysium-ability": "read:Storefront",
+        "x-ability": "read:Storefront",
         "responses": {
           "200": {
             "description": "Success.",
@@ -27365,7 +27906,7 @@
         "operationId": "postV1StorefrontSizeCharts",
         "summary": "POST /v1/storefront/size-charts",
         "tags": ["storefront"],
-        "x-elysium-ability": "create:Storefront",
+        "x-ability": "create:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -27448,7 +27989,7 @@
         "operationId": "deleteV1StorefrontSizeChartsById",
         "summary": "DELETE /v1/storefront/size-charts/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "delete:Storefront",
+        "x-ability": "delete:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -27547,7 +28088,7 @@
         "operationId": "putV1StorefrontSizeChartsById",
         "summary": "PUT /v1/storefront/size-charts/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "name": "id",

@@ -332,6 +332,14 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/promo/codes/:id/redemptions',
   'POST /v1/promo/check',
 
+  // M35a: flash sales, the same `LandingPage` subject as the discounts (D-542).
+  'GET /v1/promo/flash-sales',
+  'POST /v1/promo/flash-sales',
+  'GET /v1/promo/flash-sales/:id',
+  'PUT /v1/promo/flash-sales/:id',
+  'PATCH /v1/promo/flash-sales/:id',
+  'POST /v1/promo/flash-sales/:id/duplicate',
+
   // M16: notifications. §6 has no row; `Campaign` (org_admin and marketing, both at
   // `org`) is the audience for what a brand tells its buyers (D-205). Sending is not a
   // route: a message is queued by the code with a reason to send it.

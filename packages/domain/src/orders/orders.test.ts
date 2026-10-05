@@ -796,3 +796,23 @@ describe('a promo code goes back on a cancel, and only on a cancel (D-204)', () 
     expect(fromPending.effects).not.toContain('update_customer_stats');
   });
 });
+
+describe('flash units go back on a cancel and on a received return (M35a, D-542)', () => {
+  it('declares release_flash_units on every cancel and every received return', () => {
+    const endings = TRANSITIONS.filter(
+      (row) => row.to === 'cancelled' || row.trigger === 'receive_return',
+    );
+    expect(endings.length).toBe(5);
+    for (const row of endings) expect(row.effects).toContain('release_flash_units');
+  });
+
+  it('declares it nowhere else: a delivered unit stays sold at the sale price', () => {
+    const elsewhere = TRANSITIONS.filter(
+      (row) =>
+        row.to !== 'cancelled' &&
+        row.trigger !== 'receive_return' &&
+        row.effects.includes('release_flash_units'),
+    );
+    expect(elsewhere).toEqual([]);
+  });
+});
