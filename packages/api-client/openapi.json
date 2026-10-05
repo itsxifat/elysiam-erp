@@ -4564,7 +4564,7 @@
         "operationId": "getV1CatalogLookup",
         "summary": "GET /v1/catalog/lookup",
         "tags": ["catalog"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "responses": {
           "200": {
             "description": "Success.",
@@ -14533,7 +14533,7 @@
         "operationId": "postV1InventoryCountsByIdScans",
         "summary": "POST /v1/inventory/counts/:id/scans",
         "tags": ["inventory"],
-        "x-elysium-ability": "request:StockAdjustment",
+        "x-ability": "request:StockAdjustment",
         "parameters": [
           {
             "name": "id",
@@ -15272,7 +15272,7 @@
         "operationId": "getV1InventoryStockInHand",
         "summary": "GET /v1/inventory/stock-in-hand",
         "tags": ["inventory"],
-        "x-elysium-ability": "create:Supply",
+        "x-ability": "create:Supply",
         "responses": {
           "200": {
             "description": "Success.",
@@ -15338,7 +15338,7 @@
         "operationId": "postV1InventoryStockInHand",
         "summary": "POST /v1/inventory/stock-in-hand",
         "tags": ["inventory"],
-        "x-elysium-ability": "read:Cost",
+        "x-ability": "read:Cost",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -15421,7 +15421,7 @@
         "operationId": "getV1InventoryStockInHandById",
         "summary": "GET /v1/inventory/stock-in-hand/:id",
         "tags": ["inventory"],
-        "x-elysium-ability": "create:Supply",
+        "x-ability": "create:Supply",
         "parameters": [
           {
             "name": "id",
@@ -15509,7 +15509,7 @@
         "operationId": "postV1InventoryStockInHandByIdPost",
         "summary": "POST /v1/inventory/stock-in-hand/:id/post",
         "tags": ["inventory"],
-        "x-elysium-ability": "read:Cost",
+        "x-ability": "read:Cost",
         "parameters": [
           {
             "name": "id",
@@ -15610,7 +15610,7 @@
         "operationId": "postV1InventoryStockInHandDrafts",
         "summary": "POST /v1/inventory/stock-in-hand/drafts",
         "tags": ["inventory"],
-        "x-elysium-ability": "create:Supply",
+        "x-ability": "create:Supply",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -15693,7 +15693,7 @@
         "operationId": "deleteV1InventoryStockInHandDraftsById",
         "summary": "DELETE /v1/inventory/stock-in-hand/drafts/:id",
         "tags": ["inventory"],
-        "x-elysium-ability": "update:Supply",
+        "x-ability": "update:Supply",
         "parameters": [
           {
             "name": "id",
@@ -15792,7 +15792,7 @@
         "operationId": "patchV1InventoryStockInHandDraftsById",
         "summary": "PATCH /v1/inventory/stock-in-hand/drafts/:id",
         "tags": ["inventory"],
-        "x-elysium-ability": "update:Supply",
+        "x-ability": "update:Supply",
         "parameters": [
           {
             "name": "id",
@@ -15893,7 +15893,7 @@
         "operationId": "getV1InventoryStockInHandWindow",
         "summary": "GET /v1/inventory/stock-in-hand/window",
         "tags": ["inventory"],
-        "x-elysium-ability": "read:Stock",
+        "x-ability": "read:Stock",
         "responses": {
           "200": {
             "description": "Success.",
@@ -15961,7 +15961,7 @@
         "operationId": "postV1InventoryStockInHandWindowClose",
         "summary": "POST /v1/inventory/stock-in-hand/window/close",
         "tags": ["inventory"],
-        "x-elysium-ability": "approve:StockAdjustment",
+        "x-ability": "approve:StockAdjustment",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -16044,7 +16044,7 @@
         "operationId": "postV1InventoryStockInHandWindowReopen",
         "summary": "POST /v1/inventory/stock-in-hand/window/reopen",
         "tags": ["inventory"],
-        "x-elysium-ability": "approve:StockAdjustment",
+        "x-ability": "approve:StockAdjustment",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
