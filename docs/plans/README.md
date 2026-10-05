@@ -98,4 +98,4 @@ One ERP per brand, the mother ERP, and each brand's website run from its ERP. Ov
 | M35  | Website offers, landing pages, tracking, ncom | M35a done (merged 4e500db), M35b planned   |
 | M36  | New Elysium website on the ERP                | planned (starts empty; optional customers) |
 | M37  | Go live: brand servers, mother, switch-over   | planned                                    |
-| M38  | Barcode stickers, strict stock, scan-to-pack  | M38a being built; M38b planned             |
+| M38  | Barcode stickers, strict stock, scan-to-pack  | M38a built (`m38a-barcodes`), M38b planned |
