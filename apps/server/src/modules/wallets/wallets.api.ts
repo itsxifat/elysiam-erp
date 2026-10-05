@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
 import { isAccountSubtype, subtypeInfo, type PostingAccount } from '@elysium/domain';
 
+import { walletsHttpError } from './wallets.errors.js';
 import * as repo from './wallets.repository.js';
 
 /**
@@ -48,6 +49,24 @@ export interface WalletsApi {
     orgId: string,
     codes: readonly string[],
   ): Promise<ReadonlyMap<string, { readonly walletId: string; readonly account: PostingAccount }>>;
+
+  /**
+   * A wallet the system itself needs, created on first use (M34, D-526): the SSLCommerz
+   * clearing wallet the website's online payments land in, until the gateway settles them to
+   * the bank (a wallet transfer). Org-level, never a branch's. Its ledger account is created
+   * with the given code if there is none; a code that already names a different kind of
+   * account is refused rather than reused.
+   */
+  ensureSystemWallet(
+    tx: Tx,
+    orgId: string,
+    spec: {
+      readonly code: string;
+      readonly name: string;
+      readonly subtype: 'wallet_bank' | 'wallet_mfs_other';
+      readonly provider: string;
+    },
+  ): Promise<PostingAccount>;
 }
 
 /** The Nest injection token for `WalletsApi`. */
@@ -90,5 +109,60 @@ export class WalletsApiService implements WalletsApi {
       });
     }
     return found;
+  }
+
+  async ensureSystemWallet(
+    tx: Tx,
+    orgId: string,
+    spec: {
+      readonly code: string;
+      readonly name: string;
+      readonly subtype: 'wallet_bank' | 'wallet_mfs_other';
+      readonly provider: string;
+    },
+  ): Promise<PostingAccount> {
+    // One first setup at a time per brand and provider, so two at once cannot both create one
+    // (ledger re-audit N-c).
+    await repo.lockSystemWallet(tx, orgId, spec.provider);
+    // The provider's own wallet, whatever code it was given: never a staff wallet that
+    // happens to sit at the preferred code (M34 ledger audit W4).
+    const mine = await repo.systemWalletByProvider(tx, orgId, spec.provider, spec.subtype);
+    if (mine !== undefined) {
+      return { accountId: mine.ledger_account_id, subtype: spec.subtype, branchId: null };
+    }
+    const info = subtypeInfo(spec.subtype);
+    // The preferred code, else the next free one after it in its ten (1120, 1121 … 1129).
+    const preferred = Number.parseInt(spec.code, 10);
+    const candidates = Number.isNaN(preferred)
+      ? [spec.code]
+      : Array.from({ length: 10 - (preferred % 10) }, (_, step) => String(preferred + step));
+    let account: { id: string } | undefined;
+    for (const code of candidates) {
+      account = await repo.insertLedgerAccount(tx, {
+        orgId,
+        code,
+        name: spec.name,
+        subtype: spec.subtype,
+        class: info.class,
+        normalBalance: info.normalBalance,
+        branchId: null,
+      });
+      if (account !== undefined) break;
+    }
+    if (account === undefined) {
+      throw walletsHttpError(
+        'LEDGER_ACCOUNT_INVALID',
+        `Account codes ${candidates.join(', ')} are all taken; free one in the chart of accounts for the ${spec.name} wallet.`,
+      );
+    }
+    await repo.insertWalletIfMissing(tx, {
+      orgId,
+      ledgerAccountId: account.id,
+      branchId: null,
+      provider: spec.provider,
+      accountRefMasked: null,
+      requiresDailyClosing: false,
+    });
+    return { accountId: account.id, subtype: spec.subtype, branchId: null };
   }
 }

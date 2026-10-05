@@ -765,3 +765,47 @@ export async function agingAsOf(
   `);
   return [...rows];
 }
+
+/**
+ * A wallet row for an account, unless one exists (M34's system wallets): `on conflict do
+ * nothing` on the one-wallet-per-account index, so two callers racing to set it up both end
+ * with the same row.
+ */
+/** Serialise the first setup of a provider's system wallet in one brand (transaction lock). */
+export async function lockSystemWallet(tx: Tx, orgId: string, provider: string): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`wallets.system:${orgId}:${provider}`}, 0))`,
+  );
+}
+
+/**
+ * A provider's org-level wallet (a gateway's clearing wallet, M34): the one row
+ * `ensureSystemWallet` reuses, found by what it is rather than by the code it was given.
+ */
+export async function systemWalletByProvider(
+  tx: Tx,
+  orgId: string,
+  provider: string,
+  subtype: string,
+): Promise<{ ledger_account_id: string } | undefined> {
+  const rows = await tx.execute<{ ledger_account_id: string }>(sql`
+    select w.ledger_account_id
+    from wallets.wallets w
+    join ledger.accounts a on a.org_id = w.org_id and a.id = w.ledger_account_id
+    where w.org_id = ${orgId} and w.provider = ${provider} and w.branch_id is null
+      and a.subtype = ${subtype}::ledger.account_subtype
+    order by a.code
+    limit 1
+  `);
+  return rows[0];
+}
+
+export async function insertWalletIfMissing(tx: Tx, wallet: NewWallet): Promise<void> {
+  await tx.execute(sql`
+    insert into wallets.wallets
+      (org_id, ledger_account_id, branch_id, provider, account_ref_masked, requires_daily_closing)
+    values (${wallet.orgId}, ${wallet.ledgerAccountId}, ${wallet.branchId}::uuid,
+            ${wallet.provider}, ${wallet.accountRefMasked}, ${wallet.requiresDailyClosing})
+    on conflict (org_id, ledger_account_id) do nothing
+  `);
+}

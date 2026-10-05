@@ -98,6 +98,21 @@ export const OPERATIONS = {
     path: '/media/{orgId}/{fileId}/{variant}',
     ability: 'public',
   },
+  getStorefrontV1AccountsById: {
+    method: 'GET',
+    path: '/storefront/v1/accounts/{id}',
+    ability: 'public',
+  },
+  getStorefrontV1AccountsByIdOrders: {
+    method: 'GET',
+    path: '/storefront/v1/accounts/{id}/orders',
+    ability: 'public',
+  },
+  getStorefrontV1AccountsByIdOrdersByOrderNo: {
+    method: 'GET',
+    path: '/storefront/v1/accounts/{id}/orders/{orderNo}',
+    ability: 'public',
+  },
   getStorefrontV1CatalogCategories: {
     method: 'GET',
     path: '/storefront/v1/catalog/categories',
@@ -118,12 +133,27 @@ export const OPERATIONS = {
     path: '/storefront/v1/catalog/search',
     ability: 'public',
   },
+  getStorefrontV1FlashSales: {
+    method: 'GET',
+    path: '/storefront/v1/flash-sales',
+    ability: 'public',
+  },
+  getStorefrontV1FlashSalesBySlug: {
+    method: 'GET',
+    path: '/storefront/v1/flash-sales/{slug}',
+    ability: 'public',
+  },
   getStorefrontV1GeoDistricts: {
     method: 'GET',
     path: '/storefront/v1/geo/districts',
     ability: 'public',
   },
   getStorefrontV1GeoThanas: { method: 'GET', path: '/storefront/v1/geo/thanas', ability: 'public' },
+  getStorefrontV1OrdersByOrderNo: {
+    method: 'GET',
+    path: '/storefront/v1/orders/{orderNo}',
+    ability: 'public',
+  },
   getStorefrontV1Site: { method: 'GET', path: '/storefront/v1/site', ability: 'public' },
   getStorefrontV1SizeChartsById: {
     method: 'GET',
@@ -591,6 +621,17 @@ export const OPERATIONS = {
     path: '/v1/promo/flash-sales/{id}',
     ability: 'read:LandingPage',
   },
+  getV1StorefrontAccounts: {
+    method: 'GET',
+    path: '/v1/storefront/accounts',
+    ability: 'read:Customer',
+  },
+  getV1StorefrontEmail: { method: 'GET', path: '/v1/storefront/email', ability: 'read:Storefront' },
+  getV1StorefrontEmailLog: {
+    method: 'GET',
+    path: '/v1/storefront/email/log',
+    ability: 'read:Customer',
+  },
   getV1StorefrontHeroSlides: {
     method: 'GET',
     path: '/v1/storefront/hero-slides',
@@ -600,6 +641,21 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/storefront/nav-items',
     ability: 'read:Storefront',
+  },
+  getV1StorefrontOrdersByOrderId: {
+    method: 'GET',
+    path: '/v1/storefront/orders/{orderId}',
+    ability: 'read:Order',
+  },
+  getV1StorefrontPayments: {
+    method: 'GET',
+    path: '/v1/storefront/payments',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontPaymentsSessions: {
+    method: 'GET',
+    path: '/v1/storefront/payments/sessions',
+    ability: 'read:Order',
   },
   getV1StorefrontSettings: {
     method: 'GET',
@@ -652,6 +708,11 @@ export const OPERATIONS = {
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
   me: { method: 'GET', path: '/v1/me', ability: 'authenticated' },
   partyBalances: { method: 'GET', path: '/v1/ledger/party-balances', ability: 'read:LedgerReport' },
+  patchStorefrontV1AccountsById: {
+    method: 'PATCH',
+    path: '/storefront/v1/accounts/{id}',
+    ability: 'public',
+  },
   patchV1AccountsWalletsById: {
     method: 'PATCH',
     path: '/v1/accounts/wallets/{id}',
@@ -741,6 +802,67 @@ export const OPERATIONS = {
     ability: 'update:Supply',
   },
   postPublicV1Orders: { method: 'POST', path: '/public/v1/orders', ability: 'public' },
+  postStorefrontIpnSslcommerzByOrgId: {
+    method: 'POST',
+    path: '/storefront/ipn/sslcommerz/{orgId}',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsByIdChangePassword: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/{id}/change-password',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsForgotPassword: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/forgot-password',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsGoogle: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/google',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsRegister: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/register',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsResendCode: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/resend-code',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsResetPassword: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/reset-password',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsSignIn: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/sign-in',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsVerifyEmail: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/verify-email',
+    ability: 'public',
+  },
+  postStorefrontV1CartQuote: {
+    method: 'POST',
+    path: '/storefront/v1/cart/quote',
+    ability: 'public',
+  },
+  postStorefrontV1Checkout: { method: 'POST', path: '/storefront/v1/checkout', ability: 'public' },
+  postStorefrontV1PaymentsSslcommerzInit: {
+    method: 'POST',
+    path: '/storefront/v1/payments/sslcommerz/init',
+    ability: 'public',
+  },
+  postStorefrontV1PaymentsSslcommerzReturn: {
+    method: 'POST',
+    path: '/storefront/v1/payments/sslcommerz/return',
+    ability: 'public',
+  },
   postV1AccountsCashEntries: {
     method: 'POST',
     path: '/v1/accounts/cash-entries',
@@ -1224,6 +1346,11 @@ export const OPERATIONS = {
     path: '/v1/promo/flash-sales/{id}/duplicate',
     ability: 'create:LandingPage',
   },
+  postV1StorefrontEmailTest: {
+    method: 'POST',
+    path: '/v1/storefront/email/test',
+    ability: 'update:WebsiteCredentials',
+  },
   postV1StorefrontHeroSlides: {
     method: 'POST',
     path: '/v1/storefront/hero-slides',
@@ -1330,6 +1457,11 @@ export const OPERATIONS = {
     path: '/v1/storefront/categories/{id}',
     ability: 'update:Storefront',
   },
+  putV1StorefrontEmail: {
+    method: 'PUT',
+    path: '/v1/storefront/email',
+    ability: 'update:WebsiteCredentials',
+  },
   putV1StorefrontHeroSlidesById: {
     method: 'PUT',
     path: '/v1/storefront/hero-slides/{id}',
@@ -1349,6 +1481,11 @@ export const OPERATIONS = {
     method: 'PUT',
     path: '/v1/storefront/nav-items/layout',
     ability: 'update:Storefront',
+  },
+  putV1StorefrontPayments: {
+    method: 'PUT',
+    path: '/v1/storefront/payments',
+    ability: 'update:WebsiteCredentials',
   },
   putV1StorefrontProductsById: {
     method: 'PUT',
@@ -1519,6 +1656,23 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getMediaByOrgIdByFileIdByVariant, input, options),
+    /** GET /storefront/v1/accounts/:id */
+    getStorefrontV1AccountsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getStorefrontV1AccountsById, input, options),
+    /** GET /storefront/v1/accounts/:id/orders */
+    getStorefrontV1AccountsByIdOrders: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1AccountsByIdOrders, input, options),
+    /** GET /storefront/v1/accounts/:id/orders/:orderNo */
+    getStorefrontV1AccountsByIdOrdersByOrderNo: (
+      input: { readonly path: { readonly id: string; readonly orderNo: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1AccountsByIdOrdersByOrderNo, input, options),
     /** GET /storefront/v1/catalog/categories */
     getStorefrontV1CatalogCategories: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getStorefrontV1CatalogCategories, undefined, options),
@@ -1534,12 +1688,27 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /storefront/v1/catalog/search */
     getStorefrontV1CatalogSearch: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getStorefrontV1CatalogSearch, undefined, options),
+    /** GET /storefront/v1/flash-sales */
+    getStorefrontV1FlashSales: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1FlashSales, undefined, options),
+    /** GET /storefront/v1/flash-sales/:slug */
+    getStorefrontV1FlashSalesBySlug: (
+      input: { readonly path: { readonly slug: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1FlashSalesBySlug, input, options),
     /** GET /storefront/v1/geo/districts */
     getStorefrontV1GeoDistricts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getStorefrontV1GeoDistricts, undefined, options),
     /** GET /storefront/v1/geo/thanas */
     getStorefrontV1GeoThanas: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getStorefrontV1GeoThanas, undefined, options),
+    /** GET /storefront/v1/orders/:orderNo */
+    getStorefrontV1OrdersByOrderNo: (
+      input: { readonly path: { readonly orderNo: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1OrdersByOrderNo, input, options),
     /** GET /storefront/v1/site */
     getStorefrontV1Site: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getStorefrontV1Site, undefined, options),
@@ -2057,12 +2226,33 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1PromoFlashSalesById, input, options),
+    /** GET /v1/storefront/accounts */
+    getV1StorefrontAccounts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontAccounts, undefined, options),
+    /** GET /v1/storefront/email */
+    getV1StorefrontEmail: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontEmail, undefined, options),
+    /** GET /v1/storefront/email/log */
+    getV1StorefrontEmailLog: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontEmailLog, undefined, options),
     /** GET /v1/storefront/hero-slides */
     getV1StorefrontHeroSlides: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1StorefrontHeroSlides, undefined, options),
     /** GET /v1/storefront/nav-items */
     getV1StorefrontNavItems: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1StorefrontNavItems, undefined, options),
+    /** GET /v1/storefront/orders/:orderId */
+    getV1StorefrontOrdersByOrderId: (
+      input: { readonly path: { readonly orderId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontOrdersByOrderId, input, options),
+    /** GET /v1/storefront/payments */
+    getV1StorefrontPayments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontPayments, undefined, options),
+    /** GET /v1/storefront/payments/sessions */
+    getV1StorefrontPaymentsSessions: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontPaymentsSessions, undefined, options),
     /** GET /v1/storefront/settings */
     getV1StorefrontSettings: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1StorefrontSettings, undefined, options),
@@ -2156,6 +2346,12 @@ export function createApiClient(runtime: ApiRuntime) {
       },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.partyBalances, input, options),
+    /** PATCH /storefront/v1/accounts/:id */
+    patchStorefrontV1AccountsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchStorefrontV1AccountsById, input, options),
     /** PATCH /v1/accounts/wallets/:id */
     patchV1AccountsWalletsById: (
       input: { readonly path: { readonly id: string } },
@@ -2263,6 +2459,51 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /public/v1/orders */
     postPublicV1Orders: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postPublicV1Orders, undefined, options),
+    /** POST /storefront/ipn/sslcommerz/:orgId */
+    postStorefrontIpnSslcommerzByOrgId: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontIpnSslcommerzByOrgId, input, options),
+    /** POST /storefront/v1/accounts/:id/change-password */
+    postStorefrontV1AccountsByIdChangePassword: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsByIdChangePassword, input, options),
+    /** POST /storefront/v1/accounts/forgot-password */
+    postStorefrontV1AccountsForgotPassword: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsForgotPassword, undefined, options),
+    /** POST /storefront/v1/accounts/google */
+    postStorefrontV1AccountsGoogle: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsGoogle, undefined, options),
+    /** POST /storefront/v1/accounts/register */
+    postStorefrontV1AccountsRegister: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsRegister, undefined, options),
+    /** POST /storefront/v1/accounts/resend-code */
+    postStorefrontV1AccountsResendCode: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsResendCode, undefined, options),
+    /** POST /storefront/v1/accounts/reset-password */
+    postStorefrontV1AccountsResetPassword: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsResetPassword, undefined, options),
+    /** POST /storefront/v1/accounts/sign-in */
+    postStorefrontV1AccountsSignIn: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsSignIn, undefined, options),
+    /** POST /storefront/v1/accounts/verify-email */
+    postStorefrontV1AccountsVerifyEmail: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsVerifyEmail, undefined, options),
+    /** POST /storefront/v1/cart/quote */
+    postStorefrontV1CartQuote: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1CartQuote, undefined, options),
+    /** POST /storefront/v1/checkout */
+    postStorefrontV1Checkout: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1Checkout, undefined, options),
+    /** POST /storefront/v1/payments/sslcommerz/init */
+    postStorefrontV1PaymentsSslcommerzInit: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1PaymentsSslcommerzInit, undefined, options),
+    /** POST /storefront/v1/payments/sslcommerz/return */
+    postStorefrontV1PaymentsSslcommerzReturn: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1PaymentsSslcommerzReturn, undefined, options),
     /** POST /v1/accounts/cash-entries */
     postV1AccountsCashEntries: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1AccountsCashEntries, undefined, options),
@@ -2772,6 +3013,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PromoFlashSalesByIdDuplicate, input, options),
+    /** POST /v1/storefront/email/test */
+    postV1StorefrontEmailTest: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontEmailTest, undefined, options),
     /** POST /v1/storefront/hero-slides */
     postV1StorefrontHeroSlides: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1StorefrontHeroSlides, undefined, options),
@@ -2890,6 +3134,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1StorefrontCategoriesById, input, options),
+    /** PUT /v1/storefront/email */
+    putV1StorefrontEmail: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontEmail, undefined, options),
     /** PUT /v1/storefront/hero-slides/:id */
     putV1StorefrontHeroSlidesById: (
       input: { readonly path: { readonly id: string } },
@@ -2907,6 +3154,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/storefront/nav-items/layout */
     putV1StorefrontNavItemsLayout: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1StorefrontNavItemsLayout, undefined, options),
+    /** PUT /v1/storefront/payments */
+    putV1StorefrontPayments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontPayments, undefined, options),
     /** PUT /v1/storefront/products/:id */
     putV1StorefrontProductsById: (
       input: { readonly path: { readonly id: string } },

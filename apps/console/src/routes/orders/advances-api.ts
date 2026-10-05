@@ -27,7 +27,8 @@ export { RETURN_REASONS, type ReturnReason } from './returns-logic.js';
 export interface AdvanceRow {
   readonly id: string;
   readonly orderId: string;
-  readonly method: AdvanceMethod;
+  /** An agent's claim, or `sslcommerz`: a website payment the gateway validated (M34). */
+  readonly method: AdvanceMethod | 'sslcommerz';
   readonly transactionRef: string;
   readonly amountPoisha: string;
   readonly appliedPoisha: string;

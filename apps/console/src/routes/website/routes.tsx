@@ -38,5 +38,20 @@ export function websiteRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     path: '/website/connection',
     component: lazyRouteComponent(() => import('./connection.js'), 'WebsiteConnectionPage'),
   });
-  return [index, settings, hero, menu, sizeCharts, connection] as const;
+  const payments = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/website/payments',
+    component: lazyRouteComponent(() => import('./payments.js'), 'WebsitePaymentsPage'),
+  });
+  const email = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/website/email',
+    component: lazyRouteComponent(() => import('./email.js'), 'WebsiteEmailPage'),
+  });
+  const customers = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/website/customers',
+    component: lazyRouteComponent(() => import('./customers.js'), 'WebsiteCustomersPage'),
+  });
+  return [index, settings, hero, menu, sizeCharts, connection, payments, email, customers] as const;
 }

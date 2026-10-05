@@ -1,20 +1,26 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
+import { sql } from 'drizzle-orm';
 import {
   computePartialDelivery,
   poisha,
   TRANSITIONS,
   transitionFor,
   type OrderStatus,
+  type GatewayAdvanceMethod,
   type OrderTrigger,
   type Poisha,
+  type PostingAccount,
   type ReturnReasonCode,
 } from '@elysium/domain';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
+import { AdvancesService } from './advances.service.js';
 import { OrdersService, type CreateOrderOptions, type CreatedOrder } from './orders.service.js';
+import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
 import { mapOrderErrors } from './orders.errors.js';
 import * as repo from './orders.repository.js';
@@ -295,6 +301,71 @@ export interface DeliveryZoneSummary {
   readonly isActive: boolean;
 }
 
+/** One order as its shopper may see it (M34, D-524): selling-side money, no cost, no staff. */
+export interface ShopperOrderFacts {
+  readonly id: string;
+  readonly orderNo: string;
+  readonly channel: string;
+  readonly status: OrderStatus;
+  readonly customerId: string;
+  readonly createdAt: Date;
+  readonly confirmedAt: Date | null;
+  readonly shippedAt: Date | null;
+  readonly deliveredAt: Date | null;
+  readonly returnedAt: Date | null;
+  readonly cancelledAt: Date | null;
+  readonly itemsPoisha: bigint;
+  readonly discountPoisha: bigint;
+  readonly deliveryChargePoisha: bigint;
+  readonly advancePaidPoisha: bigint;
+  readonly codAmountPoisha: bigint;
+  readonly courierId: string | null;
+  readonly lineCount: number;
+  readonly unitCount: number;
+  readonly shipTo: {
+    readonly name: string;
+    readonly phoneE164: string;
+    readonly districtId: number;
+    readonly thanaId: number;
+    readonly districtEn: string | null;
+    readonly districtBn: string | null;
+    readonly thanaEn: string | null;
+    readonly thanaBn: string | null;
+    readonly area: string | null;
+    readonly addressLine: string;
+  };
+}
+
+/** One line as its shopper may see it: what was charged, never what it cost. */
+export interface ShopperOrderLine {
+  readonly id: string;
+  readonly skuId: string;
+  readonly skuCode: string;
+  readonly productName: string;
+  readonly qty: number;
+  readonly unitPricePoisha: bigint;
+  readonly discountPoisha: bigint;
+}
+
+/** A gateway payment the caller validated, to book as a verified advance (M34, D-526). */
+export interface GatewayAdvanceInput {
+  readonly orderId: string;
+  readonly method: GatewayAdvanceMethod;
+  /** The gateway transaction id: the advance's reference, unique while live. */
+  readonly transactionRef: string;
+  readonly amountPoisha: bigint;
+  /** The clearing wallet's ledger account (`WalletsApi.ensureSystemWallet`). */
+  readonly wallet: PostingAccount;
+  readonly note: string | null;
+  /**
+   * Money the gateway took that the order does not accept (M34 ledger audit W3): a wrong
+   * amount, an order changed after its page opened, a second page paid. Booked into the
+   * clearing wallet all the same — the gateway settles it to the bank — and owed back at once,
+   * never applied to the COD.
+   */
+  readonly owedBack?: boolean;
+}
+
 export interface OrdersApi {
   /**
    * Take an order inside the caller's transaction.
@@ -464,6 +535,65 @@ export interface OrdersApi {
     range: { readonly from: string; readonly to: string },
   ): Promise<readonly AnalyticsOrderFact[]>;
 
+  // --- M34: the website ------------------------------------------------------------
+
+  /** The buyer this E.164 phone names, or undefined: per-buyer discount limits (D-541). */
+  buyerIdByPhone(tx: Tx, orgId: string, phoneE164: string): Promise<string | undefined>;
+
+  /**
+   * Whether this thana is in this district (the reference data), and the brand's delivery zone
+   * for it, or null when the address falls in no zone: what the website's shipping rule prices.
+   */
+  deliveryZoneForArea(
+    tx: Tx,
+    orgId: string,
+    districtId: number,
+    thanaId: number,
+  ): Promise<{ readonly valid: boolean; readonly zoneId: string | null }>;
+
+  /** An order's id by its number in this brand, or undefined. */
+  orderIdByNumber(tx: Tx, orgId: string, orderNo: string): Promise<string | undefined>;
+
+  /** These orders as their shoppers may see them (D-524). Ids not of this brand are absent. */
+  shopperOrders(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+  ): Promise<readonly ShopperOrderFacts[]>;
+
+  /** One order's lines as its shopper may see them, in their order. */
+  shopperOrderLines(tx: Tx, orgId: string, orderId: string): Promise<readonly ShopperOrderLine[]>;
+
+  /**
+   * Book a validated gateway payment as a verified advance (D-526): Dr the clearing wallet /
+   * Cr Customer advance, the COD lowered before the parcel moves, in the caller's transaction.
+   * `applied` lowered the COD; `settled` met an order that had already ended and is owed back;
+   * `held` met a parcel on the road and waits as a claim for accounts.
+   */
+  recordGatewayAdvance(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly recordedBy: string; readonly decidedBy: string },
+    input: GatewayAdvanceInput,
+  ): Promise<{ readonly advanceId: string; readonly outcome: 'applied' | 'settled' | 'held' }>;
+
+  /**
+   * Whether the caller may see this order (M34 ledger audit W6): the route's own row scope,
+   * declared on `Order` and hung on the request by the guard, applied here where the order's
+   * columns are known. Marks the scope applied.
+   */
+  orderVisibleTo(tx: Tx, orgId: string, orderId: string, request: object): Promise<boolean>;
+
+  /** The booked parcel's courier and codes, for the buyer (D-524). Null before booking. */
+  parcelTracking(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+  ): Promise<{
+    readonly courierName: string;
+    readonly consignmentNo: string | null;
+    readonly trackingCode: string | null;
+  } | null>;
+
   /** The SKUs with the most units delivered in the range, most first (M24). */
   topSkus(
     tx: Tx,
@@ -506,6 +636,8 @@ export class OrdersApiService implements OrdersApi {
     private readonly orders: OrdersService,
     private readonly transitions: TransitionsService,
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
+    private readonly advances: AdvancesService,
+    private readonly courier: CourierBookingRegistry,
   ) {}
 
   async createOrder(
@@ -922,6 +1054,121 @@ export class OrdersApiService implements OrdersApi {
         deliveredCostPoisha: poisha(row.delivered_on === null ? 0n : cost),
       };
     });
+  }
+
+  async buyerIdByPhone(tx: Tx, orgId: string, phoneE164: string): Promise<string | undefined> {
+    return repo.buyerIdByPhone(tx, orgId, phoneE164);
+  }
+
+  async deliveryZoneForArea(
+    tx: Tx,
+    orgId: string,
+    districtId: number,
+    thanaId: number,
+  ): Promise<{ readonly valid: boolean; readonly zoneId: string | null }> {
+    if (!(await repo.areaExists(tx, districtId, thanaId))) return { valid: false, zoneId: null };
+    const zone = await repo.zoneForArea(tx, orgId, districtId, thanaId);
+    return { valid: true, zoneId: zone?.id ?? null };
+  }
+
+  async orderIdByNumber(tx: Tx, orgId: string, orderNo: string): Promise<string | undefined> {
+    return repo.orderIdByNo(tx, orgId, orderNo);
+  }
+
+  async shopperOrders(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+  ): Promise<readonly ShopperOrderFacts[]> {
+    const rows = await repo.shopperOrderRows(tx, orgId, [...new Set(orderIds)]);
+    return rows.map((row) => ({
+      id: row.id,
+      orderNo: row.order_no,
+      channel: row.channel,
+      status: row.status as OrderStatus,
+      customerId: row.customer_id,
+      createdAt: instant(row.created_at) ?? new Date(0),
+      confirmedAt: instant(row.confirmed_at),
+      shippedAt: instant(row.handed_over_at),
+      deliveredAt: instant(row.delivered_at),
+      returnedAt: instant(row.returned_at),
+      cancelledAt: instant(row.cancelled_at),
+      itemsPoisha: BigInt(row.items_poisha),
+      discountPoisha: BigInt(row.discount_poisha),
+      deliveryChargePoisha: BigInt(row.delivery_charge_poisha),
+      advancePaidPoisha: BigInt(row.advance_paid_poisha),
+      codAmountPoisha: BigInt(row.cod_amount_poisha),
+      courierId: row.courier_id,
+      lineCount: row.line_count,
+      unitCount: row.unit_count,
+      shipTo: {
+        name: row.ship_name,
+        phoneE164: row.ship_phone_e164,
+        districtId: row.ship_district_id,
+        thanaId: row.ship_thana_id,
+        districtEn: row.district_en,
+        districtBn: row.district_bn,
+        thanaEn: row.thana_en,
+        thanaBn: row.thana_bn,
+        area: row.ship_area,
+        addressLine: row.ship_address_line,
+      },
+    }));
+  }
+
+  async shopperOrderLines(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+  ): Promise<readonly ShopperOrderLine[]> {
+    const lines = await repo.orderLines(tx, orgId, orderId);
+    return lines.map((line) => ({
+      id: line.id,
+      skuId: line.sku_id,
+      skuCode: line.sku_code,
+      productName: line.product_name,
+      qty: line.qty,
+      unitPricePoisha: BigInt(line.unit_price_poisha),
+      discountPoisha: BigInt(line.discount_poisha),
+    }));
+  }
+
+  async recordGatewayAdvance(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly recordedBy: string; readonly decidedBy: string },
+    input: GatewayAdvanceInput,
+  ): Promise<{ readonly advanceId: string; readonly outcome: 'applied' | 'settled' | 'held' }> {
+    return mapOrderErrors(() => this.advances.recordGatewayAdvance(tx, actor, input));
+  }
+
+  async orderVisibleTo(tx: Tx, orgId: string, orderId: string, request: object): Promise<boolean> {
+    const scope = scopeWhere(request, {
+      createdBy: sql`o.created_by`,
+      assignedTo: sql`o.assigned_to`,
+      branchId: sql`o.branch_id`,
+    });
+    return (await repo.orderByIdInScope(tx, orgId, orderId, scope)) !== undefined;
+  }
+
+  async parcelTracking(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+  ): Promise<{
+    courierName: string;
+    consignmentNo: string | null;
+    trackingCode: string | null;
+  } | null> {
+    const courier = this.courier.current();
+    if (courier === undefined) return null;
+    const parcel = await courier.parcelTracking(tx, orgId, orderId);
+    if (parcel === null) return null;
+    const [party] = await repo.couriersByIds(tx, orgId, [parcel.courierId]);
+    return {
+      courierName: party?.name ?? '',
+      consignmentNo: parcel.consignmentNo,
+      trackingCode: parcel.trackingCode,
+    };
   }
 
   async topSkus(

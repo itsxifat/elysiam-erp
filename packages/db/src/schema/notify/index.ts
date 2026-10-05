@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  customType,
   index,
   integer,
   pgSchema,
@@ -136,6 +137,110 @@ export const notifyMessages = notify.table(
     check(
       'notify_messages_sent_complete',
       sql`(${table.state} = 'sent') = (${table.sentAt} is not null)`,
+    ),
+  ],
+);
+
+// --- M34: email (D-529) ----------------------------------------------------------------------
+
+/** AES-256-GCM ciphertext, sealed and opened only by the server's `sealed-box.ts` (D-528). */
+const sealedBytes = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+  fromDriver: (value) => Buffer.from(value as unknown as Uint8Array),
+  toDriver: (value) => value,
+});
+
+/**
+ * The brand's email server (D-529): the website's codes, password links and order news go out
+ * through it. One row per brand; the password sealed under `STOREFRONT_CREDENTIALS_KEY`
+ * (D-528), never readable from a response, a log or a backup.
+ */
+export const notifyEmailSettings = notify.table(
+  'email_settings',
+  {
+    orgId: uuid('org_id')
+      .primaryKey()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    enabled: boolean('enabled').notNull().default(false),
+    host: text('host').notNull(),
+    port: integer('port').notNull(),
+    /** TLS from the first byte (465); otherwise STARTTLS is required. */
+    secure: boolean('secure').notNull(),
+    username: text('username').notNull().default(''),
+    passwordSealed: sealedBytes('password_sealed'),
+    keyId: text('key_id'),
+    fingerprint: text('fingerprint'),
+    fromName: text('from_name').notNull(),
+    fromEmail: text('from_email').notNull(),
+    updatedBy: text('updated_by').notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    index('notify_email_settings_org_idx').on(table.orgId),
+    check('notify_email_settings_port', sql`${table.port} between 1 and 65535`),
+    check('notify_email_settings_host', sql`${table.host} ~ '^[A-Za-z0-9.-]{1,253}$'`),
+    check(
+      'notify_email_settings_from_email',
+      sql`${table.fromEmail} ~ '^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$'`,
+    ),
+    check(
+      'notify_email_settings_password_complete',
+      sql`(${table.passwordSealed} is null) = (${table.keyId} is null)
+          and (${table.keyId} is null) = (${table.fingerprint} is null)`,
+    ),
+  ],
+);
+
+/**
+ * The email outbox and delivery log (D-529), as `messages` is for SMS.
+ *
+ * Written in the transaction that decides to send it, sent by the `notify.send_email` job with
+ * no transaction open (invariant 6). The rendered body can carry a one-time code or a link, so
+ * it is kept **sealed** and cleared once the email is sent or has failed for good: the row then
+ * says what was sent to whom and when, and nothing a reader could reuse. `dedupe_key` makes an
+ * order's status email once per order and status however often the event is delivered.
+ */
+export const notifyEmails = notify.table(
+  'emails',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    templateKey: text('template_key').notNull(),
+    locale: text('locale').notNull().default('bn'),
+    toEmail: text('to_email').notNull(),
+    subject: text('subject').notNull(),
+    bodySealed: sealedBytes('body_sealed'),
+    state: text('state').notNull().default('queued'),
+    attempts: integer('attempts').notNull().default(0),
+    providerMessageId: text('provider_message_id'),
+    error: text('error'),
+    sentAt: timestamp('sent_at', { withTimezone: true, mode: 'date' }),
+    refType: text('ref_type'),
+    refId: uuid('ref_id'),
+    dedupeKey: text('dedupe_key'),
+    ...timestamps,
+  },
+  (table) => [
+    unique('notify_emails_org_id_id_key').on(table.orgId, table.id),
+    index('notify_emails_org_idx').on(table.orgId),
+    index('notify_emails_org_state_idx').on(table.orgId, table.state, table.createdAt),
+    index('notify_emails_org_ref_idx').on(table.orgId, table.refType, table.refId),
+    uniqueIndex('notify_emails_org_dedupe_idx')
+      .on(table.orgId, table.dedupeKey)
+      .where(sql`${table.dedupeKey} is not null`),
+    check('notify_emails_state', sql`${table.state} in ('queued', 'sent', 'failed', 'skipped')`),
+    check('notify_emails_locale', sql`${table.locale} in ('bn', 'en')`),
+    check('notify_emails_template_key', sql`${table.templateKey} ~ '^[a-z][a-z0-9_.]{2,63}$'`),
+    check(
+      'notify_emails_sent_complete',
+      sql`(${table.state} = 'sent') = (${table.sentAt} is not null)`,
+    ),
+    // A body is held only while the email can still be sent.
+    check(
+      'notify_emails_body_only_while_queued',
+      sql`${table.bodySealed} is null or ${table.state} = 'queued'`,
     ),
   ],
 );

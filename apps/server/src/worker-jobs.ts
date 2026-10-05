@@ -23,11 +23,16 @@ import { MarketingModule } from './modules/marketing/marketing.module.js';
 import { registerMarketingJobs } from './modules/marketing/marketing.worker.js';
 import { MetaJobsService } from './modules/marketing/meta-jobs.service.js';
 import { NotifyModule } from './modules/notify/notify.module.js';
+import { EmailService } from './modules/notify/emails.service.js';
 import { NotifyService } from './modules/notify/notify.service.js';
 import { registerNotifyJobs } from './modules/notify/notify.worker.js';
 import { CrmService } from './modules/orders/crm.service.js';
 import { registerCrmJobs } from './modules/orders/crm.worker.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
+import { OrderMail } from './modules/storefront/order-mail.js';
+import { PaymentsService } from './modules/storefront/payments.service.js';
+import { StorefrontModule } from './modules/storefront/storefront.module.js';
+import { registerStorefrontJobs } from './modules/storefront/storefront.worker.js';
 import type { OutboxDispatcher } from './platform/events/dispatcher.js';
 import { reportJobFailedThroughOutbox } from './platform/jobs/job-failed.js';
 import type { JobsRuntime } from './platform/jobs/jobs.runtime.js';
@@ -60,6 +65,8 @@ export const WORKER_MODULES = [
   HrModule,
   AnalyticsModule,
   LoansModule,
+  // M34: the website's payments, its unpaid-order timer and its order emails.
+  StorefrontModule,
 ] as const;
 
 export interface WorkerJobDependencies {
@@ -92,7 +99,12 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     logger,
   });
   await registerInventoryJobs({ jobs, reconcile: context.get(ReconcileService), report, logger });
-  await registerNotifyJobs({ jobs, notify: context.get(NotifyService), report });
+  await registerNotifyJobs({
+    jobs,
+    notify: context.get(NotifyService),
+    emails: context.get(EmailService),
+    report,
+  });
   await registerCrmJobs({ jobs, crm: context.get(CrmService), report });
   await registerMarketingJobs({ jobs, meta: context.get(MetaJobsService), report });
   // M20: desk events from the outbox, and the target progress recompute they trigger.
@@ -110,6 +122,13 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     report,
   });
   await registerLoansJobs({ jobs, reminders: context.get(LoanRemindersService), report });
+  await registerStorefrontJobs({
+    jobs,
+    dispatcher,
+    payments: context.get(PaymentsService),
+    mail: context.get(OrderMail),
+    report,
+  });
 
   // Every registered queue gets its dead-letter watcher, whether or not this
   // release also registered a handler for the queue itself. A queue with a

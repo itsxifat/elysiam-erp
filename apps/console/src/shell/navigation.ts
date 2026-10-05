@@ -416,6 +416,28 @@ export const PALETTE_PAGES: readonly PalettePage[] = [
     icon: Globe,
     required: { action: 'read', subject: 'Storefront' },
   },
+  // M34: the gateway, the email server and the shoppers' accounts.
+  {
+    to: '/website/payments',
+    labelKey: 'web.nav.payments',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    to: '/website/email',
+    labelKey: 'web.nav.email',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    to: '/website/customers',
+    labelKey: 'web.nav.customers',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
   {
     to: '/orders/queue',
     labelKey: 'orders.nav.queue',

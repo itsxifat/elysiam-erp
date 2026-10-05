@@ -498,7 +498,7 @@ export class StorefrontPublicService {
   }
 
   /** An image as the website is told about it: absolute URLs for each size. */
-  private image(
+  image(
     orgId: string,
     fileId: string,
     alt: string | null,

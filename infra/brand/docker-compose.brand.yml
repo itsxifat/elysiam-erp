@@ -32,6 +32,12 @@ x-server-env: &server-env
   HR_FIELD_KEY: ${BRAND_HR_FIELD_KEY:?}
   COURIER_CREDENTIALS_KEY: ${BRAND_COURIER_CREDENTIALS_KEY:?}
   MARKETING_CREDENTIALS_KEY: ${BRAND_MARKETING_CREDENTIALS_KEY:?}
+  # M34 (D-528): seals the brand's SSLCommerz and email server passwords. Empty keeps
+  # Website → Payments and Email off until it is set (new-brand.sh writes one).
+  STOREFRONT_CREDENTIALS_KEY: ${BRAND_STOREFRONT_CREDENTIALS_KEY:-}
+  STOREFRONT_CREDENTIALS_KEY_ID: ${BRAND_STOREFRONT_CREDENTIALS_KEY_ID:-k1}
+  # A live brand never takes SSLCommerz sandbox payments (D-525): its test cards are public.
+  STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX: ${BRAND_SSLCOMMERZ_ALLOW_SANDBOX:-false}
   INTAKE_KEY_SECRET: ${BRAND_INTAKE_KEY_SECRET:?}
   INTAKE_RATE_LIMIT_STORE: valkey
   # The owner sign-in link's public key (D-473). Empty keeps the feature off.

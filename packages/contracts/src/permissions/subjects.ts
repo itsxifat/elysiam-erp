@@ -113,6 +113,14 @@ export const SUBJECTS = [
    * website moving into the ERP (D-469).
    */
   'Storefront',
+  /**
+   * The website's payment gateway and email server credentials (M34, D-528): where shoppers'
+   * money goes and where password-reset links are sent from. org_admin only: a marketing
+   * user who could point SSLCommerz at another store, or the email server at their own,
+   * could take shoppers' money or their accounts. Showing that they are set up is
+   * `read Storefront`; the secrets are never shown to anyone.
+   */
+  'WebsiteCredentials',
 ] as const;
 
 export type Subject = (typeof SUBJECTS)[number];
@@ -320,6 +328,84 @@ export const STOREFRONT_VISIBLE_FIELDS = [
   'nameBn',
   'districtId',
   'divisionId',
+  // M34: the cart quote and the checkout (D-520, D-521)
+  'quote',
+  'lines',
+  'qty',
+  'unitPrice',
+  'lineTotal',
+  'flashSale',
+  'unavailable',
+  'variantId',
+  'reason',
+  'discounts',
+  'code',
+  'title',
+  'automatic',
+  'amount',
+  'deliveryAmount',
+  'codes',
+  'applied',
+  'discount',
+  'delivery',
+  'deliveryDiscount',
+  'deliverable',
+  'zone',
+  'freeShipping',
+  'order',
+  'orderNo',
+  'status',
+  'viewToken',
+  'payment',
+  'method',
+  'required',
+  // M34: shopper accounts (D-522)
+  'account',
+  'accountId',
+  'requiresVerification',
+  'emailVerified',
+  'locale',
+  'hasPassword',
+  'googleLinked',
+  'addresses',
+  'createdAt',
+  'thanaId',
+  'area',
+  'addressLine',
+  'isDefault',
+  'created',
+  'ok',
+  // M34: the shopper's view of an order (D-524)
+  'placedAt',
+  'statusLabel',
+  'en',
+  'bn',
+  'itemCount',
+  'paymentMethod',
+  'confirmedAt',
+  'shippedAt',
+  'deliveredAt',
+  'cancelledAt',
+  'paid',
+  'dueOnDelivery',
+  'paidOnline',
+  'shipTo',
+  'district',
+  'thana',
+  'tracking',
+  'courier',
+  'trackingCode',
+  // M34: SSLCommerz (D-525)
+  'gatewayUrl',
+  'tranId',
+  'expiresAt',
+  // M34: flash sales (D-548)
+  'subtitle',
+  'startsAt',
+  'endsAt',
+  'showOnHome',
+  'banner',
+  'unitsLeft',
 ] as const;
 
 export type CostField = (typeof COST_FIELDS)[number];

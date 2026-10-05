@@ -10,6 +10,12 @@ import { isMigrationKind, type OpeningPosition } from '@elysium/domain/migration
 import { sql } from 'drizzle-orm';
 
 import { runDemo } from './modules/migration/demo.js';
+import {
+  LegacyCustomersImporter,
+  LegacyCustomersModule,
+  LegacyImportError,
+  type LegacyImportReport,
+} from './modules/storefront/legacy-customers.js';
 import { MigrationError } from './modules/migration/migration.errors.js';
 import { MigrationModule } from './modules/migration/migration.module.js';
 import {
@@ -29,6 +35,7 @@ import {
  *   pnpm migration post      --org <slug> --as-of <YYYY-MM-DD> --approved-by "<accountant>"
  *   pnpm migration reconcile --org <slug> [--out <report.csv>]
  *   pnpm migration sign-off  --org <slug> --by "<accountant>" [--note "<text>"]
+ *   pnpm migration legacy-customers --org <slug> dry-run|commit --file <users.json>   (M34)
  *   pnpm demo:org
  *
  * Kinds, in the order a brand runs them: skus, customers, opening_stock,
@@ -188,8 +195,59 @@ function printReconciliation(report: ReconciliationReport): void {
   );
 }
 
+function printLegacy(report: LegacyImportReport): void {
+  const { counts } = report.plan;
+  print(`Old website customers — ${String(counts.rows)} rows`);
+  print(
+    `  Website accounts: ${String(counts.accounts)} (${String(counts.accountsWithPassword)} with their password, ${String(counts.googleOnly)} without one, ${String(counts.verified)} verified)`,
+  );
+  print(`  Buyers by phone: ${String(counts.buyers)}`);
+  print(
+    `  Left out: ${String(counts.staff)} staff, ${String(counts.duplicates)} duplicate emails, ${String(counts.alreadyImported)} already here, ${String(counts.invalid)} with no email or phone`,
+  );
+  const notes = [...report.plan.skipped, ...report.plan.warnings].sort((a, b) => a.row - b.row);
+  for (const note of notes.slice(0, 200)) print(`  row ${String(note.row)}: ${note.reason}`);
+  if (notes.length > 200) print(`  … and ${String(notes.length - 200)} more.`);
+  print(
+    report.written === null
+      ? '  Dry run: nothing was written.'
+      : `  Committed: ${String(report.written.accounts)} accounts and ${String(report.written.buyers)} buyers.`,
+  );
+}
+
+/** `pnpm migration legacy-customers --org <slug> dry-run|commit --file <users.json>` (M34, D-531). */
+async function legacyCustomers(args: readonly string[]): Promise<void> {
+  const mode = args.includes('commit') ? 'commit' : args.includes('dry-run') ? 'dry-run' : null;
+  if (mode === null) {
+    throw new MigrationError('MIGRATION_IMPORT_REJECTED', 'Say dry-run or commit.');
+  }
+  const orgId = await orgBySlug(required(args, 'org'));
+  const text = await readFile(fromCaller(required(args, 'file')), 'utf8');
+  const context = await NestFactory.createApplicationContext(LegacyCustomersModule, {
+    logger: false,
+    abortOnError: false,
+  });
+  try {
+    const importer = context.get(LegacyCustomersImporter);
+    printLegacy(
+      mode === 'commit' ? await importer.commit(orgId, text) : await importer.dryRun(orgId, text),
+    );
+  } catch (error) {
+    if (error instanceof LegacyImportError) {
+      throw new MigrationError('MIGRATION_IMPORT_REJECTED', error.message);
+    }
+    throw error;
+  } finally {
+    await context.close();
+  }
+}
+
 async function main(argv: readonly string[]): Promise<void> {
   const [command, ...args] = argv;
+  if (command === 'legacy-customers') {
+    await legacyCustomers(args);
+    return;
+  }
   const context = await NestFactory.createApplicationContext(MigrationModule, {
     logger: false,
     abortOnError: false,

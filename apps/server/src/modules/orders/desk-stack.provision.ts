@@ -133,6 +133,9 @@ async function create(): Promise<void> {
     // M38a: an org admin for barcodes.stack.ts (stock in hand, stickers, the scanner), its
     // own for the same reason as the merchandiser's.
     { label: 'stocker', grants: [{ orgId, role: 'org_admin' }] },
+    // M34: an org admin of its own for Website → Payments and Email (website-buying.stack.ts),
+    // the only role that may change the website's credentials (D-528).
+    { label: 'webadmin', grants: [{ orgId, role: 'org_admin' }] },
   ];
 
   const users: { role: string; email: string; userId: string }[] = [];

@@ -465,6 +465,40 @@ export const ERROR_CODES = [
   /** A size chart that products still point at. */
   'STOREFRONT_IN_USE',
 
+  // Buying on the website (M34, D-520 to D-539)
+  /** A figure moved between the quote the shopper saw and the checkout; the body has the new quote. */
+  'CART_REPRICED',
+  /** The web locations cannot hold every line any more; the body names the lines. */
+  'OUT_OF_STOCK',
+  /** The website does not ship to that address (its district and thana fall in no zone it serves). */
+  'CART_NOT_DELIVERABLE',
+  /** That way of paying is switched off for this website, or not set up. */
+  'PAYMENT_METHOD_UNAVAILABLE',
+  /** The order is not waiting for an online payment: paid, cancelled or cash on delivery. */
+  'PAYMENT_NOT_PAYABLE',
+  /** The payment gateway did not answer, or refused to open a session. Nothing was charged. */
+  'PAYMENT_GATEWAY_FAILED',
+  /** An account already uses that email address. */
+  'ACCOUNT_EXISTS',
+  /** No account with that email and password; one sentence for both (D-522). */
+  'ACCOUNT_CREDENTIALS_INVALID',
+  /** The account's email address is not verified yet. */
+  'ACCOUNT_EMAIL_UNVERIFIED',
+  /** A wrong, used, expired or burnt email code, or a reset link that is not live. */
+  'ACCOUNT_CODE_INVALID',
+  /** No such shopper account in this brand. */
+  'ACCOUNT_NOT_FOUND',
+  /** The account signs in with Google only and has no password to change. */
+  'ACCOUNT_NO_PASSWORD',
+  /** That email's account is linked to a different Google login. */
+  'ACCOUNT_GOOGLE_CONFLICT',
+  /** STOREFRONT_CREDENTIALS_KEY is not set, so gateway and email credentials cannot be kept. */
+  'WEBSITE_CREDENTIALS_MISSING',
+  /** The brand's email server is not set up or is switched off. */
+  'EMAIL_NOT_CONFIGURED',
+  /** The email server refused or did not answer. */
+  'EMAIL_SEND_FAILED',
+
   // Staff accounts and sign-in (gaps-users-auth, D-400 to D-409)
   /** No such person holds or held a role in this organization. */
   'USER_NOT_FOUND',

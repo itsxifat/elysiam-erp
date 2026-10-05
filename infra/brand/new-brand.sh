@@ -98,7 +98,7 @@ mkdir -p "$DIR/$SLUG"
         echo "${line}$(hex 24)" ;;
       BRAND_AUTH_SECRET=|BRAND_INTAKE_KEY_SECRET=) echo "${line}$(hex 32)" ;;
       # 32 bytes of base64, which the field-encryption keys require.
-      BRAND_HR_FIELD_KEY=|BRAND_COURIER_CREDENTIALS_KEY=|BRAND_MARKETING_CREDENTIALS_KEY=)
+      BRAND_HR_FIELD_KEY=|BRAND_COURIER_CREDENTIALS_KEY=|BRAND_MARKETING_CREDENTIALS_KEY=|BRAND_STOREFRONT_CREDENTIALS_KEY=)
         echo "${line}$(b64 32)" ;;
       *) echo "$line" ;;
     esac

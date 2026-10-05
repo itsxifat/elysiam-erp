@@ -14,7 +14,7 @@ import { ArrowLeft, Cake, Heart } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
-import { useAbility } from '../../auth/session.js';
+import { useAbility, useOrgWide } from '../../auth/session.js';
 import { useLocale } from '../../i18n/locale.js';
 import { paramOf } from '../courier/courier-nav.js';
 import { isOrdersKey, useOrdersT } from '../orders/messages.js';
@@ -23,6 +23,7 @@ import { buyerProfile, updateOccasions, type BuyerProfile } from './api.js';
 import { customersPath } from './customers-nav.js';
 import { isCustomersKey, useCustomersT } from './messages.js';
 import { DatePicker } from '../../ui/date-picker.js';
+import { listAccounts } from '../website/api.js';
 
 /** A birthday or an anniversary can be decades back: the calendar lists the years. */
 const OCCASION_YEARS = { from: 1930, to: new Date().getUTCFullYear() } as const;
@@ -234,8 +235,55 @@ function ProfileBody({ profile }: { readonly profile: BuyerProfile }) {
         </Panel>
       </div>
 
+      <WebsiteAccounts customerId={customer.id} />
+
       <RecentOrders profile={profile} />
     </>
+  );
+}
+
+/**
+ * The website accounts linked to this buyer (M34, D-533), for those who see every buyer (the
+ * accounts list's own rule, ledger audit W6). Linked by phone; an account is the shopper's, so
+ * the desk only reads it.
+ */
+function WebsiteAccounts({ customerId }: { readonly customerId: string }) {
+  const t = useCustomersT();
+  const ability = useAbility();
+  const orgWide = useOrgWide();
+  const allowed = ability.can('read', 'Storefront') && orgWide('read', 'Customer');
+  const accounts = useQuery({
+    queryKey: ['customers', customerId, 'website-accounts'],
+    queryFn: () => listAccounts({ customerId }),
+    enabled: allowed,
+  });
+  if (!allowed || accounts.data === undefined) return null;
+  return (
+    <Panel title={t('customers.web.title')}>
+      {accounts.data.items.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-muted-foreground">{t('customers.web.none')}</p>
+      ) : (
+        <ul className="divide-y divide-border text-sm">
+          {accounts.data.items.map((account) => (
+            <li
+              key={account.id}
+              className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+            >
+              <span className="break-all">{account.email}</span>
+              <StatusBadge tone={account.emailVerified ? 'success' : 'warning'}>
+                {account.emailVerified
+                  ? t('customers.web.verified')
+                  : t('customers.web.unverified')}
+              </StatusBadge>
+              <span className="text-xs text-muted-foreground">
+                {t('customers.web.lastSignIn')}{' '}
+                {account.lastSignInAt === null ? '—' : <DateTime value={account.lastSignInAt} />}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
   );
 }
 

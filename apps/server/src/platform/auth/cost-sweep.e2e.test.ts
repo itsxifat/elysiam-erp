@@ -61,8 +61,11 @@ import {
   prepareStorefrontFixtures,
   STOREFRONT_PUBLIC_FIXTURES,
   STOREFRONT_ROUTE_FIXTURES,
+  loadFixtureSku,
+  STOREFRONT_PUBLIC_WRITE_FIXTURES,
   storefrontTestKey,
 } from '../../modules/storefront/storefront.route-fixtures.js';
+import { signStorefront } from '../../modules/storefront/signature.js';
 import { signedGet } from '../../modules/storefront/storefront.testing.js';
 import {
   ORG_A,
@@ -396,4 +399,65 @@ describe('invariant 5, across the storefront API', () => {
     }
     expect(problems).toEqual([]);
   }, 120_000);
+
+  /*
+   * M34's signed writes: the quote, the checkout, the accounts and the payment routes. A write
+   * may be refused (a code that is wrong, an order that cannot be paid online), so each must
+   * answer below 500, and no answer, a success or a refusal, may carry a cost field.
+   */
+  function storefrontWrites(): string[] {
+    return describeRoutes(harness.app)
+      .filter(
+        (route) =>
+          (route.method === 'POST' || route.method === 'PATCH') &&
+          route.path.startsWith('/storefront/v1/'),
+      )
+      .map(routeKey)
+      .sort();
+  }
+
+  it('has a fixture for every signed write route', () => {
+    const live = storefrontWrites();
+    expect(live.length).toBeGreaterThanOrEqual(13);
+    expect(live.filter((key) => STOREFRONT_PUBLIC_WRITE_FIXTURES[key] === undefined)).toEqual([]);
+  });
+
+  it('sends the website no cost field from any write, accepted or refused', async () => {
+    await loadFixtureSku();
+    const key = await storefrontTestKey();
+    const problems: string[] = [];
+    for (const route of storefrontWrites()) {
+      const fixture = STOREFRONT_PUBLIC_WRITE_FIXTURES[route]?.();
+      if (fixture === undefined) continue;
+      const raw = Buffer.from(JSON.stringify(fixture.body), 'utf8');
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const idempotencyKey = `sweep-${route.length.toString()}-${timestamp}-${Math.random().toString(36).slice(2)}`;
+      const response = await harness.server.inject({
+        method: fixture.method,
+        url: fixture.path,
+        headers: {
+          'x-api-key': key.keyId,
+          'x-api-timestamp': timestamp,
+          'x-api-signature': signStorefront(key.secret, {
+            timestamp,
+            method: fixture.method,
+            pathAndQuery: fixture.path,
+            idempotencyKey,
+            rawBody: raw,
+          }),
+          'idempotency-key': idempotencyKey,
+          'content-type': 'application/json',
+        },
+        payload: raw,
+      });
+      if (response.statusCode >= 500) {
+        problems.push(`${route}: ${String(response.statusCode)} ${response.body.slice(0, 200)}`);
+        continue;
+      }
+      const parsed: unknown = JSON.parse(response.body);
+      const leaks = [...findCostFields(parsed), ...suspectKeys(parsed)];
+      if (leaks.length > 0) problems.push(`${route}: ${leaks.slice(0, 5).join(', ')}`);
+    }
+    expect(problems).toEqual([]);
+  }, 180_000);
 });

@@ -328,6 +328,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'update'], subject: 'Dashboard', scope: 'org' },
     // M33 (D-508): the brand's website: settings, hero, menu, size charts, web fields, keys.
     { action: ['read', 'create', 'update', 'delete'], subject: 'Storefront', scope: 'org' },
+    // M34 (D-528): the website's SSLCommerz and email server credentials, org_admin only.
+    { action: ['read', 'update'], subject: 'WebsiteCredentials', scope: 'org' },
     /*
      * §22's files. The grant is coarse and the row check is not (D-115).
      *

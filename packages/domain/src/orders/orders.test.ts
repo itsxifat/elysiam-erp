@@ -12,6 +12,7 @@ import {
   TERMINAL_STATUSES,
   TRANSITIONS,
   canTransition,
+  holdsStock,
   transition,
   transitionFor,
   triggersFrom,
@@ -814,5 +815,86 @@ describe('flash units go back on a cancel and on a received return (M35a, D-542)
         row.effects.includes('release_flash_units'),
     );
     expect(elsewhere).toEqual([]);
+  });
+});
+
+describe('a website order holds its stock from the checkout (M34, D-532)', () => {
+  it('does not reserve again on confirm, and releases on a pending cancel', () => {
+    expect(
+      transition({ from: 'pending', trigger: 'confirm', at: AT, stockHeld: true }).effects,
+    ).toEqual([]);
+    expect(transition({ from: 'pending', trigger: 'confirm', at: AT }).effects).toEqual([
+      'reserve_stock',
+    ]);
+    const heldCancel = transition({
+      from: 'pending',
+      trigger: 'cancel',
+      at: AT,
+      reason: 'unpaid',
+      stockHeld: true,
+    });
+    expect(heldCancel.effects).toEqual([
+      'release_reservation',
+      'release_promo',
+      'release_flash_units',
+      'settle_advances',
+    ]);
+    const plainCancel = transition({ from: 'pending', trigger: 'cancel', at: AT, reason: 'dup' });
+    expect(plainCancel.effects).not.toContain('release_reservation');
+  });
+
+  it('leaves every other transition as it was, held or not', () => {
+    for (const entry of TRANSITIONS) {
+      if (entry.from === 'pending') continue;
+      const args = {
+        from: entry.from,
+        trigger: entry.trigger,
+        at: AT,
+        reason: 'property',
+        returnReason: 'other',
+      } as const;
+      expect(transition({ ...args, stockHeld: true }).effects).toEqual(transition(args).effects);
+    }
+  });
+
+  /**
+   * Reserve once, release once: along any walk of the machine from `pending`, a held order is
+   * reserved exactly once (at the checkout, or never again) and released at most once, and
+   * never released without having been reserved.
+   */
+  it('property: a held order is reserved once and released at most once on any walk', () => {
+    fc.assert(
+      fc.property(
+        fc.boolean(),
+        fc.array(fc.constantFrom<OrderTrigger>(...ORDER_TRIGGERS), { maxLength: 30 }),
+        (held, triggers) => {
+          let status: OrderStatus = 'pending';
+          let reserved = held ? 1 : 0;
+          let released = 0;
+          for (const trigger of triggers) {
+            if (transitionFor(status, trigger) === undefined) continue;
+            const result = transition({
+              from: status,
+              trigger,
+              at: AT,
+              reason: 'property',
+              returnReason: 'other',
+              stockHeld: held,
+            });
+            if (result.effects.includes('reserve_stock')) reserved += 1;
+            if (result.effects.includes('release_reservation')) released += 1;
+            status = result.to;
+            expect(released).toBeLessThanOrEqual(reserved);
+          }
+          expect(reserved).toBeLessThanOrEqual(1);
+          expect(released).toBeLessThanOrEqual(1);
+          expect(holdsStock(status, held)).toBe(
+            reserved === 1 &&
+              released === 0 &&
+              ['pending', 'confirmed', 'on_hold', 'packed'].includes(status),
+          );
+        },
+      ),
+    );
   });
 });

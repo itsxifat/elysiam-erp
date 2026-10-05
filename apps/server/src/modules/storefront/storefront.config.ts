@@ -38,6 +38,44 @@ const schema = z.object({
     .url()
     .transform((value) => value.replace(/\/+$/, ''))
     .optional(),
+
+  // --- M34: buying (D-520 to D-539) ---------------------------------------------------------
+
+  /** How long the payment route waits for the worker to open an SSLCommerz session (D-525). */
+  STOREFRONT_GATEWAY_WAIT_MS: z.coerce.number().int().min(1_000).max(60_000).default(15_000),
+  /** How long one call to SSLCommerz may take before it counts as failed. */
+  STOREFRONT_GATEWAY_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(10_000),
+  /** `fake` answers from a recorder (tests); `sslcommerz` is the real gateway (UNVERIFIED). */
+  STOREFRONT_SSLCOMMERZ_PROVIDER: z.enum(['sslcommerz', 'fake']).default('sslcommerz'),
+  /**
+   * Whether a brand's SSLCommerz **sandbox** store may take payments on this installation (M34
+   * ledger audit C1). Off: a sandbox store is never offered and a sandbox payment is never
+   * booked, because SSLCommerz's test cards are public. On only for a staging or preview server
+   * and the tests, where the whole flow is tried before a brand goes live.
+   */
+  STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  /** The ERP's public address SSLCommerz posts its IPN to; `API_PUBLIC_URL` when unset. */
+  STOREFRONT_IPN_BASE_URL: z
+    .string()
+    .url()
+    .transform((value) => value.replace(/\/+$/, ''))
+    .optional(),
+  /** Shopper sign-in tries per shopper address and per email, per ten minutes (D-534). */
+  STOREFRONT_SIGN_IN_PER_10_MINUTES: z.coerce.number().int().min(1).max(1_000).default(8),
+  /** Email codes sent per address per fifteen minutes (D-522). */
+  STOREFRONT_CODE_SENDS_PER_15_MINUTES: z.coerce.number().int().min(1).max(100).default(4),
+  /** Registrations, resets and code checks per shopper address per fifteen minutes. */
+  STOREFRONT_ACCOUNT_WRITES_PER_15_MINUTES: z.coerce.number().int().min(1).max(10_000).default(20),
+  /** How long an unpaid SSLCommerz order holds its stock before it is cancelled (D-527). */
+  STOREFRONT_UNPAID_ORDER_MINUTES: z.coerce
+    .number()
+    .int()
+    .min(5)
+    .max(24 * 60)
+    .default(60),
 });
 
 export type StorefrontConfig = z.infer<typeof schema>;

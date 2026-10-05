@@ -54,6 +54,20 @@ export interface CourierBookingPort {
     input: { orderId: string; courierId?: string | null },
   ): Promise<unknown>;
 
+  /**
+   * The parcel's courier and the codes a buyer can track it by, once it is booked (M34: the
+   * website's "shipped" email and order view, D-524). Null while nothing is booked.
+   */
+  parcelTracking(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+  ): Promise<{
+    readonly courierId: string;
+    readonly consignmentNo: string | null;
+    readonly trackingCode: string | null;
+  } | null>;
+
   /** Enqueue a cancellation with the courier, in the caller's transaction. */
   cancelConsignment(
     tx: Tx,

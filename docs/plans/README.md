@@ -94,7 +94,7 @@ One ERP per brand, the mother ERP, and each brand's website run from its ERP. Ov
 | M31  | One ERP per brand (brand edition)             | done (merged 2954f50)                      |
 | M32  | The mother ERP                                | paused at about 70% (`m32-mother`)         |
 | M33  | Website catalog and content from the ERP      | done (merged faf12bd)                      |
-| M34  | Website buying: checkout, accounts, payment   | being built                                |
+| M34  | Website buying: checkout, accounts, payment   | built (branch `m34-buying`)                |
 | M35  | Website offers, landing pages, tracking, ncom | M35a done (merged 4e500db), M35b planned   |
 | M36  | New Elysium website on the ERP                | planned (starts empty; optional customers) |
 | M37  | Go live: brand servers, mother, switch-over   | planned                                    |

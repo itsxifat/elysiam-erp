@@ -21,4 +21,19 @@ export const NOTIFY_SEND_QUEUE: QueueDefinition = {
   expireInSeconds: 60,
 };
 
-export const NOTIFY_QUEUES: readonly QueueDefinition[] = [NOTIFY_SEND_QUEUE];
+/**
+ * One email, sent (M34, D-529). Retried by pg-boss on a timeout or a 4xx; the service records
+ * a refusal the server names, and the third failure, as failed for good.
+ */
+export const NOTIFY_SEND_EMAIL_QUEUE: QueueDefinition = {
+  name: 'notify.send_email',
+  scope: 'org',
+  retryLimit: 3,
+  retryDelaySeconds: 60,
+  expireInSeconds: 120,
+};
+
+export const NOTIFY_QUEUES: readonly QueueDefinition[] = [
+  NOTIFY_SEND_QUEUE,
+  NOTIFY_SEND_EMAIL_QUEUE,
+];

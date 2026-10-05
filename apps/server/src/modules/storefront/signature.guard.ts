@@ -9,10 +9,12 @@ import { withOrg } from '@elysium/db';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Logger } from 'pino';
 
+import { IDEMPOTENCY_HEADER } from '../../platform/http/idempotency.js';
 import type { RateLimitStore } from '../../platform/http/rate-limit.js';
 import { createLogger } from '../../platform/logging/logger.js';
 import { STOREFRONT_CONFIG, type StorefrontConfig } from './storefront.config.js';
 import { notAuthenticated, StorefrontError } from './storefront.errors.js';
+import { storefrontRawBodyOf } from './raw-body.js';
 import * as repo from './storefront.repository.js';
 import {
   deriveStorefrontSecret,
@@ -32,7 +34,14 @@ const SITE = Symbol('storefront:site');
 export interface StorefrontSite {
   readonly orgId: string;
   readonly siteKeyId: string;
+  /** A write's `Idempotency-Key`, as signed; empty when none was sent (M34). */
+  readonly idempotencyKey: string;
+  /** A write's raw body, as signed (M34); undefined for a read. */
+  readonly rawBody: Buffer | undefined;
 }
+
+/** The methods the storefront API takes: reads, and M34's signed writes. */
+const WRITES: ReadonlySet<string> = new Set(['POST', 'PATCH']);
 
 type WithSite = FastifyRequest & { [SITE]?: StorefrontSite };
 
@@ -61,8 +70,9 @@ function header(request: FastifyRequest, name: string): string {
  * 3. **The key's own limit**, generous: one website is one key.
  * 4. The key's `last_used_at`, at most every five minutes.
  *
- * Reads only (`GET`) until M34 adds writes, which will sign the idempotency key and the raw
- * body as well (`signature.ts`). Anything else is refused here rather than half-verified.
+ * Reads (`GET`) sign the method, path and query; writes (`POST`, `PATCH`, M34) sign the
+ * `Idempotency-Key` and the raw body bytes as well (`signature.ts`; the bytes are kept by
+ * `raw-body.ts`). Anything else is refused here rather than half-verified.
  */
 @Injectable()
 export class StorefrontSignatureGuard implements CanActivate {
@@ -108,7 +118,11 @@ export class StorefrontSignatureGuard implements CanActivate {
         'The storefront API is not configured on this server.',
       );
     }
-    if (request.method !== 'GET') throw this.refuse('not a read');
+    const write = WRITES.has(request.method);
+    if (request.method !== 'GET' && !write) throw this.refuse('not a read or a write');
+    const rawBody = write ? storefrontRawBodyOf(request) : undefined;
+    if (write && rawBody === undefined) throw this.refuse('a write with no body to verify');
+    const idempotencyKey = write ? header(request, IDEMPOTENCY_HEADER).trim() : '';
 
     const keyId = header(request, KEY_HEADER);
     const timestamp = header(request, TIMESTAMP_HEADER);
@@ -132,6 +146,7 @@ export class StorefrontSignatureGuard implements CanActivate {
         timestamp,
         method: request.method,
         pathAndQuery: request.url,
+        ...(rawBody === undefined ? {} : { idempotencyKey, rawBody }),
       })
     ) {
       throw this.refuse('signature mismatch');
@@ -139,7 +154,7 @@ export class StorefrontSignatureGuard implements CanActivate {
 
     await this.limit(`key:${site.id}`, this.config.STOREFRONT_RATE_KEY_PER_MINUTE);
     await withOrg({ orgId }, (tx) => repo.touchSiteKey(tx, orgId, site.id));
-    return { orgId, siteKeyId: site.id };
+    return { orgId, siteKeyId: site.id, idempotencyKey, rawBody };
   }
 
   private refuse(reason: string): StorefrontError {

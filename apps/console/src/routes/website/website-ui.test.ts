@@ -1,4 +1,10 @@
-import { defineAbilityFor, type MembershipRole } from '@elysium/contracts';
+import {
+  defineAbilityFor,
+  effectiveScope,
+  type Action,
+  type MembershipRole,
+  type Subject,
+} from '@elysium/contracts';
 import { describe, expect, it } from 'vitest';
 
 import { NAVIGATION } from '../../shell/navigation.js';
@@ -15,15 +21,23 @@ function ability(role: MembershipRole) {
   });
 }
 
+const orgWide = (role: MembershipRole) => (action: Action, subject: Subject) =>
+  effectiveScope([role], action, subject) === 'org';
+
 describe('the Website section (M33)', () => {
   it('opens for org_admin, marketing and sales, and for nobody else', () => {
-    for (const role of ['org_admin', 'marketing', 'sales'] as const) {
-      expect(visibleWebsiteTabs(ability(role)).map((tab) => tab.path)).toEqual(
+    for (const role of ['org_admin', 'marketing'] as const) {
+      expect(visibleWebsiteTabs(ability(role), orgWide(role)).map((tab) => tab.path)).toEqual(
         WEBSITE_TABS.map((tab) => tab.path),
       );
     }
+    // Sales reads the website, but its own-scope reach of buyers cannot list every shopper
+    // (M34 ledger audit W6).
+    expect(visibleWebsiteTabs(ability('sales'), orgWide('sales')).map((tab) => tab.path)).toEqual(
+      WEBSITE_TABS.map((tab) => tab.path).filter((path) => path !== '/website/customers'),
+    );
     for (const role of ['accounts', 'hr', 'warehouse', 'branch_manager', 'reseller'] as const) {
-      expect(visibleWebsiteTabs(ability(role))).toEqual([]);
+      expect(visibleWebsiteTabs(ability(role), orgWide(role))).toEqual([]);
     }
   });
 

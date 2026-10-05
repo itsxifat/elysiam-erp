@@ -28,7 +28,8 @@ export type StackRole =
   | 'admin2'
   | 'locked'
   | 'merchandiser'
-  | 'stocker';
+  | 'stocker'
+  | 'webadmin';
 
 export function user(role: StackRole) {
   const found = stack().users.find((entry) => entry.role === role);

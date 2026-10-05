@@ -56,6 +56,13 @@ export function setServerTestEnv(overrides: TestEnvOverrides = {}): void {
   process.env.COURIER_CREDENTIALS_KEY ??= Buffer.alloc(32, 7).toString('base64');
   // M18: sealing a brand's Meta token, as the courier key seals courier credentials.
   process.env.MARKETING_CREDENTIALS_KEY ??= Buffer.alloc(32, 9).toString('base64');
+  // M34: the website's SSLCommerz and email server credentials, and queued email bodies.
+  process.env.STOREFRONT_CREDENTIALS_KEY ??= Buffer.alloc(32, 11).toString('base64');
+  // M34: emails are recorded, never sent, in a test.
+  process.env.NOTIFY_EMAIL_PROVIDER ??= 'fake';
+  process.env.STOREFRONT_SSLCOMMERZ_PROVIDER ??= 'fake';
+  // The tests pay through a sandbox store, as a staging server would (ledger audit C1).
+  process.env.STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX ??= 'true';
 }
 
 /**
