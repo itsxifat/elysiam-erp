@@ -9,6 +9,7 @@ import {
   ChartLine,
   ClipboardList,
   Cog,
+  Globe,
   Handshake,
   Landmark,
   LayoutDashboard,
@@ -159,6 +160,16 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.campaigns',
         icon: Megaphone,
         required: { action: 'read', subject: 'Campaign' },
+      },
+      /*
+       * M33. The brand's website, run from its ERP (D-508): `read Storefront` — org_admin and
+       * marketing manage it, sales reads it. A sales channel, so it sits with the selling.
+       */
+      {
+        to: '/website',
+        labelKey: 'nav.website',
+        icon: Globe,
+        required: { action: 'read', subject: 'Storefront' },
       },
     ],
   },
@@ -379,6 +390,35 @@ export interface PalettePage {
 }
 
 export const PALETTE_PAGES: readonly PalettePage[] = [
+  // M33: the Website section's screens.
+  {
+    to: '/website/hero',
+    labelKey: 'web.nav.hero',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    to: '/website/menu',
+    labelKey: 'web.nav.menu',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    to: '/website/size-charts',
+    labelKey: 'web.nav.sizeCharts',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    to: '/website/connection',
+    labelKey: 'web.nav.connection',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
   {
     to: '/orders/queue',
     labelKey: 'orders.nav.queue',

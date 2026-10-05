@@ -49,6 +49,7 @@ import {
   type VariantInfo,
 } from './stock-actions.js';
 import { total } from './variant-grid.js';
+import { WebsiteCard } from './website-card.js';
 
 /**
  * One product, and everything done to it (plan `catalog-stock-ux`, D-420).
@@ -252,6 +253,17 @@ export function CatalogProductPage() {
           <AddVariants productId={productId} product={data} onDone={refresh} />
           <Photos productId={productId} images={data?.images ?? []} onDone={refresh} />
         </PermissionGate>
+
+        {data === undefined ? null : (
+          <PermissionGate allowed={ability.can('read', 'Storefront')}>
+            <WebsiteCard
+              // Starts again from the product as saved, after every save or rename.
+              key={`${data.slug}:${JSON.stringify(data.web)}`}
+              product={data}
+              onDone={refresh}
+            />
+          </PermissionGate>
+        )}
 
         <PermissionGate allowed={mayStock}>
           <StockHistory productId={productId} variants={variants} />
@@ -937,7 +949,7 @@ function EditProductDialog({
         <Field label={t('cs.description')}>
           <textarea
             value={description}
-            maxLength={4000}
+            maxLength={20000}
             rows={3}
             onChange={(event) => setDescription(event.target.value)}
             className={cn(controlClassName, 'h-auto w-full py-2')}

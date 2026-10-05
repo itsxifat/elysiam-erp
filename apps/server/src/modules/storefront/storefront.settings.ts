@@ -80,6 +80,7 @@ export function defaultSettings(input: {
       phone: '',
       email: '',
       address: '',
+      siteUrl: '',
     },
     social: { facebook: '', instagram: '', tiktok: '', youtube: '' },
     announcement: { enabled: false, text: '', link: '' },

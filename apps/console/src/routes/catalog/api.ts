@@ -73,6 +73,32 @@ export interface CatalogProduct {
     readonly position: number;
     readonly altText: string | null;
   }[];
+  /** The website's fields (M33, D-500), for the product page's Website card. */
+  readonly web: ProductWebFields;
+}
+
+export interface ProductWebFields {
+  readonly webVisible: boolean;
+  readonly featured: boolean;
+  readonly newArrival: boolean;
+  readonly gender: string | null;
+  readonly material: string | null;
+  readonly careInstructions: string | null;
+  readonly tags: readonly string[];
+  readonly sizeChartId: string | null;
+  readonly seoTitle: string | null;
+  readonly seoDescription: string | null;
+  /** Old addresses that still lead here, newest first. */
+  readonly previousSlugs: readonly string[];
+}
+
+/** A category's website fields (M33, D-501). */
+export interface CategoryWebFields {
+  readonly webVisible: boolean;
+  readonly featured: boolean;
+  readonly gender: string | null;
+  readonly description: string | null;
+  readonly imageFileId: string | null;
 }
 
 export interface CatalogCategory {
@@ -85,6 +111,7 @@ export interface CatalogCategory {
   readonly depth: number;
   readonly position: number;
   readonly isActive: boolean;
+  readonly web: CategoryWebFields;
 }
 
 export interface CatalogAttribute {

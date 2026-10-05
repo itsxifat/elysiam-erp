@@ -119,6 +119,8 @@ export const siteInfoSchema = z
       z.string().trim().max(200).email('That is not an email address.'),
     ]),
     address: text(300),
+    /** The website's own address, for the console's "View on website" links. */
+    siteUrl: httpsLink,
   })
   .strict();
 export type SiteInfo = z.infer<typeof siteInfoSchema>;
