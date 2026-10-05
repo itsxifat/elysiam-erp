@@ -14,7 +14,7 @@ import { ArrowLeft, Cake, Heart } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
-import { useAbility } from '../../auth/session.js';
+import { useAbility, useOrgWide } from '../../auth/session.js';
 import { useLocale } from '../../i18n/locale.js';
 import { paramOf } from '../courier/courier-nav.js';
 import { isOrdersKey, useOrdersT } from '../orders/messages.js';
@@ -243,13 +243,15 @@ function ProfileBody({ profile }: { readonly profile: BuyerProfile }) {
 }
 
 /**
- * The website accounts linked to this buyer (M34, D-533), for those who read the website.
- * Linked by phone; an account is the shopper's, so the desk only reads it.
+ * The website accounts linked to this buyer (M34, D-533), for those who see every buyer (the
+ * accounts list's own rule, ledger audit W6). Linked by phone; an account is the shopper's, so
+ * the desk only reads it.
  */
 function WebsiteAccounts({ customerId }: { readonly customerId: string }) {
   const t = useCustomersT();
   const ability = useAbility();
-  const allowed = ability.can('read', 'Storefront');
+  const orgWide = useOrgWide();
+  const allowed = ability.can('read', 'Storefront') && orgWide('read', 'Customer');
   const accounts = useQuery({
     queryKey: ['customers', customerId, 'website-accounts'],
     queryFn: () => listAccounts({ customerId }),

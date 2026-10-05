@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import { withOrg, withSystem } from '@elysium/db';
+import { DEFAULT_ADVANCE_POLICY, subtypeInfo } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 import pino from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -27,10 +28,12 @@ import {
   trialBalanceDifference,
 } from '../orders/orders.testing.js';
 import { PROMO_API, type PromoApi } from '../promo/promo.api.js';
+import { WALLETS_API, type WalletsApi } from '../wallets/wallets.api.js';
 import { OrderMail } from './order-mail.js';
-import { PaymentsService } from './payments.service.js';
+import { PaymentsService, SSLCOMMERZ_WALLET } from './payments.service.js';
 import { PAYMENT_GATEWAY, FakePaymentGateway } from './sslcommerz.gateway.js';
 import { signStorefront } from './signature.js';
+import { STOREFRONT_CONFIG, type StorefrontConfig } from './storefront.config.js';
 import { STOREFRONT_QUEUE_DEFINITIONS, STOREFRONT_QUEUES } from './storefront.queues.js';
 import { insertTestSiteKey, type TestSiteKey } from './storefront.testing.js';
 
@@ -634,7 +637,8 @@ describe('SSLCommerz (check 3, D-525, D-526)', () => {
     });
   });
 
-  it('refuses and logs a payment whose validated amount differs from the order’s', async () => {
+  it('refuses and logs a payment whose validated amount differs, and books the money owed back', async () => {
+    const before = await balancesBySubtype(ORG_A);
     const order = await sslOrder();
     gateway.validations.set('VAL-SHORT', {
       status: 'VALID',
@@ -654,14 +658,23 @@ describe('SSLCommerz (check 3, D-525, D-526)', () => {
       where org_id = ${ORG_A} and tran_id = ${order.tranId}
     `);
     expect(session).toEqual({ status: 'refused', failure_reason: 'amount_mismatch' });
-    const advances = await one<{ n: number }>(sql`
-      select count(*)::int as n from sales.order_advances where org_id = ${ORG_A} and order_id = ${order.orderId}
+    // Ledger audit W3: the ৳10 SSLCommerz took is booked into the clearing wallet and owed
+    // back at once, never applied to the order.
+    const advances = await one<{ n: number; status: string; amount: string; kept: string }>(sql`
+      select count(*) over ()::int as n, status, amount_poisha::text as amount, kept_poisha::text as kept
+      from sales.order_advances where org_id = ${ORG_A} and order_id = ${order.orderId}
     `);
-    expect(advances?.n).toBe(0);
-    const cod = await one<{ cod: string }>(sql`
-      select cod_amount_poisha::text as cod from sales.orders where org_id = ${ORG_A} and id = ${order.orderId}
+    expect(advances).toEqual({ n: 1, status: 'refund_due', amount: '1000', kept: '0' });
+    const cod = await one<{ cod: string; advance: string }>(sql`
+      select cod_amount_poisha::text as cod, advance_paid_poisha::text as advance
+      from sales.orders where org_id = ${ORG_A} and id = ${order.orderId}
     `);
-    expect(cod?.cod).toBe(order.total);
+    expect(cod).toEqual({ cod: order.total, advance: '0' });
+    const balances = await balancesBySubtype(ORG_A);
+    const moved = (subtype: string) => (balances.get(subtype) ?? 0n) - (before.get(subtype) ?? 0n);
+    expect(moved('wallet_mfs_other')).toBe(1000n);
+    expect(moved('customer_advance')).toBe(-1000n);
+    expect(await trialBalanceDifference(ORG_A)).toBe(0n);
     const logged = await one<{ n: number }>(sql`
       select count(*)::int as n from audit.audit_log
       where org_id = ${ORG_A} and action = 'storefront.payment_refused' and entity_id = ${order.orderId}
@@ -795,7 +808,206 @@ describe('SSLCommerz (check 3, D-525, D-526)', () => {
       });
     }
   });
+
+  it('C1: a sandbox store takes no money where the installation does not allow sandbox', async () => {
+    const order = await sslOrder();
+    const config = harness.app.get<StorefrontConfig>(STOREFRONT_CONFIG, { strict: false }) as {
+      STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX: boolean;
+    };
+    config.STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX = false;
+    try {
+      const priced = await quote([{ skuId: sku(0), qty: 1 }]);
+      const refused = await checkout([{ skuId: sku(0), qty: 1 }], priced.body.quote.total.poisha, {
+        method: 'sslcommerz',
+        email: 'sandbox@example.com',
+      });
+      expect(refused.status, refused.raw).toBe(409);
+      expect(refused.body.code).toBe('PAYMENT_METHOD_UNAVAILABLE');
+
+      // A test-card "payment" on a page opened before: refused, nothing booked, COD intact.
+      gateway.validations.set('VAL-SANDBOX', {
+        status: 'VALID',
+        tran_id: order.tranId,
+        currency: 'BDT',
+        amount: `${order.total.slice(0, -2)}.${order.total.slice(-2)}`,
+      });
+      const back = await signed<{ payment: { status: string } }>(
+        'POST',
+        '/storefront/v1/payments/sslcommerz/return',
+        { kind: 'success', tranId: order.tranId, valId: 'VAL-SANDBOX' },
+      );
+      expect(back.body.payment.status, back.raw).toBe('refused');
+      const session = await one<{ status: string; failure_reason: string }>(sql`
+        select status, failure_reason from storefront.payment_sessions
+        where org_id = ${ORG_A} and tran_id = ${order.tranId}
+      `);
+      expect(session).toEqual({ status: 'refused', failure_reason: 'sandbox_not_accepted' });
+      const booked = await one<{ n: number; cod: string }>(sql`
+        select (select count(*)::int from sales.order_advances a
+                where a.org_id = o.org_id and a.order_id = o.id) as n,
+               o.cod_amount_poisha::text as cod
+        from sales.orders o where o.org_id = ${ORG_A} and o.id = ${order.orderId}
+      `);
+      expect(booked).toEqual({ n: 0, cod: order.total });
+    } finally {
+      config.STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX = true;
+    }
+  });
+
+  it('W1: a payment being checked keeps its order from the unpaid timer and from a fail', async () => {
+    const order = await sslOrder();
+    // The gateway never answers this one: the check stays in flight.
+    gateway.unreachable.add('VAL-SLOW');
+    const ipn = await harness.server.inject({
+      method: 'POST',
+      url: `/storefront/ipn/sslcommerz/${ORG_A}`,
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ tran_id: order.tranId, val_id: 'VAL-SLOW' }).toString(),
+    });
+    expect(ipn.statusCode).toBe(200);
+    const sessionStatus = async () =>
+      (
+        await one<{ status: string }>(sql`
+          select status from storefront.payment_sessions where org_id = ${ORG_A} and tran_id = ${order.tranId}
+        `)
+      )?.status;
+    expect(await sessionStatus()).toBe('validating');
+
+    expect(await payments.expireUnpaid(ORG_A, order.orderId)).toBe('kept');
+    const failed = await signed<{ payment: { status: string } }>(
+      'POST',
+      '/storefront/v1/payments/sslcommerz/return',
+      { kind: 'fail', tranId: order.tranId },
+    );
+    expect(failed.body.payment.status, failed.raw).toBe('checking');
+    const status = await one<{ status: string }>(sql`
+      select status::text as status from sales.orders where org_id = ${ORG_A} and id = ${order.orderId}
+    `);
+    expect(status?.status).toBe('pending');
+    expect(await sessionStatus()).toBe('validating');
+  });
+
+  it('W2: a valid payment after the order was cancelled is owed back in full, whatever the policy', async () => {
+    const previous = await one<{ value: unknown }>(sql`
+      select value from org.settings where org_id = ${ORG_A} and key = 'orders.advance_on_cancel'
+    `);
+    await setSetting('orders.advance_on_cancel', 'forfeit');
+    try {
+      const before = await balancesBySubtype(ORG_A);
+      const order = await sslOrder();
+      expect(await payments.expireUnpaid(ORG_A, order.orderId)).toBe('cancelled');
+      gateway.validations.set('VAL-LATE', {
+        status: 'VALID',
+        tran_id: order.tranId,
+        currency: 'BDT',
+        amount: `${order.total.slice(0, -2)}.${order.total.slice(-2)}`,
+      });
+      const back = await signed<{ payment: { status: string } }>(
+        'POST',
+        '/storefront/v1/payments/sslcommerz/return',
+        { kind: 'success', tranId: order.tranId, valId: 'VAL-LATE' },
+      );
+      expect(back.body.payment.status, back.raw).toBe('paid');
+      const advance = await one<{ status: string; amount: string; kept: string }>(sql`
+        select status, amount_poisha::text as amount, kept_poisha::text as kept
+        from sales.order_advances where org_id = ${ORG_A} and order_id = ${order.orderId}
+      `);
+      expect(advance).toEqual({ status: 'refund_due', amount: order.total, kept: '0' });
+      const balances = await balancesBySubtype(ORG_A);
+      const moved = (subtype: string) =>
+        (balances.get(subtype) ?? 0n) - (before.get(subtype) ?? 0n);
+      expect(moved('wallet_mfs_other')).toBe(BigInt(order.total));
+      expect(moved('customer_advance')).toBe(-BigInt(order.total));
+      expect(moved('other_income')).toBe(0n);
+      expect(await trialBalanceDifference(ORG_A)).toBe(0n);
+    } finally {
+      await setSetting(
+        'orders.advance_on_cancel',
+        typeof previous?.value === 'string' ? previous.value : DEFAULT_ADVANCE_POLICY.onCancel,
+      );
+    }
+  });
+
+  it('W4: the clearing wallet is the gateway’s own, never a staff wallet at its code', async () => {
+    const info = subtypeInfo('wallet_mfs_other');
+    const staffAccount = await withSystem(
+      async (tx) => {
+        const [taken] = await tx.execute<{ id: string }>(sql`
+          insert into ledger.accounts (org_id, code, name, class, subtype, normal_balance)
+          values (${ORG_B}, '1120', 'Rocket', ${info.class}::ledger.account_class,
+                  'wallet_mfs_other'::ledger.account_subtype,
+                  ${info.normalBalance}::ledger.normal_balance)
+          on conflict (org_id, code) do nothing
+          returning id
+        `);
+        if (taken === undefined) return undefined;
+        await tx.execute(sql`
+          insert into wallets.wallets
+            (org_id, ledger_account_id, branch_id, provider, account_ref_masked, requires_daily_closing)
+          values (${ORG_B}, ${taken.id}, null, 'rocket', null, false)
+        `);
+        return taken.id;
+      },
+      { orgId: ORG_B },
+    );
+    const wallets = harness.app.get<WalletsApi>(WALLETS_API, { strict: false });
+    const ensure = () =>
+      withOrg({ orgId: ORG_B, userId: 'usr_test' }, (tx) =>
+        wallets.ensureSystemWallet(tx, ORG_B, SSLCOMMERZ_WALLET),
+      );
+    const first = await ensure();
+    const again = await ensure();
+    expect(again.accountId).toBe(first.accountId);
+    if (staffAccount !== undefined) expect(first.accountId).not.toBe(staffAccount);
+    const provider = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ provider: string }>(sql`
+            select provider from wallets.wallets where org_id = ${ORG_B} and ledger_account_id = ${first.accountId}
+          `)
+        )[0]?.provider,
+      { orgId: ORG_B },
+    );
+    expect(provider).toBe('sslcommerz');
+  });
+
+  it('W6: the console’s lists need an org-wide reach, and the order card the order’s own', async () => {
+    const sales = await harness.asRole('sales', ORG_A);
+    for (const url of [
+      '/v1/storefront/accounts',
+      '/v1/storefront/payments/sessions',
+      '/v1/storefront/email/log',
+    ]) {
+      const refused = await sales.client.request('GET', url);
+      expect(refused.statusCode, `${url} ${refused.body}`).toBe(403);
+      const allowed = await marketing.client.request('GET', url);
+      expect(allowed.statusCode, `${url} ${allowed.body}`).toBe(200);
+    }
+    const priced = await quote([{ skuId: sku(0), qty: 1 }]);
+    const placed = await checkout([{ skuId: sku(0), qty: 1 }], priced.body.quote.total.poisha);
+    expect(placed.status, placed.raw).toBe(201);
+    const orderId = await orderIdOf(placed.body.order.orderNo);
+    const hidden = await sales.client.request('GET', `/v1/storefront/orders/${orderId}`);
+    expect(hidden.statusCode).toBe(404);
+    const shown = await admin.client.request('GET', `/v1/storefront/orders/${orderId}`);
+    expect(shown.statusCode, shown.body).toBe(200);
+    expect(
+      (JSON.parse(shown.body) as { website: { paymentMethod: string } }).website.paymentMethod,
+    ).toBe('cod');
+  });
 });
+
+async function setSetting(key: string, value: string): Promise<void> {
+  await withSystem(
+    async (tx) =>
+      tx.execute(sql`
+        insert into org.settings (org_id, key, value)
+        values (${ORG_A}, ${key}, ${JSON.stringify(value)}::jsonb)
+        on conflict (org_id, key) do update set value = excluded.value
+      `),
+    { orgId: ORG_A },
+  );
+}
 
 // --- check 4: accounts --------------------------------------------------------------------------
 
@@ -824,6 +1036,13 @@ describe('shopper accounts (check 4, D-522, D-523)', () => {
       email,
     });
     expect(guest.status, guest.raw).toBe(201);
+    // Ledger audit W5: an email-less guest order on the phone the account will give is never
+    // claimed by it — a typed phone proves nothing.
+    const accountPhone = nextPhone();
+    const byPhone = await checkout([{ skuId: sku(0), qty: 1 }], priced.body.quote.total.poisha, {
+      phone: accountPhone,
+    });
+    expect(byPhone.status, byPhone.raw).toBe(201);
 
     const registered = await signed<{ accountId: string; requiresVerification: boolean }>(
       'POST',
@@ -832,6 +1051,7 @@ describe('shopper accounts (check 4, D-522, D-523)', () => {
         email: email.toUpperCase(),
         password: 'correct-horse',
         name: 'Rahim',
+        phone: accountPhone,
         locale: 'en',
         client: { ip: '203.0.113.9' },
       },
@@ -891,6 +1111,7 @@ describe('shopper accounts (check 4, D-522, D-523)', () => {
     );
     expect(orders.status, orders.raw).toBe(200);
     expect(orders.body.items.map((item) => item.orderNo)).toContain(guest.body.order.orderNo);
+    expect(orders.body.items.map((item) => item.orderNo)).not.toContain(byPhone.body.order.orderNo);
     const detail = await signed(
       'GET',
       `/storefront/v1/accounts/${accountId}/orders/${guest.body.order.orderNo}`,

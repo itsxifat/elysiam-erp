@@ -571,6 +571,7 @@ export class AdvancesService {
       readonly amountPoisha: bigint;
       readonly wallet: PostingAccount;
       readonly note: string | null;
+      readonly owedBack?: boolean;
     },
   ): Promise<{ readonly advanceId: string; readonly outcome: 'applied' | 'settled' | 'held' }> {
     const order = await repo.orderForUpdate(tx, actor.orgId, input.orderId);
@@ -607,11 +608,19 @@ export class AdvancesService {
     const status = order.status as OrderStatus;
     const parcelLive =
       acceptsAdvanceClaim(status) && (await this.parcelLive(tx, actor.orgId, order.id));
-    const outcome = advanceVerification({
+    const verified = advanceVerification({
       status,
       parcelLive,
       policy: await this.policy(tx, actor.orgId),
     });
+    // A gateway payment the order does not accept, or one that lands on an order already
+    // ended, is owed back in full: the cancel policy's "keep up to the delivery charge" is for
+    // an advance the shopper paid before the order ended, never for money that arrived after
+    // the system itself cancelled it (M34 ledger audit W2, W3; D-526, D-527).
+    const outcome: typeof verified =
+      input.owedBack === true || verified.kind === 'settle'
+        ? { kind: 'settle', disposition: 'refund' }
+        : verified;
     if (outcome.kind === 'wait') {
       // The courier holds the COD it was given; accounts verifies this claim once the order
       // ends, into the wallet the gateway paid (D-231).

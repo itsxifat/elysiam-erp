@@ -17,7 +17,7 @@ import { ArrowDown, ArrowUp, ImageOff } from 'lucide-react';
 import { useId, useState, type ComponentProps, type DragEvent, type ReactNode } from 'react';
 
 import { api, ApiError } from '../../api.js';
-import { useAbility } from '../../auth/session.js';
+import { useAbility, useOrgWide } from '../../auth/session.js';
 import { previewUrl } from './api.js';
 import { useWebsiteT } from './messages.js';
 import { visibleWebsiteTabs, type WebsiteTab } from './tabs.js';
@@ -47,7 +47,8 @@ export function WebsitePage({
 }) {
   const t = useWebsiteT();
   const ability = useAbility();
-  const tabs = visibleWebsiteTabs(ability);
+  const orgWide = useOrgWide();
+  const tabs = visibleWebsiteTabs(ability, orgWide);
   const allowed = tabs.some((entry) => entry.path === tab);
   const itemClass = cn(
     'flex h-8 items-center rounded-md px-2.5 text-sm text-muted-foreground',
@@ -90,7 +91,8 @@ export function WebsitePage({
 export function WebsiteIndexPage() {
   const t = useWebsiteT();
   const ability = useAbility();
-  const [first] = visibleWebsiteTabs(ability);
+  const orgWide = useOrgWide();
+  const [first] = visibleWebsiteTabs(ability, orgWide);
   if (first !== undefined) return <Navigate to={websitePath(first.path)} replace />;
   return (
     <div className="space-y-6">

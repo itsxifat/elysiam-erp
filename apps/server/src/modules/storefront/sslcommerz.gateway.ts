@@ -219,7 +219,11 @@ export class FakePaymentGateway implements PaymentGateway {
     });
   }
 
+  /** Validation ids the fake gateway does not answer for: a check still in flight (tests). */
+  readonly unreachable = new Set<string>();
+
   validate(_credentials: GatewayCredentials, valId: string): Promise<ValidationResult> {
+    if (this.unreachable.has(valId)) return Promise.resolve({ ok: false, error: 'unreachable' });
     const answer = this.validations.get(valId);
     return Promise.resolve(
       answer === undefined

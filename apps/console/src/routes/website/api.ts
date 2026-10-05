@@ -205,6 +205,8 @@ export interface PaymentSettings {
   readonly passwordFingerprint: string | null;
   /** False while the adapter has not been seen to work against the real gateway. */
   readonly verified: boolean;
+  /** This server books sandbox payments (a staging server); false on a live one (audit C1). */
+  readonly sandboxAllowed: boolean;
   readonly ipnUrl: string;
   readonly wallet: { readonly code: string; readonly name: string };
   readonly updatedAt: string | null;

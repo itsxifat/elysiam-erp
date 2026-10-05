@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
 
 /**
  * The website's secrets at rest (M34, D-528): the SSLCommerz store password, the email
@@ -31,7 +31,7 @@ export class SealedBoxUnavailable extends Error {
 export interface Sealed {
   readonly ciphertext: Buffer;
   readonly keyId: string;
-  /** First 12 hex of the plaintext's SHA-256: "which one is set", never the secret itself. */
+  /** 12 hex of a keyed hash of the plaintext: "which one is set", never the secret itself. */
   readonly fingerprint: string;
 }
 
@@ -84,8 +84,18 @@ export function seal(
   return {
     ciphertext: Buffer.concat([iv, cipher.getAuthTag(), body]),
     keyId: env.STOREFRONT_CREDENTIALS_KEY_ID ?? 'k1',
-    fingerprint: createHash('sha256').update(bytes).digest('hex').slice(0, 12),
+    fingerprint: fingerprintOf(key, bytes),
   };
+}
+
+/**
+ * "Which password is set", for a screen: a keyed hash (HMAC under a key derived from the
+ * installation's key), so the 48 bits shown cannot be used to guess a weak password offline by
+ * anyone who reads the screen (M34 ledger audit W7).
+ */
+function fingerprintOf(key: Buffer, plaintext: Buffer): string {
+  const derived = createHash('sha256').update('sealed-box.fingerprint.v1:').update(key).digest();
+  return createHmac('sha256', derived).update(plaintext).digest('hex').slice(0, 12);
 }
 
 /** The plaintext, or a throw that says nothing about why (no oracle for a tampered row). */

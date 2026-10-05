@@ -3594,6 +3594,8 @@ const en = {
     'This server has no key for keeping credentials. Ask whoever runs the server to set STOREFRONT_CREDENTIALS_KEY.',
   'web.pay.unverified':
     'Not yet tried against SSLCommerz’s sandbox. Test with sandbox mode before going live.',
+  'web.pay.sandboxRefused':
+    'This server does not take sandbox payments, so shoppers cannot pay online until the mode is live. A staging server can allow them (STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX).',
   'web.pay.enabled': 'Take online payments',
   'web.pay.mode': 'Mode',
   'web.pay.sandbox': 'Sandbox (test)',

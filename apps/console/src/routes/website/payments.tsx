@@ -2,7 +2,7 @@ import { Button, Checkbox, DateTime, Money, Select, StatusBadge } from '@elysium
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 
-import { useAbility } from '../../auth/session.js';
+import { useAbility, useOrgWide } from '../../auth/session.js';
 import { useLocale } from '../../i18n/locale.js';
 import {
   getPaymentSettings,
@@ -24,15 +24,20 @@ import { control, Empty, Field, Loadable, NamedSection, Problem, WebsitePage } f
  * fingerprint that says which one is set, never the password.
  */
 export function WebsitePaymentsPage() {
+  // The list of every online payment is for those who see every order (ledger audit W6).
+  const seesPayments = useOrgWide()('read', 'Order');
   const settings = useQuery({ queryKey: ['website', 'payments'], queryFn: getPaymentSettings });
   const sessions = useQuery({
     queryKey: ['website', 'payments', 'sessions'],
     queryFn: listPaymentSessions,
+    enabled: seesPayments,
   });
   return (
     <WebsitePage tab="/website/payments" wide>
       <Loadable query={settings}>{(value) => <GatewayForm value={value} />}</Loadable>
-      <Loadable query={sessions}>{(value) => <Sessions items={value.items} />}</Loadable>
+      {seesPayments ? (
+        <Loadable query={sessions}>{(value) => <Sessions items={value.items} />}</Loadable>
+      ) : null}
     </WebsitePage>
   );
 }
@@ -99,6 +104,11 @@ function GatewayForm({ value }: { readonly value: PaymentSettings }) {
       )}
       {value.verified ? null : (
         <p className="mb-4 text-xs text-muted-foreground">{t('web.pay.unverified')}</p>
+      )}
+      {value.sandboxAllowed || mode === 'live' ? null : (
+        <p role="status" className="mb-4 text-sm text-muted-foreground">
+          {t('web.pay.sandboxRefused')}
+        </p>
       )}
       <fieldset disabled={!mayUpdate} className="space-y-4">
         <label className="flex items-center gap-2 text-sm">

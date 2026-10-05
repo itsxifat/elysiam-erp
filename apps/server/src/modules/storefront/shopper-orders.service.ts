@@ -1,6 +1,6 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
-import { poisha } from '@elysium/domain';
+import { add, mulQty, poisha, sub } from '@elysium/domain';
 import {
   shopperPaymentStatus,
   shopperStatusOf,
@@ -146,7 +146,9 @@ export class ShopperOrdersService {
         name: line.productName,
         qty: line.qty,
         unitPrice: wireMoney(line.unitPricePoisha),
-        lineTotal: wireMoney(poisha(line.unitPricePoisha * BigInt(line.qty) - line.discountPoisha)),
+        lineTotal: wireMoney(
+          sub(mulQty(poisha(line.unitPricePoisha), line.qty), poisha(line.discountPoisha)),
+        ),
       })),
       tracking:
         tracking === null
@@ -166,7 +168,12 @@ function summary(order: ShopperOrderFacts, method: string) {
     status,
     statusLabel: SHOPPER_STATUS_LABELS[status],
     placedAt: order.createdAt.toISOString(),
-    total: wireMoney(order.itemsPoisha - order.discountPoisha + order.deliveryChargePoisha),
+    total: wireMoney(
+      add(
+        sub(poisha(order.itemsPoisha), poisha(order.discountPoisha)),
+        poisha(order.deliveryChargePoisha),
+      ),
+    ),
     itemCount: order.unitCount,
     paymentMethod: method,
   };

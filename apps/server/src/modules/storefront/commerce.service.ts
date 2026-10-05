@@ -127,8 +127,12 @@ export class CommerceService {
   // --- the order page -----------------------------------------------------------------------------
 
   /** A website order's account, how it was paid and its online payments; null for a desk order. */
-  async orderWebsite(context: ActiveContext, orderId: string) {
+  async orderWebsite(context: ActiveContext, orderId: string, request: object) {
     return withOrg(context, async (tx) => {
+      // The caller's own reach over orders: an order they cannot open has no card either.
+      if (!(await this.orders.orderVisibleTo(tx, context.orgId, orderId, request))) {
+        throw new StorefrontError('NOT_FOUND', HttpStatus.NOT_FOUND, 'No such order.');
+      }
       const web = await buying.webOrder(tx, context.orgId, orderId);
       if (web === undefined) return { website: null };
       const [order] = await this.orders.shopperOrders(tx, context.orgId, [orderId]);

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
+import { sql } from 'drizzle-orm';
 import {
   computePartialDelivery,
   poisha,
@@ -14,6 +15,7 @@ import {
 } from '@elysium/domain';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { AdvancesService } from './advances.service.js';
@@ -355,6 +357,13 @@ export interface GatewayAdvanceInput {
   /** The clearing wallet's ledger account (`WalletsApi.ensureSystemWallet`). */
   readonly wallet: PostingAccount;
   readonly note: string | null;
+  /**
+   * Money the gateway took that the order does not accept (M34 ledger audit W3): a wrong
+   * amount, an order changed after its page opened, a second page paid. Booked into the
+   * clearing wallet all the same — the gateway settles it to the bank — and owed back at once,
+   * never applied to the COD.
+   */
+  readonly owedBack?: boolean;
 }
 
 export interface OrdersApi {
@@ -566,6 +575,13 @@ export interface OrdersApi {
     actor: { readonly orgId: string; readonly recordedBy: string; readonly decidedBy: string },
     input: GatewayAdvanceInput,
   ): Promise<{ readonly advanceId: string; readonly outcome: 'applied' | 'settled' | 'held' }>;
+
+  /**
+   * Whether the caller may see this order (M34 ledger audit W6): the route's own row scope,
+   * declared on `Order` and hung on the request by the guard, applied here where the order's
+   * columns are known. Marks the scope applied.
+   */
+  orderVisibleTo(tx: Tx, orgId: string, orderId: string, request: object): Promise<boolean>;
 
   /** The booked parcel's courier and codes, for the buyer (D-524). Null before booking. */
   parcelTracking(
@@ -1123,6 +1139,15 @@ export class OrdersApiService implements OrdersApi {
     input: GatewayAdvanceInput,
   ): Promise<{ readonly advanceId: string; readonly outcome: 'applied' | 'settled' | 'held' }> {
     return mapOrderErrors(() => this.advances.recordGatewayAdvance(tx, actor, input));
+  }
+
+  async orderVisibleTo(tx: Tx, orgId: string, orderId: string, request: object): Promise<boolean> {
+    const scope = scopeWhere(request, {
+      createdBy: sql`o.created_by`,
+      assignedTo: sql`o.assigned_to`,
+      branchId: sql`o.branch_id`,
+    });
+    return (await repo.orderByIdInScope(tx, orgId, orderId, scope)) !== undefined;
   }
 
   async parcelTracking(

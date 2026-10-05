@@ -792,6 +792,13 @@
       "when": 1791205025569,
       "tag": "0114_m34_buying_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1791207348208,
+      "tag": "0115_m34_session_validating",
+      "breakpoints": true
     }
   ]
 }

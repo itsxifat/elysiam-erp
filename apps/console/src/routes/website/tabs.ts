@@ -14,6 +14,8 @@ export interface WebsiteTab {
   readonly path: string;
   readonly labelKey: WebsiteMessageKey;
   readonly required: { readonly action: Action; readonly subject: Subject };
+  /** The route refuses anything short of an org-wide reach of `required` (M34 audit W6). */
+  readonly orgWide?: true;
 }
 
 export const WEBSITE_TABS: readonly WebsiteTab[] = [
@@ -53,13 +55,23 @@ export const WEBSITE_TABS: readonly WebsiteTab[] = [
     labelKey: 'web.nav.email',
     required: { action: 'read', subject: 'Storefront' },
   },
+  // Every shopper's email and phone: for those who see every buyer (M34 ledger audit W6).
   {
     path: '/website/customers',
     labelKey: 'web.nav.customers',
-    required: { action: 'read', subject: 'Storefront' },
+    required: { action: 'read', subject: 'Customer' },
+    orgWide: true,
   },
 ];
 
-export function visibleWebsiteTabs(ability: AppAbility): readonly WebsiteTab[] {
-  return WEBSITE_TABS.filter((tab) => ability.can(tab.required.action, tab.required.subject));
+export function visibleWebsiteTabs(
+  ability: AppAbility,
+  orgWide: (action: Action, subject: Subject) => boolean = () => true,
+): readonly WebsiteTab[] {
+  return WEBSITE_TABS.filter(
+    (tab) =>
+      ability.can('read', 'Storefront') &&
+      ability.can(tab.required.action, tab.required.subject) &&
+      (tab.orgWide !== true || orgWide(tab.required.action, tab.required.subject)),
+  );
 }

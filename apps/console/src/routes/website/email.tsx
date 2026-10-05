@@ -2,7 +2,7 @@ import { Button, Checkbox, DateTime, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 
-import { useAbility } from '../../auth/session.js';
+import { useAbility, useOrgWide } from '../../auth/session.js';
 import {
   getEmailSettings,
   listEmails,
@@ -23,11 +23,17 @@ import { control, Empty, Field, Loadable, NamedSection, Problem, WebsitePage } f
  */
 export function WebsiteEmailPage() {
   const settings = useQuery({ queryKey: ['website', 'email'], queryFn: getEmailSettings });
-  const log = useQuery({ queryKey: ['website', 'email', 'log'], queryFn: listEmails });
+  // The shoppers' addresses in the log are for those who see every buyer (ledger audit W6).
+  const seesLog = useOrgWide()('read', 'Customer');
+  const log = useQuery({
+    queryKey: ['website', 'email', 'log'],
+    queryFn: listEmails,
+    enabled: seesLog,
+  });
   return (
     <WebsitePage tab="/website/email" wide>
       <Loadable query={settings}>{(value) => <ServerForm value={value} />}</Loadable>
-      <Loadable query={log}>{(value) => <Log items={value.items} />}</Loadable>
+      {seesLog ? <Loadable query={log}>{(value) => <Log items={value.items} />}</Loadable> : null}
     </WebsitePage>
   );
 }

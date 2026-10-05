@@ -1,7 +1,6 @@
 import { Money, StatusBadge } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 
-import { useAbility } from '../../auth/session.js';
 import { useLocale } from '../../i18n/locale.js';
 import { orderWebsite } from '../website/api.js';
 import { useWebsiteT, type WebsiteMessageKey } from '../website/messages.js';
@@ -20,7 +19,7 @@ const TONE: Readonly<Record<string, 'success' | 'warning' | 'danger' | 'neutral'
 /**
  * A website order's card on the order page (M34, D-533): the shopper's account (or a guest
  * checkout), how they chose to pay, and the online payments with what SSLCommerz said. Shown
- * to those who read the website (`read Storefront`), only for an order the website placed.
+ * to whoever opens the order (`read Order`, its own scope), only for an order the website placed.
  */
 export function WebsitePanel({
   orderId,
@@ -31,9 +30,9 @@ export function WebsitePanel({
 }) {
   const t = useOrdersT();
   const tw = useWebsiteT();
-  const ability = useAbility();
   const { locale } = useLocale();
-  const allowed = channel === 'website' && ability.can('read', 'Storefront');
+  // The card is part of the order page, under the order's own scope (ledger audit W6).
+  const allowed = channel === 'website';
   const query = useQuery({
     queryKey: ['orders', orderId, 'website'],
     queryFn: () => orderWebsite(orderId),

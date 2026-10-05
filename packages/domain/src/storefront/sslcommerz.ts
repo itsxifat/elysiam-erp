@@ -97,3 +97,51 @@ export function judgeValidation(
   const risky = answer.risk_level === 1 || answer.risk_level === '1';
   return { ok: true, amountPoisha: amount, risky };
 }
+
+/**
+ * Money SSLCommerz took that this system refused to accept as the order's payment (M34 ledger
+ * audit W3): a valid payment of this session's transaction in BDT, but for another amount, or
+ * for an order that changed after its page opened, or a second page paid for one order. The
+ * gateway settles it to the bank all the same, so it is booked — and owed back to the shopper —
+ * rather than left out of the ledger. Null when there is nothing safe to book: not a valid
+ * payment of this transaction, not in BDT, or an amount this system cannot read exactly (those
+ * stay with a person).
+ */
+export function refusedButPaid(
+  session: { readonly tranId: string },
+  answer: GatewayValidation,
+): Poisha | null {
+  if (answer.status !== 'VALID' && answer.status !== 'VALIDATED') return null;
+  if (answer.tran_id !== session.tranId) return null;
+  if (answer.currency !== 'BDT') return null;
+  if (
+    answer.currency_type !== undefined &&
+    answer.currency_type !== null &&
+    answer.currency_type !== 'BDT'
+  ) {
+    return null;
+  }
+  const amount = parseGatewayAmount(answer.amount);
+  return amount === null || amount <= 0n ? null : amount;
+}
+
+/**
+ * Whether a brand's SSLCommerz setting may take shoppers' money on this installation (M34 ledger
+ * audit C1). A live store always may; a sandbox store only where the installation allows it
+ * (`STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX`, off by default, on for a staging or preview server and
+ * the tests): SSLCommerz's test cards are public, so a sandbox store on a live website would let
+ * anybody "pay" an order and send its goods out with nothing to collect.
+ */
+export function gatewayTakesPayments(mode: 'sandbox' | 'live', allowSandbox: boolean): boolean {
+  return mode === 'live' || allowSandbox;
+}
+
+/**
+ * When a payment page stops being payable (ledger audit W1): the order's own deadline, never
+ * later, so a page cannot outlive the order it pays for. Null when less than a minute is left:
+ * too little to pay in, so no page is opened.
+ */
+export function sessionDeadline(placedAt: Date, now: Date, unpaidMinutes: number): Date | null {
+  const deadline = new Date(placedAt.getTime() + unpaidMinutes * 60_000);
+  return deadline.getTime() - now.getTime() < 60_000 ? null : deadline;
+}

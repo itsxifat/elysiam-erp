@@ -61,6 +61,8 @@ export function setServerTestEnv(overrides: TestEnvOverrides = {}): void {
   // M34: emails are recorded, never sent, in a test.
   process.env.NOTIFY_EMAIL_PROVIDER ??= 'fake';
   process.env.STOREFRONT_SSLCOMMERZ_PROVIDER ??= 'fake';
+  // The tests pay through a sandbox store, as a staging server would (ledger audit C1).
+  process.env.STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX ??= 'true';
 }
 
 /**

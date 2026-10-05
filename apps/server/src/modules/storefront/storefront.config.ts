@@ -47,6 +47,16 @@ const schema = z.object({
   STOREFRONT_GATEWAY_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(10_000),
   /** `fake` answers from a recorder (tests); `sslcommerz` is the real gateway (UNVERIFIED). */
   STOREFRONT_SSLCOMMERZ_PROVIDER: z.enum(['sslcommerz', 'fake']).default('sslcommerz'),
+  /**
+   * Whether a brand's SSLCommerz **sandbox** store may take payments on this installation (M34
+   * ledger audit C1). Off: a sandbox store is never offered and a sandbox payment is never
+   * booked, because SSLCommerz's test cards are public. On only for a staging or preview server
+   * and the tests, where the whole flow is tried before a brand goes live.
+   */
+  STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   /** The ERP's public address SSLCommerz posts its IPN to; `API_PUBLIC_URL` when unset. */
   STOREFRONT_IPN_BASE_URL: z
     .string()

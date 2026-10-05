@@ -3,11 +3,13 @@ import { createHash } from 'node:crypto';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { type CartQuoteRequest, type CheckoutRequest } from '@elysium/contracts';
 import { withOrg, type Tx } from '@elysium/db';
-import { normalizeBdPhone, OrderError, poisha, type Poisha } from '@elysium/domain';
+import { add, normalizeBdPhone, OrderError, poisha, sub, type Poisha } from '@elysium/domain';
 import { planFlashLines, type FlashLinePlan } from '@elysium/domain/promo';
 import {
   availableForWeb,
+  gatewayTakesPayments,
   normaliseEmail,
+  payableOnline,
   quoteCart,
   repricedReasons,
   UNPAID_ONLINE_ORDER_MINUTES,
@@ -357,7 +359,9 @@ export class BuyingService {
         }
 
         const now = new Date();
-        const customerId = await this.customerFor(tx, orgId, input.accountId ?? null, phone);
+        // The buyer the order will belong to — the one its phone names — so discount limits
+        // are counted against the buyer the redemption is recorded for (ledger audit N6).
+        const customerId = await this.customerFor(tx, orgId, null, phone);
         const priced = await this.price(tx, orgId, {
           lines: input.lines,
           address: { districtId: input.address.districtId, thanaId: input.address.thanaId },
@@ -385,11 +389,13 @@ export class BuyingService {
           quote,
         );
         if (reasons.length > 0) throw repriced(priced, input.codes ?? []);
-        if (input.paymentMethod === 'sslcommerz' && quote.totalPoisha < 1_000n) {
+        if (input.paymentMethod === 'sslcommerz' && !payableOnline(quote.totalPoisha)) {
+          // Outside SSLCommerz's range (৳10 to ৳5,00,000): the page would never open, and
+          // the order would hold its stock for an hour for nothing (ledger audit N1).
           throw new StorefrontError(
             'PAYMENT_METHOD_UNAVAILABLE',
             HttpStatus.CONFLICT,
-            'An order this small cannot be paid online; choose cash on delivery.',
+            'This order cannot be paid online; choose cash on delivery.',
           );
         }
 
@@ -416,7 +422,10 @@ export class BuyingService {
               qty: line.qty,
               unitPricePoisha: line.unitPricePoisha.toString(),
             })),
-            deliveryChargePoisha: (quote.deliveryPoisha - quote.deliveryDiscountPoisha).toString(),
+            deliveryChargePoisha: sub(
+              quote.deliveryPoisha,
+              quote.deliveryDiscountPoisha,
+            ).toString(),
             discountPoisha: quote.discountPoisha.toString(),
             ...(input.notes === undefined || input.notes === '' ? {} : { notes: input.notes }),
           },
@@ -653,7 +662,12 @@ export class BuyingService {
             orderNo: order.orderNo,
             status: 'placed',
             viewToken,
-            total: wireMoney(order.itemsPoisha - order.discountPoisha + order.deliveryChargePoisha),
+            total: wireMoney(
+              add(
+                sub(poisha(order.itemsPoisha), poisha(order.discountPoisha)),
+                poisha(order.deliveryChargePoisha),
+              ),
+            ),
             payment: { method, required: method === 'sslcommerz' },
           },
         },
@@ -693,13 +707,19 @@ export class BuyingService {
           );
     }
     if (code === 'PROMO_NOT_APPLICABLE' || code === 'FLASH_SALE_UNAVAILABLE') {
-      // A discount ran out or a flash allocation was taken between the price and the claim.
+      // A discount ran out or a flash allocation was taken between the price and the claim:
+      // priced again for the same buyer, so the new quote does not offer it again (audit N7).
       const fresh = await withOrg({ orgId }, async (tx) =>
         this.price(tx, orgId, {
           lines: input.lines,
           address: { districtId: input.address.districtId, thanaId: input.address.thanaId },
           codes: input.codes ?? [],
-          customerId: null,
+          customerId: await this.customerFor(
+            tx,
+            orgId,
+            null,
+            this.phoneOrNull(input.contact.phone),
+          ),
           now: new Date(),
         }),
       );
@@ -724,7 +744,12 @@ export class BuyingService {
     if (method === 'cod' && switches.cod) return;
     if (method === 'sslcommerz' && switches.sslcommerz) {
       const gateway = await buying.gatewaySettings(tx, orgId);
-      if (gateway?.enabled === true) return;
+      if (
+        gateway?.enabled === true &&
+        gatewayTakesPayments(gateway.mode, this.config.STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX)
+      ) {
+        return;
+      }
     }
     throw new StorefrontError(
       'PAYMENT_METHOD_UNAVAILABLE',

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
 import { isAccountSubtype, subtypeInfo, type PostingAccount } from '@elysium/domain';
 
+import { walletsHttpError } from './wallets.errors.js';
 import * as repo from './wallets.repository.js';
 
 /**
@@ -120,25 +121,36 @@ export class WalletsApiService implements WalletsApi {
       readonly provider: string;
     },
   ): Promise<PostingAccount> {
+    // The provider's own wallet, whatever code it was given: never a staff wallet that
+    // happens to sit at the preferred code (M34 ledger audit W4).
+    const mine = await repo.systemWalletByProvider(tx, orgId, spec.provider, spec.subtype);
+    if (mine !== undefined) {
+      return { accountId: mine.ledger_account_id, subtype: spec.subtype, branchId: null };
+    }
     const info = subtypeInfo(spec.subtype);
-    const inserted = await repo.insertLedgerAccount(tx, {
-      orgId,
-      code: spec.code,
-      name: spec.name,
-      subtype: spec.subtype,
-      class: info.class,
-      normalBalance: info.normalBalance,
-      branchId: null,
-    });
-    const account = inserted ?? (await repo.accountByCode(tx, orgId, spec.code));
-    if (account === undefined) throw new Error(`account ${spec.code} vanished while being set up`);
-    if (inserted === undefined) {
-      const existing = await repo.accountByCode(tx, orgId, spec.code);
-      if (existing?.subtype !== spec.subtype) {
-        throw new Error(
-          `Account code ${spec.code} already belongs to a ${existing?.subtype ?? 'missing'} account, not a ${spec.subtype} wallet.`,
-        );
-      }
+    // The preferred code, else the next free one after it in its ten (1120, 1121 … 1129).
+    const preferred = Number.parseInt(spec.code, 10);
+    const candidates = Number.isNaN(preferred)
+      ? [spec.code]
+      : Array.from({ length: 10 - (preferred % 10) }, (_, step) => String(preferred + step));
+    let account: { id: string } | undefined;
+    for (const code of candidates) {
+      account = await repo.insertLedgerAccount(tx, {
+        orgId,
+        code,
+        name: spec.name,
+        subtype: spec.subtype,
+        class: info.class,
+        normalBalance: info.normalBalance,
+        branchId: null,
+      });
+      if (account !== undefined) break;
+    }
+    if (account === undefined) {
+      throw walletsHttpError(
+        'LEDGER_ACCOUNT_INVALID',
+        `Account codes ${candidates.join(', ')} are all taken; free one in the chart of accounts for the ${spec.name} wallet.`,
+      );
     }
     await repo.insertWalletIfMissing(tx, {
       orgId,

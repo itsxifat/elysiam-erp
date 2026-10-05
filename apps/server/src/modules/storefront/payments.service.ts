@@ -6,9 +6,12 @@ import { withOrg, type Tx } from '@elysium/db';
 import { poisha } from '@elysium/domain';
 import {
   gatewayAmount,
+  gatewayTakesPayments,
   judgeValidation,
   parseGatewayAmount,
   payableOnline,
+  refusedButPaid,
+  sessionDeadline,
 } from '@elysium/domain/storefront';
 import type { Logger } from 'pino';
 
@@ -69,6 +72,13 @@ export function newTranId(): string {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * How long a payment being checked keeps its order from the unpaid-order timer (ledger audit
+ * W1): the validation job's retries fit in it; a check the gateway never answers in that time
+ * expires with the order, and a valid payment that turns up later is still booked, owed back.
+ */
+const VALIDATION_GRACE_MS = 15 * 60_000;
+
+/**
  * Paying online through SSLCommerz (M34, D-525 to D-528).
  *
  * - **Opening a session**: the route records the session and enqueues the worker's call in one
@@ -119,6 +129,7 @@ export class PaymentsService {
         hasPassword: row !== undefined,
         passwordFingerprint: row?.fingerprint ?? null,
         verified: this.gateway.verified,
+        sandboxAllowed: this.config.STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX,
         ipnUrl: this.ipnUrl(context.orgId),
         wallet: { code: SSLCOMMERZ_WALLET.code, name: SSLCOMMERZ_WALLET.name },
         updatedAt: row === undefined ? null : new Date(row.updated_at).toISOString(),
@@ -227,6 +238,9 @@ export class PaymentsService {
     const opened = await withOrg({ orgId, userId: GATEWAY_RECORDER }, async (tx) => {
       const orderId = await this.orders.orderIdByNumber(tx, orgId, input.orderNo);
       if (orderId === undefined) throw orderNotFound();
+      // The order locked first (the lock every transition and payment takes), so two inits at
+      // once open one page, not two (ledger audit N2).
+      await this.orders.bookingSnapshot(tx, orgId, orderId, { forUpdate: true });
       const web = await buying.webOrder(tx, orgId, orderId);
       if (web === undefined) throw orderNotFound();
       const byToken =
@@ -237,7 +251,12 @@ export class PaymentsService {
       if (web.payment_method !== 'sslcommerz') throw notPayable('This order is cash on delivery.');
 
       const gateway = await buying.gatewaySettings(tx, orgId);
-      if (gateway?.enabled !== true) {
+      const switches = (await this.settings.settingsIn(tx, orgId)).payments;
+      if (
+        gateway?.enabled !== true ||
+        !switches.sslcommerz ||
+        !gatewayTakesPayments(gateway.mode, this.config.STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX)
+      ) {
         throw new StorefrontError(
           'PAYMENT_METHOD_UNAVAILABLE',
           HttpStatus.CONFLICT,
@@ -266,10 +285,13 @@ export class PaymentsService {
       );
       if (live !== undefined) return live.id;
 
-      const placedAt = new Date(web.created_at).getTime();
-      const expiresAt = new Date(
-        Math.max(now + 60_000, placedAt + this.config.STOREFRONT_UNPAID_ORDER_MINUTES * 60_000),
+      // Never past the order's own deadline: a page cannot outlive the order (audit W1).
+      const expiresAt = sessionDeadline(
+        new Date(web.created_at),
+        new Date(now),
+        this.config.STOREFRONT_UNPAID_ORDER_MINUTES,
       );
+      if (expiresAt === null) throw notPayable('The time to pay this order online has run out.');
       const sessionId = await buying.insertSession(tx, {
         orgId,
         orderId,
@@ -416,19 +438,24 @@ export class PaymentsService {
       return order?.orderNo ?? null;
     });
 
-    if (input.kind !== 'success' || input.valId === undefined) {
+    if (input.kind !== 'success') {
       await this.abandon(orgId, session.id, input.kind === 'cancel' ? 'cancelled' : 'failed');
       const after = await withOrg({ orgId }, (tx) => buying.sessionById(tx, orgId, session.id));
-      return { payment: { orderNo, status: after?.status === 'paid' ? 'paid' : 'cancelled' } };
+      const status =
+        after?.status === 'paid'
+          ? 'paid'
+          : after?.status === 'validating'
+            ? 'checking'
+            : 'cancelled';
+      return { payment: { orderNo, status } };
     }
+    // A success with nothing to check proves nothing either way: the IPN may still bring the
+    // payment, so the order is left alone (ledger audit N3).
+    if (input.valId === undefined) return { payment: { orderNo, status: 'checking' } };
 
+    const valId = input.valId;
     await withOrg({ orgId, userId: GATEWAY_RECORDER }, (tx) =>
-      enqueue(
-        tx,
-        STOREFRONT_QUEUES.validate.name,
-        { sessionId: session.id, valId: input.valId },
-        { orgId, ref: session.id },
-      ),
+      this.startValidation(tx, orgId, session.id, valId),
     );
     const deadline = Date.now() + this.config.STOREFRONT_GATEWAY_WAIT_MS;
     for (;;) {
@@ -450,15 +477,42 @@ export class PaymentsService {
     if (!/^[A-Z0-9]{20,30}$/.test(tranId) || valId === '' || valId.length > 80) return;
     await withOrg({ orgId, userId: GATEWAY_RECORDER }, async (tx) => {
       const session = await buying.sessionByTranId(tx, orgId, tranId);
-      if (session === undefined || session.status === 'paid' || session.status === 'refused')
-        return;
-      await enqueue(
-        tx,
-        STOREFRONT_QUEUES.validate.name,
-        { sessionId: session.id, valId },
-        { orgId, ref: session.id },
-      );
+      if (session === undefined) return;
+      await this.startValidation(tx, orgId, session.id, valId);
     });
+  }
+
+  /**
+   * A `val_id` arrived for a session (a return or the IPN): the session becomes `validating`
+   * under its lock, in the same transaction as the job that asks the gateway, so neither the
+   * unpaid-order timer nor a "fail" cancels an order whose payment is being checked (ledger
+   * audit W1). A session that never had a page, or is settled, is left alone.
+   */
+  private async startValidation(
+    tx: Tx,
+    orgId: string,
+    sessionId: string,
+    valId: string,
+  ): Promise<void> {
+    const locked = await buying.sessionById(tx, orgId, sessionId, { forUpdate: true });
+    if (
+      locked === undefined ||
+      ['paid', 'refused', 'initiating', 'failed'].includes(locked.status)
+    ) {
+      return;
+    }
+    await buying.moveSession(tx, {
+      orgId,
+      id: sessionId,
+      from: ['ready', 'cancelled', 'expired'],
+      to: 'validating',
+    });
+    await enqueue(
+      tx,
+      STOREFRONT_QUEUES.validate.name,
+      { sessionId, valId },
+      { orgId, ref: sessionId },
+    );
   }
 
   /** The `storefront.sslcommerz_validate` job: check with the gateway, then book or refuse. */
@@ -472,7 +526,16 @@ export class PaymentsService {
     });
     if (prepared === null) return 'settled';
     const { session, credentials } = prepared;
-    if (credentials === null) throw new Error('SSLCommerz is not set up for this brand any more');
+    if (credentials === null) {
+      // The store was switched to the other mode (or its key lost) since this page opened:
+      // there is nothing to ask, so a person checks it in SSLCommerz's panel (audit N4).
+      return this.refuseUnchecked(orgId, sessionId, valId, 'gateway_changed');
+    }
+    if (!gatewayTakesPayments(session.mode, this.config.STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX)) {
+      // A sandbox "payment" is test money (public test cards): never booked and never lowers a
+      // COD on an installation that does not take sandbox payments (ledger audit C1).
+      return this.refuseUnchecked(orgId, sessionId, valId, 'sandbox_not_accepted');
+    }
 
     const asked = await this.gateway.validate(credentials, valId, {
       timeoutMs: this.config.STOREFRONT_GATEWAY_TIMEOUT_MS,
@@ -487,11 +550,24 @@ export class PaymentsService {
       (verdict.reason === 'not_valid' || verdict.reason === 'transaction_mismatch')
     ) {
       // Not a payment of this session: a forged or stale IPN, or a shopper who did not pay.
-      // Nothing changes; the session stays open for a real one.
+      // Nothing is booked; the session waits for a real one again while its page is still
+      // payable, else it expires (and the unpaid-order timer takes the order).
       this.logger.warn(
         { session: sessionId, reason: verdict.reason },
         'an SSLCommerz payment was not valid',
       );
+      await withOrg({ orgId, userId: GATEWAY_RECORDER }, async (tx) => {
+        const locked = await buying.sessionById(tx, orgId, sessionId, { forUpdate: true });
+        if (locked?.status !== 'validating') return;
+        const live = new Date(locked.expires_at).getTime() > Date.now();
+        await buying.moveSession(tx, {
+          orgId,
+          id: sessionId,
+          from: ['validating'],
+          to: live ? 'ready' : 'expired',
+          ...(live ? {} : { failureReason: 'unpaid' }),
+        });
+      });
       return verdict.reason;
     }
 
@@ -529,6 +605,28 @@ export class PaymentsService {
         refusal = 'amount_mismatch';
       }
       if (refusal !== null || !verdict.ok) {
+        // Refused as the order's payment, but money SSLCommerz took (and will settle to the
+        // bank all the same) is booked into the clearing wallet and owed back at once, so the
+        // deposit has a journal behind it and accounts sees the refund (ledger audit W3).
+        const taken = refusedButPaid({ tranId: locked.tran_id }, answer);
+        let owedBack: string | null = null;
+        if (taken !== null) {
+          const clearing = await this.wallets.ensureSystemWallet(tx, orgId, SSLCOMMERZ_WALLET);
+          const booked = await this.orders.recordGatewayAdvance(
+            tx,
+            { orgId, recordedBy: GATEWAY_RECORDER, decidedBy: GATEWAY_DECIDER },
+            {
+              orderId: locked.order_id,
+              method: 'sslcommerz',
+              transactionRef: locked.tran_id,
+              amountPoisha: taken,
+              wallet: clearing,
+              note: `SSLCommerz payment not accepted (${refusal ?? 'refused'}): owed back`,
+              owedBack: true,
+            },
+          );
+          owedBack = booked.advanceId;
+        }
         await buying.moveSession(tx, {
           orgId,
           id: sessionId,
@@ -553,10 +651,11 @@ export class PaymentsService {
             reason: refusal ?? 'refused',
             sessionAmountPoisha: locked.amount_poisha,
             validatedAmountPoisha: validated?.toString() ?? null,
+            owedBackAdvanceId: owedBack,
           },
         });
         this.logger.error(
-          { session: sessionId, reason: refusal },
+          { session: sessionId, reason: refusal, owedBack: owedBack !== null },
           'an SSLCommerz payment was refused: it needs a person (refund it from the gateway panel)',
         );
         return refusal ?? 'refused';
@@ -607,6 +706,49 @@ export class PaymentsService {
     });
   }
 
+  /**
+   * A payment this system cannot check or must not accept (a sandbox payment where sandbox is
+   * not taken, a store switched to the other mode): the session is refused, audited and logged
+   * for a person, with nothing booked and the COD unchanged.
+   */
+  private async refuseUnchecked(
+    orgId: string,
+    sessionId: string,
+    valId: string,
+    reason: 'sandbox_not_accepted' | 'gateway_changed',
+  ): Promise<string> {
+    return withOrg({ orgId, userId: GATEWAY_DECIDER }, async (tx) => {
+      const locked = await buying.sessionById(tx, orgId, sessionId, { forUpdate: true });
+      if (locked === undefined || ['paid', 'refused'].includes(locked.status)) return 'settled';
+      if (!['ready', 'cancelled', 'expired', 'validating'].includes(locked.status)) {
+        return 'no_page';
+      }
+      await buying.moveSession(tx, {
+        orgId,
+        id: sessionId,
+        from: [locked.status],
+        to: 'refused',
+        valId,
+        failureReason: reason,
+        settled: true,
+      });
+      await this.audit.record(tx, {
+        orgId,
+        actorUserId: GATEWAY_DECIDER,
+        operation: 'reject',
+        action: 'storefront.payment_refused',
+        entityType: 'order',
+        entityId: locked.order_id,
+        after: { tranId: locked.tran_id, reason, sessionAmountPoisha: locked.amount_poisha },
+      });
+      this.logger.error(
+        { session: sessionId, reason },
+        'an SSLCommerz payment was not checked: it needs a person (see the gateway panel)',
+      );
+      return reason;
+    });
+  }
+
   // --- not being paid ---------------------------------------------------------------------------
 
   /** A failed or cancelled return: the session ends, and the order if nothing was paid. */
@@ -625,6 +767,11 @@ export class PaymentsService {
         to: 'cancelled',
         failureReason: how,
       });
+      // A payment of this order being checked, or already booked, keeps it (audit W1).
+      const sessions = await buying.sessionsOfOrder(tx, orgId, session.order_id);
+      if (sessions.some((other) => other.status === 'validating' || other.status === 'paid')) {
+        return;
+      }
       await this.cancelIfUnpaid(
         tx,
         orgId,
@@ -640,16 +787,28 @@ export class PaymentsService {
       const web = await buying.webOrder(tx, orgId, orderId);
       if (web?.payment_method !== 'sslcommerz') return 'kept';
       const sessions = await buying.sessionsOfOrder(tx, orgId, orderId);
-      if (
-        sessions.some((session) => session.status === 'validating' || session.status === 'paid')
-      ) {
+      if (sessions.some((session) => session.status === 'paid')) return 'kept';
+      const checking = sessions.some(
+        (session) =>
+          session.status === 'validating' &&
+          Date.now() - new Date(session.updated_at).getTime() < VALIDATION_GRACE_MS,
+      );
+      if (checking) {
+        // A payment is being checked: look again once it has had time to settle (audit W1).
+        await enqueue(
+          tx,
+          STOREFRONT_QUEUES.expireUnpaid.name,
+          { orderId },
+          { orgId, ref: orderId, startAfter: VALIDATION_GRACE_MS / 1000 },
+        );
         return 'kept';
       }
       for (const session of sessions) {
         await buying.moveSession(tx, {
           orgId,
           id: session.id,
-          from: ['initiating', 'ready'],
+          // A check that never finished (the gateway silent past the grace) ends too.
+          from: ['initiating', 'ready', 'validating'],
           to: 'expired',
           failureReason: 'unpaid',
         });

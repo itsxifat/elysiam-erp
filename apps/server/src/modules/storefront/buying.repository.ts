@@ -575,11 +575,12 @@ export interface SessionRow extends Record<string, unknown> {
   readonly expires_at: Date | string;
   readonly settled_at: Date | string | null;
   readonly created_at: Date | string;
+  readonly updated_at: Date | string;
 }
 
 const SESSION_COLUMNS = sql`id, order_id, mode, tran_id, amount_poisha::text as amount_poisha, status,
   gateway_url, val_id, validated_amount_poisha::text as validated_amount_poisha, card_type, risky,
-  failure_reason, advance_id, expires_at, settled_at, created_at`;
+  failure_reason, advance_id, expires_at, settled_at, created_at, updated_at`;
 
 export async function insertSession(
   tx: Tx,

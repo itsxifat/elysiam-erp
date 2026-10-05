@@ -3528,6 +3528,8 @@ const bn: Record<MessageKey, string> = {
     'এই সার্ভারে তথ্য গোপন রাখার চাবি নেই। সার্ভার যিনি চালান তাঁকে STOREFRONT_CREDENTIALS_KEY দিতে বলুন।',
   'web.pay.unverified':
     'SSLCommerz-এর স্যান্ডবক্সে এখনো পরীক্ষা হয়নি। লাইভ করার আগে স্যান্ডবক্সে পরীক্ষা করুন।',
+  'web.pay.sandboxRefused':
+    'এই সার্ভার স্যান্ডবক্স পেমেন্ট নেয় না, তাই মোড লাইভ না হওয়া পর্যন্ত ক্রেতারা অনলাইনে পেমেন্ট করতে পারবেন না। স্টেজিং সার্ভারে এটি চালু করা যায় (STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX)।',
   'web.pay.enabled': 'অনলাইন পেমেন্ট নিন',
   'web.pay.mode': 'মোড',
   'web.pay.sandbox': 'স্যান্ডবক্স (পরীক্ষা)',
