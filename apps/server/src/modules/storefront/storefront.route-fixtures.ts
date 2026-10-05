@@ -96,6 +96,23 @@ export async function prepareStorefrontFixtures(): Promise<void> {
   if (prepared !== undefined) return;
   const catalog = new CatalogService();
   const suffix = randomUUID().slice(0, 6);
+  // Past the highest product sequence already used, not merely past the counter: other
+  // suites' fixtures write products with `max(sequence) + 1` and leave the counter behind
+  // (the inventory fixtures' note), and the route-matrix suite runs them all first.
+  await withSystem(
+    async (tx) => {
+      await tx.execute(sql`
+        insert into catalog.sku_settings (org_id, org_code, last_sequence)
+        select o.id,
+               coalesce(upper(substring(regexp_replace(o.slug, '[^A-Za-z0-9]', '', 'g') from 1 for 3)), 'ORG'),
+               coalesce((select max(p.sequence) from catalog.products p where p.org_id = o.id), 0)
+        from org.organizations o where o.id = ${ORG_A}
+        on conflict (org_id) do update
+          set last_sequence = greatest(catalog.sku_settings.last_sequence, excluded.last_sequence)
+      `);
+    },
+    { orgId: ORG_A },
+  );
   const category = await catalog.createCategory(seeder, {
     name: 'Website fixture',
     slug: `website-fixture-${suffix}`,
