@@ -46,6 +46,13 @@
 | M28  | ~~Agent activity extension~~ removed (D-292)     | 5      | XHIGH  | M20                |
 | M29  | ~~Landing page builder~~ removed (D-290)         | 5      | XHIGH  | M11, M16           |
 | M30  | Hardening and launch readiness                   | Launch | MAX    | all                |
+| M31  | One ERP per brand (brand edition)                | 6      | MAX    | M30 part 1         |
+| M32  | The mother ERP                                   | 6      | MAX    | M31                |
+| M33  | Website catalog and content from the ERP         | 6      | XHIGH  | M31                |
+| M34  | Website buying: checkout, accounts, payment      | 6      | MAX    | M33                |
+| M35  | Website offers, landing pages, tracking, ncom    | 6      | MAX    | M33, M34           |
+| M36  | Elysium website on the ERP, old data moved       | 6      | MAX    | M34, M35           |
+| M37  | Go live: brand servers, mother, switch-over      | 6      | XHIGH  | M31–M36            |
 
 ---
 
@@ -1046,3 +1053,135 @@ Launch · Effort MAX · Depends on: all · Architecture: §25–§29
 3. The `check-route-matrix` gate, in `pnpm verify` since M02b, is green, and the route report is attached.
 4. The restore drill's timing is documented.
 5. The go-live checklist is signed off by the human.
+
+---
+
+# Wave 3: one ERP per brand, the mother ERP, the website (D-469)
+
+Added on 2026-10-05 from the owner's instruction (D-469). Overview in `docs/plans/wave3.md`;
+each milestone's plan in `docs/plans/M31.md` to `M37.md` holds the detail.
+
+## M31: One ERP per brand (brand edition)
+
+Phase 6 · Effort MAX · Depends on: M30 part 1 · Architecture: §30
+
+**Build**
+
+- A deployment names its brand (`ERP_BRAND_SLUG`) and refuses to start beside another real brand; `db:seed --brand`.
+- The all-brands routes and screens leave the brand ERP (consolidated wallets and P&L, group dashboard, leaderboard).
+- White label: nothing a brand's staff, shoppers or website developer can see names Elysium (unless the brand is Elysium) or another brand.
+- Owner sign-in link: a short-lived Ed25519-signed assertion, checked with a public key in the brand's env, single use.
+- `infra/brand/`: one compose project per brand with its own Postgres.
+
+**Acceptance checks**
+
+1. A brand deployment beside a second real brand refuses to start.
+2. The cross-brand routes answer 404 and have no screens.
+3. A brand build of the console, till and portal contains no `elysium` and no other brand's name.
+4. A valid owner link signs in once; expired, replayed, wrong-audience, wrong-key or tampered links are refused alike; owners are not listed as staff.
+5. `pnpm verify` green; ledger-auditor on the tenancy and auth diff.
+
+## M32: The mother ERP
+
+Phase 6 · Effort MAX · Depends on: M31 · Architecture: §30
+
+**Build**
+
+- `apps/mother-server` and `apps/mother-console`, with their own database, sign-in (TOTP for everyone) and owners.
+- Brand registry with encrypted read-only connections and owner-link keys; a worker pulls each brand's rollups and snapshots.
+- Overview, leaderboard, brand pages with live lists, accounts across brands, "Open brand ERP".
+- `infra/mother/`.
+
+**Acceptance checks**
+
+1. Overview totals equal the sum of each brand's own dashboard for the same range.
+2. "Open brand ERP" signs the owner in, once.
+3. The mother's read role cannot write to a brand database.
+4. An unreachable brand shows its last figures with their age; the others still load.
+5. No brand process or page calls the mother.
+6. `pnpm verify` green; ledger-auditor on the consolidated money reads.
+
+## M33: Website catalog and content from the ERP
+
+Phase 6 · Effort XHIGH · Depends on: M31 · Architecture: §31
+
+**Build**
+
+- Web fields on products and categories, size charts, website settings, hero slides, menu, old-id map.
+- The signed, server-to-server storefront read API; public images.
+- The console's Website section and the product page's Website card.
+
+**Acceptance checks**
+
+1. Hidden products never reach the storefront; shown ones carry live available quantity at the web locations only.
+2. An old slug redirects.
+3. Bad signatures, stale timestamps and revoked keys are 401; no storefront response carries a cost field.
+4. Settings, hero, menu and size charts round-trip through the console (stack spec, screenshots).
+5. `pnpm verify` green; ledger-auditor on the tenancy diff.
+
+## M34: Website buying: checkout, accounts, payment
+
+Phase 6 · Effort MAX · Depends on: M33 · Architecture: §31
+
+**Build**
+
+- Cart quote and checkout priced by the ERP; stock held at placement; shopper order view.
+- Website customer accounts (email code, Google link, password reset), linked to buyers.
+- SSLCommerz with server validation and IPN, posted as a verified advance; SMTP emails.
+
+**Acceptance checks**
+
+1. A quote and its order agree to the poisha; a price change in between is `409 CART_REPRICED`.
+2. Racing for the last unit: one order, one `409 OUT_OF_STOCK`, stock never negative.
+3. A payment whose validated amount differs from the order is refused; a correct one posts and lowers the COD amount.
+4. Account flows work end to end; codes and tokens are stored hashed.
+5. `pnpm verify` green; ledger-auditor on the money and stock diff.
+
+## M35: Website offers, landing pages, tracking, ncom
+
+Phase 6 · Effort MAX · Depends on: M33, M34 · Architecture: §31
+
+**Build**
+
+- Flash sales, the old site's discount engine in integer poisha, landing pages and their editor, campaign links.
+- Meta pixel/CAPI and GA4 settings and server events; the ncom.bd connector; the packing scanner routes and Scan page; order labels.
+
+**Acceptance checks**
+
+1. A 5-unit flash sale sells exactly 5 under 20 concurrent checkouts; a cancel gives the unit back.
+2. The ported discount engine matches the old one on recorded carts.
+3. Landing-page orders are priced from the page, never the request.
+4. The old site's `ncom-check.mjs` passes against the ERP.
+5. Scanner sign-in and lookup work; a revoked token is refused.
+6. `pnpm verify` green; ledger-auditor on pricing, stock and promo.
+
+## M36: Elysium website on the ERP, old data moved
+
+Phase 6 · Effort MAX · Depends on: M34, M35
+
+**Build**
+
+- The website (`D:\Projects\elysium`) reads and writes only through the storefront API; its admin panel, database and demo kit go; `/admin` redirects to the ERP.
+- `pnpm migration legacy-site`: the old Mongo export imported through the real services, with a dry run, a cost sheet for opening stock, and a read-only history for finished orders.
+
+**Acceptance checks**
+
+1. The dry run reports everything; the commit creates exactly that or nothing.
+2. Counts, stock and every old URL and variant id match after the import.
+3. A Playwright pass of the shopper journeys against a preview brand ERP.
+4. No database connection or admin route is left in the website.
+5. `pnpm verify` green; the website builds and lints.
+
+## M37: Go live: brand servers, mother, switch-over
+
+Phase 6 · Effort XHIGH · Depends on: M31–M36 · Gate: owner's servers, domains, credentials, switch-over date
+
+**Build**
+
+- The brands server and the mother server installed; the Elysium switch-over runbook rehearsed, then run with the owner.
+
+**Acceptance checks**
+
+1. Each brand deployment passes its health checks and the bundle scan.
+2. The mother shows Elysium's figures and opens its ERP.
+3. The switch-over is rehearsed on staging with timings.
