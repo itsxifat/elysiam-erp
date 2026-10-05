@@ -28,7 +28,8 @@ function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
  * Every route declares **`read Cost`** (super_admin, org_admin, accounts: §6's cost row), the
  * same set D-005 lets price a receipt, because every answer here is purchase cost (invariant
  * 5). Writing a standard price also needs `update Supply`, which the service checks (every
- * `read Cost` role holds it today). Mutations are audited by the net.
+ * `read Cost` role holds it today). Mutations write their own audit rows, with counts only
+ * (the request body is the prices), so the interceptor's net stands down for them.
  */
 @Controller('v1/supply')
 export class SkuCostsController {

@@ -1,6 +1,7 @@
 import {
   Button,
   Checkbox,
+  ConfirmDialog,
   DataTable,
   Dialog,
   FilterChips,
@@ -92,6 +93,8 @@ import { variantLabel } from './variant-table.js';
  * selection is the page's own and is never taken from the address, so a shared link cannot
  * arrive with forty products chosen. Delete (M39a's routes, D-623) opens the shared
  * Delete-or-archive dialog: a product nothing uses is deleted, anything else archived.
+ * "Delete unused" on ticked rows deletes each one nothing uses, one request each (the server
+ * asks what uses it inside every delete), and keeps the rest, saying how many.
  */
 
 const route = getRouteApi('/catalog');
@@ -115,6 +118,7 @@ export function CatalogProductsPage() {
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [duplicating, setDuplicating] = useState<CatalogProductListItem | null>(null);
   const [managing, setManaging] = useState<CatalogProductListItem | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [stickers, setStickers] = useState<readonly StickerItem[] | null>(null);
 
   // Keyset pagination cannot compute "page 4"; it needs the last row of page 3.
@@ -215,6 +219,34 @@ export function CatalogProductsPage() {
     onSuccess: setStickers,
     onError: failed,
   });
+  /**
+   * Delete every ticked product nothing uses (plan item 8). One request each, in turn: a
+   * product in use is refused by the server (`*_IN_USE`) and kept; anything else stops the
+   * run and says why, with what was already deleted counted.
+   */
+  const deleteUnused = async () => {
+    let deleted = 0;
+    let kept = 0;
+    for (const id of chosen) {
+      try {
+        await deleteProduct(id);
+        deleted += 1;
+      } catch (error) {
+        if (error instanceof ApiError && error.code?.endsWith('_IN_USE') === true) {
+          kept += 1;
+          continue;
+        }
+        void queryClient.invalidateQueries({ queryKey: ['catalog'] });
+        failed(error);
+        return;
+      }
+    }
+    done(
+      t('cp.list.deleteUnusedDone')
+        .replace('{deleted}', String(deleted))
+        .replace('{kept}', String(kept)),
+    );
+  };
   const toggle = (id: string) =>
     setSelected((current) => {
       const nextSet = new Set(current);
@@ -574,6 +606,12 @@ export function CatalogProductsPage() {
                 </Button>
               </>
             ) : null}
+            {mayDelete ? (
+              <Button size="sm" variant="outline" onClick={() => setConfirmingDelete(true)}>
+                <Trash2 aria-hidden="true" />
+                {t('cp.list.deleteUnused')}
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="outline"
@@ -679,6 +717,17 @@ export function CatalogProductsPage() {
               />
             </div>
           }
+        />
+        <ConfirmDialog
+          open={confirmingDelete}
+          onOpenChange={setConfirmingDelete}
+          title={t('cp.list.deleteUnusedTitle').replace('{n}', String(chosen.length))}
+          description={t('cp.list.deleteUnusedHelp')}
+          confirmLabel={t('cp.list.deleteUnused')}
+          cancelLabel={t('cp.cancel')}
+          closeLabel={t('cp.close')}
+          destructive
+          onConfirm={deleteUnused}
         />
         {managing === null ? null : (
           <DeleteOrArchive

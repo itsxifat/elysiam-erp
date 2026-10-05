@@ -145,6 +145,12 @@ const bn: Record<CatalogPricingKey, string> = {
   'cp.list.show': 'ওয়েবসাইটে দেখান',
   'cp.list.hide': 'ওয়েবসাইট থেকে লুকান',
   'cp.list.archive': 'আর্কাইভ করুন',
+  'cp.list.deleteUnused': 'অব্যবহৃতগুলো মুছুন',
+  'cp.list.deleteUnusedTitle': '{n}টি পণ্যের মধ্যে অব্যবহৃতগুলো মুছবেন?',
+  'cp.list.deleteUnusedHelp':
+    'বাছাই করা যে পণ্য কোথাও ব্যবহার হয়নি সেটি স্থায়ীভাবে মুছে যাবে। স্টক, বিক্রি, রিসিট বা অর্ডার আছে এমন পণ্য থেকে যাবে: সেটি আর্কাইভ করুন।',
+  'cp.list.deleteUnusedDone':
+    '{deleted}টি মুছে গেছে। ব্যবহৃত {kept}টি রাখা হলো: সেগুলো আর্কাইভ করুন।',
   'cp.list.restore': 'ফিরিয়ে আনুন',
   'cp.list.moveTo': 'ক্যাটাগরিতে সরান',
   'cp.list.setChart': 'সাইজ চার্ট বসান',

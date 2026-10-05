@@ -289,6 +289,26 @@ test('Delete, through M39a’s dialog: a used product is offered Archive; the un
   await shot('b-09-delete-used');
   await used.getByRole('button', { name: 'Cancel' }).click();
   await expect(used).toBeHidden();
+
+  // The list's "Delete unused" on two ticked rows: the spare goes, the shirt stays.
+  const spare = `Spare Tee ${RUN}`;
+  await api('POST', '/v1/catalog/products', {
+    name: spare,
+    slug: `spare-tee-${RUN.toLowerCase()}`,
+    pricePoisha: '50000',
+  });
+  await page.goto(`/catalog?q=${RUN}`);
+  await page.getByRole('checkbox', { name: `Select ${spare}` }).click();
+  await page.getByRole('checkbox', { name: `Select ${PRODUCT}`, exact: true }).click();
+  await page.getByRole('button', { name: 'Delete unused' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Delete the unused ones of 2 products?' });
+  await confirm.getByRole('button', { name: 'Delete unused' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Deleted 1.' })).toContainText(
+    'Kept 1 that are in use',
+  );
+  await expect(page.getByRole('link', { name: spare })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: PRODUCT, exact: true })).toBeVisible();
+  await shot('b-10-delete-unused-bulk');
 });
 
 test('a role without read:cost sees prices and no cost on the same page', async ({ browser }) => {

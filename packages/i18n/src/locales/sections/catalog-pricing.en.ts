@@ -159,6 +159,12 @@ const en = {
   'cp.list.show': 'Show on website',
   'cp.list.hide': 'Hide from website',
   'cp.list.archive': 'Archive',
+  'cp.list.deleteUnused': 'Delete unused',
+  'cp.list.deleteUnusedTitle': 'Delete the unused ones of {n} products?',
+  'cp.list.deleteUnusedHelp':
+    'Each ticked product that nothing uses is deleted for good. One with stock, sales, receipts or orders is kept: archive it instead.',
+  'cp.list.deleteUnusedDone':
+    'Deleted {deleted}. Kept {kept} that are in use: archive them instead.',
   'cp.list.restore': 'Restore',
   'cp.list.moveTo': 'Move to category',
   'cp.list.setChart': 'Set size chart',
