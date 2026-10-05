@@ -89,12 +89,13 @@ The plain-language summary with percentages is `docs/build-status.md`.
 One ERP per brand, the mother ERP, and each brand's website run from its ERP. Overview:
 `wave3.md`.
 
-| Plan | Milestone                                     | State on 2026-10-05               |
-| ---- | --------------------------------------------- | --------------------------------- |
-| M31  | One ERP per brand (brand edition)             | being built                       |
-| M32  | The mother ERP                                | being built                       |
-| M33  | Website catalog and content from the ERP      | being built                       |
-| M34  | Website buying: checkout, accounts, payment   | built (branch `m34-buying`)       |
-| M35  | Website offers, landing pages, tracking, ncom | M35a built (branch), M35b planned |
-| M36  | Elysium website on the ERP, old data moved    | planned                           |
-| M37  | Go live: brand servers, mother, switch-over   | planned                           |
+| Plan | Milestone                                     | State on 2026-10-05                        |
+| ---- | --------------------------------------------- | ------------------------------------------ |
+| M31  | One ERP per brand (brand edition)             | done (merged 2954f50)                      |
+| M32  | The mother ERP                                | paused at about 70% (`m32-mother`)         |
+| M33  | Website catalog and content from the ERP      | done (merged faf12bd)                      |
+| M34  | Website buying: checkout, accounts, payment   | built (branch `m34-buying`)                |
+| M35  | Website offers, landing pages, tracking, ncom | M35a done (merged 4e500db), M35b planned   |
+| M36  | New Elysium website on the ERP                | planned (starts empty; optional customers) |
+| M37  | Go live: brand servers, mother, switch-over   | planned                                    |
+| M38  | Barcode stickers, strict stock, scan-to-pack  | M38a being built; M38b planned             |
