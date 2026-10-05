@@ -65,18 +65,37 @@ product page or in **Supply**, from a **Stock in hand** entry, from a product pa
 (**Barcode stickers** → **Print stickers**, or the printer button beside a size's barcode), and
 from **Stock**: tick the rows and press **Print stickers for the chosen rows**.
 
-1. **Print on**: the sticker roll in your thermal printer (38 × 25, 40 × 30 or 50 × 25 mm), or
-   an A4 sticker sheet (3 × 8 or 4 × 10).
+1. **Print on**: the sticker roll in your thermal printer (38 × 25, 40 × 30, 45 × 35 or
+   50 × 25 mm), an A4 sticker sheet (3 × 8 or 4 × 10), or **Custom size…** for any other roll
+   (see below).
 2. On a half-used A4 sheet, set **Start at position** to the first unused sticker (1 is top
    left, then along the row).
-3. Untick **Print the price on the sticker** if the tag should not show the price. The ERP
-   remembers your choice of paper and price for next time.
-4. Change any count, then press **Print**. The PDF opens in a new tab; print it from there. If
+3. Untick **Print the price on the sticker** if the tag should not show the price.
+4. To add the same short line to every sticker of this print ("Made in Bangladesh", a season
+   code), open **More options** and type it in **Extra line on every sticker** (up to 40
+   characters). Leave it empty for none.
+5. The **Preview** on the right shows one sticker as it will print. On a small sticker some
+   lines do not fit; the preview says which were left off.
+6. Change any count, then press **Print**. The PDF opens in a new tab; print it from there. If
    no tab opened, use **Open** or **Download**.
 
+The ERP remembers your paper, your custom size, the price choice and the extra line for next
+time, on this computer or phone.
+
+### A roll of another size
+
+Choose **Custom size…** and type one sticker's **Width** and **Height** in millimetres, as
+printed on the roll's box (one decimal at most, like 32.5). Width runs across the roll, height
+along it. Any size from 25 to 110 mm wide and 15 to 100 mm tall can be typed.
+
+The barcode needs about 29.3 mm of width to scan, so a narrower sticker is refused with the
+smallest width that works. On a small sticker the ERP keeps the brand, the price and the
+barcode, and leaves off what does not fit in this order: the extra line, the SKU code, the
+size and colour, then the product name. The preview shows the result before you print.
+
 For a thermal printer, print at **actual size** (not "fit to page") with the paper size set to
-the roll's sticker size. More than a thousand stickers come as several files: print them one
-after another.
+the roll's sticker size (for a custom size, the same width and height you typed). More than a
+thousand stickers come as several files: print them one after another.
 
 ## Use the barcode scanner
 
