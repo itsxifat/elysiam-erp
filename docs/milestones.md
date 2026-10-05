@@ -53,6 +53,7 @@
 | M35  | Website offers, landing pages, tracking, ncom    | 6      | MAX    | M33, M34           |
 | M36  | Elysium website on the ERP, old data moved       | 6      | MAX    | M34, M35           |
 | M37  | Go live: brand servers, mother, switch-over      | 6      | XHIGH  | M31–M36            |
+| M38  | Barcode stickers, strict stock, scan-to-pack     | 6      | MAX    | M33                |
 
 ---
 
@@ -1185,3 +1186,22 @@ Phase 6 · Effort XHIGH · Depends on: M31–M36 · Gate: owner's servers, domai
 1. Each brand deployment passes its health checks and the bundle scan.
 2. The mother shows Elysium's figures and opens its ERP.
 3. The switch-over is rehearsed on staging with timings.
+
+## M38: Barcode stickers, strict stock, scan-to-pack and packing video
+
+Phase 6 · Effort MAX · Depends on: M33, catalog-stock-ux · Decisions D-600 to D-619
+
+**Build**
+
+- M38a: the complete new-product form; stock in hand at a cost per piece while the opening stock window is open; an EAN-13 for every SKU; stickers for thermal rolls (38 × 25, 40 × 30, 50 × 25 mm) and A4 sheets; the scanner anywhere in the console and on stock screens.
+- M38b: the packing station (scan each piece against the order), the packing video kept until seven days after delivery.
+
+**Acceptance checks**
+
+1. Stock in hand posts one balanced journal per entry and offers one sticker per piece.
+2. Every SKU has a valid, unique EAN-13; scanning it opens the variant.
+3. Sticker PDFs have the exact page size per medium.
+4. Stock in hand is refused once the window is closed.
+5. A wrong or extra scan at packing is refused; a complete order becomes packed.
+6. The packing video is deleted seven days after delivery.
+7. `pnpm verify` green; ledger-auditor on the posting, the window and the packing transition.

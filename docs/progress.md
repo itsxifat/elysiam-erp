@@ -1385,3 +1385,35 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
   after an unanswered save ("an earlier save may have gone through"); the console bundle is at 247.8 KB of 250, so the
   redesign should watch the budget.
 - Next: merge into the wave-2 integration after the redesign lands; then M30 part 2 on staging.
+
+### 2026-10-05 · wave 3 · The owner's new shape: one ERP per brand, a mother ERP, the website run from the ERP · in progress
+
+- The owner's instruction (D-469): every business gets its own ERP deployment and database, with
+  no clue of the others or of a head office; a separate mother ERP on its own server and domain
+  shows and handles everything; each brand's ERP becomes its website's back office, starting
+  with Elysium Lifestyle BD's Next.js site at `D:\Projects\elysium`.
+- Delivered so far (branch `integration-wave2`):
+  - The redesign (`design-refresh`, verified 2026-10-03: verify exit 0, the stack and preview
+    Playwright runs green) fast-forwarded into `integration-wave2`, so wave 3 builds on the new
+    design. Its own progress entry was never written; its plan's Status and the review
+    screenshots are the record.
+  - Plans: `docs/plans/wave3.md` (shape, the old admin panel mapped feature by feature, order
+    of work, the old site's problems) and M31 to M37, the milestone table and sections in
+    `docs/milestones.md`, D-469, decision id ranges per milestone, `build-status.md` and the
+    plans index.
+  - The owner link's format, shared by the brands (verify) and the mother (mint):
+    `packages/domain/src/iam/owner-link.ts` with 13 tests including fast-check (D-473).
+  - Survey of the old website: Next.js 14, Mongoose 9 on one Mongo database, 31 admin screens,
+    112 API routes, 20 models; money in float taka; sizes only, stock as one number per size.
+- Found on the old website and fixed on its branch `fix/settings-public-allowlist` (66890cb,
+  not deployed): the public `GET /api/admin/settings` returned the ncom.bd connector, order,
+  API and webhook secrets to anyone; visitors now get an allow-list of storefront sections and
+  staff the redacted document without ncom. `GET /api/orders/[id]` also returned the ncom block
+  to shoppers. The ncom secrets should be rotated once it is deployed.
+- Builders started (each in its own worktree, decision ids reserved): M31
+  (`m31-brand-edition`), M32 (`m32-mother`), M33 (`m33-storefront-catalog`).
+- Owner questions: the old site's courier-history fraud check (default: not carried over,
+  D-291); the two servers and the mother's domain; Elysium's admin address; Elysium's
+  SSLCommerz, SMTP, Meta, GA4 and ncom credentials; the accountant's cost per piece for the
+  website's stock; a switch-over date.
+- Next: integrate M31, M32 and M33; then M34 and M35.

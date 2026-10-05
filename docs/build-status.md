@@ -1,21 +1,26 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-03** (M30 part 1 built, then its follow-ups: the remaining medium security findings fixed, two narrow races closed, and four screens a tester missed added; then products and stock made easy after the owner's feedback; then the owner-requested design refresh of the console, the investor portal and the till: a calmer look, a grouped sidebar, a search-everything palette and a real overview; part 2 waits for a staging server). This is the short, plain-language view. The
+Last updated: **2026-10-05** (the owner changed the shape of the system: one ERP per brand, a mother ERP above them, and each brand's ERP running its website, starting with Elysium Lifestyle BD's site. Wave 3 is planned and its first three milestones are being built). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Built     [###################-]  98%
+Everything     [################----]  78%   (26.5 of 34 milestones)
+First plan     [###################-]  98%   (M00 to M30)
+Wave 3         [--------------------]   0%   (M31 to M37, started 2026-10-05)
 ```
 
-- The plan has 33 milestones. Six are out on the owner's instruction: the Beownz reseller
+- The first plan had 33 milestones. Six are out on the owner's instruction: the Beownz reseller
   platform (M21, M22), the fraud check (M13, and its code deleted), the Chatwoot inbox (M27), the
-  staff activity extension (M28) and the landing page builder (M29). So **27 count**.
+  staff activity extension (M28) and the landing page builder (M29). So **27 count** from it.
+- **Wave 3 adds 7** (the owner's instruction of 2026-10-05, D-469): a separate ERP for each brand
+  with no sign of the others, a mother ERP for the owner, and each brand's website run from its
+  ERP. So **34 count** in all.
 - A milestone counts 100% when it is built, tested and passed its audits. A part-built one counts
   for the share that is done.
-- Today: **25 done, 2 part-built (M14b about 75%, M30 about 70%).** Both are waiting for a
-  staging server.
+- Today: **25 done, 2 part-built (M14b about 75%, M30 about 75%), 7 new ones being built or
+  planned.**
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
 [What the owner needs to do](#what-the-owner-needs-to-do).
@@ -40,6 +45,9 @@ Built     [###################-]  98%
 | Dashboards and leaderboard                                                  |  100% | A daily summary per brand, an owner's dashboard per brand and an all-brands view for the super admin, a fair leaderboard that never shows another brand's revenue or profit, automatic problem alerts, exports. An AI summary exists but is off.                                                                                                |
 | Company loans                                                               |  100% | Loans the company takes: flat or reducing-balance schedules, a reminder once per instalment, repayments split into principal and interest, approval above the threshold, statements. A mistaken loan is voided by a second person.                                                                                                              |
 | Going live and hardening                                                    |   85% | The test site runs on the owner's server with demo data and one login per role. Security review done and every serious finding fixed; load test passed every target; screens pass an accessibility check in both themes; staff guides and a go-live checklist written. Backup drill, alerts and data-retention rules wait for a staging server. |
+| One ERP per brand (wave 3)                                                  |    0% | Each brand gets its own copy of the ERP, its own database and web address. Nothing in it names another brand or a head office. Being built (M31).                                                                                                                                                                                               |
+| The mother ERP (wave 3)                                                     |    0% | A separate site for the owner: every brand's numbers side by side and added up, and one button to open any brand's ERP. Being built (M32).                                                                                                                                                                                                      |
+| The website run from the ERP (wave 3)                                       |    0% | The brand's website gets its products, menus, banners, offers, customers and orders from the ERP; its old admin panel is switched off. Elysium first. Catalog and content being built (M33); buying, offers, the switch-over and the old data next (M34 to M36).                                                                                |
 | Fraud check, Chatwoot inbox, staff activity extension, landing page builder |     - | Removed by the owner on 2026-10-02. Not counted. The fraud check code was deleted.                                                                                                                                                                                                                                                              |
 | Reseller platform (Beownz)                                                  |     - | Set aside by the owner. Not counted.                                                                                                                                                                                                                                                                                                            |
 
@@ -80,46 +88,72 @@ Built     [###################-]  98%
 | M28  | Staff activity extension               |     - | Removed by the owner                                                                             |
 | M29  | Landing pages                          |     - | Removed by the owner                                                                             |
 | M30  | Final hardening before launch          |   75% | Part 1 and its follow-ups done; part 2 (backup drill, alerts, retention, sign-off) needs staging |
+| M31  | One ERP per brand                      |    0% | Being built                                                                                      |
+| M32  | The mother ERP                         |    0% | Being built                                                                                      |
+| M33  | Website products and content           |    0% | Being built                                                                                      |
+| M34  | Website checkout, accounts, payment    |    0% | Next, after M33                                                                                  |
+| M35  | Website offers, landing pages, ncom    |    0% | Next, after M33                                                                                  |
+| M36  | Elysium website switched to the ERP    |    0% | After M34 and M35; moves the old site's data                                                     |
+| M37  | Brand and mother servers, go-live      |    0% | Needs the owner's servers, domains and a date                                                    |
 
 ## Being built now
 
-The owner set the order on 2026-10-02: **build everything, make it testable by a person, host it
-on the owner's server, then do M30's review and fixes.** The first three steps are done:
+**Wave 3, from the owner's instruction of 2026-10-05.** The plan is `plans/wave3.md`.
 
-1. **Done: M14b** one-server test site on the owner's server, with HTTPS, a deploy script and
-   runbooks. Production deploy config and monitoring are written; the backup and rollback drills
-   wait for a staging server.
-2. **Done: the missing buttons and screens**: order steps, parcel panel, bulk pack, Settings,
-   HR's Pay button, and the Staff screen (invite, roles, leavers, password and two-step resets).
-3. **Done: the preview kit**: demo data in every area, one login per role, and the plain testing
-   guide (`docs/testing-guide.md`).
-4. **Done: M30 part 1**:
-   - a security review, with every serious finding fixed: four money-control holes, a
-     login rate-limit bypass, and the ways round those fixes a second review found;
-   - a load test, with every target met by a wide margin;
-   - an accessibility check of every screen in both themes;
-   - a guide per role and a go-live checklist for the owner to sign;
-   - `pnpm admin:bootstrap`, which creates the first super admin on a new database.
-5. **Done: M30's follow-ups**:
-   - every remaining medium security finding fixed, except one deployment item (one bucket
-     for private and public files) and Turnstile on the tracking page, which needs the brands'
-     keys;
-   - payments split into small pieces now meet the approval limit together;
-   - supply entries and payments can no longer be back-dated;
-   - new screens: a branch on "Add an employee", editing an employee, linking an investor's
-     portal sign-in, and the warehouse's supplier list.
-6. **Next: M30 part 2** on a staging server: the timed backup restore, alert rules and how
-   long each kind of data is kept. Then the owner signs the go-live checklist.
+1. **Being built, three at once:**
+   - **M31, one ERP per brand.** Each brand runs its own copy with its own database. The
+     all-brands screens leave it. Names come from the brand itself, so Oura's staff never see
+     "Elysium". The owner can sign in through a one-time link from the mother ERP.
+   - **M32, the mother ERP.** The owner's own site: totals and a row per brand for orders,
+     sales, profit, cash, stock, COD and ad spend, the leaderboard, each brand's live lists,
+     and "Open this brand's ERP".
+   - **M33, the website's products and content in the ERP.** A Website section in the ERP for
+     the site's settings, banners, menu and size charts, website fields on products and
+     categories, and a signed connection the website reads from.
+2. **Next:** M34 (checkout, shopper accounts, SSLCommerz, emails) and M35 (flash sales,
+   discounts, landing pages, campaign links, Facebook pixel and Google Analytics, the ncom.bd
+   link, the packing scanner).
+3. **Then:** M36 rewires the Elysium website onto the ERP, removes its admin panel and
+   database, and moves the old products, customers, open orders and offers over. M37 puts the
+   brand ERPs and the mother ERP on their two servers and switches the site over, step by step
+   with the owner.
+4. **Still waiting from the first plan:** M30 part 2 (backup drill, alerts, data retention) on a
+   staging server.
 
 ## Time left (estimate)
 
-| Work                                | Time left          |
-| ----------------------------------- | ------------------ |
-| M30 part 2 (needs a staging server) | about 2 to 3 hours |
+Checked at 16:00 on 2026-10-05, from what the four builders have committed so far.
+
+| Work                                                                       | Time left                                        |
+| -------------------------------------------------------------------------- | ------------------------------------------------ |
+| M31, M32, M33 and M35a: finish, check, audit, join together                | about 5 to 7 hours                               |
+| M34 (checkout, accounts, payment) and M35b (landing pages, tracking, ncom) | about 8 to 10 hours                              |
+| M36 (the website rewired, the old data moved)                              | about 8 to 10 hours                              |
+| **All building**                                                           | **about 1.5 to 2 days**                          |
+| M37 (servers and switch-over) and M30 part 2                               | a few hours each, once the owner's inputs are in |
 
 ## What the owner needs to do
 
 Nothing here blocks building; each one blocks going live.
+
+**New with wave 3 (2026-10-05):**
+
+- **Deploy a security fix on the current website.** Its public settings address handed out the
+  ncom.bd connection secrets to anyone. The fix is on the website repo's branch
+  `fix/settings-public-allowlist`. After deploying it, issue new ncom keys (rotate them).
+- **The courier-history fraud check** the old admin panel had: carry it into the ERP or not?
+  You removed the ERP's own fraud check on 2026-10-02. Until you answer, it is not carried over.
+- **Two servers:** which machine runs the brand ERPs and which runs the mother ERP, and the
+  mother's web address.
+- **Elysium's admin address:** `admin.elysium-lifestyle.bd` unless you prefer another.
+  `elysium-lifestyle.bd/admin` will forward there.
+- **Elysium's accounts for the website:** SSLCommerz, the email (SMTP) account, the Facebook
+  pixel and Conversions API token, Google Analytics, ncom.bd.
+- **The accountant:** the old website has no cost price for its stock. Before the switch-over
+  the accountant fills in a cost per piece on a sheet the importer produces.
+- **A date for the switch-over** of the website.
+
+**From the first plan:**
 
 1. **Try the test site** with `docs/testing-guide.md` and say what feels wrong or missing.
 2. **Change the server password** (`passwd` on the server): it was shared in a chat.
