@@ -192,11 +192,7 @@ export async function recordEmailOutcome(
 }
 
 /** The latest emails, newest first, without bodies. */
-export async function listEmails(
-  tx: Tx,
-  orgId: string,
-  limit: number,
-): Promise<EmailRow[]> {
+export async function listEmails(tx: Tx, orgId: string, limit: number): Promise<EmailRow[]> {
   const rows = await tx.execute<EmailRow>(sql`
     select id, template_key, locale, to_email, subject, null::bytea as body_sealed, state,
            attempts, provider_message_id, error, sent_at, ref_type, ref_id, created_at

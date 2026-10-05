@@ -94,10 +94,9 @@ function idOf(value: unknown): string | null {
 /** `"2024-…"`, `{ "$date": "…" }` or `{ "$date": { "$numberLong": "…" } }`. */
 function dateOf(value: unknown): Date | null {
   let raw: unknown = value;
-  if (typeof raw === 'object' && raw !== null && '$date' in raw)
-    raw = (raw).$date;
+  if (typeof raw === 'object' && raw !== null && '$date' in raw) raw = raw.$date;
   if (typeof raw === 'object' && raw !== null && '$numberLong' in raw) {
-    raw = Number((raw).$numberLong);
+    raw = Number(raw.$numberLong);
   }
   if (typeof raw !== 'string' && typeof raw !== 'number') return null;
   const date = new Date(raw);
