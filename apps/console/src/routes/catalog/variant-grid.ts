@@ -1,9 +1,11 @@
 /**
  * The pure parts of the new-product form and the product page (plan `catalog-stock-ux`).
  *
- * No imports, so the unit test can load this without the API client, which reads the
- * Vite environment at import time.
+ * No runtime imports, so the unit test can load this without the API client, which reads the
+ * Vite environment at import time (the two type-only imports below are erased).
  */
+import type { CatalogSku } from './api.js';
+import type { SkuCost } from './pricing-api.js';
 
 export interface AxisChoice {
   readonly attributeId: string;
@@ -292,4 +294,33 @@ export function planExtend(
     }
   }
   return { add, archive, restore, orphans };
+}
+
+/** `M / Red`, size first, from the attribute kinds (D-639's order). */
+export function variantLabel(
+  sku: Pick<CatalogSku, 'attributes'>,
+  kinds: ReadonlyMap<string, string> = new Map(),
+): string {
+  const rank = (pair: CatalogSku['attributes'][number]) => {
+    const kind = kinds.get(pair.attributeId);
+    if (kind !== undefined) return kind === 'size' ? 0 : kind === 'colour' ? 1 : 2;
+    const text = `${pair.code} ${pair.name}`.toLowerCase();
+    return text.includes('size') ? 0 : text.includes('colo') ? 1 : 2;
+  };
+  return [...sku.attributes]
+    .sort((a, b) => rank(a) - rank(b))
+    .map((pair) => pair.valueLabel)
+    .join(' / ');
+}
+
+/**
+ * The cost a margin is worked from (D-636): the average while there is one above zero, else
+ * the last buying price, else none. Only ever a figure the role was already sent.
+ */
+export function marginCost(
+  cost: Pick<SkuCost, 'wacPoisha' | 'lastUnitCostPoisha'> | undefined,
+): string | null {
+  if (cost === undefined) return null;
+  if (cost.wacPoisha !== null && cost.wacPoisha !== '0') return cost.wacPoisha;
+  return cost.lastUnitCostPoisha;
 }

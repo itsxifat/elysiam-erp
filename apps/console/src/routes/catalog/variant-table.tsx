@@ -40,7 +40,7 @@ import {
   type SkuCost,
 } from './pricing-api.js';
 import { CopyCode, EanBars } from './stickers.js';
-import { parseGrams, positivePrice, total } from './variant-grid.js';
+import { marginCost, parseGrams, positivePrice, total, variantLabel } from './variant-grid.js';
 
 /**
  * The product page's variants and stock (D-420), with M39b's prices (D-636, D-640, D-644,
@@ -85,29 +85,7 @@ const RULE_LABELS = {
 } as const;
 const ROUNDS = ['0', '100', '500', '1000', '5000', '10000'] as const;
 
-/** `M / Red`, size first, from the attribute kinds (D-639's order). */
-export function variantLabel(
-  sku: CatalogSku,
-  kinds: ReadonlyMap<string, string> = new Map(),
-): string {
-  const rank = (pair: CatalogSku['attributes'][number]) => {
-    const kind = kinds.get(pair.attributeId);
-    if (kind !== undefined) return kind === 'size' ? 0 : kind === 'colour' ? 1 : 2;
-    const text = `${pair.code} ${pair.name}`.toLowerCase();
-    return text.includes('size') ? 0 : text.includes('colo') ? 1 : 2;
-  };
-  return [...sku.attributes]
-    .sort((a, b) => rank(a) - rank(b))
-    .map((pair) => pair.valueLabel)
-    .join(' / ');
-}
-
-/** The cost a margin is worked from: the average while there is one, else the last price. */
-export function marginCost(cost: SkuCost | undefined): string | null {
-  if (cost === undefined) return null;
-  if (cost.wacPoisha !== null && cost.wacPoisha !== '0') return cost.wacPoisha;
-  return cost.lastUnitCostPoisha;
-}
+export { marginCost, variantLabel } from './variant-grid.js';
 
 export function VariantTable({
   product,

@@ -30,7 +30,6 @@ const en = {
   'cp.col.margin': 'Margin',
   'cp.col.standardCost': 'Standard buying price (৳)',
   'cp.col.weight': 'Weight (g)',
-  'cp.col.change': 'Change',
   'cp.col.price': 'Price (৳)',
 
   // The new-product grid (D-635).
@@ -45,7 +44,6 @@ const en = {
   'cp.new.copyDown': 'Copy this row to the rows below',
   'cp.new.pricePositive': 'Prices are above zero, in taka with up to two decimals.',
   'cp.new.regularAbove': 'A regular price is above the selling price, or left blank.',
-  'cp.new.costPositive': 'A cost per piece is above zero, in taka with up to two decimals.',
   'cp.new.weight': 'Weight per piece (g)',
   'cp.new.weightHint': 'Couriers are told this. Leave it blank for their default.',
   'cp.new.weightInvalid': 'A weight is whole grams, from 1 to 100,000.',
@@ -60,8 +58,6 @@ const en = {
   'cp.hub.bulkHelp':
     'Choose variants (tick rows, or a size or colour), say what to do, and preview. Nothing is saved until you save.',
   'cp.hub.choose': 'Choose',
-  'cp.hub.chooseSize': 'Every colour of a size',
-  'cp.hub.chooseColour': 'Every size of a colour',
   'cp.hub.field': 'Which price',
   'cp.hub.field.price': 'Selling price',
   'cp.hub.field.compareAt': 'Regular price',
@@ -84,7 +80,6 @@ const en = {
   'cp.hub.reason': 'Why (kept in the price history)',
   'cp.hub.reasonDefault': 'Changed on the product page',
   'cp.hub.saveCount': 'Save prices',
-  'cp.hub.changed': 'changed',
   'cp.hub.marginHelp':
     'Margin is worked out on this screen from the selling price and the average cost (or the last buying price).',
 

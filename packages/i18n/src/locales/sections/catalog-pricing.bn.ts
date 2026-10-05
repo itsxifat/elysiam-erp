@@ -25,7 +25,6 @@ const bn: Record<CatalogPricingKey, string> = {
   'cp.col.margin': 'মার্জিন',
   'cp.col.standardCost': 'নির্ধারিত কেনা দাম (৳)',
   'cp.col.weight': 'ওজন (গ্রাম)',
-  'cp.col.change': 'পরিবর্তন',
   'cp.col.price': 'দাম (৳)',
 
   'cp.new.quickFills': 'দ্রুত দাম',
@@ -39,7 +38,6 @@ const bn: Record<CatalogPricingKey, string> = {
   'cp.new.copyDown': 'এই সারি নিচের সারিগুলোতে কপি করুন',
   'cp.new.pricePositive': 'দাম শূন্যের বেশি, টাকায়, দশমিকের পর সর্বোচ্চ দুই ঘর।',
   'cp.new.regularAbove': 'নিয়মিত দাম বিক্রয়মূল্যের বেশি হবে, নয়তো ফাঁকা রাখুন।',
-  'cp.new.costPositive': 'প্রতি পিসের খরচ শূন্যের বেশি, টাকায়, দশমিকের পর সর্বোচ্চ দুই ঘর।',
   'cp.new.weight': 'প্রতি পিসের ওজন (গ্রাম)',
   'cp.new.weightHint': 'কুরিয়ারকে এটি জানানো হয়। ফাঁকা রাখলে তাদের নিজস্ব ওজন ধরা হবে।',
   'cp.new.weightInvalid': 'ওজন পূর্ণ গ্রামে, ১ থেকে ১,০০,০০০।',
@@ -54,8 +52,6 @@ const bn: Record<CatalogPricingKey, string> = {
   'cp.hub.bulkHelp':
     'variant বাছাই করুন (সারিতে টিক দিন, বা একটি সাইজ বা রঙ), কী করবেন বলুন, তারপর দেখে নিন। সেভ না করা পর্যন্ত কিছুই সেভ হয় না।',
   'cp.hub.choose': 'বাছাই',
-  'cp.hub.chooseSize': 'একটি সাইজের সব রঙ',
-  'cp.hub.chooseColour': 'একটি রঙের সব সাইজ',
   'cp.hub.field': 'কোন দাম',
   'cp.hub.field.price': 'বিক্রয়মূল্য',
   'cp.hub.field.compareAt': 'নিয়মিত দাম',
@@ -78,7 +74,6 @@ const bn: Record<CatalogPricingKey, string> = {
   'cp.hub.reason': 'কারণ (দামের ইতিহাসে থাকবে)',
   'cp.hub.reasonDefault': 'পণ্যের পাতায় বদলানো',
   'cp.hub.saveCount': 'দাম সেভ করুন',
-  'cp.hub.changed': 'বদলানো',
   'cp.hub.marginHelp':
     'মার্জিন এই পাতাতেই হিসাব হয়: বিক্রয়মূল্য আর গড় খরচ (বা শেষ কেনা দাম) থেকে।',
 
