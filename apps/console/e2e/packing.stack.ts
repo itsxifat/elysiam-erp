@@ -93,7 +93,7 @@ test('the station opens the order from its slip and the camera starts recording'
 
   const { packOrder } = stack();
   // The packer types the number on the slip, as when the slip's barcode is torn.
-  const find = page.getByLabel('Order slip or number');
+  const find = page.getByRole('textbox', { name: 'Order slip or number' });
   await find.fill(packOrder.orderNo);
   await find.press('Enter');
 
