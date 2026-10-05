@@ -6,7 +6,7 @@ detail is in `progress.md` (session log), `plans/` (one file per milestone) and 
 ## Overall
 
 ```
-Everything     [#################---]  86%   (31 of 36 milestones)
+Everything     [#################---]  88%   (32 of 36 milestones)
 First plan     [###################-]  98%   (M00 to M30)
 Wave 3         [############--------]  61%   (M31 to M38)
 ```
@@ -91,7 +91,7 @@ Wave 3         [############--------]  61%   (M31 to M38)
 | M33  | Website products and content                 |  100% | Done; live in Elysium's ERP                                                                                                                                                     |
 | M34  | Website checkout, accounts, payment          |  100% | Done; live in Elysium's ERP (SSLCommerz needs the store's keys)                                                                                                                 |
 | M35  | Website offers, landing pages, ncom          |   50% | Discounts and flash sales done; landing pages, links, tracking, ncom being built (M35b)                                                                                         |
-| M36  | The new Elysium website on the ERP           |    0% | Being built; goes up at demo.elysium-lifestyle.bd                                                                                                                               |
+| M36  | The new Elysium website on the ERP           |  100% | Done; live at demo.elysium-lifestyle.bd (campaign links and tracking arrive with M35b)                                                                                          |
 | M37  | Servers, addresses, go-live                  |   25% | Elysium's ERP live on the brands server; the website and the final domains to come                                                                                              |
 | M38  | Barcode stickers, strict stock, scan-to-pack |   50% | Stickers, stock in hand and the scanner done and live (M38a); packing station and video next (M38b)                                                                             |
 | M39  | Catalog management: delete, variant prices   |    0% | Being built from the owner's first use: delete or archive everywhere; prices and buying prices per variant, bulk price changes, duplicate product, regular price on the website |
