@@ -107,7 +107,28 @@ function nextClosingDate(): string {
   return new Date(Date.UTC(2018, 0, closingIndex)).toISOString().slice(0, 10);
 }
 
+/** A fresh branch to rename (M39a, D-633): never the brand's own head office. */
+async function freshBranch(): Promise<string> {
+  return withSystem(
+    async (tx) => {
+      const rows = await tx.execute<{ id: string }>(sql`
+        insert into org.branches (org_id, code, name, kind)
+        values (${ORG_A}, ${`RMB${token(5)}`}, 'Route matrix branch', 'showroom')
+        returning id
+      `);
+      return rows[0]?.id ?? '';
+    },
+    { orgId: ORG_A },
+  );
+}
+
 export const POS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
+  // M39a (D-633): what still runs at a branch, and renaming one.
+  'GET /v1/pos/branches/:id/holds': () => ({ url: `/v1/pos/branches/${state().branchId}/holds` }),
+  'PATCH /v1/pos/branches/:id': async () => ({
+    url: `/v1/pos/branches/${await freshBranch()}`,
+    body: { name: 'Route matrix branch renamed' },
+  }),
   'GET /v1/pos/registers': () => ({ url: '/v1/pos/registers' }),
   'POST /v1/pos/registers': () => ({
     url: '/v1/pos/registers',

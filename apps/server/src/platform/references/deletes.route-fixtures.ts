@@ -199,15 +199,6 @@ async function freshNavItem(): Promise<string> {
   return row.id;
 }
 
-async function freshBranch(): Promise<string> {
-  const row = await one<{ id: string }>(sql`
-    insert into org.branches (org_id, code, name, kind)
-    values (${ORG_A}, ${`RMD${token(5)}`}, 'Matrix branch', 'showroom')
-    returning id
-  `);
-  return row.id;
-}
-
 async function freshHead(): Promise<string> {
   const row = await one<{ id: string }>(sql`
     insert into ledger.accounts (org_id, code, name, class, subtype, normal_balance)
@@ -231,7 +222,6 @@ interface Prepared {
   readonly saleId: string;
   readonly templateId: string;
   readonly campaignId: string;
-  readonly branchId: string;
 }
 
 let prepared: Prepared | undefined;
@@ -253,7 +243,6 @@ export async function prepareDeleteFixtures(): Promise<void> {
     saleId: await freshSale(),
     templateId: await freshTemplate(),
     campaignId: await freshCampaign(),
-    branchId: await freshBranch(),
   };
 }
 
@@ -397,12 +386,7 @@ export const DELETE_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
     url: `/v1/storefront/nav-items/${await freshNavItem()}/usage`,
   }),
 
-  // Branches (D-633): a fresh branch renamed, never the brand's own head office.
-  'GET /v1/pos/branches/:id/holds': () => ({ url: `/v1/pos/branches/${state().branchId}/holds` }),
-  'PATCH /v1/pos/branches/:id': async () => ({
-    url: `/v1/pos/branches/${await freshBranch()}`,
-    body: { name: 'Matrix branch renamed' },
-  }),
+  // Branches (D-633) are the till module's: `pos.route-fixtures.ts`.
 
   // Expense and income heads (D-634).
   'GET /v1/accounts/heads': () => ({ url: '/v1/accounts/heads' }),
