@@ -14,7 +14,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { Link, Navigate } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, ImageOff } from 'lucide-react';
-import { useState, type ComponentProps, type ReactNode } from 'react';
+import { useId, useState, type ComponentProps, type DragEvent, type ReactNode } from 'react';
 
 import { api, ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
@@ -315,14 +315,14 @@ export function useDragReorder(onMove: (from: number, to: number) => void) {
   const [dragging, setDragging] = useState<number | null>(null);
   return (index: number) => ({
     draggable: true,
-    onDragStart: (event: React.DragEvent) => {
+    onDragStart: (event: DragEvent) => {
       setDragging(index);
       event.dataTransfer.effectAllowed = 'move';
     },
-    onDragOver: (event: React.DragEvent) => {
+    onDragOver: (event: DragEvent) => {
       if (dragging !== null) event.preventDefault();
     },
-    onDrop: (event: React.DragEvent) => {
+    onDrop: (event: DragEvent) => {
       event.preventDefault();
       if (dragging !== null && dragging !== index) onMove(dragging, index);
       setDragging(null);
@@ -330,4 +330,41 @@ export function useDragReorder(onMove: (from: number, to: number) => void) {
     onDragEnd: () => setDragging(null),
     'data-dragging': dragging === index ? 'true' : undefined,
   });
+}
+
+/**
+ * The kit's `Section` look, as a named region: the page's sections are landmarks a screen
+ * reader can jump between, and the tests find them by their titles.
+ */
+export function NamedSection({
+  title,
+  description,
+  actions,
+  children,
+}: {
+  readonly title: string;
+  readonly description?: string | undefined;
+  readonly actions?: ReactNode;
+  readonly children: ReactNode;
+}) {
+  const id = useId();
+  return (
+    <section
+      aria-labelledby={`${id}-title`}
+      className="rounded-lg border border-border bg-card text-card-foreground"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4 pb-3">
+        <div className="min-w-0 space-y-0.5">
+          <h2 id={`${id}-title`} className="text-base font-semibold tracking-tight text-foreground">
+            {title}
+          </h2>
+          {description === undefined ? null : (
+            <p className="text-sm text-muted-foreground">{description}</p>
+          )}
+        </div>
+        {actions === undefined ? null : <div className="flex items-center gap-2">{actions}</div>}
+      </div>
+      <div className="px-5 pb-5">{children}</div>
+    </section>
+  );
 }

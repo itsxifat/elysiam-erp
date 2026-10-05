@@ -1,5 +1,5 @@
 import type { WebGender } from '@elysium/contracts';
-import { Button, Checkbox, Section, Select, StatusBadge, controlClassName } from '@elysium/ui';
+import { Button, Checkbox, Select, StatusBadge, controlClassName } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
@@ -8,6 +8,7 @@ import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import { getSettings, listSizeCharts, saveProductWebFields } from '../website/api.js';
+import { NamedSection } from '../website/parts.js';
 import type { CatalogProduct } from './api.js';
 
 /**
@@ -89,7 +90,7 @@ export function WebsiteCard({
       : `${siteUrl.replace(/\/+$/, '')}/shop/${product.slug}`;
 
   return (
-    <Section
+    <NamedSection
       title={t('web.card.title')}
       description={t('web.card.help')}
       actions={
@@ -224,7 +225,7 @@ export function WebsiteCard({
           </p>
         )}
       </fieldset>
-    </Section>
+    </NamedSection>
   );
 }
 

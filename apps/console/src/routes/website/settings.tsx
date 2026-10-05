@@ -8,7 +8,7 @@ import type {
   StorefrontSettingsPatch,
   Testimonial,
 } from '@elysium/contracts';
-import { Button, Checkbox, Section, Select, poishaToTaka, takaToPoisha } from '@elysium/ui';
+import { Button, Checkbox, Select, poishaToTaka, takaToPoisha } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
@@ -16,7 +16,16 @@ import { useId, useState, type ReactNode } from 'react';
 import { useAbility } from '../../auth/session.js';
 import { getSettings, saveSettings, type WebsiteSettings } from './api.js';
 import { useWebsiteT, type WebsiteMessageKey } from './messages.js';
-import { control, Field, ImagePicker, Loadable, Preview, Problem, WebsitePage } from './parts.js';
+import {
+  control,
+  Field,
+  ImagePicker,
+  Loadable,
+  NamedSection,
+  Preview,
+  Problem,
+  WebsitePage,
+} from './parts.js';
 
 /**
  * Website → Settings (M33, D-503): the site's information, social links, announcement bar,
@@ -77,7 +86,7 @@ function SettingsSection({
     onMutate: () => setSaved(false),
   });
   return (
-    <Section
+    <NamedSection
       title={title}
       {...(description === undefined ? {} : { description })}
       actions={
@@ -103,7 +112,7 @@ function SettingsSection({
         {children}
         <Problem error={save.error} />
       </fieldset>
-    </Section>
+    </NamedSection>
   );
 }
 

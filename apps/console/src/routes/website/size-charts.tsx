@@ -1,4 +1,4 @@
-import { Button, ConfirmDialog, Section } from '@elysium/ui';
+import { Button, ConfirmDialog } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Minus, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useId, useState } from 'react';
@@ -12,7 +12,7 @@ import {
   type SizeChart,
 } from './api.js';
 import { useWebsiteT } from './messages.js';
-import { control, Empty, Field, Loadable, Problem, WebsitePage } from './parts.js';
+import { control, Empty, Field, Loadable, NamedSection, Problem, WebsitePage } from './parts.js';
 
 /**
  * Website → Size charts (M33, D-502): a grid editor for the charts a product page shows
@@ -58,7 +58,7 @@ export function WebsiteSizeChartsPage() {
             <ul className="grid gap-4 lg:grid-cols-2">
               {data.items.map((chart) => (
                 <li key={chart.id}>
-                  <Section
+                  <NamedSection
                     title={chart.name}
                     actions={
                       <span className="inline-flex gap-1">
@@ -86,7 +86,7 @@ export function WebsiteSizeChartsPage() {
                     }
                   >
                     <ChartTable chart={chart} />
-                  </Section>
+                  </NamedSection>
                 </li>
               ))}
             </ul>
@@ -212,7 +212,7 @@ function ChartEditor({
   });
 
   return (
-    <Section
+    <NamedSection
       title={t('web.charts.formTitle')}
       actions={
         <span className="inline-flex gap-2">
@@ -312,6 +312,6 @@ function ChartEditor({
         </div>
         <Problem error={save.error} />
       </div>
-    </Section>
+    </NamedSection>
   );
 }
