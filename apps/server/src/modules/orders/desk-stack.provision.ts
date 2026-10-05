@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import type { MembershipRole } from '@elysium/contracts';
 import { createAuth, RecordingSmsProvider, SEED_ORG_IDS, withSystem } from '@elysium/db';
+import { internalEan13 } from '@elysium/domain/barcode';
 import { sql } from 'drizzle-orm';
 import {
   createTestUser,
@@ -142,6 +143,9 @@ async function create(): Promise<void> {
     // M39a: an org admin for delete-archive.stack.ts (deleting and archiving everywhere), its
     // own so its two-step enrolment never races another suite's.
     { label: 'remover', grants: [{ orgId, role: 'org_admin' }] },
+    // M38b: a warehouse packer for the packing station (packing.stack.ts). The warehouse has
+    // no two-step wall, which is how the packing desk signs in.
+    { label: 'packer', grants: [{ orgId, role: 'warehouse' }] },
   ];
 
   const users: { role: string; email: string; userId: string }[] = [];
@@ -298,6 +302,37 @@ async function create(): Promise<void> {
     assignedTo: desk.userId,
   });
 
+  /*
+   * M38b: an order for the packing station. Two of the first product's pieces (the first SKU),
+   * with the second SKU (the same product in another size) and a second product's SKU to be
+   * scanned by mistake; each SKU with an internal EAN-13, as M38a gives every new one.
+   */
+  const { skus: otherSkus } = await seedProductWithSkus(orgId, `pk${run}`, 1);
+  const barcodes: string[] = [];
+  for (const [index, sku] of [...skus, ...otherSkus].entries()) {
+    const barcode = internalEan13(
+      90_000_000_000 + Math.floor(Math.random() * 900_000_000) * 10 + index,
+    );
+    barcodes.push(barcode);
+    await withSystem(
+      (tx) =>
+        tx.execute(
+          sql`update catalog.skus set barcode = ${barcode} where org_id = ${orgId} and id = ${sku.id}`,
+        ),
+      { orgId },
+    );
+  }
+  const packOrder = await seedOrder(orgId, {
+    customerId: advanceBuyer,
+    status: 'confirmed',
+    lines: [{ ...firstLine, qty: 2 }],
+    locationId: location,
+    courierId: rider,
+    reserve: true,
+    createdBy: desk.userId,
+    assignedTo: desk.userId,
+  });
+
   process.stdout.write(
     `${JSON.stringify({
       databaseName: database.databaseName,
@@ -314,6 +349,12 @@ async function create(): Promise<void> {
       advanceOrder: { id: advanceOrder.id, orderNo: advanceOrder.orderNo },
       lifecycleOrder,
       bulkOrder,
+      packOrder,
+      packSkus: {
+        right: { code: firstSku.code, barcode: barcodes[0] ?? '' },
+        wrongSize: { code: skus[1]?.code ?? '', barcode: barcodes[1] ?? '' },
+        wrongItem: { code: otherSkus[0]?.code ?? '', barcode: barcodes[2] ?? '' },
+      },
     })}\n`,
   );
 
