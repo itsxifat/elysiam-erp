@@ -43,6 +43,13 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const DEFAULT_CATALOGUE = 'packages/i18n/src/locales';
 const DEFAULT_SCAN = ['apps', 'packages', 'scripts'];
 
+/**
+ * Apps that carry their own catalogue, and are checked against it in a second run (the
+ * owner console, D-494): its keys are not the shared catalogue's, and the shared one is
+ * shipped to every brand, so they must not be added there to satisfy this run.
+ */
+const OWN_CATALOGUES = ['apps/mother-console'];
+
 /** Where a key can be named. `.html` and `.hbs` cover the §22 document templates. */
 const SCANNED = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.html', '.hbs']);
 const SKIPPED_DIRS = new Set([
@@ -115,10 +122,17 @@ function parseArgs(argv) {
   }
 
   return {
-    catalogue: catalogue ?? path.join(REPO_ROOT, DEFAULT_CATALOGUE),
-    scan: (scan.length > 0 ? scan : DEFAULT_SCAN.map((dir) => path.join(REPO_ROOT, dir))).filter(
-      Boolean,
-    ),
+    // The default run skips the apps that bring their own catalogue; a run given its own
+    // catalogue and scan directories checks exactly those.
+    exclude: catalogue === null ? OWN_CATALOGUES.map((dir) => path.join(REPO_ROOT, dir)) : [],
+    catalogue:
+      catalogue === null
+        ? path.join(REPO_ROOT, DEFAULT_CATALOGUE)
+        : path.resolve(REPO_ROOT, catalogue),
+    scan: (scan.length > 0
+      ? scan.map((dir) => path.resolve(REPO_ROOT, dir))
+      : DEFAULT_SCAN.map((dir) => path.join(REPO_ROOT, dir))
+    ).filter(Boolean),
     quiet,
   };
 }
@@ -190,11 +204,13 @@ function duplicateKeysIn(file) {
   return { duplicates, counted: seen.size };
 }
 
-function* walk(directory) {
+function* walk(directory, exclude = []) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       if (SKIPPED_DIRS.has(entry.name)) continue;
-      yield* walk(path.join(directory, entry.name));
+      const child = path.join(directory, entry.name);
+      if (exclude.includes(child)) continue;
+      yield* walk(child, exclude);
     } else if (SCANNED.has(path.extname(entry.name))) {
       yield path.join(directory, entry.name);
     }
@@ -202,14 +218,14 @@ function* walk(directory) {
 }
 
 /** Every literal key reference, every interpolated family, and a count of the dynamic ones. */
-function references({ scan, catalogueDir }) {
+function references({ scan, catalogueDir, exclude = [] }) {
   const found = new Map();
   const families = new Map();
   let dynamic = 0;
 
   for (const root of scan) {
     if (!exists(root)) continue;
-    for (const file of walk(root)) {
+    for (const file of walk(root, exclude)) {
       // The catalogues name every key by definition; counting them as
       // references would make every key look used and hide nothing but bugs.
       if (file.startsWith(catalogueDir)) continue;
@@ -243,7 +259,7 @@ function references({ scan, catalogueDir }) {
 }
 
 async function main() {
-  const { catalogue: catalogueDir, scan, quiet } = parseArgs(process.argv.slice(2));
+  const { catalogue: catalogueDir, scan, quiet, exclude } = parseArgs(process.argv.slice(2));
 
   if (!exists(catalogueDir)) {
     console.error(`check-i18n: FAIL — no catalogue directory at ${catalogueDir}`);
@@ -286,7 +302,7 @@ async function main() {
     }
   }
 
-  const { found, families, dynamic } = references({ scan, catalogueDir });
+  const { found, families, dynamic } = references({ scan, catalogueDir, exclude });
   for (const [key, sites] of found) {
     if (union.has(key)) continue;
     failures.push(`no such key "${key}" — referenced at ${sites.slice(0, 3).join(', ')}`);
