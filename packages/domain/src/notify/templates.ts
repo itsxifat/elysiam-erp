@@ -35,3 +35,15 @@ export function smsSegments(text: string): number {
   const length = [...text].length;
   return length <= single ? 1 : Math.ceil(length / multi);
 }
+
+/**
+ * SMS template keys the system sends by itself (M39a, D-632): the CRM's occasion greetings
+ * and the loan reminder. A template under one of these keys, or a sign-in code template
+ * (category `otp`), is switched off when unwanted and never deleted: the code that sends it
+ * would then find no template. Held equal to the senders' own constants by a test.
+ */
+export const SYSTEM_SMS_TEMPLATE_KEYS: readonly string[] = [
+  'occasion.birthday',
+  'occasion.anniversary',
+  'loan.instalment_due',
+];

@@ -27,6 +27,10 @@ import {
   WebsitePage,
 } from './parts.js';
 import '../../i18n/website.js';
+import { formatCount } from '@elysium/i18n';
+import { navItemUsage } from '../../api/manage.js';
+import { useLocale } from '../../i18n/locale.js';
+import '../../i18n/manage.js';
 
 /**
  * Website → Menu (M33, D-504): the website's top menu, two levels deep. A category item
@@ -113,19 +117,15 @@ export function WebsiteMenuPage() {
         />
       )}
       {deleting === null ? null : (
-        <ConfirmDialog
-          open
-          onOpenChange={(next) => {
-            if (!next) setDeleting(null);
-          }}
-          title={t('web.deleteTitle')}
-          description={t('web.deleteDetail')}
-          confirmLabel={t('web.delete')}
-          cancelLabel={t('web.cancel')}
-          closeLabel={t('web.close')}
-          destructive
-          onConfirm={async () => {
-            await deleteNavItem(deleting.id);
+        <MenuDeleteConfirm
+          item={deleting}
+          name={
+            deleting.label ??
+            query.data?.categories.find((category) => category.id === deleting.categoryId)?.name ??
+            ''
+          }
+          onClose={() => setDeleting(null)}
+          onDeleted={async () => {
             setDeleting(null);
             await queryClient.invalidateQueries({ queryKey: ['website', 'menu'] });
           }}
@@ -406,5 +406,55 @@ function ItemDialog({
         <Problem error={save.error} />
       </div>
     </Dialog>
+  );
+}
+
+/**
+ * Deleting a menu item, and with a dropdown every item under it (0103's cascade): the server
+ * says how many go first, and the confirmation names the number (M39a, D-628).
+ */
+function MenuDeleteConfirm({
+  item,
+  name,
+  onClose,
+  onDeleted,
+}: {
+  readonly item: NavItem;
+  readonly name: string;
+  readonly onClose: () => void;
+  readonly onDeleted: () => Promise<void>;
+}) {
+  const t = useWebsiteT();
+  const { t: tm, locale } = useLocale();
+  const usage = useQuery({
+    queryKey: ['website', 'menu', item.id, 'usage'],
+    queryFn: () => navItemUsage(item.id),
+    staleTime: 0,
+    retry: false,
+  });
+  const children = usage.data?.children ?? 0;
+  const description =
+    children > 0
+      ? tm('mg.menu.withChildren')
+          .replace('{name}', name)
+          .replace('{n}', formatCount(children, locale))
+      : tm('mg.menu.alone').replace('{name}', name);
+  return (
+    <ConfirmDialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      title={t('web.deleteTitle')}
+      description={usage.isPending ? tm('mg.loading') : description}
+      confirmLabel={t('web.delete')}
+      cancelLabel={t('web.cancel')}
+      closeLabel={t('web.close')}
+      destructive
+      onConfirm={async () => {
+        await deleteNavItem(item.id);
+        await onDeleted();
+      }}
+    />
   );
 }

@@ -15,7 +15,7 @@ import { useId, useMemo, useState } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
-import { useLocale } from '../../i18n/locale.js';
+import { useLocale, useT } from '../../i18n/locale.js';
 import { listCategories, listProducts } from '../catalog/api.js';
 import { isOrdersKey, useOrdersT } from '../orders/messages.js';
 import {
@@ -50,6 +50,14 @@ import {
   tierField,
 } from './discount-form.js';
 import { useCampaignsT, type CampaignsMessageKey } from './messages.js';
+import {
+  archiveDiscount,
+  deleteDiscount,
+  discountUsage,
+  restoreDiscount,
+} from '../../api/manage.js';
+import '../../i18n/manage.js';
+import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 
 /**
  * Discounts (M16's promo codes, extended in M35a; D-203, D-204, D-541).
@@ -91,6 +99,9 @@ function Discounts() {
   const [status, setStatus] = useState<PromoStatus | undefined>(undefined);
   const [method, setMethod] = useState<PromoMethod | undefined>(undefined);
   const [creating, setCreating] = useState(false);
+  // M39a (D-631): the discount whose Delete-or-archive dialog is open.
+  const [managing, setManaging] = useState<PromoCode | null>(null);
+  const tm = useT();
 
   const codes = useQuery({
     queryKey: ['campaigns', 'codes', status, method],
@@ -105,6 +116,7 @@ function Discounts() {
   });
 
   const canUpdate = ability.can('update', 'LandingPage');
+  const canDelete = ability.can('delete', 'LandingPage');
 
   const columns = useMemo<readonly DataTableColumn<PromoCode>[]>(() => {
     const column = dataTableColumns<PromoCode>();
@@ -204,8 +216,18 @@ function Discounts() {
         header: t('campaigns.codes.col.actions'),
         cell: (cell) => {
           const code = cell.row.original;
-          if (!canUpdate || code.status === 'archived') return null;
+          if (!canUpdate) return null;
           const busy = changeStatus.isPending && changeStatus.variables.id === code.id;
+          // Archived: Restore (it comes back paused) and, when nobody used it, Delete (D-631).
+          if (code.status === 'archived') {
+            return (
+              <span className="inline-flex gap-1">
+                <Button size="sm" variant="outline" onClick={() => setManaging(code)}>
+                  {tm('mg.restore')}
+                </Button>
+              </span>
+            );
+          }
           return (
             <span className="inline-flex gap-1">
               <Button
@@ -227,8 +249,10 @@ function Discounts() {
                 size="sm"
                 variant="ghost"
                 disabled={busy}
-                onClick={() => changeStatus.mutate({ id: code.id, next: 'archived' })}
+                aria-label={tm('mg.setup.manageNamed').replace('{name}', code.code ?? code.title)}
+                onClick={() => setManaging(code)}
               >
+                <Trash2 aria-hidden="true" />
                 {t('campaigns.codes.archive')}
               </Button>
             </span>
@@ -236,7 +260,7 @@ function Discounts() {
         },
       }),
     ]);
-  }, [t, tOrders, locale, canUpdate, changeStatus]);
+  }, [t, tm, tOrders, locale, canUpdate, changeStatus]);
 
   const labels = useCampaignTableLabels(
     t('campaigns.codes.emptyTitle'),
@@ -302,6 +326,20 @@ function Discounts() {
         }
       />
       {creating ? <NewDiscountDialog onClose={() => setCreating(false)} /> : null}
+      {managing === null ? null : (
+        <DeleteOrArchive
+          key={managing.id}
+          open
+          onClose={() => setManaging(null)}
+          queryKey={['campaigns', 'codes', managing.id]}
+          loadUsage={() => discountUsage(managing.id)}
+          onDelete={canDelete ? () => deleteDiscount(managing.id) : undefined}
+          onArchive={() => archiveDiscount(managing.id)}
+          archiveNote={tm('mg.archive.discount')}
+          onRestore={() => restoreDiscount(managing.id)}
+          onDone={() => void queryClient.invalidateQueries({ queryKey: ['campaigns', 'codes'] })}
+        />
+      )}
     </div>
   );
 }

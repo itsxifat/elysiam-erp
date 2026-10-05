@@ -14,6 +14,8 @@ import { NotifyController } from './notify.controller.js';
 import { NotifyService } from './notify.service.js';
 import { MAILER } from './providers/mailer.js';
 import { SMS_GATEWAY } from './providers/sms-gateway.js';
+import { TemplateDeletesController } from './template-deletes.controller.js';
+import { TemplateDeletesService } from './template-deletes.service.js';
 
 /**
  * Notifications (architecture §10; M16).
@@ -38,7 +40,8 @@ const mailerProvider: Provider = {
 };
 
 @Module({
-  controllers: [NotifyController],
+  // M39a: deleting a template that never went out (D-632).
+  controllers: [NotifyController, TemplateDeletesController],
   providers: [
     configProvider,
     gatewayProvider,
@@ -47,6 +50,7 @@ const mailerProvider: Provider = {
     // Provided rather than imported, as every other module does it.
     AuditService,
     NotifyService,
+    TemplateDeletesService,
     { provide: NOTIFY_API, useClass: NotifyApiService },
   ],
   exports: [NOTIFY_API, NotifyService, SMS_GATEWAY, EmailService, MAILER],

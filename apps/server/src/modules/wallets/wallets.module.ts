@@ -9,6 +9,8 @@ import { TransfersService } from './transfers.service.js';
 import { WALLETS_API, WalletsApiService } from './wallets.api.js';
 import { WalletsController } from './wallets.controller.js';
 import { WalletsService } from './wallets.service.js';
+import { HeadsController } from './heads.controller.js';
+import { HeadsService } from './heads.service.js';
 
 /**
  * Wallets, cash entries, transfers, daily closings and the cash reports
@@ -27,8 +29,10 @@ import { WalletsService } from './wallets.service.js';
  */
 @Module({
   imports: [LedgerModule, ApprovalsModule],
-  controllers: [WalletsController],
+  controllers: [WalletsController, HeadsController],
   providers: [
+    // M39a: the brand's expense and income heads (D-634).
+    HeadsService,
     WalletsService,
     CashService,
     TransfersService,

@@ -100,6 +100,8 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'accounts|read|Supply|org',
   'accounts|update|Supply|org',
   'org_admin|create|Supply|org',
+  // M39a (D-630): a supplier nothing names is deleted, by org_admin only.
+  'org_admin|delete|Supply|org',
   'org_admin|read|Supply|org',
   'org_admin|update|Supply|org',
   'warehouse|create|Supply|org',
@@ -188,6 +190,8 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'marketing|read|Campaign|org',
   'marketing|update|Campaign|org',
   'org_admin|create|Campaign|org',
+  // M39a (D-632): an ad campaign or SMS template that never ran is deleted, by org_admin only.
+  'org_admin|delete|Campaign|org',
   'org_admin|read|Campaign|org',
   'org_admin|update|Campaign|org',
   'accounts|create|CampaignSpend|org',
@@ -211,6 +215,8 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'marketing|read|LandingPage|org',
   'marketing|update|LandingPage|org',
   'org_admin|create|LandingPage|org',
+  // M39a (D-631): a discount or flash sale nobody used is deleted, by org_admin only.
+  'org_admin|delete|LandingPage|org',
   'org_admin|read|LandingPage|org',
   'org_admin|update|LandingPage|org',
   'sales|read|LandingPage|org',
@@ -378,4 +384,9 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'org_admin|read|WebsiteCredentials|org',
   'org_admin|update|WebsiteCredentials|org',
   'sales|read|Storefront|org',
+
+  // | (not a row in the grid) | a branch's own record (M39a, D-633) |
+  // §6's "users, roles, settings" cell: org_admin renames a branch or switches it off.
+  'org_admin|read|Branch|org',
+  'org_admin|update|Branch|org',
 ];

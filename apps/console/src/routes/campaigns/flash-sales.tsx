@@ -1,6 +1,7 @@
 import {
   Button,
   buttonVariants,
+  Checkbox,
   DataTable,
   PermissionGate,
   StatusBadge,
@@ -9,11 +10,11 @@ import {
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
-import { useMemo } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
+import { useId, useMemo, useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
-import { useLocale } from '../../i18n/locale.js';
+import { useLocale, useT } from '../../i18n/locale.js';
 import {
   duplicateFlashSale,
   listFlashSales,
@@ -29,6 +30,14 @@ import {
 } from './campaigns-nav.js';
 import { dhakaText } from './dhaka-time.js';
 import { useCampaignsT, type CampaignsMessageKey } from './messages.js';
+import {
+  archiveFlashSale,
+  deleteFlashSale,
+  flashSaleUsage,
+  restoreFlashSale,
+} from '../../api/manage.js';
+import '../../i18n/manage.js';
+import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 
 /**
  * Flash sales (M35a, D-542): the list, switching a sale on or off, and starting the next one
@@ -69,10 +78,16 @@ function FlashSales() {
   const queryClient = useQueryClient();
   const canUpdate = ability.can('update', 'LandingPage');
   const canCreate = ability.can('create', 'LandingPage');
+  // M39a (D-631): archived sales leave the list; a switch shows them, to restore one.
+  const canDelete = ability.can('delete', 'LandingPage');
+  const [showArchived, setShowArchived] = useState(false);
+  const [managing, setManaging] = useState<FlashSaleSummary | null>(null);
+  const tm = useT();
+  const archivedId = useId();
 
   const sales = useQuery({
-    queryKey: ['campaigns', 'flash-sales'],
-    queryFn: listFlashSales,
+    queryKey: ['campaigns', 'flash-sales', showArchived],
+    queryFn: () => listFlashSales(showArchived),
     // Units sell while the list is open; keep the counts honest.
     refetchInterval: 30_000,
   });
@@ -161,6 +176,13 @@ function FlashSales() {
           const busy =
             (toggle.isPending && toggle.variables.id === sale.id) ||
             (duplicate.isPending && duplicate.variables === sale.id);
+          if (sale.archivedAt != null) {
+            return canUpdate ? (
+              <Button size="sm" variant="outline" onClick={() => setManaging(sale)}>
+                {tm('mg.restore')}
+              </Button>
+            ) : null;
+          }
           return (
             <span className="inline-flex gap-1">
               {canUpdate ? (
@@ -171,6 +193,18 @@ function FlashSales() {
                   onClick={() => toggle.mutate({ id: sale.id, enabled: !sale.enabled })}
                 >
                   {sale.enabled ? t('campaigns.flash.switchOff') : t('campaigns.flash.switchOn')}
+                </Button>
+              ) : null}
+              {canUpdate ? (
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  disabled={busy}
+                  aria-label={tm('mg.setup.manageNamed').replace('{name}', sale.title)}
+                  title={tm('mg.setup.manage')}
+                  onClick={() => setManaging(sale)}
+                >
+                  <Trash2 aria-hidden="true" />
                 </Button>
               ) : null}
               {canCreate ? (
@@ -188,7 +222,7 @@ function FlashSales() {
         },
       }),
     ]);
-  }, [t, locale, canUpdate, canCreate, toggle, duplicate]);
+  }, [t, tm, locale, canUpdate, canCreate, toggle, duplicate]);
 
   const labels = useCampaignTableLabels(
     t('campaigns.flash.emptyTitle'),
@@ -225,7 +259,33 @@ function FlashSales() {
         onRetry={() => void sales.refetch()}
         caption={t('campaigns.nav.flash')}
         labels={labels}
+        toolbar={
+          <label htmlFor={archivedId} className="flex items-center gap-2 text-sm">
+            <Checkbox
+              id={archivedId}
+              checked={showArchived}
+              onCheckedChange={(next) => setShowArchived(next === true)}
+            />
+            {tm('mg.showArchived')}
+          </label>
+        }
       />
+      {managing === null ? null : (
+        <DeleteOrArchive
+          key={managing.id}
+          open
+          onClose={() => setManaging(null)}
+          queryKey={['campaigns', 'flash-sales', managing.id]}
+          loadUsage={() => flashSaleUsage(managing.id)}
+          onDelete={canDelete ? () => deleteFlashSale(managing.id) : undefined}
+          onArchive={() => archiveFlashSale(managing.id)}
+          archiveNote={tm('mg.archive.flash')}
+          onRestore={() => restoreFlashSale(managing.id)}
+          onDone={() =>
+            void queryClient.invalidateQueries({ queryKey: ['campaigns', 'flash-sales'] })
+          }
+        />
+      )}
     </div>
   );
 }

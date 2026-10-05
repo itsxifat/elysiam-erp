@@ -9,6 +9,8 @@ import type { ErrorCode } from '@elysium/contracts';
 
 import { toStockHttpError } from '../inventory/inventory.errors.js';
 
+import { isStillReferenced } from '../../platform/references/references.js';
+
 /**
  * What the supply module refuses, and with which status (architecture §23).
  *
@@ -28,6 +30,8 @@ import { toStockHttpError } from '../inventory/inventory.errors.js';
 
 const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   SUPPLY_NOT_FOUND: 404,
+  // M39a (D-630): a supplier something still names.
+  SUPPLY_IN_USE: 409,
   SUPPLY_IMMUTABLE: 409,
   SUPPLY_COST_REQUIRED: 400,
   SUPPLIER_INACTIVE: 409,
@@ -130,6 +134,15 @@ function databaseSupplyCode(error: unknown): { code: ErrorCode; message: string 
     if (match !== null) {
       const code = DB_CODES.find((candidate) => candidate === match[1]);
       if (code !== undefined) return { code, message: match[2] ?? current.message };
+    }
+
+    if (isStillReferenced(current)) {
+      // The backstop behind a supplier delete's own count (D-621, D-630).
+      return {
+        code: 'SUPPLY_IN_USE',
+        message:
+          'Something still names this supplier, so it was not deleted. Deactivate it instead.',
+      };
     }
 
     const sqlstate = (current as { code?: unknown }).code;

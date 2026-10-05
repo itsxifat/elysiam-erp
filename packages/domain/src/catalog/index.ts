@@ -14,6 +14,7 @@
 export {
   buildSkuCode,
   isSkuCode,
+  skuCodePrefix,
   skuSegment,
   SkuCodeError,
   SKU_CODE_MAX,

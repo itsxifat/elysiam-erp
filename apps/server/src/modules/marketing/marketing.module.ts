@@ -15,6 +15,8 @@ import { MarketingController } from './marketing.controller.js';
 import { MarketingService } from './marketing.service.js';
 import { MetaJobsService } from './meta-jobs.service.js';
 import { META_GATEWAY } from './providers/meta-gateway.js';
+import { CampaignDeletesController } from './campaign-deletes.controller.js';
+import { CampaignDeletesService } from './campaign-deletes.service.js';
 
 /**
  * Marketing (architecture §11; M18): campaigns, spend, attribution, the dashboard, leads,
@@ -41,12 +43,15 @@ const gatewayProvider: Provider = {
 
 @Module({
   imports: [OrdersModule, PromoModule, CatalogModule],
-  controllers: [MarketingController],
+  // M39a: deleting a campaign nothing used (D-632).
+  controllers: [MarketingController, CampaignDeletesController],
   providers: [
     configProvider,
     gatewayProvider,
     AuditService,
     MarketingService,
+    // M39a: marketing's answer to the catalog's references, and campaign deletes (D-621).
+    CampaignDeletesService,
     MetaJobsService,
     // M24: per-campaign, per-day inputs for the analytics rollup.
     { provide: MARKETING_API, useClass: MarketingApiService },

@@ -4,6 +4,7 @@ import { pickupSamples, type DeskEvent, type DeskEventKind } from '@elysium/doma
 
 import * as repo from './hr.repository.js';
 import { deskEventsTouching } from './performance.repository.js';
+import * as references from './references.repository.js';
 
 /**
  * HR's service interface for other modules (invariant 12).
@@ -71,8 +72,17 @@ export interface HrApi {
 /** The Nest injection token for `HrApi`. */
 export const HR_API = Symbol('HrApi');
 
+/** M39a (D-633): people employed at a branch, active or suspended. */
+export interface HrBranchStaff {
+  employeesAtBranch(tx: Tx, orgId: string, branchId: string): Promise<number>;
+}
+
 @Injectable()
-export class HrApiService implements HrApi {
+export class HrApiService implements HrApi, HrBranchStaff {
+  employeesAtBranch(tx: Tx, orgId: string, branchId: string): Promise<number> {
+    return references.employeesAtBranch(tx, orgId, branchId);
+  }
+
   async employeeForUser(
     tx: Tx,
     orgId: string,

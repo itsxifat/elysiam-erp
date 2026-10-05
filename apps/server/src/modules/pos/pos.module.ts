@@ -19,6 +19,10 @@ import { RegistersService } from './registers.service.js';
 import { ReviewsService } from './reviews.service.js';
 import { ShiftsService } from './shifts.service.js';
 import { SyncService } from './sync.service.js';
+import { PosReferencesBinding } from './references.binding.js';
+import { HrModule } from '../hr/hr.module.js';
+import { BranchAdminController } from './branch-admin.controller.js';
+import { BranchAdminService } from './branch-admin.service.js';
 
 /**
  * Branches and showroom POS (architecture §14, M23).
@@ -46,9 +50,13 @@ import { SyncService } from './sync.service.js';
  * when its sale syncs, which is what binding the real thing requires (D-209).
  */
 @Module({
-  imports: [LedgerModule, WalletsModule, CatalogModule, InventoryModule, ApprovalsModule],
-  controllers: [PosController],
+  // M39a: HR answers whether a branch still has staff before it is switched off (D-633).
+  imports: [LedgerModule, WalletsModule, CatalogModule, InventoryModule, ApprovalsModule, HrModule],
+  controllers: [PosController, BranchAdminController],
   providers: [
+    // M39a: what the till holds about a SKU or a location (D-621, D-629).
+    PosReferencesBinding,
+    BranchAdminService,
     PosPostingService,
     RegistersService,
     ShiftsService,

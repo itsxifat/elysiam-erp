@@ -123,7 +123,7 @@ export class StorefrontController {
   async deleteHeroSlide(@Req() request: FastifyRequest, @Param('id') id: string) {
     const slideId = parse(idSchema, id);
     return mapStorefrontErrors(() =>
-      this.storefront.deleteHeroSlide(requireContext(request), slideId),
+      this.storefront.deleteHeroSlide(requireContext(request), slideId, auditable(request)),
     );
   }
 
@@ -170,7 +170,7 @@ export class StorefrontController {
   async deleteNavItem(@Req() request: FastifyRequest, @Param('id') id: string) {
     const itemId = parse(idSchema, id);
     return mapStorefrontErrors(() =>
-      this.storefront.deleteNavItem(requireContext(request), itemId),
+      this.storefront.deleteNavItem(requireContext(request), itemId, auditable(request)),
     );
   }
 
@@ -210,7 +210,7 @@ export class StorefrontController {
   async deleteSizeChart(@Req() request: FastifyRequest, @Param('id') id: string) {
     const chartId = parse(idSchema, id);
     return mapStorefrontErrors(() =>
-      this.storefront.deleteSizeChart(requireContext(request), chartId),
+      this.storefront.deleteSizeChart(requireContext(request), chartId, auditable(request)),
     );
   }
 

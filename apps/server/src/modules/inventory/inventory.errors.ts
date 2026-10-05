@@ -8,6 +8,8 @@ import {
 import type { ErrorCode } from '@elysium/contracts';
 import { InventoryError, LedgerError, MoneyError } from '@elysium/domain';
 
+import { isStillReferenced } from '../../platform/references/references.js';
+
 /**
  * Inventory failures, as the API reports them (architecture §23, D-087).
  *
@@ -49,6 +51,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   IDEMPOTENCY_CONFLICT: 409,
   IDEMPOTENCY_IN_FLIGHT: 409,
   FORBIDDEN: 403,
+  // M39a (D-629): a location something still names.
+  INVENTORY_IN_USE: 409,
 };
 
 export class StockError extends Error {
@@ -135,6 +139,14 @@ export function databaseStockCode(error: unknown): { code: ErrorCode; message: s
     const constraint = (current as { constraint_name?: unknown }).constraint_name;
     const name = typeof constraint === 'string' ? constraint : '';
 
+    if (isStillReferenced(current)) {
+      // The backstop behind a location delete's own count (D-621, D-629).
+      return {
+        code: 'INVENTORY_IN_USE',
+        message:
+          'Something still uses this location, so it was not deleted. Switch it off instead.',
+      };
+    }
     if (sqlstate === '23514' && Object.hasOwn(CHECK_MESSAGES, name)) {
       return { code: 'STOCK_INSUFFICIENT', message: CHECK_MESSAGES[name] ?? '' };
     }

@@ -639,6 +639,14 @@ export class PromoService {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const before = await repo.codeById(tx, context.orgId, id);
       if (before === undefined) throw new PromoError('PROMO_NOT_FOUND', 'No such code.');
+      if (before.status === 'archived' && status !== 'archived') {
+        // An archived discount comes back through Restore, paused, so somebody looks at it
+        // before buyers can use it again (M39a, D-631).
+        throw new PromoError(
+          'PROMO_INVALID',
+          'This discount is archived. Restore it first; it comes back paused.',
+        );
+      }
 
       await repo.setCodeStatus(tx, context.orgId, id, status);
       await this.audit.record(tx, {
