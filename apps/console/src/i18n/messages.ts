@@ -123,6 +123,7 @@ const CONSOLE_KEYS = [
   'approvals.type.investor_withdrawal',
   'approvals.type.loan_repayment',
   'approvals.type.credential_reset',
+  'approvals.type.opening_stock_reopen',
   'approvals.status.approved',
   'approvals.status.rejected',
   'approvals.status.cancelled',

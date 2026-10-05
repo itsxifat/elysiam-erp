@@ -77,12 +77,22 @@ export const skuSettings = catalog.table(
     orgCode: text('org_code').notNull(),
     /** The highest sequence handed out so far. The next product takes this + 1. */
     lastSequence: integer('last_sequence').notNull().default(0),
+    /**
+     * The highest internal EAN-13 sequence handed out so far (M38a, D-603). A SKU created
+     * without a supplier's barcode takes the next one, `2` + eleven digits + check digit.
+     * Taken by the same one-statement upsert as `last_sequence`, never read then written.
+     */
+    lastBarcodeSequence: bigint('last_barcode_sequence', { mode: 'number' }).notNull().default(0),
     ...timestamps,
   },
   (table) => [
     index('sku_settings_org_idx').on(table.orgId),
     check('sku_settings_org_code_format', sql`${table.orgCode} ~ '^[A-Z0-9]{2,8}$'`),
     check('sku_settings_sequence_not_negative', sql`${table.lastSequence} >= 0`),
+    check(
+      'sku_settings_barcode_sequence_range',
+      sql`${table.lastBarcodeSequence} between 0 and 99999999999`,
+    ),
   ],
 );
 
@@ -376,7 +386,11 @@ export const skus = catalog.table(
     /** `ELY-SHRT-0001-RED-M`. Unique per org, never globally (D-002). */
     code: text('code').notNull(),
     variantKey: text('variant_key').notNull(),
-    /** The Code 128 payload. Defaults to the SKU code; may be a supplier's own. */
+    /**
+     * What a scanner reads. An internal EAN-13 (`2…`) assigned when the SKU is created
+     * (M38a, D-603), or a supplier's own barcode; null only on a SKU from before M38a that
+     * the backfill could not number.
+     */
     barcode: text('barcode'),
     /** The **selling** price. Never a cost (invariant 5). */
     pricePoisha: bigint('price_poisha', { mode: 'bigint' }).notNull(),

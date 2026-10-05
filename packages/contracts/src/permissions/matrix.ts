@@ -79,6 +79,8 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
     'loan_repayment',
     // gaps-users-auth: a privileged person's sign-in reset needs a second admin (D-404).
     'credential_reset',
+    // M38a: reopening the opening stock window needs a second org admin (D-602).
+    'opening_stock_reopen',
   ],
   // §6: payments.
   /*
@@ -168,6 +170,8 @@ export const REQUESTER_TYPES: Readonly<Record<MembershipRole, readonly string[]>
     'loan_repayment',
     // Raised only by the iam module's reset routes, never the generic one (D-404).
     'credential_reset',
+    // Raised only by the inventory module's window route (D-602).
+    'opening_stock_reopen',
   ],
   accounts: [
     'wallet_adjustment',

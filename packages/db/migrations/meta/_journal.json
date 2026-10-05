@@ -722,6 +722,20 @@
       "when": 1791191708968,
       "tag": "0104_m33_storefront_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1791197104331,
+      "tag": "0105_m38a_barcodes_stock_in_hand",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1791197165830,
+      "tag": "0106_m38a_policies",
+      "breakpoints": true
     }
   ]
 }

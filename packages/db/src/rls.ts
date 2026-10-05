@@ -256,6 +256,8 @@ export const APPEND_ONLY_TABLES: readonly string[] = [
    */
   'loans.instalments',
   'loans.reminders',
+  // M38a: every scan on a stock count, the record a disputed count is settled from (D-606).
+  'inventory.count_scans',
 ];
 
 /**
@@ -378,6 +380,12 @@ export const NO_DELETE_TABLES: readonly string[] = [
    */
   'storefront.settings',
   'storefront.site_keys',
+  /*
+   * M38a. A brand's opening stock window: a deleted row reads as open again, which is a
+   * reopen nobody approved (D-602). UPDATE for closing and an approved reopen only, which
+   * the M38a policies migration's trigger confines it to.
+   */
+  'inventory.opening_stock_windows',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */

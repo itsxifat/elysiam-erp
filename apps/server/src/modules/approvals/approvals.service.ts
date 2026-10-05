@@ -191,6 +191,8 @@ const EXECUTOR_REQUIRED_TYPES: readonly ApprovalType[] = [
   // gaps-users-auth: only the iam module's executor resets a second factor or releases a
   // password link; "approved" with nothing done would leave the person locked out (D-404).
   'credential_reset',
+  // M38a: only the inventory module's executor reopens the opening stock window (D-602).
+  'opening_stock_reopen',
 ];
 
 /**
@@ -213,6 +215,8 @@ export const MODULE_RAISED_TYPES: readonly ApprovalType[] = [
   // gaps-users-auth: the payload names whose sign-in is reset; only `/v1/users/:id/...`
   // writes it, after checking who may reset whom (D-404).
   'credential_reset',
+  // M38a: raised only by `POST /v1/inventory/stock-in-hand/window/reopen` (D-602).
+  'opening_stock_reopen',
 ];
 
 function magnitude(amount: bigint): bigint {

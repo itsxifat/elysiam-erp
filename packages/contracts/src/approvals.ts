@@ -45,6 +45,13 @@ export const APPROVAL_TYPES = [
    * and no threshold can ever exempt it; only the iam module raises one.
    */
   'credential_reset',
+  /**
+   * M38a: reopening a brand's opening stock window once it was closed (D-602). Stock in
+   * hand credits equity, not a supplier, so letting it in again after the brand said
+   * everything was counted is a control over the books: no amount, never auto-approved,
+   * raised only by the inventory module, decided by a second org admin.
+   */
+  'opening_stock_reopen',
 ] as const;
 
 export const approvalTypeSchema = z.enum(APPROVAL_TYPES);
@@ -59,6 +66,7 @@ export const NO_AMOUNT_APPROVAL_TYPES: readonly ApprovalType[] = [
   'bonus_rule',
   'threshold_change',
   'credential_reset',
+  'opening_stock_reopen',
 ];
 
 /**

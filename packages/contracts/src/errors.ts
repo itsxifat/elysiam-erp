@@ -58,6 +58,13 @@ export const ERROR_CODES = [
   'CATALOG_VARIANT_INVALID',
   'CATALOG_PRICE_INVALID',
   'CATALOG_IMPORT_REJECTED',
+  /**
+   * A barcode the catalog will not take (M38a, D-603): one in the range the ERP numbers
+   * its own SKUs from (`2` and twelve digits), typed by hand.
+   */
+  'CATALOG_BARCODE_INVALID',
+  /** A sticker request the layout cannot print: too many, or a position off the sheet. */
+  'CATALOG_LABELS_INVALID',
   /*
    * Stock, locations and costing (M07, §8).
    *
@@ -82,6 +89,24 @@ export const ERROR_CODES = [
   'STOCK_ADJUSTMENT_FROZEN',
   /** The approval named does not match the adjustment's branch, type or amount. */
   'STOCK_ADJUSTMENT_APPROVAL_INVALID',
+  /*
+   * Stock in hand at the start and the opening stock window (M38a, D-602). Raised by the
+   * service and again by the M38a policies migration's triggers, for the reason above.
+   */
+  /** The brand's opening stock window is closed: stock now arrives only from suppliers. */
+  'OPENING_STOCK_CLOSED',
+  /** A change to the window other than closing it or an approved reopen. */
+  'OPENING_STOCK_INVALID',
+  /** Reopening named no approval, or one not approved after the close. */
+  'OPENING_STOCK_REOPEN_UNAPPROVED',
+  /** A request to reopen the window is already waiting for a checker. */
+  'OPENING_STOCK_REOPEN_PENDING',
+  'STOCK_IN_HAND_NOT_FOUND',
+  'STOCK_IN_HAND_INVALID',
+  /** A posted stock-in-hand entry, or its lines, cannot change. */
+  'STOCK_IN_HAND_IMMUTABLE',
+  /** A stock-in-hand line has no cost per piece, and every line needs one to post. */
+  'STOCK_IN_HAND_COST_REQUIRED',
   /*
    * Suppliers and purchasing (M09, §7, §8).
    *

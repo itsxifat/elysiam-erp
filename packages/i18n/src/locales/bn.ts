@@ -3195,6 +3195,7 @@ const bn: Record<MessageKey, string> = {
   // Staff accounts and sign-in (gaps-users-auth).
   'nav.users': 'স্টাফ',
   'approvals.type.credential_reset': 'সাইন-ইন রিসেট',
+  'approvals.type.opening_stock_reopen': 'শুরুর স্টক আবার খোলা',
   'auth.inactive': 'এই অ্যাকাউন্টটি চালু নেই। অ্যাক্সেসের জন্য আপনার অ্যাডমিনকে বলুন।',
   'setPassword.inviteTitle': 'আপনার পাসওয়ার্ড ঠিক করুন',
   'setPassword.resetTitle': 'নতুন পাসওয়ার্ড বেছে নিন',
