@@ -6,3 +6,4 @@
  * `iam` module.
  */
 export * from './credentials.js';
+export * from './owner-link.js';
