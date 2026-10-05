@@ -2392,3 +2392,12 @@ dry-run|commit --file <users.json>`.
   load and Gotenberg returns a PDF with Bangla text. Full verify run afterwards (below).
 - Lesson: deployed images need a smoke test that renders one PDF; added as a follow-up for
   M14b/M30 part 2 (a post-deploy check in `infra/brand/server-deploy.sh`).
+
+### 2026-10-06 · pause · Weekly usage limit reached
+
+- The hotfix's full verify passed at 613efaf: 233 test files, 3,585 passed, 1 skipped.
+- Builders stopped by the account's weekly limit (resets 2026-10-09, 07:00 Asia/Dhaka), work
+  safe on disk (no zeroed files): M38b on `m38b-pack-video` at 8982c9c (station screen, recorder
+  and upload queue committed; 4 files uncommitted), M32 on `m32-mother` at 84265aa (merged with
+  today's integration; deploy scripts in progress; 9 files uncommitted), stickers (45 × 35 mm,
+  custom size, extra line) on `stickers-sizes` not started.
