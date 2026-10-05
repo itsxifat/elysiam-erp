@@ -10,6 +10,8 @@
   },
   "scripts": {
     "admin:bootstrap": "pnpm --filter @elysium/server run admin:bootstrap",
+    "admin:website-key": "pnpm --filter @elysium/server run admin:website-key",
+    "admin:website-site-url": "pnpm --filter @elysium/server run admin:website-site-url",
     "api:client": "pnpm --filter @elysium/api-client run generate",
     "bench": "node scripts/bench.mjs",
     "build": "turbo run build",
