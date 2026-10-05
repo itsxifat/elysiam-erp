@@ -50,7 +50,7 @@
 | M32  | The mother ERP                                   | 6      | MAX    | M31                |
 | M33  | Website catalog and content from the ERP         | 6      | XHIGH  | M31                |
 | M34  | Website buying: checkout, accounts, payment      | 6      | MAX    | M33                |
-| M35  | Website offers, landing pages, tracking, ncom    | 6      | MAX    | M33, M34           |
+| M35  | Website offers, tracking, ncom                   | 6      | MAX    | M33, M34           |
 | M36  | Elysium website on the ERP, old data moved       | 6      | MAX    | M34, M35           |
 | M37  | Go live: brand servers, mother, switch-over      | 6      | XHIGH  | M31–M36            |
 | M38  | Barcode stickers, strict stock, scan-to-pack     | 6      | MAX    | M33                |
@@ -1138,7 +1138,7 @@ Phase 6 · Effort MAX · Depends on: M33 · Architecture: §31
 4. Account flows work end to end; codes and tokens are stored hashed.
 5. `pnpm verify` green; ledger-auditor on the money and stock diff.
 
-## M35: Website offers, landing pages, tracking, ncom
+## M35: Website offers, tracking, ncom
 
 Phase 6 · Effort MAX · Depends on: M33, M34 · Architecture: §31
 
@@ -1147,14 +1147,14 @@ and 6 for them); M35b, the rest.
 
 **Build**
 
-- Flash sales, the old site's discount engine in integer poisha, landing pages and their editor, campaign links.
+- Flash sales, the old site's discount engine in integer poisha, campaign links. (Landing pages: none; they are ncom.bd's, D-550.)
 - Meta pixel/CAPI and GA4 settings and server events; the ncom.bd connector; the packing scanner routes and Scan page; order labels.
 
 **Acceptance checks**
 
 1. A 5-unit flash sale sells exactly 5 under 20 concurrent checkouts; a cancel gives the unit back.
 2. The ported discount engine matches the old one on recorded carts.
-3. Landing-page orders are priced from the page, never the request.
+3. Withdrawn: the owner dropped the landing pages (D-550).
 4. The old site's `ncom-check.mjs` passes against the ERP.
 5. Scanner sign-in and lookup work; a revoked token is refused.
 6. `pnpm verify` green; ledger-auditor on pricing, stock and promo.
