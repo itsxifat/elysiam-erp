@@ -1144,6 +1144,14 @@ export class OrdersService {
       },
       request,
     });
+    // M35b: the order as it now stands goes to whoever listens (ncom.bd for its own orders,
+    // D-556), in this transaction like every order event.
+    await emit(
+      tx,
+      'order.edited',
+      { id: order.id, orderNo: order.order_no, at: new Date().toISOString() },
+      { orgId: context.orgId },
+    );
 
     const after = await repo.orderById(tx, context.orgId, order.id);
     return after === undefined ? { id: order.id } : toOrderView(after);

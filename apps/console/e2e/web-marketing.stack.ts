@@ -10,9 +10,10 @@ import { enrolSecondFactor, signIn, stack, user } from './stack/helpers.js';
  * Website → Campaign links, Tracking and Marketplace, Orders → Scan and the label sheet
  * (M35b, D-551 to D-555), against the real stack.
  *
- * Marketing makes a campaign link with a banner, changes where it opens, and sets the pixel up;
- * it can read the marketplace screen but not change its secrets. The org admin connects ncom
- * and sees the secret come back only as a fingerprint. A sales agent scans an order's number
+ * Marketing makes a campaign link with a banner, changes where it opens, and routes the
+ * tracking events; it can read the marketplace screen but change neither its secrets nor the
+ * pixel's. The org admin sets the pixel and its token up and connects ncom, and sees each secret
+ * come back only as a fingerprint. A sales agent scans an order's number
  * and gets its packing list, pairs a phone for the scanner app and signs it out, and prints the
  * label sheet for an order ticked on the list. Review screenshots go to `docs/review/M35b/`.
  */
@@ -95,7 +96,7 @@ test.describe('marketing', () => {
     ).toBeVisible();
   });
 
-  test('the pixel is set up; the screen says this server only logs events', async () => {
+  test('marketing routes the events; the pixel and its secrets are the org admin’s', async () => {
     await page
       .getByRole('navigation', { name: 'Website' })
       .getByRole('link', { name: 'Tracking' })
@@ -103,20 +104,18 @@ test.describe('marketing', () => {
     await expect(page).toHaveURL(/\/website\/tracking$/);
     const tracking = page.getByRole('region', { name: 'Tracking' });
     await expect(tracking.getByText(/events are logged here but not sent/)).toBeVisible();
+    await expect(tracking.getByLabel('Pixel ID')).toBeDisabled();
+    await expect(tracking.getByLabel('Conversions API access token')).toBeDisabled();
     await tracking.getByRole('checkbox', { name: 'Pixel in the browser' }).check();
-    await tracking.getByLabel('Pixel ID').fill('123456789012345');
     await tracking.getByRole('checkbox', { name: 'PageView: Server' }).uncheck();
     await tracking.getByRole('button', { name: 'Save' }).click();
     await expect(tracking.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
 
     await page.reload();
     const again = page.getByRole('region', { name: 'Tracking' });
-    await expect(again.getByLabel('Pixel ID')).toHaveValue('123456789012345');
     await expect(again.getByRole('checkbox', { name: 'Pixel in the browser' })).toBeChecked();
     await expect(again.getByRole('checkbox', { name: 'PageView: Server' })).not.toBeChecked();
     await expect(page.getByRole('region', { name: 'Event log' })).toBeVisible();
-    await shot(page, 'tracking');
-    await noBlockingViolations(page, 'tracking');
   });
 
   test('marketing reads the marketplace screen but cannot change its secrets', async () => {
@@ -142,6 +141,24 @@ test.describe('org admin', () => {
   });
   test.afterAll(async () => {
     await page.context().close();
+  });
+
+  test('sets the pixel up, and the screen says this server only logs events', async () => {
+    await page.goto('/website/tracking');
+    const tracking = page.getByRole('region', { name: 'Tracking' });
+    await tracking.getByLabel('Pixel ID').fill('123456789012345');
+    await tracking.getByLabel('Conversions API access token').fill(`EAAB${RUN}token-value-0001`);
+    await tracking.getByRole('button', { name: 'Save' }).click();
+    await expect(tracking.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
+
+    await page.reload();
+    const again = page.getByRole('region', { name: 'Tracking' });
+    await expect(again.getByLabel('Pixel ID')).toHaveValue('123456789012345');
+    await expect(again.getByLabel('Conversions API access token')).toHaveValue('');
+    await expect(again.getByText(/Set\. Fingerprint: [0-9a-f]{12}/)).toBeVisible();
+    await expect(again.getByRole('checkbox', { name: 'PageView: Server' })).not.toBeChecked();
+    await shot(page, 'tracking');
+    await noBlockingViolations(page, 'tracking');
   });
 
   test('connects ncom; the secret comes back only as a fingerprint', async () => {

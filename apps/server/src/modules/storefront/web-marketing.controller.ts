@@ -21,7 +21,7 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
-import { AuditExempt } from '../../platform/audit/audit.interceptor.js';
+import { AuditExempt, type AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { Public, RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { CampaignLinksService } from './campaign-links.service.js';
@@ -31,6 +31,8 @@ import { mapStorefrontErrors } from './storefront.errors.js';
 import { TrackingService } from './tracking.service.js';
 
 const idSchema = z.string().uuid('No such record.');
+const auditable = (request: FastifyRequest): AuditableRequest =>
+  request as unknown as AuditableRequest;
 const logQuerySchema = z
   .object({
     status: z.enum(['waiting', 'queued', 'success', 'partial', 'error', 'skipped']).optional(),
@@ -120,7 +122,9 @@ export class WebMarketingController {
   @Put('tracking')
   async saveTracking(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(trackingSettingsSchema, body);
-    return mapStorefrontErrors(() => this.tracking.save(requireContext(request), input));
+    return mapStorefrontErrors(() =>
+      this.tracking.save(requireContext(request), input, auditable(request)),
+    );
   }
 
   @RequireAbility('read', 'Storefront')

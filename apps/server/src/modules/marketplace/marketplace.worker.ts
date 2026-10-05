@@ -23,6 +23,7 @@ export async function registerMarketplaceJobs(deps: MarketplaceWorkerDependencie
   const { jobs, dispatcher, orders, report } = deps;
 
   dispatcher.on('order.status_changed', (event) => orders.onStatusChanged(event));
+  dispatcher.on('order.edited', (event) => orders.onEdited(event));
 
   await jobs.work(
     MARKETPLACE_QUEUES.send.name,

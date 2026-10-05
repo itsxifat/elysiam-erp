@@ -22,7 +22,7 @@ import { AdvancesService } from './advances.service.js';
 import { OrdersService, type CreateOrderOptions, type CreatedOrder } from './orders.service.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
-import { mapOrderErrors } from './orders.errors.js';
+import { mapOrderErrors, OrdersError } from './orders.errors.js';
 import * as repo from './orders.repository.js';
 import { deliveredNetItems } from './revenue.js';
 import type { CreateOrderInput, UpdateOrderInput } from './orders.schemas.js';
@@ -1247,9 +1247,20 @@ export class OrdersApiService implements OrdersApi {
     orderId: string,
     patch: UpdateOrderInput,
   ): Promise<void> {
-    await mapOrderErrors(() =>
-      this.orders.editIn(tx, workerContext(actor), NO_REQUEST, orderId, patch, { system: true }),
-    );
+    await mapOrderErrors(async () => {
+      // Defence in depth (M35b ledger audit, note 6): the system edit skips a person's scope and
+      // the discount ceiling, so it is for orders a server handed over, and nothing else.
+      const row = await repo.orderById(tx, actor.orgId, orderId);
+      if (row !== undefined && row.channel !== 'marketplace') {
+        throw new OrdersError(
+          'ORDER_IMMUTABLE',
+          'Only an order a marketplace handed over is edited this way.',
+        );
+      }
+      await this.orders.editIn(tx, workerContext(actor), NO_REQUEST, orderId, patch, {
+        system: true,
+      });
+    });
   }
 
   async orderIdsForShipmentCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]> {

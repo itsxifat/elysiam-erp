@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
-import { withSystem } from '@elysium/db';
+import { withOrg, withSystem } from '@elysium/db';
 import { ncomSignatureHeader, verifyNcomSignature } from '@elysium/domain/storefront';
 import { sql } from 'drizzle-orm';
 import pino from 'pino';
@@ -579,6 +579,278 @@ describe('orders ncom hands over', () => {
       { orgId: ORG_A },
     );
     expect(hold).toEqual({ state: 'converted', converted_order_id: placed.body.orderId });
+  });
+});
+
+/**
+ * What the M35b ledger audit asked for: money that does not add up is refused, never read as
+ * nothing; a discount splits between the brand and other shops; the same ncom order under a new
+ * key is the order already filed; an edit that cannot be applied faithfully is refused with a
+ * warning; a person's edit goes back to ncom; an ended hold stays ended.
+ */
+describe('order intake, held to its money (the ledger audit)', () => {
+  async function ncomRows(ncomId: string): Promise<number> {
+    return withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ n: number }>(sql`
+            select count(*)::int as n from marketplace.ncom_orders
+            where org_id = ${ORG_A} and ncom_order_id = ${ncomId}
+          `)
+        )[0]?.n ?? 0,
+      { orgId: ORG_A },
+    );
+  }
+
+  async function warningsOf(ncomId: string): Promise<string> {
+    return withSystem(
+      async (tx) =>
+        (
+          (
+            await tx.execute<{ warnings: string[] }>(sql`
+              select warnings from marketplace.ncom_orders
+              where org_id = ${ORG_A} and ncom_order_id = ${ncomId}
+            `)
+          )[0]?.warnings ?? []
+        ).join(' '),
+      { orgId: ORG_A },
+    );
+  }
+
+  it('refuses amounts that are missing, malformed or do not add up, and files nothing', async () => {
+    const id = randomUUID();
+    const good = order(id, [line(skuA, 2, 125_000)], {
+      subtotal: 250_000,
+      discount: 0,
+      shipping: 6_000,
+      total: 256_000,
+    });
+    const variants: Record<string, unknown>[] = [
+      { ...good, totalCents: undefined },
+      { ...good, totalCents: '2560.00' },
+      { ...good, shippingTotalCents: undefined },
+      { ...good, totalCents: 6_000 },
+      { ...good, taxTotalCents: 500, totalCents: 256_500 },
+      {
+        ...good,
+        lines: [line(skuA, 2, 125_000, { unitPriceCents: undefined, totalCents: undefined })],
+      },
+      { ...good, lines: [line(skuA, 0, 125_000)] },
+    ];
+    for (const [index, broken] of variants.entries()) {
+      const answer = await handover(
+        { topic: 'order.created', order: broken },
+        `${id}:${String(index)}`,
+      );
+      expect(answer.status, JSON.stringify(answer.body)).toBe(400);
+    }
+    expect((await handover({ topic: 'order.paid', order: good }, `${id}:topic`)).status).toBe(400);
+    expect(await ncomRows(id)).toBe(0);
+  });
+
+  it('splits a discount between the brand’s goods and another shop’s, to the poisha', async () => {
+    const id = randomUUID();
+    // Ours ৳1,500, a ৳300 tote of another shop, ৳60 delivery, ৳400 off: ৳1,460 in all.
+    const placed = await handover(
+      {
+        topic: 'order.created',
+        order: order(
+          id,
+          [
+            line(skuA, 1, 150_000, { totalCents: undefined }),
+            {
+              productId: 'ncom-p',
+              variantId: 'ncom-v',
+              source: 'ncom',
+              title: 'Tote bag',
+              quantity: 1,
+              unitPriceCents: 30_000,
+            },
+          ],
+          { subtotal: 180_000, discount: 40_000, shipping: 6_000, total: 146_000 },
+        ),
+      },
+      id,
+    );
+    expect(placed.status, JSON.stringify(placed.body)).toBe(201);
+    const row = await orderRow(placed.body.orderId as string);
+    const foreign = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ foreign_poisha: string }>(sql`
+            select foreign_poisha::text from marketplace.ncom_orders
+            where org_id = ${ORG_A} and ncom_order_id = ${id}
+          `)
+        )[0]?.foreign_poisha,
+      { orgId: ORG_A },
+    );
+    // ৳400 split by value (1,500 : 300): ৳333.33 on ours, ৳66.67 on theirs.
+    expect(row?.cod_amount_poisha).toBe('122667');
+    expect(foreign).toBe('23333');
+    expect(BigInt(row?.cod_amount_poisha ?? '0') + BigInt(foreign ?? '0')).toBe(146_000n);
+  });
+
+  it('answers the same ncom order under a new key with the order it already filed', async () => {
+    const id = randomUUID();
+    const envelope = {
+      topic: 'order.created',
+      order: order(id, [line(skuA, 1, 150_000)], {
+        subtotal: 150_000,
+        discount: 0,
+        shipping: 0,
+        total: 150_000,
+      }),
+    };
+    const first = await handover(envelope, `${id}:a`);
+    expect(first.status).toBe(201);
+    const again = await handover(envelope, `${id}:b`);
+    expect(again).toEqual({
+      status: 200,
+      body: {
+        ok: true,
+        deduped: true,
+        orderId: first.body.orderId,
+        orderNumber: first.body.orderNumber,
+      },
+    });
+    expect(await ncomRows(id)).toBe(1);
+  });
+
+  it('refuses, with a warning, an edit naming a line it cannot resolve and one on a packed order', async () => {
+    const id = randomUUID();
+    const placed = await handover(
+      {
+        topic: 'order.created',
+        order: order(id, [line(skuA, 1, 150_000)], {
+          subtotal: 150_000,
+          discount: 0,
+          shipping: 0,
+          total: 150_000,
+        }),
+      },
+      id,
+    );
+    const orderId = placed.body.orderId as string;
+    const lost = await handover(
+      {
+        topic: 'order.updated',
+        baseRevision: 0,
+        revision: 1,
+        order: order(
+          id,
+          [line(skuA, 1, 150_000), line(skuA, 1, 20_000, { productId: randomUUID() })],
+          { subtotal: 170_000, discount: 0, shipping: 0, total: 170_000 },
+        ),
+      },
+      `${id}:u1`,
+    );
+    expect(lost).toEqual({
+      status: 409,
+      body: { error: 'This shop cannot apply that change now', revision: 0 },
+    });
+    expect(await warningsOf(id)).toMatch(/no longer sells/);
+    expect((await orderRow(orderId))?.cod_amount_poisha).toBe('150000');
+
+    const orders = harness.app.get<OrdersApi>(ORDERS_API);
+    await withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) => {
+      await orders.transition(tx, { orgId: ORG_A, userId: admin.userId }, orderId, 'confirm');
+      await orders.transition(tx, { orgId: ORG_A, userId: admin.userId }, orderId, 'pack');
+    });
+    const late = await handover(
+      {
+        topic: 'order.updated',
+        baseRevision: 0,
+        revision: 1,
+        order: order(id, [line(skuA, 2, 150_000)], {
+          subtotal: 300_000,
+          discount: 0,
+          shipping: 0,
+          total: 300_000,
+        }),
+      },
+      `${id}:u2`,
+    );
+    expect(late.status).toBe(409);
+    expect(await warningsOf(id)).toMatch(/was not applied/);
+    expect((await orderRow(orderId))?.cod_amount_poisha).toBe('150000');
+  });
+
+  it('sends ncom the order as it stands when a person edits it at the desk', async () => {
+    const id = randomUUID();
+    const placed = await handover(
+      {
+        topic: 'order.created',
+        order: order(id, [line(skuA, 1, 150_000)], {
+          subtotal: 150_000,
+          discount: 0,
+          shipping: 0,
+          total: 150_000,
+        }),
+      },
+      id,
+    );
+    const orderId = placed.body.orderId as string;
+    const edited = await admin.client.request('PATCH', `/v1/orders/${orderId}`, {
+      body: { notes: 'Ring the bell twice' },
+    });
+    expect(edited.statusCode, edited.body).toBe(200);
+    const event = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ id: string; actor_user_id: string | null; created_at: Date }>(sql`
+            select id::text, actor_user_id, created_at from events.outbox
+            where org_id = ${ORG_A} and name = 'order.edited' and payload->>'id' = ${orderId}
+          `)
+        )[0],
+      { orgId: ORG_A },
+    );
+    expect(event).toBeDefined();
+    const service = harness.app.get(NcomOrdersService);
+    await service.onEdited({
+      id: event?.id ?? '',
+      orgId: ORG_A,
+      name: 'order.edited',
+      payload: { id: orderId },
+      rooms: [],
+      attempts: 0,
+      occurredAt: new Date(),
+      actorUserId: event?.actor_user_id ?? null,
+    });
+    const queued = await withSystem(
+      async (tx) =>
+        await tx.execute<{ topic: string; revision: number }>(sql`
+          select topic, revision from marketplace.ncom_outbox
+          where org_id = ${ORG_A} and order_id = ${orderId}
+        `),
+      { orgId: ORG_A },
+    );
+    expect([...queued]).toEqual([{ topic: 'order.updated', revision: 1 }]);
+  });
+
+  it('keeps an ended hold ended', async () => {
+    const ref = `ended-${randomUUID()}`;
+    await connector('POST', '/reserve', {
+      orderRef: ref,
+      lines: [{ variantId: skuA, quantity: 1 }],
+    });
+    expect((await connector('POST', '/release', { orderRef: ref })).body).toMatchObject({
+      ok: true,
+      released: 1,
+    });
+    const refused = await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          update marketplace.ncom_holds set state = 'held'
+          where org_id = ${ORG_A} and order_ref = ${ref}
+        `),
+      { orgId: ORG_A },
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    // Drizzle wraps the database's refusal; the trigger's words are in its cause.
+    const cause = (refused as { cause?: { message?: unknown } } | null)?.cause?.message;
+    expect(String(cause ?? refused)).toMatch(/has ended/);
   });
 });
 

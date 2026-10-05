@@ -30,6 +30,7 @@ export function SecretInput({
   secret,
   onChange,
   maxLength,
+  disabled = false,
 }: {
   readonly id: string;
   readonly label: string;
@@ -37,6 +38,7 @@ export function SecretInput({
   readonly secret: Secret;
   readonly onChange: (next: Secret) => void;
   readonly maxLength: number;
+  readonly disabled?: boolean;
 }) {
   const t = useT();
   const hint =
@@ -54,6 +56,7 @@ export function SecretInput({
           value={secret.mode === 'set' ? secret.value : ''}
           maxLength={maxLength}
           autoComplete="new-password"
+          disabled={disabled}
           className={control}
           onChange={(event) =>
             onChange(
@@ -68,6 +71,7 @@ export function SecretInput({
             size="sm"
             variant="outline"
             type="button"
+            disabled={disabled}
             aria-pressed={secret.mode === 'remove'}
             onClick={() =>
               onChange(secret.mode === 'remove' ? { mode: 'keep' } : { mode: 'remove' })

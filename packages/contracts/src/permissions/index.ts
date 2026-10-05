@@ -55,5 +55,6 @@ export {
   findCostFields,
   serializeFor,
   serializeForStorefront,
+  withoutCostFields,
   type SerializeContext,
 } from './serialize.js';

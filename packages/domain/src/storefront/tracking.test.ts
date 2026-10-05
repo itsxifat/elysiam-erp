@@ -130,6 +130,21 @@ describe('routing and payloads', () => {
     expect(bounded.campaign).toBe('eid');
   });
 
+  it('keeps no personal detail in custom data, which Meta receives unhashed', () => {
+    const bounded = boundedCustomData({
+      customer_email: 'rahim@example.com',
+      phone: '01712345678',
+      note: 'call 01712345678 first',
+      contact: 'rahim@example.com',
+      search_string: 'rahim@example.com',
+      user_name: 'Rahim',
+      access_token: 'abc',
+      campaign: 'eid',
+      coupon: 'EID10',
+    });
+    expect(Object.keys(bounded).sort()).toEqual(['campaign', 'coupon']);
+  });
+
   it('builds Meta’s event and GA4’s body from the same facts', () => {
     const customData = purchaseCustomData({
       orderNo: 'LP-0001',

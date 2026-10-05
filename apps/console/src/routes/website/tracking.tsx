@@ -47,6 +47,8 @@ function TrackingForm({ value }: { readonly value: TrackingSettingsView }) {
   const ability = useAbility();
   const queryClient = useQueryClient();
   const mayUpdate = ability.can('update', 'Storefront');
+  // Where the shoppers' hashed details go is the org admin's (D-558): the ids and secrets.
+  const mayCredentials = ability.can('update', 'WebsiteCredentials');
   const initial = value.settings;
   const [meta, setMeta] = useState({
     pixelEnabled: initial.meta.pixelEnabled,
@@ -141,6 +143,9 @@ function TrackingForm({ value }: { readonly value: TrackingSettingsView }) {
           </p>
         )}
         <p className="mb-4 text-xs text-muted-foreground">{t('wm.track.unverified')}</p>
+        {mayUpdate && !mayCredentials ? (
+          <p className="mb-4 text-xs text-muted-foreground">{t('wm.track.adminOnly')}</p>
+        ) : null}
         <fieldset disabled={!mayUpdate} className="space-y-6">
           <div className="space-y-3">
             <h3 className="text-sm font-semibold">{t('wm.track.meta')}</h3>
@@ -167,6 +172,7 @@ function TrackingForm({ value }: { readonly value: TrackingSettingsView }) {
                   value={meta.pixelId}
                   inputMode="numeric"
                   maxLength={24}
+                  disabled={!mayCredentials}
                   className={control}
                   onChange={(event) => setMeta({ ...meta, pixelId: event.target.value })}
                 />
@@ -181,6 +187,7 @@ function TrackingForm({ value }: { readonly value: TrackingSettingsView }) {
                   value={meta.datasetId}
                   inputMode="numeric"
                   maxLength={24}
+                  disabled={!mayCredentials}
                   className={control}
                   onChange={(event) => setMeta({ ...meta, datasetId: event.target.value })}
                 />
@@ -192,6 +199,7 @@ function TrackingForm({ value }: { readonly value: TrackingSettingsView }) {
                 secret={token}
                 onChange={setToken}
                 maxLength={600}
+                disabled={!mayCredentials}
               />
               <Field id={`${id}-version`} label={t('wm.track.apiVersion')}>
                 <input
@@ -253,6 +261,7 @@ function TrackingForm({ value }: { readonly value: TrackingSettingsView }) {
                   value={ga4.measurementId}
                   maxLength={24}
                   placeholder="G-XXXXXXX"
+                  disabled={!mayCredentials}
                   className={control}
                   onChange={(event) => setGa4({ ...ga4, measurementId: event.target.value })}
                 />
@@ -264,6 +273,7 @@ function TrackingForm({ value }: { readonly value: TrackingSettingsView }) {
                 secret={apiSecret}
                 onChange={setApiSecret}
                 maxLength={120}
+                disabled={!mayCredentials}
               />
             </div>
           </div>

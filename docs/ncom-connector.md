@@ -56,12 +56,14 @@ X-NCOM-Idempotency-Key: <key>            (order handovers and the ERP's updates)
   under `STOREFRONT_CREDENTIALS_KEY` and shown afterwards only as fingerprints. The ncom API
   key is kept for parity with the old site; contract 1 sends nothing with it.
 
-Every authentication failure is the same `401 {"error":"Unauthorized"}`; after repeated
-failures from one address it carries `Retry-After: 60`. A connector switched off answers
-`503 {"error":"not_serving"}`. The last refusal's reason (never the secret) is shown on the
-Marketplace screen.
+Until the signature checks out, every refusal is the same `401` (a brand not set up for ncom
+answers exactly like a wrong signature); after repeated failures from one address it carries
+`Retry-After: 60`. Only then: a wrong `X-NCOM-Contract` is `400 unsupported_contract`, a
+connector switched off answers `503 not_serving`, and an order to a shop not taking ncom's
+orders `503`. The last refusal's reason (never the secret) is shown on the Marketplace screen.
+Every answer has its cost fields stripped before it is written (invariant 5).
 
-Raw bodies are capped at 256 KiB for the connector, 512 KiB for webhooks and 1 MiB for orders.
+Raw bodies are capped at 256 KiB for the connector, 512 KiB for orders and 1 MiB for webhooks.
 
 ## Reads
 
@@ -190,9 +192,12 @@ Body `{ "orderRef": "…" }`. Gives back exactly what the hold took, once:
 `{ "ok": true, "released": 2 }`, or `{ "ok": true, "released": 0, "noop": true }` for a
 reference with nothing held.
 
-A hold is not a sale. It becomes the order's stock when ncom hands over an order whose `id` or
-`orderNumber` is the hold's reference. One ncom never releases stays on Website → Marketplace,
-where an org admin can release it.
+A hold is not a sale. On the old site, holds and handed-over orders were two modes: while a
+shop does not take ncom's orders, ncom holds through `/reserve` and keeps its orders; once the
+shop takes them ("Take ncom's orders"), ncom stops holding and the order holds its own stock.
+As a safety net, a hold becomes the order's stock when ncom hands over an order whose `id` or
+`orderNumber` is the hold's reference. A hold ncom never releases stays on Website →
+Marketplace, where an org admin releases it; nothing releases it on a timer (D-559).
 
 ## Order handover
 
@@ -238,14 +243,22 @@ while "Take ncom's orders" is on (otherwise `503`).
 }
 ```
 
-- `order.test` answers `200 {"ok":true,"test":true}` and files nothing.
+- `order.test` answers `200 {"ok":true,"test":true}` and files nothing. Any topic other than
+  `order.created`, `order.placed`, `order.updated`, `order.cancelled` (or none) is `400`.
 - `order.created` (or `order.placed`) files an order on the `marketplace` channel, `pending`,
   created by `marketplace:ncom`: `201 {"ok":true,"orderId":"…","orderNumber":"…"}`. The same
-  ncom order or idempotency key again answers `200` with `"deduped": true`.
-- **Money.** ncom's minor units are poisha. The order's lines are the brand's own variants at
-  ncom's prices; the discount is capped at the goods; the order collects the brand's goods and
-  delivery only (`ncomOrderMoney`). Lines from other shops are kept beside the order as
-  "foreign items" and never sold or collected here.
+  ncom order or idempotency key again answers `200` with `"deduped": true`. A refusal of the
+  ERP's order rules (a line it cannot take) is `422` with the reason: final, not retried.
+- **Money** (`ncomOrderMoney`). ncom's minor units are poisha. `totalCents` and
+  `shippingTotalCents` must be whole numbers, every line needs a quantity from 1 to 10,000 and a
+  `unitPriceCents` or `totalCents`, and the figures must add up one of two ways: the lines'
+  `totalCents` plus shipping (less any `couponDiscountCents`) is the total, or units times
+  quantities plus shipping less `discountTotalCents` is. Anything else is `400`, and so is a
+  non-zero `taxTotalCents` (an order of this shop has no tax to put it in). The discount falls
+  on the goods first, split between the brand's lines and other shops' lines by value; the
+  brand collects its own goods less their share plus the delivery. Lines from other shops are
+  kept beside the order as "foreign items" with their value less their share, never sold or
+  collected here.
 - **Address.** ncom's free text is matched to a district and thana (`matchDistrict`,
   `matchThana`); what cannot be matched is kept as text with a warning on the order.
 - **Stock.** A matching hold becomes the order's stock; with none, the order is filed and its
@@ -253,14 +266,17 @@ while "Take ncom's orders" is on (otherwise `503`).
 - `order.updated` and `order.cancelled` carry `baseRevision` (the revision ncom last saw) and
   `revision`. A stale base is `409 {"error":"This shop holds a different version of the order","revision":n}`.
   An edit goes through the order desk's own edit; a cancel through the state machine
-  (invariant 7). An edit or cancel the order can no longer take (it has shipped) is `409` with
-  a warning on the order for a person to act on.
+  (invariant 7). An edit or cancel the order can no longer take (it is packed or shipped), an
+  edit naming a product of the brand that no longer resolves or leaving none of its lines, and
+  one that would not collect the brand's part of the new total are `409` with the revision and
+  a warning on the order for a person to act on; nothing of them is applied.
 
 ## Updates back to ncom
 
-When a handed-over order moves (confirmed, packed, shipped, delivered, returned, cancelled) the
-ERP queues an update in `marketplace.ncom_outbox`, in the same transaction as the move, and the
-worker sends it with no transaction open (invariant 6):
+When a handed-over order moves (confirmed, packed, shipped, delivered, returned, cancelled), or
+a person edits it at the desk, the ERP queues an update in `marketplace.ncom_outbox` with a new
+revision, from the change's own event, and the worker sends it with no transaction open
+(invariant 6). Redirects are not followed:
 
 ```
 POST <ncom's address>/api/orders/callback

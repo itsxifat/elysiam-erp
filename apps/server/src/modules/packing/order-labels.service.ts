@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import type { OrderLabelsInput } from '@elysium/contracts';
 import { withOrg } from '@elysium/db';
-import { businessDate, formatBdPhoneForDisplay, poisha, takaText } from '@elysium/domain';
+import { add, businessDate, formatBdPhoneForDisplay, poisha, sub, takaText } from '@elysium/domain';
 
 import type { ActiveContext } from '../../platform/http/context.js';
 import { loadFonts } from '../files/pdf/fonts.js';
@@ -52,7 +52,10 @@ export class OrderLabelsService {
         );
       }
       return facts.map((order) => {
-        const total = order.itemsPoisha - order.discountPoisha + order.deliveryChargePoisha;
+        const total = add(
+          sub(poisha(order.itemsPoisha), poisha(order.discountPoisha)),
+          poisha(order.deliveryChargePoisha),
+        );
         const [year, month, day] = businessDate(order.createdAt).split('-');
         const recipient = order.recipient;
         return {

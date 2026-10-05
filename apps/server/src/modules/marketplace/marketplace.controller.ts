@@ -13,6 +13,7 @@ import { marketplaceSettingsSchema } from '@elysium/contracts';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { MarketplaceSettingsService } from './marketplace-settings.service.js';
@@ -21,6 +22,9 @@ const idSchema = z.string().uuid('No such record.');
 const holdQuerySchema = z
   .object({ state: z.enum(['held', 'released', 'converted']).optional() })
   .strict();
+
+const auditable = (request: FastifyRequest): AuditableRequest =>
+  request as unknown as AuditableRequest;
 
 function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
   const parsed = schema.safeParse(value);
@@ -58,7 +62,7 @@ export class MarketplaceController {
   @Put('ncom')
   async save(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(marketplaceSettingsSchema, body);
-    return this.settings.save(requireContext(request), input);
+    return this.settings.save(requireContext(request), input, auditable(request));
   }
 
   @RequireAbility('read', 'Storefront')
@@ -71,7 +75,11 @@ export class MarketplaceController {
   @RequireAbility('update', 'WebsiteCredentials')
   @Post('ncom/holds/:id/release')
   async releaseHold(@Req() request: FastifyRequest, @Param('id') id: string) {
-    return this.settings.releaseHold(requireContext(request), parse(idSchema, id));
+    return this.settings.releaseHold(
+      requireContext(request),
+      parse(idSchema, id),
+      auditable(request),
+    );
   }
 
   @RequireAbility('read', 'Storefront')

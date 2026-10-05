@@ -32,6 +32,9 @@ export class NcomTransport {
         method: 'POST',
         headers: { ...headers },
         body,
+        // A redirect is not followed: the signed order goes to the address the org admin set
+        // and nowhere it is pointed on to (the ledger audit's note 4). A 3xx is an answer.
+        redirect: 'manual',
         signal: AbortSignal.timeout(this.timeoutMs),
       });
       const text = await response.text().catch(() => '');

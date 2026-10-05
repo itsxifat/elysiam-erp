@@ -426,11 +426,17 @@ export async function trackingStats(
   return [...rows];
 }
 
-/** Removes the brand's events past their retention; the number removed. */
+/**
+ * Removes the brand's events past their retention, whatever became of them; the number
+ * removed. A Purchase still waiting then is an online payment that never came (an unpaid
+ * order is cancelled within the hour), and one still queued was never going to be sent: both
+ * hold a sealed payload of hashed personal data that is not kept past the retention either
+ * (the M35b ledger audit's W7).
+ */
 export async function purgeTrackingEvents(tx: Tx, orgId: string): Promise<number> {
   const rows = await tx.execute<{ id: string }>(sql`
     delete from storefront.tracking_events
-    where org_id = ${orgId} and expires_at < now() and status not in ('waiting', 'queued')
+    where org_id = ${orgId} and expires_at < now()
     returning id
   `);
   return rows.length;

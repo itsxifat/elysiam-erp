@@ -1079,6 +1079,7 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 | `order.created`                         | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, order_no, channel, total, created_at   | New-order alert; starts the pickup timer  |
 | `order.assigned` / `order.claimed`      | `org:role:sales`, `user:{assignee}`                                                                                                                               | id, assignee                               | Queue ownership                           |
 | `order.status_changed`                  | `org:role:sales`, `org:role:warehouse`<br>`org:role:accounts` (delivered and returned only)<br>`reseller:{id}` (reseller orders)<br>`org:branch:{b}` (POS orders) | id, from, to, at                           | Live lists and dashboards                 |
+| `order.edited`                          | `org:role:sales`, `org:role:warehouse`                                                                                                                            | id, order_no, at                           | Live lists; ncom.bd hears its edits       |
 | `order.fraud_flagged`                   | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, trust_score, decision                  | Review queue                              |
 | `delivery.updated`                      | `org:role:sales`, `reseller:{id}`                                                                                                                                 | order id, normalized status, at            | Tracking view                             |
 | `delivery.booking_failed`               | `org:role:sales`, `org:role:org_admin`                                                                                                                            | order id, courier, error code              | Fix and retry                             |
@@ -1599,9 +1600,14 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   by `marketplace:ncom`) to ncom's id, revision and idempotency key; edits and cancels go through
   `OrdersApi.editOrder` and the state machine, with a revision check. The order's money is
   `ncomOrderMoney`: the brand's goods at ncom's prices, the discount capped at the goods, COD =
-  goods + delivery, other shops' lines kept aside. Status changes reach ncom through
-  `ncom_outbox` (written by the order's status event in its transaction, sealed, delivered by
-  `marketplace.ncom_send` with backoff, `ncomDeliveryOutcome`). Triggers keep each row's
+  goods + delivery, other shops' lines kept aside. Amounts that are missing, malformed or do
+  not add up are refused, never read as zero; the order discount is split between the brand's
+  lines and other shops' by value (`allocate`), so the COD and the other shops' part add up to
+  ncom's total exactly. Status changes and a person's edits (`order.status_changed`,
+  `order.edited`) reach ncom through `ncom_outbox` (written in the change's transaction,
+  sealed, delivered by `marketplace.ncom_send` with backoff, `ncomDeliveryOutcome`); an inbound
+  edit or cancel the order can no longer take is refused under a savepoint and leaves a warning
+  on the order. Every connector answer has its cost fields stripped (`withoutCostFields`). Triggers keep each row's
   identity fixed and its revision moving forward. Console: Website → Marketplace (secrets are
   `update WebsiteCredentials`).
 - **Packing** (module `packing`, schema `packing`): `scanner_devices` holds the packing scanner

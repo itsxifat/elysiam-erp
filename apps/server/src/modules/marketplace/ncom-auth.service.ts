@@ -96,24 +96,13 @@ export class NcomAuthService {
             const site = await this.storefront.siteFacts(tx, orgId);
             return { settings, site };
           });
+    // Before the signature checks out, every refusal is the same 401: a caller learns nothing
+    // about whether this brand is set up for ncom (the M35b ledger audit's note 1).
     if (orgId === null || loaded?.settings.connector_secret_sealed == null) {
-      throw new NcomRefusal(
-        401,
-        connectorError('unauthorized', 'Product source is not connected.'),
-      );
+      throw this.unconfigured(request);
     }
     const { settings, site } = loaded;
 
-    const contract = header(request, 'x-ncom-contract').trim();
-    if (contract !== '' && contract !== NCOM_CONTRACT) {
-      throw new NcomRefusal(
-        400,
-        connectorError(
-          'unsupported_contract',
-          `This connector implements contract ${NCOM_CONTRACT}, not ${contract.slice(0, 20)}.`,
-        ),
-      );
-    }
     if (settings.connector_key_id !== '') {
       if (!ncomSecretEquals(header(request, 'x-ncom-key'), settings.connector_key_id)) {
         throw this.unauthorized(orgId, request, 'connector key mismatch');
@@ -129,6 +118,16 @@ export class NcomAuthService {
     );
     if (!verdict.ok) throw this.unauthorized(orgId, request, verdict.reason);
 
+    const contract = header(request, 'x-ncom-contract').trim();
+    if (contract !== '' && contract !== NCOM_CONTRACT) {
+      throw new NcomRefusal(
+        400,
+        connectorError(
+          'unsupported_contract',
+          `This connector implements contract ${NCOM_CONTRACT}, not ${contract.slice(0, 20)}.`,
+        ),
+      );
+    }
     const origin = (
       settings.public_base_url !== '' ? settings.public_base_url : site.siteUrl
     ).replace(/\/+$/, '');
@@ -147,10 +146,7 @@ export class NcomAuthService {
     const settings =
       orgId === null ? undefined : await withOrg({ orgId }, (tx) => repo.settingsOf(tx, orgId));
     if (orgId === null || settings?.order_secret_sealed == null || settings.order_key_id === '') {
-      throw new NcomRefusal(401, { error: 'Order intake is not configured' });
-    }
-    if (!settings.accept_orders) {
-      throw new NcomRefusal(503, { error: 'This shop is not accepting ncom orders' });
+      throw new NcomRefusal(401, { error: 'Unauthorized' }, this.floodHeaders(request));
     }
     if (!ncomSecretEquals(header(request, 'x-ncom-key'), settings.order_key_id)) {
       throw this.unauthorizedOrder(orgId, request, 'order key mismatch');
@@ -164,6 +160,10 @@ export class NcomAuthService {
       Date.now(),
     );
     if (!verdict.ok) throw this.unauthorizedOrder(orgId, request, verdict.reason);
+    // Said only to a caller that signed with the brand's own secret.
+    if (!settings.accept_orders) {
+      throw new NcomRefusal(503, { error: 'This shop is not accepting ncom orders' });
+    }
     return { orgId, settings };
   }
 
@@ -173,7 +173,7 @@ export class NcomAuthService {
     const settings =
       orgId === null ? undefined : await withOrg({ orgId }, (tx) => repo.settingsOf(tx, orgId));
     if (orgId === null || settings?.webhook_secret_sealed == null) {
-      throw new NcomRefusal(401, { error: 'Webhook secret not configured' });
+      throw new NcomRefusal(401, { error: 'Unauthorized' }, this.floodHeaders(request));
     }
     const secret = this.open(orgId, settings.webhook_secret_sealed, 'webhook_secret');
     const verdict =
@@ -217,6 +217,19 @@ export class NcomAuthService {
       connectorError('unauthorized', 'Invalid signature.'),
       flooding ? { 'retry-after': '60' } : {},
     );
+  }
+
+  /** A brand with no connector set up (or no brand): the same answer as a wrong signature. */
+  private unconfigured(request: FastifyRequest): NcomRefusal {
+    return new NcomRefusal(
+      401,
+      connectorError('unauthorized', 'Invalid signature.'),
+      this.floodHeaders(request),
+    );
+  }
+
+  private floodHeaders(request: FastifyRequest): Record<string, string> {
+    return this.flooding(request) ? { 'retry-after': '60' } : {};
   }
 
   private unauthorizedOrder(orgId: string, request: FastifyRequest, reason: string): NcomRefusal {

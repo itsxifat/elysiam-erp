@@ -1,11 +1,23 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { HttpException, Inject, Injectable } from '@nestjs/common';
 import { withGlobal, withOrg, type Tx } from '@elysium/db';
-import { normalizeBdPhone, OrderError, poisha, takaText, type OrderStatus } from '@elysium/domain';
+import {
+  add,
+  mulQty,
+  normalizeBdPhone,
+  OrderError,
+  poisha,
+  sub,
+  sum,
+  takaText,
+  type OrderStatus,
+  type Poisha,
+} from '@elysium/domain';
 import {
   availableForWeb,
   matchDistrict,
   matchThana,
   ncomCents,
+  ncomCentsOf,
   ncomDeliveryOutcome,
   ncomOrderMoney,
   ncomSignatureHeader,
@@ -52,6 +64,9 @@ interface NcomLine {
   readonly totalCents?: unknown;
 }
 
+/** The topics that file a new order (the old site took any other topic as one too). */
+const PLACING_TOPICS = new Set([undefined, 'order.created', 'order.placed']);
+
 interface NcomOrder {
   readonly id?: unknown;
   readonly orderNumber?: unknown;
@@ -64,7 +79,9 @@ interface NcomOrder {
   readonly shippingAddress?: Record<string, unknown> | null;
   readonly subtotalCents?: unknown;
   readonly discountTotalCents?: unknown;
+  readonly couponDiscountCents?: unknown;
   readonly shippingTotalCents?: unknown;
+  readonly taxTotalCents?: unknown;
   readonly totalCents?: unknown;
   readonly discountCode?: unknown;
   readonly note?: unknown;
@@ -86,14 +103,28 @@ interface ForeignItem {
   readonly variantTitle: string;
   readonly sku: string;
   readonly quantity: number;
+  /** The line's value in ncom's order, before the order discount. */
   readonly pricePoisha: string;
 }
 
+/** ncom's lines, each resolved to one of the brand's SKUs or not (another shop's). */
 interface Rebuilt {
-  readonly ours: { skuId: string; qty: number; unitPricePoisha: bigint }[];
-  readonly foreign: ForeignItem[];
+  readonly lines: readonly { readonly line: NcomLine; readonly skuId: string | null }[];
+  /** Lines of the brand's website (`source: website`) this shop no longer sells. */
+  readonly unresolved: number;
   readonly warnings: string[];
   readonly facts: ReadonlyMap<string, WebSkuFact>;
+}
+
+/** ncom's order in the ERP's terms: its own lines merged per SKU, and the money (D-556). */
+interface Priced {
+  readonly ours: { skuId: string; qty: number; unitPricePoisha: Poisha }[];
+  readonly foreign: ForeignItem[];
+  readonly deliveryPoisha: Poisha;
+  /** The ERP order's discount: its goods at these unit prices less what is collected. */
+  readonly discountPoisha: Poisha;
+  readonly codPoisha: Poisha;
+  readonly foreignPoisha: Poisha;
 }
 
 const str = (value: unknown, max: number): string =>
@@ -171,6 +202,9 @@ export class NcomOrdersService {
     if (envelope.topic === 'order.updated' || envelope.topic === 'order.cancelled') {
       return this.applyChange(context, envelope, order, key);
     }
+    if (!PLACING_TOPICS.has(envelope.topic as string | undefined)) {
+      return { status: 400, body: { error: 'Unknown topic' } };
+    }
     const lines = (order as NcomOrder).lines;
     if (!Array.isArray(lines) || lines.length === 0) {
       return { status: 400, body: { error: 'Order has no lines' } };
@@ -186,14 +220,21 @@ export class NcomOrdersService {
       return await this.place(context, envelope, order, key);
     } catch (error) {
       if (isUnique(error)) {
-        const winner = await withOrg({ orgId: context.orgId }, (tx) =>
-          repo.ncomOrderByKey(tx, context.orgId, key),
-        );
+        // The same key raced in, or the same ncom order came again under a new key.
+        const ncomId = str((order as NcomOrder).id, 128);
+        const winner = await withOrg({ orgId: context.orgId }, async (tx) => {
+          const byKey = await repo.ncomOrderByKey(tx, context.orgId, key);
+          if (byKey !== undefined || ncomId === '') return byKey;
+          return repo.ncomOrderByNcomId(tx, context.orgId, ncomId);
+        });
         if (winner !== undefined) return this.deduped(context.orgId, winner);
       }
       if (error instanceof NcomRefusal) return { status: error.status, body: error.body };
-      if (error instanceof OrderError) {
-        return { status: 400, body: { error: error.message } };
+      // The orders module refused it (a line it cannot take, a phone it cannot read): final,
+      // so ncom's queue stops retrying and its dashboard shows why.
+      const refusal = orderRefusal(error);
+      if (refusal !== null) {
+        return { status: 422, body: { error: refusal.message, code: refusal.code } };
       }
       this.logger.error({ err: error }, 'an ncom order could not be filed');
       // A 5xx, so ncom's queue retries: a blip is likelier than a payload never acceptable.
@@ -221,8 +262,26 @@ export class NcomOrdersService {
     const { orgId } = context;
     const actor = { orgId, userId: NCOM_ORDER_ACTOR };
     return withOrg(actor, async (tx) => {
+      // A same-order retry under a new key is answered with the order already filed.
+      const ncomIdFirst = str(order.id, 128);
+      if (ncomIdFirst !== '') {
+        const same = await repo.ncomOrderByNcomId(tx, orgId, ncomIdFirst);
+        if (same !== undefined) {
+          const summary = await this.orders.summary(tx, orgId, same.order_id);
+          return {
+            status: 200,
+            body: {
+              ok: true,
+              deduped: true,
+              orderId: same.order_id,
+              orderNumber: summary?.orderNo ?? '',
+            },
+          };
+        }
+      }
       const rebuilt = await this.rebuild(tx, orgId, order);
-      if (rebuilt.ours.length === 0) {
+      const priced = this.price(rebuilt, order);
+      if (priced.ours.length === 0) {
         // The ERP's orders are made of its own SKUs: an order of nothing the brand sells is
         // ncom's to fulfil (D-556), refused for good so its dashboard shows it.
         throw new NcomRefusal(400, { error: 'Order has no line this shop sells' });
@@ -238,14 +297,7 @@ export class NcomOrdersService {
       const name = str(customer.name, 200) || str(address.name, 200) || 'Customer';
       const warnings = [...rebuilt.warnings];
       const place = await this.placeOf(tx, address, warnings);
-      const money = ncomOrderMoney({
-        ours: rebuilt.ours.map((line) => ({
-          qty: line.qty,
-          unitPricePoisha: poisha(line.unitPricePoisha),
-        })),
-        shippingTotalCents: order.shippingTotalCents,
-        totalCents: order.totalCents,
-      });
+      const money = priced;
       if (money.foreignPoisha > 0n) {
         warnings.push(
           `ncom's total carries ${takaText(money.foreignPoisha)} for items this shop does not stock; this order collects only its own goods and delivery.`,
@@ -265,38 +317,55 @@ export class NcomOrdersService {
         }
       }
 
-      const locationId = await this.holdLocation(tx, orgId, rebuilt.ours);
+      let locationId = await this.holdLocation(tx, orgId, priced.ours);
       if (locationId === null) {
         warnings.push(
           'No single location holds every line: the order is filed without held stock; confirm it once the stock is there.',
         );
       }
       const note = str(order.note, 1500);
-      const created = await this.orders.createOrder(
-        tx,
-        actor,
-        {
-          channel: 'marketplace',
-          source: { utmSource: 'ncom' },
-          customer: { phone, name },
-          shipTo: {
-            name: str(address.name, 200) || name,
-            districtId: place.districtId,
-            thanaId: place.thanaId,
-            ...(place.area === '' ? {} : { area: place.area }),
-            addressLine: place.addressLine,
-          },
-          lines: rebuilt.ours.map((line) => ({
-            skuId: line.skuId,
-            qty: line.qty,
-            unitPricePoisha: line.unitPricePoisha.toString(),
-          })),
-          deliveryChargePoisha: money.deliveryPoisha.toString(),
-          discountPoisha: money.discountPoisha.toString(),
-          notes: `ncom.bd ${ncomNumber || ncomId}${note === '' ? '' : `: ${note}`}`.slice(0, 2000),
+      const orderInput: Parameters<OrdersApi['createOrder']>[2] = {
+        channel: 'marketplace',
+        source: { utmSource: 'ncom' },
+        customer: { phone, name },
+        shipTo: {
+          name: str(address.name, 200) || name,
+          districtId: place.districtId,
+          thanaId: place.thanaId,
+          ...(place.area === '' ? {} : { area: place.area }),
+          addressLine: place.addressLine,
         },
-        locationId === null ? {} : { holdStockAt: locationId },
-      );
+        lines: priced.ours.map((line) => ({
+          skuId: line.skuId,
+          qty: line.qty,
+          unitPricePoisha: line.unitPricePoisha.toString(),
+        })),
+        deliveryChargePoisha: money.deliveryPoisha.toString(),
+        discountPoisha: money.discountPoisha.toString(),
+        notes: `ncom.bd ${ncomNumber || ncomId}${note === '' ? '' : `: ${note}`}`.slice(0, 2000),
+      };
+      let created;
+      try {
+        // A savepoint: losing the race for the last units undoes only the attempt to hold them.
+        const at = locationId;
+        created = await tx.transaction((savepoint) =>
+          this.orders.createOrder(
+            savepoint,
+            actor,
+            orderInput,
+            at === null ? {} : { holdStockAt: at },
+          ),
+        );
+      } catch (error) {
+        if (locationId === null || orderRefusal(error)?.code !== 'STOCK_INSUFFICIENT') throw error;
+        // The shopper was told the order is placed: file it, say the stock was short (the old
+        // site's rule), and let a person confirm it once the units are there.
+        warnings.push(
+          'The units were sold while this order arrived: it is filed without held stock; confirm it once the stock is there.',
+        );
+        locationId = null;
+        created = await this.orders.createOrder(tx, actor, orderInput, {});
+      }
       if (BigInt(created.codAmountPoisha) !== money.codPoisha) {
         throw new Error('an ncom order’s COD did not come out as ncom’s total');
       }
@@ -312,16 +381,10 @@ export class NcomOrdersService {
         pageUrl: str(order.campaign?.pageUrl, 500),
         offerKey: str(order.campaign?.offerKey, 120),
         offerLabel: str(order.campaign?.offerLabel, 300),
-        offerPricePoisha:
-          order.campaign?.offerPriceCents === undefined
-            ? null
-            : ncomCents(order.campaign.offerPriceCents),
-        regularPricePoisha:
-          order.campaign?.offerRegularCents === undefined
-            ? null
-            : ncomCents(order.campaign.offerRegularCents),
+        offerPricePoisha: ncomCents(order.campaign?.offerPriceCents),
+        regularPricePoisha: ncomCents(order.campaign?.offerRegularCents),
         discountCode: str(order.discountCode, 80),
-        foreignItems: rebuilt.foreign,
+        foreignItems: priced.foreign,
         foreignPoisha: money.foreignPoisha,
         warnings,
         stockHeld: locationId !== null,
@@ -341,7 +404,7 @@ export class NcomOrdersService {
         orderId: created.id,
         orderNo: created.orderNo,
         totalPoisha: money.codPoisha,
-        lines: rebuilt.ours.map((line) => ({
+        lines: priced.ours.map((line) => ({
           productId: rebuilt.facts.get(line.skuId)?.productId ?? line.skuId,
           name: rebuilt.facts.get(line.skuId)?.productName ?? '',
           qty: line.qty,
@@ -368,7 +431,7 @@ export class NcomOrdersService {
           ncomOrderNumber: ncomNumber,
           codAmountPoisha: money.codPoisha.toString(),
           heldAt: locationId,
-          foreignItems: rebuilt.foreign.length,
+          foreignItems: priced.foreign.length,
           warnings: warnings.length,
           topic: str(envelope.topic, 40),
         },
@@ -418,11 +481,13 @@ export class NcomOrdersService {
         const summary = await this.orders.summary(tx, orgId, existing.order_id);
         if (summary !== undefined && summary.status !== 'cancelled') {
           try {
-            await this.orders.transition(tx, actor, existing.order_id, 'cancel', {
-              reason: `Cancelled on ncom${str(envelope.reason, 200) === '' ? '' : `: ${str(envelope.reason, 200)}`}`,
-            });
+            await tx.transaction((savepoint) =>
+              this.orders.transition(savepoint, actor, existing.order_id, 'cancel', {
+                reason: `Cancelled on ncom${str(envelope.reason, 200) === '' ? '' : `: ${str(envelope.reason, 200)}`}`,
+              }),
+            );
           } catch (error) {
-            if (!refusedAs(error, 'ORDER_TRANSITION_INVALID', 'ORDER_IMMUTABLE')) throw error;
+            if (orderRefusal(error) === null) throw error;
             warnings.push(
               `ncom cancelled this order when it was ${summary.status}; stop it by hand.`,
             );
@@ -447,47 +512,8 @@ export class NcomOrdersService {
       const rebuilt = await this.rebuild(tx, orgId, incoming);
       const address = incoming.shippingAddress ?? {};
       const editWarnings: string[] = [...rebuilt.warnings];
-      const money = ncomOrderMoney({
-        ours: rebuilt.ours.map((line) => ({
-          qty: line.qty,
-          unitPricePoisha: poisha(line.unitPricePoisha),
-        })),
-        shippingTotalCents: incoming.shippingTotalCents,
-        totalCents: incoming.totalCents,
-      });
-      const hasAddress = str(address.address1, 300) !== '' || str(address.city, 120) !== '';
-      const place = hasAddress ? await this.placeOf(tx, address, editWarnings) : null;
-      try {
-        await this.orders.editOrder(tx, actor, existing.order_id, {
-          ...(rebuilt.ours.length === 0
-            ? {}
-            : {
-                lines: rebuilt.ours.map((line) => ({
-                  skuId: line.skuId,
-                  qty: line.qty,
-                  unitPricePoisha: line.unitPricePoisha.toString(),
-                })),
-              }),
-          deliveryChargePoisha: money.deliveryPoisha.toString(),
-          discountPoisha: money.discountPoisha.toString(),
-          ...(place === null
-            ? {}
-            : {
-                shipTo: {
-                  ...(str(address.name, 200) === '' ? {} : { name: str(address.name, 200) }),
-                  districtId: place.districtId,
-                  thanaId: place.thanaId,
-                  ...(place.area === '' ? {} : { area: place.area }),
-                  addressLine: place.addressLine,
-                },
-              }),
-          ...(incoming.note === undefined ? {} : { notes: str(incoming.note, 2000) }),
-        });
-      } catch (error) {
-        if (!refusedAs(error, 'ORDER_IMMUTABLE', 'ORDER_TRANSITION_INVALID')) throw error;
-        warnings.push(
-          `ncom changed this order but it can no longer be edited here: ${(error as Error).message}`,
-        );
+      const refuseEdit = async (why: string): Promise<IntakeAnswer> => {
+        warnings.push(`ncom changed this order but the change was not applied: ${why}`);
         await repo.applyInbound(tx, {
           orgId,
           orderId: existing.order_id,
@@ -499,6 +525,57 @@ export class NcomOrdersService {
           status: 409,
           body: { error: 'This shop cannot apply that change now', revision: held },
         };
+      };
+      // A line of ours that no longer resolves would silently leave the order (the ledger
+      // audit's C2): a person decides instead.
+      if (rebuilt.unresolved > 0) {
+        return refuseEdit('a line names a product this shop no longer sells; edit it by hand.');
+      }
+      const priced = this.price(rebuilt, incoming);
+      if (priced.ours.length === 0) {
+        return refuseEdit('it leaves no line this shop sells; cancel or edit it by hand.');
+      }
+      const hasAddress = str(address.address1, 300) !== '' || str(address.city, 120) !== '';
+      const place = hasAddress ? await this.placeOf(tx, address, editWarnings) : null;
+      try {
+        await tx.transaction(async (savepoint) => {
+          await this.orders.editOrder(savepoint, actor, existing.order_id, {
+            lines: priced.ours.map((line) => ({
+              skuId: line.skuId,
+              qty: line.qty,
+              unitPricePoisha: line.unitPricePoisha.toString(),
+            })),
+            deliveryChargePoisha: priced.deliveryPoisha.toString(),
+            discountPoisha: priced.discountPoisha.toString(),
+            ...(place === null
+              ? {}
+              : {
+                  shipTo: {
+                    ...(str(address.name, 200) === '' ? {} : { name: str(address.name, 200) }),
+                    districtId: place.districtId,
+                    thanaId: place.thanaId,
+                    ...(place.area === '' ? {} : { area: place.area }),
+                    addressLine: place.addressLine,
+                  },
+                }),
+            ...(incoming.note === undefined ? {} : { notes: str(incoming.note, 2000) }),
+          });
+          // The order must now collect exactly the brand's part of ncom's total, less what
+          // was paid ahead; anything else is undone with the savepoint.
+          const after = await this.orders.summary(savepoint, orgId, existing.order_id);
+          const advance = poisha(after?.advancePaidPoisha ?? '0');
+          const expected = priced.codPoisha > advance ? sub(priced.codPoisha, advance) : poisha(0);
+          if (after === undefined || poisha(after.codAmountPoisha) !== expected) {
+            throw new NcomRefusal(409, { error: 'The edit would not collect ncom’s total' });
+          }
+        });
+      } catch (error) {
+        if (error instanceof NcomRefusal) {
+          return refuseEdit('the order would not have collected ncom’s total.');
+        }
+        const refusal = orderRefusal(error);
+        if (refusal === null) throw error;
+        return refuseEdit(refusal.message);
       }
       await repo.applyInbound(tx, {
         orgId,
@@ -506,8 +583,8 @@ export class NcomOrdersService {
         revision,
         key,
         warnings: [...warnings, ...editWarnings],
-        foreignItems: rebuilt.foreign,
-        foreignPoisha: money.foreignPoisha,
+        foreignItems: priced.foreign,
+        foreignPoisha: priced.foreignPoisha,
       });
       return { status: 200, body: { ok: true, revision } };
     });
@@ -582,6 +659,30 @@ export class NcomOrdersService {
     await withOrg({ orgId: event.orgId, userId: 'system:marketplace' }, (tx) =>
       this.queueChange(tx, event.orgId, orderId, status, `Status changed to ${status}`, event.id),
     );
+  }
+
+  /**
+   * The outbox subscriber for `order.edited`: a person corrected a handed-over order (its
+   * lines, money or address) and ncom hears the order as it now stands, under a new revision,
+   * so its next change cannot quietly overwrite the correction (the ledger audit's W5).
+   */
+  async onEdited(event: DeliveredEvent): Promise<void> {
+    if (event.actorUserId === NCOM_ORDER_ACTOR) return;
+    const payload = event.payload as { id?: unknown };
+    if (typeof payload.id !== 'string') return;
+    const orderId = payload.id;
+    await withOrg({ orgId: event.orgId, userId: 'system:marketplace' }, async (tx) => {
+      const summary = await this.orders.summary(tx, event.orgId, orderId);
+      if (summary === undefined) return;
+      await this.queueChange(
+        tx,
+        event.orgId,
+        orderId,
+        summary.status,
+        'Edited in the shop',
+        event.id,
+      );
+    });
   }
 
   /** Queue one change of an order ncom handed over; nothing for any other order. */
@@ -683,19 +784,22 @@ export class NcomOrdersService {
         facts.lines.map((line) => line.skuId),
       ),
     ]);
-    const total = facts.itemsPoisha - facts.discountPoisha + facts.deliveryChargePoisha;
+    const total = add(
+      sub(poisha(facts.itemsPoisha), poisha(facts.discountPoisha)),
+      poisha(facts.deliveryChargePoisha),
+    );
     return {
       id: row.ncom_order_id,
       orderNumber: facts.orderNo,
       status: ncomStatusFor(status),
       fulfilmentStatus: status,
-      paymentStatus: facts.advancePaidPoisha >= total && total > 0n ? 'paid' : 'pending',
+      paymentStatus: poisha(facts.advancePaidPoisha) >= total && total > 0n ? 'paid' : 'pending',
       currencyCode: 'BDT',
-      subtotalCents: Number(facts.itemsPoisha),
-      discountTotalCents: Number(facts.discountPoisha),
-      shippingTotalCents: Number(facts.deliveryChargePoisha),
+      subtotalCents: ncomCentsOf(poisha(facts.itemsPoisha)),
+      discountTotalCents: ncomCentsOf(poisha(facts.discountPoisha)),
+      shippingTotalCents: ncomCentsOf(poisha(facts.deliveryChargePoisha)),
       taxTotalCents: 0,
-      totalCents: Number(total),
+      totalCents: ncomCentsOf(total),
       cancelledAt:
         topic === 'order.cancelled' || status === 'returned' ? new Date().toISOString() : null,
       note: facts.notes,
@@ -721,10 +825,10 @@ export class NcomOrdersService {
           sku: line.skuCode,
           imageUrl: null,
           quantity: line.qty,
-          unitPriceCents: Number(line.unitPricePoisha),
+          unitPriceCents: ncomCentsOf(poisha(line.unitPricePoisha)),
           discountCents: 0,
           taxCents: 0,
-          totalCents: Number(line.unitPricePoisha) * line.qty,
+          totalCents: ncomCentsOf(mulQty(poisha(line.unitPricePoisha), line.qty)),
           requiresShipping: true,
           weightGrams: 0,
           isGift: false,
@@ -844,6 +948,7 @@ export class NcomOrdersService {
     let queued = 0;
     for (const orgId of orgIds) {
       queued += await withOrg({ orgId }, async (tx) => {
+        await repo.purgeEvents(tx, orgId);
         const due = await repo.dueOrders(tx, orgId, 50);
         for (const orderId of due) {
           await enqueue(
@@ -895,40 +1000,82 @@ export class NcomOrdersService {
       ).map((fact) => [fact.id, fact]),
     );
 
-    const ours = new Map<string, { skuId: string; qty: number; unitPricePoisha: bigint }>();
-    const foreign: ForeignItem[] = [];
+    const resolved: { line: NcomLine; skuId: string | null }[] = [];
+    let unresolved = 0;
     for (const line of lines) {
-      const quantity = Math.floor(Number(line.quantity) || 0);
-      if (quantity <= 0 || !Number.isSafeInteger(quantity)) continue;
-      const price = ncomCents(line.unitPriceCents);
       const productId = line.source === 'website' ? productIdOf(str(line.productId, 128)) : null;
       const candidates =
         productId === null ? [] : skus.filter((sku) => sku.productId === productId);
       const skuId = matchVariant(candidates, line, legacyVariants);
-      if (skuId !== null) {
-        const existing = ours.get(skuId);
-        if (existing === undefined)
-          ours.set(skuId, { skuId, qty: quantity, unitPricePoisha: price });
-        else {
-          existing.qty += quantity;
-          if (price > existing.unitPricePoisha) existing.unitPricePoisha = price;
-        }
-        continue;
-      }
-      if (line.source === 'website') {
+      if (skuId === null && line.source === 'website') {
+        unresolved += 1;
         warnings.push(
           `"${str(line.title, 120)}"${str(line.variantTitle, 60) === '' ? '' : ` (${str(line.variantTitle, 60)})`} is no longer in this shop's catalogue.`,
         );
       }
-      foreign.push({
-        title: str(line.title, 200) || 'Item',
-        variantTitle: str(line.variantTitle, 100),
-        sku: str(line.sku, 100),
-        quantity,
-        pricePoisha: price.toString(),
-      });
+      resolved.push({ line, skuId });
     }
-    return { ours: [...ours.values()], foreign, warnings, facts };
+    return { lines: resolved, unresolved, warnings, facts };
+  }
+
+  /**
+   * ncom's money for the order (`ncomOrderMoney`), refused when it does not add up, and the
+   * brand's lines merged per SKU. A SKU on two lines at different prices takes the higher
+   * one; the order's discount is whatever makes it collect exactly the brand's part.
+   */
+  private price(rebuilt: Rebuilt, order: NcomOrder): Priced {
+    const money = ncomOrderMoney({
+      lines: rebuilt.lines.map(({ line, skuId }) => ({
+        ours: skuId !== null,
+        quantity: line.quantity,
+        unitPriceCents: line.unitPriceCents,
+        totalCents: line.totalCents,
+      })),
+      shippingTotalCents: order.shippingTotalCents,
+      discountTotalCents: order.discountTotalCents,
+      couponDiscountCents: order.couponDiscountCents,
+      taxTotalCents: order.taxTotalCents,
+      totalCents: order.totalCents,
+    });
+    if (!money.ok) throw new NcomRefusal(400, { error: money.reason });
+    const ours = new Map<string, { skuId: string; qty: number; unitPricePoisha: Poisha }>();
+    const foreign: ForeignItem[] = [];
+    rebuilt.lines.forEach(({ line, skuId }, index) => {
+      const priced = money.lines[index];
+      if (priced === undefined) return;
+      if (skuId === null) {
+        foreign.push({
+          title: str(line.title, 200) || 'Item',
+          variantTitle: str(line.variantTitle, 100),
+          sku: str(line.sku, 100),
+          quantity: priced.quantity,
+          pricePoisha: priced.valuePoisha.toString(),
+        });
+        return;
+      }
+      const existing = ours.get(skuId);
+      if (existing === undefined) {
+        ours.set(skuId, { skuId, qty: priced.quantity, unitPricePoisha: priced.unitPricePoisha });
+      } else {
+        existing.qty += priced.quantity;
+        if (priced.unitPricePoisha > existing.unitPricePoisha) {
+          existing.unitPricePoisha = priced.unitPricePoisha;
+        }
+      }
+    });
+    const merged = [...ours.values()];
+    const items = sum(merged.map((line) => mulQty(line.unitPricePoisha, line.qty)));
+    // Never negative: each line's unit price covers its value, and the brand collects its
+    // goods less their discount plus delivery.
+    const discount = sub(add(items, money.deliveryPoisha), money.codPoisha);
+    return {
+      ours: merged,
+      foreign,
+      deliveryPoisha: money.deliveryPoisha,
+      discountPoisha: discount,
+      codPoisha: money.codPoisha,
+      foreignPoisha: money.foreignPoisha,
+    };
   }
 
   /** The courier's district and thana for ncom's free-text address (D-556). */
@@ -1070,9 +1217,26 @@ function isUnique(error: unknown): boolean {
   return false;
 }
 
-/** A refusal the orders module answered with, by its code (it may arrive wrapped). */
-function refusedAs(error: unknown, ...codes: readonly string[]): boolean {
-  if (error instanceof OrderError) return true;
+/**
+ * A refusal the orders module answered with, whatever wrapped it: `OrdersApi.editOrder` maps
+ * its errors to HTTP exceptions, `createOrder` and `transition` throw the module's own. Its
+ * contract code and message, or null for anything that is not a refusal (a 5xx, a bug).
+ */
+function orderRefusal(error: unknown): { code: string; message: string } | null {
+  if (error instanceof HttpException) {
+    if (error.getStatus() >= 500) return null;
+    const body = error.getResponse() as { code?: unknown; message?: unknown } | string;
+    return typeof body === 'string'
+      ? { code: 'REFUSED', message: body }
+      : {
+          code: typeof body.code === 'string' ? body.code : 'REFUSED',
+          message: typeof body.message === 'string' ? body.message : error.message,
+        };
+  }
+  if (error instanceof OrderError) return { code: error.code, message: error.message };
   const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === 'string' && codes.includes(code);
+  // A contract code (`STOCK_INSUFFICIENT`), never a database SQLSTATE (`23505`).
+  return typeof code === 'string' && /^[A-Z][A-Z0-9_]{2,}$/.test(code)
+    ? { code, message: error instanceof Error ? error.message : code }
+    : null;
 }

@@ -1,6 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
-import { add, mulQty, poisha, sub, sum, ZERO, type Poisha } from '../money/index.js';
+import { add, allocate, mulQty, poisha, sub, sum, ZERO, type Poisha } from '../money/index.js';
 import type { OrderStatus } from '../orders/state.js';
 import { takaDecimal } from './price.js';
 
@@ -180,64 +180,195 @@ export function mergeNcomLines(
 
 // --- orders handed over (D-556) -----------------------------------------------------------
 
-/** Integer minor units, as ncom sends them (`*Cents`): poisha. Anything else is zero. */
-export function ncomCents(value: unknown): Poisha {
+/** Integer minor units, as ncom sends them (`*Cents`): poisha. Anything else is `null`. */
+export function ncomCents(value: unknown): Poisha | null {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return poisha(value);
-  if (typeof value === 'string' && /^\d{1,16}$/.test(value)) return poisha(value);
-  return ZERO;
+  if (typeof value === 'string' && /^\d{1,15}$/.test(value)) return poisha(value);
+  return null;
 }
 
-export interface NcomOurLine {
-  readonly qty: number;
-  /** ncom's unit price for the line: the price the shopper agreed to. */
-  readonly unitPricePoisha: Poisha;
+/** The most of one line ncom may hand over: past it, a quantity is a mistake, not an order. */
+export const NCOM_MAX_LINE_QUANTITY = 10_000;
+
+/** One of ncom's order lines, as the money rule reads it. */
+export interface NcomMoneyLine {
+  /** A line of the brand's own (resolved to a SKU); otherwise another shop's or ncom's. */
+  readonly ours: boolean;
+  readonly quantity: unknown;
+  readonly unitPriceCents: unknown;
+  /** The line's total after its own savings, when ncom sends one. */
+  readonly totalCents: unknown;
 }
+
+export type NcomOrderMoney =
+  | {
+      readonly ok: true;
+      /** Per line, in the order given: the quantity, the unit price an ERP order line carries
+       * (never below the line's value per unit) and the line's value before the order discount. */
+      readonly lines: readonly {
+        readonly quantity: number;
+        readonly unitPricePoisha: Poisha;
+        readonly valuePoisha: Poisha;
+      }[];
+      /** The brand's own goods, at ncom's prices, before the order discount. */
+      readonly oursPoisha: Poisha;
+      /** The order discount's share that falls on the brand's goods. */
+      readonly oursDiscountPoisha: Poisha;
+      /** ncom's delivery, less any of the discount that went beyond the goods. */
+      readonly deliveryPoisha: Poisha;
+      /** What the brand's courier collects: its goods less their discount, plus delivery. */
+      readonly codPoisha: Poisha;
+      /** Other shops' goods less their share of the discount: not the brand's to collect. */
+      readonly foreignPoisha: Poisha;
+    }
+  | { readonly ok: false; readonly reason: string };
+
+const refused = (reason: string): NcomOrderMoney => ({ ok: false, reason });
 
 /**
- * What an order handed over by ncom costs in the ERP (D-556): **ncom's prices, as they are**.
+ * What an order handed over by ncom costs in the ERP (D-556): **ncom's prices, as they are**,
+ * and only when they add up.
  *
- * The shopper agreed to a bundle price on ncom's page, so the ERP does not reprice it. The
- * lines the brand sells carry ncom's unit prices; delivery is ncom's shipping total; the order
- * discount is whatever makes the COD equal ncom's total. A line for something ncom stores
- * itself is recorded on the order but is not the brand's to ship or collect for: when those
- * lines carry money, the brand's COD covers its own goods and delivery only (`foreignPoisha`
- * is the difference, collected by whoever ships them), and the order says so.
+ * The shopper agreed to a bundle price on ncom's page, so the ERP does not reprice it. But a
+ * missing or malformed amount is refused, never read as zero (the ledger audit's C1: a zero
+ * total would have turned into a discount that gave the goods away). The figures must agree
+ * one of the two ways ncom's payloads are written:
+ *
+ * - every line has its `totalCents` and `Σ line totals + shipping = total` (the order discount
+ *   is already inside the lines; the old order check's payload), or that less
+ *   `couponDiscountCents`, or
+ * - `Σ unit × quantity + shipping − discountTotalCents = total`.
+ *
+ * Tax is refused unless it is zero: an order of this shop has no tax to put it in (D-559).
+ * The discount falls on the goods first, split between the brand's lines and other shops' lines
+ * by value with `allocate` (exact, no poisha lost), and only what is left of it comes off the
+ * delivery. The brand collects its own goods less their share plus the delivery; other shops'
+ * goods less theirs are `foreignPoisha`. `codPoisha + foreignPoisha` is exactly ncom's total.
  */
 export function ncomOrderMoney(input: {
-  readonly ours: readonly NcomOurLine[];
+  readonly lines: readonly NcomMoneyLine[];
   readonly shippingTotalCents: unknown;
+  readonly discountTotalCents: unknown;
+  /** A coupon taken off after the lines' own totals, when ncom sends one. */
+  readonly couponDiscountCents?: unknown;
+  readonly taxTotalCents: unknown;
   readonly totalCents: unknown;
-}): {
-  readonly itemsPoisha: Poisha;
-  readonly deliveryPoisha: Poisha;
-  readonly discountPoisha: Poisha;
-  readonly codPoisha: Poisha;
-  /** What ncom's total carries beyond the brand's own goods and delivery. */
-  readonly foreignPoisha: Poisha;
-} {
-  const items = sum(input.ours.map((line) => mulQty(line.unitPricePoisha, line.qty)));
-  const delivery = ncomCents(input.shippingTotalCents);
+}): NcomOrderMoney {
+  if (input.lines.length === 0) return refused('The order has no lines.');
   const total = ncomCents(input.totalCents);
-  const gross = add(items, delivery);
-  if (total <= gross) {
-    // The discount cannot take the goods below nothing: delivery is never discounted here.
-    const discount = sub(gross, total);
-    const capped = discount > items ? items : discount;
-    return {
-      itemsPoisha: items,
-      deliveryPoisha: delivery,
-      discountPoisha: capped,
-      codPoisha: sub(gross, capped),
-      foreignPoisha: ZERO,
-    };
+  if (total === null) return refused('totalCents is missing or not a whole number of poisha.');
+  const shipping = ncomCents(input.shippingTotalCents);
+  if (shipping === null) {
+    return refused('shippingTotalCents is missing or not a whole number of poisha.');
   }
+  const tax =
+    input.taxTotalCents === undefined || input.taxTotalCents === null
+      ? ZERO
+      : ncomCents(input.taxTotalCents);
+  if (tax === null) return refused('taxTotalCents is not a whole number of poisha.');
+  if (tax !== ZERO) return refused('This shop does not take orders that carry tax.');
+
+  const read: { quantity: number; unit: Poisha | null; lineTotal: Poisha | null; ours: boolean }[] =
+    [];
+  for (const line of input.lines) {
+    const quantity = typeof line.quantity === 'number' ? line.quantity : Number(line.quantity);
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > NCOM_MAX_LINE_QUANTITY) {
+      return refused(
+        `A line's quantity must be a whole number from 1 to ${String(NCOM_MAX_LINE_QUANTITY)}.`,
+      );
+    }
+    const unit =
+      line.unitPriceCents === undefined || line.unitPriceCents === null
+        ? null
+        : ncomCents(line.unitPriceCents);
+    if (unit === null && line.unitPriceCents !== undefined && line.unitPriceCents !== null) {
+      return refused("A line's unitPriceCents is not a whole number of poisha.");
+    }
+    const lineTotal =
+      line.totalCents === undefined || line.totalCents === null ? null : ncomCents(line.totalCents);
+    if (lineTotal === null && line.totalCents !== undefined && line.totalCents !== null) {
+      return refused("A line's totalCents is not a whole number of poisha.");
+    }
+    if (unit === null && lineTotal === null) return refused('A line has no price.');
+    read.push({ quantity, unit, lineTotal, ours: line.ours });
+  }
+
+  // Which way the figures are written: line totals carrying the discount, or units less the
+  // order's discount.
+  let values: Poisha[];
+  let discount: Poisha;
+  const byTotals = read.every((line) => line.lineTotal !== null)
+    ? read.map((line) => line.lineTotal ?? ZERO)
+    : null;
+  const byUnits = read.every((line) => line.unit !== null)
+    ? read.map((line) => mulQty(line.unit ?? ZERO, line.quantity))
+    : null;
+  const orderDiscount =
+    input.discountTotalCents === undefined || input.discountTotalCents === null
+      ? ZERO
+      : ncomCents(input.discountTotalCents);
+  const coupon =
+    input.couponDiscountCents === undefined || input.couponDiscountCents === null
+      ? ZERO
+      : ncomCents(input.couponDiscountCents);
+  if (byTotals !== null && add(sum(byTotals), shipping) === total) {
+    values = byTotals;
+    discount = ZERO;
+  } else if (
+    byTotals !== null &&
+    coupon !== null &&
+    coupon > ZERO &&
+    sub(add(sum(byTotals), shipping), coupon) === total
+  ) {
+    values = byTotals;
+    discount = coupon;
+  } else if (
+    byUnits !== null &&
+    orderDiscount !== null &&
+    sub(add(sum(byUnits), shipping), orderDiscount) === total
+  ) {
+    values = byUnits;
+    discount = orderDiscount;
+  } else {
+    return refused("The order's amounts do not add up to its total.");
+  }
+
+  const linesValue = sum(values);
+  const onGoods = discount > linesValue ? linesValue : discount;
+  const offDelivery = sub(discount, onGoods);
+  const oursValue = sum(values.filter((_, index) => read[index]?.ours === true));
+  const foreignValue = sub(linesValue, oursValue);
+  const [oursShare, foreignShare] =
+    onGoods === ZERO || linesValue === ZERO
+      ? [ZERO, ZERO]
+      : (allocate(onGoods, [oursValue, foreignValue]) as [Poisha, Poisha]);
+  const delivery = sub(shipping, offDelivery);
+  const cod = add(sub(oursValue, oursShare), delivery);
+  const foreign = sub(foreignValue, foreignShare);
   return {
-    itemsPoisha: items,
+    ok: true,
+    lines: read.map((line, index) => {
+      const value = values[index] ?? ZERO;
+      // An order line carries a unit price; never one below the line's value per unit, so the
+      // ERP's order discount (its goods less what is collected for them) is never negative.
+      const perUnit = poisha((value + BigInt(line.quantity) - 1n) / BigInt(line.quantity));
+      const unit = line.unit !== null && line.unit > perUnit ? line.unit : perUnit;
+      return { quantity: line.quantity, unitPricePoisha: unit, valuePoisha: value };
+    }),
+    oursPoisha: oursValue,
+    oursDiscountPoisha: oursShare,
     deliveryPoisha: delivery,
-    discountPoisha: ZERO,
-    codPoisha: gross,
-    foreignPoisha: sub(total, gross),
+    codPoisha: cod,
+    foreignPoisha: foreign,
   };
+}
+
+/** ncom's minor units for an amount of poisha, as a JSON number; refused past exactness. */
+export function ncomCentsOf(amount: Poisha): number {
+  const value = Number(amount);
+  if (!Number.isSafeInteger(value))
+    throw new RangeError('An amount too large for ncom’s minor units.');
+  return value;
 }
 
 /**

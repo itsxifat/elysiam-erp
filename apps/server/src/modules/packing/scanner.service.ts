@@ -7,7 +7,7 @@ import {
   type RequestContext,
   type Tx,
 } from '@elysium/db';
-import { formatBdPhoneForDisplay, poisha } from '@elysium/domain';
+import { add, formatBdPhoneForDisplay, poisha, sub } from '@elysium/domain';
 import { takaDecimal, wireMoney } from '@elysium/domain/storefront';
 import { sql } from 'drizzle-orm';
 
@@ -178,7 +178,10 @@ export class ScannerService {
       if (!firstImage.has(image.productId)) firstImage.set(image.productId, image.fileId);
     }
     const urls = await this.storefront.publicImageUrls(tx, orgId, [...firstImage.values()]);
-    const total = facts.itemsPoisha - facts.discountPoisha + facts.deliveryChargePoisha;
+    const total = add(
+      sub(poisha(facts.itemsPoisha), poisha(facts.discountPoisha)),
+      poisha(facts.deliveryChargePoisha),
+    );
     const paid = facts.codAmountPoisha === 0n && total > 0n;
     const label = (skuId: string, kind: string): string =>
       byId.get(skuId)?.values.find((value) => value.kind === kind)?.label ?? '';

@@ -1,7 +1,11 @@
 import { createHash, randomInt } from 'node:crypto';
 
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import type { TrackingEventsRequest, TrackingSettingsInput } from '@elysium/contracts';
+import {
+  defineAbilityFor,
+  type TrackingEventsRequest,
+  type TrackingSettingsInput,
+} from '@elysium/contracts';
 import { withGlobal, withOrg, type Tx } from '@elysium/db';
 import { decimalToPoisha, poisha } from '@elysium/domain';
 import {
@@ -26,6 +30,8 @@ import {
 import { sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import type { RateLimitStore } from '../../platform/http/rate-limit.js';
 import { enqueue } from '../../platform/jobs/enqueue.js';
@@ -165,6 +171,7 @@ export class TrackingService {
   constructor(
     @Inject(TRACKING_GATEWAY) private readonly gateway: TrackingGateway,
     @Inject(STOREFRONT_RATE_LIMITER) private readonly limiter: RateLimitStore,
+    private readonly audit: AuditService,
   ) {}
 
   // --- the console ----------------------------------------------------------------------------
@@ -175,7 +182,7 @@ export class TrackingService {
     );
   }
 
-  async save(context: ActiveContext, input: TrackingSettingsInput) {
+  async save(context: ActiveContext, input: TrackingSettingsInput, request?: AuditableRequest) {
     const wantsSecret =
       typeof input.meta.accessToken === 'string' || typeof input.ga4.apiSecret === 'string';
     if (wantsSecret && !sealedBoxConfigured()) {
@@ -186,6 +193,23 @@ export class TrackingService {
       );
     }
     return withOrg(context, async (tx) => {
+      const current = await repo.trackingSettings(tx, context.orgId);
+      // Where the shoppers' hashed details go is the org admin's to change (D-528's rule,
+      // the M35b ledger audit's W8): the pixel, the dataset, the measurement id and the
+      // secrets. Marketing runs everything else (which events, the paths, test mode).
+      const destinationChanged =
+        input.meta.pixelId !== (current?.meta_pixel_id ?? '') ||
+        input.meta.datasetId !== (current?.meta_dataset_id ?? '') ||
+        input.ga4.measurementId !== (current?.ga4_measurement_id ?? '') ||
+        input.meta.accessToken !== undefined ||
+        input.ga4.apiSecret !== undefined;
+      if (destinationChanged && !defineAbilityFor(context).can('update', 'WebsiteCredentials')) {
+        throw new StorefrontError(
+          'FORBIDDEN',
+          HttpStatus.FORBIDDEN,
+          'Only an org admin changes the pixel, the dataset, the measurement id or their secrets.',
+        );
+      }
       const bind = (field: string) => ({ orgId: context.orgId, row: 'tracking_settings', field });
       const token =
         typeof input.meta.accessToken === 'string'
@@ -228,7 +252,34 @@ export class TrackingService {
         keyId,
         updatedBy: context.userId,
       });
-      return this.view(await repo.trackingSettings(tx, context.orgId));
+      const next = await repo.trackingSettings(tx, context.orgId);
+      // In this transaction, so the change and its record stand or fall together. Ids and
+      // fingerprints only: the audit's redaction would hide a secret, but none is passed.
+      const facts = (row: repo.TrackingSettingsRow | undefined) => ({
+        pixelEnabled: row?.meta_pixel_enabled ?? false,
+        capiEnabled: row?.meta_capi_enabled ?? false,
+        pixelId: row?.meta_pixel_id ?? '',
+        datasetId: row?.meta_dataset_id ?? '',
+        metaTokenFingerprint: row?.meta_token_fingerprint ?? null,
+        ga4ClientEnabled: row?.ga4_client_enabled ?? false,
+        ga4MpEnabled: row?.ga4_mp_enabled ?? false,
+        measurementId: row?.ga4_measurement_id ?? '',
+        ga4SecretFingerprint: row?.ga4_secret_fingerprint ?? null,
+        testMode: row?.test_mode ?? false,
+      });
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: current === undefined ? 'create' : 'update',
+        action: 'storefront.tracking_updated',
+        entityType: 'storefront.tracking_settings',
+        entityId: context.orgId,
+        before: current === undefined ? null : facts(current),
+        after: facts(next),
+        requestId: context.requestId,
+        ...(request === undefined ? {} : { request }),
+      });
+      return this.view(next);
     });
   }
 
@@ -415,6 +466,19 @@ export class TrackingService {
    * paid online it waits for the payment (`releasePurchase`).
    */
   async recordPurchase(tx: Tx, orgId: string, facts: PurchaseFacts): Promise<void> {
+    // A savepoint: a Purchase that cannot be written (a key that cannot seal, a row past its
+    // size check) is logged and lost, never the sale it describes (the ledger audit's note 8).
+    try {
+      await tx.transaction((savepoint) => this.writePurchase(savepoint, orgId, facts));
+    } catch (error) {
+      this.logger.error(
+        { err: error, orderId: facts.orderId },
+        'the order’s Purchase was not logged',
+      );
+    }
+  }
+
+  private async writePurchase(tx: Tx, orgId: string, facts: PurchaseFacts): Promise<void> {
     const settings = await this.settingsOf(tx, orgId);
     if (!this.sendable(settings, 'Purchase') || !sealedBoxConfigured()) return;
     const { firstName, lastName } = splitName(facts.buyer.name);

@@ -305,7 +305,12 @@ describe('campaign links', () => {
 
 describe('tracking', () => {
   it('keeps the token and the secret sealed, shows a fingerprint, and gives the website none of it', async () => {
-    const saved = await marketing.client.request('PUT', '/v1/storefront/tracking', {
+    // Where shoppers' hashed details go is the org admin's to set (D-558, the audit's W8).
+    const byMarketing = await marketing.client.request('PUT', '/v1/storefront/tracking', {
+      body: trackingSettings(),
+    });
+    expect(byMarketing.statusCode, byMarketing.body).toBe(403);
+    const saved = await admin.client.request('PUT', '/v1/storefront/tracking', {
       body: trackingSettings(),
     });
     expect(saved.statusCode, saved.body).toBe(200);
@@ -350,6 +355,26 @@ describe('tracking', () => {
         ],
       },
     });
+
+    // Marketing runs the rest: the same destinations, the secrets left as they are.
+    const routed = trackingSettings();
+    const { accessToken: _token, ...meta } = routed.meta;
+    const { apiSecret: _secret, ...ga4 } = routed.ga4;
+    const byMarketingRouting = await marketing.client.request('PUT', '/v1/storefront/tracking', {
+      body: { ...routed, meta, ga4, logRetentionDays: 31 },
+    });
+    expect(byMarketingRouting.statusCode, byMarketingRouting.body).toBe(200);
+    const audited = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ n: number }>(sql`
+            select count(*)::int as n from audit.audit_log
+            where org_id = ${ORG_A} and action = 'storefront.tracking_updated'
+          `)
+        )[0]?.n,
+      { orgId: ORG_A },
+    );
+    expect(audited).toBe(2);
   });
 
   it('hashes a browser event before keeping it, and the worker sends it to Meta and GA4', async () => {

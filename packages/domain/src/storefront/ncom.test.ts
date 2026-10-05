@@ -15,6 +15,7 @@ import {
   ncomHexEquals,
   ncomIdsFrom,
   ncomOrderMoney,
+  type NcomOrderMoney,
   ncomPrice,
   ncomSecretEquals,
   ncomSign,
@@ -132,63 +133,143 @@ describe('the connector’s shapes', () => {
 
 describe('an order ncom hands over', () => {
   const t = (taka: number): Poisha => poisha(BigInt(taka) * 100n);
+  const ok = (money: NcomOrderMoney) => {
+    if (!money.ok) throw new Error(money.reason);
+    return money;
+  };
 
-  it('collects exactly ncom’s total when the brand sells every line', () => {
-    // The old order check's order: ৳1,500 of ours and a free gift; ৳60 delivery; ৳1,560 total.
-    const money = ncomOrderMoney({
-      ours: [{ qty: 1, unitPricePoisha: t(1500) }],
-      shippingTotalCents: 6_000,
-      totalCents: 156_000,
-    });
-    expect(money).toEqual({
-      itemsPoisha: t(1500),
-      deliveryPoisha: t(60),
-      discountPoisha: ZERO,
-      codPoisha: t(1560),
-      foreignPoisha: ZERO,
-    });
+  it('collects exactly ncom’s total for the old order check’s order', () => {
+    // ৳1,500 of ours, a free gift ncom stores; ৳60 delivery; ৳1,560 total. The gift's own ৳500
+    // saving is inside its line total (0), and `discountTotalCents` repeats it.
+    const money = ok(
+      ncomOrderMoney({
+        lines: [
+          { ours: true, quantity: 1, unitPriceCents: 150_000, totalCents: 150_000 },
+          { ours: false, quantity: 1, unitPriceCents: 50_000, totalCents: 0 },
+        ],
+        shippingTotalCents: 6_000,
+        discountTotalCents: 50_000,
+        taxTotalCents: 0,
+        totalCents: 156_000,
+      }),
+    );
+    expect(money.codPoisha).toBe(t(1560));
+    expect(money.foreignPoisha).toBe(ZERO);
+    expect(money.deliveryPoisha).toBe(t(60));
+    expect(money.lines.map((line) => line.valuePoisha)).toEqual([t(1500), ZERO]);
   });
 
-  it('turns a bundle price into the order discount, and never discounts below the goods', () => {
+  it('takes a discount off units when the lines carry no totals', () => {
+    const money = ok(
+      ncomOrderMoney({
+        lines: [{ ours: true, quantity: 2, unitPriceCents: 125_000, totalCents: undefined }],
+        shippingTotalCents: 6_000,
+        discountTotalCents: 50_000,
+        taxTotalCents: 0,
+        totalCents: 206_000,
+      }),
+    );
+    expect(money.oursDiscountPoisha).toBe(t(500));
+    expect(money.codPoisha).toBe(t(2060));
+  });
+
+  it('refuses a missing or malformed amount rather than reading it as nothing', () => {
+    const base = {
+      lines: [{ ours: true, quantity: 2, unitPriceCents: 125_000, totalCents: 250_000 }],
+      shippingTotalCents: 6_000,
+      discountTotalCents: 0,
+      taxTotalCents: 0,
+      totalCents: 256_000,
+    };
+    expect(ncomOrderMoney(base).ok).toBe(true);
+    for (const broken of [
+      { ...base, totalCents: undefined },
+      { ...base, totalCents: '2560.00' },
+      { ...base, totalCents: -1 },
+      { ...base, shippingTotalCents: undefined },
+      { ...base, shippingTotalCents: 1.5 },
+      { ...base, taxTotalCents: 100 },
+      { ...base, totalCents: 6_000 },
+      {
+        ...base,
+        lines: [{ ours: true, quantity: 2, unitPriceCents: undefined, totalCents: undefined }],
+      },
+      {
+        ...base,
+        lines: [{ ours: true, quantity: 2, unitPriceCents: 'free', totalCents: 250_000 }],
+      },
+      { ...base, lines: [{ ours: true, quantity: 0, unitPriceCents: 125_000, totalCents: 0 }] },
+      {
+        ...base,
+        lines: [{ ours: true, quantity: 20_000, unitPriceCents: 1, totalCents: 20_000 }],
+      },
+      { ...base, lines: [] },
+    ]) {
+      expect(ncomOrderMoney(broken).ok).toBe(false);
+    }
+  });
+
+  it('splits a discount between the brand’s goods and another shop’s, exactly', () => {
+    // The ledger audit's W3: ours ৳1,500, theirs ৳300, delivery ৳60, ৳400 off, total ৳1,460.
+    const money = ok(
+      ncomOrderMoney({
+        lines: [
+          { ours: true, quantity: 1, unitPriceCents: 150_000, totalCents: undefined },
+          { ours: false, quantity: 1, unitPriceCents: 30_000, totalCents: undefined },
+        ],
+        shippingTotalCents: 6_000,
+        discountTotalCents: 40_000,
+        taxTotalCents: 0,
+        totalCents: 146_000,
+      }),
+    );
+    expect(money.oursDiscountPoisha + (t(300) - money.foreignPoisha)).toBe(t(400));
+    expect(money.codPoisha + money.foreignPoisha).toBe(t(1460));
+    expect(money.foreignPoisha > ZERO).toBe(true);
+  });
+
+  it('always collects exactly ncom’s total between the brand and other shops', () => {
     fc.assert(
       fc.property(
         fc.array(
           fc.record({
-            qty: fc.integer({ min: 1, max: 5 }),
-            price: fc.integer({ min: 0, max: 5_000 }),
+            ours: fc.boolean(),
+            quantity: fc.integer({ min: 1, max: 5 }),
+            unit: fc.integer({ min: 0, max: 500_000 }),
           }),
-          { minLength: 1, maxLength: 4 },
+          { minLength: 1, maxLength: 6 },
         ),
-        fc.integer({ min: 0, max: 300 }),
-        fc.integer({ min: 0, max: 40_000 }),
-        (lines, shipping, total) => {
-          const money = ncomOrderMoney({
-            ours: lines.map((line) => ({ qty: line.qty, unitPricePoisha: t(line.price) })),
-            shippingTotalCents: shipping * 100,
-            totalCents: total * 100,
-          });
-          expect(money.discountPoisha >= 0n && money.discountPoisha <= money.itemsPoisha).toBe(
-            true,
+        fc.integer({ min: 0, max: 30_000 }),
+        fc.integer({ min: 0, max: 10_000 }),
+        (lines, shipping, discountWish) => {
+          const gross = lines.reduce((total, line) => total + line.unit * line.quantity, 0);
+          const discount = Math.min(discountWish * 100, gross + shipping);
+          const total = gross + shipping - discount;
+          const money = ok(
+            ncomOrderMoney({
+              lines: lines.map((line) => ({
+                ours: line.ours,
+                quantity: line.quantity,
+                unitPriceCents: line.unit,
+                totalCents: undefined,
+              })),
+              shippingTotalCents: shipping,
+              discountTotalCents: discount,
+              taxTotalCents: 0,
+              totalCents: total,
+            }),
           );
-          expect(money.codPoisha).toBe(
-            money.itemsPoisha - money.discountPoisha + money.deliveryPoisha,
-          );
-          // The brand collects ncom's total, or its own goods and delivery when ncom's total
-          // carries goods the brand does not sell.
-          if (money.foreignPoisha === 0n && money.discountPoisha < money.itemsPoisha) {
-            expect(money.codPoisha).toBe(t(total));
-          }
-          if (money.foreignPoisha > 0n) {
-            expect(money.codPoisha + money.foreignPoisha).toBe(t(total));
+          expect(money.codPoisha + money.foreignPoisha).toBe(poisha(total));
+          expect(money.codPoisha >= money.deliveryPoisha).toBe(true);
+          expect(money.deliveryPoisha <= poisha(shipping)).toBe(true);
+          expect(money.oursDiscountPoisha <= money.oursPoisha).toBe(true);
+          // Every order line's value fits under its unit price, so the order's own discount
+          // (its goods less what is collected for them) is never negative.
+          for (const line of money.lines) {
+            expect(line.unitPricePoisha * BigInt(line.quantity) >= line.valuePoisha).toBe(true);
           }
         },
       ),
-    );
-  });
-
-  it('reads only integer cents', () => {
-    expect(ncomOrderMoney({ ours: [], shippingTotalCents: 1.5, totalCents: '-3' }).codPoisha).toBe(
-      ZERO,
     );
   });
 

@@ -68,6 +68,8 @@ const en = {
     'This server has no STOREFRONT_CREDENTIALS_KEY, so tokens cannot be kept and events are not logged.',
   'wm.track.unverified':
     'Built against Meta’s and Google’s documentation and not yet tried with live accounts. Use a test event code first.',
+  'wm.track.adminOnly':
+    'The pixel, dataset and measurement ids and their secrets decide where shoppers’ details go: an org admin changes them.',
   'wm.track.meta': 'Meta',
   'wm.track.pixelOn': 'Pixel in the browser',
   'wm.track.capiOn': 'Conversions API from the server',

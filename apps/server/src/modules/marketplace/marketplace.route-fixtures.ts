@@ -22,6 +22,7 @@ export const FIXTURE_CONNECTOR_KEY = 'ncomcat_route_matrix';
 export const FIXTURE_CONNECTOR_SECRET = 'ncomsec_route_matrix_secret';
 
 let warehouse: string | undefined;
+let product: string | undefined;
 
 /** The brand's ncom settings with a sealed connector secret; idempotent. */
 export async function prepareMarketplaceFixtures(): Promise<void> {
@@ -48,6 +49,20 @@ export async function prepareMarketplaceFixtures(): Promise<void> {
     },
     { orgId: ORG_A },
   );
+}
+
+/** One of the brand's products, for the connector's read of a single product. */
+async function anyProduct(): Promise<string> {
+  product ??= await withSystem(
+    async (tx) =>
+      (
+        await tx.execute<{ id: string }>(sql`
+          select id from catalog.products where org_id = ${ORG_A} order by created_at limit 1
+        `)
+      )[0]?.id,
+    { orgId: ORG_A },
+  );
+  return product ?? randomUUID();
 }
 
 /** A fresh, empty hold for a release to give back. */
@@ -91,11 +106,14 @@ export const MARKETPLACE_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<C
 };
 
 /** The connector's routes, signed as ncom signs them, for the cost sweep. */
+interface ConnectorCall {
+  readonly method: 'GET' | 'POST';
+  readonly path: string;
+  readonly body?: unknown;
+}
+
 export const NCOM_CONNECTOR_FIXTURES: Readonly<
-  Record<
-    string,
-    () => { readonly method: 'GET' | 'POST'; readonly path: string; readonly body?: unknown }
-  >
+  Record<string, () => ConnectorCall | Promise<ConnectorCall>>
 > = {
   'GET /ncom/:orgId/v1/ping': () => ({ method: 'GET', path: `/ncom/${ORG_A}/v1/ping` }),
   'GET /ncom/:orgId/v1/products': () => ({
@@ -107,6 +125,22 @@ export const NCOM_CONNECTOR_FIXTURES: Readonly<
     method: 'POST',
     path: `/ncom/${ORG_A}/v1/stock`,
     body: { ids: [] },
+  }),
+  'GET /ncom/:orgId/v1/products/:id': async () => ({
+    method: 'GET',
+    path: `/ncom/${ORG_A}/v1/products/${await anyProduct()}`,
+  }),
+  // A hold of nothing, and the release of a reference never held: both answered, neither
+  // moving stock.
+  'POST /ncom/:orgId/v1/reserve': () => ({
+    method: 'POST',
+    path: `/ncom/${ORG_A}/v1/reserve`,
+    body: { orderRef: `sweep-${randomUUID()}`, lines: [] },
+  }),
+  'POST /ncom/:orgId/v1/release': () => ({
+    method: 'POST',
+    path: `/ncom/${ORG_A}/v1/release`,
+    body: { orderRef: `sweep-${randomUUID()}` },
   }),
 };
 

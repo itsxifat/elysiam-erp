@@ -337,6 +337,15 @@ export function serializeForStorefront<T>(data: T): T {
 }
 
 /**
+ * Every cost field removed at every depth, for an answer to a machine with no role and no
+ * allow-list of its own (M35b: ncom.bd's connector, whose answers keep the old site's shapes).
+ * Invariant 5 holds there the same way: a cost field never leaves, whatever a builder added.
+ */
+export function withoutCostFields<T>(data: T): T {
+  return pruneDenied(data, COST_FIELD_SET) as T;
+}
+
+/**
  * Fail a test if any cost field survived anywhere in a payload.
  *
  * The milestone asks for this as a test utility, and it is deliberately blunt:

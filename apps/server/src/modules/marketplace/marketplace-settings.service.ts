@@ -2,6 +2,8 @@ import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import type { MarketplaceSettingsInput } from '@elysium/contracts';
 import { withOrg } from '@elysium/db';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
 import { seal, sealedBoxConfigured } from '../../platform/crypto/sealed-box.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { serverEnv } from '../../platform/config/env.js';
@@ -29,6 +31,7 @@ export class MarketplaceSettingsService {
   constructor(
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
     @Inject(ORDERS_API) private readonly ordersApi: OrdersApi,
+    private readonly audit: AuditService,
   ) {}
 
   async view(context: ActiveContext) {
@@ -74,7 +77,7 @@ export class MarketplaceSettingsService {
     });
   }
 
-  async save(context: ActiveContext, input: MarketplaceSettingsInput) {
+  async save(context: ActiveContext, input: MarketplaceSettingsInput, request?: AuditableRequest) {
     const setting = [input.connectorSecret, input.orderSecret, input.apiKey, input.webhookSecret];
     if (setting.some((value) => typeof value === 'string') && !sealedBoxConfigured()) {
       throw refusal(
@@ -84,6 +87,7 @@ export class MarketplaceSettingsService {
       );
     }
     await withOrg(context, async (tx) => {
+      const before = await repo.settingsOf(tx, context.orgId);
       let keyId: string | null = null;
       const sealOne = (value: string | null | undefined, field: string) => {
         if (typeof value !== 'string') return value;
@@ -114,6 +118,32 @@ export class MarketplaceSettingsService {
         keyId,
         updatedBy: context.userId,
       });
+      const after = await repo.settingsOf(tx, context.orgId);
+      // In the same transaction as the change. Switches, key ids and fingerprints: never a
+      // secret, so the audit's redaction has nothing to catch.
+      const facts = (row: repo.NcomSettingsRow | undefined) => ({
+        enabled: row?.enabled ?? false,
+        acceptOrders: row?.accept_orders ?? false,
+        allowReserve: row?.allow_reserve ?? false,
+        baseUrl: row?.base_url ?? '',
+        connectorKeyId: row?.connector_key_id ?? '',
+        orderKeyId: row?.order_key_id ?? '',
+        connectorFingerprint: row?.connector_secret_fingerprint ?? null,
+        orderFingerprint: row?.order_secret_fingerprint ?? null,
+        webhookFingerprint: row?.webhook_secret_fingerprint ?? null,
+      });
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: before === undefined ? 'create' : 'update',
+        action: 'marketplace.settings_updated',
+        entityType: 'marketplace.ncom_settings',
+        entityId: context.orgId,
+        before: before === undefined ? null : facts(before),
+        after: facts(after),
+        requestId: context.requestId,
+        ...(request === undefined ? {} : { request }),
+      });
     });
     return this.view(context);
   }
@@ -138,7 +168,7 @@ export class MarketplaceSettingsService {
    * Give back a hold ncom never released (D-553: a hold is not a sale; one left open when the
    * brand does not take ncom's orders is a person's to release). Exactly what it held, once.
    */
-  async releaseHold(context: ActiveContext, id: string) {
+  async releaseHold(context: ActiveContext, id: string, request?: AuditableRequest) {
     return withOrg(context, async (tx) => {
       const hold = await repo.holdById(tx, context.orgId, id);
       if (hold === undefined) {
@@ -151,6 +181,18 @@ export class MarketplaceSettingsService {
         { refType: 'ncom_hold', refId: hold.id },
       );
       await repo.endHold(tx, { orgId: context.orgId, id: hold.id, state: 'released' });
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'update',
+        action: 'marketplace.hold_released',
+        entityType: 'marketplace.ncom_hold',
+        entityId: hold.id,
+        before: { state: 'held', orderRef: hold.order_ref },
+        after: { state: 'released' },
+        requestId: context.requestId,
+        ...(request === undefined ? {} : { request }),
+      });
       return { id, state: 'released' as const };
     });
   }

@@ -2,6 +2,7 @@ import { Readable } from 'node:stream';
 
 import { Injectable, PayloadTooLargeException, type OnModuleInit } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
+import { withoutCostFields } from '@elysium/contracts';
 import { NCOM_CONTRACT } from '@elysium/domain/storefront';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -78,7 +79,11 @@ const BASE_HEADERS: Readonly<Record<string, string>> = {
   'referrer-policy': 'no-referrer',
 };
 
-/** A JSON answer with the contract's headers. */
+/**
+ * A JSON answer with the contract's headers. Written through `@Res()`, so no interceptor
+ * serialises it: every cost field is removed here instead (invariant 5, the M35b ledger
+ * audit's W6), whatever a builder of the answer added.
+ */
 export async function ncomJson(
   reply: FastifyReply,
   status: number,
@@ -88,7 +93,7 @@ export async function ncomJson(
   await reply
     .code(status)
     .headers({ ...BASE_HEADERS, ...headers })
-    .send(JSON.stringify(body));
+    .send(JSON.stringify(withoutCostFields(body)));
 }
 
 /** A connector refusal: a machine code and a sentence that echoes nothing the caller sent. */

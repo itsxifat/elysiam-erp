@@ -68,6 +68,8 @@ const bn: Record<WebMarketingKey, string> = {
     'এই সার্ভারে STOREFRONT_CREDENTIALS_KEY নেই, তাই টোকেন রাখা যায় না এবং ইভেন্টের লগ থাকে না।',
   'wm.track.unverified':
     'Meta ও Google-এর ডকুমেন্টেশন দেখে তৈরি, লাইভ অ্যাকাউন্টে এখনো পরীক্ষা হয়নি। আগে একটি টেস্ট ইভেন্ট কোড দিয়ে চালান।',
+  'wm.track.adminOnly':
+    'পিক্সেল, ডেটাসেট ও মেজারমেন্ট আইডি এবং তাদের সিক্রেট ঠিক করে ক্রেতার তথ্য কোথায় যাবে: এগুলো একজন অর্গ অ্যাডমিন বদলান।',
   'wm.track.meta': 'Meta',
   'wm.track.pixelOn': 'ব্রাউজারে পিক্সেল',
   'wm.track.capiOn': 'সার্ভার থেকে Conversions API',

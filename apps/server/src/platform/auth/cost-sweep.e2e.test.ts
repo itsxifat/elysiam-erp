@@ -478,33 +478,27 @@ describe('invariant 5, across the storefront API', () => {
 
 /**
  * The ncom.bd connector (M35b, D-553): no role to sweep as, so it is swept as ncom, signed with
- * the brand's connector secret, over every live read under `/ncom/` and the stock route. ncom
- * reads selling prices and stock counts; no answer may carry a cost.
+ * the brand's connector secret, over every route under `/ncom/<org>/v1/`: the reads, the stock
+ * route and the holds. ncom reads selling prices and stock counts; no answer may carry a cost.
  */
 describe('invariant 5, across the ncom.bd connector', () => {
   function connectorRoutes(): string[] {
     return describeRoutes(harness.app)
-      .filter(
-        (route) =>
-          route.path.startsWith('/ncom/:orgId/v1/') &&
-          (route.method === 'GET' || route.path.endsWith('/stock')) &&
-          !route.path.endsWith('/*') &&
-          !route.path.endsWith('/products/:id'),
-      )
+      .filter((route) => route.path.startsWith('/ncom/:orgId/v1/') && !route.path.endsWith('/*'))
       .map(routeKey)
       .sort();
   }
 
   it('has a fixture for every connector read', () => {
     const live = connectorRoutes();
-    expect(live.length).toBeGreaterThanOrEqual(4);
+    expect(live.length).toBeGreaterThanOrEqual(7);
     expect(live.filter((key) => NCOM_CONNECTOR_FIXTURES[key] === undefined)).toEqual([]);
   });
 
   it('sends ncom no cost field', async () => {
     const problems: string[] = [];
     for (const route of connectorRoutes()) {
-      const fixture = NCOM_CONNECTOR_FIXTURES[route]?.();
+      const fixture = await NCOM_CONNECTOR_FIXTURES[route]?.();
       if (fixture === undefined) continue;
       const raw = fixture.body === undefined ? '' : JSON.stringify(fixture.body);
       const response = await harness.server.inject({

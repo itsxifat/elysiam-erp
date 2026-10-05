@@ -1,4 +1,4 @@
-import { maskEmail, maskPhone } from '../audit/index.js';
+import { maskEmail, maskPhone, maskPhonesInText, REDACTED_FIELD_PATTERNS } from '../audit/index.js';
 import { metaCity, metaName } from '../marketing/meta.js';
 import { poishaToMajorNumber, type Poisha } from '../money/index.js';
 
@@ -235,8 +235,45 @@ const KNOWN_KEYS = new Set([
   'content_name',
 ]);
 
+/** Key names that hold a person's details or a secret: never kept as custom data. */
+const PERSONAL_KEY_PARTS: readonly string[] = [
+  ...REDACTED_FIELD_PATTERNS,
+  'email',
+  'phone',
+  'mobile',
+  'name',
+  'address',
+  'street',
+  'city',
+  'zip',
+  'postal',
+  'birth',
+  'dob',
+  'gender',
+  'ip',
+  'user',
+  'customer',
+  'fbp',
+  'fbc',
+];
+
+function personalKey(key: string): boolean {
+  const lower = key.toLowerCase();
+  return PERSONAL_KEY_PARTS.some((part) => lower.includes(part));
+}
+
+const EMAIL_IN_TEXT = /[^\s@]+@[^\s@]+\.[^\s@]+/;
+
+/**
+ * A text the website put in custom data, or nothing when it carries an email address or a
+ * phone number: `customData` goes to Meta unhashed (the M35b ledger audit's W7), so personal
+ * details belong in `userData`, where they are hashed.
+ */
 function text(value: unknown, max: number): string | undefined {
-  return typeof value === 'string' ? value.slice(0, max) : undefined;
+  if (typeof value !== 'string') return undefined;
+  const cut = value.slice(0, max);
+  if (EMAIL_IN_TEXT.test(cut) || maskPhonesInText(cut) !== cut) return undefined;
+  return cut;
 }
 
 function finite(value: unknown): number | undefined {
@@ -290,9 +327,12 @@ export function boundedCustomData(input: unknown): Record<string, unknown> {
   let extra = 0;
   for (const [key, raw] of Object.entries(source)) {
     if (KNOWN_KEYS.has(key) || extra >= MAX_EXTRA_KEYS) continue;
-    if (!/^[a-z][a-z0-9_]{0,39}$/i.test(key)) continue;
-    if (typeof raw === 'string') out[key] = raw.slice(0, 200);
-    else if (typeof raw === 'boolean') out[key] = raw;
+    if (!/^[a-z][a-z0-9_]{0,39}$/i.test(key) || personalKey(key)) continue;
+    if (typeof raw === 'string') {
+      const kept = text(raw, 200);
+      if (kept === undefined) continue;
+      out[key] = kept;
+    } else if (typeof raw === 'boolean') out[key] = raw;
     else if (typeof raw === 'number' && Number.isFinite(raw)) out[key] = raw;
     else continue;
     extra += 1;
