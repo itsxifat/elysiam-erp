@@ -1019,3 +1019,37 @@ describe('who may delete, archive and ask (permissions, D-621)', () => {
     expect(await exists('products', anItem.id)).toBe(true);
   });
 });
+
+describe('what only a cascade may delete (0118, 0119; D-627)', () => {
+  const attempt = (query: ReturnType<typeof sql>): Promise<unknown> =>
+    withSystem((tx) => tx.execute(query), { orgId: ORG_A }).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+
+  it('refuses, for erp_owner too, a price history row or a stock level while its SKU is there', async () => {
+    const guarded = await product('Guarded product');
+    await receive(skuOf(guarded));
+    expect(
+      isStillReferenced(
+        await attempt(sql`delete from catalog.sku_price_history where sku_id = ${skuOf(guarded)}`),
+      ),
+    ).toBe(true);
+    expect(
+      isStillReferenced(
+        await attempt(sql`delete from inventory.stock_levels where sku_id = ${skuOf(guarded)}`),
+      ),
+    ).toBe(true);
+  });
+
+  it('gives the application role no DELETE on them', async () => {
+    const privileges = await withSystem(async (tx) =>
+      tx.execute<{ table_name: string; can_delete: boolean }>(sql`
+        select t as table_name, has_table_privilege('erp_app', t, 'DELETE') as can_delete
+        from unnest(array['catalog.sku_price_history', 'inventory.stock_levels',
+                          'promo.discount_tiers', 'promo.flash_sale_items']) as t
+      `),
+    );
+    expect(privileges.filter((row) => row.can_delete).map((row) => row.table_name)).toEqual([]);
+  });
+});
