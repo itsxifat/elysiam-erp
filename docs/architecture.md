@@ -1145,6 +1145,7 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 | `order.created`                         | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, order_no, channel, total, created_at   | New-order alert; starts the pickup timer  |
 | `order.assigned` / `order.claimed`      | `org:role:sales`, `user:{assignee}`                                                                                                                               | id, assignee                               | Queue ownership                           |
 | `order.status_changed`                  | `org:role:sales`, `org:role:warehouse`<br>`org:role:accounts` (delivered and returned only)<br>`reseller:{id}` (reseller orders)<br>`org:branch:{b}` (POS orders) | id, from, to, at                           | Live lists and dashboards                 |
+| `order.edited`                          | `org:role:sales`, `org:role:warehouse`                                                                                                                            | id, order_no, at                           | Live lists; ncom.bd hears its edits       |
 | `order.fraud_flagged`                   | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, trust_score, decision                  | Review queue                              |
 | `delivery.updated`                      | `org:role:sales`, `reseller:{id}`                                                                                                                                 | order id, normalized status, at            | Tracking view                             |
 | `delivery.booking_failed`               | `org:role:sales`, `org:role:org_admin`                                                                                                                            | order id, courier, error code              | Fix and retry                             |
@@ -1489,8 +1490,9 @@ _To be written by M32: `apps/mother-server` and `apps/mother-console`, its own d
 
 M33 (D-500 to D-512), after D-469: each brand's ERP is its website's back office, and the
 website keeps no database of its own. This section covers what a shopper **looks at** and, from
-M34, what a shopper **buys**; offers and landing pages (M35) and the website's conversion (M36)
-build on it.
+M34, what a shopper **buys**; offers, campaign links, tracking and the ncom.bd connector (M35)
+and the website's conversion (M36) build on it. Landing pages are ncom.bd's (D-550): the ERP
+builds none, and §17 stays out of scope.
 
 ### The module
 
@@ -1659,3 +1661,54 @@ the account routes answer with an account id and the website keeps its own sessi
 - **Flash sales**: an archived sale is switched off, leaves the list and every website read.
 - M35b's campaign links (`storefront.custom_links`) count as the website's references to a
   category and its highlighted products when that branch joins.
+### Campaign links, tracking, the marketplace and packing (M35b)
+
+D-551 to D-556. Four pieces the old website ran, now the ERP's:
+
+- **Campaign links** (`storefront.custom_links`): a five-digit code per brand (unique, drawn
+  at random, `^[1-9][0-9]{4}$`) on the shop, a category or a path of the site, with up to 24
+  highlighted products, a banner and a pop-up (its picture a public `campaign-asset`), and a
+  visit counter. The website reads one with `GET /storefront/v1/custom-links/{code}` and counts a
+  visit with a signed `POST`. Console: Website → Campaign links (`Storefront`).
+- **Tracking** (`storefront.tracking_settings`, `storefront.tracking_events`): the Meta pixel and
+  Conversions API and GA4 with its Measurement Protocol, per brand. The access token and API
+  secret are sealed (`STOREFRONT_CREDENTIALS_KEY`). The website forwards its browser events
+  (`POST /storefront/v1/events`); the ERP writes the log row with personal data already
+  normalised and hashed (`packages/domain/src/storefront/tracking.ts`), the outgoing payload
+  sealed, and enqueues `storefront.tracking_send` in the same transaction; the worker sends with
+  no transaction open (invariant 6) and clears the payload. `Purchase` is the ERP's own, written
+  in the checkout's and the ncom handover's transaction with event id `purchase_<orderNo>`; an
+  SSLCommerz order's waits (`waiting`) until the payment is booked. `storefront.tracking_purge`
+  drops rows past the brand's retention nightly. `STOREFRONT_TRACKING_PROVIDER=fake` (the
+  default) records sends without making them; `live` needs `STOREFRONT_TRACKING_ENABLED=true`.
+  Console: Website → Tracking, with the event log.
+- **The ncom.bd connector** (module `marketplace`, schema `marketplace`; `docs/ncom-connector.md`):
+  contract 1 under `/ncom/<org id>/…`, HMAC-signed both ways (`verifyNcomSignature`, ±300 s,
+  raw body captured before parsing). Reads go through `CATALOG_API` (`marketplaceProducts`) and
+  the live availability at the web locations; ids are the old website's where `legacy_ids`
+  has them. `ncom_holds` hold stock with the inventory's reserve (`ref_type = 'ncom_hold'`) and
+  give back exactly that once. `ncom_orders` ties an ERP order (`channel = marketplace`, created
+  by `marketplace:ncom`) to ncom's id, revision and idempotency key; edits and cancels go through
+  `OrdersApi.editOrder` and the state machine, with a revision check. The order's money is
+  `ncomOrderMoney`: the brand's goods at ncom's prices, the discount capped at the goods, COD =
+  goods + delivery, other shops' lines kept aside. Amounts that are missing, malformed or do
+  not add up are refused, never read as zero; the order discount is split between the brand's
+  lines and other shops' by value (`allocate`), so the COD and the other shops' part add up to
+  ncom's total exactly. Status changes and a person's edits (`order.status_changed`,
+  `order.edited`) reach ncom through `ncom_outbox` (written in the change's transaction,
+  sealed, delivered by `marketplace.ncom_send` with backoff, `ncomDeliveryOutcome`); an inbound
+  edit or cancel the order can no longer take is refused under a savepoint and leaves a warning
+  on the order. Every connector answer has its cost fields stripped (`withoutCostFields`). Triggers keep each row's
+  identity fixed and its revision moving forward. Console: Website → Marketplace (secrets are
+  `update WebsiteCredentials`).
+- **Packing** (module `packing`, schema `packing`): `scanner_devices` holds the packing scanner
+  app's bearer tokens (`sdt_<org>_<random>`, SHA-256 stored, 30 days, revocable). The app signs
+  in with email, password and, where the role requires it, the authenticator code
+  (`POST /v1/scanner/sign-in`, Better Auth's own checks, no session kept), then reads
+  `GET /v1/scanner/shipment?code=` in the person's own order scope (order number or the
+  courier's parcel codes). Those three routes are exempt from CSRF and allow any origin without
+  credentials (the app is not a browser page). The app as it ships calls the old site's
+  `/api/admin/scanner/login` and `/shipment`, which the ERP serves too, answering refusals as
+  `{ error, code }`. The console's **Orders → Scan** does the same
+  lookup and pairs or signs out phones. `POST /v1/packing/labels` renders the old site's label
+  sheet (eight paper sizes, QR codes drawn in-house from `uqr`) through Gotenberg.

@@ -39,6 +39,8 @@ import * as repo from './storefront.repository.js';
 import { STOREFRONT_RATE_LIMITER } from './signature.guard.js';
 import { StorefrontService } from './storefront.service.js';
 import { httpCodeOf, newToken, tokenHash } from './tokens.js';
+import { TrackingService } from './tracking.service.js';
+import { districtName } from './web-marketing.repository.js';
 
 /** The actor a website order is created by: the website key that signed the checkout. */
 export function websiteActor(orgId: string, siteKeyId: string) {
@@ -114,6 +116,7 @@ export class BuyingService {
     private readonly settings: StorefrontService,
     private readonly mail: OrderMail,
     private readonly audit: AuditService,
+    private readonly tracking: TrackingService,
   ) {}
 
   // --- the quote ---------------------------------------------------------------------------------
@@ -497,6 +500,34 @@ export class BuyingService {
           purpose: 'confirmation',
         });
         await buying.completeCheckout(tx, orgId, claim, created.id);
+
+        // M35b (D-552): the server-side Purchase, `purchase_<order no>`, as the confirmation
+        // page's browser event names it. Cash on delivery goes now; paid online, it waits for
+        // the payment.
+        await this.tracking.recordPurchase(tx, orgId, {
+          orderId: created.id,
+          orderNo: created.orderNo,
+          totalPoisha: quote.totalPoisha,
+          lines: quote.lines.map((line) => {
+            const fact = priced.facts.get(line.skuId);
+            return {
+              productId: fact?.productId ?? line.skuId,
+              name: fact?.productName ?? '',
+              qty: line.qty,
+              unitPricePoisha: line.unitPricePoisha,
+            };
+          }),
+          buyer: {
+            name: input.contact.name,
+            phoneE164: phone,
+            email: orderEmail,
+            city: await districtName(tx, input.address.districtId),
+            customerId: summary.customerId,
+          },
+          browser: input.tracking,
+          client: input.client,
+          waitForPayment: input.paymentMethod === 'sslcommerz',
+        });
 
         if (orderEmail !== null) {
           await this.mail.queueOrderEmail(tx, orgId, {

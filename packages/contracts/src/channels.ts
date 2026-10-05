@@ -16,6 +16,8 @@ export const ORDER_CHANNELS = [
   'phone',
   'walk_in',
   'reseller',
+  // M35b (D-556): orders the ncom.bd marketplace hands over. Never a lead's channel.
+  'marketplace',
 ] as const;
 export type OrderChannel = (typeof ORDER_CHANNELS)[number];
 

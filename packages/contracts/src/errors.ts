@@ -540,6 +540,23 @@ export const ERROR_CODES = [
   'MARKETING_IN_USE',
   /** A branch that still has an open till, money, staff or stock, so it is not switched off. */
   'BRANCH_IN_USE',
+  // M35b: campaign links, tracking, the marketplace connector, the scanner, order labels
+  /** Every five-digit code was taken on each try; try again. */
+  'CAMPAIGN_LINK_CODE_EXHAUSTED',
+  /** The marketplace connector is not set up, or this action needs a credential it lacks. */
+  'MARKETPLACE_NOT_CONFIGURED',
+  /** The scanner sign-in's email or password is wrong (one answer for both). */
+  'SCANNER_CREDENTIALS_INVALID',
+  /** The account has two-step sign-in on: send the authenticator's code, or pair from the console. */
+  'SCANNER_CODE_REQUIRED',
+  /** The account must enrol two-step sign-in in the console before a phone can sign in. */
+  'SCANNER_ENROLMENT_REQUIRED',
+  /** The account holds roles in more than one brand: pair the phone from the console. */
+  'SCANNER_BRAND_AMBIGUOUS',
+  /** The account may not read orders, so it cannot pack. */
+  'SCANNER_NOT_ALLOWED',
+  /** No order has that order number, tracking code or consignment id. */
+  'SHIPMENT_NOT_FOUND',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

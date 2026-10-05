@@ -44,6 +44,22 @@ describe('@AuditExempt', () => {
       'modules/courier/tracking.controller.ts#track',
       // A pending upload's bytes; the ticket and the finalize are audited in the org.
       'modules/files/files.controller.ts#upload',
+      // M35b: the packing scanner app's sign-in (the device it creates is audited by the
+      // packing module in its own transaction) and sign-out (the device row says when).
+      'modules/iam/scanner-sign-in.ts#login',
+      'modules/iam/scanner-sign-in.ts#post',
+      // ncom.bd's connector (M35b, D-553, D-556): no session and no person. A stock read and an
+      // unknown address change nothing; holds, handovers and webhooks are recorded in the
+      // marketplace's own tables and the orders' audit, as ncom.
+      'modules/marketplace/ncom.controller.ts#intake',
+      'modules/marketplace/ncom.controller.ts#release',
+      'modules/marketplace/ncom.controller.ts#reserve',
+      'modules/marketplace/ncom.controller.ts#stock',
+      'modules/marketplace/ncom.controller.ts#unknown',
+      'modules/marketplace/ncom.controller.ts#webhook',
+      // The label sheet (M35b, D-555) reads orders and writes nothing.
+      'modules/packing/packing.controller.ts#labelsPdf',
+      'modules/packing/scanner.controller.ts#signOut',
       // SSLCommerz's unsigned IPN (M34, D-525): it only enqueues a validation, whose outcome
       // the worker audits in the brand's log.
       'modules/storefront/sslcommerz-ipn.controller.ts#ipn',
@@ -64,6 +80,10 @@ describe('@AuditExempt', () => {
       'modules/storefront/storefront-buying.controller.ts#signIn',
       'modules/storefront/storefront-buying.controller.ts#updateAccount',
       'modules/storefront/storefront-buying.controller.ts#verifyEmail',
+      // The website's campaign-link visit counter and its forwarded browser events (M35b,
+      // D-551, D-552): no person decided either; the events have a log of their own.
+      'modules/storefront/web-marketing.controller.ts#customLinkView',
+      'modules/storefront/web-marketing.controller.ts#events',
     ]);
   });
 

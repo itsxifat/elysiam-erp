@@ -6,8 +6,9 @@ settings from the brand's ERP through this API, signed with a website key. Shopp
 never call it; they get the website's pages and the public images under `/media/`.
 
 Built in M33 (architecture §31, decisions D-500 to D-512). M34 adds the checkout, accounts and
-payments under the same prefix and the same keys; M35 adds flash sales, landing pages and
-custom links.
+payments under the same prefix and the same keys; M35 adds flash sales, campaign links and
+tracking (landing pages are ncom.bd's, D-550; the connector ncom reads is
+`docs/ncom-connector.md`).
 
 ## At a glance
 
@@ -512,6 +513,109 @@ and the checkout: a flash price needs a unit of the sale's allowance, claimed wh
 placed, so a quote may show the sale price and the checkout still answer `409 CART_REPRICED` if
 the last unit went to someone else.
 
+### Campaign links (M35b)
+
+A campaign link is a five-digit code on a page of the site, made on **Website → Campaign links**
+(D-551): `/shop?cu=48213`, `/shop?category=panjabi&cu=48213` or `/new-arrivals?cu=48213`. When
+a page arrives with `cu`, read the link and render its extras over the page's own listing.
+
+`GET /custom-links/{code}` → `404` for an unknown or inactive code, or (cached like the catalog):
+
+```json
+{
+  "customLink": {
+    "code": "48213",
+    "title": "Eid post",
+    "basePath": "/shop?category=panjabi",
+    "banner": { "text": "Eid offer", "bgColor": "#B85C3A", "textColor": "#FFFFFF", "link": "/shop" } | null,
+    "modal": { "type": "text" | "image", "title": "…", "text": "…", "image": { …image… } | null,
+               "ctaText": "Shop now", "ctaLink": "/shop" | null } | null,
+    "highlightProducts": [ …product cards, as in the list… ]
+  }
+}
+```
+
+`highlightProducts` are the chosen products the website still sells, in the order chosen; show
+them first. `POST /custom-links/{code}/views` with `{}` counts one visit (`{ "ok": true }`; not
+cached, not idempotent: call it once per page view, from the server).
+
+### Tracking (M35b)
+
+D-552. The brand sets the Meta pixel and Conversions API and Google Analytics 4 up on
+**Website → Tracking**. The website's browser runs the pixel and gtag; its server forwards the
+same events to the ERP, which sends them again from the server with the **same event id**, so Meta
+counts each once and ad blockers lose none. The access token and API secret never leave the ERP.
+
+`GET /tracking/config` (cached) → what the browser's helper needs, no secret:
+
+```json
+{
+  "tracking": {
+    "meta": { "pixelEnabled": true, "pixelId": "123456789012345" },
+    "ga4": { "clientEnabled": true, "measurementId": "G-XXXXXXX" },
+    "proxy": {
+      "metaScriptPath": "/e1/s.js",
+      "metaCollectPath": "/e1/t",
+      "ga4ScriptPath": "/e2/s.js",
+      "ga4CollectPath": "/e2"
+    },
+    "testMode": false,
+    "events": [{ "name": "PageView", "enabled": true, "client": true }]
+  }
+}
+```
+
+Serve the pixel's and gtag's scripts and forward their hits under the `proxy` paths of the
+website's own domain. Fire an event in the browser only when it is `enabled` and `client`.
+
+`POST /events` (not cached; 120 a minute per shopper address):
+
+```json
+{
+  "events": [
+    {
+      "eventName": "AddToCart",
+      "eventId": "atc_9f1c…",
+      "eventTime": 1760000000,
+      "eventSourceUrl": "https://<site>/shop/linen-panjabi",
+      "actionSource": "website",
+      "userData": {
+        "email": "…",
+        "phone": "…",
+        "firstName": "…",
+        "lastName": "…",
+        "city": "…",
+        "externalId": "…",
+        "fbp": "fb.1.…",
+        "fbc": "fb.1.…"
+      },
+      "customData": { "currency": "BDT", "value": 1290, "content_ids": ["linen-panjabi"] },
+      "ga4": { "clientId": "123.456", "sessionId": "789", "params": { "item_id": "LP-M" } }
+    }
+  ],
+  "client": { "ip": "203.0.113.7", "userAgent": "Mozilla/5.0 …" }
+}
+```
+
+→ `{ "ok": true, "results": [{ "eventId": "atc_9f1c…", "status": "queued" | "skipped" }] }`.
+Up to 20 events per call; use the **same `eventId`** the browser's pixel used. `skipped` means
+the brand sends nothing server-side for that event (or it is older than a week). Personal data is
+normalised and SHA-256-hashed before it is stored; `fbp`, `fbc`, the address and the user agent
+go to Meta as they are. Send `client` from the shopper's request, never the website server's own.
+
+**Purchase is the ERP's own** (D-552): do not send it to `/events`. When a website order is
+placed (`POST /checkout`) the ERP sends `Purchase` with event id `purchase_<orderNo>`; give
+the browser's pixel that same id on the confirmation page so the two are counted once. Add
+what only the browser knows to the checkout:
+
+```json
+"tracking": { "fbp": "fb.1.…", "fbc": "fb.1.…", "eventSourceUrl": "https://<site>/checkout",
+              "gaClientId": "123.456", "gaSessionId": "789" }
+```
+
+A cash-on-delivery order's Purchase is sent at once; an SSLCommerz order's waits until the
+payment is booked, and is never sent for one that is not paid.
+
 ### Calling a write from Node
 
 ```js
@@ -568,4 +672,5 @@ key at every depth (`STOREFRONT_VISIBLE_FIELDS`): no purchase cost, no supplier,
 location, no internal note can reach the website, and a field added to the ERP stays out until
 somebody decides the website needs it. The merchant id printed on courier labels is not sent.
 Nor are a password hash, an email code, a reset or view token's hash, Google's account id, the
-staff who handled an order or the SSLCommerz store password.
+staff who handled an order, the SSLCommerz store password, the Meta access token, the GA4 API
+secret or a campaign link's visit count.

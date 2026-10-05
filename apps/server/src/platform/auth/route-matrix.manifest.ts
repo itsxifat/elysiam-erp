@@ -453,6 +453,27 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/accounts/heads',
   'POST /v1/accounts/heads',
   'PATCH /v1/accounts/heads/:id',
+  // M35b: campaign links and tracking (`Storefront`, D-551, D-552).
+  'GET /v1/storefront/campaign-links',
+  'GET /v1/storefront/campaign-links/:id',
+  'POST /v1/storefront/campaign-links',
+  'PUT /v1/storefront/campaign-links/:id',
+  'DELETE /v1/storefront/campaign-links/:id',
+  'GET /v1/storefront/tracking',
+  'PUT /v1/storefront/tracking',
+  'GET /v1/storefront/tracking/events',
+  // M35b: Website → Marketplace (`read Storefront`, `update WebsiteCredentials`, D-553).
+  'GET /v1/marketplace/ncom',
+  'PUT /v1/marketplace/ncom',
+  'GET /v1/marketplace/ncom/holds',
+  'POST /v1/marketplace/ncom/holds/:id/release',
+  'GET /v1/marketplace/ncom/orders',
+  // M35b: the console's scanner and the label sheet (`read Order`, D-554, D-555).
+  'GET /v1/scanner/lookup',
+  'GET /v1/scanner/devices',
+  'POST /v1/scanner/devices',
+  'POST /v1/scanner/devices/:id/revoke',
+  'POST /v1/packing/labels',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

@@ -13,6 +13,8 @@ import { Radio } from 'lucide-react';
 import { useCallback, type ReactNode } from 'react';
 
 import { useAbility } from '../../auth/session.js';
+import { useT } from '../../i18n/locale.js';
+import '../../i18n/packing.js';
 import { useRealtime, type RealtimeStatus } from '../../realtime/use-realtime.js';
 import type { OrderStatus } from './api.js';
 import { ordersPath } from './paths.js';
@@ -35,6 +37,7 @@ const ACTIVE = { className: tabActiveClassName };
  */
 export function OrdersNav() {
   const t = useOrdersT();
+  const tr = useT();
   const ability = useAbility();
   return (
     <TabList label={t('orders.title')}>
@@ -57,6 +60,9 @@ export function OrdersNav() {
       </Link>
       <Link to={ordersPath('/orders/returns')} className={TAB} activeProps={ACTIVE}>
         {t('orders.nav.returns')}
+      </Link>
+      <Link to={ordersPath('/orders/scan')} className={TAB} activeProps={ACTIVE}>
+        {tr('pk.nav.scan')}
       </Link>
       {ability.can('export', 'BuyerExport') ? (
         <Link

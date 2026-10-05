@@ -71,6 +71,9 @@ catalog:
   # nodemailer: the website's emails over the brand's own SMTP server, the old site's mailer.
   bcryptjs: 3.0.3
   nodemailer: 10.0.12
+  # M35b (D-555). uqr: the QR code on the order labels, a small zero-dependency encoder that
+  # draws an SVG the label's HTML embeds for Gotenberg.
+  uqr: 0.1.3
   # sharp for §22's image variants. It is the only Node image library that
   # re-encodes through libvips rather than shelling out, and re-encoding is
   # what strips the EXIF GPS tags a customer photo carries (invariant 10).

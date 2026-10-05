@@ -1451,6 +1451,7 @@ const en = {
   'orders.channel.phone': 'Phone call',
   'orders.channel.walk_in': 'Walk-in',
   'orders.channel.reseller': 'Reseller',
+  'orders.channel.marketplace': 'Marketplace',
 
   'orders.desk.title': 'New order',
   'orders.desk.subtitle':

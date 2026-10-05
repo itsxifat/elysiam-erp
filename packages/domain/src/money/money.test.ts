@@ -21,6 +21,7 @@ import {
   takaText,
   sumDecimalsToPoisha,
   takaParts,
+  unitCovering,
   type Poisha,
 } from './index.js';
 
@@ -102,6 +103,10 @@ describe('add, sub, sum, negate, mulQty', () => {
 describe('check 6: rounding is half away from zero, tested at the .5 boundaries', () => {
   it('rounds exact halves away from zero in both signs', () => {
     expect(divideRounded(5n, 2n)).toBe(3n); // 2.5
+    expect(unitCovering(poisha(10n), 3)).toBe(4n);
+    expect(unitCovering(poisha(9n), 3)).toBe(3n);
+    expect(unitCovering(poisha(0n), 2)).toBe(0n);
+    expect(() => unitCovering(poisha(1n), 0)).toThrow(MoneyError);
     expect(divideRounded(-5n, 2n)).toBe(-3n); // -2.5
     expect(divideRounded(5n, -2n)).toBe(-3n);
     expect(divideRounded(15n, 10n)).toBe(2n); // 1.5

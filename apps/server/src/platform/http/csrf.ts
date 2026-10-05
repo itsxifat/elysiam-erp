@@ -140,6 +140,14 @@ const SIGNED_MACHINE_PREFIXES = [
   // SSLCommerz's IPN, whose content is believed only after the gateway's validation API.
   '/storefront/v1/',
   '/storefront/ipn/',
+  // M35b: ncom.bd's connector, order intake and webhook, signed with the brand's ncom secrets
+  // over the raw body (D-553); and the packing scanner's device routes, which take their
+  // authority from a bearer device token, never from a cookie (D-554).
+  '/ncom/',
+  '/v1/scanner/sign-in',
+  '/v1/scanner/sign-out',
+  // The scanner app as it ships signs in at the old site's address (D-554).
+  '/api/admin/scanner/login',
 ] as const;
 
 function isSignedMachineRoute(url: string): boolean {

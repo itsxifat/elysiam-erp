@@ -8,6 +8,7 @@ import { INVENTORY_QUEUES } from './modules/inventory/reconcile.service.js';
 import { MARKETING_QUEUE_DEFINITIONS } from './modules/marketing/marketing.queues.js';
 import { LOANS_QUEUE_DEFINITIONS } from './modules/loans/loans.queues.js';
 import { STOREFRONT_QUEUE_DEFINITIONS } from './modules/storefront/storefront.queues.js';
+import { MARKETPLACE_QUEUE_DEFINITIONS } from './modules/marketplace/marketplace.queues.js';
 
 /**
  * Every pg-boss queue the application defines, for both entrypoints.
@@ -32,4 +33,5 @@ export const ALL_QUEUES: readonly QueueDefinition[] = [
   ...ANALYTICS_QUEUE_DEFINITIONS,
   ...LOANS_QUEUE_DEFINITIONS,
   ...STOREFRONT_QUEUE_DEFINITIONS,
+  ...MARKETPLACE_QUEUE_DEFINITIONS,
 ];

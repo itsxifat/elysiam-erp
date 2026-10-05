@@ -134,6 +134,18 @@ export function divideRounded(numerator: bigint, denominator: bigint): bigint {
   return negative ? -rounded : rounded;
 }
 
+/**
+ * The smallest whole number of poisha that, times `count`, covers `amount`: a unit price that
+ * never falls below its share of a total (M35b: an ncom line's value per unit). `amount` and
+ * `count` must not be negative; `count` must not be zero.
+ */
+export function unitCovering(amount: Poisha, count: bigint | number): Poisha {
+  const n = toBigInt(count, 'A count');
+  if (n <= 0n) throw new MoneyError('A count must be positive.');
+  if (amount < 0n) throw new MoneyError('An amount to cover cannot be negative.');
+  return checked((amount + n - 1n) / n);
+}
+
 /** 10,000 basis points = 100%. */
 export const BASIS_POINTS = 10_000n;
 

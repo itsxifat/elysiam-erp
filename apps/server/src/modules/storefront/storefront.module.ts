@@ -14,6 +14,7 @@ import { OrdersModule } from '../orders/orders.module.js';
 import { PromoModule } from '../promo/promo.module.js';
 import { WalletsModule } from '../wallets/wallets.module.js';
 import { AccountsService } from './accounts.service.js';
+import { CampaignLinksService } from './campaign-links.service.js';
 import { BuyingService } from './buying.service.js';
 import { CommerceController } from './commerce.controller.js';
 import { CommerceService } from './commerce.service.js';
@@ -32,6 +33,12 @@ import { StorefrontController } from './storefront.controller.js';
 import { StorefrontPublicController } from './storefront-public.controller.js';
 import { StorefrontPublicService } from './storefront-public.service.js';
 import { StorefrontService } from './storefront.service.js';
+import { FakeTrackingGateway, LiveTrackingGateway, TRACKING_GATEWAY } from './tracking.gateway.js';
+import { TrackingService } from './tracking.service.js';
+import {
+  WebMarketingController,
+  WebMarketingPublicController,
+} from './web-marketing.controller.js';
 import { STOREFRONT_RATE_LIMITER, StorefrontSignatureGuard } from './signature.guard.js';
 import { StorefrontReferencesBinding } from './references.binding.js';
 import { StorefrontDeletesController } from './storefront-deletes.controller.js';
@@ -104,6 +111,9 @@ class StorefrontValkey implements OnModuleDestroy {
     CommerceController,
     // M39a: what uses a size chart or a menu item, and a chart's "Empty and delete" (D-628).
     StorefrontDeletesController,
+    // M35b: campaign links and tracking.
+    WebMarketingController,
+    WebMarketingPublicController,
   ],
   providers: [
     { provide: STOREFRONT_CONFIG, useFactory: () => storefrontConfig() },
@@ -142,7 +152,29 @@ class StorefrontValkey implements OnModuleDestroy {
     PaymentsService,
     CommerceService,
     FlashSalesReader,
+    // M35b: campaign links and tracking (D-551, D-552).
+    {
+      provide: TRACKING_GATEWAY,
+      useFactory: (config: StorefrontConfig) =>
+        config.STOREFRONT_TRACKING_PROVIDER === 'live'
+          ? new LiveTrackingGateway({
+              metaBaseUrl: config.STOREFRONT_TRACKING_META_BASE_URL,
+              ga4BaseUrl: config.STOREFRONT_TRACKING_GA4_BASE_URL,
+              timeoutMs: config.STOREFRONT_TRACKING_TIMEOUT_MS,
+            })
+          : new FakeTrackingGateway(),
+      inject: [STOREFRONT_CONFIG],
+    },
+    CampaignLinksService,
+    TrackingService,
   ],
-  exports: [STOREFRONT_API, PaymentsService, OrderMail, PAYMENT_GATEWAY],
+  exports: [
+    STOREFRONT_API,
+    PaymentsService,
+    OrderMail,
+    PAYMENT_GATEWAY,
+    TrackingService,
+    TRACKING_GATEWAY,
+  ],
 })
 export class StorefrontModule {}

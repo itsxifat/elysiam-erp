@@ -10,6 +10,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ANALYTICS_ROUTE_FIXTURES } from '../../modules/analytics/analytics.route-fixtures.js';
 import {
+  MARKETPLACE_ROUTE_FIXTURES,
+  NCOM_CONNECTOR_FIXTURES,
+  ncomFixtureHeaders,
+  prepareMarketplaceFixtures,
+} from '../../modules/marketplace/marketplace.route-fixtures.js';
+import {
+  PACKING_ROUTE_FIXTURES,
+  preparePackingFixtures,
+} from '../../modules/packing/packing.route-fixtures.js';
+import {
   CATALOG_ROUTE_FIXTURES,
   prepareCatalogFixtures,
 } from '../../modules/catalog/catalog.route-fixtures.js';
@@ -179,6 +189,8 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...STOREFRONT_ROUTE_FIXTURES,
   // M39a: the usage reads (what uses a row), swept like every other read (D-621).
   ...DELETE_ROUTE_FIXTURES,
+  ...MARKETPLACE_ROUTE_FIXTURES,
+  ...PACKING_ROUTE_FIXTURES,
 };
 
 /**
@@ -260,6 +272,8 @@ beforeAll(async () => {
   await prepareLoanFixtures();
   await prepareStorefrontFixtures();
   await prepareDeleteFixtures();
+  await prepareMarketplaceFixtures();
+  await preparePackingFixtures();
 
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 
@@ -467,4 +481,50 @@ describe('invariant 5, across the storefront API', () => {
     }
     expect(problems).toEqual([]);
   }, 180_000);
+});
+
+/**
+ * The ncom.bd connector (M35b, D-553): no role to sweep as, so it is swept as ncom, signed with
+ * the brand's connector secret, over every route under `/ncom/<org>/v1/`: the reads, the stock
+ * route and the holds. ncom reads selling prices and stock counts; no answer may carry a cost.
+ */
+describe('invariant 5, across the ncom.bd connector', () => {
+  function connectorRoutes(): string[] {
+    return describeRoutes(harness.app)
+      .filter((route) => route.path.startsWith('/ncom/:orgId/v1/') && !route.path.endsWith('/*'))
+      .map(routeKey)
+      .sort();
+  }
+
+  it('has a fixture for every connector read', () => {
+    const live = connectorRoutes();
+    expect(live.length).toBeGreaterThanOrEqual(7);
+    expect(live.filter((key) => NCOM_CONNECTOR_FIXTURES[key] === undefined)).toEqual([]);
+  });
+
+  it('sends ncom no cost field', async () => {
+    const problems: string[] = [];
+    for (const route of connectorRoutes()) {
+      const fixture = await NCOM_CONNECTOR_FIXTURES[route]?.();
+      if (fixture === undefined) continue;
+      const raw = fixture.body === undefined ? '' : JSON.stringify(fixture.body);
+      const response = await harness.server.inject({
+        method: fixture.method,
+        url: fixture.path,
+        headers: {
+          ...ncomFixtureHeaders(raw),
+          ...(fixture.body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        ...(fixture.body === undefined ? {} : { payload: raw }),
+      });
+      if (response.statusCode !== 200) {
+        problems.push(`${route}: ${String(response.statusCode)} ${response.body.slice(0, 200)}`);
+        continue;
+      }
+      const parsed: unknown = JSON.parse(response.body);
+      const leaks = [...findCostFields(parsed), ...suspectKeys(parsed)];
+      if (leaks.length > 0) problems.push(`${route}: ${leaks.slice(0, 5).join(', ')}`);
+    }
+    expect(problems).toEqual([]);
+  }, 60_000);
 });

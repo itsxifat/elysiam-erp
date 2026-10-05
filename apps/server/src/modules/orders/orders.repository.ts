@@ -1659,6 +1659,70 @@ export async function shopperOrderRows(
   `);
 }
 
+/** What packing needs of orders (M35b, D-554, D-555): the scope columns and the note too. */
+export interface PackingOrderRow extends ShopperOrderRow {
+  readonly notes: string | null;
+  readonly branch_id: string | null;
+  readonly created_by: string;
+  readonly assigned_to: string | null;
+}
+
+export async function packingOrderRows(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+): Promise<PackingOrderRow[]> {
+  if (ids.length === 0) return [];
+  return tx.execute<PackingOrderRow>(sql`
+    select o.id, o.order_no, o.channel::text as channel, o.status::text as status, o.customer_id,
+           o.ship_name, o.ship_phone_e164, o.ship_district_id, o.ship_thana_id, o.ship_area,
+           o.ship_address_line, o.items_poisha::text as items_poisha,
+           o.discount_poisha::text as discount_poisha,
+           o.delivery_charge_poisha::text as delivery_charge_poisha,
+           o.advance_paid_poisha::text as advance_paid_poisha,
+           o.cod_amount_poisha::text as cod_amount_poisha, o.courier_id,
+           o.created_at, o.confirmed_at, o.handed_over_at, o.delivered_at, o.returned_at,
+           o.cancelled_at, o.notes, o.branch_id, o.created_by, o.assigned_to,
+           (select count(*)::int from sales.order_lines l
+             where l.org_id = o.org_id and l.order_id = o.id) as line_count,
+           (select coalesce(sum(l.qty), 0)::int from sales.order_lines l
+             where l.org_id = o.org_id and l.order_id = o.id) as unit_count,
+           d.name_en as district_en, d.name_bn as district_bn,
+           t.name_en as thana_en, t.name_bn as thana_bn
+    from sales.orders o
+    left join ref.districts d on d.id = o.ship_district_id
+    left join ref.thanas t on t.id = o.ship_thana_id
+    where o.org_id = ${orgId} and o.id = any (${sql.param([...ids])}::uuid[])
+  `);
+}
+
+export interface PackingLineRow extends Record<string, unknown> {
+  readonly order_id: string;
+  readonly sku_id: string;
+  readonly sku_code: string;
+  readonly product_name: string;
+  readonly qty: number;
+  readonly returned_qty: number;
+  readonly unit_price_poisha: string;
+}
+
+/** The lines of several orders as packing sees them, in each order's own order. No cost. */
+export async function packingLines(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+): Promise<PackingLineRow[]> {
+  if (ids.length === 0) return [];
+  const rows = await tx.execute<PackingLineRow>(sql`
+    select l.order_id, l.sku_id, l.sku_code, l.product_name, l.qty, l.returned_qty,
+           l.unit_price_poisha::text as unit_price_poisha
+    from sales.order_lines l
+    where l.org_id = ${orgId} and l.order_id = any (${sql.param([...ids])}::uuid[])
+    order by l.order_id, l.position, l.created_at
+  `);
+  return [...rows];
+}
+
 /** An order's id by its number, or undefined. */
 export async function orderIdByNo(
   tx: Tx,

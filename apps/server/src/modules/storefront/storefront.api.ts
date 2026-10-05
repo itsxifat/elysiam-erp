@@ -3,8 +3,13 @@ import type { Tx } from '@elysium/db';
 import { poisha } from '@elysium/domain';
 import type { ShippingRule } from '@elysium/domain/storefront';
 
+import { FilesService } from '../files/files.service.js';
+import { StorefrontPublicService } from './storefront-public.service.js';
 import * as repo from './storefront.repository.js';
 import { StorefrontService } from './storefront.service.js';
+import { TrackingService, type PurchaseFacts } from './tracking.service.js';
+
+export type { PurchaseFacts };
 
 /**
  * What other modules may ask the website module (invariant 12; M33, D-503, D-505).
@@ -29,19 +34,94 @@ export interface StorefrontApi {
     legacyIds: readonly string[],
   ): Promise<ReadonlyMap<string, string>>;
 
+  /**
+   * The old-site id each of these ERP rows carries, if any (M35b: the marketplace connector
+   * answers ncom with the ids its saved offers already hold, D-553).
+   */
+  legacyIdsFor(
+    tx: Tx,
+    orgId: string,
+    kind: string,
+    erpIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>>;
+
   /** Record old-site ids (M36's importer). An id already recorded is left as it was. */
   recordLegacyIds(
     tx: Tx,
     orgId: string,
     rows: readonly { readonly kind: string; readonly legacyId: string; readonly erpId: string }[],
   ): Promise<number>;
+
+  /**
+   * The website's own name and address and the courier merchant id the brand prints on its
+   * labels (M35b: the order labels, D-555, and the marketplace connector's product links).
+   */
+  siteFacts(
+    tx: Tx,
+    orgId: string,
+  ): Promise<{
+    readonly siteName: string;
+    /** Without a trailing slash; empty when the brand has not set one. */
+    readonly siteUrl: string;
+    readonly merchantId: string;
+  }>;
+
+  /**
+   * The public addresses of these stored images, the full size (M35b: the marketplace
+   * connector's product pictures, which ncom's pages load straight from the brand, D-553).
+   * Only public website images; anything else is absent.
+   */
+  publicImageUrls(
+    tx: Tx,
+    orgId: string,
+    fileIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>>;
+
+  /**
+   * The server-side `Purchase` for an order another module placed (M35b, D-552: the
+   * marketplace's), logged and queued in the caller's transaction.
+   */
+  recordPurchase(tx: Tx, orgId: string, facts: PurchaseFacts): Promise<void>;
 }
 
 export const STOREFRONT_API = Symbol('StorefrontApi');
 
 @Injectable()
 export class StorefrontApiService implements StorefrontApi {
-  constructor(private readonly storefront: StorefrontService) {}
+  constructor(
+    private readonly storefront: StorefrontService,
+    private readonly tracking: TrackingService,
+    private readonly files: FilesService,
+    private readonly publicService: StorefrontPublicService,
+  ) {}
+
+  async siteFacts(tx: Tx, orgId: string) {
+    const settings = await this.storefront.settingsIn(tx, orgId);
+    return {
+      siteName: settings.siteInfo.siteName,
+      siteUrl: settings.siteInfo.siteUrl.replace(/\/+$/, ''),
+      merchantId: settings.siteInfo.merchantId,
+    };
+  }
+
+  async publicImageUrls(
+    tx: Tx,
+    orgId: string,
+    fileIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>> {
+    if (fileIds.length === 0) return new Map();
+    const media = await this.files.publicImagesIn(tx, orgId, [...new Set(fileIds)]);
+    const out = new Map<string, string>();
+    for (const fileId of fileIds) {
+      const image = this.publicService.image(orgId, fileId, null, media);
+      if (image !== null) out.set(fileId, image.urls.full);
+    }
+    return out;
+  }
+
+  async recordPurchase(tx: Tx, orgId: string, facts: PurchaseFacts): Promise<void> {
+    await this.tracking.recordPurchase(tx, orgId, facts);
+  }
 
   async webLocationIds(tx: Tx, orgId: string): Promise<readonly string[]> {
     return (await this.storefront.settingsIn(tx, orgId)).webLocationIds;
@@ -74,6 +154,15 @@ export class StorefrontApiService implements StorefrontApi {
     legacyIds: readonly string[],
   ): Promise<ReadonlyMap<string, string>> {
     return repo.legacyIds(tx, orgId, kind, [...new Set(legacyIds)]);
+  }
+
+  async legacyIdsFor(
+    tx: Tx,
+    orgId: string,
+    kind: string,
+    erpIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>> {
+    return repo.legacyIdsFor(tx, orgId, kind, [...new Set(erpIds)]);
   }
 
   async recordLegacyIds(

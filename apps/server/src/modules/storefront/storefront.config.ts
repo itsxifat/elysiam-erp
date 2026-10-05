@@ -76,6 +76,31 @@ const schema = z.object({
     .min(5)
     .max(24 * 60)
     .default(60),
+
+  // --- M35b: tracking (D-552) ---------------------------------------------------------------
+
+  /**
+   * Who receives the website's server-side events: `fake` records them (tests, and every
+   * installation until a brand's real pixel token is tried), `live` sends them to Meta's
+   * Conversions API and GA4's Measurement Protocol. Both adapters are UNVERIFIED, so `live`
+   * also needs `STOREFRONT_TRACKING_ENABLED=true` (the two-key rule of D-257).
+   */
+  STOREFRONT_TRACKING_PROVIDER: z.enum(['fake', 'live']).default('fake'),
+  STOREFRONT_TRACKING_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  STOREFRONT_TRACKING_META_BASE_URL: z
+    .string()
+    .url()
+    .transform((value) => value.replace(/\/+$/, ''))
+    .default('https://graph.facebook.com'),
+  STOREFRONT_TRACKING_GA4_BASE_URL: z
+    .string()
+    .url()
+    .transform((value) => value.replace(/\/+$/, ''))
+    .default('https://www.google-analytics.com'),
+  STOREFRONT_TRACKING_TIMEOUT_MS: z.coerce.number().int().min(500).max(30_000).default(10_000),
 });
 
 export type StorefrontConfig = z.infer<typeof schema>;
@@ -98,6 +123,16 @@ export function storefrontConfig(source: NodeJS.ProcessEnv = process.env): Store
     // The intake's rule (M11): per-process counters multiply the limit by the replica count.
     throw new Error(
       'STOREFRONT_RATE_LIMIT_STORE=memory in production makes every limit per process. Use valkey.',
+    );
+  }
+  if (
+    parsed.data.STOREFRONT_TRACKING_PROVIDER === 'live' &&
+    !parsed.data.STOREFRONT_TRACKING_ENABLED
+  ) {
+    // D-257's two keys: naming unverified adapters is not switching them on.
+    throw new Error(
+      'STOREFRONT_TRACKING_PROVIDER=live names unverified Meta and GA4 adapters (D-552). Set ' +
+        'STOREFRONT_TRACKING_ENABLED=true as well to send events before they have been verified.',
     );
   }
   return parsed.data;

@@ -247,6 +247,16 @@ export const orderAssignedPayload = z
   .strict();
 
 /**
+ * M35b: an order's lines, money or address were changed at the desk (or by a server). Id,
+ * number and when, nothing more, for the same reason as the status change below; a screen
+ * that needs the new figures fetches them. The marketplace sends ncom.bd the order as it now
+ * stands when one of its orders is edited here (D-556).
+ */
+export const orderEditedPayload = z
+  .object({ id: uuid, orderNo: z.string(), at: z.string() })
+  .strict();
+
+/**
  * §19: id, from, to, at.
  *
  * No amount at all, deliberately. This event drives live lists and dashboards for sales,
@@ -389,6 +399,9 @@ export const EVENTS = {
       ...(payload.resellerId === null ? [] : [resellerRoom(payload.resellerId)]),
       ...(payload.branchId === null ? [] : [`branch:${payload.branchId}`]),
     ],
+  }),
+  'order.edited': defineEvent('order.edited', orderEditedPayload, {
+    roles: ['sales', 'warehouse'],
   }),
   'delivery.booking_failed': defineEvent('delivery.booking_failed', deliveryBookingFailedPayload, {
     roles: ['org_admin'],

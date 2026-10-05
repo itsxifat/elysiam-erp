@@ -48,11 +48,15 @@ export default defineConfig({
     'loans',
     // M18. Campaigns, spend, leads, the Meta link and the conversion log.
     'marketing',
+    // M35b. The ncom.bd connector: settings, holds, handed-over orders, the outbox, webhooks.
+    'marketplace',
     // M14a. The record of a brand's opening import and the opening of its books.
     'migration',
     // M16. Templates, opt-outs and the delivery log.
     'notify',
     'org',
+    // M35b. The packing scanner's devices.
+    'packing',
     // M23. Eleven tables holding till sales, tenders, returns and branch closings.
     'pos',
     // M16. Promo codes and their redemption ledger.

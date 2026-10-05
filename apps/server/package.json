@@ -42,8 +42,8 @@
     "@opentelemetry/instrumentation-undici": "catalog:",
     "@opentelemetry/sdk-node": "catalog:",
     "@sentry/node": "catalog:",
-    "bcryptjs": "catalog:",
     "@socket.io/redis-adapter": "catalog:",
+    "bcryptjs": "catalog:",
     "drizzle-orm": "catalog:",
     "fastify": "catalog:",
     "ioredis": "catalog:",
@@ -54,6 +54,7 @@
     "rxjs": "catalog:",
     "sharp": "catalog:",
     "socket.io": "catalog:",
+    "uqr": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

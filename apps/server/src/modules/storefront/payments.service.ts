@@ -39,6 +39,7 @@ import { STOREFRONT_CONFIG, type StorefrontConfig } from './storefront.config.js
 import { StorefrontError } from './storefront.errors.js';
 import { STOREFRONT_QUEUES } from './storefront.queues.js';
 import { StorefrontService } from './storefront.service.js';
+import { TrackingService } from './tracking.service.js';
 import { tokenHash } from './tokens.js';
 
 /** The clearing wallet SSLCommerz payments land in until the gateway settles them (D-526). */
@@ -113,6 +114,7 @@ export class PaymentsService {
     @Inject(WALLETS_API) private readonly wallets: WalletsApi,
     private readonly settings: StorefrontService,
     private readonly audit: AuditService,
+    private readonly tracking: TrackingService,
   ) {}
 
   // --- the console: Website → Payments --------------------------------------------------------
@@ -703,6 +705,11 @@ export class PaymentsService {
           risky: verdict.risky,
         },
       });
+      // M35b (D-552): the order's server-side Purchase, waiting since the checkout, goes now
+      // that the money is the order's.
+      if (booked.outcome === 'applied') {
+        await this.tracking.releasePurchase(tx, orgId, locked.order_id);
+      }
       return `paid:${booked.outcome}`;
     });
   }

@@ -55,6 +55,22 @@ export const WEBSITE_TABS: readonly WebsiteTab[] = [
     labelKey: 'web.nav.email',
     required: { action: 'read', subject: 'Storefront' },
   },
+  // M35b: campaign links, the pixel and analytics, and the ncom.bd marketplace.
+  {
+    path: '/website/campaign-links',
+    labelKey: 'web.nav.campaignLinks',
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    path: '/website/tracking',
+    labelKey: 'web.nav.tracking',
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    path: '/website/marketplace',
+    labelKey: 'web.nav.marketplace',
+    required: { action: 'read', subject: 'Storefront' },
+  },
   // Every shopper's email and phone: for those who see every buyer (M34 ledger audit W6).
   {
     path: '/website/customers',

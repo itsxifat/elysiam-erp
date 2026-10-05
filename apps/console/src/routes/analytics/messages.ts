@@ -101,6 +101,7 @@ const ANALYTICS_KEYS = [
   'orders.channel.phone',
   'orders.channel.walk_in',
   'orders.channel.reseller',
+  'orders.channel.marketplace',
 ] as const satisfies readonly MessageKey[];
 
 export type AnalyticsMessageKey = (typeof ANALYTICS_KEYS)[number];

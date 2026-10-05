@@ -54,3 +54,5 @@ export * from './storefront.js';
 export * from './storefront-buying.js';
 // M39a: what uses a row, before it is deleted or archived.
 export * from './usage.js';
+// M35b: campaign links, tracking, the ncom.bd marketplace, the scanner and order labels.
+export * from './storefront-marketing.js';

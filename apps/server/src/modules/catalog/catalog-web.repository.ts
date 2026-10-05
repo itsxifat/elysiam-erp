@@ -551,3 +551,107 @@ export async function webSkuFactsOf(
   `);
   return [...rows];
 }
+
+// --- M35b: the ncom.bd marketplace connector (D-553) ----------------------------------------
+
+export interface MarketplaceProductRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly category_id: string | null;
+  readonly web_visible: boolean;
+  readonly material: string | null;
+  readonly gender: string | null;
+  readonly tags: string[];
+  readonly updated_at: string;
+}
+
+export interface MarketplaceFilter {
+  /** Only these products (ncom re-reading the ones its offers name). */
+  readonly ids?: readonly string[];
+  /** `active`: on the website; `draft`: active but not on the website. */
+  readonly kinds: readonly ('active' | 'draft')[];
+  readonly categoryIds: readonly string[] | null;
+  readonly search: readonly string[];
+  /** Keyset paging by id. */
+  readonly afterId: string | null;
+}
+
+function marketplaceWhere(orgId: string, filter: MarketplaceFilter): SQL {
+  const conditions: SQL[] = [
+    sql`p.org_id = ${orgId}`,
+    sql`p.status = 'active'`,
+    sql`exists (select 1 from catalog.skus s
+                where s.org_id = p.org_id and s.product_id = p.id and s.status = 'active')`,
+  ];
+  const visible = filter.kinds.includes('active');
+  const drafts = filter.kinds.includes('draft');
+  if (!visible && !drafts) conditions.push(sql`false`);
+  else if (!visible) conditions.push(sql`not p.web_visible`);
+  else if (!drafts) conditions.push(sql`p.web_visible`);
+  if (filter.ids !== undefined) {
+    conditions.push(
+      filter.ids.length === 0
+        ? sql`false`
+        : sql`p.id = any (${sql.param([...filter.ids])}::uuid[])`,
+    );
+  }
+  if (filter.categoryIds !== null) {
+    conditions.push(
+      filter.categoryIds.length === 0
+        ? sql`false`
+        : sql`p.category_id = any (${sql.param([...filter.categoryIds])}::uuid[])`,
+    );
+  }
+  for (const word of filter.search) {
+    conditions.push(sql`p.search_text like ${`%${escapeLike(word)}%`} escape '\'`);
+  }
+  if (filter.afterId !== null) conditions.push(sql`p.id > ${filter.afterId}::uuid`);
+  return sql.join(conditions, sql` and `);
+}
+
+/** Products ncom may list: active ones with an active size, drafts only when asked. */
+export async function marketplaceProducts(
+  tx: Tx,
+  orgId: string,
+  filter: MarketplaceFilter,
+  limit: number,
+): Promise<MarketplaceProductRow[]> {
+  const rows = await tx.execute<MarketplaceProductRow>(sql`
+    select p.id, p.slug, p.name, p.description, p.category_id, p.web_visible, p.material,
+           p.gender, p.tags, p.updated_at
+    from catalog.products p
+    where ${marketplaceWhere(orgId, filter)}
+    order by p.id
+    limit ${limit}
+  `);
+  return [...rows];
+}
+
+export async function marketplaceProductCount(
+  tx: Tx,
+  orgId: string,
+  filter: MarketplaceFilter,
+): Promise<number> {
+  const rows = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from catalog.products p
+    where ${marketplaceWhere(orgId, { ...filter, afterId: null })}
+  `);
+  return rows[0]?.n ?? 0;
+}
+
+/** A product by its slug or one it used to have (an offer built before a rename). */
+export async function marketplaceProductIdBySlug(
+  tx: Tx,
+  orgId: string,
+  slug: string,
+): Promise<string | undefined> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select p.id from catalog.products p
+    where p.org_id = ${orgId} and (p.slug = ${slug} or ${slug} = any (p.previous_slugs))
+    order by (p.slug = ${slug}) desc
+    limit 1
+  `);
+  return rows[0]?.id;
+}

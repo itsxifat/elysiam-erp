@@ -56,7 +56,7 @@ export interface WireImage {
   readonly urls: Readonly<Record<Variant, string>>;
 }
 
-interface CategoryRef {
+export interface CategoryRef {
   readonly id: string;
   readonly slug: string;
   readonly name: string;
@@ -384,6 +384,24 @@ export class StorefrontPublicService {
         payments: settings.payments,
       };
     });
+  }
+
+  /**
+   * Cards for these products, in the order given, leaving out any the website does not sell
+   * now (M35b: a campaign link's highlighted products, D-551).
+   */
+  async cardsByIds(tx: Tx, orgId: string, ids: readonly string[]) {
+    if (ids.length === 0) return [];
+    const categories = await this.catalog.webCategories(tx, orgId);
+    const rows = await this.catalog.webProductPage(
+      tx,
+      orgId,
+      { ...emptyFilter(), ids },
+      { sort: 'newest', cursor: null, limit: ids.length, offset: 0 },
+    );
+    const order = new Map(ids.map((id, index) => [id, index]));
+    const sorted = [...rows].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    return this.cards(tx, orgId, sorted, categories);
   }
 
   // --- assembly --------------------------------------------------------------------------------

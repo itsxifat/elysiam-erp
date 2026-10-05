@@ -15,6 +15,9 @@ const en = {
     'What the brand’s website shows: its settings, slides, menu and size charts, and the key it reads with.',
   'web.deniedTitle': 'The website is not part of your role',
   'web.deniedDetail': 'Ask an admin if you need to change what the website shows.',
+  'web.nav.campaignLinks': 'Campaign links',
+  'web.nav.tracking': 'Tracking',
+  'web.nav.marketplace': 'Marketplace',
   'web.pay.title': 'SSLCommerz',
   'web.pay.description':
     'The account shoppers pay online through. Payments are checked with SSLCommerz before an order is marked paid.',

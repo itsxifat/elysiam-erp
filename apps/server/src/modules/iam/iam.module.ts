@@ -10,6 +10,12 @@ import { OwnerLinkController } from './owner-link.controller.js';
 import { OwnerLinkService } from './owner-link.service.js';
 import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
+import { PackingModule } from '../packing/packing.module.js';
+import {
+  ScannerAppSignInController,
+  ScannerSignInController,
+  ScannerSignInService,
+} from './scanner-sign-in.js';
 
 /**
  * Identity (architecture §6). Exports the service so later modules can resolve
@@ -34,13 +40,21 @@ export class IamModule {
   }): DynamicModule {
     return {
       module: IamModule,
-      imports: [ApprovalsModule],
-      controllers: [IamController, UsersController, OwnerLinkController],
+      // M35b: the packing module issues the scanner device the sign-in checks for (D-554).
+      imports: [ApprovalsModule, PackingModule],
+      controllers: [
+        IamController,
+        UsersController,
+        OwnerLinkController,
+        ScannerSignInController,
+        ScannerAppSignInController,
+      ],
       providers: [
         IamService,
         UsersService,
         AuditService,
         OwnerLinkService,
+        ScannerSignInService,
         { provide: OWNER_LINK_CONFIG, useFactory: () => ownerLinkConfig() },
         { provide: AUTH, useValue: dependencies.auth },
         { provide: PASSWORD_TOKENS, useValue: dependencies.tokens },

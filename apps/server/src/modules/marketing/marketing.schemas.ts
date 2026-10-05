@@ -1,4 +1,8 @@
-import { businessDateSchema, nonNegativePoishaSchema, ORDER_CHANNELS } from '@elysium/contracts';
+import {
+  businessDateSchema,
+  nonNegativePoishaSchema,
+  type ORDER_CHANNELS,
+} from '@elysium/contracts';
 import {
   AGE_BANDS,
   CAMPAIGN_REF_KINDS,
@@ -175,7 +179,21 @@ export const metaConnectionSchema = z
   });
 export type MetaConnectionInput = z.infer<typeof metaConnectionSchema>;
 
-export const LEAD_CHANNELS = ORDER_CHANNELS;
+/**
+ * A lead's channel: every order channel but the marketplace, whose orders arrive already
+ * placed (D-556) and which `marketing.leads`' CHECK does not list.
+ */
+export const LEAD_CHANNELS = [
+  'facebook',
+  'whatsapp',
+  'instagram',
+  'tiktok',
+  'landing_page',
+  'website',
+  'phone',
+  'walk_in',
+  'reseller',
+] as const satisfies readonly (typeof ORDER_CHANNELS)[number][];
 
 export const createLeadSchema = z
   .object({
