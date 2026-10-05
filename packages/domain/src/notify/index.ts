@@ -4,3 +4,5 @@
  */
 export * from './quiet-hours.js';
 export * from './templates.js';
+// M34: the website's emails, bn and en (D-529).
+export * from './emails.js';

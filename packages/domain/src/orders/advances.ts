@@ -18,9 +18,19 @@ import type { OrderStatus } from './state.js';
  *    per the brand's policy (D-232).
  */
 
-/** How the buyer sent the money. bKash is the one D-013 names. */
+/** How the buyer sent the money, as an agent records it. bKash is the one D-013 names. */
 export const ADVANCE_METHODS = ['bkash', 'nagad', 'bank'] as const;
-export type AdvanceMethod = (typeof ADVANCE_METHODS)[number];
+
+/**
+ * Money a payment gateway took on the website and the ERP checked with that gateway (M34,
+ * D-526). Never typed by an agent: the website's payment is validated with SSLCommerz and
+ * becomes a verified advance at once, the gateway's validation being the evidence accounts
+ * would otherwise look for.
+ */
+export const GATEWAY_ADVANCE_METHODS = ['sslcommerz'] as const;
+export type GatewayAdvanceMethod = (typeof GATEWAY_ADVANCE_METHODS)[number];
+
+export type AdvanceMethod = (typeof ADVANCE_METHODS)[number] | GatewayAdvanceMethod;
 
 export const ADVANCE_STATUSES = [
   /** Recorded by the agent. Nothing posted. */
