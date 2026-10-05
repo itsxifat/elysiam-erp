@@ -122,12 +122,15 @@ Wave 3         [--------------------]   0%   (M31 to M37, started 2026-10-05)
 
 ## Time left (estimate)
 
-| Work                                   | Time left                                    |
-| -------------------------------------- | -------------------------------------------- |
-| M31, M32, M33 (in parallel)            | about 6 to 8 hours                           |
-| M34 and M35                            | about 8 to 10 hours                          |
-| M36 (website rewrite and the old data) | about 6 to 8 hours                           |
-| M37 and M30 part 2                     | a few hours each, once the servers are ready |
+Checked at 16:00 on 2026-10-05, from what the four builders have committed so far.
+
+| Work                                                                       | Time left                                        |
+| -------------------------------------------------------------------------- | ------------------------------------------------ |
+| M31, M32, M33 and M35a: finish, check, audit, join together                | about 5 to 7 hours                               |
+| M34 (checkout, accounts, payment) and M35b (landing pages, tracking, ncom) | about 8 to 10 hours                              |
+| M36 (the website rewired, the old data moved)                              | about 8 to 10 hours                              |
+| **All building**                                                           | **about 1.5 to 2 days**                          |
+| M37 (servers and switch-over) and M30 part 2                               | a few hours each, once the owner's inputs are in |
 
 ## What the owner needs to do
 
