@@ -24,6 +24,7 @@ const en = {
 
   // Columns.
   'cp.col.regular': 'Regular price (৳)',
+  'cp.col.cost': 'Cost',
   'cp.col.regularShort': 'Regular',
   'cp.col.avgCost': 'Avg. cost',
   'cp.col.lastCost': 'Last bought',

@@ -508,7 +508,12 @@ export function VariantTable({
                 ) : null}
                 {showStock
                   ? columns.map((location) => (
-                      <th key={location.id} scope="col" className={cn(th, 'text-right')}>
+                      <th
+                        key={location.id}
+                        scope="col"
+                        // A long location name wraps rather than widening the table (D-636).
+                        className={cn(th, 'max-w-32 text-right whitespace-normal')}
+                      >
                         {location.name}
                       </th>
                     ))
@@ -620,7 +625,7 @@ export function VariantTable({
                       {editing ? (
                         <>
                           <label className="sr-only" htmlFor={`regular-${sku.id}`}>
-                            {`${t('cp.col.regular')} ${label}`}
+                            {`${t('cp.col.regularShort')} ${label}`}
                           </label>
                           <input
                             id={`regular-${sku.id}`}

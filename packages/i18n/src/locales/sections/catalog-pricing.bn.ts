@@ -19,6 +19,7 @@ const bn: Record<CatalogPricingKey, string> = {
   'cp.selectRow': 'বাছাই করুন',
 
   'cp.col.regular': 'নিয়মিত দাম (৳)',
+  'cp.col.cost': 'খরচ',
   'cp.col.regularShort': 'নিয়মিত',
   'cp.col.avgCost': 'গড় খরচ',
   'cp.col.lastCost': 'শেষ কেনা',

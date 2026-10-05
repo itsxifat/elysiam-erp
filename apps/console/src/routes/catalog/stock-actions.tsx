@@ -228,7 +228,7 @@ function QtyTable({
                 {costs === undefined ? null : (
                   <td className="px-3 py-2 text-right">
                     <label className="sr-only" htmlFor={`${idPrefix}-cost-${variant.id}`}>
-                      {`${t('st.col.costPerPiece')} ${variant.label || variant.skuCode}`}
+                      {`${t('cp.col.cost')} ${variant.label || variant.skuCode}`}
                     </label>
                     <input
                       id={`${idPrefix}-cost-${variant.id}`}
@@ -539,7 +539,7 @@ export function ReceiveStockDialog({
           </Field>
           {mayPrice ? (
             <Field
-              label={t('cp.receive.sameForAll')}
+              label={t('cs.costPerPiece')}
               id="receive-cost"
               hint={t('cp.receive.sameForAllHint')}
             >

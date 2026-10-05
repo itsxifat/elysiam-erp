@@ -856,7 +856,7 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
                       </td>
                       <td className="px-3 py-2 text-right">
                         <label className="sr-only" htmlFor={`regular-${String(index)}`}>
-                          {`${t('cp.col.regular')} ${label}`}
+                          {`${t('cp.col.regularShort')} ${label}`}
                         </label>
                         <input
                           id={`regular-${String(index)}`}
