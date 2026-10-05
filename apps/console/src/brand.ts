@@ -47,6 +47,9 @@ let applied: { readonly branding: LoginBranding | null } | null = null;
 export function applyBrand(branding: LoginBranding | null): void {
   applied = { branding };
   const root = document.documentElement;
+  // The tab carries the brand's own name, from its row (D-472); the shipped page names none.
+  const name = branding?.displayName;
+  document.title = typeof name === 'string' && name !== '' ? `${name} · Console` : 'Console';
   const accent = branding?.brand?.accent;
 
   const theme = root.classList.contains('dark') ? 'dark' : 'light';

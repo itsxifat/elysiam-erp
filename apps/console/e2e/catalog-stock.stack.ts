@@ -158,11 +158,15 @@ test('new product: sizes and colours as chips, a variant price and opening stock
   const grid = page.getByRole('table', { name: 'Variants this product will have' });
   await expect(grid.getByRole('row')).toHaveCount(5);
   await page.getByLabel('Price (৳) L / Navy Blue').fill('2550');
-  await page.getByLabel('Opening stock M / Red').fill('10');
-  await page.getByLabel('Opening stock L / Navy Blue').fill('5');
+  await page.getByLabel('Pieces M / Red').fill('10');
+  await page.getByLabel('Pieces L / Navy Blue').fill('5');
 
-  const opening = page.getByRole('region', { name: 'Opening stock' });
-  await choose(opening.getByLabel('Supplier'), `${SUPPLIER} (${SUPPLIER_CODE})`);
+  // M38a: while the brand's opening stock window is open the form offers stock already in
+  // hand first; this delivery is from a supplier.
+  const opening = page.getByRole('region', { name: 'Stock', exact: true });
+  const fromSupplier = opening.getByRole('radio', { name: 'Received from a supplier' });
+  if (await fromSupplier.isVisible()) await fromSupplier.check();
+  await choose(opening.getByLabel('Supplier', { exact: true }), `${SUPPLIER} (${SUPPLIER_CODE})`);
   await opening.getByLabel('Cost per piece (৳)').fill('1200');
   await expect(opening).toContainText('15 pieces');
 
@@ -170,6 +174,9 @@ test('new product: sizes and colours as chips, a variant price and opening stock
   await shot('02-new-product');
 
   await page.getByRole('button', { name: 'Create product' }).click();
+  // M38a: the form ends on what was saved, with its stickers one click away.
+  await expect(page.getByRole('heading', { name: 'Product created', level: 1 })).toBeVisible();
+  await page.getByRole('link', { name: 'Open the product' }).click();
   await expect(page.getByRole('heading', { name: PRODUCT, level: 1 })).toBeVisible();
 
   const variants = page.getByRole('table', { name: 'Variants and stock' });
@@ -233,14 +240,18 @@ test('receive a second delivery from the product page', async () => {
 
   await page.getByRole('button', { name: 'Receive stock' }).click();
   const dialog = page.getByRole('dialog', { name: 'Receive stock from a supplier' });
-  await choose(dialog.getByLabel('Supplier'), `${SUPPLIER} (${SUPPLIER_CODE})`);
+  await choose(dialog.getByLabel('Supplier', { exact: true }), `${SUPPLIER} (${SUPPLIER_CODE})`);
   await dialog.getByLabel('Cost per piece (৳)').fill('1180.50');
   await dialog.getByLabel('Quantity M / Navy Blue').fill('4');
   await expect(dialog).toContainText('৳4,722');
   await shot('07-receive');
   await dialog.getByRole('button', { name: 'Receive stock' }).click();
-  await expect(dialog.getByRole('status')).toContainText('Received');
-  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  // M38a: a receipt ends on its stickers, one per piece received (D-604).
+  await expect(dialog).toBeHidden();
+  const stickers = page.getByRole('dialog', { name: 'Print stickers' });
+  await expect(stickers.getByText('Stickers in all: 4')).toBeVisible();
+  await stickers.getByRole('button', { name: 'Close' }).first().click();
+  await expect(stickers).toBeHidden();
 
   const variants = page.getByRole('table', { name: 'Variants and stock' });
   const mRed = variants.getByRole('row', { name: /M \/ Red/ });

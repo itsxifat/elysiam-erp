@@ -19,6 +19,7 @@
     "@elysium/api-client": "workspace:*",
     "@elysium/config": "workspace:*",
     "@elysium/contracts": "workspace:*",
+    "@elysium/domain": "workspace:*",
     "@elysium/i18n": "workspace:*",
     "@elysium/ui": "workspace:*",
     "@hookform/resolvers": "catalog:",

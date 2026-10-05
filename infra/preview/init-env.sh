@@ -53,7 +53,7 @@ umask 077
         echo "${line}$(hex 24)" ;;
       PREVIEW_AUTH_SECRET=|PREVIEW_INTAKE_KEY_SECRET=) echo "${line}$(hex 32)" ;;
       # 32 bytes of base64, which the field-encryption keys require.
-      PREVIEW_HR_FIELD_KEY=|PREVIEW_COURIER_CREDENTIALS_KEY=|PREVIEW_MARKETING_CREDENTIALS_KEY=)
+      PREVIEW_HR_FIELD_KEY=|PREVIEW_COURIER_CREDENTIALS_KEY=|PREVIEW_MARKETING_CREDENTIALS_KEY=|PREVIEW_STOREFRONT_CREDENTIALS_KEY=)
         echo "${line}$(b64 32)" ;;
       *) echo "$line" ;;
     esac

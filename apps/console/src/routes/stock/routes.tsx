@@ -61,5 +61,12 @@ export function stockRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./counts.js'), 'StockCountsPage'),
   });
 
-  return [levels, adjustments, transfers, counts] as const;
+  // M38a: stock the brand already holds when it starts, and its window (D-602).
+  const inHand = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/stock/in-hand',
+    component: lazyRouteComponent(() => import('./stock-in-hand.js'), 'StockInHandPage'),
+  });
+
+  return [levels, adjustments, transfers, counts, inHand] as const;
 }

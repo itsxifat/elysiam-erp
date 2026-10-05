@@ -34,15 +34,34 @@ the next one moves.
    the shell only for the session. A bad row anywhere leaves nothing behind; fix the file
    and run it again.
 4. **Post the opening**: `pnpm migration post --org <slug> --as-of <yesterday> --approved-by "<accountant>"`
-   (one journal, dated the evening before go-live, D-221).
+   (one journal, dated the evening before go-live, D-221). A brand that had already traded on
+   the ERP when migration 0114 was applied starts with **opening stock closed** (D-602), and a
+   post with an opening stock file is refused with `OPENING_STOCK_CLOSED`: an org admin asks
+   to reopen it (Stock → Stock in hand → Ask to reopen), a second admin approves it in
+   Approvals, then post again.
+   **A brand that starts fresh** (D-561) counts its stock in on the ERP instead of importing
+   it (Stock → Stock in hand, or the new-product form; `docs/training/stickers-and-scanning.md`).
+   For it, steps 3 to 5 cover only the balance files (supplier dues, wallets, courier COD), and
+   are skipped when there are none. **Sign the reconciliation (step 5) before counting any
+   stock in**: it compares the opening journal's stock with the live valuation, and stock
+   counted in first would read as a difference and block the sign-off. Then count the stock
+   in, close opening stock (step 6) and trade. The accountant checks the counted stock on
+   its own: the `stock_in_hand` journals' credits to 3350 equal the stock valuation while
+   nothing else has moved (to the poisha, unless one product was counted in at two costs:
+   the average rounds once per entry, §8).
 5. **Run the reconciliation and have the accountant sign it before the brand trades**
    (`pnpm migration reconcile --org <slug> --out reconciliation.csv`, then
    `pnpm migration sign-off --org <slug> --by "<accountant>"`, D-222). Stock is valued at the moment the report runs, so
    it moves after the first sale: sign first, trade second. A line that does not agree
    blocks the sign-off; find out why before going on.
-6. **Open for business:** the desks take orders, the first parcel is booked with the
+6. **Close opening stock** once every piece the brand holds is in (Stock → Stock in hand →
+   Close opening stock, org admin; D-602). While it is open, anyone with `read:cost` can
+   credit opening balance equity with stock and no second person checks it; after it, stock
+   comes only from suppliers, transfers, returns and approved adjustments. Close it before
+   trading if the count is done; at the latest when it is, and record the date below.
+7. **Open for business:** the desks take orders, the first parcel is booked with the
    courier, and the first showroom sale goes through the till.
-7. **Watch** for the first hours: Sentry, `/health/ready`, the failed-jobs view
+8. **Watch** for the first hours: Sentry, `/health/ready`, the failed-jobs view
    (`GET /v1/jobs/failed`), and the first courier status updates arriving.
 
 ## During the pilot
@@ -54,6 +73,6 @@ the next one moves.
 
 ## Record
 
-| Brand | Go-live date | Opening posted | Reconciliation signed by | First order | First sale | By  |
-| ----- | ------------ | -------------- | ------------------------ | ----------- | ---------- | --- |
-|       |              |                |                          |             |            |     |
+| Brand | Go-live date | Opening posted | Opening stock closed | Reconciliation signed by | First order | First sale | By  |
+| ----- | ------------ | -------------- | -------------------- | ------------------------ | ----------- | ---------- | --- |
+|       |              |                |                      |                          |             |            |     |

@@ -79,6 +79,10 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
     'loan_repayment',
     // gaps-users-auth: a privileged person's sign-in reset needs a second admin (D-404).
     'credential_reset',
+    // M38a: reopening the opening stock window needs a second org admin (D-602).
+    'opening_stock_reopen',
+    // M38a: so does taking a posted stock-in-hand entry back out (D-602).
+    'stock_in_hand_reversal',
   ],
   // §6: payments.
   /*
@@ -168,6 +172,10 @@ export const REQUESTER_TYPES: Readonly<Record<MembershipRole, readonly string[]>
     'loan_repayment',
     // Raised only by the iam module's reset routes, never the generic one (D-404).
     'credential_reset',
+    // Raised only by the inventory module's window route (D-602).
+    'opening_stock_reopen',
+    // Raised only by the inventory module's reverse route, by whoever may post (D-602).
+    'stock_in_hand_reversal',
   ],
   accounts: [
     'wallet_adjustment',
@@ -181,6 +189,8 @@ export const REQUESTER_TYPES: Readonly<Record<MembershipRole, readonly string[]>
     'investor_distribution',
     'investor_withdrawal',
     'loan_repayment',
+    // M38a: accounts posts stock in hand, so it may ask to reverse an entry (D-602).
+    'stock_in_hand_reversal',
   ],
   hr: ['payroll_run', 'bonus_rule'],
   branch_manager: ['stock_write_off', 'stock_gain', 'closing_variance', 'wallet_adjustment'],
@@ -287,7 +297,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
      */
     { action: 'read', subject: 'Stock', scope: 'org' },
     { action: ['read', 'request', 'approve'], subject: 'StockAdjustment', scope: 'org' },
-    { action: ['read', 'create', 'update'], subject: 'Supply', scope: 'org' },
+    // M39a (D-630): deleting a supplier nothing names is org_admin's alone.
+    { action: ['read', 'create', 'update', 'delete'], subject: 'Supply', scope: 'org' },
     { action: ['read', 'create', 'update', 'delete'], subject: 'Order', scope: 'org' },
     { action: ['read', 'update'], subject: 'Customer', scope: 'org' },
     { action: 'export', subject: 'BuyerExport', scope: 'org' },
@@ -297,9 +308,11 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     // period_reopen request only super_admin decides (D-083).
     { action: ['read', 'update'], subject: 'LedgerPeriod', scope: 'org' },
     { action: ['read', 'update'], subject: 'CourierSettlement', scope: 'org' },
-    { action: ['read', 'create', 'update'], subject: 'Campaign', scope: 'org' },
+    // M39a (D-632): deleting an ad campaign or an SMS template that never ran.
+    { action: ['read', 'create', 'update', 'delete'], subject: 'Campaign', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'CampaignSpend', scope: 'org' },
-    { action: ['read', 'create', 'update'], subject: 'LandingPage', scope: 'org' },
+    // M39a (D-631): deleting a discount or flash sale nobody used; marketing archives.
+    { action: ['read', 'create', 'update', 'delete'], subject: 'LandingPage', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Employee', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Payroll', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Target', scope: 'org' },
@@ -313,17 +326,15 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     // raise it could exempt their own team's requests.
     { action: ['read', 'update'], subject: 'ApprovalThreshold', scope: 'org' },
     { action: 'read', subject: 'AuditLog', scope: 'org' },
-    /*
-     * The one cross-org grant an ordinary role holds, and §18 is explicit
-     * about why it is not a tenancy hole: org admins see other orgs'
-     * **normalized metrics and ranks only**, never raw financials (D-023),
-     * read through `erp_analytics` (§5 exception 2), carrying no money at all.
-     * The matrix test allows exactly this cell by name and fails on any other
-     * `all` scope.
-     */
-    { action: 'read', subject: 'Leaderboard', scope: 'all' },
+    // No cross-org grant: the leaderboard across brands left the brand's ERP (M31, D-471).
     // M24 (D-325): the brand's own dashboard, and recomputing its rollups.
     { action: ['read', 'update'], subject: 'Dashboard', scope: 'org' },
+    // M33 (D-508): the brand's website: settings, hero, menu, size charts, web fields, keys.
+    { action: ['read', 'create', 'update', 'delete'], subject: 'Storefront', scope: 'org' },
+    // M34 (D-528): the website's SSLCommerz and email server credentials, org_admin only.
+    { action: ['read', 'update'], subject: 'WebsiteCredentials', scope: 'org' },
+    // M39a (D-633): rename a branch, or switch it off once nothing runs there.
+    { action: ['read', 'update'], subject: 'Branch', scope: 'org' },
     /*
      * §22's files. The grant is coarse and the row check is not (D-115).
      *
@@ -387,6 +398,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     // a sales agent rewrite a brand's storefront; applying a promo code is an
     // Order concern and is covered by the Order rules above.
     { action: 'read', subject: 'LandingPage', scope: 'org' },
+    // M33 (D-508): what the website shows, to answer a shopper about it. Never edits it.
+    { action: 'read', subject: 'Storefront', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'read', subject: 'Target', scope: 'own' },
     // No `request ApprovalRequest`: §6 gives sales no action that goes through
@@ -424,6 +437,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
      */
     { action: ['read', 'create', 'update'], subject: 'CampaignSpend', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'LandingPage', scope: 'org' },
+    // M33 (D-508): the website is marketing's work as much as the landing pages are.
+    { action: ['read', 'create', 'update', 'delete'], subject: 'Storefront', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'read', subject: 'Target', scope: 'own' },
     /*

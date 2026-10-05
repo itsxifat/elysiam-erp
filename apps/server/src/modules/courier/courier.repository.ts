@@ -277,6 +277,22 @@ export async function consignmentByOrder(
   return rows[0];
 }
 
+/**
+ * The orders whose parcels carry this code as the courier's consignment number or tracking
+ * code (M35b: the packing scanner, D-554), newest first. Case-insensitive, as couriers print
+ * them either way.
+ */
+export async function ordersByParcelCode(tx: Tx, orgId: string, code: string): Promise<string[]> {
+  const rows = await tx.execute<{ order_id: string }>(sql`
+    select order_id from courier.consignments
+    where org_id = ${orgId}
+      and (lower(consignment_no) = lower(${code}) or lower(tracking_code) = lower(${code}))
+    order by created_at desc
+    limit 5
+  `);
+  return [...rows].map((row) => row.order_id);
+}
+
 export interface NewConsignment {
   readonly orgId: string;
   readonly orderId: string;

@@ -45,6 +45,20 @@ export const APPROVAL_TYPES = [
    * and no threshold can ever exempt it; only the iam module raises one.
    */
   'credential_reset',
+  /**
+   * M38a: reopening a brand's opening stock window once it was closed (D-602). Stock in
+   * hand credits equity, not a supplier, so letting it in again after the brand said
+   * everything was counted is a control over the books: no amount, never auto-approved,
+   * raised only by the inventory module, decided by a second org admin.
+   */
+  'opening_stock_reopen',
+  /**
+   * M38a: reversing a posted stock-in-hand entry while the window is open (D-602). Takes
+   * the pieces out again and debits opening balance equity, so it is a write-off of stock
+   * in all but name: valued at what the entry posted (a cost figure), never auto-approved,
+   * raised only by the inventory module, decided by an org admin who did not ask.
+   */
+  'stock_in_hand_reversal',
 ] as const;
 
 export const approvalTypeSchema = z.enum(APPROVAL_TYPES);
@@ -59,6 +73,7 @@ export const NO_AMOUNT_APPROVAL_TYPES: readonly ApprovalType[] = [
   'bonus_rule',
   'threshold_change',
   'credential_reset',
+  'opening_stock_reopen',
 ];
 
 /**
@@ -74,6 +89,8 @@ export const NO_AMOUNT_APPROVAL_TYPES: readonly ApprovalType[] = [
 export const NEVER_AUTO_APPROVE_TYPES: readonly ApprovalType[] = [
   ...NO_AMOUNT_APPROVAL_TYPES,
   'back_dated_entry',
+  // M38a (D-602): taking counted stock back out against equity; never "small".
+  'stock_in_hand_reversal',
 ];
 
 /**
@@ -121,6 +138,8 @@ export const SERVER_DERIVED_AMOUNT_TYPES: readonly ApprovalType[] = [
 export const COST_VALUED_APPROVAL_TYPES: readonly ApprovalType[] = [
   'stock_write_off',
   'stock_gain',
+  // M38a: the amount is what the entry's pieces cost (D-602).
+  'stock_in_hand_reversal',
 ];
 
 /**

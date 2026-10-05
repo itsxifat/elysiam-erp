@@ -19,7 +19,8 @@ const BANGLA = /[ঀ-৿]/;
 
 describe('the catalogues are the same shape', () => {
   it('has the same keys in every locale', () => {
-    const keys = Object.keys(en).sort();
+    // Every key: the core catalogue's and its sections' (M38a, D-607).
+    const keys = Object.keys(messages.en).sort();
     for (const locale of LOCALES) {
       expect(Object.keys(messages[locale]).sort(), `${locale} keys`).toEqual(keys);
     }
@@ -45,7 +46,7 @@ describe('the catalogues are the same shape', () => {
      * which fails silently, because those call sites cast to the key type. An
      * interior segment stays lowerCamel: nothing builds a key out of two holes.
      */
-    const wrong = Object.keys(en).filter(
+    const wrong = Object.keys(messages.en).filter(
       (key) =>
         !/^[a-z][a-zA-Z0-9]*(\.[a-z0-9][a-zA-Z0-9]*)*\.[a-z0-9][a-zA-Z0-9]*(?:_[a-z0-9][a-zA-Z0-9]*)*$/.test(
           key,

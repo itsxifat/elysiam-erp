@@ -6,6 +6,8 @@ import {
   mulQty,
   poisha,
   sum,
+  stockInHandDraft,
+  stockInHandValue,
   supplyReceivedDraft,
   supplierReturnDraft,
   type AccountSubtype,
@@ -16,6 +18,8 @@ import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { MovementsService } from './movements.service.js';
 import * as repo from './inventory.repository.js';
 import { StockError } from './inventory.errors.js';
+import { lockWindow } from './stock-in-hand.repository.js';
+import * as references from './references.repository.js';
 
 /**
  * Inventory's service interface for other modules (invariant 12).
@@ -143,6 +147,57 @@ export interface InventoryApi {
   ): Promise<PostedStockEvent>;
 
   /**
+   * Stock a brand already holds when it starts (M38a, D-602): `opening_balance` movements
+   * at each line's cost, blended into the weighted average exactly as a receipt is, and
+   * one journal for the entry, Dr Inventory / Cr Opening balance equity, keyed
+   * `stock_in_hand:<entryId>:posted`.
+   *
+   * Movements and journal in the caller's transaction, by this one function, for the same
+   * reason as `receiveSupply`. Refused with `OPENING_STOCK_CLOSED` once the brand's window
+   * is closed: checked here too, under the window's share lock, so no caller can credit
+   * equity after the close by forgetting to ask (the database's triggers check the entry).
+   */
+  receiveStockInHand(
+    tx: Tx,
+    actor: { orgId: string; userId: string },
+    input: {
+      entryId: string;
+      locationId: string;
+      branchId: string | null;
+      occurredAt: Date;
+      lines: readonly SupplyLine[];
+      memo?: string | null;
+    },
+  ): Promise<PostedStockEvent>;
+
+  /**
+   * Take a posted stock-in-hand entry back out (M38a, D-602), after its approval: the
+   * same pieces leave the same location at the cost they came in at (`adjustment_loss`
+   * movements, keyed per entry, SKU and location), and the ledger reverses the entry's
+   * journal (Dr Opening balance equity / Cr Inventory, invariant 2).
+   *
+   * Exact or refused: the journal relieves inventory at the entry's cost, so each SKU's
+   * weighted average must still be that cost. Once the pieces have been averaged with
+   * stock at another cost, taking them out at the entry's cost would leave the stock
+   * ledger and 1300 Inventory describing different stock, so it is refused with
+   * `STOCK_IN_HAND_REVERSAL_BLOCKED` and corrected by a count instead. Pieces no longer
+   * at the location, or promised to orders, are refused by the movement as any removal is.
+   * Refused too once the window is closed.
+   */
+  reverseStockInHand(
+    tx: Tx,
+    actor: { orgId: string; userId: string },
+    input: {
+      entryId: string;
+      locationId: string;
+      journalId: string;
+      occurredAt: Date;
+      lines: readonly SupplyLine[];
+      reason: string;
+    },
+  ): Promise<PostedStockEvent>;
+
+  /**
    * Return stock to a supplier: out at the current average, credited at the
    * original cost, difference to purchase price variance (§7, §8).
    */
@@ -181,6 +236,17 @@ export interface InventoryApi {
 
   /** The weighted average per SKU, for a module that needs to value something. */
   costFor(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<Map<string, Poisha>>;
+
+  /**
+   * The last price each SKU was bought at (M39b, D-637): its newest supply receipt or
+   * opening / in-hand stock, with when and what it was. Purchase cost (invariant 5): the
+   * supply module reads it for `read:cost` routes only. A SKU never received is absent.
+   */
+  lastReceiptCosts(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+  ): Promise<Map<string, LastReceiptCost>>;
 
   /** Available units per SKU at one location: on hand minus reserved. */
   availability(
@@ -263,6 +329,43 @@ export interface InventoryApi {
 
   /** The SKUs, of those given, that already have a movement or a cost basis. */
   heldSkus(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<ReadonlySet<string>>;
+
+  /**
+   * On hand and reserved for these SKUs at these locations (M33): what the website's
+   * availability is computed from (`availableForWeb`). Quantities only, never a cost; a
+   * SKU with no row at a location is simply absent.
+   */
+  levelsAt(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+    locationIds: readonly string[],
+  ): Promise<readonly StockLevelAt[]>;
+
+  /**
+   * How many places at a branch's locations still hold or reserve stock (M39a, D-633): a
+   * branch with stock on its shelves is not switched off.
+   */
+  stockAtBranch(tx: Tx, orgId: string, branchId: string): Promise<number>;
+}
+
+/** A SKU's newest costed receipt (M39b, D-637). */
+export interface LastReceiptCost {
+  readonly unitCostPoisha: Poisha;
+  readonly occurredAt: Date;
+  /** The Asia/Dhaka business date (invariant 8). */
+  readonly businessDate: string;
+  /** `supply` for a supply receipt, `stock_in_hand` or `opening` for stock already held. */
+  readonly refType: string;
+  readonly refId: string | null;
+}
+
+/** One `stock_levels` row's quantities. */
+export interface StockLevelAt {
+  readonly skuId: string;
+  readonly locationId: string;
+  readonly onHand: number;
+  readonly reserved: number;
 }
 
 /** One SKU's opening stock at one location, at the brand's one cost for it (D-216). */
@@ -518,6 +621,149 @@ export class InventoryApiService implements InventoryApi {
     return { movementIds, journalId: posted.journalId, valuePoisha: total.toString() };
   }
 
+  async receiveStockInHand(
+    tx: Tx,
+    actor: { orgId: string; userId: string },
+    input: {
+      entryId: string;
+      locationId: string;
+      branchId: string | null;
+      occurredAt: Date;
+      lines: readonly SupplyLine[];
+      memo?: string | null;
+    },
+  ): Promise<PostedStockEvent> {
+    await this.assertOpeningWindowOpen(tx, actor.orgId);
+    const movementIds: string[] = [];
+    for (const line of input.lines) {
+      const applied = await this.movements.apply(tx, actor, {
+        skuId: line.skuId,
+        locationId: input.locationId,
+        // §8's opening kind: an outside cost, blended into WAC like a receipt (D-142).
+        kind: 'opening_balance',
+        qty: line.qty,
+        unitCostPoisha: line.unitCostPoisha,
+        refType: 'stock_in_hand',
+        refId: input.entryId,
+        dedupeKey: `stock_in_hand:${input.entryId}:${line.skuId}:${input.locationId}`,
+        occurredAt: input.occurredAt,
+        memo: input.memo ?? 'Stock in hand',
+      });
+      if (applied.created) movementIds.push(applied.movementId);
+    }
+    // The journal below is for every line; a line whose movement was already recorded would
+    // be valued twice. Unreachable while the entry's status guards the post, and kept so.
+    if (movementIds.length !== input.lines.length) {
+      throw new StockError(
+        'IDEMPOTENCY_CONFLICT',
+        'Part of that entry’s stock was already recorded; nothing was posted.',
+      );
+    }
+
+    const [inventory, equity] = await Promise.all([
+      this.account(tx, actor.orgId, 'inventory'),
+      this.account(tx, actor.orgId, 'opening_equity'),
+    ]);
+
+    const posted = await this.ledger.post(
+      tx,
+      actor,
+      stockInHandDraft({
+        entryId: input.entryId,
+        occurredAt: input.occurredAt,
+        inventory,
+        equity,
+        lines: input.lines.map((line) => ({ qty: line.qty, unitCostPoisha: line.unitCostPoisha })),
+        branchId: input.branchId,
+        memo: input.memo ?? null,
+      }),
+    );
+    return {
+      movementIds,
+      journalId: posted.journalId,
+      valuePoisha: stockInHandValue(input.lines).toString(),
+    };
+  }
+
+  async reverseStockInHand(
+    tx: Tx,
+    actor: { orgId: string; userId: string },
+    input: {
+      entryId: string;
+      locationId: string;
+      journalId: string;
+      occurredAt: Date;
+      lines: readonly SupplyLine[];
+      reason: string;
+    },
+  ): Promise<PostedStockEvent> {
+    await this.assertOpeningWindowOpen(tx, actor.orgId);
+    const value = stockInHandValue(input.lines);
+
+    // The journal named is the one these lines posted: Dr Inventory and Cr Opening balance
+    // equity, each exactly what the lines are worth. Its own caller reads both from the entry;
+    // this keeps another caller from reversing some other journal with these movements.
+    const posted = await this.ledger.journalLines(tx, actor.orgId, input.journalId);
+    const side = (subtype: string, pick: 'debitPoisha' | 'creditPoisha') =>
+      posted
+        .filter((line) => line.subtype === subtype)
+        .reduce((total, line) => total + line[pick], 0n);
+    if (
+      side('inventory', 'debitPoisha') !== value ||
+      side('opening_equity', 'creditPoisha') !== value
+    ) {
+      throw new StockError(
+        'STOCK_IN_HAND_INVALID',
+        'That journal is not the one these stock-in-hand lines posted.',
+      );
+    }
+
+    // The averages first, each under its cost row's lock (held to commit), before anything
+    // moves: a refusal then leaves nothing half done.
+    for (const line of input.lines) {
+      const cost = await repo.lockCost(tx, actor.orgId, line.skuId);
+      if (cost.wacPoisha !== line.unitCostPoisha) {
+        throw new StockError(
+          'STOCK_IN_HAND_REVERSAL_BLOCKED',
+          'Those pieces have since been averaged with stock at another cost, so they cannot be taken out at the cost they came in at. Correct the stock with a count instead.',
+        );
+      }
+    }
+
+    const movementIds: string[] = [];
+    for (const line of input.lines) {
+      const applied = await this.movements.apply(tx, actor, {
+        skuId: line.skuId,
+        locationId: input.locationId,
+        kind: 'adjustment_loss',
+        qty: line.qty,
+        // The cost it came in at, which the check above holds equal to the average.
+        unitCostPoisha: line.unitCostPoisha,
+        refType: 'stock_in_hand',
+        refId: input.entryId,
+        dedupeKey: `stock_in_hand:${input.entryId}:${line.skuId}:${input.locationId}:reversed`,
+        occurredAt: input.occurredAt,
+        memo: `Stock in hand reversed: ${input.reason}`.slice(0, 500),
+      });
+      if (applied.created) movementIds.push(applied.movementId);
+    }
+    if (movementIds.length !== input.lines.length) {
+      throw new StockError(
+        'IDEMPOTENCY_CONFLICT',
+        'Part of that reversal was already recorded; nothing was reversed.',
+      );
+    }
+
+    const reversed = await this.ledger.reverse(
+      tx,
+      actor,
+      input.journalId,
+      input.reason,
+      input.occurredAt,
+    );
+    return { movementIds, journalId: reversed.journalId, valuePoisha: value.toString() };
+  }
+
   async returnToSupplier(
     tx: Tx,
     actor: { orgId: string; userId: string },
@@ -638,6 +884,26 @@ export class InventoryApiService implements InventoryApi {
     return new Map(rows.map((row) => [row.sku_id, poisha(BigInt(row.wac_poisha))]));
   }
 
+  async lastReceiptCosts(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+  ): Promise<Map<string, LastReceiptCost>> {
+    const rows = await repo.lastReceiptCosts(tx, orgId, skuIds);
+    return new Map(
+      rows.map((row) => [
+        row.sku_id,
+        {
+          unitCostPoisha: poisha(BigInt(row.unit_cost_poisha)),
+          occurredAt: row.occurred_at instanceof Date ? row.occurred_at : new Date(row.occurred_at),
+          businessDate: row.business_date,
+          refType: row.ref_type,
+          refId: row.ref_id,
+        },
+      ]),
+    );
+  }
+
   async availability(
     tx: Tx,
     orgId: string,
@@ -716,6 +982,10 @@ export class InventoryApiService implements InventoryApi {
       readonly lines: readonly OpeningStockLine[];
     },
   ): Promise<{ readonly movementIds: readonly string[]; readonly valuePoisha: Poisha }> {
+    // Opening stock credits equity like stock in hand, so it waits for the same window
+    // (M38a, D-602): once an org admin said everything was counted in, M14a's opening
+    // cannot bring more in either.
+    if (input.lines.length > 0) await this.assertOpeningWindowOpen(tx, actor.orgId);
     const movementIds: string[] = [];
     const values: Poisha[] = [];
     for (const line of input.lines) {
@@ -752,6 +1022,36 @@ export class InventoryApiService implements InventoryApi {
 
   async heldSkus(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<ReadonlySet<string>> {
     return new Set(await repo.heldSkus(tx, orgId, skuIds));
+  }
+
+  stockAtBranch(tx: Tx, orgId: string, branchId: string): Promise<number> {
+    return references.stockAtBranch(tx, orgId, branchId);
+  }
+
+  async levelsAt(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+    locationIds: readonly string[],
+  ): Promise<readonly StockLevelAt[]> {
+    const rows = await repo.levelsAt(tx, orgId, skuIds, locationIds);
+    return rows.map((row) => ({
+      skuId: row.sku_id,
+      locationId: row.location_id,
+      onHand: row.on_hand,
+      reserved: row.reserved,
+    }));
+  }
+
+  /** The brand's opening stock window, held `for share` to commit, and open (D-602). */
+  private async assertOpeningWindowOpen(tx: Tx, orgId: string): Promise<void> {
+    const window = await lockWindow(tx, orgId, 'share');
+    if (window.status === 'closed') {
+      throw new StockError(
+        'OPENING_STOCK_CLOSED',
+        'The opening stock window is closed: stock now comes in from a supplier, a transfer, a return or an approved adjustment.',
+      );
+    }
   }
 
   /** One of the four accounts §7's inventory rules name, or a clear refusal. */

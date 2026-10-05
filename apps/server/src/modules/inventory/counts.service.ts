@@ -1,15 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { withOrg } from '@elysium/db';
+import { normaliseScannedCode } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import { AdjustmentsService, type AdjustmentView } from './adjustments.service.js';
 import * as repo from './inventory.repository.js';
 import { mapStockErrors, StockError } from './inventory.errors.js';
 import type { OpenCountInput, RecordCountsInput } from './inventory.schemas.js';
+import * as scans from './stock-in-hand.repository.js';
+import type { CountScanInput } from './stock-in-hand.schemas.js';
 
 /**
  * Stock counts (architecture §8 "Adjustments and counts").
@@ -56,6 +60,7 @@ export class CountsService {
   constructor(
     private readonly adjustments: AdjustmentsService,
     private readonly audit: AuditService,
+    @Inject(CATALOG_API) private readonly catalog: CatalogApi,
   ) {}
 
   async open(
@@ -108,6 +113,31 @@ export class CountsService {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const session = await this.requireOpen(tx, context, request, sessionId);
 
+        // D-606: a figure typed over one already counted (by scanning or typing) says why,
+        // in the count's audit entry. The console asks for it; this is where it is required.
+        // The lines locked first: a scan committing between this read and the write below
+        // would otherwise be overwritten without the note this check asks for.
+        const counted = new Map(
+          (
+            await repo.lockCountLines(
+              tx,
+              context.orgId,
+              session.id,
+              input.lines.map((line) => line.skuId),
+            )
+          ).map((line) => [line.sku_id, line.counted_qty]),
+        );
+        const overwrites = input.lines.some((line) => {
+          const was = counted.get(line.skuId);
+          return was !== undefined && was !== null && was !== line.countedQty;
+        });
+        if (overwrites && (input.note ?? '').trim() === '') {
+          throw new StockError(
+            'STOCK_COUNT_INVALID',
+            'Changing a figure that was already counted needs a note saying why.',
+          );
+        }
+
         for (const line of input.lines) {
           // A SKU with no frozen line was not at this location when the session
           // opened. Refused rather than inserted: a line added mid-count has no
@@ -138,12 +168,94 @@ export class CountsService {
           entityType: 'StockCount',
           entityId: session.id,
           before: null,
-          after: { lines: input.lines },
+          // A manual figure typed over a scanned one carries the person's note (D-606).
+          after: { lines: input.lines, note: input.note ?? null },
           requestId: context.requestId,
           request,
         });
 
         return this.load(tx, context.orgId, session.id);
+      }),
+    );
+  }
+
+  /**
+   * One scan on an open count: one more piece of that SKU (M38a, D-606).
+   *
+   * The scan is resolved by barcode or SKU code, written to `count_scans` under the
+   * device's own key and added to the line in the same transaction, so the count is the
+   * scans: a retried scan (same key) counts once, two people scanning one shelf from two
+   * phones both count, and the line never holds a number no scan explains. A SKU the count
+   * did not freeze is refused, as a typed count is: stock found where the brand never had
+   * it is a transfer to record, not a count to absorb.
+   */
+  async scan(
+    context: ActiveContext,
+    request: AuditableRequest,
+    sessionId: string,
+    input: CountScanInput,
+  ): Promise<{
+    readonly skuId: string;
+    readonly skuCode: string;
+    readonly countedQty: number;
+    readonly duplicate: boolean;
+  }> {
+    return mapStockErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const session = await this.requireOpen(tx, context, request, sessionId);
+
+        const seen = await scans.scanById(tx, context.orgId, input.scanId);
+        if (seen !== undefined) {
+          if (seen.session_id !== session.id) {
+            throw new StockError('IDEMPOTENCY_CONFLICT', 'That scan was counted on another count.');
+          }
+          const line = await scans.countLine(tx, {
+            orgId: context.orgId,
+            sessionId: session.id,
+            skuId: seen.sku_id,
+          });
+          const [sku] = await this.catalog.skusByIds(tx, context.orgId, [seen.sku_id]);
+          return {
+            skuId: seen.sku_id,
+            skuCode: sku?.code ?? '',
+            countedQty: line?.counted_qty ?? 0,
+            duplicate: true,
+          };
+        }
+
+        const code = normaliseScannedCode(input.code);
+        const found = await this.catalog.lookupCode(tx, context.orgId, code);
+        if (found === undefined) {
+          throw new StockError('STOCK_NOT_FOUND', 'No product in this brand has that barcode.');
+        }
+        await scans.insertScan(tx, {
+          orgId: context.orgId,
+          id: input.scanId,
+          sessionId: session.id,
+          skuId: found.skuId,
+          code,
+          createdBy: context.userId,
+        });
+        const counted = await scans.countOneMore(tx, {
+          orgId: context.orgId,
+          sessionId: session.id,
+          skuId: found.skuId,
+          countedBy: context.userId,
+        });
+        if (counted === undefined) {
+          throw new StockError(
+            'STOCK_COUNT_INVALID',
+            'That item was not at this location when the count began; transfer it in before counting it.',
+          );
+        }
+        // The scan row is the append-only record (who, what, when); the audit interceptor adds
+        // the request's own entry after commit, as for any mutation.
+        return {
+          skuId: found.skuId,
+          skuCode: found.skuCode,
+          countedQty: counted.counted_qty,
+          duplicate: false,
+        };
       }),
     );
   }
@@ -162,7 +274,9 @@ export class CountsService {
   ): Promise<CountSessionView> {
     return mapStockErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const session = await this.requireOpen(tx, context, request, sessionId);
+        // `for update`: every scan and figure still being written holds the session `for
+        // share`, so the lines read below are the last ones.
+        const session = await this.requireOpen(tx, context, request, sessionId, 'update');
         const lines = await repo.countLines(tx, context.orgId, session.id);
         if (lines.every((line) => line.counted_qty === null)) {
           throw new StockError('STOCK_COUNT_INVALID', 'Nothing has been counted yet.');
@@ -204,7 +318,9 @@ export class CountsService {
   ): Promise<{ session: CountSessionView; adjustments: AdjustmentView[] }> {
     const prepared = await mapStockErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const session = await repo.countSessionById(tx, context.orgId, sessionId);
+        // `for update`: two closes at once would otherwise both read "submitted" and raise
+        // the variance's adjustments twice (M38a's ledger audit, N-5).
+        const session = await repo.countSessionById(tx, context.orgId, sessionId, 'update');
         if (session === undefined) throw new StockError('STOCK_NOT_FOUND', 'No such count.');
         assertInScope(request, { branchId: session.branch_id });
         if (session.status !== 'submitted') {
@@ -300,8 +416,9 @@ export class CountsService {
     context: ActiveContext,
     request: object,
     sessionId: string,
+    lock: 'share' | 'update' = 'share',
   ): Promise<repo.CountSessionRow> {
-    const session = await repo.countSessionById(tx, context.orgId, sessionId);
+    const session = await repo.countSessionById(tx, context.orgId, sessionId, lock);
     if (session === undefined) throw new StockError('STOCK_NOT_FOUND', 'No such count.');
     assertInScope(request, { branchId: session.branch_id });
     if (session.status !== 'open') {

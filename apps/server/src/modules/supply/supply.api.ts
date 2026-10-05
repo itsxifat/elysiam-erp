@@ -18,6 +18,12 @@ export interface SupplyApi {
     orgId: string,
     codes: readonly string[],
   ): Promise<ReadonlyMap<string, { readonly id: string; readonly isActive: boolean }>>;
+
+  /**
+   * The suppliers among these ids that still exist, held `for key share` until the caller's
+   * transaction ends: a supplier delete waits, then finds the journal line naming it (M39a).
+   */
+  lockSuppliers(tx: Tx, orgId: string, ids: readonly string[]): Promise<ReadonlySet<string>>;
 }
 
 /** The Nest injection token for `SupplyApi`. */
@@ -32,5 +38,9 @@ export class SupplyApiService implements SupplyApi {
   ): Promise<ReadonlyMap<string, { readonly id: string; readonly isActive: boolean }>> {
     const rows = await repo.suppliersByCodes(tx, orgId, codes);
     return new Map(rows.map((row) => [row.code, { id: row.id, isActive: row.is_active }]));
+  }
+
+  async lockSuppliers(tx: Tx, orgId: string, ids: readonly string[]) {
+    return new Set(await repo.lockSuppliersById(tx, orgId, ids));
   }
 }

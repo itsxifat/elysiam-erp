@@ -11,7 +11,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { useId, type ReactNode } from 'react';
 
-import { useAbility, useSession } from '../../auth/session.js';
+import { useAbility } from '../../auth/session.js';
 import { useLocale } from '../../i18n/locale.js';
 import type { Statement } from './api.js';
 import { useAccountsT, type AccountsMessageKey } from './messages.js';
@@ -68,7 +68,6 @@ export function useSourceLabel(): (sourceType: string) => string {
 export function AccountsNav() {
   const a = useAccountsT();
   const ability = useAbility();
-  const session = useSession();
   const reports = ability.can('read', 'LedgerReport');
 
   return (
@@ -111,11 +110,6 @@ export function AccountsNav() {
       {ability.can('read', 'LedgerPeriod') ? (
         <Link to="/accounts/periods" className={TAB} activeProps={ACTIVE}>
           {a('accounts.nav.periods')}
-        </Link>
-      ) : null}
-      {session.context?.isSuperAdmin === true ? (
-        <Link to="/accounts/consolidated" className={TAB} activeProps={ACTIVE}>
-          {a('accounts.nav.consolidated')}
         </Link>
       ) : null}
     </TabList>

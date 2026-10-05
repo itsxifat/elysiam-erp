@@ -12,6 +12,11 @@ import { useLocale } from '../../i18n/locale.js';
  */
 const CUSTOMERS_KEYS = [
   'customers.title',
+  'customers.web.title',
+  'customers.web.none',
+  'customers.web.verified',
+  'customers.web.unverified',
+  'customers.web.lastSignIn',
   'customers.subtitle',
   'customers.nav.all',
   'customers.nav.lapsed',

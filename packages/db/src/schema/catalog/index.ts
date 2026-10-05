@@ -77,12 +77,22 @@ export const skuSettings = catalog.table(
     orgCode: text('org_code').notNull(),
     /** The highest sequence handed out so far. The next product takes this + 1. */
     lastSequence: integer('last_sequence').notNull().default(0),
+    /**
+     * The highest internal EAN-13 sequence handed out so far (M38a, D-603). A SKU created
+     * without a supplier's barcode takes the next one, `2` + eleven digits + check digit.
+     * Taken by the same one-statement upsert as `last_sequence`, never read then written.
+     */
+    lastBarcodeSequence: bigint('last_barcode_sequence', { mode: 'number' }).notNull().default(0),
     ...timestamps,
   },
   (table) => [
     index('sku_settings_org_idx').on(table.orgId),
     check('sku_settings_org_code_format', sql`${table.orgCode} ~ '^[A-Z0-9]{2,8}$'`),
     check('sku_settings_sequence_not_negative', sql`${table.lastSequence} >= 0`),
+    check(
+      'sku_settings_barcode_sequence_range',
+      sql`${table.lastBarcodeSequence} between 0 and 99999999999`,
+    ),
   ],
 );
 
@@ -115,6 +125,23 @@ export const categories = catalog.table(
     depth: integer('depth').notNull().default(0),
     position: integer('position').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
+    /*
+     * The website's fields (M33, D-501). `web_visible` is separate from `is_active`: a
+     * category the desk still files products under can be left off the website's menu and
+     * shop filters. `gender` drives the old site's men/women/kids shelves; `featured`, its
+     * home-page category grid.
+     */
+    webVisible: boolean('web_visible').notNull().default(true),
+    featured: boolean('featured').notNull().default(false),
+    gender: text('gender'),
+    description: text('description'),
+    imageFileId: uuid('image_file_id'),
+    /**
+     * The size chart a new product filed here starts with (M39b, D-646). Points at
+     * `storefront.size_charts` through a composite foreign key declared in M39b's migration
+     * SQL (`on delete set null`), for the same reason as `products.size_chart_id`.
+     */
+    defaultSizeChartId: uuid('default_size_chart_id'),
     ...timestamps,
   },
   (table) => [
@@ -148,6 +175,19 @@ export const categories = catalog.table(
     // Four levels is deep enough for any fashion catalogue and shallow enough
     // that the path stays readable on a label.
     check('categories_depth_bounded', sql`${table.depth} between 0 and 3`),
+    foreignKey({
+      name: 'categories_org_id_image_file_id_fk',
+      columns: [table.orgId, table.imageFileId],
+      foreignColumns: [fileObjects.orgId, fileObjects.id],
+    }).onDelete('restrict'),
+    check(
+      'categories_gender',
+      sql`${table.gender} is null or ${table.gender} in ('men', 'women', 'kids', 'unisex')`,
+    ),
+    check(
+      'categories_description_length',
+      sql`${table.description} is null or length(${table.description}) <= 2000`,
+    ),
   ],
 );
 
@@ -172,6 +212,12 @@ export const attributes = catalog.table(
      */
     isVariant: boolean('is_variant').notNull().default(true),
     position: integer('position').notNull().default(0),
+    /**
+     * Archived lists are hidden from the new-product form and "Add sizes or colours" (M39a,
+     * D-624); the variants that already carry one keep showing its name. A list nothing uses
+     * is deleted instead.
+     */
+    isActive: boolean('is_active').notNull().default(true),
     ...timestamps,
   },
   (table) => [
@@ -200,6 +246,11 @@ export const attributeValues = catalog.table(
      * screen and every label sheet.
      */
     position: integer('position').notNull().default(0),
+    /**
+     * An archived value (a size no longer made) cannot go on a new variant; the variants that
+     * carry it keep it, on screens and stickers (M39a, D-624).
+     */
+    isActive: boolean('is_active').notNull().default(true),
     ...timestamps,
   },
   (table) => [
@@ -241,6 +292,34 @@ export const products = catalog.table(
     slug: text('slug').notNull(),
     description: text('description'),
     status: productStatus('status').notNull().default('draft'),
+    /*
+     * The website's fields (M33, D-500).
+     *
+     * `web_visible` is separate from `status` on purpose: an active product can be sold at
+     * the till and the desk without being on the website, and it is off until somebody
+     * puts it there. The storefront shows a product only when it is both active and web
+     * visible. `previous_slugs` is written by the M33 trigger whenever `slug` changes, never
+     * by the service: an old address that answers a redirect is the one thing a rename
+     * must not lose. `size_chart_id` points at `storefront.size_charts` through a composite
+     * foreign key declared in the M33 migration (see that schema file for why not here).
+     */
+    webVisible: boolean('web_visible').notNull().default(false),
+    featured: boolean('featured').notNull().default(false),
+    newArrival: boolean('new_arrival').notNull().default(false),
+    gender: text('gender'),
+    material: text('material'),
+    careInstructions: text('care_instructions'),
+    tags: text('tags')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    sizeChartId: uuid('size_chart_id'),
+    seoTitle: text('seo_title'),
+    seoDescription: text('seo_description'),
+    previousSlugs: text('previous_slugs')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     /**
      * What `pg_trgm` searches: the name, the slug and every SKU code, joined.
      *
@@ -250,6 +329,12 @@ export const products = catalog.table(
      */
     searchText: text('search_text').notNull().default(''),
     createdBy: text('created_by'),
+    /**
+     * What one piece weighs, in grams, as a courier is told (M39b, D-645). A variant may
+     * override it (`skus.weight_grams`); a booking sums qty × weight and falls back to the
+     * courier's default when any line has none.
+     */
+    weightGrams: integer('weight_grams'),
     ...timestamps,
   },
   (table) => [
@@ -267,9 +352,42 @@ export const products = catalog.table(
     check('products_sequence_positive', sql`${table.sequence} >= 1`),
     check('products_name_length', sql`length(${table.name}) between 1 and 200`),
     check('products_slug_format', sql`${table.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+    // 20,000 since M33 (D-500): the old site's descriptions are long, plain text.
     check(
       'products_description_length',
-      sql`${table.description} is null or length(${table.description}) <= 4000`,
+      sql`${table.description} is null or length(${table.description}) <= 20000`,
+    ),
+    index('products_org_web_idx')
+      .on(table.orgId, table.createdAt)
+      .where(sql`${table.webVisible} and ${table.status} = 'active'`),
+    index('products_previous_slugs_idx').using('gin', table.previousSlugs),
+    index('products_tags_idx').using('gin', table.tags),
+    check(
+      'products_gender',
+      sql`${table.gender} is null or ${table.gender} in ('men', 'women', 'kids', 'unisex')`,
+    ),
+    check(
+      'products_material_length',
+      sql`${table.material} is null or length(${table.material}) <= 200`,
+    ),
+    check(
+      'products_care_length',
+      sql`${table.careInstructions} is null or length(${table.careInstructions}) <= 2000`,
+    ),
+    check(
+      'products_tags_bounded',
+      sql`cardinality(${table.tags}) <= 30
+        and array_to_string(${table.tags}, ',') = lower(array_to_string(${table.tags}, ','))`,
+    ),
+    check(
+      'products_seo_length',
+      sql`(${table.seoTitle} is null or length(${table.seoTitle}) <= 120)
+        and (${table.seoDescription} is null or length(${table.seoDescription}) <= 320)`,
+    ),
+    check('products_previous_slugs_bounded', sql`cardinality(${table.previousSlugs}) <= 20`),
+    check(
+      'products_weight_bounded',
+      sql`${table.weightGrams} is null or ${table.weightGrams} between 1 and 100000`,
     ),
   ],
 );
@@ -295,10 +413,21 @@ export const skus = catalog.table(
     /** `ELY-SHRT-0001-RED-M`. Unique per org, never globally (D-002). */
     code: text('code').notNull(),
     variantKey: text('variant_key').notNull(),
-    /** The Code 128 payload. Defaults to the SKU code; may be a supplier's own. */
+    /**
+     * What a scanner reads. An internal EAN-13 (`2…`) assigned when the SKU is created
+     * (M38a, D-603), or a supplier's own barcode; null only on a SKU from before M38a that
+     * the backfill could not number.
+     */
     barcode: text('barcode'),
     /** The **selling** price. Never a cost (invariant 5). */
     pricePoisha: bigint('price_poisha', { mode: 'bigint' }).notNull(),
+    /**
+     * The regular ("was") price the website strikes through (M39b, D-640): a selling-side
+     * figure, so the catalog may hold it. Null for none; above the price when set.
+     */
+    compareAtPoisha: bigint('compare_at_poisha', { mode: 'bigint' }),
+    /** This variant's own weight in grams, over the product's (M39b, D-645). */
+    weightGrams: integer('weight_grams'),
     status: skuStatus('status').notNull().default('active'),
     position: integer('position').notNull().default(0),
     ...timestamps,
@@ -323,6 +452,16 @@ export const skus = catalog.table(
     ),
     check('skus_price_positive', sql`${table.pricePoisha} > 0`),
     check('skus_price_bounded', sql`${table.pricePoisha} <= 9000000000000000`),
+    check(
+      'skus_compare_at_above_price',
+      sql`${table.compareAtPoisha} is null
+        or (${table.compareAtPoisha} > ${table.pricePoisha}
+            and ${table.compareAtPoisha} <= 9000000000000000)`,
+    ),
+    check(
+      'skus_weight_bounded',
+      sql`${table.weightGrams} is null or ${table.weightGrams} between 1 and 100000`,
+    ),
     check(
       'skus_barcode_printable_ascii',
       // `[ -~]` rather than `[\x20-\x7e]`: a literal range needs no escape
@@ -388,6 +527,13 @@ export const skuPriceHistory = catalog.table(
     /** Null on the first row: there was no price before. */
     fromPoisha: bigint('from_poisha', { mode: 'bigint' }),
     toPoisha: bigint('to_poisha', { mode: 'bigint' }).notNull(),
+    /**
+     * The regular price before and after (M39b, D-640). A row is written when the price or
+     * the regular price changes; a regular-price-only change repeats the price in both
+     * `from_poisha` and `to_poisha`.
+     */
+    compareAtFromPoisha: bigint('compare_at_from_poisha', { mode: 'bigint' }),
+    compareAtToPoisha: bigint('compare_at_to_poisha', { mode: 'bigint' }),
     /** The Asia/Dhaka business date the change took effect (invariant 8). */
     changedBy: text('changed_by'),
     reason: text('reason'),
@@ -396,15 +542,22 @@ export const skuPriceHistory = catalog.table(
   (table) => [
     index('sku_price_history_org_idx').on(table.orgId),
     index('sku_price_history_org_sku_idx').on(table.orgId, table.skuId, table.createdAt),
+    /*
+     * Cascade since M39a (D-627): a SKU nothing else references (a variant added by mistake)
+     * may be deleted, and its price history goes with it. `erp_app` still holds no DELETE on
+     * this table, and the M39a policies migration's trigger refuses a history row's delete
+     * while its SKU exists, so the cascade is the only way a row leaves.
+     */
     foreignKey({
       name: 'sku_price_history_org_id_sku_id_fk',
       columns: [table.orgId, table.skuId],
       foreignColumns: [skus.orgId, skus.id],
-    }).onDelete('restrict'),
+    }).onDelete('cascade'),
     check('sku_price_history_to_positive', sql`${table.toPoisha} > 0`),
     check(
       'sku_price_history_changed',
-      sql`${table.fromPoisha} is null or ${table.fromPoisha} <> ${table.toPoisha}`,
+      sql`${table.fromPoisha} is null or ${table.fromPoisha} <> ${table.toPoisha}
+        or ${table.compareAtFromPoisha} is distinct from ${table.compareAtToPoisha}`,
     ),
     check(
       'sku_price_history_reason_length',
@@ -432,10 +585,17 @@ export const productImages = catalog.table(
     fileId: uuid('file_id').notNull(),
     position: integer('position').notNull().default(0),
     altText: text('alt_text'),
+    /**
+     * The colour this photo shows (M39b, D-643), or null for every colour. A colour value of
+     * the brand's, through a composite foreign key declared in M39b's migration SQL
+     * (`on delete set null (colour_value_id)`, which Drizzle cannot express).
+     */
+    colourValueId: uuid('colour_value_id'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (table) => [
     unique('product_images_org_id_id_key').on(table.orgId, table.id),
+    index('product_images_org_colour_idx').on(table.orgId, table.colourValueId),
     index('product_images_org_idx').on(table.orgId),
     index('product_images_org_product_idx').on(table.orgId, table.productId, table.position),
     uniqueIndex('product_images_org_product_file_idx').on(

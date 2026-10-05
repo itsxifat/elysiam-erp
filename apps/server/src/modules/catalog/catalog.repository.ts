@@ -26,10 +26,19 @@ import { sql, type SQL } from 'drizzle-orm';
 
 /** Columns of a catalog row that leaves the module. Never a cost column. */
 const PRODUCT_COLUMNS = sql`p.id, p.org_id, p.category_id, p.sequence, p.name, p.slug,
-  p.description, p.status::text as status, p.created_by, p.created_at, p.updated_at`;
+  p.description, p.status::text as status, p.created_by, p.created_at, p.updated_at,
+  p.weight_grams`;
 
+/** `compare_at_poisha` is the regular (selling-side) price and `weight_grams` a weight (M39b). */
 const SKU_COLUMNS = sql`s.id, s.org_id, s.product_id, s.code, s.variant_key, s.barcode,
-  s.price_poisha, s.status::text as status, s.position`;
+  s.price_poisha, s.status::text as status, s.position, s.compare_at_poisha, s.weight_grams`;
+
+/** The same columns in a `returning` clause, which cannot use the `s.` alias. */
+const SKU_RETURNING = sql`id, org_id, product_id, code, variant_key, barcode, price_poisha,
+  status::text as status, position, compare_at_poisha, weight_grams`;
+
+const PRODUCT_RETURNING = sql`id, org_id, category_id, sequence, name, slug, description,
+  status::text as status, created_by, created_at, updated_at, weight_grams`;
 
 export interface ProductRow extends Record<string, unknown> {
   readonly id: string;
@@ -43,6 +52,8 @@ export interface ProductRow extends Record<string, unknown> {
   readonly created_by: string | null;
   readonly created_at: Date;
   readonly updated_at: Date;
+  /** Grams per piece (M39b, D-645). */
+  readonly weight_grams: number | null;
 }
 
 export interface SkuRow extends Record<string, unknown> {
@@ -56,6 +67,10 @@ export interface SkuRow extends Record<string, unknown> {
   readonly price_poisha: string;
   readonly status: string;
   readonly position: number;
+  /** The regular ("was") price, a decimal string, or null (M39b, D-640). */
+  readonly compare_at_poisha: string | null;
+  /** This variant's own weight in grams, over the product's (D-645). */
+  readonly weight_grams: number | null;
 }
 
 export interface CategoryRow extends Record<string, unknown> {
@@ -68,6 +83,14 @@ export interface CategoryRow extends Record<string, unknown> {
   readonly depth: number;
   readonly position: number;
   readonly is_active: boolean;
+  /** M33's website fields (D-501), for Catalog setup. */
+  readonly web_visible?: boolean;
+  readonly featured?: boolean;
+  readonly gender?: string | null;
+  readonly description?: string | null;
+  readonly image_file_id?: string | null;
+  /** The size chart new products here start with (M39b, D-646). */
+  readonly default_size_chart_id?: string | null;
 }
 
 export interface AttributeRow extends Record<string, unknown> {
@@ -77,6 +100,8 @@ export interface AttributeRow extends Record<string, unknown> {
   readonly kind: string;
   readonly is_variant: boolean;
   readonly position: number;
+  /** M39a (D-624): false once archived; only `listAttributes` selects it. */
+  readonly is_active?: boolean;
 }
 
 export interface AttributeValueRow extends Record<string, unknown> {
@@ -85,6 +110,8 @@ export interface AttributeValueRow extends Record<string, unknown> {
   readonly code: string;
   readonly label: string;
   readonly position: number;
+  /** M39a (D-624): false once archived; only `listAttributeValues` selects it. */
+  readonly is_active?: boolean;
 }
 
 // --- the per-org SKU counter and prefix -------------------------------------
@@ -123,6 +150,51 @@ export async function takeSequence(
   return { sequence: row.last_sequence, orgCode: row.org_code };
 }
 
+/**
+ * Take `count` internal barcode sequences for this org, atomically (M38a, D-603).
+ *
+ * The same one-statement upsert as `takeSequence`, on the same row, so it also takes that
+ * row's lock until the transaction ends: two product creations in one brand get disjoint
+ * ranges, never the same number. Returns the last sequence of the range; the range is
+ * `last - count + 1 … last`.
+ */
+export async function takeBarcodeSequences(tx: Tx, orgId: string, count: number): Promise<number> {
+  const rows = await tx.execute<{ last_barcode_sequence: string | number }>(sql`
+    insert into catalog.sku_settings (org_id, org_code, last_sequence, last_barcode_sequence)
+    values (
+      ${orgId},
+      coalesce(
+        (select upper(substring(regexp_replace(o.slug, '[^A-Za-z0-9]', '', 'g') from 1 for 3))
+         from org.organizations o where o.id = ${orgId}),
+        'ORG'
+      ),
+      0,
+      ${count}
+    )
+    on conflict (org_id) do update
+      set last_barcode_sequence = catalog.sku_settings.last_barcode_sequence + ${count},
+          updated_at = now()
+    returning last_barcode_sequence
+  `);
+  const row = rows[0];
+  if (row === undefined) throw new Error('The barcode counter returned no row.');
+  return Number(row.last_barcode_sequence);
+}
+
+/** Which of these barcodes some SKU of this org already carries. */
+export async function barcodesInUse(
+  tx: Tx,
+  orgId: string,
+  barcodes: readonly string[],
+): Promise<Set<string>> {
+  if (barcodes.length === 0) return new Set();
+  const rows = await tx.execute<{ barcode: string }>(sql`
+    select barcode from catalog.skus
+    where org_id = ${orgId} and barcode = any (${sql.param([...barcodes])}::text[])
+  `);
+  return new Set(rows.map((row) => row.barcode));
+}
+
 export async function skuSettings(
   tx: Tx,
   orgId: string,
@@ -132,6 +204,19 @@ export async function skuSettings(
   `);
   const row = rows[0];
   return row === undefined ? undefined : { orgCode: row.org_code, lastSequence: row.last_sequence };
+}
+
+/**
+ * The name a sticker prints for the brand (M38a, D-604): its short name when the brand
+ * has set one in its branding, otherwise its display name. Read from the brand's own row,
+ * so one build prints for any brand (white label).
+ */
+export async function brandShortName(tx: Tx, orgId: string): Promise<string> {
+  const rows = await tx.execute<{ name: string }>(sql`
+    select coalesce(nullif(trim(o.brand->>'shortName'), ''), o.display_name) as name
+    from org.organizations o where o.id = ${orgId}
+  `);
+  return rows[0]?.name ?? '';
 }
 
 export async function setOrgCode(tx: Tx, orgId: string, orgCode: string): Promise<void> {
@@ -146,7 +231,8 @@ export async function setOrgCode(tx: Tx, orgId: string, orgCode: string): Promis
 
 export async function listCategories(tx: Tx, orgId: string): Promise<CategoryRow[]> {
   const rows = await tx.execute<CategoryRow>(sql`
-    select id, parent_id, name, slug, code, path, depth, position, is_active
+    select id, parent_id, name, slug, code, path, depth, position, is_active,
+           web_visible, featured, gender, description, image_file_id, default_size_chart_id
     from catalog.categories
     where org_id = ${orgId}
     order by path
@@ -216,7 +302,8 @@ export async function categoryById(
   id: string,
 ): Promise<CategoryRow | undefined> {
   const rows = await tx.execute<CategoryRow>(sql`
-    select id, parent_id, name, slug, code, path, depth, position, is_active
+    select id, parent_id, name, slug, code, path, depth, position, is_active,
+           default_size_chart_id
     from catalog.categories where org_id = ${orgId} and id = ${id}
   `);
   return rows[0];
@@ -226,7 +313,7 @@ export async function categoryById(
 
 export async function listAttributes(tx: Tx, orgId: string): Promise<AttributeRow[]> {
   const rows = await tx.execute<AttributeRow>(sql`
-    select id, code, name, kind::text as kind, is_variant, position
+    select id, code, name, kind::text as kind, is_variant, position, is_active
     from catalog.attributes where org_id = ${orgId}
     order by position, code
   `);
@@ -239,7 +326,7 @@ export async function listAttributeValues(
   attributeIds?: readonly string[],
 ): Promise<AttributeValueRow[]> {
   const rows = await tx.execute<AttributeValueRow>(sql`
-    select id, attribute_id, code, label, position
+    select id, attribute_id, code, label, position, is_active
     from catalog.attribute_values
     where org_id = ${orgId}
       and ${
@@ -310,15 +397,16 @@ export async function insertProduct(
     readonly description: string | null;
     readonly status: string;
     readonly createdBy: string | null;
+    readonly weightGrams?: number | null | undefined;
   },
 ): Promise<ProductRow> {
   const rows = await tx.execute<ProductRow>(sql`
     insert into catalog.products
-      (org_id, category_id, sequence, name, slug, description, status, created_by)
+      (org_id, category_id, sequence, name, slug, description, status, created_by, weight_grams)
     values (${orgId}, ${input.categoryId}, ${input.sequence}, ${input.name}, ${input.slug},
-            ${input.description}, ${input.status}::catalog.product_status, ${input.createdBy})
-    returning id, org_id, category_id, sequence, name, slug, description,
-              status::text as status, created_by, created_at, updated_at
+            ${input.description}, ${input.status}::catalog.product_status, ${input.createdBy},
+            ${input.weightGrams ?? null}::integer)
+    returning ${PRODUCT_RETURNING}
   `);
   const row = rows[0];
   if (row === undefined) throw new Error('The product insert returned no row.');
@@ -349,6 +437,9 @@ export async function updateProduct(
     readonly categoryId: string | null;
     readonly changeDescription: boolean;
     readonly description: string | null;
+    /** M39b (D-645): true writes `weightGrams` (null clears it); false leaves the weight. */
+    readonly changeWeight?: boolean | undefined;
+    readonly weightGrams?: number | null | undefined;
   },
 ): Promise<ProductRow | undefined> {
   const rows = await tx.execute<ProductRow>(sql`
@@ -358,10 +449,11 @@ export async function updateProduct(
       status = coalesce(${input.status ?? null}::catalog.product_status, p.status),
       category_id = case when ${input.changeCategory} then ${input.categoryId}::uuid else p.category_id end,
       description = case when ${input.changeDescription} then ${input.description} else p.description end,
+      weight_grams = case when ${input.changeWeight === true} then ${input.weightGrams ?? null}::integer else p.weight_grams end,
       updated_at = now()
     where p.org_id = ${orgId} and p.id = ${id}
     returning p.id, p.org_id, p.category_id, p.sequence, p.name, p.slug, p.description,
-              p.status::text as status, p.created_by, p.created_at, p.updated_at
+              p.status::text as status, p.created_by, p.created_at, p.updated_at, p.weight_grams
   `);
   return rows[0];
 }
@@ -373,6 +465,8 @@ export interface ProductListRow extends ProductRow {
   readonly min_price_poisha: string | null;
   readonly max_price_poisha: string | null;
   readonly image_file_id: string | null;
+  /** Whether the product is shown on the website (M33's flag; a list column since M39b). */
+  readonly web_visible: boolean;
 }
 
 /**
@@ -408,7 +502,8 @@ export async function searchProducts(
         where s.org_id = p.org_id and s.product_id = p.id and s.status = 'active') as max_price_poisha,
       (select i.file_id from catalog.product_images i
         where i.org_id = p.org_id and i.product_id = p.id
-        order by i.position, i.created_at limit 1) as image_file_id
+        order by i.position, i.created_at limit 1) as image_file_id,
+      p.web_visible
     from catalog.products p
     left join catalog.categories c on c.org_id = p.org_id and c.id = p.category_id
     where p.org_id = ${orgId}
@@ -462,7 +557,13 @@ export interface NewSku {
   readonly variantKey: string;
   readonly pricePoisha: bigint;
   readonly position: number;
+  /** An internal EAN-13 or a supplier's barcode (M38a, D-603). */
+  readonly barcode: string | null;
   readonly values: readonly { readonly attributeId: string; readonly valueId: string }[];
+  /** The regular price (M39b, D-640); absent or null for none. */
+  readonly compareAtPoisha?: bigint | null | undefined;
+  /** The variant's own weight (M39b, D-645). */
+  readonly weightGrams?: number | null | undefined;
 }
 
 /**
@@ -481,17 +582,20 @@ export async function insertSkus(
   if (newSkus.length === 0) return [];
 
   const skuRows = await tx.execute<SkuRow>(sql`
-    insert into catalog.skus (org_id, product_id, code, variant_key, price_poisha, position)
+    insert into catalog.skus
+      (org_id, product_id, code, variant_key, price_poisha, position, barcode, compare_at_poisha,
+       weight_grams)
     values ${sql.join(
       newSkus.map(
         (sku) =>
           sql`(${orgId}, ${sku.productId}, ${sku.code}, ${sku.variantKey},
-               ${sku.pricePoisha.toString()}::bigint, ${sku.position})`,
+               ${sku.pricePoisha.toString()}::bigint, ${sku.position}, ${sku.barcode},
+               ${sku.compareAtPoisha == null ? null : sku.compareAtPoisha.toString()}::bigint,
+               ${sku.weightGrams ?? null}::integer)`,
       ),
       sql`, `,
     )}
-    returning id, org_id, product_id, code, variant_key, barcode, price_poisha,
-              status::text as status, position
+    returning ${SKU_RETURNING}
   `);
 
   const byKey = new Map(skuRows.map((row) => [row.variant_key, row.id]));
@@ -542,6 +646,29 @@ export async function searchSkus(
     limit ${query.limit}
   `);
   return [...rows];
+}
+
+/**
+ * A scanned code (M38a): the SKU whose barcode is exactly it, or whose code is it in
+ * capitals. A barcode match wins: an EAN-13 is digits, and a SKU code made only of digits
+ * that equalled another SKU's barcode is the one ambiguous case worth settling the same
+ * way every time.
+ */
+export async function lookupSku(
+  tx: Tx,
+  orgId: string,
+  code: string,
+): Promise<(SkuRow & { product_name: string; product_status: string }) | undefined> {
+  const rows = await tx.execute<SkuRow & { product_name: string; product_status: string }>(sql`
+    select ${SKU_COLUMNS}, p.name as product_name, p.status::text as product_status
+    from catalog.skus s
+    join catalog.products p on p.org_id = s.org_id and p.id = s.product_id
+    where s.org_id = ${orgId}
+      and (s.barcode = ${code} or s.code = ${code.toUpperCase()})
+    order by (s.barcode = ${code}) desc nulls last
+    limit 1
+  `);
+  return rows[0];
 }
 
 /**
@@ -669,9 +796,18 @@ export async function productNamesAndSlugs(
 export async function allSkuCodesAndPrices(
   tx: Tx,
   orgId: string,
-): Promise<{ code: string; price_poisha: string }[]> {
-  const rows = await tx.execute<{ code: string; price_poisha: string }>(sql`
-    select code, price_poisha from catalog.skus where org_id = ${orgId} and status = 'active'
+): Promise<
+  { code: string; price_poisha: string; barcode: string | null; compare_at_poisha: string | null }[]
+> {
+  const rows = await tx.execute<{
+    code: string;
+    price_poisha: string;
+    barcode: string | null;
+    compare_at_poisha: string | null;
+  }>(sql`
+    select code, price_poisha, barcode, compare_at_poisha::text as compare_at_poisha
+    from catalog.skus
+    where org_id = ${orgId} and status = 'active'
   `);
   return [...rows];
 }
@@ -750,6 +886,8 @@ export async function priceHistory(
   {
     from_poisha: string | null;
     to_poisha: string;
+    compare_at_from_poisha: string | null;
+    compare_at_to_poisha: string | null;
     changed_by: string | null;
     reason: string | null;
     created_at: Date;
@@ -758,11 +896,14 @@ export async function priceHistory(
   const rows = await tx.execute<{
     from_poisha: string | null;
     to_poisha: string;
+    compare_at_from_poisha: string | null;
+    compare_at_to_poisha: string | null;
     changed_by: string | null;
     reason: string | null;
     created_at: Date;
   }>(sql`
-    select from_poisha, to_poisha, changed_by, reason, created_at
+    select from_poisha, to_poisha, compare_at_from_poisha, compare_at_to_poisha, changed_by,
+           reason, created_at
     from catalog.sku_price_history
     where org_id = ${orgId} and sku_id = ${skuId}
     order by created_at desc, id desc
@@ -778,6 +919,8 @@ export interface ImageRow extends Record<string, unknown> {
   readonly file_id: string;
   readonly position: number;
   readonly alt_text: string | null;
+  /** The colour value this photo shows (M39b, D-643), or null for every colour. */
+  readonly colour_value_id: string | null;
 }
 
 export async function imagesOfProduct(
@@ -786,7 +929,7 @@ export async function imagesOfProduct(
   productId: string,
 ): Promise<ImageRow[]> {
   const rows = await tx.execute<ImageRow>(sql`
-    select i.id, i.file_id, i.position, i.alt_text
+    select i.id, i.file_id, i.position, i.alt_text, i.colour_value_id
     from catalog.product_images i
     where i.org_id = ${orgId} and i.product_id = ${productId}
     order by i.position, i.created_at
@@ -809,20 +952,22 @@ export async function attachImage(
   productId: string,
   fileId: string,
   altText: string | null,
+  colourValueId: string | null = null,
 ): Promise<ImageRow | undefined> {
   const rows = await tx.execute<ImageRow>(sql`
-    insert into catalog.product_images (org_id, product_id, file_id, position, alt_text)
+    insert into catalog.product_images
+      (org_id, product_id, file_id, position, alt_text, colour_value_id)
     select ${orgId}, ${productId}, f.id,
       coalesce((select max(i.position) + 1 from catalog.product_images i
                 where i.org_id = ${orgId} and i.product_id = ${productId}), 0),
-      ${altText}
+      ${altText}, ${colourValueId}::uuid
     from files.objects f
     where f.org_id = ${orgId}
       and f.id = ${fileId}
       and f.status = 'stored'
       and f.visibility = 'public'
       and f.purpose = 'product-image'
-    returning id, file_id, position, alt_text
+    returning id, file_id, position, alt_text, colour_value_id
   `);
   return rows[0];
 }
@@ -950,8 +1095,7 @@ export async function setSkuStatus(
   const rows = await tx.execute<SkuRow>(sql`
     update catalog.skus set status = ${status}::catalog.sku_status, updated_at = now()
     where org_id = ${orgId} and id = ${skuId}
-    returning id, org_id, product_id, code, variant_key, barcode, price_poisha,
-              status::text as status, position
+    returning ${SKU_RETURNING}
   `);
   return rows[0];
 }
@@ -996,4 +1140,33 @@ export async function categorySubtree(
       and (cat.id = root.id or starts_with(cat.path, root.path || '/'))
   `);
   return rows.map((row) => row.id);
+}
+
+/**
+ * Each category with itself and every category above it, through the maintained path
+ * (M35a): a discount for a category covers its sub-categories, so a line in "Silk sarees"
+ * is in scope of a discount for "Sarees". An unknown id is absent from the map.
+ */
+export async function categoryLineage(
+  tx: Tx,
+  orgId: string,
+  categoryIds: readonly string[],
+): Promise<Map<string, string[]>> {
+  if (categoryIds.length === 0) return new Map();
+  const rows = await tx.execute<{ id: string; ancestor_id: string }>(sql`
+    select cat.id, up.id as ancestor_id
+    from catalog.categories cat
+    join catalog.categories up
+      on up.org_id = cat.org_id
+     and (up.id = cat.id or starts_with(cat.path, up.path || '/'))
+    where cat.org_id = ${orgId} and cat.id = any (${sql.param([...categoryIds])}::uuid[])
+    order by cat.id, length(up.path) desc
+  `);
+  const lineage = new Map<string, string[]>();
+  for (const row of rows) {
+    const ancestors = lineage.get(row.id) ?? [];
+    ancestors.push(row.ancestor_id);
+    lineage.set(row.id, ancestors);
+  }
+  return lineage;
 }

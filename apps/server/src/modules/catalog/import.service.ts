@@ -112,12 +112,47 @@ export class CatalogImportService {
 
 function review(
   csv: string,
-  known: readonly { code: string; price_poisha: string }[],
+  known: readonly {
+    code: string;
+    price_poisha: string;
+    barcode: string | null;
+    compare_at_poisha: string | null;
+  }[],
 ): PriceImportReport {
-  return reviewPriceImport(
+  const report = reviewPriceImport(
     parseCsv(csv),
-    known.map((sku) => ({ code: sku.code, pricePoisha: poisha(sku.price_poisha) })),
+    known.map((sku) => ({
+      code: sku.code,
+      pricePoisha: poisha(sku.price_poisha),
+      barcode: sku.barcode,
+    })),
   );
+  // M39b (D-640): a new price at or above the variant's regular price would leave a
+  // struck-through figure no higher than the real one; the database refuses it, so the dry
+  // run names the line first (ledger audit N11).
+  const regular = new Map(known.map((sku) => [sku.code, sku.compare_at_poisha]));
+  const overtaken = report.rows.filter((row) => {
+    const was = regular.get(row.sku) ?? null;
+    return was !== null && row.pricePoisha >= BigInt(was);
+  });
+  if (overtaken.length === 0) return report;
+  return {
+    ...report,
+    rows: report.rows.filter((row) => !overtaken.includes(row)),
+    problems: [
+      ...report.problems,
+      ...overtaken.map((row) => ({
+        line: row.line,
+        column: 'price_taka',
+        message: `${row.sku} has a regular price of ${takaPlain(BigInt(regular.get(row.sku) ?? '0'))} taka; a price must stay below it. Change or clear the regular price on the product page first.`,
+      })),
+    ],
+  };
+}
+
+/** Poisha as plain taka for a message, `189000n` → `1890.00`. */
+function takaPlain(amount: bigint): string {
+  return `${(amount / 100n).toString()}.${(amount % 100n).toString().padStart(2, '0')}`;
 }
 
 function present(

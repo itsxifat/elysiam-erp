@@ -661,7 +661,7 @@ describe('the rollups are tenant data, and only the analytics role reads across 
     );
     expect([...seen].map((row) => row.org_id).sort()).toEqual([ORG_A, ORG_B].sort());
 
-    // The owner's reporting reads (migration 0103, D-483): counts and sums per day.
+    // The owner's reporting reads (migration 0125, D-483): counts and sums per day.
     for (const table of ['daily_channel', 'daily_campaign']) {
       await withAnalytics((tx) => tx.execute(sql.raw(`select count(*) from analytics.${table}`)));
     }

@@ -164,16 +164,24 @@ export const stockLevels = inventory.table(
     index('stock_levels_org_idx').on(table.orgId),
     index('stock_levels_org_sku_idx').on(table.orgId, table.skuId),
     index('stock_levels_org_location_idx').on(table.orgId, table.locationId),
+    /*
+     * Cascade since M39a (D-627): deleting a SKU or a location that never held stock takes
+     * its empty level rows (a reorder level set on a mistake) with it. `erp_app` still holds
+     * no DELETE here, and the M39a policies migration's trigger refuses the delete of a row
+     * that holds or reserves a piece, or whose SKU and location both still exist, so only a
+     * cascade from a row nothing else references can remove one. Stock movements stay
+     * `restrict`: a SKU or location with any history is never deleted.
+     */
     foreignKey({
       name: 'stock_levels_org_id_sku_id_fk',
       columns: [table.orgId, table.skuId],
       foreignColumns: [skus.orgId, skus.id],
-    }).onDelete('restrict'),
+    }).onDelete('cascade'),
     foreignKey({
       name: 'stock_levels_org_id_location_id_fk',
       columns: [table.orgId, table.locationId],
       foreignColumns: [locations.orgId, locations.id],
-    }).onDelete('restrict'),
+    }).onDelete('cascade'),
     // Invariant 3, as arithmetic the database enforces.
     check('stock_levels_on_hand_not_negative', sql`${table.onHand} >= 0`),
     check('stock_levels_reserved_not_negative', sql`${table.reserved} >= 0`),
@@ -753,5 +761,244 @@ export const reconciliations = inventory.table(
       'reconciliations_counts_not_negative',
       sql`${table.levelsChecked} >= 0 and ${table.driftCount} >= 0`,
     ),
+  ],
+);
+
+/**
+ * The brand's opening stock window (M38a, D-602).
+ *
+ * While it is open, stock the brand already holds can be entered at a cost per piece
+ * against opening balance equity (`stock_in_hand_entries`). An org admin closes it once
+ * everything is counted in; after that stock arrives only from suppliers, transfers,
+ * returns and approved adjustments. A brand with no row is open: a new brand starts open.
+ *
+ * One row per brand. Closing is an UPDATE that takes the row's lock, so an entry being
+ * posted at that moment either finishes first (it holds the row with `for share`) or sees
+ * the window closed. Reopening needs an approved `opening_stock_reopen` decided after the
+ * close, which the trigger in the M38a policies migration checks, so no code path can
+ * reopen it by writing the row.
+ */
+export const openingStockWindows = inventory.table(
+  'opening_stock_windows',
+  {
+    orgId: uuid('org_id')
+      .primaryKey()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    status: text('status').notNull().default('open'),
+    closedAt: timestamp('closed_at', { withTimezone: true, mode: 'date' }),
+    closedBy: text('closed_by'),
+    /** The approval that reopened it last, decided after `closed_at`. */
+    reopenApprovalId: uuid('reopen_approval_id'),
+    reopenedAt: timestamp('reopened_at', { withTimezone: true, mode: 'date' }),
+    reopenedBy: text('reopened_by'),
+    ...timestamps,
+  },
+  (table) => [
+    index('opening_stock_windows_org_idx').on(table.orgId),
+    foreignKey({
+      name: 'opening_stock_windows_org_id_reopen_approval_id_fk',
+      columns: [table.orgId, table.reopenApprovalId],
+      foreignColumns: [approvalRequests.orgId, approvalRequests.id],
+    }).onDelete('restrict'),
+    check('opening_stock_windows_status_known', sql`${table.status} in ('open', 'closed')`),
+    check(
+      'opening_stock_windows_closed_is_complete',
+      sql`${table.status} <> 'closed' or (${table.closedAt} is not null and ${table.closedBy} is not null)`,
+    ),
+    check(
+      'opening_stock_windows_reopen_is_complete',
+      sql`(${table.reopenApprovalId} is null) = (${table.reopenedAt} is null)
+          and (${table.reopenedAt} is null) = (${table.reopenedBy} is null)`,
+    ),
+  ],
+);
+
+/**
+ * Stock in hand at the start: one entry is a location and the pieces counted into it, each
+ * at what it cost (M38a, D-602).
+ *
+ * Three states. `draft` holds quantities only (warehouse counts, and has no `read:cost`),
+ * like a supply entry (D-005); `posted` has a cost on every line, its `opening_balance`
+ * movements and its own journal (`stock_in_hand:<id>:posted`, Dr Inventory / Cr Opening
+ * balance equity); `reversed` is a posted entry taken back out by an approved
+ * `stock_in_hand_reversal` while the window was open: its pieces left again at the cost
+ * they came in at, and `reversal_journal_id` is the ledger's reversal of `journal_id`
+ * (invariant 2). The id is the client's key, so a retried save finds the first one (D-432's
+ * pattern). The M38a policies migration's triggers refuse any other change to a posted
+ * entry, any change at all to a reversed one, and a delete of either, or of their lines.
+ */
+export const stockInHandEntries = inventory.table(
+  'stock_in_hand_entries',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    locationId: uuid('location_id').notNull(),
+    /** Copied from the location for §6's branch row scope. Held equal by a trigger. */
+    branchId: uuid('branch_id'),
+    status: text('status').notNull().default('draft'),
+    memo: text('memo'),
+    /** When the stock was counted in: set on posting, and the journal's business date. */
+    occurredAt: timestamp('occurred_at', { withTimezone: true, mode: 'date' }),
+    businessDate: date('business_date'),
+    journalId: uuid('journal_id'),
+    createdBy: text('created_by').notNull(),
+    postedBy: text('posted_by'),
+    postedAt: timestamp('posted_at', { withTimezone: true, mode: 'date' }),
+    /** The ledger's reversal of `journal_id`; set only with `status = 'reversed'`. */
+    reversalJournalId: uuid('reversal_journal_id'),
+    /** The approved `stock_in_hand_reversal` that took the entry back out. */
+    reversalApprovalId: uuid('reversal_approval_id'),
+    reversedBy: text('reversed_by'),
+    reversedAt: timestamp('reversed_at', { withTimezone: true, mode: 'date' }),
+    ...timestamps,
+  },
+  (table) => [
+    unique('stock_in_hand_entries_org_id_id_key').on(table.orgId, table.id),
+    index('stock_in_hand_entries_org_idx').on(table.orgId),
+    index('stock_in_hand_entries_org_status_idx').on(table.orgId, table.status),
+    index('stock_in_hand_entries_org_branch_idx').on(table.orgId, table.branchId),
+    foreignKey({
+      name: 'stock_in_hand_entries_org_id_location_id_fk',
+      columns: [table.orgId, table.locationId],
+      foreignColumns: [locations.orgId, locations.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'stock_in_hand_entries_org_id_branch_id_fk',
+      columns: [table.orgId, table.branchId],
+      foreignColumns: [branches.orgId, branches.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'stock_in_hand_entries_org_id_journal_id_fk',
+      columns: [table.orgId, table.journalId],
+      foreignColumns: [journals.orgId, journals.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'stock_in_hand_entries_org_id_reversal_journal_id_fk',
+      columns: [table.orgId, table.reversalJournalId],
+      foreignColumns: [journals.orgId, journals.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'stock_in_hand_entries_org_id_reversal_approval_id_fk',
+      columns: [table.orgId, table.reversalApprovalId],
+      foreignColumns: [approvalRequests.orgId, approvalRequests.id],
+    }).onDelete('restrict'),
+    check(
+      'stock_in_hand_entries_status_known',
+      sql`${table.status} in ('draft', 'posted', 'reversed')`,
+    ),
+    check(
+      'stock_in_hand_entries_memo_length',
+      sql`${table.memo} is null or length(${table.memo}) <= 500`,
+    ),
+    check(
+      'stock_in_hand_entries_posted_is_complete',
+      sql`case ${table.status}
+            when 'draft' then ${table.journalId} is null and ${table.occurredAt} is null
+              and ${table.businessDate} is null and ${table.postedBy} is null
+              and ${table.postedAt} is null
+            else ${table.journalId} is not null and ${table.occurredAt} is not null
+              and ${table.businessDate} is not null and ${table.postedBy} is not null
+              and ${table.postedAt} is not null
+          end`,
+    ),
+    check(
+      'stock_in_hand_entries_reversal_is_complete',
+      sql`case ${table.status}
+            when 'reversed' then ${table.reversalJournalId} is not null
+              and ${table.reversalApprovalId} is not null and ${table.reversedBy} is not null
+              and ${table.reversedAt} is not null
+            else ${table.reversalJournalId} is null and ${table.reversalApprovalId} is null
+              and ${table.reversedBy} is null and ${table.reversedAt} is null
+          end`,
+    ),
+  ],
+);
+
+export const stockInHandLines = inventory.table(
+  'stock_in_hand_lines',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    entryId: uuid('entry_id').notNull(),
+    lineNo: integer('line_no').notNull(),
+    skuId: uuid('sku_id').notNull(),
+    qty: integer('qty').notNull(),
+    /** What one piece cost. Null on a draft; required before the entry posts. */
+    unitCostPoisha: bigint('unit_cost_poisha', { mode: 'bigint' }),
+    ...timestamps,
+  },
+  (table) => [
+    unique('stock_in_hand_lines_org_id_id_key').on(table.orgId, table.id),
+    index('stock_in_hand_lines_org_idx').on(table.orgId),
+    index('stock_in_hand_lines_org_sku_idx').on(table.orgId, table.skuId),
+    // One line per SKU per entry: the movement's dedupe key is per SKU and location, so two
+    // lines for one SKU would post one movement and a journal for both.
+    uniqueIndex('stock_in_hand_lines_org_entry_sku_idx').on(
+      table.orgId,
+      table.entryId,
+      table.skuId,
+    ),
+    foreignKey({
+      name: 'stock_in_hand_lines_org_id_entry_id_fk',
+      columns: [table.orgId, table.entryId],
+      foreignColumns: [stockInHandEntries.orgId, stockInHandEntries.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'stock_in_hand_lines_org_id_sku_id_fk',
+      columns: [table.orgId, table.skuId],
+      foreignColumns: [skus.orgId, skus.id],
+    }).onDelete('restrict'),
+    check('stock_in_hand_lines_qty_positive', sql`${table.qty} > 0 and ${table.qty} <= 1000000`),
+    check(
+      'stock_in_hand_lines_cost_positive',
+      sql`${table.unitCostPoisha} is null or (${table.unitCostPoisha} > 0 and ${table.unitCostPoisha} <= 9000000000000000)`,
+    ),
+    check('stock_in_hand_lines_line_no_positive', sql`${table.lineNo} > 0`),
+  ],
+);
+
+/**
+ * Every scan on a stock count (M38a, D-606): "the count is the scans".
+ *
+ * Each scan adds one piece of its SKU to the open count's line, in the transaction that
+ * writes this row, and the row's id is the scanning device's key for that scan, so a scan
+ * retried after a lost response counts once. Append-only: who scanned what, when, is the
+ * record a disputed count is settled from.
+ */
+export const countScans = inventory.table(
+  'count_scans',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    sessionId: uuid('session_id').notNull(),
+    skuId: uuid('sku_id').notNull(),
+    /** What was scanned: the barcode or the SKU code. */
+    code: text('code').notNull(),
+    qty: integer('qty').notNull().default(1),
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('count_scans_org_id_id_key').on(table.orgId, table.id),
+    index('count_scans_org_idx').on(table.orgId),
+    index('count_scans_org_session_idx').on(table.orgId, table.sessionId),
+    foreignKey({
+      name: 'count_scans_org_id_session_id_fk',
+      columns: [table.orgId, table.sessionId],
+      foreignColumns: [countSessions.orgId, countSessions.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'count_scans_org_id_sku_id_fk',
+      columns: [table.orgId, table.skuId],
+      foreignColumns: [skus.orgId, skus.id],
+    }).onDelete('restrict'),
+    check('count_scans_qty_positive', sql`${table.qty} between 1 and 1000`),
+    check('count_scans_code_length', sql`length(${table.code}) between 1 and 64`),
   ],
 );

@@ -1,4 +1,4 @@
-import { CSRF_HEADER, api, csrfToken } from '../../api.js';
+import { ApiError, CSRF_HEADER, api, csrfToken } from '../../api.js';
 import { env } from '../../env.js';
 
 /**
@@ -40,6 +40,8 @@ export interface CatalogProductListItem {
   readonly fromPricePoisha: string | null;
   readonly toPricePoisha: string | null;
   readonly imageFileId: string | null;
+  /** Shown on the website (M39b's product list column, D-642). */
+  readonly webVisible: boolean;
 }
 
 export interface CatalogSku {
@@ -47,6 +49,10 @@ export interface CatalogSku {
   readonly skuCode: string;
   readonly barcode: string | null;
   readonly pricePoisha: string;
+  /** The regular ("was") selling price, or null (M39b, D-640). Never a cost. */
+  readonly compareAtPoisha: string | null;
+  /** This variant's own weight in grams, or null for the product's (D-645). */
+  readonly weightGrams: number | null;
   readonly status: 'active' | 'archived';
   readonly attributes: readonly {
     readonly attributeId: string;
@@ -72,7 +78,39 @@ export interface CatalogProduct {
     readonly fileId: string;
     readonly position: number;
     readonly altText: string | null;
+    /** The colour value the photo shows (M39b, D-643), or null for every colour. */
+    readonly colourValueId: string | null;
   }[];
+  /** The website's fields (M33, D-500), for the product page's Website card. */
+  readonly web: ProductWebFields;
+  /** Grams per piece, as couriers are told (M39b, D-645). */
+  readonly weightGrams: number | null;
+}
+
+export interface ProductWebFields {
+  readonly webVisible: boolean;
+  readonly featured: boolean;
+  readonly newArrival: boolean;
+  readonly gender: string | null;
+  readonly material: string | null;
+  readonly careInstructions: string | null;
+  readonly tags: readonly string[];
+  readonly sizeChartId: string | null;
+  readonly seoTitle: string | null;
+  readonly seoDescription: string | null;
+  /** Old addresses that still lead here, newest first. */
+  readonly previousSlugs: readonly string[];
+}
+
+/** A category's website fields (M33, D-501). */
+export interface CategoryWebFields {
+  readonly webVisible: boolean;
+  readonly featured: boolean;
+  readonly gender: string | null;
+  readonly description: string | null;
+  readonly imageFileId: string | null;
+  /** The size chart new products filed here start with (M39b, D-646). */
+  readonly defaultSizeChartId?: string | null;
 }
 
 export interface CatalogCategory {
@@ -85,6 +123,7 @@ export interface CatalogCategory {
   readonly depth: number;
   readonly position: number;
   readonly isActive: boolean;
+  readonly web: CategoryWebFields;
 }
 
 export interface CatalogAttribute {
@@ -94,11 +133,18 @@ export interface CatalogAttribute {
   readonly kind: 'size' | 'colour' | 'custom';
   readonly isVariant: boolean;
   readonly position: number;
+  /**
+   * M39a (D-624): false once archived. A picker for a new variant shows only lists and values
+   * whose `isActive` is not false; existing variants keep showing archived ones.
+   */
+  readonly isActive?: boolean;
   readonly values: readonly {
     readonly id: string;
     readonly code: string;
     readonly label: string;
     readonly position: number;
+    /** M39a (D-624): false once archived. */
+    readonly isActive?: boolean;
   }[];
 }
 
@@ -171,7 +217,12 @@ export function createProduct(input: {
   readonly variantPrices?: readonly {
     readonly valueIds: readonly string[];
     readonly pricePoisha: string;
+    /** M39b (D-640): absent for the product's regular price, null for none. */
+    readonly compareAtPoisha?: string | null;
   }[];
+  /** M39b: the regular price every variant starts with, and the weight per piece. */
+  readonly compareAtPoisha?: string | undefined;
+  readonly weightGrams?: number | undefined;
 }): Promise<CatalogProduct> {
   const { axes, variantPrices, ...rest } = input;
   return api.post('/v1/catalog/products', {
@@ -186,9 +237,13 @@ export function updateProduct(
   id: string,
   patch: {
     readonly name?: string;
+    /** The web address (M38a): the old one keeps leading here (M33's previous slugs). */
+    readonly slug?: string;
     readonly categoryId?: string | null;
     readonly description?: string | null;
     readonly status?: 'draft' | 'active' | 'archived';
+    /** Grams per piece, or null to clear it (M39b, D-645). */
+    readonly weightGrams?: number | null;
   },
 ): Promise<CatalogProduct> {
   return api.patch(`/v1/catalog/products/${id}`, patch);
@@ -347,7 +402,12 @@ export function priceHistory(skuId: string): Promise<{
 
 export function attachImage(
   productId: string,
-  input: { readonly fileId: string; readonly altText?: string | undefined },
+  input: {
+    readonly fileId: string;
+    readonly altText?: string | undefined;
+    /** The colour the photo shows (M39b, D-643). */
+    readonly colourValueId?: string | null | undefined;
+  },
 ): Promise<{ id: string; fileId: string; position: number }> {
   return api.post(`/v1/catalog/products/${productId}/images`, input);
 }
@@ -377,24 +437,67 @@ export function commitPriceImport(
   });
 }
 
+/** Where stickers are printed (M38a, D-604): a thermal roll, or an A4 sheet. */
+export type StickerMediumId =
+  'thermal-38x25' | 'thermal-40x30' | 'thermal-50x25' | 'a4-3x8' | 'a4-4x10';
+
 /**
- * The label sheet, as a blob.
+ * Barcode stickers, as a PDF blob (M06's label sheet, M38a's media).
  *
- * Not through `api.post`, which parses JSON: this response is a PDF. Written out
- * here rather than adding a method to the shared client, which is one of the files
- * other milestones are editing in this working tree — M06's INTEGRATION section
- * hands the integrator the shared `api.blob()` it should become.
+ * Not through `api.post`, which parses JSON: this response is a PDF. A refusal still comes
+ * back as problem+json, and its message is kept so the dialog can say what was wrong.
  */
-export async function labelSheetPdf(
-  items: readonly { readonly skuId: string; readonly copies: number }[],
-  showPrice: boolean,
-): Promise<Blob> {
+export async function stickersPdf(input: {
+  readonly items: readonly { readonly skuId: string; readonly copies: number }[];
+  readonly showPrice: boolean;
+  readonly medium: StickerMediumId;
+  readonly startAt: number;
+}): Promise<Blob> {
   const response = await fetch(new URL('/v1/catalog/labels', env.VITE_API_URL), {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json', ...csrfHeader() },
-    body: JSON.stringify({ items, showPrice }),
+    body: JSON.stringify(input),
   });
-  if (!response.ok) throw new Error('The label sheet could not be produced.');
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => null)) as {
+      code?: string;
+      detail?: string;
+      message?: string;
+    } | null;
+    throw new ApiError(
+      response.status,
+      problem?.code ?? null,
+      problem?.detail ?? problem?.message ?? 'The stickers could not be produced.',
+    );
+  }
   return response.blob();
+}
+
+/** What a scanned code is (M38a, D-605). No cost unless the caller may read it. */
+export interface CodeLookup {
+  readonly code: string;
+  readonly product: { readonly id: string; readonly name: string; readonly status: string };
+  readonly sku: {
+    readonly id: string;
+    readonly code: string;
+    readonly barcode: string | null;
+    readonly status: 'active' | 'archived';
+    readonly variantLabel: string;
+    readonly pricePoisha: string;
+  };
+  readonly stock: {
+    readonly onHand: number;
+    readonly available: number;
+    readonly locations: readonly {
+      readonly locationId: string;
+      readonly locationName: string;
+      readonly onHand: number;
+      readonly available: number;
+    }[];
+  } | null;
+}
+
+export function lookupCode(code: string): Promise<CodeLookup> {
+  return api.get(`/v1/catalog/lookup?code=${encodeURIComponent(code)}`);
 }

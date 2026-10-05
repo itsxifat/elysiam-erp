@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
 import { canReadCost, ORDER_CHANNELS } from '@elysium/contracts';
-import { withAnalytics, withOrg, type Tx } from '@elysium/db';
+import { withOrg, type Tx } from '@elysium/db';
 import {
   addDays,
   businessDate,
@@ -14,23 +14,17 @@ import {
 } from '@elysium/domain';
 import {
   assertNarrativePayloadSafe,
+  BASELINE_MONTHS,
   buildNarrativePayload,
+  insightBaseline,
   insights,
   kpis,
-  leaderboardView,
-  LEADERBOARD_METRICS,
   narrativePrompt,
-  normalizedMetrics,
   pickupMeanSeconds,
-  rankBoard,
   returnRateBps,
-  type BoardRow,
-  type BrandMonth,
   type Insight,
   type InsightMonth,
   type Kpis,
-  type NormalizedMetrics,
-  type VisibleBoardRow,
 } from '@elysium/domain/analytics';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -50,7 +44,6 @@ import {
   type TabularCell,
 } from '../orders/export/tabular.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
-import { ANALYTICS_CONFIG, type AnalyticsConfig } from './analytics.config.js';
 import { AnalyticsError } from './analytics.errors.js';
 import * as repo from './analytics.repository.js';
 import type { DashboardQuery, ExportQuery, MonthQuery, RefreshInput } from './analytics.schemas.js';
@@ -58,18 +51,13 @@ import { NARRATIVE_PROVIDER, type NarrativeProvider } from './providers/narrativ
 import { daysOf, RollupService } from './rollup.service.js';
 
 /**
- * Dashboards, the leaderboard, insights, the narrative and exports (architecture §18; M24).
+ * The brand's dashboard, insights, the narrative and exports (architecture §18; M24).
  *
- * Two ways into the database, and which one a method uses is the point of it:
- *
- * - **`withOrg()`** for everything about the caller's own brand: the dashboard, the export,
- *   the refresh, the narrative cache. RLS makes the brand the only one there is.
- * - **`withAnalytics()`** for everything that compares brands: the leaderboard, the
- *   group medians the insight rules measure against, and Super Admin's consolidated view.
- *   The role reads the five rollup tables and the brand list and can write nothing (D-329).
- *
- * D-023 is applied by `leaderboardView` in the domain, and the JSON for another brand's row
- * is built from the fields that function kept, never from the raw row.
+ * Everything reads the caller's own brand through **`withOrg()`**: RLS makes the brand the
+ * only one there is. A brand's ERP runs on its own database and knows no other brand
+ * (D-469), so the cross-brand reads (the leaderboard, the consolidated view, the insight
+ * rules' group medians) left with M31 (D-471): the insight rules now measure a month
+ * against the brand's own recent months.
  */
 
 const text = (value: bigint | null): string | null => (value === null ? null : value.toString());
@@ -106,12 +94,6 @@ function metricsView(row: repo.MetricSumRow) {
   };
 }
 
-function normalizedView(metrics: NormalizedMetrics) {
-  return Object.fromEntries(
-    LEADERBOARD_METRICS.map((metric) => [metric, text(metrics[metric])]),
-  ) as Record<(typeof LEADERBOARD_METRICS)[number], string | null>;
-}
-
 /** A brand's month for the insight rules and the narrative, from one sums row. */
 function insightMonth(row: repo.RateFigures): InsightMonth {
   return {
@@ -133,6 +115,17 @@ function previousMonth(month: string): string {
   return addDays(start, -1).slice(0, 7);
 }
 
+/** The `count` months before `month`, nearest first. */
+function monthsBefore(month: string, count: number): string[] {
+  const months: string[] = [];
+  let cursor = month;
+  for (let index = 0; index < count; index += 1) {
+    cursor = previousMonth(cursor);
+    months.push(cursor);
+  }
+  return months;
+}
+
 @Injectable()
 export class AnalyticsService {
   /** The clock "today" is read from; a field so a suite can stand on a fixed day. */
@@ -147,7 +140,6 @@ export class AnalyticsService {
     @Inject(HR_API) private readonly hr: HrApi,
     @Inject(LEDGER_API) private readonly ledger: LedgerApi,
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
-    @Inject(ANALYTICS_CONFIG) private readonly config: AnalyticsConfig,
     @Inject(NARRATIVE_PROVIDER) private readonly provider: NarrativeProvider,
   ) {}
 
@@ -265,111 +257,31 @@ export class AnalyticsService {
     });
   }
 
-  // --- the consolidated dashboard (withAnalytics, Super Admin only) ---------------------
-
-  async consolidated(context: ActiveContext, query: DashboardQuery) {
-    this.assertSuperAdmin(context);
-    const rows = await withAnalytics((tx) => repo.brandSums(tx, query.from, query.to));
-    const brands = rows.map((row) => ({
-      orgId: row.org_id,
-      orgName: row.org_name,
-      ...metricsView(row),
-      spendPoisha: row.spend_poisha,
-      ...kpisView(kpis(kpiInputs(row))),
-    }));
-    const group = repo.sumTotals(rows);
-    return {
-      from: query.from,
-      to: query.to,
-      brands,
-      group: {
-        ...metricsView(group),
-        spendPoisha: group.spend_poisha,
-        ...kpisView(kpis(kpiInputs(group))),
-      },
-    };
-  }
-
-  // --- the leaderboard (withAnalytics) -----------------------------------------------
-
-  /** Every brand's board for a month, ranked; not yet cut down for a viewer. */
-  private async board(month: string): Promise<BoardRow[]> {
-    const current = periodForMonth(month);
-    const previous = periodForMonth(previousMonth(month));
-    const [now, before] = await withAnalytics(async (tx) => [
-      await repo.brandRates(tx, current.startsOn, current.endsOn),
-      await repo.brandRates(tx, previous.startsOn, previous.endsOn),
-    ]);
-    const previousByOrg = new Map(before.map((row) => [row.org_id, row]));
-    const months = now.map((row) => {
-      const earlier = previousByOrg.get(row.org_id);
-      return {
-        orgId: row.org_id,
-        orgName: row.org_name,
-        current: insightMonth(row),
-        previous: earlier === undefined ? insightMonth(repo.ZERO_BRAND) : insightMonth(earlier),
-      };
-    });
-    const ranked = rankBoard(
-      months.map((entry) => ({
-        orgId: entry.orgId,
-        metrics: normalizedMetrics(entry.current, entry.previous),
-      })),
-      this.config.weights,
-    );
-    const byOrg = new Map(months.map((entry) => [entry.orgId, entry]));
-    return ranked.map((entry) => {
-      const source = byOrg.get(entry.orgId);
-      return {
-        ...entry,
-        orgName: source?.orgName ?? '',
-        current: source?.current ?? insightMonth(repo.ZERO_BRAND),
-        previous: source?.previous ?? insightMonth(repo.ZERO_BRAND),
-      };
-    });
-  }
-
-  async leaderboard(context: ActiveContext, query: MonthQuery) {
-    const rows = leaderboardView(await this.board(query.month), {
-      orgId: context.orgId,
-      isSuperAdmin: context.isSuperAdmin,
-    });
-    return {
-      month: query.month,
-      metrics: LEADERBOARD_METRICS,
-      weights: this.config.weights,
-      rows: rows.map((row) => boardRowView(row)),
-    };
-  }
-
   // --- insights ----------------------------------------------------------------------
 
   private async insightsFor(context: ActiveContext, month: string) {
     const current = periodForMonth(month);
     const previous = periodForMonth(previousMonth(month));
-    const own = await this.tx(context, async (tx) => ({
-      current: repo.sumTotals(
-        await repo.orgDays(tx, context.orgId, current.startsOn, current.endsOn),
-      ),
-      previous: repo.sumTotals(
-        await repo.orgDays(tx, context.orgId, previous.startsOn, previous.endsOn),
-      ),
-      channels: await repo.channelSums(tx, context.orgId, current.startsOn, current.endsOn),
-      campaigns: await repo.campaignSums(tx, context.orgId, current.startsOn, current.endsOn),
-    }));
-    // The group: every brand's normalized rates, which D-023 lets any org admin see.
-    const group = await withAnalytics((tx) =>
-      repo.brandRates(tx, current.startsOn, current.endsOn),
-    );
+    const own = await this.tx(context, async (tx) => {
+      const sums = async (period: { startsOn: string; endsOn: string }) =>
+        repo.sumTotals(await repo.orgDays(tx, context.orgId, period.startsOn, period.endsOn));
+      // The brand's usual: its own three months before this one (D-471).
+      const baseline: repo.OrgTotals[] = [];
+      for (const earlier of monthsBefore(month, BASELINE_MONTHS)) {
+        baseline.push(await sums(periodForMonth(earlier)));
+      }
+      return {
+        current: await sums(current),
+        previous: await sums(previous),
+        baseline,
+        channels: await repo.channelSums(tx, context.orgId, current.startsOn, current.endsOn),
+        campaigns: await repo.campaignSums(tx, context.orgId, current.startsOn, current.endsOn),
+      };
+    });
     const found = insights({
       current: insightMonth(own.current),
       previous: insightMonth(own.previous),
-      group: {
-        outsideDhakaReturnRateBps: group.map((row) =>
-          returnRateBps(row.delivered_outside_dhaka, row.returned_outside_dhaka),
-        ),
-        deliverySuccessBps: group.map((row) => kpis(kpiInputs(row)).deliverySuccessBps),
-      },
+      baseline: insightBaseline(own.baseline.map((row) => insightMonth(row))),
       channels: own.channels.map((row) => ({
         channel: row.key,
         ordersDelivered: row.orders_delivered,
@@ -425,17 +337,10 @@ export class AnalyticsService {
     if (cached !== undefined) return narrativeView(query.month, cached, true);
 
     const { own, found } = await this.insightsFor(context, query.month);
-    const board = await this.board(query.month);
-    const position = board.find((row) => row.orgId === context.orgId);
     const payload = buildNarrativePayload({
       month: query.month,
       current: insightMonth(own.current),
       previous: insightMonth(own.previous),
-      leaderboard: {
-        rank: position?.rank ?? null,
-        brands: board.length,
-        compositeBps: position?.compositeBps ?? null,
-      },
       insights: found,
       channelCodes: ORDER_CHANNELS,
     });
@@ -560,15 +465,6 @@ export class AnalyticsService {
           rows: rows.length,
         };
   }
-
-  private assertSuperAdmin(context: ActiveContext): void {
-    if (!context.isSuperAdmin) {
-      throw new AnalyticsError(
-        'FORBIDDEN',
-        'The consolidated view across brands is the platform super admin’s (§5 exception 3).',
-      );
-    }
-  }
 }
 
 function kpiInputs(row: repo.RateFigures) {
@@ -581,43 +477,6 @@ function kpiInputs(row: repo.RateFigures) {
     spendPoisha: BigInt(row.spend_poisha),
     pickupCount: row.pickup_count,
     pickupSeconds: Number(row.pickup_seconds),
-  };
-}
-
-function monthFigures(month: BrandMonth) {
-  return {
-    ordersDelivered: month.ordersDelivered,
-    ordersReturned: month.ordersReturned,
-    ordersCancelled: month.ordersCancelled,
-    deliveredRevenuePoisha: month.deliveredRevenuePoisha.toString(),
-    spendPoisha: month.spendPoisha.toString(),
-    pickupCount: month.pickupCount,
-    pickupSeconds: month.pickupSeconds,
-  };
-}
-
-/**
- * The JSON for one leaderboard row. A `normalized` row is built only from the fields
- * `leaderboardView` kept for it; a `full` row adds the raw month (D-023).
- */
-function boardRowView(row: VisibleBoardRow) {
-  const shared = {
-    visibility: row.visibility,
-    orgId: row.orgId,
-    orgName: row.orgName,
-    rank: row.rank,
-    compositeBps: row.compositeBps,
-    metrics: normalizedView(row.metrics),
-    ranks: row.ranks,
-    scores: row.scores,
-  };
-  if (row.visibility === 'normalized') return shared;
-  return {
-    ...shared,
-    raw: {
-      current: monthFigures(row.current),
-      previous: monthFigures(row.previous),
-    },
   };
 }
 

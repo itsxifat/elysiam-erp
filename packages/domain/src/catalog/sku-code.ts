@@ -125,3 +125,31 @@ const SKU_CODE_SHAPE = new RegExp(`^[A-Z0-9]+(-[A-Z0-9]+)*$`);
 export function isSkuCode(value: string): boolean {
   return value.length > 0 && value.length <= SKU_CODE_MAX && SKU_CODE_SHAPE.test(value);
 }
+
+/**
+ * The organization and category segments a product's SKU codes already carry (M39a, D-623).
+ *
+ * A product keeps its codes when it moves to another category (they are printed), so a
+ * variant added afterwards would otherwise start with the new category's segment and the
+ * product's labels would read two ways. `extendMatrix` reads the prefix back from one of the
+ * product's existing codes and builds the new ones with it. Undefined when the code is not
+ * one this system built for that sequence (an imported code): the caller then uses the
+ * product's current category, as before.
+ */
+export function skuCodePrefix(
+  code: string,
+  sequence: number,
+): { readonly orgCode: string; readonly categoryCode: string | undefined } | undefined {
+  if (!Number.isInteger(sequence) || sequence < 1) return undefined;
+  const parts = code.split(SKU_SEPARATOR);
+  const seq = String(sequence).padStart(SKU_SEQUENCE_WIDTH, '0');
+  const orgCode = parts[0];
+  if (orgCode === undefined || orgCode === '') return undefined;
+  // The category reading first: `ELY-0007-0007-M` is category 0007's product 7. The other
+  // reading needs a first variant code equal to the padded sequence, which nobody types.
+  if (parts[2] === seq && parts[1] !== undefined && parts[1] !== '') {
+    return { orgCode, categoryCode: parts[1] };
+  }
+  if (parts[1] === seq) return { orgCode, categoryCode: undefined };
+  return undefined;
+}

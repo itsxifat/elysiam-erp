@@ -16,6 +16,54 @@
     "./locales/bn": {
       "types": "./dist/locales/bn.d.ts",
       "default": "./dist/locales/bn.js"
+    },
+    "./locales/sections/stock-tools.en": {
+      "types": "./dist/locales/sections/stock-tools.en.d.ts",
+      "default": "./dist/locales/sections/stock-tools.en.js"
+    },
+    "./locales/sections/stock-tools.bn": {
+      "types": "./dist/locales/sections/stock-tools.bn.d.ts",
+      "default": "./dist/locales/sections/stock-tools.bn.js"
+    },
+    "./locales/sections/website.en": {
+      "types": "./dist/locales/sections/website.en.d.ts",
+      "default": "./dist/locales/sections/website.en.js"
+    },
+    "./locales/sections/website.bn": {
+      "types": "./dist/locales/sections/website.bn.d.ts",
+      "default": "./dist/locales/sections/website.bn.js"
+    },
+    "./locales/sections/catalog-pricing.en": {
+      "types": "./dist/locales/sections/catalog-pricing.en.d.ts",
+      "default": "./dist/locales/sections/catalog-pricing.en.js"
+    },
+    "./locales/sections/catalog-pricing.bn": {
+      "types": "./dist/locales/sections/catalog-pricing.bn.d.ts",
+      "default": "./dist/locales/sections/catalog-pricing.bn.js"
+    },
+    "./locales/sections/manage.en": {
+      "types": "./dist/locales/sections/manage.en.d.ts",
+      "default": "./dist/locales/sections/manage.en.js"
+    },
+    "./locales/sections/manage.bn": {
+      "types": "./dist/locales/sections/manage.bn.d.ts",
+      "default": "./dist/locales/sections/manage.bn.js"
+    },
+    "./locales/sections/web-marketing.en": {
+      "types": "./dist/locales/sections/web-marketing.en.d.ts",
+      "default": "./dist/locales/sections/web-marketing.en.js"
+    },
+    "./locales/sections/web-marketing.bn": {
+      "types": "./dist/locales/sections/web-marketing.bn.d.ts",
+      "default": "./dist/locales/sections/web-marketing.bn.js"
+    },
+    "./locales/sections/packing.en": {
+      "types": "./dist/locales/sections/packing.en.d.ts",
+      "default": "./dist/locales/sections/packing.en.js"
+    },
+    "./locales/sections/packing.bn": {
+      "types": "./dist/locales/sections/packing.bn.d.ts",
+      "default": "./dist/locales/sections/packing.bn.js"
     }
   },
   "files": [

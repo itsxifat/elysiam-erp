@@ -24,8 +24,8 @@ import { isTrustedOrigin } from './origins.js';
  * for the Chatwoot iframe.
  */
 
-export const CSRF_COOKIE = 'elysium_csrf';
-export const CSRF_HEADER = 'x-elysium-csrf';
+export const CSRF_COOKIE = 'erp_csrf';
+export const CSRF_HEADER = 'x-csrf-token';
 
 /** Methods that cannot change state, so cannot be the target of CSRF. */
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -123,7 +123,9 @@ export interface CsrfResult {
  * CSRF is an attack on cookie authority: a hostile page makes the victim's browser send
  * a request the victim's cookie authorises. These routes take no authority from a cookie
  * — the public intake is authenticated by a site key and an HMAC over the body (M11), a
- * courier webhook by the courier's shared secret (M12) — so there is nothing for a forged
+ * courier webhook by the courier's shared secret (M12), the website's writes by a website
+ * key's HMAC and SSLCommerz's IPN by nothing but the gateway's own validation (M34) — so
+ * there is nothing for a forged
  * browser request to borrow, and a landing page's server or a courier has no way to
  * obtain the double-submit token at all. Without this both answered 403 to every real
  * caller while passing in their own harnesses.
@@ -131,7 +133,22 @@ export interface CsrfResult {
  * A prefix list, kept short and explicit: a handler under one of these prefixes must
  * never read the session. Both are `@Public`, which the route gate enforces.
  */
-const SIGNED_MACHINE_PREFIXES = ['/public/v1/', '/v1/courier/webhooks/'] as const;
+const SIGNED_MACHINE_PREFIXES = [
+  '/public/v1/',
+  '/v1/courier/webhooks/',
+  // M34: the brand website's server, signed with a website key over the body (D-506), and
+  // SSLCommerz's IPN, whose content is believed only after the gateway's validation API.
+  '/storefront/v1/',
+  '/storefront/ipn/',
+  // M35b: ncom.bd's connector, order intake and webhook, signed with the brand's ncom secrets
+  // over the raw body (D-553); and the packing scanner's device routes, which take their
+  // authority from a bearer device token, never from a cookie (D-554).
+  '/ncom/',
+  '/v1/scanner/sign-in',
+  '/v1/scanner/sign-out',
+  // The scanner app as it ships signs in at the old site's address (D-554).
+  '/api/admin/scanner/login',
+] as const;
 
 function isSignedMachineRoute(url: string): boolean {
   const path = url.split('?')[0] ?? '';

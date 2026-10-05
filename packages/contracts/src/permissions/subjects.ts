@@ -96,14 +96,7 @@ export const SUBJECTS = [
   'Payroll',
   'Target',
   /**
-   * §18's cross-org ranking. The one `all`-scope grant an ordinary role holds,
-   * bounded by D-023: normalized metrics and ranks only, never raw financials,
-   * read through `erp_analytics` (§5 exception 2).
-   */
-  'Leaderboard',
-  /**
-   * §18's org dashboard and its rollups (M24, D-325): org_admin at `org`, and Super Admin
-   * for the consolidated view across brands. §6 has no row for it; the dashboard puts
+   * §18's org dashboard and its rollups (M24, D-325): org_admin at `org`. §6 has no row for it; the dashboard puts
    * revenue, cash and stock value side by side, which is the org admin's picture, and
    * every other role already has a dashboard of its own (marketing, accounts, the desk).
    * `update` is recomputing the brand's rollups for a range.
@@ -112,6 +105,29 @@ export const SUBJECTS = [
   'ResellerAdmin',
   'Investor',
   'CompanyLoan',
+  /**
+   * The brand's website, run from its ERP (M33, D-508): its settings, hero slides, menu,
+   * size charts, the products' and categories' website fields, and the site keys the
+   * website reads the catalog with. org_admin and marketing manage it; sales reads it, to
+   * answer a shopper about what the site shows. Not a row in §6's grid, which predates the
+   * website moving into the ERP (D-469).
+   */
+  'Storefront',
+  /**
+   * The website's payment gateway and email server credentials (M34, D-528): where shoppers'
+   * money goes and where password-reset links are sent from. org_admin only: a marketing
+   * user who could point SSLCommerz at another store, or the email server at their own,
+   * could take shoppers' money or their accounts. Showing that they are set up is
+   * `read Storefront`; the secrets are never shown to anyone.
+   */
+  'WebsiteCredentials',
+  /**
+   * A branch's own record (M39a, D-633): renaming it and switching it off once nothing runs
+   * there any more. §6's "users, roles, settings" cell, so org_admin only. Branches are never
+   * deleted: from the first day ledger lines, wallets and staff name them. Reading the branch
+   * dashboards stays `read LedgerReport`.
+   */
+  'Branch',
 ] as const;
 
 export type Subject = (typeof SUBJECTS)[number];
@@ -174,6 +190,25 @@ export const COST_FIELDS = [
    */
   'originalUnitCostPoisha',
   'original_unit_cost_poisha',
+  /**
+   * A variant's standard buying price (M39b, D-638): `supply.sku_purchase_prices`, what
+   * the next receipt is prefilled with. Purchase cost by any measure.
+   */
+  'standardUnitCostPoisha',
+  'standard_unit_cost_poisha',
+  /** The last price a variant was bought at (M39b, D-637), read from receipts. */
+  'lastUnitCostPoisha',
+  'last_unit_cost_poisha',
+  /** The cost a receipt line starts at (standard, else last): one of the two above. */
+  'prefillUnitCostPoisha',
+  'prefill_unit_cost_poisha',
+  /**
+   * A margin on a selling price. No route sends one (the console computes it from a cost
+   * the role already reads, D-636), and it is listed so none ever can: a margin beside a
+   * price is the cost (investigation critic, "a server-computed margin would leak cost").
+   */
+  'marginBps',
+  'margin_bps',
 ] as const;
 
 /**
@@ -193,6 +228,239 @@ export const RESELLER_VISIBLE_FIELDS = [
   'attributes',
   'resellerPricePoisha',
   'availableQty',
+] as const;
+
+/**
+ * Every field the storefront API may send to the brand's website (M33, D-506).
+ *
+ * The website is outside the ERP: its server holds a site key, and whatever reaches it can
+ * reach a shopper's browser. So its responses go through an allow-list stricter than the
+ * reseller's: **every key at every depth** must be named here (`serializeForStorefront`),
+ * not only the top-level ones. A field added to a payload and forgotten here disappears from
+ * the response (a test notices) rather than reaching the internet. The cost deny-list runs
+ * after it as well, so a cost field could not pass even if somebody listed it.
+ */
+export const STOREFRONT_VISIBLE_FIELDS = [
+  // envelopes and paging
+  'items',
+  'nextCursor',
+  'total',
+  'page',
+  'limit',
+  'product',
+  'redirect',
+  'sizeChart',
+  'site',
+  // identity and words
+  'id',
+  'slug',
+  'name',
+  'label',
+  'kind',
+  'description',
+  'text',
+  'alt',
+  'position',
+  // the product card and page
+  'category',
+  'gender',
+  'tags',
+  'featured',
+  'newArrival',
+  'price',
+  'min',
+  'max',
+  'compareAt',
+  'onSale',
+  'image',
+  'images',
+  'sizes',
+  'inStock',
+  'material',
+  'careInstructions',
+  'seoTitle',
+  'seoDescription',
+  'breadcrumb',
+  'variants',
+  'skuId',
+  'sku',
+  'size',
+  'colour',
+  'attributes',
+  'value',
+  'availableQty',
+  // M39b (D-643): the product page's photos grouped by colour.
+  'galleries',
+  'related',
+  'children',
+  'subcategories',
+  // money, as poisha and taka strings
+  'poisha',
+  'taka',
+  // images
+  'width',
+  'height',
+  'urls',
+  'thumb',
+  'card',
+  'full',
+  // size charts
+  'columns',
+  'rows',
+  // the site: info, social, announcement, promo, testimonials, hero, menu
+  'logo',
+  'whatsapp',
+  'phone',
+  'email',
+  'address',
+  'social',
+  'facebook',
+  'instagram',
+  'tiktok',
+  'youtube',
+  'announcement',
+  'enabled',
+  'link',
+  'promoBanner',
+  'headline',
+  'subtext',
+  'note',
+  'decorativeText',
+  'primaryLabel',
+  'primaryHref',
+  'secondaryLabel',
+  'secondaryHref',
+  'testimonials',
+  'location',
+  'rating',
+  'hero',
+  'desktop',
+  'mobile',
+  'menu',
+  'href',
+  'highlighted',
+  // shipping and payment
+  'shipping',
+  'freeShippingEnabled',
+  'freeShippingThreshold',
+  'zones',
+  'inside_dhaka',
+  'suburbs',
+  'outside_dhaka',
+  'fee',
+  'payments',
+  'cod',
+  'sslcommerz',
+  // geography for the checkout's address pickers
+  'nameEn',
+  'nameBn',
+  'districtId',
+  'divisionId',
+  // M34: the cart quote and the checkout (D-520, D-521)
+  'quote',
+  'lines',
+  'qty',
+  'unitPrice',
+  'lineTotal',
+  'flashSale',
+  'unavailable',
+  'variantId',
+  'reason',
+  'discounts',
+  'code',
+  'title',
+  'automatic',
+  'amount',
+  'deliveryAmount',
+  'codes',
+  'applied',
+  'discount',
+  'delivery',
+  'deliveryDiscount',
+  'deliverable',
+  'zone',
+  'freeShipping',
+  'order',
+  'orderNo',
+  'status',
+  'viewToken',
+  'payment',
+  'method',
+  'required',
+  // M34: shopper accounts (D-522)
+  'account',
+  'accountId',
+  'requiresVerification',
+  'emailVerified',
+  'locale',
+  'hasPassword',
+  'googleLinked',
+  'addresses',
+  'createdAt',
+  'thanaId',
+  'area',
+  'addressLine',
+  'isDefault',
+  'created',
+  'ok',
+  // M34: the shopper's view of an order (D-524)
+  'placedAt',
+  'statusLabel',
+  'en',
+  'bn',
+  'itemCount',
+  'paymentMethod',
+  'confirmedAt',
+  'shippedAt',
+  'deliveredAt',
+  'cancelledAt',
+  'paid',
+  'dueOnDelivery',
+  'paidOnline',
+  'shipTo',
+  'district',
+  'thana',
+  'tracking',
+  'courier',
+  'trackingCode',
+  // M34: SSLCommerz (D-525)
+  'gatewayUrl',
+  'tranId',
+  'expiresAt',
+  // M34: flash sales (D-548)
+  'subtitle',
+  'startsAt',
+  'endsAt',
+  'showOnHome',
+  'banner',
+  'unitsLeft',
+  // M35b: campaign links (D-551)
+  'customLink',
+  'basePath',
+  'bgColor',
+  'textColor',
+  'modal',
+  'type',
+  'ctaText',
+  'ctaLink',
+  'highlightProducts',
+  // M35b: tracking (D-552): the client-safe config and the events' answers
+  'meta',
+  'pixelEnabled',
+  'pixelId',
+  'ga4',
+  'clientEnabled',
+  'measurementId',
+  'proxy',
+  'metaScriptPath',
+  'metaCollectPath',
+  'ga4ScriptPath',
+  'ga4CollectPath',
+  'testMode',
+  'events',
+  'client',
+  'results',
+  'eventId',
 ] as const;
 
 export type CostField = (typeof COST_FIELDS)[number];

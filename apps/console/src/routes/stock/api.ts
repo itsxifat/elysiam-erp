@@ -238,8 +238,20 @@ export function openCount(input: {
 export function recordCounts(
   id: string,
   lines: readonly { skuId: string; countedQty: number }[],
+  note?: string,
 ): Promise<CountSession> {
-  return send('PUT', `/v1/inventory/counts/${id}/lines`, { lines });
+  return send('PUT', `/v1/inventory/counts/${id}/lines`, {
+    lines,
+    ...(note === undefined || note.trim() === '' ? {} : { note: note.trim() }),
+  });
+}
+
+/** One scan on an open count (M38a, D-606): one more piece of that SKU. */
+export function scanCount(
+  id: string,
+  input: { readonly scanId: string; readonly code: string },
+): Promise<{ skuId: string; skuCode: string; countedQty: number; duplicate: boolean }> {
+  return api.post(`/v1/inventory/counts/${id}/scans`, input);
 }
 
 export function submitCount(id: string): Promise<CountSession> {
@@ -323,4 +335,139 @@ export function listBranchOptions(): Promise<{
   items: { id: string; code: string; name: string }[];
 }> {
   return api.get('/v1/hr/branch-options');
+}
+
+// --- stock in hand and the opening stock window (M38a, D-602) --------------------
+
+export interface OpeningStockWindow {
+  readonly open: boolean;
+  readonly closedAt: string | null;
+  /** Only for those who may close and reopen it (`approve StockAdjustment`). */
+  readonly closedBy?: string | null;
+  readonly reopenedAt: string | null;
+  readonly reopenPending: boolean;
+}
+
+export type StockInHandStatus = 'draft' | 'posted' | 'reversed';
+
+export interface StockInHandListItem {
+  readonly id: string;
+  readonly status: StockInHandStatus;
+  readonly locationId: string;
+  readonly locationName: string;
+  readonly memo: string | null;
+  readonly lineCount: number;
+  readonly totalQty: number;
+  readonly businessDate: string | null;
+  readonly createdAt: string;
+  readonly postedAt: string | null;
+  readonly reversedAt: string | null;
+  /** Cost: absent for a role without `read Cost`. Null while a line is unpriced. */
+  readonly stockValuePoisha?: string | null | undefined;
+}
+
+export interface StockInHandEntry {
+  readonly id: string;
+  readonly status: StockInHandStatus;
+  readonly locationId: string;
+  readonly locationName: string;
+  readonly memo: string | null;
+  readonly businessDate: string | null;
+  readonly postedAt: string | null;
+  readonly reversedAt: string | null;
+  /** A reversal is waiting for a second admin. */
+  readonly reversalPending: boolean;
+  readonly costWithheld: boolean;
+  readonly stockValuePoisha?: string | null | undefined;
+  readonly lines: readonly {
+    readonly skuId: string;
+    readonly skuCode: string;
+    readonly barcode: string | null;
+    readonly productName: string;
+    readonly variantLabel: string;
+    readonly qty: number;
+    readonly unitCostPoisha?: string | null | undefined;
+  }[];
+}
+
+export function openingStockWindow(): Promise<OpeningStockWindow> {
+  return api.get('/v1/inventory/stock-in-hand/window');
+}
+
+export function closeOpeningStock(note?: string): Promise<OpeningStockWindow> {
+  return api.post('/v1/inventory/stock-in-hand/window/close', note === undefined ? {} : { note });
+}
+
+export function requestOpeningStockReopen(
+  reason: string,
+): Promise<{ approvalId: string; status: string }> {
+  return api.post('/v1/inventory/stock-in-hand/window/reopen', { reason });
+}
+
+export function listStockInHand(): Promise<{
+  items: StockInHandListItem[];
+  costWithheld: boolean;
+}> {
+  return api.get('/v1/inventory/stock-in-hand');
+}
+
+export function getStockInHand(id: string): Promise<StockInHandEntry> {
+  return api.get(`/v1/inventory/stock-in-hand/${id}`);
+}
+
+/** Enter and post, with a cost per piece on every line (`read Cost`). */
+export function postStockInHand(input: {
+  readonly entryId: string;
+  readonly locationId: string;
+  readonly memo?: string;
+  readonly lines: readonly { skuId: string; qty: number; unitCostPoisha: string }[];
+}): Promise<{ id: string; status: 'posted'; journalId: string | null }> {
+  return api.post('/v1/inventory/stock-in-hand', input);
+}
+
+/** A quantity-only draft, for accounts to price (warehouse). */
+export function draftStockInHand(input: {
+  readonly entryId: string;
+  readonly locationId: string;
+  readonly memo?: string;
+  readonly lines: readonly { skuId: string; qty: number }[];
+}): Promise<{ id: string; status: 'draft' }> {
+  return api.post('/v1/inventory/stock-in-hand/drafts', input);
+}
+
+export function updateStockInHandDraft(
+  id: string,
+  patch: {
+    readonly locationId?: string;
+    readonly memo?: string | null;
+    readonly lines?: readonly { skuId: string; qty: number }[];
+  },
+): Promise<{ id: string; status: 'draft' }> {
+  return api.patch(`/v1/inventory/stock-in-hand/drafts/${id}`, patch);
+}
+
+export function deleteStockInHandDraft(id: string): Promise<{ id: string }> {
+  return api.delete(`/v1/inventory/stock-in-hand/drafts/${id}`);
+}
+
+/**
+ * Price a draft and post it (`read Cost`), repeating the location and the pieces the person
+ * read: a draft changed since is refused (`STOCK_IN_HAND_CHANGED`) rather than posted.
+ */
+export function postStockInHandDraft(
+  id: string,
+  input: {
+    readonly locationId: string;
+    readonly lines: readonly { skuId: string; qty: number; unitCostPoisha: string }[];
+  },
+): Promise<{ id: string; status: 'posted' }> {
+  return api.post(`/v1/inventory/stock-in-hand/${id}/post`, input);
+}
+
+/** Ask to take a posted entry back out: an approval a second admin decides (D-602). */
+export function requestStockInHandReversal(
+  id: string,
+  reason: string,
+): Promise<{ approvalId: string; status: string }> {
+  return api.post(`/v1/inventory/stock-in-hand/${id}/reverse`, { reason });
 }

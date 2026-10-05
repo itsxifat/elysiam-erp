@@ -1,9 +1,13 @@
 import { BASIS_POINTS } from '../money/index.js';
-import { median, ratio, returnRateBps } from './kpis.js';
+import { deliverySuccessBps, median, ratio, returnRateBps } from './kpis.js';
 import { normalizedMetrics, type BrandMonth } from './leaderboard.js';
 
 /**
  * Rule-based insights (architecture §18; M24 check 3, D-326).
+ *
+ * Every rule compares the brand with itself: its own last month, its own channels, or the
+ * median of its own recent months (`baseline`). A brand's ERP runs on its own database and
+ * knows no other brand (D-469, D-471), so nothing here is measured against one.
  *
  * Each rule is a plain comparison against a threshold, so the reason for a suggestion is
  * always one sentence anybody can check against the dashboard. Every rule needs a minimum
@@ -24,7 +28,7 @@ export const INSIGHT_CODES = [
   'cpdo_rising',
   'slow_pickup',
   'channel_returns',
-  'delivery_success_below_group',
+  'delivery_success_below_usual',
 ] as const;
 
 export type InsightCode = (typeof INSIGHT_CODES)[number];
@@ -46,8 +50,12 @@ export interface InsightMonth extends BrandMonth {
 export interface InsightInput {
   readonly current: InsightMonth;
   readonly previous: InsightMonth;
-  /** Every brand's figure this month, this brand's included; null where it has none. */
-  readonly group: {
+  /**
+   * The brand's own figure in each of its recent months before this one (the server passes
+   * the three before it); null for a month without enough to say. The rules compare this
+   * month with their median: "your usual".
+   */
+  readonly baseline: {
     readonly outsideDhakaReturnRateBps: readonly (bigint | null)[];
     readonly deliverySuccessBps: readonly (bigint | null)[];
   };
@@ -67,7 +75,7 @@ export interface InsightInput {
 export interface InsightThresholds {
   /** Orders (or pickups) a rule needs before it says anything. */
   readonly minSample: number;
-  /** Outside-Dhaka return rate this far above the group median, in basis points. */
+  /** Outside-Dhaka return rate this far above the brand's usual (baseline median), in bps. */
   readonly outsideDhakaGapBps: bigint;
   /** Return rate up this much on last month, in basis points (percentage points × 100). */
   readonly returnRateRiseBps: bigint;
@@ -81,7 +89,7 @@ export interface InsightThresholds {
   readonly slowPickupSeconds: number;
   /** A channel's return rate this far above the brand's own, in basis points. */
   readonly channelGapBps: bigint;
-  /** Delivery success this far below the group median, in basis points. */
+  /** Delivery success this far below the brand's usual (baseline median), in bps. */
   readonly successGapBps: bigint;
 }
 
@@ -103,15 +111,15 @@ function outsideDhakaReturns(input: InsightInput, t: InsightThresholds): Insight
   const { deliveredOutsideDhaka: delivered, returnedOutsideDhaka: returned } = input.current;
   if (delivered + returned < t.minSample) return [];
   const rate = returnRateBps(delivered, returned);
-  const groupMedian = median(input.group.outsideDhakaReturnRateBps);
-  if (rate === null || groupMedian === null) return [];
-  const gap = rate - groupMedian;
+  const usual = median(input.baseline.outsideDhakaReturnRateBps);
+  if (rate === null || usual === null) return [];
+  const gap = rate - usual;
   if (gap < t.outsideDhakaGapBps) return [];
   return [
     {
       code: 'outside_dhaka_returns',
       severity: 'warning',
-      params: { rateBps: text(rate), medianBps: text(groupMedian), gapBps: text(gap) },
+      params: { rateBps: text(rate), medianBps: text(usual), gapBps: text(gap) },
     },
   ];
 }
@@ -210,23 +218,49 @@ function channelReturns(input: InsightInput, t: InsightThresholds): Insight[] {
     }));
 }
 
-function deliverySuccessBelowGroup(input: InsightInput, t: InsightThresholds): Insight[] {
+function deliverySuccessBelowUsual(input: InsightInput, t: InsightThresholds): Insight[] {
   const now = input.current;
   if (now.ordersDelivered + now.ordersReturned + now.ordersCancelled < t.minSample) return [];
   const own = normalizedMetrics(now, input.previous).deliverySuccess;
-  const groupMedian = median(input.group.deliverySuccessBps);
-  if (own === null || groupMedian === null || groupMedian - own < t.successGapBps) return [];
+  const usual = median(input.baseline.deliverySuccessBps);
+  if (own === null || usual === null || usual - own < t.successGapBps) return [];
   return [
     {
-      code: 'delivery_success_below_group',
+      code: 'delivery_success_below_usual',
       severity: 'warning',
       params: {
         successBps: text(own),
-        medianBps: text(groupMedian),
-        gapBps: text(groupMedian - own),
+        medianBps: text(usual),
+        gapBps: text(usual - own),
       },
     },
   ];
+}
+
+/** How many of the brand's own months before this one the baseline reads (D-471). */
+export const BASELINE_MONTHS = 3;
+
+/**
+ * The baseline from the brand's own months before this one: each month's outside-Dhaka
+ * return rate and delivery success, or null for a month with fewer parcels than a rule needs
+ * before it speaks, so a quiet month cannot set the brand's "usual".
+ */
+export function insightBaseline(
+  months: readonly InsightMonth[],
+  thresholds: InsightThresholds = DEFAULT_INSIGHT_THRESHOLDS,
+): InsightInput['baseline'] {
+  return {
+    outsideDhakaReturnRateBps: months.map((month) =>
+      month.deliveredOutsideDhaka + month.returnedOutsideDhaka < thresholds.minSample
+        ? null
+        : returnRateBps(month.deliveredOutsideDhaka, month.returnedOutsideDhaka),
+    ),
+    deliverySuccessBps: months.map((month) =>
+      month.ordersDelivered + month.ordersReturned + month.ordersCancelled < thresholds.minSample
+        ? null
+        : deliverySuccessBps(month.ordersDelivered, month.ordersReturned, month.ordersCancelled),
+    ),
+  };
 }
 
 /** Every rule, in a fixed order, so the same month always reads the same way. */
@@ -237,7 +271,7 @@ export function insights(
   return [
     ...outsideDhakaReturns(input, thresholds),
     ...returnRateRising(input, thresholds),
-    ...deliverySuccessBelowGroup(input, thresholds),
+    ...deliverySuccessBelowUsual(input, thresholds),
     ...campaignsBelowBreakEven(input, thresholds),
     ...cpdoRising(input, thresholds),
     ...slowPickup(input, thresholds),

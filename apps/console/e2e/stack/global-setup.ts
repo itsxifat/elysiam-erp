@@ -178,6 +178,14 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       // into these sockets, and this worker must not deliver into another's.
       REALTIME_ADAPTER_KEY: `e2e-desk-${randomBytes(4).toString('hex')}`,
       LOG_LEVEL: process.env.E2E_STACK_LOG_LEVEL ?? 'warn',
+      // M34: the website's credentials can be kept, and email and SSLCommerz are recorders,
+      // so Website → Payments and Email are exercised without reaching anything real.
+      STOREFRONT_CREDENTIALS_KEY:
+        process.env.STOREFRONT_CREDENTIALS_KEY ?? randomBytes(32).toString('base64'),
+      NOTIFY_EMAIL_PROVIDER: 'fake',
+      STOREFRONT_SSLCOMMERZ_PROVIDER: 'fake',
+      // A throwaway stack is a staging server: its sandbox store may take test payments.
+      STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX: 'true',
     };
 
     const detached = process.platform !== 'win32';

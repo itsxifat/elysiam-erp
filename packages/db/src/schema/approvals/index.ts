@@ -59,6 +59,12 @@ export const approvalType = approvals.enum('approval_type', [
   // gaps-users-auth: a privileged person's sign-in reset needs a second admin (D-404).
   // Added by migration 0098, and used as a literal nowhere in that file, for the reason above.
   'credential_reset',
+  // M38a: reopening a brand's closed opening-stock window needs a second person (D-602).
+  // Added by its migration, and used as a literal nowhere in that file, for the reason above.
+  'opening_stock_reopen',
+  // M38a: reversing a posted stock-in-hand entry needs one too (D-602). Same migration,
+  // same rule: compared as text wherever the policies migration names it.
+  'stock_in_hand_reversal',
 ]);
 
 /**
@@ -74,6 +80,10 @@ export const NEVER_AUTO_APPROVE_TYPE_NAMES = [
   'back_dated_entry',
   // gaps-users-auth (D-404): a sign-in reset is a control, never small enough to skip.
   'credential_reset',
+  // M38a (D-602): stock entered against equity again, after the brand said it was all in.
+  'opening_stock_reopen',
+  // M38a (D-602): counted stock taken back out against equity.
+  'stock_in_hand_reversal',
 ] as const;
 
 export const NEVER_AUTO_APPROVE_SQL = sql.raw(

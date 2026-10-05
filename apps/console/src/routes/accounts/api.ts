@@ -454,46 +454,6 @@ export function requestReopen(input: {
   return api.post('/v1/ledger/periods/reopen', input);
 }
 
-// --- consolidation (super admin) ------------------------------------------------------
-
-export interface ConsolidatedWallets {
-  readonly orgs: readonly {
-    readonly orgId: string;
-    readonly orgName: string;
-    readonly totalPoisha: string;
-    readonly bySubtype: Readonly<Record<string, string>>;
-  }[];
-  readonly totalPoisha: string;
-}
-
-export function consolidatedWallets(): Promise<ConsolidatedWallets> {
-  return api.get<ConsolidatedWallets>('/v1/accounts/reports/consolidated-wallets');
-}
-
-export interface ConsolidatedProfitAndLoss {
-  readonly from: string;
-  readonly to: string;
-  readonly orgs: readonly {
-    readonly orgId: string;
-    readonly orgName: string;
-    readonly incomePoisha: string;
-    readonly expensePoisha: string;
-    readonly netPoisha: string;
-  }[];
-  readonly incomePoisha: string;
-  readonly expensePoisha: string;
-  readonly netPoisha: string;
-}
-
-export function consolidatedProfitAndLoss(range: {
-  from: string;
-  to: string;
-}): Promise<ConsolidatedProfitAndLoss> {
-  return api.get<ConsolidatedProfitAndLoss>(
-    `/v1/accounts/reports/consolidated-profit-and-loss?from=${range.from}&to=${range.to}`,
-  );
-}
-
 /**
  * Today, and the first of this month, as Asia/Dhaka calendar dates (invariant 8).
  *

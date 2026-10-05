@@ -574,6 +574,16 @@ describe('SKUs', () => {
     const review = reviewSkus(parseCsv('product,sku,price_taka,cost\nA,A-1,10,5\n'), skuRefs());
     expect(review.problems[0]?.column).toBe('cost');
   });
+
+  it('leaves the ERP’s own barcode range to the ERP (D-603)', () => {
+    const review = reviewSkus(
+      parseCsv('product,sku,price_taka,barcode\nA,A-1,10,2000000000015\nB,B-1,10,5901234123457\n'),
+      skuRefs(),
+    );
+    expect(review.problems.map((problem) => [problem.line, problem.column])).toEqual([
+      [2, 'barcode'],
+    ]);
+  });
 });
 
 // --- the training org ------------------------------------------------------------

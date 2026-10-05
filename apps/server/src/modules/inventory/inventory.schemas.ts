@@ -144,6 +144,11 @@ export const recordCountsSchema = z
       )
       .min(1)
       .max(500),
+    /**
+     * Why a figure was typed rather than scanned (M38a, D-606): a manual correction of a
+     * scanned count carries a note, which the audit entry keeps.
+     */
+    note: z.string().trim().max(500).optional(),
   })
   .strict();
 

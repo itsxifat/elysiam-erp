@@ -62,6 +62,8 @@ export class BranchesService {
           code: branch.code,
           name: branch.name,
           kind: branch.kind,
+          // M39a (D-633): a switched-off branch is still listed, marked.
+          isActive: branch.is_active ?? true,
           businessDate: day,
           salesCount: summary.sales_count,
           netSalesPoisha: summary.net_poisha,

@@ -9,6 +9,7 @@ import {
   ChartLine,
   ClipboardList,
   Cog,
+  Globe,
   Handshake,
   Landmark,
   LayoutDashboard,
@@ -102,10 +103,7 @@ export const NAVIGATION: readonly NavSection[] = [
     untitled: true,
     items: [
       { to: '/', labelKey: 'nav.overview', icon: LayoutDashboard, required: 'always' },
-      /*
-       * M24. `read Dashboard`, org_admin's (D-325): the brand dashboard, with the leaderboard
-       * and, for Super Admin, all brands as tabs inside the section.
-       */
+      // M24. `read Dashboard`, org_admin's (D-325): the brand's own dashboard.
       {
         to: '/analytics',
         labelKey: 'nav.analytics',
@@ -159,6 +157,16 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.campaigns',
         icon: Megaphone,
         required: { action: 'read', subject: 'Campaign' },
+      },
+      /*
+       * M33. The brand's website, run from its ERP (D-508): `read Storefront` — org_admin and
+       * marketing manage it, sales reads it. A sales channel, so it sits with the selling.
+       */
+      {
+        to: '/website',
+        labelKey: 'nav.website',
+        icon: Globe,
+        required: { action: 'read', subject: 'Storefront' },
       },
     ],
   },
@@ -379,6 +387,57 @@ export interface PalettePage {
 }
 
 export const PALETTE_PAGES: readonly PalettePage[] = [
+  // M33: the Website section's screens.
+  {
+    to: '/website/hero',
+    labelKey: 'web.nav.hero',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    to: '/website/menu',
+    labelKey: 'web.nav.menu',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    to: '/website/size-charts',
+    labelKey: 'web.nav.sizeCharts',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    to: '/website/connection',
+    labelKey: 'web.nav.connection',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  // M34: the gateway, the email server and the shoppers' accounts.
+  {
+    to: '/website/payments',
+    labelKey: 'web.nav.payments',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    to: '/website/email',
+    labelKey: 'web.nav.email',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
+  {
+    to: '/website/customers',
+    labelKey: 'web.nav.customers',
+    parentKey: 'nav.website',
+    icon: Globe,
+    required: { action: 'read', subject: 'Storefront' },
+  },
   {
     to: '/orders/queue',
     labelKey: 'orders.nav.queue',
@@ -463,6 +522,14 @@ export const PALETTE_PAGES: readonly PalettePage[] = [
     icon: ClipboardList,
     required: { action: 'read', subject: 'Stock' },
   },
+  // M38a: stock the brand already holds when it starts, and its window (D-602).
+  {
+    to: '/stock/in-hand',
+    labelKey: 'nav.stockInHand',
+    parentKey: 'nav.stock',
+    icon: PackagePlus,
+    required: { action: 'read', subject: 'Stock' },
+  },
   {
     to: '/supply/entries',
     labelKey: 'supply.entries',
@@ -532,13 +599,6 @@ export const PALETTE_PAGES: readonly PalettePage[] = [
     parentKey: 'nav.performance',
     icon: Target,
     required: { action: 'read', subject: 'Target' },
-  },
-  {
-    to: '/analytics/leaderboard',
-    labelKey: 'analytics.nav.leaderboard',
-    parentKey: 'nav.analytics',
-    icon: ChartLine,
-    required: { action: 'read', subject: 'Leaderboard' },
   },
   ...SETTINGS_TABS.map((tab): PalettePage => ({
     to: tab.path,

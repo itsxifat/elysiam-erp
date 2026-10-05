@@ -360,4 +360,27 @@ describe('the price importer', () => {
   it('will not commit an empty file', () => {
     expect(allOrNothing(reviewPriceImport(parseCsv('sku,price_taka\n'), known)).ok).toBe(false);
   });
+
+  it('keeps the ERP’s own barcode range for the ERP, but lets a SKU keep its number (D-603)', () => {
+    const own = '2000000000015';
+    const withBarcodes = [
+      { code: 'ELY-SHRT-0001-RED-M', pricePoisha: poisha(149_000), barcode: own },
+      { code: 'ELY-SHRT-0001-RED-L', pricePoisha: poisha(149_000), barcode: null },
+    ];
+    const report = reviewPriceImport(
+      parseCsv(
+        `sku,price_taka,barcode\nELY-SHRT-0001-RED-M,1490,${own}\nELY-SHRT-0001-RED-L,1490,2000000000022\n`,
+      ),
+      withBarcodes,
+    );
+    expect(report.problems.map((problem) => [problem.line, problem.column])).toEqual([
+      [3, 'barcode'],
+    ]);
+    // A supplier's code outside the range is taken as before.
+    const supplier = reviewPriceImport(
+      parseCsv('sku,price_taka,barcode\nELY-SHRT-0001-RED-L,1490,5901234123457\n'),
+      withBarcodes,
+    );
+    expect(supplier.problems).toEqual([]);
+  });
 });

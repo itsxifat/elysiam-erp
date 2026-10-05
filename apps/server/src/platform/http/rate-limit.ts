@@ -56,6 +56,14 @@ export const CREDENTIAL_RULES: Readonly<Record<string, RateLimitRule>> = {
   // Better Auth, which counts failures against the user.
   '/api/auth/two-factor/verify-totp': { windowSeconds: 60, perIp: 10 },
   '/api/auth/two-factor/verify-backup-code': { windowSeconds: 60, perIp: 10 },
+  // M31 (D-473): an owner sign-in link. Its token names no identifier worth a bucket of its
+  // own; a link is single use and two minutes long, so ten a minute is plenty.
+  '/v1/auth/owner-link': { windowSeconds: 60, perIp: 10 },
+  // M35b (D-554): the packing scanner's sign-in takes an email and a password like the
+  // console's; the old site allowed eight tries in ten minutes per address, and so does this,
+  // per address and per email.
+  '/v1/scanner/sign-in': { windowSeconds: 600, perIp: 8, perIdentifier: 8 },
+  '/api/admin/scanner/login': { windowSeconds: 600, perIp: 8, perIdentifier: 8 },
 };
 
 /**

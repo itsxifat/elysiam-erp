@@ -27,6 +27,9 @@ beforeAll(async () => {
   for (const method of CORS_METHODS.filter((m) => m !== 'HEAD')) {
     app.route({ method, url: '/v1/thing', handler: () => ({ ok: true }) });
   }
+  app.get('/v1/scanner/shipment', () => ({ found: false }));
+  app.post('/v1/scanner/sign-in', () => ({ ok: true }));
+  app.get('/api/admin/scanner/shipment', () => ({ found: false }));
   await app.ready();
 });
 
@@ -84,5 +87,66 @@ describe('the CORS preflight', () => {
     });
 
     expect(response.headers['access-control-allow-origin']).toBe(CONSOLE);
+  });
+});
+
+/**
+ * The packing scanner app's routes (M35b, D-554): its WebView is an origin of its own and it
+ * sends a bearer token, never a cookie. Any origin may call them, without credentials; every
+ * other route keeps the exact-origin, credentialed policy.
+ */
+describe('the scanner device routes', () => {
+  const APP = 'https://localhost';
+
+  it('answers any origin, without credentials, with the bearer header allowed', async () => {
+    const response = await app.inject({
+      method: 'OPTIONS',
+      url: '/v1/scanner/shipment?code=EL-1001',
+      headers: {
+        origin: APP,
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'authorization',
+      },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe(APP);
+    expect(response.headers['access-control-allow-credentials']).toBeUndefined();
+    expect(String(response.headers['access-control-allow-headers']).toLowerCase()).toContain(
+      'authorization',
+    );
+  });
+
+  it('lets the app post its sign-in from its own origin', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/scanner/sign-in',
+      headers: { origin: APP, 'content-type': 'application/json' },
+      payload: '{}',
+    });
+
+    expect(response.headers['access-control-allow-origin']).toBe(APP);
+    expect(response.headers['access-control-allow-credentials']).toBeUndefined();
+  });
+
+  it('answers the app as it ships at the old address the same way', async () => {
+    const response = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/admin/scanner/shipment?code=EL-1001',
+      headers: {
+        origin: APP,
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'authorization',
+      },
+    });
+
+    expect(response.headers['access-control-allow-origin']).toBe(APP);
+    expect(response.headers['access-control-allow-credentials']).toBeUndefined();
+  });
+
+  it('opens nothing else to that origin', async () => {
+    const response = await preflight(APP, 'POST', 'content-type');
+
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
   });
 });

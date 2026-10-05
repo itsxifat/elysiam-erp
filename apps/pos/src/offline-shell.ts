@@ -16,7 +16,7 @@
  * change on every save, and a worker caching them would serve stale code.
  */
 
-const SHELL_CACHE = 'elysium-pos-shell-v1';
+const SHELL_CACHE = 'erp-pos-shell-v1';
 
 export function registerOfflineShell(): void {
   if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return;

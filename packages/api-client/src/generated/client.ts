@@ -47,15 +47,55 @@ export const OPERATIONS = {
     path: '/v1/approvals/{id}/decide',
     ability: 'approve:ApprovalRequest',
   },
+  deleteV1CatalogAttributesById: {
+    method: 'DELETE',
+    path: '/v1/catalog/attributes/{id}',
+    ability: 'delete:Catalog',
+  },
+  deleteV1CatalogAttributesByIdValuesByValueId: {
+    method: 'DELETE',
+    path: '/v1/catalog/attributes/{id}/values/{valueId}',
+    ability: 'delete:Catalog',
+  },
+  deleteV1CatalogCategoriesById: {
+    method: 'DELETE',
+    path: '/v1/catalog/categories/{id}',
+    ability: 'delete:Catalog',
+  },
+  deleteV1CatalogProductsById: {
+    method: 'DELETE',
+    path: '/v1/catalog/products/{id}',
+    ability: 'delete:Catalog',
+  },
   deleteV1CatalogProductsByIdImagesByImageId: {
     method: 'DELETE',
     path: '/v1/catalog/products/{id}/images/{imageId}',
     ability: 'update:Catalog',
   },
+  deleteV1CatalogSkusById: {
+    method: 'DELETE',
+    path: '/v1/catalog/skus/{id}',
+    ability: 'delete:Catalog',
+  },
   deleteV1HrPayrollRunsByIdInputsByInputId: {
     method: 'DELETE',
     path: '/v1/hr/payroll/runs/{id}/inputs/{inputId}',
     ability: 'create:Payroll',
+  },
+  deleteV1InventoryLocationsById: {
+    method: 'DELETE',
+    path: '/v1/inventory/locations/{id}',
+    ability: 'delete:Catalog',
+  },
+  deleteV1InventoryStockInHandDraftsById: {
+    method: 'DELETE',
+    path: '/v1/inventory/stock-in-hand/drafts/{id}',
+    ability: 'update:Supply',
+  },
+  deleteV1MarketingCampaignsById: {
+    method: 'DELETE',
+    path: '/v1/marketing/campaigns/{id}',
+    ability: 'delete:Campaign',
   },
   deleteV1MarketingCampaignsByIdRefsByRefId: {
     method: 'DELETE',
@@ -67,12 +107,147 @@ export const OPERATIONS = {
     path: '/v1/notify/opt-outs/{phone}',
     ability: 'update:Campaign',
   },
+  deleteV1NotifyTemplatesById: {
+    method: 'DELETE',
+    path: '/v1/notify/templates/{id}',
+    ability: 'delete:Campaign',
+  },
+  deleteV1PromoCodesById: {
+    method: 'DELETE',
+    path: '/v1/promo/codes/{id}',
+    ability: 'delete:LandingPage',
+  },
+  deleteV1PromoFlashSalesById: {
+    method: 'DELETE',
+    path: '/v1/promo/flash-sales/{id}',
+    ability: 'delete:LandingPage',
+  },
+  deleteV1StorefrontCampaignLinksById: {
+    method: 'DELETE',
+    path: '/v1/storefront/campaign-links/{id}',
+    ability: 'delete:Storefront',
+  },
+  deleteV1StorefrontHeroSlidesById: {
+    method: 'DELETE',
+    path: '/v1/storefront/hero-slides/{id}',
+    ability: 'delete:Storefront',
+  },
+  deleteV1StorefrontNavItemsById: {
+    method: 'DELETE',
+    path: '/v1/storefront/nav-items/{id}',
+    ability: 'delete:Storefront',
+  },
+  deleteV1StorefrontSizeChartsById: {
+    method: 'DELETE',
+    path: '/v1/storefront/size-charts/{id}',
+    ability: 'delete:Storefront',
+  },
   deleteV1SupplyDraftsById: {
     method: 'DELETE',
     path: '/v1/supply/drafts/{id}',
     ability: 'update:Supply',
   },
+  deleteV1SupplySuppliersById: {
+    method: 'DELETE',
+    path: '/v1/supply/suppliers/{id}',
+    ability: 'delete:Supply',
+  },
+  getApiAdminScannerShipment: {
+    method: 'GET',
+    path: '/api/admin/scanner/shipment',
+    ability: 'public',
+  },
   getApproval: { method: 'GET', path: '/v1/approvals/{id}', ability: 'read:ApprovalRequest' },
+  getMediaByOrgIdByFileIdByVariant: {
+    method: 'GET',
+    path: '/media/{orgId}/{fileId}/{variant}',
+    ability: 'public',
+  },
+  getNcomByOrgIdV1: { method: 'GET', path: '/ncom/{orgId}/v1', ability: 'public' },
+  getNcomByOrgIdV1Categories: {
+    method: 'GET',
+    path: '/ncom/{orgId}/v1/categories',
+    ability: 'public',
+  },
+  getNcomByOrgIdV1Ping: { method: 'GET', path: '/ncom/{orgId}/v1/ping', ability: 'public' },
+  getNcomByOrgIdV1Products: { method: 'GET', path: '/ncom/{orgId}/v1/products', ability: 'public' },
+  getNcomByOrgIdV1ProductsById: {
+    method: 'GET',
+    path: '/ncom/{orgId}/v1/products/{id}',
+    ability: 'public',
+  },
+  getStorefrontV1AccountsById: {
+    method: 'GET',
+    path: '/storefront/v1/accounts/{id}',
+    ability: 'public',
+  },
+  getStorefrontV1AccountsByIdOrders: {
+    method: 'GET',
+    path: '/storefront/v1/accounts/{id}/orders',
+    ability: 'public',
+  },
+  getStorefrontV1AccountsByIdOrdersByOrderNo: {
+    method: 'GET',
+    path: '/storefront/v1/accounts/{id}/orders/{orderNo}',
+    ability: 'public',
+  },
+  getStorefrontV1CatalogCategories: {
+    method: 'GET',
+    path: '/storefront/v1/catalog/categories',
+    ability: 'public',
+  },
+  getStorefrontV1CatalogProducts: {
+    method: 'GET',
+    path: '/storefront/v1/catalog/products',
+    ability: 'public',
+  },
+  getStorefrontV1CatalogProductsBySlug: {
+    method: 'GET',
+    path: '/storefront/v1/catalog/products/{slug}',
+    ability: 'public',
+  },
+  getStorefrontV1CatalogSearch: {
+    method: 'GET',
+    path: '/storefront/v1/catalog/search',
+    ability: 'public',
+  },
+  getStorefrontV1CustomLinksByCode: {
+    method: 'GET',
+    path: '/storefront/v1/custom-links/{code}',
+    ability: 'public',
+  },
+  getStorefrontV1FlashSales: {
+    method: 'GET',
+    path: '/storefront/v1/flash-sales',
+    ability: 'public',
+  },
+  getStorefrontV1FlashSalesBySlug: {
+    method: 'GET',
+    path: '/storefront/v1/flash-sales/{slug}',
+    ability: 'public',
+  },
+  getStorefrontV1GeoDistricts: {
+    method: 'GET',
+    path: '/storefront/v1/geo/districts',
+    ability: 'public',
+  },
+  getStorefrontV1GeoThanas: { method: 'GET', path: '/storefront/v1/geo/thanas', ability: 'public' },
+  getStorefrontV1OrdersByOrderNo: {
+    method: 'GET',
+    path: '/storefront/v1/orders/{orderNo}',
+    ability: 'public',
+  },
+  getStorefrontV1Site: { method: 'GET', path: '/storefront/v1/site', ability: 'public' },
+  getStorefrontV1SizeChartsById: {
+    method: 'GET',
+    path: '/storefront/v1/size-charts/{id}',
+    ability: 'public',
+  },
+  getStorefrontV1TrackingConfig: {
+    method: 'GET',
+    path: '/storefront/v1/tracking/config',
+    ability: 'public',
+  },
   getV1AccountsCashEntries: {
     method: 'GET',
     path: '/v1/accounts/cash-entries',
@@ -84,6 +259,7 @@ export const OPERATIONS = {
     ability: 'read:Wallet',
   },
   getV1AccountsClosings: { method: 'GET', path: '/v1/accounts/closings', ability: 'read:Wallet' },
+  getV1AccountsHeads: { method: 'GET', path: '/v1/accounts/heads', ability: 'update:Wallet' },
   getV1AccountsReportsAging: {
     method: 'GET',
     path: '/v1/accounts/reports/aging',
@@ -94,27 +270,12 @@ export const OPERATIONS = {
     path: '/v1/accounts/reports/balance-sheet',
     ability: 'read:LedgerReport',
   },
-  getV1AccountsReportsConsolidatedProfitAndLoss: {
-    method: 'GET',
-    path: '/v1/accounts/reports/consolidated-profit-and-loss',
-    ability: 'read:LedgerReport',
-  },
-  getV1AccountsReportsConsolidatedWallets: {
-    method: 'GET',
-    path: '/v1/accounts/reports/consolidated-wallets',
-    ability: 'read:LedgerReport',
-  },
   getV1AccountsReportsProfitAndLoss: {
     method: 'GET',
     path: '/v1/accounts/reports/profit-and-loss',
     ability: 'read:LedgerReport',
   },
   getV1AccountsWallets: { method: 'GET', path: '/v1/accounts/wallets', ability: 'read:Wallet' },
-  getV1AnalyticsConsolidated: {
-    method: 'GET',
-    path: '/v1/analytics/consolidated',
-    ability: 'read:Dashboard',
-  },
   getV1AnalyticsDashboard: {
     method: 'GET',
     path: '/v1/analytics/dashboard',
@@ -125,11 +286,6 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/analytics/insights',
     ability: 'read:Dashboard',
-  },
-  getV1AnalyticsLeaderboard: {
-    method: 'GET',
-    path: '/v1/analytics/leaderboard',
-    ability: 'read:Leaderboard',
   },
   getV1AnalyticsNarrative: {
     method: 'GET',
@@ -148,22 +304,53 @@ export const OPERATIONS = {
     path: '/v1/catalog/attributes',
     ability: 'read:Catalog',
   },
+  getV1CatalogAttributesByIdUsage: {
+    method: 'GET',
+    path: '/v1/catalog/attributes/{id}/usage',
+    ability: 'update:Catalog',
+  },
+  getV1CatalogAttributesByIdValuesByValueIdUsage: {
+    method: 'GET',
+    path: '/v1/catalog/attributes/{id}/values/{valueId}/usage',
+    ability: 'update:Catalog',
+  },
   getV1CatalogCategories: {
     method: 'GET',
     path: '/v1/catalog/categories',
     ability: 'read:Catalog',
   },
+  getV1CatalogCategoriesByIdUsage: {
+    method: 'GET',
+    path: '/v1/catalog/categories/{id}/usage',
+    ability: 'update:Catalog',
+  },
+  getV1CatalogLookup: { method: 'GET', path: '/v1/catalog/lookup', ability: 'read:Catalog' },
   getV1CatalogProducts: { method: 'GET', path: '/v1/catalog/products', ability: 'read:Catalog' },
   getV1CatalogProductsById: {
     method: 'GET',
     path: '/v1/catalog/products/{id}',
     ability: 'read:Catalog',
   },
+  getV1CatalogProductsByIdPriceHistory: {
+    method: 'GET',
+    path: '/v1/catalog/products/{id}/price-history',
+    ability: 'read:Catalog',
+  },
+  getV1CatalogProductsByIdUsage: {
+    method: 'GET',
+    path: '/v1/catalog/products/{id}/usage',
+    ability: 'update:Catalog',
+  },
   getV1CatalogSkus: { method: 'GET', path: '/v1/catalog/skus', ability: 'read:Catalog' },
   getV1CatalogSkusByIdPriceHistory: {
     method: 'GET',
     path: '/v1/catalog/skus/{id}/price-history',
     ability: 'read:Catalog',
+  },
+  getV1CatalogSkusByIdUsage: {
+    method: 'GET',
+    path: '/v1/catalog/skus/{id}/usage',
+    ability: 'update:Catalog',
   },
   getV1CourierAccounts: {
     method: 'GET',
@@ -358,6 +545,11 @@ export const OPERATIONS = {
     path: '/v1/inventory/locations',
     ability: 'read:Stock',
   },
+  getV1InventoryLocationsByIdUsage: {
+    method: 'GET',
+    path: '/v1/inventory/locations/{id}/usage',
+    ability: 'update:Catalog',
+  },
   getV1InventoryMovements: {
     method: 'GET',
     path: '/v1/inventory/movements',
@@ -369,6 +561,26 @@ export const OPERATIONS = {
     ability: 'read:StockAdjustment',
   },
   getV1InventoryStock: { method: 'GET', path: '/v1/inventory/stock', ability: 'read:Stock' },
+  getV1InventoryStockInHand: {
+    method: 'GET',
+    path: '/v1/inventory/stock-in-hand',
+    ability: 'create:Supply',
+  },
+  getV1InventoryStockInHandById: {
+    method: 'GET',
+    path: '/v1/inventory/stock-in-hand/{id}',
+    ability: 'create:Supply',
+  },
+  getV1InventoryStockInHandWindow: {
+    method: 'GET',
+    path: '/v1/inventory/stock-in-hand/window',
+    ability: 'read:Stock',
+  },
+  getV1InventoryStockProducts: {
+    method: 'GET',
+    path: '/v1/inventory/stock/products',
+    ability: 'read:Stock',
+  },
   getV1InventoryTransfers: {
     method: 'GET',
     path: '/v1/inventory/transfers',
@@ -431,6 +643,11 @@ export const OPERATIONS = {
     path: '/v1/marketing/campaigns',
     ability: 'read:Campaign',
   },
+  getV1MarketingCampaignsByIdUsage: {
+    method: 'GET',
+    path: '/v1/marketing/campaigns/{id}/usage',
+    ability: 'update:Campaign',
+  },
   getV1MarketingCapiEvents: {
     method: 'GET',
     path: '/v1/marketing/capi-events',
@@ -462,9 +679,25 @@ export const OPERATIONS = {
     path: '/v1/marketing/spend/campaigns',
     ability: 'read:CampaignSpend',
   },
+  getV1MarketplaceNcom: { method: 'GET', path: '/v1/marketplace/ncom', ability: 'read:Storefront' },
+  getV1MarketplaceNcomHolds: {
+    method: 'GET',
+    path: '/v1/marketplace/ncom/holds',
+    ability: 'read:Storefront',
+  },
+  getV1MarketplaceNcomOrders: {
+    method: 'GET',
+    path: '/v1/marketplace/ncom/orders',
+    ability: 'read:Storefront',
+  },
   getV1NotifyMessages: { method: 'GET', path: '/v1/notify/messages', ability: 'read:Campaign' },
   getV1NotifyOptOuts: { method: 'GET', path: '/v1/notify/opt-outs', ability: 'read:Campaign' },
   getV1NotifyTemplates: { method: 'GET', path: '/v1/notify/templates', ability: 'read:Campaign' },
+  getV1NotifyTemplatesByIdUsage: {
+    method: 'GET',
+    path: '/v1/notify/templates/{id}/usage',
+    ability: 'update:Campaign',
+  },
   getV1OrderAdvances: { method: 'GET', path: '/v1/order-advances', ability: 'create:Wallet' },
   getV1Orders: { method: 'GET', path: '/v1/orders', ability: 'read:Order' },
   getV1OrdersAgents: { method: 'GET', path: '/v1/orders/agents', ability: 'read:Order' },
@@ -497,6 +730,11 @@ export const OPERATIONS = {
     path: '/v1/pos/branches/{id}/closings',
     ability: 'read:Wallet',
   },
+  getV1PosBranchesByIdHolds: {
+    method: 'GET',
+    path: '/v1/pos/branches/{id}/holds',
+    ability: 'read:Branch',
+  },
   getV1PosBranchesByIdSummary: {
     method: 'GET',
     path: '/v1/pos/branches/{id}/summary',
@@ -528,6 +766,110 @@ export const OPERATIONS = {
     path: '/v1/promo/codes/{id}/redemptions',
     ability: 'read:LandingPage',
   },
+  getV1PromoCodesByIdUsage: {
+    method: 'GET',
+    path: '/v1/promo/codes/{id}/usage',
+    ability: 'update:LandingPage',
+  },
+  getV1PromoFlashSales: {
+    method: 'GET',
+    path: '/v1/promo/flash-sales',
+    ability: 'read:LandingPage',
+  },
+  getV1PromoFlashSalesById: {
+    method: 'GET',
+    path: '/v1/promo/flash-sales/{id}',
+    ability: 'read:LandingPage',
+  },
+  getV1PromoFlashSalesByIdUsage: {
+    method: 'GET',
+    path: '/v1/promo/flash-sales/{id}/usage',
+    ability: 'update:LandingPage',
+  },
+  getV1ScannerDevices: { method: 'GET', path: '/v1/scanner/devices', ability: 'read:Order' },
+  getV1ScannerLookup: { method: 'GET', path: '/v1/scanner/lookup', ability: 'read:Order' },
+  getV1ScannerShipment: { method: 'GET', path: '/v1/scanner/shipment', ability: 'public' },
+  getV1StorefrontAccounts: {
+    method: 'GET',
+    path: '/v1/storefront/accounts',
+    ability: 'read:Customer',
+  },
+  getV1StorefrontCampaignLinks: {
+    method: 'GET',
+    path: '/v1/storefront/campaign-links',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontCampaignLinksById: {
+    method: 'GET',
+    path: '/v1/storefront/campaign-links/{id}',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontEmail: { method: 'GET', path: '/v1/storefront/email', ability: 'read:Storefront' },
+  getV1StorefrontEmailLog: {
+    method: 'GET',
+    path: '/v1/storefront/email/log',
+    ability: 'read:Customer',
+  },
+  getV1StorefrontHeroSlides: {
+    method: 'GET',
+    path: '/v1/storefront/hero-slides',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontNavItems: {
+    method: 'GET',
+    path: '/v1/storefront/nav-items',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontNavItemsByIdUsage: {
+    method: 'GET',
+    path: '/v1/storefront/nav-items/{id}/usage',
+    ability: 'update:Storefront',
+  },
+  getV1StorefrontOrdersByOrderId: {
+    method: 'GET',
+    path: '/v1/storefront/orders/{orderId}',
+    ability: 'read:Order',
+  },
+  getV1StorefrontPayments: {
+    method: 'GET',
+    path: '/v1/storefront/payments',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontPaymentsSessions: {
+    method: 'GET',
+    path: '/v1/storefront/payments/sessions',
+    ability: 'read:Order',
+  },
+  getV1StorefrontSettings: {
+    method: 'GET',
+    path: '/v1/storefront/settings',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontSiteKeys: {
+    method: 'GET',
+    path: '/v1/storefront/site-keys',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontSizeCharts: {
+    method: 'GET',
+    path: '/v1/storefront/size-charts',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontSizeChartsByIdUsage: {
+    method: 'GET',
+    path: '/v1/storefront/size-charts/{id}/usage',
+    ability: 'update:Storefront',
+  },
+  getV1StorefrontTracking: {
+    method: 'GET',
+    path: '/v1/storefront/tracking',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontTrackingEvents: {
+    method: 'GET',
+    path: '/v1/storefront/tracking/events',
+    ability: 'read:Storefront',
+  },
   getV1SupplyEntries: { method: 'GET', path: '/v1/supply/entries', ability: 'read:Supply' },
   getV1SupplyEntriesById: {
     method: 'GET',
@@ -536,6 +878,12 @@ export const OPERATIONS = {
   },
   getV1SupplyPayments: { method: 'GET', path: '/v1/supply/payments', ability: 'read:Supply' },
   getV1SupplyReturns: { method: 'GET', path: '/v1/supply/returns', ability: 'read:Supply' },
+  getV1SupplySkuCosts: { method: 'GET', path: '/v1/supply/sku-costs', ability: 'read:Cost' },
+  getV1SupplySkuCostsExport: {
+    method: 'GET',
+    path: '/v1/supply/sku-costs/export',
+    ability: 'read:Cost',
+  },
   getV1SupplySupplierOptions: {
     method: 'GET',
     path: '/v1/supply/supplier-options',
@@ -552,6 +900,11 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}/statement',
     ability: 'read:Cost',
   },
+  getV1SupplySuppliersByIdUsage: {
+    method: 'GET',
+    path: '/v1/supply/suppliers/{id}/usage',
+    ability: 'update:Supply',
+  },
   healthLive: { method: 'GET', path: '/health/live', ability: 'public' },
   healthReady: { method: 'GET', path: '/health/ready', ability: 'public' },
   listApprovals: { method: 'GET', path: '/v1/approvals', ability: 'read:ApprovalRequest' },
@@ -564,6 +917,16 @@ export const OPERATIONS = {
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
   me: { method: 'GET', path: '/v1/me', ability: 'authenticated' },
   partyBalances: { method: 'GET', path: '/v1/ledger/party-balances', ability: 'read:LedgerReport' },
+  patchStorefrontV1AccountsById: {
+    method: 'PATCH',
+    path: '/storefront/v1/accounts/{id}',
+    ability: 'public',
+  },
+  patchV1AccountsHeadsById: {
+    method: 'PATCH',
+    path: '/v1/accounts/heads/{id}',
+    ability: 'update:Wallet',
+  },
   patchV1AccountsWalletsById: {
     method: 'PATCH',
     path: '/v1/accounts/wallets/{id}',
@@ -584,11 +947,17 @@ export const OPERATIONS = {
     path: '/v1/catalog/categories/{id}',
     ability: 'update:Catalog',
   },
+  patchV1CatalogProducts: {
+    method: 'PATCH',
+    path: '/v1/catalog/products',
+    ability: 'update:Catalog',
+  },
   patchV1CatalogProductsById: {
     method: 'PATCH',
     path: '/v1/catalog/products/{id}',
     ability: 'update:Catalog',
   },
+  patchV1CatalogSkus: { method: 'PATCH', path: '/v1/catalog/skus', ability: 'update:Catalog' },
   patchV1CatalogSkusById: {
     method: 'PATCH',
     path: '/v1/catalog/skus/{id}',
@@ -605,6 +974,11 @@ export const OPERATIONS = {
     path: '/v1/inventory/locations/{id}',
     ability: 'update:Catalog',
   },
+  patchV1InventoryStockInHandDraftsById: {
+    method: 'PATCH',
+    path: '/v1/inventory/stock-in-hand/drafts/{id}',
+    ability: 'update:Supply',
+  },
   patchV1InvestorsById: { method: 'PATCH', path: '/v1/investors/{id}', ability: 'update:Investor' },
   patchV1MarketingCampaignsById: {
     method: 'PATCH',
@@ -617,6 +991,11 @@ export const OPERATIONS = {
     ability: 'update:Campaign',
   },
   patchV1OrdersById: { method: 'PATCH', path: '/v1/orders/{id}', ability: 'update:Order' },
+  patchV1PosBranchesById: {
+    method: 'PATCH',
+    path: '/v1/pos/branches/{id}',
+    ability: 'update:Branch',
+  },
   patchV1PosRegistersById: {
     method: 'PATCH',
     path: '/v1/pos/registers/{id}',
@@ -626,6 +1005,16 @@ export const OPERATIONS = {
     method: 'PATCH',
     path: '/v1/promo/codes/{id}',
     ability: 'update:LandingPage',
+  },
+  patchV1PromoFlashSalesById: {
+    method: 'PATCH',
+    path: '/v1/promo/flash-sales/{id}',
+    ability: 'update:LandingPage',
+  },
+  patchV1StorefrontSettings: {
+    method: 'PATCH',
+    path: '/v1/storefront/settings',
+    ability: 'update:Storefront',
   },
   patchV1SupplyDraftsById: {
     method: 'PATCH',
@@ -637,7 +1026,80 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}',
     ability: 'update:Supply',
   },
+  postApiAdminScannerLogin: { method: 'POST', path: '/api/admin/scanner/login', ability: 'public' },
+  postNcomByOrgIdOrders: { method: 'POST', path: '/ncom/{orgId}/orders', ability: 'public' },
+  postNcomByOrgIdV1Release: { method: 'POST', path: '/ncom/{orgId}/v1/release', ability: 'public' },
+  postNcomByOrgIdV1Reserve: { method: 'POST', path: '/ncom/{orgId}/v1/reserve', ability: 'public' },
+  postNcomByOrgIdV1Stock: { method: 'POST', path: '/ncom/{orgId}/v1/stock', ability: 'public' },
+  postNcomByOrgIdWebhook: { method: 'POST', path: '/ncom/{orgId}/webhook', ability: 'public' },
   postPublicV1Orders: { method: 'POST', path: '/public/v1/orders', ability: 'public' },
+  postStorefrontIpnSslcommerzByOrgId: {
+    method: 'POST',
+    path: '/storefront/ipn/sslcommerz/{orgId}',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsByIdChangePassword: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/{id}/change-password',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsForgotPassword: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/forgot-password',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsGoogle: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/google',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsRegister: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/register',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsResendCode: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/resend-code',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsResetPassword: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/reset-password',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsSignIn: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/sign-in',
+    ability: 'public',
+  },
+  postStorefrontV1AccountsVerifyEmail: {
+    method: 'POST',
+    path: '/storefront/v1/accounts/verify-email',
+    ability: 'public',
+  },
+  postStorefrontV1CartQuote: {
+    method: 'POST',
+    path: '/storefront/v1/cart/quote',
+    ability: 'public',
+  },
+  postStorefrontV1Checkout: { method: 'POST', path: '/storefront/v1/checkout', ability: 'public' },
+  postStorefrontV1CustomLinksByCodeViews: {
+    method: 'POST',
+    path: '/storefront/v1/custom-links/{code}/views',
+    ability: 'public',
+  },
+  postStorefrontV1Events: { method: 'POST', path: '/storefront/v1/events', ability: 'public' },
+  postStorefrontV1PaymentsSslcommerzInit: {
+    method: 'POST',
+    path: '/storefront/v1/payments/sslcommerz/init',
+    ability: 'public',
+  },
+  postStorefrontV1PaymentsSslcommerzReturn: {
+    method: 'POST',
+    path: '/storefront/v1/payments/sslcommerz/return',
+    ability: 'public',
+  },
   postV1AccountsCashEntries: {
     method: 'POST',
     path: '/v1/accounts/cash-entries',
@@ -648,6 +1110,7 @@ export const OPERATIONS = {
     path: '/v1/accounts/closings',
     ability: 'update:Wallet',
   },
+  postV1AccountsHeads: { method: 'POST', path: '/v1/accounts/heads', ability: 'update:Wallet' },
   postV1AccountsTransfers: {
     method: 'POST',
     path: '/v1/accounts/transfers',
@@ -659,20 +1122,56 @@ export const OPERATIONS = {
     path: '/v1/analytics/rollups/refresh',
     ability: 'update:Dashboard',
   },
+  postV1AuthOwnerLink: { method: 'POST', path: '/v1/auth/owner-link', ability: 'public' },
   postV1CatalogAttributes: {
     method: 'POST',
     path: '/v1/catalog/attributes',
     ability: 'create:Catalog',
+  },
+  postV1CatalogAttributesByIdArchive: {
+    method: 'POST',
+    path: '/v1/catalog/attributes/{id}/archive',
+    ability: 'update:Catalog',
+  },
+  postV1CatalogAttributesByIdRestore: {
+    method: 'POST',
+    path: '/v1/catalog/attributes/{id}/restore',
+    ability: 'update:Catalog',
   },
   postV1CatalogAttributesByIdValues: {
     method: 'POST',
     path: '/v1/catalog/attributes/{id}/values',
     ability: 'create:Catalog',
   },
+  postV1CatalogAttributesByIdValuesByValueIdArchive: {
+    method: 'POST',
+    path: '/v1/catalog/attributes/{id}/values/{valueId}/archive',
+    ability: 'update:Catalog',
+  },
+  postV1CatalogAttributesByIdValuesByValueIdRestore: {
+    method: 'POST',
+    path: '/v1/catalog/attributes/{id}/values/{valueId}/restore',
+    ability: 'update:Catalog',
+  },
   postV1CatalogCategories: {
     method: 'POST',
     path: '/v1/catalog/categories',
     ability: 'create:Catalog',
+  },
+  postV1CatalogCategoriesByIdArchive: {
+    method: 'POST',
+    path: '/v1/catalog/categories/{id}/archive',
+    ability: 'update:Catalog',
+  },
+  postV1CatalogCategoriesByIdEmptyAndDelete: {
+    method: 'POST',
+    path: '/v1/catalog/categories/{id}/empty-and-delete',
+    ability: 'delete:Catalog',
+  },
+  postV1CatalogCategoriesByIdRestore: {
+    method: 'POST',
+    path: '/v1/catalog/categories/{id}/restore',
+    ability: 'update:Catalog',
   },
   postV1CatalogImportsPrices: {
     method: 'POST',
@@ -698,6 +1197,11 @@ export const OPERATIONS = {
   postV1CatalogProducts: {
     method: 'POST',
     path: '/v1/catalog/products',
+    ability: 'create:Catalog',
+  },
+  postV1CatalogProductsByIdDuplicate: {
+    method: 'POST',
+    path: '/v1/catalog/products/{id}/duplicate',
     ability: 'create:Catalog',
   },
   postV1CatalogProductsByIdImages: {
@@ -874,6 +1378,11 @@ export const OPERATIONS = {
     path: '/v1/inventory/counts/{id}/close',
     ability: 'request:StockAdjustment',
   },
+  postV1InventoryCountsByIdScans: {
+    method: 'POST',
+    path: '/v1/inventory/counts/{id}/scans',
+    ability: 'request:StockAdjustment',
+  },
   postV1InventoryCountsByIdSubmit: {
     method: 'POST',
     path: '/v1/inventory/counts/{id}/submit',
@@ -883,6 +1392,46 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/inventory/locations',
     ability: 'create:Catalog',
+  },
+  postV1InventoryLocationsByIdArchive: {
+    method: 'POST',
+    path: '/v1/inventory/locations/{id}/archive',
+    ability: 'update:Catalog',
+  },
+  postV1InventoryLocationsByIdRestore: {
+    method: 'POST',
+    path: '/v1/inventory/locations/{id}/restore',
+    ability: 'update:Catalog',
+  },
+  postV1InventoryStockInHand: {
+    method: 'POST',
+    path: '/v1/inventory/stock-in-hand',
+    ability: 'read:Cost',
+  },
+  postV1InventoryStockInHandByIdPost: {
+    method: 'POST',
+    path: '/v1/inventory/stock-in-hand/{id}/post',
+    ability: 'read:Cost',
+  },
+  postV1InventoryStockInHandByIdReverse: {
+    method: 'POST',
+    path: '/v1/inventory/stock-in-hand/{id}/reverse',
+    ability: 'read:Cost',
+  },
+  postV1InventoryStockInHandDrafts: {
+    method: 'POST',
+    path: '/v1/inventory/stock-in-hand/drafts',
+    ability: 'create:Supply',
+  },
+  postV1InventoryStockInHandWindowClose: {
+    method: 'POST',
+    path: '/v1/inventory/stock-in-hand/window/close',
+    ability: 'approve:StockAdjustment',
+  },
+  postV1InventoryStockInHandWindowReopen: {
+    method: 'POST',
+    path: '/v1/inventory/stock-in-hand/window/reopen',
+    ability: 'approve:StockAdjustment',
   },
   postV1InventoryTransfers: {
     method: 'POST',
@@ -963,6 +1512,11 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/marketing/meta/import',
     ability: 'create:CampaignSpend',
+  },
+  postV1MarketplaceNcomHoldsByIdRelease: {
+    method: 'POST',
+    path: '/v1/marketplace/ncom/holds/{id}/release',
+    ability: 'update:WebsiteCredentials',
   },
   postV1NotifyOptOuts: { method: 'POST', path: '/v1/notify/opt-outs', ability: 'update:Campaign' },
   postV1OrderAdvancesByIdRefund: {
@@ -1050,6 +1604,7 @@ export const OPERATIONS = {
     path: '/v1/orders/{id}/start-return',
     ability: 'update:Order',
   },
+  postV1PackingLabels: { method: 'POST', path: '/v1/packing/labels', ability: 'read:Order' },
   postV1PosBranchesByIdClosings: {
     method: 'POST',
     path: '/v1/pos/branches/{id}/closings',
@@ -1075,6 +1630,79 @@ export const OPERATIONS = {
   postV1PosSync: { method: 'POST', path: '/v1/pos/sync', ability: 'update:Wallet' },
   postV1PromoCheck: { method: 'POST', path: '/v1/promo/check', ability: 'read:LandingPage' },
   postV1PromoCodes: { method: 'POST', path: '/v1/promo/codes', ability: 'create:LandingPage' },
+  postV1PromoCodesByIdRestore: {
+    method: 'POST',
+    path: '/v1/promo/codes/{id}/restore',
+    ability: 'update:LandingPage',
+  },
+  postV1PromoFlashSales: {
+    method: 'POST',
+    path: '/v1/promo/flash-sales',
+    ability: 'create:LandingPage',
+  },
+  postV1PromoFlashSalesByIdArchive: {
+    method: 'POST',
+    path: '/v1/promo/flash-sales/{id}/archive',
+    ability: 'update:LandingPage',
+  },
+  postV1PromoFlashSalesByIdDuplicate: {
+    method: 'POST',
+    path: '/v1/promo/flash-sales/{id}/duplicate',
+    ability: 'create:LandingPage',
+  },
+  postV1PromoFlashSalesByIdRestore: {
+    method: 'POST',
+    path: '/v1/promo/flash-sales/{id}/restore',
+    ability: 'update:LandingPage',
+  },
+  postV1ScannerDevices: { method: 'POST', path: '/v1/scanner/devices', ability: 'read:Order' },
+  postV1ScannerDevicesByIdRevoke: {
+    method: 'POST',
+    path: '/v1/scanner/devices/{id}/revoke',
+    ability: 'read:Order',
+  },
+  postV1ScannerSignIn: { method: 'POST', path: '/v1/scanner/sign-in', ability: 'public' },
+  postV1ScannerSignOut: { method: 'POST', path: '/v1/scanner/sign-out', ability: 'public' },
+  postV1StorefrontCampaignLinks: {
+    method: 'POST',
+    path: '/v1/storefront/campaign-links',
+    ability: 'create:Storefront',
+  },
+  postV1StorefrontEmailTest: {
+    method: 'POST',
+    path: '/v1/storefront/email/test',
+    ability: 'update:WebsiteCredentials',
+  },
+  postV1StorefrontHeroSlides: {
+    method: 'POST',
+    path: '/v1/storefront/hero-slides',
+    ability: 'create:Storefront',
+  },
+  postV1StorefrontNavItems: {
+    method: 'POST',
+    path: '/v1/storefront/nav-items',
+    ability: 'create:Storefront',
+  },
+  postV1StorefrontSiteKeys: {
+    method: 'POST',
+    path: '/v1/storefront/site-keys',
+    ability: 'create:Storefront',
+  },
+  postV1StorefrontSiteKeysByIdRevoke: {
+    method: 'POST',
+    path: '/v1/storefront/site-keys/{id}/revoke',
+    ability: 'update:Storefront',
+  },
+  postV1StorefrontSizeCharts: {
+    method: 'POST',
+    path: '/v1/storefront/size-charts',
+    ability: 'create:Storefront',
+  },
+  postV1StorefrontSizeChartsByIdEmptyAndDelete: {
+    method: 'POST',
+    path: '/v1/storefront/size-charts/{id}/empty-and-delete',
+    ability: 'delete:Storefront',
+  },
   postV1SupplyAdvanceApplications: {
     method: 'POST',
     path: '/v1/supply/advance-applications',
@@ -1089,6 +1717,16 @@ export const OPERATIONS = {
   },
   postV1SupplyPayments: { method: 'POST', path: '/v1/supply/payments', ability: 'read:Cost' },
   postV1SupplyReturns: { method: 'POST', path: '/v1/supply/returns', ability: 'read:Cost' },
+  postV1SupplySkuCostsImport: {
+    method: 'POST',
+    path: '/v1/supply/sku-costs/import',
+    ability: 'read:Cost',
+  },
+  postV1SupplySkuCostsImportDryRun: {
+    method: 'POST',
+    path: '/v1/supply/sku-costs/import/dry-run',
+    ability: 'read:Cost',
+  },
   postV1SupplySuppliers: { method: 'POST', path: '/v1/supply/suppliers', ability: 'create:Supply' },
   postV1SupplySuppliersByIdContacts: {
     method: 'POST',
@@ -1106,7 +1744,17 @@ export const OPERATIONS = {
     ability: 'update:Supply',
   },
   postV1Track: { method: 'POST', path: '/v1/track', ability: 'public' },
+  putV1CatalogAttributesByIdValuesOrder: {
+    method: 'PUT',
+    path: '/v1/catalog/attributes/{id}/values/order',
+    ability: 'update:Catalog',
+  },
   putV1CatalogPrices: { method: 'PUT', path: '/v1/catalog/prices', ability: 'update:Catalog' },
+  putV1CatalogProductsByIdImagesByImageIdColour: {
+    method: 'PUT',
+    path: '/v1/catalog/products/{id}/images/{imageId}/colour',
+    ability: 'update:Catalog',
+  },
   putV1CatalogProductsByIdImagesOrder: {
     method: 'PUT',
     path: '/v1/catalog/products/{id}/images/order',
@@ -1115,6 +1763,11 @@ export const OPERATIONS = {
   putV1CatalogSkusByIdBarcode: {
     method: 'PUT',
     path: '/v1/catalog/skus/{id}/barcode',
+    ability: 'update:Catalog',
+  },
+  putV1CatalogSkusByIdWeight: {
+    method: 'PUT',
+    path: '/v1/catalog/skus/{id}/weight',
     ability: 'update:Catalog',
   },
   putV1CourierSelectionRules: {
@@ -1145,7 +1798,78 @@ export const OPERATIONS = {
     path: '/v1/marketing/spend',
     ability: 'create:CampaignSpend',
   },
+  putV1MarketplaceNcom: {
+    method: 'PUT',
+    path: '/v1/marketplace/ncom',
+    ability: 'update:WebsiteCredentials',
+  },
   putV1NotifyTemplates: { method: 'PUT', path: '/v1/notify/templates', ability: 'update:Campaign' },
+  putV1PromoFlashSalesById: {
+    method: 'PUT',
+    path: '/v1/promo/flash-sales/{id}',
+    ability: 'update:LandingPage',
+  },
+  putV1StorefrontCampaignLinksById: {
+    method: 'PUT',
+    path: '/v1/storefront/campaign-links/{id}',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontCategoriesById: {
+    method: 'PUT',
+    path: '/v1/storefront/categories/{id}',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontEmail: {
+    method: 'PUT',
+    path: '/v1/storefront/email',
+    ability: 'update:WebsiteCredentials',
+  },
+  putV1StorefrontHeroSlidesById: {
+    method: 'PUT',
+    path: '/v1/storefront/hero-slides/{id}',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontHeroSlidesOrder: {
+    method: 'PUT',
+    path: '/v1/storefront/hero-slides/order',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontNavItemsById: {
+    method: 'PUT',
+    path: '/v1/storefront/nav-items/{id}',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontNavItemsLayout: {
+    method: 'PUT',
+    path: '/v1/storefront/nav-items/layout',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontPayments: {
+    method: 'PUT',
+    path: '/v1/storefront/payments',
+    ability: 'update:WebsiteCredentials',
+  },
+  putV1StorefrontProducts: {
+    method: 'PUT',
+    path: '/v1/storefront/products',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontProductsById: {
+    method: 'PUT',
+    path: '/v1/storefront/products/{id}',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontSizeChartsById: {
+    method: 'PUT',
+    path: '/v1/storefront/size-charts/{id}',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontTracking: {
+    method: 'PUT',
+    path: '/v1/storefront/tracking',
+    ability: 'update:Storefront',
+  },
+  putV1SupplySkuCosts: { method: 'PUT', path: '/v1/supply/sku-costs', ability: 'read:Cost' },
   reopenPeriod: {
     method: 'POST',
     path: '/v1/ledger/periods/reopen',
@@ -1235,18 +1959,64 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: ApprovalDecisionInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.decideApproval, input, options),
+    /** DELETE /v1/catalog/attributes/:id */
+    deleteV1CatalogAttributesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1CatalogAttributesById, input, options),
+    /** DELETE /v1/catalog/attributes/:id/values/:valueId */
+    deleteV1CatalogAttributesByIdValuesByValueId: (
+      input: { readonly path: { readonly id: string; readonly valueId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1CatalogAttributesByIdValuesByValueId, input, options),
+    /** DELETE /v1/catalog/categories/:id */
+    deleteV1CatalogCategoriesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1CatalogCategoriesById, input, options),
+    /** DELETE /v1/catalog/products/:id */
+    deleteV1CatalogProductsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1CatalogProductsById, input, options),
     /** DELETE /v1/catalog/products/:id/images/:imageId */
     deleteV1CatalogProductsByIdImagesByImageId: (
       input: { readonly path: { readonly id: string; readonly imageId: string } },
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.deleteV1CatalogProductsByIdImagesByImageId, input, options),
+    /** DELETE /v1/catalog/skus/:id */
+    deleteV1CatalogSkusById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1CatalogSkusById, input, options),
     /** DELETE /v1/hr/payroll/runs/:id/inputs/:inputId */
     deleteV1HrPayrollRunsByIdInputsByInputId: (
       input: { readonly path: { readonly id: string; readonly inputId: string } },
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.deleteV1HrPayrollRunsByIdInputsByInputId, input, options),
+    /** DELETE /v1/inventory/locations/:id */
+    deleteV1InventoryLocationsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1InventoryLocationsById, input, options),
+    /** DELETE /v1/inventory/stock-in-hand/drafts/:id */
+    deleteV1InventoryStockInHandDraftsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1InventoryStockInHandDraftsById, input, options),
+    /** DELETE /v1/marketing/campaigns/:id */
+    deleteV1MarketingCampaignsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1MarketingCampaignsById, input, options),
     /** DELETE /v1/marketing/campaigns/:id/refs/:refId */
     deleteV1MarketingCampaignsByIdRefsByRefId: (
       input: { readonly path: { readonly id: string; readonly refId: string } },
@@ -1259,16 +2029,172 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.deleteV1NotifyOptOutsByPhone, input, options),
+    /** DELETE /v1/notify/templates/:id */
+    deleteV1NotifyTemplatesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1NotifyTemplatesById, input, options),
+    /** DELETE /v1/promo/codes/:id */
+    deleteV1PromoCodesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1PromoCodesById, input, options),
+    /** DELETE /v1/promo/flash-sales/:id */
+    deleteV1PromoFlashSalesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1PromoFlashSalesById, input, options),
+    /** DELETE /v1/storefront/campaign-links/:id */
+    deleteV1StorefrontCampaignLinksById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1StorefrontCampaignLinksById, input, options),
+    /** DELETE /v1/storefront/hero-slides/:id */
+    deleteV1StorefrontHeroSlidesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1StorefrontHeroSlidesById, input, options),
+    /** DELETE /v1/storefront/nav-items/:id */
+    deleteV1StorefrontNavItemsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1StorefrontNavItemsById, input, options),
+    /** DELETE /v1/storefront/size-charts/:id */
+    deleteV1StorefrontSizeChartsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1StorefrontSizeChartsById, input, options),
     /** DELETE /v1/supply/drafts/:id */
     deleteV1SupplyDraftsById: (
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1SupplyDraftsById, input, options),
+    /** DELETE /v1/supply/suppliers/:id */
+    deleteV1SupplySuppliersById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1SupplySuppliersById, input, options),
+    /** GET /api/admin/scanner/shipment */
+    getApiAdminScannerShipment: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getApiAdminScannerShipment, undefined, options),
     /** One approval request, with its decision lineage. */
     getApproval: (
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getApproval, input, options),
+    /** GET /media/:orgId/:fileId/:variant */
+    getMediaByOrgIdByFileIdByVariant: (
+      input: {
+        readonly path: {
+          readonly fileId: string;
+          readonly orgId: string;
+          readonly variant: string;
+        };
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getMediaByOrgIdByFileIdByVariant, input, options),
+    /** GET /ncom/:orgId/v1 */
+    getNcomByOrgIdV1: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getNcomByOrgIdV1, input, options),
+    /** GET /ncom/:orgId/v1/categories */
+    getNcomByOrgIdV1Categories: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getNcomByOrgIdV1Categories, input, options),
+    /** GET /ncom/:orgId/v1/ping */
+    getNcomByOrgIdV1Ping: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getNcomByOrgIdV1Ping, input, options),
+    /** GET /ncom/:orgId/v1/products */
+    getNcomByOrgIdV1Products: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getNcomByOrgIdV1Products, input, options),
+    /** GET /ncom/:orgId/v1/products/:id */
+    getNcomByOrgIdV1ProductsById: (
+      input: { readonly path: { readonly id: string; readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getNcomByOrgIdV1ProductsById, input, options),
+    /** GET /storefront/v1/accounts/:id */
+    getStorefrontV1AccountsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getStorefrontV1AccountsById, input, options),
+    /** GET /storefront/v1/accounts/:id/orders */
+    getStorefrontV1AccountsByIdOrders: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1AccountsByIdOrders, input, options),
+    /** GET /storefront/v1/accounts/:id/orders/:orderNo */
+    getStorefrontV1AccountsByIdOrdersByOrderNo: (
+      input: { readonly path: { readonly id: string; readonly orderNo: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1AccountsByIdOrdersByOrderNo, input, options),
+    /** GET /storefront/v1/catalog/categories */
+    getStorefrontV1CatalogCategories: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1CatalogCategories, undefined, options),
+    /** GET /storefront/v1/catalog/products */
+    getStorefrontV1CatalogProducts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1CatalogProducts, undefined, options),
+    /** GET /storefront/v1/catalog/products/:slug */
+    getStorefrontV1CatalogProductsBySlug: (
+      input: { readonly path: { readonly slug: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1CatalogProductsBySlug, input, options),
+    /** GET /storefront/v1/catalog/search */
+    getStorefrontV1CatalogSearch: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1CatalogSearch, undefined, options),
+    /** GET /storefront/v1/custom-links/:code */
+    getStorefrontV1CustomLinksByCode: (
+      input: { readonly path: { readonly code: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1CustomLinksByCode, input, options),
+    /** GET /storefront/v1/flash-sales */
+    getStorefrontV1FlashSales: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1FlashSales, undefined, options),
+    /** GET /storefront/v1/flash-sales/:slug */
+    getStorefrontV1FlashSalesBySlug: (
+      input: { readonly path: { readonly slug: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1FlashSalesBySlug, input, options),
+    /** GET /storefront/v1/geo/districts */
+    getStorefrontV1GeoDistricts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1GeoDistricts, undefined, options),
+    /** GET /storefront/v1/geo/thanas */
+    getStorefrontV1GeoThanas: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1GeoThanas, undefined, options),
+    /** GET /storefront/v1/orders/:orderNo */
+    getStorefrontV1OrdersByOrderNo: (
+      input: { readonly path: { readonly orderNo: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1OrdersByOrderNo, input, options),
+    /** GET /storefront/v1/site */
+    getStorefrontV1Site: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1Site, undefined, options),
+    /** GET /storefront/v1/size-charts/:id */
+    getStorefrontV1SizeChartsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1SizeChartsById, input, options),
+    /** GET /storefront/v1/tracking/config */
+    getStorefrontV1TrackingConfig: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1TrackingConfig, undefined, options),
     /** GET /v1/accounts/cash-entries */
     getV1AccountsCashEntries: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsCashEntries, undefined, options),
@@ -1278,32 +2204,21 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/accounts/closings */
     getV1AccountsClosings: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsClosings, undefined, options),
+    /** GET /v1/accounts/heads */
+    getV1AccountsHeads: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1AccountsHeads, undefined, options),
     /** GET /v1/accounts/reports/aging */
     getV1AccountsReportsAging: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsReportsAging, undefined, options),
     /** GET /v1/accounts/reports/balance-sheet */
     getV1AccountsReportsBalanceSheet: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsReportsBalanceSheet, undefined, options),
-    /** GET /v1/accounts/reports/consolidated-profit-and-loss */
-    getV1AccountsReportsConsolidatedProfitAndLoss: (options?: RequestOptions): Promise<unknown> =>
-      request(
-        runtime,
-        OPERATIONS.getV1AccountsReportsConsolidatedProfitAndLoss,
-        undefined,
-        options,
-      ),
-    /** GET /v1/accounts/reports/consolidated-wallets */
-    getV1AccountsReportsConsolidatedWallets: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1AccountsReportsConsolidatedWallets, undefined, options),
     /** GET /v1/accounts/reports/profit-and-loss */
     getV1AccountsReportsProfitAndLoss: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsReportsProfitAndLoss, undefined, options),
     /** GET /v1/accounts/wallets */
     getV1AccountsWallets: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsWallets, undefined, options),
-    /** GET /v1/analytics/consolidated */
-    getV1AnalyticsConsolidated: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1AnalyticsConsolidated, undefined, options),
     /** GET /v1/analytics/dashboard */
     getV1AnalyticsDashboard: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AnalyticsDashboard, undefined, options),
@@ -1313,9 +2228,6 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/analytics/insights */
     getV1AnalyticsInsights: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AnalyticsInsights, undefined, options),
-    /** GET /v1/analytics/leaderboard */
-    getV1AnalyticsLeaderboard: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1AnalyticsLeaderboard, undefined, options),
     /** GET /v1/analytics/narrative */
     getV1AnalyticsNarrative: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AnalyticsNarrative, undefined, options),
@@ -1331,9 +2243,30 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/catalog/attributes */
     getV1CatalogAttributes: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CatalogAttributes, undefined, options),
+    /** GET /v1/catalog/attributes/:id/usage */
+    getV1CatalogAttributesByIdUsage: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogAttributesByIdUsage, input, options),
+    /** GET /v1/catalog/attributes/:id/values/:valueId/usage */
+    getV1CatalogAttributesByIdValuesByValueIdUsage: (
+      input: { readonly path: { readonly id: string; readonly valueId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogAttributesByIdValuesByValueIdUsage, input, options),
     /** GET /v1/catalog/categories */
     getV1CatalogCategories: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CatalogCategories, undefined, options),
+    /** GET /v1/catalog/categories/:id/usage */
+    getV1CatalogCategoriesByIdUsage: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogCategoriesByIdUsage, input, options),
+    /** GET /v1/catalog/lookup */
+    getV1CatalogLookup: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogLookup, undefined, options),
     /** GET /v1/catalog/products */
     getV1CatalogProducts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CatalogProducts, undefined, options),
@@ -1342,6 +2275,18 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1CatalogProductsById, input, options),
+    /** GET /v1/catalog/products/:id/price-history */
+    getV1CatalogProductsByIdPriceHistory: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogProductsByIdPriceHistory, input, options),
+    /** GET /v1/catalog/products/:id/usage */
+    getV1CatalogProductsByIdUsage: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogProductsByIdUsage, input, options),
     /** GET /v1/catalog/skus */
     getV1CatalogSkus: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CatalogSkus, undefined, options),
@@ -1351,6 +2296,11 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CatalogSkusByIdPriceHistory, input, options),
+    /** GET /v1/catalog/skus/:id/usage */
+    getV1CatalogSkusByIdUsage: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1CatalogSkusByIdUsage, input, options),
     /** GET /v1/courier/accounts */
     getV1CourierAccounts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CourierAccounts, undefined, options),
@@ -1571,6 +2521,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/inventory/locations */
     getV1InventoryLocations: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InventoryLocations, undefined, options),
+    /** GET /v1/inventory/locations/:id/usage */
+    getV1InventoryLocationsByIdUsage: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryLocationsByIdUsage, input, options),
     /** GET /v1/inventory/movements */
     getV1InventoryMovements: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InventoryMovements, undefined, options),
@@ -1580,6 +2536,21 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/inventory/stock */
     getV1InventoryStock: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InventoryStock, undefined, options),
+    /** GET /v1/inventory/stock-in-hand */
+    getV1InventoryStockInHand: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryStockInHand, undefined, options),
+    /** GET /v1/inventory/stock-in-hand/:id */
+    getV1InventoryStockInHandById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryStockInHandById, input, options),
+    /** GET /v1/inventory/stock-in-hand/window */
+    getV1InventoryStockInHandWindow: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryStockInHandWindow, undefined, options),
+    /** GET /v1/inventory/stock/products */
+    getV1InventoryStockProducts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryStockProducts, undefined, options),
     /** GET /v1/inventory/transfers */
     getV1InventoryTransfers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InventoryTransfers, undefined, options),
@@ -1646,6 +2617,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/marketing/campaigns */
     getV1MarketingCampaigns: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1MarketingCampaigns, undefined, options),
+    /** GET /v1/marketing/campaigns/:id/usage */
+    getV1MarketingCampaignsByIdUsage: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketingCampaignsByIdUsage, input, options),
     /** GET /v1/marketing/capi-events */
     getV1MarketingCapiEvents: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1MarketingCapiEvents, undefined, options),
@@ -1667,6 +2644,15 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/marketing/spend/campaigns */
     getV1MarketingSpendCampaigns: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1MarketingSpendCampaigns, undefined, options),
+    /** GET /v1/marketplace/ncom */
+    getV1MarketplaceNcom: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketplaceNcom, undefined, options),
+    /** GET /v1/marketplace/ncom/holds */
+    getV1MarketplaceNcomHolds: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketplaceNcomHolds, undefined, options),
+    /** GET /v1/marketplace/ncom/orders */
+    getV1MarketplaceNcomOrders: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1MarketplaceNcomOrders, undefined, options),
     /** GET /v1/notify/messages */
     getV1NotifyMessages: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1NotifyMessages, undefined, options),
@@ -1676,6 +2662,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/notify/templates */
     getV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1NotifyTemplates, undefined, options),
+    /** GET /v1/notify/templates/:id/usage */
+    getV1NotifyTemplatesByIdUsage: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1NotifyTemplatesByIdUsage, input, options),
     /** GET /v1/order-advances */
     getV1OrderAdvances: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1OrderAdvances, undefined, options),
@@ -1721,6 +2713,11 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1PosBranchesByIdClosings, input, options),
+    /** GET /v1/pos/branches/:id/holds */
+    getV1PosBranchesByIdHolds: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PosBranchesByIdHolds, input, options),
     /** GET /v1/pos/branches/:id/summary */
     getV1PosBranchesByIdSummary: (
       input: { readonly path: { readonly id: string } },
@@ -1771,6 +2768,97 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1PromoCodesByIdRedemptions, input, options),
+    /** GET /v1/promo/codes/:id/usage */
+    getV1PromoCodesByIdUsage: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PromoCodesByIdUsage, input, options),
+    /** GET /v1/promo/flash-sales */
+    getV1PromoFlashSales: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PromoFlashSales, undefined, options),
+    /** GET /v1/promo/flash-sales/:id */
+    getV1PromoFlashSalesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PromoFlashSalesById, input, options),
+    /** GET /v1/promo/flash-sales/:id/usage */
+    getV1PromoFlashSalesByIdUsage: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PromoFlashSalesByIdUsage, input, options),
+    /** GET /v1/scanner/devices */
+    getV1ScannerDevices: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1ScannerDevices, undefined, options),
+    /** GET /v1/scanner/lookup */
+    getV1ScannerLookup: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1ScannerLookup, undefined, options),
+    /** GET /v1/scanner/shipment */
+    getV1ScannerShipment: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1ScannerShipment, undefined, options),
+    /** GET /v1/storefront/accounts */
+    getV1StorefrontAccounts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontAccounts, undefined, options),
+    /** GET /v1/storefront/campaign-links */
+    getV1StorefrontCampaignLinks: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontCampaignLinks, undefined, options),
+    /** GET /v1/storefront/campaign-links/:id */
+    getV1StorefrontCampaignLinksById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontCampaignLinksById, input, options),
+    /** GET /v1/storefront/email */
+    getV1StorefrontEmail: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontEmail, undefined, options),
+    /** GET /v1/storefront/email/log */
+    getV1StorefrontEmailLog: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontEmailLog, undefined, options),
+    /** GET /v1/storefront/hero-slides */
+    getV1StorefrontHeroSlides: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontHeroSlides, undefined, options),
+    /** GET /v1/storefront/nav-items */
+    getV1StorefrontNavItems: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontNavItems, undefined, options),
+    /** GET /v1/storefront/nav-items/:id/usage */
+    getV1StorefrontNavItemsByIdUsage: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontNavItemsByIdUsage, input, options),
+    /** GET /v1/storefront/orders/:orderId */
+    getV1StorefrontOrdersByOrderId: (
+      input: { readonly path: { readonly orderId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontOrdersByOrderId, input, options),
+    /** GET /v1/storefront/payments */
+    getV1StorefrontPayments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontPayments, undefined, options),
+    /** GET /v1/storefront/payments/sessions */
+    getV1StorefrontPaymentsSessions: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontPaymentsSessions, undefined, options),
+    /** GET /v1/storefront/settings */
+    getV1StorefrontSettings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontSettings, undefined, options),
+    /** GET /v1/storefront/site-keys */
+    getV1StorefrontSiteKeys: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontSiteKeys, undefined, options),
+    /** GET /v1/storefront/size-charts */
+    getV1StorefrontSizeCharts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontSizeCharts, undefined, options),
+    /** GET /v1/storefront/size-charts/:id/usage */
+    getV1StorefrontSizeChartsByIdUsage: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontSizeChartsByIdUsage, input, options),
+    /** GET /v1/storefront/tracking */
+    getV1StorefrontTracking: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontTracking, undefined, options),
+    /** GET /v1/storefront/tracking/events */
+    getV1StorefrontTrackingEvents: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontTrackingEvents, undefined, options),
     /** GET /v1/supply/entries */
     getV1SupplyEntries: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplyEntries, undefined, options),
@@ -1785,6 +2873,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/supply/returns */
     getV1SupplyReturns: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplyReturns, undefined, options),
+    /** GET /v1/supply/sku-costs */
+    getV1SupplySkuCosts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1SupplySkuCosts, undefined, options),
+    /** GET /v1/supply/sku-costs/export */
+    getV1SupplySkuCostsExport: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1SupplySkuCostsExport, undefined, options),
     /** GET /v1/supply/supplier-options */
     getV1SupplySupplierOptions: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplySupplierOptions, undefined, options),
@@ -1802,6 +2896,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplySuppliersByIdStatement, input, options),
+    /** GET /v1/supply/suppliers/:id/usage */
+    getV1SupplySuppliersByIdUsage: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1SupplySuppliersByIdUsage, input, options),
     /** Liveness probe. */
     healthLive: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.healthLive, undefined, options),
@@ -1855,6 +2955,17 @@ export function createApiClient(runtime: ApiRuntime) {
       },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.partyBalances, input, options),
+    /** PATCH /storefront/v1/accounts/:id */
+    patchStorefrontV1AccountsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchStorefrontV1AccountsById, input, options),
+    /** PATCH /v1/accounts/heads/:id */
+    patchV1AccountsHeadsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1AccountsHeadsById, input, options),
     /** PATCH /v1/accounts/wallets/:id */
     patchV1AccountsWalletsById: (
       input: { readonly path: { readonly id: string } },
@@ -1878,11 +2989,17 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.patchV1CatalogCategoriesById, input, options),
+    /** PATCH /v1/catalog/products */
+    patchV1CatalogProducts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1CatalogProducts, undefined, options),
     /** PATCH /v1/catalog/products/:id */
     patchV1CatalogProductsById: (
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1CatalogProductsById, input, options),
+    /** PATCH /v1/catalog/skus */
+    patchV1CatalogSkus: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1CatalogSkus, undefined, options),
     /** PATCH /v1/catalog/skus/:id */
     patchV1CatalogSkusById: (
       input: { readonly path: { readonly id: string } },
@@ -1904,6 +3021,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.patchV1InventoryLocationsById, input, options),
+    /** PATCH /v1/inventory/stock-in-hand/drafts/:id */
+    patchV1InventoryStockInHandDraftsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1InventoryStockInHandDraftsById, input, options),
     /** PATCH /v1/investors/:id */
     patchV1InvestorsById: (
       input: { readonly path: { readonly id: string } },
@@ -1925,6 +3048,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1OrdersById, input, options),
+    /** PATCH /v1/pos/branches/:id */
+    patchV1PosBranchesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1PosBranchesById, input, options),
     /** PATCH /v1/pos/registers/:id */
     patchV1PosRegistersById: (
       input: { readonly path: { readonly id: string } },
@@ -1935,6 +3063,14 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1PromoCodesById, input, options),
+    /** PATCH /v1/promo/flash-sales/:id */
+    patchV1PromoFlashSalesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1PromoFlashSalesById, input, options),
+    /** PATCH /v1/storefront/settings */
+    patchV1StorefrontSettings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1StorefrontSettings, undefined, options),
     /** PATCH /v1/supply/drafts/:id */
     patchV1SupplyDraftsById: (
       input: { readonly path: { readonly id: string } },
@@ -1945,15 +3081,100 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1SupplySuppliersById, input, options),
+    /** POST /api/admin/scanner/login */
+    postApiAdminScannerLogin: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postApiAdminScannerLogin, undefined, options),
+    /** POST /ncom/:orgId/orders */
+    postNcomByOrgIdOrders: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postNcomByOrgIdOrders, input, options),
+    /** POST /ncom/:orgId/v1/release */
+    postNcomByOrgIdV1Release: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postNcomByOrgIdV1Release, input, options),
+    /** POST /ncom/:orgId/v1/reserve */
+    postNcomByOrgIdV1Reserve: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postNcomByOrgIdV1Reserve, input, options),
+    /** POST /ncom/:orgId/v1/stock */
+    postNcomByOrgIdV1Stock: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postNcomByOrgIdV1Stock, input, options),
+    /** POST /ncom/:orgId/webhook */
+    postNcomByOrgIdWebhook: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postNcomByOrgIdWebhook, input, options),
     /** POST /public/v1/orders */
     postPublicV1Orders: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postPublicV1Orders, undefined, options),
+    /** POST /storefront/ipn/sslcommerz/:orgId */
+    postStorefrontIpnSslcommerzByOrgId: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontIpnSslcommerzByOrgId, input, options),
+    /** POST /storefront/v1/accounts/:id/change-password */
+    postStorefrontV1AccountsByIdChangePassword: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsByIdChangePassword, input, options),
+    /** POST /storefront/v1/accounts/forgot-password */
+    postStorefrontV1AccountsForgotPassword: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsForgotPassword, undefined, options),
+    /** POST /storefront/v1/accounts/google */
+    postStorefrontV1AccountsGoogle: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsGoogle, undefined, options),
+    /** POST /storefront/v1/accounts/register */
+    postStorefrontV1AccountsRegister: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsRegister, undefined, options),
+    /** POST /storefront/v1/accounts/resend-code */
+    postStorefrontV1AccountsResendCode: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsResendCode, undefined, options),
+    /** POST /storefront/v1/accounts/reset-password */
+    postStorefrontV1AccountsResetPassword: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsResetPassword, undefined, options),
+    /** POST /storefront/v1/accounts/sign-in */
+    postStorefrontV1AccountsSignIn: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsSignIn, undefined, options),
+    /** POST /storefront/v1/accounts/verify-email */
+    postStorefrontV1AccountsVerifyEmail: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1AccountsVerifyEmail, undefined, options),
+    /** POST /storefront/v1/cart/quote */
+    postStorefrontV1CartQuote: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1CartQuote, undefined, options),
+    /** POST /storefront/v1/checkout */
+    postStorefrontV1Checkout: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1Checkout, undefined, options),
+    /** POST /storefront/v1/custom-links/:code/views */
+    postStorefrontV1CustomLinksByCodeViews: (
+      input: { readonly path: { readonly code: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1CustomLinksByCodeViews, input, options),
+    /** POST /storefront/v1/events */
+    postStorefrontV1Events: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1Events, undefined, options),
+    /** POST /storefront/v1/payments/sslcommerz/init */
+    postStorefrontV1PaymentsSslcommerzInit: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1PaymentsSslcommerzInit, undefined, options),
+    /** POST /storefront/v1/payments/sslcommerz/return */
+    postStorefrontV1PaymentsSslcommerzReturn: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postStorefrontV1PaymentsSslcommerzReturn, undefined, options),
     /** POST /v1/accounts/cash-entries */
     postV1AccountsCashEntries: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1AccountsCashEntries, undefined, options),
     /** POST /v1/accounts/closings */
     postV1AccountsClosings: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1AccountsClosings, undefined, options),
+    /** POST /v1/accounts/heads */
+    postV1AccountsHeads: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1AccountsHeads, undefined, options),
     /** POST /v1/accounts/transfers */
     postV1AccountsTransfers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1AccountsTransfers, undefined, options),
@@ -1963,18 +3184,73 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/analytics/rollups/refresh */
     postV1AnalyticsRollupsRefresh: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1AnalyticsRollupsRefresh, undefined, options),
+    /** POST /v1/auth/owner-link */
+    postV1AuthOwnerLink: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1AuthOwnerLink, undefined, options),
     /** POST /v1/catalog/attributes */
     postV1CatalogAttributes: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogAttributes, undefined, options),
+    /** POST /v1/catalog/attributes/:id/archive */
+    postV1CatalogAttributesByIdArchive: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogAttributesByIdArchive, input, options),
+    /** POST /v1/catalog/attributes/:id/restore */
+    postV1CatalogAttributesByIdRestore: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogAttributesByIdRestore, input, options),
     /** POST /v1/catalog/attributes/:id/values */
     postV1CatalogAttributesByIdValues: (
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogAttributesByIdValues, input, options),
+    /** POST /v1/catalog/attributes/:id/values/:valueId/archive */
+    postV1CatalogAttributesByIdValuesByValueIdArchive: (
+      input: { readonly path: { readonly id: string; readonly valueId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(
+        runtime,
+        OPERATIONS.postV1CatalogAttributesByIdValuesByValueIdArchive,
+        input,
+        options,
+      ),
+    /** POST /v1/catalog/attributes/:id/values/:valueId/restore */
+    postV1CatalogAttributesByIdValuesByValueIdRestore: (
+      input: { readonly path: { readonly id: string; readonly valueId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(
+        runtime,
+        OPERATIONS.postV1CatalogAttributesByIdValuesByValueIdRestore,
+        input,
+        options,
+      ),
     /** POST /v1/catalog/categories */
     postV1CatalogCategories: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogCategories, undefined, options),
+    /** POST /v1/catalog/categories/:id/archive */
+    postV1CatalogCategoriesByIdArchive: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogCategoriesByIdArchive, input, options),
+    /** POST /v1/catalog/categories/:id/empty-and-delete */
+    postV1CatalogCategoriesByIdEmptyAndDelete: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogCategoriesByIdEmptyAndDelete, input, options),
+    /** POST /v1/catalog/categories/:id/restore */
+    postV1CatalogCategoriesByIdRestore: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogCategoriesByIdRestore, input, options),
     /** POST /v1/catalog/imports/prices */
     postV1CatalogImportsPrices: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogImportsPrices, undefined, options),
@@ -1993,6 +3269,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/catalog/products */
     postV1CatalogProducts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogProducts, undefined, options),
+    /** POST /v1/catalog/products/:id/duplicate */
+    postV1CatalogProductsByIdDuplicate: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogProductsByIdDuplicate, input, options),
     /** POST /v1/catalog/products/:id/images */
     postV1CatalogProductsByIdImages: (
       input: { readonly path: { readonly id: string } },
@@ -2183,6 +3465,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InventoryCountsByIdClose, input, options),
+    /** POST /v1/inventory/counts/:id/scans */
+    postV1InventoryCountsByIdScans: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryCountsByIdScans, input, options),
     /** POST /v1/inventory/counts/:id/submit */
     postV1InventoryCountsByIdSubmit: (
       input: { readonly path: { readonly id: string } },
@@ -2192,6 +3480,42 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/inventory/locations */
     postV1InventoryLocations: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InventoryLocations, undefined, options),
+    /** POST /v1/inventory/locations/:id/archive */
+    postV1InventoryLocationsByIdArchive: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryLocationsByIdArchive, input, options),
+    /** POST /v1/inventory/locations/:id/restore */
+    postV1InventoryLocationsByIdRestore: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryLocationsByIdRestore, input, options),
+    /** POST /v1/inventory/stock-in-hand */
+    postV1InventoryStockInHand: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryStockInHand, undefined, options),
+    /** POST /v1/inventory/stock-in-hand/:id/post */
+    postV1InventoryStockInHandByIdPost: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryStockInHandByIdPost, input, options),
+    /** POST /v1/inventory/stock-in-hand/:id/reverse */
+    postV1InventoryStockInHandByIdReverse: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryStockInHandByIdReverse, input, options),
+    /** POST /v1/inventory/stock-in-hand/drafts */
+    postV1InventoryStockInHandDrafts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryStockInHandDrafts, undefined, options),
+    /** POST /v1/inventory/stock-in-hand/window/close */
+    postV1InventoryStockInHandWindowClose: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryStockInHandWindowClose, undefined, options),
+    /** POST /v1/inventory/stock-in-hand/window/reopen */
+    postV1InventoryStockInHandWindowReopen: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryStockInHandWindowReopen, undefined, options),
     /** POST /v1/inventory/transfers */
     postV1InventoryTransfers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InventoryTransfers, undefined, options),
@@ -2274,6 +3598,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/marketing/meta/import */
     postV1MarketingMetaImport: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1MarketingMetaImport, undefined, options),
+    /** POST /v1/marketplace/ncom/holds/:id/release */
+    postV1MarketplaceNcomHoldsByIdRelease: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1MarketplaceNcomHoldsByIdRelease, input, options),
     /** POST /v1/notify/opt-outs */
     postV1NotifyOptOuts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1NotifyOptOuts, undefined, options),
@@ -2381,6 +3711,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdStartReturn, input, options),
+    /** POST /v1/packing/labels */
+    postV1PackingLabels: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingLabels, undefined, options),
     /** POST /v1/pos/branches/:id/closings */
     postV1PosBranchesByIdClosings: (
       input: { readonly path: { readonly id: string } },
@@ -2415,6 +3748,77 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/promo/codes */
     postV1PromoCodes: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PromoCodes, undefined, options),
+    /** POST /v1/promo/codes/:id/restore */
+    postV1PromoCodesByIdRestore: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1PromoCodesByIdRestore, input, options),
+    /** POST /v1/promo/flash-sales */
+    postV1PromoFlashSales: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PromoFlashSales, undefined, options),
+    /** POST /v1/promo/flash-sales/:id/archive */
+    postV1PromoFlashSalesByIdArchive: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PromoFlashSalesByIdArchive, input, options),
+    /** POST /v1/promo/flash-sales/:id/duplicate */
+    postV1PromoFlashSalesByIdDuplicate: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PromoFlashSalesByIdDuplicate, input, options),
+    /** POST /v1/promo/flash-sales/:id/restore */
+    postV1PromoFlashSalesByIdRestore: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PromoFlashSalesByIdRestore, input, options),
+    /** POST /v1/scanner/devices */
+    postV1ScannerDevices: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1ScannerDevices, undefined, options),
+    /** POST /v1/scanner/devices/:id/revoke */
+    postV1ScannerDevicesByIdRevoke: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1ScannerDevicesByIdRevoke, input, options),
+    /** POST /v1/scanner/sign-in */
+    postV1ScannerSignIn: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1ScannerSignIn, undefined, options),
+    /** POST /v1/scanner/sign-out */
+    postV1ScannerSignOut: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1ScannerSignOut, undefined, options),
+    /** POST /v1/storefront/campaign-links */
+    postV1StorefrontCampaignLinks: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontCampaignLinks, undefined, options),
+    /** POST /v1/storefront/email/test */
+    postV1StorefrontEmailTest: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontEmailTest, undefined, options),
+    /** POST /v1/storefront/hero-slides */
+    postV1StorefrontHeroSlides: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontHeroSlides, undefined, options),
+    /** POST /v1/storefront/nav-items */
+    postV1StorefrontNavItems: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontNavItems, undefined, options),
+    /** POST /v1/storefront/site-keys */
+    postV1StorefrontSiteKeys: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontSiteKeys, undefined, options),
+    /** POST /v1/storefront/site-keys/:id/revoke */
+    postV1StorefrontSiteKeysByIdRevoke: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontSiteKeysByIdRevoke, input, options),
+    /** POST /v1/storefront/size-charts */
+    postV1StorefrontSizeCharts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontSizeCharts, undefined, options),
+    /** POST /v1/storefront/size-charts/:id/empty-and-delete */
+    postV1StorefrontSizeChartsByIdEmptyAndDelete: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontSizeChartsByIdEmptyAndDelete, input, options),
     /** POST /v1/supply/advance-applications */
     postV1SupplyAdvanceApplications: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1SupplyAdvanceApplications, undefined, options),
@@ -2436,6 +3840,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/supply/returns */
     postV1SupplyReturns: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1SupplyReturns, undefined, options),
+    /** POST /v1/supply/sku-costs/import */
+    postV1SupplySkuCostsImport: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplySkuCostsImport, undefined, options),
+    /** POST /v1/supply/sku-costs/import/dry-run */
+    postV1SupplySkuCostsImportDryRun: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplySkuCostsImportDryRun, undefined, options),
     /** POST /v1/supply/suppliers */
     postV1SupplySuppliers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1SupplySuppliers, undefined, options),
@@ -2460,9 +3870,21 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/track */
     postV1Track: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Track, undefined, options),
+    /** PUT /v1/catalog/attributes/:id/values/order */
+    putV1CatalogAttributesByIdValuesOrder: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1CatalogAttributesByIdValuesOrder, input, options),
     /** PUT /v1/catalog/prices */
     putV1CatalogPrices: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1CatalogPrices, undefined, options),
+    /** PUT /v1/catalog/products/:id/images/:imageId/colour */
+    putV1CatalogProductsByIdImagesByImageIdColour: (
+      input: { readonly path: { readonly id: string; readonly imageId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1CatalogProductsByIdImagesByImageIdColour, input, options),
     /** PUT /v1/catalog/products/:id/images/order */
     putV1CatalogProductsByIdImagesOrder: (
       input: { readonly path: { readonly id: string } },
@@ -2474,6 +3896,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.putV1CatalogSkusByIdBarcode, input, options),
+    /** PUT /v1/catalog/skus/:id/weight */
+    putV1CatalogSkusByIdWeight: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1CatalogSkusByIdWeight, input, options),
     /** PUT /v1/courier/selection-rules */
     putV1CourierSelectionRules: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1CourierSelectionRules, undefined, options),
@@ -2501,9 +3928,72 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/marketing/spend */
     putV1MarketingSpend: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1MarketingSpend, undefined, options),
+    /** PUT /v1/marketplace/ncom */
+    putV1MarketplaceNcom: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1MarketplaceNcom, undefined, options),
     /** PUT /v1/notify/templates */
     putV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1NotifyTemplates, undefined, options),
+    /** PUT /v1/promo/flash-sales/:id */
+    putV1PromoFlashSalesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1PromoFlashSalesById, input, options),
+    /** PUT /v1/storefront/campaign-links/:id */
+    putV1StorefrontCampaignLinksById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontCampaignLinksById, input, options),
+    /** PUT /v1/storefront/categories/:id */
+    putV1StorefrontCategoriesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontCategoriesById, input, options),
+    /** PUT /v1/storefront/email */
+    putV1StorefrontEmail: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontEmail, undefined, options),
+    /** PUT /v1/storefront/hero-slides/:id */
+    putV1StorefrontHeroSlidesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontHeroSlidesById, input, options),
+    /** PUT /v1/storefront/hero-slides/order */
+    putV1StorefrontHeroSlidesOrder: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontHeroSlidesOrder, undefined, options),
+    /** PUT /v1/storefront/nav-items/:id */
+    putV1StorefrontNavItemsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1StorefrontNavItemsById, input, options),
+    /** PUT /v1/storefront/nav-items/layout */
+    putV1StorefrontNavItemsLayout: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontNavItemsLayout, undefined, options),
+    /** PUT /v1/storefront/payments */
+    putV1StorefrontPayments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontPayments, undefined, options),
+    /** PUT /v1/storefront/products */
+    putV1StorefrontProducts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontProducts, undefined, options),
+    /** PUT /v1/storefront/products/:id */
+    putV1StorefrontProductsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1StorefrontProductsById, input, options),
+    /** PUT /v1/storefront/size-charts/:id */
+    putV1StorefrontSizeChartsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontSizeChartsById, input, options),
+    /** PUT /v1/storefront/tracking */
+    putV1StorefrontTracking: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontTracking, undefined, options),
+    /** PUT /v1/supply/sku-costs */
+    putV1SupplySkuCosts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1SupplySkuCosts, undefined, options),
     /** Ask to reopen a closed month. Needs an approval. */
     reopenPeriod: (
       input: { readonly body: ReopenPeriodInput },

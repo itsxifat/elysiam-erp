@@ -17,12 +17,40 @@ import { en } from '@elysium/i18n/locales/en';
  * English inside a Bangla page.
  */
 
-const loaded: Partial<Record<Locale, Record<MessageKey, string>>> = { en };
+/*
+ * A copy, not the module's own object: sections are merged into it as their screens load
+ * (`registerSection`), and the imported catalogue stays as it was shipped.
+ */
+const loaded: Partial<Record<Locale, Record<MessageKey, string>>> = {
+  en: { ...en } as Record<MessageKey, string>,
+};
+
+/** Section strings that arrived before their locale did (Bangla loads on demand). */
+const pending: Partial<Record<Locale, Record<string, string>>> = {};
 
 export async function loadLocale(locale: Locale): Promise<void> {
   if (loaded[locale] !== undefined) return;
   if (locale === 'bn') {
-    loaded.bn = (await import('@elysium/i18n/locales/bn')).bn;
+    const bn = (await import('@elysium/i18n/locales/bn')).bn;
+    loaded.bn = { ...bn, ...pending.bn } as Record<MessageKey, string>;
+  }
+}
+
+/**
+ * Merge one area's section catalogue into both locales (M38a, D-607).
+ *
+ * A section is shipped in the chunk of the screens that use it, not in the first download,
+ * so the initial route stays inside its budget as the product grows. The module that holds a
+ * section calls this as it loads, before any of its screens renders, so a read stays
+ * synchronous: a screen never renders a key that is still on its way.
+ */
+export function registerSection(
+  strings: Readonly<Record<Locale, Readonly<Record<string, string>>>>,
+): void {
+  for (const locale of Object.keys(strings) as Locale[]) {
+    const target = loaded[locale];
+    if (target === undefined) pending[locale] = { ...pending[locale], ...strings[locale] };
+    else Object.assign(target, strings[locale]);
   }
 }
 

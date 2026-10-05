@@ -19,13 +19,15 @@ import {
 } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Link, getRouteApi } from '@tanstack/react-router';
-import { MoreHorizontal, PackagePlus } from 'lucide-react';
-import { useMemo } from 'react';
+import { MoreHorizontal, PackagePlus, Printer } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
+import '../../i18n/stock-tools.js';
 import { formatSort, mergeSearch, parseSort } from '../../lib/table-search.js';
 import { listCategories } from '../catalog/api.js';
+import { StickerDialog, type StickerItem } from '../catalog/stickers.js';
 import { listLocations, listStock, stockValuation, type StockRow } from './api.js';
 import { StockHeader } from './stock-nav.js';
 import { useStockT } from './messages.js';
@@ -64,7 +66,12 @@ export function StockLevelsPage() {
 
   const mayRead = ability.can('read', 'Stock');
   const mayReadCost = ability.can('read', 'Cost');
+  const mayPrint = ability.can('read', 'Catalog');
   const lowOnly = search.status === 'low';
+  // Rows ticked for stickers (M38a, D-604): one sticker per piece on hand there.
+  const [picked, setPicked] = useState<Readonly<Record<string, StockRow>>>({});
+  const [printing, setPrinting] = useState<readonly StickerItem[] | null>(null);
+  const rowKey = (row: StockRow) => `${row.skuId}:${row.locationId}`;
 
   const locations = useQuery({
     queryKey: ['stock', 'locations'],
@@ -124,7 +131,30 @@ export function StockLevelsPage() {
 
   const columns = useMemo<readonly DataTableColumn<StockRow>[]>(() => {
     const column = dataTableColumns<StockRow>();
+    const pick = column.display({
+      id: 'pick',
+      header: () => <span className="sr-only">{t('st.stickers.pickColumn')}</span>,
+      cell: (cell) => {
+        const row = cell.row.original;
+        const id = `${row.skuId}:${row.locationId}`;
+        return (
+          <Checkbox
+            aria-label={`${t('st.stickers.pick')} ${row.skuCode} ${row.locationName}`}
+            checked={picked[id] !== undefined}
+            onCheckedChange={(next) =>
+              setPicked((current) => {
+                const copy = { ...current };
+                if (next === true) copy[id] = row;
+                else delete copy[id];
+                return copy;
+              })
+            }
+          />
+        );
+      },
+    });
     const base = [
+      ...(mayPrint ? [pick] : []),
       // The product first, linked to its page — where receiving, adjusting and
       // transferring it are one click each (plan `catalog-stock-ux`, D-420).
       column.accessor('productName', {
@@ -204,7 +234,25 @@ export function StockLevelsPage() {
         },
       }),
     ]);
-  }, [mayReadCost, st, t, transit]);
+  }, [mayPrint, mayReadCost, picked, st, t, transit]);
+
+  const pickedRows = Object.values(picked);
+  const printPicked = () => {
+    // One line per SKU: the same SKU ticked at two locations prints both locations' pieces.
+    const bySku = new Map<string, StickerItem>();
+    for (const row of pickedRows) {
+      const label =
+        row.variantLabel === '' ? row.productName : `${row.productName} · ${row.variantLabel}`;
+      const before = bySku.get(row.skuId);
+      bySku.set(row.skuId, {
+        skuId: row.skuId,
+        label,
+        skuCode: row.skuCode,
+        count: (before?.count ?? 0) + Math.max(1, row.onHand),
+      });
+    }
+    setPrinting([...bySku.values()]);
+  };
 
   const mayTransfer = ability.can('request', 'StockAdjustment');
   const locationOptions = [
@@ -326,7 +374,7 @@ export function StockLevelsPage() {
             // An empty in-transit row is bookkeeping, not stock anybody can look for.
             (row) => row.onHand > 0 || !transit.has(row.locationId),
           )}
-          getRowId={(row) => `${row.skuId}:${row.locationId}`}
+          getRowId={rowKey}
           page={{
             page: search.page,
             pageSize: search.pageSize,
@@ -425,6 +473,18 @@ export function StockLevelsPage() {
                 </label>
               </div>
 
+              {pickedRows.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button data-testid="stock-print-stickers" onClick={printPicked}>
+                    <Printer aria-hidden="true" />
+                    {`${t('st.stickers.printPicked')} (${String(pickedRows.length)})`}
+                  </Button>
+                  <Button variant="ghost" onClick={() => setPicked({})}>
+                    {t('st.stickers.clearPicked')}
+                  </Button>
+                </div>
+              ) : null}
+
               <FilterChips
                 filters={active}
                 removeLabel={t('common.removeFilter')}
@@ -440,6 +500,13 @@ export function StockLevelsPage() {
               />
             </div>
           }
+        />
+        <StickerDialog
+          open={printing !== null}
+          onOpenChange={(next) => {
+            if (!next) setPrinting(null);
+          }}
+          items={printing ?? []}
         />
       </div>
     </PermissionGate>

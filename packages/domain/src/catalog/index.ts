@@ -14,6 +14,7 @@
 export {
   buildSkuCode,
   isSkuCode,
+  skuCodePrefix,
   skuSegment,
   SkuCodeError,
   SKU_CODE_MAX,
@@ -67,7 +68,15 @@ export {
   type PriceImportRow,
 } from './price-import.js';
 
-export { variantPrices, type VariantPriceOverride } from './variant-prices.js';
+export { parcelWeightGrams } from './parcel-weight.js';
+
+export {
+  variantOverrides,
+  variantPriceEntries,
+  variantPrices,
+  type VariantPriceEntry,
+  type VariantPriceOverride,
+} from './variant-prices.js';
 
 export {
   productSlug,

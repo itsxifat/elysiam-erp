@@ -5,6 +5,9 @@ import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
+import { useT } from '../../i18n/locale.js';
+import '../../i18n/stock-tools.js';
+import { ScanField } from '../catalog/scan-field.js';
 import {
   closeCount,
   getCount,
@@ -12,6 +15,7 @@ import {
   listLocations,
   openCount,
   recordCounts,
+  scanCount,
   submitCount,
 } from './api.js';
 import {
@@ -53,7 +57,11 @@ import { useStockT, type StockMessageKey } from './messages.js';
 export function StockCountsPage() {
   const ability = useAbility();
   const st = useStockT();
+  const t = useT();
   const queryClient = useQueryClient();
+  // The answer to the last scan, and a note for figures typed over counted ones (D-606).
+  const [scanned, setScanned] = useState<{ text: string; error: boolean } | null>(null);
+  const [note, setNote] = useState('');
 
   const mayRead = ability.can('read', 'Stock');
   const mayCount = ability.can('request', 'StockAdjustment');
@@ -98,8 +106,28 @@ export function StockCountsPage() {
         Object.entries(entered)
           .filter(([, value]) => value.trim() !== '')
           .map(([skuId, value]) => ({ skuId, countedQty: Number(value) })),
+        note,
       ),
-    onSuccess: refresh,
+    onSuccess: () => {
+      setEntered({});
+      setNote('');
+      refresh();
+    },
+  });
+
+  // Each scan counts one piece on the open count; the device's key makes a retry count once.
+  const scan = useMutation({
+    mutationFn: (code: string) =>
+      scanCount(openSessionId ?? '', { scanId: crypto.randomUUID(), code }),
+    onSuccess: (result) => {
+      setScanned({ text: `${result.skuCode}: ${String(result.countedQty)}`, error: false });
+      void queryClient.invalidateQueries({ queryKey: ['stock', 'counts', openSessionId] });
+    },
+    onError: (error) =>
+      setScanned({
+        text: error instanceof ApiError ? error.message : st('stock.saveFailed'),
+        error: true,
+      }),
   });
 
   const finish = useMutation({
@@ -116,6 +144,17 @@ export function StockCountsPage() {
   const failure = [start.error, save.error, finish.error, send.error].find(
     (error) => error != null,
   );
+  // Typing over a figure already counted (by scans or by hand) is a correction, and a
+  // correction says why (D-606).
+  const correcting = Object.entries(entered).some(([skuId, value]) => {
+    const line = current?.lines.find((entry) => entry.skuId === skuId);
+    return (
+      line !== undefined &&
+      line.countedQty !== null &&
+      value.trim() !== '' &&
+      Number(value) !== line.countedQty
+    );
+  });
 
   return (
     <PermissionGate
@@ -205,6 +244,14 @@ export function StockCountsPage() {
 
         {current === undefined ? null : (
           <section aria-label={st('stock.colCounted')} className="space-y-3">
+            {current.status === 'open' && mayCount ? (
+              <ScanField
+                label={t('st.count.scanLabel')}
+                message={scanned?.text ?? null}
+                tone={scanned?.error === true ? 'error' : 'neutral'}
+                onCode={(code) => scan.mutate(code)}
+              />
+            ) : null}
             <TableFrame label={st('stock.counts')}>
               <table className="w-full border-separate border-spacing-0 text-sm">
                 <caption className="sr-only">{st('stock.counts')}</caption>
@@ -278,9 +325,31 @@ export function StockCountsPage() {
 
             <PermissionGate allowed={mayCount}>
               <div className="flex flex-wrap items-center gap-2">
+                {correcting ? (
+                  <div className="w-full space-y-1.5 sm:w-96">
+                    <label htmlFor="count-note" className="text-sm font-medium">
+                      {t('st.count.note')}
+                    </label>
+                    <input
+                      id="count-note"
+                      value={note}
+                      maxLength={500}
+                      aria-describedby="count-note-hint"
+                      onChange={(event) => setNote(event.target.value)}
+                      className={control}
+                    />
+                    <p id="count-note-hint" className="text-xs text-muted-foreground">
+                      {t('st.count.noteHint')}
+                    </p>
+                  </div>
+                ) : null}
                 <Button
                   variant="outline"
-                  disabled={current.status !== 'open' || save.isPending}
+                  disabled={
+                    current.status !== 'open' ||
+                    save.isPending ||
+                    (correcting && note.trim() === '')
+                  }
                   onClick={() => save.mutate()}
                 >
                   {st('stock.colCounted')}

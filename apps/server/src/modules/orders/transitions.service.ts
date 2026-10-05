@@ -217,6 +217,9 @@ export class TransitionsService {
        */
       parcelBooked: trigger === 'cancel' && (await this.parcelBooked(tx, context.orgId, order.id)),
       returnReason: options.returnReason ?? null,
+      // A website checkout reserved this order's stock as it was placed (D-532): the machine
+      // decides that its confirm reserves nothing more and a pending cancel releases.
+      stockHeld: order.stock_held_at !== null,
     });
 
     /*
@@ -428,6 +431,23 @@ export class TransitionsService {
         // redemption still being applied (D-204). Nothing to do for an order with no code.
         await this.promo.releaseForOrder(tx, context.orgId, order.id);
         return;
+
+      case 'release_flash_units': {
+        // M35a, D-542: a cancel gives every flash unit back; a received return gives back
+        // each line's units that were not delivered (all of them after `return_in_transit`,
+        // the undelivered part after a partial delivery). Per order line, so two lines of
+        // one SKU priced by two sales each return their own (ledger audit W4). Once, by the
+        // claim rows' own conditional update; nothing to do for an order that claimed none.
+        const returned =
+          result.to === 'cancelled'
+            ? undefined
+            : (await repo.orderLines(tx, context.orgId, order.id)).map((line) => ({
+                orderLineId: line.id,
+                qty: line.qty - line.delivered_qty,
+              }));
+        await this.promo.releaseFlashUnits(tx, context.orgId, order.id, returned);
+        return;
+      }
 
       case 'create_exchange_order':
         if (options.callerHandlesExchange !== true) {

@@ -1,6 +1,11 @@
 import type { MembershipRole } from '../iam.js';
 import { canReadCost } from './ability.js';
-import { COST_FIELDS, RESELLER_VISIBLE_FIELDS, type Subject } from './subjects.js';
+import {
+  COST_FIELDS,
+  RESELLER_VISIBLE_FIELDS,
+  STOREFRONT_VISIBLE_FIELDS,
+  type Subject,
+} from './subjects.js';
 
 /**
  * Strip every field the caller may not read, on the way out (invariant 5).
@@ -27,6 +32,7 @@ export interface SerializeContext {
 
 const COST_FIELD_SET: ReadonlySet<string> = new Set(COST_FIELDS);
 const RESELLER_FIELD_SET: ReadonlySet<string> = new Set(RESELLER_VISIBLE_FIELDS);
+const STOREFRONT_FIELD_SET: ReadonlySet<string> = new Set(STOREFRONT_VISIBLE_FIELDS);
 
 /** Subjects a reseller sees through the allow-list rather than the deny-list. */
 const RESELLER_ALLOWLISTED: ReadonlySet<Subject> = new Set<Subject>(['Catalog', 'CostedItem']);
@@ -281,6 +287,61 @@ export function serializeFor<T>(context: SerializeContext, subject: Subject, dat
 
   if (canReadCost(context.roles, context.isSuperAdmin)) return data;
 
+  return pruneDenied(data, COST_FIELD_SET) as T;
+}
+
+/**
+ * Prune with an allow-list applied at **every** depth (M33, D-506).
+ *
+ * Unlike `pruneAllowed`, an allowed key does not expose its subtree: the subtree is judged
+ * key by key as well, so `{ product: { variants: [{ wacPoisha }] } }` loses `wacPoisha`
+ * because `wacPoisha` is not on the list, not because somebody remembered it is cost.
+ * Scalars inside an array are kept (a size chart's cells, a product's tags): an array has no
+ * keys, and its key was judged one level up.
+ */
+function pruneStrict(
+  input: unknown,
+  allowed: ReadonlySet<string>,
+  seen: Seen = new Set(),
+): unknown {
+  if (isCycle(input, seen)) return undefined;
+  const value = normalise(input);
+  if (Array.isArray(value)) {
+    seen.add(value);
+    const entries = value
+      .map((entry) => pruneStrict(entry, allowed, seen))
+      .filter((entry) => entry !== undefined);
+    seen.delete(value);
+    return entries;
+  }
+  if (!isPlainObject(value)) return typeof value === 'function' ? undefined : value;
+
+  seen.add(value);
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (!allowed.has(key) || typeof entry === 'function') continue;
+    const pruned = pruneStrict(entry, allowed, seen);
+    if (pruned !== undefined || entry === undefined) assign(result, key, pruned);
+  }
+  seen.delete(value);
+  return result;
+}
+
+/**
+ * What the brand's website may receive (M33, D-506): the storefront allow-list at every
+ * depth, then the cost deny-list. The website has no role and no session, so this is not a
+ * function of an ability: it is the one shape every storefront response leaves in.
+ */
+export function serializeForStorefront<T>(data: T): T {
+  return pruneDenied(pruneStrict(data, STOREFRONT_FIELD_SET), COST_FIELD_SET) as T;
+}
+
+/**
+ * Every cost field removed at every depth, for an answer to a machine with no role and no
+ * allow-list of its own (M35b: ncom.bd's connector, whose answers keep the old site's shapes).
+ * Invariant 5 holds there the same way: a cost field never leaves, whatever a builder added.
+ */
+export function withoutCostFields<T>(data: T): T {
   return pruneDenied(data, COST_FIELD_SET) as T;
 }
 

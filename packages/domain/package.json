@@ -67,6 +67,18 @@
     "./iam": {
       "types": "./dist/iam/index.d.ts",
       "default": "./dist/iam/index.js"
+    },
+    "./storefront": {
+      "types": "./dist/storefront/index.d.ts",
+      "default": "./dist/storefront/index.js"
+    },
+    "./barcode": {
+      "types": "./dist/barcode/index.d.ts",
+      "default": "./dist/barcode/index.js"
+    },
+    "./pricing": {
+      "types": "./dist/pricing/index.d.ts",
+      "default": "./dist/pricing/index.js"
     }
   },
   "files": [

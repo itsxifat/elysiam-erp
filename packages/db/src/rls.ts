@@ -177,7 +177,7 @@ export const ANALYTICS_READABLE: readonly string[] = [
    */
   'analytics.daily_org',
   /*
-   * The owner's reporting reads (migration 0103, D-483). With one brand per database
+   * The owner's reporting reads (migration 0125, D-483). With one brand per database
    * (D-469) the owner's figures across brands are read from each brand's database through
    * this role, so the channel and campaign rollups open too. Counts and sums per day; no
    * buyer, no cost.
@@ -189,7 +189,7 @@ export const ANALYTICS_READABLE: readonly string[] = [
 ];
 
 /**
- * Tables `erp_analytics` may read some columns of, and exactly which (migration 0103, D-483).
+ * Tables `erp_analytics` may read some columns of, and exactly which (migration 0125, D-483).
  *
  * A column grant rather than the table, because each of these also holds a person's details
  * or a cost: the buyer's name, phone and address on an order, a line's dispatch cost, a staff
@@ -331,6 +331,8 @@ export const APPEND_ONLY_TABLES: readonly string[] = [
    */
   'loans.instalments',
   'loans.reminders',
+  // M38a: every scan on a stock count, the record a disputed count is settled from (D-606).
+  'inventory.count_scans',
 ];
 
 /**
@@ -446,6 +448,19 @@ export const NO_DELETE_TABLES: readonly string[] = [
    * trigger confines it to.
    */
   'iam.credential_resets',
+  /*
+   * M33. The website's settings are one row per brand, edited and never removed: a missing
+   * row would silently fall back to the defaults. A website key is revoked, never deleted,
+   * like the intake's: `revoked_at` is the record that it once could read the catalog.
+   */
+  'storefront.settings',
+  'storefront.site_keys',
+  /*
+   * M38a. A brand's opening stock window: a deleted row reads as open again, which is a
+   * reopen nobody approved (D-602). UPDATE for closing and an approved reopen only, which
+   * the M38a policies migration's trigger confines it to.
+   */
+  'inventory.opening_stock_windows',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */
@@ -477,6 +492,9 @@ export const GLOBAL_TABLES: readonly string[] = [
   'iam.accounts',
   'iam.verifications',
   'iam.two_factors',
+  // M31 (D-473): the owner sign-in links already used, by `jti`. Identity, like the
+  // tables above; a link names a brand by its audience, not an org row.
+  'iam.owner_link_uses',
 ];
 
 /**

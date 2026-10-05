@@ -15,6 +15,7 @@ import { PROMO_CODES, type PromoCodePort } from './ports/promo-code.port.js';
 import { posHttpError } from './pos.errors.js';
 import * as repo from './pos.repository.js';
 import type { CreateRegisterInput, UpdateRegisterInput } from './pos.schemas.js';
+import { branchIsActive } from './references.repository.js';
 
 /**
  * Registers, and everything a till loads before it can sell (§14).
@@ -85,6 +86,7 @@ export class RegistersService {
   ): Promise<RegisterView> {
     assertInScope(request, { branchId: input.branchId });
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      await assertBranchActive(tx, context.orgId, input.branchId);
       await this.assertWallets(tx, context.orgId, input.branchId, input);
       const id = await repo.insertRegister(tx, {
         orgId: context.orgId,
@@ -127,6 +129,9 @@ export class RegistersService {
   ): Promise<RegisterView> {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const before = await this.inScope(tx, context, request, id);
+      if (patch.isActive === true) {
+        await assertBranchActive(tx, context.orgId, before.branch_id);
+      }
       await this.assertWallets(tx, context.orgId, before.branch_id, {
         bkashWalletId: patch.bkashWalletId,
         cardWalletId: patch.cardWalletId,
@@ -314,4 +319,11 @@ export class RegistersService {
 function stringOr(record: Record<string, unknown>, key: string): string | null {
   const value = record[key];
   return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
+/** A switched-off branch takes no new till and no till switched back on (M39a, D-633). */
+async function assertBranchActive(tx: Tx, orgId: string, branchId: string): Promise<void> {
+  if (!(await branchIsActive(tx, orgId, branchId))) {
+    throw posHttpError('POS_REGISTER_INVALID', 'That branch is switched off.');
+  }
 }

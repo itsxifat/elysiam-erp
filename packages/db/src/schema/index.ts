@@ -28,13 +28,19 @@ export * from './investors/index.js';
 export * from './ledger/index.js';
 export * from './loans/index.js';
 export * from './marketing/index.js';
+// M35b: the ncom.bd marketplace connector.
+export * from './marketplace/index.js';
 export * from './migration/index.js';
 export * from './notify/index.js';
 export * from './org/index.js';
 export * from './orders/index.js';
+// M35b: the packing scanner's devices.
+export * from './packing/index.js';
 export * from './pos/index.js';
 export * from './promo/index.js';
 export * from './ref/index.js';
+// M33: the brand's website, run from its ERP.
+export * from './storefront/index.js';
 export * from './supply/index.js';
 export * from './targets/index.js';
 export * from './wallets/index.js';

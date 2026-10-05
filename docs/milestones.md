@@ -50,9 +50,11 @@
 | M32  | The mother ERP                                   | 6      | MAX    | M31                |
 | M33  | Website catalog and content from the ERP         | 6      | XHIGH  | M31                |
 | M34  | Website buying: checkout, accounts, payment      | 6      | MAX    | M33                |
-| M35  | Website offers, landing pages, tracking, ncom    | 6      | MAX    | M33, M34           |
+| M35  | Website offers, tracking, ncom                   | 6      | MAX    | M33, M34           |
 | M36  | Elysium website on the ERP, old data moved       | 6      | MAX    | M34, M35           |
 | M37  | Go live: brand servers, mother, switch-over      | 6      | XHIGH  | M31–M36            |
+| M38  | Barcode stickers, strict stock, scan-to-pack     | 6      | MAX    | M33                |
+| M39  | Catalog management: delete, variant prices       | 6      | MAX    | M38a, M34          |
 
 ---
 
@@ -1137,40 +1139,42 @@ Phase 6 · Effort MAX · Depends on: M33 · Architecture: §31
 4. Account flows work end to end; codes and tokens are stored hashed.
 5. `pnpm verify` green; ledger-auditor on the money and stock diff.
 
-## M35: Website offers, landing pages, tracking, ncom
+## M35: Website offers, tracking, ncom
 
 Phase 6 · Effort MAX · Depends on: M33, M34 · Architecture: §31
 
+Built in two parts (plan `docs/plans/M35.md`): M35a, flash sales and discounts (checks 1, 2
+and 6 for them); M35b, the rest.
+
 **Build**
 
-- Flash sales, the old site's discount engine in integer poisha, landing pages and their editor, campaign links.
+- Flash sales, the old site's discount engine in integer poisha, campaign links. (Landing pages: none; they are ncom.bd's, D-550.)
 - Meta pixel/CAPI and GA4 settings and server events; the ncom.bd connector; the packing scanner routes and Scan page; order labels.
 
 **Acceptance checks**
 
 1. A 5-unit flash sale sells exactly 5 under 20 concurrent checkouts; a cancel gives the unit back.
 2. The ported discount engine matches the old one on recorded carts.
-3. Landing-page orders are priced from the page, never the request.
+3. Withdrawn: the owner dropped the landing pages (D-550).
 4. The old site's `ncom-check.mjs` passes against the ERP.
 5. Scanner sign-in and lookup work; a revoked token is refused.
 6. `pnpm verify` green; ledger-auditor on pricing, stock and promo.
 
-## M36: Elysium website on the ERP, old data moved
+## M36: The new Elysium website on the ERP
 
-Phase 6 · Effort MAX · Depends on: M34, M35
+Phase 6 · Effort MAX · Depends on: M34, M35 · Amended on 2026-10-05 (D-561: start fresh; D-550: no landing pages)
 
 **Build**
 
-- The website (`D:\Projects\elysium`) reads and writes only through the storefront API; its admin panel, database and demo kit go; `/admin` redirects to the ERP.
-- `pnpm migration legacy-site`: the old Mongo export imported through the real services, with a dry run, a cost sheet for opening stock, and a read-only history for finished orders.
+- The website (`D:\Projects\elysium`, branch `erp-storefront`) reads and writes only through the brand ERP's signed storefront API; its admin panel, database, demo kit and landing pages go; `/admin` redirects to the ERP.
+- Nothing old is imported except, optionally, the customers (M34's `pnpm migration legacy-customers`).
+- A deploy kit for `demo.elysium-lifestyle.bd` on the brands server.
 
 **Acceptance checks**
 
-1. The dry run reports everything; the commit creates exactly that or nothing.
-2. Counts, stock and every old URL and variant id match after the import.
-3. A Playwright pass of the shopper journeys against a preview brand ERP.
-4. No database connection or admin route is left in the website.
-5. `pnpm verify` green; the website builds and lints.
+1. A Playwright pass of the shopper journeys against a brand ERP: browse, search, product, cart, checkout (COD), sign up with the emailed code, sign in, reset password, account orders, an old address redirecting, `/admin` going to the ERP.
+2. No database connection and no admin route left in the website (a check in its CI).
+3. The website builds and lints; the ERP's `pnpm verify` stays green.
 
 ## M37: Go live: brand servers, mother, switch-over
 
@@ -1185,3 +1189,42 @@ Phase 6 · Effort XHIGH · Depends on: M31–M36 · Gate: owner's servers, domai
 1. Each brand deployment passes its health checks and the bundle scan.
 2. The mother shows Elysium's figures and opens its ERP.
 3. The switch-over is rehearsed on staging with timings.
+
+## M38: Barcode stickers, strict stock, scan-to-pack and packing video
+
+Phase 6 · Effort MAX · Depends on: M33, catalog-stock-ux · Decisions D-600 to D-619
+
+**Build**
+
+- M38a: the complete new-product form; stock in hand at a cost per piece while the opening stock window is open; an EAN-13 for every SKU; stickers for thermal rolls (38 × 25, 40 × 30, 50 × 25 mm) and A4 sheets; the scanner anywhere in the console and on stock screens.
+- M38b: the packing station (scan each piece against the order), the packing video kept until seven days after delivery.
+
+**Acceptance checks**
+
+1. Stock in hand posts one balanced journal per entry and offers one sticker per piece.
+2. Every SKU has a valid, unique EAN-13; scanning it opens the variant.
+3. Sticker PDFs have the exact page size per medium.
+4. Stock in hand is refused once the window is closed.
+5. A wrong or extra scan at packing is refused; a complete order becomes packed.
+6. The packing video is deleted seven days after delivery.
+7. `pnpm verify` green; ledger-auditor on the posting, the window and the packing transition.
+
+## M39: Catalog management the way a fashion brand works
+
+Phase 6 · Effort MAX · Depends on: M38a, M34 · Decisions D-620 to D-649
+
+**Build**
+
+- M39a: delete when unused, archive when used, everywhere a brand keeps a list; "empty and delete" for categories and size charts; a reference port so the catalog asks other modules.
+- M39b: prices by size or colour and in bulk; buying price per variant on every receipt; a standard buying price in supply; regular (compare-at) price; duplicate product; product list row and bulk actions; per-colour photos; variant barcode, weight, default size chart.
+
+**Acceptance checks**
+
+1. Unused rows delete; used rows archive with the reason; nothing referenced by stock, orders, POS, supply or journals can be deleted.
+2. A category in use is emptied into another and deleted in one transaction.
+3. Prices by size in one step; a bulk +10% previewed and saved, with history.
+4. Per-variant buying prices on a receipt give the right WAC; cost and margin only for read:cost.
+5. A standard buying price pre-fills the next receipt and never appears in a catalog response.
+6. Duplicate product copies variants and prices, not stock.
+7. The website shows regular-price and flash-sale strike-throughs; "On sale" works.
+8. `pnpm verify` green; ledger-auditor; stack specs with screenshots; acceptance-auditor.

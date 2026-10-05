@@ -28,6 +28,7 @@ import {
 import { AdvancesPanel } from './advances-panel.js';
 import { OrderActions } from './order-actions.js';
 import { ParcelPanel } from './parcel-panel.js';
+import { WebsitePanel } from './website-panel.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { OrderStatusBadge } from './parts.js';
 import { DEFAULT_ORDER_SEARCH } from './search.js';
@@ -136,11 +137,22 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
   );
   // An intake order is created by the site key, not by a person (`intake:<key>`), and is
   // named as the channel it came through rather than shown as an opaque id.
+  // An owner is named only to another owner; everyone else reads "Owner" (D-473).
+  const owners = new Map((order.owners ?? []).map((owner) => [owner.userId, owner.name]));
   const nameOf = (userId: string | null): string =>
     userId === null
       ? t('orders.timeline.system')
-      : (names.get(userId) ??
-        (userId.startsWith('intake:') ? t('orders.channel.landing_page') : userId));
+      : owners.has(userId)
+        ? (owners.get(userId) ?? t('orders.timeline.owner'))
+        : (names.get(userId) ??
+          (userId.startsWith('intake:')
+            ? t('orders.channel.landing_page')
+            : // M34: a website checkout, and the gateway that validated a payment.
+              userId.startsWith('storefront:')
+              ? t('orders.channel.website')
+              : userId.startsWith('gateway:')
+                ? t('orders.timeline.gateway')
+                : userId));
 
   const area = areas.data?.areas.find((entry) => entry.thanaId === order.shipTo.thanaId);
   const zone = areas.data?.zones.find((entry) => entry.id === order.deliveryZoneId);
@@ -344,6 +356,8 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
           <ParcelPanel order={order} mayUpdate={mayUpdate} />
 
           <AdvancesPanel order={order} />
+
+          <WebsitePanel orderId={order.id} channel={order.channel} />
 
           {order.notes === null && sourceEntries.length === 0 ? null : (
             <section className="space-y-3 rounded-lg border border-border bg-card p-5 text-sm">

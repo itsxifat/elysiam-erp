@@ -21,6 +21,7 @@ import { serverEnv } from './platform/config/env.js';
 import { createLogger } from './platform/logging/logger.js';
 import { reportError, shutdownObservability } from './platform/observability/errors.js';
 import type { Logger } from 'pino';
+import { isIP } from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { registerAuth } from './platform/http/auth-plugin.js';
 import { corsOptions } from './platform/http/cors.js';
@@ -28,6 +29,7 @@ import { withBrandOrigins } from './platform/http/origins.js';
 import { ValkeyRateLimiter } from './platform/http/rate-limit.valkey.js';
 import { createRealtimeGateway } from './platform/realtime/index.js';
 import { useTrackingRateLimitStore } from './modules/courier/tracking.service.js';
+import { loadDeploymentBrand } from './platform/brand/deployment.js';
 
 /**
  * The Fastify adapter, exactly as the running API builds it.
@@ -40,15 +42,52 @@ import { useTrackingRateLimitStore } from './modules/courier/tracking.service.js
  * passing pino to `logger` threw `FST_ERR_LOG_INVALID_LOGGER_CONFIG` before the first
  * request, with 1,500 tests green.
  */
+/**
+ * `TRUSTED_PROXY_COUNT` as Fastify's `trustProxy` (§25, D-479): trust the `count` nearest
+ * hops, the socket's peer first, and take the first address beyond them as the client.
+ *
+ * A function, not the number. Fastify 5.12 turns a numeric `trustProxy` into "trust
+ * nothing" (`getTrustProxyFn`: hop-count trust "cannot validate the immediate peer", so it
+ * fails closed), which made `request.ip` the proxy's own address for every visitor: one
+ * per-address rate-limit bucket for the whole country behind nginx. Trusting by hop is
+ * safe here because the API is only reachable through its proxy: every deployment
+ * publishes its port on 127.0.0.1 alone (infra/brand, infra/preview, infra/kamal), and the
+ * proxy sets `X-Forwarded-For` to the visitor rather than appending to what they sent.
+ * 0 means no proxy: the socket's peer is the client and the header is ignored.
+ */
+export function trustProxyFor(count: number): false | ((address: string, hop: number) => boolean) {
+  if (!Number.isSafeInteger(count) || count <= 0) return false;
+  // The nearest hop must also be a machine of ours (loopback or a private network, as the
+  // host's nginx and Docker's bridge are): a port published to the internet by mistake
+  // then trusts nothing, rather than a visitor's own header.
+  return (address, hop) => hop < count && (hop > 0 || isPrivateAddress(address));
+}
+
+/** Loopback, private (RFC 1918), unique-local or link-local, IPv4-mapped included. */
+export function isPrivateAddress(address: string): boolean {
+  const lower = address.toLowerCase();
+  const v4 = lower.startsWith('::ffff:') ? lower.slice('::ffff:'.length) : lower;
+  if (isIP(v4) === 4) {
+    const [a = -1, b = -1] = v4.split('.').map(Number);
+    return (
+      a === 127 ||
+      a === 10 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254)
+    );
+  }
+  if (isIP(lower) === 6) {
+    return lower === '::1' || /^f[cd]/.test(lower) || /^fe[89ab]/.test(lower);
+  }
+  return false;
+}
+
 export function createApiAdapter(trustedProxyCount: number, logger: Logger): FastifyAdapter {
   return new FastifyAdapter({
     // `trustProxy` is what makes `request.ip` the client rather than the proxy,
     // and the per-IP rate limit is only meaningful if it is right (§25).
-    //
-    // Cast: Fastify passes this straight to `proxy-addr`, which accepts a hop
-    // count, but the published type only lists the boolean/string/function
-    // forms. 0 becomes `false` — trust the socket, no proxy.
-    trustProxy: trustedProxyCount === 0 ? false : (trustedProxyCount as unknown as boolean),
+    trustProxy: trustProxyFor(trustedProxyCount),
     /*
      * The logger Fastify hands to `request.log` (§26).
      *
@@ -97,6 +136,14 @@ async function bootstrap(): Promise<void> {
   const logger = createLogger('api');
 
   /*
+   * One brand per deployment (D-470). With `ERP_BRAND_SLUG` set, a database holding any
+   * other real brand stops the process here, before it serves anything. The brand's own
+   * name then signs the second factor and the sign-in texts (D-472).
+   */
+  const brand = await loadDeploymentBrand(env.ERP_BRAND_SLUG);
+  if (brand !== null) logger.info({ brand: brand.slug }, 'brand deployment');
+
+  /*
    * The trusted origins, resolved once (architecture §25, D-035, D-054).
    *
    * Enumerated, never patterned: the configured origins plus one per active
@@ -107,7 +154,13 @@ async function bootstrap(): Promise<void> {
    * three cannot drift apart or interpret a pattern differently.
    */
   const originPolicy = {
-    trustedOrigins: withBrandOrigins(env.TRUSTED_ORIGINS, env.APP_DOMAIN, await activeOrgSlugs()),
+    // A brand's own deployment serves one host per app, all listed in TRUSTED_ORIGINS: it
+    // has no per-brand hostnames to add (D-474).
+    trustedOrigins: withBrandOrigins(
+      env.TRUSTED_ORIGINS,
+      env.APP_DOMAIN,
+      brand === null ? await activeOrgSlugs() : [],
+    ),
   };
   logger.info({ origins: originPolicy.trustedOrigins.length }, 'trusted origins resolved');
 
@@ -126,6 +179,7 @@ async function bootstrap(): Promise<void> {
     trustedOrigins: originPolicy.trustedOrigins,
     cookieDomain: env.APP_DOMAIN === 'localhost' ? undefined : `.${env.APP_DOMAIN}`,
     sms: new RecordingSmsProvider(),
+    ...(brand === null ? {} : { brandName: brand.displayName }),
     onPasswordToken: ({ email, token }) => {
       tokens.put(email, token);
       return Promise.resolve();

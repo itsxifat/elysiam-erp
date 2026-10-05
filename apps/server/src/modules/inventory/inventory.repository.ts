@@ -374,6 +374,29 @@ export async function levelFor(
   return rows[0];
 }
 
+/** Quantities for many SKUs at many locations, in one read (M33's web availability). */
+export async function levelsAt(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+  locationIds: readonly string[],
+): Promise<{ sku_id: string; location_id: string; on_hand: number; reserved: number }[]> {
+  if (skuIds.length === 0 || locationIds.length === 0) return [];
+  const rows = await tx.execute<{
+    sku_id: string;
+    location_id: string;
+    on_hand: number;
+    reserved: number;
+  }>(sql`
+    select sku_id, location_id, on_hand, reserved
+    from inventory.stock_levels
+    where org_id = ${orgId}
+      and sku_id = any (${sql.param([...skuIds])}::uuid[])
+      and location_id = any (${sql.param([...locationIds])}::uuid[])
+  `);
+  return [...rows];
+}
+
 export interface StockViewRow extends Record<string, unknown> {
   readonly sku_id: string;
   readonly sku_code: string;
@@ -894,15 +917,22 @@ export async function freezeCountLines(
   return rows.length;
 }
 
+/**
+ * A count session, optionally locked (M38a's ledger audit, N7): `share` while a figure or a
+ * scan is written to it, `update` while it is submitted, so a submit waits for every scan in
+ * flight and a scan after the submit sees it submitted.
+ */
 export async function countSessionById(
   tx: Tx,
   orgId: string,
   id: string,
+  lock?: 'share' | 'update',
 ): Promise<CountSessionRow | undefined> {
   const rows = await tx.execute<CountSessionRow>(sql`
     select id, location_id, branch_id, status::text as status, memo, created_by
     from inventory.count_sessions
     where org_id = ${orgId} and id = ${id}
+    ${lock === 'share' ? sql`for share` : lock === 'update' ? sql`for update` : sql``}
   `);
   return rows[0];
 }
@@ -924,6 +954,28 @@ export async function recordCount(
     returning id
   `);
   return rows.length === 1;
+}
+
+/**
+ * The count's figures for these SKUs, locked until the transaction ends (a typed figure's
+ * overwrite check). Only the lines being typed, in `sku_id` order, so a scan of another SKU
+ * never waits behind a correction and two corrections cannot deadlock.
+ */
+export async function lockCountLines(
+  tx: Tx,
+  orgId: string,
+  sessionId: string,
+  skuIds: readonly string[],
+): Promise<{ sku_id: string; counted_qty: number | null }[]> {
+  if (skuIds.length === 0) return [];
+  const rows = await tx.execute<{ sku_id: string; counted_qty: number | null }>(sql`
+    select sku_id, counted_qty from inventory.count_lines
+    where org_id = ${orgId} and session_id = ${sessionId}
+      and sku_id = any (${sql.param([...new Set(skuIds)])}::uuid[])
+    order by sku_id
+    for update
+  `);
+  return [...rows];
 }
 
 export interface CountLineRow extends Record<string, unknown> {
@@ -1335,4 +1387,102 @@ export async function skuCodes(
       )})
   `);
   return new Map(rows.map((row) => [row.id, row.code]));
+}
+
+// --- M39b (D-637, D-639) ---------------------------------------------------------------
+
+/**
+ * The last price each SKU was bought at (D-637): its newest costed inbound movement, a
+ * supply receipt or opening / in-hand stock, whichever came last. Purchase cost (invariant
+ * 5): read only for `read:cost` routes, through `InventoryApi.lastReceiptCosts`.
+ */
+export async function lastReceiptCosts(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+): Promise<
+  {
+    sku_id: string;
+    unit_cost_poisha: string;
+    occurred_at: Date;
+    business_date: string;
+    ref_type: string;
+    ref_id: string | null;
+  }[]
+> {
+  if (skuIds.length === 0) return [];
+  const rows = await tx.execute<{
+    sku_id: string;
+    unit_cost_poisha: string;
+    occurred_at: Date;
+    business_date: string;
+    ref_type: string;
+    ref_id: string | null;
+  }>(sql`
+    select distinct on (m.sku_id)
+           m.sku_id, m.unit_cost_poisha::text as unit_cost_poisha, m.occurred_at,
+           m.business_date::text as business_date, m.ref_type, m.ref_id
+    from inventory.stock_movements m
+    where m.org_id = ${orgId}
+      and m.sku_id = any (${sql.param([...new Set(skuIds)])}::uuid[])
+      and m.kind in ('supply_receipt', 'opening_balance')
+      and m.qty_delta > 0
+      and m.unit_cost_poisha is not null
+    order by m.sku_id, m.occurred_at desc, m.created_at desc
+  `);
+  return [...rows];
+}
+
+/**
+ * Pieces held for orders, per SKU, across every location (D-639): a variant whose pieces a
+ * confirmed order or a website checkout holds is not archived out from under it. The rows are
+ * locked so a reservation cannot land between the check and the archive.
+ */
+export async function reservedBySku(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+): Promise<Map<string, { reserved: number; onHand: number }>> {
+  if (skuIds.length === 0) return new Map();
+  const locked = await tx.execute<{ sku_id: string; reserved: number; on_hand: number }>(sql`
+    select sku_id, reserved, on_hand from inventory.stock_levels
+    where org_id = ${orgId} and sku_id = any (${sql.param([...new Set(skuIds)])}::uuid[])
+    order by sku_id, location_id
+    for update
+  `);
+  const totals = new Map<string, { reserved: number; onHand: number }>();
+  for (const row of locked) {
+    const current = totals.get(row.sku_id) ?? { reserved: 0, onHand: 0 };
+    totals.set(row.sku_id, {
+      reserved: current.reserved + Number(row.reserved),
+      onHand: current.onHand + Number(row.on_hand),
+    });
+  }
+  return totals;
+}
+
+/**
+ * Pieces on hand and free to sell per product, across the locations in the caller's scope
+ * (M39b, D-642): the product list's stock column. Quantities only, never a cost.
+ */
+export async function productStockTotals(
+  tx: Tx,
+  orgId: string,
+  filters: { readonly scope: SQL; readonly productIds: readonly string[] },
+): Promise<{ product_id: string; on_hand: number; available: number }[]> {
+  if (filters.productIds.length === 0) return [];
+  const rows = await tx.execute<{ product_id: string; on_hand: number; available: number }>(sql`
+    select s.product_id,
+           coalesce(sum(sl.on_hand), 0)::int as on_hand,
+           coalesce(sum(sl.on_hand - sl.reserved), 0)::int as available
+    from inventory.stock_levels sl
+    join catalog.skus s on s.org_id = sl.org_id and s.id = sl.sku_id
+    join org.locations l on l.org_id = sl.org_id and l.id = sl.location_id
+    where sl.org_id = ${orgId}
+      and ${filters.scope}
+      and l.kind in ('warehouse', 'showroom')
+      and s.product_id = any (${sql.param([...new Set(filters.productIds)])}::uuid[])
+    group by s.product_id
+  `);
+  return [...rows];
 }

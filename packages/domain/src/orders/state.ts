@@ -115,6 +115,13 @@ export const ORDER_EFFECTS = [
    */
   'release_promo',
   /**
+   * M35a, D-542: a flash sale's units go back to the sale. On every cancel (all of them) and
+   * on a received return (the units that came back), never on a delivery: what was
+   * delivered stays sold at the sale price. Once, however often: each claim is released by
+   * a conditional update.
+   */
+  'release_flash_units',
+  /**
    * M17, D-233: the delivery journal relieved Customer advance by the applicable amount, and
    * each verified advance records its share of it, oldest first. After `post_revenue` /
    * `post_partial_revenue`, which is what computes the amount.
@@ -168,7 +175,10 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     from: 'pending',
     to: 'cancelled',
     trigger: 'cancel',
-    effects: ['release_promo', 'settle_advances'],
+    // `release_reservation` only for an order whose stock was held when it was placed (a
+    // website checkout, M34, D-532); `transition()` drops it for every other pending order,
+    // which holds nothing.
+    effects: ['release_reservation', 'release_promo', 'release_flash_units', 'settle_advances'],
     requiresReason: true,
   },
   {
@@ -198,6 +208,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
       'enqueue_courier_cancel',
       'update_customer_stats',
       'release_promo',
+      'release_flash_units',
       'settle_advances',
     ],
     requiresReason: true,
@@ -211,6 +222,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
       'enqueue_courier_cancel',
       'update_customer_stats',
       'release_promo',
+      'release_flash_units',
       'settle_advances',
     ],
     requiresReason: true,
@@ -257,6 +269,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     effects: [
       'receive_return_stock',
       'post_return',
+      'release_flash_units',
       'update_customer_stats',
       'settle_advances',
       'record_return_reason',
@@ -267,7 +280,13 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     from: 'partially_delivered',
     to: 'returned',
     trigger: 'receive_return',
-    effects: ['receive_return_stock', 'post_return', 'settle_advances', 'record_return_reason'],
+    effects: [
+      'receive_return_stock',
+      'post_return',
+      'release_flash_units',
+      'settle_advances',
+      'record_return_reason',
+    ],
     requiresReason: true,
   },
   {
@@ -339,6 +358,12 @@ export interface TransitionRequest {
   readonly parcelBooked?: boolean;
   /** Why the goods came back: required on `receive_return` and `exchange` (M17, D-234). */
   readonly returnReason?: string | null | undefined;
+  /**
+   * Whether the order's stock was held when it was placed (M34, D-532): a website checkout
+   * reserves at once, so confirming it must not reserve again and cancelling it while still
+   * pending must give the units back. False (or absent) for every other pending order.
+   */
+  readonly stockHeld?: boolean;
 }
 
 export interface TransitionResult {
@@ -415,6 +440,16 @@ export function transition(request: TransitionRequest): TransitionResult {
       );
     }
     if (effect === 'enqueue_courier_cancel') return request.parcelBooked === true;
+    /*
+     * A held order (D-532). Its units were reserved by the checkout that placed it, so the
+     * confirm has nothing to reserve and a pending cancel has something to release. Decided
+     * here, beside the rest of the table, so no caller chooses for itself whether a confirm
+     * reserves: invariant 7 is that the machine says what happens.
+     */
+    if (effect === 'reserve_stock' && entry.from === 'pending') return request.stockHeld !== true;
+    if (effect === 'release_reservation' && entry.from === 'pending') {
+      return request.stockHeld === true;
+    }
     return true;
   });
 
@@ -427,6 +462,19 @@ export function transition(request: TransitionRequest): TransitionResult {
     returnReason: recordsReturn ? returnReason : null,
     businessDate: businessDateOf(request.at),
   };
+}
+
+/**
+ * Whether an order in this status holds reserved stock (§8, §9; M34, D-532).
+ *
+ * Confirmed, on hold and packed orders always do: the confirm reserved and only the ship or a
+ * cancel lets go. A pending order holds nothing, unless it was placed by a website checkout,
+ * which reserves at once. An edit that changes a holding order's lines or location rewrites
+ * its reservation; one that does not hold any leaves the shelves alone.
+ */
+export function holdsStock(status: OrderStatus, stockHeld: boolean): boolean {
+  if (status === 'pending') return stockHeld;
+  return status === 'confirmed' || status === 'on_hold' || status === 'packed';
 }
 
 function describeTrigger(trigger: OrderTrigger): string {

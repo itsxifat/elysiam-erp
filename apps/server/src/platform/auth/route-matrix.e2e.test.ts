@@ -44,6 +44,14 @@ import {
 import { NOTIFY_ROUTE_FIXTURES } from '../../modules/notify/notify.route-fixtures.js';
 import { ANALYTICS_ROUTE_FIXTURES } from '../../modules/analytics/analytics.route-fixtures.js';
 import {
+  MARKETPLACE_ROUTE_FIXTURES,
+  prepareMarketplaceFixtures,
+} from '../../modules/marketplace/marketplace.route-fixtures.js';
+import {
+  PACKING_ROUTE_FIXTURES,
+  preparePackingFixtures,
+} from '../../modules/packing/packing.route-fixtures.js';
+import {
   MARKETING_ROUTE_FIXTURES,
   prepareMarketingFixtures,
 } from '../../modules/marketing/marketing.route-fixtures.js';
@@ -60,6 +68,14 @@ import {
   prepareLoanFixtures,
 } from '../../modules/loans/loans.route-fixtures.js';
 import { USERS_ROUTE_FIXTURES } from '../../modules/iam/users.route-fixtures.js';
+import {
+  prepareStorefrontFixtures,
+  STOREFRONT_ROUTE_FIXTURES,
+} from '../../modules/storefront/storefront.route-fixtures.js';
+import {
+  DELETE_ROUTE_FIXTURES,
+  prepareDeleteFixtures,
+} from '../references/deletes.route-fixtures.js';
 import { describeRoutes, type RouteDeclaration } from './route-map.js';
 import { ROUTE_MATRIX_MANIFEST, routeKey } from './route-matrix.manifest.js';
 
@@ -99,6 +115,10 @@ beforeAll(async () => {
   await preparePromoFixtures();
   await prepareMarketingFixtures();
   await prepareLoanFixtures();
+  await prepareStorefrontFixtures();
+  await prepareDeleteFixtures();
+  await prepareMarketplaceFixtures();
+  await preparePackingFixtures();
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 }, 300_000);
 
@@ -272,6 +292,11 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...ANALYTICS_ROUTE_FIXTURES,
   ...LOANS_ROUTE_FIXTURES,
   ...USERS_ROUTE_FIXTURES,
+  ...STOREFRONT_ROUTE_FIXTURES,
+  // M39a: delete and archive everywhere (D-621 to D-634).
+  ...DELETE_ROUTE_FIXTURES,
+  ...MARKETPLACE_ROUTE_FIXTURES,
+  ...PACKING_ROUTE_FIXTURES,
 };
 
 function testedRoutes(): RouteDeclaration[] {

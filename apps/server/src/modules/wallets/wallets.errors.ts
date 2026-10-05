@@ -30,9 +30,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   LEDGER_ACCOUNT_NOT_FOUND: 404,
   IDEMPOTENCY_CONFLICT: 409,
   APPROVAL_REQUIRED: 409,
-  // The consolidated view is the platform super admin's: an ordinary org admin
-  // holds `read LedgerReport` at `org`, so this is a refusal about scope rather
-  // than about the ability, and 403 is the honest status for it.
+  // A refusal about scope rather than about the ability (a transfer or a wallet
+  // outside the caller's reach), and 403 is the honest status for it.
   FORBIDDEN: 403,
 };
 

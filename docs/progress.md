@@ -1385,3 +1385,993 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
   after an unanswered save ("an earlier save may have gone through"); the console bundle is at 247.8 KB of 250, so the
   redesign should watch the budget.
 - Next: merge into the wave-2 integration after the redesign lands; then M30 part 2 on staging.
+
+### 2026-10-05 · wave 3 · The owner's new shape: one ERP per brand, a mother ERP, the website run from the ERP · in progress
+
+- The owner's instruction (D-469): every business gets its own ERP deployment and database, with
+  no clue of the others or of a head office; a separate mother ERP on its own server and domain
+  shows and handles everything; each brand's ERP becomes its website's back office, starting
+  with Elysium Lifestyle BD's Next.js site at `D:Projectselysium`.
+- Delivered so far (branch `integration-wave2`):
+  - The redesign (`design-refresh`, verified 2026-10-03: verify exit 0, the stack and preview
+    Playwright runs green) fast-forwarded into `integration-wave2`, so wave 3 builds on the new
+    design. Its own progress entry was never written; its plan's Status and the review
+    screenshots are the record.
+  - Plans: `docs/plans/wave3.md` (shape, the old admin panel mapped feature by feature, order
+    of work, the old site's problems) and M31 to M37, the milestone table and sections in
+    `docs/milestones.md`, D-469, decision id ranges per milestone, `build-status.md` and the
+    plans index.
+  - The owner link's format, shared by the brands (verify) and the mother (mint):
+    `packages/domain/src/iam/owner-link.ts` with 13 tests including fast-check (D-473).
+  - Survey of the old website: Next.js 14, Mongoose 9 on one Mongo database, 31 admin screens,
+    112 API routes, 20 models; money in float taka; sizes only, stock as one number per size.
+- Found on the old website and fixed on its branch `fix/settings-public-allowlist` (66890cb,
+  not deployed): the public `GET /api/admin/settings` returned the ncom.bd connector, order,
+  API and webhook secrets to anyone; visitors now get an allow-list of storefront sections and
+  staff the redacted document without ncom. `GET /api/orders/[id]` also returned the ncom block
+  to shoppers. The ncom secrets should be rotated once it is deployed.
+- Builders started (each in its own worktree, decision ids reserved): M31
+  (`m31-brand-edition`), M32 (`m32-mother`), M33 (`m33-storefront-catalog`).
+- Owner questions: the old site's courier-history fraud check (default: not carried over,
+  D-291); the two servers and the mother's domain; Elysium's admin address; Elysium's
+  SSLCommerz, SMTP, Meta, GA4 and ncom credentials; the accountant's cost per piece for the
+  website's stock; a switch-over date.
+- Next: integrate M31, M32 and M33; then M34 and M35.
+
+### 2026-10-05 · M33 · The website's catalog and content, run from the ERP · built
+
+- Delivered (branch `m33-storefront-catalog`, continuous build mode, plan `docs/plans/M33.md`):
+  - **The data.** Web fields on `catalog.products` (`web_visible` separate from `status` and off
+    for a new product, featured, new arrival, gender, material, care, tags, size chart, SEO
+    title and description, `previous_slugs` kept by a trigger; descriptions to 20,000
+    characters) and on `catalog.categories` (shown on the website, featured, gender,
+    description, picture). A new tenant schema `storefront`: `settings`, `web_locations`,
+    `hero_slides`, `nav_items`, `size_charts`, `legacy_ids`, `site_keys`, all RLS ENABLE and
+    FORCE from `tenantTableSql()` with composite foreign keys. Migrations
+    `0103_m33_storefront_schema.sql` (generated) and `0104_m33_storefront_policies.sql`
+    (policies, grants, the size-chart foreign key, the slug-history triggers, search text with
+    tags and material).
+  - **The rules** (`packages/domain/src/storefront/`, fast-check): `availableForWeb`,
+    `storefrontPrice` and the `{ poisha, taka }` wire money, the slug history
+    (`recordSlugChange`, `releaseSlug`, `resolveSlug`), the shipping rule, the product list's
+    parameters and cursor, tags, safe links, size charts, the category tree and the menu.
+  - **The storefront read API** `/storefront/v1/*` (`docs/storefront-api.md`): products with
+    category subtree, gender, tags, size, price range, featured, new arrival, on sale and
+    search, six sorts, a keyset cursor plus `page` and `total`; a product by slug with each
+    size's live availability at the web locations, images, size chart, breadcrumb and related
+    products, and `{ redirect: { slug } }` for an old address; the category tree; search; the
+    site in one answer (settings, hero, menu, announcement, promo, testimonials, shipping,
+    payments); size charts; districts and thanas. Signed with `X-Api-Key`, `X-Api-Timestamp`,
+    `X-Api-Signature` over `timestamp.METHOD.path?query`, ±5 minutes, keys derived from
+    `INTAKE_KEY_SECRET` under their own label; every answer through `serializeForStorefront`
+    (an allow-list at every depth, then the cost deny-list), with an ETag, `304` and
+    `Cache-Control: private, max-age=30, stale-while-revalidate=300`.
+  - **Public images**: `GET /media/<org>/<file>/<thumb|card|full>` for stored public product,
+    category and website images only, never an original, cached a year.
+  - **The console**: a **Website** section in the Sell group (Settings by section, Hero slides
+    and Menu with drag and arrows, a Size chart grid editor, Connection for the website's keys
+    with the secret shown once), the product page's **Website** card with "View on website",
+    and a **Website** dialog per category on Catalog setup. A `Storefront` subject: org_admin
+    and marketing manage, sales reads. Lazy-loaded; strings in bn and en.
+  - **For M34 to M36**: `STOREFRONT_API` (web locations, the shipping rule, old ids),
+    `OrdersApi.deliveryZones`, `InventoryApi.levelsAt`, `CatalogApi` web reads,
+    `FilesService.publicImagesIn`, the POST signing base for M34's checkout.
+- Verification:
+  - Acceptance check 1 (hidden never reaches the website; live availability at the web
+    locations only): `storefront.e2e.test.ts` › "what the shop shows" — a hidden and an
+    archived product absent from list and search and 404 on their pages; the shirt's sizes
+    read S 5, M 3 (4 less 1 held), L 0 at the warehouse, then S 5, M 12, L 3 once the showroom
+    is a web location. PASS.
+  - Check 2 (an old slug redirects): "old addresses" — a renamed product's old slug answers
+    `{ redirect: { slug } }`; another product taking it stops the redirect; another brand
+    taking it leaves this brand's redirect alone; domain property test of the history rule.
+    PASS.
+  - Check 3 (401s; no cost field): "the signature" — no headers, a malformed, unknown,
+    revoked, other-master or landing-page key, a wrong signature, another path or query, and
+    a timestamp 301 s either side all answer the same 401; `cost-sweep.e2e.test.ts` drives
+    every live `/storefront/v1` route with a website key and finds no cost or cost-like key.
+    PASS.
+  - Check 4 (round trip through the console): `website.stack.ts` against the real stack, 7 of
+    7 passed (ports 3213/5286), first at `ef62846` and again after the audit fixes at
+    `21672da` (48.2 s): settings by section, two hero slides reordered, a menu with a dropdown,
+    a size chart, a key issued and the saved site read back through the signed API with it, a
+    product put on the website from its card. axe clean (serious and critical) on settings,
+    hero, menu and size charts. Screenshots in `docs/review/M33/` (`dd30f7a`); the dialog that
+    shows a key's secret is not screenshotted (`b2792ae`; an earlier commit carried one from a
+    throwaway database, useless without that database's key row). PASS.
+  - Check 5: `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at `8a3414c`,
+    the last code commit: 194 test files, 3,086 passed, 1 skipped (pre-existing); format, lint,
+    typecheck, build, bundle (initial route 246.1 KB of 250), migrations, schema drift (103
+    migrations agree), route matrix (358 routes, 341 matrix-tested, 17 public), i18n (3,256
+    keys) and api-client all pass. The route-matrix and cost-sweep suites pass with the 21 new
+    console routes and the 8 signed reads.
+- Auditors: ledger-auditor first pass 0 critical, 1 high (a nested `withOrg` in the public
+  reads could starve the pool under concurrent traffic), 1 medium (key issue and revoke and
+  settings saves audited only after the response; the `pin` pattern redacted the whole
+  shipping section), 6 low, 6 notes — all fixed (`7808488`) except the notes recorded below;
+  re-check 0 critical, 0 high, 0 medium, 1 low (a repeated query parameter), 6 notes — the low
+  and five notes fixed (`21672da`). acceptance-auditor: READY, all five checks PASS; its
+  scope notes fixed after: the category picture is checked through `FilesService`
+  (`publicImagesIn` with a purpose), not by a new catalog read of `files.objects`; the old-id
+  map, a shown product with no active size and a pending category picture gained tests; the
+  doc nits.
+- Decisions/assumptions: D-500 to D-512 (D-500, D-501, D-503, D-506, D-507, D-509, D-510,
+  D-511 and D-512 ASSUMED).
+- New dependencies: none.
+- Deviations from the milestone spec: two migration files (schema, then policies and
+  triggers), as every milestone writes them; `Cache-Control` is `private` as well (D-506);
+  the list also takes `page` and returns `total` for the old shop's numbered pages (D-506);
+  website keys reuse `INTAKE_KEY_SECRET` under their own label (D-509); "drag to reorder" is
+  native drag and drop plus arrow buttons, no library.
+- Owner questions: exact stock quantities on the website, or only in and out of stock
+  (D-510); new products start off the website (D-500); the product path for "View on
+  website" is the old site's `/shop/<slug>` (D-503, confirm in M36).
+- Follow-ups: the audit redaction matches `pin` and `nid` as substrings (`shipping`,
+  `locationIds`), which redacts innocent keys across the system — match whole segments
+  (owner: claude); `storefront_settings_org_idx` duplicates the settings primary key (drop in
+  a later migration; harmless); M36's importer must write products inside the brand's
+  `withOrg()` so the slug triggers see the brand (§31); a 1,920-pixel image size if the hero
+  looks soft (D-507); nginx or a CDN cache in front of `/media/` at go-live (M37).
+- Integration notes: migrations `0103_m33_storefront_schema.sql` and
+  `0104_m33_storefront_policies.sql` (renumber at integration; 0103's journal entry and
+  snapshots come with them); the i18n blocks sit before `common.today` in both catalogues;
+  `openapi.json` and the generated client are regenerated by `pnpm api:client`; M31's
+  neutral header names are what this API uses from the start.
+- Next: M34 (buying on the website) on the storefront API; M36 converts the website onto it.
+
+### 2026-10-05 · M31 · One ERP per brand (brand edition) · done
+
+- Delivered:
+  - **One brand per deployment** (D-470): `ERP_BRAND_SLUG` on the API and worker; both refuse
+    to start unless the database holds that brand and no other real one (the training org
+    may sit beside it), with a message naming the other brands. `db:seed --brand <slug>` /
+    `SEED_BRANDS`, `preview:seed --brand`, `preview:local --brand`. With the slug set the
+    login branding answers that brand alone and the trusted origins are `TRUSTED_ORIGINS`.
+  - **The all-brands views left** (D-471): the consolidated dashboard, the leaderboard and the
+    consolidated wallet and P&L reports answer 404 and are gone from the route matrix,
+    OpenAPI, the client, the console (screens, tabs, palette, messages) and the permission
+    matrix (`Leaderboard`). Insights compare a month with the brand's own three months before
+    it (D-478); the narrative payload (v2) carries no rank.
+  - **White label** (D-472, D-479): CSRF `erp_csrf` / `x-csrf-token`; local storage `erp-*`
+    (older values moved once, by shape); the till's IndexedDB `erp-pos`, an older build's database
+    copied on every start and deleted only when the till holds it alone and the copy took
+    everything in it; shell cache `erp-pos-shell-v1`;
+    intake headers `X-Api-*` (old names still read); TOTP issuer, SMS text, titles, login
+    fallbacks, recovery-code file names and payslip from the brand's row or neutral;
+    multi-brand copy reworded; OpenAPI `ERP API`. `pnpm check:white-label` in verify.
+  - **Owner sign-in link, brand side** (D-473, D-476, D-477): `POST /v1/auth/owner-link`
+    (off unless `OWNER_LINK_PUBLIC_KEY`), Ed25519 verify, audience, window, single use
+    (`iam.owner_link_uses`) and the owner's identity in one owner-role function
+    (`iam.accept_owner_link`), a two-hour Better Auth session (server-only endpoint) that
+    passes the enrolment wall and lands in the brand, audited; one 401 for every refusal.
+    Owners are never staff, never given a role or a password (triggers), and read "Owner" on orders and
+    resets to non-owners. Console `/owner-link#token=…`.
+  - **The client address behind the proxy** (D-479, from the coordinator): Fastify 5.12 read
+    the numeric `TRUSTED_PROXY_COUNT` as "trust nothing", so every visitor shared one
+    per-address rate-limit bucket; the adapter now passes a hop function, and the nearest hop
+    must be loopback or private.
+  - **Deployment shape** (D-474, D-475): `infra/brand/` (compose project `erp-<slug>`,
+    `.env.brand.example`, `new-brand.sh`, `nginx-brand.conf` incl. `/storefront/` and
+    `/media/`, `deploy.sh`, `server-deploy.sh`, the website's `/admin` redirect) and
+    `docs/runbooks/brand-deploy.md`. Nothing deployed.
+- Verification:
+  - `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at `b1683a8`: 199 test
+    files, 3,033 passed, 1 skipped; format, lint, typecheck, build, bundle 243.8 KB of 250,
+    white-label (185 built files, no hit), migrations, schema drift, route matrix (325 routes,
+    316 matrix-tested, 9 public), i18n and api-client all pass. Earlier runs at `98bd32c` and
+    `166af4b` were green too.
+  - Check 1 in a real process: the built API and worker against a throwaway five-brand
+    database exit 1 with `BrandDeploymentError: ERP_BRAND_SLUG is "oura-lifestyle", but this
+database also holds 4 other brands (beownz, elysium-lifestyle-bd, orvo, wear-x-clothing).
+A brand's ERP runs on a database of its own …`; on one brand beside the training org the
+    API stays up and logs `brand deployment`.
+  - Browser: the till's Playwright spec 5 of 5 (two new: a queued sale under an older build's
+    database moves and syncs once; an older tab left open keeps its database and its later
+    sale arrives too); the console's stubbed specs 13 of 13; `users.stack.ts` 4 of 4
+    (`E2E_API_PORT=3211 E2E_CONSOLE_PORT=5284`).
+- Auditors: ledger-auditor on the tenancy and auth diff: first pass 0 critical, 0 high, 2
+  medium (the app role could pre-spend a `jti` and mint an owner through 0104's function; the
+  till could delete an older build's database while another tab still queued sales into it),
+  3 low, notes; all fixed in `d39b42c` (migration 0105, the session trigger and owner check on
+  the wall bypass, the till's drain-then-delete) or recorded (a link names its brand by slug:
+  copies use another key pair). Re-check: 0 critical, 2 low (an owner could still get an
+  account row; a second new tab could wait on an older tab), both fixed in `4811b5e`
+  (migration 0106, a bounded wait). acceptance-auditor: checks 1 to 4 evidenced; NOT READY only for want of a green verify
+  after `d39b42c` and `4811b5e`, closed by the run at `b1683a8` above; its smaller notes (an
+  untested `admin:bootstrap` owner rule, `_headers` unscanned, one multi-brand sentence in
+  the reset rules) were fixed in `b1683a8`.
+- Decisions/assumptions: D-470 to D-479 (D-475 and D-478, and D-472's app names, ASSUMED). D-473 records the
+  link format committed before the session and its brand side.
+- Migrations: `0103_m31_owner_link.sql` (owner_link_uses, users.is_owner, sessions.owner_link),
+  `0104_m31_owner_link_grants.sql` (owner triggers), `0105_m31_owner_link_hardening.sql`
+  (`iam.accept_owner_link`, the session trigger, revokes), `0106_m31_owner_no_password.sql`
+  (no account row for an owner). Renumbered at integration (after M33's 0103 and 0104) to
+  `0105_m31_owner_link`, `0106_m31_owner_link_grants`, `0107_m31_owner_link_hardening` and
+  `0108_m31_owner_no_password`; the regenerated 0105 is byte-identical to the original 0103.
+- New dependencies: none.
+- Deviations from the milestone spec: used `jti`s are pruned by `iam.accept_owner_link` on each
+  use, not by a worker job (D-476); the plan's `packages/domain/src/auth/owner-link.ts` is
+  `packages/domain/src/iam/owner-link.ts` (committed so before the session).
+- Follow-ups: the mother mints links against D-473 (M32, owner: claude); the owner names the
+  admin hosts and the app names (D-475, D-472, owner: human); paste the website's `/admin`
+  redirect when the brand's staff move (M36, owner: human); an existing preview tab needs one
+  reload after this deploys (CSRF rename); a realtime test of the two-hour cap (it shares
+  `resolveIdentity`, owner: claude); the old intake header names retire with the old site (M36).
+- Next: integration with M32 and M33; M37 deploys the brands.
+
+### 2026-10-05 · M35a · Offers: the old website's discount engine and flash sales, in the ERP · built
+
+- Why: the old website's admin ran its own discounts and flash sales (wave 3, D-469); M34's
+  checkout needs the pricing rules before it can price a cart, so M35 was split and its offers
+  built first (plan `docs/plans/M35.md`, items 1 and 2).
+- Delivered (branch `m35a-offers` from `integration-wave2` at `0c056cf`, not merged):
+  - **One discount engine** (D-540): `packages/domain/src/promo/discounts.ts`, the old site's
+    `computeDiscounts` in integer poisha (code and automatic; percent, flat, free delivery, buy X
+    get Y, tiered; SKU, product and category-ancestry scope; minimums, first order, windows,
+    limits, ceiling; best single or the stack, priority). M16's `validatePromo` is a view of it.
+    Each stacked discount comes off its own lines only (the old engine over-gave on scoped
+    stacks). `legacy.ts` reads the old site's documents; `flash.ts` ports the offer ranking and
+    line planner.
+  - **Differential test**: the old engine copied verbatim as an oracle
+    (`promo/oracle/old-site-discounts.js`, commit 333393e) against the port on 5,000 generated
+    carts (whole percents, equal to the poisha outside three documented departures) and 2,000
+    with fractional percents (within a poisha per discount), plus eleven named cases. Recorded
+    carts from the old database were not reachable (D-540).
+  - **Schema** 0103 to 0106: `promo.codes` extended, `promo.discount_tiers`,
+    `promo.flash_sales`, `promo.flash_sale_items`, `promo.flash_claims` (one per order line, a
+    six-column foreign key to a whole line of its own order charged the sale price, and a key on
+    `sales.order_lines` to point it at); RLS ENABLE and FORCE, no DELETE grants, the claim
+    trigger, the title backfill brand by brand.
+  - **Server** (D-541, D-542, D-548): `PromoApi.quoteDiscounts`, `redeem` (a savepoint),
+    `liveFlashOffers`, `claimFlashUnits` (conditional UPDATE per line in a savepoint, database
+    clock), `releaseFlashUnits`, `storefrontFlashSales`, `storefrontFlashSale`, `holdsOnOrder`;
+    `release_flash_units` on every cancel and received return; an order edit refused around
+    claims and applied discounts; first order through `BuyerHistoryRegistry` (D-543),
+    re-checked under the code's lock; editor routes `/v1/promo/flash-sales` on `LandingPage`
+    with route-matrix fixtures; `FilesApi.isPublicAsset` for banners (D-547). The desk sends
+    line quantities and names the two new refusal reasons; automatic discounts stay off at the
+    desk (D-544).
+  - **Console** (D-549): Campaigns → Discounts (the promo-code screen renamed, a form per kind,
+    scope pickers, conditions, Dhaka-time schedule D-545, limits, stacking, priority) and Flash
+    sales (list with live sold counts, switch on and off, duplicate; editor with product picker,
+    per-size sale price and units or all stock, banner, slug, window). bn and en; lazy.
+- Verification:
+  - New tests: `discounts.test.ts`, `discounts.differential.test.ts`, `flash.test.ts` (domain,
+    fast-check), `offers.db.test.ts` (25 on real Postgres: the five-of-twenty race on lines
+    charged the sale price, the cancel through the real route, the savepoints, the claim's
+    conditions and line tie, a return after a partial delivery through the real transitions,
+    per-line release, the claim trigger, the edit refusal, the storefront read seam, the editor
+    over HTTP with banner checks and audit, quotes and redemptions, the first-order race,
+    sub-category scope, a buy-X-get-Y code at the desk, the 0105 backfill), console
+    `campaigns-ui.test.ts`, the effect rows in `orders.test.ts`.
+  - M16's promo tests green (`promo.db.test.ts`, `promo.test.ts` unchanged; the desk's unit
+    test gains `qty`; `crm.stack.ts` follows the rename).
+  - `offers.stack.ts` and `crm.stack.ts` against the real stack (ports 3214/5287): 2 and 4
+    passed, axe clean in both themes; screenshots in `docs/review/M35a/` (M16's refreshed).
+  - `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at `3e3387c`: 193 test
+    files, 3,079 passed, 1 skipped; format, lint, typecheck, build, bundle (245.6 KB of 250; M35a's
+    strings are 1.8 KB of it), migrations, schema drift (105 migrations), route matrix (334
+    routes, 326 matrix-tested, 8 public), i18n and api-client all pass.
+- Auditors:
+  - ledger-auditor: 0 critical, 13 warnings (one high: stacked scoped discounts could over-give).
+    Fixed W1-W6, W8-W10, W12, W13 and N1-N2 in `c4d212f`, W11 (the desk's two new refusal
+    reasons) in `ff470a7`; W7 recorded as D-546 (owner question).
+  - Re-check: 0 critical, 2 warnings (an order edit would 500 around claims; a claim was not
+    tied to its own order's line), both fixed in `592a728`; its notes on stacked redemptions (a
+    savepoint), lock order (D-548), flash-sale edits (offer order) and legacy amounts fixed too;
+    the first-order gap across different discounts accepted in D-543.
+  - acceptance-auditor on items 1 and 2: NOT READY with six gaps; addressed in `3e3387c` (claims
+    tied to the line's price, the evidence substitution recorded in D-540 and the plan, the
+    storefront read seam with its routes left to M33/M34, the plan's ids and checks, this
+    entry). Not re-run after the fixes.
+- Decisions/assumptions: D-540 to D-549 (D-543, D-544, D-546 ASSUMED).
+- Migrations: `0103_m35a_offers_schema.sql`, `0104_m35a_offers_policies.sql`,
+  `0105_m35a_offers_integrity.sql`, `0106_m35a_flash_claim_lines.sql`. M31 (0103-0106), M32
+  (0103) and M33 (0103-0104) use the same numbers: renumber at integration. 0105 and 0106 were
+  amended on this unmerged branch; a local database that applied an earlier version needs a
+  fresh migrate. New dependencies: none.
+- Owner questions: an approval step, a ceiling or a below-cost refusal for discounts and flash
+  sales (D-546).
+- Follow-ups: the storefront module's `GET /storefront/v1/flash-sales` and `/:slug` on the read
+  seam, and the Website section's link to Campaigns (M33/M34); M34 calls the checkout surface in
+  D-548's order and chooses an order's `promo_code_id` when discounts stack; M36 maps the old
+  site's discounts and flash sales (legacy product-wide caps need per-size limits) and can add
+  recorded carts to the differential test; palette entries for Discounts and Flash sales; a kit
+  date-and-time picker for the schedules; the console bundle has about 4 KB left.
+- Next: integrate with M31 to M33; M34 prices checkout through this.
+
+### 2026-10-05 · integration · M31, M33 and M35a joined into the wave-3 integration · done
+
+- Merged into `integration-wave2`: M33 (faf12bd), M31 (2954f50), the Cloudflare real-address
+  change (f055243, D-580) and M35a (4e500db). Migrations renumbered in merge order, SQL
+  unchanged: M33 0103–0104, M31 0105–0108 (0105 regenerated, byte-identical to the branch's
+  0103), M35a 0109–0112 (the regenerated schema diff equals the net of its 0103 and 0106; the
+  branch's files kept verbatim). Conflicts were side-by-side additions (docs, `catalog.api.ts`,
+  CLAUDE.md's stack-spec line); the API client was regenerated from the merged server.
+- Verification at 967efca: format, lint, typecheck green; tests 3,210 passed, 1 skipped (the
+  one failure at 4e500db was M35a's backfill test reading its migration under the old number,
+  fixed in 967efca and re-run 25/25); build, bundle, white-label (197 files, no brand name),
+  migrations, schema drift (111 migrations agree), route matrix (361 routes, 343
+  matrix-tested, 18 public), i18n and api-client all PASS.
+- M35a's acceptance re-audit at 4e500db: checks 1–3 evidenced; gaps closed or reassigned (the
+  renumbered test; a ledger audit of its last fix commit 3e3387c, run now; the flash-sale
+  storefront routes and the checkout claim, now M34's per D-548).
+- Ledger audit of M35a's last fix commit (3e3387c): 0 critical, 1 warning (W1: the storefront flash-sale reads filter only switched-on items, not web visibility; handed to M34, which builds the routes, with notes N1 upcoming-sale prices, N4 a test that no line is charged a flash price without a claim, N5 a cross-org claim test). N2: migration 0112 builds a six-column unique index on `sales.order_lines` under an exclusive lock, harmless on a new brand, worth a quiet window on a populated one.
+- From now on every migration up to 0112 is treated as frozen: Elysium's ERP will be deployed
+  from this branch.
+- Deploying Elysium's ERP to `erp.elysium-lifestyle.bd` was blocked by Claude Code's permission
+  check; the steps are with the owner (option to allow it, or run them).
+
+### 2026-10-05 · M38a · Products, stock in hand, barcode stickers and the scanner · built
+
+- Why: the owner's first priority (D-600): re-upload the products and the stock already in hand
+  at a cost per piece, and print a barcode sticker for every piece; then use a scanner
+  everywhere (plan `docs/plans/M38.md`, part M38a).
+- Delivered (branch `m38a-barcodes`, merged up to `integration-wave2` at a80598e, not merged
+  back):
+  - **The new-product form, complete** (D-601): name, category, price, status, description;
+    several photos at once, reordered, cover chosen, each optionally cropped to 3 : 4 on a
+    canvas; sizes and colours as chips with a price, pieces and a cost per variant; the stock
+    **already in hand** (while the window is open) or **from a supplier**; the website details
+    folded away. One button; a failed step is retried alone; it ends on "Print N stickers".
+  - **Stock in hand** (D-602): `inventory.stock_in_hand_entries` and `…_lines`; drafts by the
+    warehouse (no cost field), priced and posted by `read:cost`; `opening_balance` movements
+    blended into WAC and one journal per entry, Dr Inventory / Cr 3350 Opening balance equity
+    (`stockInHandDraft`, keyed `stock_in_hand:<entry>:posted`). The **opening stock window**: an
+    org admin closes it; reopening is an `opening_stock_reopen` approval for that close (D-608);
+    migration 0114 starts it closed for a brand that had already opened its books or traded. A
+    posted entry made by mistake is reversed exactly, through an approved
+    `stock_in_hand_reversal`, while the window is open (adjustment_loss movements at the entry's
+    cost and the ledger's reversal of its journal), or not at all.
+  - **An internal EAN-13 for every SKU** (D-603): `2`, an eleven-digit per-brand sequence, the
+    check digit, taken in one upsert; typed or imported codes in the range refused; the backfill
+    in 0114, brand by brand.
+  - **Stickers** (D-604): thermal 38 × 25, 40 × 30 and 50 × 25 mm (one sticker per page, the
+    page the sticker's size) and A4 3 × 8 and 4 × 10 with "start at"; the brand's short name
+    from its own org row (white label); printed from the new-product form, every receipt and
+    stock-in-hand entry, the product page and ticked Stock rows.
+  - **The scanner everywhere** (D-605): `createScanDetector` in `@elysium/domain/barcode`; the
+    console's lazy `ScanListener` opens the product at the scanned variant, or hands the scan to
+    the stock screen listening; scan fields on receive, stock in hand, transfer, adjustment,
+    supply entries and counts; "Scan with camera" through `BarcodeDetector`.
+  - **Strict stock** (D-606): a count by scanning (`POST /v1/inventory/counts/:id/scans`,
+    append-only `count_scans`, one piece per scan key); typing over a counted figure needs a
+    note, on the server too; each variant's barcode on the product page.
+  - **Lookup** `GET /v1/catalog/lookup?code=` (D-609); section catalogues for i18n so the
+    strings stay out of the first download (D-607).
+  - **Error text in the dark theme**: `text-destructive` read 3.2:1 on dark surfaces, found by
+    this milestone's dark axe pass; `--destructive-text` lifts it there (`.dark
+.text-destructive`, M30's `--primary-text` pattern), held by three pairs in the token
+    contrast audit. Every error line in the console gains from it.
+- Verification:
+  - `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at 3e72f26: 214 test
+    files, 3,294 passed, 1 skipped (not new); format, lint, typecheck, build; bundle 249.2 KB
+    of 250; white-label (206 files), migrations, schema drift, route matrix (374 routes, 356
+    matrix-tested, 18 public), i18n and api-client PASS. After 428069a (a narrower count lock,
+    a test assertion, docs): the three inventory test files, 48 passed.
+  - Acceptance checks: (1) `stock-in-hand.e2e.test.ts` asserts one balanced journal per entry
+    (Dr Inventory / Cr Opening balance equity) and its `opening_balance` movements, and
+    `barcodes.stack.ts` creates a product with three sizes and 9 pieces in hand at ৳850 and is
+    offered exactly 9 stickers, then prints a 9-page PDF; (2) `barcode.test.ts` (fast-check:
+    every check digit, every single-digit error caught, internal numbers valid and unique), the
+    e2e test's six concurrent product creates (18 unique codes) and SQL equal to the domain, and
+    a scan in the stack spec opening the product at that variant; (3) `stickers.test.ts` reads
+    every PDF page's MediaBox from the real Gotenberg for all five media, and the stack spec
+    checks the downloaded roll PDF; (4) stock in hand refused once closed by the service,
+    `InventoryApi` (stock in hand and M14a's opening) and the triggers; (5) this verify and the
+    ledger audits below.
+  - `barcodes.stack.ts` (8) and `catalog-stock.stack.ts` (7) against the real stack at
+    3e72f26 (ports 3215/5288, one worker): 15 passed, axe clean in light and, for the M38a
+    screens and dialogs, dark (log `D:/Projects/erp-tools/e2e-m38a-final.log`); screenshots in
+    `docs/review/M38a/` (01 to 07 light, 08 to 10 dark).
+- Auditors:
+  - ledger-auditor: 0 critical, 7 warnings. All fixed in 3585ae1: W1 (windows closed for
+    brands with history; maker-checker on each post is an owner question), W2 (the exact
+    reversal), W3 (a post repeats what its poster read), W4 (the note on the server), W5 and N1
+    (a reopen names its close; the trigger stamps the times), W6 (the merge), W7 (tests: a close
+    racing an in-flight entry, the WAC blend, concurrent scans, a stale reopen, the backfill);
+    notes N2 to N7 and N9 to N11 fixed, N8 and N12 left (the POS tables use the same client-id
+    keys; `brandShortName` follows `takeSequence`).
+  - Re-check at bd3248f: 0 critical, 3 warnings (the price dialog could quietly refetch the
+    draft beside the typed costs; no tests of the reversal's checks at the decision; the
+    go-live runbook did not mention the window) and notes, fixed in 2c9d7ea and 3e72f26 (the
+    window will not close while a reversal waits; the reversal checks the journal it reverses;
+    count locks). A last check of those: 0 critical, 1 warning (a fresh brand counting stock in
+    before signing the reconciliation would block the sign-off), fixed with notes 1, 3, 5 and 6
+    in 428069a. Left as notes: a changed location marks no line in the price dialog (the
+    dialog shows the location); N8, N12 and N-9 (display only).
+  - acceptance-auditor at bd3248f: checks 1 to 5 evidenced, NOT READY on one gap: axe ran in
+    the light theme only. Fixed in 2c9d7ea (the dark pass above, which found and fixed the
+    error-text contrast); its nits fixed too (the sticker PDF checks skip, and say so, when
+    Gotenberg is down; a Bangla label; the migration's comment). Not re-run after the fix.
+- Decisions/assumptions: D-601 to D-609 (D-601 and D-604 ASSUMED; D-602's maker-checker on
+  each post ASSUMED, an owner question); D-602, D-603, D-606 and D-608 amended after the audit.
+- Migrations: `0113_m38a_barcodes_stock_in_hand.sql` (generated) and `0114_m38a_policies.sql`
+  (custom), numbered after integration's frozen 0112. Both were regenerated on this unmerged
+  branch after the ledger audit and never applied outside throwaway test databases.
+- New dependencies: none from outside the repo. The console gains the workspace package
+  `@elysium/domain`, through its `./barcode` entry only (scan detection and the bars on the
+  product page, D-609).
+- Preview: a database migrated with history (the shared preview) starts with opening stock
+  closed for every brand that traded there; ask to reopen as org admin and approve as super
+  admin, or try it in a brand without history. A preview built fresh by `preview:local` starts
+  open.
+- Owner questions: a second person on each stock-in-hand post (D-602); the A4 sheet stock's
+  exact geometry (D-604); each brand's short name for stickers; the 3 : 4 crop (D-601); the
+  thermal printers' dots per mm; `BarcodeDetector` is missing on some browsers (iPhones), where
+  the camera button is hidden.
+- Follow-ups: a pending reversal shown on the entries list (the entry's detail has it); the
+  difference between 1300 Inventory and Σ on hand × WAC that §8's once-per-receipt rounding
+  leaves (existing, unrecorded; `preview:seed` passes only with round costs) wants a decision
+  row and a line on the valuation report; M38b's packing station reuses the scan detector and
+  the lookup.
+
+### 2026-10-05 · M34 · Buying on the website: checkout, accounts, SSLCommerz, email · built
+
+- Delivered (branch `m34-buying`, from `integration-wave2`, merged again at 4e500db and 9d1a4cd):
+  - **Cart and checkout** (D-520, D-521, D-532, D-539): `POST /storefront/v1/cart/quote` and
+    `POST /storefront/v1/checkout` (signed over the idempotency key and the raw body, D-535).
+    One pure rule (`quoteCart`) prices the quote and the checkout: shelf or flash price,
+    M35a's discounts (codes and automatic), the website's zone fee and free shipping. The
+    checkout re-prices (`409 CART_REPRICED` with the new quote), creates a `pending` website
+    order, holds its stock at one web location with the atomic reserve (`409 OUT_OF_STOCK`),
+    redeems the discounts, claims the flash units and returns a one-time view token. The
+    state machine knows a held order (`stockHeld`): confirming it reserves nothing more, a
+    pending cancel releases the hold.
+  - **Shopper accounts** (D-522, D-523, D-533, D-534): register with a six-digit email code
+    (HMAC'd, 15 minutes, 5 tries), sign-in (bcrypt 12; the old site's hashes still work),
+    Google (linked only to a verified address), forgot and reset password (SHA-256 tokens, one
+    hour, once), profile with saved addresses, change password, the account's orders. Guest
+    orders join the account by verified email only. Limits per shopper address and email.
+  - **The shopper's order** (D-524): by view token or account, the shopper's status words, the
+    money, how it is paid, the address, the lines and the courier's tracking code.
+  - **SSLCommerz** (D-525 to D-528, D-537): Website → Payments (store id, sealed password,
+    sandbox or live, the IPN address, the online payments). The worker opens the session and
+    checks every payment with the Order Validation API (exact amount, BDT, this transaction);
+    an accepted one is a verified advance (Dr SSLCommerz clearing 1120 / Cr Customer advance)
+    and lowers the COD. Unpaid online orders cancel after 60 minutes. UNVERIFIED adapter.
+  - **Email** (D-529, D-530): an SMTP channel in `notify` per brand (Website → Email, a test
+    button, the log); Bangla and English templates for the code, the reset link and order
+    placed, confirmed, shipped, delivered, cancelled; written in the transaction, sent by
+    the worker with the body sealed until it goes.
+  - **Flash sales on the website** (D-538): `GET /storefront/v1/flash-sales` and `/:slug`, only
+    SKUs the website sells, scheduled sales without prices.
+  - **The old site's customers** (D-531): `pnpm migration legacy-customers --org <slug>
+dry-run|commit --file <users.json>`.
+  - **Console**: Website → Payments, Email and Customers; the order page's website card; the
+    buyer profile's website account.
+  - Docs: `docs/storefront-api.md` "Buying (M34)", architecture §31 "Buying (M34)" and the §7
+    row, `docs/runbooks/website-buying.md`, CLAUDE.md Commands, the plan's Status.
+- Verification:
+  - `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at `f3398a2`: 212 test files, 3,280 passed, 1 skipped (the known skip); format, lint,
+    typecheck, build, bundle (249.9 KB of 250: two strings shortened to fit), white label,
+    migrations, schema drift (114 migrations), route matrix (390 routes, 352 matrix-tested, 38
+    public), i18n and api-client all pass.
+  - Acceptance checks 1-4 and 6 in `apps/server/src/modules/storefront/buying.e2e.test.ts` (29
+    tests on real Postgres): quote = order = COD and `409 CART_REPRICED`; the last-unit race
+    (one 201, one `409 OUT_OF_STOCK`, stock never below zero); a short SSLCommerz payment
+    refused and audited (and its money owed back) and a correct one booked once from the IPN
+    with exact balances and a zero trial balance; register, verify, sign in, reset, Google;
+    twenty checkouts against a five-unit flash sale (five at the sale price, the rest
+    `409 CART_REPRICED`, no sale-priced line without a claim, a cancel gives the unit back);
+    a typed code and an automatic discount through the checkout (redemptions, attribution,
+    release on cancel). Domain: `packages/domain/src/storefront/buying.test.ts` (31, fast-check)
+    and the held-order rows in `orders.test.ts`.
+  - `website-buying.stack.ts` against the real stack (ports 3216/5289): 4 passed, axe clean;
+    screenshots in `docs/review/M34/`.
+- Auditors:
+  - ledger-auditor: 1 critical (a sandbox store's test-card payments would have been booked
+    as real money), 8 warnings (a payment being checked could be expired; late gateway money
+    kept under the cancel policy; refused-but-taken money left out of the ledger; the clearing
+    wallet found by code; guest orders claimable by an unverified phone; console lists wider
+    than sales' own scope; an unkeyed password fingerprint; untested money paths) and 8 notes.
+    All fixed in f692e6e and 8eba94d (migration 0115). Re-check: 0 critical, 1 warning (a key
+    the worker cannot open refused the payment instead of retrying) and five notes, fixed in
+    872f94e; the one note left (a not-valid check returns the session to `ready` rather than
+    its earlier state) is cosmetic.
+  - acceptance-auditor: NOT READY with five gaps (the API client not regenerated after the
+    scope change, check 5 unrecorded, no progress entry, no test of discounts through the
+    checkout, the new key missing from the deploy configs), fixed in 62794f3 and 91c9426 and
+    this entry, plus the bundle budget in f3398a2. Re-run at ff1a32c: READY (29 of 29
+    end-to-end tests passing).
+- Decisions/assumptions: D-520 to D-539 (ASSUMED: D-520, D-522, D-527, D-528, D-529, D-531,
+  D-534, D-538); an "Unverified integrations" row for the SSLCommerz adapter.
+- New dependencies:
+  - `bcryptjs` 3.0.3 — bcrypt in pure JavaScript (no native build on Windows or Alpine) that
+    also checks the old site's `$2a$`/`$2b$`/`$2y$` hashes, so imported shoppers keep their
+    passwords.
+  - `nodemailer` 10.0.12 — SMTP to each brand's own mail server, the mailer the old site
+    already used.
+- Migrations: `0113_m34_buying_schema.sql`, `0114_m34_buying_policies.sql`,
+  `0115_m34_session_validating.sql`. 0113 and 0114 were regenerated after the first merge
+  (renumbered after M35a's 0112); a local database that ran an earlier copy needs a fresh
+  migrate.
+- Deviations from the milestone spec: flash prices and the full discount engine moved into
+  scope at the coordinator's request (plan item 8, check 6); the customers import is the
+  optional command of D-561. A sandbox SSLCommerz store takes payments only where
+  `STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX=true` (staging, preview, tests).
+- Follow-ups:
+  - The first SSLCommerz sandbox run, then marking the adapter verified (owner: human).
+  - Gateway fees from SSLCommerz's settlement report into the clearing wallet (owner: claude).
+  - `BRAND_STOREFRONT_CREDENTIALS_KEY` in Elysium's `.env.brand` before Website → Payments and
+    Email are used there (owner: human).
+  - Owner questions: splitting an order no single web location can fill (D-521); holding
+    risky payments (D-525); whether M36's website must send `client.ip` (D-534).
+  - The order page's website card and the buyer profile's card are covered by API tests but
+    not by the stack spec.
+  - The console's initial route is at 249.9 KB of 250: the next strings in the English catalogue
+    need the section catalogues lazy-loaded first (owner: claude).
+  - Kamal's deploy leaves `STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX` off for staging too; set it
+    per environment if staging should take sandbox payments (owner: human).
+  - Tests still to write (owner: claude): the real `SslcommerzGateway` and `SmtpMailer` against
+    a stubbed fetch and transport; that the password fingerprint is keyed; D-534's sign-in,
+    code-send and resend limits over HTTP.
+- Next: integrate M34 into `integration-wave2`; M36 builds the website on these routes.
+
+### 2026-10-05 · integration and deploy · M38a and M34 joined; Elysium's own ERP online · done
+
+- M38a fast-forwarded into `integration-wave2` (dffe5d2; its verify green there, migrations
+  0113–0114). M34 merged (7a0b0fd), its migrations renumbered after M38a's: 0115
+  (regenerated, identical), 0116, 0117 (unchanged). Conflicts were side-by-side additions
+  (stack provision users, docs, CLAUDE.md, §7's posting table).
+- The console's initial route reached 250.7 KB of 250 at the merge: the 236 website keys moved
+  into a section catalogue (D-607 amended), 247.8 KB after; the white-label check now scans
+  section catalogues (93a9765).
+- Verification at 93a9765: `pnpm verify` exit 0 — 218 test files, 3,364 passed, 1 skipped;
+  bundle, white-label (216 files), migrations, schema drift (116), route matrix (403 routes,
+  365 matrix-tested, 38 public), i18n, api-client all PASS.
+- **Elysium's brand ERP is live** at `https://erp.elysium-lifestyle.bd` (D-581) on the brands
+  server (103.129.209.29), deployed with `infra/brand/deploy.sh` after the owner's go-ahead:
+  compose project `erp-elysium-lifestyle-bd`, API on 127.0.0.1:3501, a fresh database seeded
+  with Elysium alone, certbot TLS, behind Cloudflare with the real-address snippet (D-580).
+  Deploys: a80598e (first), dffe5d2 (M38a: stickers, stock in hand, scanner), 93a9765 (M34;
+  `BRAND_STOREFRONT_CREDENTIALS_KEY` added to its `.env.brand` first). Health checks green
+  after each; the server's other sites still answer 200.
+- The first super admin (the owner's email) was created with `admin:bootstrap`; the one-time
+  link was given to the owner.
+- Every migration up to 0117 is now applied to a live database: frozen.
+- Next: M35b and M36 (building), then M38b, then M32 resumes.
+
+### 2026-10-05 · M36 · The new Elysium website on its ERP · built (website repo)
+
+- Delivered in `D:\Projects\elysium` on branch `erp-storefront` (seven commits from
+  f379c9d to aba9ecb): the site reads and writes only through the brand ERP's signed storefront
+  API; the admin panel, the Mongo models, `mongoose`, the demo kit, Cloudinary, the ncom and
+  Steadfast routes, scanner, upload and image routes, fraud and courier code and the landing
+  pages are gone (about −46k / +6k lines); `/admin` answers 308 to the ERP. Shopper features
+  kept: home, shop with filters and search, product page with sizes, size chart and flash prices,
+  cart and checkout priced by the ERP (district and thana pickers, COD and SSLCommerz through the
+  ERP), the order page by token or account, sign-up with an emailed code, sign-in, reset and
+  change password, profile, addresses and orders, the frame from `GET /site`.
+- Verification: Playwright 14 of 14 against a local preview brand ERP (`elysium_preview_m36`,
+  API on 3300), including a COD checkout checked through the ERP (website channel, pending,
+  stock held), sign-up and reset through a local TLS mail sink, an SSLCommerz return the ERP
+  refuses, sign-in refusing off-site callbacks; `next build`, lint, the no-database check and
+  11 unit tests green; the Docker image healthy read-only. acceptance-auditor: two real bugs
+  (open redirect through `callbackUrl`; a checkout idempotency key lost after a gateway timeout)
+  fixed and covered; its remaining points were these ERP docs.
+- Decisions: D-560, D-562 to D-564 (D-561 is the owner's start-fresh decision).
+- Waiting for M35b: campaign links, tracking, the scanner app's sign-in.
+- Owner inputs for the demo: the website key and Site URL (a server command is being added so
+  the key's secret is never shown), SMTP in Website → Email, SSLCommerz sandbox or live keys,
+  a Google OAuth client for the demo host, products switched on for the website.
+
+### 2026-10-05 · ops · A brand's website connected from the server (D-582) · built
+
+- Branch `ops-website-key` from `integration-wave2` at 0e90e4a. Not merged, not deployed.
+- `main.admin.ts` gains two commands beside `bootstrap` (unchanged):
+  - `website-key --label "<label>"` issues a storefront site key for the deployment's brand
+    through `StorefrontService.issueKey`, the console's own method (same derivation,
+    fingerprint row and in-transaction audit row), and prints on stdout exactly
+    `ERP_SITE_KEY_ID=…` and `ERP_SITE_SECRET=…`, for
+    `… | sudo tee -a /etc/elysium-web/<site>.env >/dev/null`. The key id and everything else go
+    to stderr; log lines too (`LOG_DESTINATION=stderr`, and stdout is redirected to stderr
+    while a command runs). Refuses without `INTAKE_KEY_SECRET`.
+  - `website-site-url --url https://…` saves Website → Settings' Site URL through the new
+    `StorefrontService.setSiteUrl`: `patchSettings`' lock, merge and audit, with the other site
+    details read inside the lock. `https://` only, no query or fragment; `http://localhost` is
+    refused too (D-582 says why).
+  - Both boot `WebsiteAdminModule` (the storefront service with the catalog, orders, files and
+    approvals modules) as an application context, the way `pnpm migration legacy-customers`
+    boots its importer, and act as `system:admin-cli` with `via: 'cli'` on the audit row. The
+    brand is `ERP_BRAND_SLUG` (the boot check) or the database's one brand (`commandBrand` in
+    `platform/brand/deployment.ts`); two brands, none or a switched-off one are refused.
+- The settings audit summary now records `siteUrl` for every save. The HTTP harness takes
+  `brands` to boot on a one-brand database.
+- Scripts: `pnpm admin:website-key`, `pnpm admin:website-site-url` (root and server), beside
+  `admin:bootstrap`. pnpm 12 prints its `$ …` lines on stderr, so the pnpm form pipes cleanly
+  too. Runbook: `docs/runbooks/brand-deploy.md` §5; architecture §31; CLAUDE.md Commands.
+- Tests: `website-admin.e2e.test.ts` (10, real PostgreSQL holding one brand beside the
+  training org): the two lines and nothing else on stdout; the key signs
+  `GET /storefront/v1/site` through the real guard (200; a wrong secret 401); the row and audit
+  row with the system actor, `via: 'cli'` and no secret; `ERP_BRAND_SLUG` named; the Site URL
+  saved with the other site details kept, and a save holding the settings lock is waited for
+  and kept (the command is seen queued on the lock in `pg_locks` first); refusals without
+  `INTAKE_KEY_SECRET`, without a label, for eight non-https or malformed addresses (nothing
+  saved), for a switched-off brand, the training org named, and a second brand, named or
+  not. The built CLI was also run end to end on a throwaway database with
+  `NODE_ENV=production LOG_LEVEL=debug`, piped through `tee`: the file held exactly the two
+  lines.
+- ledger-auditor: 0 critical, 2 warnings. Fixed: the missing tests above (S2); the address is
+  checked before the database is touched; a failure to close the modules no longer hides an
+  issued key; exit 1 when stdout could not be written; an unknown command says `admin`; the
+  saved address is compared with what reads back. S1, a Website → Settings page opened before
+  the command and saved after it puts the old Site URL back (the form sends the whole
+  section): a runbook warning for now. Not changed: the slug is read from the raw environment
+  (the tests change it per call; `serverEnv()` still rejects a malformed one when the modules
+  boot).
+- Verification at 38d7059: `pnpm verify` exit 0 under the heavy lock (`VITEST_MAX_WORKERS=4`) —
+  219 test files, 3,374 passed, 1 skipped; bundle, white-label (216 files), migrations, schema
+  drift (116), route matrix (403 routes, 365 matrix-tested, 38 public), i18n, api-client all
+  PASS. The rebuilt CLI run end to end again afterwards: the same two lines in the file.
+- Follow-ups:
+  - Settings saves conditional on `updatedAt` (409 when the section changed since the form
+    loaded), so a stale console form cannot undo the CLI's or another person's save (owner:
+    claude).
+- Dependencies: none added.
+
+### 2026-10-05 · deploy · The new Elysium website online at demo.elysium-lifestyle.bd · done
+
+- Elysium's ERP redeployed at 550f5e5 (the website-key and Site URL commands, D-582); health
+  green.
+- The website (`erp-storefront` at cb7379e) copied to `/srv/elysium-web/releases/cb7379e23132`
+  on the brands server (`/srv/elysium-web/current`), its settings in the root-only
+  `/etc/elysium-web/demo.env` (NEXTAUTH secret generated on the server), the website key
+  issued by `admin website-key --label "demo website"` and piped straight into that file (the
+  secret was never displayed), the ERP's Site URL set to `https://demo.elysium-lifestyle.bd`
+  by `admin website-site-url`. Container `elysium-web-demo-web-1` on 127.0.0.1:3601 (host
+  network, read-only), healthy; `/api/health?erp=1` answers `"erp":"ok"`.
+- nginx site `elysium-web-demo.conf` (Cloudflare real-IP include, rate limits) installed after
+  `nginx -t`, certbot TLS; `https://demo.elysium-lifestyle.bd` 200, `/admin` 308 to the ERP;
+  the server's other sites still 200.
+- The owner still sets Website → Email (SMTP), Website → Payments (SSLCommerz), switches
+  products on for the website, and optionally a Google OAuth client for the demo host.
+
+### 2026-10-06 · M39a · Delete and archive everywhere · built
+
+- Why: the owner's first use of the live ERP: "we don't have any option to delete categories,
+  size chart and sizes and others" (D-620; plan `docs/plans/M39.md`, part M39a; investigation
+  `docs/review/M39/investigation.json`). Built in parallel with M39b.
+- Delivered (branch `m39a-delete-archive` from `integration-wave2` at 28e0c4c, not merged):
+  - **What uses a row is asked of the modules that hold it** (D-621): `ReferenceRegistry` in
+    `platform/references/`, with `CatalogReferences`, `LocationReferences` and
+    `DiscountReferences`; inventory, orders, the till, supply, couriers, promotions, the website
+    and marketing each register a checker counting their own tables (invariant 12). Inside each
+    delete: lock, count, refuse with `*_IN_USE` and the counts in words, release, delete, audit.
+    A delete-side 23503 maps to the same code. `GET …/:id/usage` answers what uses a row.
+  - **Every delete keeps what it deleted** (D-622): the audit row's `before`, in the same
+    transaction; the website's size chart, menu and hero slide deletes retrofitted.
+  - **Catalog** (D-623 to D-626): categories (delete, empty-and-delete with subcategories moved
+    up and menu entries moved, archive/restore; an archived category's products leave the
+    website; discount scopes never rewritten); lists and values (`is_active`, delete, archive
+    with their variants in one call, restore, reorder; the server refuses an archived value on
+    a new variant); products and SKUs deleted when nothing references them; an archived
+    product's address goes to the next product as `-2`; new variants keep a product's code
+    prefix after it moves category.
+  - **Cascades only from a deleted parent** (D-627): price history, empty stock levels,
+    discount tiers and flash sale items, each guarded by a trigger for every role.
+  - **Everything else** (D-628 to D-634): size charts' empty-and-delete and the menu's child
+    count; locations, suppliers, discounts (restored paused), flash sales (archived), SMS
+    templates and ad campaigns deleted when never used; branches renamed and switched off with
+    guards (new `Branch` subject); expense and income heads added, renamed and archived, never
+    deleted. `delete Supply`, `delete LandingPage` and `delete Campaign` for org_admin.
+  - **Console**: the shared `DeleteOrArchive` dialog, on Catalog setup (explicit Archive and
+    Restore replace the hidden checkboxes; value order; the location dialog's copy and the
+    16-character code fixed), Website → Size charts and Menu, Campaigns → Discounts, Flash sales
+    and Templates, Marketing → Campaigns, Supply → Suppliers, Branches and Accounts → Wallets.
+    Strings in a `manage` section (D-607).
+  - **After the ledger audit**: a supplier the books name as a party (an opening due) is kept;
+    a supplier's audit row keeps no contact details; a branch is held by money in any of its
+    wallet accounts, and a switched-off branch opens no till or shift; the discount restore
+    guard reads under its lock; a category under an archived one is refused for a product;
+    empties lock in id order and write one audit row per product moved; a campaign an order's
+    recorded source names is kept, matched as §11's attribution matches
+    (`OrdersApi.ordersAttributedTo`); posting the opening refuses a supplier deleted after its
+    balance was staged (`SupplyApi.lockSuppliers`); an empty-and-delete refuses a target under
+    an archived category, and a parent and its child emptied at once queue.
+- Verification:
+  - `pnpm verify` at 52774e6 (under the heavy lock, `VITEST_MAX_WORKERS=4`): exit 0 — 222 test
+    files, 3,422 passed, 1 skipped; bundle 248.1 KB of 250 PASS; white-label (222 files) PASS;
+    migrations (36 on main unchanged) PASS; schema drift (118 migrations) PASS; route matrix
+    (446 routes, 408 matrix-tested, 38 public) PASS; i18n PASS; api-client PASS.
+  - `catalog-deletes.e2e.test.ts` 28 passed, `platform/references/deletes.e2e.test.ts` 18
+    passed, `migration.db.test.ts` passed, on throwaway databases.
+  - `delete-archive.stack.ts` on 52774e6 (`E2E_API_PORT=3220 E2E_CONSOLE_PORT=5293`, one
+    worker, under the heavy lock): 9 passed; screenshots `docs/review/M39/a-01` to `a-12`
+    retaken.
+- Acceptance checks:
+  - **Check 1** — every M39a entity is deleted when unused and refused (archived instead) with
+    its users named when used; nothing referenced by a stock movement, an order line, a till
+    line, a supply line, a flash sale, a live discount or a lead can be deleted; the courier
+    return line is counted (the `pg_constraint` test holds every foreign key into the catalog to
+    a checker); a reference committing while a delete waits on its lock refuses the delete, and
+    twelve racing rounds never leave a reference to nothing: `catalog-deletes.e2e.test.ts`,
+    `platform/references/deletes.e2e.test.ts`, `delete-archive.stack.ts`.
+  - **Check 2** — a category with two products, a subcategory (whose slug collides at the top
+    level) and a menu entry is emptied into another and deleted in one transaction, and the
+    signed storefront list shows the products under the new category:
+    `catalog-deletes.e2e.test.ts` › "empties a category …", `delete-archive.stack.ts` with
+    `docs/review/M39/a-02` and `a-03`.
+  - **Check 8 (M39a part)** — `pnpm verify` green; ledger-auditor on the deletes and tenancy
+    diff; the stack spec with screenshots `docs/review/M39/a-*.png`; acceptance-auditor.
+- Auditors:
+  - ledger-auditor (deletes, tenancy, branches, ledger parties), first pass: 1 critical (a
+    supplier named only by an opening due's journal lines could be deleted), 6 warnings
+    (supplier contact details in the audit row; branch money read from wallet rows only; no
+    branch-hold tests; the holds read locked the branch; tills and shifts at a switched-off
+    branch; the archived-discount restore race) and minors; all fixed in `00c1e2e`. Re-review:
+    0 critical, 2 warnings (campaign usage did not match orders as attribution does; a balance
+    staged before a supplier's delete) and notes; fixed in `52774e6`.
+  - acceptance-auditor: NOT READY with 5 gaps (this entry; the stack spec on HEAD; an
+    empty-and-delete target under an archived category; behaviour tests for courier returns,
+    legacy ids, a campaign's product, a product-wide discount and an archived list; another
+    brand's 404 on every route kind); all closed in `52774e6` and by this entry and run.
+- Decisions/assumptions: D-621 to D-634 (ASSUMED: D-623, D-625, D-626).
+- New dependencies: none.
+- Migrations: `0118_m39a_delete_archive_schema.sql`, `0119_m39a_delete_archive_policies.sql`
+  (renumbered at integration).
+- For M39b (it owns `product-detail.tsx`, `products.tsx`, `new-product.tsx`):
+  `productUsage`/`deleteProduct` and `skuUsage`/`deleteSku` in `apps/console/src/api/manage.ts`
+  with `<DeleteOrArchive>` from `apps/console/src/ui/delete-or-archive.tsx`; `isActive` on each
+  list and value of `GET /v1/catalog/attributes` (filter pickers for a new variant to
+  `isActive !== false`).
+- Follow-ups:
+  - M35b's `storefront.custom_links` (category key, highlighted products) join the website's
+    checker when that branch merges (owner: claude, at integration).
+  - Owner questions: an archived category's products on the website (D-623); a grace period
+    before deleting a never-stocked SKU if tills stay offline long (D-625); renaming the
+    standard expense heads (D-634).
+  - Product and variant delete buttons on the product page and list (M39b).
+  - An orphan sweep for files no product, category or banner uses any more (critic).
+  - Discount scope ids and a campaign's `product_ids` are soft references (no foreign key, no
+    lock), so a discount created while a product is being deleted can name it; harmless
+    (D-623), noted for whoever adds foreign keys there.
+  - `ordersAttributedTo` reads `sales.orders.source` with no index; fine now, watch at §29's
+    sizes.
+  - Supply's ledger-party count and wallets' branch-money read add to the existing
+    `module-boundaries` debt on `ledger.*`; a `LedgerApi` method would retire both.
+  - No test drives the hero slide delete's audit row (it needs a stored file), or the 23503
+    backstop in each module's mapper (only catalog's and the shared helper are tested).
+  - The website's cache is forgotten inside the delete's transaction, so a read in the same
+    instant can re-cache the old menu for up to 30 seconds (`SiteCache.TTL_MS`); an after-commit
+    hook in `withOrg` would close it.
+
+### 2026-10-06 · integration and deploy · M39a joined and live · done
+
+- M39a (delete and archive everywhere) merged into `integration-wave2` (ff89eb8); its
+  migrations 0118–0119 follow the live 0117 unchanged. Verify at ff89eb8 exit 0: 223 test
+  files, 3,432 passed, 1 skipped; bundle, white-label (350 files), migrations, schema drift
+  (118), route matrix (446 routes, 408 matrix-tested, 38 public), i18n, api-client PASS.
+- Elysium's ERP redeployed at ff89eb8: health green; the website at demo.elysium-lifestyle.bd
+  still reads it (`erp: ok`); the server's other sites 200. Migrations up to 0119 are frozen.
+
+### 2026-10-06 · M35b · Campaign links, tracking, the ncom.bd connector, the packing scanner and order labels · done (on branch, not merged)
+
+- Delivered: the rest of the old admin panel, run from the brand's ERP. **Website → Campaign links** (a five-digit code on the shop, a category or a page, with highlighted products, a banner and a pop-up, and a visit count; the website reads it through the signed API). **Website → Tracking** (the Meta pixel and Conversions API and GA4 with its Measurement Protocol; the website forwards its browser events, the ERP hashes personal data before storing it, seals what it will send and sends it from the worker; the order's `Purchase` is the ERP's own, `purchase_<order no>`, held until an online payment is booked; an event log). **Website → Marketplace** (ncom.bd's contract 1 under `/ncom/<org id>/…`: products, categories and live stock for ncom's own landing pages, holds through the inventory's atomic reserve, orders handed over and edited with revisions, status changes and desk edits sent back through an outbox, webhooks). **Orders → Scan** and the packing scanner app's routes (sign-in with password and authenticator code, a 30-day device token, the packing list by order number or parcel code in the person's own scope, pairing and signing phones out). The old **label sheet** as a bulk action on the orders list (eight paper sizes, QR codes). Landing pages were dropped by the owner mid-build (D-550: they are ncom.bd's).
+- Verification: `pnpm verify` exit 0 (224 test files, 3,434 passed, 1 known skip; every gate; the console's initial route 248.3 of 250 KB), re-run after the last fixes. Acceptance: check 3 withdrawn (D-550); check 4 PASS (the old site's `ncom-check.mjs` and `ncom-order-check.mjs`, ported, pass against the ERP in `marketplace.e2e.test.ts`); check 5 PASS (`packing.e2e.test.ts`: sign-in with password and TOTP, lookup with the device token in scope, refused once revoked, after sign-out and once the person is switched off). e2e: `web-marketing.stack.ts`, 8 tests on the real stack (ports 3217/5290, one worker), screenshots in `docs/review/M35b/`. Route matrix and cost sweep cover every new route; the cost sweep drives every connector route signed as ncom.
+- Auditors: ledger-auditor first pass 2 critical, 9 warnings (ncom amounts read as zero when missing; an ncom edit could rewrite the money unchecked; edit refusals never reached; same order under a new key; foreign lines plus a discount; desk edits not sent back; connector answers outside the serializers; tracking keeping personal data; marketing able to retarget the pixel; missing tests) and 13 notes, fixed in b8f591f; re-check 0 critical, 0 warnings; its notes fixed in d6c6169 (a unit-covering division in the money module, quantities read strictly, SQLSTATEs never taken for refusals) or recorded below. acceptance-auditor: NOT READY on its first pass with five gaps (this entry, the plan's status, the re-check's result, a stack run on the final code, and the scanner app as it ships calling the old site's `/api/admin/scanner/*`); all closed, the last by serving those two paths in the app's own error shape (D-554 amended).
+- Decisions/assumptions: D-551 to D-559 (D-554, D-555, D-559 ASSUMED; parts of D-552 and D-556 ASSUMED), with D-552, D-553, D-556 and D-558 amended after the ledger audit and D-554 after the acceptance audit; a new event, `order.edited` (architecture §19); D-550 is the owner's. Two unverified integrations recorded: the Meta CAPI/GA4 adapters and the ncom connector against ncom.bd itself.
+- Migrations: `0118_m35b_web_marketing_schema.sql` (schemas `marketplace` and `packing`, nine tables, `order_channel` gains `marketplace`), `0119_m35b_web_marketing_policies.sql` (RLS ENABLE and FORCE, grants, guard triggers), `0120_m35b_holds_final_events_purge.sql` (an ended hold is final; webhook claims prunable). M39a and M39b also add 0118/0119: renumber at integration.
+- New dependencies: `uqr` 0.1.3 (server) — a zero-dependency MIT QR encoder for the label sheet's codes; the SVG is drawn in-house.
+- Deviations from the milestone spec: ncom's addresses carry the org id (`/ncom/<org id>/v1/*`, not `/ncom/v1/*`): nothing else names the tenant before the signature is checked; the website's nginx can rewrite the old `/api/ncom/*` (M37). The scanner pairs a phone from the console with a one-time code instead of reusing a session. The courier fraud check is not carried over (D-291). The console's initial route is 248.8 KB of 250 (247.8 at the base): the four new lazy routes in the router.
+- Follow-ups: the ledger re-check's notes left open: a desk edit reaches ncom a few seconds after it is made (the event dispatcher), so an ncom change in that window still passes the revision check; an order handed over with a line of the brand that no longer resolves is filed with that line as another shop's and a warning only on the Marketplace screen (the old site's behaviour; consider the order desk); untested paths: the edit refused for not collecting ncom's total, the edit leaving none of the brand's lines, ncom's own edit not echoed, the marketplace order's Purchase, the SSLCommerz waiting Purchase released, the 120-a-minute event limit, and a lookup by courier tracking code (owner: claude); `docs/build-status.md` still shows M35 at 30% (the coordinator's to update); verify the tracking adapters with a brand's dataset, test event code and GA4 DebugView, and the connector with ncom's dashboard test on a staging brand (owner: human); an index for the scanner's parcel-code lookup on `courier.consignments` (owner: claude); M39a registers `custom_links.category_id` and the highlighted products with `CatalogReferences` (owner: claude, M39a); M36's website gives its pixel `purchase_<orderNo>` and sends `tracking` with the checkout (owner: claude, M36); the generic keys added to `STOREFRONT_VISIBLE_FIELDS` (`meta`, `events`, `client`, `type`, `results`) could be narrowed (owner: claude).
+- Next: integration into `integration-wave2`, renumbering the migrations after M39's.
+
+### 2026-10-06 · M39b · Variant prices, buying prices and product management · built
+
+- Delivered (D-635 to D-649; branch `m39b-variant-pricing` from `integration-wave2` at 28e0c4c,
+  with `integration-wave2` at ff89eb8, M39a, merged in on 2026-10-06):
+  - **New product**: prices by size and by colour in one step (a row's own price wins, then its
+    size's, then its colour's, then the main price), rows chosen and set together (price,
+    regular price, pieces, cost) or copied down, zero and negative figures refused on the
+    screen, a regular ("was") price per variant, a weight, the category's default size chart,
+    a colour per photo, and **a buying price per variant whether the stock is in hand or from a
+    supplier** (D-421's one cost for all is gone).
+  - **Product page**: each variant's price and regular price; for a `read:cost` role its average
+    cost, last buying price (date, supplier) and a margin worked out in the browser; a stock-value
+    tile; **Edit prices** with a bulk editor (all, a size, a colour or ticked rows; set, add,
+    subtract, raise or lower by %, round; preview into the boxes; one save with one reason); one
+    price history for every variant (price and regular price); **Buying prices** (the standard
+    buying price per variant); **Sizes and colours** (new variants listed with the price they
+    start at, never the cheapest or an archived one's; untick a size to stop it in every colour;
+    a new axis offers to archive the old variants); a colour per photo; **Edit variant** (a
+    supplier's barcode, a weight); **Duplicate**; the price tile for every reader; the 1440 px
+    layout (codes on one line, icon actions in a sticky column).
+  - **Receipts**: the receive dialog and Supply → Entries ("Add a product": every variant as a
+    line) take a cost per variant, prefilled from the supplier's standard price, else the
+    standard price, else the last buying price; a draft being priced is prefilled the same way;
+    a scanned archived variant is refused; the draft-pricing Cancel label.
+  - **Supply → Buying prices**: the standard buying price spreadsheet (download, check, import
+    all or nothing). `supply.sku_purchase_prices` lives in supply only (invariant 5).
+  - **Product list**: photo, stock, website switch, price range; a row menu (open, duplicate,
+    show or hide on the website, archive) and bulk actions (show or hide, size chart, move to a
+    category, archive, stickers).
+  - **Delete** (M39a's routes and dialog, `delete Catalog`): in the product page's header, on
+    each variant row and in the list's row menu. The dialog says what uses it; something nothing
+    uses is deleted (its standard buying prices go with it, counted in the audit log); anything
+    else is offered Archive or Restore. Pickers for a new variant offer only live lists and
+    values; Sizes and colours keeps an archived one the product sells so it can be unticked and
+    never adds a combination with one; a duplicate leaves such variants out and refuses an
+    archived category, as the bulk move does. **Delete unused** on the list's ticked rows
+    deletes the ones nothing uses and says how many it kept.
+  - **Website**: the product page, the cards and the cart show the same price (a live flash
+    price included) and strike through the regular price, or under a flash price the higher of
+    the shelf and regular prices; the storefront API's "on sale" filter works (D-511
+    amended); photos grouped by colour. (The website's own "On sale" link still opens its
+    flash-sale page: a website follow-up.)
+  - **Couriers**: a booking declares Σ qty × weight when every variant is weighed (Pathao never
+    below 500 g), else the courier's default.
+- Server: migrations (renumbered after M39a's frozen 0118 and 0119) `0120_m39b_variant_pricing_schema.sql` (columns, `supply.sku_purchase_prices`)
+  and `0121_m39b_variant_pricing_policies.sql` (RLS, two `on delete set null (column)` composite
+  keys, the price-history trigger widened to the regular price). New routes:
+  `GET /v1/catalog/products/:id/price-history`, `POST /v1/catalog/products/:id/duplicate`,
+  `PATCH /v1/catalog/products`, `PUT /v1/catalog/products/:id/images/:imageId/colour`,
+  `PUT /v1/catalog/skus/:id/weight`, `PATCH /v1/catalog/skus` (inventory, the held-stock guard),
+  `GET /v1/inventory/stock/products`, `GET`/`PUT /v1/supply/sku-costs`,
+  `GET /v1/supply/sku-costs/export`, `POST /v1/supply/sku-costs/import/dry-run`,
+  `POST /v1/supply/sku-costs/import`, `PUT /v1/storefront/products`; wider bodies on
+  `POST /v1/catalog/products`, `POST …/variants`, `PUT /v1/catalog/prices` (regular price,
+  expected price) and the category's website fields. Errors `CATALOG_SKU_HELD`,
+  `SUPPLY_IMPORT_REJECTED`. Domain: `@elysium/domain/pricing` (new entry point).
+- Verification:
+  - `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`): exit 0 at d46e0c8 (226 test files; every gate passed; initial route 248.5 KB of 250). Before the
+    merge: exit 0 at 98f9ed0 (221 files). The first merged run had one failure outside M39b,
+    `storefront.e2e.test.ts` "refuses a timestamp outside five minutes" (a `now + 301` that
+    lands on 300 when a second ticks over under load); it passed on its own and in the next run.
+  - M39 checks 3 to 7 on real Postgres in `apps/server/src/modules/catalog/variant-pricing.e2e.test.ts`
+    (prices by size and +10 % with a history row each; per-variant receipt costs giving WAC 750
+    after 700 and 800; cost to cost roles only and never through the catalog; the standard price
+    prefilling, never moving WAC, its spreadsheet, the audit keeping counts only; duplicate with
+    no stock; extend prices and code order; held-stock guard; the storefront's regular and flash
+    prices and "on sale"; product stock totals, never another brand's; stale reprices refused; the catalog price
+    spreadsheet naming a price that would reach its regular price; with M39a: a duplicate
+    without archived values or categories, a bulk move refused into an archived category,
+    standard prices through the real SKU, product and supplier deletes with their audit
+    counts, the supplier keys swept from `pg_constraint`, a size chart emptied into another
+    moving the category default). M39a's `catalog-deletes.e2e.test.ts` now lists the standard
+    price's cascade from its SKU.
+    Domain: `packages/domain/src/pricing/pricing.test.ts` (fast-check). Console:
+    `m39b-ui.test.ts`. Route matrix and cost sweep cover every new route.
+  - `variant-pricing.stack.ts` against the real stack (ports 3221/5294), now with Delete (the
+    unused copy deleted, the shirt offered Archive, "Delete unused" on two rows): 7 passed with axe, with `catalog-stock.stack.ts`, `barcodes.stack.ts` and M39a's `delete-archive.stack.ts` in the same run (31 passed, d46e0c8). The first run at HEAD failed check 3: with several size lists in the brand, the quick prices followed the first list, not the one picked (fixed in d46e0c8). Screenshots
+    `docs/review/M39/b-01` to `b-10`.
+- Auditors:
+  - ledger-auditor: 0 critical, 5 warnings, 11 notes. Fixed: W1 (the standard-price
+    spreadsheet went into the audit log through the request body: the service now writes
+    counts only, tested), W2 (the product page's per-variant archive now goes through the
+    guarded route), W3 (`for no key update`, so repricing or archiving no longer blocks stock
+    movements' key-share locks or risks a deadlock), W4 (a card only strikes through the lowest
+    size's own regular price, tested), W5 (the product stock route tested: the stock page's
+    scope, which §6 makes the whole brand for a branch manager, and nothing of another brand), N1 (no silent zero cost or ৳0.01 fallback), N2 (a negative cost is refused), N3
+    ("Cost per piece" now speaks for every untyped variant), N4 (a reprice carries the price it
+    was made against; a stale one is refused), N5 (Save waits until the preview has no problems),
+    N7 (Pathao never below 500 g), N10 (tests: standard price never moves WAC, import refused for
+    non-cost roles), N11 (the catalog price spreadsheet names a price that would reach its
+    regular price, in the dry run). Left as recorded: W3's reserve-path re-check of the variant's status (an
+    order confirmed in the same instant as an archive can still reserve it, as D-423 already
+    allows for orders taken before an archive), N6 (price sort uses shelf prices, documented),
+    N8 (kept), N9 (requests are chunked at 200).
+  - ledger-auditor on the integration (ba851b0, 7eb3ca5): 0 critical, 2 warnings, 4 notes, all
+    fixed in 4e2e8f1: W1 (standard prices tested through the real deletes, the supplier keys
+    swept), W2 (a delete's standard prices counted in the audit log), N1 (shared locks in the
+    duplicate and bulk move), N2 (`SUPPLY_NOT_FOUND` for a standard price racing a delete), N3
+    (a size chart emptied into another moves category defaults), N4 (Sizes and colours adds no
+    archived combination). Same unlocked check remains in M39a's own create and extend paths
+    (follow-up).
+  - acceptance-auditor: NOT READY at 4e2e8f1 with four gaps (no stack run at HEAD, this entry
+    stale, bulk "delete unused" missing, the website's "On sale" claim); all four closed in
+    2f4aece, d46e0c8 and e324aeb. Re-check at e324aeb: READY.
+- Decisions/assumptions: D-635 to D-649 (ASSUMED: D-637, D-639, D-640, D-641, D-645, D-646);
+  D-421 amended by D-635, D-511 by D-640.
+- New dependencies: none.
+- Deviations from the milestone spec: none.
+- Follow-ups: M39a's create and extend paths check archived categories and values without a
+  shared lock (owner: claude, with M39a's next change); `storefront.e2e.test.ts`'s timestamp
+  test is flaky under load (owner: claude, M33); the catalog price spreadsheet's text is kept
+  whole by the audit net (selling prices, not costs; owner: claude); the website's "On sale"
+  link should open `?onSale=true` on its shop page rather than the flash-sale page, so regular
+  prices show there too (owner: claude, website repo); the archive guard sees reserved stock, not pending orders without a reservation (M39a's
+  reference port, owner: claude); a check that a "was" price was ever real (D-640, owner:
+  human); Pathao's real minimum weight (owner: human, with credentials).
+- Next: merge into `integration-wave2` (coordinator).
+
+### 2026-10-06 · integration and deploy · M39b joined and live · done
+
+- M39b merged into `integration-wave2` (f8d2cd3); code identical to its verified branch (verify
+  at d46e0c8: 226 test files, 3,504 passed, 1 skipped; every gate; stack 31 passed;
+  ledger-auditor 0 critical after fixes; acceptance-auditor READY). Migrations 0120–0121 follow
+  M39a's 0119; schema drift PASS (120).
+- Elysium's ERP redeployed at f8d2cd3: health green; the website at demo.elysium-lifestyle.bd
+  reads it (`erp: ok`) and its home answers 200; the server's other sites 200. Migrations up to
+  0121 are frozen.
+- M35b's integration is renumbering its migrations after 0121 (0122–0124).
+- Follow-up for the website repo: show the storefront's new regular (compare-at) prices and
+  per-colour photos, and point its "On sale" link at the shop's on-sale filter.
+
+### 2026-10-06 · integration · M35b joined (after M39a and M39b) · done, not deployed
+
+- Branch `int-m35b` from `integration-wave2` at aebe7f5 (M39a live), then `integration-wave2`
+  at e72c5ec merged in when M39b went live first (67349fc). `m35b-web-marketing` (3a26f2c)
+  merged in a8f3aaf. Conflicts were side-by-side additions, all kept: CLAUDE.md's stack-spec
+  line and the ncom checkers, `CatalogApi` (M39a's size-chart reassignment, M35b's marketplace
+  reads, M39b's SKU weights, statuses and directory), `OrdersApi` (`CampaignMatch` and the
+  packing facts), the storefront module's controllers, storefront-public (M39b's shown prices,
+  M35b's exported `CategoryRef`), error codes, the contracts and i18n barrels (manage,
+  catalog-pricing, web-marketing, packing sections), the route-matrix manifest and both auth
+  sweeps' fixtures, architecture §31, progress, build status. The API client is regenerated
+  from the merged server (`pnpm api:client`, 496 operations, exactly both sides').
+- **Migrations renumbered** after the frozen, live 0118–0119 (M39a) and 0120–0121 (M39b):
+  `0122_m35b_web_marketing_schema.sql` (regenerated, byte-identical to the branch's 0118),
+  `0123_m35b_web_marketing_policies.sql` and `0124_m35b_holds_final_events_purge.sql` (the
+  branch's 0119 and 0120, copied; 0124's header still says "0119's rules", meaning 0123).
+  `check-migrations --base integration-wave2`: 193 unchanged. A dev database that ran the
+  branch's own 0118–0120 must be rebuilt (its journal stamps would skip M39's).
+- **The references join** (9d3927c, c713d3b; decisions 2026-10-06 integration rows): the
+  website's checker counts a campaign link's category (its foreign key) and highlighted products
+  (`campaign_links`, not movable: a shared link is never re-pointed or trimmed by a delete);
+  the marketplace module registers with `CatalogReferences` and `LocationReferences` for ncom
+  holds, live or ended (`marketplace_holds`); ncom's product listing and category list leave
+  out an archived category's products and subtree as the website does (D-623). Tests on real
+  Postgres in `web-marketing.e2e.test.ts` and `marketplace.e2e.test.ts`; the `pg_constraint`
+  coverage tests list `storefront.custom_links` and `marketplace.ncom_holds`.
+- Verification at 67349fc: `pnpm verify` exit 0 — 232 test files, 3,581 passed, 1 skipped;
+  bundle 248.9 of 250 KB; white-label (244 files), migrations, schema drift (123), route matrix
+  (497 routes, 439 matrix-tested, 58 public), i18n (4,088 keys), api-client PASS. Stack:
+  `web-marketing.stack.ts`, `delete-archive.stack.ts` and `variant-pricing.stack.ts`, 24 of 24
+  (screenshots retaken in `docs/review/M35b/` and `docs/review/M39/`); `delete-archive`'s list
+  order assertion now polls (it raced the refetch once).
+- Auditors on the merge: ledger-auditor 0 critical, 1 warning (the green verify was on an
+  uncommitted tree; since committed and re-verified) and notes, fixed in c713d3b (the "Empty and
+  delete" hint names a campaign link; ncom categories walk their ancestors; the hold-by-SKU
+  count uses jsonb containment; migration numbers in comments and decisions) or below.
+  acceptance-auditor on M35b items 4–8 and checks 4–6: the five earlier gaps closed, checks 4,
+  5 and 6 and the join evidenced; its two integration gaps (the failed stack run, this entry)
+  closed by the green re-run and this entry. Ledger re-audit of the M39b merge (67349fc): 0
+  critical, 1 warning — an archived variant can meet a live ncom hold (the single-variant
+  archive checks no held stock; a reserve reads `sellable` before locking), recorded as a
+  2026-10-06 integration decision row with its fix, not changed at the merge; its notes: a doc
+  comment moved, the rest below. Migrations 0118–0121 byte-identical to live, 0122–0124 to
+  M35b's originals, snapshot chain intact; `catalog-deletes.e2e.test.ts` 28/28 on the merged
+  order.
+- Follow-ups: a campaign link saved at the same moment as a product delete can keep the deleted
+  product's id (no foreign key on the highlighted list; M39a's soft references share the gap;
+  the website skips it, a re-save says "No such product") — lock the products `for key share`
+  in `assertRefs` (owner: claude); a campaign link may still be pointed at an archived category
+  (owner: claude); `check-migrations` compares with `main`, so pass `--base` at the live
+  commit on integration branches (owner: claude); the archived-variant / ncom-hold gap above:
+  the single archive through the held-stock check, SKUs locked before every reserve, ncom and
+  checkout holds named in `CATALOG_SKU_HELD` (owner: claude); should ncom see flash prices and
+  M39b's per-variant weights (owner: human); the cost-sweep fixture for
+  `GET /v1/inventory/stock/products` asks for a random product (owner: claude).
+- Next: the coordinator fast-forwards `integration-wave2` and deploys (migrations 0122–0124
+  become frozen).
+
+### 2026-10-06 · deploy · M35b live on Elysium's ERP · done
+
+- `integration-wave2` fast-forwarded to the M35b integration (f69fdea; verify at 67349fc green:
+  232 test files, 3,581 passed; stack 24 of 24; ledger and acceptance audits run). Migrations
+  0122–0124 follow M39b's 0121 and are now frozen.
+- Elysium's ERP redeployed at f69fdea: health green, the website still reads it.
+- Its nginx site (installed once and never rewritten by a deploy, because certbot edits it) was
+  patched by hand to the template's API paths: `/ncom/` (the ncom.bd connector) and
+  `/api/admin/scanner/` (the shipped scanner APK's old addresses) now reach the API (an unsigned
+  ncom ping answers 401, the scanner login 400); `nginx -t` passed before the reload, with a
+  backup to roll back to; the server's other sites still 200.
+- Still to do: the website repo shows the new regular prices, colour photos and campaign links,
+  and turns tracking on; ncom.bd's credentials go into Website → Marketplace when the owner has
+  them.
+
+### 2026-10-06 · website · Regular prices, colour photos, campaign links and tracking on the new site · done
+
+- The website repo's `erp-storefront` gained b433c66 and 8451835: the ERP's regular price
+  struck through everywhere a price shows, "On sale" through the ERP's filter, photos switched
+  by colour, campaign links (`?cu=`) mapped to the real ERP route with a view counted once per
+  visit, and tracking from the ERP (off until switched on in Website → Tracking; browser events
+  batched to the ERP, never Purchase; the confirmation page's pixel uses `purchase_<orderNo>` so
+  the ERP's server Purchase deduplicates). Playwright 20 of 20 against the live code's ERP,
+  37 unit tests, lint clean, no-database check; acceptance-auditor READY. No ERP change.
+- Redeployed to demo.elysium-lifestyle.bd (release 845183525925, the previous image kept as
+  `elysium-web:previous`): healthy, reads the ERP, home and the on-sale shop answer 200.
+- To switch tracking on later: the nginx tracking-proxy include on the demo site, the pixel and
+  GA4 ids in Website → Tracking, and `STOREFRONT_TRACKING_PROVIDER=live` with
+  `STOREFRONT_TRACKING_ENABLED=true` on the brand ERP.

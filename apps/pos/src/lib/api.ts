@@ -13,8 +13,8 @@ import type { PriceListItem } from './cart.js';
  * the sale stays queued.
  */
 
-export const CSRF_COOKIE = 'elysium_csrf';
-export const CSRF_HEADER = 'x-elysium-csrf';
+export const CSRF_COOKIE = 'erp_csrf';
+export const CSRF_HEADER = 'x-csrf-token';
 
 function csrfToken(): string {
   for (const entry of document.cookie.split(';')) {

@@ -1,11 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   NotFoundException,
 } from '@nestjs/common';
 import type { ErrorCode } from '@elysium/contracts';
 import { InventoryError, LedgerError, MoneyError } from '@elysium/domain';
+
+import { isStillReferenced } from '../../platform/references/references.js';
 
 /**
  * Inventory failures, as the API reports them (architecture §23, D-087).
@@ -36,6 +39,23 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   STOCK_ADJUSTMENT_FROZEN: 409,
   STOCK_ADJUSTMENT_APPROVAL_INVALID: 409,
   APPROVAL_REQUIRED: 409,
+  // M38a (D-602): the window said no, or the entry is already posted.
+  OPENING_STOCK_CLOSED: 409,
+  OPENING_STOCK_INVALID: 409,
+  OPENING_STOCK_REOPEN_UNAPPROVED: 409,
+  OPENING_STOCK_REOPEN_PENDING: 409,
+  STOCK_IN_HAND_NOT_FOUND: 404,
+  STOCK_IN_HAND_IMMUTABLE: 409,
+  STOCK_IN_HAND_CHANGED: 409,
+  STOCK_IN_HAND_REVERSAL_BLOCKED: 409,
+  IDEMPOTENCY_CONFLICT: 409,
+  IDEMPOTENCY_IN_FLIGHT: 409,
+  FORBIDDEN: 403,
+  // M39a (D-629): a location something still names.
+  INVENTORY_IN_USE: 409,
+  // M39b (D-639): variants whose pieces orders hold are not archived together.
+  CATALOG_SKU_HELD: 409,
+  CATALOG_NOT_FOUND: 404,
 };
 
 export class StockError extends Error {
@@ -51,6 +71,8 @@ export class StockError extends Error {
 export function stockHttpError(code: ErrorCode, message: string): HttpException {
   const body = { code, message };
   switch (STATUS[code] ?? 400) {
+    case 403:
+      return new ForbiddenException(body);
     case 404:
       return new NotFoundException(body);
     case 409:
@@ -70,6 +92,13 @@ const TRIGGER_CODES: readonly ErrorCode[] = [
   'STOCK_TRANSFER_INVALID',
   'STOCK_ADJUSTMENT_FROZEN',
   'STOCK_ADJUSTMENT_APPROVAL_INVALID',
+  // The M38a policies migration's triggers (D-602).
+  'OPENING_STOCK_CLOSED',
+  'OPENING_STOCK_INVALID',
+  'OPENING_STOCK_REOPEN_UNAPPROVED',
+  'STOCK_IN_HAND_INVALID',
+  'STOCK_IN_HAND_IMMUTABLE',
+  'STOCK_IN_HAND_COST_REQUIRED',
 ];
 
 /**
@@ -87,6 +116,12 @@ const CHECK_MESSAGES: Readonly<Record<string, string>> = {
     'Those units are reserved for confirmed orders; release the reservations first.',
   stock_levels_reserved_not_negative: 'More units were released than were ever reserved.',
 };
+
+/** Primary keys that are a client's idempotency key (M38a). */
+const IN_FLIGHT_KEYS: ReadonlySet<string> = new Set([
+  'stock_in_hand_entries_pkey',
+  'count_scans_pkey',
+]);
 
 const UNIQUE_MESSAGES: Readonly<Record<string, string>> = {
   stock_movements_org_dedupe_idx: 'That stock movement has already been recorded.',
@@ -107,8 +142,24 @@ export function databaseStockCode(error: unknown): { code: ErrorCode; message: s
     const constraint = (current as { constraint_name?: unknown }).constraint_name;
     const name = typeof constraint === 'string' ? constraint : '';
 
+    if (isStillReferenced(current)) {
+      // The backstop behind a location delete's own count (D-621, D-629).
+      return {
+        code: 'INVENTORY_IN_USE',
+        message:
+          'Something still uses this location, so it was not deleted. Switch it off instead.',
+      };
+    }
     if (sqlstate === '23514' && Object.hasOwn(CHECK_MESSAGES, name)) {
       return { code: 'STOCK_INSUFFICIENT', message: CHECK_MESSAGES[name] ?? '' };
+    }
+    if (sqlstate === '23505' && IN_FLIGHT_KEYS.has(name)) {
+      // Two saves of one entry (or one scan) at once, with the same client key: the second
+      // lost the race to the first, which is still committing. Retrying answers it.
+      return {
+        code: 'IDEMPOTENCY_IN_FLIGHT',
+        message: 'That save is already in progress; try again in a moment.',
+      };
     }
     if (sqlstate === '23505') {
       return {

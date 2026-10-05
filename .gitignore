@@ -32,6 +32,8 @@ blob-report/
 !.env.example
 # The preview server's template is committed; the file init-env.sh writes from it is not.
 !.env.preview.example
+# A brand deployment's template likewise (infra/brand, M31); new-brand.sh's output is not.
+!.env.brand.example
 
 # editors and os
 .DS_Store

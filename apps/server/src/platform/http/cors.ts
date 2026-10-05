@@ -25,7 +25,7 @@ export const CORS_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'] as
  * `credentials` must be true, or the session cookie is simply never sent and
  * every request looks anonymous.
  */
-export function corsOptions(policy: OriginPolicy) {
+function credentialedOptions(policy: OriginPolicy) {
   return {
     origin: (
       origin: string | undefined,
@@ -51,5 +51,49 @@ export function corsOptions(policy: OriginPolicy) {
     // preflight — passed.
     allowedHeaders: ['content-type', CSRF_HEADER, IDEMPOTENCY_HEADER],
     maxAge: 600,
+  };
+}
+
+/**
+ * The packing scanner's device routes (M35b, D-554): called by the native scanner app, whose
+ * WebView is its own origin (`https://localhost` under Capacitor), with a bearer device token
+ * and never a cookie. Any origin may read them, with no credentials: a page elsewhere that
+ * calls them carries no token, and the browser sends no cookie for a non-credentialed request.
+ */
+export const SCANNER_DEVICE_PATHS: readonly string[] = [
+  '/v1/scanner/sign-in',
+  '/v1/scanner/sign-out',
+  '/v1/scanner/shipment',
+  // The same two, at the old site's addresses the app as it ships calls.
+  '/api/admin/scanner/login',
+  '/api/admin/scanner/shipment',
+];
+
+export function isScannerDevicePath(url: string): boolean {
+  const path = url.split('?')[0] ?? '';
+  return SCANNER_DEVICE_PATHS.includes(path);
+}
+
+const SCANNER_OPTIONS = {
+  origin: true,
+  credentials: false,
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['authorization', 'content-type'],
+  maxAge: 86_400,
+} as const;
+
+/**
+ * The CORS options, chosen per request: the scanner device routes' open policy above, and the
+ * exact-origin, credentialed policy everywhere else.
+ */
+export function corsOptions(policy: OriginPolicy) {
+  const credentialed = credentialedOptions(policy);
+  return {
+    delegator: (
+      request: { readonly url?: string },
+      callback: (error: Error | null, options: object) => void,
+    ) => {
+      callback(null, isScannerDevicePath(request.url ?? '') ? SCANNER_OPTIONS : credentialed);
+    },
   };
 }

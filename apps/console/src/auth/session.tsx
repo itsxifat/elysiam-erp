@@ -1,8 +1,11 @@
 import {
   defineAbilityFor,
+  effectiveScope,
   uniformBranchScope,
+  type Action,
   type AppAbility,
   type MembershipRole,
+  type Subject,
 } from '@elysium/contracts';
 import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
@@ -135,4 +138,16 @@ export function useSession(): Session {
 /** The ability alone, which is what the navigation and every gate want. */
 export function useAbility(): AppAbility {
   return useSession().ability;
+}
+
+/**
+ * Whether the caller reaches every row of a subject: a super admin, or a role whose cell for it
+ * is `org`. For a screen whose route refuses an `own` or `branch` reach outright (a list of every
+ * shopper, M34), so it is not offered to someone it would refuse.
+ */
+export function useOrgWide(): (action: Action, subject: Subject) => boolean {
+  const session = useSession();
+  return (action, subject) =>
+    session.context?.isSuperAdmin === true ||
+    effectiveScope(session.roles, action, subject) === 'org';
 }

@@ -187,3 +187,11 @@ export const setPasswordSchema = z
     message: 'The two passwords differ.',
   });
 export type SetPassword = z.infer<typeof setPasswordSchema>;
+
+/**
+ * `POST /v1/auth/owner-link` (M31, D-473): an owner sign-in link's token, as the console
+ * reads it from the URL fragment. The format is `packages/domain/src/iam/owner-link.ts`;
+ * 2,048 characters is its ceiling.
+ */
+export const ownerLinkSignInSchema = z.object({ token: z.string().min(1).max(2048) }).strict();
+export type OwnerLinkSignIn = z.infer<typeof ownerLinkSignInSchema>;

@@ -8,10 +8,13 @@ import type { ErrorCode } from '@elysium/contracts';
 import {
   Code128Error,
   CsvError,
+  Ean13Error,
   MoneyError,
   SkuCodeError,
   VariantMatrixError,
 } from '@elysium/domain';
+
+import { isStillReferenced } from '../../platform/references/references.js';
 
 /**
  * Catalog failures, as the API reports them (architecture §23, D-087).
@@ -36,6 +39,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   CATALOG_PRODUCT_IMMUTABLE: 409,
   CATALOG_CATEGORY_CYCLE: 409,
   CATALOG_IMPORT_REJECTED: 422,
+  // M39a (D-621): something still points at the row being deleted.
+  CATALOG_IN_USE: 409,
 };
 
 export class CatalogError extends Error {
@@ -104,6 +109,38 @@ export function databaseCatalogCode(error: unknown): { code: ErrorCode; message:
     }
 
     const sqlstate = (current as { code?: unknown }).code;
+    if (
+      sqlstate === '23514' &&
+      (current as { constraint_name?: unknown }).constraint_name ===
+        'sku_settings_barcode_sequence_range'
+    ) {
+      // The brand's internal barcode counter is at its end (D-603): never in practice, and
+      // a refusal that says so rather than a 500 if it ever is.
+      return {
+        code: 'CATALOG_BARCODE_INVALID',
+        message: 'This brand has used every internal barcode number; ask an admin to look.',
+      };
+    }
+    if (
+      sqlstate === '23514' &&
+      (current as { constraint_name?: unknown }).constraint_name === 'skus_compare_at_above_price'
+    ) {
+      // The service checks first (M39b, D-640); this is the backstop for a race or a script.
+      return {
+        code: 'CATALOG_PRICE_INVALID',
+        message: 'A regular price must be above the selling price it is shown beside.',
+      };
+    }
+    if (isStillReferenced(current)) {
+      // The backstop behind the delete's own count (D-621): a reference the checkers did not
+      // name — a new module's foreign key, or one that committed after the count — refused
+      // the delete. The same answer the count gives, never a 500.
+      return {
+        code: 'CATALOG_IN_USE',
+        message:
+          'Something still uses this, so it was not deleted. Archive it instead, or look at what uses it.',
+      };
+    }
     if (sqlstate === '23505') {
       const constraint = (current as { constraint_name?: unknown }).constraint_name;
       const known = typeof constraint === 'string' ? CONSTRAINT_MESSAGES[constraint] : undefined;
@@ -128,6 +165,8 @@ export function toCatalogHttpError(error: unknown): unknown {
   }
   if (error instanceof Code128Error)
     return catalogHttpError('CATALOG_VARIANT_INVALID', error.message);
+  if (error instanceof Ean13Error)
+    return catalogHttpError('CATALOG_BARCODE_INVALID', error.message);
   if (error instanceof CsvError) {
     return catalogHttpError(
       'CATALOG_IMPORT_REJECTED',

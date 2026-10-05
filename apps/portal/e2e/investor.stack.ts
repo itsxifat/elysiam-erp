@@ -69,12 +69,12 @@ async function bothThemes(page: Page, name: string): Promise<void> {
   await settled(page);
   await noBlockingViolations(page, `${name} (light)`);
   await shot(page, `${name}-light`);
-  await page.evaluate(() => localStorage.setItem('elysium-theme', 'dark'));
+  await page.evaluate(() => localStorage.setItem('erp-theme', 'dark'));
   await page.reload();
   await settled(page);
   await noBlockingViolations(page, `${name} (dark)`);
   await shot(page, `${name}-dark`);
-  await page.evaluate(() => localStorage.setItem('elysium-theme', 'light'));
+  await page.evaluate(() => localStorage.setItem('erp-theme', 'light'));
   await page.reload();
   await settled(page);
 }

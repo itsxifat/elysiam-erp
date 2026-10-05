@@ -126,6 +126,8 @@ env:
     - R2_ACCESS_KEY_ID
     - R2_SECRET_ACCESS_KEY
     # Optional. Left empty in the secrets file, each is read as unset (§26, D-344).
+    # STOREFRONT_CREDENTIALS_KEY (M34, D-528): unset keeps Website → Payments and Email off.
+    - STOREFRONT_CREDENTIALS_KEY
     - SENTRY_DSN
     - OTEL_EXPORTER_OTLP_HEADERS
 

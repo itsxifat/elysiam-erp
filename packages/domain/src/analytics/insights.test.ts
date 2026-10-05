@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  insightBaseline,
   DEFAULT_INSIGHT_THRESHOLDS,
   INSIGHT_CODES,
   insights,
@@ -33,7 +34,7 @@ function input(overrides: Partial<InsightInput> = {}): InsightInput {
   return {
     current: quiet,
     previous: quiet,
-    group: { outsideDhakaReturnRateBps: [], deliverySuccessBps: [] },
+    baseline: { outsideDhakaReturnRateBps: [], deliverySuccessBps: [] },
     channels: [],
     campaigns: [],
     ...overrides,
@@ -53,15 +54,15 @@ describe('a quiet month says nothing', () => {
 });
 
 describe('outside_dhaka_returns: §18’s example, without the trust score (D-291)', () => {
-  const group = {
+  const baseline = {
     outsideDhakaReturnRateBps: [1_000n, 1_200n, null, 3_000n],
     deliverySuccessBps: [],
   };
 
-  it('fires when outside-Dhaka returns run 5 pp or more above the group median', () => {
+  it('fires when outside-Dhaka returns run 5 pp or more above the baseline median', () => {
     // 21 / (49 + 21) = 30.00%; the median of 10%, 12% and 30% is 12%; the gap is 18 pp.
     const result = insights(
-      input({ current: month({ deliveredOutsideDhaka: 49, returnedOutsideDhaka: 21 }), group }),
+      input({ current: month({ deliveredOutsideDhaka: 49, returnedOutsideDhaka: 21 }), baseline }),
     );
     expect(result).toEqual([
       {
@@ -76,12 +77,12 @@ describe('outside_dhaka_returns: §18’s example, without the trust score (D-29
     // 17 / 100 = 17.00% against a median of 12.00%: exactly 5 pp.
     const at = input({
       current: month({ deliveredOutsideDhaka: 83, returnedOutsideDhaka: 17 }),
-      group: { outsideDhakaReturnRateBps: [1_200n], deliverySuccessBps: [] },
+      baseline: { outsideDhakaReturnRateBps: [1_200n], deliverySuccessBps: [] },
     });
     expect(codes(at)).toEqual(['outside_dhaka_returns']);
     const under = input({
       current: month({ deliveredOutsideDhaka: 83, returnedOutsideDhaka: 17 }),
-      group: { outsideDhakaReturnRateBps: [1_201n], deliverySuccessBps: [] },
+      baseline: { outsideDhakaReturnRateBps: [1_201n], deliverySuccessBps: [] },
     });
     expect(codes(under)).toEqual([]);
   });
@@ -89,12 +90,12 @@ describe('outside_dhaka_returns: §18’s example, without the trust score (D-29
   it('stays quiet on fewer than 20 outside-Dhaka parcels', () => {
     const small = input({
       current: month({ deliveredOutsideDhaka: 9, returnedOutsideDhaka: 10 }),
-      group,
+      baseline,
     });
     expect(codes(small)).toEqual([]);
   });
 
-  it('stays quiet with no group to compare against', () => {
+  it('stays quiet with no baseline to compare against', () => {
     const alone = input({
       current: month({ deliveredOutsideDhaka: 20, returnedOutsideDhaka: 20 }),
     });
@@ -160,18 +161,18 @@ describe('return_rate_rising at its edges', () => {
   });
 });
 
-describe('delivery_success_below_group', () => {
-  it('fires when delivery success sits 5 pp or more under the group median', () => {
-    // 70 / (70 + 20 + 10) = 70%; the group median is 80%.
+describe('delivery_success_below_usual', () => {
+  it('fires when delivery success sits 5 pp or more under the baseline median', () => {
+    // 70 / (70 + 20 + 10) = 70%; the baseline median is 80%.
     const result = insights(
       input({
         current: month({ ordersDelivered: 70, ordersReturned: 20, ordersCancelled: 10 }),
-        group: { outsideDhakaReturnRateBps: [], deliverySuccessBps: [7_000n, 8_000n, 9_000n] },
+        baseline: { outsideDhakaReturnRateBps: [], deliverySuccessBps: [7_000n, 8_000n, 9_000n] },
       }),
     );
-    expect(result.map((insight) => insight.code)).toContain('delivery_success_below_group');
+    expect(result.map((insight) => insight.code)).toContain('delivery_success_below_usual');
     expect(
-      result.find((insight) => insight.code === 'delivery_success_below_group')?.params,
+      result.find((insight) => insight.code === 'delivery_success_below_usual')?.params,
     ).toEqual({
       successBps: '7000',
       medianBps: '8000',
@@ -183,30 +184,30 @@ describe('delivery_success_below_group', () => {
     const result = insights(
       input({
         current: month({ ordersDelivered: 75, ordersReturned: 25 }), // 75.00%
-        group: { outsideDhakaReturnRateBps: [], deliverySuccessBps: [8_000n] },
+        baseline: { outsideDhakaReturnRateBps: [], deliverySuccessBps: [8_000n] },
       }),
     );
-    expect(result.map((insight) => insight.code)).toContain('delivery_success_below_group');
+    expect(result.map((insight) => insight.code)).toContain('delivery_success_below_usual');
   });
 
   it('stays quiet on fewer than 20 finished orders, however far below', () => {
     const result = insights(
       input({
         current: month({ ordersDelivered: 1, ordersReturned: 10, ordersCancelled: 8 }), // 19
-        group: { outsideDhakaReturnRateBps: [], deliverySuccessBps: [9_500n] },
+        baseline: { outsideDhakaReturnRateBps: [], deliverySuccessBps: [9_500n] },
       }),
     );
-    expect(result.map((insight) => insight.code)).not.toContain('delivery_success_below_group');
+    expect(result.map((insight) => insight.code)).not.toContain('delivery_success_below_usual');
   });
 
   it('stays quiet at 4.99 pp under the median', () => {
     const result = insights(
       input({
         current: month({ ordersDelivered: 7_501, ordersReturned: 2_499 }), // 75.01%
-        group: { outsideDhakaReturnRateBps: [], deliverySuccessBps: [8_000n] },
+        baseline: { outsideDhakaReturnRateBps: [], deliverySuccessBps: [8_000n] },
       }),
     );
-    expect(result.map((insight) => insight.code)).not.toContain('delivery_success_below_group');
+    expect(result.map((insight) => insight.code)).not.toContain('delivery_success_below_usual');
   });
 });
 
@@ -380,7 +381,7 @@ describe('the rules together', () => {
         pickupSeconds: 30_000,
       }),
       previous: month({ ordersDelivered: 90, ordersReturned: 10 }),
-      group: { outsideDhakaReturnRateBps: [1_000n], deliverySuccessBps: [] },
+      baseline: { outsideDhakaReturnRateBps: [1_000n], deliverySuccessBps: [] },
       campaigns: [{ campaignId: 'x', spendPoisha: 900_000n, deliveredRevenuePoisha: 1n }],
     });
     expect(codes(busy)).toEqual([
@@ -396,5 +397,35 @@ describe('the rules together', () => {
     const value = input({ current: month({ pickupCount: 20, pickupSeconds: 20_000 }) });
     expect(insights(value).map((insight) => insight.code)).toEqual(['slow_pickup']);
     expect(insights(value, lenient)).toEqual([]);
+  });
+});
+
+describe('insightBaseline', () => {
+  const quiet = {
+    ordersConfirmed: 5,
+    ordersDelivered: 3,
+    ordersReturned: 1,
+    ordersCancelled: 0,
+    deliveredRevenuePoisha: 0n,
+    spendPoisha: 0n,
+    pickupCount: 0,
+    pickupSeconds: 0,
+    deliveredOutsideDhaka: 2,
+    returnedOutsideDhaka: 1,
+  };
+  const busy = {
+    ...quiet,
+    ordersDelivered: 80,
+    ordersReturned: 15,
+    ordersCancelled: 5,
+    deliveredOutsideDhaka: 40,
+    returnedOutsideDhaka: 10,
+  };
+
+  it('reads each of the brand’s own months, and leaves a quiet month out of its usual', () => {
+    expect(insightBaseline([busy, quiet])).toEqual({
+      outsideDhakaReturnRateBps: [2_000n, null],
+      deliverySuccessBps: [8_000n, null],
+    });
   });
 });

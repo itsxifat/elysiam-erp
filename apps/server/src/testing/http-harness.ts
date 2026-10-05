@@ -184,13 +184,18 @@ export interface HarnessOptions {
    * makes an executor registered by one visible to the other.
    */
   readonly extraModules?: readonly (DynamicModule | Type<unknown>)[];
+  /** Seed only these brands, as a brand's own ERP has (D-470); all five when absent. */
+  readonly brands?: readonly string[];
 }
 
 export async function startHttpHarness(
   name: string,
   options: HarnessOptions = {},
 ): Promise<HttpHarness> {
-  const database = await startTestDatabase(name);
+  const database = await startTestDatabase(
+    name,
+    options.brands === undefined ? {} : { brands: options.brands },
+  );
 
   // Before the app is built: `serverEnv()` parses once and caches.
   setServerTestEnvWithDatabase(database.appUrl, ORIGIN, APP_DOMAIN);

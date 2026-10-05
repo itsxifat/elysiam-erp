@@ -61,7 +61,18 @@
 | Fraud check (Steadfast history)                         | Owner to decide (M35); default: not carried over                     |
 | SSLCommerz, SMTP settings                               | ERP **Website → Payments, Email** (M34)                              |
 
-## Order of work
+## Order of work (changed on 2026-10-05, D-561, D-581, D-600)
+
+1. M31 (one ERP per brand), M33 (website catalog and content) and M35a (discounts and flash
+   sales) finish and are joined; M32 (the mother) is paused until the website is done.
+2. **M38a** (product upload, stock in hand at cost, barcode stickers, the scanner), then Elysium's
+   ERP goes live, fresh, at `erp.elysium-lifestyle.bd` on the current server.
+3. M34 (buying) and M35b (landing pages, links, tracking, ncom, scanner app), then M36 (the
+   website on the ERP, customers only imported) at `demo.elysium-lifestyle.bd`.
+4. M38b (scan-to-pack and the packing video).
+5. M32 resumes; M37 (domains switched, the mother's server).
+
+## Order of work (as first planned)
 
 1. M31 (brand edition) and M33 (website catalog and content) in parallel; M32 (mother) beside
    them, joining M31's owner link at the end.

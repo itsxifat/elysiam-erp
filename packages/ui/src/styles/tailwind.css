@@ -64,6 +64,7 @@
   --color-primary-subtle: var(--primary-subtle);
 
   --color-destructive: var(--destructive);
+  --color-destructive-text: var(--destructive-text);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-destructive-subtle: var(--destructive-subtle);
   --color-destructive-subtle-foreground: var(--destructive-subtle-foreground);
@@ -152,36 +153,36 @@
   --shadow-dialog: var(--shadow-dialog);
 
   --ease-out: var(--ease-out);
-  --animate-in: elysium-in var(--duration-base) var(--ease-out);
-  --animate-fade: elysium-fade var(--duration-base) var(--ease-out);
-  --animate-sheet-in: elysium-sheet-in var(--duration-slow) var(--ease-out);
-  --animate-drawer-in: elysium-drawer-in var(--duration-slow) var(--ease-out);
+  --animate-in: erp-in var(--duration-base) var(--ease-out);
+  --animate-fade: erp-fade var(--duration-base) var(--ease-out);
+  --animate-sheet-in: erp-sheet-in var(--duration-slow) var(--ease-out);
+  --animate-drawer-in: erp-drawer-in var(--duration-slow) var(--ease-out);
 }
 
 /* Enter motion for floating layers: a short fade and a 4px rise. Nothing exits with
    a flourish; a closing layer simply goes. Disabled wholesale by the reduced-motion
    guard below. */
-@keyframes elysium-in {
+@keyframes erp-in {
   from {
     opacity: 0;
     transform: translateY(4px) scale(0.99);
   }
 }
 
-@keyframes elysium-fade {
+@keyframes erp-fade {
   from {
     opacity: 0;
   }
 }
 
-@keyframes elysium-sheet-in {
+@keyframes erp-sheet-in {
   from {
     opacity: 0;
     transform: translateX(16px);
   }
 }
 
-@keyframes elysium-drawer-in {
+@keyframes erp-drawer-in {
   from {
     opacity: 0;
     transform: translateX(-16px);
@@ -196,6 +197,12 @@
  */
 .dark .text-primary {
   color: var(--primary-text);
+}
+
+/* Error text on a dark surface, for the same reason (M38a): `text-destructive` shares the
+   destructive fill's variable, which a white label needs dark and text needs light. */
+.dark .text-destructive {
+  color: var(--destructive-text);
 }
 
 /* A scroll area with more past its right edge fades that edge, so a cut-off column reads

@@ -5,6 +5,7 @@ import {
   type Locale,
   type MessageKey,
 } from '@elysium/i18n';
+import { readStored, STORAGE_KEYS, writeStored } from '@elysium/ui';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
@@ -35,8 +36,6 @@ import { catalogueFor, loadLocale } from './catalogue.js';
  * screen.
  */
 
-const STORAGE_KEY = 'elysium-locale';
-
 interface LocaleContextValue {
   readonly locale: Locale;
   readonly setLocale: (locale: Locale) => void;
@@ -57,12 +56,9 @@ function lookup(key: MessageKey, locale: Locale): string {
 }
 
 export function readStoredLocale(): Locale {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved !== null && isLocale(saved)) return saved;
-  } catch {
-    // Private browsing denies storage. English for this session, per D-036.
-  }
+  // Private browsing denies storage: English for this session, per D-036.
+  const saved = readStored(STORAGE_KEYS.consoleLocale);
+  if (saved !== null && isLocale(saved)) return saved;
   return DEFAULT_LOCALE;
 }
 
@@ -89,11 +85,8 @@ export function LocaleProvider({ children }: { readonly children: ReactNode }) {
     void loadLocale(next)
       .then(() => {
         setLocaleState(next);
-        try {
-          localStorage.setItem(STORAGE_KEY, next);
-        } catch {
-          // The choice still applies to this session.
-        }
+        // Storage denied: the choice still applies to this session.
+        writeStored(STORAGE_KEYS.consoleLocale, next);
       })
       .catch(() => {
         // The strings could not be fetched (offline). Stay in the current locale

@@ -1,6 +1,6 @@
 # Public order intake API
 
-For developers building a brand's landing pages or connecting an existing brand website (D-024) to the Elysium ERP. It covers one endpoint: posting an order.
+For developers building a brand's landing pages or connecting an existing brand website (D-024) to the brand's ERP. It covers one endpoint: posting an order.
 
 Every order posted here arrives as a **pending** order in the brand's **unassigned queue**. Sales agents confirm it by phone, as they would a Facebook order. Nothing you send can confirm an order, set a price, or assign it to someone.
 
@@ -40,13 +40,16 @@ The Turnstile **site key** for your widget comes from the brand's Cloudflare acc
 
 ### Headers
 
-| Header                | Value                                                          |
-| --------------------- | -------------------------------------------------------------- |
-| `Content-Type`        | `application/json`                                             |
-| `X-Elysium-Key`       | Your key id, `pk_…`                                            |
-| `X-Elysium-Timestamp` | Unix time in **seconds**, as decimal digits, e.g. `1790000000` |
-| `X-Elysium-Signature` | `sha256=` followed by the lower-case hex HMAC (see below)      |
-| `Idempotency-Key`     | 8–255 printable ASCII characters, unique per order; use a UUID |
+| Header            | Value                                                          |
+| ----------------- | -------------------------------------------------------------- |
+| `Content-Type`    | `application/json`                                             |
+| `X-Api-Key`       | Your key id, `pk_…`                                            |
+| `X-Api-Timestamp` | Unix time in **seconds**, as decimal digits, e.g. `1790000000` |
+| `X-Api-Signature` | `sha256=` followed by the lower-case hex HMAC (see below)      |
+| `Idempotency-Key` | 8–255 printable ASCII characters, unique per order; use a UUID |
+
+An integration built before these header names keeps working: the API still reads the
+names it sends. New integrations use the names above.
 
 ### Signing
 
@@ -68,17 +71,17 @@ export async function postOrder(order: object): Promise<Response> {
   const body = JSON.stringify(order); // sign exactly these bytes, send exactly these bytes
   const timestamp = String(Math.floor(Date.now() / 1000));
   const idempotencyKey = randomUUID(); // keep it: retries must reuse it
-  const signature = createHmac('sha256', process.env.ELYSIUM_SITE_SECRET!)
+  const signature = createHmac('sha256', process.env.ERP_SITE_SECRET!)
     .update(`${timestamp}.${idempotencyKey}.${body}`)
     .digest('hex');
 
-  return fetch(`${process.env.ELYSIUM_API_URL}/public/v1/orders`, {
+  return fetch(`${process.env.ERP_API_URL}/public/v1/orders`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-elysium-key': process.env.ELYSIUM_SITE_KEY_ID!,
-      'x-elysium-timestamp': timestamp,
-      'x-elysium-signature': `sha256=${signature}`,
+      'x-api-key': process.env.ERP_SITE_KEY_ID!,
+      'x-api-timestamp': timestamp,
+      'x-api-signature': `sha256=${signature}`,
       'idempotency-key': idempotencyKey,
     },
     body,
@@ -186,3 +189,9 @@ Send `visitor.ip`. Without it the per-visitor bucket falls back to your server's
 - The ERP never stores your secret, even encrypted. It stores a fingerprint and derives the secret from a server-side master key when a request arrives. A leaked ERP database cannot sign a request.
 - Rotate a key by issuing a new one, deploying it, then revoking the old one. A revoked key is refused immediately.
 - The phone number is personal data. Do not log it in your own site's logs, and mask it if you must (`017******44`).
+
+## Reading the catalog for a brand's own website
+
+This endpoint takes orders from landing pages. A brand's own website reads its products,
+categories, menu and settings through a different, read-only API with its own keys, issued on
+**Website → Connection**: see [`storefront-api.md`](storefront-api.md) (M33).

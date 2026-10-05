@@ -19,6 +19,8 @@
     "bench:catalog": "node ../../scripts/bench.mjs catalog",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "admin:bootstrap": "node --env-file-if-exists=.env --enable-source-maps dist/main.admin.js bootstrap",
+    "admin:website-key": "node --env-file-if-exists=.env --enable-source-maps dist/main.admin.js website-key",
+    "admin:website-site-url": "node --env-file-if-exists=.env --enable-source-maps dist/main.admin.js website-site-url",
     "migration": "node --env-file-if-exists=.env --enable-source-maps dist/main.migration.js",
     "demo:org": "node --env-file-if-exists=.env --enable-source-maps dist/main.migration.js demo",
     "preview:seed": "node --env-file-if-exists=.env --enable-source-maps dist/main.preview.js"
@@ -41,15 +43,18 @@
     "@opentelemetry/sdk-node": "catalog:",
     "@sentry/node": "catalog:",
     "@socket.io/redis-adapter": "catalog:",
+    "bcryptjs": "catalog:",
     "drizzle-orm": "catalog:",
     "fastify": "catalog:",
     "ioredis": "catalog:",
+    "nodemailer": "catalog:",
     "pg-boss": "catalog:",
     "pino": "catalog:",
     "reflect-metadata": "catalog:",
     "rxjs": "catalog:",
     "sharp": "catalog:",
     "socket.io": "catalog:",
+    "uqr": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

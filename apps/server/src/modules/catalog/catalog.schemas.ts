@@ -1,3 +1,4 @@
+import { MAX_STICKERS_PER_PDF, STICKER_MEDIA_IDS } from '@elysium/domain';
 import { z } from 'zod';
 
 /**
@@ -37,6 +38,29 @@ export const pricePoishaSchema = z
   );
 
 export const catalogIdSchema = z.string().uuid('No such record.');
+
+/**
+ * A regular ("was") price (M39b, D-640): a selling-side figure, positive integer poisha like
+ * a price, or null for none. Above the selling price when set; the service says which
+ * variant broke that and the database's CHECK is the backstop.
+ */
+export const compareAtPoishaSchema = pricePoishaSchema.nullable();
+
+/** A weight in grams, as couriers are told (M39b, D-645): 1 g to 100 kg, or null for none. */
+export const weightGramsSchema = z
+  .number()
+  .int('A weight is whole grams.')
+  .min(1, 'A weight is at least 1 gram.')
+  .max(100_000, 'A weight is at most 100 kg.')
+  .nullable();
+
+/** One variant's own prices, named by its value ids (D-422, M39b D-635, D-639). */
+const variantPriceSchema = z.object({
+  valueIds: z.array(z.string().uuid('No such record.')).min(1).max(4),
+  pricePoisha: pricePoishaSchema,
+  /** Absent: the product's regular price. Null: none for this variant. */
+  compareAtPoisha: compareAtPoishaSchema.optional(),
+});
 
 /** The `{CAT}`, `{COLOR}`, `{SIZE}` segments of a SKU code: upper-case, no dash. */
 const segmentSchema = z
@@ -146,7 +170,7 @@ export const createProductSchema = z.object({
   name: nameSchema,
   slug: slugSchema,
   categoryId: catalogIdSchema.nullish(),
-  description: z.string().trim().max(4000).optional(),
+  description: z.string().trim().max(20000).optional(),
   status: productStatusSchema.default('draft'),
   /** The selling price every generated SKU starts at. */
   pricePoisha: pricePoishaSchema,
@@ -159,19 +183,16 @@ export const createProductSchema = z.object({
   axes: z.array(variantAxisSchema).max(4).default([]),
   generateSkus: z.boolean().default(true),
   /**
-   * A price for some of the generated variants, named by their value ids (D-422).
-   * Every other variant starts at `pricePoisha`. Refused when it names a combination
-   * the axes do not produce, so a typed price is never silently dropped.
+   * A price for some of the generated variants, named by their value ids (D-422), each
+   * with its own regular price if it has one (M39b, D-635). Every other variant starts at
+   * `pricePoisha`. Refused when it names a combination the axes do not produce, so a
+   * typed price is never silently dropped.
    */
-  variantPrices: z
-    .array(
-      z.object({
-        valueIds: z.array(catalogIdSchema).min(1).max(4),
-        pricePoisha: pricePoishaSchema,
-      }),
-    )
-    .max(500)
-    .optional(),
+  variantPrices: z.array(variantPriceSchema).max(500).optional(),
+  /** The regular ("was") price every generated variant starts with (M39b, D-640). */
+  compareAtPoisha: pricePoishaSchema.optional(),
+  /** What one piece weighs, in grams (M39b, D-645). */
+  weightGrams: weightGramsSchema.optional(),
 });
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
@@ -180,8 +201,10 @@ export const updateProductSchema = z
     name: nameSchema.optional(),
     slug: slugSchema.optional(),
     categoryId: catalogIdSchema.nullish(),
-    description: z.string().trim().max(4000).nullish(),
+    description: z.string().trim().max(20000).nullish(),
     status: productStatusSchema.optional(),
+    /** Grams per piece, or null to clear it (M39b, D-645). */
+    weightGrams: weightGramsSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'Nothing to change.');
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
@@ -196,8 +219,14 @@ export type UpdateProductInput = z.infer<typeof updateProductSchema>;
  */
 export const extendMatrixSchema = z.object({
   axes: z.array(variantAxisSchema).min(1).max(4),
-  /** The price for the new SKUs. Defaults to the product's cheapest existing SKU. */
+  /**
+   * The main price for new SKUs that have no price of their own (M39b, D-639): used when a
+   * new variant has no same-size variant to follow. Absent: the price most of the product's
+   * active variants carry. Never the cheapest, never an archived variant's.
+   */
   pricePoisha: pricePoishaSchema.optional(),
+  /** A price (and regular price) for some of the new variants, by their value ids. */
+  variantPrices: z.array(variantPriceSchema).max(500).optional(),
 });
 export type ExtendMatrixInput = z.infer<typeof extendMatrixSchema>;
 
@@ -205,7 +234,24 @@ export type ExtendMatrixInput = z.infer<typeof extendMatrixSchema>;
 
 export const setPricesSchema = z.object({
   prices: z
-    .array(z.object({ skuId: catalogIdSchema, pricePoisha: pricePoishaSchema }))
+    .array(
+      z
+        .object({
+          skuId: catalogIdSchema,
+          pricePoisha: pricePoishaSchema.optional(),
+          /** The regular price (M39b, D-640): absent leaves it, null clears it. */
+          compareAtPoisha: compareAtPoishaSchema.optional(),
+          /**
+           * The selling price the change was worked out from (the bulk editor's preview): a
+           * price changed by someone else since is refused rather than overwritten.
+           */
+          expectedPricePoisha: pricePoishaSchema.optional(),
+        })
+        .refine(
+          (entry) => entry.pricePoisha !== undefined || entry.compareAtPoisha !== undefined,
+          'Each entry changes a price, a regular price or both.',
+        ),
+    )
     .min(1, 'Name at least one SKU.')
     .max(500, 'Reprice at most 500 SKUs at a time.'),
   reason: z.string().trim().max(200).optional(),
@@ -236,6 +282,8 @@ export const attachImageSchema = z.object({
   /** A `files.objects` id from `POST /v1/files`, already finalized and public. */
   fileId: catalogIdSchema,
   altText: z.string().trim().max(200).optional(),
+  /** The colour this photo shows (M39b, D-643): a colour value of the brand's, or none. */
+  colourValueId: catalogIdSchema.nullish(),
 });
 export type AttachImageInput = z.infer<typeof attachImageSchema>;
 
@@ -297,18 +345,74 @@ export type ProductImportInput = z.infer<typeof productImportSchema>;
 
 // --- labels -----------------------------------------------------------------
 
-export const labelSheetSchema = z.object({
-  /** The SKUs to print, and how many labels of each. */
-  items: z
-    .array(
-      z.object({
-        skuId: catalogIdSchema,
-        copies: z.number().int().min(1).max(200).default(1),
-      }),
-    )
-    .min(1)
-    .max(200),
-  /** Show the selling price on the label. Off by default. */
-  showPrice: z.boolean().default(false),
-});
+export const labelSheetSchema = z
+  .object({
+    /**
+     * The SKUs to print, and how many stickers of each: one per piece (M38a). At most
+     * `MAX_STICKERS_PER_PDF` in all, which the service checks (the console prints more in
+     * parts).
+     */
+    items: z
+      .array(
+        z.object({
+          skuId: catalogIdSchema,
+          copies: z.number().int().min(1).max(MAX_STICKERS_PER_PDF).default(1),
+        }),
+      )
+      .min(1)
+      .max(500),
+    /** Show the selling price on the sticker. Off unless asked; the console asks by default. */
+    showPrice: z.boolean().default(false),
+    /**
+     * What the stickers print on (D-604): a thermal roll (one sticker a page, at the
+     * sticker's size) or an A4 sheet. M06's A4 3 × 8 sheet when absent.
+     */
+    medium: z.enum(STICKER_MEDIA_IDS).default('a4-3x8'),
+    /** On a sheet, the first unused position (1 = top left); the ones before stay blank. */
+    startAt: z.number().int().min(1).max(40).default(1),
+  })
+  .strict();
 export type LabelSheetInput = z.infer<typeof labelSheetSchema>;
+
+// --- M39b: product management (D-641 to D-646) -------------------------------------
+
+/** Which colour a photo shows, or null for every colour (D-643). */
+export const imageColourSchema = z.object({ colourValueId: catalogIdSchema.nullable() }).strict();
+export type ImageColourInput = z.infer<typeof imageColourSchema>;
+
+/** A variant's own weight in grams, or null to use the product's (D-645). */
+export const skuWeightSchema = z.object({ weightGrams: weightGramsSchema }).strict();
+export type SkuWeightInput = z.infer<typeof skuWeightSchema>;
+
+/**
+ * Duplicate a product (D-641): its name, and optionally its web address (made from the name
+ * and kept unique otherwise).
+ */
+export const duplicateProductSchema = z
+  .object({
+    name: nameSchema,
+    slug: slugSchema.optional(),
+  })
+  .strict();
+export type DuplicateProductInput = z.infer<typeof duplicateProductSchema>;
+
+/**
+ * Many products at once from the product list (D-642): archive or restore them, or file them
+ * under another category. The website's switches go through the storefront's own bulk route
+ * (`update Storefront`, D-508).
+ */
+export const bulkProductsSchema = z
+  .object({
+    productIds: z
+      .array(catalogIdSchema)
+      .min(1, 'Choose at least one product.')
+      .max(100, 'Change at most 100 products at a time.'),
+    status: productStatusSchema.optional(),
+    categoryId: catalogIdSchema.nullish(),
+  })
+  .strict()
+  .refine(
+    (value) => value.status !== undefined || value.categoryId !== undefined,
+    'Nothing to change.',
+  );
+export type BulkProductsInput = z.infer<typeof bulkProductsSchema>;

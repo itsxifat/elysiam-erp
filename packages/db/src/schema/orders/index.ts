@@ -66,6 +66,8 @@ export const orderChannel = sales.enum('order_channel', [
   'phone',
   'walk_in',
   'reseller',
+  // M35b (D-556): orders the ncom.bd marketplace hands over.
+  'marketplace',
 ]);
 
 /**
@@ -417,6 +419,15 @@ export const orders = sales.table(
      * for an order that already shipped.
      */
     locationId: uuid('location_id'),
+    /**
+     * When the order's units were reserved as it was placed (M34, D-532).
+     *
+     * A website checkout holds the stock at once, at `location_id`, so a shopper is never sold
+     * a unit somebody else has just paid for; every other order reserves on confirm. The state
+     * machine reads it (`stockHeld`): confirming a held order reserves nothing more, and
+     * cancelling it while still pending releases what the checkout held. Written at insert only.
+     */
+    stockHeldAt: timestamp('stock_held_at', { withTimezone: true, mode: 'date' }),
 
     itemsPoisha: bigint('items_poisha', { mode: 'bigint' }).notNull(),
     discountPoisha: bigint('discount_poisha', { mode: 'bigint' })
@@ -541,6 +552,11 @@ export const orders = sales.table(
       'orders_exchange_not_self',
       sql`${table.exchangeOfOrderId} is null or ${table.exchangeOfOrderId} <> ${table.id}`,
     ),
+    // A held order holds its stock somewhere (D-532): the location it was reserved at.
+    check(
+      'orders_stock_held_has_location',
+      sql`${table.stockHeldAt} is null or ${table.locationId} is not null`,
+    ),
   ],
 );
 
@@ -590,6 +606,17 @@ export const orderLines = sales.table(
   },
   (table) => [
     unique('order_lines_org_id_id_key').on(table.orgId, table.id),
+    // M35a: what a flash claim names, so a claim is for a whole line of its own order, of
+    // its own SKU, charged at the sale price (D-542). Redundant with the primary key as a
+    // constraint; it exists to be the target of `promo.flash_claims`' composite foreign key.
+    unique('order_lines_flash_claim_key').on(
+      table.orgId,
+      table.orderId,
+      table.id,
+      table.skuId,
+      table.qty,
+      table.unitPricePoisha,
+    ),
     index('order_lines_org_idx').on(table.orgId),
     index('order_lines_org_order_idx').on(table.orgId, table.orderId),
     index('order_lines_org_sku_idx').on(table.orgId, table.skuId),

@@ -10,6 +10,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ANALYTICS_ROUTE_FIXTURES } from '../../modules/analytics/analytics.route-fixtures.js';
 import {
+  MARKETPLACE_ROUTE_FIXTURES,
+  NCOM_CONNECTOR_FIXTURES,
+  ncomFixtureHeaders,
+  prepareMarketplaceFixtures,
+} from '../../modules/marketplace/marketplace.route-fixtures.js';
+import {
+  PACKING_ROUTE_FIXTURES,
+  preparePackingFixtures,
+} from '../../modules/packing/packing.route-fixtures.js';
+import {
   CATALOG_ROUTE_FIXTURES,
   prepareCatalogFixtures,
 } from '../../modules/catalog/catalog.route-fixtures.js';
@@ -58,11 +68,25 @@ import {
 } from '../../modules/wallets/wallets.route-fixtures.js';
 import { USERS_ROUTE_FIXTURES } from '../../modules/iam/users.route-fixtures.js';
 import {
+  prepareStorefrontFixtures,
+  STOREFRONT_PUBLIC_FIXTURES,
+  STOREFRONT_ROUTE_FIXTURES,
+  loadFixtureSku,
+  STOREFRONT_PUBLIC_WRITE_FIXTURES,
+  storefrontTestKey,
+} from '../../modules/storefront/storefront.route-fixtures.js';
+import { signStorefront } from '../../modules/storefront/signature.js';
+import { signedGet } from '../../modules/storefront/storefront.testing.js';
+import {
   ORG_A,
   startHttpHarness,
   type HttpHarness,
   type RoleClient,
 } from '../../testing/http-harness.js';
+import {
+  DELETE_ROUTE_FIXTURES,
+  prepareDeleteFixtures,
+} from '../references/deletes.route-fixtures.js';
 import { describeRoutes } from './route-map.js';
 import { ROUTE_MATRIX_MANIFEST, routeKey } from './route-matrix.manifest.js';
 
@@ -162,6 +186,11 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...ANALYTICS_ROUTE_FIXTURES,
   ...LOANS_ROUTE_FIXTURES,
   ...USERS_ROUTE_FIXTURES,
+  ...STOREFRONT_ROUTE_FIXTURES,
+  // M39a: the usage reads (what uses a row), swept like every other read (D-621).
+  ...DELETE_ROUTE_FIXTURES,
+  ...MARKETPLACE_ROUTE_FIXTURES,
+  ...PACKING_ROUTE_FIXTURES,
 };
 
 /**
@@ -241,6 +270,10 @@ beforeAll(async () => {
   await preparePromoFixtures();
   await prepareMarketingFixtures();
   await prepareLoanFixtures();
+  await prepareStorefrontFixtures();
+  await prepareDeleteFixtures();
+  await prepareMarketplaceFixtures();
+  await preparePackingFixtures();
 
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 
@@ -347,4 +380,151 @@ describe('invariant 5, across every endpoint', () => {
       `only ${String(answered.size)} of ${String(routes.length)} routes answered a role without cost`,
     ).toBeGreaterThan(routes.length / 2);
   }, 600_000);
+});
+
+/**
+ * The brand's website (M33, D-506): the signed read API has no role to sweep as, so it is
+ * swept as the website — with a website key, over every live `/storefront/v1` route, with
+ * real rows behind each (the fixtures put a product, a category, a size chart and a slide on
+ * the website). Every answer must be 2xx, carry no cost field, and carry no key that smells
+ * of cost: the storefront allow-list is the fence, and this is the check that it holds.
+ */
+describe('invariant 5, across the storefront API', () => {
+  function storefrontRoutes(): string[] {
+    return describeRoutes(harness.app)
+      .filter((route) => route.method === 'GET' && route.path.startsWith('/storefront/v1/'))
+      .map(routeKey)
+      .sort();
+  }
+
+  it('has a fixture for every signed read route', () => {
+    const live = storefrontRoutes();
+    expect(live.length).toBeGreaterThanOrEqual(8);
+    expect(live.filter((key) => STOREFRONT_PUBLIC_FIXTURES[key] === undefined)).toEqual([]);
+  });
+
+  it('sends the website no cost field from any of them', async () => {
+    const key = await storefrontTestKey();
+    const problems: string[] = [];
+    for (const route of storefrontRoutes()) {
+      const path = STOREFRONT_PUBLIC_FIXTURES[route]?.();
+      if (path === undefined) continue;
+      const response = await signedGet(harness.server, key, path);
+      if (response.statusCode !== 200) {
+        problems.push(`${route}: ${String(response.statusCode)} ${response.body.slice(0, 200)}`);
+        continue;
+      }
+      const parsed: unknown = JSON.parse(response.body);
+      const leaks = [...findCostFields(parsed), ...suspectKeys(parsed)];
+      if (leaks.length > 0) problems.push(`${route}: ${leaks.slice(0, 5).join(', ')}`);
+    }
+    expect(problems).toEqual([]);
+  }, 120_000);
+
+  /*
+   * M34's signed writes: the quote, the checkout, the accounts and the payment routes. A write
+   * may be refused (a code that is wrong, an order that cannot be paid online), so each must
+   * answer below 500, and no answer, a success or a refusal, may carry a cost field.
+   */
+  function storefrontWrites(): string[] {
+    return describeRoutes(harness.app)
+      .filter(
+        (route) =>
+          (route.method === 'POST' || route.method === 'PATCH') &&
+          route.path.startsWith('/storefront/v1/'),
+      )
+      .map(routeKey)
+      .sort();
+  }
+
+  it('has a fixture for every signed write route', () => {
+    const live = storefrontWrites();
+    expect(live.length).toBeGreaterThanOrEqual(13);
+    expect(live.filter((key) => STOREFRONT_PUBLIC_WRITE_FIXTURES[key] === undefined)).toEqual([]);
+  });
+
+  it('sends the website no cost field from any write, accepted or refused', async () => {
+    await loadFixtureSku();
+    const key = await storefrontTestKey();
+    const problems: string[] = [];
+    for (const route of storefrontWrites()) {
+      const fixture = STOREFRONT_PUBLIC_WRITE_FIXTURES[route]?.();
+      if (fixture === undefined) continue;
+      const raw = Buffer.from(JSON.stringify(fixture.body), 'utf8');
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const idempotencyKey = `sweep-${route.length.toString()}-${timestamp}-${Math.random().toString(36).slice(2)}`;
+      const response = await harness.server.inject({
+        method: fixture.method,
+        url: fixture.path,
+        headers: {
+          'x-api-key': key.keyId,
+          'x-api-timestamp': timestamp,
+          'x-api-signature': signStorefront(key.secret, {
+            timestamp,
+            method: fixture.method,
+            pathAndQuery: fixture.path,
+            idempotencyKey,
+            rawBody: raw,
+          }),
+          'idempotency-key': idempotencyKey,
+          'content-type': 'application/json',
+        },
+        payload: raw,
+      });
+      if (response.statusCode >= 500) {
+        problems.push(`${route}: ${String(response.statusCode)} ${response.body.slice(0, 200)}`);
+        continue;
+      }
+      const parsed: unknown = JSON.parse(response.body);
+      const leaks = [...findCostFields(parsed), ...suspectKeys(parsed)];
+      if (leaks.length > 0) problems.push(`${route}: ${leaks.slice(0, 5).join(', ')}`);
+    }
+    expect(problems).toEqual([]);
+  }, 180_000);
+});
+
+/**
+ * The ncom.bd connector (M35b, D-553): no role to sweep as, so it is swept as ncom, signed with
+ * the brand's connector secret, over every route under `/ncom/<org>/v1/`: the reads, the stock
+ * route and the holds. ncom reads selling prices and stock counts; no answer may carry a cost.
+ */
+describe('invariant 5, across the ncom.bd connector', () => {
+  function connectorRoutes(): string[] {
+    return describeRoutes(harness.app)
+      .filter((route) => route.path.startsWith('/ncom/:orgId/v1/') && !route.path.endsWith('/*'))
+      .map(routeKey)
+      .sort();
+  }
+
+  it('has a fixture for every connector read', () => {
+    const live = connectorRoutes();
+    expect(live.length).toBeGreaterThanOrEqual(7);
+    expect(live.filter((key) => NCOM_CONNECTOR_FIXTURES[key] === undefined)).toEqual([]);
+  });
+
+  it('sends ncom no cost field', async () => {
+    const problems: string[] = [];
+    for (const route of connectorRoutes()) {
+      const fixture = await NCOM_CONNECTOR_FIXTURES[route]?.();
+      if (fixture === undefined) continue;
+      const raw = fixture.body === undefined ? '' : JSON.stringify(fixture.body);
+      const response = await harness.server.inject({
+        method: fixture.method,
+        url: fixture.path,
+        headers: {
+          ...ncomFixtureHeaders(raw),
+          ...(fixture.body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        ...(fixture.body === undefined ? {} : { payload: raw }),
+      });
+      if (response.statusCode !== 200) {
+        problems.push(`${route}: ${String(response.statusCode)} ${response.body.slice(0, 200)}`);
+        continue;
+      }
+      const parsed: unknown = JSON.parse(response.body);
+      const leaks = [...findCostFields(parsed), ...suspectKeys(parsed)];
+      if (leaks.length > 0) problems.push(`${route}: ${leaks.slice(0, 5).join(', ')}`);
+    }
+    expect(problems).toEqual([]);
+  }, 60_000);
 });

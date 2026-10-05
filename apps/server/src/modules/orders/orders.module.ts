@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ApprovalsModule } from '../approvals/approvals.module.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
 import { FilesModule } from '../files/files.module.js';
+import { IamDirectoryModule } from '../iam/iam.api.js';
 import { InventoryModule } from '../inventory/inventory.module.js';
 import { LedgerModule } from '../ledger/ledger.module.js';
 import { AdvancesController } from './advances.controller.js';
@@ -23,6 +24,8 @@ import { OrdersService } from './orders.service.js';
 import { ReturnReasonsService } from './returns.service.js';
 import { TransitionsService } from './transitions.service.js';
 import { PROMO_API } from '../promo/promo.api.js';
+import { BuyerHistoryBinding } from './buyer-history.binding.js';
+import { OrdersReferencesBinding } from './references.binding.js';
 import { PromoModule } from '../promo/promo.module.js';
 import { NOTIFY_API } from '../notify/notify.api.js';
 import { NotifyModule } from '../notify/notify.module.js';
@@ -86,6 +89,8 @@ import { PROMO_PORT } from './ports/promo.port.js';
     ApprovalsModule,
     PromoModule,
     NotifyModule,
+    // Who on an order is an owner (M31, D-473), through identity's interface.
+    IamDirectoryModule,
   ],
   controllers: [
     OrdersController,
@@ -113,6 +118,10 @@ import { PROMO_PORT } from './ports/promo.port.js';
     BuyersService,
     // M16: the desk prices and redeems a code through its own port (D-204).
     { provide: PROMO_PORT, useExisting: PROMO_API },
+    // M35a: first-order discounts ask the promo module, which asks this one (D-543).
+    BuyerHistoryBinding,
+    // M39a: what orders hold about a SKU, a location or a discount (D-621).
+    OrdersReferencesBinding,
     // M16: the CRM's greetings queue a message through their own port, in their own
     // transaction, beside the code they announce.
     { provide: NOTIFY_PORT, useExisting: NOTIFY_API },

@@ -58,6 +58,18 @@ export const ERROR_CODES = [
   'CATALOG_VARIANT_INVALID',
   'CATALOG_PRICE_INVALID',
   'CATALOG_IMPORT_REJECTED',
+  /**
+   * A barcode the catalog will not take (M38a, D-603): one in the range the ERP numbers
+   * its own SKUs from (`2` and twelve digits), typed by hand.
+   */
+  'CATALOG_BARCODE_INVALID',
+  /** A sticker request the layout cannot print: too many, or a position off the sheet. */
+  'CATALOG_LABELS_INVALID',
+  /**
+   * Variants that cannot be archived together because stock is held for orders (M39b,
+   * D-639): archiving would leave confirmed orders holding pieces nobody may sell or edit.
+   */
+  'CATALOG_SKU_HELD',
   /*
    * Stock, locations and costing (M07, §8).
    *
@@ -83,6 +95,31 @@ export const ERROR_CODES = [
   /** The approval named does not match the adjustment's branch, type or amount. */
   'STOCK_ADJUSTMENT_APPROVAL_INVALID',
   /*
+   * Stock in hand at the start and the opening stock window (M38a, D-602). Raised by the
+   * service and again by the M38a policies migration's triggers, for the reason above.
+   */
+  /** The brand's opening stock window is closed: stock now arrives only from suppliers. */
+  'OPENING_STOCK_CLOSED',
+  /** A change to the window other than closing it or an approved reopen. */
+  'OPENING_STOCK_INVALID',
+  /** Reopening named no approval, or one not approved after the close. */
+  'OPENING_STOCK_REOPEN_UNAPPROVED',
+  /** A request to reopen the window is already waiting for a checker. */
+  'OPENING_STOCK_REOPEN_PENDING',
+  'STOCK_IN_HAND_NOT_FOUND',
+  'STOCK_IN_HAND_INVALID',
+  /** A posted stock-in-hand entry, or its lines, cannot change. */
+  'STOCK_IN_HAND_IMMUTABLE',
+  /** A stock-in-hand line has no cost per piece, and every line needs one to post. */
+  'STOCK_IN_HAND_COST_REQUIRED',
+  /** The draft's pieces or location changed after the person posting it read it. */
+  'STOCK_IN_HAND_CHANGED',
+  /**
+   * A posted entry cannot be reversed now: a reversal is already waiting, or its pieces
+   * have since been costed with other stock or have left the location.
+   */
+  'STOCK_IN_HAND_REVERSAL_BLOCKED',
+  /*
    * Suppliers and purchasing (M09, §7, §8).
    *
    * Raised by the services and again by migration 0037's triggers, so a client
@@ -102,6 +139,8 @@ export const ERROR_CODES = [
   'SUPPLY_ADVANCE_INVALID',
   /** A supplier payment's terms are fixed once its approval is raised. */
   'SUPPLY_PAYMENT_FROZEN',
+  /** A standard buying price file with problems (M39b, D-638): nothing was imported. */
+  'SUPPLY_IMPORT_REJECTED',
 
   /*
    * Orders (M10, §9, §23).
@@ -366,6 +405,14 @@ export const ERROR_CODES = [
   'PROMO_CODE_TAKEN',
   'PROMO_INVALID',
   'PROMO_REDEMPTION_IMMUTABLE',
+  // Flash sales (M35a)
+  'FLASH_SALE_NOT_FOUND',
+  /** A claim refused: sold out, not live, switched off, or the sale price moved. */
+  'FLASH_SALE_UNAVAILABLE',
+  /** Another sale of this brand already has that slug. */
+  'FLASH_SALE_SLUG_TAKEN',
+  'FLASH_SALE_INVALID',
+  'FLASH_CLAIM_IMMUTABLE',
   'NOTIFY_TEMPLATE_INVALID',
   'NOTIFY_MESSAGE_IMMUTABLE',
   'CRM_OCCASION_IMMUTABLE',
@@ -417,6 +464,48 @@ export const ERROR_CODES = [
   /** The person who recorded a loan cannot also void it; a second person does (D-304). */
   'LOAN_SELF_VOID',
 
+  // The brand's website, run from its ERP (M33, D-500 to D-519)
+  /** No such website item (slide, menu item, size chart, site key) in this brand. */
+  'STOREFRONT_NOT_FOUND',
+  /** A website setting or item the rules refuse: a menu three deep, a zone in two places. */
+  'STOREFRONT_INVALID',
+  /** A size chart that products still point at. */
+  'STOREFRONT_IN_USE',
+
+  // Buying on the website (M34, D-520 to D-539)
+  /** A figure moved between the quote the shopper saw and the checkout; the body has the new quote. */
+  'CART_REPRICED',
+  /** The web locations cannot hold every line any more; the body names the lines. */
+  'OUT_OF_STOCK',
+  /** The website does not ship to that address (its district and thana fall in no zone it serves). */
+  'CART_NOT_DELIVERABLE',
+  /** That way of paying is switched off for this website, or not set up. */
+  'PAYMENT_METHOD_UNAVAILABLE',
+  /** The order is not waiting for an online payment: paid, cancelled or cash on delivery. */
+  'PAYMENT_NOT_PAYABLE',
+  /** The payment gateway did not answer, or refused to open a session. Nothing was charged. */
+  'PAYMENT_GATEWAY_FAILED',
+  /** An account already uses that email address. */
+  'ACCOUNT_EXISTS',
+  /** No account with that email and password; one sentence for both (D-522). */
+  'ACCOUNT_CREDENTIALS_INVALID',
+  /** The account's email address is not verified yet. */
+  'ACCOUNT_EMAIL_UNVERIFIED',
+  /** A wrong, used, expired or burnt email code, or a reset link that is not live. */
+  'ACCOUNT_CODE_INVALID',
+  /** No such shopper account in this brand. */
+  'ACCOUNT_NOT_FOUND',
+  /** The account signs in with Google only and has no password to change. */
+  'ACCOUNT_NO_PASSWORD',
+  /** That email's account is linked to a different Google login. */
+  'ACCOUNT_GOOGLE_CONFLICT',
+  /** STOREFRONT_CREDENTIALS_KEY is not set, so gateway and email credentials cannot be kept. */
+  'WEBSITE_CREDENTIALS_MISSING',
+  /** The brand's email server is not set up or is switched off. */
+  'EMAIL_NOT_CONFIGURED',
+  /** The email server refused or did not answer. */
+  'EMAIL_SEND_FAILED',
+
   // Staff accounts and sign-in (gaps-users-auth, D-400 to D-409)
   /** No such person holds or held a role in this organization. */
   'USER_NOT_FOUND',
@@ -435,6 +524,46 @@ export const ERROR_CODES = [
    * is disabled, or holds no active role in any brand (D-401).
    */
   'ACCOUNT_INACTIVE',
+
+  /*
+   * Delete and archive everywhere (M39a, D-621 to D-634).
+   *
+   * Each module's "something still uses this row": the delete asked every module that points
+   * at it (the `CatalogReferences` port and its siblings) and one answered, or the database's
+   * foreign key refused it (23503) as the backstop. The detail names the counts in words;
+   * `GET …/usage` names them as data, and the screen offers Archive instead.
+   */
+  /** A category, list, value, product or variant that stock, orders or the website use. */
+  'CATALOG_IN_USE',
+  /** A stock location that holds, held or moved stock, or that a till, order or supply names. */
+  'INVENTORY_IN_USE',
+  /** A supplier with entries, returns, payments or notes. */
+  'SUPPLY_IN_USE',
+  /** A discount that was redeemed or named on an order, or a flash sale that sold. */
+  'PROMO_IN_USE',
+  /** An SMS template that was sent, or one the system sends by itself. */
+  'NOTIFY_IN_USE',
+  /** An ad campaign with spend, leads or discounts. */
+  'MARKETING_IN_USE',
+  /** A branch that still has an open till, money, staff or stock, so it is not switched off. */
+  'BRANCH_IN_USE',
+  // M35b: campaign links, tracking, the marketplace connector, the scanner, order labels
+  /** Every five-digit code was taken on each try; try again. */
+  'CAMPAIGN_LINK_CODE_EXHAUSTED',
+  /** The marketplace connector is not set up, or this action needs a credential it lacks. */
+  'MARKETPLACE_NOT_CONFIGURED',
+  /** The scanner sign-in's email or password is wrong (one answer for both). */
+  'SCANNER_CREDENTIALS_INVALID',
+  /** The account has two-step sign-in on: send the authenticator's code, or pair from the console. */
+  'SCANNER_CODE_REQUIRED',
+  /** The account must enrol two-step sign-in in the console before a phone can sign in. */
+  'SCANNER_ENROLMENT_REQUIRED',
+  /** The account holds roles in more than one brand: pair the phone from the console. */
+  'SCANNER_BRAND_AMBIGUOUS',
+  /** The account may not read orders, so it cannot pack. */
+  'SCANNER_NOT_ALLOWED',
+  /** No order has that order number, tracking code or consignment id. */
+  'SHIPMENT_NOT_FOUND',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

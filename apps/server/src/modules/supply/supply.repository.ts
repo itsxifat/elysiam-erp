@@ -81,6 +81,21 @@ export async function supplierOptions(
 }
 
 /** Suppliers by code, active or not (M14a's supplier balances). */
+/** The suppliers among these ids that exist, held `for key share` until the caller commits. */
+export async function lockSuppliersById(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const rows = await tx.execute<{ id: string }>(sql`
+    select id from supply.suppliers
+    where org_id = ${orgId} and id = any (${sql.param([...new Set(ids)])}::uuid[])
+    for key share
+  `);
+  return rows.map((row) => row.id);
+}
+
 export async function suppliersByCodes(
   tx: Tx,
   orgId: string,

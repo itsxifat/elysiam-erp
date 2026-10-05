@@ -35,6 +35,7 @@ import {
   TR,
 } from './stock-nav.js';
 import { useStockT, type StockMessageKey } from './messages.js';
+import { ScanOneSku } from './scan-one.js';
 
 /**
  * Write-offs, gains and the nightly check (M07 Build list; check 4's screen).
@@ -207,6 +208,18 @@ export function StockAdjustmentsPage() {
                   onValueChange={(value) => setDirection(value === 'gain' ? 'gain' : 'loss')}
                 />
               </Field>
+
+              {locationId === '' ? null : (
+                <ScanOneSku
+                  held={stockHere.data?.items ?? []}
+                  skuId={skuId}
+                  onChoose={(id) => {
+                    setSkuId(id);
+                    setQty('1');
+                  }}
+                  onOneMore={() => setQty((current) => String((Number(current) || 0) + 1))}
+                />
+              )}
 
               <Field label={st('stock.sku')} id="adjustment-sku">
                 <Select

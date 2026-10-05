@@ -100,6 +100,8 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'accounts|read|Supply|org',
   'accounts|update|Supply|org',
   'org_admin|create|Supply|org',
+  // M39a (D-630): a supplier nothing names is deleted, by org_admin only.
+  'org_admin|delete|Supply|org',
   'org_admin|read|Supply|org',
   'org_admin|update|Supply|org',
   'warehouse|create|Supply|org',
@@ -188,6 +190,8 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'marketing|read|Campaign|org',
   'marketing|update|Campaign|org',
   'org_admin|create|Campaign|org',
+  // M39a (D-632): an ad campaign or SMS template that never ran is deleted, by org_admin only.
+  'org_admin|delete|Campaign|org',
   'org_admin|read|Campaign|org',
   'org_admin|update|Campaign|org',
   'accounts|create|CampaignSpend|org',
@@ -211,6 +215,8 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'marketing|read|LandingPage|org',
   'marketing|update|LandingPage|org',
   'org_admin|create|LandingPage|org',
+  // M39a (D-631): a discount or flash sale nobody used is deleted, by org_admin only.
+  'org_admin|delete|LandingPage|org',
   'org_admin|read|LandingPage|org',
   'org_admin|update|LandingPage|org',
   'sales|read|LandingPage|org',
@@ -304,19 +310,13 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'org_admin|read|ApprovalThreshold|org',
   'org_admin|update|ApprovalThreshold|org',
 
-  // | Leaderboard | org_admin all orgs (normalized metrics only) | rest — |
-  /*
-   * The only cross-org grant an ordinary role holds. §18 and D-023 bound it to
-   * normalized metrics and ranks, read through `erp_analytics`. The matrix
-   * test allows this one cell by name and fails on any other `all`.
-   */
-  'org_admin|read|Leaderboard|all',
+  // | Leaderboard | (removed by M31, D-471: a brand's ERP ranks no brands) |
 
   // | (not a row in the grid) | §18's org dashboard (M24, D-325) |
   /*
    * §6 has no dashboard row. The org dashboard puts the brand's revenue, gross profit,
    * cash and stock value on one screen, which is the org admin's; Super Admin holds it
-   * through `manage all` and is the only one who may see it across brands. `update` is
+   * through `manage all`. `update` is
    * recomputing the brand's rollups for a range.
    */
   'org_admin|read|Dashboard|org',
@@ -365,4 +365,28 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'sales|read|FileObject|org',
   'warehouse|create|FileObject|org',
   'warehouse|read|FileObject|org',
+
+  /*
+   * | (not a row in the grid) | the brand's website, run from its ERP (M33, D-508) |
+   *
+   * §6 predates the website moving into the ERP (D-469). The website is marketing's work as
+   * much as the landing pages are, so org_admin and marketing manage it; sales reads it, to
+   * answer a shopper about what the site shows, and edits nothing.
+   */
+  'marketing|create|Storefront|org',
+  'marketing|delete|Storefront|org',
+  'marketing|read|Storefront|org',
+  'marketing|update|Storefront|org',
+  'org_admin|create|Storefront|org',
+  'org_admin|delete|Storefront|org',
+  'org_admin|read|Storefront|org',
+  'org_admin|update|Storefront|org',
+  'org_admin|read|WebsiteCredentials|org',
+  'org_admin|update|WebsiteCredentials|org',
+  'sales|read|Storefront|org',
+
+  // | (not a row in the grid) | a branch's own record (M39a, D-633) |
+  // §6's "users, roles, settings" cell: org_admin renames a branch or switches it off.
+  'org_admin|read|Branch|org',
+  'org_admin|update|Branch|org',
 ];

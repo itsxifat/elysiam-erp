@@ -1,16 +1,8 @@
-import {
-  Button,
-  FileUpload,
-  type FileUploadProps,
-  type UploadTicket,
-  type UploadedFile,
-} from '@elysium/ui';
+import { Button } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { ImageOff } from 'lucide-react';
-import { cloneElement, useId, useState, type ReactElement } from 'react';
+import { cloneElement, useId, type ReactElement } from 'react';
 
-import { api } from '../../api.js';
-import { useT } from '../../i18n/locale.js';
 import { imageUrl } from './api.js';
 
 /**
@@ -55,51 +47,6 @@ export function ChipGroup({
         })}
       </div>
     </fieldset>
-  );
-}
-
-/** The upload ticket for a product photo: public, `product-image` (§22). */
-function photoTicket(input: Parameters<FileUploadProps['createTicket']>[0]) {
-  return api.post<UploadTicket>('/v1/files', {
-    ...input,
-    visibility: 'public',
-    purpose: 'product-image',
-  });
-}
-
-/**
- * Upload photos one after another. Each finished upload is handed to `onUploaded` and
- * the picker resets, so a second photo is one more click rather than a remove first.
- */
-export function PhotoUploader({
-  onUploaded,
-  disabled,
-}: {
-  readonly onUploaded: (file: UploadedFile) => void;
-  readonly disabled?: boolean;
-}) {
-  const t = useT();
-  const [round, setRound] = useState(0);
-  return (
-    <FileUpload
-      key={round}
-      accept="image/webp,image/jpeg,image/png"
-      disabled={disabled === true}
-      createTicket={(input) => photoTicket(input)}
-      finalize={(fileId) => api.post<UploadedFile>(`/v1/files/${fileId}/finalize`)}
-      onUploaded={(file) => {
-        onUploaded(file);
-        setRound((current) => current + 1);
-      }}
-      labels={{
-        choose: t('cs.photos.add'),
-        uploading: t('cs.photos.uploading'),
-        uploaded: t('cs.photos.uploaded'),
-        remove: t('cs.photos.remove'),
-        failed: t('cs.photos.failed'),
-        tooLarge: t('cs.photos.tooLarge'),
-      }}
-    />
   );
 }
 

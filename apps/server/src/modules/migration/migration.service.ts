@@ -453,6 +453,22 @@ export class MigrationService {
           );
         }
 
+        // M39a: a supplier deleted since its balance was staged would leave the permanent
+        // opening journal naming nobody (a party id has no foreign key). The rest are held
+        // `for key share`, so a delete arriving now waits and then finds the journal line.
+        const present = await this.supply.lockSuppliers(
+          tx,
+          actor.orgId,
+          staged.suppliers.map((row) => row.supplierId),
+        );
+        const gone = staged.suppliers.filter((row) => !present.has(row.supplierId));
+        if (gone.length > 0) {
+          throw new MigrationError(
+            'MIGRATION_IMPORT_REJECTED',
+            `${[...new Set(gone.map((row) => row.supplierCode))].join(', ')} is no longer a supplier of this brand. Discard the supplier balance file and import it again.`,
+          );
+        }
+
         const conflicts = stagedStockConflicts(staged.stock);
         if (conflicts.length > 0) {
           throw new MigrationError(

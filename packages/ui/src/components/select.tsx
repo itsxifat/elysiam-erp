@@ -31,7 +31,7 @@ export interface SelectOption {
 }
 
 /** Radix may not hold `''`; a filter's "all" option does. */
-const EMPTY = '__elysium-empty__';
+const EMPTY = '__empty__';
 const toRadix = (value: string): string => (value === '' ? EMPTY : value);
 const fromRadix = (value: string): string => (value === EMPTY ? '' : value);
 

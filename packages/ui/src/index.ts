@@ -51,6 +51,13 @@ export {
 // --- M05: the component kit -------------------------------------------------
 
 export { cn } from './lib/cn.js';
+export {
+  readStored,
+  STORAGE_KEYS,
+  writeStored,
+  type KeyValueStore,
+  type StorageSlot,
+} from './lib/storage.js';
 
 export { Button, buttonVariants, type ButtonProps } from './components/button.js';
 export { Money, type MoneyProps } from './components/money.js';

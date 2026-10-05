@@ -1,0 +1,1287 @@
+{
+  "crud": {
+    "entities": [
+      {
+        "area": "Catalog",
+        "entity": "Category",
+        "screens": "/catalog/structure: apps/console/src/routes/catalog/structure.tsx:164-399 (list 211-244, Edit button 238, EditCategory dialog 316-399, archive hidden as the 'In use' checkbox 391-394); 'Website' dialog category-website.tsx",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "GET/POST /v1/catalog/categories (apps/server/src/modules/catalog/catalog.controller.ts:86-97); PATCH /v1/catalog/categories/:id {name, slug, parentId, position, isActive} (catalog.controller.ts:99-111; catalog.schemas.ts:67-77, code deliberately absent); PUT /v1/storefront/categories/:id web fields (storefront.controller.ts:261-273). No DELETE route, although org_admin already holds 'delete Catalog' (packages/contracts/src/permissions/matrix.ts:286). erp_app has DELETE on catalog.categories (packages/db/migrations/0024_catalog_policies.sql:44).",
+        "referencedBy": [
+          "catalog.products.category_id FK restrict (packages/db/src/schema/catalog/index.ts:324-328)",
+          "catalog.categories.parent_id self FK restrict (catalog/index.ts:157-161)",
+          "storefront.nav_items.category_id FK restrict (packages/db/src/schema/storefront/index.ts:209-213; migration 0103:143)",
+          "promo.codes.category_ids jsonb, a soft reference with no FK (packages/db/src/schema/promo/index.ts ~92; promo.schemas.ts:87)",
+          "storefront.legacy_ids kind 'category', soft (storefront/index.ts:273-295)",
+          "category.code is a segment inside every stored skus.code string (not an FK)"
+        ],
+        "proposedPolicy": "Add a Delete button (it uses the existing 'delete Catalog' grant). Hard delete when the category has no products in any status, no subcategories, no menu entry and is not named in any promo code's category_ids; remove its legacy_ids rows in the same transaction. When it is in use, show the counts ('Used by N products, M subcategories, K menu entries, P discount codes') and offer reassign-then-delete in one transaction: choose a target category or 'No category', move the products (PATCH categoryId; tell the owner that existing SKU codes keep the old code segment because they are stored and printed strings), move subcategories up to this category's parent, re-point or remove its category menu entries, rewrite promo category_ids, then delete. The alternative is Archive (is_active=false plus web_visible=false) as an explicit Archive/Restore button instead of the checkbox buried in Edit.",
+        "ownerImpact": "high",
+        "notes": "Inconsistencies: the new-product picker hides inactive categories (new-product.tsx:439), but the product Edit dialog lists them (product-detail.tsx:1122), and the server does not refuse an inactive category on create (catalog.service.ts:318-322). The storefront hides inactive and off-web categories (catalog-web.repository.ts:241). On the old site, delete was refused only while subcategories existed (D:/Projects/elysium main: app/api/admin/categories/[id]/route.js:53-66)."
+      },
+      {
+        "area": "Catalog",
+        "entity": "Attribute list (Size, Colour, custom)",
+        "screens": "/catalog/structure 'Sizes, colours and other lists': structure.tsx:408-579 (Rename 465-473, Add list 521-558)",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "no",
+        "restore": "n/a",
+        "apiRoutes": "GET/POST /v1/catalog/attributes (catalog.controller.ts:115-126); PATCH /v1/catalog/attributes/:id {name, position} only, strict (catalog.controller.ts:142-155; catalog.schemas.ts:107-113). No DELETE. Kind and isVariant cannot change after creation.",
+        "referencedBy": [
+          "catalog.attribute_values.attribute_id FK restrict (catalog/index.ts:248-252)",
+          "catalog.sku_values.attribute_id FK restrict (catalog/index.ts:452-456)",
+          "skus.variant_key strings are built from attribute ids (catalog/index.ts:371-388)"
+        ],
+        "proposedPolicy": "Hard delete the list and its values when no sku_values row references the attribute (a list created by mistake). Otherwise Archive: add an is_active column to catalog.attributes in a new migration. Archiving hides the list from the new-product and 'Add sizes or colours' pickers, while existing variants keep showing their labels. Restore flips it back. Message: 'Size is used by N variants of M products. Archive it to hide it from new products; existing variants keep it.'",
+        "ownerImpact": "high",
+        "notes": "catalog.attributes has no is_active or archived column (catalog/index.ts:189-218), so the schema needs a new migration. The old site kept master sizes as one editable array (D:/Projects/elysium main: app/api/admin/master-sizes/route.js:22-36), so removing a size there was a single edit."
+      },
+      {
+        "area": "Catalog",
+        "entity": "Attribute value (a size such as XXL, a colour such as Maroon)",
+        "screens": "/catalog/structure: structure.tsx:479-516 (each value chip is a rename button, 481-499); NewValue form 581-635",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "no",
+        "restore": "n/a",
+        "apiRoutes": "POST /v1/catalog/attributes/:id/values (catalog.controller.ts:128-140); PATCH /v1/catalog/attributes/:id/values/:valueId {label, position} strict (catalog.controller.ts:157-172; catalog.schemas.ts:120-126). No DELETE. erp_app has DELETE on catalog.attribute_values (0024_catalog_policies.sql:60).",
+        "referencedBy": [
+          "catalog.sku_values.value_id FK restrict (catalog/index.ts:457-461)",
+          "the value code is a segment of stored skus.code strings and printed labels",
+          "skus.variant_key (value ids)"
+        ],
+        "proposedPolicy": "Hard delete when no sku_values row uses the value (a mistyped value that was never used). Otherwise Archive: add an is_active column to catalog.attribute_values. An archived value is hidden from the pickers on new products and when extending variants, and existing SKUs still show its label. Offer a second action, 'Also archive the N variants with this value' (a bulk PATCH /v1/catalog/skus/:id {status: archived}). Restore un-archives the value. The message names the variant and product counts.",
+        "ownerImpact": "high",
+        "notes": "No is_active column exists (catalog/index.ts:220-256). Positions can change through the API, but no UI reorders values. The extend dialog already says an existing value cannot be taken off and its variants must be archived instead (product-detail.tsx:843)."
+      },
+      {
+        "area": "Catalog",
+        "entity": "Product",
+        "screens": "/catalog list (apps/console/src/routes/catalog/products.tsx:118-126 status column, 166-170 status filter incl. archived); /catalog/$productId (product-detail.tsx:241-243 Archive/Reactivate button, 380-397 ConfirmDialog, EditProductDialog 1055-1137 with a status select that includes archived); /catalog/new (new-product.tsx); /catalog/import",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "GET/POST /v1/catalog/products, GET /v1/catalog/products/:id (catalog.controller.ts:176-196); PATCH /v1/catalog/products/:id incl. status 'archived' (catalog.controller.ts:198-210; catalog.schemas.ts:179-187); PUT /v1/storefront/products/:id web fields (storefront.controller.ts:247-259); POST /v1/catalog/imports/products(/dry-run) (catalog.controller.ts:350-363). No DELETE.",
+        "referencedBy": [
+          "catalog.skus.product_id FK restrict (catalog/index.ts:410-414), so everything that references its SKUs (see the SKU row)",
+          "catalog.product_images FK cascade (catalog/index.ts:541-545)",
+          "promo.codes.product_ids jsonb, soft (promo/index.ts ~90; promo.schemas.ts:86)",
+          "marketing.campaigns.product_ids jsonb, soft (packages/db/src/schema/marketing/index.ts:64)",
+          "storefront.legacy_ids kind 'product', soft; products.previous_slugs drive redirects"
+        ],
+        "proposedPolicy": "Hard delete only when none of the product's SKUs has an operational reference: no stock_movements, order_lines, POS sale or return lines, supply or supply-return lines, adjustment, transfer, count, count-scan or stock-in-hand lines, reservations, sku_costs, flash_sale_items or marketing.leads (a mistaken or duplicate draft). In one transaction, also remove sku_values, zero-quantity stock_levels rows (created by a reorder-level set), sku_price_history, product_images (the files stay for cleanup), legacy_ids, and the id inside promo and campaign jsonb lists. This needs a new migration: sku_price_history is insert/select only for erp_app (0024_catalog_policies.sql:92) with FK restrict (catalog/index.ts:494-498), and trigger skus_record_price writes a history row on every SKU insert (0026_catalog_integrity.sql:174-199), so today even a never-used SKU cannot be deleted. Use a SECURITY DEFINER catalog.purge_unused_product(org_id, id) that re-checks every reference inside the transaction. Otherwise Archive, which already exists, with the message 'This product has stock or sales history (N movements, M orders). It is archived instead: it leaves the desk, the till and the website; its stock and history stay.' Restore already exists.",
+        "ownerImpact": "high",
+        "notes": "The old site hard-deleted products (D:/Projects/elysium main: app/api/products/[id]/route.js:83-89). M38a's new product with opening stock posts movements immediately, so a product created with stock by mistake can only be written off (adjustment) and archived. Variant-wise SELLING price already exists but may not be discoverable: per-variant prices at create (variantPrices D-422, catalog.schemas.ts:167-175; new-product.tsx:245-251) and later through 'Edit prices' on the variant grid (product-detail.tsx:510-517, 559 -> PUT /v1/catalog/prices). Variant-wise BUYING price cannot live in the catalog (invariant 5, catalog/index.ts:27-41). It already exists per SKU as supply_lines.unit_cost_poisha, stock_in_hand_lines.unit_cost_poisha and inventory.sku_costs.wac_poisha (packages/db/src/schema/inventory/index.ts:308-337), and only read:cost roles may see it, through serializeFor (the new-product cost column is gated at new-product.tsx:361)."
+      },
+      {
+        "area": "Catalog",
+        "entity": "SKU / variant",
+        "screens": "/catalog/$productId variant grid: product-detail.tsx:445-775 (per-variant Archive/Restore 739-741, ConfirmDialog 764-772, Edit prices 510-517 and 559, 'Add sizes or colours' extend dialog ~800-861); stickers; /stock",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "POST /v1/catalog/products/:id/variants (extend only, catalog.controller.ts:220-232); PUT /v1/catalog/prices (:243-249); PUT /v1/catalog/skus/:id/barcode (:258-264); PATCH /v1/catalog/skus/:id {status: active|archived} (:266-273; catalog.service.ts:575-581, D-423). No DELETE. SKU identity is frozen by trigger skus_freeze_identity (0026_catalog_integrity.sql:121-145).",
+        "referencedBy": [
+          "inventory.stock_levels, stock_movements, sku_costs, reservations, stock_transfer_lines, count_lines, adjustment_lines, stock_in_hand_lines, count_scans (packages/db/src/schema/inventory/index.ts:170,260,334,378,484,572,715,945,991; migration 0113:93,104)",
+          "sales.order_lines (packages/db/src/schema/orders/index.ts:632)",
+          "pos.sale_lines, pos.return_lines (packages/db/src/schema/pos/index.ts:367,540)",
+          "supply.supply_lines, supply.return_lines (packages/db/src/schema/supply/index.ts:443,577)",
+          "promo.flash_sale_items (promo/index.ts:409-413)",
+          "marketing.leads.sku_id (marketing/index.ts:192)",
+          "catalog.sku_price_history FK restrict (catalog/index.ts:494-498); catalog.sku_values cascade (:447-451)",
+          "promo.codes.sku_ids jsonb (soft); storefront.legacy_ids kind 'variant' (soft)"
+        ],
+        "proposedPolicy": "Hard delete only an unused variant (for example one added by mistake through 'Add sizes or colours'): none of the references listed exist and stock_levels rows are all zero. Use the same SECURITY DEFINER purge, because the price-history row blocks it today. Otherwise Archive, which already exists (D-423): the stock stays and can still be transferred, counted or written off. Because the unique variant key (catalog/index.ts:406) refuses re-adding an archived combination, the extend dialog should offer 'Restore' for it instead of failing.",
+        "ownerImpact": "high",
+        "notes": "Archive and restore already work. The owner's 'price varies by size' need is already covered by the per-SKU price (see the Product row). Cost per variant is in inventory and supply only."
+      },
+      {
+        "area": "Catalog",
+        "entity": "Product image",
+        "screens": "/catalog/$productId: product-detail.tsx:901-959 (move up/down 933-950, Remove 951-959, no confirm)",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "yes",
+        "archive": "n/a",
+        "restore": "n/a",
+        "apiRoutes": "POST /v1/catalog/products/:id/images; PUT /v1/catalog/products/:id/images/order; DELETE /v1/catalog/products/:id/images/:imageId (catalog.controller.ts:277-317)",
+        "referencedBy": [
+          "nothing references a product_images row; it references files.objects FK restrict (catalog/index.ts:546-550)"
+        ],
+        "proposedPolicy": "Keep the hard delete of the link (it already exists). Optionally clean up the files.objects row and the R2 object when no category image, hero slide, flash banner or other product uses it, as the old site's deleteImageIfUnreferenced did.",
+        "ownerImpact": "high",
+        "notes": "Already complete. The file object is left behind in R2."
+      },
+      {
+        "area": "Website (storefront)",
+        "entity": "Size chart",
+        "screens": "/website/size-charts: apps/console/src/routes/website/size-charts.tsx:33-112 (Edit 67-71, Delete 76-81, ConfirmDialog 98-112); chart picker on the product Website card, apps/console/src/routes/catalog/website-card.tsx:55-73, 138-141",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "yes",
+        "archive": "no",
+        "restore": "n/a",
+        "apiRoutes": "GET/POST /v1/storefront/size-charts, PUT/DELETE /v1/storefront/size-charts/:id (apps/server/src/modules/storefront/storefront.controller.ts:177-215). An in-use chart answers 409 STOREFRONT_IN_USE with a count (storefront.service.ts:401-415, D-502). Ability 'delete Storefront' is held by org_admin and marketing (matrix.ts:330, 436).",
+        "referencedBy": [
+          "catalog.products.size_chart_id FK restrict (packages/db/migrations/0104_m33_storefront_policies.sql:128-132)",
+          "storefront.legacy_ids kind 'size_chart' (soft)"
+        ],
+        "proposedPolicy": "Keep the hard delete when the chart is unused. When it is in use, replace the dead-end 409 with reassign-then-delete: list the products that use the chart and offer 'Move them to [another chart | no chart] and delete' in one transaction (bulk-set products.size_chart_id through CATALOG_API), and also remove its legacy_ids rows. No archive is needed.",
+        "ownerImpact": "high",
+        "notes": "Delete already exists, but it lives under Website > Size charts and not in Catalog setup (/catalog/structure), where the owner looks for sizes. The owner's 'size chart' may also mean the Size list (an attribute), which has no delete. Add a link from /catalog/structure. Today an in-use chart can only be freed by editing each product's Website card one at a time."
+      },
+      {
+        "area": "Website (storefront)",
+        "entity": "Hero slide",
+        "screens": "/website/hero: apps/console/src/routes/website/hero.tsx:45-149 (New 61, Edit 103-107, Delete 112-117, ConfirmDialog 137-149, On/Off isActive in the editor 173-183)",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "yes",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "GET/POST /v1/storefront/hero-slides, PUT /hero-slides/order, PUT/DELETE /hero-slides/:id (storefront.controller.ts:83-128; storefront.service.ts:274-279)",
+        "referencedBy": [
+          "nothing references a slide; it references files.objects for its desktop and mobile images (storefront/index.ts:155-164)"
+        ],
+        "proposedPolicy": "Keep it as is: hard delete (nothing references a slide) plus the On/Off switch as a soft hide. Optionally clean up image files no other row uses.",
+        "ownerImpact": "high",
+        "notes": "Complete; no gap."
+      },
+      {
+        "area": "Website (storefront)",
+        "entity": "Menu item (link, category entry, dropdown)",
+        "screens": "/website/menu: apps/console/src/routes/website/menu.tsx:46-353 (New 80, Edit 218-222, Delete 227-232, ConfirmDialog 116-128, isActive 278-297, the category picker shows only active categories 353)",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "yes",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "GET/POST /v1/storefront/nav-items, PUT /nav-items/layout, PUT/DELETE /nav-items/:id (storefront.controller.ts:132-175; storefront.service.ts:339-347)",
+        "referencedBy": [
+          "storefront.nav_items.parent_id self FK ON DELETE CASCADE (storefront/index.ts:204-208; migration 0103:142)",
+          "a category entry holds catalog.categories with FK restrict (storefront/index.ts:209-213), so the menu item blocks a category delete"
+        ],
+        "proposedPolicy": "Keep the hard delete. Deleting a dropdown silently cascades to every item under it, and the confirm text only says 'The website stops showing it at once.' (packages/i18n/src/locales/sections/website.en.ts:111). Name the child count ('and its N items') or offer to move the children to the top level first. When a category is deleted or archived, offer to remove its menu entries in the same dialog.",
+        "ownerImpact": "high",
+        "notes": "Delete works; the cascade warning is missing."
+      },
+      {
+        "area": "Website (storefront)",
+        "entity": "Website site key (storefront read key)",
+        "screens": "/website/connection: apps/console/src/routes/website/connection.tsx:28-120 (Issue 36-39, Revoke 92-94, ConfirmDialog 108-120)",
+        "create": "yes",
+        "edit": "no",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "no",
+        "apiRoutes": "GET/POST /v1/storefront/site-keys, POST /v1/storefront/site-keys/:id/revoke (storefront.controller.ts:219-243)",
+        "referencedBy": [
+          "storefront.checkout_submissions.site_key_id FK restrict (migration 0115:199)",
+          "audit log entries (storefront.site_key_issued and storefront.site_key_revoked)"
+        ],
+        "proposedPolicy": "Keep revoke-only: never delete and never un-revoke, because a leaked secret must stay dead. Optionally hide revoked keys behind a filter.",
+        "ownerImpact": "low",
+        "notes": "Correct as built (storefront/index.ts:297-305: revoked, never deleted)."
+      },
+      {
+        "area": "Settings",
+        "entity": "Intake site key (landing-page order key)",
+        "screens": "/settings/site-keys: apps/console/src/routes/settings/site-keys.tsx:53-131",
+        "create": "yes",
+        "edit": "no",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "no",
+        "apiRoutes": "GET/POST /v1/intake/site-keys, POST /v1/intake/site-keys/:id/revoke under subject LandingPage (apps/server/src/modules/intake/intake.controller.ts:102-128)",
+        "referencedBy": ["orders posted to public/v1/orders signed by the key (audit)"],
+        "proposedPolicy": "No change. This is part of the landing-page intake topic, which the owner has dropped (landing page builder out of scope, D-290; ncom handles it). It is left exactly as it is, and revoke-only is correct anyway.",
+        "ownerImpact": "low",
+        "notes": "Excluded from the delete work on the owner's instruction to leave the landing-page topic alone."
+      },
+      {
+        "area": "Campaigns",
+        "entity": "Discount / promo code",
+        "screens": "/campaigns: apps/console/src/routes/campaigns/discounts.tsx:207-253 (Pause/Resume 211-218, Archive 226-230, New 253); archived rows show no actions at all (207)",
+        "create": "yes",
+        "edit": "no",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "api-only",
+        "apiRoutes": "GET/POST /v1/promo/codes; PATCH /v1/promo/codes/:id {status: active|paused|archived} (apps/server/src/modules/promo/promo.controller.ts:61-99); GET /v1/promo/codes/:id/redemptions. The terms are frozen by design (promo.controller.ts:87-90). setStatus has no transition guard, so archived can go back to active (promo.service.ts:633-657).",
+        "referencedBy": [
+          "promo.redemptions.code_id FK (migration 0077:170)",
+          "sales.orders.promo_code_id FK (migration 0079:15; orders/index.ts:446)",
+          "sales.occasion_issues.promo_code_id FK (migration 0077:162)",
+          "promo.discount_tiers.code_id FK restrict (migration 0109:108)"
+        ],
+        "proposedPolicy": "Hard delete the code and its tiers when it was never used: no redemptions, no orders.promo_code_id and no occasion_issues. Otherwise Archive, which already exists, with the message 'Used on N orders; archived so those orders keep their discount record.' Add a Restore button (archived to paused). To change terms, offer 'Duplicate' instead of editing.",
+        "ownerImpact": "medium",
+        "notes": "The ability subject is named 'LandingPage' (D-203). That is only a name and has nothing to do with the dropped landing-page builder, so this audit proposes no change to it. The old site hard-deleted discounts (D:/Projects/elysium main: app/api/admin/discounts/[id]/route.js:70)."
+      },
+      {
+        "area": "Campaigns",
+        "entity": "Flash sale",
+        "screens": "/campaigns/flash-sales: apps/console/src/routes/campaigns/flash-sales.tsx:81-191 (Switch on/off 167-173, Duplicate 177-183); editor /campaigns/flash-sales/$saleId (flash-sale-editor.tsx)",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "no",
+        "restore": "n/a",
+        "apiRoutes": "GET/POST /v1/promo/flash-sales; GET/PUT/PATCH {enabled} /v1/promo/flash-sales/:id; POST /:id/duplicate (apps/server/src/modules/promo/flash.controller.ts:52-112; 'nobody deletes' at 45-47). SKUs left out of a PUT are switched off, not deleted (:81).",
+        "referencedBy": [
+          "promo.flash_sale_items.flash_sale_id FK restrict (migration 0109:103)",
+          "promo.flash_claims.flash_sale_item_id FK restrict, and claims reference sales.orders (migration 0109:100-101)",
+          "storefront.legacy_ids kind 'flash_sale' (soft)"
+        ],
+        "proposedPolicy": "Hard delete the sale and its items when nothing was ever sold: no flash_claims rows and units_sold = 0 on every item. Otherwise Archive (a new archived_at column) so that ended sales leave the list but keep the record of the prices they sold at. Restore un-archives the sale, switched off.",
+        "ownerImpact": "medium",
+        "notes": "With only an on/off switch, the list only grows. The old site hard-deleted flash sales (D:/Projects/elysium main: app/api/admin/flash-sales/[id]/route.js:80-87)."
+      },
+      {
+        "area": "Campaigns",
+        "entity": "SMS template",
+        "screens": "/campaigns/templates: apps/console/src/routes/campaigns/templates.tsx:82-116 (Edit 95, New 116), editor 163-193 with an isActive switch at 281",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "GET /v1/notify/templates; PUT /v1/notify/templates (upsert by key, isActive) (apps/server/src/modules/notify/notify.controller.ts:54-68; notify.schemas.ts:11-26)",
+        "referencedBy": [
+          "notify.messages.template_key, text with no FK (packages/db/src/schema/notify/index.ts:102)",
+          "system code paths send fixed keys (for example order.confirmed); OTP templates are seeded"
+        ],
+        "proposedPolicy": "Hard delete only a marketing template that was never sent (no notify.messages row with its key) and whose key the system does not send. Otherwise switch it off (already exists).",
+        "ownerImpact": "low",
+        "notes": "The soft hide already exists."
+      },
+      {
+        "area": "Campaigns",
+        "entity": "SMS opt-out",
+        "screens": "/campaigns/opt-outs: apps/console/src/routes/campaigns/opt-outs.tsx",
+        "create": "yes",
+        "edit": "no",
+        "delete": "yes",
+        "archive": "n/a",
+        "restore": "n/a",
+        "apiRoutes": "GET/POST /v1/notify/opt-outs; DELETE /v1/notify/opt-outs/:phone (notify.controller.ts:70-94; migration 0078 grants DELETE)",
+        "referencedBy": [],
+        "proposedPolicy": "Keep the hard delete: a buyer opting back in removes the row.",
+        "ownerImpact": "low",
+        "notes": "Complete."
+      },
+      {
+        "area": "Marketing",
+        "entity": "Ad campaign (and its Meta/UTM refs)",
+        "screens": "/marketing/campaigns: apps/console/src/routes/marketing/campaigns.tsx:108, 172-182 (Archive/Restore), 305 (New), 362 (map ref)",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "GET/POST /v1/marketing/campaigns; PATCH /v1/marketing/campaigns/:id incl. status active|archived (apps/server/src/modules/marketing/marketing.controller.ts:69-100; marketing.schemas.ts:104-114); POST/DELETE /v1/marketing/campaigns/:id/refs(/:refId) (marketing.controller.ts:102-126)",
+        "referencedBy": [
+          "marketing.ad_spend FK (migration 0084:128)",
+          "marketing.campaign_refs FK (migration 0084:130)",
+          "marketing.leads.campaign_id FK (migration 0084:135)",
+          "promo.codes.campaign_id FK (migration 0084:152)"
+        ],
+        "proposedPolicy": "Hard delete the campaign and its refs when it has no ad spend, no leads and no promo codes. Otherwise Archive, which already exists, as does Restore.",
+        "ownerImpact": "low",
+        "notes": "Refs already have a hard delete. campaigns.product_ids is a jsonb soft reference to products (marketing/index.ts:64), which a product purge must clean."
+      },
+      {
+        "area": "Inventory",
+        "entity": "Stock location",
+        "screens": "/catalog/structure 'Locations': structure.tsx:693-893 (Add 769-823, Edit 760-763, an 'In use' checkbox as the archive at 885-888; all kinds listed so one can be switched back on, 737-739)",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "GET/POST /v1/inventory/locations; PATCH /v1/inventory/locations/:id {name, isActive} (apps/server/src/modules/inventory/inventory.controller.ts:97-134; inventory.schemas.ts:46-52). Switching off is refused while the location holds stock, reservations or a transfer in transit (stock.service.ts:181-194).",
+        "referencedBy": [
+          "inventory.stock_levels, stock_movements, reservations, stock_transfers from/to/transit, count_sessions, adjustments, stock_in_hand_entries (inventory/index.ts:175,265,383,428-438,529,632,857)",
+          "sales.orders.location_id (orders/index.ts:514)",
+          "pos.registers, pos.sales, pos.returns (pos/index.ts:125,294,475)",
+          "supply.supplies, supply.returns (supply/index.ts:348,519)",
+          "courier.return_receipts location and damaged location (courier/index.ts:624,629)",
+          "storefront.web_locations (storefront/index.ts:124-128)"
+        ],
+        "proposedPolicy": "Hard delete only a location created by mistake that nothing references: no movements, levels, transfers, counts, registers, supplies, orders or web_locations. Otherwise deactivate, which already exists with a guard. Replace the hidden checkbox with explicit Archive and Restore buttons.",
+        "ownerImpact": "medium",
+        "notes": "The soft hide is safe and guarded already."
+      },
+      {
+        "area": "Org",
+        "entity": "Branch",
+        "screens": "/branches and /branches/$branchId: apps/console/src/routes/branches/branches-page.tsx, branch-detail.tsx (dashboards only; they read /v1/pos/branches, apps/console/src/routes/branches/api.ts:144-146)",
+        "create": "no",
+        "edit": "no",
+        "delete": "no",
+        "archive": "no",
+        "restore": "n/a",
+        "apiRoutes": "Read only: GET /v1/pos/branches (pos.controller.ts:238), GET /v1/hr/branch-options (hr.controller.ts:115). Branches are created only by the seed (packages/db/src/seed/index.ts:131) and the preview setup (apps/server/src/preview/setup.ts:90). The column org.branches.is_active exists (packages/db/src/schema/org/index.ts:83), but no route sets it.",
+        "referencedBy": [
+          "org.locations (org/index.ts:148)",
+          "ledger.accounts, ledger.journal_lines (ledger/index.ts:146,260)",
+          "wallets.wallets, cash_entries, closings (wallets/index.ts:136,211,379)",
+          "hr.employees, attendance_days, employee_loans, payroll_lines (hr/index.ts:321,581,651,1001)",
+          "iam.membership_branches (iam/index.ts:266)",
+          "sales.orders (orders/index.ts:494)",
+          "pos.registers, shifts, sales, returns, review_items, branch_closings",
+          "supply.supplies, returns, supplier_payments",
+          "courier.consignments, settlements, return_receipts",
+          "inventory.count_sessions, adjustments, stock_in_hand_entries",
+          "approvals.approval_requests, targets.targets"
+        ],
+        "proposedPolicy": "Never hard delete once anything references the branch, which is true from the first day. Add rename and deactivate (is_active) with a guard: no active registers or open shifts, zero balances in its wallets, no active employees and no stock at its locations. Creating a branch should also create its showroom location and hand-cash wallet, as the seed does.",
+        "ownerImpact": "medium",
+        "notes": "The owner cannot add or rename a branch at all today. This probably belongs with M32 (mother ERP)."
+      },
+      {
+        "area": "Supply",
+        "entity": "Supplier",
+        "screens": "/supply: apps/console/src/routes/supply/suppliers.tsx:61-259 (Add form, 'include inactive' toggle 173-176, Deactivate 251-259); /supply/suppliers/$supplierId supplier-detail.tsx (add contact 189, add note)",
+        "create": "yes",
+        "edit": "api-only",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "api-only",
+        "apiRoutes": "GET/POST /v1/supply/suppliers; GET/PATCH /v1/supply/suppliers/:id {name, phone, email, address, paymentTermsDays, isActive} (apps/server/src/modules/supply/supply.controller.ts:98-134; supply.schemas.ts:150-160). The console only ever calls PATCH with isActive:false (suppliers.tsx:87-88; api.ts:161). No DELETE; migration 0036 grants none.",
+        "referencedBy": [
+          "supply.supplies, supply.returns, supply.supplier_payments, supply.advance_applications (supply/index.ts:343,509,644,731)",
+          "supply.supplier_contacts, supplier_notes, supplier_documents (supply/index.ts:188,226,269)",
+          "ledger party balances and statements"
+        ],
+        "proposedPolicy": "Hard delete, together with its contacts, notes and documents, when the supplier has no supply entries (draft or received), returns, payments or advance applications, for example a duplicate typed by mistake. Otherwise deactivate, which already exists, with the message 'N entries and payments name this supplier.' Add the missing Edit form and a Reactivate button; the API already supports both.",
+        "ownerImpact": "medium",
+        "notes": "Contacts, notes and documents can be added but never edited or removed; nothing references them, so a hard delete with an audit entry is safe."
+      },
+      {
+        "area": "Settings",
+        "entity": "Delivery zone",
+        "screens": "/settings/zones: apps/console/src/routes/settings/zones.tsx:47-173 (New 47, Edit 96, active checkbox 136-148)",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "GET /v1/delivery-zones, /areas, /for-area; PUT /v1/delivery-zones (upsert by code incl. isActive) (apps/server/src/modules/orders/orders.controller.ts:589-635; orders.schemas.ts:514-523)",
+        "referencedBy": [
+          "sales.orders.delivery_zone_id (orders/index.ts:504)",
+          "courier.consignments.delivery_zone_id (courier/index.ts:412)",
+          "courier.selection_rules (courier/index.ts:1038)",
+          "sales.delivery_zone_areas (orders/index.ts:190-235)"
+        ],
+        "proposedPolicy": "Deactivate, which already exists. Hard delete, together with its area mappings and selection rules, only when no order or consignment ever used the zone.",
+        "ownerImpact": "low",
+        "notes": "The soft hide already exists."
+      },
+      {
+        "area": "Settings",
+        "entity": "Courier account (and courier)",
+        "screens": "/settings/couriers: apps/console/src/routes/settings/couriers.tsx:62-223 (New 62, Edit 129, isActive 178-198)",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "GET /v1/courier/accounts (inactive included), GET /v1/courier/providers, POST /v1/courier/accounts (upsert incl. isActive) (apps/server/src/modules/courier/courier.controller.ts:110-136; courier.schemas.ts:67). Courier selection rules: GET/PUT /v1/courier/selection-rules (courier.controller.ts:230-249), API only with no console screen. sales.couriers rows are seeded, and no route adds or hides a courier.",
+        "referencedBy": [
+          "courier.consignments, webhook_deliveries, settlements, settlement_fetch_runs (courier/index.ts:397,564,821,1143)",
+          "the courier row is referenced by courier_accounts, consignments, settlements, selection_rules, delivery_zones.default_courier_id and sales.orders.courier_id (courier/index.ts:229,402,826,1043; orders/index.ts:161,509)"
+        ],
+        "proposedPolicy": "Deactivate, which already exists. Hard delete, wiping its credentials, only an account that was never used: no consignments, settlements, webhook deliveries or fetch runs.",
+        "ownerImpact": "low",
+        "notes": "The soft hide already exists."
+      },
+      {
+        "area": "Settings",
+        "entity": "POS register",
+        "screens": "/settings/registers: apps/console/src/routes/settings/registers.tsx:35-115 (Add 59, Activate/Deactivate toggle 109-115; the comment at 35 says a register is never deleted)",
+        "create": "yes",
+        "edit": "api-only",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "GET/POST /v1/pos/registers; PATCH /v1/pos/registers/:id {name, isActive} (apps/server/src/modules/pos/pos.controller.ts:82-112; pos.schemas.ts:49-50). The console never sends a rename.",
+        "referencedBy": [
+          "pos.shifts, pos.sales, pos.returns register_id FK (migration 0068_pos_schema.sql:322,356,368)"
+        ],
+        "proposedPolicy": "Deactivate, which already exists. Hard delete only a register that never opened a shift. Add a rename to the console.",
+        "ownerImpact": "low",
+        "notes": ""
+      },
+      {
+        "area": "Accounts",
+        "entity": "Wallet (cash, bank, MFS)",
+        "screens": "/accounts/wallets: apps/console/src/routes/accounts/wallets.tsx:228-449 (New 228, Edit 329-333, isActive in the edit form 443)",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "GET/POST /v1/accounts/wallets; PATCH /v1/accounts/wallets/:id {provider, requiresDailyClosing, isActive} (apps/server/src/modules/wallets/wallets.controller.ts:80-115; wallets.schemas.ts:73-80). Switching off is refused unless the balance is zero (wallets.service.ts:220-228).",
+        "referencedBy": [
+          "ledger.journal_lines through its ledger account (ledger/index.ts:255)",
+          "wallets.cash_entries, transfers, closings",
+          "sales.order_advances, investors.investments and withdrawals, loans.loans and payments, hr.employee_loans and payroll_runs, supply.supplier_payments (all FK to ledger accounts)"
+        ],
+        "proposedPolicy": "Never hard delete once any journal line has posted to the wallet (journals never change). Hard delete, with its ledger account, only a wallet that was never posted to and is not a branch's hand-cash wallet. Otherwise deactivate, which already exists with a zero-balance guard.",
+        "ownerImpact": "low",
+        "notes": "The soft hide is correct as built."
+      },
+      {
+        "area": "Accounts",
+        "entity": "Cash-entry category / chart of accounts",
+        "screens": "/accounts/ledger (read); category pickers in cash entries",
+        "create": "no",
+        "edit": "no",
+        "delete": "no",
+        "archive": "no",
+        "restore": "n/a",
+        "apiRoutes": "GET /v1/accounts/categories (wallets.controller.ts:117); GET /v1/ledger/accounts (ledger.controller.ts:60). Both are seeded by db:seed, and no route writes them.",
+        "referencedBy": [
+          "ledger.journal_lines.account_id (ledger/index.ts:255)",
+          "wallets.cash_entries.category_account_id (wallets/index.ts:206)"
+        ],
+        "proposedPolicy": "Add create, rename and archive for expense and income heads. Never delete one that has a posted journal line; hard delete only a head that was never posted.",
+        "ownerImpact": "medium",
+        "notes": "The owner cannot add an expense head today."
+      },
+      {
+        "area": "HR",
+        "entity": "Employee",
+        "screens": "/people: apps/console/src/routes/hr/people.tsx:162-310 (Add), edit form with status active/suspended/resigned/terminated 739-746",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "yes",
+        "apiRoutes": "GET/POST /v1/hr/employees; PATCH /v1/hr/employees/:id incl. status (apps/server/src/modules/hr/hr.controller.ts:104-171; hr.schemas.ts:127)",
+        "referencedBy": [
+          "hr.salary_structures, attendance_days, employee_loans, payroll_inputs, payroll_lines (hr/index.ts:410,576,646,919,996)",
+          "targets.targets, target_members, bonus_awards (targets/index.ts:110,167,336)"
+        ],
+        "proposedPolicy": "Never hard delete once salary, attendance, payroll, loan or target rows exist. Hard delete only an employee created by mistake who has none of them. Otherwise use the status resigned or terminated, which already exists.",
+        "ownerImpact": "low",
+        "notes": "Payroll inputs already have a DELETE (hr.controller.ts:365)."
+      },
+      {
+        "area": "Users",
+        "entity": "Staff user / membership",
+        "screens": "/users: apps/console/src/routes/users/users-page.tsx (invite, roles, deactivate 76 and 544)",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "no",
+        "apiRoutes": "GET /v1/users; PUT /v1/users/:id/roles; POST /v1/users/:id/deactivate, /password-link, /two-factor/reset (apps/server/src/modules/iam/users.controller.ts:52-110); POST /v1/users (iam.controller.ts:137)",
+        "referencedBy": ["audit log, created_by and changed_by text across modules, approvals"],
+        "proposedPolicy": "Never delete; memberships are switched off so the history stays (matrix.ts:274). Add an explicit Reactivate.",
+        "ownerImpact": "low",
+        "notes": "There is no reactivate route. I did not verify whether PUT roles revives a deactivated membership."
+      },
+      {
+        "area": "HR",
+        "entity": "Work calendar and holiday",
+        "screens": "There is no create screen; the console only lists calendars (apps/console/src/routes/hr/api.ts:297)",
+        "create": "api-only",
+        "edit": "no",
+        "delete": "no",
+        "archive": "no",
+        "restore": "n/a",
+        "apiRoutes": "GET/POST /v1/hr/calendars; POST /v1/hr/calendars/:id/holidays (hr.controller.ts:232-258)",
+        "referencedBy": [
+          "hr.calendar_holidays.calendar_id FK (hr/index.ts:236)",
+          "hr.employees.calendar_id (hr/index.ts:284)"
+        ],
+        "proposedPolicy": "Holiday: hard delete or edit allowed while no payroll run for that month has been submitted or paid, because a holiday changes proration. Calendar: rename, and deactivate when employees use it.",
+        "ownerImpact": "low",
+        "notes": "A holiday entered by mistake cannot be removed."
+      },
+      {
+        "area": "Loans",
+        "entity": "Lender",
+        "screens": "/loans: apps/console/src/routes/loans/loans-page.tsx (create lender)",
+        "create": "yes",
+        "edit": "no",
+        "delete": "no",
+        "archive": "no",
+        "restore": "n/a",
+        "apiRoutes": "GET/POST /v1/loans/lenders (apps/server/src/modules/loans/loans.controller.ts:47-61)",
+        "referencedBy": ["loans.loans.lender_id (packages/db/src/schema/loans/index.ts:73)"],
+        "proposedPolicy": "Add edit. Hard delete only when the lender has no loans; otherwise keep the lender.",
+        "ownerImpact": "low",
+        "notes": ""
+      },
+      {
+        "area": "Investors",
+        "entity": "Investor",
+        "screens": "/investors and /investors/$investorId: apps/console/src/routes/investors/investors-page.tsx, investor-detail.tsx",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "yes",
+        "restore": "api-only",
+        "apiRoutes": "GET/POST /v1/investors; GET/PATCH /v1/investors/:id incl. status 'exited' (apps/server/src/modules/investors/investors.controller.ts:86-320; investors.schemas.ts:79)",
+        "referencedBy": [
+          "investors.investments, distributions, withdrawals, documents; ledger journal lines"
+        ],
+        "proposedPolicy": "Never hard delete after any investment; exit already exists. Hard delete only an investor created by mistake with no investment.",
+        "ownerImpact": "low",
+        "notes": "The schema only accepts 'exited', so I did not verify any path back."
+      },
+      {
+        "area": "Customers",
+        "entity": "Customer (buyer)",
+        "screens": "/customers: apps/console/src/routes/customers/customers-page.tsx, profile.tsx; /website/customers lists website accounts read-only",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "no",
+        "archive": "no",
+        "restore": "n/a",
+        "apiRoutes": "GET/POST /v1/customers; GET/PATCH /v1/customers/:id (apps/server/src/modules/orders/orders.controller.ts:510-580)",
+        "referencedBy": [
+          "sales.orders, sales.customer_addresses",
+          "storefront.customer_accounts.customer_id (migration 0115:202)",
+          "promo.redemptions, sales.occasion_issues"
+        ],
+        "proposedPolicy": "No delete, because order history depends on the customer. The useful tool is merging duplicate customers. A personal-data erasure request could anonymise the name, phone and addresses in place.",
+        "ownerImpact": "low",
+        "notes": ""
+      },
+      {
+        "area": "Supply / Stock",
+        "entity": "Supply entry draft and stock-in-hand draft",
+        "screens": "/supply/entries: apps/console/src/routes/supply/entries.tsx:319, 710 (Delete draft); stock in hand: apps/console/src/routes/stock/stock-in-hand.tsx:768-778 (Delete draft)",
+        "create": "yes",
+        "edit": "yes",
+        "delete": "yes",
+        "archive": "n/a",
+        "restore": "n/a",
+        "apiRoutes": "DELETE /v1/supply/drafts/:id (supply.controller.ts:222); DELETE /v1/inventory/stock-in-hand/drafts/:id (stock-in-hand.controller.ts:165). A posted entry is reversed by a reversal journal: POST /v1/inventory/stock-in-hand/:id/reverse (stock-in-hand.controller.ts:126).",
+        "referencedBy": [
+          "drafts carry no movements or journals; a received or posted entry carries movements and journals"
+        ],
+        "proposedPolicy": "Keep it as is: hard delete for drafts, and reversal (never deletion) once posted.",
+        "ownerImpact": "low",
+        "notes": "Complete."
+      }
+    ]
+  },
+  "variants": {
+    "summary": "Read-only review of variant-wise selling price and buying price (cost) in product create and edit, D:/Projects/elysium-erp at integration-wave2 (6a56a34). Nothing touches the landing-page builder (the owner dropped it; ncom handles that).\n\n(1) Selling price per variant at creation: it works, including size x colour combinations. The /catalog/new grid (new-product.tsx:526-624) draws one row per combination (variant-grid.ts:26-43). Each row has a Price input whose placeholder is the main price (555-579). Typed prices that differ from the main price are sent as variantPrices with every value id of the row (245-252). The server matches them by value-id set, whatever the axis order (variant-prices.ts:31-61). It inserts each SKU at its own price (catalog.service.ts:334-368, 751) and refuses a price for a combination the axes do not make (CATALOG_VARIANT_INVALID). Server e2e (catalog-stock-ux.e2e.test.ts:187-221) and the console stack spec (catalog-stock.stack.ts:160) cover it. No price is ignored, overwritten, unsent or lost. The friction: every combination is typed one by one (no by-size or by-colour fill), changed rows are not highlighted, the main price stays required, and the client lets 0 or negative prices through to a server refusal.\n\n(2) Changing prices later: yes, per variant. \"Edit prices\" on the product page (product-detail.tsx:497-517, 678-703) sends PUT /v1/catalog/prices, which is all-or-nothing and keeps price history, with a fixed reason. There is no bulk tool (all XL +100, set all, percent), no category-wide reprice, and the CSV price import has no template and no export of current prices. Adding a size later has no price field: the server gives new SKUs the cheapest existing price, archived SKUs included (catalog.service.ts:414-423, 830-834), and they go on sale straight away.\n\n(3) Buying price: per-variant cost can be entered only on the Stock in hand page and in the new-product form's \"in hand\" mode, both only while the opening-stock window is open. It can also be typed line by line on Supply > Entries, one SKU per line with no product grid. The product page's Receive dialog takes one cost for all variants (stock-actions.tsx:281-312). So does the new-product form's supplier mode (new-product.tsx:303-314, 361), the only mode left once the window closes. This is the norm for a live brand, although the server takes a cost per line (supply.schemas.ts:303-326). The product page shows no cost at all (product-detail.tsx:68-70), yet the stock rows it already loads carry wacPoisha for read:cost roles (inventory.repository.ts:451-452), and they go unused. There is no last-cost or margin view anywhere. A standard buying price per variant fits invariant 5 if it lives in the supply module behind read:cost (design in the findings).\n\n(4) Compare-at price: there is no merchant-set regular price. The website's compare-at comes only from flash sales. The product page and product cards never apply live flash prices, and the \"on sale\" filter returns nothing, while the cart does charge the flash price. So the shop shows one price and the cart another; the old site's product page showed the strike-through.\n\n(5) Other friction: no barcode edit screen (the API exists), no photos per colour, no weight (couriers get the 500 g default), no \"duplicate product\", removing a size means archiving each variant one by one, adding a colour to a size-only product silently leaves the old variants on sale, AddVariants can write SKU code segments in a different order, the product spreadsheet import takes one price per product, and the size chart is only under the folded website section with no category default.",
+    "findings": [
+      {
+        "kind": "bug",
+        "severity": "high",
+        "where": "apps/console/src/routes/catalog/product-detail.tsx:812-818; apps/server/src/modules/catalog/catalog.service.ts:414-423,830-834; apps/server/src/modules/catalog/catalog.repository.ts:502-509; apps/console/src/routes/catalog/api.ts:340-356",
+        "what": "Adding a size or colour later gives the new variants no price you can choose: they start at the CHEAPEST existing SKU's price, archived SKUs included, and are sellable at once. An XXL added to a shirt whose XXL should be ৳1,590 goes live at ৳1,490, or at an archived clearance price.",
+        "evidence": "AddVariants sends only `axes` (product-detail.tsx:814-817). The console's addVariants() accepts `pricePoisha` (api.ts:347), but the UI never passes it. extendMatrix falls back to `cheapest(existing)` (catalog.service.ts:417). `existing` comes from skusOfProduct, which has no status filter (catalog.repository.ts:503-506). New SKUs are inserted 'active'.",
+        "proposal": "(a) Server: extend `extendMatrixSchema` (catalog.schemas.ts:198-202) with `variantPrices` like createProduct's, and apply domain `variantPrices()` to `plan.additions` only. Exclude archived SKUs from `cheapest`, or better, default each new combination to an active sibling's price for the same size (XXL/Blue takes XXL/Red's price), and only then to the cheapest active price. (b) Console: before submitting, list the planned new rows with an editable price per row (placeholder = the default the server will use) and send them."
+      },
+      {
+        "kind": "gap",
+        "severity": "high",
+        "where": "apps/console/src/routes/catalog/stock-actions.tsx:281-290,296-319,415-425,444-456",
+        "what": "The product page's Receive stock dialog takes ONE cost per piece for every variant, from a supplier and in hand alike. Variant-wise buying price (XL costs more than M) cannot be entered where stock is usually received.",
+        "evidence": "`costPoisha = positiveCost(takaToPoisha(costTaka))` (283) is applied to every line: `unitCostPoisha: costPoisha ?? '0'` (300, 312). QtyTable has only a Qty column (105-185). The server accepts a cost per line: createSupplySchema lines `{skuId, qty, unitCostPoisha}` (supply.schemas.ts:303-326), and pricedLines for stock in hand (stock-in-hand.schemas.ts:42-46).",
+        "proposal": "When `ability.can('read','Cost')`, add a 'Cost per piece' column to the receive QtyTable. Keep the common cost field as the fallback, using the `costOf(row)` pattern already in new-product.tsx:185-188 and stock-in-hand.tsx:441-443. Prefill each row from the standard buying price or the last received cost (see the supply design finding). Show Σ qty × cost per line as the total. Roles without read:cost still save a quantity-only draft (D-005)."
+      },
+      {
+        "kind": "gap",
+        "severity": "high",
+        "where": "apps/console/src/routes/catalog/new-product.tsx:166-168,303-314,361,599-619,687-700; docs/decisions.md D-421",
+        "what": "In the new-product form, cost per variant exists only in 'Already in hand' mode, and that mode exists only while the opening-stock window is open. 'Received from a supplier' mode hides the per-variant cost column and posts one cost for all variants. Per-variant costs typed in in-hand mode are thrown away when the person switches to supplier mode. Once Elysium closes its window, variant-wise buying price at creation is impossible.",
+        "evidence": "`showCostColumn = mayReceive && mayPrice && stockMode === 'in-hand'` (361). The supplier branch uses `unitCostPoisha: costPoisha ?? '0'` for every line (309-313), while the in-hand branch uses `costOf(line.row)` (292). `stockMode` is forced to 'supplier' when the window is closed (168). D-421 records 'one cost per piece' as an ASSUMED default.",
+        "proposal": "Show the per-variant cost column in both modes and use `costOf(row)` for supplier lines too: one-line change at 312 plus `costMissing` and `stockValue` at 208-222. Amend D-421 with a decision row. Add a stack-spec case that receives two variants at different costs, then checks sku_costs.wac_poisha for each."
+      },
+      {
+        "kind": "gap",
+        "severity": "high",
+        "where": "apps/console/src/routes/catalog/product-detail.tsx:68-70,112-135,254-264,571-748; apps/server/src/modules/inventory/inventory.repository.ts:416-418,451-452; apps/console/src/routes/stock/api.ts:101-103",
+        "what": "The product page shows a read:cost role no buying price at all: no average cost (WAC), no last cost, no margin per variant. The WAC per variant is already in the data the page loads and is discarded.",
+        "evidence": "The page comment says 'There is no cost on this page' (68-70). Its `listStock({ productId })` query (116-120) returns StockRow, which includes `wacPoisha` / `stockValuePoisha` for cost roles (stock list SQL selects `coalesce(c.wac_poisha,0)`, inventory.repository.ts:451-452; serializeFor strips them for others). VariantGrid never reads them (593-623). stock-levels.tsx:215-235 already renders the same field behind `mayReadCost`, so the pattern exists.",
+        "proposal": "Behind `ability.can('read','Cost')` and only when the field is present (as stock-levels.tsx does), add VariantGrid columns 'Avg cost' (WAC), 'Last cost' and 'Margin' = (price − WAC)/price, computed in the browser with bigint (basis points, no floats). Add a 'Stock value' tile (Σ stockValuePoisha). Show '—' when the SKU has no stock row or on_hand = 0 with WAC 0, because coalesce(…,0) otherwise reads as 'cost ৳0'. No catalog change; cost still leaves only through inventory/supply routes and serializeFor. Rewrite the page's doc comment."
+      },
+      {
+        "kind": "advanced-idea",
+        "severity": "high",
+        "where": "new: packages/db/src/schema/supply (new table), apps/server/src/modules/supply (routes), packages/contracts/src/permissions/subjects.ts:156-186 (COST_FIELDS)",
+        "what": "There is nowhere to keep a 'standard buying price' per variant (and per supplier) that pre-fills future receipts, and no 'last purchase cost' per SKU anywhere: supply_lines.unit_cost_poisha exists but no route reads it per SKU.",
+        "evidence": "Supply routes (supply.controller.ts:98-278) have no per-SKU cost read. Supply > Entries lines start blank (entries.tsx:85-88), and draft pricing starts blank (entries.tsx:606). The catalog schema forbids any cost column by design (packages/db/src/schema/catalog/index.ts:26-41).",
+        "proposal": "Design, compatible with invariant 5: table `supply.sku_purchase_prices` (id, org_id NOT NULL FK+index, sku_id, supplier_id NULL = any supplier, `standard_unit_cost_poisha bigint NOT NULL CHECK >= 0 AND <= 9e15`, updated_by, timestamps), unique (org_id, sku_id, coalesce(supplier_id, zero-uuid)). It gets RLS ENABLE+FORCE, composite FKs (org_id, sku_id)→catalog.skus and (org_id, supplier_id)→supply.suppliers (D-047), and the minimum erp_app grants. Add both spellings `standardUnitCostPoisha`/`standard_unit_cost_poisha` and `lastUnitCostPoisha`/`last_unit_cost_poisha` to COST_FIELDS; cost-fields.test.ts fails otherwise. Routes: `GET /v1/supply/sku-costs?productId=|skuIds=` (@RequireAbility read Cost) returns per SKU {standardUnitCostPoisha, lastUnitCostPoisha, lastReceivedOn, lastSupplierName}; the last cost is the newest received supply_lines row for that SKU, with stock-in-hand lines as fallback through InventoryApi, and product/SKU names come through CatalogApi (invariant 12). `PUT /v1/supply/sku-costs` (read Cost + create Supply, ≤500 lines, audited by the interceptor) sets standard prices, including by-size fill from the product page. The table is used only to PRE-FILL the receive dialog, Supply entries, draft pricing and the new-product cost column, with an optional 'remember these costs' tick on a receipt. It never feeds WAC or a journal: the actual cost still enters only through a posted receipt (invariant 2 and 5 unchanged). Never join it into catalog responses or the reseller allow-list. Tests: route-matrix fixtures and the cost sweep for the new routes, plus an integration test that a role without read:cost gets 403 and no field."
+      },
+      {
+        "kind": "gap",
+        "severity": "high",
+        "where": "apps/console/src/routes/catalog/product-detail.tsx:497-517,531-563,678-703; apps/server/src/modules/catalog/catalog.service.ts:514-538",
+        "what": "Changing prices later is per-variant typing only: no 'all XL +৳100', 'set all to ৳1,490', '+10% on this category' or 'all Red −৳50'. A 5-size × 6-colour product needs 30 edits for one size-wide change, and catalog-wide reprices need a hand-built CSV.",
+        "evidence": "Edit mode turns each SKU's price cell into its own input (684-698). `changed` is built from those inputs only (497-504). The only other path is the SKU-code CSV (import.tsx PriceImport). PUT /v1/catalog/prices takes ≤500 explicit {skuId, pricePoisha} (catalog.schemas.ts:207-213).",
+        "proposal": "In Edit prices mode add a rule bar: [All | Size ▾ | Colour ▾] [Set to | + | − | %] [amount] [round to ৳10 ▾] Apply. It fills the inputs; nothing is saved until 'Save prices', which keeps one PUT with history. Put the arithmetic in a pure, property-tested `applyPriceRule(skus, rule)` in packages/domain/src/catalog (invariant 11), with rounding only through packages/domain/src/money (invariant 1), and refuse results ≤0. Add a catalog-wide version on the Products list (select products or a category → rule → dry-run preview like the price importer → commit through setPrices, in 500-SKU chunks or a new server endpoint in one transaction). Let the person type the price-history reason, e.g. 'Eid price', instead of the fixed 'Edited on the product page' (product-detail.tsx:511)."
+      },
+      {
+        "kind": "ux",
+        "severity": "medium",
+        "where": "apps/console/src/routes/catalog/new-product.tsx:196-199,224-225,526-626; apps/console/src/routes/catalog/variant-grid.ts:26-43",
+        "what": "Per-variant selling price at creation works but is laborious and easy to miss for a fashion brand. Every combination is typed separately (no 'price by size' that fills all colours), a row priced differently from the main price looks just like one using the placeholder, and the main 'Selling price' is required even when every variant has its own price.",
+        "evidence": "One input per row (564-577), placeholder = main price (568). `ready` requires `pricePoisha !== null` (224-225). The help text 'Leave a price blank to use the selling price' (stock-tools.en.ts:107-108) is the only hint.",
+        "proposal": "Above the grid, add a 'Price by size' strip (one input per chosen size) and a 'Price by colour' strip. Precedence: cell > size > colour > main price, resolved in a pure domain helper, with each cell's placeholder showing the price that will apply. Highlight rows whose price differs from the main price (semantic token, plus a 'own price' label beside the colour, per the a11y rules). Add a 'Fill column' button for cost and price. Default the main price to the lowest variant price when it is left blank, or rename it 'Default price'."
+      },
+      {
+        "kind": "bug",
+        "severity": "medium",
+        "where": "apps/server/src/storefront/../modules/storefront/storefront-public.service.ts:203,491-492,535; apps/server/src/modules/catalog/catalog-web.repository.ts:234; packages/domain/src/storefront/cart.ts:170-178; apps/server/src/modules/storefront/buying.service.ts:236-239",
+        "what": "The website's product page and product cards ignore live flash sales, and the 'On sale' filter returns nothing. The cart does charge the flash price, so a shopper sees ৳1,490 with no strike-through on the product page and ৳1,190 in the cart. The old site's product page showed the strike-through.",
+        "evidence": "`storefrontPrice({ id: sku.id, pricePoisha })` is called with no offers (storefront-public.service.ts:203), so compareAt is always null (price.ts:33-35). Cards hard-code `compareAt: null, onSale: false` (491-492, 535). `if (filter.onSale) conditions.push(sql`false`)` (catalog-web.repository.ts:234). The cart passes `flashPrices` to quoteCart (buying.service.ts:236-239; cart.ts:170-178). D-511 said 'M35 fills both'. Old site: `git show main:app/(store)/shop/[slug]/ProductDetailClient.js` line 226 renders flash.regularPrice line-through.",
+        "proposal": "Inject PROMO_API into the storefront public service the way flash-sales.reader.ts:26 does. Load live flash prices for the SKUs on the page and pass them to storefrontPrice (product page) and to the card min/max (cards: price = min effective price, compareAt = shelf price when lower, onSale = any SKU discounted). Implement the onSale filter as 'has an active SKU in a live flash sale' through a PromoApi id list. Add a stack test that the product page price equals the cart's unitPrice during a live sale."
+      },
+      {
+        "kind": "gap",
+        "severity": "medium",
+        "where": "packages/db/src/schema/catalog/index.ts:396; packages/domain/src/storefront/price.ts:3-36",
+        "what": "A variant has no compare-at ('regular' / MRP) price, so a brand cannot show a permanent '৳1,890 → ৳1,490' outside a flash sale, which modern shops do. The old site had none on products either.",
+        "evidence": "catalog.skus has only `price_poisha` (396). StorefrontPrice.compareAtPoisha is set only by a flash offer (price.ts:23-36).",
+        "proposal": "Add a nullable `compare_at_poisha bigint` on catalog.skus with CHECK (compare_at_poisha IS NULL OR compare_at_poisha > price_poisha). It is a selling-side field, not cost, and its name does not match the cost-column regex in cost-fields.test.ts. Record it in price history (extend the 0026 trigger or add a column). Edit it in the new-product grid and the Edit prices mode (optional 'Regular price' column with the same by-size fill), and in the price CSV (`compare_at_taka`). storefrontPrice: compareAt = flash ? max(shelf, compare_at) : compare_at. Keep it off the reseller allow-list. Note for the owner: a 'was' price must be a real recent price (consumer-protection risk), so consider warning when compare_at was never the actual price in the history."
+      },
+      {
+        "kind": "bug",
+        "severity": "medium",
+        "where": "apps/console/src/routes/catalog/product-detail.tsx:807-818; apps/console/src/routes/catalog/new-product.tsx:171-173,789-791; apps/server/src/modules/catalog/catalog.service.ts:680-686; apps/server/src/modules/catalog/catalog.repository.ts:292-297",
+        "what": "AddVariants sends axes in the attribute-list order (position, then code), while the new-product form sends size before colour. The server takes the request order as the SKU-code segment order, so variants added later can get `…-0007-RED-XL` while the originals are `…-0007-XL-RED`. That is inconsistent printed codes, and confusing for scanning and search.",
+        "evidence": "New product: `.sort((a,b) => rank(a.kind) - rank(b.kind) || a.position - b.position)` (171-173). AddVariants: `(attributes.data?.items ?? []).filter(...)` with no sort (807-809). The server uses `position: index` and comments that the request order is the code order (catalog.service.ts:680-686). listAttributes orders `by position, code` (repository 296), and with equal positions 'COLOUR' sorts before 'SIZE'. The Setup screen sets position = creation order (structure.tsx:437).",
+        "proposal": "Make the server own the order. In extendMatrix, take the axis order from the product's existing SKUs (the attribute order of the first SKU's values / its code), and for createProduct use kind rank then position. Or, as a minimum, apply new-product's `rank()` sort in AddVariants. Add an e2e test that adds XXL to a size × colour product whose Colour list sits before Size and checks the segment order."
+      },
+      {
+        "kind": "bug",
+        "severity": "medium",
+        "where": "apps/server/src/modules/catalog/catalog.service.ts:406-449; packages/domain/src/catalog/variant-matrix.ts (matrixPlan); apps/console/src/routes/catalog/product-detail.tsx:812-823",
+        "what": "Choosing a value on an axis the product does not have yet (adding a colour to a size-only product) creates the full new matrix (M/Red, M/Blue…) and leaves every old size-only SKU (M, L…) active and on sale. The server reports them as `orphaned`; the UI drops that and shows only 'N variants added'.",
+        "evidence": "matrixPlan returns `orphaned` for existing keys not in the new axes, and extendMatrix returns them ('Reported, never removed', 444-445). AddVariants' onSuccess reads only `data.created.length` (819-823).",
+        "proposal": "Before submitting, show the plan from a dry-run flag or a client-side variantRows diff: 'Will add 6, and these 3 existing variants won't match: M, L, XL. Archive them? (their stock stays and can be transferred to the new variants)'. Archive on confirmation. After success, list `orphaned` with an Archive button. A stock-move helper (transfer M → M/Red) would be an inventory adjustment pair, so keep it out of scope or route it through approvals."
+      },
+      {
+        "kind": "ux",
+        "severity": "medium",
+        "where": "apps/console/src/routes/catalog/product-detail.tsx:737-743,759-774,841-844; apps/server/src/modules/catalog/catalog.schemas.ts:231",
+        "what": "Removing a size (stop selling XS in all 6 colours) means archiving 6 variants one by one, each with its own confirm dialog. In 'Add sizes or colours' an existing value cannot be unticked.",
+        "evidence": "A per-row Archive button opens a ConfirmDialog for one SKU (737-743, 771-773). The onToggle guard `if (list.includes(valueId) && existing(axis).includes(valueId)) return;` (844). PATCH /v1/catalog/skus/:id takes one SKU (catalog.controller.ts:268-275).",
+        "proposal": "Rename the section 'Sizes and colours' and let an existing value be unticked. Show 'Archive 6 variants of XS (stock 4 stays; can still be transferred/written off)' with one confirm. Add `PATCH /v1/catalog/skus` {skuIds[] ≤500, status} in one transaction (update Catalog, audited), with a route-matrix fixture. Re-ticking restores them."
+      },
+      {
+        "kind": "ux",
+        "severity": "medium",
+        "where": "apps/console/src/routes/supply/entries.tsx:85-88,439-524,591-615; compare apps/console/src/routes/stock/stock-in-hand.tsx:488-506",
+        "what": "Supply > Entries is the one screen with a cost per line after go-live, but each line is one SKU chosen from a long dropdown, with no 'add product → all its sizes/colours' grid and no cost prefill. Receiving 30 variants of one style is 30 dropdown picks. Draft pricing likewise starts blank.",
+        "evidence": "blankLine() starts `unitCostTaka: ''` (87). Each row has a Select over `skuOptions` (445-459). Draft pricing uses `prices[line.skuId] ?? ''` (606). Stock in hand already has `addProduct` adding every active variant as a line (stock-in-hand.tsx:488-506).",
+        "proposal": "Reuse stock-in-hand's 'Add product' search in the Supply entry form: add every active variant as lines with Qty and Cost, a 'same cost for all' field, and by-size fill. Prefill cost from the standard or last cost (GET /v1/supply/sku-costs) for read:cost roles only. Do the same prefill in the draft-pricing table."
+      },
+      {
+        "kind": "gap",
+        "severity": "medium",
+        "where": "apps/console/src/routes/catalog/import.tsx:109-200; apps/console/src/routes/catalog/variant-grid.ts:83-85; packages/domain/src/catalog/product-import.ts:30,53; packages/domain/src/catalog/price-import.ts:31-34",
+        "what": "Spreadsheet paths cannot carry variant prices or buying prices. The new-products template has one `price_taka` per product. The price importer (by SKU code) has no template download and no 'export current prices', so the owner has to assemble SKU codes by hand.",
+        "evidence": "PRODUCT_TEMPLATE = 'name,category,price_taka,sizes,colours,status,description' (variant-grid.ts:83-85). PriceImport renders a file input only, while product-import.tsx:64 offers a template link. PRICE_IMPORT_REQUIRED = ['sku','price_taka'] with optional barcode and note.",
+        "proposal": "(a) `GET /v1/catalog/prices/export?productId|categoryId` (read Catalog) → CSV sku,product,variant,price_taka[,compare_at_taka], to edit in Excel and re-import (round trip). (b) An optional `prices` column in the product template, e.g. `XL=2550|XXL=2650`, parsed in product-import.ts into `variantPrices` (D-422 already supports it server-side). (c) Buying prices by CSV belong to the supply module (sku, supplier_code, standard_cost_taka), behind read:cost; never in the catalog importer, which refuses cost columns by design (price-import.ts:17-22)."
+      },
+      {
+        "kind": "gap",
+        "severity": "medium",
+        "where": "apps/server/src/modules/catalog/catalog.controller.ts:259-266; apps/server/src/modules/catalog/catalog.service.ts:555-566; apps/console/src/routes/catalog/api.ts (no setBarcode); apps/console/src/routes/catalog/product-detail.tsx:656-677",
+        "what": "A variant's barcode cannot be changed from the console. When a supplier ships with its own EAN on the tag, the brand cannot enter it, although `PUT /v1/catalog/skus/:id/barcode` exists and guards the internal range (D-603).",
+        "evidence": "grep finds no `setBarcode` or '/barcode' call in apps/console/src. The product grid shows the barcode with Copy and Print only (660-675).",
+        "proposal": "Add a pencil button on the barcode cell (update Catalog), or a 'Barcode' column in Edit mode. The scan field can fill it ('scan the supplier's tag'). Show the server's refusal for an internal-range or duplicate code. A null value restores the SKU code as the label payload, as the schema says (catalog.schemas.ts:216-224)."
+      },
+      {
+        "kind": "gap",
+        "severity": "medium",
+        "where": "packages/db/src/schema/catalog/index.ts:519-549; apps/server/src/modules/storefront/storefront-public.service.ts:190-192",
+        "what": "Photos belong to the product only, not to a colour. The website cannot switch the gallery when a shopper picks Red, and a fashion product with 4 colours shows every colour's photos mixed together.",
+        "evidence": "product_images columns: product_id, file_id, position, alt_text, with no attribute value. The product detail response returns one `images` list for the product.",
+        "proposal": "Add a nullable `attribute_value_id` to catalog.product_images with a composite FK (org_id, attribute_value_id) → attribute_values (D-047), restricted to colour-kind values in the service. On the product page each photo gets a 'Colour: Any / Red / Blue' chip. The new-product photo picker gets the same chip per pending photo. The storefront product page returns `images` plus `colour` per image, so the website filters by the chosen colour."
+      },
+      {
+        "kind": "advanced-idea",
+        "severity": "medium",
+        "where": "apps/console/src/routes/catalog/product-detail.tsx:224-245 (header actions)",
+        "what": "There is no 'Duplicate product'. A brand adding 50 products, many of them the same cut in another fabric, re-enters category, description, sizes, colours, per-variant prices, website fields and size chart each time.",
+        "evidence": "No duplicate or clone action in the catalog routes (grep). The new-product form starts from EMPTY state (new-product.tsx:103-117).",
+        "proposal": "Add a 'Duplicate' button on the product page that navigates to /catalog/new with `?from=<productId>`. The form pre-fills name ('… copy'), category, description, chosen axis values, per-variant prices (rowPrice keyed by the sorted value-id key), and website fields including size chart. It copies no stock and no costs; photos are optional and, if wanted, re-attached by fileId, since the unique index is per product (product_images_org_product_file_idx). Everything goes through the existing create path, so codes and barcodes stay server-made."
+      },
+      {
+        "kind": "gap",
+        "severity": "low",
+        "where": "apps/server/src/modules/courier/booking.service.ts:464; apps/server/src/modules/courier/courier.config.ts:97-103; apps/server/src/modules/courier/adapters/pathao.adapter.ts:286",
+        "what": "Products and variants have no weight, so every courier booking is declared at the configured default (500 g for Pathao). Pathao prices by weight, so heavy items (jackets, sets) are under-declared and light ones over-charged.",
+        "evidence": "`weightGrams: null` on every booking (booking.service.ts:464). Pathao falls back to COURIER_PATHAO_DEFAULT_WEIGHT_GRAMS (pathao.adapter.ts:286), whose comment says 'this ERP does not track' weight (courier.config.ts:99).",
+        "proposal": "Add an optional `weight_grams integer` on catalog.products, with an optional per-SKU override, entered in the new-product form and Edit dialog. Booking sums qty × weight through CatalogApi (invariant 12) and falls back to the default when any line lacks one."
+      },
+      {
+        "kind": "bug",
+        "severity": "low",
+        "where": "apps/console/src/routes/catalog/stock-actions.tsx:442,444-449; apps/server/src/modules/inventory/stock-in-hand.service.ts:903",
+        "what": "In the Receive dialog, scanning an ARCHIVED variant's sticker adds a quantity for a row that is not shown. The hidden line is counted in the total and received into the archived SKU without the person seeing it.",
+        "evidence": "`<ScanIntoQuantities variants={variants} …/>` gets all variants (442), while QtyTable shows `variants.filter((variant) => variant.status === 'active')` (446). linesFrom() sends every non-empty entry (187-198). Supply and stock-in-hand accept archived SKUs (stock-in-hand.service.ts:903).",
+        "proposal": "Pass the same active-only list to ScanIntoQuantities and answer 'This variant is archived' on such a scan, or list archived variants in the table whenever they hold a quantity."
+      },
+      {
+        "kind": "bug",
+        "severity": "low",
+        "where": "apps/console/src/routes/catalog/new-product.tsx:182,196-199,224-225,454; packages/ui/src/components/fields.tsx:163-177; apps/console/src/routes/catalog/product-detail.tsx:497-508; apps/server/src/modules/catalog/catalog.schemas.ts:31-38",
+        "what": "Price fields accept 0 and negative amounts in the browser (takaToPoisha returns '0' or '-…'), so the long new-product form (photos chosen and all) is submitted and then refused by the server. In Edit prices one zero refuses the whole batch with a schema message.",
+        "evidence": "takaToPoisha's regex allows a leading '-' and zero (fields.tsx:166-176). `priceProblem` and aria-invalid test only `=== null` (new-product.tsx:196-199, 454). The server requires /^[1-9]\\d*$/ (catalog.schemas.ts:34).",
+        "proposal": "Add a `positivePrice()` helper next to `positiveCost()` (variant-grid.ts:124-126), use it in the main price, row prices and edit-price inputs, and mark invalid cells with aria-invalid and a message, so the button stays disabled until fixed."
+      },
+      {
+        "kind": "ux",
+        "severity": "low",
+        "where": "apps/console/src/routes/catalog/new-product.tsx:719-739,899-908; apps/server/src/modules/catalog/catalog.service.ts:152-158",
+        "what": "The size chart is linked only inside the folded 'Website details' section, visible only to someone who may update Storefront. There is no category default, so all 50 panjabis need the same chart picked one by one.",
+        "evidence": "The WebDetails sizeChart Select sits inside `<details>` behind `mayWeb` (719-739). Category web fields are webVisible, featured, gender, description and imageFileId, with no size chart (catalog.service.ts:152-158).",
+        "proposal": "Add `default_size_chart_id` to category web fields. A product with no chart inherits its category's chart, shown as 'From category: Panjabi chart'. Show the chosen chart next to the Sizes chips in the new-product form, not only in the folded section."
+      },
+      {
+        "kind": "ux",
+        "severity": "low",
+        "where": "apps/console/src/routes/supply/entries.tsx:621-634; apps/console/src/routes/catalog/product-detail.tsx:254-264",
+        "what": "Two small labelling and visibility issues. The draft-pricing form's cancel button is labelled 'Remove line' (it closes the pricing form). The product page's Price range tile is hidden from roles without `read Stock`, even though price is catalog data.",
+        "evidence": "The pricing form's ghost button text is `st('supply.removeLine')` but it calls setPricing(null) (625-634). `<PermissionGate allowed={mayStock}>` wraps all four tiles, including PriceRange (254-264).",
+        "proposal": "Use a 'Cancel' key for the pricing form button. Move the Price tile outside the stock gate, or show it in the header next to the status badge."
+      }
+    ]
+  },
+  "parity": {
+    "items": [
+      {
+        "feature": "Delete a product, and a clear split between delete and archive",
+        "oldSite": "Trash icon on every row of the product list, confirm, then a hard delete of the Mongo document plus CDN clean-up of images nothing else uses: elysium@HEAD app/(admin)/admin/products/AdminProductsClient.js:62-71 and 108-110; app/api/products/[id]/route.js:83-100 (deleteImageIfUnreferenced at 93-95). (The old admin is staged for deletion on branch erp-storefront of D:/Projects/elysium, so read it with `git show HEAD:<path>`.)",
+        "erpStatus": "partial",
+        "priority": "must",
+        "proposal": "ERP today: the product page has Archive and Reactivate only (apps/console/src/routes/catalog/product-detail.tsx:241-243, 380-397). Variants have per-row Archive (737-743, 759-774). There is no DELETE route (apps/server/src/modules/catalog/catalog.controller.ts:174-232). Archived products still show in the default list, because the status filter starts empty (products.tsx:166-171, 289-297). A hard delete is impossible today even for an untouched draft. Every SKU gets a sku_price_history row from the trigger, that table is insert/select-only for erp_app (packages/db/migrations/0024_catalog_policies.sql:92), and its FK is restrict (packages/db/src/schema/catalog/index.ts:494-498).\n\nProposal:\n(a) Add `DELETE /v1/catalog/products/:id` under `delete Catalog`. It succeeds only for a product that was never used: no stock_movements, no stock_levels row with on_hand or reserved > 0, no order/POS/supply/supply-return/stock-in-hand/transfer/count/adjustment lines, not in a flash sale or in a discount's product_ids jsonb, and no storefront.legacy_ids row. Implement it as a SECURITY DEFINER function owned by erp_owner (`catalog.purge_unused_product(org_id, product_id)`). The function re-checks every reference under a row lock, then deletes price history, sku_values, skus, product_images and the product in one transaction. The audit interceptor records it. The pure eligibility rule `purgeBlockers(usage)` goes in packages/domain/src/catalog with tests.\n(b) When anything references the product, the same button becomes Archive. It says why in one line, e.g. 'sold 14 times, 3 in stock — archived so its history and labels stay'.\n(c) The product list defaults to Active and Draft, with an Archived chip/tab.\n(d) The archive dialog offers 'also take it off the website' (web_visible=false).\n\nNever hard-delete a row referenced by stock, orders or journals."
+      },
+      {
+        "feature": "Delete or switch off categories",
+        "oldSite": "Categories admin: the delete button is disabled while a category has subcategories (app/(admin)/admin/categories/page.js:102-109, handler 328-335). The API refuses while children exist and removes the image (app/api/admin/categories/[id]/route.js:53-71). It never checked products, so deleting left their category reference dangling.",
+        "erpStatus": "missing",
+        "priority": "must",
+        "proposal": "ERP today: Catalog setup lists categories with only Website and Edit buttons (apps/console/src/routes/catalog/structure.tsx:211-244). Edit can change name and parent, and has an 'In use' tick (316-399; updateCategorySchema apps/server/src/modules/catalog/catalog.schemas.ts:67-77). There is no delete route, even though erp_app has the DELETE grant on categories (0024_catalog_policies.sql:44).\n\nProposal:\n- Add `DELETE /v1/catalog/categories/:id` (delete Catalog). It is allowed only when the category has no products of any status, no child category, no storefront.nav_items row (composite FK at packages/db/src/schema/storefront/index.ts:194-221) and no mention in an active discount's category_ids. That last list is jsonb with no FK (packages/db/src/schema/promo/index.ts:90-92), so the service must check it. Otherwise refuse with a typed CATEGORY_IN_USE error that gives the counts.\n- In the console, the dialog then offers 'Move its N products to …' (one audited bulk re-categorise, then delete) or 'Switch off' (is_active=false and web_visible=false).\n- Show a product count on each row.\n- Make the product edit dialog hide switched-off categories like the new-product form does. Today product-detail.tsx:1122 lists them while new-product.tsx:439 filters them out."
+      },
+      {
+        "feature": "Size and colour lists (old 'Master sizes'): delete or retire, reorder, presets",
+        "oldSite": "app/(admin)/admin/master-sizes/page.js: add a size (25-35), remove a chip (37-39, 148-153), drag to reorder (41-53), presets Clothing XS–3XL, Numeric 28–40, Kids 2Y–14Y and Shoes 36–45 (72-82), one Save (55-70). It wrote a plain string list to Settings (app/api/admin/master-sizes/route.js:22-38). Removing a size never touched existing products (page.js:181).",
+        "erpStatus": "partial",
+        "priority": "must",
+        "proposal": "ERP today: Catalog setup can add lists and values and rename them (structure.tsx:455-519, 581-635, 637-689). A new value always goes last (position = values.length at structure.tsx:513 and 598). The PATCH route accepts a position (catalog.schemas.ts:120-126), but the console sends only the label (apps/console/src/routes/catalog/api.ts:249-255). So an XS added after XXL sorts after XXL forever: on chips, labels and the website. There is no delete, no retire and no preset, and attribute_values has no active flag (packages/db/src/schema/catalog/index.ts:220-256).\n\nProposal:\n(a) Drag to reorder values and lists, reusing MoveButtons and useDragReorder from apps/console/src/routes/website/parts.tsx:266 and :310. Save with one `PUT /v1/catalog/attributes/:id/values/order`.\n(b) `DELETE /v1/catalog/attributes/:id/values/:valueId` when no sku_values row uses the value. The FK sku_values_org_id_value_id_fk is restrict (catalog/index.ts:457-461), so the database backs this up. Otherwise offer Retire: a new migration adds `attribute_values.retired_at timestamptz null`. A retired value is hidden from new-product chips, Add variants and the importer, but existing SKUs keep it. The same applies to a whole list.\n(c) Presets: XS–3XL, 28–44, 2Y–14Y, 36–45, plus Bangladesh-specific Panjabi/Kurta 38–46 and Free Size. They append without duplicates, with codes from codeFrom (variant-grid.ts:51-58).\n(d) Show 'used by N variants' next to each value."
+      },
+      {
+        "feature": "Duplicate a product (one or many copies)",
+        "oldSite": "A copy icon on each row opens 'How many duplicates?' (1–20): AdminProductsClient.js:18-39, 102-104, 198-224. The server (app/api/products/[id]/duplicate/route.js:13-68) copies name, images and variants with fresh ids, gives slugs '<slug>-copy-N', and makes drafts 'so you can change the photos'. That was the old site's way to add a colourway (AdminProductsClient.js:210-212).",
+        "erpStatus": "missing",
+        "priority": "must",
+        "proposal": "ERP today: no duplicate route (catalog.controller.ts) and no button on the list (products.tsx) or the product page (product-detail.tsx:224-245).\n\nProposal: `POST /v1/catalog/products/:id/duplicate {count 1-20, name?, copyImages, copyPrices, copyWebsite}` under create Catalog.\n- Build each copy through CatalogService.createProductIn, the same path the product importer uses. Each copy then gets its own sequence, SKU codes and internal EAN-13 (D-603).\n- Copies start as status=draft with web_visible=false.\n- Copy: the axes (same value ids), per-variant selling prices (variantPrices), category, description, the website fields (tags, size chart, material, care, SEO; slug '<slug>-copy-n'), and image rows pointing at the same file ids. product_images is unique per product (catalog/index.ts:536-540), so sharing files is safe.\n- Never copy stock, cost, supplier barcodes, price history or legacy ids.\n- The pure helpers `copyName` and `copySlug(n)` go in packages/domain/src/catalog with tests.\n- UI: a row action on the list and 'Duplicate' in the product header. After a single copy, open it ready to edit."
+      },
+      {
+        "feature": "A different selling price for each size (or variant), made easy",
+        "oldSite": "Each size row in the one product form has its own Price (Tk), Stock and SKU: ProductForm.js:193-236 ('Each size has its own price', 201). The list shows a min–max price (AdminProductsClient.js:87-95).",
+        "erpStatus": "present-but-harder",
+        "priority": "must",
+        "proposal": "ERP today: per-variant prices exist (D-422), but four things make them hard to use. This explains the owner's 'we can't do that'.\n1. The new-product grid is a flat list of every size × colour pair, with one price box each (new-product.tsx:526-624, 245-252). Five sizes and four colours means 20 boxes, with no 'same price for every colour of XL'.\n2. After creation, prices change only behind 'Edit prices' (product-detail.tsx:531-563, 679-702).\n3. 'Add sizes or colours' sends no price (product-detail.tsx:812-818). The server then gives new variants the cheapest existing price (catalog.service.ts:414-421), so an XXL added later quietly sells at the S price.\n4. The products spreadsheet has one price_taka per product (packages/domain/src/catalog/product-import.ts:30-34, 53).\n\nProposal:\n(a) A shared matrix editor for the new-product form and the product page: sizes as rows, colours as columns, one price cell per SKU. It has row and column 'apply to all', 'fill down', '+/- % or ৳' on a selection, paste from Excel, and one 'same price for all' box. It saves through variantPrices on create and through PUT /v1/catalog/prices on edit, one history row per change.\n(b) Prices by size group. The brand defines named groups on its size list, e.g. 'Regular S–XL' and 'Plus XXL–3XL', stored in `catalog.size_groups` and `catalog.size_group_values` (org_id, RLS ENABLE+FORCE, composite FKs). The grid then shows one price box per group that fills its SKUs; the pure `pricesFromGroups` goes in packages/domain/src/catalog/variant-prices.ts.\n(c) Add variants gets a price field and per-new-variant prices: extend extendMatrixSchema (catalog.schemas.ts:198-202) with variantPrices, as create already has.\n(d) The product importer accepts an optional `size_prices` column (`XXL:2090|3XL:2190`), reviewed in product-import.ts.\n\nAll money is integer poisha via takaToPoisha."
+      },
+      {
+        "feature": "A buying price (cost) for each variant, and margin",
+        "oldSite": "Not in the old admin. Variants were size/price/stock/sku only (models/Product.js:4-9). This is the owner's new request: 'we also have variant-wise buying price and selling price'.",
+        "erpStatus": "partial",
+        "priority": "must",
+        "proposal": "ERP today:\n- A weighted average cost per SKU already exists in inventory.sku_costs (packages/db/src/schema/inventory/index.ts:298-340). Cost roles see it on Stock (apps/console/src/routes/stock/stock-levels.tsx:218-235; StockRow.wacPoisha in apps/console/src/routes/stock/api.ts:102-104).\n- The product page shows no cost by design (product-detail.tsx:68-70), even though its own listStock query (112-135) already receives wacPoisha for read:cost roles.\n- Receiving from the product page takes ONE cost for every variant (stock-actions.tsx:280-283, 300, 312, 415-425). The new-product form's supplier mode does the same (new-product.tsx:303-314). Only stock-in-hand mode has a cost per row (185-188, 599-619).\n\nProposal (nothing added to catalog, so invariant 5 holds):\n(a) The product page's variant grid gets 'Avg cost', 'Last buy price' and 'Margin %' columns behind PermissionGate read:Cost. They come from an inventory read `GET /v1/inventory/costs?productId=`: wac plus the last received supply_lines unit cost per SKU, passed through serializeFor. Margin is computed in packages/domain/src/money as integer basis points.\n(b) A cost-per-variant column in ReceiveStockDialog and in the new-product supplier mode. A 'cost for all' box fills the column. It is sent as per-line unitCostPoisha, which createEntry already accepts.\n(c) A standard buying price owned by supply: `supply.sku_buy_prices(org_id, sku_id, supplier_id null, unit_cost_poisha bigint, updated_by, updated_at)`, with RLS ENABLE+FORCE, composite FKs (D-047), and its field added to COST_FIELDS. It pre-fills receipts, which start empty today (supply/entries.tsx:87, 255, 307), and shows the expected margin before any stock exists. It is editable as a 'Buying price' layer of the matrix editor, for read:Cost roles only.\n(d) A buy_price_taka column in CSV export and import, for read:cost roles only.\n\nThe ledger-auditor must review this change."
+      },
+      {
+        "feature": "Product list: thumbnails, stock, website status, newest first, sorting that works",
+        "oldSite": "products/page.js:14-17 lists newest first. AdminProductsClient.js:134-160 shows Product (photo, name, slug), Category, price range, total stock coloured red at 0 / orange under 5 / green (87-95), and a Published/Draft pill. Phones get cards (169-193).",
+        "erpStatus": "present-but-harder",
+        "priority": "must",
+        "proposal": "ERP today:\n- Columns are name, category, status, SKU count and price only (products.tsx:98-156).\n- imageFileId is returned (apps/console/src/routes/catalog/api.ts:42; catalog.repository.ts:474-476) but never drawn.\n- There is no stock column and no website column.\n- The list is oldest first (catalog.repository.ts:494 `order by p.sequence`), so a product added today is on the last page.\n- The Product column is marked sortable (products.tsx:103) and clicking it changes the URL (238-241), but listProducts never sends a sort (82-89) and productQuerySchema has none (catalog.schemas.ts:251-263). The sort control does nothing.\n\nProposal:\n- A 40px Thumb column (parts.tsx Thumb).\n- 'Available': the sum across locations from stock_levels, with Out and Low badges, shown only with read Stock.\n- Website on/off, Featured and New badges.\n- Server-side sorts: newest (default), name, price low/high, stock low/high. Use keyset paging on (sort key, sequence).\n- The product code under the name.\n- An expandable row showing stock by size and location.\n- A phone layout.\n\nKeep 36px rows and tokens only."
+      },
+      {
+        "feature": "Quick edits from the product list (row actions and inline edits)",
+        "oldSite": "Each row has a website on/off eye toggle (AdminProductsClient.js:73-85, 99-101), Duplicate (102-104), Edit (105-107) and Delete (108-110).",
+        "erpStatus": "missing",
+        "priority": "must",
+        "proposal": "ERP today: rows only link to the product page, so every change means opening the product.\n\nProposal: a row action menu that is keyboard-reachable, with lucide icons and accessible names:\n- Show or hide on website: `PUT /v1/storefront/products/:id` (apps/server/src/modules/storefront/storefront.controller.ts:247-248), under update Storefront.\n- Featured and New arrival toggles.\n- Duplicate (item 4).\n- Archive or Delete (item 1).\n- Print stickers (StickerDialog).\n- View on website (URL as built in website-card.tsx:87-104).\n\nInline edits: click the price of a single-price product to change it (PUT /v1/catalog/prices for all its SKUs, reason 'Quick edit'). Click the category or status to change it. A product with several prices opens the matrix editor in a popover. Updates are optimistic and roll back on error, and the interceptor audits each one."
+      },
+      {
+        "feature": "Bulk actions on the product list",
+        "oldSite": "None on the old product list (one row at a time). The old customers list did have multi-select (app/(admin)/admin/customers/page.js:115-124, 272).",
+        "erpStatus": "missing",
+        "priority": "should",
+        "proposal": "Reuse the order list's selection pattern (apps/console/src/routes/orders/order-list.tsx:85-161): the selection covers the current page and is never pre-filled from the URL.\n\nBulk actions:\n- archive or restore; delete the never-used ones\n- website on/off, featured and new arrival on/off\n- move to a category; add or remove a tag; set a size chart\n- change prices by % or ৳, rounded through packages/domain/src/money, with a preview before applying (one PUT /v1/catalog/prices, at most 500, with a reason)\n- set a reorder level for every variant at a location\n- print stickers for the selection, one per piece in stock\n\nServer: `POST /v1/catalog/products/bulk {ids ≤ 200, action, params}`, all or nothing in one transaction, returning a result per id. Website-field actions go to a storefront bulk route under update Storefront."
+      },
+      {
+        "feature": "New products show on the website by default",
+        "oldSite": "New products were Published by default (ProductForm.js:29 isPublished: true), and one eye icon per row toggled it.",
+        "erpStatus": "present-but-harder",
+        "priority": "must",
+        "proposal": "ERP today: web_visible defaults to false (D-500; packages/db/src/schema/catalog/index.ts:289). The new-product form keeps 'Shown on the website' unticked inside a folded section (new-product.tsx:719-739, 817-819). An owner who saves a product then can't find it on the site.\n\nProposal:\n- A brand setting 'New products go on the website', on by default for a brand whose ERP runs its website.\n- Show the tick outside the fold, next to Status.\n- A 'Not on website' badge in the product header and the list, and a 'Website: off' filter.\n\nThe storefront rule stays the same: it shows only status=active AND web_visible."
+      },
+      {
+        "feature": "Product list filters and search",
+        "oldSite": "Search with several words, where every word must match somewhere: name, slug, category, gender, material, tags, SKU, size or price (AdminProductsClient.js:41-60). The shop filtered by size, colour, price range, featured and new arrival (app/api/products/route.js:50-64).",
+        "erpStatus": "partial",
+        "priority": "should",
+        "proposal": "ERP today: search needs three or more characters (products.tsx:271-277; catalog.schemas.ts:258) and covers only name, slug and SKU codes (search_text, catalog/index.ts:306-313). The only filters are category and status (products.tsx:280-297).\n\nProposal:\n- Filters: website on/off, featured, new arrival, gender, tag, size chart, stock (out / low / in stock, optionally per location), no photo, price range, a size or colour value, created date.\n- Exact match on a scanned barcode or a short SKU fragment through the existing exact `code` lookup (catalog.schemas.ts:266-272).\n- Add tags and barcodes to search_text, maintained by the existing trigger.\n- Keep filters in the URL, with saved views such as 'On website but out of stock' and 'No photo'."
+      },
+      {
+        "feature": "Category order and the category editor",
+        "oldSite": "categories/page.js has the whole category in one side panel (129-307):\n- a tree with expand/collapse (37-54) and 'Add subcategory' on each row (90-98)\n- Sort Order (277-280), slug (247-251) and SKU code (252-256)\n- image (205-241), description, featured with a '0/3 featured' counter (344-351), Active (291-294)",
+        "erpStatus": "partial",
+        "priority": "should",
+        "proposal": "ERP today: categories are ordered by path, which is alphabetical by slug (catalog.repository.ts:211-218). The storefront reads them the same way (apps/server/src/modules/catalog/catalog-web.repository.ts:119). So the brand can't order its home-page grid or shop filters, even though catalog.categories.position exists (catalog/index.ts:126) and updateCategorySchema accepts it (catalog.schemas.ts:74). The schema also allows a slug change (70), but the dialog never sends one (structure.tsx:336-342). Editing is split into two dialogs: EditCategory (structure.tsx:316-399) and CategoryWebsiteDialog (category-website.tsx:21-134).\n\nProposal:\n- Drag to reorder siblings (position). Console and storefront both sort by parent path, then position.\n- One category sheet with Details and Website tabs.\n- A slug field, with the old slug kept for redirects (as products' previous_slugs do).\n- Collapse/expand, 'Add subcategory' and a product count on each row.\n- A counter of featured categories against the website's limit."
+      },
+      {
+        "feature": "Size charts: deleting one in use, a default chart per category",
+        "oldSite": "Deleting a chart unlinks it from all products (app/(admin)/admin/size-charts/page.js:259-270; app/api/admin/size-charts/[id]/route.js:32-44). The spreadsheet editor can delete any row or column (70-180).",
+        "erpStatus": "present-but-harder",
+        "priority": "should",
+        "proposal": "ERP today: delete exists, but a chart in use is refused (D-502; apps/console/src/routes/website/size-charts.tsx:97-120). 'Remove column' removes only the last column (189-192, 309-312).\n\nProposal:\n- When delete is refused, offer 'Move its N products to [chart] or to none, then delete', as one audited storefront transaction.\n- Delete any column, not only the last; reorder rows; duplicate a chart; show 'used by N products'.\n- A default size chart per category: a new migration adds categories.size_chart_id with a composite FK. New products in that category inherit it."
+      },
+      {
+        "feature": "Product photos on the product page",
+        "oldSite": "ProductForm.js:172-191: upload, remove, the first photo is the main one. Uploads were de-duplicated by SHA-256 (app/api/upload/route.js:36-52). Unused CDN files were removed on save and delete (app/api/products/[id]/route.js:67-71, 93-95).",
+        "erpStatus": "partial",
+        "priority": "should",
+        "proposal": "ERP today: the new-product form has drag to reorder and a 3:4 crop (photo-picker.tsx:66-160; photo-crop.ts). The product page only moves photos with up/down arrows (product-detail.tsx:906-915, 928-963) and uploads without a crop (974-1035). It never sets alt text: attachImageSchema accepts altText (catalog.schemas.ts:236-240), but there is no update route. A removed photo's file object stays behind.\n\nProposal:\n- Reuse PhotoPicker on the product page: drag, crop, 'Make cover'.\n- `PATCH /v1/catalog/products/:id/images/:imageId {altText, colourValueId}`.\n- Alt text defaults to 'name — colour'.\n- A weekly job flags product-image files nothing references, for clean-up."
+      },
+      {
+        "feature": "Photos for each colour, and colour swatches",
+        "oldSite": "Old variants had no colour (models/Product.js:4-9). A colourway was made by duplicating the product and swapping its photos (AdminProductsClient.js:210-212).",
+        "erpStatus": "missing",
+        "priority": "should",
+        "proposal": "ERP today: colour is a real variant axis, but photos belong only to the product (product_images has no variant link, catalog/index.ts:519-557) and colour values have no swatch (220-256). So the website can't switch the gallery when a shopper picks Maroon.\n\nProposal:\n- A new migration adds `product_images.attribute_value_id uuid null`, with a composite FK (org_id, attribute_value_id) to attribute_values (restrict).\n- It also adds `attribute_values.swatch_hex text null check (swatch_hex ~ '^#[0-9A-F]{6}$')`, and optionally a swatch image file id.\n- Console: tag each photo with a colour (chips under the thumbnail). Bulk upload maps file names such as 'navy-1.jpg' to colours. Colour values get a swatch picker on Catalog setup.\n- Storefront API: return images grouped by colour, plus the swatches, alongside the variants (apps/server/src/modules/storefront/storefront-public.service.ts:202-219). A colour's first photo becomes its card image."
+      },
+      {
+        "feature": "Regular (compare-at) price shown struck through",
+        "oldSite": "Not really a feature. GET /api/products?onSale filtered on a salePrice field (app/api/products/route.js:64) that the Product model never had (models/Product.js:11-34). Struck-through prices came only from flash sales.",
+        "erpStatus": "missing",
+        "priority": "should",
+        "proposal": "ERP today: a compareAt price reaches the website only from a live flash offer (packages/domain/src/storefront/price.ts:3-36). It is null otherwise.\n\nProposal:\n- A new migration adds `catalog.skus.compare_at_poisha bigint null`, with checks (> price_poisha, bounded).\n- Price history covers it, through a new migration that extends the trigger or adds a sibling history table.\n- Editable as a layer of the matrix editor and in CSV.\n- storefrontPrice uses the SKU's compare-at when one is set; otherwise the shelf price when a flash offer undercuts it.\n- POS receipts can print 'Regular ৳X, you save ৳Y'.\n\nIt is a selling price, so it belongs in catalog (invariant 5 is untouched). The reseller allow-list in serializeFor decides whether resellers see it."
+      },
+      {
+        "feature": "Catalog CSV export that re-imports",
+        "oldSite": "No product export in the old admin; only customers had a CSV export (customers/page.js:144-146).",
+        "erpStatus": "missing",
+        "priority": "should",
+        "proposal": "ERP today: the price importer needs SKU codes (catalog.controller.ts:330-343; apps/console/src/routes/catalog/import.tsx), but there is no way to download the current catalog to edit.\n\nProposal: `GET /v1/catalog/export.csv` (read Catalog, streamed), honouring the list's current filters. Columns:\n- product, product code, category path, SKU code, barcode, size, colour\n- selling price, compare-at, status, website flags\n- available per location (read Stock only)\n- average cost and buying price, only when serializeFor allows read:cost\n\nThe file goes back unchanged through the price importer (sku, price_taka). Add an Export button on the list. Header names in bn and en."
+      },
+      {
+        "feature": "Low-stock alerts",
+        "oldSite": "The product list coloured total stock red at 0 and orange under 5 (AdminProductsClient.js:93).",
+        "erpStatus": "partial",
+        "priority": "should",
+        "proposal": "ERP today:\n- Reorder levels exist per SKU per location (inventory/index.ts:155-156). They are set one product at a time (stock-actions.tsx:803-860), and the default 0 means no alert.\n- stock.low goes out through the outbox (apps/server/src/modules/inventory/movements.service.ts:357-379). But the console inbox handles only loan and approval events (apps/console/src/shell/inbox.ts:82-105), so nobody is told.\n- Low badges appear only on Stock and the product page.\n\nProposal:\n- An inbox handler for stock.low, for org_admin and warehouse. The payload is ids and quantities only.\n- A daily 9:00 Asia/Dhaka digest job.\n- A brand-wide default reorder level, plus per-category defaults, used where a level is 0.\n- A bulk 'Set reorder level' on the list and on Stock.\n- A Low/Out filter and badge on the product list.\n- A reorder suggestion on the product page: sold in the last 30 days against available."
+      },
+      {
+        "feature": "Supplier's own barcode per variant",
+        "oldSite": "A SKU typed by hand for each size in the product form (ProductForm.js:226-228).",
+        "erpStatus": "partial",
+        "priority": "should",
+        "proposal": "ERP today: SKU codes and internal EAN-13s are generated (D-603). `PUT /v1/catalog/skus/:id/barcode` exists (catalog.controller.ts:258-264; setBarcodeSchema catalog.schemas.ts:216-225), but no console screen calls it.\n\nProposal:\n- An 'Edit barcode' action per variant on the product page. Typing or scanning into the field works (ScanField). A clash is shown inline.\n- Warn that stickers already printed carry the old code.\n- An optional barcode column in the products spreadsheet and the export."
+      },
+      {
+        "feature": "Edit the whole product on one page",
+        "oldSite": "The same ProductForm edits everything with one sticky Save: basics, category, featured/new/published, images, variants and size chart (ProductForm.js:114-288; edit page app/(admin)/admin/products/[id]/edit/page.js:19-31).",
+        "erpStatus": "present-but-harder",
+        "priority": "should",
+        "proposal": "ERP today: editing is spread over five places, each with its own save:\n- the Edit dialog: name, slug, category, status, description (product-detail.tsx:1039-1158)\n- 'Edit prices' (531-563)\n- Add variants (781-877)\n- Photos (881-968)\n- the Website card (website-card.tsx)\n\nProposal: an Edit mode on the product page that turns these into one form with one sticky Save bar (the D-447 pattern in new-product.tsx:757-783). Warn before leaving with unsaved changes. Keep a per-section save for a role that may edit only the website fields (update Storefront without update Catalog)."
+      },
+      {
+        "feature": "Correct a variant's stock to the counted number from the product page",
+        "oldSite": "Stock per size was typed straight into the product form (ProductForm.js:223-225).",
+        "erpStatus": "present-but-harder",
+        "priority": "should",
+        "proposal": "ERP today, rightly (invariant 3): stock changes only through movements. Adjust is a gain or loss with a reason, and goes through approvals (stock-actions.tsx:491-523). Counts live on Stock → Counts.\n\nProposal: a 'Set to counted' column in the product's variant grid. Type the real count of each size at a location; the screen shows the difference. It submits one count session for that product and location through the existing counts API, or an adjustment request. Approvals apply as configured. It never writes stock_levels directly."
+      },
+      {
+        "feature": "Let non-admin staff manage the catalog",
+        "oldSite": "The moderator role held products.manage, categories.manage and discounts.manage, and the Roles page allowed per-user overrides (lib/permissions.js:59-103; app/(admin)/admin/roles/page.js).",
+        "erpStatus": "missing",
+        "priority": "should",
+        "proposal": "ERP today: only org_admin may create, update or delete Catalog (packages/contracts/src/permissions/matrix.ts:285-286; catalog.controller.ts:57-61). A staff member who uploads products would need org_admin, which also carries Cost, the ledger and approvals.\n\nProposal: a merchandiser ability set: create/update Catalog, update Storefront, read Stock, no read:Cost, no delete or purge. Offer it as a role or a grantable set. Record the decision in decisions.md and update the route-matrix fixtures. Delete and purge stay with org_admin."
+      },
+      {
+        "feature": "Discounts: duplicate, restore, delete an unused one",
+        "oldSite": "Discounts could be edited, switched on/off and deleted (app/(admin)/admin/discounts/page.js:294-298; app/api/admin/discounts/[id]/route.js).",
+        "erpStatus": "present-but-harder",
+        "priority": "should",
+        "proposal": "ERP today: a discount's terms are frozen once it exists (apps/server/src/modules/promo/promo.controller.ts:88-99 accepts a status only; promoStatusSchema promo.schemas.ts:143-145), which is sound. But:\n- there is no 'duplicate as new' to make a changed offer\n- archive is one-way: an archived row shows no actions (apps/console/src/routes/campaigns/discounts.tsx:207)\n- a discount nobody redeemed can't be deleted\n- the screens are still gated by the `LandingPage` subject (discounts.tsx:68, 107) although landing pages are dropped (D-550)\n\nProposal:\n- 'Duplicate', which pre-fills the create form with a new code.\n- 'Restore' for an archived discount.\n- Delete only when it has 0 redemptions; otherwise archive.\n- Allow extending ends_at and the usage limit (not the terms) with a reason.\n- Rename the subject to Promotion, with route-matrix and decision updates."
+      },
+      {
+        "feature": "Flash sales: removing old ones",
+        "oldSite": "Delete with a warning, plus status tabs and a search (app/(admin)/admin/flash-sales/page.js:177-189, 229-232).",
+        "erpStatus": "partial",
+        "priority": "could",
+        "proposal": "ERP today: switch on/off and duplicate only (apps/console/src/routes/campaigns/flash-sales.tsx:156-187), so switched-off sales pile up.\n\nProposal: delete a sale that never started and has no claims. Archive an ended one, hidden by default. Add status tabs (scheduled / live / ended / off) and a search."
+      },
+      {
+        "feature": "Customer duplicates, merge and record removal",
+        "oldSite": "app/(admin)/admin/customers/page.js: CSV export (144-146), a duplicates finder (169, 491), select-and-merge (74, 272, 494-496), add/edit modal (482), delete a record (134-137).",
+        "erpStatus": "partial",
+        "priority": "should",
+        "proposal": "ERP today: a buyer export exists (apps/server/src/modules/orders/orders.controller.ts:638-675, export BuyerExport) and the profile shows RFM scores (apps/console/src/routes/customers/profile.tsx). There is no duplicate finder, no merge and no delete or anonymise.\n\nProposal:\n- Find duplicates by normalised phone.\n- Merge: re-point orders, advances and CRM rows to one buyer, keep a merged_into id, and audit it.\n- A personal-data erase that anonymises a buyer with no open orders, rather than deleting rows that orders or journals reference."
+      },
+      {
+        "feature": "Campaign links (old 'Custom URLs')",
+        "oldSite": "models/CustomUrl.js:40-63 and app/(admin)/admin/custom-urls/page.js: a 5-digit ?cu= code on a category, the shop or a custom path, with highlighted products, a banner, a pop-up, an on/off switch and a view count.",
+        "erpStatus": "missing",
+        "priority": "should",
+        "proposal": "Planned for M35b (docs/plans/M35.md:17-23, 55: 'Website → Campaign links'). Nothing exists yet in apps/console/src/routes/website or any server module. It is not a landing page, so it stays in scope after D-550. Build it as the M35b plan says, reusing the discounts product picker."
+      },
+      {
+        "feature": "Order labels for thermal printers",
+        "oldSite": "app/(admin)/admin/labels/page.js: A4, 2x3, 3x2 and 4x6 thermal sizes (15-20), options for logo, QR, prices and COD (235-241), a large CN number (42-52).",
+        "erpStatus": "missing",
+        "priority": "should",
+        "proposal": "Planned for M35b (docs/plans/M35.md:77). The ERP has order documents (orders.controller.ts:214, 483) but not the thermal label sheet. Reuse the thermal page handling from the catalog stickers (D-604)."
+      },
+      {
+        "feature": "Hero slider and website menu (parity checked)",
+        "oldSite": "hero/page.js:255-390: desktop and mobile images, a link, move up/down, delete. navbar/page.js: custom or category items, highlight, on/off, order.",
+        "erpStatus": "present",
+        "priority": "could",
+        "proposal": "The ERP has both, with drag to reorder, an on/off switch and a two-level menu (apps/console/src/routes/website/hero.tsx:32-60; menu.tsx:31-60, 197-242). Optional extras: show the recommended sizes 1920×750 and 750×1000 as the old page did (hero/page.js:255-268), and add start/end dates to slides for Eid campaigns."
+      },
+      {
+        "feature": "Editing an order (parity checked)",
+        "oldSite": "EditOrderModal behind a PIN: add/remove items and change quantities, address, shipping fee, discount, payment method, source and notes (app/(admin)/admin/orders/[id]/page.js:49-140).",
+        "erpStatus": "present",
+        "priority": "could",
+        "proposal": "`PATCH /v1/orders/:id` accepts shipTo, location, zone, courier, delivery charge, discount, notes and lines (apps/server/src/modules/orders/orders.schemas.ts:191-203), under the state machine and the audit log. Nothing to port. The old courier fraud check was removed on purpose (D-291)."
+      },
+      {
+        "feature": "Scheduled price changes and a website-only price (advanced)",
+        "oldSite": "Not in the old admin.",
+        "erpStatus": "missing",
+        "priority": "could",
+        "proposal": "Scheduled price changes, e.g. 'Eid price from 2027-03-08 to 03-20': a promo-owned job writes PUT /v1/catalog/prices at the Asia/Dhaka start date and reverts at the end, each change with a history row and a reason. Optionally, a website-only price per SKU for a brand that prices online differently from its showrooms. Build that only after the owner confirms they want it, and record it as OPEN in decisions.md."
+      },
+      {
+        "feature": "Activity log on the product page",
+        "oldSite": "Not in the old admin.",
+        "erpStatus": "missing",
+        "priority": "could",
+        "proposal": "The audit interceptor already records every change. Add an Activity section to the product page showing who renamed, repriced, archived or changed website fields, with before/after. Read it through the audit module's api.ts, with cost fields stripped by serializeFor."
+      }
+    ]
+  },
+  "probe": {
+    "ran": true,
+    "steps": [
+      {
+        "action": "Catalog setup: create list Size (S, M, L, XL), list Colour (Red, Navy), categories 'Probe Cat' and 'Delete Me Cat', a showroom location",
+        "expected": "All created",
+        "observed": "Everything was created. Values show as rename chips. Location codes are auto-derived and cut off at 12 characters ('PROBESHOWROO').",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/01-catalog-setup-initial.png",
+        "verdict": "works"
+      },
+      {
+        "action": "Website > Size charts: create chart A (later linked to the product) and chart B (unused)",
+        "expected": "Both created",
+        "observed": "Both saved and listed.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/02-size-charts-created.png",
+        "verdict": "works"
+      },
+      {
+        "action": "New product: pick sizes S, M, L, XL and colours Red, Navy",
+        "expected": "A grid of 8 variants",
+        "observed": "The grid has 8 rows (S/Red ... XL/Navy). Columns are Variant, Price (৳), Pieces and Cost per piece (৳).",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/03-new-product-grid-empty.png",
+        "verdict": "works"
+      },
+      {
+        "action": "New product: type a selling price per variant (S 1500, M 1600, L 1700, XL/Red 1850, XL/Navy 1800), pieces per variant and a cost per variant (700/710/750/760/800/810/900/850) in 'Already in hand (opening stock)' mode",
+        "expected": "Each variant keeps its own selling price and buying cost",
+        "observed": "Every per-row input took its value. The stock summary reads '20 pieces · ৳15,540.00', which is correct. A blank price row falls back to the selling price (the placeholder shows it). The size and colour of each price have to be typed cell by cell; there is no 'same price for all M' shortcut.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/04-new-product-filled-in-hand.png",
+        "verdict": "works"
+      },
+      {
+        "action": "Same form: switch 'Where the pieces come from' to 'Received from a supplier'",
+        "expected": "A cost per variant is still possible",
+        "observed": "The per-variant cost column disappears. Headers become [Variant, Price (৳), Pieces], with 0 per-variant cost inputs and a single 'Cost per piece (৳)' for all variants. Code: new-product.tsx:312 sends one costPoisha for every line, and :361 shows the cost column only in in-hand mode. new-product.tsx:168 forces supplier mode once the brand's opening-stock window is closed, so after go-live the form has no per-variant cost at all. Switching back to in-hand keeps the typed costs.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/05-new-product-supplier-mode.png",
+        "verdict": "missing"
+      },
+      {
+        "action": "Attach size chart A under Website details and click Create product",
+        "expected": "Product created with 8 SKUs, the stock posted and the chart linked",
+        "observed": "The 'Product created' screen appears. The stock posts as Opening stock, and chart A is linked.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/06-product-created.png",
+        "verdict": "works"
+      },
+      {
+        "action": "Product page: read back each variant's price and any cost",
+        "expected": "Selling price per variant, plus the buying price per variant for an admin with read:cost",
+        "observed": "Prices read back exactly: S/Red 1,500, S/Navy 1,500, M/Red 1,600, M/Navy 1,600, L/Red 1,700, L/Navy 1,700, XL/Red 1,850, XL/Navy 1,800. The tile reads 'Price ৳1,500.00–1,850.00'. The product page shows no cost, buying price or average cost anywhere, even for org_admin, which holds read:Cost. That is by design (product-detail.tsx:68-70). Stock history shows quantities only.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/07-product-page-after-create.png",
+        "verdict": "confusing"
+      },
+      {
+        "action": "Stock page: search the product and read 'Avg. cost'; Stock in hand entries",
+        "expected": "The cost entered for each variant",
+        "observed": "'Avg. cost' per SKU per location matches what was typed: S/Red 700, S/Navy 710, M/Red 750, M/Navy 760, L/Red 800, L/Navy 810, XL/Red 900, XL/Navy 850, with stock value per row. This page is the only place the variant buying price can be seen. The Stock in hand entry shows only the total, 20 pieces / ৳15,540.00.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/08-stock-page-avg-cost.png",
+        "verdict": "works"
+      },
+      {
+        "action": "Product page > Edit prices: change one variant (S/Red 1500 -> 1550) and save",
+        "expected": "The price changes and is recorded",
+        "observed": "The row now reads ৳1,550.00. Price history adds '1,500 -> 1,550, Edited on the product page'. Each input is labelled by its SKU code, not by size or colour.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/11-one-price-changed.png",
+        "verdict": "works"
+      },
+      {
+        "action": "Edit prices: set several at once (M/Red, M/Navy, L/Red, L/Navy to 1999)",
+        "expected": "Several prices in one save, ideally with a bulk tool such as 'apply to all M' or 'apply to selected'",
+        "observed": "Typing each of the 4 boxes and pressing Save prices once works, and all four read ৳1,999.00. There is no bulk control: no matching buttons or inputs, and no select-rows-then-set. With many colours, each size has to be typed once per colour.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/12-several-prices-changed.png",
+        "verdict": "confusing"
+      },
+      {
+        "action": "Check the price history and the variants table layout",
+        "expected": "Price history readable for every variant; table fits the screen",
+        "observed": "Price history shows one variant at a time from a dropdown that defaults to the first variant, so the M/L changes are not visible without switching. At 1440px the variants table wraps SKU codes over 4-5 lines, and the right-hand Actions column ('Archive') is cut off.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/10-edit-prices-open.png",
+        "verdict": "confusing"
+      },
+      {
+        "action": "Product Edit dialog and Receive stock dialog: look for price and cost per variant",
+        "expected": "Buying price per variant when receiving",
+        "observed": "The Edit dialog has Name, Web address, Category, Status and Description, and says 'Prices are edited in the variant list'. The Receive stock dialog has exactly one 'Cost per piece (৳)' input plus a quantity per variant, so one cost applies to every variant received (stock-actions.tsx:300, :312, :416).",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/14-receive-dialog.png",
+        "verdict": "missing"
+      },
+      {
+        "action": "Archive variant XL/Navy, which has 1 piece in stock",
+        "expected": "Archived (never deleted), with stock kept",
+        "observed": "The dialog reads 'Archive this variant? It stops being sold. Its stock and history stay, and you can restore it any time.' After confirming, the row shows 'Archived' and a Restore button. The product list SKU count drops from 8 to 7. Nothing warns that it still holds 1 piece.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/16-archive-variant-after.png",
+        "verdict": "works"
+      },
+      {
+        "action": "Create a plain product with no stock, then try to delete it",
+        "expected": "A delete, or an archive for a product with history",
+        "observed": "There is no Delete anywhere. Archive leads to status 'Archived' and a 'Reactivate' button. The catalog list has no row actions at all (its only buttons are Columns, Sort, Previous and Next), so even a product created by mistake with no stock or orders cannot be removed.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/19-catalog-list.png",
+        "verdict": "missing"
+      },
+      {
+        "action": "Catalog setup: try to delete the unused category 'Delete Me Cat'",
+        "expected": "Delete, or archive when used",
+        "observed": "The row's buttons are only 'Website' and 'Edit'. The Edit dialog has Category name, Inside, an 'In use' checkbox, Cancel and Save, with no delete. Unticking 'In use' marks it 'Not in use', which is the only option.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/20-edit-category-dialog.png",
+        "verdict": "missing"
+      },
+      {
+        "action": "Untick 'In use' on 'Probe Cat', which the product uses",
+        "expected": "A warning, or a count of the products in it",
+        "observed": "It switched off silently, with no warning or confirmation. It disappears from the New product category list (options are now only 'No category' and 'Test Category'), but the product keeps it, and the product Edit dialog still offers inactive categories (product-detail.tsx:1116-1127 does not filter isActive).",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/21-categories-after-deactivate.png",
+        "verdict": "confusing"
+      },
+      {
+        "action": "Try to delete size value XL and colour value Navy",
+        "expected": "Delete when unused, or deactivate",
+        "observed": "Clicking a value opens 'Fix value' with Name, Cancel, Save and Close, and 0 checkboxes. There is no delete and no deactivate (structure.tsx:466-500). The server has only PATCH attributes/:id/values/:valueId, for rename and move (catalog.controller.ts:159).",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/22-size-value-dialog.png",
+        "verdict": "missing"
+      },
+      {
+        "action": "Try to delete a whole list (Colour)",
+        "expected": "Delete when unused, or deactivate",
+        "observed": "The card's only list action is 'Rename', which opens the 'Rename list' dialog with Name, Cancel and Save. There is no delete or deactivate. Across the whole setup page, the only control matching /delete|remove/ was the category's own 'Website: Delete Me Cat' button, so there are no real delete controls.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/23-list-rename-dialog.png",
+        "verdict": "missing"
+      },
+      {
+        "action": "Try to delete the unused showroom location",
+        "expected": "Delete, or switch off",
+        "observed": "The row has only 'Edit'. The dialog has Location name, 'In use', Cancel and Save. Unticking 'In use' marks it 'Not in use', and it still shows in the list. The dialog says 'The code stays the same: it is printed inside product codes and labels.', which is wrong for a location.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/24-edit-location-dialog.png",
+        "verdict": "confusing"
+      },
+      {
+        "action": "Untick 'In use' on the Main Warehouse, which holds stock",
+        "expected": "Refused, with a reason",
+        "observed": "The dialog stays open with 'This location still holds stock, stock held for orders or a transfer on its way. Move or receive it first; a switched-off location can take no movement.' The location stays active.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/33-deactivate-warehouse-dialog.png",
+        "verdict": "works"
+      },
+      {
+        "action": "Website > Size charts: delete the unused chart B",
+        "expected": "Deleted",
+        "observed": "A confirm dialog appears ('Delete this? The website stops showing it at once.'). After confirming, chart B is gone.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/27-after-delete-chart-b.png",
+        "verdict": "works"
+      },
+      {
+        "action": "Website > Size charts: delete chart A, which the product uses",
+        "expected": "Refused, naming the products",
+        "observed": "Refused with 409 STOREFRONT_IN_USE: '1 product uses this size chart. Choose another chart for them first.' It appears in red above the list after the dialog closes. It does not name the product or link to it.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/28-delete-chart-a-in-use.png",
+        "verdict": "works"
+      },
+      {
+        "action": "Website > Hero slides: add a slide, then delete it",
+        "expected": "Deleted",
+        "observed": "The row has Move up, Move down, Edit and Delete. After the confirm dialog, the slide is gone.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/30-hero-after-delete.png",
+        "verdict": "works"
+      },
+      {
+        "action": "Website > Menu: delete a plain link, then delete a dropdown that has a child link",
+        "expected": "The link is deleted; deleting the parent warns about its children",
+        "observed": "The link was deleted. The dropdown was deleted after the same generic 'Delete this?' dialog, and its child link silently went with it: both counts are 0, through the FK ON DELETE cascade in migration 0103_m33_storefront_schema.sql:142. Nothing warns that the children go too.",
+        "screenshot": "D:/Projects/erp-tools/probe-shots/32-menu-after-delete.png",
+        "verdict": "confusing"
+      }
+    ],
+    "bugs": [
+      "A buying price per variant is only possible for opening stock. The New product form shows a per-row 'Cost per piece' only in 'Already in hand' mode (apps/console/src/routes/catalog/new-product.tsx:361). In 'Received from a supplier' mode it sends one cost for every line (new-product.tsx:312). Once the brand's opening-stock window is closed, the form is forced into supplier mode (new-product.tsx:168), so a live brand has no per-variant cost at all. The product page's Receive stock dialog also has a single cost for all variants (apps/console/src/routes/catalog/stock-actions.tsx:300, 312, 416).",
+      "An admin with read:Cost sees no buying price on the product page. The per-variant cost is visible only on the Stock page's 'Avg. cost' column, per SKU per location (apps/console/src/routes/stock/stock-levels.tsx:218). Selling price and buying price are never shown side by side.",
+      "Size values, colour values and whole lists cannot be deleted or deactivated. The setup screen offers only Rename / 'Fix value' (apps/console/src/routes/catalog/structure.tsx:466-500), and the server has no DELETE or isActive for attributes or values, only PATCH rename/move (apps/server/src/modules/catalog/catalog.controller.ts:144, 159).",
+      "Categories and stock locations have no delete, only an 'In use' checkbox inside Edit (structure.tsx:226-241, 390-394, 760-765, 885-888). A category used by products is switched off silently, with no warning or count. Afterwards New product hides it, but the product Edit dialog still lists inactive categories (apps/console/src/routes/catalog/product-detail.tsx:1116-1127).",
+      "Products have no delete at all, not even a draft product with no stock, orders or journals. Archive is the only path (product-detail.tsx:241). The catalog list has no row actions.",
+      "Deleting a website menu dropdown also deletes its children, through the FK ON DELETE cascade (packages/db/migrations/0103_m33_storefront_schema.sql:142), behind the same generic 'Delete this?' dialog (apps/console/src/routes/website/menu.tsx:121-128). There is no warning about the children.",
+      "There is no bulk price tool on the product page: no 'set all M to X', no 'apply to selected', no per-size price across colours. Each SKU input is labelled by SKU code and typed one by one (product-detail.tsx:676-701). The New product grid has the same limit.",
+      "Price history shows one variant at a time behind a dropdown (product-detail.tsx:1271-1300), so a multi-variant price change cannot be reviewed at once.",
+      "At a 1440px viewport, the product page's 'Variants and stock' table wraps SKU codes over 4-5 lines and cuts off the right-hand Actions column ('Archive'); see screenshot 10.",
+      "The Edit location dialog reuses the copy 'The code stays the same: it is printed inside product codes and labels.', which is wrong for a location (structure.tsx:863). Auto location codes are cut off at 12 characters ('PROBESHOWROO').",
+      "When an in-use size chart cannot be deleted, the refusal says '1 product uses this size chart…' but does not name or link the product (apps/server/src/modules/storefront/storefront.service.ts:401-413)."
+    ],
+    "notes": "Ran against a throwaway real stack: the built API and worker, Vite console on 5292, API on 3219, all under heavy.mjs, Playwright with 1 worker. I signed in as the 'merchandiser' stack user (org_admin, which holds read:Cost and delete:Storefront) and enrolled 2FA. The fresh database has the opening-stock window OPEN, which is why the per-variant cost column appeared. On live Elysium, if that window has been closed, the owner will never see a per-variant cost on New product. That probably explains 'we can't set variant-wise buying price'.\n\nThe first run (results discarded) failed only because of my own spec: a locator without a timeout hung test 04, and serial mode then skipped the rest. I wrapped each test so a failure is logged without stopping later tests, and the second run passed 9/9 with every step OK.\n\nPer-variant selling price itself works, both on New product and through Edit prices on the product page. The owner's 'can't do variant pricing' is likely about discoverability (the column placeholder shows the base price), the lack of bulk tools, and the missing per-variant cost outside opening stock.\n\nArchive-not-delete is consistent with the invariants for products, variants and locations that have stock, orders or journals. It is missing for unused rows and for size/colour values and lists, which have no archive either.\n\nWebsite size charts, hero and menu all have delete. Following the relayed owner instruction, I did not probe the M35b landing page builder at all; hero and menu are M33 website content, not that builder.\n\nCleanup: deleted the temporary apps/console/e2e/zz-probe.stack.ts, apps/console/test-results/ and my build and run logs in D:/Projects/erp-tools/. Git status in D:/Projects/elysium-erp-probe is clean; nothing was committed or pushed. Ports 3219 and 5292 are free, the heavy lock is released, and no throwaway database from today's runs remains. The gitignored build outputs (apps/server/dist, apps/console/dist, packages/*/dist) were left in the worktree for later stack runs.\n\nThe 34 screenshots are in D:/Projects/erp-tools/probe-shots/ (01-catalog-setup-initial.png through 34-locations-after-warehouse.png). Full-page shots show the sticky shell header stitched mid-page; that is a capture artifact, not a UI bug. C: had 19 GB free throughout."
+  },
+  "critic": {
+    "missing": [
+      {
+        "topic": "Missed SKU reference: courier.return_receipt_lines",
+        "why": "Neither the CRUD audit's SKU list nor the parity item's purge list includes courier.return_receipt_lines.sku_id. Its foreign key exists only in raw SQL (packages/db/migrations/0048_courier_schema.sql:253, ON DELETE restrict) and is not declared in the Drizzle schema (packages/db/src/schema/courier/index.ts:653-680 declares only the receipt FK), so anyone who scanned the Drizzle schema missed it. A purge that pre-checks only the listed tables would fail on that FK with a raw 23503.",
+        "whatToCheck": "Build the reference list from the migrations (grep REFERENCES \"catalog\".\"skus\" across packages/db/migrations: 23 tables), not from packages/db/src/schema. Add a test that fails when a new FK to catalog.skus, products or categories appears without a matching check in the purge."
+      },
+      {
+        "topic": "Catalog errors do not map foreign-key violations (23503)",
+        "why": "mapCatalogErrors maps only 23514 (the barcode range) and 23505 (duplicates) (apps/server/src/modules/catalog/catalog.errors.ts:107-129). If any new delete route misses a reference (courier return lines, or M35b's custom_links), Postgres answers 23503 and the API returns a 500 instead of a typed 'in use' refusal.",
+        "whatToCheck": "Add a CATALOG_IN_USE code to packages/contracts/src/errors.ts. Map 23503 to it as a backstop behind the explicit pre-check counts, and test it with a reference the pre-check deliberately skips."
+      },
+      {
+        "topic": "Proposed SECURITY DEFINER purge conflicts with repo convention",
+        "why": "Both the CRUD audit and the parity item propose `catalog.purge_unused_product` as SECURITY DEFINER owned by erp_owner. The catalog and storefront migrations state that this is avoided deliberately as an RLS-hole pattern (0026_catalog_integrity.sql:266-273; 0104_m33_storefront_policies.sql:20-23; 0055_hr_integrity.sql:334-338). erp_owner is NOBYPASSRLS (packages/db/src/bootstrap.sql:8) and FORCE RLS applies to it, so the function would still be tenant-bound. Even so, it departs from the convention and needs a decision row and a `set search_path`, as the only precedents have (0015:100-101, 0106:79-80). The blocker it is meant to solve is that erp_app has only select and insert on sku_price_history (0024_catalog_policies.sql:92) and the FK is restrict (catalog/index.ts:494-498).",
+        "whatToCheck": "Compare the alternatives. (1) Grant erp_app DELETE on sku_price_history, guarded by a trigger that allows the delete only when the parent SKU is deleted in the same transaction, or only for SKUs with no other references. (2) Make the FK ON DELETE CASCADE from skus. Record the choice in decisions.md, because price history was designed as append-only evidence (catalog/index.ts:466-470 comment). Run the ledger-auditor, since this touches tenancy."
+      },
+      {
+        "topic": "Module boundaries (invariant 12): catalog is a leaf module",
+        "why": "CatalogModule imports only FilesModule (apps/server/src/modules/catalog/catalog.module.ts:23). inventory, orders, pos, promo, storefront, marketing, intake and migration all consume CATALOG_API. A purge or 'used by N' check run from catalog would have to query inventory, sales, pos, supply, courier, promo, marketing and storefront tables directly, which breaks invariant 12 and apps/server/src/modules/module-boundaries.test.ts, or import those modules, which creates circular Nest dependencies. No investigator addressed this. The same applies to the CRUD audit's plan to rewrite promo, campaign and storefront jsonb lists and menu rows from a catalog delete.",
+        "whatToCheck": "Design the orchestration: either a higher-level service in a module that imports the others, with each module exposing `skuUsage(tx, orgId, skuIds)` on its *.api.ts, or DB FKs as the hard check (with 23503 mapped) plus events for the soft jsonb references. Confirm against module-boundaries.test.ts."
+      },
+      {
+        "topic": "Hard deletes get no 'before' audit record",
+        "why": "The catalog module writes no audit entries of its own (no AuditService or audit.record anywhere in apps/server/src/modules/catalog). The interceptor runs after the response, in its own transaction, and stores only the redacted request and response bodies, with entityId falling back to the path (apps/server/src/platform/audit/audit.interceptor.ts:178-201). A delete that returns {id} therefore leaves no record of what was deleted. The existing deletes already lose data this way: a size chart's grid (storefront.service.ts:401-414), and menu children removed by the cascade (0103:142). The proposals' 'the audit interceptor records it' is not enough.",
+        "whatToCheck": "Every new hard delete and bulk action should call AuditService.record(tx, {operation:'delete', before: snapshot}) inside the delete transaction (audit.service.ts:36 supports `before`), with one row per entity in bulk actions. Retro-fit the size chart, menu item (including cascaded children) and hero slide deletes."
+      },
+      {
+        "topic": "Purging a SKU breaks unsynced offline till sales",
+        "why": "The till sells offline from a cached catalog. On sync, a line whose SKU the catalog no longer has is rejected as POS_SALE_INVALID, 'a bad payload rather than a sale anybody could post later' (apps/server/src/modules/pos/sync.service.ts:180-191). If an 'unused' SKU is purged while a till holds an unsynced sale of it, the cash sale can never be recorded. The 'no pos.sale_lines' eligibility check cannot see sales that have not synced yet.",
+        "whatToCheck": "Make purge eligibility stricter: the product never reached status active (a draft only), or a grace period longer than the till's offline window, or the till's catalog version is checked. Add a POS sync test that covers a purged SKU."
+      },
+      {
+        "topic": "Archived products keep their slug, so re-creating them fails",
+        "why": "Under D-561 the owner re-uploads every product by hand (docs/plans/M36.md:11-19), and the new-product form posts opening stock straight away (D-602: movements and a journal). Nearly every product created by mistake is therefore archive-only. An archived product keeps its unique slug (products_org_slug_idx, catalog/index.ts:323). The form sends `slug: slugify(name)` with no suffix (apps/console/src/routes/catalog/new-product.tsx:234), so re-creating 'Black Panjabi' correctly fails with CATALOG_DUPLICATE. This is the owner's most likely day-to-day pain, and no proposal covers it.",
+        "whatToCheck": "Specify the 'made a mistake with stock' flow: reverse the stock-in-hand entry while the window is open (POST /v1/inventory/stock-in-hand/:id/reverse), then archive and release the slug (rename it to <slug>-archived-<seq>, which the slug-history trigger at 0104:146-205 handles), or suffix slugs automatically on create. Test: archive, then re-create with the same name."
+      },
+      {
+        "topic": "Archiving or deleting a category does not take its products off the website",
+        "why": "The shop listing's webWhere checks only p.web_visible, p.status='active' and an active SKU (apps/server/src/modules/catalog/catalog-web.repository.ts:184-191). Products in a switched-off or deleted category stay on /shop, shown with no category on the card (storefront-public.service.ts:472-485). Menu entries for hidden categories are dropped automatically (packages/domain/src/storefront/content.ts:227-264), so the menu is fine. Category URLs have no slug history or redirects (only products have previous_slugs).",
+        "whatToCheck": "Decide with the owner whether archiving a category should also hide its products. Offer 'also hide its N products from the website' in the archive or delete dialog. Consider category slug redirects."
+      },
+      {
+        "topic": "Moving subcategories up on a category delete can collide on slug",
+        "why": "The CRUD audit's reassign-then-delete moves child categories to the deleted category's parent. Slugs are unique per (org, parent, slug) (categories_org_parent_slug_idx, catalog/index.ts:151-155), so 'Men > Shirts' moved to the root fails when a root 'Shirts' already exists. A freed category code can also be reused (categories_org_code_idx), which makes old printed SKU codes ambiguous.",
+        "whatToCheck": "Pre-check sibling slug collisions in the reassignment plan and show them. Decide whether category codes are retired or reusable after a delete."
+      },
+      {
+        "topic": "Mixed SKU code segments after a category reassignment",
+        "why": "extendMatrix takes the category code from the product's current category (catalog.service.ts:424-427), and the code segment is built from it (packages/domain/src/catalog/sku-code.ts:106-108). After a category is reassigned or deleted, new variants of an old product carry a different category segment, or none, than the existing SKUs. The CRUD audit mentions only that existing codes keep the old segment.",
+        "whatToCheck": "Decide whether extendMatrix should reuse the segment from the product's existing SKUs. Add an e2e test: reassign the category, add a size, and check that the code prefixes match."
+      },
+      {
+        "topic": "M35b branch adds new references that the delete design must include",
+        "why": "Branch m35b-web-marketing (commit 2749274, migration 0118) adds storefront.custom_links.category_id with FK restrict (0118 line 276), and highlight_product_ids uuid[] as a soft product reference (0118 line 173). It also adds the ncom connector (marketplace.ncom_*, with allow_categories). Per docs/plans/M35.md:65-72, ncom reads products and stock and reserves by SKU id, and its variant ids go through storefront.legacy_ids (storefront/index.ts:265-272). Neither investigator looked at this branch. A delete or archive built on integration-wave2 will miss these references once the branches merge.",
+        "whatToCheck": "Merge-order plan. Add custom_links (category FK, highlight ids) to the category and product delete checks and cleanup. Decide how archive and delete reach ncom: stock 0 or unlisted, and an outbox event."
+      },
+      {
+        "topic": "A server-computed margin would leak cost",
+        "why": "Both reviews propose a per-variant 'Margin %'. COST_FIELDS (packages/contracts/src/permissions/subjects.ts:156-185) has no margin entry. cost-fields.test.ts:51 checks only database columns whose names match cost, wac, margin or profit, not computed response fields. If any route returns marginBps, a role without read:cost can derive cost from price and margin. The parity item puts the margin in packages/domain/src/money, served from an inventory route.",
+        "whatToCheck": "Either compute the margin only in the browser from the wacPoisha that cost roles already receive, or add marginBps and margin_bps (and lastUnitCostPoisha, standardUnitCostPoisha) to COST_FIELDS. Add a route-matrix cost sweep for the new routes."
+      },
+      {
+        "topic": "A catalog CSV export with cost breaks invariant 5",
+        "why": "The parity item proposes GET /v1/catalog/export.csv with average cost and buying price for read:cost roles, and a buy_price_taka column in catalog CSV import and export. The catalog must never carry purchase cost (catalog/index.ts:26-41), and the price importer refuses cost columns by design (packages/domain/src/catalog/price-import.ts:17-22). serializeFor works on objects, not on CSV text.",
+        "whatToCheck": "Keep the cost export and import in supply or inventory routes. Put a selling-side-only export in catalog. Make sure CSV builders strip COST_FIELDS before serialising."
+      },
+      {
+        "topic": "Archiving a SKU can break in-flight orders and holds without warning",
+        "why": "updateSku archives with no check (catalog.service.ts:575-581). On any later edit of an open order's lines, priceLines refuses an archived SKU (apps/server/src/modules/orders/orders.service.ts:1730-1735), so editing a pending order that holds a now-archived variant fails until the line is replaced. The probe saw no warning when archiving a variant that holds stock. Live flash-sale items and website checkout holds are not reported either.",
+        "whatToCheck": "Have the archive dialogs (variant, product and the proposed bulk 'archive by size') report open orders, reservations, live flash items and stock. Test editing an order whose SKU was archived."
+      },
+      {
+        "topic": "Probe coverage gaps",
+        "why": "The probe exercised sizes × colours (S, M, L, XL × Red, Navy; 8 SKUs) for create and Edit prices only. It did not: run 'Add sizes or colours', so the cheapest-price, axis-order and orphaned-variant bugs are code-read only; run the price CSV or product import; run with the opening-stock window CLOSED, the likely live state; sign in as a role without read:cost; or check what the website (storefront API) shows after archiving a variant, product or category. It ran on a fresh database, not on Elysium's data.",
+        "whatToCheck": "Rerun with: the window closed (inventory.opening_stock_windows), a sales or warehouse user, the extend dialog on a size × colour product whose Colour list sits before Size, an archived category with products, and the storefront GET /storefront/v1/products after each archive."
+      },
+      {
+        "topic": "Live state not verified",
+        "why": "Whether Elysium's opening-stock window is open or closed on erp.elysium-lifestyle.bd decides whether the owner has ever seen a per-variant cost on New product (new-product.tsx:168, 361). Nobody checked. Per-variant selling price IS in the deployed build: catalog-stock-ux is an ancestor of 93a9765 (D-422), so 'we can't do variant pricing' is about discoverability and missing cost, not a missing feature.",
+        "whatToCheck": "Read inventory.opening_stock_windows for Elysium on the live server, or ask the owner, before ranking the per-variant cost fixes."
+      },
+      {
+        "topic": "Rewriting promo scope lists conflicts with frozen terms",
+        "why": "The CRUD audit proposes rewriting promo.codes.category_ids, product_ids and sku_ids when a category or product is deleted. Discount terms are frozen by design (promo.controller.ts:87-90): only status changes, with an audit entry (promo.service.ts:632-656). Changing a code's scope after redemptions changes terms retroactively. Dangling ids in jsonb are harmless at runtime.",
+        "whatToCheck": "Decide: block the delete while any code names the id, or leave dangling ids and show 'deleted product' in the discount view. Do not mutate a redeemed code's terms. Changes go through PromoApi (invariant 12)."
+      },
+      {
+        "topic": "Tenancy tests for the new deletes",
+        "why": "CLAUDE.md requires integration tests against real Postgres for tenancy and permission changes, and the ledger-auditor for diffs touching tenancy or permissions. None of the delete proposals mention a cross-tenant test: a delete of org B's id from org A must return 404 and touch nothing. 'delete Catalog' is currently granted (matrix.ts:286) but used by no route, so it has never been exercised.",
+        "whatToCheck": "Plan route-matrix fixtures for every new DELETE and bulk route, an RLS cross-org delete test, and a check that roles without delete Catalog (warehouse, sales, marketing) get 403."
+      },
+      {
+        "topic": "Entities not audited",
+        "why": "Not covered: product tags (free text on products.tags, with no way to rename or remove a tag across products); category website images and product-image file objects (no orphan sweep exists in apps/server/src/modules/files); storefront.web_locations as a setup entity (insert/delete only, 0104:51); catalog.sku_settings (org code). The CRUD audit also never notes that delete Catalog is unused today while image detach uses update Catalog (catalog.controller.ts:305-317).",
+        "whatToCheck": "Decide whether tags need a manage screen. Add a file-object orphan sweep job if image and category deletes are to free R2 storage."
+      }
+    ],
+    "contradictions": [
+      "Product purge and legacy ids: the CRUD audit deletes storefront.legacy_ids rows in the purge transaction, while the parity item refuses the delete while a legacy_ids row exists. Under D-561 (docs/plans/M36.md:11-19) no products are imported, so product and variant legacy ids are empty and the clash is moot for products. It still matters for customers and for ncom variant addressing (storefront/index.ts:265-272).",
+      "Promo references in deletes: the CRUD audit blocks a category delete when ANY promo code names it and rewrites promo and campaign jsonb on a product purge. The parity item blocks only on an ACTIVE discount's category_ids (archived codes are left dangling) and blocks a product purge when it is in a discount's product_ids or a flash sale. Rewriting conflicts with the frozen discount terms (promo.controller.ts:87-90).",
+      "Archive marker for size and colour lists and values: the CRUD audit proposes an is_active column; the parity item proposes retired_at timestamptz. Pick one.",
+      "Last purchase cost read: the variant pricing review puts it in supply (GET /v1/supply/sku-costs, table supply.sku_purchase_prices), and the parity item in inventory (GET /v1/inventory/costs, table supply.sku_buy_prices). Different modules and different table names. An inventory route reading supply_lines would also break invariant 12.",
+      "Buying price by CSV: the variant pricing review says it belongs only in a supply importer, because the catalog importer refuses cost columns (price-import.ts:17-22). The parity item puts buy_price_taka in the catalog CSV export and import.",
+      "Discount restore: the CRUD audit says restore is api-only, because setStatus has no transition guard (promo.service.ts:632-656). The parity item says archive is one-way. Both are partly right: the server allows archived to active, the UI hides every action on archived rows (discounts.tsx:207).",
+      "LandingPage subject: the parity item proposes renaming it to Promotion. The CRUD audit and the relayed owner instruction say to leave the landing-page topic alone. Renaming touches that topic and the route matrix, so it is out of scope.",
+      "Campaign links: the parity item says 'Nothing exists yet' and lists them for this work. Branch m35b-web-marketing (commit 2749274) already builds campaign links console CRUD (storefront.custom_links), and they are M35b scope, not catalog scope.",
+      "Category order on the website: the parity item says the storefront orders categories alphabetically by slug. The website tree sorts siblings by position, then name (packages/domain/src/storefront/content.ts:108-135). Only the raw SQL orders by path. What is missing is a console control that sets position.",
+      "Re-adding an archived variant: the CRUD audit says the unique variant key refuses it. extendMatrix passes every existing key, archived ones included (skusOfProduct has no status filter, catalog.repository.ts:502-508), so matrixPlan reports it as unchanged: a silent no-op, not an error. The dialog already shows archived values as existing chips that cannot be unticked (product-detail.tsx:800-806, 844).",
+      "Activity log: the parity item says the interceptor already records every change with before and after. It records only the redacted request and response bodies (audit.interceptor.ts:178-201), the catalog writes no audit entries of its own, and there is no audit module api.ts to read through (only desk.repository.ts and preview/guard.ts read audit.audit_log).",
+      "Hands-on probe notes: 'merchandiser' is only the stack user's name; the account is org_admin. The parity item proposes a merchandiser role that does not exist, so the probe never tested a non-admin catalog editor."
+    ]
+  }
+}

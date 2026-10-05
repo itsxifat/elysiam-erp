@@ -53,7 +53,7 @@ const INSIGHT_KEY: Readonly<Record<InsightItem['code'], string>> = {
   cpdo_rising: 'cpdoRising',
   slow_pickup: 'slowPickup',
   channel_returns: 'channelReturns',
-  delivery_success_below_group: 'deliverySuccessBelowGroup',
+  delivery_success_below_usual: 'deliverySuccessBelowUsual',
 };
 
 /**

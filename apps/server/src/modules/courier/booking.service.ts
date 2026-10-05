@@ -100,6 +100,29 @@ export class BookingService implements OnModuleInit {
     return existing.booking_state === 'pending' || existing.booking_state === 'booked';
   }
 
+  /** The booked parcel's codes, for the buyer's tracking (M34, D-524). Null before booking. */
+  async parcelTracking(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+  ): Promise<{
+    courierId: string;
+    consignmentNo: string | null;
+    trackingCode: string | null;
+  } | null> {
+    const parcel = await repo.consignmentByOrder(tx, orgId, orderId);
+    if (parcel?.booking_state !== 'booked') return null;
+    return {
+      courierId: parcel.courier_id,
+      consignmentNo: parcel.consignment_no,
+      trackingCode: parcel.tracking_code,
+    };
+  }
+
+  async ordersByParcelCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]> {
+    return repo.ordersByParcelCode(tx, orgId, code);
+  }
+
   /**
    * Create the consignment row and queue the booking, inside the caller's transaction.
    *
@@ -442,7 +465,9 @@ export class BookingService implements OnModuleInit {
       codAmountPoisha: poisha(BigInt(consignment.cod_amount_poisha)),
       itemDescription: order.itemSummary,
       note: order.notes,
-      weightGrams: null,
+      // The order's weight when every variant in it is weighed (M39b, D-645); otherwise the
+      // adapter's configured default.
+      weightGrams: order.weightGrams,
     };
 
     let result;

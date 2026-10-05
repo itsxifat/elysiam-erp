@@ -22,6 +22,7 @@ import { ReconcileService } from './reconcile.service.js';
 import { StockService } from './stock.service.js';
 import { TransfersService } from './transfers.service.js';
 import { mapStockErrors } from './inventory.errors.js';
+import { countScanSchema } from './stock-in-hand.schemas.js';
 import {
   createLocationSchema,
   dispatchTransferSchema,
@@ -249,6 +250,18 @@ export class InventoryController {
     const sessionId = parse(stockIdSchema, id);
     const input = parse(recordCountsSchema, body);
     return this.counts.record(requireContext(request), auditable(request), sessionId, input);
+  }
+
+  /**
+   * One scan on an open count (M38a, D-606): one more piece of the scanned SKU. Same
+   * ability as typing a count, because it is the same act done with a scanner.
+   */
+  @RequireAbility('request', 'StockAdjustment')
+  @Post('counts/:id/scans')
+  async scanCount(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    const sessionId = parse(stockIdSchema, id);
+    const input = parse(countScanSchema, body);
+    return this.counts.scan(requireContext(request), auditable(request), sessionId, input);
   }
 
   @RequireAbility('request', 'StockAdjustment')

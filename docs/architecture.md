@@ -42,6 +42,8 @@ When you assume something, add a row to `docs/decisions.md`.
 27. Testing strategy
 28. Environments and deployment
 29. Performance targets
+30. One ERP per brand and the mother ERP
+31. The brand's website, run from its ERP
 
 ---
 
@@ -175,6 +177,8 @@ Explain these to the client. Each is logged in decisions.md.
 
 The system is a TypeScript modular monolith: one codebase and one PostgreSQL database, deployed as separate processes.
 
+> **Since M31 (D-469, D-470), production runs one deployment per brand:** the same codebase, its own processes and its own database, holding that one brand (and at most the training org). Row-level security and `org_id` stay. The cross-brand views moved to a separate mother ERP. See §30.
+
 - **`api`** (NestJS on Fastify): REST + OpenAPI, authentication, and the Socket.IO realtime gateway.
 - **`worker`** (same codebase, different entrypoint): pg-boss consumers and cron schedules. It owns **all** outbound integration calls.
 - **Frontends:**
@@ -211,34 +215,35 @@ See D-001 and D-002.
 
 ### Module → schema map
 
-| Module    | Schema    | Owns                                                                          |
-| --------- | --------- | ----------------------------------------------------------------------------- |
-| org       | org       | organizations, branches, locations, settings, feature flags, per-org branding |
-| iam       | iam       | Better Auth tables, memberships, sign-in resets, API keys, devices            |
-| audit     | audit     | audit log                                                                     |
-| approvals | approvals | maker-checker requests                                                        |
-| events    | events    | outbox and event log                                                          |
-| files     | files     | file objects                                                                  |
-| catalog   | catalog   | categories, attributes, products, SKUs, prices, images                        |
-| inventory | inventory | movements, levels, reservations, costs, counts                                |
-| supply    | supply    | suppliers, supply entries, supplier returns, supplier payments                |
-| ledger    | ledger    | accounts, journals, lines, periods                                            |
-| sales     | sales     | customers (org-scoped), orders, order lines, delivery zones                   |
-| delivery  | delivery  | courier accounts, consignments, status events, settlements                    |
-| fraud     | fraud     | phone signals, provider checks, rules; **cross-org by design** (§5)           |
-| crm       | sales     | buyer stats, segments, occasions — built inside `orders` (D-211)              |
-| notify    | notify    | templates, messages, opt-outs                                                 |
-| promo     | promo     | promo codes, redemptions                                                      |
-| marketing | marketing | campaigns, ad spend, leads                                                    |
-| hr        | hr        | employees, attendance, payroll, employee loans, targets, bonus rules          |
-| reseller  | reseller  | resellers, margin rules, slabs, earnings, payouts                             |
-| pos       | pos       | registers, shifts, POS sync                                                   |
-| investor  | investor  | investors, investments, distributions, withdrawals                            |
-| loans     | loans     | lenders, company loans, instalments, payments, reminders (M26, D-293, D-302)  |
-| messaging | messaging | Chatwoot links, conversation stats, activity heartbeats                       |
-| landing   | landing   | pages, versions, domains                                                      |
-| analytics | analytics | rollups, leaderboard snapshots, insights                                      |
-| migration | migration | imported files and the one opening of a brand's books (M14a, D-215)           |
+| Module     | Schema     | Owns                                                                          |
+| ---------- | ---------- | ----------------------------------------------------------------------------- |
+| org        | org        | organizations, branches, locations, settings, feature flags, per-org branding |
+| iam        | iam        | Better Auth tables, memberships, sign-in resets, API keys, devices            |
+| audit      | audit      | audit log                                                                     |
+| approvals  | approvals  | maker-checker requests                                                        |
+| events     | events     | outbox and event log                                                          |
+| files      | files      | file objects                                                                  |
+| catalog    | catalog    | categories, attributes, products, SKUs, prices, images                        |
+| inventory  | inventory  | movements, levels, reservations, costs, counts                                |
+| supply     | supply     | suppliers, supply entries, supplier returns, supplier payments                |
+| ledger     | ledger     | accounts, journals, lines, periods                                            |
+| sales      | sales      | customers (org-scoped), orders, order lines, delivery zones                   |
+| delivery   | delivery   | courier accounts, consignments, status events, settlements                    |
+| fraud      | fraud      | phone signals, provider checks, rules; **cross-org by design** (§5)           |
+| crm        | sales      | buyer stats, segments, occasions — built inside `orders` (D-211)              |
+| notify     | notify     | templates, messages, opt-outs                                                 |
+| promo      | promo      | promo codes, redemptions                                                      |
+| marketing  | marketing  | campaigns, ad spend, leads                                                    |
+| hr         | hr         | employees, attendance, payroll, employee loans, targets, bonus rules          |
+| reseller   | reseller   | resellers, margin rules, slabs, earnings, payouts                             |
+| pos        | pos        | registers, shifts, POS sync                                                   |
+| investor   | investor   | investors, investments, distributions, withdrawals                            |
+| loans      | loans      | lenders, company loans, instalments, payments, reminders (M26, D-293, D-302)  |
+| messaging  | messaging  | Chatwoot links, conversation stats, activity heartbeats                       |
+| landing    | landing    | pages, versions, domains                                                      |
+| analytics  | analytics  | rollups, leaderboard snapshots, insights                                      |
+| storefront | storefront | website settings, hero slides, menu, size charts, old ids, site keys (§31)    |
+| migration  | migration  | imported files and the one opening of a brand's books (M14a, D-215)           |
 
 ---
 
@@ -294,11 +299,11 @@ create policy org_isolation on <schema>.<table>
 
 ### Database roles
 
-| Role            | Used by                                                                               | Rights                                                                                                                                                                    |
-| --------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `erp_owner`     | Migrations and seeds only; the app never connects as it                               | Owns all objects. **NOSUPERUSER and NOBYPASSRLS** (D-042): a superuser bypasses FORCE RLS, which would make every policy above a no-op for the role that owns the tables. |
-| `erp_app`       | The running app                                                                       | No BYPASSRLS. INSERT/SELECT only on append-only tables (ledger, stock movements, audit, outbox).                                                                          |
-| `erp_analytics` | Only the analytics module and super-admin consolidated reads, through a separate pool | SELECT only, with policies that allow all orgs                                                                                                                            |
+| Role            | Used by                                                                                                                                              | Rights                                                                                                                                                                    |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `erp_owner`     | Migrations and seeds only; the app never connects as it                                                                                              | Owns all objects. **NOSUPERUSER and NOBYPASSRLS** (D-042): a superuser bypasses FORCE RLS, which would make every policy above a no-op for the role that owns the tables. |
+| `erp_app`       | The running app                                                                                                                                      | No BYPASSRLS. INSERT/SELECT only on append-only tables (ledger, stock movements, audit, outbox).                                                                          |
+| `erp_analytics` | Read-only access across orgs, through a separate pool; since M31 nothing in a brand's ERP uses it, and the mother ERP reads a brand through it (§30) | SELECT only, with policies that allow all orgs                                                                                                                            |
 
 ### Access helpers
 
@@ -314,7 +319,7 @@ create policy org_isolation on <schema>.<table>
 
 1. `fraud.phone_signals` and `fraud.provider_checks`: aggregated counts keyed by an HMAC of the normalized phone number. Every org can read them. They contain no order details, names or addresses.
 2. The `analytics.daily_org` rollup, read through `erp_analytics` (D-329); the other rollups are single-brand.
-3. Super Admin consolidated views (wallet totals, P&L across orgs) through `erp_analytics`. These are read-only; **every write is scoped to exactly one org**.
+3. ~~Super Admin consolidated views (wallet totals, P&L across orgs) through `erp_analytics`.~~ Removed from the brand's ERP by M31 (D-471): each brand runs on its own database, and the mother ERP builds the combined views from each brand's read-only role (§30). Every write is still scoped to exactly one org.
 4. `iam` users and memberships: one user can belong to several orgs with different roles.
 5. The org list and reference data (districts and thanas) are global.
 
@@ -404,34 +409,40 @@ The hostname comes from the **caller**, not from the API's own `Host` header (D-
 
 This summary is authoritative until M02b writes the code matrix. After that, the code is authoritative and any change needs a decision row.
 
-| Capability                         | super_admin        | org_admin                          | sales                   | accounts                    | marketing    | hr      | branch_manager                 | warehouse           | reseller            | investor |
-| ---------------------------------- | ------------------ | ---------------------------------- | ----------------------- | --------------------------- | ------------ | ------- | ------------------------------ | ------------------- | ------------------- | -------- |
-| Catalog read (no cost)             | all                | org                                | org                     | org                         | org          | —       | org                            | org                 | limited fields      | —        |
-| Catalog write, prices              | all                | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
-| Cost, WAC, stock value, margins    | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
-| Stock availability                 | all                | org                                | org                     | org                         | org          | —       | org                            | org                 | Beownz only         | —        |
-| Stock adjust / transfer / count    | all                | org + approve                      | —                       | read                        | —            | —       | request (branch)               | request             | —                   | —        |
-| Supply entries, suppliers          | all                | org                                | —                       | org                         | —            | —       | —                              | qty-only drafts     | —                   | —        |
-| Orders                             | all                | org                                | own + unassigned queue  | read                        | read         | —       | branch                         | pack, ship, returns | own (portal)        | —        |
-| Customers, buyer history           | all                | org                                | customers of own orders | read                        | org          | —       | branch                         | —                   | own end customers   | —        |
-| Buyer list export                  | all                | org                                | —                       | —                           | org          | —       | —                              | —                   | —                   | —        |
-| Fraud trust badge and reasons      | all                | org                                | yes                     | read                        | —            | —       | branch                         | —                   | badge on own orders | —        |
-| Fraud block override               | all                | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
-| Wallets, cash entries, petty cash  | all                | org                                | —                       | org                         | —            | —       | own branch wallets             | —                   | —                   | —        |
-| Ledger reports, P&L, balance sheet | all + consolidated | org                                | —                       | org                         | —            | —       | branch P&L without cost detail | —                   | —                   | —        |
-| Period close, reopen request       | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
-| Courier settlements                | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
-| Campaigns, ad spend, leads         | all                | org                                | —                       | spend entry                 | org          | —       | —                              | —                   | —                   | —        |
-| Landing pages, promo codes         | all                | org                                | apply codes             | —                           | org          | —       | apply at POS                   | —                   | —                   | —        |
-| Employees, attendance, payroll     | all                | org                                | own                     | payroll posting and payment | own          | org     | branch staff                   | own                 | —                   | —        |
-| Targets and bonus rules            | all                | org                                | own progress            | —                           | own progress | org     | branch progress                | —                   | —                   | —        |
-| Reseller admin, payouts            | all                | Beownz org                         | —                       | Beownz org                  | —            | —       | —                              | —                   | own                 | —        |
-| Investors                          | all                | org (read)                         | —                       | org                         | —            | —       | —                              | —                   | —                   | own      |
-| Company loans                      | all                | org                                | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
-| Approvals (as checker)             | all                | org                                | —                       | payments                    | —            | payroll | branch items under threshold   | —                   | —                   | —        |
-| Leaderboard                        | all                | all orgs (normalized metrics only) | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
-| Org dashboard (analytics)          | all + consolidated | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
-| Users, roles, settings             | all                | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Capability                         | super_admin | org_admin     | sales                   | accounts                    | marketing    | hr      | branch_manager                 | warehouse           | reseller            | investor |
+| ---------------------------------- | ----------- | ------------- | ----------------------- | --------------------------- | ------------ | ------- | ------------------------------ | ------------------- | ------------------- | -------- |
+| Catalog read (no cost)             | all         | org           | org                     | org                         | org          | —       | org                            | org                 | limited fields      | —        |
+| Catalog write, prices              | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Cost, WAC, stock value, margins    | all         | org           | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Stock availability                 | all         | org           | org                     | org                         | org          | —       | org                            | org                 | Beownz only         | —        |
+| Stock adjust / transfer / count    | all         | org + approve | —                       | read                        | —            | —       | request (branch)               | request             | —                   | —        |
+| Supply entries, suppliers          | all         | org           | —                       | org                         | —            | —       | —                              | qty-only drafts     | —                   | —        |
+| Orders                             | all         | org           | own + unassigned queue  | read                        | read         | —       | branch                         | pack, ship, returns | own (portal)        | —        |
+| Customers, buyer history           | all         | org           | customers of own orders | read                        | org          | —       | branch                         | —                   | own end customers   | —        |
+| Buyer list export                  | all         | org           | —                       | —                           | org          | —       | —                              | —                   | —                   | —        |
+| Fraud trust badge and reasons      | all         | org           | yes                     | read                        | —            | —       | branch                         | —                   | badge on own orders | —        |
+| Fraud block override               | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Wallets, cash entries, petty cash  | all         | org           | —                       | org                         | —            | —       | own branch wallets             | —                   | —                   | —        |
+| Ledger reports, P&L, balance sheet | all         | org           | —                       | org                         | —            | —       | branch P&L without cost detail | —                   | —                   | —        |
+| Period close, reopen request       | all         | org           | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Courier settlements                | all         | org           | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Campaigns, ad spend, leads         | all         | org           | —                       | spend entry                 | org          | —       | —                              | —                   | —                   | —        |
+| Landing pages, promo codes         | all         | org           | apply codes             | —                           | org          | —       | apply at POS                   | —                   | —                   | —        |
+| Employees, attendance, payroll     | all         | org           | own                     | payroll posting and payment | own          | org     | branch staff                   | own                 | —                   | —        |
+| Targets and bonus rules            | all         | org           | own progress            | —                           | own progress | org     | branch progress                | —                   | —                   | —        |
+| Reseller admin, payouts            | all         | Beownz org    | —                       | Beownz org                  | —            | —       | —                              | —                   | own                 | —        |
+| Investors                          | all         | org (read)    | —                       | org                         | —            | —       | —                              | —                   | —                   | own      |
+| Company loans                      | all         | org           | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Approvals (as checker)             | all         | org           | —                       | payments                    | —            | payroll | branch items under threshold   | —                   | —                   | —        |
+| Org dashboard (analytics)          | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Users, roles, settings             | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Website (M33, D-508)               | all         | org           | read                    | —                           | org          | —       | —                              | —                   | —                   | —        |
+| Branch name, switch off (M39a)     | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+
+M39a (D-621, D-630 to D-633): deleting a row nothing uses is the org admin's alone (`delete
+Catalog`, `Supply`, `LandingPage`, `Campaign`); the website's own rows keep D-508's `delete
+Storefront` (org_admin and marketing). Archiving and restoring are the row's `update`. The
+`Branch` subject is new.
 
 ### Maker-checker actions
 
@@ -529,42 +540,45 @@ System subtypes:
 
 W = the wallet account used.
 
-| Business event                        | Journal                                                                                                                                                                                                                            |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Supply received (qty × unit cost)     | Dr Inventory / Cr Supplier payable (supplier)                                                                                                                                                                                      |
-| Supplier advance paid                 | Dr Supplier advance / Cr W                                                                                                                                                                                                         |
-| Advance applied to a supply           | Dr Supplier payable / Cr Supplier advance                                                                                                                                                                                          |
-| Supplier paid                         | Dr Supplier payable / Cr W                                                                                                                                                                                                         |
-| Supplier return                       | Dr Supplier payable (qty × original unit cost)<br>Cr Inventory (qty × current WAC)<br>Dr or Cr Purchase price variance (the difference)                                                                                            |
-| Order handed to courier               | Dr Goods in transit / Cr Inventory (qty × WAC at handover; this value is recorded on the movement)                                                                                                                                 |
-| Delivered (full)                      | Dr Courier receivable (COD collected) + Dr Customer advance (if an advance was taken)<br>Cr Sales revenue (net item value) + Cr Delivery charge income<br>and Dr COGS / Cr Goods in transit                                        |
-| Partially delivered                   | Delivered lines post as above. Any difference between the courier-reported collection and the computed value posts to Sales discounts, with a reason. Undelivered lines follow the return path.                                    |
-| Return received (sellable or damaged) | Dr Inventory / Cr Goods in transit (at dispatch value). Damaged units go to the `damaged` location; writing them off is a separate step that needs approval.                                                                       |
-| Courier charges (from settlement)     | Dr Courier charges and Dr Return charges / Cr Courier receivable                                                                                                                                                                   |
-| COD settlement received               | Dr W (bank or bKash) / Cr Courier receivable (net)                                                                                                                                                                                 |
-| Advance received before delivery      | Dr W / Cr Customer advance, when accounts **verifies** the claim an agent recorded; a claim alone posts nothing (D-230)                                                                                                            |
-| Advance at the order's ending         | Kept (per org policy, at most the delivery charge): Dr Customer advance / Cr Other income. Owed back: stays in Customer advance until the refund is paid, then Dr Customer advance / Cr W (D-232)                                  |
-| Advance verification undone           | The reversal of its received journal, and the COD restored; only before the parcel moves (D-236)                                                                                                                                   |
-| POS sale                              | Dr W (branch) / Cr Sales revenue, and Dr COGS / Cr Inventory                                                                                                                                                                       |
-| POS return (D-169)                    | Dr Sales revenue / Cr W (the tender refunded), and Dr Inventory / Cr COGS at the unit cost the sale recorded. An exchange is a return and a new sale, two journals. Taken only at the branch that made the sale.                   |
-| Cash in (category)                    | Dr W / Cr income account                                                                                                                                                                                                           |
-| Cash out / petty cash (category)      | Dr expense account / Cr W (receipt required)                                                                                                                                                                                       |
-| Wallet transfer                       | Dr W2 (+ Dr Bank charges) / Cr W1                                                                                                                                                                                                  |
-| Daily closing variance                | Dr or Cr Cash over/short against W (approval required)                                                                                                                                                                             |
-| Ad spend recorded                     | Dr Ad spend / Cr W or Cr Other payable                                                                                                                                                                                             |
-| Payroll posted                        | Dr Salary expense + Dr Bonus expense<br>Cr Salary payable + Cr Employee loan receivable (deductions)                                                                                                                               |
-| Salary paid                           | Dr Salary payable / Cr W                                                                                                                                                                                                           |
-| Employee loan disbursed               | Dr Employee loan receivable / Cr W                                                                                                                                                                                                 |
-| Reseller order delivered              | Dr Courier receivable (Σ customer selling price + delivery charge)<br>Cr Sales revenue (Σ reseller price + slab charge)<br>Cr Delivery charge income<br>Cr Reseller payable (reseller income)<br>and Dr COGS / Cr Goods in transit |
-| Reseller order returned               | No income accrues. Any return fee is charged to the reseller per policy (D-016): Dr Reseller payable / Cr Other income.                                                                                                            |
-| Reseller payout                       | Dr Reseller payable / Cr W                                                                                                                                                                                                         |
-| Investor capital received             | Dr W / Cr Investor capital (investor)                                                                                                                                                                                              |
-| Profit distribution declared          | Dr Profit distribution / Cr Investor payable                                                                                                                                                                                       |
-| Distribution or withdrawal paid       | Dr Investor payable (or Investor capital) / Cr W                                                                                                                                                                                   |
-| Company loan received                 | Dr W / Cr Loan payable (lender)                                                                                                                                                                                                    |
-| Loan instalment paid                  | Dr Loan payable (principal) + Dr Interest expense / Cr W, one whole instalment, keyed per instalment; interest expensed when paid (D-295, D-297)                                                                                   |
-| Stock write-off / count loss          | Dr Inventory write-off / Cr Inventory (approval required)                                                                                                                                                                          |
-| Stock gain                            | Dr Inventory / Cr Inventory adjustment gain (approval required)                                                                                                                                                                    |
+| Business event                                                                   | Journal                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Supply received (Σ line qty × that line's unit cost; M39b: each variant its own) | Dr Inventory / Cr Supplier payable (supplier)                                                                                                                                                                                                                                                                                                          |
+| Supplier advance paid                                                            | Dr Supplier advance / Cr W                                                                                                                                                                                                                                                                                                                             |
+| Advance applied to a supply                                                      | Dr Supplier payable / Cr Supplier advance                                                                                                                                                                                                                                                                                                              |
+| Supplier paid                                                                    | Dr Supplier payable / Cr W                                                                                                                                                                                                                                                                                                                             |
+| Supplier return                                                                  | Dr Supplier payable (qty × original unit cost)<br>Cr Inventory (qty × current WAC)<br>Dr or Cr Purchase price variance (the difference)                                                                                                                                                                                                                |
+| Order handed to courier                                                          | Dr Goods in transit / Cr Inventory (qty × WAC at handover; this value is recorded on the movement)                                                                                                                                                                                                                                                     |
+| Delivered (full)                                                                 | Dr Courier receivable (COD collected) + Dr Customer advance (if an advance was taken)<br>Cr Sales revenue (net item value) + Cr Delivery charge income<br>and Dr COGS / Cr Goods in transit                                                                                                                                                            |
+| Partially delivered                                                              | Delivered lines post as above. Any difference between the courier-reported collection and the computed value posts to Sales discounts, with a reason. Undelivered lines follow the return path.                                                                                                                                                        |
+| Return received (sellable or damaged)                                            | Dr Inventory / Cr Goods in transit (at dispatch value). Damaged units go to the `damaged` location; writing them off is a separate step that needs approval.                                                                                                                                                                                           |
+| Courier charges (from settlement)                                                | Dr Courier charges and Dr Return charges / Cr Courier receivable                                                                                                                                                                                                                                                                                       |
+| COD settlement received                                                          | Dr W (bank or bKash) / Cr Courier receivable (net)                                                                                                                                                                                                                                                                                                     |
+| Advance received before delivery                                                 | Dr W / Cr Customer advance, when accounts **verifies** the claim an agent recorded; a claim alone posts nothing (D-230)                                                                                                                                                                                                                                |
+| Advance at the order's ending                                                    | Kept (per org policy, at most the delivery charge): Dr Customer advance / Cr Other income. Owed back: stays in Customer advance until the refund is paid, then Dr Customer advance / Cr W (D-232)                                                                                                                                                      |
+| Advance verification undone                                                      | The reversal of its received journal, and the COD restored; only before the parcel moves (D-236)                                                                                                                                                                                                                                                       |
+| POS sale                                                                         | Dr W (branch) / Cr Sales revenue, and Dr COGS / Cr Inventory                                                                                                                                                                                                                                                                                           |
+| POS return (D-169)                                                               | Dr Sales revenue / Cr W (the tender refunded), and Dr Inventory / Cr COGS at the unit cost the sale recorded. An exchange is a return and a new sale, two journals. Taken only at the branch that made the sale.                                                                                                                                       |
+| Cash in (category)                                                               | Dr W / Cr income account                                                                                                                                                                                                                                                                                                                               |
+| Cash out / petty cash (category)                                                 | Dr expense account / Cr W (receipt required)                                                                                                                                                                                                                                                                                                           |
+| Wallet transfer                                                                  | Dr W2 (+ Dr Bank charges) / Cr W1                                                                                                                                                                                                                                                                                                                      |
+| Daily closing variance                                                           | Dr or Cr Cash over/short against W (approval required)                                                                                                                                                                                                                                                                                                 |
+| Ad spend recorded                                                                | Dr Ad spend / Cr W or Cr Other payable                                                                                                                                                                                                                                                                                                                 |
+| Payroll posted                                                                   | Dr Salary expense + Dr Bonus expense<br>Cr Salary payable + Cr Employee loan receivable (deductions)                                                                                                                                                                                                                                                   |
+| Salary paid                                                                      | Dr Salary payable / Cr W                                                                                                                                                                                                                                                                                                                               |
+| Employee loan disbursed                                                          | Dr Employee loan receivable / Cr W                                                                                                                                                                                                                                                                                                                     |
+| Reseller order delivered                                                         | Dr Courier receivable (Σ customer selling price + delivery charge)<br>Cr Sales revenue (Σ reseller price + slab charge)<br>Cr Delivery charge income<br>Cr Reseller payable (reseller income)<br>and Dr COGS / Cr Goods in transit                                                                                                                     |
+| Reseller order returned                                                          | No income accrues. Any return fee is charged to the reseller per policy (D-016): Dr Reseller payable / Cr Other income.                                                                                                                                                                                                                                |
+| Reseller payout                                                                  | Dr Reseller payable / Cr W                                                                                                                                                                                                                                                                                                                             |
+| Investor capital received                                                        | Dr W / Cr Investor capital (investor)                                                                                                                                                                                                                                                                                                                  |
+| Profit distribution declared                                                     | Dr Profit distribution / Cr Investor payable                                                                                                                                                                                                                                                                                                           |
+| Distribution or withdrawal paid                                                  | Dr Investor payable (or Investor capital) / Cr W                                                                                                                                                                                                                                                                                                       |
+| Company loan received                                                            | Dr W / Cr Loan payable (lender)                                                                                                                                                                                                                                                                                                                        |
+| Loan instalment paid                                                             | Dr Loan payable (principal) + Dr Interest expense / Cr W, one whole instalment, keyed per instalment; interest expensed when paid (D-295, D-297)                                                                                                                                                                                                       |
+| Stock write-off / count loss                                                     | Dr Inventory write-off / Cr Inventory (approval required)                                                                                                                                                                                                                                                                                              |
+| Stock gain                                                                       | Dr Inventory / Cr Inventory adjustment gain (approval required)                                                                                                                                                                                                                                                                                        |
+| Stock in hand at the start (M38a)                                                | Dr Inventory / Cr Opening balance equity (Σ qty × cost per piece), one journal per entry keyed `stock_in_hand:<entry>:posted`, only while the brand's opening stock window is open (D-602)                                                                                                                                                             |
+| Stock in hand reversed (M38a)                                                    | The ledger's reversal of the entry's journal (Dr Opening balance equity / Cr Inventory), after an approved `stock_in_hand_reversal`, while the window is open, only while each SKU still averages to the entry's cost (D-602)                                                                                                                          |
+| Website payment (SSLCommerz)                                                     | The same posting as a verified advance: Dr SSLCommerz clearing (`1120`, `wallet_mfs_other`) / Cr Customer advance, when the Order Validation API confirms the exact amount; recorded by `storefront:checkout`, decided by `gateway:sslcommerz`. Accounts moves the clearing balance to the bank with a wallet transfer when SSLCommerz settles (D-526) |
 
 Accounting policies:
 
@@ -577,12 +591,12 @@ All reports filter by org, branch and a range of business dates. They apply the 
 
 - day book
 - cash book per wallet
-- wallet balances, plus a consolidated view for super_admin
+- wallet balances (the consolidated view across brands moved to the mother ERP with M31, D-471)
 - account ledger
 - party statements: supplier, courier, reseller, investor, employee, lender
 - receivable and payable aging (0–7, 8–30, 31–60, 60+ days), by open item: a settlement clears the oldest amount still open, and money paid ahead is shown apart, never aged (D-193)
 - trial balance
-- P&L by org, by branch, and consolidated
+- P&L by org and by branch (consolidated across brands: the mother ERP, §30)
 - balance sheet
 - stock valuation (cost roles only)
 - COD reconciliation: delivered vs settled vs outstanding, by courier
@@ -596,6 +610,7 @@ A brand that has traded for years opens its books here once, before go-live (D-2
 - A SKU opens at one cost (D-216), so the journal's inventory line equals the inventory module's valuation to the poisha.
 - The reconciliation puts imported, journal and module figures side by side per line (D-222); the accountant's sign-off is recorded once, only when every line agrees.
 - Run by the implementation team through `pnpm migration` and `pnpm demo:org` (D-214), not a screen. The training org (`is_training`) is seeded from anonymised files through the same importers and is left out of consolidated reads (D-223).
+- A brand that starts fresh instead (D-561) counts its stock in through **stock in hand** (§8, D-602): one journal per entry against the same `3350 Opening balance equity`, never M14a's one opening journal.
 
 ### Periods and dates
 
@@ -625,6 +640,9 @@ A brand that has traded for years opens its books here once, before go-live (D-2
   - `org_id, sku_id, location_id, qty`
   - `ref_type, ref_id`
   - `status`: `active | consumed | released`
+- `inventory.opening_stock_windows` (M38a): one row per brand, `status open | closed`, who closed it and when, the approval that reopened it last; no row means open (D-602).
+- `inventory.stock_in_hand_entries` and `…_lines` (M38a): a location and its lines (SKU, qty, `unit_cost_poisha`, null on a draft); `draft | posted | reversed`, the journal once posted, the ledger's reversal of it and the approval once reversed; the id is the client's key (D-602).
+- `inventory.count_scans` (M38a, append-only): one row per scan on a count, keyed by the scanning device (D-606).
 
 ### Rules
 
@@ -649,7 +667,8 @@ where org_id = $org and sku_id = $sku and location_id = $loc and on_hand - reser
   - A count session freezes a snapshot and staff enter counted quantities.
   - The variance becomes adjustment movements, which need approval.
 - **Transfers** are two steps: `transfer_out` to the `in_transit` location, then `transfer_in` at the destination. A brand's first transfer creates its org-level `IN-TRANSIT` location when it has none (D-428).
-- **A new product's first stock** is a supply receipt (supplier, cost per piece), entered from the product page or the new-product form; there is no opening-balance path after go-live (D-421).
+- **Stock already in hand** (M38a, D-602): while the brand's **opening stock window** is open (a new brand starts open), stock it already holds is entered per location at a cost per piece (> 0): `opening_balance` movements at that cost, blended into WAC exactly as a receipt, and one journal per entry, Dr Inventory / Cr Opening balance equity. Warehouse saves quantity-only drafts; `read:cost` prices and posts (D-005's split). An org admin closes the window once everything is counted in (audited); from then on it is refused (`OPENING_STOCK_CLOSED`, by the service, by `InventoryApi` for stock in hand and M14a's opening, and by triggers), and reopening is an `opening_stock_reopen` approval, for that close, a second admin decides (D-608). A brand that had already opened its books or moved stock when M38a arrived starts closed (migration 0114). Posting a draft repeats the pieces and location its poster read (`STOCK_IN_HAND_CHANGED` otherwise). A posted entry made by mistake is reversed while the window is open by an approved `stock_in_hand_reversal`: the same pieces out at the entry's cost (`adjustment_loss`) and the ledger's reversal of its journal, refused once a SKU averages to another cost, when an exact reversal is no longer possible; the window does not close while a reversal waits (D-602).
+- **A new product's first stock** is either stock in hand (while the window is open) or a supply receipt (supplier, cost per piece), from the new-product form or the product page (D-421, D-601). After the window closes, stock arrives only from suppliers, transfers, returns and approved adjustments.
 - **Low stock:** each SKU has a reorder level per location. Crossing it emits `stock.low`.
 - **Worked WAC example (use it in tests):**
   - Starting position: on-hand 10 @ ৳500.00 (50,000 poisha).
@@ -657,6 +676,144 @@ where org_id = $org and sku_id = $sku and location_id = $loc and on_hand - reser
   - New WAC = (10×50000 + 30×54000) / 40 = 53,000 poisha (৳530.00).
   - Dispatch 5 at 53,000.
   - A supplier return of 3 from the second lot credits the supplier 3×54,000 and removes inventory at 3×53,000. The 3,000-poisha difference goes to purchase price variance (credit).
+
+### Variant prices and buying prices (M39b)
+
+D-635 to D-646. The selling side lives in the catalog, purchase cost in supply and inventory
+(invariant 5), and the two meet only on a screen that may show both.
+
+- **Selling price and regular price** (`catalog.skus`): `price_poisha` is what the variant sells
+  for; `compare_at_poisha` (nullable, D-640) is a regular ("was") price the website strikes
+  through, a selling-side figure, so the catalog may hold it. A CHECK keeps it above the price
+  (`skus_compare_at_above_price`). Migration 0121 widens the price-history trigger to it: a row
+  whenever either changes (`compare_at_from_poisha`, `compare_at_to_poisha`), with the reason
+  the request gave. `PUT /v1/catalog/prices` reprices up to 500 variants (price, regular price
+  or both) in one transaction with one reason; the regular price is checked against the price
+  it will sit beside, under a row lock (`CATALOG_PRICE_INVALID` names the SKU).
+- **Prices at creation** (D-635): `POST /v1/catalog/products` takes a regular price for the
+  product and, per variant (`variantPrices`, D-422), a price and regular price. The console
+  fills them by size and by colour (row > size > colour > main price), by chosen rows, and by
+  copying a row down; the arithmetic is `@elysium/domain/pricing`, shared with the server.
+- **Bulk changes** (D-636): `planBulkPrices` (set, add or subtract an amount, raise or lower by
+  basis points, round to a step, half away from zero through `divideRounded`) previews a change
+  on chosen variants and refuses a result of zero or less, or one that leaves a regular price at
+  or under the price. The console saves the preview in one `PUT /v1/catalog/prices`.
+  `GET /v1/catalog/products/:id/price-history` is the product's one history.
+- **Variants added later** (D-639): `POST /v1/catalog/products/:id/variants` codes new variants
+  in the axis order the product's existing codes use (read back from a code by
+  `axisOrderFromCode`), whatever order the request lists the axes in. A new variant's price is
+  the request's, else the same size's in the product's active variants (the price most of them
+  carry), else the request's main price, else the price most active variants carry: never the
+  cheapest and never an archived variant's (`newVariantPrice`). The answer lists the variants
+  that no longer match (`orphanedSkus`) for the console to offer to archive.
+  `PATCH /v1/catalog/skus` (served by inventory, like the scan lookup) archives or restores up to
+  500 variants together and refuses while orders hold pieces of any of them
+  (`CATALOG_SKU_HELD`, the stock rows locked for the check).
+- **Buying price per variant on every receipt** (D-637): a supply receipt and stock in hand
+  already posted each line at its own cost; the receive dialog, Supply → Entries and the
+  new-product form (supplier or in hand) now send one per variant, so each variant's WAC moves by
+  its own figure. Nothing else changed in the WAC rule above.
+- **Standard buying price** (D-638): `supply.sku_purchase_prices` (per SKU, optionally per
+  supplier; unique per SKU and supplier, "any supplier" being null; RLS; composite keys that
+  cascade from a deleted SKU or supplier). It only **prefills** a receipt line: the supplier's
+  standard, else any supplier's, else the last price the variant was bought at
+  (`InventoryApi.lastReceiptCosts`: the newest costed supply receipt or opening / in-hand
+  movement), else blank (`prefillUnitCost`). It never feeds WAC or a journal. Routes, all
+  `read Cost` (writing also needs `update Supply`): `GET /v1/supply/sku-costs?skuIds=&supplierId=`
+  (standards, last price with its date and supplier, WAC, the prefill), `PUT /v1/supply/sku-costs`,
+  and a spreadsheet `GET …/export`, `POST …/import/dry-run`, `POST …/import` (all or nothing).
+  `standardUnitCostPoisha`, `lastUnitCostPoisha`, `prefillUnitCostPoisha` and `marginBps` are in
+  `COST_FIELDS`. The catalog's own price importer still refuses any cost column.
+- **Margin** is worked out in the browser from the WAC (or the last buying price) the supply
+  route sends a cost role and the selling price everyone sees; no route sends a margin.
+- **Duplicate** (D-641): `POST /v1/catalog/products/:id/duplicate { name, slug? }` copies the
+  category, description, weight, website fields (off the website), size chart, photos with
+  their colours, and every active variant with its price and regular price, coded under the
+  copy's own sequence in the source's segment order with new barcodes. No stock, cost, orders,
+  history or old addresses. The copy is a draft. A variant with an archived size, colour or list
+  is left out (M39a's D-624), and a product in an archived category is not copied (D-623).
+- **Weights** (D-645): `products.weight_grams` and an optional `skus.weight_grams`; a courier
+  booking declares Σ qty × weight (`parcelWeightGrams`, through `CatalogApi.skuWeights`) or the
+  courier's default when any line has none.
+- **Photos per colour** (D-643): `product_images.colour_value_id` (a colour value; cleared if the
+  value is deleted); `PUT /v1/catalog/products/:id/images/:imageId/colour`.
+- **A category's default size chart** (D-646): `categories.default_size_chart_id`, written with
+  the category's website fields; a product created in the category starts with it.
+- **The product list** (D-642): a photo, the stock (`GET /v1/inventory/stock/products`, scoped
+  like the stock page), the website switch and the price range per row; row and bulk actions
+  through `PATCH /v1/catalog/products` (status, category; `update Catalog`; never into an
+  archived category) and `PUT /v1/storefront/products` (shown on the website, size chart;
+  `update Storefront`). **Delete** on the list, the product page and each variant row is M39a's
+  (below): its dialog reads `GET …/usage` and deletes only what nothing uses, offering Archive
+  otherwise.
+
+### Barcodes, stickers and scanning (M38a)
+
+- **Barcodes** (D-603): every SKU is created with an internal EAN-13 — `2` (GS1's in-store prefix), an eleven-digit per-brand sequence from `catalog.sku_settings.last_barcode_sequence` (one upsert, never read then written), the check digit — unless a supplier's barcode is given. Pure arithmetic in `@elysium/domain/barcode` (`internalEan13`, `isValidEan13`, `ean13Svg`); `catalog.internal_ean13()` repeats it in SQL for the backfill. A typed barcode in the internal range is refused.
+- **Lookup** (D-609): `GET /v1/catalog/lookup?code=` resolves a barcode or a SKU code to the product, the variant, the selling price and (with `read Stock`) where its pieces are; no cost without `read:cost`.
+- **Stickers** (D-604): `POST /v1/catalog/labels` with a `medium` — thermal rolls `38x25`, `40x30`, `50x25` mm (one sticker per PDF page, the page the sticker's size, no margin) or A4 sheets `3x8` and `4x10` with a start position — at most 1,000 a PDF. Each carries the brand's short name (from its org row), the product name, the variant, the price on request, the EAN-13 with its digits and the SKU code; bars are whole modules sized in thermal dots. Offered with one sticker per piece wherever pieces arrive.
+- **Scanning** (D-605, D-606): the console tells a scanner from typing (≥ 8 characters, ≤ 35 ms apart, ended by Enter, not inside a text box); a scan opens the product at its variant, or, on a stock screen, adds the line or one more piece. A count is counted by scanning (`POST /v1/inventory/counts/:id/scans`, one piece per scan, idempotent per scan); a typed correction over a counted figure carries a note. "Scan with camera" uses the browser's `BarcodeDetector` where there is one.
+
+### Deleting and archiving (M39a)
+
+**The rule** (D-620): anything never used is really deleted; anything used by stock, orders,
+the till, supply or the books is archived instead (hidden from new work, kept on everything that
+used it), and the answer says what uses it. Branches and ledger accounts are never deleted.
+
+- **Asked, not assumed** (D-621). The owner of a row exports a registry built on
+  `ReferenceRegistry` (`platform/references/references.ts`): `CatalogReferences` (categories,
+  lists, values, products, SKUs), `LocationReferences`, `DiscountReferences` (discounts and flash
+  sales). Every module that points at those rows registers a checker when it starts and counts
+  **its own** rows (invariant 12): inventory, orders, the till, supply, couriers, promotions,
+  the website, marketing and the ncom.bd marketplace for the catalog; orders, the till, supply,
+  couriers, the website and the marketplace for locations; orders and the website for
+  discounts. (M35b's campaign links and ncom holds joined at integration.) `GET …/:id/usage` returns the counts by
+  reason with a few names (`UsageReport` in `@elysium/contracts`); the delete asks again.
+- **Inside the delete's transaction:** lock the rows (`for update`, in id order); count the
+  owner's own uses, then every checker's; refuse with `*_IN_USE` (409) and the counts in words;
+  let each checker release what exists only because of the row (the old site's ids); delete;
+  write the audit row **with the deleted row's content** (`before`), because after a hard delete
+  nothing else holds it (contact details excepted, invariant 10), and one row per product an
+  empty-and-delete moved. A reference committing first is counted; one arriving after the lock
+  waits and then fails on its foreign key. A delete refused by a foreign key the counts missed
+  (SQLSTATE 23503 on the deleting side) answers the same `*_IN_USE`, never a 500.
+- **Cascades only from a deleted parent** (D-627). A SKU's price history and its empty stock
+  rows, a location's empty stock rows, a discount's tiers and a flash sale's items cascade from
+  their parent (0118); `erp_app` holds no DELETE on them, and 0119's triggers refuse any other
+  delete of them — a price row while its SKU exists, a stock row holding or reserving a piece,
+  or while its SKU and location both exist — for every role. Every other foreign key stays
+  `restrict`; a test reads the foreign keys into the catalog from `pg_constraint` and fails on
+  one that no checker counts.
+- **Categories** (D-623): delete when no product (any status), subcategory, menu entry or live
+  discount names it; **Empty and delete** moves its products to a target (or none), its
+  subcategories up to its parent (a slug taken there becomes `-2`, `-3`), points its menu
+  entries at the target (or removes them, audited), then deletes, in one transaction. A live
+  discount naming it refuses: discount scopes are terms and are never rewritten (D-541).
+  Archive and Restore are explicit; an archived category refuses new products and takes its
+  products off the website (§31). Products keep their printed codes, and a variant added later
+  takes the prefix the product's codes already have (`skuCodePrefix`).
+- **Lists and values** (D-624): `is_active` on both; delete when no variant carries it; archive
+  hides it from every picker for a new variant and the server refuses one that names it, with
+  "also archive the N variants" in the same call; values reorder.
+- **Products and SKUs** (D-625): deleted only when no stock movement, level holding stock,
+  stock document, order line, till line, supply line, courier return line, flash sale item,
+  live discount, live campaign or lead names any of its SKUs; its values, images, price
+  history, empty stock rows and old ids go with it. Otherwise archive (D-423). A new product
+  whose address an archived one holds takes the next free `-2`, `-3` (D-626).
+- **Locations** (D-629), **suppliers** (D-630), **discounts and flash sales** (D-631), **SMS
+  templates and ad campaigns** (D-632): deleted when never used; otherwise switched off or
+  archived (a discount comes back paused; a flash sale gains `archived_at`). **Size charts and
+  the menu** are the website's (§31). A supplier the books name as a party (an opening due)
+  stays; so does a campaign an order's recorded source names. **Branches** (D-633) are renamed
+  and switched off once nothing runs there (tills, open shifts, money in any of their wallet
+  accounts, staff, stock); a switched-off branch opens no till and no shift. **Expense and
+  income heads** (D-634) are added, renamed and archived, never deleted (§7).
+- **Who:** `delete <Subject>` deletes (org_admin; M39a adds it for `Supply`, `LandingPage` and
+  `Campaign`); `update <Subject>` asks what uses a row and archives or restores it; the new
+  `Branch` subject is org_admin's.
+- **The console:** one `DeleteOrArchive` dialog (`apps/console/src/ui/delete-or-archive.tsx`)
+  asks for the usage first and offers only what can work: Delete, Empty and delete with a
+  target picker, Archive (with the variants option), Restore.
 
 ---
 
@@ -802,16 +959,16 @@ interface CourierAdapter {
 
 ### Promotions (`promo`)
 
-- Codes are `percent | flat | free_delivery` and support:
-  - minimum order and maximum discount
-  - usage limits, total and per customer
-  - a validity window
-  - scope to SKUs or categories and to channels
-  - a campaign link
-  - personal single-use codes
-- A redemption ledger records each use.
-- Validation is a pure function.
-- Codes are applied in the order desk (Phase 2), at the POS (Phase 4) and on landing pages (Phase 5).
+- **Discounts** (`promo.codes`, M16, extended in M35a, D-540, D-541):
+  - method `code` (the buyer types it) or `automatic` (the website applies it whenever it is eligible; the desk does not, D-544)
+  - kinds `percent | flat | free_delivery | buy_x_get_y | tiered` (tiers in `promo.discount_tiers`)
+  - minimum order and quantity, first order only (D-543), a ceiling, usage limits total and per buyer, a date window and an instant window
+  - scope to SKUs, products or categories (a category covers its sub-categories) and to channels
+  - stacking with priority, a campaign link, personal single-use codes
+- **One engine** (`packages/domain/src/promo/discounts.ts`, D-540): the old website's `computeDiscounts` in integer poisha. The best single discount, or every stackable one together when that gives at least as much; each stacked discount comes off its own lines only. Every percentage rounds once, half away from zero, through `percentOf`. M16's `validatePromo` is a view of it; a differential test holds it to the old engine.
+- A redemption ledger records each use. A use is taken with a conditional UPDATE (`used_count < total_limit`) in the order's transaction; the per-buyer limit and the first-order rule are re-checked under that row lock. A cancel gives the uses back once.
+- **Flash sales** (`promo.flash_sales`, `promo.flash_sale_items`, `promo.flash_claims`, D-542): per SKU a sale price and a unit limit or all stock. The cheapest live offer below the shelf price wins, then the one ending soonest. Checkout claims units per order line with a conditional UPDATE (`units_sold + qty <= unit_limit`, live by the database clock) inside a savepoint, all or nothing; the order's cancel and received return give units back exactly once (`release_flash_units`).
+- Applied at the order desk (codes, Phase 2), the website (M34), and later the POS and landing pages. Console: Campaigns → Discounts and Flash sales (D-549).
 
 ---
 
@@ -1016,14 +1173,14 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
   - CPO, CPDO, ROAS
   - cash position, and stock value (cost roles only), read live (D-330)
   - by channel, showroom and campaign; best sellers; agent performance
-- **Consolidated dashboard:** Super Admin only, every brand's totals and the group total from `daily_org` through `erp_analytics` (§5 exception 3).
-- **Leaderboard (cross-org):**
+- **Consolidated dashboard and leaderboard: moved to the mother ERP (M31, D-471).** A brand's ERP runs on its own database and knows no other brand, so `GET /v1/analytics/consolidated` and `GET /v1/analytics/leaderboard` are gone, with their screens and the `Leaderboard` permission. What follows describes them as M24 built them; M32 rebuilds them in the mother. The ranking's pure functions stay in `packages/domain/src/analytics/leaderboard.ts`.
+- **Leaderboard (cross-org, M24; now the mother's):**
   - compares normalized metrics: month-over-month revenue growth %, delivery success rate, return rate, ROAS, CPDO, AOV growth, pickup time (D-322). Response time left with the Message Hub (D-290).
   - ranks each metric, plus a composite score with configurable weights (D-323)
   - org admins see other orgs' **normalized metrics and ranks only**, never their raw financials (D-023, built as D-324)
   - computed on read from the rollups through `erp_analytics`; the only cross-org reads are the analytics module's (D-329)
 - **Insights:**
-  - rule-based suggestions, pure functions in `packages/domain/src/analytics/insights.ts` (D-326), e.g. "return rate outside Dhaka is 9 pp above the group median → require an advance delivery charge for outside-Dhaka COD"
+  - rule-based suggestions, pure functions in `packages/domain/src/analytics/insights.ts` (D-326), e.g. "return rate outside Dhaka is 9 pp above your usual → require an advance delivery charge for outside-Dhaka COD". Since M31 a month is measured against the brand's own three months before it (`insightBaseline`), never against other brands (D-471); the narrative's payload (v2) carries no rank
   - an optional LLM narrative behind the flag `analytics.llm_narrative`, generated only from an allow-listed metrics payload (no PII) and cached daily; only a fake provider exists (D-327)
 - **Export:** the brand's daily rollup as CSV or XLSX (D-328).
 
@@ -1054,28 +1211,29 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 
 ### Catalog
 
-| Event                                   | Rooms                                                                                                                                                             | Payload                                    | Purpose                                  |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------- |
-| `order.created`                         | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, order_no, channel, total, created_at   | New-order alert; starts the pickup timer |
-| `order.assigned` / `order.claimed`      | `org:role:sales`, `user:{assignee}`                                                                                                                               | id, assignee                               | Queue ownership                          |
-| `order.status_changed`                  | `org:role:sales`, `org:role:warehouse`<br>`org:role:accounts` (delivered and returned only)<br>`reseller:{id}` (reseller orders)<br>`org:branch:{b}` (POS orders) | id, from, to, at                           | Live lists and dashboards                |
-| `order.fraud_flagged`                   | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, trust_score, decision                  | Review queue                             |
-| `delivery.updated`                      | `org:role:sales`, `reseller:{id}`                                                                                                                                 | order id, normalized status, at            | Tracking view                            |
-| `delivery.booking_failed`               | `org:role:sales`, `org:role:org_admin`                                                                                                                            | order id, courier, error code              | Fix and retry                            |
-| `settlement.imported`                   | `org:role:accounts`                                                                                                                                               | batch id, totals, exception count          | Reconciliation                           |
-| `stock.available_changed`               | `org:role:sales`, `org:role:warehouse`; Beownz resellers for Beownz SKUs (throttled)                                                                              | sku id, location id, available             | Live availability                        |
-| `stock.low`                             | `org:role:org_admin`, `org:role:warehouse`                                                                                                                        | sku id, location, available, reorder level | Replenishment                            |
-| `wallet.balance_changed`                | `org:role:accounts`, `org:branch:{b}` (branch wallets)                                                                                                            | account id, balance                        | Cash position                            |
-| `approval.requested`                    | `user:{each eligible checker}`                                                                                                                                    | request id, type, amount                   | Approvals inbox                          |
-| `approval.decided`                      | `user:{requester}`                                                                                                                                                | request id, decision                       | Status                                   |
-| `target.progress`                       | `user:{employee}`, `org:role:hr`                                                                                                                                  | target id, achieved, pct                   | Progress widgets                         |
-| `leaderboard.updated`                   | `org:role:org_admin` (all orgs), `super`                                                                                                                          | snapshot id                                | Not emitted: computed on read (D-324)    |
-| `payout.updated`                        | `reseller:{id}`, `org:role:accounts`                                                                                                                              | payout id, status                          | Reseller portal                          |
-| `investor.withdrawal.updated`           | `user:{investor user}`                                                                                                                                            | request id, status                         | Investor portal                          |
-| `pos.sale_synced` / `pos.sync_conflict` | `org:branch:{b}`                                                                                                                                                  | sale id / conflict id                      | POS status                               |
-| `loan.instalment_due`                   | `org:role:accounts`, `org:role:org_admin`                                                                                                                         | loan id, instalment id, seq, due, amount   | Loan reminder in the inbox (D-300)       |
-| `notification.created`                  | `user:{id}`                                                                                                                                                       | notification id, title key                 | In-app inbox                             |
-| `job.failed`                            | `org:role:org_admin`, `super`                                                                                                                                     | job type, ref, error code                  | Operations                               |
+| Event                                   | Rooms                                                                                                                                                             | Payload                                    | Purpose                                   |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------- |
+| `order.created`                         | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, order_no, channel, total, created_at   | New-order alert; starts the pickup timer  |
+| `order.assigned` / `order.claimed`      | `org:role:sales`, `user:{assignee}`                                                                                                                               | id, assignee                               | Queue ownership                           |
+| `order.status_changed`                  | `org:role:sales`, `org:role:warehouse`<br>`org:role:accounts` (delivered and returned only)<br>`reseller:{id}` (reseller orders)<br>`org:branch:{b}` (POS orders) | id, from, to, at                           | Live lists and dashboards                 |
+| `order.edited`                          | `org:role:sales`, `org:role:warehouse`                                                                                                                            | id, order_no, at                           | Live lists; ncom.bd hears its edits       |
+| `order.fraud_flagged`                   | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, trust_score, decision                  | Review queue                              |
+| `delivery.updated`                      | `org:role:sales`, `reseller:{id}`                                                                                                                                 | order id, normalized status, at            | Tracking view                             |
+| `delivery.booking_failed`               | `org:role:sales`, `org:role:org_admin`                                                                                                                            | order id, courier, error code              | Fix and retry                             |
+| `settlement.imported`                   | `org:role:accounts`                                                                                                                                               | batch id, totals, exception count          | Reconciliation                            |
+| `stock.available_changed`               | `org:role:sales`, `org:role:warehouse`; Beownz resellers for Beownz SKUs (throttled)                                                                              | sku id, location id, available             | Live availability                         |
+| `stock.low`                             | `org:role:org_admin`, `org:role:warehouse`                                                                                                                        | sku id, location, available, reorder level | Replenishment                             |
+| `wallet.balance_changed`                | `org:role:accounts`, `org:branch:{b}` (branch wallets)                                                                                                            | account id, balance                        | Cash position                             |
+| `approval.requested`                    | `user:{each eligible checker}`                                                                                                                                    | request id, type, amount                   | Approvals inbox                           |
+| `approval.decided`                      | `user:{requester}`                                                                                                                                                | request id, decision                       | Status                                    |
+| `target.progress`                       | `user:{employee}`, `org:role:hr`                                                                                                                                  | target id, achieved, pct                   | Progress widgets                          |
+| `leaderboard.updated`                   | —                                                                                                                                                                 | —                                          | Removed with the leaderboard (M31, D-471) |
+| `payout.updated`                        | `reseller:{id}`, `org:role:accounts`                                                                                                                              | payout id, status                          | Reseller portal                           |
+| `investor.withdrawal.updated`           | `user:{investor user}`                                                                                                                                            | request id, status                         | Investor portal                           |
+| `pos.sale_synced` / `pos.sync_conflict` | `org:branch:{b}`                                                                                                                                                  | sale id / conflict id                      | POS status                                |
+| `loan.instalment_due`                   | `org:role:accounts`, `org:role:org_admin`                                                                                                                         | loan id, instalment id, seq, due, amount   | Loan reminder in the inbox (D-300)        |
+| `notification.created`                  | `user:{id}`                                                                                                                                                       | notification id, title key                 | In-app inbox                              |
+| `job.failed`                            | `org:role:org_admin`, `super`                                                                                                                                     | job type, ref, error code                  | Operations                                |
 
 ---
 
@@ -1138,6 +1296,7 @@ Rules for every integration:
 - **Storage driver:** an interface with a `local` driver (development and tests) and an `r2` driver (staging and production).
   - Private bucket (receipts, invoices, legal documents, KYC, payslips): served only through short-lived signed URLs after an authorization check. The generic `GET /v1/files/:id/download` serves a file someone else uploaded only to a holder of the purpose's ability across the brand; a narrower holder reaches such a document through the owning module's route, which checks the row first (D-413).
   - Public bucket (product images, landing page assets): served through the CDN.
+  - The brand website's images (M33, D-507): `GET /media/<org id>/<file id>/<thumb|card|full>` serves the re-encoded sizes of a stored, public file whose purpose is `product-image`, `category-image` or `storefront-image`, with a year's immutable caching; every other file is the same 404. Never an original.
 - **Uploads:**
   - presigned PUT, with size and MIME limits; the finalize reads at most the type's ceiling (D-417)
   - each upload creates a `files.objects` row with sha256, owner and visibility
@@ -1263,7 +1422,7 @@ Installable, with an offline shell and web push (Android first).
   - as in §6
   - CSRF protection for cookie-authenticated mutations (Origin checks plus a double-submit token)
   - strict CORS and security headers
-  - rate limits on login, OTP and the public API
+  - rate limits on login, OTP and the public API, per visitor address: `TRUSTED_PROXY_COUNT` hops are trusted (a hop function, since Fastify reads a bare number as "trust nothing", D-479), and every deployment reaches the API only through its proxy
 - **Application-level encryption** (AES-256-GCM, key from the secret manager, key id stored for rotation) applies to:
   - national ID numbers
   - bank account and bKash payout numbers
@@ -1333,7 +1492,8 @@ Installable, with an offline shell and web push (Android first).
 - **Backups:** point-in-time recovery, plus a nightly `pg_dump` as `erp_backup` (BYPASSRLS, read-only), encrypted, to a second provider (D-342).
 - **Feature flags:** an `org.feature_flags` table (D-031), so unfinished modules can ship dark.
 - **Preview:** before staging exists, the whole ERP can run on one Docker host (`infra/docker-compose.preview.yml`: Postgres, Valkey, Gotenberg, API, worker and a one-shot release step, behind the host's own nginx, which serves the SPAs and the API on one origin over HTTPS; `infra/preview/deploy.sh` deploys a commit), for people to try it; it is not production (D-352).
-- **Runbooks** in `docs/runbooks/`: deploy, rollback, restore, secret rotation, courier outage, month-end close, go-live, monitoring, queue policy, preview server.
+- **One ERP per brand (M31, D-474):** on the brands server each brand is its own Compose project `erp-<slug>` (`infra/brand/`), with its own Postgres 17, Valkey, Gotenberg, API, worker, files volume, `.env.brand`, nginx site and certificate. See §30.
+- **Runbooks** in `docs/runbooks/`: deploy, rollback, restore, secret rotation, courier outage, month-end close, go-live, monitoring, queue policy, preview server, brand deploy.
 
 ---
 
@@ -1347,3 +1507,299 @@ Installable, with an offline shell and web push (Android first).
 | Public intake API                                    | p95 < 500 ms at 20 req/s sustained                   |
 | Reports over 12 months of one org                    | p95 < 3 s (use rollups)                              |
 | Console first load                                   | < 2.5 s on 4G; initial route bundle ≤ 250 KB gzipped |
+
+---
+
+## 30. One ERP per brand and the mother ERP
+
+The owner's instruction of 2026-10-05 (D-469): every business gets its own ERP, with its own server processes, database and domain, and none of them ever presents itself as a child, connects to another brand or gives a clue that a mother ERP exists. A separate mother ERP lets the owner see and handle every brand. The code stays one codebase; this section is what changed for the brand's ERP (M31) and, below, the mother's (M32).
+
+### A deployment is one brand (D-470)
+
+- `ERP_BRAND_SLUG` names the deployment's brand. The API and the worker read every `org.organizations` row before they start and refuse unless the database holds that brand and no other real one; the training org (`is_training`) may sit beside it (`checkBrandDeployment`, `platform/brand/deployment.ts`). A switched-off second brand counts. The error names the problem for the operator.
+- Unset keeps the many-brand mode the tests and local development use; nothing else changes with it.
+- `pnpm db:seed --brand <slug>` (or `SEED_BRANDS`) seeds one brand: its chart of accounts with a hand-cash wallet, its head office and warehouse, and its delivery zones. `preview:seed --brand <slug>` and `preview:local --brand <slug>` do the same for a preview and keep its books checks.
+- With the slug set, the login branding answers that brand whatever host or slug is asked about, and the trusted origins are `TRUSTED_ORIGINS` alone (no per-brand hostnames).
+- Row-level security and `org_id` stay: they cost nothing with one brand per database, keep the training org apart, and removing them would be a rewrite with no gain.
+
+### What left the brand's ERP (D-471)
+
+`GET /v1/analytics/consolidated`, `GET /v1/analytics/leaderboard`, `GET /v1/accounts/reports/consolidated-wallets` and `GET /v1/accounts/reports/consolidated-profit-and-loss`, with their service paths, route-matrix entries, fixtures, OpenAPI operations and client methods; the console's all-brands dashboard, leaderboard and all-brands accounts screens, their tabs, palette entry and messages; the `Leaderboard` permission subject (the matrix now holds no `all` scope for any membership role). They answer 404. The insight rules measure a month against the brand's own three months before it, and the narrative carries no rank among brands. `erp_analytics` stays: it is how the mother reads a brand.
+
+### White label (D-472)
+
+Nothing a brand's staff, shoppers or website developer can see names the product's old name or another brand. The brand's own name comes from its `org.organizations` row at run time:
+
+- the authenticator app's issuer and the sign-in text (`createAuth({ brandName })`), page titles (`document.title` from the branding or the till's receipt header), the login screens' name and legal line (nothing when no brand is known), recovery-code file names (`<slug>-recovery-codes.txt`), the payslip;
+- browser-visible names are neutral: the CSRF cookie and header `erp_csrf` / `x-csrf-token`; local storage `erp-theme`, `erp-locale`, `erp-pos-locale`, `erp-portal-locale`, `erp-sidebar`, `erp-nav-groups`, `erp-palette-recent` (an older build's value is moved across once, matched by its shape, `packages/ui/src/lib/storage.ts`); the till's IndexedDB `erp-pos` (an older build's database on the origin is copied on every start in one transaction, and deleted only once the till holds it alone and the copy took everything in it; the till's browser tests hold queued sales through the move, an older tab left open included) and shell cache `erp-pos-shell-v1`; the intake headers `X-Api-Key`, `X-Api-Timestamp`, `X-Api-Signature` (the first integration's names still read); the OpenAPI title `ERP API` and its `x-ability` / `x-body-type` keys;
+- copy that only made sense with several brands in one database is reworded;
+- `pnpm check:white-label` (in `pnpm verify`) scans the built console, till and portal and the shared locale files for the old name (Latin and Bangla) and the brands' names, and fails on a published source map.
+
+Internal names that never reach a browser stay: the `@elysium/*` packages, Nest symbols, deterministic-id namespaces and the HMAC derivation labels (changing one would invalidate every issued file URL and site key).
+
+### The owner sign-in link (D-473)
+
+The owner reaches a brand without a password of their own there:
+
+- **Format** (`packages/domain/src/iam/owner-link.ts`, shared with the minter): `<payload>.<signature>`, base64url; the payload is `{ v, aud, sub, name, jti, iat, exp }`; Ed25519 over the payload's base64url text; at most 120 seconds long, 30 seconds of clock skew.
+- **Brand side** (`modules/iam/owner-link.*`): `POST /v1/auth/owner-link { token }`, public, off (404) unless `OWNER_LINK_PUBLIC_KEY` (base64 SPKI DER, Ed25519) is set, which also needs `ERP_BRAND_SLUG`; rate-limited per address. It verifies the signature, then audience = `ERP_BRAND_SLUG` and the window, then spends the `jti` in `iam.owner_link_uses` (`on conflict do nothing`; pruned after a day), with the owner found or made in the same statement by `iam.accept_owner_link` (an owner-role function, migration 0105: the application role can neither write the single-use record nor set `is_super_admin` or `is_owner`), then opens the session inside Better Auth (`createOwnerSession`, a server-only endpoint no HTTP path reaches) so its row and cookie are a normal sign-in's, lands it in the brand and audits `auth.owner_link_signed_in`. Every refusal is the same 401; the reason is logged.
+- **An owner** (D-476) is a super admin with `is_owner`, no password and no membership (triggers refuse both): never on the Staff screen, never given a role or an invite, and shown as "Owner" on orders and resets to everyone but another owner (`IamApi.ownersAmong`). An address that belongs to a staff account or a local super admin is never taken over.
+- **The session** (`iam.sessions.owner_link`, only an owner's, fixed at creation by a trigger) passes the enrolment wall — the minter enforced the second factor — lasts two hours from creation and is never extended: the cookie is a "don't remember me" one, and `resolveIdentity` refuses an owner-link session older than two hours whatever its expiry says.
+- Nothing in the brand's code or copy names a mother ERP: it is an "owner sign-in link".
+
+### Deployment shape (D-474, D-475)
+
+`infra/brand/`: `docker-compose.brand.yml` (project `erp-<slug>`), `.env.brand.example`, `new-brand.sh <slug> <admin-host>` (fresh secrets, the next free loopback port), `nginx-brand.conf` (the admin host: console `/`, portal `/portal/`, till `/pos/`, and `/v1`, `/api/auth`, `/public/v1`, `/storefront`, `/media`, `/health`, `/socket.io` to the API), `deploy.sh` and `server-deploy.sh` (one brand or all), and `nginx-website-admin-redirect.conf`. The admin host defaults to `admin.<brand domain>`, and the website's `/admin` redirects there. Cookies are scoped to the admin host (`APP_DOMAIN`), never the website's domain. `docs/runbooks/brand-deploy.md`.
+
+### The mother ERP (M32)
+
+_To be written by M32: `apps/mother-server` and `apps/mother-console`, its own database and owners, the brand registry with read-only connections and owner-link keys, the pulled rollups, the overview, leaderboard and accounts across brands, and minting owner links against the format above._
+
+---
+
+## 31. The brand's website, run from its ERP
+
+M33 (D-500 to D-512), after D-469: each brand's ERP is its website's back office, and the
+website keeps no database of its own. This section covers what a shopper **looks at** and, from
+M34, what a shopper **buys**; offers, campaign links, tracking and the ncom.bd connector (M35)
+and the website's conversion (M36) build on it. Landing pages are ncom.bd's (D-550): the ERP
+builds none, and §17 stays out of scope.
+
+### The module
+
+`storefront` owns the `storefront` schema (tenant tables, RLS from `tenantTableSql()`,
+composite foreign keys):
+
+- `settings`, one row per brand: site information, social links, announcement bar, promo
+  banner, testimonials, the shipping rule and the payment methods, as JSON sections validated by
+  the contract schemas and parsed defensively (a section that does not parse falls back to its
+  default). No row means the defaults, which name nothing but the brand itself.
+- `web_locations`: where the website sells from (default: the brand's first active warehouse,
+  the order desk's own default).
+- `hero_slides`, `nav_items` (link, category or dropdown; two levels; only a dropdown holds
+  items), `size_charts`, `legacy_ids (kind, legacy_id, erp_id)` for M36's importer and M35's
+  connector, and `site_keys`.
+
+The website fields of a product and a category are catalog columns (D-500, D-501):
+`web_visible` (separate from `status`, off for a new product), `featured`, `new_arrival`,
+`gender`, `material`, `care_instructions`, `tags`, `size_chart_id`, `seo_title`,
+`seo_description` and `previous_slugs`; a category gains `web_visible`, `featured`, `gender`,
+`description` and a picture. `previous_slugs` is written by a trigger only: a slug a product
+leaves joins its history, and a slug a product takes is released from every other product's
+history, so an address is in at most one place and a redirect never chooses
+(`packages/domain/src/storefront/slugs.ts` is the same rule, property-tested).
+
+The module reaches the catalog, inventory, the delivery zones and the files only through
+`CATALOG_API`, `INVENTORY_API`, `ORDERS_API` and `FilesService` (invariant 12), and exports
+`STOREFRONT_API` (web locations, the shipping rule, old ids) for M34 to M36. The rules are pure
+functions in `packages/domain/src/storefront/`: `availableForWeb`, `storefrontPrice`, the slug
+history, the shipping rule, the list's parameters and cursor, tags, safe links, size charts,
+the category tree and the menu.
+
+### The read API
+
+`/storefront/v1/*`, server to server (`docs/storefront-api.md`): products (filters, sorts,
+cursor or numbered pages with a total), a product by slug (variants with live availability at
+the web locations; an old slug answers `{ redirect: { slug } }`), the category tree, search, the
+site in one answer, a size chart, districts and thanas.
+
+- **Who may read.** A website key (`pk_<org id>_…`) and `sha256=HMAC(secret, timestamp.METHOD.
+path?query)` in `X-Api-Key`, `X-Api-Timestamp`, `X-Api-Signature`, ±5 minutes; a write (M34)
+  adds the idempotency key and the raw body. The secret is derived from the intake's master key
+  under the website's own label, so it is never stored, a landing-page key cannot read and a
+  website key cannot post landing-page orders (D-509). Every failure is the same 401. The key
+  id names its org, so the lookup runs inside that org's `withOrg()`: no cross-org read.
+- **What it may send.** Every answer passes `serializeForStorefront`: an allow-list
+  (`STOREFRONT_VISIBLE_FIELDS`) applied at every depth, then the cost deny-list. The cost sweep
+  drives every signed route (invariant 5).
+- **Money** is `{ poisha, taka }` strings. **Availability** is
+  `Σ max(0, on_hand − reserved)` over the web locations, read live on every call (D-510).
+- **Caching.** `ETag` over the bytes, `Cache-Control: private, max-age=30,
+stale-while-revalidate=300`, `304` on a match; `site` is also kept thirty seconds per brand in
+  the process and forgotten on every write through it.
+- **Rate limits** per source address before the signature and per key after it (Valkey, D-056's
+  fallback; per-process counters refused in production).
+- **One transaction per answer.** Everything an answer reads (catalog, inventory, files, the
+  module's own tables) goes through the caller's `tx`; a second `withOrg` inside one would hold
+  a pooled connection while waiting for another, and ten concurrent shop pages would starve the
+  pool (the M33 ledger audit's H1, tested with 24 concurrent signed reads).
+- **Audit.** Issuing and revoking a website key and saving the settings write their audit rows
+  inside the same transaction; a settings row records the delivery fees, the payment switches,
+  the web locations and the Site URL under names the audit's redaction leaves alone.
+- **From the server** (D-582). `node dist/main.admin.js website-key --label …` issues a key
+  through the same service method as Website → Connection and prints only
+  `ERP_SITE_KEY_ID=…` and `ERP_SITE_SECRET=…` on stdout, for piping into the website's env
+  file; `website-site-url --url https://…` saves Settings' Site URL through the same lock, merge
+  and audit as a console save. Both act for `ERP_BRAND_SLUG` (else the database's one brand)
+  as the system actor `system:admin-cli`, with `via: 'cli'` on the audit row.
+
+### Images
+
+`GET /media/<org id>/<file id>/<thumb|card|full>` (§22, D-507): public website images only, the
+re-encoded sizes only, a year's immutable cache. A found variant's key and hash are kept ten
+minutes in the process and each address may ask 1,200 times a minute, so a flood that skipped
+the CDN cannot starve the API's pool. Only the people who manage the website may upload a
+`storefront-image` or `category-image` (`createRequires` in `files.policy.ts`): a public image
+is served on the brand's domain the moment it is stored. The storefront API hands out absolute URLs
+under `STOREFRONT_MEDIA_BASE_URL` (default `API_PUBLIC_URL`), so a CDN can sit in front.
+
+### The console
+
+**Website** (Sell group; `read Storefront`): Settings (a section per form, each with its own
+Save), Hero slides and Menu (drag or arrows to reorder), Size charts (a grid editor) and
+Connection (keys: the secret shown once, revoke). The product page's **Website** card and Catalog
+setup's **Website** dialog per category write the catalog's web fields under
+`update Storefront`: org_admin and marketing decide what the website shows; the catalog itself
+stays org_admin's (D-508).
+
+The slug triggers read and release other products of the same brand under row-level security,
+so anything that writes products in bulk (M36's importer) must write them inside that brand's
+`withOrg()`: under `withSystem` with no org set, the history would not see the other products.
+
+### Prices on the website (M39b)
+
+D-640. A variant's shown price is `storefrontPrice`: the live flash offer that undercuts the
+shelf price (`bestFlashOffer` on `PromoApi.liveFlashOffers`, the same choice the cart charges
+by), else the shelf price; struck through is, with a flash price, the higher of the shelf price
+and the regular price, without one the regular price, else nothing. The product page's variants,
+the cards (`price.min`/`max` are what a shopper pays now; `compareAt` sits beside the lowest;
+`onSale` when any size is discounted) and the cart's lines all use it. The `onSale` filter
+lists products with an active SKU whose regular price is above its price or which a live flash
+sale undercuts (promo's live offers reach the catalog's filter as data,
+`PromoApi.liveFlashSkuPrices`). The product page also groups its photos by colour
+(`galleries`, each image's `colour`).
+
+### Buying (M34)
+
+D-520 to D-539. The website's server prices carts, places orders, signs shoppers in and starts
+online payments through signed `POST` and `PATCH` routes under the same prefix and keys
+(`docs/storefront-api.md`). The ERP sets no cookie for the website and keeps no shopper session:
+the account routes answer with an account id and the website keeps its own session.
+
+- **Tables** (`storefront` schema, RLS, composite foreign keys): `customer_accounts` (one per
+  lower-cased email per brand, bcrypt hash, verified-at, `google_sub` allowed only once
+  verified, linked to `sales.customers`), `account_codes` (HMAC of the email code or SHA-256 of
+  the reset token, expiry, tries, used once), `web_orders` (the website's facts about an order:
+  account, email, locale, payment method; written once), `order_view_tokens` (SHA-256),
+  `checkout_submissions` (idempotency: key, request hash, order), `gateway_settings`
+  (SSLCommerz per brand, the store password sealed) and `payment_sessions` (our transaction
+  id, amount, status `initiating → ready → validating → paid | refused`, or `failed`,
+  `cancelled`, `expired`). `notify` gains `email_settings` and `emails` (the outbox and log).
+- **Pricing.** `quoteCart` in `packages/domain/src/storefront/cart.ts` is the one rule for the
+  quote and the checkout: shelf or flash price per line, M35a's `quoteDiscounts` on the charged
+  prices and the delivery fee, the website's zone fee and free-shipping threshold, and the
+  total the order's COD will equal (property-tested against `computeOrderTotals`).
+- **The checkout** is one `withOrg` transaction: claim the idempotency key, re-price and refuse
+  a moved figure (`409 CART_REPRICED` with the new quote), create the order through
+  `OrdersApi.createOrder` (`channel = website`, `pending`), hold its stock at one web location
+  with the atomic conditional reserve (`stock_held_at`), `redeem` the discounts, then
+  `claimFlashUnits`, write `web_orders` and the view token, queue the "placed" email, and for
+  SSLCommerz the 60-minute unpaid timer. A held order's confirm reserves nothing and its
+  pending cancel releases the hold: the state machine takes `stockHeld` (D-532, invariant 7).
+- **Payments.** `init` records a session and enqueues `storefront.sslcommerz_open`; the worker
+  calls SSLCommerz with no transaction open (invariant 6) while the route waits on the row
+  outside any transaction. The shopper's return (relayed by the website) and the public IPN
+  (`/storefront/ipn/sslcommerz/<org id>`) only move the session to `validating` and enqueue
+  `storefront.sslcommerz_validate`, which
+  asks the Order Validation API and accepts VALID or VALIDATED for this transaction, in BDT,
+  for exactly the session's amount, which must still be what the order collects
+  (`judgeValidation`). Accepted, it becomes a verified `sslcommerz` advance through
+  `OrdersApi.recordGatewayAdvance` and §7's advance posting into the SSLCommerz clearing
+  wallet, and the COD drops by it (D-526). Money SSLCommerz took that the order does not accept,
+  or that lands on an ended order, is booked the same way and owed back in full. A sandbox
+  store takes no money unless the installation allows it. `storefront.expire_unpaid` cancels an
+  online order still pending and unpaid after 60 minutes, never while a payment is being checked.
+  The console's lists of accounts, emails and payments need an org-wide reach (D-533).
+- **Accounts.** bcrypt cost 12 (`bcryptjs`, which also checks the old site's `$2a$`/`$2b$`
+  hashes), email codes as HMACs under a key derived from `INTAKE_KEY_SECRET`, reset and view
+  tokens as SHA-256 of 32 random bytes; Google links only to a verified address (D-522).
+  Per-shopper limits count the `client.ip` the website signs into the body (D-534).
+- **Email.** `notify`'s SMTP channel (nodemailer) per brand, Bangla and English templates in
+  `packages/domain/src/notify/emails.ts`, written in the caller's transaction and sent by
+  `notify.send_email` with the body sealed until sent (D-529, D-530).
+- **Secrets.** `STOREFRONT_CREDENTIALS_KEY` seals the SSLCommerz and SMTP passwords and queued
+  email bodies (AES-256-GCM, bound to brand, row and field); changing them is
+  `update WebsiteCredentials`, org_admin only (D-528).
+- **The console.** Website → Payments (SSLCommerz, the IPN address, the online payments),
+  Email (the server, a test, the log) and Customers (the accounts); a website order's page
+  shows its account and payments, a buyer's profile its website account.
+- **The old site's shoppers.** `pnpm migration legacy-customers --org <slug> dry-run|commit
+--file <users.json>` imports accounts with their bcrypt hashes and buyers by phone (D-531).
+
+### Deletes and archives on the website (M39a)
+
+- **An archived category takes its products off the website** until they are moved or it is
+  restored (D-623): `webWhere` and a cart line's `sellable` require that no category above the
+  product, its own included, is archived. A category only switched off the website still hides
+  just itself and its subtree from the menu and the filter (D-501).
+- **Size charts** (D-628): the usage names the products a chart is on (the console links them);
+  **Empty and delete** gives them another chart, or none, through `CatalogApi.reassignSizeChart`,
+  then deletes the chart, its grid kept in the audit row. A plain delete of a chart in use names
+  its products in the refusal.
+- **The menu**: deleting a dropdown deletes its items (0103's cascade); the console asks
+  `GET /v1/storefront/nav-items/:id/usage` and says how many go, and the audit row keeps the
+  item and every child. A category's menu entries move with the category's "Empty and delete".
+- **Old ids** (`legacy_ids`) of a deleted category, product, variant, discount, flash sale or
+  size chart are forgotten in the same transaction. A location the website sells from is kept
+  until Website → Settings stops using it.
+- **Flash sales**: an archived sale is switched off, leaves the list and every website read.
+- **Campaign links** (M35b's `storefront.custom_links`, joined at integration) keep the
+  category a link opens (its foreign key) and the products it highlights (its id list), switched
+  off or not: the usage names the link by title and code (`campaign_links`), and neither a
+  delete nor "Empty and delete" goes ahead, because a link already shared in ads is never
+  re-pointed or trimmed by a delete. The person edits or deletes the link first, or archives.
+- **ncom.bd** (§31's marketplace): a hold, live or ended, keeps the SKUs it held and the place
+  it held them at (`marketplace_holds`, the marketplace module's checker); ncom's product
+  listing leaves out an archived category's products, as the website does.
+
+### Campaign links, tracking, the marketplace and packing (M35b)
+
+D-551 to D-556. Four pieces the old website ran, now the ERP's:
+
+- **Campaign links** (`storefront.custom_links`): a five-digit code per brand (unique, drawn
+  at random, `^[1-9][0-9]{4}$`) on the shop, a category or a path of the site, with up to 24
+  highlighted products, a banner and a pop-up (its picture a public `campaign-asset`), and a
+  visit counter. The website reads one with `GET /storefront/v1/custom-links/{code}` and counts a
+  visit with a signed `POST`. Console: Website → Campaign links (`Storefront`).
+- **Tracking** (`storefront.tracking_settings`, `storefront.tracking_events`): the Meta pixel and
+  Conversions API and GA4 with its Measurement Protocol, per brand. The access token and API
+  secret are sealed (`STOREFRONT_CREDENTIALS_KEY`). The website forwards its browser events
+  (`POST /storefront/v1/events`); the ERP writes the log row with personal data already
+  normalised and hashed (`packages/domain/src/storefront/tracking.ts`), the outgoing payload
+  sealed, and enqueues `storefront.tracking_send` in the same transaction; the worker sends with
+  no transaction open (invariant 6) and clears the payload. `Purchase` is the ERP's own, written
+  in the checkout's and the ncom handover's transaction with event id `purchase_<orderNo>`; an
+  SSLCommerz order's waits (`waiting`) until the payment is booked. `storefront.tracking_purge`
+  drops rows past the brand's retention nightly. `STOREFRONT_TRACKING_PROVIDER=fake` (the
+  default) records sends without making them; `live` needs `STOREFRONT_TRACKING_ENABLED=true`.
+  Console: Website → Tracking, with the event log.
+- **The ncom.bd connector** (module `marketplace`, schema `marketplace`; `docs/ncom-connector.md`):
+  contract 1 under `/ncom/<org id>/…`, HMAC-signed both ways (`verifyNcomSignature`, ±300 s,
+  raw body captured before parsing). Reads go through `CATALOG_API` (`marketplaceProducts`) and
+  the live availability at the web locations; ids are the old website's where `legacy_ids`
+  has them. `ncom_holds` hold stock with the inventory's reserve (`ref_type = 'ncom_hold'`) and
+  give back exactly that once. `ncom_orders` ties an ERP order (`channel = marketplace`, created
+  by `marketplace:ncom`) to ncom's id, revision and idempotency key; edits and cancels go through
+  `OrdersApi.editOrder` and the state machine, with a revision check. The order's money is
+  `ncomOrderMoney`: the brand's goods at ncom's prices, the discount capped at the goods, COD =
+  goods + delivery, other shops' lines kept aside. Amounts that are missing, malformed or do
+  not add up are refused, never read as zero; the order discount is split between the brand's
+  lines and other shops' by value (`allocate`), so the COD and the other shops' part add up to
+  ncom's total exactly. Status changes and a person's edits (`order.status_changed`,
+  `order.edited`) reach ncom through `ncom_outbox` (written in the change's transaction,
+  sealed, delivered by `marketplace.ncom_send` with backoff, `ncomDeliveryOutcome`); an inbound
+  edit or cancel the order can no longer take is refused under a savepoint and leaves a warning
+  on the order. Every connector answer has its cost fields stripped (`withoutCostFields`). Triggers keep each row's
+  identity fixed and its revision moving forward. Console: Website → Marketplace (secrets are
+  `update WebsiteCredentials`).
+- **Packing** (module `packing`, schema `packing`): `scanner_devices` holds the packing scanner
+  app's bearer tokens (`sdt_<org>_<random>`, SHA-256 stored, 30 days, revocable). The app signs
+  in with email, password and, where the role requires it, the authenticator code
+  (`POST /v1/scanner/sign-in`, Better Auth's own checks, no session kept), then reads
+  `GET /v1/scanner/shipment?code=` in the person's own order scope (order number or the
+  courier's parcel codes). Those three routes are exempt from CSRF and allow any origin without
+  credentials (the app is not a browser page). The app as it ships calls the old site's
+  `/api/admin/scanner/login` and `/shipment`, which the ERP serves too, answering refusals as
+  `{ error, code }`. The console's **Orders → Scan** does the same
+  lookup and pairs or signs out phones. `POST /v1/packing/labels` renders the old site's label
+  sheet (eight paper sizes, QR codes drawn in-house from `uqr`) through Gotenberg.

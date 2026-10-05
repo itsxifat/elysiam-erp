@@ -2,12 +2,14 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   NotFoundException,
-  type HttpException,
 } from '@nestjs/common';
 import type { ErrorCode } from '@elysium/contracts';
 
 import { toStockHttpError } from '../inventory/inventory.errors.js';
+
+import { isStillReferenced } from '../../platform/references/references.js';
 
 /**
  * What the supply module refuses, and with which status (architecture §23).
@@ -28,6 +30,8 @@ import { toStockHttpError } from '../inventory/inventory.errors.js';
 
 const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   SUPPLY_NOT_FOUND: 404,
+  // M39a (D-630): a supplier something still names.
+  SUPPLY_IN_USE: 409,
   SUPPLY_IMMUTABLE: 409,
   SUPPLY_COST_REQUIRED: 400,
   SUPPLIER_INACTIVE: 409,
@@ -44,6 +48,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   CONFLICT: 409,
   NOT_FOUND: 404,
   PERIOD_CLOSED: 409,
+  // M39b (D-638): a standard buying price file that does not import; the body names why.
+  SUPPLY_IMPORT_REJECTED: 422,
 };
 
 /** The trigger-raised codes in migration 0037, in the order that file declares them. */
@@ -113,10 +119,18 @@ export function supplyHttpError(code: ErrorCode, message: string): HttpException
       return new NotFoundException(body);
     case 409:
       return new ConflictException(body);
+    case 422:
+      return new HttpException(body, 422);
     default:
       return new BadRequestException(body);
   }
 }
+
+/** The standard buying price's foreign keys (M39b, D-638). */
+const STANDARD_PRICE_KEYS: ReadonlySet<string> = new Set([
+  'sku_purchase_prices_org_id_sku_id_fk',
+  'sku_purchase_prices_org_id_supplier_id_fk',
+]);
 
 /**
  * A trigger's refusal, recognised by its code prefix.
@@ -132,9 +146,28 @@ function databaseSupplyCode(error: unknown): { code: ErrorCode; message: string 
       if (code !== undefined) return { code, message: match[2] ?? current.message };
     }
 
+    if (isStillReferenced(current)) {
+      // The backstop behind a supplier delete's own count (D-621, D-630).
+      return {
+        code: 'SUPPLY_IN_USE',
+        message:
+          'Something still names this supplier, so it was not deleted. Deactivate it instead.',
+      };
+    }
+
     const sqlstate = (current as { code?: unknown }).code;
     const constraint = (current as { constraint_name?: unknown }).constraint_name;
     const name = typeof constraint === 'string' ? constraint : '';
+
+    if (sqlstate === '23503' && STANDARD_PRICE_KEYS.has(name)) {
+      // A standard buying price written for a variant or supplier deleted a moment before
+      // (M39a's deletes, D-638): the inserting side of the key, so not `*_IN_USE`.
+      return {
+        code: 'SUPPLY_NOT_FOUND',
+        message:
+          'A variant or supplier in this change was deleted a moment ago. Reload and try again; nothing was saved.',
+      };
+    }
 
     if (sqlstate === '23505' && Object.hasOwn(UNIQUE_MESSAGES, name)) {
       return { code: 'CONFLICT', message: UNIQUE_MESSAGES[name] ?? '' };

@@ -21,6 +21,7 @@ export {
   createUserSchema,
   credentialResetSchema,
   deactivateUserSchema,
+  ownerLinkSignInSchema,
   roleGrantSchema,
   setPasswordSchema,
   setRolesSchema,
@@ -29,6 +30,7 @@ export {
   type CreateUser,
   type CredentialResetInput,
   type DeactivateUser,
+  type OwnerLinkSignIn,
   type RoleGrant,
   type SetPassword,
   type SetRoles,
@@ -46,3 +48,11 @@ export * from './ledger.js';
 export * from './permissions/index.js';
 export * from './pos.js';
 export * from './channels.js';
+// M33: the brand's website, run from its ERP.
+export * from './storefront.js';
+// M34: buying on the website: cart, checkout, accounts, payments, emails.
+export * from './storefront-buying.js';
+// M39a: what uses a row, before it is deleted or archived.
+export * from './usage.js';
+// M35b: campaign links, tracking, the ncom.bd marketplace, the scanner and order labels.
+export * from './storefront-marketing.js';

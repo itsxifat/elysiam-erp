@@ -120,8 +120,8 @@ describe('the OpenAPI document (§23)', () => {
 
   it('publishes a bare `public` rather than the reason the route gave', () => {
     // Rewording an internal reason must not change every generated file.
-    expect(operation('/health/live', 'get')['x-elysium-ability']).toBe('public');
-    expect(operation('/v1/ledger/cash-in', 'post')['x-elysium-ability']).toBe('update:Wallet');
+    expect(operation('/health/live', 'get')['x-ability']).toBe('public');
+    expect(operation('/v1/ledger/cash-in', 'post')['x-ability']).toBe('update:Wallet');
   });
 
   it('gives a 404 only where there is a record to be missing', () => {

@@ -68,7 +68,13 @@ export { seedTrainingOrg, TRAINING_ORG_SLUG, trainingOrgId } from './seed/traini
  * command makes a fresh database previewable. Both are idempotent upserts.
  */
 export { seedGeography, type GeographySeedResult } from './seed/geography.js';
-export { seedOrganizations, type SeedResult } from './seed/index.js';
+export {
+  seedBrandsFrom,
+  seedOrganizations,
+  seedOrgsFor,
+  type SeedOptions,
+  type SeedResult,
+} from './seed/index.js';
 
 export {
   availableOrgs,
@@ -97,7 +103,9 @@ export {
   mayHoldSession,
   mustEnrolTwoFactor,
   requiresTwoFactor,
+  verificationText,
   type Auth,
   type AuthOptions,
   type SmsProvider,
 } from './auth/index.js';
+export { OWNER_SESSION_SECONDS } from './auth/owner-session.js';

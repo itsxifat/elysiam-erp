@@ -79,9 +79,9 @@ export function post_order() {
   const response = http.post(`${data.apiUrl}/public/v1/orders`, body, {
     headers: {
       'content-type': 'application/json',
-      'x-elysium-key': data.intake.keyId,
-      'x-elysium-timestamp': timestamp,
-      'x-elysium-signature': `sha256=${signature}`,
+      'x-api-key': data.intake.keyId,
+      'x-api-timestamp': timestamp,
+      'x-api-signature': `sha256=${signature}`,
       'idempotency-key': key,
     },
     tags: { op: 'intake' },

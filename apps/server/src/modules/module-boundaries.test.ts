@@ -56,15 +56,23 @@ const OWNER: Readonly<Record<string, string>> = {
   // M18: campaigns, spend, leads, the Meta link and the conversion log. The promo FK to
   // `marketing.campaigns` is a constraint, not a read.
   marketing: 'marketing',
+  // M35b: the ncom.bd connector. The catalog, inventory, orders and the website's settings are
+  // reached through their APIs.
+  marketplace: 'marketplace',
   // M14a: imported files and the opening of a brand's books. Everything an import writes
   // elsewhere goes through the owning module's interface, so this module carries no debt.
   migration: 'migration',
   // M16: codes and redemptions, and messages, templates and opt-outs, each reached
   // from elsewhere only through `PromoApi` / `NotifyApi`.
   notify: 'notify',
+  // M35b: the scanner's devices. Orders and the catalog through their APIs.
+  packing: 'packing',
   pos: 'pos',
   promo: 'promo',
   sales: 'orders',
+  // M33: the website's settings, hero, menu, size charts, old ids and keys. The catalog,
+  // inventory, files and delivery zones are reached through their APIs, so no debt.
+  storefront: 'storefront',
   supply: 'supply',
   wallets: 'wallets',
 };

@@ -25,6 +25,7 @@ import {
   TR,
 } from './stock-nav.js';
 import { useStockT, type StockMessageKey } from './messages.js';
+import { ScanOneSku } from './scan-one.js';
 
 /**
  * Two-step transfers (M07 Build list).
@@ -186,6 +187,18 @@ export function StockTransfersPage() {
                   onValueChange={setTo}
                 />
               </Field>
+
+              {fromLocationId === '' ? null : (
+                <ScanOneSku
+                  held={stockHere.data?.items ?? []}
+                  skuId={skuId}
+                  onChoose={(id) => {
+                    setSkuId(id);
+                    setQty('1');
+                  }}
+                  onOneMore={() => setQty((current) => String((Number(current) || 0) + 1))}
+                />
+              )}
 
               <Field label={st('stock.sku')} id="transfer-sku">
                 <Select

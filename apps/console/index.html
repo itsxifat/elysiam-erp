@@ -3,11 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Elysium Console</title>
+    <title>Console</title>
     <script>
       // Applied before first paint so a dark-mode user never sees a white flash.
       try {
-        const saved = localStorage.getItem('elysium-theme');
+        // `erp-theme`, or an older build's `<word>-theme` (packages/ui storage.ts, D-472).
+        let saved = localStorage.getItem('erp-theme');
+        for (let i = 0; saved === null && i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && /^[a-z]+-theme$/.test(key)) saved = localStorage.getItem(key);
+        }
         const dark =
           saved === 'dark' ||
           (saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);

@@ -5,14 +5,14 @@ import { env } from './env.js';
  *
  * The same two rules as the console's client, because the portal is another origin talking
  * to the same API (D-053): send the cookies (`credentials: 'include'`), and echo the
- * `elysium_csrf` cookie back as a header on anything that is not a read. The tracking page
+ * `erp_csrf` cookie back as a header on anything that is not a read. The tracking page
  * keeps its own one-call client (`tracking/api.ts`), which also primes that cookie for a
  * visitor with no session; here the session probe is always the first request, and any
  * request sets the cookie.
  */
 
-export const CSRF_COOKIE = 'elysium_csrf';
-export const CSRF_HEADER = 'x-elysium-csrf';
+export const CSRF_COOKIE = 'erp_csrf';
+export const CSRF_HEADER = 'x-csrf-token';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 

@@ -9,6 +9,7 @@ import {
   basisPointsAsPercent,
   discountAllowed,
   formatOrderNo,
+  holdsStock as holdsStockNow,
   mulQty,
   normalizeBdPhone,
   orderDiscountCeilingBps,
@@ -31,6 +32,7 @@ import { emit } from '../../platform/events/outbox.js';
 import { assertInScope } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi, type CatalogSku } from '../catalog/catalog.api.js';
+import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { CustomersService } from './customers.service.js';
@@ -306,6 +308,18 @@ export interface CreateOrderOptions {
    * every HTTP path leaves it out and is checked.
    */
   readonly systemPricing?: true;
+  /**
+   * Reserve the lines at this location as the order is placed, in this transaction (a website
+   * checkout, M34, D-532). The order is then `stock_held_at`: confirming it reserves nothing
+   * more and cancelling it while pending releases the hold, both by the state machine. All or
+   * nothing: a line the location cannot hold refuses the order with `STOCK_INSUFFICIENT`.
+   */
+  readonly holdStockAt?: string;
+  /**
+   * The discount the order's `promo_code_id` names, for a server caller that priced and
+   * redeems its discounts itself (the website, M34, D-539). Never from a request body.
+   */
+  readonly promoCodeId?: string | null;
 }
 
 export interface CreatedOrder {
@@ -323,6 +337,7 @@ export class OrdersService {
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
     @Inject(LEDGER_API) private readonly ledger: LedgerApi,
     @Inject(PROMO_PORT) private readonly promo: PromoPort,
+    @Inject(IAM_API) private readonly iam: IamApi,
     private readonly customers: CustomersService,
     private readonly transitions: TransitionsService,
     private readonly audit: AuditService,
@@ -394,11 +409,28 @@ export class OrdersService {
           actorUserId: event.actor_user_id,
           occurredAt: new Date(event.occurred_at).toISOString(),
         }));
+        const timeline = orderTimeline(history, audited);
+        /*
+         * The owners among the people on this order (M31, D-473): an owner holds no role,
+         * so the console cannot name them from its list of staff. Their names go to other
+         * owners only; everyone else reads "Owner".
+         */
+        const owners = await this.iam.ownersAmong(
+          tx,
+          [
+            ...timeline.flatMap((entry) => (entry.actorUserId === null ? [] : [entry.actorUserId])),
+            ...[order.assigned_to, order.created_by].filter(
+              (id): id is string => typeof id === 'string',
+            ),
+          ],
+          context,
+        );
         return {
           ...toOrderView(order),
           lines: lines.map(toLineView),
           history,
-          timeline: orderTimeline(history, audited),
+          timeline,
+          owners,
           transitions: transitionsFrom(order.status as OrderStatus),
         };
       }),
@@ -619,6 +651,7 @@ export class OrdersService {
             channel: input.channel,
             lines: lines.map((line) => ({
               skuId: line.skuId,
+              qty: line.qty,
               netPoisha: sub(
                 mulQty(poisha(line.unitPricePoisha), line.qty),
                 poisha(line.discountPoisha),
@@ -687,6 +720,16 @@ export class OrdersService {
       // the agent is still on the phone rather than at the confirm that reserves stock.
       await this.assertShippableLocation(tx, context, input.locationId);
     }
+    const holdAt = options.holdStockAt;
+    if (holdAt !== undefined) {
+      if (input.locationId !== undefined && input.locationId !== holdAt) {
+        throw new OrdersError(
+          'STOCK_LOCATION_INVALID',
+          'An order is held at the location it ships from; name one location, not two.',
+        );
+      }
+      await this.assertShippableLocation(tx, context, holdAt);
+    }
 
     const orderNo = await this.nextOrderNo(tx, context, at);
     const orderId = await repo.insertOrder(tx, {
@@ -704,13 +747,14 @@ export class OrdersService {
       shipAddressLine: shipTo.addressLine,
       deliveryZoneId: zone?.id ?? options.fallbackDeliveryZoneId ?? null,
       courierId: input.courierId ?? zone?.defaultCourierId ?? null,
-      locationId: input.locationId ?? null,
+      locationId: holdAt ?? input.locationId ?? null,
+      stockHeldAt: holdAt === undefined ? null : at,
       itemsPoisha: BigInt(totals.itemsPoisha),
       discountPoisha: BigInt(totals.discountPoisha),
       deliveryChargePoisha: BigInt(totals.deliveryChargePoisha),
       advancePaidPoisha: BigInt(totals.advancePaidPoisha),
       codAmountPoisha: BigInt(totals.codAmountPoisha),
-      promoCodeId: priced?.codeId ?? null,
+      promoCodeId: priced?.codeId ?? options.promoCodeId ?? null,
       assignedTo: input.assignedTo ?? null,
       createdBy: context.userId,
       notes: input.notes ?? null,
@@ -735,6 +779,23 @@ export class OrdersService {
         discountPoisha: line.discountPoisha,
         position: index,
       });
+    }
+
+    if (holdAt !== undefined) {
+      /*
+       * The website's hold (D-532): the lines are reserved now, with M07's atomic conditional
+       * UPDATE, so two shoppers racing for the last unit cannot both be sold it. A line the
+       * location cannot hold throws `STOCK_INSUFFICIENT` and the whole order rolls back.
+       */
+      await this.inventory.reserve(
+        tx,
+        { orgId: context.orgId, userId: context.userId },
+        {
+          refType: 'order',
+          refId: orderId,
+          lines: lines.map((line) => ({ skuId: line.skuId, locationId: holdAt, qty: line.qty })),
+        },
+      );
     }
 
     /*
@@ -820,242 +881,287 @@ export class OrdersService {
     patch: UpdateOrderInput,
   ) {
     return mapOrderErrors(async () =>
-      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const order = await this.readInScope(tx, context, request, id);
-        const editable: readonly string[] = ['pending', 'confirmed', 'on_hold'];
-        if (!editable.includes(order.status)) {
-          throw new OrdersError(
-            'ORDER_IMMUTABLE',
-            `An order that is ${order.status} can no longer be edited; its terms are already on an invoice.`,
-          );
-        }
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) =>
+        this.editIn(tx, context, request, id, patch),
+      ),
+    );
+  }
 
-        /*
-         * An order a promo code priced keeps its price (ledger audit W2).
-         *
-         * The redemption records what the code gave against these lines, this discount and
-         * this delivery charge; changing any of them would leave the code's use spent on a
-         * price that no longer exists — or bring back a charge a free-delivery code took
-         * off. Re-pricing a code on an edit is its own decision; until then the honest path
-         * is to cancel the order (which gives the use back) and take it again.
-         */
-        if (
-          order.promo_code_id !== null &&
-          (patch.lines !== undefined ||
-            patch.discountPoisha !== undefined ||
-            patch.deliveryChargePoisha !== undefined)
-        ) {
-          throw new OrdersError(
-            'ORDER_IMMUTABLE',
-            'A promo code priced this order, so its lines, discount and delivery charge are fixed. Cancel it and take it again to change them.',
-          );
-        }
+  /**
+   * The edit, in the caller's transaction (M35b: an order the ncom.bd marketplace handed over
+   * and then changed, D-556). `system` is set only by `OrdersApiService`: the change comes from
+   * a server whose prices the order already carries, so there is no person's scope to apply
+   * and no agent's discount ceiling (D-364), as for `createIn`'s `systemPricing`.
+   */
+  async editIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+    patch: UpdateOrderInput,
+    options: { readonly system?: true } = {},
+  ) {
+    const order =
+      options.system === true
+        ? await this.lockSystem(tx, context, id)
+        : await this.readInScope(tx, context, request, id);
+    const editable: readonly string[] = ['pending', 'confirmed', 'on_hold'];
+    if (!editable.includes(order.status)) {
+      throw new OrdersError(
+        'ORDER_IMMUTABLE',
+        `An order that is ${order.status} can no longer be edited; its terms are already on an invoice.`,
+      );
+    }
 
-        const existing = await repo.orderLines(tx, context.orgId, order.id);
-        const lines =
-          patch.lines === undefined
-            ? existing.map((line) => ({
-                skuId: line.sku_id,
-                skuCode: line.sku_code,
-                productName: line.product_name,
-                qty: line.qty,
-                unitPricePoisha: BigInt(line.unit_price_poisha),
-                discountPoisha: BigInt(line.discount_poisha),
-              }))
-            : await this.priceLines(tx, context, patch.lines);
+    /*
+     * An order a promo code priced keeps its price (ledger audit W2).
+     *
+     * The redemption records what the code gave against these lines, this discount and
+     * this delivery charge; changing any of them would leave the code's use spent on a
+     * price that no longer exists — or bring back a charge a free-delivery code took
+     * off. Re-pricing a code on an edit is its own decision; until then the honest path
+     * is to cancel the order (which gives the use back) and take it again.
+     */
+    const repricing =
+      patch.lines !== undefined ||
+      patch.discountPoisha !== undefined ||
+      patch.deliveryChargePoisha !== undefined;
+    /*
+     * M35a: a website order can carry several discounts and no single `promo_code_id`,
+     * and its lines can hold flash-sale units claimed at a sale price (D-542). A line
+     * edit replaces the lines, which would orphan the claims (their foreign key refuses
+     * it) and leave the sale's sold count describing lines that no longer exist.
+     */
+    const holds = repricing
+      ? await this.promo.holdsOnOrder(tx, context.orgId, order.id)
+      : { appliedDiscounts: 0, flashClaims: 0 };
+    if (repricing && (order.promo_code_id !== null || holds.appliedDiscounts > 0)) {
+      throw new OrdersError(
+        'ORDER_IMMUTABLE',
+        'A promo code priced this order, so its lines, discount and delivery charge are fixed. Cancel it and take it again to change them.',
+      );
+    }
+    if (patch.lines !== undefined && holds.flashClaims > 0) {
+      throw new OrdersError(
+        'ORDER_IMMUTABLE',
+        'Flash-sale prices priced this order’s lines, so they are fixed. Cancel it and take it again to change them.',
+      );
+    }
 
-        /*
-         * The order-level discount, derived rather than stored.
-         *
-         * `orders.discount_poisha` is the total §9 names and the COD CHECK re-derives
-         * from, so the order-level part is what is left after the lines' own discounts.
-         * The same derivation as `TransitionsService.orderLevelDiscount`, for the same
-         * reason: two columns holding one number is two numbers that must agree.
-         */
-        const existingLineDiscounts = existing.reduce(
-          (total, line) => total + BigInt(line.discount_poisha),
-          0n,
-        );
-        const orderDiscountPoisha =
-          patch.discountPoisha !== undefined
-            ? BigInt(patch.discountPoisha)
-            : bigintMax(BigInt(order.discount_poisha) - existingLineDiscounts, 0n);
-
-        if (patch.lines !== undefined || patch.discountPoisha !== undefined) {
-          await this.assertDiscountCeiling(
-            tx,
-            context,
-            { lines, orderDiscountPoisha },
-            {
-              lines: existing.map((line) => ({
-                skuId: line.sku_id,
-                qty: line.qty,
-                unitPricePoisha: BigInt(line.unit_price_poisha),
-                discountPoisha: BigInt(line.discount_poisha),
-              })),
-              orderDiscountPoisha: bigintMax(
-                BigInt(order.discount_poisha) - existingLineDiscounts,
-                0n,
-              ),
-            },
-          );
-        }
-
-        const deliveryChargePoisha =
-          patch.deliveryChargePoisha === undefined
-            ? BigInt(order.delivery_charge_poisha)
-            : BigInt(patch.deliveryChargePoisha);
-
-        const totals = computeOrderTotals({
-          lines: lines.map((line) => ({
+    const existing = await repo.orderLines(tx, context.orgId, order.id);
+    const lines =
+      patch.lines === undefined
+        ? existing.map((line) => ({
+            skuId: line.sku_id,
+            skuCode: line.sku_code,
+            productName: line.product_name,
             qty: line.qty,
-            unitPricePoisha: poisha(line.unitPricePoisha),
-            lineDiscountPoisha: poisha(line.discountPoisha),
+            unitPricePoisha: BigInt(line.unit_price_poisha),
+            discountPoisha: BigInt(line.discount_poisha),
+          }))
+        : await this.priceLines(tx, context, patch.lines);
+
+    /*
+     * The order-level discount, derived rather than stored.
+     *
+     * `orders.discount_poisha` is the total §9 names and the COD CHECK re-derives
+     * from, so the order-level part is what is left after the lines' own discounts.
+     * The same derivation as `TransitionsService.orderLevelDiscount`, for the same
+     * reason: two columns holding one number is two numbers that must agree.
+     */
+    const existingLineDiscounts = existing.reduce(
+      (total, line) => total + BigInt(line.discount_poisha),
+      0n,
+    );
+    const orderDiscountPoisha =
+      patch.discountPoisha !== undefined
+        ? BigInt(patch.discountPoisha)
+        : bigintMax(BigInt(order.discount_poisha) - existingLineDiscounts, 0n);
+
+    if (
+      options.system !== true &&
+      (patch.lines !== undefined || patch.discountPoisha !== undefined)
+    ) {
+      await this.assertDiscountCeiling(
+        tx,
+        context,
+        { lines, orderDiscountPoisha },
+        {
+          lines: existing.map((line) => ({
+            skuId: line.sku_id,
+            qty: line.qty,
+            unitPricePoisha: BigInt(line.unit_price_poisha),
+            discountPoisha: BigInt(line.discount_poisha),
           })),
-          orderDiscountPoisha: poisha(orderDiscountPoisha),
-          deliveryChargePoisha: poisha(deliveryChargePoisha),
-          // An advance is a posted journal, so the edit carries it across untouched.
-          advancePaidPoisha: poisha(BigInt(order.advance_paid_poisha)),
-        });
+          orderDiscountPoisha: bigintMax(BigInt(order.discount_poisha) - existingLineDiscounts, 0n),
+        },
+      );
+    }
 
-        if (patch.shipTo !== undefined) await this.assertArea(tx, patch.shipTo);
-        const shipTo: ShipTo =
-          patch.shipTo === undefined
-            ? {
-                name: order.ship_name,
-                phoneE164: order.ship_phone_e164,
-                districtId: order.ship_district_id,
-                thanaId: order.ship_thana_id,
-                area: order.ship_area,
-                addressLine: order.ship_address_line,
-              }
-            : {
-                name: patch.shipTo.name ?? order.ship_name,
-                phoneE164: order.ship_phone_e164,
-                districtId: patch.shipTo.districtId,
-                thanaId: patch.shipTo.thanaId,
-                area: patch.shipTo.area ?? null,
-                addressLine: patch.shipTo.addressLine,
-              };
+    const deliveryChargePoisha =
+      patch.deliveryChargePoisha === undefined
+        ? BigInt(order.delivery_charge_poisha)
+        : BigInt(patch.deliveryChargePoisha);
 
-        const linesChanged = patch.lines !== undefined && !sameLines(existing, lines);
-        const nextLocationId = patch.locationId ?? order.location_id;
-        const locationChanged = nextLocationId !== order.location_id;
-        const holdsStock = order.status === 'confirmed' || order.status === 'on_hold';
-        /*
-         * A moved fulfilment location needs the hold moved with it.
-         *
-         * `inventory.reservations` is keyed on `(sku, location)`, so an edit that changed
-         * only `location_id` would leave the units held at the warehouse the order is no
-         * longer shipping from — reserved where nobody will pick them, and unavailable to
-         * the orders that will. So the reservation is rewritten for a location change as
-         * well as for a line change.
-         */
-        const rewriteReservation = holdsStock && (linesChanged || locationChanged);
-        if (rewriteReservation) {
-          await this.inventory.release(
-            tx,
-            { orgId: context.orgId, userId: context.userId },
-            { refType: 'order', refId: order.id },
-          );
-        }
-        if (linesChanged) {
-          await repo.deleteOrderLines(tx, context.orgId, order.id);
-          for (const [index, line] of lines.entries()) {
-            await repo.insertOrderLine(tx, {
-              orgId: context.orgId,
-              orderId: order.id,
-              skuId: line.skuId,
-              skuCode: line.skuCode,
-              productName: line.productName,
-              qty: line.qty,
-              unitPricePoisha: line.unitPricePoisha,
-              discountPoisha: line.discountPoisha,
-              position: index,
-            });
+    const totals = computeOrderTotals({
+      lines: lines.map((line) => ({
+        qty: line.qty,
+        unitPricePoisha: poisha(line.unitPricePoisha),
+        lineDiscountPoisha: poisha(line.discountPoisha),
+      })),
+      orderDiscountPoisha: poisha(orderDiscountPoisha),
+      deliveryChargePoisha: poisha(deliveryChargePoisha),
+      // An advance is a posted journal, so the edit carries it across untouched.
+      advancePaidPoisha: poisha(BigInt(order.advance_paid_poisha)),
+    });
+
+    if (patch.shipTo !== undefined) await this.assertArea(tx, patch.shipTo);
+    const shipTo: ShipTo =
+      patch.shipTo === undefined
+        ? {
+            name: order.ship_name,
+            phoneE164: order.ship_phone_e164,
+            districtId: order.ship_district_id,
+            thanaId: order.ship_thana_id,
+            area: order.ship_area,
+            addressLine: order.ship_address_line,
           }
-        }
+        : {
+            name: patch.shipTo.name ?? order.ship_name,
+            phoneE164: order.ship_phone_e164,
+            districtId: patch.shipTo.districtId,
+            thanaId: patch.shipTo.thanaId,
+            area: patch.shipTo.area ?? null,
+            addressLine: patch.shipTo.addressLine,
+          };
 
-        await this.transitions.assertCourierChangeAllowed(
-          tx,
-          context.orgId,
-          order,
-          patch.courierId,
-        );
-        const moved = await repo.updateOrderCommercials(tx, {
+    const linesChanged = patch.lines !== undefined && !sameLines(existing, lines);
+    const nextLocationId = patch.locationId ?? order.location_id;
+    const locationChanged = nextLocationId !== order.location_id;
+    // A confirmed or held order, and a website order its checkout held (D-532).
+    const holdsStock = holdsStockNow(order.status as OrderStatus, order.stock_held_at !== null);
+    /*
+     * A moved fulfilment location needs the hold moved with it.
+     *
+     * `inventory.reservations` is keyed on `(sku, location)`, so an edit that changed
+     * only `location_id` would leave the units held at the warehouse the order is no
+     * longer shipping from — reserved where nobody will pick them, and unavailable to
+     * the orders that will. So the reservation is rewritten for a location change as
+     * well as for a line change.
+     */
+    const rewriteReservation = holdsStock && (linesChanged || locationChanged);
+    if (rewriteReservation) {
+      await this.inventory.release(
+        tx,
+        { orgId: context.orgId, userId: context.userId },
+        { refType: 'order', refId: order.id },
+      );
+    }
+    if (linesChanged) {
+      await repo.deleteOrderLines(tx, context.orgId, order.id);
+      for (const [index, line] of lines.entries()) {
+        await repo.insertOrderLine(tx, {
           orgId: context.orgId,
           orderId: order.id,
-          itemsPoisha: BigInt(totals.itemsPoisha),
-          discountPoisha: BigInt(totals.discountPoisha),
-          deliveryChargePoisha: BigInt(totals.deliveryChargePoisha),
-          advancePaidPoisha: BigInt(totals.advancePaidPoisha),
-          codAmountPoisha: BigInt(totals.codAmountPoisha),
-          shipName: shipTo.name,
-          shipPhoneE164: shipTo.phoneE164,
-          shipDistrictId: shipTo.districtId,
-          shipThanaId: shipTo.thanaId,
-          shipArea: shipTo.area,
-          shipAddressLine: shipTo.addressLine,
-          deliveryZoneId: patch.deliveryZoneId ?? order.delivery_zone_id,
-          courierId: patch.courierId ?? order.courier_id,
-          locationId: nextLocationId,
-          notes: patch.notes ?? order.notes,
+          skuId: line.skuId,
+          skuCode: line.skuCode,
+          productName: line.productName,
+          qty: line.qty,
+          unitPricePoisha: line.unitPricePoisha,
+          discountPoisha: line.discountPoisha,
+          position: index,
         });
-        if (!moved) {
-          // The order was dispatched between the lock and here, which the lock should
-          // have made impossible — so this is the backstop for a caller that reached
-          // `edit` without one.
-          throw new OrdersError(
-            'ORDER_IMMUTABLE',
-            'This order moved while the edit was in flight; reload and try again.',
-          );
-        }
+      }
+    }
 
-        if (rewriteReservation) {
-          // Resolved from the order *as edited*, not as read: passing the old row here
-          // would hold the new lines at the old location, which is the bug the release
-          // above exists to avoid. It goes through the kind check too, so an edit cannot
-          // move an order onto a shelf it may not ship from.
-          const locationId = await this.fulfilmentLocation(
-            tx,
-            context,
-            { ...order, location_id: nextLocationId },
-            nextLocationId ?? undefined,
-          );
-          await this.inventory.reserve(
-            tx,
-            { orgId: context.orgId, userId: context.userId },
-            {
-              refType: 'order',
-              refId: order.id,
-              lines: lines.map((line) => ({ skuId: line.skuId, locationId, qty: line.qty })),
-            },
-          );
-        }
+    await this.transitions.assertCourierChangeAllowed(tx, context.orgId, order, patch.courierId);
+    const moved = await repo.updateOrderCommercials(tx, {
+      orgId: context.orgId,
+      orderId: order.id,
+      itemsPoisha: BigInt(totals.itemsPoisha),
+      discountPoisha: BigInt(totals.discountPoisha),
+      deliveryChargePoisha: BigInt(totals.deliveryChargePoisha),
+      advancePaidPoisha: BigInt(totals.advancePaidPoisha),
+      codAmountPoisha: BigInt(totals.codAmountPoisha),
+      shipName: shipTo.name,
+      shipPhoneE164: shipTo.phoneE164,
+      shipDistrictId: shipTo.districtId,
+      shipThanaId: shipTo.thanaId,
+      shipArea: shipTo.area,
+      shipAddressLine: shipTo.addressLine,
+      deliveryZoneId: patch.deliveryZoneId ?? order.delivery_zone_id,
+      courierId: patch.courierId ?? order.courier_id,
+      locationId: nextLocationId,
+      notes: patch.notes ?? order.notes,
+    });
+    if (!moved) {
+      // The order was dispatched between the lock and here, which the lock should
+      // have made impossible — so this is the backstop for a caller that reached
+      // `edit` without one.
+      throw new OrdersError(
+        'ORDER_IMMUTABLE',
+        'This order moved while the edit was in flight; reload and try again.',
+      );
+    }
 
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'update',
-          action: 'order.edited',
-          entityType: 'order',
-          entityId: order.id,
-          before: {
-            codAmountPoisha: String(order.cod_amount_poisha),
-            lines: existing.length,
-          },
-          after: {
-            codAmountPoisha: BigInt(totals.codAmountPoisha).toString(),
-            lines: lines.length,
-            linesChanged,
-          },
-          request,
-        });
+    if (rewriteReservation) {
+      // Resolved from the order *as edited*, not as read: passing the old row here
+      // would hold the new lines at the old location, which is the bug the release
+      // above exists to avoid. It goes through the kind check too, so an edit cannot
+      // move an order onto a shelf it may not ship from.
+      const locationId = await this.fulfilmentLocation(
+        tx,
+        context,
+        { ...order, location_id: nextLocationId },
+        nextLocationId ?? undefined,
+      );
+      await this.inventory.reserve(
+        tx,
+        { orgId: context.orgId, userId: context.userId },
+        {
+          refType: 'order',
+          refId: order.id,
+          lines: lines.map((line) => ({ skuId: line.skuId, locationId, qty: line.qty })),
+        },
+      );
+    }
 
-        const after = await repo.orderById(tx, context.orgId, order.id);
-        return after === undefined ? { id: order.id } : toOrderView(after);
-      }),
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'update',
+      action: 'order.edited',
+      entityType: 'order',
+      entityId: order.id,
+      before: {
+        codAmountPoisha: String(order.cod_amount_poisha),
+        lines: existing.length,
+      },
+      after: {
+        codAmountPoisha: BigInt(totals.codAmountPoisha).toString(),
+        lines: lines.length,
+        linesChanged,
+      },
+      request,
+    });
+    // M35b: the order as it now stands goes to whoever listens (ncom.bd for its own orders,
+    // D-556), in this transaction like every order event.
+    await emit(
+      tx,
+      'order.edited',
+      { id: order.id, orderNo: order.order_no, at: new Date().toISOString() },
+      { orgId: context.orgId },
     );
+
+    const after = await repo.orderById(tx, context.orgId, order.id);
+    return after === undefined ? { id: order.id } : toOrderView(after);
+  }
+
+  /** A system caller's lock on an order of the brand, with no person's scope to apply. */
+  private async lockSystem(tx: Tx, context: ActiveContext, id: string): Promise<repo.OrderRow> {
+    const order = await repo.lockOrderInScope(tx, context.orgId, id, sql`true`);
+    if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
+    return order;
   }
 
   // --- transitions --------------------------------------------------------------

@@ -1,25 +1,34 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
+import { sql } from 'drizzle-orm';
 import {
   computePartialDelivery,
+  parcelWeightGrams,
   poisha,
   TRANSITIONS,
   transitionFor,
   type OrderStatus,
+  type GatewayAdvanceMethod,
   type OrderTrigger,
   type Poisha,
+  type PostingAccount,
   type ReturnReasonCode,
 } from '@elysium/domain';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
+import { AdvancesService } from './advances.service.js';
 import { OrdersService, type CreateOrderOptions, type CreatedOrder } from './orders.service.js';
+import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
-import { mapOrderErrors } from './orders.errors.js';
+import { mapOrderErrors, OrdersError } from './orders.errors.js';
 import * as repo from './orders.repository.js';
 import { deliveredNetItems } from './revenue.js';
-import type { CreateOrderInput } from './orders.schemas.js';
+import type { CreateOrderInput, UpdateOrderInput } from './orders.schemas.js';
+import * as references from './references.repository.js';
 
 /**
  * Orders' service interface for other modules (invariant 12).
@@ -114,6 +123,11 @@ export interface OrderBookingSnapshot {
   /** For the courier's parcel description. Never an item's cost. */
   readonly itemSummary: string | null;
   readonly notes: string | null;
+  /**
+   * Σ qty × weight in grams (M39b, D-645), or null when any line's variant has no weight:
+   * the courier then declares its configured default.
+   */
+  readonly weightGrams: number | null;
 }
 
 /**
@@ -285,7 +299,145 @@ export interface TopSku {
   readonly units: number;
 }
 
+/** A delivery zone as another module sees it (M33). */
+export interface DeliveryZoneSummary {
+  readonly id: string;
+  readonly code: string;
+  readonly nameEn: string;
+  readonly nameBn: string;
+  readonly chargePoisha: bigint;
+  readonly isActive: boolean;
+}
+
+/** One order as its shopper may see it (M34, D-524): selling-side money, no cost, no staff. */
+export interface ShopperOrderFacts {
+  readonly id: string;
+  readonly orderNo: string;
+  readonly channel: string;
+  readonly status: OrderStatus;
+  readonly customerId: string;
+  readonly createdAt: Date;
+  readonly confirmedAt: Date | null;
+  readonly shippedAt: Date | null;
+  readonly deliveredAt: Date | null;
+  readonly returnedAt: Date | null;
+  readonly cancelledAt: Date | null;
+  readonly itemsPoisha: bigint;
+  readonly discountPoisha: bigint;
+  readonly deliveryChargePoisha: bigint;
+  readonly advancePaidPoisha: bigint;
+  readonly codAmountPoisha: bigint;
+  readonly courierId: string | null;
+  readonly lineCount: number;
+  readonly unitCount: number;
+  readonly shipTo: {
+    readonly name: string;
+    readonly phoneE164: string;
+    readonly districtId: number;
+    readonly thanaId: number;
+    readonly districtEn: string | null;
+    readonly districtBn: string | null;
+    readonly thanaEn: string | null;
+    readonly thanaBn: string | null;
+    readonly area: string | null;
+    readonly addressLine: string;
+  };
+}
+
+/** One line as its shopper may see it: what was charged, never what it cost. */
+export interface ShopperOrderLine {
+  readonly id: string;
+  readonly skuId: string;
+  readonly skuCode: string;
+  readonly productName: string;
+  readonly qty: number;
+  readonly unitPricePoisha: bigint;
+  readonly discountPoisha: bigint;
+}
+
+/** A gateway payment the caller validated, to book as a verified advance (M34, D-526). */
+export interface GatewayAdvanceInput {
+  readonly orderId: string;
+  readonly method: GatewayAdvanceMethod;
+  /** The gateway transaction id: the advance's reference, unique while live. */
+  readonly transactionRef: string;
+  readonly amountPoisha: bigint;
+  /** The clearing wallet's ledger account (`WalletsApi.ensureSystemWallet`). */
+  readonly wallet: PostingAccount;
+  readonly note: string | null;
+  /**
+   * Money the gateway took that the order does not accept (M34 ledger audit W3): a wrong
+   * amount, an order changed after its page opened, a second page paid. Booked into the
+   * clearing wallet all the same — the gateway settles it to the bank — and owed back at once,
+   * never applied to the COD.
+   */
+  readonly owedBack?: boolean;
+}
+
+/** A campaign and its refs by kind, as attribution matches an order's source to it (§11). */
+export interface CampaignMatch {
+  readonly id: string;
+  /** `meta_campaign` refs: an order's `campaignId` may carry one instead of the uuid. */
+  readonly metaCampaignIds: readonly string[];
+  readonly metaAdIds: readonly string[];
+  /** `utm_campaign` refs, lower-cased as `marketing.campaign_refs` stores them. */
+  readonly utmCampaigns: readonly string[];
+}
+
+/** One line as a packer picks it (M35b, D-554): what to put in the box, never a cost. */
+export interface PackingLine {
+  readonly skuId: string;
+  readonly skuCode: string;
+  readonly productName: string;
+  readonly qty: number;
+  readonly returnedQty: number;
+  /** The selling price charged, for a label's price rows. */
+  readonly unitPricePoisha: bigint;
+}
+
+/** An order as packing sees it (M35b: the scanner and the order labels, D-554, D-555). */
+export interface PackingFacts {
+  readonly id: string;
+  readonly orderNo: string;
+  readonly channel: string;
+  readonly status: OrderStatus;
+  readonly createdAt: Date;
+  readonly notes: string | null;
+  /** The scope columns: who may see the order (§6). */
+  readonly branchId: string | null;
+  readonly createdBy: string;
+  readonly assignedTo: string | null;
+  readonly itemsPoisha: bigint;
+  readonly discountPoisha: bigint;
+  readonly deliveryChargePoisha: bigint;
+  readonly advancePaidPoisha: bigint;
+  readonly codAmountPoisha: bigint;
+  readonly recipient: {
+    readonly name: string;
+    /** E.164, in full: the rider calls it. Never logged (invariant 10). */
+    readonly phoneE164: string;
+    readonly districtEn: string | null;
+    readonly districtBn: string | null;
+    readonly thanaEn: string | null;
+    readonly thanaBn: string | null;
+    readonly area: string | null;
+    readonly addressLine: string;
+  };
+  readonly parcel: {
+    readonly courierName: string;
+    readonly consignmentNo: string | null;
+    readonly trackingCode: string | null;
+  } | null;
+  readonly lines: readonly PackingLine[];
+}
+
 export interface OrdersApi {
+  /**
+   * Orders whose recorded source names a campaign as §11's attribution reads it (M39a,
+   * D-632): marketing keeps such a campaign rather than orphan their attribution.
+   */
+  ordersAttributedTo(tx: Tx, orgId: string, campaign: CampaignMatch): Promise<number>;
+
   /**
    * Take an order inside the caller's transaction.
    *
@@ -340,6 +492,12 @@ export interface OrdersApi {
     orgId: string,
     codes: readonly string[],
   ): Promise<ReadonlyMap<string, CourierParty & { readonly isActive: boolean }>>;
+
+  /**
+   * The brand's delivery zones, active or not (M33): what the website's shipping rule maps
+   * its three zones onto (D-503). Charges are selling-side money, never a cost.
+   */
+  deliveryZones(tx: Tx, orgId: string): Promise<readonly DeliveryZoneSummary[]>;
 
   /** Of these E.164 phones, the ones already a buyer of this brand. */
   buyerPhones(tx: Tx, orgId: string, phones: readonly string[]): Promise<ReadonlySet<string>>;
@@ -448,6 +606,88 @@ export interface OrdersApi {
     range: { readonly from: string; readonly to: string },
   ): Promise<readonly AnalyticsOrderFact[]>;
 
+  // --- M34: the website ------------------------------------------------------------
+
+  /** The buyer this E.164 phone names, or undefined: per-buyer discount limits (D-541). */
+  buyerIdByPhone(tx: Tx, orgId: string, phoneE164: string): Promise<string | undefined>;
+
+  /**
+   * Whether this thana is in this district (the reference data), and the brand's delivery zone
+   * for it, or null when the address falls in no zone: what the website's shipping rule prices.
+   */
+  deliveryZoneForArea(
+    tx: Tx,
+    orgId: string,
+    districtId: number,
+    thanaId: number,
+  ): Promise<{ readonly valid: boolean; readonly zoneId: string | null }>;
+
+  /** An order's id by its number in this brand, or undefined. */
+  orderIdByNumber(tx: Tx, orgId: string, orderNo: string): Promise<string | undefined>;
+
+  /** These orders as their shoppers may see them (D-524). Ids not of this brand are absent. */
+  shopperOrders(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+  ): Promise<readonly ShopperOrderFacts[]>;
+
+  /** One order's lines as its shopper may see them, in their order. */
+  shopperOrderLines(tx: Tx, orgId: string, orderId: string): Promise<readonly ShopperOrderLine[]>;
+
+  /**
+   * Book a validated gateway payment as a verified advance (D-526): Dr the clearing wallet /
+   * Cr Customer advance, the COD lowered before the parcel moves, in the caller's transaction.
+   * `applied` lowered the COD; `settled` met an order that had already ended and is owed back;
+   * `held` met a parcel on the road and waits as a claim for accounts.
+   */
+  recordGatewayAdvance(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly recordedBy: string; readonly decidedBy: string },
+    input: GatewayAdvanceInput,
+  ): Promise<{ readonly advanceId: string; readonly outcome: 'applied' | 'settled' | 'held' }>;
+
+  /**
+   * Whether the caller may see this order (M34 ledger audit W6): the route's own row scope,
+   * declared on `Order` and hung on the request by the guard, applied here where the order's
+   * columns are known. Marks the scope applied.
+   */
+  orderVisibleTo(tx: Tx, orgId: string, orderId: string, request: object): Promise<boolean>;
+
+  /** The booked parcel's courier and codes, for the buyer (D-524). Null before booking. */
+  parcelTracking(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+  ): Promise<{
+    readonly courierName: string;
+    readonly consignmentNo: string | null;
+    readonly trackingCode: string | null;
+  } | null>;
+
+  // --- M35b: the marketplace and packing ----------------------------------------------
+
+  /**
+   * Change an order a server handed over and then changed (M35b: ncom.bd, D-556), through the
+   * desk's own edit (`OrdersService.editIn`) in the caller's transaction: the same rules on
+   * what may still change, no person's scope and no agent's discount ceiling. Refuses with
+   * `ORDER_IMMUTABLE` once the order is past `on_hold`.
+   */
+  editOrder(tx: Tx, actor: OrdersActor, orderId: string, patch: UpdateOrderInput): Promise<void>;
+
+  /**
+   * The orders a scanned code names (M35b, D-554): its order number, else a parcel's
+   * consignment number or tracking code. Newest first; empty when nothing matches.
+   */
+  orderIdsForShipmentCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]>;
+
+  /** These orders as packing sees them; ids not of this brand are absent. */
+  packingFacts(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+  ): Promise<readonly PackingFacts[]>;
+
   /** The SKUs with the most units delivered in the range, most first (M24). */
   topSkus(
     tx: Tx,
@@ -490,7 +730,14 @@ export class OrdersApiService implements OrdersApi {
     private readonly orders: OrdersService,
     private readonly transitions: TransitionsService,
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
+    private readonly advances: AdvancesService,
+    private readonly courier: CourierBookingRegistry,
+    @Inject(CATALOG_API) private readonly catalog: CatalogApi,
   ) {}
+
+  ordersAttributedTo(tx: Tx, orgId: string, campaign: CampaignMatch) {
+    return references.ordersAttributedTo(tx, orgId, campaign);
+  }
 
   async createOrder(
     tx: Tx,
@@ -555,6 +802,18 @@ export class OrdersApiService implements OrdersApi {
     return rows.map((row) => ({ id: row.id, code: row.code, name: row.name }));
   }
 
+  async deliveryZones(tx: Tx, orgId: string): Promise<readonly DeliveryZoneSummary[]> {
+    const rows = await repo.listZones(tx, orgId);
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      nameEn: row.name_en,
+      nameBn: row.name_bn,
+      chargePoisha: BigInt(row.charge_poisha),
+      isActive: row.is_active,
+    }));
+  }
+
   async couriersByCodes(
     tx: Tx,
     orgId: string,
@@ -614,6 +873,12 @@ export class OrdersApiService implements OrdersApi {
 
     const area = await repo.areaNames(tx, order.ship_district_id, order.ship_thana_id);
     const lines = await repo.orderLines(tx, orgId, orderId);
+    // What the parcel weighs (D-645), through the catalog's interface (invariant 12).
+    const weights = await this.catalog.skuWeights(
+      tx,
+      orgId,
+      lines.map((line) => line.sku_id),
+    );
 
     return {
       orderId: order.id,
@@ -639,6 +904,9 @@ export class OrdersApiService implements OrdersApi {
       addressLine: order.ship_address_line,
       itemSummary: itemSummaryOf(lines),
       notes: order.notes,
+      weightGrams: parcelWeightGrams(
+        lines.map((line) => ({ qty: line.qty, grams: weights.get(line.sku_id) ?? null })),
+      ),
     };
   }
 
@@ -894,6 +1162,209 @@ export class OrdersApiService implements OrdersApi {
         deliveredCostPoisha: poisha(row.delivered_on === null ? 0n : cost),
       };
     });
+  }
+
+  async buyerIdByPhone(tx: Tx, orgId: string, phoneE164: string): Promise<string | undefined> {
+    return repo.buyerIdByPhone(tx, orgId, phoneE164);
+  }
+
+  async deliveryZoneForArea(
+    tx: Tx,
+    orgId: string,
+    districtId: number,
+    thanaId: number,
+  ): Promise<{ readonly valid: boolean; readonly zoneId: string | null }> {
+    if (!(await repo.areaExists(tx, districtId, thanaId))) return { valid: false, zoneId: null };
+    const zone = await repo.zoneForArea(tx, orgId, districtId, thanaId);
+    return { valid: true, zoneId: zone?.id ?? null };
+  }
+
+  async orderIdByNumber(tx: Tx, orgId: string, orderNo: string): Promise<string | undefined> {
+    return repo.orderIdByNo(tx, orgId, orderNo);
+  }
+
+  async shopperOrders(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+  ): Promise<readonly ShopperOrderFacts[]> {
+    const rows = await repo.shopperOrderRows(tx, orgId, [...new Set(orderIds)]);
+    return rows.map((row) => ({
+      id: row.id,
+      orderNo: row.order_no,
+      channel: row.channel,
+      status: row.status as OrderStatus,
+      customerId: row.customer_id,
+      createdAt: instant(row.created_at) ?? new Date(0),
+      confirmedAt: instant(row.confirmed_at),
+      shippedAt: instant(row.handed_over_at),
+      deliveredAt: instant(row.delivered_at),
+      returnedAt: instant(row.returned_at),
+      cancelledAt: instant(row.cancelled_at),
+      itemsPoisha: BigInt(row.items_poisha),
+      discountPoisha: BigInt(row.discount_poisha),
+      deliveryChargePoisha: BigInt(row.delivery_charge_poisha),
+      advancePaidPoisha: BigInt(row.advance_paid_poisha),
+      codAmountPoisha: BigInt(row.cod_amount_poisha),
+      courierId: row.courier_id,
+      lineCount: row.line_count,
+      unitCount: row.unit_count,
+      shipTo: {
+        name: row.ship_name,
+        phoneE164: row.ship_phone_e164,
+        districtId: row.ship_district_id,
+        thanaId: row.ship_thana_id,
+        districtEn: row.district_en,
+        districtBn: row.district_bn,
+        thanaEn: row.thana_en,
+        thanaBn: row.thana_bn,
+        area: row.ship_area,
+        addressLine: row.ship_address_line,
+      },
+    }));
+  }
+
+  async shopperOrderLines(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+  ): Promise<readonly ShopperOrderLine[]> {
+    const lines = await repo.orderLines(tx, orgId, orderId);
+    return lines.map((line) => ({
+      id: line.id,
+      skuId: line.sku_id,
+      skuCode: line.sku_code,
+      productName: line.product_name,
+      qty: line.qty,
+      unitPricePoisha: BigInt(line.unit_price_poisha),
+      discountPoisha: BigInt(line.discount_poisha),
+    }));
+  }
+
+  async recordGatewayAdvance(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly recordedBy: string; readonly decidedBy: string },
+    input: GatewayAdvanceInput,
+  ): Promise<{ readonly advanceId: string; readonly outcome: 'applied' | 'settled' | 'held' }> {
+    return mapOrderErrors(() => this.advances.recordGatewayAdvance(tx, actor, input));
+  }
+
+  async orderVisibleTo(tx: Tx, orgId: string, orderId: string, request: object): Promise<boolean> {
+    const scope = scopeWhere(request, {
+      createdBy: sql`o.created_by`,
+      assignedTo: sql`o.assigned_to`,
+      branchId: sql`o.branch_id`,
+    });
+    return (await repo.orderByIdInScope(tx, orgId, orderId, scope)) !== undefined;
+  }
+
+  async parcelTracking(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+  ): Promise<{
+    courierName: string;
+    consignmentNo: string | null;
+    trackingCode: string | null;
+  } | null> {
+    const courier = this.courier.current();
+    if (courier === undefined) return null;
+    const parcel = await courier.parcelTracking(tx, orgId, orderId);
+    if (parcel === null) return null;
+    const [party] = await repo.couriersByIds(tx, orgId, [parcel.courierId]);
+    return {
+      courierName: party?.name ?? '',
+      consignmentNo: parcel.consignmentNo,
+      trackingCode: parcel.trackingCode,
+    };
+  }
+
+  async editOrder(
+    tx: Tx,
+    actor: OrdersActor,
+    orderId: string,
+    patch: UpdateOrderInput,
+  ): Promise<void> {
+    await mapOrderErrors(async () => {
+      // Defence in depth (M35b ledger audit, note 6): the system edit skips a person's scope and
+      // the discount ceiling, so it is for orders a server handed over, and nothing else.
+      const row = await repo.orderById(tx, actor.orgId, orderId);
+      if (row !== undefined && row.channel !== 'marketplace') {
+        throw new OrdersError(
+          'ORDER_IMMUTABLE',
+          'Only an order a marketplace handed over is edited this way.',
+        );
+      }
+      await this.orders.editIn(tx, workerContext(actor), NO_REQUEST, orderId, patch, {
+        system: true,
+      });
+    });
+  }
+
+  async orderIdsForShipmentCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]> {
+    const trimmed = code.trim();
+    if (trimmed === '') return [];
+    const byNumber = await repo.orderIdByNo(tx, orgId, trimmed);
+    if (byNumber !== undefined) return [byNumber];
+    const byNumberUpper = await repo.orderIdByNo(tx, orgId, trimmed.toUpperCase());
+    if (byNumberUpper !== undefined) return [byNumberUpper];
+    const courier = this.courier.current();
+    if (courier === undefined) return [];
+    return courier.ordersByParcelCode(tx, orgId, trimmed);
+  }
+
+  async packingFacts(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+  ): Promise<readonly PackingFacts[]> {
+    const ids = [...new Set(orderIds)];
+    const [rows, lines] = await Promise.all([
+      repo.packingOrderRows(tx, orgId, ids),
+      repo.packingLines(tx, orgId, ids),
+    ]);
+    const facts: PackingFacts[] = [];
+    for (const row of rows) {
+      facts.push({
+        id: row.id,
+        orderNo: row.order_no,
+        channel: row.channel,
+        status: row.status as OrderStatus,
+        createdAt: instant(row.created_at) ?? new Date(0),
+        notes: row.notes,
+        branchId: row.branch_id,
+        createdBy: row.created_by,
+        assignedTo: row.assigned_to,
+        itemsPoisha: BigInt(row.items_poisha),
+        discountPoisha: BigInt(row.discount_poisha),
+        deliveryChargePoisha: BigInt(row.delivery_charge_poisha),
+        advancePaidPoisha: BigInt(row.advance_paid_poisha),
+        codAmountPoisha: BigInt(row.cod_amount_poisha),
+        recipient: {
+          name: row.ship_name,
+          phoneE164: row.ship_phone_e164,
+          districtEn: row.district_en,
+          districtBn: row.district_bn,
+          thanaEn: row.thana_en,
+          thanaBn: row.thana_bn,
+          area: row.ship_area,
+          addressLine: row.ship_address_line,
+        },
+        parcel: await this.parcelTracking(tx, orgId, row.id),
+        lines: lines
+          .filter((line) => line.order_id === row.id)
+          .map((line) => ({
+            skuId: line.sku_id,
+            skuCode: line.sku_code,
+            productName: line.product_name,
+            qty: line.qty,
+            returnedQty: line.returned_qty,
+            unitPricePoisha: BigInt(line.unit_price_poisha),
+          })),
+      });
+    }
+    const order = new Map(ids.map((id, index) => [id, index]));
+    return facts.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
   }
 
   async topSkus(

@@ -43,6 +43,7 @@ export const ORDER_CHANNELS = [
   'phone',
   'walk_in',
   'reseller',
+  'marketplace',
 ] as const;
 export type OrderChannel = (typeof ORDER_CHANNELS)[number];
 
@@ -146,6 +147,11 @@ export interface OrderDetail extends OrderRow {
     readonly returnedQty: number;
   })[];
   readonly timeline: readonly TimelineEntry[];
+  /**
+   * The owners among the people on this order (M31, D-473). An owner holds no role, so the
+   * staff list cannot name them; `name` is null unless the viewer is an owner too.
+   */
+  readonly owners?: readonly { readonly userId: string; readonly name: string | null }[];
   /** What the server will accept next, from the domain's own table. */
   readonly transitions: readonly AvailableTransition[];
 }
@@ -228,7 +234,11 @@ export type PromoCheck =
  */
 export const checkPromo = (body: {
   readonly code: string;
-  readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
+  readonly lines: readonly {
+    readonly skuId: string;
+    readonly qty?: number;
+    readonly netPoisha: string;
+  }[];
   readonly orderDiscountPoisha?: string;
   readonly deliveryChargePoisha: string;
   readonly channel: string;

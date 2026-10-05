@@ -115,7 +115,7 @@ test('check 1: phone to confirmed order, keyboard only, inside the 30-second bud
 });
 
 async function csrfToken(context: BrowserContext): Promise<string> {
-  const cookie = (await context.cookies()).find((entry) => entry.name === 'elysium_csrf');
+  const cookie = (await context.cookies()).find((entry) => entry.name === 'erp_csrf');
   if (cookie === undefined) throw new Error('no CSRF cookie in this session');
   return cookie.value;
 }
@@ -148,7 +148,7 @@ test('check 4: a new order appears in a second agent’s queue without a refresh
     expect(skuId).toBeDefined();
 
     const taken = await creator.request.post(`${stack().apiUrl}/v1/orders`, {
-      headers: { 'x-elysium-csrf': await csrfToken(first), origin: 'http://localhost:5183' },
+      headers: { 'x-csrf-token': await csrfToken(first), origin: 'http://localhost:5183' },
       data: {
         channel: 'whatsapp',
         customer: {

@@ -10,7 +10,9 @@ import { inConsole, login, look, preview, signIn } from './preview/helpers.js';
 
 const consoleUrl = () => preview().urls.console;
 
-test('super admin: enrols two-step login, chooses a brand, sees every brand', async ({ page }) => {
+test('super admin: enrols two-step login, chooses a brand, reads its dashboard', async ({
+  page,
+}) => {
   await signIn(page, consoleUrl(), login('superadmin'));
   // A super admin enters no brand by default: the switcher asks.
   await expect(page.getByText('Choose an organisation to continue.')).toBeVisible();
@@ -18,8 +20,8 @@ test('super admin: enrols two-step login, chooses a brand, sees every brand', as
   await page.getByRole('option', { name: /Elysium Lifestyle BD/ }).click();
   await inConsole(page);
 
-  await look(page, 'superadmin-all-brands', '/analytics/group', 'All brands');
-  await look(page, 'superadmin-consolidated-accounts', '/accounts/consolidated', 'All brands');
+  // The all-brands views left the brand's ERP with M31 (D-471).
+  await look(page, 'superadmin-dashboard', '/analytics', 'Analytics');
   await look(page, 'superadmin-approvals', '/approvals', 'Approvals');
 });
 

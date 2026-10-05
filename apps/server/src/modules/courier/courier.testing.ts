@@ -563,6 +563,7 @@ export class TestOrdersPort implements OrdersPort {
       addressLine: row.ship_address_line,
       itemSummary: null,
       notes: row.notes,
+      weightGrams: null,
     };
   }
 

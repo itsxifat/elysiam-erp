@@ -61,6 +61,13 @@ export const FILE_PURPOSES = [
    * finance team the very documents they file.
    */
   'investor-document',
+  /** A category's picture on the brand's website (M33, D-501). Public. */
+  'category-image',
+  /**
+   * The website's own imagery: hero slides and the site logo (M33, D-504). Public. Read
+   * through `Storefront`, the subject of the screens that upload it.
+   */
+  'storefront-image',
 ] as const;
 
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
@@ -79,6 +86,13 @@ export interface PurposeRule {
    * typo. Only imagery and campaign creative can opt in.
    */
   readonly mayBePublic: boolean;
+  /**
+   * The ability an upload of this purpose needs beyond `create FileObject`, when the
+   * purpose belongs to one team's screens (M33's ledger audit, L6). A public website image
+   * is served on the brand's own domain the moment it is stored, so only the people who
+   * manage the website may put one there.
+   */
+  readonly createRequires?: { readonly action: Action; readonly subject: Subject };
 }
 
 export const PURPOSE_RULES: Readonly<Record<FilePurpose, PurposeRule>> = {
@@ -118,4 +132,35 @@ export const PURPOSE_RULES: Readonly<Record<FilePurpose, PurposeRule>> = {
     readRequires: { action: 'read', subject: 'Investor' },
     mayBePublic: false,
   },
+  'category-image': {
+    readRequires: { action: 'read', subject: 'Catalog' },
+    mayBePublic: true,
+    createRequires: { action: 'update', subject: 'Storefront' },
+  },
+  'storefront-image': {
+    readRequires: { action: 'read', subject: 'Storefront' },
+    mayBePublic: true,
+    createRequires: { action: 'update', subject: 'Storefront' },
+  },
 };
+
+/**
+ * The purposes the public media path serves (M33, D-507): what the brand's website shows.
+ *
+ * An allow-list, and narrower than "may be public". Since M34 a public `campaign-asset` is
+ * served too (a flash sale's banner, D-538); every private purpose is refused by
+ * construction, and so is a public file of any purpose added later until somebody decides
+ * the website needs it. The row must also be `public` and `stored`: a purpose alone never
+ * makes a file servable.
+ */
+export const PUBLIC_MEDIA_PURPOSES: readonly FilePurpose[] = [
+  'product-image',
+  'category-image',
+  'storefront-image',
+  /*
+   * M34 (D-538): a flash sale's banner is a public `campaign-asset` (M35a, D-547) that the
+   * website shows on its sale pages, so public campaign images are the website's too. Still only
+   * a `public`, `stored` row, and still only its re-encoded sizes.
+   */
+  'campaign-asset',
+];
