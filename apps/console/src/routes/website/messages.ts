@@ -25,6 +25,7 @@ const WEBSITE_KEYS = [
   'web.pay.description',
   'web.pay.noKey',
   'web.pay.unverified',
+  'web.pay.sandboxRefused',
   'web.pay.enabled',
   'web.pay.mode',
   'web.pay.sandbox',
