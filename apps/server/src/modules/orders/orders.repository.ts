@@ -1559,3 +1559,20 @@ export async function areaExists(tx: Tx, districtId: number, thanaId: number): P
   `);
   return rows[0]?.ok === true;
 }
+
+/**
+ * A buyer's orders that were not cancelled (M35a, D-543): what a first-order-only discount
+ * asks. A cancelled order never was a purchase, so a buyer whose only order was cancelled
+ * is still on their first.
+ */
+export async function standingOrderCount(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+): Promise<number> {
+  const rows = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from sales.orders
+    where org_id = ${orgId} and customer_id = ${customerId} and status <> 'cancelled'
+  `);
+  return rows[0]?.n ?? 0;
+}

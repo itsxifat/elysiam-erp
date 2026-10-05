@@ -619,6 +619,7 @@ export class OrdersService {
             channel: input.channel,
             lines: lines.map((line) => ({
               skuId: line.skuId,
+              qty: line.qty,
               netPoisha: sub(
                 mulQty(poisha(line.unitPricePoisha), line.qty),
                 poisha(line.discountPoisha),

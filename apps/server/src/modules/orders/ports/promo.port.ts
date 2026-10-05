@@ -35,7 +35,12 @@ export interface PromoPort {
       readonly code: string;
       readonly customerId: string | null;
       readonly channel: string;
-      readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
+      /** Each line's net after its own typed discount, and its units (M35a). */
+      readonly lines: readonly {
+        readonly skuId: string;
+        readonly netPoisha: string;
+        readonly qty?: number;
+      }[];
       /** The agent's typed order discount, spread over the lines first (`promoBasis`, W3). */
       readonly orderDiscountPoisha?: string;
       readonly deliveryChargePoisha: string;
@@ -52,6 +57,18 @@ export interface PromoPort {
 
   /** Give the use back when the order is cancelled before it ships. Once, however often. */
   releaseForOrder(tx: Tx, orgId: string, orderId: string): Promise<boolean>;
+
+  /**
+   * Give the order's flash-sale units back (M35a, D-542): all of them on a cancel, or the
+   * units returned per SKU when a return is received. Once, however often; nothing to do for
+   * an order that claimed none.
+   */
+  releaseFlashUnits(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    returned?: readonly { readonly skuId: string; readonly qty: number }[],
+  ): Promise<number>;
 
   /**
    * A personal single-use code for a buyer's occasion (M16 check 2), in the caller's

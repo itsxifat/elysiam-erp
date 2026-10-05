@@ -2,49 +2,65 @@ import { sql } from 'drizzle-orm';
 import type { Tx } from '@elysium/db';
 
 /**
- * Every query the promo module runs (architecture §10; M16).
+ * Every query the promo module runs for discounts (architecture §10; M16, M35a).
  *
  * Raw SQL, parameterized, in one file, filtering on `org_id` even though RLS already
  * does — the rule the rest of this repo keeps, for the day somebody runs one of these as
- * `erp_owner` in a script.
+ * `erp_owner` in a script. Flash sales have their own file, `flash.repository.ts`.
  *
- * The one piece of real concurrency control in this module is `claimUse`. Everything else
- * is a read or an append.
+ * The one piece of real concurrency control here is `claimUse`. Everything else is a read
+ * or an append.
  *
- * Nothing here reads another module's tables. A code scoped to a category needs each
- * SKU's category, and that comes from `CatalogApi.skusByIds` — invariant 12, which
+ * Nothing here reads another module's tables. A discount scoped to a category needs each
+ * SKU's category and its ancestry, and that comes from `CatalogApi` — invariant 12, which
  * `../module-boundaries.test.ts` enforces.
  */
 
 export interface PromoCodeRow extends Record<string, unknown> {
   readonly id: string;
-  readonly code: string;
+  readonly method: string;
+  readonly code: string | null;
+  readonly title: string;
+  readonly description: string;
   readonly kind: string;
   readonly value_bps: number;
   readonly value_poisha: string;
+  readonly buy_quantity: number | null;
+  readonly get_quantity: number | null;
+  readonly get_discount_bps: number | null;
   readonly min_order_poisha: string | null;
+  readonly min_quantity: number | null;
+  readonly first_order_only: boolean;
   readonly max_discount_poisha: string | null;
   readonly total_limit: number | null;
   readonly per_customer_limit: number | null;
   readonly used_count: number;
   readonly valid_from: string | null;
   readonly valid_to: string | null;
+  /** `timestamptz` arrives from a raw query as text; `instant()` in the service reads it. */
+  readonly starts_at: string | Date | null;
+  readonly ends_at: string | Date | null;
   readonly channels: unknown;
   readonly sku_ids: unknown;
+  readonly product_ids: unknown;
   readonly category_ids: unknown;
   readonly customer_id: string | null;
   readonly campaign_id: string | null;
+  readonly allow_stacking: boolean;
+  readonly priority: number;
   readonly origin: string;
   readonly status: string;
   readonly created_by: string;
-  readonly created_at: Date;
+  readonly created_at: string | Date;
 }
 
 const CODE_COLUMNS = sql`
-  c.id, c.code, c.kind, c.value_bps, c.value_poisha::text, c.min_order_poisha::text,
-  c.max_discount_poisha::text, c.total_limit, c.per_customer_limit, c.used_count,
-  c.valid_from, c.valid_to, c.channels, c.sku_ids, c.category_ids, c.customer_id,
-  c.campaign_id, c.origin, c.status, c.created_by, c.created_at
+  c.id, c.method, c.code, c.title, c.description, c.kind, c.value_bps, c.value_poisha::text,
+  c.buy_quantity, c.get_quantity, c.get_discount_bps, c.min_order_poisha::text,
+  c.min_quantity, c.first_order_only, c.max_discount_poisha::text, c.total_limit,
+  c.per_customer_limit, c.used_count, c.valid_from, c.valid_to, c.starts_at, c.ends_at,
+  c.channels, c.sku_ids, c.product_ids, c.category_ids, c.customer_id, c.campaign_id,
+  c.allow_stacking, c.priority, c.origin, c.status, c.created_by, c.created_at
 `;
 
 /** One code by its word. Case-insensitive, because people type codes however they like. */
@@ -58,6 +74,36 @@ export async function codeByWord(
     where c.org_id = ${orgId} and c.code = ${code.trim().toUpperCase()}
   `);
   return rows[0];
+}
+
+/** The code discounts these words name, any status: a paused one is refused, not unknown. */
+export async function codesByWords(
+  tx: Tx,
+  orgId: string,
+  words: readonly string[],
+): Promise<PromoCodeRow[]> {
+  if (words.length === 0) return [];
+  const rows = await tx.execute<PromoCodeRow>(sql`
+    select ${CODE_COLUMNS} from promo.codes c
+    where c.org_id = ${orgId} and c.method = 'code'
+      and c.code = any (${sql.param([...words])}::text[])
+  `);
+  return [...rows];
+}
+
+/**
+ * The brand's active automatic discounts: the candidates every quote considers.
+ *
+ * Only `active` ones, because an automatic discount that is paused is simply not offered;
+ * a code that is paused is still looked up, so the buyer is told it is paused.
+ */
+export async function activeAutomatic(tx: Tx, orgId: string): Promise<PromoCodeRow[]> {
+  const rows = await tx.execute<PromoCodeRow>(sql`
+    select ${CODE_COLUMNS} from promo.codes c
+    where c.org_id = ${orgId} and c.method = 'automatic' and c.status = 'active'
+    order by c.priority desc, c.id
+  `);
+  return [...rows];
 }
 
 export async function codeById(
@@ -75,68 +121,150 @@ export async function codeById(
 export async function listCodes(
   tx: Tx,
   orgId: string,
-  filters: { readonly status?: string | undefined; readonly limit: number },
+  filters: {
+    readonly status?: string | undefined;
+    readonly method?: string | undefined;
+    readonly limit: number;
+  },
 ): Promise<PromoCodeRow[]> {
   const rows = await tx.execute<PromoCodeRow>(sql`
     select ${CODE_COLUMNS} from promo.codes c
     where c.org_id = ${orgId}
       and ${filters.status === undefined ? sql`true` : sql`c.status = ${filters.status}`}
-    order by c.created_at desc, c.code
+      and ${filters.method === undefined ? sql`true` : sql`c.method = ${filters.method}`}
+    order by c.created_at desc, c.id
     limit ${filters.limit}
   `);
   return [...rows];
 }
 
+export interface TierRow extends Record<string, unknown> {
+  readonly code_id: string;
+  readonly position: number;
+  readonly min_subtotal_poisha: string;
+  readonly kind: string;
+  readonly value_bps: number;
+  readonly value_poisha: string;
+}
+
+/** The tiers of these discounts, in their order. One query whatever the number of discounts. */
+export async function tiersOf(
+  tx: Tx,
+  orgId: string,
+  codeIds: readonly string[],
+): Promise<Map<string, TierRow[]>> {
+  if (codeIds.length === 0) return new Map();
+  const rows = await tx.execute<TierRow>(sql`
+    select code_id, position, min_subtotal_poisha::text, kind, value_bps, value_poisha::text
+    from promo.discount_tiers
+    where org_id = ${orgId} and code_id = any (${sql.param([...codeIds])}::uuid[])
+    order by code_id, position
+  `);
+  const tiers = new Map<string, TierRow[]>();
+  for (const row of rows) {
+    const list = tiers.get(row.code_id) ?? [];
+    list.push(row);
+    tiers.set(row.code_id, list);
+  }
+  return tiers;
+}
+
+export interface NewTier {
+  readonly minSubtotalPoisha: bigint;
+  readonly kind: 'percent' | 'flat';
+  readonly valueBps: number;
+  readonly valuePoisha: bigint;
+}
+
+export async function insertTiers(
+  tx: Tx,
+  orgId: string,
+  codeId: string,
+  tiers: readonly NewTier[],
+): Promise<void> {
+  for (const [position, tier] of tiers.entries()) {
+    await tx.execute(sql`
+      insert into promo.discount_tiers (
+        org_id, code_id, position, min_subtotal_poisha, kind, value_bps, value_poisha)
+      values (${orgId}, ${codeId}, ${position}, ${tier.minSubtotalPoisha.toString()},
+              ${tier.kind}, ${tier.valueBps}, ${tier.valuePoisha.toString()})
+    `);
+  }
+}
+
 export interface NewPromoCode {
   readonly orgId: string;
-  readonly code: string;
+  readonly method: 'code' | 'automatic';
+  /** Null exactly when the method is `automatic`. */
+  readonly code: string | null;
+  readonly title: string;
+  readonly description: string;
   readonly kind: string;
   readonly valueBps: number;
   readonly valuePoisha: bigint;
+  readonly buyQuantity: number | null;
+  readonly getQuantity: number | null;
+  readonly getDiscountBps: number | null;
   readonly minOrderPoisha: bigint | null;
+  readonly minQuantity: number | null;
+  readonly firstOrderOnly: boolean;
   readonly maxDiscountPoisha: bigint | null;
   readonly totalLimit: number | null;
   readonly perCustomerLimit: number | null;
   readonly validFrom: string | null;
   readonly validTo: string | null;
+  readonly startsAt: Date | null;
+  readonly endsAt: Date | null;
   readonly channels: readonly string[];
   readonly skuIds: readonly string[];
+  readonly productIds: readonly string[];
   readonly categoryIds: readonly string[];
   readonly customerId: string | null;
   readonly campaignId: string | null;
+  readonly allowStacking: boolean;
+  readonly priority: number;
   readonly origin: string;
   readonly createdBy: string;
 }
 
 /**
- * Insert a code, or nothing when the brand already has that word.
+ * Insert a discount, or nothing when the brand already has that word.
  *
  * `on conflict do nothing` rather than a read followed by an insert: the unique index on
  * `(org_id, code)` is the only thing that can decide this without a race, and two people
- * creating `EID25` at once must not become two rows.
+ * creating `EID25` at once must not become two rows. Automatic discounts have no word and
+ * never conflict.
  */
 export async function insertCode(tx: Tx, input: NewPromoCode): Promise<string | undefined> {
   const rows = await tx.execute<{ id: string }>(sql`
     insert into promo.codes (
-      org_id, code, kind, value_bps, value_poisha, min_order_poisha, max_discount_poisha,
-      total_limit, per_customer_limit, valid_from, valid_to, channels, sku_ids,
-      category_ids, customer_id, campaign_id, origin, created_by)
+      org_id, method, code, title, description, kind, value_bps, value_poisha, buy_quantity,
+      get_quantity, get_discount_bps, min_order_poisha, min_quantity, first_order_only,
+      max_discount_poisha, total_limit, per_customer_limit, valid_from, valid_to, starts_at,
+      ends_at, channels, sku_ids, product_ids, category_ids, customer_id, campaign_id,
+      allow_stacking, priority, origin, created_by)
     values (
-      ${input.orgId}, ${input.code}, ${input.kind}, ${input.valueBps},
-      ${input.valuePoisha.toString()}, ${input.minOrderPoisha?.toString() ?? null},
+      ${input.orgId}, ${input.method}, ${input.code}, ${input.title}, ${input.description},
+      ${input.kind}, ${input.valueBps}, ${input.valuePoisha.toString()}, ${input.buyQuantity},
+      ${input.getQuantity}, ${input.getDiscountBps}, ${input.minOrderPoisha?.toString() ?? null},
+      ${input.minQuantity}, ${input.firstOrderOnly},
       ${input.maxDiscountPoisha?.toString() ?? null}, ${input.totalLimit},
       ${input.perCustomerLimit}, ${input.validFrom}, ${input.validTo},
+      ${input.startsAt?.toISOString() ?? null}::timestamptz,
+      ${input.endsAt?.toISOString() ?? null}::timestamptz,
       ${JSON.stringify([...input.channels])}::jsonb,
       ${JSON.stringify([...input.skuIds])}::jsonb,
+      ${JSON.stringify([...input.productIds])}::jsonb,
       ${JSON.stringify([...input.categoryIds])}::jsonb,
-      ${input.customerId}, ${input.campaignId}, ${input.origin}, ${input.createdBy})
+      ${input.customerId}, ${input.campaignId}, ${input.allowStacking}, ${input.priority},
+      ${input.origin}, ${input.createdBy})
     on conflict (org_id, code) do nothing
     returning id
   `);
   return rows[0]?.id;
 }
 
-/** Only the status moves after a code exists: its terms are what buyers were told. */
+/** Only the status moves after a discount exists: its terms are what buyers were told. */
 export async function setCodeStatus(
   tx: Tx,
   orgId: string,
@@ -158,15 +286,32 @@ export async function usageOf(
   codeId: string,
   customerId: string | null,
 ): Promise<{ total: number; byCustomer: number }> {
-  const rows = await tx.execute<{ total: number; by_customer: number }>(sql`
-    select count(*)::int as total,
+  const usage = await usageOfMany(tx, orgId, [codeId], customerId);
+  return usage.get(codeId) ?? { total: 0, byCustomer: 0 };
+}
+
+/** The same, for several discounts in one query. A discount never used is absent. */
+export async function usageOfMany(
+  tx: Tx,
+  orgId: string,
+  codeIds: readonly string[],
+  customerId: string | null,
+): Promise<Map<string, { total: number; byCustomer: number }>> {
+  if (codeIds.length === 0) return new Map();
+  const rows = await tx.execute<{ code_id: string; total: number; by_customer: number }>(sql`
+    select r.code_id,
+           count(*)::int as total,
            count(*) filter (
              where ${customerId === null ? sql`false` : sql`r.customer_id = ${customerId}`}
            )::int as by_customer
     from promo.redemptions r
-    where r.org_id = ${orgId} and r.code_id = ${codeId} and r.status = 'applied'
+    where r.org_id = ${orgId} and r.code_id = any (${sql.param([...codeIds])}::uuid[])
+      and r.status = 'applied'
+    group by r.code_id
   `);
-  return { total: rows[0]?.total ?? 0, byCustomer: rows[0]?.by_customer ?? 0 };
+  return new Map(
+    [...rows].map((row) => [row.code_id, { total: row.total, byCustomer: row.by_customer }]),
+  );
 }
 
 /**
@@ -275,17 +420,38 @@ export interface RedemptionRow extends Record<string, unknown> {
   readonly status: string;
 }
 
-/** The applied redemption against an order, if the order carried a code. */
+/**
+ * Every applied redemption against an order: one for a desk order with a code, several for
+ * a website order whose discounts stacked (M35a).
+ */
 export async function appliedForOrder(
   tx: Tx,
   orgId: string,
+  orderId: string,
+): Promise<RedemptionRow[]> {
+  const rows = await tx.execute<RedemptionRow>(sql`
+    select id, code_id, order_id, pos_sale_id, customer_id, discount_poisha::text,
+           delivery_discount_poisha::text, status
+    from promo.redemptions
+    where org_id = ${orgId} and order_id = ${orderId} and status = 'applied'
+    order by created_at, id
+  `);
+  return [...rows];
+}
+
+/** The applied redemption of one code against one order, if there is one. */
+export async function appliedForCodeAndOrder(
+  tx: Tx,
+  orgId: string,
+  codeId: string,
   orderId: string,
 ): Promise<RedemptionRow | undefined> {
   const rows = await tx.execute<RedemptionRow>(sql`
     select id, code_id, order_id, pos_sale_id, customer_id, discount_poisha::text,
            delivery_discount_poisha::text, status
     from promo.redemptions
-    where org_id = ${orgId} and order_id = ${orderId} and status = 'applied'
+    where org_id = ${orgId} and code_id = ${codeId} and order_id = ${orderId}
+      and status = 'applied'
   `);
   return rows[0];
 }

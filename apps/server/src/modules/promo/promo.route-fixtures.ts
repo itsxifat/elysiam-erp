@@ -30,6 +30,7 @@ const ORG_A = SEED_ORG_IDS['elysium-lifestyle-bd'] ?? '';
 
 let seededCodeId = '';
 let seededCode = '';
+let seededSaleId = '';
 
 function token(length: number): string {
   return randomUUID().replace(/-/g, '').slice(0, length).toUpperCase();
@@ -43,6 +44,19 @@ export async function preparePromoFixtures(): Promise<void> {
       const rows = await tx.execute<{ id: string }>(sql`
         insert into promo.codes (org_id, code, kind, value_bps, created_by)
         values (${ORG_A}, ${seededCode}, 'percent', 1000, 'usr_route_matrix')
+        returning id
+      `);
+      return rows[0]?.id ?? '';
+    },
+    { orgId: ORG_A },
+  );
+  // M35a: a draft flash sale with nothing on it, so the read, edit and duplicate routes
+  // name a real row. A draft, so editing it to another draft is idempotent for every role.
+  seededSaleId = await withSystem(
+    async (tx) => {
+      const rows = await tx.execute<{ id: string }>(sql`
+        insert into promo.flash_sales (org_id, title, slug, created_by)
+        values (${ORG_A}, 'Matrix sale', ${`matrix-${token(8).toLowerCase()}`}, 'usr_route_matrix')
         returning id
       `);
       return rows[0]?.id ?? '';
@@ -65,6 +79,24 @@ export const PROMO_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> |
   }),
   'GET /v1/promo/codes/:id/redemptions': () => ({
     url: `/v1/promo/codes/${seededCodeId}/redemptions`,
+  }),
+  'GET /v1/promo/flash-sales': () => ({ url: '/v1/promo/flash-sales' }),
+  // A fresh slug per call: `flash_sales_org_slug_idx` is unique per org.
+  'POST /v1/promo/flash-sales': () => ({
+    url: '/v1/promo/flash-sales',
+    body: { title: 'Matrix', slug: `matrix-${token(8).toLowerCase()}` },
+  }),
+  'GET /v1/promo/flash-sales/:id': () => ({ url: `/v1/promo/flash-sales/${seededSaleId}` }),
+  'PUT /v1/promo/flash-sales/:id': () => ({
+    url: `/v1/promo/flash-sales/${seededSaleId}`,
+    body: { title: 'Matrix sale' },
+  }),
+  'PATCH /v1/promo/flash-sales/:id': () => ({
+    url: `/v1/promo/flash-sales/${seededSaleId}`,
+    body: { enabled: false },
+  }),
+  'POST /v1/promo/flash-sales/:id/duplicate': () => ({
+    url: `/v1/promo/flash-sales/${seededSaleId}/duplicate`,
   }),
   'POST /v1/promo/check': () => ({
     url: '/v1/promo/check',

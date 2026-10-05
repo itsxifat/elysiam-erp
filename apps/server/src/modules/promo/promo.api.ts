@@ -1,11 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
 import type { Poisha } from '@elysium/domain';
+import type { FlashOffer } from '@elysium/domain/promo';
 
 import type { ActiveContext } from '../../platform/http/context.js';
+import { FlashService, type FlashClaimLine } from './flash.service.js';
 import { PromoError, promoHttpError } from './promo.errors.js';
 import * as repo from './promo.repository.js';
-import { PromoService } from './promo.service.js';
+import { PromoService, type AppliedDiscountView, type DiscountQuote } from './promo.service.js';
+
+export type { AppliedDiscountView, DiscountQuote, QuoteRefusal } from './promo.service.js';
+export type { FlashClaimLine } from './flash.service.js';
 
 /**
  * A code, priced for one order and not yet spent.
@@ -24,19 +29,31 @@ export interface PricedPromo {
   readonly deliveryDiscountPoisha: Poisha;
 }
 
+/** A basket line as the caller priced it (M35a): flash prices already applied. */
+export interface QuoteLine {
+  readonly skuId: string;
+  /** Whole units. */
+  readonly qty: number;
+  /** What the buyer pays for the whole line before any discount. */
+  readonly netPoisha: Poisha | bigint | string;
+}
+
 /**
- * What the order desk may ask of this module (M16; invariant 12).
+ * What other modules may ask of this one (M16, M35a; invariant 12).
  *
  * **Two phases, one transaction.** Creating an order is chicken-and-egg: the discount has
  * to be known before the order row is written, because the totals are computed from it;
- * and a redemption's foreign key needs that row to exist. So the caller prices the code,
- * writes the order, then redeems — all inside its own transaction.
+ * and a redemption's foreign key needs that row to exist. So the caller prices, writes the
+ * order, then redeems (and claims flash units) — all inside its own transaction.
  *
  * That is safe where "validate, then later redeem" is not, and the difference is the
- * transaction. `redeemForOrder` takes the use with a conditional UPDATE, so a code that
- * ran out between the two phases is refused there, the caller's transaction rolls back,
- * and no order exists with a discount it was never entitled to. Split across two requests
- * instead, a code validated against nine uses would be redeemed as the eleventh.
+ * transaction. Redeeming takes each use with a conditional UPDATE, so a discount that ran
+ * out between the two phases is refused there, the caller's transaction rolls back, and no
+ * order exists with a discount it was never entitled to. Split across two requests instead,
+ * a code validated against nine uses would be redeemed as the eleventh.
+ *
+ * The desk uses `priceForOrder` / `redeemForOrder` (one typed code, no automatic discounts,
+ * D-544). The website (M34) uses `quoteDiscounts` / `redeem` and the flash-sale calls.
  */
 export interface PromoApi {
   /**
@@ -54,8 +71,12 @@ export interface PromoApi {
       readonly code: string;
       readonly customerId: string | null;
       readonly channel: string;
-      /** Each line's net after its own typed discount, as the domain rule expects. */
-      readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
+      /** Each line's net after its own typed discount, and its units (M35a). */
+      readonly lines: readonly {
+        readonly skuId: string;
+        readonly netPoisha: string;
+        readonly qty?: number;
+      }[];
       /** The agent's typed order discount, spread over the lines first (`promoBasis`, W3). */
       readonly orderDiscountPoisha?: string;
       readonly deliveryChargePoisha: string;
@@ -78,11 +99,11 @@ export interface PromoApi {
   ): Promise<{ readonly redemptionId: string }>;
 
   /**
-   * Give a code's use back when an order is cancelled before it ships.
+   * Give every discount's use back when an order is cancelled before it ships.
    *
-   * False when the order carried no code or its redemption was already released — a
-   * cancel delivered twice must not return two uses (D-204). Kept once the order ships:
-   * the goods went out, and a return is a different event from never having bought.
+   * False when the order carried none or they were already released — a cancel delivered
+   * twice must not return two uses (D-204). Kept once the order ships: the goods went out,
+   * and a return is a different event from never having bought.
    */
   releaseForOrder(tx: Tx, orgId: string, orderId: string): Promise<boolean>;
 
@@ -119,6 +140,84 @@ export interface PromoApi {
     orgId: string,
     codeIds: readonly string[],
   ): Promise<ReadonlyMap<string, string>>;
+
+  // --- M35a: the website's discounts and flash sales -----------------------------------
+
+  /**
+   * Every discount a basket gets (D-540): the brand's live automatic discounts (unless
+   * `automatic` is false) and the typed codes, through the one engine the desk uses.
+   * Returns what applies, the amounts, and why each typed code did not (`not_found` for a
+   * word that names nothing). Claims nothing.
+   *
+   * `customerId` is the ERP's buyer (by phone); a signed-in website account resolves to its
+   * buyer first (M34), so per-customer limits and first-order checks count one person once.
+   */
+  quoteDiscounts(
+    tx: Tx,
+    orgId: string,
+    input: {
+      readonly lines: readonly QuoteLine[];
+      readonly customerId: string | null;
+      readonly channel: string;
+      readonly codes: readonly string[];
+      readonly deliveryChargePoisha: Poisha | bigint | string;
+      readonly now: Date;
+      /** Default true. */
+      readonly automatic?: boolean;
+    },
+  ): Promise<DiscountQuote>;
+
+  /**
+   * Take a use of every discount a quote applied and record each against the order just
+   * written, in its transaction. Any refusal (a limit reached since the quote) throws
+   * `PROMO_NOT_APPLICABLE`; the caller's transaction then rolls the order back.
+   */
+  redeem(
+    tx: Tx,
+    orgId: string,
+    input: {
+      readonly orderId: string;
+      readonly customerId: string | null;
+      readonly applied: readonly AppliedDiscountView[];
+    },
+  ): Promise<{ readonly redemptionIds: readonly string[] }>;
+
+  /**
+   * The switched-on flash offers on these SKUs that have not ended (D-542). Which one prices
+   * a line is `bestFlashOffer` / `planFlashLines` from `@elysium/domain/promo`.
+   */
+  liveFlashOffers(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+    now: Date,
+  ): Promise<readonly FlashOffer[]>;
+
+  /**
+   * Take the flash units an order was priced with, all or nothing, in its transaction and
+   * after its row exists. Refused lines throw `FLASH_SALE_UNAVAILABLE` (409, with
+   * `skuIds`); every unit this call took is undone by its savepoint.
+   */
+  claimFlashUnits(
+    tx: Tx,
+    orgId: string,
+    input: {
+      readonly orderId: string;
+      readonly lines: readonly FlashClaimLine[];
+      readonly now: Date;
+    },
+  ): Promise<{ readonly claimIds: readonly string[] }>;
+
+  /**
+   * Give an order's flash units back, exactly once: all of them on a cancel, or up to the
+   * units returned per SKU after a partial delivery. Returns the units given back.
+   */
+  releaseFlashUnits(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    returned?: readonly { readonly skuId: string; readonly qty: number }[],
+  ): Promise<number>;
 }
 
 export const PROMO_API = Symbol('PromoApi');
@@ -143,21 +242,15 @@ async function asHttp<T>(work: () => Promise<T>): Promise<T> {
 
 @Injectable()
 export class PromoApiService implements PromoApi {
-  constructor(@Inject(PromoService) private readonly promo: PromoService) {}
+  constructor(
+    @Inject(PromoService) private readonly promo: PromoService,
+    @Inject(FlashService) private readonly flash: FlashService,
+  ) {}
 
   async priceForOrder(
     tx: Tx,
     context: ActiveContext,
-    input: {
-      readonly code: string;
-      readonly customerId: string | null;
-      readonly channel: string;
-      readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
-      /** The agent's typed order discount, spread over the lines first (`promoBasis`, W3). */
-      readonly orderDiscountPoisha?: string;
-      readonly deliveryChargePoisha: string;
-      readonly on?: string;
-    },
+    input: Parameters<PromoApi['priceForOrder']>[2],
   ): Promise<PricedPromo> {
     return asHttp(() => this.price(tx, context, input));
   }
@@ -165,16 +258,7 @@ export class PromoApiService implements PromoApi {
   private async price(
     tx: Tx,
     context: ActiveContext,
-    input: {
-      readonly code: string;
-      readonly customerId: string | null;
-      readonly channel: string;
-      readonly lines: readonly { readonly skuId: string; readonly netPoisha: string }[];
-      /** The agent's typed order discount, spread over the lines first (`promoBasis`, W3). */
-      readonly orderDiscountPoisha?: string;
-      readonly deliveryChargePoisha: string;
-      readonly on?: string;
-    },
+    input: Parameters<PromoApi['priceForOrder']>[2],
   ): Promise<PricedPromo> {
     const { code, verdict } = await this.promo.verdictFor(tx, context.orgId, {
       code: input.code,
@@ -241,5 +325,61 @@ export class PromoApiService implements PromoApi {
     codeIds: readonly string[],
   ): Promise<ReadonlyMap<string, string>> {
     return repo.campaignsOfCodes(tx, orgId, codeIds);
+  }
+
+  async quoteDiscounts(
+    tx: Tx,
+    orgId: string,
+    input: Parameters<PromoApi['quoteDiscounts']>[2],
+  ): Promise<DiscountQuote> {
+    return asHttp(() =>
+      this.promo.quote(tx, orgId, {
+        lines: input.lines.map((line) => ({
+          skuId: line.skuId,
+          qty: line.qty,
+          netPoisha: line.netPoisha.toString(),
+        })),
+        deliveryChargePoisha: input.deliveryChargePoisha.toString(),
+        channel: input.channel,
+        customerId: input.customerId,
+        codes: input.codes,
+        automatic: input.automatic ?? true,
+        now: input.now,
+      }),
+    );
+  }
+
+  async redeem(
+    tx: Tx,
+    orgId: string,
+    input: Parameters<PromoApi['redeem']>[2],
+  ): Promise<{ readonly redemptionIds: readonly string[] }> {
+    return asHttp(() => this.promo.redeemQuote(tx, { orgId }, input));
+  }
+
+  async liveFlashOffers(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+    now: Date,
+  ): Promise<readonly FlashOffer[]> {
+    return this.flash.liveOffers(tx, orgId, skuIds, now);
+  }
+
+  async claimFlashUnits(
+    tx: Tx,
+    orgId: string,
+    input: Parameters<PromoApi['claimFlashUnits']>[2],
+  ): Promise<{ readonly claimIds: readonly string[] }> {
+    return asHttp(() => this.flash.claim(tx, orgId, input));
+  }
+
+  async releaseFlashUnits(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    returned?: readonly { readonly skuId: string; readonly qty: number }[],
+  ): Promise<number> {
+    return this.flash.release(tx, orgId, orderId, returned);
   }
 }
