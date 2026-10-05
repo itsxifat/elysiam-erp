@@ -372,7 +372,7 @@ export function StickerDialog({
                 {t('st.stickers.more')}
               </summary>
               <div className="mt-2 space-y-1.5">
-                <label htmlFor={`${id}-extra`} className="text-sm font-medium">
+                <label htmlFor={`${id}-extra`} className="block text-sm font-medium">
                   {t('st.stickers.extra')}
                 </label>
                 <input

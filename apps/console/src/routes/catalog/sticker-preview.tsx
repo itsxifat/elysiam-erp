@@ -94,10 +94,17 @@ export function StickerPreview({
         const priceMm = scale.price * PT_TO_MM;
         const tallest = text.price === null ? brandMm : priceMm;
         const y = baseline(row.yMm, row.heightMm, tallest);
+        // The brand gives way to the price, as the PDF's ellipsis does: about 0.6 em a
+        // character for the price, 0.7 em for the spaced capitals of the brand.
+        const priceWidth = text.price === null ? 0 : [...text.price].length * 0.6 * priceMm + 1;
+        const brandChars = Math.max(
+          3,
+          Math.min(24, Math.floor((layout.innerWidthMm - priceWidth) / (0.7 * brandMm))),
+        );
         return (
           <g key="top" fontWeight={600}>
             <text x={padXMm} y={y} fontSize={brandMm} letterSpacing={brandMm * 0.04}>
-              {fitStickerText(text.brand, 24).toUpperCase()}
+              {fitStickerText(text.brand, brandChars).toUpperCase()}
             </text>
             {text.price === null ? null : (
               <text x={rightX} y={y} fontSize={priceMm} textAnchor="end">
