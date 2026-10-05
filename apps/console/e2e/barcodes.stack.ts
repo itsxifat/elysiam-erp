@@ -220,7 +220,7 @@ test('every variant shows its own EAN-13, and the stock came in as opening stock
 test('a scanner anywhere opens the product at the scanned variant', async () => {
   const variants = page.getByRole('table', { name: 'Variants and stock' });
   const mRow = variants.getByRole('row', { name: /^M\b/ });
-  const code = ((await mRow.textContent()) ?? '').match(/2\d{12}/)?.[0] ?? '';
+  const code = /2\d{12}/.exec((await mRow.textContent()) ?? '')?.[0] ?? '';
   expect(code).toMatch(/^2\d{12}$/);
   scanned = code;
 
