@@ -2135,3 +2135,12 @@ dry-run|commit --file <users.json>`.
   - The website's cache is forgotten inside the delete's transaction, so a read in the same
     instant can re-cache the old menu for up to 30 seconds (`SiteCache.TTL_MS`); an after-commit
     hook in `withOrg` would close it.
+
+### 2026-10-06 · integration and deploy · M39a joined and live · done
+
+- M39a (delete and archive everywhere) merged into `integration-wave2` (ff89eb8); its
+  migrations 0118–0119 follow the live 0117 unchanged. Verify at ff89eb8 exit 0: 223 test
+  files, 3,432 passed, 1 skipped; bundle, white-label (350 files), migrations, schema drift
+  (118), route matrix (446 routes, 408 matrix-tested, 38 public), i18n, api-client PASS.
+- Elysium's ERP redeployed at ff89eb8: health green; the website at demo.elysium-lifestyle.bd
+  still reads it (`erp: ok`); the server's other sites 200. Migrations up to 0119 are frozen.
