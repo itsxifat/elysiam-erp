@@ -1226,6 +1226,9 @@ describe('audit, isolation and load (the M33 ledger audit)', () => {
     ).toString('base64url');
     expect((await signed(`/storefront/v1/catalog/products?cursor=${impossible}`)).status).toBe(400);
     expect((await signed('/storefront/v1/catalog/products?size=M%00')).status).toBe(400);
+    // A repeated parameter is an array to the server; the last one wins, never a 500.
+    expect((await signed('/storefront/v1/catalog/search?q=shirt&q=oxford')).status).toBe(200);
+    expect((await signed('/storefront/v1/geo/thanas?districtId=1&districtId=2')).status).toBe(200);
   });
 
   it('lets only the website’s managers upload website images', async () => {

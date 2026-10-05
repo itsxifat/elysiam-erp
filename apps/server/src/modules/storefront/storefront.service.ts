@@ -215,6 +215,7 @@ export class StorefrontService {
         entityId: context.orgId,
         before: auditSummary(current),
         after: { sections: Object.keys(patch), ...auditSummary(next) },
+        requestId: context.requestId,
         request,
       });
       return this.view(tx, context.orgId);
@@ -449,12 +450,12 @@ export class StorefrontService {
         entityId: inserted.id,
         // The key id is public; the secret is not in here, under any name.
         after: { label, keyId },
+        requestId: context.requestId,
         request,
       });
       return inserted;
     });
-    // The audit interceptor records the issue and the public key id; the secret is in this
-    // response only, and the audit log redacts any field named like one.
+    // Audited inside the write with the public key id; the secret is in this response only.
     return { ...keyView(row), secret };
   }
 
@@ -470,6 +471,7 @@ export class StorefrontService {
           entityType: 'storefront.site_key',
           entityId: id,
           after: { keyId: revoked.key_id },
+          requestId: context.requestId,
           request,
         });
         return revoked;

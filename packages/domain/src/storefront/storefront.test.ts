@@ -501,6 +501,13 @@ describe('the product list parameters', () => {
       id: uuid(2),
     });
     expect(decodeStorefrontCursor(impossible, 'newest')).toBeNull();
+    // PostgreSQL has no year 0, and nothing on a website was made before 1970.
+    const yearZero = encodeStorefrontCursor({
+      sort: 'newest',
+      createdAt: '0000-01-01T00:00:00Z',
+      id: uuid(3),
+    });
+    expect(decodeStorefrontCursor(yearZero, 'newest')).toBeNull();
     expect(parseStorefrontQuery({ cursor: impossible }).problems.map((p) => p.param)).toEqual([
       'cursor',
     ]);

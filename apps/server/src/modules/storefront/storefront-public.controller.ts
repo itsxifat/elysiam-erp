@@ -70,11 +70,14 @@ export class StorefrontPublicController {
   async search(
     @Req() request: FastifyRequest,
     @Res() reply: FastifyReply,
-    @Query('q') q: string | undefined,
-    @Query('limit') limit: string | undefined,
+    @Query('q') q: string | string[] | undefined,
+    @Query('limit') limit: string | string[] | undefined,
   ): Promise<void> {
     const { orgId } = storefrontSiteOf(request);
-    const payload = await mapStorefrontErrors(() => this.storefront.search(orgId, q, limit));
+    // A repeated parameter arrives as an array; the last one wins, as in the product list.
+    const payload = await mapStorefrontErrors(() =>
+      this.storefront.search(orgId, lastOf(q), lastOf(limit)),
+    );
     await send(request, reply, render(payload));
   }
 
@@ -117,12 +120,18 @@ export class StorefrontPublicController {
   async thanas(
     @Req() request: FastifyRequest,
     @Res() reply: FastifyReply,
-    @Query('districtId') districtId: string | undefined,
+    @Query('districtId') districtId: string | string[] | undefined,
   ): Promise<void> {
     const { orgId } = storefrontSiteOf(request);
-    const payload = await mapStorefrontErrors(() => this.storefront.thanas(orgId, districtId));
+    const payload = await mapStorefrontErrors(() =>
+      this.storefront.thanas(orgId, lastOf(districtId)),
+    );
     await send(request, reply, render(payload));
   }
+}
+
+function lastOf(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[value.length - 1] : value;
 }
 
 /** The one way an answer leaves: the storefront allow-list, then JSON. */

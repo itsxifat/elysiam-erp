@@ -260,7 +260,9 @@ const ISO = {
     if (!ISO_SHAPE.test(text)) return false;
     const parsed = new Date(text);
     return (
-      !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 19) === text.slice(0, 19)
+      !Number.isNaN(parsed.getTime()) &&
+      parsed.getTime() >= 0 &&
+      parsed.toISOString().slice(0, 19) === text.slice(0, 19)
     );
   },
 };
