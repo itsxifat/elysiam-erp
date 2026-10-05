@@ -4,6 +4,8 @@ import { withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 
+import type { InjectedResponse } from '../../testing/http-harness.js';
+
 import {
   deriveStorefrontSecret,
   fingerprint,
@@ -81,7 +83,7 @@ export async function signedGet(
   key: { readonly keyId: string; readonly secret: string },
   pathAndQuery: string,
   extra: Record<string, string> = {},
-) {
+): Promise<InjectedResponse> {
   return server.inject({
     method: 'GET',
     url: pathAndQuery,
