@@ -2375,3 +2375,20 @@ dry-run|commit --file <users.json>`.
 - To switch tracking on later: the nginx tracking-proxy include on the demo site, the pixel and
   GA4 ids in Website → Tracking, and `STOREFRONT_TRACKING_PROVIDER=live` with
   `STOREFRONT_TRACKING_ENABLED=true` on the brand ERP.
+
+### 2026-10-06 · hotfix · Sticker and every other PDF failed on the live ERP · fixed
+
+- The owner's "Print stickers" failed with "the failure is logged". The live API's log:
+  `Cannot find the Bangla fonts. Set PDF_FONT_DIR …` from `loadFonts` (catalog labels).
+- Cause: `apps/server/src/modules/files/pdf/fonts.ts` never read `PDF_FONT_DIR`. The server
+  image sets it to `/app/fonts` (where the fonts are) and also keeps a `pnpm-workspace.yaml` at
+  `/app`, so the workspace walk stopped there, looked for a `packages/ui` the image does not have,
+  and threw. All seven production callers (SKU stickers, courier labels, packing order labels,
+  invoices and their documents, payslips) were affected on any deployed server, including the
+  test site; every local and CI test passed because a checkout has the folder the walk finds.
+- Fix 8f68372: the variable wins whenever it is set; `fonts.test.ts` reproduces the image's
+  layout (marker at the root, no packages/ui, fonts in their own folder). PDF tests 19 of 19,
+  typecheck and lint green; deployed to Elysium's ERP at once; on the live server the four faces
+  load and Gotenberg returns a PDF with Bangla text. Full verify run afterwards (below).
+- Lesson: deployed images need a smoke test that renders one PDF; added as a follow-up for
+  M14b/M30 part 2 (a post-deploy check in `infra/brand/server-deploy.sh`).
