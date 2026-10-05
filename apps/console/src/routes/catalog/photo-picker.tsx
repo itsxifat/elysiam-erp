@@ -102,7 +102,8 @@ export function PhotoPicker({
           type="file"
           accept={ACCEPT}
           multiple
-          className="sr-only"
+          // Out of the tab order and the accessibility tree: the Add photos button opens it.
+          className="hidden"
           disabled={disabled === true}
           onChange={(event) => {
             const files = [...(event.target.files ?? [])];

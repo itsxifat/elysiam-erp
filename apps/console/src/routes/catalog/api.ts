@@ -213,6 +213,8 @@ export function updateProduct(
   id: string,
   patch: {
     readonly name?: string;
+    /** The web address (M38a): the old one keeps leading here (M33's previous slugs). */
+    readonly slug?: string;
     readonly categoryId?: string | null;
     readonly description?: string | null;
     readonly status?: 'draft' | 'active' | 'archived';

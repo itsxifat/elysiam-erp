@@ -14,7 +14,7 @@ import {
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, getRouteApi } from '@tanstack/react-router';
-import { ArrowDown, ArrowLeft, ArrowUp, Pencil, Printer, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, ImagePlus, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
@@ -39,7 +39,8 @@ import {
   type CatalogProduct,
   type CatalogSku,
 } from './api.js';
-import { ChipGroup, Field, PhotoUploader, Thumb } from './parts.js';
+import { ChipGroup, Field, Thumb } from './parts.js';
+import { PhotoTooLargeError, uploadPhoto } from './photo-picker.js';
 import {
   AdjustStockDialog,
   ReceiveStockDialog,
@@ -888,7 +889,9 @@ function Photos({
 }) {
   const t = useT();
   const attach = useMutation({
-    mutationFn: (fileId: string) => attachImage(productId, { fileId }),
+    mutationFn: async (fileIds: readonly string[]) => {
+      for (const fileId of fileIds) await attachImage(productId, { fileId });
+    },
     onSuccess: onDone,
   });
   const reorder = useMutation({
@@ -959,8 +962,75 @@ function Photos({
           ))}
         </ol>
       )}
-      <PhotoUploader onUploaded={(file) => attach.mutate(file.id)} />
+      <AddPhotos onAdd={(fileIds) => attach.mutateAsync(fileIds)} />
     </section>
+  );
+}
+
+/**
+ * Add several photos at once (M38a, D-601): each is uploaded and attached in the order
+ * chosen, after the ones already there.
+ */
+function AddPhotos({
+  onAdd,
+}: {
+  readonly onAdd: (fileIds: readonly string[]) => Promise<unknown>;
+}) {
+  const t = useT();
+  const input = useRef<HTMLInputElement>(null);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const add = async (files: readonly File[]) => {
+    setFailed(null);
+    try {
+      const ids: string[] = [];
+      for (const [index, file] of files.entries()) {
+        setProgress(`${t('st.new.uploading')} ${String(index + 1)} / ${String(files.length)}`);
+        ids.push((await uploadPhoto(file)).id);
+      }
+      await onAdd(ids);
+    } catch (error) {
+      setFailed(
+        error instanceof PhotoTooLargeError ? t('cs.photos.tooLarge') : t('cs.photos.failed'),
+      );
+    } finally {
+      setProgress(null);
+    }
+  };
+  return (
+    <div className="space-y-2">
+      <input
+        ref={input}
+        type="file"
+        accept="image/webp,image/jpeg,image/png"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const files = [...(event.target.files ?? [])];
+          event.target.value = '';
+          if (files.length > 0) void add(files);
+        }}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        disabled={progress !== null}
+        onClick={() => input.current?.click()}
+      >
+        <ImagePlus aria-hidden="true" />
+        {t('st.photos.add')}
+      </Button>
+      {progress === null ? null : (
+        <p role="status" className="text-sm text-muted-foreground">
+          {progress}
+        </p>
+      )}
+      {failed === null ? null : (
+        <p role="alert" className="text-sm text-destructive">
+          {failed}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -979,6 +1049,7 @@ function EditProductDialog({
 }) {
   const t = useT();
   const [name, setName] = useState(product.name);
+  const [slug, setSlug] = useState(product.slug);
   const [categoryId, setCategoryId] = useState(product.categoryId ?? '');
   const [description, setDescription] = useState(product.description ?? '');
   const [status, setStatus] = useState(product.status);
@@ -993,6 +1064,8 @@ function EditProductDialog({
     mutationFn: () =>
       updateProduct(product.id, {
         name: name.trim(),
+        // The web address only when it changed: the old one keeps leading here (M33).
+        ...(slug.trim() === product.slug || slug.trim() === '' ? {} : { slug: slug.trim() }),
         categoryId: categoryId === '' ? null : categoryId,
         description: description.trim() === '' ? null : description.trim(),
         status,
@@ -1030,6 +1103,14 @@ function EditProductDialog({
             maxLength={200}
             onChange={(event) => setName(event.target.value)}
             className={control}
+          />
+        </Field>
+        <Field label={t('st.edit.slug')} hint={t('st.edit.slugHint')}>
+          <input
+            value={slug}
+            maxLength={120}
+            onChange={(event) => setSlug(event.target.value.toLowerCase())}
+            className={cn(control, 'font-mono')}
           />
         </Field>
         <Field label={t('catalog.productCategory')}>

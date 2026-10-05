@@ -65,6 +65,9 @@ const bn: Record<StockToolsKey, string> = {
   'st.stickers.printPicked': 'বাছাই করা সারির স্টিকার প্রিন্ট',
   'st.stickers.clearPicked': 'বাছাই মুছুন',
 
+  'st.edit.slug': 'ওয়েব ঠিকানা',
+  'st.edit.slugHint': 'ছোট হাতের ইংরেজি অক্ষর, সংখ্যা ও ড্যাশ। পুরোনো ঠিকানাও পণ্যটিতেই নিয়ে যাবে।',
+
   'st.barcode.copy': 'বারকোড কপি',
   'st.barcode.copied': 'কপি হয়েছে',
   'st.barcode.print': 'স্টিকার প্রিন্ট:',

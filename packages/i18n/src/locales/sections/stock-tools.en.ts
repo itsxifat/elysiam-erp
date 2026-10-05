@@ -72,6 +72,11 @@ const en = {
   'st.stickers.printPicked': 'Print stickers for the chosen rows',
   'st.stickers.clearPicked': 'Clear the choice',
 
+  // Editing a product (D-601).
+  'st.edit.slug': 'Web address',
+  'st.edit.slugHint':
+    'Lower-case letters, digits and dashes. The old address keeps leading to the product.',
+
   // Barcodes on the product page (D-606).
   'st.barcode.copy': 'Copy barcode',
   'st.barcode.copied': 'Copied',

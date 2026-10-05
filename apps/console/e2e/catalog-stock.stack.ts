@@ -158,10 +158,14 @@ test('new product: sizes and colours as chips, a variant price and opening stock
   const grid = page.getByRole('table', { name: 'Variants this product will have' });
   await expect(grid.getByRole('row')).toHaveCount(5);
   await page.getByLabel('Price (৳) L / Navy Blue').fill('2550');
-  await page.getByLabel('Opening stock M / Red').fill('10');
-  await page.getByLabel('Opening stock L / Navy Blue').fill('5');
+  await page.getByLabel('Pieces M / Red').fill('10');
+  await page.getByLabel('Pieces L / Navy Blue').fill('5');
 
-  const opening = page.getByRole('region', { name: 'Opening stock' });
+  // M38a: while the brand's opening stock window is open the form offers stock already in
+  // hand first; this delivery is from a supplier.
+  const opening = page.getByRole('region', { name: 'Stock', exact: true });
+  const fromSupplier = opening.getByRole('radio', { name: 'Received from a supplier' });
+  if (await fromSupplier.isVisible()) await fromSupplier.check();
   await choose(opening.getByLabel('Supplier'), `${SUPPLIER} (${SUPPLIER_CODE})`);
   await opening.getByLabel('Cost per piece (৳)').fill('1200');
   await expect(opening).toContainText('15 pieces');
@@ -170,6 +174,9 @@ test('new product: sizes and colours as chips, a variant price and opening stock
   await shot('02-new-product');
 
   await page.getByRole('button', { name: 'Create product' }).click();
+  // M38a: the form ends on what was saved, with its stickers one click away.
+  await expect(page.getByRole('heading', { name: 'Product created', level: 1 })).toBeVisible();
+  await page.getByRole('link', { name: 'Open the product' }).click();
   await expect(page.getByRole('heading', { name: PRODUCT, level: 1 })).toBeVisible();
 
   const variants = page.getByRole('table', { name: 'Variants and stock' });
