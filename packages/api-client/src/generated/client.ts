@@ -528,6 +528,16 @@ export const OPERATIONS = {
     path: '/v1/promo/codes/{id}/redemptions',
     ability: 'read:LandingPage',
   },
+  getV1PromoFlashSales: {
+    method: 'GET',
+    path: '/v1/promo/flash-sales',
+    ability: 'read:LandingPage',
+  },
+  getV1PromoFlashSalesById: {
+    method: 'GET',
+    path: '/v1/promo/flash-sales/{id}',
+    ability: 'read:LandingPage',
+  },
   getV1SupplyEntries: { method: 'GET', path: '/v1/supply/entries', ability: 'read:Supply' },
   getV1SupplyEntriesById: {
     method: 'GET',
@@ -625,6 +635,11 @@ export const OPERATIONS = {
   patchV1PromoCodesById: {
     method: 'PATCH',
     path: '/v1/promo/codes/{id}',
+    ability: 'update:LandingPage',
+  },
+  patchV1PromoFlashSalesById: {
+    method: 'PATCH',
+    path: '/v1/promo/flash-sales/{id}',
     ability: 'update:LandingPage',
   },
   patchV1SupplyDraftsById: {
@@ -1075,6 +1090,16 @@ export const OPERATIONS = {
   postV1PosSync: { method: 'POST', path: '/v1/pos/sync', ability: 'update:Wallet' },
   postV1PromoCheck: { method: 'POST', path: '/v1/promo/check', ability: 'read:LandingPage' },
   postV1PromoCodes: { method: 'POST', path: '/v1/promo/codes', ability: 'create:LandingPage' },
+  postV1PromoFlashSales: {
+    method: 'POST',
+    path: '/v1/promo/flash-sales',
+    ability: 'create:LandingPage',
+  },
+  postV1PromoFlashSalesByIdDuplicate: {
+    method: 'POST',
+    path: '/v1/promo/flash-sales/{id}/duplicate',
+    ability: 'create:LandingPage',
+  },
   postV1SupplyAdvanceApplications: {
     method: 'POST',
     path: '/v1/supply/advance-applications',
@@ -1146,6 +1171,11 @@ export const OPERATIONS = {
     ability: 'create:CampaignSpend',
   },
   putV1NotifyTemplates: { method: 'PUT', path: '/v1/notify/templates', ability: 'update:Campaign' },
+  putV1PromoFlashSalesById: {
+    method: 'PUT',
+    path: '/v1/promo/flash-sales/{id}',
+    ability: 'update:LandingPage',
+  },
   reopenPeriod: {
     method: 'POST',
     path: '/v1/ledger/periods/reopen',
@@ -1771,6 +1801,14 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1PromoCodesByIdRedemptions, input, options),
+    /** GET /v1/promo/flash-sales */
+    getV1PromoFlashSales: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PromoFlashSales, undefined, options),
+    /** GET /v1/promo/flash-sales/:id */
+    getV1PromoFlashSalesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PromoFlashSalesById, input, options),
     /** GET /v1/supply/entries */
     getV1SupplyEntries: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplyEntries, undefined, options),
@@ -1935,6 +1973,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1PromoCodesById, input, options),
+    /** PATCH /v1/promo/flash-sales/:id */
+    patchV1PromoFlashSalesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1PromoFlashSalesById, input, options),
     /** PATCH /v1/supply/drafts/:id */
     patchV1SupplyDraftsById: (
       input: { readonly path: { readonly id: string } },
@@ -2415,6 +2458,15 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/promo/codes */
     postV1PromoCodes: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PromoCodes, undefined, options),
+    /** POST /v1/promo/flash-sales */
+    postV1PromoFlashSales: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PromoFlashSales, undefined, options),
+    /** POST /v1/promo/flash-sales/:id/duplicate */
+    postV1PromoFlashSalesByIdDuplicate: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PromoFlashSalesByIdDuplicate, input, options),
     /** POST /v1/supply/advance-applications */
     postV1SupplyAdvanceApplications: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1SupplyAdvanceApplications, undefined, options),
@@ -2504,6 +2556,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/notify/templates */
     putV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1NotifyTemplates, undefined, options),
+    /** PUT /v1/promo/flash-sales/:id */
+    putV1PromoFlashSalesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1PromoFlashSalesById, input, options),
     /** Ask to reopen a closed month. Needs an approval. */
     reopenPeriod: (
       input: { readonly body: ReopenPeriodInput },
