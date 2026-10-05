@@ -2262,3 +2262,16 @@ dry-run|commit --file <users.json>`.
   reference port, owner: claude); a check that a "was" price was ever real (D-640, owner:
   human); Pathao's real minimum weight (owner: human, with credentials).
 - Next: merge into `integration-wave2` (coordinator).
+
+### 2026-10-06 · integration and deploy · M39b joined and live · done
+
+- M39b merged into `integration-wave2` (f8d2cd3); code identical to its verified branch (verify
+  at d46e0c8: 226 test files, 3,504 passed, 1 skipped; every gate; stack 31 passed;
+  ledger-auditor 0 critical after fixes; acceptance-auditor READY). Migrations 0120–0121 follow
+  M39a's 0119; schema drift PASS (120).
+- Elysium's ERP redeployed at f8d2cd3: health green; the website at demo.elysium-lifestyle.bd
+  reads it (`erp: ok`) and its home answers 200; the server's other sites 200. Migrations up to
+  0121 are frozen.
+- M35b's integration is renumbering its migrations after 0121 (0122–0124).
+- Follow-up for the website repo: show the storefront's new regular (compare-at) prices and
+  per-colour photos, and point its "On sale" link at the shop's on-sale filter.
