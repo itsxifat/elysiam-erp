@@ -1674,6 +1674,7 @@ const en = {
   'orders.timeline.courier': 'Courier booking queued',
   'orders.timeline.other': 'Activity',
   'orders.timeline.system': 'the system',
+  'orders.timeline.owner': 'Owner',
 
   'orders.buyers.title': 'Buyer list',
   'orders.buyers.subtitle': 'Everyone who bought, filtered. Every export is logged.',
@@ -2242,7 +2243,7 @@ const en = {
   'pos.error.generic': 'Something went wrong.',
   'pos.error.permission': 'Your role cannot use the till for this branch.',
 
-  // Accounts: transfers, cash books, statements, ledger, periods, all brands (M08).
+  // Accounts: transfers, cash books, statements, ledger, periods (M08).
   'accounts.nav.cash': 'Wallets and cash',
   'accounts.nav.transfers': 'Transfers',
   'accounts.nav.wallets': 'Wallets',
@@ -3249,6 +3250,15 @@ const en = {
   'setPassword.doneTitle': 'Password set',
   'setPassword.doneDetail': 'Sign in with your email and the password you just chose.',
   'setPassword.toSignIn': 'Go to sign in',
+  // The owner sign-in link's page (M31, D-473).
+  'ownerLink.title': 'Signing you in',
+  'ownerLink.working': 'Checking your sign-in link…',
+  'ownerLink.refused':
+    'This sign-in link cannot be used. It may have expired or been used already. Ask for a new one.',
+  'ownerLink.noToken': 'This page needs the sign-in link it was opened with. Open the link again.',
+  'ownerLink.offline':
+    'The server could not be reached. Check the connection and open the link again.',
+  'ownerLink.toSignIn': 'Go to sign in',
   'setPassword.failed': 'The password could not be saved. Try again.',
   'users.title': 'Staff',
   'users.subtitle': 'Who can sign in to this brand, what each person may do, and how they sign in.',
@@ -3266,6 +3276,8 @@ const en = {
   'users.never': 'Never',
   'users.you': 'You',
   'users.superAdmin': 'Super admin',
+  // An owner on a record, to everyone but another owner (M31, D-473).
+  'users.owner': 'Owner',
   'users.statusActive': 'Active',
   'users.statusInvited': 'Invited',
   'users.statusDeactivated': 'Deactivated',

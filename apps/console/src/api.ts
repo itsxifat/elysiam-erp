@@ -163,6 +163,8 @@ export interface EnrolmentResult {
 export const endpoints = {
   branding: (host: string) =>
     api.get<LoginBranding>(`/v1/auth/login-branding?host=${encodeURIComponent(host)}`),
+  /** An owner sign-in link's token for a session (M31, D-473). Sets the cookie; says no more. */
+  ownerLink: (token: string) => api.post<{ ok: true }>('/v1/auth/owner-link', { token }),
   signIn: (email: string, password: string) =>
     api.post<SignInResult>('/api/auth/sign-in/email', { email, password }),
   signOut: () => api.post<unknown>('/api/auth/sign-out'),

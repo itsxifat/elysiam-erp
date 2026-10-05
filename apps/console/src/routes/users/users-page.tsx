@@ -465,8 +465,10 @@ function WaitingResets({
                   {kind}: {nameOf(reset.userId)}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {u('users.askedBy')}: {reset.requestedByName ?? reset.requestedBy} ·{' '}
-                  <DateTime value={reset.createdAt} />
+                  {u('users.askedBy')}:{' '}
+                  {reset.requestedByName ??
+                    (reset.requestedByOwner === true ? u('users.owner') : reset.requestedBy)}{' '}
+                  · <DateTime value={reset.createdAt} />
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {u('users.reason')}: {reset.reason}

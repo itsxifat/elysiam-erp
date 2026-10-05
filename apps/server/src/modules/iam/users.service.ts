@@ -89,13 +89,30 @@ export interface StaffRow {
   readonly resetNeedsApproval: boolean;
 }
 
+/** Who asked for a reset, as this caller may see them: an owner is "Owner" (D-473). */
+function requesterView(
+  person: { readonly name: string; readonly is_owner: boolean } | undefined,
+  viewer: { readonly isOwner?: boolean | undefined },
+): { requestedByName: string | null; requestedByOwner: boolean } {
+  if (person === undefined) return { requestedByName: null, requestedByOwner: false };
+  if (person.is_owner) {
+    return {
+      requestedByName: viewer.isOwner === true ? person.name : null,
+      requestedByOwner: true,
+    };
+  }
+  return { requestedByName: person.name, requestedByOwner: false };
+}
+
 export interface OpenResetView {
   readonly id: string;
   readonly userId: string;
   readonly kind: 'password' | 'two_factor';
   readonly status: 'pending_approval' | 'approved';
   readonly requestedBy: string;
+  /** Null for an owner unless the caller is one too (D-473): the console shows "Owner". */
   readonly requestedByName: string | null;
+  readonly requestedByOwner: boolean;
   readonly reason: string;
   readonly approvalRequestId: string | null;
   readonly createdAt: string;
@@ -200,7 +217,8 @@ export class UsersService {
       const items: StaffRow[] = [];
       for (const userId of userIds) {
         const person = byId.get(userId);
-        if (person === undefined) continue;
+        // An owner holds no role here (D-473); never listed as staff even if one did.
+        if (person === undefined || person.is_owner) continue;
         const held = memberships.filter((row) => row.user_id === userId);
         items.push(this.view(context, person, held, elsewhere.has(userId)));
       }
@@ -216,7 +234,7 @@ export class UsersService {
             kind: row.kind as 'password' | 'two_factor',
             status: row.status as 'pending_approval' | 'approved',
             requestedBy: row.requested_by,
-            requestedByName: byId.get(row.requested_by)?.name ?? null,
+            ...requesterView(byId.get(row.requested_by), context),
             reason: row.reason,
             approvalRequestId: row.approval_request_id,
             createdAt: iso(row.created_at) ?? '',
@@ -231,7 +249,7 @@ export class UsersService {
     return this.inOrg(context, async (tx) => {
       const held = await repo.membershipsOfUser(tx, context.orgId, userId);
       const [person] = await repo.people(tx, [userId]);
-      if (held.length === 0 || person === undefined) return NOT_FOUND();
+      if (held.length === 0 || person === undefined || person.is_owner) return NOT_FOUND();
       const elsewhere = await repo.activeElsewhere(tx, [userId], context.orgId);
       return this.view(context, person, held, elsewhere.has(userId));
     });

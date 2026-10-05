@@ -17,6 +17,7 @@ import {
   users,
   verifications,
 } from '../schema/iam/index.js';
+import { ownerSession } from './owner-session.js';
 
 /**
  * Authentication (architecture §6, §25).
@@ -267,6 +268,8 @@ export function createAuth(options: AuthOptions) {
       updateAge: 60 * 60,
       additionalFields: {
         activeOrgId: { type: 'string', required: false, input: false },
+        // Opened by an owner sign-in link (M31, D-473): set by `ownerSession()` only.
+        ownerLink: { type: 'boolean', required: false, input: false, defaultValue: false },
       },
     },
 
@@ -304,6 +307,8 @@ export function createAuth(options: AuthOptions) {
         otpLength: 6,
         expiresIn: 300,
       }),
+      // The owner sign-in link's session (M31, D-473). Server-only: no HTTP path reaches it.
+      ownerSession(),
     ],
 
     databaseHooks: {

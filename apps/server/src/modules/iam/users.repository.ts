@@ -62,12 +62,28 @@ export async function activeMembers(
     where m.org_id = ${orgId}
       and m.is_active
       and u.is_active
+      -- An owner holds no role (D-473, a trigger refuses one); this says so here as well.
+      and not u.is_owner
       and ${
         roles === undefined ? sql`true` : sql`m.role::text = any (${sql.param([...roles])}::text[])`
       }
     group by u.id, u.name, u.email
     order by u.name, u.id
     limit 1000
+  `);
+  return [...rows];
+}
+
+/** The owners among these people (D-473), with their names, for the caller to mask. */
+export async function ownersAmong(
+  tx: Tx,
+  userIds: readonly string[],
+): Promise<{ id: string; name: string }[]> {
+  const ids = [...new Set(userIds)].filter((id) => id !== '');
+  if (ids.length === 0) return [];
+  const rows = await tx.execute<{ id: string; name: string }>(sql`
+    select u.id, u.name from iam.users u
+    where u.is_owner and u.id = any(${sql.param(ids)}::text[])
   `);
   return [...rows];
 }
@@ -228,6 +244,8 @@ export interface PersonRow extends Record<string, unknown> {
   readonly email: string;
   readonly is_active: boolean;
   readonly is_super_admin: boolean;
+  /** An owner (D-473): named "Owner" to everyone but other owners. */
+  readonly is_owner: boolean;
   readonly two_factor_enabled: boolean;
   readonly last_sign_in_at: Date | null;
   readonly has_password: boolean;
@@ -238,7 +256,7 @@ export interface PersonRow extends Record<string, unknown> {
 export async function people(tx: Tx, userIds: readonly string[]): Promise<PersonRow[]> {
   if (userIds.length === 0) return [];
   const rows = await tx.execute<PersonRow>(sql`
-    select u.id, u.name, u.email, u.is_active, u.is_super_admin, u.two_factor_enabled,
+    select u.id, u.name, u.email, u.is_active, u.is_super_admin, u.is_owner, u.two_factor_enabled,
            u.last_sign_in_at,
            exists (
              select 1 from iam.accounts a

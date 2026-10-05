@@ -1624,6 +1624,7 @@ const bn: Record<MessageKey, string> = {
   'orders.timeline.courier': 'কুরিয়ার বুকিং সারিতে',
   'orders.timeline.other': 'কার্যক্রম',
   'orders.timeline.system': 'সিস্টেম',
+  'orders.timeline.owner': 'মালিক',
 
   'orders.buyers.title': 'ক্রেতার তালিকা',
   'orders.buyers.subtitle': 'যারা কিনেছেন, ফিল্টার করা। প্রতিটি এক্সপোর্ট লগ হয়।',
@@ -3183,6 +3184,15 @@ const bn: Record<MessageKey, string> = {
   'setPassword.doneTitle': 'পাসওয়ার্ড সেট হয়েছে',
   'setPassword.doneDetail': 'আপনার ইমেইল আর এইমাত্র বেছে নেওয়া পাসওয়ার্ড দিয়ে সাইন ইন করুন।',
   'setPassword.toSignIn': 'সাইন ইনে যান',
+  // The owner sign-in link's page (M31, D-473).
+  'ownerLink.title': 'আপনাকে সাইন ইন করানো হচ্ছে',
+  'ownerLink.working': 'আপনার সাইন-ইন লিংক যাচাই করা হচ্ছে…',
+  'ownerLink.refused':
+    'এই সাইন-ইন লিংকটি ব্যবহার করা যাবে না। এর মেয়াদ শেষ হয়ে থাকতে পারে বা এটি আগেই ব্যবহার হয়েছে। নতুন লিংক চান।',
+  'ownerLink.noToken':
+    'এই পাতাটি যে সাইন-ইন লিংক দিয়ে খোলা হয়েছিল সেটি দরকার। লিংকটি আবার খুলুন।',
+  'ownerLink.offline': 'সার্ভারে পৌঁছানো গেল না। সংযোগ দেখে লিংকটি আবার খুলুন।',
+  'ownerLink.toSignIn': 'সাইন ইনে যান',
   'setPassword.failed': 'পাসওয়ার্ড সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।',
   'users.title': 'স্টাফ',
   'users.subtitle':
@@ -3201,6 +3211,8 @@ const bn: Record<MessageKey, string> = {
   'users.never': 'কখনো না',
   'users.you': 'আপনি',
   'users.superAdmin': 'সুপার অ্যাডমিন',
+  // An owner on a record, to everyone but another owner (M31, D-473).
+  'users.owner': 'মালিক',
   'users.statusActive': 'সক্রিয়',
   'users.statusInvited': 'আমন্ত্রিত',
   'users.statusDeactivated': 'নিষ্ক্রিয়',

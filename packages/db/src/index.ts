@@ -107,3 +107,4 @@ export {
   type AuthOptions,
   type SmsProvider,
 } from './auth/index.js';
+export { OWNER_SESSION_SECONDS } from './auth/owner-session.js';

@@ -275,6 +275,7 @@ const ORDERS_KEYS = [
   'orders.timeline.courier',
   'orders.timeline.other',
   'orders.timeline.system',
+  'orders.timeline.owner',
   'orders.buyers.title',
   'orders.buyers.subtitle',
   'orders.buyers.product',
