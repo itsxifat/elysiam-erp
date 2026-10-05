@@ -879,7 +879,7 @@ export class PaymentsService {
     mode: 'sandbox' | 'live',
   ): Promise<GatewayCredentials | 'mode_changed'> {
     const row = await buying.gatewaySettings(tx, orgId);
-    if (row === undefined || row.mode !== mode) return 'mode_changed';
+    if (row?.mode !== mode) return 'mode_changed';
     return {
       storeId: row.store_id,
       storePassword: open(row.password_sealed, PASSWORD_BINDING(orgId)),
