@@ -3590,12 +3590,11 @@ const en = {
   'web.pay.title': 'SSLCommerz',
   'web.pay.description':
     'The account shoppers pay online through. Payments are checked with SSLCommerz before an order is marked paid.',
-  'web.pay.noKey':
-    'This server has no key for keeping credentials. Ask whoever runs the server to set STOREFRONT_CREDENTIALS_KEY.',
+  'web.pay.noKey': 'This server has no STOREFRONT_CREDENTIALS_KEY, so credentials cannot be kept.',
   'web.pay.unverified':
     'Not yet tried against SSLCommerz’s sandbox. Test with sandbox mode before going live.',
   'web.pay.sandboxRefused':
-    'This server does not take sandbox payments, so shoppers cannot pay online until the mode is live. A staging server can allow them (STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX).',
+    'This server takes no sandbox payments: shoppers can pay online once the mode is live.',
   'web.pay.enabled': 'Take online payments',
   'web.pay.mode': 'Mode',
   'web.pay.sandbox': 'Sandbox (test)',
