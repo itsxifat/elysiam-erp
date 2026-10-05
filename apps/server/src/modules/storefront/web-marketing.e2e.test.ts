@@ -301,6 +301,103 @@ describe('campaign links', () => {
     });
     expect(bySales.statusCode).toBe(403);
   });
+
+  /*
+   * M35b joined to M39a's deletes at integration (D-551, D-621): the website's references
+   * checker counts a link's category and its highlighted products, so neither is deleted out
+   * from under a link already shared, and the usage answer names the link.
+   */
+  it('keep the category they open and the products they highlight from a delete, and are named', async () => {
+    const tag = randomUUID().replace(/-/g, '').slice(0, 6);
+    const madeCategory = await admin.client.request('POST', '/v1/catalog/categories', {
+      body: { name: `Eid range ${tag}`, slug: `eid-range-${tag}`, code: `L${tag.toUpperCase()}` },
+    });
+    expect(madeCategory.statusCode, madeCategory.body).toBeLessThan(300);
+    const category = (JSON.parse(madeCategory.body) as { id: string }).id;
+    const madeProduct = await admin.client.request('POST', '/v1/catalog/products', {
+      body: {
+        name: `Eid kurta ${tag}`,
+        slug: `eid-kurta-${tag}`,
+        pricePoisha: '150000',
+        status: 'active',
+      },
+    });
+    expect(madeProduct.statusCode, madeProduct.body).toBeLessThan(300);
+    const product = (JSON.parse(madeProduct.body) as { id: string }).id;
+
+    const created = await marketing.client.request('POST', '/v1/storefront/campaign-links', {
+      body: link({ title: 'Eid range', categoryId: category, highlightProductIds: [product] }),
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const { id, code } = JSON.parse(created.body) as { id: string; code: string };
+    const named = {
+      reason: 'campaign_links',
+      count: 1,
+      movable: false,
+      examples: [{ id, label: `Eid range (${code})` }],
+    };
+
+    interface Usage {
+      readonly canDelete: boolean;
+      readonly canEmptyAndDelete: boolean;
+      readonly uses: readonly { reason: string; count: number; movable: boolean }[];
+    }
+    const usageOf = async (url: string) =>
+      JSON.parse((await admin.client.request('GET', url)).body) as Usage;
+    const refusal = async (method: 'DELETE' | 'POST', url: string, body?: unknown) => {
+      const response = await admin.client.request(method, url, body === undefined ? {} : { body });
+      return {
+        status: response.statusCode,
+        ...(JSON.parse(response.body) as { code?: string; detail?: string }),
+      };
+    };
+
+    // The category: nothing but the link uses it, and the link is not moved for it.
+    const categoryUsage = await usageOf(`/v1/catalog/categories/${category}/usage`);
+    expect(categoryUsage).toMatchObject({ canDelete: false, canEmptyAndDelete: false });
+    expect(categoryUsage.uses).toEqual([named]);
+    const refusedCategory = await refusal('DELETE', `/v1/catalog/categories/${category}`);
+    expect(refusedCategory).toMatchObject({ status: 409, code: 'CATALOG_IN_USE' });
+    expect(refusedCategory.detail).toContain('1 campaign link');
+    expect(
+      await refusal('POST', `/v1/catalog/categories/${category}/empty-and-delete`, {
+        targetCategoryId: categoryId,
+      }),
+    ).toMatchObject({ status: 409, code: 'CATALOG_IN_USE' });
+
+    // The highlighted product.
+    const productUsage = await usageOf(`/v1/catalog/products/${product}/usage`);
+    expect(productUsage.canDelete).toBe(false);
+    expect(productUsage.uses).toEqual([named]);
+    const refusedProduct = await refusal('DELETE', `/v1/catalog/products/${product}`);
+    expect(refusedProduct).toMatchObject({ status: 409, code: 'CATALOG_IN_USE' });
+    expect(refusedProduct.detail).toContain('1 campaign link');
+
+    // Switched off, the link still keeps both: switched on again, it must still open them.
+    const off = await marketing.client.request('PUT', `/v1/storefront/campaign-links/${id}`, {
+      body: link({
+        title: 'Eid range',
+        categoryId: category,
+        highlightProductIds: [product],
+        isActive: false,
+      }),
+    });
+    expect(off.statusCode, off.body).toBe(200);
+    expect((await refusal('DELETE', `/v1/catalog/categories/${category}`)).status).toBe(409);
+    expect((await refusal('DELETE', `/v1/catalog/products/${product}`)).status).toBe(409);
+
+    // With the link deleted, both go.
+    const gone = await marketing.client.request('DELETE', `/v1/storefront/campaign-links/${id}`);
+    expect(gone.statusCode, gone.body).toBeLessThan(300);
+    expect((await usageOf(`/v1/catalog/categories/${category}/usage`)).canDelete).toBe(true);
+    const deletedProduct = await admin.client.request('DELETE', `/v1/catalog/products/${product}`);
+    expect(deletedProduct.statusCode, deletedProduct.body).toBeLessThan(300);
+    const deletedCategory = await admin.client.request(
+      'DELETE',
+      `/v1/catalog/categories/${category}`,
+    );
+    expect(deletedCategory.statusCode, deletedCategory.body).toBeLessThan(300);
+  });
 });
 
 describe('tracking', () => {

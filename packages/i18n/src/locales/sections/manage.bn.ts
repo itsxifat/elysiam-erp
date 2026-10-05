@@ -69,6 +69,8 @@ const bn: Record<ManageKey, string> = {
   'mg.reason.flash_claims': 'সেলের দামে অর্ডার',
   'mg.reason.menu_entries': 'ওয়েবসাইটের মেনু',
   'mg.reason.web_locations': 'ওয়েবসাইট এখান থেকে বিক্রি করে',
+  'mg.reason.campaign_links': 'ওয়েবসাইটের ক্যাম্পেইন লিংক',
+  'mg.reason.marketplace_holds': 'ncom.bd-র ধরে রাখা স্টক',
   'mg.reason.leads': 'লিড',
   'mg.reason.campaigns': 'বিজ্ঞাপন ক্যাম্পেইন',
   'mg.reason.ad_spend': 'বিজ্ঞাপন খরচের এন্ট্রি',

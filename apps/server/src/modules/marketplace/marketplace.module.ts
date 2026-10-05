@@ -13,6 +13,7 @@ import { NcomController } from './ncom.controller.js';
 import { NcomRawBody } from './ncom.http.js';
 import { NcomOrdersService } from './ncom-orders.service.js';
 import { NcomTransport } from './ncom.transport.js';
+import { MarketplaceReferencesBinding } from './references.binding.js';
 
 /**
  * The ncom.bd marketplace connector (M35b, architecture §31, D-553, D-556).
@@ -32,6 +33,8 @@ import { NcomTransport } from './ncom.transport.js';
     NcomConnectorService,
     NcomOrdersService,
     MarketplaceSettingsService,
+    // What a hold keeps: its SKUs and its location (M39a's registries, joined at integration).
+    MarketplaceReferencesBinding,
   ],
   exports: [NcomOrdersService, NcomTransport],
 })

@@ -584,6 +584,10 @@ function marketplaceWhere(orgId: string, filter: MarketplaceFilter): SQL {
     sql`p.status = 'active'`,
     sql`exists (select 1 from catalog.skus s
                 where s.org_id = p.org_id and s.product_id = p.id and s.status = 'active')`,
+    // An archived category's products leave ncom's listing as they leave the website (M39a,
+    // D-623, joined at integration): their SKUs are no longer `sellable`, so ncom could
+    // neither show stock for them nor hold any.
+    IN_LIVE_CATEGORY,
   ];
   const visible = filter.kinds.includes('active');
   const drafts = filter.kinds.includes('draft');

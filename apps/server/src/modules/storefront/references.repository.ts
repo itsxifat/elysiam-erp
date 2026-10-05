@@ -9,6 +9,53 @@ import type { NavItemRow } from './storefront.repository.js';
  * flash sale, and the size charts and menu it owns, for deletes (M39a, D-621, D-628).
  */
 
+/** A campaign link as a usage report names it: its title and its code. */
+const LINK_LABEL = sql`l.title || ' (' || l.code || ')'`;
+
+/**
+ * Campaign links that open any of these categories (M35b's `storefront.custom_links`, joined
+ * at integration; D-551, D-621). Switched-off links count too: the foreign key keeps the
+ * category for them, and a link switched back on must still open it.
+ */
+export async function campaignLinksForCategories(
+  tx: Tx,
+  orgId: string,
+  categoryIds: readonly string[],
+): Promise<{ count: number; examples: { id: string; label: string }[] }> {
+  const rows = await tx.execute<{ id: string; label: string; total: number }>(sql`
+    select l.id, ${LINK_LABEL} as label, count(*) over ()::int as total
+    from storefront.custom_links l
+    where l.org_id = ${orgId}
+      and l.category_id = any (${sql.param([...categoryIds])}::uuid[])
+    order by l.code
+    limit ${USAGE_EXAMPLES}
+  `);
+  return {
+    count: rows[0]?.total ?? 0,
+    examples: rows.map((row) => ({ id: row.id, label: row.label })),
+  };
+}
+
+/** Campaign links that highlight any of these products (D-551; no foreign key, an id list). */
+export async function campaignLinksForProducts(
+  tx: Tx,
+  orgId: string,
+  productIds: readonly string[],
+): Promise<{ count: number; examples: { id: string; label: string }[] }> {
+  const rows = await tx.execute<{ id: string; label: string; total: number }>(sql`
+    select l.id, ${LINK_LABEL} as label, count(*) over ()::int as total
+    from storefront.custom_links l
+    where l.org_id = ${orgId}
+      and l.highlight_product_ids && ${sql.param([...productIds])}::uuid[]
+    order by l.code
+    limit ${USAGE_EXAMPLES}
+  `);
+  return {
+    count: rows[0]?.total ?? 0,
+    examples: rows.map((row) => ({ id: row.id, label: row.label })),
+  };
+}
+
 const NAV_COLUMNS = sql`id, parent_id, kind, label, href, category_id, highlighted, is_active,
   position`;
 

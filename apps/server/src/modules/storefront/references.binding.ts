@@ -31,10 +31,11 @@ const LEGACY_KIND: Readonly<Partial<Record<string, string>>> = {
  *   address exists any more, and a redirect to a deleted row would be a 404 anyway.
  * - A location the website sells from keeps that location: the brand changes Website →
  *   Settings first, deliberately.
- *
- * M35b's campaign links (`storefront.custom_links`, a category foreign key and highlighted
- * products) belong here when that branch joins: count them in `references` for `category`
- * and `product`.
+ * - A campaign link (M35b, D-551; joined at integration) keeps the category it opens and the
+ *   products it highlights. It is never re-pointed or trimmed by a delete: the link is already
+ *   shared in ads and posts, so the person edits or deletes it in Website → Campaign links
+ *   first, or archives the category or product instead. Not movable, so "Empty and delete"
+ *   refuses as well.
  */
 @Injectable()
 export class StorefrontReferencesBinding implements OnModuleInit {
@@ -49,16 +50,27 @@ export class StorefrontReferencesBinding implements OnModuleInit {
   onModuleInit(): void {
     this.catalog.register({
       module: 'storefront',
-      references: async (tx, orgId, kind, ids) =>
-        kind === 'category'
-          ? [
-              {
-                reason: 'menu_entries',
-                ...(await refs.menuEntriesFor(tx, orgId, ids)),
-                movable: true,
-              },
-            ]
-          : [],
+      references: async (tx, orgId, kind, ids) => {
+        if (kind === 'category') {
+          return [
+            {
+              reason: 'menu_entries',
+              ...(await refs.menuEntriesFor(tx, orgId, ids)),
+              movable: true,
+            },
+            {
+              reason: 'campaign_links',
+              ...(await refs.campaignLinksForCategories(tx, orgId, ids)),
+            },
+          ];
+        }
+        if (kind === 'product') {
+          return [
+            { reason: 'campaign_links', ...(await refs.campaignLinksForProducts(tx, orgId, ids)) },
+          ];
+        }
+        return [];
+      },
       release: (tx, orgId, kind, ids) => this.forget(tx, orgId, kind, ids),
       moveCategory: (tx, orgId, fromId, toId, actor) =>
         this.moveCategory(tx, orgId, fromId, toId, actor),

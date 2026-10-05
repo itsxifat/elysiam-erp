@@ -157,6 +157,8 @@ const REASON_WORDS: Readonly<Record<UsageReason, readonly [string, string]>> = {
   flash_claims: ['flash sale order line', 'flash sale order lines'],
   menu_entries: ['menu entry', 'menu entries'],
   web_locations: ['website stock setting', 'website stock settings'],
+  campaign_links: ['campaign link', 'campaign links'],
+  marketplace_holds: ['ncom.bd stock hold', 'ncom.bd stock holds'],
   leads: ['lead', 'leads'],
   campaigns: ['ad campaign', 'ad campaigns'],
   ad_spend: ['ad spend entry', 'ad spend entries'],

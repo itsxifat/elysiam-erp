@@ -213,6 +213,8 @@ describe('every module that points at catalog rows answers (D-621)', () => {
       'courier',
       'inventory',
       'marketing',
+      // M35b, joined at integration: an ncom.bd hold keeps the SKUs it held.
+      'marketplace',
       'orders',
       'pos',
       'promo',
@@ -260,6 +262,8 @@ describe('every module that points at catalog rows answers (D-621)', () => {
       'pos.sale_lines->catalog.skus': 'pos',
       'promo.flash_sale_items->catalog.skus': 'promo',
       'sales.order_lines->catalog.skus': 'orders',
+      // M35b, joined at integration: a campaign link opening a category (D-551).
+      'storefront.custom_links->catalog.categories': 'storefront',
       'storefront.nav_items->catalog.categories': 'storefront',
       'supply.return_lines->catalog.skus': 'supply',
       'supply.supply_lines->catalog.skus': 'supply',
@@ -277,7 +281,14 @@ describe('every module that points at catalog rows answers (D-621)', () => {
 
   it('counts or cascades every foreign key into a stock location, read from the database', async () => {
     const registry = harness.app.get(LocationReferences, { strict: false });
-    expect(registry.modules()).toEqual(['courier', 'orders', 'pos', 'storefront', 'supply']);
+    expect(registry.modules()).toEqual([
+      'courier',
+      'marketplace',
+      'orders',
+      'pos',
+      'storefront',
+      'supply',
+    ]);
     const keys = await withSystem(async (tx) =>
       tx.execute<{ child: string; action: string }>(sql`
         select distinct cn.nspname || '.' || c.relname as child, con.confdeltype::text as action
@@ -299,6 +310,8 @@ describe('every module that points at catalog rows answers (D-621)', () => {
       'inventory.stock_in_hand_entries': 'inventory',
       'inventory.stock_movements': 'inventory',
       'inventory.stock_transfers': 'inventory',
+      // M35b, joined at integration: an ncom.bd hold keeps the place it held stock at.
+      'marketplace.ncom_holds': 'marketplace',
       'pos.registers': 'pos',
       'pos.returns': 'pos',
       'pos.sales': 'pos',

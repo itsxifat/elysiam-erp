@@ -17,7 +17,7 @@ import {
   type HttpHarness,
   type RoleClient,
 } from '../../testing/http-harness.js';
-import { seedProductWithSkus, warehouseId } from '../inventory/inventory.testing.js';
+import { makeLocation, seedProductWithSkus, warehouseId } from '../inventory/inventory.testing.js';
 import { applyOrderMigrations, seedStockLevel, stockAt } from '../orders/orders.testing.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import { STOREFRONT_QUEUE_DEFINITIONS } from '../storefront/storefront.queues.js';
@@ -396,6 +396,142 @@ describe('the connector', () => {
     expect(after.reserved).toBeLessThanOrEqual(after.onHand);
     for (const n of [1, 2])
       await connector('POST', '/release', { orderRef: `race-${String(n)}-${suffix}` });
+  });
+});
+
+/*
+ * M35b joined to M39a's deletes at integration (D-553, D-621, D-623, D-629): a hold keeps the
+ * SKUs it held and the place it held them at, live or ended, and the usage answer names ncom;
+ * an archived category's products leave ncom's listing as they leave the website.
+ */
+describe('joined to delete and archive (M39a)', () => {
+  interface Usage {
+    readonly canDelete: boolean;
+    readonly uses: readonly {
+      reason: string;
+      count: number;
+      movable: boolean;
+      examples: { id: string; label: string }[];
+    }[];
+  }
+  const usageOf = async (url: string) => {
+    const response = await admin.client.request('GET', url);
+    expect(response.statusCode, response.body).toBe(200);
+    return JSON.parse(response.body) as Usage;
+  };
+  const holdsIn = (usage: Usage) => usage.uses.find((use) => use.reason === 'marketplace_holds');
+
+  it('names a live hold in its SKU’s and its location’s usage', async () => {
+    const ref = `usage-${suffix}`;
+    const held = await connector('POST', '/reserve', {
+      orderRef: ref,
+      lines: [{ variantId: skuA, quantity: 1 }],
+    });
+    expect(held.body).toEqual({ ok: true, held: 1 });
+    try {
+      const sku = holdsIn(await usageOf(`/v1/catalog/skus/${skuA}/usage`));
+      expect(sku?.movable).toBe(false);
+      expect(sku?.examples.map((example) => example.label)).toContain(ref);
+      const place = holdsIn(await usageOf(`/v1/inventory/locations/${warehouse}/usage`));
+      expect(place?.examples.map((example) => example.label)).toContain(ref);
+    } finally {
+      await connector('POST', '/release', { orderRef: ref });
+    }
+  });
+
+  it('keeps a SKU and a location nothing but an ended hold names', async () => {
+    const lone = await seedProductWithSkus(ORG_A, `ncdel${suffix}`, 1);
+    const skuId = lone.skus[0]?.id ?? '';
+    // Not a warehouse: the website's default place is the brand's first warehouse, and this
+    // suite sells from the main one.
+    const place = await makeLocation(ORG_A, {
+      code: `NCDEL${suffix.toUpperCase()}`,
+      name: `ncom hold place ${suffix}`,
+      kind: 'damaged',
+    });
+    const ref = `ended-${suffix}`;
+    await withSystem(
+      async (tx) => {
+        await tx.execute(sql`
+          insert into marketplace.ncom_holds (org_id, order_ref, state, location_id, lines, released_at)
+          values (${ORG_A}, ${ref}, 'released', ${place},
+                  ${JSON.stringify([{ skuId, variantId: skuId, qty: 1 }])}::jsonb, now())
+        `);
+      },
+      { orgId: ORG_A },
+    );
+
+    const skuUsage = await usageOf(`/v1/catalog/skus/${skuId}/usage`);
+    expect(skuUsage.canDelete).toBe(false);
+    expect(skuUsage.uses).toEqual([
+      {
+        reason: 'marketplace_holds',
+        count: 1,
+        movable: false,
+        examples: [{ id: expect.any(String) as string, label: ref }],
+      },
+    ]);
+    const refusedSku = await admin.client.request('DELETE', `/v1/catalog/skus/${skuId}`);
+    expect(refusedSku.statusCode).toBe(409);
+    expect(JSON.parse(refusedSku.body)).toMatchObject({ code: 'CATALOG_IN_USE' });
+    expect((JSON.parse(refusedSku.body) as { detail: string }).detail).toContain(
+      '1 ncom.bd stock hold',
+    );
+    const refusedProduct = await admin.client.request(
+      'DELETE',
+      `/v1/catalog/products/${lone.productId}`,
+    );
+    expect(refusedProduct.statusCode).toBe(409);
+
+    const placeUsage = await usageOf(`/v1/inventory/locations/${place}/usage`);
+    expect(placeUsage.canDelete).toBe(false);
+    expect(placeUsage.uses.map((use) => [use.reason, use.count])).toEqual([
+      ['marketplace_holds', 1],
+    ]);
+    const refusedPlace = await admin.client.request('DELETE', `/v1/inventory/locations/${place}`);
+    expect(refusedPlace.statusCode).toBe(409);
+    expect(JSON.parse(refusedPlace.body)).toMatchObject({ code: 'INVENTORY_IN_USE' });
+  });
+
+  it('drops an archived category’s products from the listing until it is restored', async () => {
+    const seeded = await seedProductWithSkus(ORG_A, `ncarc${suffix}`, 1);
+    const category = await withSystem(
+      async (tx) => {
+        await tx.execute(sql`
+          update catalog.products set web_visible = true
+          where org_id = ${ORG_A} and id = ${seeded.productId}
+        `);
+        return (
+          await tx.execute<{ category_id: string }>(sql`
+            select category_id from catalog.products where id = ${seeded.productId}
+          `)
+        )[0]?.category_id;
+      },
+      { orgId: ORG_A },
+    );
+    const listed = async () =>
+      (
+        (await connector('GET', `/products?ids=${seeded.productId}`)).body.products as {
+          id: string;
+        }[]
+      ).map((product) => product.id);
+    expect(await listed()).toEqual([seeded.productId]);
+
+    const archived = await admin.client.request(
+      'POST',
+      `/v1/catalog/categories/${String(category)}/archive`,
+      {},
+    );
+    expect(archived.statusCode, archived.body).toBeLessThan(300);
+    expect(await listed()).toEqual([]);
+
+    const restored = await admin.client.request(
+      'POST',
+      `/v1/catalog/categories/${String(category)}/restore`,
+      {},
+    );
+    expect(restored.statusCode, restored.body).toBeLessThan(300);
+    expect(await listed()).toEqual([seeded.productId]);
   });
 });
 

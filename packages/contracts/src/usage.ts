@@ -47,6 +47,9 @@ export const USAGE_REASONS = [
   // The website.
   'menu_entries',
   'web_locations',
+  // M35b, joined at integration: campaign links and the ncom.bd marketplace's stock holds.
+  'campaign_links',
+  'marketplace_holds',
   // Marketing and messages.
   'leads',
   'campaigns',

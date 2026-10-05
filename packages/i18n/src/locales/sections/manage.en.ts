@@ -73,6 +73,8 @@ const en = {
   'mg.reason.flash_claims': 'Orders at the sale price',
   'mg.reason.menu_entries': 'Website menu entries',
   'mg.reason.web_locations': 'The website sells from it',
+  'mg.reason.campaign_links': 'Website campaign links',
+  'mg.reason.marketplace_holds': 'Stock held by ncom.bd',
   'mg.reason.leads': 'Leads',
   'mg.reason.campaigns': 'Ad campaigns',
   'mg.reason.ad_spend': 'Ad spend entries',
