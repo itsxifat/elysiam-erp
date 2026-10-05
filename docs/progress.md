@@ -1679,3 +1679,25 @@ A brand's ERP runs on a database of its own …`; on one brand beside the traini
   recorded carts to the differential test; palette entries for Discounts and Flash sales; a kit
   date-and-time picker for the schedules; the console bundle has about 4 KB left.
 - Next: integrate with M31 to M33; M34 prices checkout through this.
+
+### 2026-10-05 · integration · M31, M33 and M35a joined into the wave-3 integration · done
+
+- Merged into `integration-wave2`: M33 (faf12bd), M31 (2954f50), the Cloudflare real-address
+  change (f055243, D-580) and M35a (4e500db). Migrations renumbered in merge order, SQL
+  unchanged: M33 0103–0104, M31 0105–0108 (0105 regenerated, byte-identical to the branch's
+  0103), M35a 0109–0112 (the regenerated schema diff equals the net of its 0103 and 0106; the
+  branch's files kept verbatim). Conflicts were side-by-side additions (docs, `catalog.api.ts`,
+  CLAUDE.md's stack-spec line); the API client was regenerated from the merged server.
+- Verification at 967efca: format, lint, typecheck green; tests 3,210 passed, 1 skipped (the
+  one failure at 4e500db was M35a's backfill test reading its migration under the old number,
+  fixed in 967efca and re-run 25/25); build, bundle, white-label (197 files, no brand name),
+  migrations, schema drift (111 migrations agree), route matrix (361 routes, 343
+  matrix-tested, 18 public), i18n and api-client all PASS.
+- M35a's acceptance re-audit at 4e500db: checks 1–3 evidenced; gaps closed or reassigned (the
+  renumbered test; a ledger audit of its last fix commit 3e3387c, run now; the flash-sale
+  storefront routes and the checkout claim, now M34's per D-548).
+- Ledger audit of M35a's last fix commit (3e3387c): 0 critical, 1 warning (W1: the storefront flash-sale reads filter only switched-on items, not web visibility; handed to M34, which builds the routes, with notes N1 upcoming-sale prices, N4 a test that no line is charged a flash price without a claim, N5 a cross-org claim test). N2: migration 0112 builds a six-column unique index on `sales.order_lines` under an exclusive lock, harmless on a new brand, worth a quiet window on a populated one.
+- From now on every migration up to 0112 is treated as frozen: Elysium's ERP will be deployed
+  from this branch.
+- Deploying Elysium's ERP to `erp.elysium-lifestyle.bd` was blocked by Claude Code's permission
+  check; the steps are with the owner (option to allow it, or run them).

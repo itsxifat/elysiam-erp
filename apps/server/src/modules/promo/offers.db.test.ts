@@ -1126,8 +1126,8 @@ describe('the website’s discounts, through the one engine (D-540, D-541)', () 
     expect(JSON.parse(response.body)).toMatchObject({ codAmountPoisha: '306000' });
   });
 
-  it('titles a code made before M35a with its own word (the 0105 backfill, ledger audit W2)', async () => {
-    // A code as M16 left it: no title. Then 0105's own statement, run as the migration runs
+  it('titles a code made before M35a with its own word (the 0111 backfill, ledger audit W2)', async () => {
+    // A code as M16 left it: no title. Then 0111's own statement, run as the migration runs
     // it: as the owner, with no org context of its own.
     const word = `OLD${randomUUID().slice(0, 6).toUpperCase()}`;
     await withSystem(
@@ -1141,7 +1141,7 @@ describe('the website’s discounts, through the one engine (D-540, D-541)', () 
     const { readFileSync } = await import('node:fs');
     const migration = readFileSync(
       new URL(
-        '../../../../../packages/db/migrations/0105_m35a_offers_integrity.sql',
+        '../../../../../packages/db/migrations/0111_m35a_offers_integrity.sql',
         import.meta.url,
       ),
       'utf8',
