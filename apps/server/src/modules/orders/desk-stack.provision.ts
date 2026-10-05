@@ -130,6 +130,9 @@ async function create(): Promise<void> {
     // catalog-stock-ux: an org admin of its own for the product and stock screens
     // (catalog-stock.stack.ts), so its two-step enrolment never races another suite's.
     { label: 'merchandiser', grants: [{ orgId, role: 'org_admin' }] },
+    // M34: an org admin of its own for Website → Payments and Email (website-buying.stack.ts),
+    // the only role that may change the website's credentials (D-528).
+    { label: 'webadmin', grants: [{ orgId, role: 'org_admin' }] },
   ];
 
   const users: { role: string; email: string; userId: string }[] = [];

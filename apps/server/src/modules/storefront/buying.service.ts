@@ -19,6 +19,7 @@ import {
 import type { Logger } from 'pino';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
+import type { RateLimitStore } from '../../platform/http/rate-limit.js';
 import { enqueue } from '../../platform/jobs/enqueue.js';
 import { createLogger } from '../../platform/logging/logger.js';
 import { CATALOG_API, type CatalogApi, type WebSkuFact } from '../catalog/catalog.api.js';
@@ -32,6 +33,7 @@ import { STOREFRONT_CONFIG, type StorefrontConfig } from './storefront.config.js
 import { StorefrontError, StorefrontRefusal } from './storefront.errors.js';
 import { STOREFRONT_QUEUES } from './storefront.queues.js';
 import * as repo from './storefront.repository.js';
+import { STOREFRONT_RATE_LIMITER } from './signature.guard.js';
 import { StorefrontService } from './storefront.service.js';
 import { httpCodeOf, newToken, tokenHash } from './tokens.js';
 
@@ -67,6 +69,9 @@ export interface CheckoutReceipt {
   };
 }
 
+/** Checkouts one shopper address may place in ten minutes (the old site's 30, D-534). */
+const CHECKOUTS_PER_10_MINUTES = 30;
+
 /** Thrown inside the checkout's transaction when a concurrent copy of it already committed. */
 class AlreadyPlaced extends Error {}
 
@@ -98,6 +103,7 @@ export class BuyingService {
 
   constructor(
     @Inject(STOREFRONT_CONFIG) private readonly config: StorefrontConfig,
+    @Inject(STOREFRONT_RATE_LIMITER) private readonly limiter: RateLimitStore,
     @Inject(CATALOG_API) private readonly catalog: CatalogApi,
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
     @Inject(ORDERS_API) private readonly orders: OrdersApi,
@@ -283,6 +289,23 @@ export class BuyingService {
     request: { readonly idempotencyKey: string; readonly rawBody: Buffer },
   ): Promise<CheckoutReceipt> {
     const { orgId } = site;
+    // The old site's ceiling, per shopper address (D-534): loose, because mobile shoppers share
+    // carrier NAT; it stops a script, not a street of buyers.
+    if (input.client !== undefined) {
+      const decision = await this.limiter.hit(
+        `storefront:checkout:${orgId}:${input.client.ip}`,
+        CHECKOUTS_PER_10_MINUTES,
+        600,
+      );
+      if (!decision.allowed) {
+        throw new StorefrontError(
+          'RATE_LIMITED',
+          HttpStatus.TOO_MANY_REQUESTS,
+          'Too many orders from this shopper. Wait a few minutes and try again.',
+          decision.retryAfterSeconds ?? 600,
+        );
+      }
+    }
     const phone = this.phoneOf(input.contact.phone);
     const email =
       input.contact.email === undefined || input.contact.email === ''

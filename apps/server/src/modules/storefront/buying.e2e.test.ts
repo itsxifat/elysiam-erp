@@ -197,7 +197,9 @@ async function orderIdOf(orderNo: string): Promise<string> {
 async function one<T extends Record<string, unknown>>(
   query: ReturnType<typeof sql>,
 ): Promise<T | undefined> {
-  return withSystem(async (tx) => (await tx.execute<T>(query))[0], { orgId: ORG_A });
+  return withSystem(async (tx) => (await tx.execute<T>(query))[0] as T | undefined, {
+    orgId: ORG_A,
+  });
 }
 
 async function waitFor<T>(probe: () => Promise<T | undefined>, ms = 10_000): Promise<T> {
