@@ -1,4 +1,9 @@
-import { ean13Modules, isValidEan13 } from '@elysium/domain/barcode';
+import {
+  stickerExtraLineSchema,
+  stickerHeightMmSchema,
+  stickerWidthMmSchema,
+} from '@elysium/contracts';
+import { ean13Modules, isValidEan13, stickerLayout } from '@elysium/domain/barcode';
 import { Button, Checkbox, Dialog, Select, cn, controlClassName } from '@elysium/ui';
 import { useMutation } from '@tanstack/react-query';
 import { Check, Copy, Download, ExternalLink, Printer } from 'lucide-react';
@@ -9,24 +14,38 @@ import { useSession } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/stock-tools.js';
 import { stickersPdf } from './api.js';
+import { StickerPreview } from './sticker-preview.js';
 import {
+  SHEET_MODULE_MM,
+  STICKER_EXTRA_LINE_MAX,
   STICKER_MEDIUM_IDS,
+  STICKER_SIZES,
+  STICKER_SIZE_LIMITS,
+  customSizeProblems,
+  formatMm,
   parseCopies,
+  parseMm,
   positionsOn,
   readStickerPrefs,
+  splitItemLabel,
   stickerPrints,
   writeStickerPrefs,
   type StickerMediumChoice,
+  type StickerPrefs,
+  type StickerSizeProblem,
 } from './stickers-plan.js';
 
 /**
- * Print barcode stickers (M38a, D-604): one per piece, on a thermal roll or an A4 sheet.
+ * Print barcode stickers (M38a, D-604): one per piece, on a thermal roll, an A4 sheet, or a
+ * roll of a custom size (D-650).
  *
  * Opened from the end of the new-product form, after a stock receipt or a stock-in-hand
  * entry (one sticker per piece received), from the product page (any variants, any counts)
- * and from the Stock list (the rows ticked). The person picks the stock they print on, a
- * start position for a half-used A4 sheet, and whether the price is on the tag; the stock
- * and the price choice are remembered for them on this device.
+ * and from the Stock list and the product list (the rows ticked). The person picks the stock
+ * they print on (or types a custom size in millimetres), a start position for a half-used A4
+ * sheet, whether the price is on the tag and, under "More options", an extra line for every
+ * sticker (D-651). A live preview draws the first item from the same layout the PDF is drawn
+ * from. The choices are remembered for them on this device (D-652).
  *
  * A print of more than a thousand stickers comes as several PDFs, one button each.
  */
@@ -43,9 +62,19 @@ export interface StickerItem {
 const MEDIUM_KEYS = {
   'thermal-38x25': 'st.stickers.medium.thermal_38x25',
   'thermal-40x30': 'st.stickers.medium.thermal_40x30',
+  'thermal-45x35': 'st.stickers.medium.thermal_45x35',
   'thermal-50x25': 'st.stickers.medium.thermal_50x25',
   'a4-3x8': 'st.stickers.medium.a4_3x8',
   'a4-4x10': 'st.stickers.medium.a4_4x10',
+  custom: 'st.stickers.medium.custom',
+} as const;
+
+const DROPPED_KEYS = {
+  name2: 'st.stickers.preview.dropped.name2',
+  extra: 'st.stickers.preview.dropped.extra',
+  code: 'st.stickers.preview.dropped.code',
+  variant: 'st.stickers.preview.dropped.variant',
+  name: 'st.stickers.preview.dropped.name',
 } as const;
 
 export function StickerDialog({
@@ -61,10 +90,16 @@ export function StickerDialog({
 }) {
   const t = useT();
   const id = useId();
-  const userId = useSession().context?.userId ?? '';
+  const session = useSession();
+  const userId = session.context?.userId ?? '';
+  const brandName =
+    session.orgs.find((org) => org.orgId === session.context?.orgId)?.displayName ?? '';
   const [prefs] = useState(() => readStickerPrefs(userId));
   const [medium, setMedium] = useState<StickerMediumChoice>(prefs.medium);
   const [showPrice, setShowPrice] = useState(prefs.showPrice);
+  const [widthText, setWidthText] = useState(formatMm(prefs.widthMm));
+  const [heightText, setHeightText] = useState(formatMm(prefs.heightMm));
+  const [extraLine, setExtraLine] = useState(prefs.extraLine);
   const [startAt, setStartAt] = useState('1');
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [ready, setReady] = useState<{ url: string; part: number }[]>([]);
@@ -101,11 +136,69 @@ export function StickerDialog({
   const total = lines.reduce((sum, line) => sum + line.copies, 0);
   const prints = stickerPrints(lines);
 
-  const remember = (next: { medium?: StickerMediumChoice; showPrice?: boolean }) =>
+  // The custom size (D-650), checked by the server's own range and the layout's rule.
+  const custom = medium === 'custom';
+  const extra = extraLine.trim();
+  const extraProblem = !stickerExtraLineSchema.safeParse(extraLine).success;
+  const sizeProblems = custom
+    ? customSizeProblems(widthText, heightText, { price: showPrice, variant: false, extra: false })
+    : [];
+  const widthProblem = sizeProblems.find((problem) => problem.field === 'width');
+  const heightProblem = sizeProblems.find((problem) => problem.field === 'height');
+  const size = custom
+    ? { widthMm: parseMm(widthText) ?? 0, heightMm: parseMm(heightText) ?? 0 }
+    : STICKER_SIZES[medium];
+
+  // The preview: the first item as it will print, laid out by the PDF's own rule.
+  const first = items[0];
+  const parts = splitItemLabel(first?.label ?? '');
+  const preview =
+    sizeProblems.length > 0
+      ? null
+      : stickerLayout(
+          size.widthMm,
+          size.heightMm,
+          {
+            price: showPrice,
+            variant: parts.variant !== '',
+            extra: extra !== '',
+            nameLength: [...parts.name].length,
+          },
+          SHEET_MODULE_MM[medium] === undefined ? {} : { moduleMm: SHEET_MODULE_MM[medium] },
+        );
+
+  const remember = (next: Partial<StickerPrefs>) => {
+    const width = parseMm(widthText);
+    const height = parseMm(heightText);
     writeStickerPrefs(userId, {
-      medium: next.medium ?? medium,
-      showPrice: next.showPrice ?? showPrice,
+      medium,
+      showPrice,
+      // Only a size in range is kept; a half-typed one leaves the last good size.
+      widthMm:
+        width !== null && stickerWidthMmSchema.safeParse(width).success ? width : prefs.widthMm,
+      heightMm:
+        height !== null && stickerHeightMmSchema.safeParse(height).success
+          ? height
+          : prefs.heightMm,
+      extraLine: extraProblem ? prefs.extraLine : extra,
+      ...next,
     });
+  };
+
+  const mm = t('st.stickers.mm');
+  const problemText = (problem: StickerSizeProblem): string => {
+    const limits = STICKER_SIZE_LIMITS[problem.field === 'width' ? 'widthMm' : 'heightMm'];
+    switch (problem.kind) {
+      case 'number':
+        return t('st.stickers.custom.number');
+      case 'range':
+        return `${t('st.stickers.custom.range')} ${String(limits.min)}–${String(limits.max)} ${mm}`;
+      case 'too-narrow':
+        return `${t('st.stickers.custom.tooNarrow')} ${formatMm(problem.minMm)} ${mm}`;
+      case 'too-short':
+        return `${t('st.stickers.custom.tooShort')} ${formatMm(problem.minMm)} ${mm}`;
+    }
+  };
 
   const print = useMutation({
     mutationFn: async (part: number) => {
@@ -116,6 +209,8 @@ export function StickerDialog({
         medium,
         // Only the first PDF starts part-way into a sheet; the rest start on a fresh one.
         startAt: part === 0 ? start : 1,
+        ...(custom ? { widthMm: size.widthMm, heightMm: size.heightMm } : {}),
+        ...(extra === '' ? {} : { extraLine: extra }),
       });
       const url = URL.createObjectURL(blob);
       made.current.push(url);
@@ -129,6 +224,19 @@ export function StickerDialog({
     },
   });
 
+  const blocked =
+    total === 0 ||
+    countProblem ||
+    startProblem ||
+    sizeProblems.length > 0 ||
+    extraProblem ||
+    print.isPending;
+
+  const sizeLabel = `${formatMm(size.widthMm)} × ${formatMm(size.heightMm)} ${mm}`;
+  const fileMedium = custom
+    ? `custom-${formatMm(size.widthMm)}x${formatMm(size.heightMm)}`
+    : medium;
+
   return (
     <Dialog
       open={open}
@@ -136,18 +244,14 @@ export function StickerDialog({
       title={title ?? t('st.stickers.title')}
       description={t('st.stickers.help')}
       closeLabel={t('st.close')}
-      className="w-[min(46rem,calc(100vw-2rem))]"
+      className="w-[min(50rem,calc(100vw-2rem))]"
       footer={
         <>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('st.close')}
           </Button>
           {prints.length <= 1 ? (
-            <Button
-              data-testid="stickers-print"
-              disabled={total === 0 || countProblem || startProblem || print.isPending}
-              onClick={() => print.mutate(0)}
-            >
+            <Button data-testid="stickers-print" disabled={blocked} onClick={() => print.mutate(0)}>
               <Printer aria-hidden="true" />
               {`${t('st.stickers.print')} (${String(total)})`}
             </Button>
@@ -156,57 +260,170 @@ export function StickerDialog({
       }
     >
       <div className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <label htmlFor={`${id}-medium`} className="text-sm font-medium">
-              {t('st.stickers.medium')}
-            </label>
-            <Select
-              id={`${id}-medium`}
-              value={medium}
-              onValueChange={(value) => {
-                const next = value as StickerMediumChoice;
-                setMedium(next);
-                remember({ medium: next });
-              }}
-              options={STICKER_MEDIUM_IDS.map((value) => ({
-                value,
-                label: t(MEDIUM_KEYS[value]),
-              }))}
-            />
-          </div>
-          {positions > 0 ? (
-            <div className="space-y-1.5">
-              <label htmlFor={`${id}-start`} className="text-sm font-medium">
-                {t('st.stickers.startAt')}
-              </label>
-              <input
-                id={`${id}-start`}
-                inputMode="numeric"
-                value={startAt}
-                aria-invalid={startProblem}
-                aria-describedby={`${id}-start-hint`}
-                onChange={(event) => setStartAt(event.target.value)}
-                className={cn(controlClassName, 'w-24 text-right tabular-nums')}
-              />
-              <p id={`${id}-start-hint`} className="text-xs text-muted-foreground">
-                {`${t('st.stickers.startAtHint')} ${String(positions)}`}
-              </p>
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="min-w-0 space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label htmlFor={`${id}-medium`} className="text-sm font-medium">
+                  {t('st.stickers.medium')}
+                </label>
+                <Select
+                  id={`${id}-medium`}
+                  value={medium}
+                  onValueChange={(value) => {
+                    const next = value as StickerMediumChoice;
+                    setMedium(next);
+                    remember({ medium: next });
+                  }}
+                  options={STICKER_MEDIUM_IDS.map((value) => ({
+                    value,
+                    label: t(MEDIUM_KEYS[value]),
+                  }))}
+                />
+              </div>
+              {positions > 0 ? (
+                <div className="space-y-1.5">
+                  <label htmlFor={`${id}-start`} className="text-sm font-medium">
+                    {t('st.stickers.startAt')}
+                  </label>
+                  <input
+                    id={`${id}-start`}
+                    inputMode="numeric"
+                    value={startAt}
+                    aria-invalid={startProblem}
+                    aria-describedby={`${id}-start-hint`}
+                    onChange={(event) => setStartAt(event.target.value)}
+                    className={cn(controlClassName, 'w-24 text-right tabular-nums')}
+                  />
+                  <p id={`${id}-start-hint`} className="text-xs text-muted-foreground">
+                    {`${t('st.stickers.startAtHint')} ${String(positions)}`}
+                  </p>
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
 
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox
-            checked={showPrice}
-            onCheckedChange={(next) => {
-              const value = next === true;
-              setShowPrice(value);
-              remember({ showPrice: value });
-            }}
-          />
-          {t('st.stickers.showPrice')}
-        </label>
+            {custom ? (
+              <fieldset className="space-y-1.5">
+                <legend className="text-sm font-medium">{t('st.stickers.custom.size')}</legend>
+                <div className="flex flex-wrap items-start gap-3">
+                  {(
+                    [
+                      ['width', widthText, setWidthText, widthProblem],
+                      ['height', heightText, setHeightText, heightProblem],
+                    ] as const
+                  ).map(([field, value, setValue, problem]) => (
+                    <div key={field} className="space-y-1">
+                      <label htmlFor={`${id}-${field}`} className="text-xs text-muted-foreground">
+                        {t(
+                          field === 'width'
+                            ? 'st.stickers.custom.width'
+                            : 'st.stickers.custom.height',
+                        )}
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          id={`${id}-${field}`}
+                          data-testid={`sticker-${field}`}
+                          inputMode="decimal"
+                          autoComplete="off"
+                          value={value}
+                          aria-invalid={problem !== undefined}
+                          aria-describedby={
+                            problem === undefined ? undefined : `${id}-${field}-problem`
+                          }
+                          onChange={(event) => setValue(event.target.value)}
+                          onBlur={() => remember({})}
+                          className={cn(controlClassName, 'w-20 text-right tabular-nums')}
+                        />
+                        <span className="text-sm text-muted-foreground">{mm}</span>
+                      </div>
+                      {problem === undefined ? null : (
+                        <p
+                          id={`${id}-${field}-problem`}
+                          role="alert"
+                          className="max-w-56 text-xs text-destructive"
+                        >
+                          {problemText(problem)}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {`${t('st.stickers.custom.hint')} ${String(STICKER_SIZE_LIMITS.widthMm.min)}–${String(STICKER_SIZE_LIMITS.widthMm.max)} × ${String(STICKER_SIZE_LIMITS.heightMm.min)}–${String(STICKER_SIZE_LIMITS.heightMm.max)} ${mm}`}
+                </p>
+              </fieldset>
+            ) : null}
+
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={showPrice}
+                onCheckedChange={(next) => {
+                  const value = next === true;
+                  setShowPrice(value);
+                  remember({ showPrice: value });
+                }}
+              />
+              {t('st.stickers.showPrice')}
+            </label>
+
+            <details className="group text-sm" open={extraLine !== ''}>
+              <summary className="cursor-pointer rounded-sm text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                {t('st.stickers.more')}
+              </summary>
+              <div className="mt-2 space-y-1.5">
+                <label htmlFor={`${id}-extra`} className="text-sm font-medium">
+                  {t('st.stickers.extra')}
+                </label>
+                <input
+                  id={`${id}-extra`}
+                  data-testid="sticker-extra"
+                  value={extraLine}
+                  maxLength={STICKER_EXTRA_LINE_MAX}
+                  aria-invalid={extraProblem}
+                  aria-describedby={`${id}-extra-hint`}
+                  onChange={(event) => setExtraLine(event.target.value)}
+                  onBlur={() => remember({})}
+                  className={cn(controlClassName, 'w-full max-w-80')}
+                />
+                <p id={`${id}-extra-hint`} className="text-xs text-muted-foreground">
+                  {`${t('st.stickers.extraHint')} ${String([...extraLine].length)}/${String(STICKER_EXTRA_LINE_MAX)}`}
+                </p>
+              </div>
+            </details>
+          </div>
+
+          <figure className="space-y-1.5 justify-self-start sm:w-60">
+            <figcaption className="text-xs text-muted-foreground">
+              {`${t('st.stickers.preview')} · ${sizeLabel}`}
+            </figcaption>
+            {preview?.ok === true ? (
+              <>
+                <StickerPreview
+                  layout={preview}
+                  label={`${t('st.stickers.preview')}, ${sizeLabel}`}
+                  text={{
+                    brand: brandName === '' ? t('st.stickers.preview.brand') : brandName,
+                    price: showPrice ? t('st.stickers.preview.price') : null,
+                    name: parts.name,
+                    variant: parts.variant,
+                    code: first?.skuCode ?? '',
+                    extra: extra === '' ? null : extra,
+                  }}
+                />
+                {preview.dropped.length > 0 ? (
+                  <p className="text-xs text-muted-foreground" data-testid="sticker-dropped">
+                    {`${t('st.stickers.preview.left')} ${preview.dropped
+                      .map((line) => t(DROPPED_KEYS[line]))
+                      .join(', ')}`}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">{t('st.stickers.preview.none')}</p>
+            )}
+          </figure>
+        </div>
 
         <div className="max-h-72 overflow-auto rounded-lg border border-border">
           <table className="w-full text-sm">
@@ -269,7 +486,13 @@ export function StickerDialog({
                   <Button
                     key={String(index)}
                     variant="outline"
-                    disabled={countProblem || startProblem || print.isPending}
+                    disabled={
+                      countProblem ||
+                      startProblem ||
+                      sizeProblems.length > 0 ||
+                      extraProblem ||
+                      print.isPending
+                    }
                     onClick={() => print.mutate(index)}
                   >
                     <Printer aria-hidden="true" />
@@ -302,7 +525,7 @@ export function StickerDialog({
                     </a>
                     <a
                       href={entry.url}
-                      download={`stickers-${medium}-${String(entry.part + 1)}.pdf`}
+                      download={`stickers-${fileMedium}-${String(entry.part + 1)}.pdf`}
                       className="inline-flex items-center gap-1 rounded-sm text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                     >
                       <Download aria-hidden="true" className="size-3.5" />

@@ -437,9 +437,18 @@ export function commitPriceImport(
   });
 }
 
-/** Where stickers are printed (M38a, D-604): a thermal roll, or an A4 sheet. */
+/**
+ * Where stickers are printed (M38a, D-604, D-650): a thermal roll, an A4 sheet, or a roll of
+ * a custom size (`widthMm` × `heightMm`).
+ */
 export type StickerMediumId =
-  'thermal-38x25' | 'thermal-40x30' | 'thermal-50x25' | 'a4-3x8' | 'a4-4x10';
+  | 'thermal-38x25'
+  | 'thermal-40x30'
+  | 'thermal-45x35'
+  | 'thermal-50x25'
+  | 'a4-3x8'
+  | 'a4-4x10'
+  | 'custom';
 
 /**
  * Barcode stickers, as a PDF blob (M06's label sheet, M38a's media).
@@ -452,6 +461,11 @@ export async function stickersPdf(input: {
   readonly showPrice: boolean;
   readonly medium: StickerMediumId;
   readonly startAt: number;
+  /** The custom size in millimetres, one decimal at most (D-650); custom only. */
+  readonly widthMm?: number;
+  readonly heightMm?: number;
+  /** One short line on every sticker of this print (D-651). */
+  readonly extraLine?: string;
 }): Promise<Blob> {
   const response = await fetch(new URL('/v1/catalog/labels', env.VITE_API_URL), {
     method: 'POST',
