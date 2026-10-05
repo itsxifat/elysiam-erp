@@ -103,8 +103,8 @@ was used, and you can restore it.
    - **Empty and delete** for a category or a size chart: choose where its products go (or
      none). A category's subcategories move up one level and its menu entries follow the
      products. Product codes already printed keep their old category letters.
-   - **Archive** when something uses it. For a size or a colour, tick **Also archive the N
-     variants with it** to stop selling them in one step.
+   - **Archive** when something uses it. For a size or a colour, tick **Also archive its variants**
+     to stop selling them in one step.
    - **Restore** when it is archived. A restored discount comes back paused: switch it on when
      you are ready.
 4. If something started using it while the window was open, it says so and shows the new list.

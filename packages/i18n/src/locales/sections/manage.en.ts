@@ -43,7 +43,7 @@ const en = {
   'mg.archive.category':
     'Its products leave the website until they are moved to another category or it is restored.',
   'mg.archive.value': 'New variants cannot use it; the variants that have it keep it.',
-  'mg.archive.variants': 'Also archive the {n} variants with it',
+  'mg.archive.variants': 'Also archive its variants ({n})',
   'mg.archive.location': 'A location is switched off only when it holds no stock.',
   'mg.archive.discount': 'Buyers can no longer use it. Restoring brings it back paused.',
   'mg.archive.flash':

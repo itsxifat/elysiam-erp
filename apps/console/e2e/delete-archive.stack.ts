@@ -195,7 +195,7 @@ test('a size with variants is archived with them, and restored', async () => {
   await card.getByRole('button', { name: 'Delete or archive XXL' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('Variants');
-  await dialog.getByLabel('Also archive the 1 variants with it').check();
+  await dialog.getByLabel('Also archive its variants (1)').check();
   await shot('04-value-archive');
   await noBlockingViolations('archive a size');
   await dialog.getByRole('button', { name: 'Archive' }).click();
