@@ -164,16 +164,24 @@ export const stockLevels = inventory.table(
     index('stock_levels_org_idx').on(table.orgId),
     index('stock_levels_org_sku_idx').on(table.orgId, table.skuId),
     index('stock_levels_org_location_idx').on(table.orgId, table.locationId),
+    /*
+     * Cascade since M39a (D-627): deleting a SKU or a location that never held stock takes
+     * its empty level rows (a reorder level set on a mistake) with it. `erp_app` still holds
+     * no DELETE here, and the M39a policies migration's trigger refuses the delete of a row
+     * that holds or reserves a piece, or whose SKU and location both still exist, so only a
+     * cascade from a row nothing else references can remove one. Stock movements stay
+     * `restrict`: a SKU or location with any history is never deleted.
+     */
     foreignKey({
       name: 'stock_levels_org_id_sku_id_fk',
       columns: [table.orgId, table.skuId],
       foreignColumns: [skus.orgId, skus.id],
-    }).onDelete('restrict'),
+    }).onDelete('cascade'),
     foreignKey({
       name: 'stock_levels_org_id_location_id_fk',
       columns: [table.orgId, table.locationId],
       foreignColumns: [locations.orgId, locations.id],
-    }).onDelete('restrict'),
+    }).onDelete('cascade'),
     // Invariant 3, as arithmetic the database enforces.
     check('stock_levels_on_hand_not_negative', sql`${table.onHand} >= 0`),
     check('stock_levels_reserved_not_negative', sql`${table.reserved} >= 0`),
