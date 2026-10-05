@@ -1,4 +1,5 @@
 import { HttpException, Inject, Injectable } from '@nestjs/common';
+import { isErrorCode } from '@elysium/contracts';
 import { withGlobal, withOrg, type Tx } from '@elysium/db';
 import {
   add,
@@ -1235,8 +1236,9 @@ function orderRefusal(error: unknown): { code: string; message: string } | null 
   }
   if (error instanceof OrderError) return { code: error.code, message: error.message };
   const code = (error as { code?: unknown } | null)?.code;
-  // A contract code (`STOCK_INSUFFICIENT`), never a database SQLSTATE (`23505`).
-  return typeof code === 'string' && /^[A-Z][A-Z0-9_]{2,}$/.test(code)
+  // A contract code (`STOCK_INSUFFICIENT`), never a database SQLSTATE (`23505`, `P0001`): an
+  // unmapped database error stays a 500 that ncom retries.
+  return typeof code === 'string' && isErrorCode(code)
     ? { code, message: error instanceof Error ? error.message : code }
     : null;
 }

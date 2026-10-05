@@ -1,6 +1,16 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
-import { add, allocate, mulQty, poisha, sub, sum, ZERO, type Poisha } from '../money/index.js';
+import {
+  add,
+  allocate,
+  mulQty,
+  poisha,
+  sub,
+  sum,
+  unitCovering,
+  ZERO,
+  type Poisha,
+} from '../money/index.js';
 import type { OrderStatus } from '../orders/state.js';
 import { takaDecimal } from './price.js';
 
@@ -271,7 +281,13 @@ export function ncomOrderMoney(input: {
   const read: { quantity: number; unit: Poisha | null; lineTotal: Poisha | null; ours: boolean }[] =
     [];
   for (const line of input.lines) {
-    const quantity = typeof line.quantity === 'number' ? line.quantity : Number(line.quantity);
+    // A number, or the digits of one: `true` or `"2.0"` is not a quantity.
+    const quantity =
+      typeof line.quantity === 'number'
+        ? line.quantity
+        : typeof line.quantity === 'string' && /^\d{1,6}$/.test(line.quantity)
+          ? Number(line.quantity)
+          : NaN;
     if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > NCOM_MAX_LINE_QUANTITY) {
       return refused(
         `A line's quantity must be a whole number from 1 to ${String(NCOM_MAX_LINE_QUANTITY)}.`,
@@ -351,7 +367,7 @@ export function ncomOrderMoney(input: {
       const value = values[index] ?? ZERO;
       // An order line carries a unit price; never one below the line's value per unit, so the
       // ERP's order discount (its goods less what is collected for them) is never negative.
-      const perUnit = poisha((value + BigInt(line.quantity) - 1n) / BigInt(line.quantity));
+      const perUnit = unitCovering(value, line.quantity);
       const unit = line.unit !== null && line.unit > perUnit ? line.unit : perUnit;
       return { quantity: line.quantity, unitPricePoisha: unit, valuePoisha: value };
     }),
