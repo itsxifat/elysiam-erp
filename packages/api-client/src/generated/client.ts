@@ -227,6 +227,11 @@ export const OPERATIONS = {
     path: '/v1/catalog/products/{id}',
     ability: 'read:Catalog',
   },
+  getV1CatalogProductsByIdPriceHistory: {
+    method: 'GET',
+    path: '/v1/catalog/products/{id}/price-history',
+    ability: 'read:Catalog',
+  },
   getV1CatalogSkus: { method: 'GET', path: '/v1/catalog/skus', ability: 'read:Catalog' },
   getV1CatalogSkusByIdPriceHistory: {
     method: 'GET',
@@ -450,6 +455,11 @@ export const OPERATIONS = {
   getV1InventoryStockInHandWindow: {
     method: 'GET',
     path: '/v1/inventory/stock-in-hand/window',
+    ability: 'read:Stock',
+  },
+  getV1InventoryStockProducts: {
+    method: 'GET',
+    path: '/v1/inventory/stock/products',
     ability: 'read:Stock',
   },
   getV1InventoryTransfers: {
@@ -680,6 +690,12 @@ export const OPERATIONS = {
   },
   getV1SupplyPayments: { method: 'GET', path: '/v1/supply/payments', ability: 'read:Supply' },
   getV1SupplyReturns: { method: 'GET', path: '/v1/supply/returns', ability: 'read:Supply' },
+  getV1SupplySkuCosts: { method: 'GET', path: '/v1/supply/sku-costs', ability: 'read:Cost' },
+  getV1SupplySkuCostsExport: {
+    method: 'GET',
+    path: '/v1/supply/sku-costs/export',
+    ability: 'read:Cost',
+  },
   getV1SupplySupplierOptions: {
     method: 'GET',
     path: '/v1/supply/supplier-options',
@@ -733,11 +749,17 @@ export const OPERATIONS = {
     path: '/v1/catalog/categories/{id}',
     ability: 'update:Catalog',
   },
+  patchV1CatalogProducts: {
+    method: 'PATCH',
+    path: '/v1/catalog/products',
+    ability: 'update:Catalog',
+  },
   patchV1CatalogProductsById: {
     method: 'PATCH',
     path: '/v1/catalog/products/{id}',
     ability: 'update:Catalog',
   },
+  patchV1CatalogSkus: { method: 'PATCH', path: '/v1/catalog/skus', ability: 'update:Catalog' },
   patchV1CatalogSkusById: {
     method: 'PATCH',
     path: '/v1/catalog/skus/{id}',
@@ -924,6 +946,11 @@ export const OPERATIONS = {
   postV1CatalogProducts: {
     method: 'POST',
     path: '/v1/catalog/products',
+    ability: 'create:Catalog',
+  },
+  postV1CatalogProductsByIdDuplicate: {
+    method: 'POST',
+    path: '/v1/catalog/products/{id}/duplicate',
     ability: 'create:Catalog',
   },
   postV1CatalogProductsByIdImages: {
@@ -1390,6 +1417,16 @@ export const OPERATIONS = {
   },
   postV1SupplyPayments: { method: 'POST', path: '/v1/supply/payments', ability: 'read:Cost' },
   postV1SupplyReturns: { method: 'POST', path: '/v1/supply/returns', ability: 'read:Cost' },
+  postV1SupplySkuCostsImport: {
+    method: 'POST',
+    path: '/v1/supply/sku-costs/import',
+    ability: 'read:Cost',
+  },
+  postV1SupplySkuCostsImportDryRun: {
+    method: 'POST',
+    path: '/v1/supply/sku-costs/import/dry-run',
+    ability: 'read:Cost',
+  },
   postV1SupplySuppliers: { method: 'POST', path: '/v1/supply/suppliers', ability: 'create:Supply' },
   postV1SupplySuppliersByIdContacts: {
     method: 'POST',
@@ -1408,6 +1445,11 @@ export const OPERATIONS = {
   },
   postV1Track: { method: 'POST', path: '/v1/track', ability: 'public' },
   putV1CatalogPrices: { method: 'PUT', path: '/v1/catalog/prices', ability: 'update:Catalog' },
+  putV1CatalogProductsByIdImagesByImageIdColour: {
+    method: 'PUT',
+    path: '/v1/catalog/products/{id}/images/{imageId}/colour',
+    ability: 'update:Catalog',
+  },
   putV1CatalogProductsByIdImagesOrder: {
     method: 'PUT',
     path: '/v1/catalog/products/{id}/images/order',
@@ -1416,6 +1458,11 @@ export const OPERATIONS = {
   putV1CatalogSkusByIdBarcode: {
     method: 'PUT',
     path: '/v1/catalog/skus/{id}/barcode',
+    ability: 'update:Catalog',
+  },
+  putV1CatalogSkusByIdWeight: {
+    method: 'PUT',
+    path: '/v1/catalog/skus/{id}/weight',
     ability: 'update:Catalog',
   },
   putV1CourierSelectionRules: {
@@ -1487,6 +1534,11 @@ export const OPERATIONS = {
     path: '/v1/storefront/payments',
     ability: 'update:WebsiteCredentials',
   },
+  putV1StorefrontProducts: {
+    method: 'PUT',
+    path: '/v1/storefront/products',
+    ability: 'update:Storefront',
+  },
   putV1StorefrontProductsById: {
     method: 'PUT',
     path: '/v1/storefront/products/{id}',
@@ -1497,6 +1549,7 @@ export const OPERATIONS = {
     path: '/v1/storefront/size-charts/{id}',
     ability: 'update:Storefront',
   },
+  putV1SupplySkuCosts: { method: 'PUT', path: '/v1/supply/sku-costs', ability: 'read:Cost' },
   reopenPeriod: {
     method: 'POST',
     path: '/v1/ledger/periods/reopen',
@@ -1777,6 +1830,12 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1CatalogProductsById, input, options),
+    /** GET /v1/catalog/products/:id/price-history */
+    getV1CatalogProductsByIdPriceHistory: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogProductsByIdPriceHistory, input, options),
     /** GET /v1/catalog/skus */
     getV1CatalogSkus: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CatalogSkus, undefined, options),
@@ -2027,6 +2086,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/inventory/stock-in-hand/window */
     getV1InventoryStockInHandWindow: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InventoryStockInHandWindow, undefined, options),
+    /** GET /v1/inventory/stock/products */
+    getV1InventoryStockProducts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryStockProducts, undefined, options),
     /** GET /v1/inventory/transfers */
     getV1InventoryTransfers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InventoryTransfers, undefined, options),
@@ -2276,6 +2338,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/supply/returns */
     getV1SupplyReturns: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplyReturns, undefined, options),
+    /** GET /v1/supply/sku-costs */
+    getV1SupplySkuCosts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1SupplySkuCosts, undefined, options),
+    /** GET /v1/supply/sku-costs/export */
+    getV1SupplySkuCostsExport: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1SupplySkuCostsExport, undefined, options),
     /** GET /v1/supply/supplier-options */
     getV1SupplySupplierOptions: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplySupplierOptions, undefined, options),
@@ -2375,11 +2443,17 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.patchV1CatalogCategoriesById, input, options),
+    /** PATCH /v1/catalog/products */
+    patchV1CatalogProducts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1CatalogProducts, undefined, options),
     /** PATCH /v1/catalog/products/:id */
     patchV1CatalogProductsById: (
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1CatalogProductsById, input, options),
+    /** PATCH /v1/catalog/skus */
+    patchV1CatalogSkus: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1CatalogSkus, undefined, options),
     /** PATCH /v1/catalog/skus/:id */
     patchV1CatalogSkusById: (
       input: { readonly path: { readonly id: string } },
@@ -2552,6 +2626,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/catalog/products */
     postV1CatalogProducts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogProducts, undefined, options),
+    /** POST /v1/catalog/products/:id/duplicate */
+    postV1CatalogProductsByIdDuplicate: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogProductsByIdDuplicate, input, options),
     /** POST /v1/catalog/products/:id/images */
     postV1CatalogProductsByIdImages: (
       input: { readonly path: { readonly id: string } },
@@ -3055,6 +3135,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/supply/returns */
     postV1SupplyReturns: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1SupplyReturns, undefined, options),
+    /** POST /v1/supply/sku-costs/import */
+    postV1SupplySkuCostsImport: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplySkuCostsImport, undefined, options),
+    /** POST /v1/supply/sku-costs/import/dry-run */
+    postV1SupplySkuCostsImportDryRun: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1SupplySkuCostsImportDryRun, undefined, options),
     /** POST /v1/supply/suppliers */
     postV1SupplySuppliers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1SupplySuppliers, undefined, options),
@@ -3082,6 +3168,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/catalog/prices */
     putV1CatalogPrices: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1CatalogPrices, undefined, options),
+    /** PUT /v1/catalog/products/:id/images/:imageId/colour */
+    putV1CatalogProductsByIdImagesByImageIdColour: (
+      input: { readonly path: { readonly id: string; readonly imageId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1CatalogProductsByIdImagesByImageIdColour, input, options),
     /** PUT /v1/catalog/products/:id/images/order */
     putV1CatalogProductsByIdImagesOrder: (
       input: { readonly path: { readonly id: string } },
@@ -3093,6 +3185,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.putV1CatalogSkusByIdBarcode, input, options),
+    /** PUT /v1/catalog/skus/:id/weight */
+    putV1CatalogSkusByIdWeight: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1CatalogSkusByIdWeight, input, options),
     /** PUT /v1/courier/selection-rules */
     putV1CourierSelectionRules: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1CourierSelectionRules, undefined, options),
@@ -3157,6 +3254,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/storefront/payments */
     putV1StorefrontPayments: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1StorefrontPayments, undefined, options),
+    /** PUT /v1/storefront/products */
+    putV1StorefrontProducts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontProducts, undefined, options),
     /** PUT /v1/storefront/products/:id */
     putV1StorefrontProductsById: (
       input: { readonly path: { readonly id: string } },
@@ -3168,6 +3268,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1StorefrontSizeChartsById, input, options),
+    /** PUT /v1/supply/sku-costs */
+    putV1SupplySkuCosts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1SupplySkuCosts, undefined, options),
     /** Ask to reopen a closed month. Needs an approval. */
     reopenPeriod: (
       input: { readonly body: ReopenPeriodInput },

@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { parseCsv } from '../catalog/csv.js';
+import { parcelWeightGrams } from '../catalog/parcel-weight.js';
 import { divideRounded, poisha, type Poisha } from '../money/index.js';
 import { storefrontPrice } from '../storefront/price.js';
 import {
@@ -484,5 +485,24 @@ describe('the standard buying price spreadsheet (D-638)', () => {
       { line: 2, sku: 'ELY-0001-M', supplierCode: null, unitCostPoisha: 82_050n },
     ]);
     expect(report.skipped).toBe(1);
+  });
+});
+
+describe('parcelWeightGrams (D-645)', () => {
+  it('sums qty × grams, and gives the courier its default when any line has no weight', () => {
+    expect(
+      parcelWeightGrams([
+        { qty: 2, grams: 350 },
+        { qty: 1, grams: 420 },
+      ]),
+    ).toBe(1120);
+    expect(
+      parcelWeightGrams([
+        { qty: 2, grams: 350 },
+        { qty: 1, grams: null },
+      ]),
+    ).toBeNull();
+    expect(parcelWeightGrams([])).toBeNull();
+    expect(parcelWeightGrams([{ qty: 0, grams: 350 }])).toBeNull();
   });
 });
