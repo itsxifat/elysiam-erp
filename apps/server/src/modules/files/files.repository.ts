@@ -87,6 +87,45 @@ function hydrate(row: RawFileRow): FileRow {
   };
 }
 
+/**
+ * Rows the public media path may serve: stored, public, of a website purpose (M33, D-507).
+ *
+ * Runs inside the org the URL names, with no user — the media path has no session — so RLS
+ * still bounds it to that one brand.
+ */
+export async function publicMediaRows(
+  orgId: string,
+  fileIds: readonly string[],
+  purposes: readonly string[],
+): Promise<FileRow[]> {
+  if (fileIds.length === 0) return [];
+  return withOrg({ orgId }, (tx) => publicMediaRowsIn(tx, orgId, fileIds, purposes));
+}
+
+/**
+ * The same read inside a caller's transaction. The storefront answers from one transaction,
+ * and a second `withOrg` inside it would hold one pooled connection while waiting for
+ * another: ten concurrent shop pages would take the whole pool and wait for ever (M33's
+ * ledger audit, H1).
+ */
+export async function publicMediaRowsIn(
+  tx: Tx,
+  orgId: string,
+  fileIds: readonly string[],
+  purposes: readonly string[],
+): Promise<FileRow[]> {
+  if (fileIds.length === 0) return [];
+  const rows = await tx.execute<RawFileRow>(sql`
+    select ${COLUMNS} from files.objects
+    where org_id = ${orgId}
+      and id = any (${sql.param([...fileIds])}::uuid[])
+      and status = 'stored'
+      and visibility = 'public'
+      and purpose = any (${sql.param([...purposes])}::text[])
+  `);
+  return rows.map(hydrate);
+}
+
 export interface OrgUser {
   readonly orgId: string;
   readonly userId: string;

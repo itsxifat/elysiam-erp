@@ -20,13 +20,17 @@ import {
 
 import type { ActiveContext } from '../../platform/http/context.js';
 import { isProcessableImage, processImage, ImageRejected } from './image.js';
-import { PURPOSE_RULES, type FilePurpose } from './files.policy.js';
+import { PUBLIC_MEDIA_PURPOSES, PURPOSE_RULES, type FilePurpose } from './files.policy.js';
 import type { UploadTicketInput } from './files.schemas.js';
+import type { Tx } from '@elysium/db';
+
 import {
   findById,
   insertPending,
   markStored,
   markStoredIn,
+  publicMediaRows,
+  publicMediaRowsIn,
   recordVariants,
   underFileLock,
   underKeyLock,
@@ -120,6 +124,79 @@ function mapStorageError(error: unknown): never {
   throw error;
 }
 
+/** The image sizes the public media path serves (§22's three, D-507). */
+export const PUBLIC_VARIANTS = ['thumb', 'card', 'full'] as const;
+export type PublicVariant = (typeof PUBLIC_VARIANTS)[number];
+
+/** A public image as the website is told about it: its id and each size's dimensions. */
+export interface PublicImage {
+  readonly fileId: string;
+  readonly sizes: Readonly<Partial<Record<PublicVariant, { width: number; height: number }>>>;
+}
+
+/** The bytes of one size of a public image. */
+export interface PublicMedia {
+  readonly bytes: Uint8Array;
+  readonly mime: string;
+  readonly sha256: string;
+}
+
+function variantOf(
+  row: FileRow,
+  name: PublicVariant,
+): { key: string; width: number; height: number; mime: string; sha256: string } | null {
+  const entry = row.variants[name];
+  if (typeof entry !== 'object' || entry === null) return null;
+  const { key, width, height, mime, sha256 } = entry as Record<string, unknown>;
+  if (
+    typeof key !== 'string' ||
+    typeof width !== 'number' ||
+    typeof height !== 'number' ||
+    typeof mime !== 'string' ||
+    typeof sha256 !== 'string'
+  ) {
+    return null;
+  }
+  return { key, width, height, mime, sha256 };
+}
+
+function describePublic(rows: readonly FileRow[]): ReadonlyMap<string, PublicImage> {
+  const found = new Map<string, PublicImage>();
+  for (const row of rows) {
+    const sizes: Partial<Record<PublicVariant, { width: number; height: number }>> = {};
+    for (const name of PUBLIC_VARIANTS) {
+      const variant = variantOf(row, name);
+      if (variant !== null) sizes[name] = { width: variant.width, height: variant.height };
+    }
+    if (Object.keys(sizes).length > 0) found.set(row.id, { fileId: row.id, sizes });
+  }
+  return found;
+}
+
+/** A small, bounded, time-limited map of found variants (`publicVariant`). */
+class VariantCache {
+  private static readonly TTL_MS = 10 * 60_000;
+  private static readonly MAX = 5_000;
+  private readonly entries = new Map<
+    string,
+    { readonly value: { key: string; mime: string; sha256: string }; readonly expires: number }
+  >();
+
+  get(key: string, now: number): { key: string; mime: string; sha256: string } | undefined {
+    const entry = this.entries.get(key);
+    if (entry === undefined || entry.expires <= now) {
+      this.entries.delete(key);
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  set(key: string, value: { key: string; mime: string; sha256: string }, now: number): void {
+    if (this.entries.size >= VariantCache.MAX) this.entries.clear();
+    this.entries.set(key, { value, expires: now + VariantCache.TTL_MS });
+  }
+}
+
 /** The org segment of a storage key, as `buildStorageKey` writes it. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -150,6 +227,21 @@ export class FilesService {
       assertWithinLimit(input.sizeBytes, rule);
 
       const purposeRule = PURPOSE_RULES[input.purpose];
+      const needs = purposeRule.createRequires;
+      if (needs !== undefined && !context.isSuperAdmin) {
+        const ability = defineAbilityFor({
+          roles: context.roles,
+          isSuperAdmin: context.isSuperAdmin,
+          userId: context.userId,
+          branchIds: context.branchIds,
+          branchIdsByRole: context.branchIdsByRole,
+        });
+        if (!ability.can(needs.action, needs.subject)) {
+          throw new ForbiddenException(
+            `You cannot upload ${input.purpose} files in this organization.`,
+          );
+        }
+      }
       if (input.visibility === 'public' && !purposeRule.mayBePublic) {
         throw new BadRequestException(`A ${input.purpose} file cannot be public.`);
       }
@@ -473,6 +565,64 @@ export class FilesService {
       throw new ForbiddenException(`You cannot read ${row.purpose} files in this organization.`);
     }
   }
+
+  // --- the public media path (M33, D-507) -----------------------------------------------------
+
+  /**
+   * The public images among these ids, with each size's dimensions, for the storefront API
+   * to describe — inside the caller's transaction, never a second connection inside one (the
+   * M33 ledger audit's H1). A file that is private, pending, of another purpose or of another
+   * brand is simply absent: the website is never told it exists.
+   */
+  async publicImagesIn(
+    tx: Tx,
+    orgId: string,
+    fileIds: readonly string[],
+    purposes: readonly FilePurpose[] = PUBLIC_MEDIA_PURPOSES,
+  ): Promise<ReadonlyMap<string, PublicImage>> {
+    const ids = [...new Set(fileIds)].filter((id) => UUID.test(id));
+    const allowed = purposes.filter((purpose) => PUBLIC_MEDIA_PURPOSES.includes(purpose));
+    return describePublic(await publicMediaRowsIn(tx, orgId, ids, allowed));
+  }
+
+  /**
+   * One size of one public image, for `GET /media/:orgId/:fileId/:variant`.
+   *
+   * Only the re-encoded variants are ever served, never the original upload: the original
+   * still carries whatever the camera wrote into it (§22 strips EXIF in the variants), and
+   * the website has no use for it. Null for anything that is not a stored public image of a
+   * website purpose in that brand, so the route answers one 404 for every reason.
+   *
+   * What a found variant is (its key, type and hash) is kept for ten minutes in the
+   * process: a variant never changes once written, so a repeated image costs no database
+   * round trip (M33's ledger audit, L5). A miss is never kept, so an upload finished a
+   * moment ago is served at once.
+   */
+  async publicVariant(
+    orgId: string,
+    fileId: string,
+    name: PublicVariant,
+  ): Promise<PublicMedia | null> {
+    if (!UUID.test(orgId) || !UUID.test(fileId)) return null;
+    const cacheKey = `${orgId}/${fileId}/${name}`;
+    let variant = this.variantCache.get(cacheKey, Date.now());
+    if (variant === undefined) {
+      const [row] = await publicMediaRows(orgId, [fileId], PUBLIC_MEDIA_PURPOSES);
+      const found = row === undefined ? null : variantOf(row, name);
+      if (found === null) return null;
+      variant = { key: found.key, mime: found.mime, sha256: found.sha256 };
+      this.variantCache.set(cacheKey, variant, Date.now());
+    }
+    try {
+      const bytes = await this.driver.get(variant.key);
+      return { bytes, mime: variant.mime, sha256: variant.sha256 };
+    } catch (error) {
+      if (error instanceof StorageError && error.failure === 'not-found') return null;
+      throw error;
+    }
+  }
+
+  private readonly variantCache = new VariantCache();
 
   /**
    * Accept the bytes a local signed PUT ticket points at.

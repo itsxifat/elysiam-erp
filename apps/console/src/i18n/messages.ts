@@ -45,6 +45,7 @@ const CONSOLE_KEYS = [
   'nav.users',
   'nav.audit',
   'nav.settings',
+  'nav.website',
   'nav.tables',
   'nav.sectionWork',
   'nav.sectionMoney',

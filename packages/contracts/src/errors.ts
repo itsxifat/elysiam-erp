@@ -417,6 +417,14 @@ export const ERROR_CODES = [
   /** The person who recorded a loan cannot also void it; a second person does (D-304). */
   'LOAN_SELF_VOID',
 
+  // The brand's website, run from its ERP (M33, D-500 to D-519)
+  /** No such website item (slide, menu item, size chart, site key) in this brand. */
+  'STOREFRONT_NOT_FOUND',
+  /** A website setting or item the rules refuse: a menu three deep, a zone in two places. */
+  'STOREFRONT_INVALID',
+  /** A size chart that products still point at. */
+  'STOREFRONT_IN_USE',
+
   // Staff accounts and sign-in (gaps-users-auth, D-400 to D-409)
   /** No such person holds or held a role in this organization. */
   'USER_NOT_FOUND',

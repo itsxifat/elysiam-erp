@@ -115,6 +115,17 @@ export const categories = catalog.table(
     depth: integer('depth').notNull().default(0),
     position: integer('position').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
+    /*
+     * The website's fields (M33, D-501). `web_visible` is separate from `is_active`: a
+     * category the desk still files products under can be left off the website's menu and
+     * shop filters. `gender` drives the old site's men/women/kids shelves; `featured`, its
+     * home-page category grid.
+     */
+    webVisible: boolean('web_visible').notNull().default(true),
+    featured: boolean('featured').notNull().default(false),
+    gender: text('gender'),
+    description: text('description'),
+    imageFileId: uuid('image_file_id'),
     ...timestamps,
   },
   (table) => [
@@ -148,6 +159,19 @@ export const categories = catalog.table(
     // Four levels is deep enough for any fashion catalogue and shallow enough
     // that the path stays readable on a label.
     check('categories_depth_bounded', sql`${table.depth} between 0 and 3`),
+    foreignKey({
+      name: 'categories_org_id_image_file_id_fk',
+      columns: [table.orgId, table.imageFileId],
+      foreignColumns: [fileObjects.orgId, fileObjects.id],
+    }).onDelete('restrict'),
+    check(
+      'categories_gender',
+      sql`${table.gender} is null or ${table.gender} in ('men', 'women', 'kids', 'unisex')`,
+    ),
+    check(
+      'categories_description_length',
+      sql`${table.description} is null or length(${table.description}) <= 2000`,
+    ),
   ],
 );
 
@@ -241,6 +265,34 @@ export const products = catalog.table(
     slug: text('slug').notNull(),
     description: text('description'),
     status: productStatus('status').notNull().default('draft'),
+    /*
+     * The website's fields (M33, D-500).
+     *
+     * `web_visible` is separate from `status` on purpose: an active product can be sold at
+     * the till and the desk without being on the website, and it is off until somebody
+     * puts it there. The storefront shows a product only when it is both active and web
+     * visible. `previous_slugs` is written by the M33 trigger whenever `slug` changes, never
+     * by the service: an old address that answers a redirect is the one thing a rename
+     * must not lose. `size_chart_id` points at `storefront.size_charts` through a composite
+     * foreign key declared in the M33 migration (see that schema file for why not here).
+     */
+    webVisible: boolean('web_visible').notNull().default(false),
+    featured: boolean('featured').notNull().default(false),
+    newArrival: boolean('new_arrival').notNull().default(false),
+    gender: text('gender'),
+    material: text('material'),
+    careInstructions: text('care_instructions'),
+    tags: text('tags')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    sizeChartId: uuid('size_chart_id'),
+    seoTitle: text('seo_title'),
+    seoDescription: text('seo_description'),
+    previousSlugs: text('previous_slugs')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     /**
      * What `pg_trgm` searches: the name, the slug and every SKU code, joined.
      *
@@ -267,10 +319,39 @@ export const products = catalog.table(
     check('products_sequence_positive', sql`${table.sequence} >= 1`),
     check('products_name_length', sql`length(${table.name}) between 1 and 200`),
     check('products_slug_format', sql`${table.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+    // 20,000 since M33 (D-500): the old site's descriptions are long, plain text.
     check(
       'products_description_length',
-      sql`${table.description} is null or length(${table.description}) <= 4000`,
+      sql`${table.description} is null or length(${table.description}) <= 20000`,
     ),
+    index('products_org_web_idx')
+      .on(table.orgId, table.createdAt)
+      .where(sql`${table.webVisible} and ${table.status} = 'active'`),
+    index('products_previous_slugs_idx').using('gin', table.previousSlugs),
+    index('products_tags_idx').using('gin', table.tags),
+    check(
+      'products_gender',
+      sql`${table.gender} is null or ${table.gender} in ('men', 'women', 'kids', 'unisex')`,
+    ),
+    check(
+      'products_material_length',
+      sql`${table.material} is null or length(${table.material}) <= 200`,
+    ),
+    check(
+      'products_care_length',
+      sql`${table.careInstructions} is null or length(${table.careInstructions}) <= 2000`,
+    ),
+    check(
+      'products_tags_bounded',
+      sql`cardinality(${table.tags}) <= 30
+        and array_to_string(${table.tags}, ',') = lower(array_to_string(${table.tags}, ','))`,
+    ),
+    check(
+      'products_seo_length',
+      sql`(${table.seoTitle} is null or length(${table.seoTitle}) <= 120)
+        and (${table.seoDescription} is null or length(${table.seoDescription}) <= 320)`,
+    ),
+    check('products_previous_slugs_bounded', sql`cardinality(${table.previousSlugs}) <= 20`),
   ],
 );
 

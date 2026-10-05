@@ -59,6 +59,8 @@ export default defineConfig({
     'promo',
     'ref',
     'sales',
+    // M33. The website's settings, hero, menu, size charts, old ids and site keys.
+    'storefront',
     'supply',
     'wallets',
   ],

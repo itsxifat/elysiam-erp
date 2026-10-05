@@ -60,6 +60,10 @@ import {
   prepareLoanFixtures,
 } from '../../modules/loans/loans.route-fixtures.js';
 import { USERS_ROUTE_FIXTURES } from '../../modules/iam/users.route-fixtures.js';
+import {
+  prepareStorefrontFixtures,
+  STOREFRONT_ROUTE_FIXTURES,
+} from '../../modules/storefront/storefront.route-fixtures.js';
 import { describeRoutes, type RouteDeclaration } from './route-map.js';
 import { ROUTE_MATRIX_MANIFEST, routeKey } from './route-matrix.manifest.js';
 
@@ -99,6 +103,7 @@ beforeAll(async () => {
   await preparePromoFixtures();
   await prepareMarketingFixtures();
   await prepareLoanFixtures();
+  await prepareStorefrontFixtures();
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 }, 300_000);
 
@@ -272,6 +277,7 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...ANALYTICS_ROUTE_FIXTURES,
   ...LOANS_ROUTE_FIXTURES,
   ...USERS_ROUTE_FIXTURES,
+  ...STOREFRONT_ROUTE_FIXTURES,
 };
 
 function testedRoutes(): RouteDeclaration[] {

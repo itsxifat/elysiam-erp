@@ -112,6 +112,14 @@ export const SUBJECTS = [
   'ResellerAdmin',
   'Investor',
   'CompanyLoan',
+  /**
+   * The brand's website, run from its ERP (M33, D-508): its settings, hero slides, menu,
+   * size charts, the products' and categories' website fields, and the site keys the
+   * website reads the catalog with. org_admin and marketing manage it; sales reads it, to
+   * answer a shopper about what the site shows. Not a row in §6's grid, which predates the
+   * website moving into the ERP (D-469).
+   */
+  'Storefront',
 ] as const;
 
 export type Subject = (typeof SUBJECTS)[number];
@@ -193,6 +201,132 @@ export const RESELLER_VISIBLE_FIELDS = [
   'attributes',
   'resellerPricePoisha',
   'availableQty',
+] as const;
+
+/**
+ * Every field the storefront API may send to the brand's website (M33, D-506).
+ *
+ * The website is outside the ERP: its server holds a site key, and whatever reaches it can
+ * reach a shopper's browser. So its responses go through an allow-list stricter than the
+ * reseller's: **every key at every depth** must be named here (`serializeForStorefront`),
+ * not only the top-level ones. A field added to a payload and forgotten here disappears from
+ * the response (a test notices) rather than reaching the internet. The cost deny-list runs
+ * after it as well, so a cost field could not pass even if somebody listed it.
+ */
+export const STOREFRONT_VISIBLE_FIELDS = [
+  // envelopes and paging
+  'items',
+  'nextCursor',
+  'total',
+  'page',
+  'limit',
+  'product',
+  'redirect',
+  'sizeChart',
+  'site',
+  // identity and words
+  'id',
+  'slug',
+  'name',
+  'label',
+  'kind',
+  'description',
+  'text',
+  'alt',
+  'position',
+  // the product card and page
+  'category',
+  'gender',
+  'tags',
+  'featured',
+  'newArrival',
+  'price',
+  'min',
+  'max',
+  'compareAt',
+  'onSale',
+  'image',
+  'images',
+  'sizes',
+  'inStock',
+  'material',
+  'careInstructions',
+  'seoTitle',
+  'seoDescription',
+  'breadcrumb',
+  'variants',
+  'skuId',
+  'sku',
+  'size',
+  'colour',
+  'attributes',
+  'value',
+  'availableQty',
+  'related',
+  'children',
+  'subcategories',
+  // money, as poisha and taka strings
+  'poisha',
+  'taka',
+  // images
+  'width',
+  'height',
+  'urls',
+  'thumb',
+  'card',
+  'full',
+  // size charts
+  'columns',
+  'rows',
+  // the site: info, social, announcement, promo, testimonials, hero, menu
+  'logo',
+  'whatsapp',
+  'phone',
+  'email',
+  'address',
+  'social',
+  'facebook',
+  'instagram',
+  'tiktok',
+  'youtube',
+  'announcement',
+  'enabled',
+  'link',
+  'promoBanner',
+  'headline',
+  'subtext',
+  'note',
+  'decorativeText',
+  'primaryLabel',
+  'primaryHref',
+  'secondaryLabel',
+  'secondaryHref',
+  'testimonials',
+  'location',
+  'rating',
+  'hero',
+  'desktop',
+  'mobile',
+  'menu',
+  'href',
+  'highlighted',
+  // shipping and payment
+  'shipping',
+  'freeShippingEnabled',
+  'freeShippingThreshold',
+  'zones',
+  'inside_dhaka',
+  'suburbs',
+  'outside_dhaka',
+  'fee',
+  'payments',
+  'cod',
+  'sslcommerz',
+  // geography for the checkout's address pickers
+  'nameEn',
+  'nameBn',
+  'districtId',
+  'divisionId',
 ] as const;
 
 export type CostField = (typeof COST_FIELDS)[number];

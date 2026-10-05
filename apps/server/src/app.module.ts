@@ -20,6 +20,7 @@ import { OrdersModule } from './modules/orders/orders.module.js';
 import { PosModule } from './modules/pos/pos.module.js';
 import { NotifyModule } from './modules/notify/notify.module.js';
 import { PromoModule } from './modules/promo/promo.module.js';
+import { StorefrontModule } from './modules/storefront/storefront.module.js';
 import { SupplyModule } from './modules/supply/supply.module.js';
 import { WalletsModule } from './modules/wallets/wallets.module.js';
 import { JobsModule } from './platform/jobs/jobs.module.js';
@@ -100,6 +101,9 @@ export class AppModule {
         AnalyticsModule,
         // M26. Company loans; after notify, whose API its reminders queue through.
         LoansModule,
+        // M33. The brand's website: after the catalog, inventory, orders and files, whose
+        // APIs it reads; it exports STOREFRONT_API for M34 to M36.
+        StorefrontModule,
         ...(withDemo ? [DemoModule] : []),
       ],
     };

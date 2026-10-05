@@ -263,6 +263,26 @@ export interface InventoryApi {
 
   /** The SKUs, of those given, that already have a movement or a cost basis. */
   heldSkus(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<ReadonlySet<string>>;
+
+  /**
+   * On hand and reserved for these SKUs at these locations (M33): what the website's
+   * availability is computed from (`availableForWeb`). Quantities only, never a cost; a
+   * SKU with no row at a location is simply absent.
+   */
+  levelsAt(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+    locationIds: readonly string[],
+  ): Promise<readonly StockLevelAt[]>;
+}
+
+/** One `stock_levels` row's quantities. */
+export interface StockLevelAt {
+  readonly skuId: string;
+  readonly locationId: string;
+  readonly onHand: number;
+  readonly reserved: number;
 }
 
 /** One SKU's opening stock at one location, at the brand's one cost for it (D-216). */
@@ -752,6 +772,21 @@ export class InventoryApiService implements InventoryApi {
 
   async heldSkus(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<ReadonlySet<string>> {
     return new Set(await repo.heldSkus(tx, orgId, skuIds));
+  }
+
+  async levelsAt(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+    locationIds: readonly string[],
+  ): Promise<readonly StockLevelAt[]> {
+    const rows = await repo.levelsAt(tx, orgId, skuIds, locationIds);
+    return rows.map((row) => ({
+      skuId: row.sku_id,
+      locationId: row.location_id,
+      onHand: row.on_hand,
+      reserved: row.reserved,
+    }));
   }
 
   /** One of the four accounts §7's inventory rules name, or a clear refusal. */

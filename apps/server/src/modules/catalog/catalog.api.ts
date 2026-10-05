@@ -3,6 +3,7 @@ import { poisha, variantKey } from '@elysium/domain';
 import { importSlug, type ImportProduct, type SkusRefs } from '@elysium/domain/migration';
 
 import * as repo from './catalog.repository.js';
+import * as web from './catalog-web.repository.js';
 
 /**
  * What other modules may ask the catalog (invariant 12).
@@ -109,6 +110,139 @@ export interface CatalogApi {
 
   /** A category's id and every id below it; empty when the brand has no such category. */
   categorySubtree(tx: Tx, orgId: string, categoryId: string): Promise<string[]>;
+
+  // --- the brand's website (M33, D-500, D-501, D-506) -----------------------------------------
+
+  /** A product's website fields, or nothing when the brand has no such product. */
+  productWebFields(tx: Tx, orgId: string, productId: string): Promise<ProductWebFields | undefined>;
+
+  /** Write the product page's Website card; absent fields are left as they are. */
+  setProductWebFields(
+    tx: Tx,
+    orgId: string,
+    productId: string,
+    patch: web.ProductWebPatch,
+  ): Promise<ProductWebFields | undefined>;
+
+  /**
+   * Write a category's website fields. The caller has checked a picture is a stored public
+   * upload made for category images (the files module's question, not the catalog's); the
+   * composite foreign key keeps it inside the brand.
+   */
+  setCategoryWebFields(
+    tx: Tx,
+    orgId: string,
+    categoryId: string,
+    patch: web.CategoryWebPatch,
+  ): Promise<WebCategory | undefined>;
+
+  /** Every category with its website fields; the storefront decides what is visible. */
+  webCategories(tx: Tx, orgId: string): Promise<WebCategory[]>;
+
+  /** One page of the shop: shown, active products with an active SKU, filtered and sorted. */
+  webProductPage(
+    tx: Tx,
+    orgId: string,
+    filter: web.WebFilter,
+    page: Parameters<typeof web.webProductPage>[3],
+  ): Promise<WebCard[]>;
+
+  webProductCount(tx: Tx, orgId: string, filter: web.WebFilter): Promise<number>;
+
+  /** The product shown at this address, a redirect to where it moved, or nothing. */
+  webProductBySlug(tx: Tx, orgId: string, slug: string): Promise<WebProductLookup>;
+
+  /** The active SKUs of these products, with their sizes, colours and selling prices. */
+  webSkus(tx: Tx, orgId: string, productIds: readonly string[]): Promise<WebSku[]>;
+
+  /** These products' images, in order. */
+  webImages(
+    tx: Tx,
+    orgId: string,
+    productIds: readonly string[],
+  ): Promise<{ productId: string; fileId: string; altText: string | null }[]>;
+
+  /** How many products point at a size chart (a chart in use is not deleted). */
+  productsUsingSizeChart(tx: Tx, orgId: string, sizeChartId: string): Promise<number>;
+}
+
+export type {
+  WebFilter,
+  ProductWebPatch,
+  CategoryWebPatch,
+  Change,
+} from './catalog-web.repository.js';
+
+export interface ProductWebFields {
+  readonly webVisible: boolean;
+  readonly featured: boolean;
+  readonly newArrival: boolean;
+  readonly gender: string | null;
+  readonly material: string | null;
+  readonly careInstructions: string | null;
+  readonly tags: readonly string[];
+  readonly sizeChartId: string | null;
+  readonly seoTitle: string | null;
+  readonly seoDescription: string | null;
+  /** Old addresses that redirect here, newest first (written by the slug trigger). */
+  readonly previousSlugs: readonly string[];
+}
+
+export interface WebCategory {
+  readonly id: string;
+  readonly parentId: string | null;
+  readonly name: string;
+  readonly slug: string;
+  readonly position: number;
+  readonly isActive: boolean;
+  readonly webVisible: boolean;
+  readonly featured: boolean;
+  readonly gender: string | null;
+  readonly description: string | null;
+  readonly imageFileId: string | null;
+}
+
+export interface WebCard {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly categoryId: string | null;
+  readonly gender: string | null;
+  readonly tags: readonly string[];
+  readonly featured: boolean;
+  readonly newArrival: boolean;
+  readonly createdKey: string;
+  readonly nameKey: string;
+  readonly minPricePoisha: bigint;
+  readonly maxPricePoisha: bigint;
+}
+
+export interface WebProduct extends WebCard {
+  readonly description: string | null;
+  readonly material: string | null;
+  readonly careInstructions: string | null;
+  readonly sizeChartId: string | null;
+  readonly seoTitle: string | null;
+  readonly seoDescription: string | null;
+}
+
+export type WebProductLookup =
+  | { readonly kind: 'product'; readonly product: WebProduct }
+  | { readonly kind: 'redirect'; readonly slug: string }
+  | { readonly kind: 'none' };
+
+export interface WebSku {
+  readonly id: string;
+  readonly productId: string;
+  readonly code: string;
+  /** The **selling** price. */
+  readonly pricePoisha: bigint;
+  readonly values: readonly {
+    readonly kind: string;
+    readonly name: string;
+    readonly label: string;
+    readonly position: number;
+  }[];
 }
 
 export interface SkuFacets {
@@ -278,6 +412,151 @@ export class CatalogApiService implements CatalogApi {
   async categorySubtree(tx: Tx, orgId: string, categoryId: string): Promise<string[]> {
     return repo.categorySubtree(tx, orgId, categoryId);
   }
+
+  // --- the brand's website (M33) --------------------------------------------------------------
+
+  async productWebFields(
+    tx: Tx,
+    orgId: string,
+    productId: string,
+  ): Promise<ProductWebFields | undefined> {
+    const row = await web.webFieldsOf(tx, orgId, productId);
+    return row === undefined ? undefined : toWebFields(row);
+  }
+
+  async setProductWebFields(
+    tx: Tx,
+    orgId: string,
+    productId: string,
+    patch: web.ProductWebPatch,
+  ): Promise<ProductWebFields | undefined> {
+    const row = await web.setWebFields(tx, orgId, productId, patch);
+    return row === undefined ? undefined : toWebFields(row);
+  }
+
+  async setCategoryWebFields(
+    tx: Tx,
+    orgId: string,
+    categoryId: string,
+    patch: web.CategoryWebPatch,
+  ): Promise<WebCategory | undefined> {
+    const row = await web.setCategoryWebFields(tx, orgId, categoryId, patch);
+    return row === undefined ? undefined : toWebCategory(row);
+  }
+
+  async webCategories(tx: Tx, orgId: string): Promise<WebCategory[]> {
+    return (await web.webCategories(tx, orgId)).map(toWebCategory);
+  }
+
+  async webProductPage(
+    tx: Tx,
+    orgId: string,
+    filter: web.WebFilter,
+    page: Parameters<typeof web.webProductPage>[3],
+  ): Promise<WebCard[]> {
+    return (await web.webProductPage(tx, orgId, filter, page)).map(toWebCard);
+  }
+
+  async webProductCount(tx: Tx, orgId: string, filter: web.WebFilter): Promise<number> {
+    return web.webProductCount(tx, orgId, filter);
+  }
+
+  async webProductBySlug(tx: Tx, orgId: string, slug: string): Promise<WebProductLookup> {
+    const row = await web.webProductBySlug(tx, orgId, slug);
+    if (row !== undefined) {
+      return {
+        kind: 'product',
+        product: {
+          ...toWebCard(row),
+          description: row.description,
+          material: row.material,
+          careInstructions: row.care_instructions,
+          sizeChartId: row.size_chart_id,
+          seoTitle: row.seo_title,
+          seoDescription: row.seo_description,
+        },
+      };
+    }
+    const moved = await web.webRedirectFor(tx, orgId, slug);
+    return moved === undefined || moved === slug
+      ? { kind: 'none' }
+      : { kind: 'redirect', slug: moved };
+  }
+
+  async webSkus(tx: Tx, orgId: string, productIds: readonly string[]): Promise<WebSku[]> {
+    return (await web.webSkusOf(tx, orgId, productIds)).map((row) => ({
+      id: row.id,
+      productId: row.product_id,
+      code: row.code,
+      pricePoisha: BigInt(row.price_poisha),
+      values: row.attrs,
+    }));
+  }
+
+  async webImages(
+    tx: Tx,
+    orgId: string,
+    productIds: readonly string[],
+  ): Promise<{ productId: string; fileId: string; altText: string | null }[]> {
+    return (await web.webImagesOf(tx, orgId, productIds)).map((row) => ({
+      productId: row.product_id,
+      fileId: row.file_id,
+      altText: row.alt_text,
+    }));
+  }
+
+  async productsUsingSizeChart(tx: Tx, orgId: string, sizeChartId: string): Promise<number> {
+    return web.productsUsingSizeChart(tx, orgId, sizeChartId);
+  }
+}
+
+function toWebFields(row: web.ProductWebRow): ProductWebFields {
+  return {
+    webVisible: row.web_visible,
+    featured: row.featured,
+    newArrival: row.new_arrival,
+    gender: row.gender,
+    material: row.material,
+    careInstructions: row.care_instructions,
+    tags: row.tags,
+    sizeChartId: row.size_chart_id,
+    seoTitle: row.seo_title,
+    seoDescription: row.seo_description,
+    previousSlugs: row.previous_slugs,
+  };
+}
+
+function toWebCategory(row: web.CategoryWebRow): WebCategory {
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    name: row.name,
+    slug: row.slug,
+    position: row.position,
+    isActive: row.is_active,
+    webVisible: row.web_visible,
+    featured: row.featured,
+    gender: row.gender,
+    description: row.description,
+    imageFileId: row.image_file_id,
+  };
+}
+
+function toWebCard(row: web.WebCardRow): WebCard {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    categoryId: row.category_id,
+    gender: row.gender,
+    tags: row.tags,
+    featured: row.featured,
+    newArrival: row.new_arrival,
+    createdKey: row.created_key,
+    nameKey: row.name_key,
+    minPricePoisha: BigInt(row.min_price),
+    maxPricePoisha: BigInt(row.max_price),
+  };
 }
 
 function toSku(

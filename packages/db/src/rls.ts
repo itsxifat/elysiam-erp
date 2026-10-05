@@ -371,6 +371,13 @@ export const NO_DELETE_TABLES: readonly string[] = [
    * trigger confines it to.
    */
   'iam.credential_resets',
+  /*
+   * M33. The website's settings are one row per brand, edited and never removed: a missing
+   * row would silently fall back to the defaults. A website key is revoked, never deleted,
+   * like the intake's: `revoked_at` is the record that it once could read the catalog.
+   */
+  'storefront.settings',
+  'storefront.site_keys',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */

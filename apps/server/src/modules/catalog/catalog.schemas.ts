@@ -146,7 +146,7 @@ export const createProductSchema = z.object({
   name: nameSchema,
   slug: slugSchema,
   categoryId: catalogIdSchema.nullish(),
-  description: z.string().trim().max(4000).optional(),
+  description: z.string().trim().max(20000).optional(),
   status: productStatusSchema.default('draft'),
   /** The selling price every generated SKU starts at. */
   pricePoisha: pricePoishaSchema,
@@ -180,7 +180,7 @@ export const updateProductSchema = z
     name: nameSchema.optional(),
     slug: slugSchema.optional(),
     categoryId: catalogIdSchema.nullish(),
-    description: z.string().trim().max(4000).nullish(),
+    description: z.string().trim().max(20000).nullish(),
     status: productStatusSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'Nothing to change.');

@@ -67,12 +67,64 @@ export const OPERATIONS = {
     path: '/v1/notify/opt-outs/{phone}',
     ability: 'update:Campaign',
   },
+  deleteV1StorefrontHeroSlidesById: {
+    method: 'DELETE',
+    path: '/v1/storefront/hero-slides/{id}',
+    ability: 'delete:Storefront',
+  },
+  deleteV1StorefrontNavItemsById: {
+    method: 'DELETE',
+    path: '/v1/storefront/nav-items/{id}',
+    ability: 'delete:Storefront',
+  },
+  deleteV1StorefrontSizeChartsById: {
+    method: 'DELETE',
+    path: '/v1/storefront/size-charts/{id}',
+    ability: 'delete:Storefront',
+  },
   deleteV1SupplyDraftsById: {
     method: 'DELETE',
     path: '/v1/supply/drafts/{id}',
     ability: 'update:Supply',
   },
   getApproval: { method: 'GET', path: '/v1/approvals/{id}', ability: 'read:ApprovalRequest' },
+  getMediaByOrgIdByFileIdByVariant: {
+    method: 'GET',
+    path: '/media/{orgId}/{fileId}/{variant}',
+    ability: 'public',
+  },
+  getStorefrontV1CatalogCategories: {
+    method: 'GET',
+    path: '/storefront/v1/catalog/categories',
+    ability: 'public',
+  },
+  getStorefrontV1CatalogProducts: {
+    method: 'GET',
+    path: '/storefront/v1/catalog/products',
+    ability: 'public',
+  },
+  getStorefrontV1CatalogProductsBySlug: {
+    method: 'GET',
+    path: '/storefront/v1/catalog/products/{slug}',
+    ability: 'public',
+  },
+  getStorefrontV1CatalogSearch: {
+    method: 'GET',
+    path: '/storefront/v1/catalog/search',
+    ability: 'public',
+  },
+  getStorefrontV1GeoDistricts: {
+    method: 'GET',
+    path: '/storefront/v1/geo/districts',
+    ability: 'public',
+  },
+  getStorefrontV1GeoThanas: { method: 'GET', path: '/storefront/v1/geo/thanas', ability: 'public' },
+  getStorefrontV1Site: { method: 'GET', path: '/storefront/v1/site', ability: 'public' },
+  getStorefrontV1SizeChartsById: {
+    method: 'GET',
+    path: '/storefront/v1/size-charts/{id}',
+    ability: 'public',
+  },
   getV1AccountsCashEntries: {
     method: 'GET',
     path: '/v1/accounts/cash-entries',
@@ -528,6 +580,31 @@ export const OPERATIONS = {
     path: '/v1/promo/codes/{id}/redemptions',
     ability: 'read:LandingPage',
   },
+  getV1StorefrontHeroSlides: {
+    method: 'GET',
+    path: '/v1/storefront/hero-slides',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontNavItems: {
+    method: 'GET',
+    path: '/v1/storefront/nav-items',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontSettings: {
+    method: 'GET',
+    path: '/v1/storefront/settings',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontSiteKeys: {
+    method: 'GET',
+    path: '/v1/storefront/site-keys',
+    ability: 'read:Storefront',
+  },
+  getV1StorefrontSizeCharts: {
+    method: 'GET',
+    path: '/v1/storefront/size-charts',
+    ability: 'read:Storefront',
+  },
   getV1SupplyEntries: { method: 'GET', path: '/v1/supply/entries', ability: 'read:Supply' },
   getV1SupplyEntriesById: {
     method: 'GET',
@@ -626,6 +703,11 @@ export const OPERATIONS = {
     method: 'PATCH',
     path: '/v1/promo/codes/{id}',
     ability: 'update:LandingPage',
+  },
+  patchV1StorefrontSettings: {
+    method: 'PATCH',
+    path: '/v1/storefront/settings',
+    ability: 'update:Storefront',
   },
   patchV1SupplyDraftsById: {
     method: 'PATCH',
@@ -1075,6 +1157,31 @@ export const OPERATIONS = {
   postV1PosSync: { method: 'POST', path: '/v1/pos/sync', ability: 'update:Wallet' },
   postV1PromoCheck: { method: 'POST', path: '/v1/promo/check', ability: 'read:LandingPage' },
   postV1PromoCodes: { method: 'POST', path: '/v1/promo/codes', ability: 'create:LandingPage' },
+  postV1StorefrontHeroSlides: {
+    method: 'POST',
+    path: '/v1/storefront/hero-slides',
+    ability: 'create:Storefront',
+  },
+  postV1StorefrontNavItems: {
+    method: 'POST',
+    path: '/v1/storefront/nav-items',
+    ability: 'create:Storefront',
+  },
+  postV1StorefrontSiteKeys: {
+    method: 'POST',
+    path: '/v1/storefront/site-keys',
+    ability: 'create:Storefront',
+  },
+  postV1StorefrontSiteKeysByIdRevoke: {
+    method: 'POST',
+    path: '/v1/storefront/site-keys/{id}/revoke',
+    ability: 'update:Storefront',
+  },
+  postV1StorefrontSizeCharts: {
+    method: 'POST',
+    path: '/v1/storefront/size-charts',
+    ability: 'create:Storefront',
+  },
   postV1SupplyAdvanceApplications: {
     method: 'POST',
     path: '/v1/supply/advance-applications',
@@ -1146,6 +1253,41 @@ export const OPERATIONS = {
     ability: 'create:CampaignSpend',
   },
   putV1NotifyTemplates: { method: 'PUT', path: '/v1/notify/templates', ability: 'update:Campaign' },
+  putV1StorefrontCategoriesById: {
+    method: 'PUT',
+    path: '/v1/storefront/categories/{id}',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontHeroSlidesById: {
+    method: 'PUT',
+    path: '/v1/storefront/hero-slides/{id}',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontHeroSlidesOrder: {
+    method: 'PUT',
+    path: '/v1/storefront/hero-slides/order',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontNavItemsById: {
+    method: 'PUT',
+    path: '/v1/storefront/nav-items/{id}',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontNavItemsLayout: {
+    method: 'PUT',
+    path: '/v1/storefront/nav-items/layout',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontProductsById: {
+    method: 'PUT',
+    path: '/v1/storefront/products/{id}',
+    ability: 'update:Storefront',
+  },
+  putV1StorefrontSizeChartsById: {
+    method: 'PUT',
+    path: '/v1/storefront/size-charts/{id}',
+    ability: 'update:Storefront',
+  },
   reopenPeriod: {
     method: 'POST',
     path: '/v1/ledger/periods/reopen',
@@ -1259,6 +1401,24 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.deleteV1NotifyOptOutsByPhone, input, options),
+    /** DELETE /v1/storefront/hero-slides/:id */
+    deleteV1StorefrontHeroSlidesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1StorefrontHeroSlidesById, input, options),
+    /** DELETE /v1/storefront/nav-items/:id */
+    deleteV1StorefrontNavItemsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1StorefrontNavItemsById, input, options),
+    /** DELETE /v1/storefront/size-charts/:id */
+    deleteV1StorefrontSizeChartsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1StorefrontSizeChartsById, input, options),
     /** DELETE /v1/supply/drafts/:id */
     deleteV1SupplyDraftsById: (
       input: { readonly path: { readonly id: string } },
@@ -1269,6 +1429,48 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getApproval, input, options),
+    /** GET /media/:orgId/:fileId/:variant */
+    getMediaByOrgIdByFileIdByVariant: (
+      input: {
+        readonly path: {
+          readonly fileId: string;
+          readonly orgId: string;
+          readonly variant: string;
+        };
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getMediaByOrgIdByFileIdByVariant, input, options),
+    /** GET /storefront/v1/catalog/categories */
+    getStorefrontV1CatalogCategories: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1CatalogCategories, undefined, options),
+    /** GET /storefront/v1/catalog/products */
+    getStorefrontV1CatalogProducts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1CatalogProducts, undefined, options),
+    /** GET /storefront/v1/catalog/products/:slug */
+    getStorefrontV1CatalogProductsBySlug: (
+      input: { readonly path: { readonly slug: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1CatalogProductsBySlug, input, options),
+    /** GET /storefront/v1/catalog/search */
+    getStorefrontV1CatalogSearch: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1CatalogSearch, undefined, options),
+    /** GET /storefront/v1/geo/districts */
+    getStorefrontV1GeoDistricts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1GeoDistricts, undefined, options),
+    /** GET /storefront/v1/geo/thanas */
+    getStorefrontV1GeoThanas: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1GeoThanas, undefined, options),
+    /** GET /storefront/v1/site */
+    getStorefrontV1Site: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1Site, undefined, options),
+    /** GET /storefront/v1/size-charts/:id */
+    getStorefrontV1SizeChartsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getStorefrontV1SizeChartsById, input, options),
     /** GET /v1/accounts/cash-entries */
     getV1AccountsCashEntries: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsCashEntries, undefined, options),
@@ -1771,6 +1973,21 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1PromoCodesByIdRedemptions, input, options),
+    /** GET /v1/storefront/hero-slides */
+    getV1StorefrontHeroSlides: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontHeroSlides, undefined, options),
+    /** GET /v1/storefront/nav-items */
+    getV1StorefrontNavItems: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontNavItems, undefined, options),
+    /** GET /v1/storefront/settings */
+    getV1StorefrontSettings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontSettings, undefined, options),
+    /** GET /v1/storefront/site-keys */
+    getV1StorefrontSiteKeys: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontSiteKeys, undefined, options),
+    /** GET /v1/storefront/size-charts */
+    getV1StorefrontSizeCharts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontSizeCharts, undefined, options),
     /** GET /v1/supply/entries */
     getV1SupplyEntries: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplyEntries, undefined, options),
@@ -1935,6 +2152,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1PromoCodesById, input, options),
+    /** PATCH /v1/storefront/settings */
+    patchV1StorefrontSettings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1StorefrontSettings, undefined, options),
     /** PATCH /v1/supply/drafts/:id */
     patchV1SupplyDraftsById: (
       input: { readonly path: { readonly id: string } },
@@ -2415,6 +2635,24 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/promo/codes */
     postV1PromoCodes: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PromoCodes, undefined, options),
+    /** POST /v1/storefront/hero-slides */
+    postV1StorefrontHeroSlides: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontHeroSlides, undefined, options),
+    /** POST /v1/storefront/nav-items */
+    postV1StorefrontNavItems: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontNavItems, undefined, options),
+    /** POST /v1/storefront/site-keys */
+    postV1StorefrontSiteKeys: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontSiteKeys, undefined, options),
+    /** POST /v1/storefront/site-keys/:id/revoke */
+    postV1StorefrontSiteKeysByIdRevoke: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontSiteKeysByIdRevoke, input, options),
+    /** POST /v1/storefront/size-charts */
+    postV1StorefrontSizeCharts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1StorefrontSizeCharts, undefined, options),
     /** POST /v1/supply/advance-applications */
     postV1SupplyAdvanceApplications: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1SupplyAdvanceApplications, undefined, options),
@@ -2504,6 +2742,40 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/notify/templates */
     putV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1NotifyTemplates, undefined, options),
+    /** PUT /v1/storefront/categories/:id */
+    putV1StorefrontCategoriesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontCategoriesById, input, options),
+    /** PUT /v1/storefront/hero-slides/:id */
+    putV1StorefrontHeroSlidesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontHeroSlidesById, input, options),
+    /** PUT /v1/storefront/hero-slides/order */
+    putV1StorefrontHeroSlidesOrder: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontHeroSlidesOrder, undefined, options),
+    /** PUT /v1/storefront/nav-items/:id */
+    putV1StorefrontNavItemsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1StorefrontNavItemsById, input, options),
+    /** PUT /v1/storefront/nav-items/layout */
+    putV1StorefrontNavItemsLayout: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontNavItemsLayout, undefined, options),
+    /** PUT /v1/storefront/products/:id */
+    putV1StorefrontProductsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1StorefrontProductsById, input, options),
+    /** PUT /v1/storefront/size-charts/:id */
+    putV1StorefrontSizeChartsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1StorefrontSizeChartsById, input, options),
     /** Ask to reopen a closed month. Needs an approval. */
     reopenPeriod: (
       input: { readonly body: ReopenPeriodInput },

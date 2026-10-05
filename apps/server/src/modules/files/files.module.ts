@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { serverEnv } from '../../platform/config/env.js';
 import { FilesController } from './files.controller.js';
+import { PublicMediaController } from './media.controller.js';
 import { FilesService } from './files.service.js';
 import { createStorageDriver, filesEnv } from './files.config.js';
 import { GotenbergClient } from './pdf/gotenberg.client.js';
@@ -61,7 +62,7 @@ export class FileUploadBodyParser implements OnModuleInit {
  * this module rather than each constructing their own with their own base URL.
  */
 @Module({
-  controllers: [FilesController],
+  controllers: [FilesController, PublicMediaController],
   providers: [
     FileUploadBodyParser,
     {

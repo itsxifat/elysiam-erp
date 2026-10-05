@@ -36,6 +36,7 @@ import {
   type CatalogAttribute,
   type CatalogCategory,
 } from './api.js';
+import { CategoryWebsiteDialog } from './category-website.js';
 import { slugify } from './slug.js';
 import { codeFrom } from './variant-grid.js';
 
@@ -175,6 +176,9 @@ function Categories({
   const [parentId, setParentId] = useState('');
   const [code, setCode] = useState<string | null>(null);
   const [editing, setEditing] = useState<CatalogCategory | null>(null);
+  const [onWebsite, setOnWebsite] = useState<CatalogCategory | null>(null);
+  const ability = useAbility();
+  const mayWebsite = ability.can('update', 'Storefront');
   const suggested = code ?? codeFrom(name, 4);
 
   const create = useMutation({
@@ -215,7 +219,20 @@ function Categories({
               {category.isActive ? null : (
                 <StatusBadge tone="neutral">{t('cs.inactive')}</StatusBadge>
               )}
+              {category.web.webVisible ? null : (
+                <StatusBadge tone="neutral">{t('web.off')}</StatusBadge>
+              )}
               <span className="flex-1" />
+              <PermissionGate allowed={mayWebsite}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`${t('web.category.action')}: ${category.name}`}
+                  onClick={() => setOnWebsite(category)}
+                >
+                  {t('web.category.action')}
+                </Button>
+              </PermissionGate>
               <PermissionGate allowed={mayUpdate}>
                 <Button size="sm" variant="ghost" onClick={() => setEditing(category)}>
                   {t('cs.edit')}
@@ -272,6 +289,15 @@ function Categories({
           <Problem error={create.error} />
         </div>
       </PermissionGate>
+
+      {onWebsite === null ? null : (
+        <CategoryWebsiteDialog
+          key={onWebsite.id}
+          category={onWebsite}
+          onClose={() => setOnWebsite(null)}
+          onDone={onDone}
+        />
+      )}
 
       {editing === null ? null : (
         <EditCategory

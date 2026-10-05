@@ -46,3 +46,5 @@ export * from './ledger.js';
 export * from './permissions/index.js';
 export * from './pos.js';
 export * from './channels.js';
+// M33: the brand's website, run from its ERP.
+export * from './storefront.js';

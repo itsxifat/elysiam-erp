@@ -374,6 +374,29 @@ export async function levelFor(
   return rows[0];
 }
 
+/** Quantities for many SKUs at many locations, in one read (M33's web availability). */
+export async function levelsAt(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+  locationIds: readonly string[],
+): Promise<{ sku_id: string; location_id: string; on_hand: number; reserved: number }[]> {
+  if (skuIds.length === 0 || locationIds.length === 0) return [];
+  const rows = await tx.execute<{
+    sku_id: string;
+    location_id: string;
+    on_hand: number;
+    reserved: number;
+  }>(sql`
+    select sku_id, location_id, on_hand, reserved
+    from inventory.stock_levels
+    where org_id = ${orgId}
+      and sku_id = any (${sql.param([...skuIds])}::uuid[])
+      and location_id = any (${sql.param([...locationIds])}::uuid[])
+  `);
+  return [...rows];
+}
+
 export interface StockViewRow extends Record<string, unknown> {
   readonly sku_id: string;
   readonly sku_code: string;

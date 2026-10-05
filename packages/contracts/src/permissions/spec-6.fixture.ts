@@ -365,4 +365,21 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'sales|read|FileObject|org',
   'warehouse|create|FileObject|org',
   'warehouse|read|FileObject|org',
+
+  /*
+   * | (not a row in the grid) | the brand's website, run from its ERP (M33, D-508) |
+   *
+   * §6 predates the website moving into the ERP (D-469). The website is marketing's work as
+   * much as the landing pages are, so org_admin and marketing manage it; sales reads it, to
+   * answer a shopper about what the site shows, and edits nothing.
+   */
+  'marketing|create|Storefront|org',
+  'marketing|delete|Storefront|org',
+  'marketing|read|Storefront|org',
+  'marketing|update|Storefront|org',
+  'org_admin|create|Storefront|org',
+  'org_admin|delete|Storefront|org',
+  'org_admin|read|Storefront|org',
+  'org_admin|update|Storefront|org',
+  'sales|read|Storefront|org',
 ];

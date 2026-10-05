@@ -281,7 +281,7 @@ export function CatalogNewProductPage() {
             <Field label={t('cs.description')} className="sm:col-span-2">
               <textarea
                 value={description}
-                maxLength={4000}
+                maxLength={20000}
                 rows={2}
                 onChange={(event) => setDescription(event.target.value)}
                 className={cn(controlClassName, 'h-auto w-full py-2')}

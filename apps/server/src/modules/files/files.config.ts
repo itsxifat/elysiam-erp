@@ -68,6 +68,13 @@ const schema = z
      * path nobody can act on.
      */
     PDF_FONT_DIR: z.string().min(1).optional(),
+
+    /**
+     * Requests a minute one address may make to the public image path, `/media/` (M33,
+     * D-507). Generous, because many shoppers on a mobile carrier share one address, and a
+     * CDN in front serves most images anyway; it guards the connection pool, not the bytes.
+     */
+    MEDIA_RATE_PER_MINUTE: z.coerce.number().int().min(60).max(1_000_000).default(1200),
   })
   .superRefine((value, context) => {
     if (value.STORAGE_DRIVER !== 'r2') return;

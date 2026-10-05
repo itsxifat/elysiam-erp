@@ -68,6 +68,12 @@ export interface CategoryRow extends Record<string, unknown> {
   readonly depth: number;
   readonly position: number;
   readonly is_active: boolean;
+  /** M33's website fields (D-501), for Catalog setup. */
+  readonly web_visible?: boolean;
+  readonly featured?: boolean;
+  readonly gender?: string | null;
+  readonly description?: string | null;
+  readonly image_file_id?: string | null;
 }
 
 export interface AttributeRow extends Record<string, unknown> {
@@ -146,7 +152,8 @@ export async function setOrgCode(tx: Tx, orgId: string, orgCode: string): Promis
 
 export async function listCategories(tx: Tx, orgId: string): Promise<CategoryRow[]> {
   const rows = await tx.execute<CategoryRow>(sql`
-    select id, parent_id, name, slug, code, path, depth, position, is_active
+    select id, parent_id, name, slug, code, path, depth, position, is_active,
+           web_visible, featured, gender, description, image_file_id
     from catalog.categories
     where org_id = ${orgId}
     order by path
