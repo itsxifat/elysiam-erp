@@ -71,7 +71,7 @@ export class Browser {
         ...(body === undefined ? {} : { payload: JSON.stringify(body) }),
       });
     this.absorb(response.headers);
-    let parsed: unknown = null;
+    let parsed: unknown;
     try {
       parsed = response.body === '' ? null : JSON.parse(response.body);
     } catch {
