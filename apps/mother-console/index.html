@@ -7,16 +7,7 @@
     <meta name="referrer" content="no-referrer" />
     <meta name="robots" content="noindex, nofollow" />
     <title>Owner console</title>
-    <script>
-      // Applied before first paint so a dark-mode user never sees a white flash.
-      try {
-        const saved = localStorage.getItem('owner-theme');
-        const dark =
-          saved === 'dark' ||
-          (saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-        if (dark) document.documentElement.classList.add('dark');
-      } catch {}
-    </script>
+    <script src="/theme-boot.js"></script>
   </head>
   <body>
     <div id="root"></div>
