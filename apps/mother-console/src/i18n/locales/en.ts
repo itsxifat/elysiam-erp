@@ -241,6 +241,7 @@ const en = {
   'channel.phone': 'Phone',
   'channel.walk_in': 'Walk-in',
   'channel.reseller': 'Reseller',
+  'channel.marketplace': 'Marketplace',
   'staffStatus.active': 'Active',
   'staffStatus.suspended': 'Suspended',
   'walletKind.wallet_cash': 'Hand cash',

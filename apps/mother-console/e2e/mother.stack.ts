@@ -140,10 +140,64 @@ test('the overview adds both brands together, in light and dark', async ({ page 
   }
 });
 
-test('a brand page reads live lists, and Open ERP hands over a link the brand verifies', async ({
+/** A cookie jar for one origin, for talking to a brand's own API from the test. */
+class Jar {
+  private readonly cookies = new Map<string, string>();
+
+  absorb(response: Response): void {
+    for (const line of response.headers.getSetCookie()) {
+      const pair = line.split(';')[0] ?? '';
+      const index = pair.indexOf('=');
+      if (index > 0) this.cookies.set(pair.slice(0, index), pair.slice(index + 1));
+    }
+  }
+
+  get header(): string {
+    return [...this.cookies].map(([name, value]) => `${name}=${value}`).join('; ');
+  }
+
+  get(name: string): string | undefined {
+    return this.cookies.get(name);
+  }
+}
+
+/**
+ * M31's real verifier: POST the link's token to the brand's own `/v1/auth/owner-link`, as
+ * its console's `/owner-link` page does (CSRF cookie first). Returns the session's jar.
+ */
+async function redeemAtBrand(apiUrl: string, token: string): Promise<{ status: number; jar: Jar }> {
+  const jar = new Jar();
+  jar.absorb(await fetch(`${apiUrl}/health/live`));
+  const response = await fetch(`${apiUrl}/v1/auth/owner-link`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      cookie: jar.header,
+      'x-csrf-token': jar.get('erp_csrf') ?? '',
+    },
+    body: JSON.stringify({ token }),
+  });
+  jar.absorb(response);
+  return { status: response.status, jar };
+}
+
+/** A link minted by the mother API for this owner, as "Open <brand> ERP" mints it. */
+async function mint(page: Page, brandId: string): Promise<string> {
+  const csrf = (await page.context().cookies()).find((cookie) => cookie.name === 'owner_csrf');
+  const answer = await page.request.post(`/v1/brands/${brandId}/owner-link`, {
+    headers: { 'x-owner-csrf': csrf?.value ?? '' },
+  });
+  expect(answer.status()).toBe(200);
+  const { url } = (await answer.json()) as { url: string };
+  return new URL(url).hash.replace('#token=', '');
+}
+
+test('a brand page reads live lists, and Open ERP hands over a link the brand accepts once', async ({
   page,
 }) => {
-  const { publicKey, brandSlugs } = state();
+  const { brands } = state();
+  const brand = brands[0];
+  if (brand === undefined) throw new Error('no brand in the stack');
   await signIn(page);
   await page
     .getByRole('navigation', { name: 'Main navigation' })
@@ -151,39 +205,99 @@ test('a brand page reads live lists, and Open ERP hands over a link the brand ve
     .click();
   await expect(page.getByRole('heading', { name: 'Elysium Lifestyle BD', level: 1 })).toBeVisible();
   await expect(page.getByRole('table', { name: 'Latest orders' })).toBeVisible();
-  await expect(page.getByRole('table', { name: 'COD with couriers' })).toContainText('Steadfast');
+  await expect(page.getByRole('table', { name: 'Wallets' })).toBeVisible();
   await page.screenshot({ path: path.join(SHOTS, 'brand-page.png'), fullPage: true });
   await axe(page, 'brand page, light');
   await dark(page, true);
   await axe(page, 'brand page, dark');
   await dark(page, false);
 
-  const slug = brandSlugs[0] ?? '';
   let landed: { url: string; referer: string | undefined } | null = null;
-  await page.route(`https://admin.${slug}.example/**`, async (route) => {
+  await page.route(`https://admin.${brand.slug}.example/**`, async (route) => {
     landed = { url: route.request().url(), referer: route.request().headers().referer };
     await route.fulfill({ status: 200, contentType: 'text/html', body: '<title>brand</title>' });
   });
   await page.getByRole('button', { name: 'Open Elysium Lifestyle BD ERP' }).click();
   await expect.poll(() => landed).not.toBeNull();
   const arrived = landed as unknown as { url: string; referer: string | undefined };
-  // The fragment never reaches a server; the browser keeps it on the page.
-  expect(arrived.url).toBe(`https://admin.${slug}.example/owner-link`);
+  // The fragment never reaches a server; the browser keeps it on the page. No Referer.
+  expect(arrived.url).toBe(`https://admin.${brand.slug}.example/owner-link`);
   expect(arrived.referer).toBeUndefined();
   const token = new URL(page.url()).hash.replace('#token=', '');
+
+  // The format holds against the shared rules...
   const parsed = parseOwnerLink(token);
   if (!parsed.ok) throw new Error(parsed.reason);
   const key = createPublicKey({
-    key: Buffer.from(publicKey, 'base64'),
+    key: Buffer.from(brand.publicKey, 'base64'),
     format: 'der',
     type: 'spki',
   });
   expect(verify(null, Buffer.from(parsed.signedText, 'utf8'), key, parsed.signature)).toBe(true);
   expect(
     checkOwnerLinkClaims(parsed.claims, {
-      audience: slug,
+      audience: brand.slug,
       nowSeconds: Math.floor(Date.now() / 1000),
     }),
   ).toBeUndefined();
   expect(parsed.claims.sub).toBe('owner@example.com');
+
+  // ...and the brand's own API signs the owner in with it, once (check 2).
+  const first = await redeemAtBrand(brand.apiUrl, token);
+  expect(first.status).toBe(200);
+  const me = await fetch(`${brand.apiUrl}/v1/me`, { headers: { cookie: first.jar.header } });
+  expect(me.status).toBe(200);
+  const replay = await redeemAtBrand(brand.apiUrl, token);
+  expect(replay.status).toBe(401);
+  // A link for one brand opens no other.
+  const other = brands[1];
+  if (other !== undefined) {
+    const wrong = await redeemAtBrand(other.apiUrl, await mint(page, brand.id));
+    expect(wrong.status).toBe(401);
+  }
+});
+
+test('check 1: the overview is the sum of each brand’s own dashboard', async ({ page }) => {
+  const { brands } = state();
+  await signIn(page);
+  const today = new Date(Date.now() + 6 * 3_600_000).toISOString().slice(0, 10);
+  const from = new Date(Date.now() + 6 * 3_600_000 - 29 * 86_400_000).toISOString().slice(0, 10);
+  const overview = (await (
+    await page.request.get(`/v1/overview?from=${from}&to=${today}`)
+  ).json()) as {
+    totals: Record<string, unknown>;
+    brands: { brand: { id: string }; figures: Record<string, unknown> }[];
+  };
+
+  const FIELDS = [
+    'ordersPlaced',
+    'ordersConfirmed',
+    'ordersDelivered',
+    'ordersReturned',
+    'ordersCancelled',
+    'deliveredRevenuePoisha',
+    'grossProfitPoisha',
+    'spendPoisha',
+  ] as const;
+  const sums = new Map<string, bigint>(FIELDS.map((field) => [field, 0n]));
+  for (const brand of brands) {
+    // The brand's own dashboard, as its owner sees it there: signed in by the mother's link.
+    const { status, jar } = await redeemAtBrand(brand.apiUrl, await mint(page, brand.id));
+    expect(status).toBe(200);
+    const answer = await fetch(`${brand.apiUrl}/v1/analytics/dashboard?from=${from}&to=${today}`, {
+      headers: { cookie: jar.header },
+    });
+    expect(answer.status).toBe(200);
+    const own = ((await answer.json()) as { totals: Record<string, unknown> }).totals;
+    const row = overview.brands.find((entry) => entry.brand.id === brand.id);
+    expect(row, brand.slug).toBeDefined();
+    for (const field of FIELDS) {
+      expect(String(row?.figures[field]), `${brand.slug} ${field}`).toBe(String(own[field]));
+      sums.set(field, (sums.get(field) ?? 0n) + BigInt(String(own[field])));
+    }
+    expect(Number(own.ordersPlaced), `${brand.slug} has demo orders`).toBeGreaterThan(0);
+  }
+  for (const field of FIELDS) {
+    expect(String(overview.totals[field]), `total ${field}`).toBe(String(sums.get(field)));
+  }
 });

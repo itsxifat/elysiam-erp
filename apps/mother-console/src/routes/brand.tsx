@@ -60,6 +60,7 @@ const CHANNEL: Readonly<Record<string, MessageKey>> = {
   phone: 'channel.phone',
   walk_in: 'channel.walk_in',
   reseller: 'channel.reseller',
+  marketplace: 'channel.marketplace',
 };
 
 const WALLET_KIND: Readonly<Record<string, MessageKey>> = {

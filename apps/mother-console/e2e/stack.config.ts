@@ -10,6 +10,10 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export const API_PORT = Number(process.env.E2E_MOTHER_API_PORT ?? 3212);
 export const CONSOLE_PORT = Number(process.env.E2E_MOTHER_CONSOLE_PORT ?? 5285);
+/** Each brand's own API, one port per brand (check 1 and the owner link's real verifier). */
+export const BRAND_API_PORTS = (process.env.E2E_BRAND_API_PORTS ?? '3231,3232')
+  .split(',')
+  .map((port) => Number(port.trim()));
 
 export default defineConfig({
   testDir: '.',
@@ -17,7 +21,9 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   retries: 0,
-  timeout: 240_000,
+  timeout: 300_000,
+  // Two brands seeded by their own preview:seed before the first test.
+  globalTimeout: 3_600_000,
   reporter: [['list']],
   globalSetup: './global-setup.ts',
   use: {

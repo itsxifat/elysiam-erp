@@ -51,7 +51,7 @@ const owners: Record<'a' | 'b' | 'c', { email: string; secret: string; browser: 
   {} as never;
 
 beforeAll(async () => {
-  brand = await startTestDatabase('mhttp_brand');
+  brand = await startTestDatabase('mhttp_brand', { brands: ['elysium-lifestyle-bd'] });
   await seedDemoSetUp(ORG_A);
   mother = await startMotherDatabase(brand.adminUrl);
   pools = new BrandPools(() => secrets, { connectTimeoutSeconds: 5, statementTimeoutMs: 20_000 });

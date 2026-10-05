@@ -242,6 +242,7 @@ const bn: Record<MessageKey, string> = {
   'channel.phone': 'ফোন',
   'channel.walk_in': 'সরাসরি দোকানে',
   'channel.reseller': 'রিসেলার',
+  'channel.marketplace': 'মার্কেটপ্লেস',
   'staffStatus.active': 'সক্রিয়',
   'staffStatus.suspended': 'সাময়িক বরখাস্ত',
   'walletKind.wallet_cash': 'হাতে নগদ',

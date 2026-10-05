@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import { SEED_ORG_IDS } from '@elysium/db';
+import { SEED_ORG_IDS, seedTrainingOrg } from '@elysium/db';
 import {
   seedDemoSetUp,
   startTestDatabase,
@@ -69,13 +69,16 @@ let rowA: BrandRow;
 let rowB: BrandRow;
 
 beforeAll(async () => {
-  brandA = await startTestDatabase('mbrand_a');
+  // Each brand database seeded as a brand's own server is (`db:seed --brand`, D-470): its
+  // one brand, plus the training org a brand keeps beside itself (D-223).
+  brandA = await startTestDatabase('mbrand_a', { brands: ['elysium-lifestyle-bd'] });
   await seedDemoSetUp(ORG_A);
+  const trainingOrg = await seedTrainingOrg();
   // The second brand on the same server: its own database, its own seed (D-469).
   const provided = process.env.TEST_DATABASE_URL;
   process.env.TEST_DATABASE_URL = brandA.adminUrl;
   try {
-    brandB = await startTestDatabase('mbrand_b');
+    brandB = await startTestDatabase('mbrand_b', { brands: ['oura-lifestyle'] });
   } finally {
     if (provided === undefined) delete process.env.TEST_DATABASE_URL;
     else process.env.TEST_DATABASE_URL = provided;
@@ -98,15 +101,15 @@ beforeAll(async () => {
   });
 
   // Another org's rows inside brand A's database, which the mother must never count: the
-  // training org a brand keeps beside itself is exactly this shape (D-223).
+  // training org's figures (D-223).
   const owner = postgres(brandA.ownerUrl, { max: 1, onnotice: () => undefined });
   try {
     await owner.begin(async (tx) => {
-      await tx`select set_config('app.org_id', ${ORG_B}, true)`;
+      await tx`select set_config('app.org_id', ${trainingOrg}, true)`;
       await tx`
         insert into analytics.daily_org (org_id, business_date, orders_placed, orders_delivered,
                                          delivered_revenue_poisha, gross_profit_poisha)
-        values (${ORG_B}, ${TODAY}::date, 99999, 99999, 999999999999, 1)
+        values (${trainingOrg}, ${TODAY}::date, 99999, 99999, 999999999999, 1)
       `;
     });
   } finally {
