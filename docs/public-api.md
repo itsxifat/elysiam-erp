@@ -186,3 +186,9 @@ Send `visitor.ip`. Without it the per-visitor bucket falls back to your server's
 - The ERP never stores your secret, even encrypted. It stores a fingerprint and derives the secret from a server-side master key when a request arrives. A leaked ERP database cannot sign a request.
 - Rotate a key by issuing a new one, deploying it, then revoking the old one. A revoked key is refused immediately.
 - The phone number is personal data. Do not log it in your own site's logs, and mask it if you must (`017******44`).
+
+## Reading the catalog for a brand's own website
+
+This endpoint takes orders from landing pages. A brand's own website reads its products,
+categories, menu and settings through a different, read-only API with its own keys, issued on
+**Website → Connection**: see [`storefront-api.md`](storefront-api.md) (M33).

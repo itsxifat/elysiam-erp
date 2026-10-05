@@ -42,6 +42,8 @@ When you assume something, add a row to `docs/decisions.md`.
 27. Testing strategy
 28. Environments and deployment
 29. Performance targets
+30. (M31: one ERP per brand)
+31. The brand's website, run from its ERP
 
 ---
 
@@ -211,34 +213,35 @@ See D-001 and D-002.
 
 ### Module → schema map
 
-| Module    | Schema    | Owns                                                                          |
-| --------- | --------- | ----------------------------------------------------------------------------- |
-| org       | org       | organizations, branches, locations, settings, feature flags, per-org branding |
-| iam       | iam       | Better Auth tables, memberships, sign-in resets, API keys, devices            |
-| audit     | audit     | audit log                                                                     |
-| approvals | approvals | maker-checker requests                                                        |
-| events    | events    | outbox and event log                                                          |
-| files     | files     | file objects                                                                  |
-| catalog   | catalog   | categories, attributes, products, SKUs, prices, images                        |
-| inventory | inventory | movements, levels, reservations, costs, counts                                |
-| supply    | supply    | suppliers, supply entries, supplier returns, supplier payments                |
-| ledger    | ledger    | accounts, journals, lines, periods                                            |
-| sales     | sales     | customers (org-scoped), orders, order lines, delivery zones                   |
-| delivery  | delivery  | courier accounts, consignments, status events, settlements                    |
-| fraud     | fraud     | phone signals, provider checks, rules; **cross-org by design** (§5)           |
-| crm       | sales     | buyer stats, segments, occasions — built inside `orders` (D-211)              |
-| notify    | notify    | templates, messages, opt-outs                                                 |
-| promo     | promo     | promo codes, redemptions                                                      |
-| marketing | marketing | campaigns, ad spend, leads                                                    |
-| hr        | hr        | employees, attendance, payroll, employee loans, targets, bonus rules          |
-| reseller  | reseller  | resellers, margin rules, slabs, earnings, payouts                             |
-| pos       | pos       | registers, shifts, POS sync                                                   |
-| investor  | investor  | investors, investments, distributions, withdrawals                            |
-| loans     | loans     | lenders, company loans, instalments, payments, reminders (M26, D-293, D-302)  |
-| messaging | messaging | Chatwoot links, conversation stats, activity heartbeats                       |
-| landing   | landing   | pages, versions, domains                                                      |
-| analytics | analytics | rollups, leaderboard snapshots, insights                                      |
-| migration | migration | imported files and the one opening of a brand's books (M14a, D-215)           |
+| Module     | Schema     | Owns                                                                          |
+| ---------- | ---------- | ----------------------------------------------------------------------------- |
+| org        | org        | organizations, branches, locations, settings, feature flags, per-org branding |
+| iam        | iam        | Better Auth tables, memberships, sign-in resets, API keys, devices            |
+| audit      | audit      | audit log                                                                     |
+| approvals  | approvals  | maker-checker requests                                                        |
+| events     | events     | outbox and event log                                                          |
+| files      | files      | file objects                                                                  |
+| catalog    | catalog    | categories, attributes, products, SKUs, prices, images                        |
+| inventory  | inventory  | movements, levels, reservations, costs, counts                                |
+| supply     | supply     | suppliers, supply entries, supplier returns, supplier payments                |
+| ledger     | ledger     | accounts, journals, lines, periods                                            |
+| sales      | sales      | customers (org-scoped), orders, order lines, delivery zones                   |
+| delivery   | delivery   | courier accounts, consignments, status events, settlements                    |
+| fraud      | fraud      | phone signals, provider checks, rules; **cross-org by design** (§5)           |
+| crm        | sales      | buyer stats, segments, occasions — built inside `orders` (D-211)              |
+| notify     | notify     | templates, messages, opt-outs                                                 |
+| promo      | promo      | promo codes, redemptions                                                      |
+| marketing  | marketing  | campaigns, ad spend, leads                                                    |
+| hr         | hr         | employees, attendance, payroll, employee loans, targets, bonus rules          |
+| reseller   | reseller   | resellers, margin rules, slabs, earnings, payouts                             |
+| pos        | pos        | registers, shifts, POS sync                                                   |
+| investor   | investor   | investors, investments, distributions, withdrawals                            |
+| loans      | loans      | lenders, company loans, instalments, payments, reminders (M26, D-293, D-302)  |
+| messaging  | messaging  | Chatwoot links, conversation stats, activity heartbeats                       |
+| landing    | landing    | pages, versions, domains                                                      |
+| analytics  | analytics  | rollups, leaderboard snapshots, insights                                      |
+| storefront | storefront | website settings, hero slides, menu, size charts, old ids, site keys (§31)    |
+| migration  | migration  | imported files and the one opening of a brand's books (M14a, D-215)           |
 
 ---
 
@@ -432,6 +435,7 @@ This summary is authoritative until M02b writes the code matrix. After that, the
 | Leaderboard                        | all                | all orgs (normalized metrics only) | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
 | Org dashboard (analytics)          | all + consolidated | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
 | Users, roles, settings             | all                | org                                | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Website (M33, D-508)               | all                | org                                | read                    | —                           | org          | —       | —                              | —                   | —                   | —        |
 
 ### Maker-checker actions
 
@@ -1138,6 +1142,7 @@ Rules for every integration:
 - **Storage driver:** an interface with a `local` driver (development and tests) and an `r2` driver (staging and production).
   - Private bucket (receipts, invoices, legal documents, KYC, payslips): served only through short-lived signed URLs after an authorization check. The generic `GET /v1/files/:id/download` serves a file someone else uploaded only to a holder of the purpose's ability across the brand; a narrower holder reaches such a document through the owning module's route, which checks the row first (D-413).
   - Public bucket (product images, landing page assets): served through the CDN.
+  - The brand website's images (M33, D-507): `GET /media/<org id>/<file id>/<thumb|card|full>` serves the re-encoded sizes of a stored, public file whose purpose is `product-image`, `category-image` or `storefront-image`, with a year's immutable caching; every other file is the same 404. Never an original.
 - **Uploads:**
   - presigned PUT, with size and MIME limits; the finalize reads at most the type's ceiling (D-417)
   - each upload creates a `files.objects` row with sha256, owner and visibility
@@ -1347,3 +1352,81 @@ Installable, with an offline shell and web push (Android first).
 | Public intake API                                    | p95 < 500 ms at 20 req/s sustained                   |
 | Reports over 12 months of one org                    | p95 < 3 s (use rollups)                              |
 | Console first load                                   | < 2.5 s on 4G; initial route bundle ≤ 250 KB gzipped |
+
+---
+
+## 31. The brand's website, run from its ERP
+
+M33 (D-500 to D-512), after D-469: each brand's ERP is its website's back office, and the
+website keeps no database of its own. This section covers what a shopper **looks at**; buying
+(M34), offers and landing pages (M35) and the website's conversion (M36) build on it.
+
+### The module
+
+`storefront` owns the `storefront` schema (tenant tables, RLS from `tenantTableSql()`,
+composite foreign keys):
+
+- `settings`, one row per brand: site information, social links, announcement bar, promo
+  banner, testimonials, the shipping rule and the payment methods, as JSON sections validated by
+  the contract schemas and parsed defensively (a section that does not parse falls back to its
+  default). No row means the defaults, which name nothing but the brand itself.
+- `web_locations`: where the website sells from (default: the brand's first active warehouse,
+  the order desk's own default).
+- `hero_slides`, `nav_items` (link, category or dropdown; two levels; only a dropdown holds
+  items), `size_charts`, `legacy_ids (kind, legacy_id, erp_id)` for M36's importer and M35's
+  connector, and `site_keys`.
+
+The website fields of a product and a category are catalog columns (D-500, D-501):
+`web_visible` (separate from `status`, off for a new product), `featured`, `new_arrival`,
+`gender`, `material`, `care_instructions`, `tags`, `size_chart_id`, `seo_title`,
+`seo_description` and `previous_slugs`; a category gains `web_visible`, `featured`, `gender`,
+`description` and a picture. `previous_slugs` is written by a trigger only: a slug a product
+leaves joins its history, and a slug a product takes is released from every other product's
+history, so an address is in at most one place and a redirect never chooses
+(`packages/domain/src/storefront/slugs.ts` is the same rule, property-tested).
+
+The module reaches the catalog, inventory, the delivery zones and the files only through
+`CATALOG_API`, `INVENTORY_API`, `ORDERS_API` and `FilesService` (invariant 12), and exports
+`STOREFRONT_API` (web locations, the shipping rule, old ids) for M34 to M36. The rules are pure
+functions in `packages/domain/src/storefront/`: `availableForWeb`, `storefrontPrice`, the slug
+history, the shipping rule, the list's parameters and cursor, tags, safe links, size charts,
+the category tree and the menu.
+
+### The read API
+
+`/storefront/v1/*`, server to server (`docs/storefront-api.md`): products (filters, sorts,
+cursor or numbered pages with a total), a product by slug (variants with live availability at
+the web locations; an old slug answers `{ redirect: { slug } }`), the category tree, search, the
+site in one answer, a size chart, districts and thanas.
+
+- **Who may read.** A website key (`pk_<org id>_…`) and `sha256=HMAC(secret, timestamp.METHOD.
+path?query)` in `X-Api-Key`, `X-Api-Timestamp`, `X-Api-Signature`, ±5 minutes; a write (M34)
+  adds the idempotency key and the raw body. The secret is derived from the intake's master key
+  under the website's own label, so it is never stored, a landing-page key cannot read and a
+  website key cannot post landing-page orders (D-509). Every failure is the same 401. The key
+  id names its org, so the lookup runs inside that org's `withOrg()`: no cross-org read.
+- **What it may send.** Every answer passes `serializeForStorefront`: an allow-list
+  (`STOREFRONT_VISIBLE_FIELDS`) applied at every depth, then the cost deny-list. The cost sweep
+  drives every signed route (invariant 5).
+- **Money** is `{ poisha, taka }` strings. **Availability** is
+  `Σ max(0, on_hand − reserved)` over the web locations, read live on every call (D-510).
+- **Caching.** `ETag` over the bytes, `Cache-Control: private, max-age=30,
+stale-while-revalidate=300`, `304` on a match; `site` is also kept thirty seconds per brand in
+  the process and forgotten on every write through it.
+- **Rate limits** per source address before the signature and per key after it (Valkey, D-056's
+  fallback).
+
+### Images
+
+`GET /media/<org id>/<file id>/<thumb|card|full>` (§22, D-507): public website images only, the
+re-encoded sizes only, a year's immutable cache. The storefront API hands out absolute URLs
+under `STOREFRONT_MEDIA_BASE_URL` (default `API_PUBLIC_URL`), so a CDN can sit in front.
+
+### The console
+
+**Website** (Sell group; `read Storefront`): Settings (a section per form, each with its own
+Save), Hero slides and Menu (drag or arrows to reorder), Size charts (a grid editor) and
+Connection (keys: the secret shown once, revoke). The product page's **Website** card and Catalog
+setup's **Website** dialog per category write the catalog's web fields under
+`update Storefront`: org_admin and marketing decide what the website shows; the catalog itself
+stays org_admin's (D-508).
