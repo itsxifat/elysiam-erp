@@ -2009,3 +2009,20 @@ dry-run|commit --file <users.json>`.
     loaded), so a stale console form cannot undo the CLI's or another person's save (owner:
     claude).
 - Dependencies: none added.
+
+### 2026-10-05 · deploy · The new Elysium website online at demo.elysium-lifestyle.bd · done
+
+- Elysium's ERP redeployed at 550f5e5 (the website-key and Site URL commands, D-582); health
+  green.
+- The website (`erp-storefront` at cb7379e) copied to `/srv/elysium-web/releases/cb7379e23132`
+  on the brands server (`/srv/elysium-web/current`), its settings in the root-only
+  `/etc/elysium-web/demo.env` (NEXTAUTH secret generated on the server), the website key
+  issued by `admin website-key --label "demo website"` and piped straight into that file (the
+  secret was never displayed), the ERP's Site URL set to `https://demo.elysium-lifestyle.bd`
+  by `admin website-site-url`. Container `elysium-web-demo-web-1` on 127.0.0.1:3601 (host
+  network, read-only), healthy; `/api/health?erp=1` answers `"erp":"ok"`.
+- nginx site `elysium-web-demo.conf` (Cloudflare real-IP include, rate limits) installed after
+  `nginx -t`, certbot TLS; `https://demo.elysium-lifestyle.bd` 200, `/admin` 308 to the ERP;
+  the server's other sites still 200.
+- The owner still sets Website → Email (SMTP), Website → Payments (SSLCommerz), switches
+  products on for the website, and optionally a Google OAuth client for the demo host.
