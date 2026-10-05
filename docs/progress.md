@@ -1391,7 +1391,7 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
 - The owner's instruction (D-469): every business gets its own ERP deployment and database, with
   no clue of the others or of a head office; a separate mother ERP on its own server and domain
   shows and handles everything; each brand's ERP becomes its website's back office, starting
-  with Elysium Lifestyle BD's Next.js site at `D:\Projects\elysium`.
+  with Elysium Lifestyle BD's Next.js site at `D:Projectselysium`.
 - Delivered so far (branch `integration-wave2`):
   - The redesign (`design-refresh`, verified 2026-10-03: verify exit 0, the stack and preview
     Playwright runs green) fast-forwarded into `integration-wave2`, so wave 3 builds on the new
