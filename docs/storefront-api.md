@@ -243,7 +243,7 @@ Left out, every shopper shares one bucket and a busy evening may hit `429` (D-53
 | 409    | `CART_REPRICED`                  | The checkout's figures moved; carries `quote` (below)                                                   |
 | 409    | `OUT_OF_STOCK`                   | A line cannot be held; carries `lines` (below)                                                          |
 | 409    | `CART_NOT_DELIVERABLE`           | The address is in no delivery zone the brand ships to                                                   |
-| 409    | `PAYMENT_METHOD_UNAVAILABLE`     | That way of paying is switched off, or the order is under ৳10 for SSLCommerz                            |
+| 409    | `PAYMENT_METHOD_UNAVAILABLE`     | That way of paying is switched off, or the order is outside ৳10–৳5,00,000 for SSLCommerz                |
 | 409    | `PAYMENT_NOT_PAYABLE`            | The order cannot be paid online now (paid, being checked, no longer pending, COD)                       |
 | 409    | `IDEMPOTENCY_CONFLICT`           | An `Idempotency-Key` reused for a different checkout body                                               |
 | 409    | `IDEMPOTENCY_IN_FLIGHT`          | The same checkout is still being placed; retry with the same key                                        |
@@ -418,7 +418,7 @@ All `POST` except where shown. Every answer that names an account gives the same
 | Route                           | Body                                                                 | Answer                                                                              |
 | ------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `accounts/register`             | `{ email, password, name, phone?, locale?, client? }`                | `201 { accountId, requiresVerification: true, email }`; a six-digit code is emailed |
-| `accounts/verify-email`         | `{ email, code, client? }`                                           | `{ account }`; past guest orders join the account (D-523)                           |
+| `accounts/verify-email`         | `{ email, code, client? }`                                           | `{ account }`; past guest orders that gave this email join the account (D-523)      |
 | `accounts/resend-code`          | `{ email, client? }`                                                 | `{ ok: true }`, whether or not the address has an account                           |
 | `accounts/sign-in`              | `{ email, password, client? }`                                       | `{ account }`, `401`, `403 ACCOUNT_EMAIL_UNVERIFIED` or `429`                       |
 | `accounts/google`               | `{ email, emailVerified: true, googleSub, name?, locale?, client? }` | `{ account, created }`                                                              |
@@ -479,8 +479,9 @@ null until a parcel is booked. Only website orders are ever shown; a wrong token
    `"cancel"` with no `valId`). The ERP checks the payment with SSLCommerz's validation API
    (status, transaction, currency and the exact amount) and answers
    `{ "payment": { "orderNo", "status": "paid" | "refused" | "checking" | "cancelled" } }`.
-   `checking` means SSLCommerz was slow; show "we are confirming your payment" and read the
-   order a little later. A fail or cancel cancels the unpaid order.
+   `checking` means SSLCommerz was slow (or the return carried no `val_id`); show "we are
+   confirming your payment" and read the order a little later. A fail or cancel cancels the
+   unpaid order, unless a payment of it is still being checked.
 3. SSLCommerz also calls the ERP directly (the IPN, `POST /storefront/ipn/sslcommerz/<org id>`,
    set by the ERP on every session). It needs no key and nothing in it is believed: it only
    prompts the same validation. Let it through any proxy unchanged.

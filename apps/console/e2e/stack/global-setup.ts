@@ -184,6 +184,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         process.env.STOREFRONT_CREDENTIALS_KEY ?? randomBytes(32).toString('base64'),
       NOTIFY_EMAIL_PROVIDER: 'fake',
       STOREFRONT_SSLCOMMERZ_PROVIDER: 'fake',
+      // A throwaway stack is a staging server: its sandbox store may take test payments.
+      STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX: 'true',
     };
 
     const detached = process.platform !== 'win32';

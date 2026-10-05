@@ -37,6 +37,11 @@ address" on Website → Settings (`https://…`) first; without it the emails go
 
 ## 3. SSLCommerz (Website → Payments, org admin)
 
+A **sandbox** store takes no money on a server where `STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX` is
+not `true` (the default): SSLCommerz's test cards are public, so a sandbox store on a live
+website would let anyone "pay". Do the sandbox run on a staging or preview server with the flag
+on, or on the live server for the duration of the test only, then turn it off again.
+
 1. Set the "Website address" on Website → Settings (`https://…`): SSLCommerz sends the shopper
    back to `<website address>/api/payment/sslcommerz/success|fail|cancel`, and no payment page
    opens without it. Ask SSLCommerz for a **sandbox** store for the brand. Enter the store id
@@ -60,9 +65,13 @@ id>`) into the store's IPN setting in SSLCommerz's merchant panel. The ERP also 
 clearing` to the bank wallet for the amount received, and the gateway's fee as an expense from
 the clearing wallet (a follow-up will read SSLCommerz's settlement report).
 
-**A refused payment** (the validated amount, currency or order did not match) shows as
-`refused` on the order's page and on Website → Payments, and is in the audit log. The shopper
-was charged: refund it from SSLCommerz's merchant panel and tell the shopper. A payment that
+**A refused payment** (the validated amount or order did not match, or a second page was paid
+for one order) shows as `refused` on the order's page and on Website → Payments, and is in the
+audit log. The shopper was charged, so the money is booked into the clearing wallet as an
+advance owed back (refund due on the order's advances): refund it from SSLCommerz's merchant
+panel, settle the refund on the order, and tell the shopper. A refusal for a wrong currency, a
+sandbox payment on a live server or a store switched to the other mode books nothing: check it
+in the panel. A payment that
 arrives after its order was cancelled is booked as an advance owed back: refund it the same way
 and settle it on the order's advances.
 

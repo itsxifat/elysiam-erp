@@ -1527,13 +1527,17 @@ the account routes answer with an account id and the website keeps its own sessi
 - **Payments.** `init` records a session and enqueues `storefront.sslcommerz_open`; the worker
   calls SSLCommerz with no transaction open (invariant 6) while the route waits on the row
   outside any transaction. The shopper's return (relayed by the website) and the public IPN
-  (`/storefront/ipn/sslcommerz/<org id>`) only enqueue `storefront.sslcommerz_validate`, which
+  (`/storefront/ipn/sslcommerz/<org id>`) only move the session to `validating` and enqueue
+  `storefront.sslcommerz_validate`, which
   asks the Order Validation API and accepts VALID or VALIDATED for this transaction, in BDT,
   for exactly the session's amount, which must still be what the order collects
   (`judgeValidation`). Accepted, it becomes a verified `sslcommerz` advance through
   `OrdersApi.recordGatewayAdvance` and §7's advance posting into the SSLCommerz clearing
-  wallet, and the COD drops by it (D-526). `storefront.expire_unpaid` cancels an online order
-  still pending and unpaid after 60 minutes; a later valid payment is still booked and owed back.
+  wallet, and the COD drops by it (D-526). Money SSLCommerz took that the order does not accept,
+  or that lands on an ended order, is booked the same way and owed back in full. A sandbox
+  store takes no money unless the installation allows it. `storefront.expire_unpaid` cancels an
+  online order still pending and unpaid after 60 minutes, never while a payment is being checked.
+  The console's lists of accounts, emails and payments need an org-wide reach (D-533).
 - **Accounts.** bcrypt cost 12 (`bcryptjs`, which also checks the old site's `$2a$`/`$2b$`
   hashes), email codes as HMACs under a key derived from `INTAKE_KEY_SECRET`, reset and view
   tokens as SHA-256 of 32 random bytes; Google links only to a verified address (D-522).
