@@ -159,6 +159,20 @@
   --chart-1: oklch(var(--brand-l) var(--brand-c) var(--brand-h));
   --chart-2: oklch(0.8 0.006 75);
   --chart-grid: oklch(0.94 0.003 75);
+
+  /* Categorical series, for a chart with one line per entity (D-496). A fixed order,
+     never cycled: the order is what keeps neighbours apart for colour-blind readers
+     (worst adjacent CVD ΔE 9.1 light, 8.4 dark; validated on --card). Slots 3-5 sit
+     under 3:1 on the light card, so a chart using them also shows its values as a
+     table. Marks only: text never wears a series colour. */
+  --series-1: oklch(0.575 0.163 255.5);
+  --series-2: oklch(0.671 0.175 40.6);
+  --series-3: oklch(0.669 0.141 162.1);
+  --series-4: oklch(0.764 0.161 75.1);
+  --series-5: oklch(0.716 0.141 357.4);
+  --series-6: oklch(0.529 0.18 142.5);
+  --series-7: oklch(0.433 0.167 283.6);
+  --series-8: oklch(0.623 0.191 24.9);
 }
 
 /* @tokens:theme dark */
@@ -235,4 +249,13 @@
   --chart-1: oklch(calc(var(--brand-l) + 0.13) var(--brand-c) var(--brand-h));
   --chart-2: oklch(0.45 0.006 75);
   --chart-grid: oklch(0.28 0.004 75);
+
+  --series-1: oklch(0.622 0.161 255.1);
+  --series-2: oklch(0.622 0.173 40.1);
+  --series-3: oklch(0.621 0.128 163.1);
+  --series-4: oklch(0.67 0.143 73.2);
+  --series-5: oklch(0.622 0.171 0.8);
+  --series-6: oklch(0.529 0.18 142.5);
+  --series-7: oklch(0.67 0.145 286.8);
+  --series-8: oklch(0.669 0.159 22.3);
 }

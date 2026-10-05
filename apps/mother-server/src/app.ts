@@ -42,15 +42,16 @@ export interface BuildOptions {
   readonly auth: MotherAuth;
   readonly trustedOrigins: readonly string[];
   readonly secure: boolean;
-  readonly trustedProxyCount: number;
+  /** Comma-separated proxy addresses or CIDRs whose `X-Forwarded-For` is believed. */
+  readonly trustedProxies: string;
   readonly limiter?: MemoryRateLimiter;
   readonly rateLimitEnabled?: boolean;
 }
 
 export async function buildMotherApp(options: BuildOptions): Promise<NestFastifyApplication> {
   const adapter = new FastifyAdapter({
-    trustProxy:
-      options.trustedProxyCount === 0 ? false : (options.trustedProxyCount as unknown as boolean),
+    // Addresses, never a count: Fastify 5 trusts no header for a hop count (D-487).
+    trustProxy: options.trustedProxies.trim() === '' ? false : options.trustedProxies,
     loggerInstance: options.runtime.logger,
     bodyLimit: 256 * 1024,
   });

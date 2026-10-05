@@ -67,7 +67,7 @@ async function main(): Promise<void> {
     auth,
     trustedOrigins: origins,
     secure,
-    trustedProxyCount: env.TRUSTED_PROXY_COUNT,
+    trustedProxies: env.MOTHER_TRUSTED_PROXIES,
   });
 
   await app.listen({ port: env.MOTHER_API_PORT, host: env.MOTHER_API_HOST });

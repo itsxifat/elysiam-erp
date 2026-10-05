@@ -56,8 +56,15 @@ const schema = z.object({
     .regex(/^[a-z0-9-]{1,32}$/)
     .default('k1'),
 
-  /** How many reverse proxies stand in front (nginx: 1). Decides the per-IP rate limit's key. */
-  TRUSTED_PROXY_COUNT: z.coerce.number().int().min(0).max(10).default(0),
+  /**
+   * The proxies whose `X-Forwarded-For` is believed, comma-separated addresses or CIDRs
+   * (nginx on the host: `127.0.0.1`; through Docker's bridge: its gateway's range). Empty
+   * trusts none, and every request's address is the socket's. Addresses, not a hop count:
+   * Fastify 5 ignores the header entirely for a count (it cannot tell a proxy from a
+   * client that sends the header itself), which would put every owner in one rate-limit
+   * bucket (D-487).
+   */
+  MOTHER_TRUSTED_PROXIES: z.string().default(''),
 
   /** The pull worker's cadence (D-484). */
   MOTHER_PULL_EVERY_MINUTES: z.coerce.number().int().min(1).max(60).default(10),
