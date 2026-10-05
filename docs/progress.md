@@ -1931,3 +1931,27 @@ dry-run|commit --file <users.json>`.
   link was given to the owner.
 - Every migration up to 0117 is now applied to a live database: frozen.
 - Next: M35b and M36 (building), then M38b, then M32 resumes.
+
+### 2026-10-05 · M36 · The new Elysium website on its ERP · built (website repo)
+
+- Delivered in `D:\\Projects\\elysium` on branch `erp-storefront` (seven commits from
+  f379c9d to aba9ecb): the site reads and writes only through the brand ERP's signed storefront
+  API; the admin panel, the Mongo models, `mongoose`, the demo kit, Cloudinary, the ncom and
+  Steadfast routes, scanner, upload and image routes, fraud and courier code and the landing
+  pages are gone (about −46k / +6k lines); `/admin` answers 308 to the ERP. Shopper features
+  kept: home, shop with filters and search, product page with sizes, size chart and flash prices,
+  cart and checkout priced by the ERP (district and thana pickers, COD and SSLCommerz through the
+  ERP), the order page by token or account, sign-up with an emailed code, sign-in, reset and
+  change password, profile, addresses and orders, the frame from `GET /site`.
+- Verification: Playwright 14 of 14 against a local preview brand ERP (`elysium_preview_m36`,
+  API on 3300), including a COD checkout checked through the ERP (website channel, pending,
+  stock held), sign-up and reset through a local TLS mail sink, an SSLCommerz return the ERP
+  refuses, sign-in refusing off-site callbacks; `next build`, lint, the no-database check and
+  11 unit tests green; the Docker image healthy read-only. acceptance-auditor: two real bugs
+  (open redirect through `callbackUrl`; a checkout idempotency key lost after a gateway timeout)
+  fixed and covered; its remaining points were these ERP docs.
+- Decisions: D-560, D-562 to D-564 (D-561 is the owner's start-fresh decision).
+- Waiting for M35b: campaign links, tracking, the scanner app's sign-in.
+- Owner inputs for the demo: the website key and Site URL (a server command is being added so
+  the key's secret is never shown), SMTP in Website → Email, SSLCommerz sandbox or live keys,
+  a Google OAuth client for the demo host, products switched on for the website.
