@@ -771,6 +771,13 @@ export async function agingAsOf(
  * nothing` on the one-wallet-per-account index, so two callers racing to set it up both end
  * with the same row.
  */
+/** Serialise the first setup of a provider's system wallet in one brand (transaction lock). */
+export async function lockSystemWallet(tx: Tx, orgId: string, provider: string): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`wallets.system:${orgId}:${provider}`}, 0))`,
+  );
+}
+
 /**
  * A provider's org-level wallet (a gateway's clearing wallet, M34): the one row
  * `ensureSystemWallet` reuses, found by what it is rather than by the code it was given.

@@ -16,7 +16,14 @@ import {
 import { CartError, quoteCart, repricedReasons, type CartSku } from './cart.js';
 import type { ShippingRule } from './shipping.js';
 import { shopperPaymentStatus, shopperStatusOf } from './shopper.js';
-import { gatewayAmount, judgeValidation, parseGatewayAmount } from './sslcommerz.js';
+import {
+  gatewayAmount,
+  gatewayTakesPayments,
+  judgeValidation,
+  parseGatewayAmount,
+  refusedButPaid,
+  sessionDeadline,
+} from './sslcommerz.js';
 
 const ZONE_IN = 'zone-in';
 const ZONE_SUB = 'zone-sub';
@@ -387,6 +394,57 @@ describe('the COD after an online payment (M34 check 3, D-526)', () => {
         },
       ),
     );
+  });
+});
+
+describe('SSLCommerz after the ledger audit (C1, W1, W3)', () => {
+  it('takes money from a live store always, from a sandbox store only where allowed', () => {
+    expect(gatewayTakesPayments('live', false)).toBe(true);
+    expect(gatewayTakesPayments('live', true)).toBe(true);
+    expect(gatewayTakesPayments('sandbox', false)).toBe(false);
+    expect(gatewayTakesPayments('sandbox', true)).toBe(true);
+  });
+
+  it('never lets a page outlive its order, and opens none with under a minute left', () => {
+    const placed = new Date('2026-10-05T10:00:00Z');
+    expect(sessionDeadline(placed, new Date('2026-10-05T10:10:00Z'), 60)).toEqual(
+      new Date('2026-10-05T11:00:00Z'),
+    );
+    expect(sessionDeadline(placed, new Date('2026-10-05T10:59:00Z'), 60)).toEqual(
+      new Date('2026-10-05T11:00:00Z'),
+    );
+    expect(sessionDeadline(placed, new Date('2026-10-05T10:59:30Z'), 60)).toBeNull();
+    expect(sessionDeadline(placed, new Date('2026-10-05T12:00:00Z'), 60)).toBeNull();
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 200 * 60 }),
+        fc.integer({ min: 5, max: 1440 }),
+        (seconds, minutes) => {
+          const now = new Date(placed.getTime() + seconds * 1000);
+          const deadline = sessionDeadline(placed, now, minutes);
+          if (deadline === null) return true;
+          return (
+            deadline.getTime() === placed.getTime() + minutes * 60_000 &&
+            deadline.getTime() - now.getTime() >= 60_000
+          );
+        },
+      ),
+    );
+  });
+
+  it('books refused money only when it is a valid BDT payment of this transaction', () => {
+    const session = { tranId: 'TRAN0000000000000000001' };
+    const valid = { status: 'VALID', tran_id: session.tranId, currency: 'BDT', amount: '10.00' };
+    expect(refusedButPaid(session, valid)).toBe(poisha(1_000n));
+    expect(refusedButPaid(session, { ...valid, status: 'VALIDATED', amount: '1250.5' })).toBe(
+      poisha(125_050n),
+    );
+    expect(refusedButPaid(session, { ...valid, status: 'INVALID_TRANSACTION' })).toBeNull();
+    expect(refusedButPaid(session, { ...valid, tran_id: 'OTHER000000000000000001' })).toBeNull();
+    expect(refusedButPaid(session, { ...valid, currency: 'USD' })).toBeNull();
+    expect(refusedButPaid(session, { ...valid, currency_type: 'USD' })).toBeNull();
+    expect(refusedButPaid(session, { ...valid, amount: '10.005' })).toBeNull();
+    expect(refusedButPaid(session, { ...valid, amount: '0.00' })).toBeNull();
   });
 });
 

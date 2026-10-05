@@ -637,11 +637,13 @@ export async function sessionsOfOrder(
   tx: Tx,
   orgId: string,
   orderId: string,
+  options: { readonly forUpdate?: boolean } = {},
 ): Promise<SessionRow[]> {
   const rows = await tx.execute<SessionRow>(sql`
     select ${SESSION_COLUMNS} from storefront.payment_sessions
     where org_id = ${orgId} and order_id = ${orderId}
     order by created_at desc, id desc
+    ${options.forUpdate === true ? sql`for update` : sql``}
   `);
   return [...rows];
 }

@@ -770,17 +770,14 @@ export class BuyingService {
     accountId: string | null,
     phone: string | null,
   ): Promise<string | null> {
-    if (accountId !== null) {
-      const account = await buying.accountById(tx, orgId, accountId);
-      if (account?.customer_id != null) return account.customer_id;
-      const accountPhone = phone ?? account?.phone_e164 ?? null;
-      if (accountPhone !== null) {
-        return (await this.orders.buyerIdByPhone(tx, orgId, accountPhone)) ?? null;
-      }
-      return null;
-    }
-    if (phone === null) return null;
-    return (await this.orders.buyerIdByPhone(tx, orgId, phone)) ?? null;
+    // The phone the order will be placed with names its buyer, so the quote and the checkout
+    // count limits against the same buyer the redemption is recorded for (ledger audit N6).
+    if (phone !== null) return (await this.orders.buyerIdByPhone(tx, orgId, phone)) ?? null;
+    if (accountId === null) return null;
+    const account = await buying.accountById(tx, orgId, accountId);
+    if (account?.customer_id != null) return account.customer_id;
+    if (account?.phone_e164 == null) return null;
+    return (await this.orders.buyerIdByPhone(tx, orgId, account.phone_e164)) ?? null;
   }
 
   /**

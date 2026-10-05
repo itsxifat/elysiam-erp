@@ -854,6 +854,36 @@ describe('SSLCommerz (check 3, D-525, D-526)', () => {
     }
   });
 
+  it('a key this server cannot open fails the check for a retry, and never refuses the payment', async () => {
+    const order = await sslOrder();
+    const session = await one<{ id: string }>(sql`
+      select id from storefront.payment_sessions where org_id = ${ORG_A} and tran_id = ${order.tranId}
+    `);
+    gateway.validations.set('VAL-NOKEY', {
+      status: 'VALID',
+      tran_id: order.tranId,
+      currency: 'BDT',
+      amount: `${order.total.slice(0, -2)}.${order.total.slice(-2)}`,
+    });
+    const key = process.env.STOREFRONT_CREDENTIALS_KEY;
+    // A worker deployed with another key (a rotation half done).
+    process.env.STOREFRONT_CREDENTIALS_KEY = Buffer.alloc(32, 99).toString('base64');
+    try {
+      await expect(payments.validate(ORG_A, session?.id ?? '', 'VAL-NOKEY')).rejects.toThrow();
+    } finally {
+      process.env.STOREFRONT_CREDENTIALS_KEY = key;
+    }
+    const untouched = await one<{ status: string; n: number }>(sql`
+      select s.status,
+             (select count(*)::int from sales.order_advances a
+              where a.org_id = s.org_id and a.order_id = s.order_id) as n
+      from storefront.payment_sessions s where s.org_id = ${ORG_A} and s.id = ${session?.id}
+    `);
+    expect(untouched).toEqual({ status: 'ready', n: 0 });
+    // The retry, with the right key, books it.
+    expect(await payments.validate(ORG_A, session?.id ?? '', 'VAL-NOKEY')).toBe('paid:applied');
+  });
+
   it('W1: a payment being checked keeps its order from the unpaid timer and from a fail', async () => {
     const order = await sslOrder();
     // The gateway never answers this one: the check stays in flight.

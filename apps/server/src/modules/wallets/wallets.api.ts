@@ -121,6 +121,9 @@ export class WalletsApiService implements WalletsApi {
       readonly provider: string;
     },
   ): Promise<PostingAccount> {
+    // One first setup at a time per brand and provider, so two at once cannot both create one
+    // (ledger re-audit N-c).
+    await repo.lockSystemWallet(tx, orgId, spec.provider);
     // The provider's own wallet, whatever code it was given: never a staff wallet that
     // happens to sit at the preferred code (M34 ledger audit W4).
     const mine = await repo.systemWalletByProvider(tx, orgId, spec.provider, spec.subtype);

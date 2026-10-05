@@ -526,9 +526,10 @@ export class PaymentsService {
     });
     if (prepared === null) return 'settled';
     const { session, credentials } = prepared;
-    if (credentials === null) {
-      // The store was switched to the other mode (or its key lost) since this page opened:
-      // there is nothing to ask, so a person checks it in SSLCommerz's panel (audit N4).
+    if (credentials === 'mode_changed') {
+      // The store was switched to the other mode since this page opened: there is nothing to
+      // ask, so a person checks it in SSLCommerz's panel (audit N4). A key this server cannot
+      // open is not this: `credentialsFor` throws for it, and the job is tried again.
       return this.refuseUnchecked(orgId, sessionId, valId, 'gateway_changed');
     }
     if (!gatewayTakesPayments(session.mode, this.config.STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX)) {
@@ -767,8 +768,11 @@ export class PaymentsService {
         to: 'cancelled',
         failureReason: how,
       });
-      // A payment of this order being checked, or already booked, keeps it (audit W1).
-      const sessions = await buying.sessionsOfOrder(tx, orgId, session.order_id);
+      // A payment of this order being checked, or already booked, keeps it (audit W1). The
+      // sessions locked, so a check that starts now waits for this decision or comes first.
+      const sessions = await buying.sessionsOfOrder(tx, orgId, session.order_id, {
+        forUpdate: true,
+      });
       if (sessions.some((other) => other.status === 'validating' || other.status === 'paid')) {
         return;
       }
@@ -786,7 +790,9 @@ export class PaymentsService {
     return withOrg({ orgId, userId: GATEWAY_RECORDER }, async (tx) => {
       const web = await buying.webOrder(tx, orgId, orderId);
       if (web?.payment_method !== 'sslcommerz') return 'kept';
-      const sessions = await buying.sessionsOfOrder(tx, orgId, orderId);
+      // Locked before deciding: a check that starts at this moment either comes first (and is
+      // seen) or waits until the order is settled (ledger re-audit N-a).
+      const sessions = await buying.sessionsOfOrder(tx, orgId, orderId, { forUpdate: true });
       if (sessions.some((session) => session.status === 'paid')) return 'kept';
       const checking = sessions.some(
         (session) =>
@@ -860,15 +866,25 @@ export class PaymentsService {
     return this.open(orgId, row);
   }
 
-  /** The credentials for a session's mode, even if the gateway was switched off since. */
+  /**
+   * The credentials for a session's mode, even if the gateway was switched off since; or
+   * `mode_changed` when the store now holds the other mode's. A key this process cannot open
+   * (missing, or a rotation half done) throws: that is this server's fault, not the payment's,
+   * so the validation job fails, is retried and is reported — never a payment refused for good
+   * with nothing booked (ledger re-audit).
+   */
   private async credentialsFor(
     tx: Tx,
     orgId: string,
     mode: 'sandbox' | 'live',
-  ): Promise<GatewayCredentials | null> {
+  ): Promise<GatewayCredentials | 'mode_changed'> {
     const row = await buying.gatewaySettings(tx, orgId);
-    if (row?.mode !== mode) return null;
-    return this.open(orgId, row);
+    if (row === undefined || row.mode !== mode) return 'mode_changed';
+    return {
+      storeId: row.store_id,
+      storePassword: open(row.password_sealed, PASSWORD_BINDING(orgId)),
+      mode: row.mode,
+    };
   }
 
   private open(orgId: string, row: buying.GatewaySettingsRow): GatewayCredentials | null {
