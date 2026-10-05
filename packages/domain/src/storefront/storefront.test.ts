@@ -491,6 +491,21 @@ describe('the product list parameters', () => {
     );
   });
 
+  it('refuses a NUL in any parameter, and a cursor with an impossible date', () => {
+    const { problems } = parseStorefrontQuery({ q: 'a\u0000b', size: 'M\u0000' });
+    expect(problems.map((problem) => problem.param).sort()).toEqual(['q', 'size']);
+    expect(searchTokens('a\u0000b')).toEqual(['a', 'b']);
+    const impossible = encodeStorefrontCursor({
+      sort: 'newest',
+      createdAt: '2026-13-45T99:99:99Z',
+      id: uuid(2),
+    });
+    expect(decodeStorefrontCursor(impossible, 'newest')).toBeNull();
+    expect(parseStorefrontQuery({ cursor: impossible }).problems.map((p) => p.param)).toEqual([
+      'cursor',
+    ]);
+  });
+
   it('drops a page number when a cursor is sent', () => {
     const cursor = encodeStorefrontCursor({
       sort: 'newest',

@@ -1034,3 +1034,227 @@ describe('Website settings, hero, menu and size charts', () => {
     expect(count).toBe(0);
   });
 });
+
+// --- from the ledger audit ----------------------------------------------------------------------
+
+describe('audit, isolation and load (the M33 ledger audit)', () => {
+  async function auditRows(action: string, entityId: string) {
+    return withSystem(
+      async (tx) =>
+        tx.execute<{ after: Record<string, unknown> | null }>(sql`
+          select after from audit.audit_log
+          where org_id = ${ORG_A} and action = ${action} and entity_id = ${entityId}
+          order by created_at
+        `),
+      { orgId: ORG_A },
+    );
+  }
+
+  it('audits a key issued and revoked inside the write, never with its secret', async () => {
+    const issued = await json<{ id: string; keyId: string; secret: string }>(
+      marketing.client,
+      'POST',
+      '/v1/storefront/site-keys',
+      { label: 'Audited website' },
+    );
+    expect(issued.status, issued.raw).toBe(201);
+    const issuedRows = await auditRows('storefront.site_key_issued', issued.body.id);
+    expect(issuedRows).toHaveLength(1);
+    expect(JSON.stringify(issuedRows[0]?.after)).toContain(issued.body.keyId);
+    expect(JSON.stringify(issuedRows)).not.toContain(issued.body.secret);
+
+    const revoked = await json(
+      marketing.client,
+      'POST',
+      `/v1/storefront/site-keys/${issued.body.id}/revoke`,
+    );
+    expect(revoked.status, revoked.raw).toBe(201);
+    expect(await auditRows('storefront.site_key_revoked', issued.body.id)).toHaveLength(1);
+  });
+
+  it('audits a settings save with the delivery fees readable, not redacted', async () => {
+    const settings = await json<{
+      shipping: { zones: Record<string, { feePoisha: string; deliveryZoneIds: string[] }> };
+    }>(marketing.client, 'GET', '/v1/storefront/settings');
+    const zones = settings.body.shipping.zones;
+    const saved = await json(marketing.client, 'PATCH', '/v1/storefront/settings', {
+      shipping: {
+        freeShippingEnabled: true,
+        freeShippingThresholdPoisha: '200000',
+        zones: {
+          inside_dhaka: {
+            feePoisha: '7000',
+            deliveryZoneIds: zones.inside_dhaka?.deliveryZoneIds ?? [],
+          },
+          suburbs: { feePoisha: '11000', deliveryZoneIds: zones.suburbs?.deliveryZoneIds ?? [] },
+          outside_dhaka: {
+            feePoisha: '14000',
+            deliveryZoneIds: zones.outside_dhaka?.deliveryZoneIds ?? [],
+          },
+        },
+      },
+    });
+    expect(saved.status, saved.raw).toBe(200);
+    const rows = await auditRows('storefront.settings_updated', ORG_A);
+    const last = rows.at(-1)?.after as {
+      feesPoisha?: Record<string, string>;
+      sections?: string[];
+    };
+    expect(last.sections).toEqual(['shipping']);
+    expect(last.feesPoisha).toEqual({
+      inside_dhaka: '7000',
+      suburbs: '11000',
+      outside_dhaka: '14000',
+    });
+  });
+
+  it('gives another brand’s key nothing of this brand’s: no size chart, no product', async () => {
+    const keyB = await insertTestSiteKey(ORG_B);
+    const chart = await json<{ id: string }>(
+      marketing.client,
+      'POST',
+      '/v1/storefront/size-charts',
+      {
+        name: `Isolation ${suffix}`,
+        columns: ['Size'],
+        rows: [['M']],
+      },
+    );
+    expect(chart.status, chart.raw).toBe(201);
+    const chartRead = await signedGet(
+      harness.server,
+      keyB,
+      `/storefront/v1/size-charts/${chart.body.id}`,
+    );
+    expect(chartRead.statusCode).toBe(404);
+    const productRead = await signedGet(
+      harness.server,
+      keyB,
+      `/storefront/v1/catalog/products/${seeded.shirt.slug}`,
+    );
+    expect(productRead.statusCode).toBe(404);
+    // A malformed id is a 404 too, never a failed cast.
+    expect((await signed(`/storefront/v1/size-charts/${'-'.repeat(36)}`)).status).toBe(404);
+  });
+
+  it('lets another brand take an old address without touching this brand’s redirect', async () => {
+    const first = `linen-kurta-${suffix}`;
+    const second = `linen-kurta-classic-${suffix}`;
+    const kurta = await json<{ id: string }>(admin.client, 'POST', '/v1/catalog/products', {
+      name: `Linen kurta ${suffix}`,
+      slug: first,
+      status: 'active',
+      pricePoisha: '180000',
+    });
+    expect(kurta.status, kurta.raw).toBe(201);
+    await setWeb(kurta.body.id, { webVisible: true });
+    const renamed = await json(admin.client, 'PATCH', `/v1/catalog/products/${kurta.body.id}`, {
+      slug: second,
+    });
+    expect(renamed.status, renamed.raw).toBe(200);
+
+    const theirs = await json(adminB.client, 'POST', '/v1/catalog/products', {
+      name: `Their kurta ${suffix}`,
+      slug: first,
+      status: 'active',
+      pricePoisha: '90000',
+    });
+    expect(theirs.status, theirs.raw).toBe(201);
+
+    const mine = await json<{ web: { previousSlugs: string[] } }>(
+      admin.client,
+      'GET',
+      `/v1/catalog/products/${kurta.body.id}`,
+    );
+    expect(mine.body.web.previousSlugs).toEqual([first]);
+    const moved = await signed<{ redirect: { slug: string } }>(
+      `/storefront/v1/catalog/products/${first}`,
+    );
+    expect(moved.body).toEqual({ redirect: { slug: second } });
+  });
+
+  it('does not name a hidden category on a card, nor find products by its name', async () => {
+    const code = `HS${suffix
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '0')
+      .slice(0, 5)}`;
+    const shelf = await json<{ id: string }>(admin.client, 'POST', '/v1/catalog/categories', {
+      name: `Quiet shelf ${suffix}`,
+      slug: `quiet-shelf-${suffix}`,
+      code,
+    });
+    expect(shelf.status, shelf.raw).toBe(201);
+    const wrap = await json<{ id: string; slug: string }>(
+      admin.client,
+      'POST',
+      '/v1/catalog/products',
+      {
+        name: `Silk wrap ${suffix}`,
+        slug: `silk-wrap-${suffix}`,
+        categoryId: shelf.body.id,
+        status: 'active',
+        pricePoisha: '300000',
+      },
+    );
+    expect(wrap.status, wrap.raw).toBe(201);
+    await setWeb(wrap.body.id, { webVisible: true });
+    const hidden = await json(
+      marketing.client,
+      'PUT',
+      `/v1/storefront/categories/${shelf.body.id}`,
+      {
+        webVisible: false,
+      },
+    );
+    expect(hidden.status, hidden.raw).toBe(200);
+
+    const page = await signed<{ product: { category: unknown; breadcrumb: unknown[] } }>(
+      `/storefront/v1/catalog/products/${wrap.body.slug}`,
+    );
+    expect(page.status, page.raw).toBe(200);
+    expect(page.body.product.category).toBeNull();
+    expect(page.body.product.breadcrumb).toEqual([]);
+    const search = await signed<{ items: { id: string }[] }>(
+      `/storefront/v1/catalog/search?q=${encodeURIComponent(`quiet-shelf-${suffix}`)}`,
+    );
+    expect(search.body.items.some((item) => item.id === wrap.body.id)).toBe(false);
+  });
+
+  it('refuses a malformed cursor date and a NUL with 400, not a database error', async () => {
+    const impossible = Buffer.from(
+      JSON.stringify(['newest', '2026-13-45T99:99:99Z', '00000000-0000-4000-8000-000000000001']),
+    ).toString('base64url');
+    expect((await signed(`/storefront/v1/catalog/products?cursor=${impossible}`)).status).toBe(400);
+    expect((await signed('/storefront/v1/catalog/products?size=M%00')).status).toBe(400);
+  });
+
+  it('lets only the website’s managers upload website images', async () => {
+    const ticket = (client: Client) =>
+      json(client, 'POST', '/v1/files', {
+        purpose: 'storefront-image',
+        contentType: 'image/png',
+        sizeBytes: 1024,
+        visibility: 'public',
+      });
+    expect((await ticket(warehouse.client)).status).toBe(403);
+    expect((await ticket(sales.client)).status).toBe(403);
+    expect((await ticket(marketing.client)).status).toBe(201);
+  });
+
+  it('answers many shoppers at once: never two connections inside one request', async () => {
+    const paths = [
+      '/storefront/v1/catalog/products?limit=60',
+      `/storefront/v1/catalog/products/${seeded.shirt.slug}`,
+      '/storefront/v1/site',
+      '/storefront/v1/catalog/categories',
+    ];
+    const started = Date.now();
+    const answers = await Promise.all(
+      Array.from({ length: 24 }, (_, index) =>
+        signedGet(harness.server, key, paths[index % paths.length] ?? '/storefront/v1/site'),
+      ),
+    );
+    expect(answers.map((answer) => answer.statusCode)).toEqual(answers.map(() => 200));
+    expect(Date.now() - started).toBeLessThan(20_000);
+  }, 30_000);
+});

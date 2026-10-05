@@ -53,6 +53,15 @@ export function storefrontConfig(source: NodeJS.ProcessEnv = process.env): Store
       .join('\n');
     throw new Error(`Invalid storefront configuration:\n${problems}`);
   }
+  if (
+    parsed.data.NODE_ENV === 'production' &&
+    parsed.data.STOREFRONT_RATE_LIMIT_STORE === 'memory'
+  ) {
+    // The intake's rule (M11): per-process counters multiply the limit by the replica count.
+    throw new Error(
+      'STOREFRONT_RATE_LIMIT_STORE=memory in production makes every limit per process. Use valkey.',
+    );
+  }
   return parsed.data;
 }
 

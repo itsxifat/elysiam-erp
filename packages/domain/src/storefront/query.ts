@@ -93,6 +93,9 @@ const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 export function searchTokens(input: string | null | undefined): string[] {
   if (input === null || input === undefined) return [];
   const words = input
+    // Control characters are no part of a word, and PostgreSQL refuses a NUL outright.
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
     .toLowerCase()
     .split(/\s+/)
     .map((word) => word.slice(0, TOKEN_LENGTH_MAX))
@@ -149,6 +152,14 @@ export function parseStorefrontQuery(params: Params): {
   readonly problems: readonly QueryProblem[];
 } {
   const problems: QueryProblem[] = [];
+
+  // A NUL reaches PostgreSQL as a refused parameter (a 500); it is never in a real value.
+  for (const [name, value] of Object.entries(params)) {
+    const values = value === undefined ? [] : typeof value === 'string' ? [value] : value;
+    if (values.some((text) => text.includes('\u0000'))) {
+      problems.push({ param: name, message: `${name} holds a character that is not allowed.` });
+    }
+  }
 
   const category = one(params, 'category') ?? null;
   if (category !== null && !UUID.test(category) && !SLUG.test(category)) {
@@ -241,7 +252,18 @@ export function parseStorefrontQuery(params: Params): {
 
 // --- the cursor ---------------------------------------------------------------------------
 
-const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/;
+const ISO_SHAPE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/;
+
+/** An instant the database will accept: the shape, and a real date and time. */
+const ISO = {
+  test(text: string): boolean {
+    if (!ISO_SHAPE.test(text)) return false;
+    const parsed = new Date(text);
+    return (
+      !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 19) === text.slice(0, 19)
+    );
+  },
+};
 
 /** A cursor as the opaque string the API returns. */
 export function encodeStorefrontCursor(cursor: StorefrontCursor): string {
@@ -307,6 +329,7 @@ export function decodeStorefrontCursor(
     case 'name': {
       const [, name] = parts as unknown[];
       if (parts.length !== 3 || typeof name !== 'string' || name.length > 200) return null;
+      if (name.includes('\u0000')) return null;
       return { sort, name, id };
     }
   }

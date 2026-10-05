@@ -86,6 +86,13 @@ export interface PurposeRule {
    * typo. Only imagery and campaign creative can opt in.
    */
   readonly mayBePublic: boolean;
+  /**
+   * The ability an upload of this purpose needs beyond `create FileObject`, when the
+   * purpose belongs to one team's screens (M33's ledger audit, L6). A public website image
+   * is served on the brand's own domain the moment it is stored, so only the people who
+   * manage the website may put one there.
+   */
+  readonly createRequires?: { readonly action: Action; readonly subject: Subject };
 }
 
 export const PURPOSE_RULES: Readonly<Record<FilePurpose, PurposeRule>> = {
@@ -125,10 +132,15 @@ export const PURPOSE_RULES: Readonly<Record<FilePurpose, PurposeRule>> = {
     readRequires: { action: 'read', subject: 'Investor' },
     mayBePublic: false,
   },
-  'category-image': { readRequires: { action: 'read', subject: 'Catalog' }, mayBePublic: true },
+  'category-image': {
+    readRequires: { action: 'read', subject: 'Catalog' },
+    mayBePublic: true,
+    createRequires: { action: 'update', subject: 'Storefront' },
+  },
   'storefront-image': {
     readRequires: { action: 'read', subject: 'Storefront' },
     mayBePublic: true,
+    createRequires: { action: 'update', subject: 'Storefront' },
   },
 };
 

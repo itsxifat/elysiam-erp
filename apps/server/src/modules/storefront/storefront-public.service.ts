@@ -163,7 +163,8 @@ export class StorefrontPublicService {
         webLocations,
       );
       const available = availableForWeb(levels, webLocations);
-      const media = await this.files.publicImages(
+      const media = await this.files.publicImagesIn(
+        tx,
         orgId,
         images.map((image) => image.fileId),
       );
@@ -198,7 +199,11 @@ export class StorefrontPublicService {
               sku: sku.code,
               size: labelOf(sku, 'size'),
               colour: labelOf(sku, 'colour'),
-              attributes: sku.values.map((value) => ({ name: value.name, value: value.label })),
+              // Size and colour only: a custom attribute (a supplier lot, a fabric source) is
+              // the brand's own business, not the website's (ledger audit L2).
+              attributes: sku.values
+                .filter((value) => value.kind === 'size' || value.kind === 'colour')
+                .map((value) => ({ name: value.name, value: value.label })),
               price: wireMoney(price.pricePoisha),
               compareAt: price.compareAtPoisha === null ? null : wireMoney(price.compareAtPoisha),
               availableQty: qty,
@@ -217,7 +222,8 @@ export class StorefrontPublicService {
     return withOrg({ orgId }, async (tx) => {
       const categories = await this.catalog.webCategories(tx, orgId);
       const tree = buildCategoryTree(categories.map(toNode));
-      const media = await this.files.publicImages(
+      const media = await this.files.publicImagesIn(
+        tx,
         orgId,
         categories
           .map((category) => category.imageFileId)
@@ -246,7 +252,9 @@ export class StorefrontPublicService {
   }
 
   async sizeChart(orgId: string, id: string) {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) return notFound();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      return notFound();
+    }
     return withOrg({ orgId }, async (tx) => {
       const chart = await repo.sizeChartById(tx, orgId, id);
       if (chart === undefined) return notFound();
@@ -306,7 +314,7 @@ export class StorefrontPublicService {
         this.catalog.webCategories(tx, orgId),
       ]);
       const active = slides.filter((slide) => slide.is_active);
-      const media = await this.files.publicImages(orgId, [
+      const media = await this.files.publicImagesIn(tx, orgId, [
         ...(settings.siteInfo.logoFileId === null ? [] : [settings.siteInfo.logoFileId]),
         ...active.flatMap((slide) =>
           slide.mobile_file_id === null
@@ -427,7 +435,8 @@ export class StorefrontPublicService {
       perProduct.set(image.productId, list);
     }
     const firstTwo = [...perProduct.values()].flat();
-    const media = await this.files.publicImages(
+    const media = await this.files.publicImagesIn(
+      tx,
       orgId,
       firstTwo.map((image) => image.fileId),
     );
@@ -453,7 +462,10 @@ export class StorefrontPublicService {
     available: ReadonlyMap<string, number>,
     categories: readonly WebCategory[],
   ) {
-    const category = categories.find((candidate) => candidate.id === row.categoryId);
+    // Only a category the website shows (D-501): a hidden one is not named on a card.
+    const category = visibleCategories(categories).find(
+      (candidate) => candidate.id === row.categoryId,
+    );
     const pictures = images
       .map((image) => this.image(orgId, image.fileId, image.altText ?? row.name, media))
       .filter((image): image is WireImage => image !== null);
@@ -530,6 +542,19 @@ function toNode(category: WebCategory): CategoryNode {
     position: category.position,
     visible: category.isActive && category.webVisible,
   };
+}
+
+/** The categories the website shows: switched on, shown, and every ancestor too. */
+function visibleCategories(categories: readonly WebCategory[]): WebCategory[] {
+  const shown = new Set<string>();
+  const walk = (nodes: readonly CategoryTree<CategoryNode>[]): void => {
+    for (const node of nodes) {
+      shown.add(node.id);
+      walk(node.children);
+    }
+  };
+  walk(buildCategoryTree(categories.map(toNode)));
+  return categories.filter((category) => shown.has(category.id));
 }
 
 function refOf(category: WebCategory): CategoryRef {

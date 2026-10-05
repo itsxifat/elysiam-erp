@@ -1414,12 +1414,23 @@ path?query)` in `X-Api-Key`, `X-Api-Timestamp`, `X-Api-Signature`, ±5 minutes; 
 stale-while-revalidate=300`, `304` on a match; `site` is also kept thirty seconds per brand in
   the process and forgotten on every write through it.
 - **Rate limits** per source address before the signature and per key after it (Valkey, D-056's
-  fallback).
+  fallback; per-process counters refused in production).
+- **One transaction per answer.** Everything an answer reads (catalog, inventory, files, the
+  module's own tables) goes through the caller's `tx`; a second `withOrg` inside one would hold
+  a pooled connection while waiting for another, and ten concurrent shop pages would starve the
+  pool (the M33 ledger audit's H1, tested with 24 concurrent signed reads).
+- **Audit.** Issuing and revoking a website key and saving the settings write their audit rows
+  inside the same transaction; a settings row records the delivery fees, the payment switches
+  and the web locations under names the audit's redaction leaves alone.
 
 ### Images
 
 `GET /media/<org id>/<file id>/<thumb|card|full>` (§22, D-507): public website images only, the
-re-encoded sizes only, a year's immutable cache. The storefront API hands out absolute URLs
+re-encoded sizes only, a year's immutable cache. A found variant's key and hash are kept ten
+minutes in the process and each address may ask 1,200 times a minute, so a flood that skipped
+the CDN cannot starve the API's pool. Only the people who manage the website may upload a
+`storefront-image` or `category-image` (`createRequires` in `files.policy.ts`): a public image
+is served on the brand's domain the moment it is stored. The storefront API hands out absolute URLs
 under `STOREFRONT_MEDIA_BASE_URL` (default `API_PUBLIC_URL`), so a CDN can sit in front.
 
 ### The console
@@ -1430,3 +1441,7 @@ Connection (keys: the secret shown once, revoke). The product page's **Website**
 setup's **Website** dialog per category write the catalog's web fields under
 `update Storefront`: org_admin and marketing decide what the website shows; the catalog itself
 stays org_admin's (D-508).
+
+The slug triggers read and release other products of the same brand under row-level security,
+so anything that writes products in bulk (M36's importer) must write them inside that brand's
+`withOrg()`: under `withSystem` with no org set, the history would not see the other products.

@@ -1,7 +1,17 @@
-import { Controller, Get, NotFoundException, Param, Req, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  Req,
+  Res,
+} from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { Public } from '../../platform/auth/abilities.js';
+import { MemoryRateLimiter } from '../../platform/http/rate-limit.js';
 import { FilesService, PUBLIC_VARIANTS, type PublicVariant } from './files.service.js';
 
 /**
@@ -24,8 +34,18 @@ import { FilesService, PUBLIC_VARIANTS, type PublicVariant } from './files.servi
  * variant's SHA-256 as its ETag. nginx or a CDN in front keeps the API from serving the
  * same image twice (§28).
  */
+/**
+ * Requests per minute from one address before `429` (M33's ledger audit, L5). Generous: a
+ * product grid is dozens of images and a CDN in front serves most of them. Per process, in
+ * memory: this guards the API's connection pool against a flood that skipped the cache, and
+ * an exact cross-replica count is not what it is for.
+ */
+const MEDIA_PER_MINUTE = 1200;
+
 @Controller('media')
 export class PublicMediaController {
+  private readonly limiter = new MemoryRateLimiter();
+
   constructor(private readonly files: FilesService) {}
 
   @Public(
@@ -39,6 +59,14 @@ export class PublicMediaController {
     @Req() request: FastifyRequest,
     @Res() reply: FastifyReply,
   ): Promise<void> {
+    const decision = this.limiter.hit(`media:${request.ip}`, MEDIA_PER_MINUTE, 60);
+    if (!decision.allowed) {
+      void reply.header('retry-after', String(decision.retryAfterSeconds ?? 60));
+      throw new HttpException(
+        { code: 'RATE_LIMITED', message: 'Too many requests. Wait and try again.' },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
     const name = variant.replace(/\.webp$/, '');
     if (!(PUBLIC_VARIANTS as readonly string[]).includes(name)) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Not found.' });

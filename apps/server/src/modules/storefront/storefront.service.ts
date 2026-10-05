@@ -17,6 +17,8 @@ import {
   type NavItemRow as DomainNavItem,
 } from '@elysium/domain/storefront';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi, type Change } from '../catalog/catalog.api.js';
 import { FilesService } from '../files/files.service.js';
@@ -75,6 +77,7 @@ export class StorefrontService {
     @Inject(ORDERS_API) private readonly orders: OrdersApi,
     private readonly files: FilesService,
     private readonly cache: SiteCache,
+    private readonly audit: AuditService,
   ) {}
 
   // --- settings -------------------------------------------------------------------------------
@@ -134,9 +137,14 @@ export class StorefrontService {
     };
   }
 
-  /** Save the sections sent; the rest stay as they are. */
+  /**
+   * Save the sections sent; the rest stay as they are. Audited inside the write, with what a
+   * shopper is charged written out under names the audit's redaction leaves alone (ledger
+   * audit M1: a key named `shipping` matches the `pin` pattern and was stored redacted).
+   */
   async patchSettings(
     context: ActiveContext,
+    request: AuditableRequest,
     patch: StorefrontSettingsPatch,
   ): Promise<SettingsView> {
     const result = await withOrg(context, async (tx) => {
@@ -145,7 +153,7 @@ export class StorefrontService {
       const next: StorefrontSettings = { ...current, ...patch };
 
       if (patch.siteInfo !== undefined && patch.siteInfo.logoFileId !== null) {
-        await this.assertPublicImages(context.orgId, [patch.siteInfo.logoFileId], 'logo');
+        await this.assertPublicImages(tx, context.orgId, [patch.siteInfo.logoFileId], 'logo');
       }
       if (patch.shipping !== undefined) {
         const zones = await this.orders.deliveryZones(tx, context.orgId);
@@ -198,6 +206,17 @@ export class StorefrontService {
         payments: next.payments,
         updatedBy: context.userId,
       });
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'update',
+        action: 'storefront.settings_updated',
+        entityType: 'storefront.settings',
+        entityId: context.orgId,
+        before: auditSummary(current),
+        after: { sections: Object.keys(patch), ...auditSummary(next) },
+        request,
+      });
       return this.view(tx, context.orgId);
     });
     this.cache.forget(context.orgId);
@@ -220,23 +239,31 @@ export class StorefrontService {
   }
 
   async createHeroSlide(context: ActiveContext, input: HeroSlideInput) {
-    await this.assertPublicImages(
-      context.orgId,
-      [input.desktopFileId, input.mobileFileId].filter((id): id is string => id !== null),
-      'slide image',
-    );
-    const row = await withOrg(context, (tx) => repo.insertHeroSlide(tx, context.orgId, input));
+    const row = await withOrg(context, async (tx) => {
+      await this.assertPublicImages(
+        tx,
+        context.orgId,
+        [input.desktopFileId, input.mobileFileId].filter((id): id is string => id !== null),
+        'slide image',
+      );
+      return repo.insertHeroSlide(tx, context.orgId, input);
+    });
     this.cache.forget(context.orgId);
     return heroView(row);
   }
 
   async updateHeroSlide(context: ActiveContext, id: string, input: HeroSlideInput) {
-    await this.assertPublicImages(
-      context.orgId,
-      [input.desktopFileId, input.mobileFileId].filter((value): value is string => value !== null),
-      'slide image',
-    );
-    const row = await withOrg(context, (tx) => repo.updateHeroSlide(tx, context.orgId, id, input));
+    const row = await withOrg(context, async (tx) => {
+      await this.assertPublicImages(
+        tx,
+        context.orgId,
+        [input.desktopFileId, input.mobileFileId].filter(
+          (value): value is string => value !== null,
+        ),
+        'slide image',
+      );
+      return repo.updateHeroSlide(tx, context.orgId, id, input);
+    });
     if (row === undefined) throw storefrontNotFound('slide');
     this.cache.forget(context.orgId);
     return heroView(row);
@@ -395,7 +422,7 @@ export class StorefrontService {
   }
 
   /** Issue a key. The secret is in this response and in no other, ever. */
-  async issueKey(context: ActiveContext, label: string) {
+  async issueKey(context: ActiveContext, request: AuditableRequest, label: string) {
     const master = this.config.INTAKE_KEY_SECRET;
     if (master === undefined) {
       throw new StorefrontError(
@@ -406,23 +433,47 @@ export class StorefrontService {
     }
     const keyId = newKeyId(context.orgId);
     const secret = deriveStorefrontSecret(master, keyId);
-    const row = await withOrg(context, (tx) =>
-      repo.insertSiteKey(tx, context.orgId, {
+    const row = await withOrg(context, async (tx) => {
+      const inserted = await repo.insertSiteKey(tx, context.orgId, {
         label,
         keyId,
         secretSha256: fingerprint(secret),
         createdBy: context.userId,
-      }),
-    );
+      });
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'create',
+        action: 'storefront.site_key_issued',
+        entityType: 'storefront.site_key',
+        entityId: inserted.id,
+        // The key id is public; the secret is not in here, under any name.
+        after: { label, keyId },
+        request,
+      });
+      return inserted;
+    });
     // The audit interceptor records the issue and the public key id; the secret is in this
     // response only, and the audit log redacts any field named like one.
     return { ...keyView(row), secret };
   }
 
-  async revokeKey(context: ActiveContext, id: string) {
+  async revokeKey(context: ActiveContext, request: AuditableRequest, id: string) {
     const row = await withOrg(context, async (tx) => {
       const revoked = await repo.revokeSiteKey(tx, context.orgId, id, context.userId);
-      if (revoked !== undefined) return revoked;
+      if (revoked !== undefined) {
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'update',
+          action: 'storefront.site_key_revoked',
+          entityType: 'storefront.site_key',
+          entityId: id,
+          after: { keyId: revoked.key_id },
+          request,
+        });
+        return revoked;
+      }
       const existing = await repo.siteKeyById(tx, context.orgId, id);
       if (existing === undefined) throw storefrontNotFound('key');
       return existing;
@@ -493,12 +544,13 @@ export class StorefrontService {
    * an id can fail, because which way would say what exists.
    */
   private async assertPublicImages(
+    tx: Tx,
     orgId: string,
     ids: readonly string[],
     what: string,
   ): Promise<void> {
     if (ids.length === 0) return;
-    const found = await this.files.publicImages(orgId, ids);
+    const found = await this.files.publicImagesIn(tx, orgId, ids);
     if (ids.some((id) => !found.has(id))) {
       throw new StorefrontError(
         'STOREFRONT_NOT_FOUND',
@@ -515,6 +567,33 @@ export class StorefrontService {
  */
 function iso(value: Date | string): string {
   return (value instanceof Date ? value : new Date(value)).toISOString();
+}
+
+/**
+ * What the audit row keeps of a settings save: what a shopper is charged, how the checkout
+ * takes money and where the website sells from. Named so that no key matches a redaction
+ * pattern (`shipping` contains `pin`, `locationIds` contains `nid`).
+ */
+function auditSummary(settings: StorefrontSettings): Record<string, unknown> {
+  const zones = settings.shipping.zones;
+  return {
+    freeDeliveryOn: settings.shipping.freeShippingEnabled,
+    freeDeliveryFromPoisha: settings.shipping.freeShippingThresholdPoisha,
+    feesPoisha: {
+      inside_dhaka: zones.inside_dhaka.feePoisha,
+      suburbs: zones.suburbs.feePoisha,
+      outside_dhaka: zones.outside_dhaka.feePoisha,
+    },
+    coveredZones: {
+      inside_dhaka: zones.inside_dhaka.deliveryZoneIds,
+      suburbs: zones.suburbs.deliveryZoneIds,
+      outside_dhaka: zones.outside_dhaka.deliveryZoneIds,
+    },
+    payments: settings.payments,
+    sellsFrom: settings.webLocationIds,
+    announcementOn: settings.announcement.enabled,
+    promoOn: settings.promoBanner.enabled,
+  };
 }
 
 function blankToNull(value: string | null | undefined): string | null {

@@ -5,6 +5,7 @@ import { serverEnv } from '../../platform/config/env.js';
 import { MemoryRateLimiter, type RateLimitStore } from '../../platform/http/rate-limit.js';
 import { ValkeyRateLimiter } from '../../platform/http/rate-limit.valkey.js';
 import { createLogger } from '../../platform/logging/logger.js';
+import { ApprovalsModule } from '../approvals/approvals.module.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
 import { FilesModule } from '../files/files.module.js';
 import { InventoryModule } from '../inventory/inventory.module.js';
@@ -67,7 +68,7 @@ class StorefrontValkey implements OnModuleDestroy {
  * `STOREFRONT_API` for M34 to M36.
  */
 @Module({
-  imports: [CatalogModule, InventoryModule, OrdersModule, FilesModule],
+  imports: [CatalogModule, InventoryModule, OrdersModule, FilesModule, ApprovalsModule],
   controllers: [StorefrontController, StorefrontPublicController],
   providers: [
     { provide: STOREFRONT_CONFIG, useFactory: () => storefrontConfig() },

@@ -24,12 +24,16 @@ import {
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { mapStorefrontErrors } from './storefront.errors.js';
 import { StorefrontService } from './storefront.service.js';
 
 const idSchema = z.string().uuid('No such record.');
+
+const auditable = (request: FastifyRequest): AuditableRequest =>
+  request as unknown as AuditableRequest;
 
 function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
   const parsed = schema.safeParse(value);
@@ -69,7 +73,9 @@ export class StorefrontController {
   @Patch('settings')
   async patchSettings(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(storefrontSettingsPatchSchema, body);
-    return mapStorefrontErrors(() => this.storefront.patchSettings(requireContext(request), input));
+    return mapStorefrontErrors(() =>
+      this.storefront.patchSettings(requireContext(request), auditable(request), input),
+    );
   }
 
   // --- hero slides ----------------------------------------------------------------------------
@@ -223,7 +229,7 @@ export class StorefrontController {
   async issueKey(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(issueStorefrontKeySchema, body);
     return mapStorefrontErrors(() =>
-      this.storefront.issueKey(requireContext(request), input.label),
+      this.storefront.issueKey(requireContext(request), auditable(request), input.label),
     );
   }
 
@@ -231,7 +237,9 @@ export class StorefrontController {
   @Post('site-keys/:id/revoke')
   async revokeKey(@Req() request: FastifyRequest, @Param('id') id: string) {
     const keyId = parse(idSchema, id);
-    return mapStorefrontErrors(() => this.storefront.revokeKey(requireContext(request), keyId));
+    return mapStorefrontErrors(() =>
+      this.storefront.revokeKey(requireContext(request), auditable(request), keyId),
+    );
   }
 
   // --- website fields on the catalog ----------------------------------------------------------

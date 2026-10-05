@@ -251,6 +251,7 @@ function webWhere(orgId: string, filter: WebFilter): SQL {
       p.search_text like ${pattern} escape '\\'
       or exists (select 1 from catalog.categories c
                  where c.org_id = p.org_id and c.id = p.category_id
+                   and c.is_active and c.web_visible
                    and (lower(c.name) like ${pattern} escape '\\' or c.slug like ${pattern} escape '\\')))`);
   }
   if (filter.excludeIds !== undefined && filter.excludeIds.length > 0) {

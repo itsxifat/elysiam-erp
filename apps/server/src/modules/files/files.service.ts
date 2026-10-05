@@ -22,12 +22,15 @@ import type { ActiveContext } from '../../platform/http/context.js';
 import { isProcessableImage, processImage, ImageRejected } from './image.js';
 import { PUBLIC_MEDIA_PURPOSES, PURPOSE_RULES, type FilePurpose } from './files.policy.js';
 import type { UploadTicketInput } from './files.schemas.js';
+import type { Tx } from '@elysium/db';
+
 import {
   findById,
   insertPending,
   markStored,
   markStoredIn,
   publicMediaRows,
+  publicMediaRowsIn,
   recordVariants,
   underFileLock,
   underKeyLock,
@@ -157,6 +160,43 @@ function variantOf(
   return { key, width, height, mime, sha256 };
 }
 
+function describePublic(rows: readonly FileRow[]): ReadonlyMap<string, PublicImage> {
+  const found = new Map<string, PublicImage>();
+  for (const row of rows) {
+    const sizes: Partial<Record<PublicVariant, { width: number; height: number }>> = {};
+    for (const name of PUBLIC_VARIANTS) {
+      const variant = variantOf(row, name);
+      if (variant !== null) sizes[name] = { width: variant.width, height: variant.height };
+    }
+    if (Object.keys(sizes).length > 0) found.set(row.id, { fileId: row.id, sizes });
+  }
+  return found;
+}
+
+/** A small, bounded, time-limited map of found variants (`publicVariant`). */
+class VariantCache {
+  private static readonly TTL_MS = 10 * 60_000;
+  private static readonly MAX = 5_000;
+  private readonly entries = new Map<
+    string,
+    { readonly value: { key: string; mime: string; sha256: string }; readonly expires: number }
+  >();
+
+  get(key: string, now: number): { key: string; mime: string; sha256: string } | undefined {
+    const entry = this.entries.get(key);
+    if (entry === undefined || entry.expires <= now) {
+      this.entries.delete(key);
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  set(key: string, value: { key: string; mime: string; sha256: string }, now: number): void {
+    if (this.entries.size >= VariantCache.MAX) this.entries.clear();
+    this.entries.set(key, { value, expires: now + VariantCache.TTL_MS });
+  }
+}
+
 /** The org segment of a storage key, as `buildStorageKey` writes it. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -187,6 +227,21 @@ export class FilesService {
       assertWithinLimit(input.sizeBytes, rule);
 
       const purposeRule = PURPOSE_RULES[input.purpose];
+      const needs = purposeRule.createRequires;
+      if (needs !== undefined && !context.isSuperAdmin) {
+        const ability = defineAbilityFor({
+          roles: context.roles,
+          isSuperAdmin: context.isSuperAdmin,
+          userId: context.userId,
+          branchIds: context.branchIds,
+          branchIdsByRole: context.branchIdsByRole,
+        });
+        if (!ability.can(needs.action, needs.subject)) {
+          throw new ForbiddenException(
+            `You cannot upload ${input.purpose} files in this organization.`,
+          );
+        }
+      }
       if (input.visibility === 'public' && !purposeRule.mayBePublic) {
         throw new BadRequestException(`A ${input.purpose} file cannot be public.`);
       }
@@ -523,17 +578,17 @@ export class FilesService {
     fileIds: readonly string[],
   ): Promise<ReadonlyMap<string, PublicImage>> {
     const ids = [...new Set(fileIds)].filter((id) => UUID.test(id));
-    const rows = await publicMediaRows(orgId, ids, PUBLIC_MEDIA_PURPOSES);
-    const found = new Map<string, PublicImage>();
-    for (const row of rows) {
-      const sizes: Partial<Record<PublicVariant, { width: number; height: number }>> = {};
-      for (const name of PUBLIC_VARIANTS) {
-        const variant = variantOf(row, name);
-        if (variant !== null) sizes[name] = { width: variant.width, height: variant.height };
-      }
-      if (Object.keys(sizes).length > 0) found.set(row.id, { fileId: row.id, sizes });
-    }
-    return found;
+    return describePublic(await publicMediaRows(orgId, ids, PUBLIC_MEDIA_PURPOSES));
+  }
+
+  /** The same, inside the caller's transaction (never a second connection inside one). */
+  async publicImagesIn(
+    tx: Tx,
+    orgId: string,
+    fileIds: readonly string[],
+  ): Promise<ReadonlyMap<string, PublicImage>> {
+    const ids = [...new Set(fileIds)].filter((id) => UUID.test(id));
+    return describePublic(await publicMediaRowsIn(tx, orgId, ids, PUBLIC_MEDIA_PURPOSES));
   }
 
   /**
@@ -543,6 +598,11 @@ export class FilesService {
    * still carries whatever the camera wrote into it (§22 strips EXIF in the variants), and
    * the website has no use for it. Null for anything that is not a stored public image of a
    * website purpose in that brand, so the route answers one 404 for every reason.
+   *
+   * What a found variant is (its key, type and hash) is kept for ten minutes in the
+   * process: a variant never changes once written, so a repeated image costs no database
+   * round trip (M33's ledger audit, L5). A miss is never kept, so an upload finished a
+   * moment ago is served at once.
    */
   async publicVariant(
     orgId: string,
@@ -550,10 +610,15 @@ export class FilesService {
     name: PublicVariant,
   ): Promise<PublicMedia | null> {
     if (!UUID.test(orgId) || !UUID.test(fileId)) return null;
-    const [row] = await publicMediaRows(orgId, [fileId], PUBLIC_MEDIA_PURPOSES);
-    if (row === undefined) return null;
-    const variant = variantOf(row, name);
-    if (variant === null) return null;
+    const cacheKey = `${orgId}/${fileId}/${name}`;
+    let variant = this.variantCache.get(cacheKey, Date.now());
+    if (variant === undefined) {
+      const [row] = await publicMediaRows(orgId, [fileId], PUBLIC_MEDIA_PURPOSES);
+      const found = row === undefined ? null : variantOf(row, name);
+      if (found === null) return null;
+      variant = { key: found.key, mime: found.mime, sha256: found.sha256 };
+      this.variantCache.set(cacheKey, variant, Date.now());
+    }
     try {
       const bytes = await this.driver.get(variant.key);
       return { bytes, mime: variant.mime, sha256: variant.sha256 };
@@ -562,6 +627,8 @@ export class FilesService {
       throw error;
     }
   }
+
+  private readonly variantCache = new VariantCache();
 
   /**
    * Accept the bytes a local signed PUT ticket points at.
