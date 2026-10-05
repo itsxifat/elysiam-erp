@@ -73,6 +73,16 @@ deploy_brand() {
   WEB="$WEB_BASE/erp-$SLUG"
   SITE="$SITES/erp-$SLUG.conf"
   COMPOSE="docker compose -f $SRC/infra/brand/docker-compose.brand.yml --env-file $ENV_FILE"
+  # M32 (D-482): the owner console's tunnel reads this brand's Postgres on the loopback, for
+  # a brand whose .env.brand names the port. Every other brand publishes no database port.
+  REPORTING_PORT=$(setting BRAND_REPORTING_DB_PORT)
+  if [ -n "$REPORTING_PORT" ]; then
+    case "$REPORTING_PORT" in
+      *[!0-9]*) fail "$ENV_FILE: BRAND_REPORTING_DB_PORT must be a port number" ;;
+    esac
+    COMPOSE="$COMPOSE -f $SRC/infra/brand/docker-compose.reporting.yml"
+    echo "$SLUG: Postgres published on 127.0.0.1:$REPORTING_PORT for the owner console's tunnel"
+  fi
 
   say "$SLUG: release step (database roles, migrations, job queues)"
   # Before anything is recreated: if it fails, the brand's running API and worker are untouched.

@@ -46,7 +46,13 @@ async function axe(page: Page, label: string): Promise<void> {
     (violation) => violation.impact === 'serious' || violation.impact === 'critical',
   );
   expect(
-    serious.map((violation) => `${violation.id}: ${violation.nodes.length}`),
+    serious.map(
+      (violation) =>
+        `${violation.id}: ${violation.nodes
+          .slice(0, 4)
+          .map((node) => `${node.target.join(' ')} (${node.failureSummary ?? ''})`)
+          .join('; ')}`,
+    ),
     `${label}: serious or critical axe violations`,
   ).toEqual([]);
 }

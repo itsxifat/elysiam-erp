@@ -1,11 +1,12 @@
 # The owner console's server (M32, D-480, D-497): its own Postgres, the mother API and
 # worker, and the SSH tunnel to the brands' server. One Linux host of its own, behind that
-# host's nginx (nginx-mother.conf), on the owner's own domain. Nothing in this repository
-# deploys it yet: docs/runbooks/mother-deploy.md is the step by step.
+# host's nginx (nginx-mother.conf), on the owner's own domain. deploy.sh and
+# server-deploy.sh deploy it; docs/runbooks/mother-deploy.md is the step by step.
 #
 # Nothing listens on a public address: the API is published on 127.0.0.1 only; Postgres
 # and the tunnel publish nothing. Every secret comes from .env.mother (gitignored, written
-# by new-env.sh); the tunnel's key and the brands' host key are files beside it.
+# by new-env.sh); the tunnel's key and the brands' host key are files in MOTHER_TUNNEL_DIR,
+# beside it on the server.
 
 name: elysium-mother
 
@@ -29,8 +30,8 @@ x-logging: &logging
     max-size: 20m
     max-file: '5'
 
-x-mother-image: &mother-image
-  image: elysium-mother:current
+x-mother-image: &mother-image # Built once per deploy by server-deploy.sh (`elysium-mother:<sha>`).
+  image: elysium-mother:${MOTHER_RELEASE:-current}
   restart: unless-stopped
   logging: *logging
 
@@ -78,7 +79,7 @@ services:
     build:
       context: .
       dockerfile: tunnel.Dockerfile
-    image: elysium-mother-tunnel:current
+    image: elysium-mother-tunnel:${MOTHER_RELEASE:-current}
     restart: unless-stopped
     logging: *logging
     environment:
@@ -87,8 +88,9 @@ services:
       MOTHER_TUNNEL_FORWARDS: ${MOTHER_TUNNEL_FORWARDS:?listen:brand-port pairs}
     volumes:
       - ./tunnel-run.sh:/etc/tunnel/run.sh:ro
-      - ./tunnel/id_ed25519:/etc/tunnel/id_ed25519:ro
-      - ./tunnel/known_hosts:/etc/tunnel/known_hosts:ro
+      # Outside the release: kept between deploys, written once by new-env.sh and ssh-keyscan.
+      - ${MOTHER_TUNNEL_DIR:-./tunnel}/id_ed25519:/etc/tunnel/id_ed25519:ro
+      - ${MOTHER_TUNNEL_DIR:-./tunnel}/known_hosts:/etc/tunnel/known_hosts:ro
 
   worker:
     <<: *mother-image

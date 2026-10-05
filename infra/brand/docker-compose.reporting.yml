@@ -1,0 +1,15 @@
+# Opt-in, per brand (M32, D-482): publish this brand's Postgres on the brands server's
+# loopback, so the owner console's SSH tunnel can read it as `erp_analytics`.
+#
+# server-deploy.sh adds this file to a brand's Compose command when its .env.brand sets
+# BRAND_REPORTING_DB_PORT, and only then; a brand without it publishes no database port.
+# The port is bound to 127.0.0.1: nothing off the host reaches it, and on the host only the
+# tunnel account's `permitopen` forwards do (docs/runbooks/mother-deploy.md).
+#
+# The role the owner console signs in with can read the reporting grants of migration 0125
+# and nothing else (D-483); the other roles' passwords never leave the brand's .env.brand.
+
+services:
+  postgres:
+    ports:
+      - '127.0.0.1:${BRAND_REPORTING_DB_PORT:?set BRAND_REPORTING_DB_PORT in .env.brand}:5432'
