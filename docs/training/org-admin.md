@@ -114,7 +114,8 @@ was used, and you can restore it.
 - An archived category's products leave the website until you move them or restore it.
 - **Branches** are never deleted. **Branches** → the gear button renames one, or switches it off
   once nothing runs there (no till switched on, no open shift, no money in its wallets, no staff,
-  no stock).
+  no stock). A switched-off branch opens no new till and no shift until you switch it back on.
+- A supplier with an opening balance in the books stays; deactivate it instead.
 - **Expense and income heads** are on **Accounts** → **Wallets**. Add your own, rename or archive
   them. They are never deleted, so the books keep every entry against them.
 - Every delete is recorded with what was deleted.

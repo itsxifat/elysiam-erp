@@ -1931,3 +1931,112 @@ dry-run|commit --file <users.json>`.
   link was given to the owner.
 - Every migration up to 0117 is now applied to a live database: frozen.
 - Next: M35b and M36 (building), then M38b, then M32 resumes.
+
+### 2026-10-06 · M39a · Delete and archive everywhere · built
+
+- Why: the owner's first use of the live ERP: "we don't have any option to delete categories,
+  size chart and sizes and others" (D-620; plan `docs/plans/M39.md`, part M39a; investigation
+  `docs/review/M39/investigation.json`). Built in parallel with M39b.
+- Delivered (branch `m39a-delete-archive` from `integration-wave2` at 28e0c4c, not merged):
+  - **What uses a row is asked of the modules that hold it** (D-621): `ReferenceRegistry` in
+    `platform/references/`, with `CatalogReferences`, `LocationReferences` and
+    `DiscountReferences`; inventory, orders, the till, supply, couriers, promotions, the website
+    and marketing each register a checker counting their own tables (invariant 12). Inside each
+    delete: lock, count, refuse with `*_IN_USE` and the counts in words, release, delete, audit.
+    A delete-side 23503 maps to the same code. `GET …/:id/usage` answers what uses a row.
+  - **Every delete keeps what it deleted** (D-622): the audit row's `before`, in the same
+    transaction; the website's size chart, menu and hero slide deletes retrofitted.
+  - **Catalog** (D-623 to D-626): categories (delete, empty-and-delete with subcategories moved
+    up and menu entries moved, archive/restore; an archived category's products leave the
+    website; discount scopes never rewritten); lists and values (`is_active`, delete, archive
+    with their variants in one call, restore, reorder; the server refuses an archived value on
+    a new variant); products and SKUs deleted when nothing references them; an archived
+    product's address goes to the next product as `-2`; new variants keep a product's code
+    prefix after it moves category.
+  - **Cascades only from a deleted parent** (D-627): price history, empty stock levels,
+    discount tiers and flash sale items, each guarded by a trigger for every role.
+  - **Everything else** (D-628 to D-634): size charts' empty-and-delete and the menu's child
+    count; locations, suppliers, discounts (restored paused), flash sales (archived), SMS
+    templates and ad campaigns deleted when never used; branches renamed and switched off with
+    guards (new `Branch` subject); expense and income heads added, renamed and archived, never
+    deleted. `delete Supply`, `delete LandingPage` and `delete Campaign` for org_admin.
+  - **Console**: the shared `DeleteOrArchive` dialog, on Catalog setup (explicit Archive and
+    Restore replace the hidden checkboxes; value order; the location dialog's copy and the
+    16-character code fixed), Website → Size charts and Menu, Campaigns → Discounts, Flash sales
+    and Templates, Marketing → Campaigns, Supply → Suppliers, Branches and Accounts → Wallets.
+    Strings in a `manage` section (D-607).
+  - **After the ledger audit**: a supplier the books name as a party (an opening due) is kept;
+    a supplier's audit row keeps no contact details; a branch is held by money in any of its
+    wallet accounts, and a switched-off branch opens no till or shift; the discount restore
+    guard reads under its lock; a category under an archived one is refused for a product;
+    empties lock in id order and write one audit row per product moved; a campaign an order's
+    recorded source names is kept, matched as §11's attribution matches
+    (`OrdersApi.ordersAttributedTo`); posting the opening refuses a supplier deleted after its
+    balance was staged (`SupplyApi.lockSuppliers`); an empty-and-delete refuses a target under
+    an archived category, and a parent and its child emptied at once queue.
+- Verification:
+  - `pnpm verify` at 52774e6 (under the heavy lock, `VITEST_MAX_WORKERS=4`): exit 0 — 222 test
+    files, 3,422 passed, 1 skipped; bundle 248.1 KB of 250 PASS; white-label (222 files) PASS;
+    migrations (36 on main unchanged) PASS; schema drift (118 migrations) PASS; route matrix
+    (446 routes, 408 matrix-tested, 38 public) PASS; i18n PASS; api-client PASS.
+  - `catalog-deletes.e2e.test.ts` 28 passed, `platform/references/deletes.e2e.test.ts` 18
+    passed, `migration.db.test.ts` passed, on throwaway databases.
+  - `delete-archive.stack.ts` on 52774e6 (`E2E_API_PORT=3220 E2E_CONSOLE_PORT=5293`, one
+    worker, under the heavy lock): 9 passed; screenshots `docs/review/M39/a-01` to `a-12`
+    retaken.
+- Acceptance checks:
+  - **Check 1** — every M39a entity is deleted when unused and refused (archived instead) with
+    its users named when used; nothing referenced by a stock movement, an order line, a till
+    line, a supply line, a flash sale, a live discount or a lead can be deleted; the courier
+    return line is counted (the `pg_constraint` test holds every foreign key into the catalog to
+    a checker); a reference committing while a delete waits on its lock refuses the delete, and
+    twelve racing rounds never leave a reference to nothing: `catalog-deletes.e2e.test.ts`,
+    `platform/references/deletes.e2e.test.ts`, `delete-archive.stack.ts`.
+  - **Check 2** — a category with two products, a subcategory (whose slug collides at the top
+    level) and a menu entry is emptied into another and deleted in one transaction, and the
+    signed storefront list shows the products under the new category:
+    `catalog-deletes.e2e.test.ts` › "empties a category …", `delete-archive.stack.ts` with
+    `docs/review/M39/a-02` and `a-03`.
+  - **Check 8 (M39a part)** — `pnpm verify` green; ledger-auditor on the deletes and tenancy
+    diff; the stack spec with screenshots `docs/review/M39/a-*.png`; acceptance-auditor.
+- Auditors:
+  - ledger-auditor (deletes, tenancy, branches, ledger parties), first pass: 1 critical (a
+    supplier named only by an opening due's journal lines could be deleted), 6 warnings
+    (supplier contact details in the audit row; branch money read from wallet rows only; no
+    branch-hold tests; the holds read locked the branch; tills and shifts at a switched-off
+    branch; the archived-discount restore race) and minors; all fixed in `00c1e2e`. Re-review:
+    0 critical, 2 warnings (campaign usage did not match orders as attribution does; a balance
+    staged before a supplier's delete) and notes; fixed in `52774e6`.
+  - acceptance-auditor: NOT READY with 5 gaps (this entry; the stack spec on HEAD; an
+    empty-and-delete target under an archived category; behaviour tests for courier returns,
+    legacy ids, a campaign's product, a product-wide discount and an archived list; another
+    brand's 404 on every route kind); all closed in `52774e6` and by this entry and run.
+- Decisions/assumptions: D-621 to D-634 (ASSUMED: D-623, D-625, D-626).
+- New dependencies: none.
+- Migrations: `0118_m39a_delete_archive_schema.sql`, `0119_m39a_delete_archive_policies.sql`
+  (renumbered at integration).
+- For M39b (it owns `product-detail.tsx`, `products.tsx`, `new-product.tsx`):
+  `productUsage`/`deleteProduct` and `skuUsage`/`deleteSku` in `apps/console/src/api/manage.ts`
+  with `<DeleteOrArchive>` from `apps/console/src/ui/delete-or-archive.tsx`; `isActive` on each
+  list and value of `GET /v1/catalog/attributes` (filter pickers for a new variant to
+  `isActive !== false`).
+- Follow-ups:
+  - M35b's `storefront.custom_links` (category key, highlighted products) join the website's
+    checker when that branch merges (owner: claude, at integration).
+  - Owner questions: an archived category's products on the website (D-623); a grace period
+    before deleting a never-stocked SKU if tills stay offline long (D-625); renaming the
+    standard expense heads (D-634).
+  - Product and variant delete buttons on the product page and list (M39b).
+  - An orphan sweep for files no product, category or banner uses any more (critic).
+  - Discount scope ids and a campaign's `product_ids` are soft references (no foreign key, no
+    lock), so a discount created while a product is being deleted can name it; harmless
+    (D-623), noted for whoever adds foreign keys there.
+  - `ordersAttributedTo` reads `sales.orders.source` with no index; fine now, watch at §29's
+    sizes.
+  - Supply's ledger-party count and wallets' branch-money read add to the existing
+    `module-boundaries` debt on `ledger.*`; a `LedgerApi` method would retire both.
+  - No test drives the hero slide delete's audit row (it needs a stored file), or the 23503
+    backstop in each module's mapper (only catalog's and the shared helper are tested).
+  - The website's cache is forgotten inside the delete's transaction, so a read in the same
+    instant can re-cache the old menu for up to 30 seconds (`SiteCache.TTL_MS`); an after-commit
+    hook in `withOrg` would close it.
