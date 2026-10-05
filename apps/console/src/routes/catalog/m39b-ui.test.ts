@@ -136,6 +136,35 @@ describe('planExtend (D-639)', () => {
     expect([...plan.orphans].sort()).toEqual(['sku-m', 'sku-s']);
     expect(plan.archive).toEqual([]);
   });
+
+  it('adds no combination with an archived value, and keeps the variants that have one', () => {
+    // Red is archived in Catalog setup; the product still sells S and M in red.
+    const plan = planExtend(
+      existing,
+      [
+        { attributeId: 'size', valueIds: ['s', 'm', 'xs'] },
+        { attributeId: 'colour', valueIds: ['red', 'blue'] },
+      ],
+      axis,
+      new Set(['red']),
+    );
+    expect(plan.add.map((row) => row.key).sort()).toEqual(['blue|m', 'blue|s', 'blue|xs']);
+    // XS / Red would have been restored, which is not a new variant: it stays offered.
+    expect(plan.restore).toEqual(['sku-xs-red']);
+    expect(plan.archive).toEqual([]);
+    expect(plan.skipped).toBe(0);
+    const onlyRed = planExtend(
+      existing,
+      [
+        { attributeId: 'size', valueIds: ['s', 'm', 'l'] },
+        { attributeId: 'colour', valueIds: ['red'] },
+      ],
+      new Map<string, string>([...axis, ['l', 'size']]),
+      new Set(['red']),
+    );
+    expect(onlyRed.add).toEqual([]);
+    expect(onlyRed.skipped).toBe(1);
+  });
 });
 
 describe('variantLabel and marginCost (D-636)', () => {

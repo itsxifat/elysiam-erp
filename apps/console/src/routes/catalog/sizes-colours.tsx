@@ -94,7 +94,15 @@ export function SizesAndColours({
   ];
   const current = (axis: CatalogAttribute) => chosen?.[axis.id] ?? selling(axis);
   const ticked = axes.map((axis) => ({ attributeId: axis.id, valueIds: current(axis) }));
-  const plan = planExtend(existing, ticked, valueAxis);
+  // Archived lists and values (M39a, D-624) go on no new variant.
+  const archivedValues = new Set(
+    attributes.flatMap((axis) =>
+      axis.values
+        .filter((value) => axis.isActive === false || value.isActive === false)
+        .map((value) => value.id),
+    ),
+  );
+  const plan = planExtend(existing, ticked, valueAxis, archivedValues);
 
   const active = existing.filter((variant) => variant.status === 'active');
   const defaultMain = mostCommonPrice(active.map((variant) => BigInt(variant.pricePoisha)));
@@ -171,7 +179,14 @@ export function SizesAndColours({
       if (plan.restore.length > 0) await setSkuStatuses(plan.restore, 'active');
       if (plan.add.length > 0 && product !== undefined) {
         await extendVariants(product.id, {
-          axes: ticked.filter((axis) => axis.valueIds.length > 0),
+          // Only live values: the server builds the new variants from these axes, and an
+          // archived value the product still sells stays on its own variants.
+          axes: ticked
+            .map((axis) => ({
+              ...axis,
+              valueIds: axis.valueIds.filter((id) => !archivedValues.has(id)),
+            }))
+            .filter((axis) => axis.valueIds.length > 0),
           ...(mainPoisha === null ? {} : { pricePoisha: mainPoisha.toString() }),
           variantPrices: plan.add.map((row) => {
             const regular = regularOf(row.key);
@@ -315,6 +330,11 @@ export function SizesAndColours({
           items={describe(plan.restore)}
           piecesLabel={t('cp.extend.pieces')}
         />
+      ) : null}
+      {plan.skipped > 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {t('cp.extend.skippedArchived').replace('{n}', String(plan.skipped))}
+        </p>
       ) : null}
       {plan.orphans.length > 0 && plan.add.length > 0 ? (
         <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">

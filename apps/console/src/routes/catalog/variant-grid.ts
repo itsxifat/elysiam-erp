@@ -249,6 +249,8 @@ export interface ExtendPlan {
    * colours): they will not match the new ones; offered for archiving.
    */
   readonly orphans: readonly string[];
+  /** New combinations left out because one of their values is archived (M39a, D-624). */
+  readonly skipped: number;
 }
 
 /**
@@ -260,6 +262,8 @@ export function planExtend(
   existing: readonly ExistingVariant[],
   chosen: readonly { readonly attributeId: string; readonly valueIds: readonly string[] }[],
   valueAxis: ReadonlyMap<string, string>,
+  /** Values archived in Catalog setup (M39a, D-624): never on a new variant. */
+  archived: ReadonlySet<string> = new Set(),
 ): ExtendPlan {
   const used = chosen.filter((axis) => axis.valueIds.length > 0);
   let combos: string[][] = [[]];
@@ -268,12 +272,14 @@ export function planExtend(
   }
   const keyOf = (ids: readonly string[]) => [...ids].sort().join('|');
   const existingKeys = new Set(existing.map((variant) => keyOf(variant.valueIds)));
-  const add =
-    used.length === 0
-      ? []
-      : combos
-          .filter((combo) => !existingKeys.has(keyOf(combo)))
-          .map((combo) => ({ key: keyOf(combo), valueIds: combo }));
+  const missing =
+    used.length === 0 ? [] : combos.filter((combo) => !existingKeys.has(keyOf(combo)));
+  // A combination with an archived value is not added: the server would refuse the whole
+  // save for it. The product keeps the variants it already has with that value.
+  const add = missing
+    .filter((combo) => combo.every((id) => !archived.has(id)))
+    .map((combo) => ({ key: keyOf(combo), valueIds: combo }));
+  const skipped = missing.length - add.length;
 
   const ticked = new Set(used.flatMap((axis) => axis.valueIds));
   const chosenAxes = new Set(used.map((axis) => axis.attributeId));
@@ -293,7 +299,7 @@ export function planExtend(
       restore.push(variant.id);
     }
   }
-  return { add, archive, restore, orphans };
+  return { add, archive, restore, orphans, skipped };
 }
 
 /** `M / Red`, size first, from the attribute kinds (D-639's order). */

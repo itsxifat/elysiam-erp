@@ -131,6 +131,8 @@ const en = {
   'cp.extend.orphans':
     'These variants have no colour and will not match the new ones. Archive them? Their stock stays.',
   'cp.extend.archiveOrphans': 'Archive them',
+  'cp.extend.skippedArchived':
+    '{n} new combinations are left out because a size or colour in them is archived. Restore it in Catalog setup to add them.',
   'cp.extend.submit': 'Save sizes and colours',
   'cp.extend.done': 'Saved.',
   'cp.extend.nothing': 'Nothing to change yet: tick or untick a size or colour.',

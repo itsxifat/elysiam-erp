@@ -120,6 +120,8 @@ const bn: Record<CatalogPricingKey, string> = {
   'cp.extend.orphans':
     'এই variant-গুলোর কোনো রঙ নেই, নতুনগুলোর সাথে মিলবে না। আর্কাইভ করবেন? স্টক থেকে যাবে।',
   'cp.extend.archiveOrphans': 'আর্কাইভ করুন',
+  'cp.extend.skippedArchived':
+    'আর্কাইভ করা সাইজ বা রঙ থাকায় {n}টি নতুন কম্বিনেশন বাদ রাখা হলো। যোগ করতে Catalog setup-এ সেটি ফিরিয়ে আনুন।',
   'cp.extend.submit': 'সাইজ ও রঙ সেভ করুন',
   'cp.extend.done': 'সেভ হয়েছে।',
   'cp.extend.nothing': 'এখনও কিছু বদলানোর নেই: একটি সাইজ বা রঙে টিক দিন বা তুলে দিন।',

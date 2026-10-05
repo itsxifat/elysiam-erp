@@ -48,6 +48,43 @@ export async function skuPricesForUpdate(
 }
 
 /**
+ * The values a copy would put on new variants, with their lists, locked `for share` (lists
+ * first, then values, each in id order: the order an archive or delete takes them in), and
+ * which of them are archived, read under the lock (M39a, D-624). An archive that commits
+ * first is seen; one that comes after waits for this transaction.
+ */
+export async function lockValuesLive(
+  tx: Tx,
+  orgId: string,
+  valueIds: readonly string[],
+): Promise<Set<string>> {
+  if (valueIds.length === 0) return new Set();
+  const ids = sql.param([...new Set(valueIds)]);
+  const lists = await tx.execute<{ id: string; is_active: boolean }>(sql`
+    select a.id, a.is_active from catalog.attributes a
+    where a.org_id = ${orgId}
+      and a.id in (
+        select v.attribute_id from catalog.attribute_values v
+        where v.org_id = ${orgId} and v.id = any (${ids}::uuid[])
+      )
+    order by a.id
+    for share
+  `);
+  const values = await tx.execute<{ id: string; attribute_id: string; is_active: boolean }>(sql`
+    select v.id, v.attribute_id, v.is_active from catalog.attribute_values v
+    where v.org_id = ${orgId} and v.id = any (${ids}::uuid[])
+    order by v.id
+    for share
+  `);
+  const archivedLists = new Set(lists.filter((row) => !row.is_active).map((row) => row.id));
+  return new Set(
+    values
+      .filter((row) => !row.is_active || archivedLists.has(row.attribute_id))
+      .map((row) => row.id),
+  );
+}
+
+/**
  * Write a SKU's price and regular price. The history row is migration 0121's trigger's;
  * the reason reaches it through `setPriceContext`.
  */

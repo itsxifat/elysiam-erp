@@ -121,7 +121,48 @@ export async function supplierImage(
     select d.id, d.label, d.file_object_id from supply.supplier_documents d
     where d.org_id = ${orgId} and d.supplier_id = ${supplierId}
   `);
-  return { ...supplier[0], contacts: [...contacts], documents: [...documents] };
+  // The supplier's own standard buying prices go with it by cascade (M39b, D-638): counted
+  // here, never their figures, which stay out of the append-only log.
+  const prices = await tx.execute<{ count: number }>(sql`
+    select count(*)::int as count from supply.sku_purchase_prices
+    where org_id = ${orgId} and supplier_id = ${supplierId}
+  `);
+  return {
+    ...supplier[0],
+    contacts: [...contacts],
+    documents: [...documents],
+    standardBuyingPrices: prices[0]?.count ?? 0,
+  };
+}
+
+/**
+ * Remove the standard buying prices of variants being deleted (M39b, D-638), how many went.
+ * A setting, not evidence: no receipt, movement or journal points at one. The database would
+ * cascade them anyway; removing them here lets the delete's audit trail say how many.
+ */
+export async function releaseStandardPrices(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+): Promise<number> {
+  if (skuIds.length === 0) return 0;
+  const rows = await tx.execute<{ id: string }>(sql`
+    delete from supply.sku_purchase_prices
+    where org_id = ${orgId} and sku_id = any (${sql.param([...skuIds])}::uuid[])
+    returning id
+  `);
+  return rows.length;
+}
+
+/** Who is acting in this transaction, as `withOrg` set it (for a row written mid-delete). */
+export async function sessionActor(
+  tx: Tx,
+): Promise<{ userId: string | null; requestId: string | null }> {
+  const rows = await tx.execute<{ user_id: string | null; request_id: string | null }>(sql`
+    select nullif(current_setting('app.user_id', true), '') as user_id,
+           nullif(current_setting('app.request_id', true), '') as request_id
+  `);
+  return { userId: rows[0]?.user_id ?? null, requestId: rows[0]?.request_id ?? null };
 }
 
 export async function deleteSupplier(tx: Tx, orgId: string, id: string): Promise<boolean> {

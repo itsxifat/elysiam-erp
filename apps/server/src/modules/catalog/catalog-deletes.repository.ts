@@ -617,6 +617,12 @@ export async function reassignSizeChart(
     where org_id = ${orgId} and size_chart_id = ${fromId}
     returning id
   `);
+  // A category whose new products start on this chart (M39b, D-646) starts them on the
+  // replacement too, rather than on none when the chart's row goes.
+  await tx.execute(sql`
+    update catalog.categories set default_size_chart_id = ${toId}::uuid, updated_at = now()
+    where org_id = ${orgId} and default_size_chart_id = ${fromId}
+  `);
   return rows.map((row) => row.id);
 }
 

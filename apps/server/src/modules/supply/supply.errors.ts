@@ -126,6 +126,12 @@ export function supplyHttpError(code: ErrorCode, message: string): HttpException
   }
 }
 
+/** The standard buying price's foreign keys (M39b, D-638). */
+const STANDARD_PRICE_KEYS: ReadonlySet<string> = new Set([
+  'sku_purchase_prices_org_id_sku_id_fk',
+  'sku_purchase_prices_org_id_supplier_id_fk',
+]);
+
 /**
  * A trigger's refusal, recognised by its code prefix.
  *
@@ -152,6 +158,16 @@ function databaseSupplyCode(error: unknown): { code: ErrorCode; message: string 
     const sqlstate = (current as { code?: unknown }).code;
     const constraint = (current as { constraint_name?: unknown }).constraint_name;
     const name = typeof constraint === 'string' ? constraint : '';
+
+    if (sqlstate === '23503' && STANDARD_PRICE_KEYS.has(name)) {
+      // A standard buying price written for a variant or supplier deleted a moment before
+      // (M39a's deletes, D-638): the inserting side of the key, so not `*_IN_USE`.
+      return {
+        code: 'SUPPLY_NOT_FOUND',
+        message:
+          'A variant or supplier in this change was deleted a moment ago. Reload and try again; nothing was saved.',
+      };
+    }
 
     if (sqlstate === '23505' && Object.hasOwn(UNIQUE_MESSAGES, name)) {
       return { code: 'CONFLICT', message: UNIQUE_MESSAGES[name] ?? '' };

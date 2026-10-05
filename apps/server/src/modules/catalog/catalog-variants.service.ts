@@ -118,16 +118,16 @@ export class CatalogVariantsService {
         context.orgId,
         selling.map((sku) => sku.id),
       );
+      const { sequence, orgCode } = await repo.takeSequence(tx, context.orgId);
+
       // A size, colour or list archived since (M39a, D-624) goes on no new variant: the copy
-      // leaves out the variants that carry one, and refuses when that is every variant.
-      const archived = new Set(
-        (
-          await del.archivedAmong(
-            tx,
-            context.orgId,
-            values.map((value) => value.value_id),
-          )
-        ).map((value) => value.id),
+      // leaves out the variants that carry one, and refuses when that is every variant. Read
+      // under a shared lock, after the sequence, so an archive cannot slip in between the
+      // check and the insert (ledger re-audit N1).
+      const archived = await pricing.lockValuesLive(
+        tx,
+        context.orgId,
+        values.map((value) => value.value_id),
       );
       const active = selling.filter(
         (sku) => !values.some((value) => value.sku_id === sku.id && archived.has(value.value_id)),
@@ -139,11 +139,13 @@ export class CatalogVariantsService {
         );
       }
 
-      const { sequence, orgCode } = await repo.takeSequence(tx, context.orgId);
+      // The category locked `for share`, as an empty-and-delete locks it: an archive or a
+      // delete of it either commits first (and is seen) or waits for this copy.
       const category =
         source.category_id === null
           ? undefined
-          : await repo.categoryById(tx, context.orgId, source.category_id);
+          : await del.lockCategory(tx, context.orgId, source.category_id, 'share');
+      if (source.category_id !== null && category === undefined) throw notFound('category');
       // A copy is a new product, and no new product goes into an archived category (D-623).
       await assertCategoryLive(
         tx,
@@ -242,7 +244,8 @@ export class CatalogVariantsService {
     return withOrg(context, async (tx) => {
       const ids = [...new Set(input.productIds)];
       if (input.categoryId != null) {
-        const category = await repo.categoryById(tx, context.orgId, input.categoryId);
+        // Locked `for share`, so an archive or delete of the target cannot pass the check.
+        const category = await del.lockCategory(tx, context.orgId, input.categoryId, 'share');
         if (category === undefined) throw notFound('category');
         // Moving products into an archived category would take them off the website without
         // anyone deciding that (M39a, D-623), as the one-product edit refuses.

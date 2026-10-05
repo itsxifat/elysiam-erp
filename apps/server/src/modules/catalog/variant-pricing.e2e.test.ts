@@ -71,7 +71,7 @@ interface Product {
 
 async function call<T>(
   who: RoleClient,
-  method: 'GET' | 'POST' | 'PATCH' | 'PUT',
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   url: string,
   payload?: unknown,
   expected?: number,
@@ -87,7 +87,7 @@ async function call<T>(
 
 async function status(
   who: RoleClient,
-  method: 'GET' | 'POST' | 'PATCH' | 'PUT',
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   url: string,
   payload?: unknown,
 ): Promise<{ statusCode: number; code: string | undefined; body: string }> {
@@ -1051,6 +1051,29 @@ describe('weights, photo colours, the category default chart, bulk changes (D-64
       201,
     );
     expect(product.web.sizeChartId).toBe(chart.id);
+
+    // Emptied into another chart (M39a's empty-and-delete): the category's new products start
+    // on the replacement, not on none (re-audit N3).
+    const replacement = await call<{ id: string }>(
+      marketing,
+      'POST',
+      '/v1/storefront/size-charts',
+      { name: `Shirts chart two ${suffix}`, columns: ['Size', 'Chest'], rows: [['M', '41']] },
+      201,
+    );
+    await call(
+      marketing,
+      'POST',
+      `/v1/storefront/size-charts/${chart.id}/empty-and-delete`,
+      { replacementId: replacement.id },
+      200,
+    );
+    const categories = await call<{
+      items: { id: string; web: { defaultSizeChartId: string | null } }[];
+    }>(admin, 'GET', '/v1/catalog/categories', undefined, 200);
+    expect(categories.items.find((entry) => entry.id === category)?.web.defaultSizeChartId).toBe(
+      replacement.id,
+    );
     await call(
       marketing,
       'PUT',
@@ -1468,6 +1491,170 @@ describe('ledger audit follow-ups (W1, W4, W5, N4, N10)', () => {
     const other = await call<{ items: unknown[] }>(adminB, 'GET', url, undefined, 200);
     expect(other.items).toEqual([]);
     expect(JSON.stringify(all)).not.toMatch(/cost|wac/i);
+  });
+});
+
+describe('standard buying prices and M39a’s deletes (re-audit W1, W2)', () => {
+  async function priceRows(where: { skuId?: string; supplierId?: string; orgId?: string }) {
+    return withSystem(
+      async (tx) =>
+        tx.execute<{ sku_id: string; supplier_id: string | null }>(sql`
+          select sku_id, supplier_id from supply.sku_purchase_prices
+          where org_id = ${where.orgId ?? ORG_A}
+            and (${where.skuId ?? null}::uuid is null or sku_id = ${where.skuId ?? null}::uuid)
+            and (${where.supplierId ?? null}::uuid is null
+                 or supplier_id = ${where.supplierId ?? null}::uuid)
+        `),
+      { orgId: where.orgId ?? ORG_A },
+    );
+  }
+
+  async function standard(skuId: string, supplierId: string | null, poisha: string) {
+    await call(
+      accounts,
+      'PUT',
+      '/v1/supply/sku-costs',
+      { entries: [{ skuId, supplierId, standardUnitCostPoisha: poisha }] },
+      200,
+    );
+  }
+
+  it('a variant or product nothing used is deleted with its standard prices, and the log counts them', async () => {
+    const otherBrandBefore = (await priceRows({ orgId: ORG_B })).length;
+    const tee = await call<Product>(
+      admin,
+      'POST',
+      '/v1/catalog/products',
+      {
+        name: `Mistake tee ${suffix}`,
+        slug: `mistake-tee-${suffix}`,
+        status: 'active',
+        pricePoisha: '90000',
+        axes: [{ attributeId: sizeAttribute, valueIds: [sizes.S, sizes.M] }],
+      },
+      201,
+    );
+    const s = skuOf(tee, 'S');
+    const m = skuOf(tee, 'M');
+    await standard(s.id, null, '40000');
+    await standard(s.id, supplier, '41000');
+    await standard(m.id, null, '42000');
+
+    const deleted = await status(admin, 'DELETE', `/v1/catalog/skus/${s.id}`);
+    expect(deleted.statusCode, deleted.body).toBe(200);
+    expect(await priceRows({ skuId: s.id })).toEqual([]);
+    expect(await priceRows({ skuId: m.id })).toHaveLength(1);
+    const logged = await withSystem(
+      async (tx) =>
+        tx.execute<{ actor_user_id: string | null; entity_id: string; before: unknown }>(sql`
+          select actor_user_id, entity_id, before from audit.audit_log
+          where org_id = ${ORG_A} and action = 'supply.standard_costs.removed'
+            and entity_id = ${s.id}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(logged).toHaveLength(1);
+    expect(logged[0]?.actor_user_id).toBe(admin.userId);
+    // Counts only: the figures stay out of the append-only log (invariant 5).
+    expect(logged[0]?.before).toEqual({ standardBuyingPrices: 2, variants: 1 });
+    expect(JSON.stringify(logged[0]?.before)).not.toMatch(/4[01]000/);
+
+    const gone = await status(admin, 'DELETE', `/v1/catalog/products/${tee.id}`);
+    expect(gone.statusCode, gone.body).toBe(200);
+    expect(await priceRows({ skuId: m.id })).toEqual([]);
+    expect((await priceRows({ orgId: ORG_B })).length).toBe(otherBrandBefore);
+  });
+
+  it('a variant with a receipt is kept, and so is its standard price', async () => {
+    const tee = await call<Product>(
+      admin,
+      'POST',
+      '/v1/catalog/products',
+      {
+        name: `Kept tee ${suffix}`,
+        slug: `kept-tee-${suffix}`,
+        status: 'active',
+        pricePoisha: '90000',
+      },
+      201,
+    );
+    const only = tee.skus[0]?.id ?? '';
+    await standard(only, null, '43000');
+    await call(
+      admin,
+      'POST',
+      '/v1/supply/entries',
+      {
+        supplyId: randomUUID(),
+        supplierId: supplier,
+        locationId: mainWarehouse,
+        lines: [{ skuId: only, qty: 1, unitCostPoisha: '43000' }],
+      },
+      201,
+    );
+    const refused = await status(admin, 'DELETE', `/v1/catalog/skus/${only}`);
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.code).toBe('CATALOG_IN_USE');
+    expect(await priceRows({ skuId: only })).toHaveLength(1);
+  });
+
+  it('a supplier nothing used takes only its own standard prices with it', async () => {
+    const spare = await call<{ id: string }>(
+      admin,
+      'POST',
+      '/v1/supply/suppliers',
+      { code: `SUP-DX${suffix.slice(0, 3).toUpperCase()}`, name: 'Duplicate Mills' },
+      201,
+    );
+    const tee = await call<Product>(
+      admin,
+      'POST',
+      '/v1/catalog/products',
+      {
+        name: `Supplied tee ${suffix}`,
+        slug: `supplied-tee-${suffix}`,
+        status: 'active',
+        pricePoisha: '90000',
+      },
+      201,
+    );
+    const only = tee.skus[0]?.id ?? '';
+    await standard(only, null, '44000');
+    await standard(only, spare.id, '45000');
+    await standard(only, otherSupplier, '46000');
+
+    const deleted = await status(admin, 'DELETE', `/v1/supply/suppliers/${spare.id}`);
+    expect(deleted.statusCode, deleted.body).toBe(200);
+    const left = await priceRows({ skuId: only });
+    expect(left.map((row) => row.supplier_id).sort()).toEqual([null, otherSupplier].sort());
+    const logged = await withSystem(
+      async (tx) =>
+        tx.execute<{ before: { standardBuyingPrices?: number } }>(sql`
+          select before from audit.audit_log
+          where org_id = ${ORG_A} and entity_id = ${spare.id} and operation = 'delete'
+        `),
+      { orgId: ORG_A },
+    );
+    expect(logged.map((row) => row.before.standardBuyingPrices)).toEqual([1]);
+  });
+
+  it('every foreign key into a supplier is restrict but the standard price, read from the database', async () => {
+    const keys = await withSystem(async (tx) =>
+      tx.execute<{ child: string; action: string }>(sql`
+        select cn.nspname || '.' || c.relname as child, con.confdeltype::text as action
+        from pg_constraint con
+        join pg_class c on c.oid = con.conrelid
+        join pg_namespace cn on cn.oid = c.relnamespace
+        join pg_class p on p.oid = con.confrelid
+        join pg_namespace pn on pn.oid = p.relnamespace
+        where con.contype = 'f' and pn.nspname = 'supply' and p.relname = 'suppliers'
+        order by 1
+      `),
+    );
+    expect(keys.length).toBeGreaterThan(1);
+    expect(keys.filter((key) => key.action === 'c').map((key) => key.child)).toEqual([
+      'supply.sku_purchase_prices',
+    ]);
   });
 });
 
