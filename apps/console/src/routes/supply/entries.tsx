@@ -16,7 +16,10 @@ import { useState } from 'react';
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
-import { searchSkus } from '../catalog/api.js';
+import '../../i18n/stock-tools.js';
+import { lookupCode, searchSkus } from '../catalog/api.js';
+import { ScanField } from '../catalog/scan-field.js';
+import { StickerDialog, type StickerItem } from '../catalog/stickers.js';
 import { isReplayConflict, requestKey } from '../catalog/variant-grid.js';
 import {
   createDraft,
@@ -102,6 +105,11 @@ export function SupplyEntriesPage() {
   /** The draft accounts is pricing, if any. Null while the main form is in use. */
   const [pricing, setPricing] = useState<string | null>(null);
   const [prices, setPrices] = useState<Record<string, string>>({});
+  // M38a: SKUs added by a scan (so the line's list offers them), the last scan's answer,
+  // and the stickers a receipt offers, one per piece received (D-604, D-605).
+  const [scannedOptions, setScannedOptions] = useState<{ skuId: string; label: string }[]>([]);
+  const [scanMessage, setScanMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [stickers, setStickers] = useState<readonly StickerItem[] | null>(null);
 
   /*
    * The picker reads `GET /v1/supply/supplier-options` (`create Supply`, D-419): ids, codes
@@ -148,6 +156,7 @@ export function SupplyEntriesPage() {
     staleTime: 60_000,
   });
   const options = [
+    ...scannedOptions,
     ...(stock.data?.items ?? []).map((row) => ({
       skuId: row.skuId,
       label: `${row.skuCode} · ${row.productName}`,
@@ -173,6 +182,58 @@ export function SupplyEntriesPage() {
   // One key per entry or draft being saved, kept across retries (ledger audit H1): a
   // retry after a lost response replays the first receipt instead of posting a second.
   const [key] = useState(() => requestKey());
+
+  /** One sticker per piece on the lines just saved, labelled as the line list shows them. */
+  function offerStickers(): void {
+    const items = lines
+      .filter((line) => line.skuId !== '' && Number(line.qty) > 0)
+      .map((line) => ({
+        skuId: line.skuId,
+        label: options.find((option) => option.skuId === line.skuId)?.label ?? line.skuId,
+        skuCode: '',
+        count: Number(line.qty),
+      }));
+    if (items.length > 0) setStickers(items);
+  }
+
+  /** A scan adds a line for that SKU, or one more piece on its line (D-605). */
+  async function scan(code: string): Promise<void> {
+    try {
+      const found = await lookupCode(code);
+      const label = `${found.sku.code} · ${found.product.name}${
+        found.sku.variantLabel === '' ? '' : ` · ${found.sku.variantLabel}`
+      }`;
+      setScannedOptions((current) =>
+        current.some((option) => option.skuId === found.sku.id)
+          ? current
+          : [...current, { skuId: found.sku.id, label }],
+      );
+      setLines((current) => {
+        const existing = current.find((line) => line.skuId === found.sku.id);
+        if (existing !== undefined) {
+          return current.map((line) =>
+            line === existing ? { ...line, qty: String((Number(line.qty) || 0) + 1) } : line,
+          );
+        }
+        const blank = current.find((line) => line.skuId === '');
+        if (blank !== undefined) {
+          return current.map((line) =>
+            line === blank ? { ...line, skuId: found.sku.id, qty: '1' } : line,
+          );
+        }
+        return [...current, { ...blankLine(), skuId: found.sku.id, qty: '1' }];
+      });
+      setScanMessage({ text: `${t('st.scan.added')} ${label}`, error: false });
+    } catch (scanError) {
+      setScanMessage({
+        text:
+          scanError instanceof ApiError && scanError.status === 404
+            ? t('st.scan.notFound')
+            : t('st.scan.failed'),
+        error: true,
+      });
+    }
+  }
 
   function reset(): void {
     key.settle();
@@ -200,6 +261,7 @@ export function SupplyEntriesPage() {
     },
     onSuccess: () => {
       setDone('entry');
+      offerStickers();
       reset();
     },
   });
@@ -219,6 +281,7 @@ export function SupplyEntriesPage() {
     },
     onSuccess: () => {
       setDone('draft');
+      offerStickers();
       reset();
     },
   });
@@ -332,6 +395,13 @@ export function SupplyEntriesPage() {
                   />
                 </Field>
               </div>
+
+              <ScanField
+                autoFocus={false}
+                message={scanMessage?.text ?? null}
+                tone={scanMessage?.error === true ? 'error' : 'neutral'}
+                onCode={(code) => void scan(code)}
+              />
 
               <Field label={t('cs.findItem')} id="entry-find">
                 <SearchInput
@@ -650,6 +720,13 @@ export function SupplyEntriesPage() {
             )}
           </section>
         </PermissionGate>
+        <StickerDialog
+          open={stickers !== null}
+          onOpenChange={(next) => {
+            if (!next) setStickers(null);
+          }}
+          items={stickers ?? []}
+        />
       </div>
     </PermissionGate>
   );

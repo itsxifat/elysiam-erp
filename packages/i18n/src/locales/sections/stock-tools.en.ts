@@ -33,6 +33,7 @@ const en = {
     'The camera could not be opened. Allow camera access, or type the code instead.',
   'st.scan.added': 'Added:',
   'st.scan.notThisProduct': 'That sticker belongs to another product.',
+  'st.scan.notHere': 'None at this location:',
   'st.scan.notFound': 'No product in this brand has that barcode.',
   'st.scan.failed': 'The barcode could not be looked up. Try again.',
   'st.scan.opening': 'Opening the scanned product…',

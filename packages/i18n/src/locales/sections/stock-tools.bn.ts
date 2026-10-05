@@ -29,6 +29,7 @@ const bn: Record<StockToolsKey, string> = {
   'st.scan.cameraFailed': 'ক্যামেরা খোলা যায়নি। ক্যামেরার অনুমতি দিন, অথবা কোডটি লিখুন।',
   'st.scan.added': 'যোগ হয়েছে:',
   'st.scan.notThisProduct': 'এই স্টিকারটি অন্য পণ্যের।',
+  'st.scan.notHere': 'এই লোকেশনে নেই:',
   'st.scan.notFound': 'এই ব্র্যান্ডের কোনো পণ্যে এই বারকোড নেই।',
   'st.scan.failed': 'বারকোডটি খোঁজা যায়নি। আবার চেষ্টা করুন।',
   'st.scan.opening': 'scan করা পণ্যটি খোলা হচ্ছে…',

@@ -57,6 +57,11 @@ export const OPERATIONS = {
     path: '/v1/hr/payroll/runs/{id}/inputs/{inputId}',
     ability: 'create:Payroll',
   },
+  deleteV1InventoryStockInHandDraftsById: {
+    method: 'DELETE',
+    path: '/v1/inventory/stock-in-hand/drafts/{id}',
+    ability: 'update:Supply',
+  },
   deleteV1MarketingCampaignsByIdRefsByRefId: {
     method: 'DELETE',
     path: '/v1/marketing/campaigns/{id}/refs/{refId}',
@@ -205,6 +210,7 @@ export const OPERATIONS = {
     path: '/v1/catalog/categories',
     ability: 'read:Catalog',
   },
+  getV1CatalogLookup: { method: 'GET', path: '/v1/catalog/lookup', ability: 'read:Catalog' },
   getV1CatalogProducts: { method: 'GET', path: '/v1/catalog/products', ability: 'read:Catalog' },
   getV1CatalogProductsById: {
     method: 'GET',
@@ -421,6 +427,21 @@ export const OPERATIONS = {
     ability: 'read:StockAdjustment',
   },
   getV1InventoryStock: { method: 'GET', path: '/v1/inventory/stock', ability: 'read:Stock' },
+  getV1InventoryStockInHand: {
+    method: 'GET',
+    path: '/v1/inventory/stock-in-hand',
+    ability: 'create:Supply',
+  },
+  getV1InventoryStockInHandById: {
+    method: 'GET',
+    path: '/v1/inventory/stock-in-hand/{id}',
+    ability: 'create:Supply',
+  },
+  getV1InventoryStockInHandWindow: {
+    method: 'GET',
+    path: '/v1/inventory/stock-in-hand/window',
+    ability: 'read:Stock',
+  },
   getV1InventoryTransfers: {
     method: 'GET',
     path: '/v1/inventory/transfers',
@@ -681,6 +702,11 @@ export const OPERATIONS = {
     method: 'PATCH',
     path: '/v1/inventory/locations/{id}',
     ability: 'update:Catalog',
+  },
+  patchV1InventoryStockInHandDraftsById: {
+    method: 'PATCH',
+    path: '/v1/inventory/stock-in-hand/drafts/{id}',
+    ability: 'update:Supply',
   },
   patchV1InvestorsById: { method: 'PATCH', path: '/v1/investors/{id}', ability: 'update:Investor' },
   patchV1MarketingCampaignsById: {
@@ -956,6 +982,11 @@ export const OPERATIONS = {
     path: '/v1/inventory/counts/{id}/close',
     ability: 'request:StockAdjustment',
   },
+  postV1InventoryCountsByIdScans: {
+    method: 'POST',
+    path: '/v1/inventory/counts/{id}/scans',
+    ability: 'request:StockAdjustment',
+  },
   postV1InventoryCountsByIdSubmit: {
     method: 'POST',
     path: '/v1/inventory/counts/{id}/submit',
@@ -965,6 +996,31 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/inventory/locations',
     ability: 'create:Catalog',
+  },
+  postV1InventoryStockInHand: {
+    method: 'POST',
+    path: '/v1/inventory/stock-in-hand',
+    ability: 'read:Cost',
+  },
+  postV1InventoryStockInHandByIdPost: {
+    method: 'POST',
+    path: '/v1/inventory/stock-in-hand/{id}/post',
+    ability: 'read:Cost',
+  },
+  postV1InventoryStockInHandDrafts: {
+    method: 'POST',
+    path: '/v1/inventory/stock-in-hand/drafts',
+    ability: 'create:Supply',
+  },
+  postV1InventoryStockInHandWindowClose: {
+    method: 'POST',
+    path: '/v1/inventory/stock-in-hand/window/close',
+    ability: 'approve:StockAdjustment',
+  },
+  postV1InventoryStockInHandWindowReopen: {
+    method: 'POST',
+    path: '/v1/inventory/stock-in-hand/window/reopen',
+    ability: 'approve:StockAdjustment',
   },
   postV1InventoryTransfers: {
     method: 'POST',
@@ -1389,6 +1445,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.deleteV1HrPayrollRunsByIdInputsByInputId, input, options),
+    /** DELETE /v1/inventory/stock-in-hand/drafts/:id */
+    deleteV1InventoryStockInHandDraftsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1InventoryStockInHandDraftsById, input, options),
     /** DELETE /v1/marketing/campaigns/:id/refs/:refId */
     deleteV1MarketingCampaignsByIdRefsByRefId: (
       input: { readonly path: { readonly id: string; readonly refId: string } },
@@ -1536,6 +1598,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/catalog/categories */
     getV1CatalogCategories: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CatalogCategories, undefined, options),
+    /** GET /v1/catalog/lookup */
+    getV1CatalogLookup: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CatalogLookup, undefined, options),
     /** GET /v1/catalog/products */
     getV1CatalogProducts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CatalogProducts, undefined, options),
@@ -1782,6 +1847,18 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/inventory/stock */
     getV1InventoryStock: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InventoryStock, undefined, options),
+    /** GET /v1/inventory/stock-in-hand */
+    getV1InventoryStockInHand: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryStockInHand, undefined, options),
+    /** GET /v1/inventory/stock-in-hand/:id */
+    getV1InventoryStockInHandById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryStockInHandById, input, options),
+    /** GET /v1/inventory/stock-in-hand/window */
+    getV1InventoryStockInHandWindow: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InventoryStockInHandWindow, undefined, options),
     /** GET /v1/inventory/transfers */
     getV1InventoryTransfers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InventoryTransfers, undefined, options),
@@ -2121,6 +2198,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.patchV1InventoryLocationsById, input, options),
+    /** PATCH /v1/inventory/stock-in-hand/drafts/:id */
+    patchV1InventoryStockInHandDraftsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.patchV1InventoryStockInHandDraftsById, input, options),
     /** PATCH /v1/investors/:id */
     patchV1InvestorsById: (
       input: { readonly path: { readonly id: string } },
@@ -2403,6 +2486,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InventoryCountsByIdClose, input, options),
+    /** POST /v1/inventory/counts/:id/scans */
+    postV1InventoryCountsByIdScans: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryCountsByIdScans, input, options),
     /** POST /v1/inventory/counts/:id/submit */
     postV1InventoryCountsByIdSubmit: (
       input: { readonly path: { readonly id: string } },
@@ -2412,6 +2501,24 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/inventory/locations */
     postV1InventoryLocations: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InventoryLocations, undefined, options),
+    /** POST /v1/inventory/stock-in-hand */
+    postV1InventoryStockInHand: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryStockInHand, undefined, options),
+    /** POST /v1/inventory/stock-in-hand/:id/post */
+    postV1InventoryStockInHandByIdPost: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryStockInHandByIdPost, input, options),
+    /** POST /v1/inventory/stock-in-hand/drafts */
+    postV1InventoryStockInHandDrafts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryStockInHandDrafts, undefined, options),
+    /** POST /v1/inventory/stock-in-hand/window/close */
+    postV1InventoryStockInHandWindowClose: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryStockInHandWindowClose, undefined, options),
+    /** POST /v1/inventory/stock-in-hand/window/reopen */
+    postV1InventoryStockInHandWindowReopen: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryStockInHandWindowReopen, undefined, options),
     /** POST /v1/inventory/transfers */
     postV1InventoryTransfers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InventoryTransfers, undefined, options),
