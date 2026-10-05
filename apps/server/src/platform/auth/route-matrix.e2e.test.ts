@@ -44,6 +44,14 @@ import {
 import { NOTIFY_ROUTE_FIXTURES } from '../../modules/notify/notify.route-fixtures.js';
 import { ANALYTICS_ROUTE_FIXTURES } from '../../modules/analytics/analytics.route-fixtures.js';
 import {
+  MARKETPLACE_ROUTE_FIXTURES,
+  prepareMarketplaceFixtures,
+} from '../../modules/marketplace/marketplace.route-fixtures.js';
+import {
+  PACKING_ROUTE_FIXTURES,
+  preparePackingFixtures,
+} from '../../modules/packing/packing.route-fixtures.js';
+import {
   MARKETING_ROUTE_FIXTURES,
   prepareMarketingFixtures,
 } from '../../modules/marketing/marketing.route-fixtures.js';
@@ -104,6 +112,8 @@ beforeAll(async () => {
   await prepareMarketingFixtures();
   await prepareLoanFixtures();
   await prepareStorefrontFixtures();
+  await prepareMarketplaceFixtures();
+  await preparePackingFixtures();
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 }, 300_000);
 
@@ -278,6 +288,8 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...LOANS_ROUTE_FIXTURES,
   ...USERS_ROUTE_FIXTURES,
   ...STOREFRONT_ROUTE_FIXTURES,
+  ...MARKETPLACE_ROUTE_FIXTURES,
+  ...PACKING_ROUTE_FIXTURES,
 };
 
 function testedRoutes(): RouteDeclaration[] {

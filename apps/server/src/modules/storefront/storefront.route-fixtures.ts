@@ -8,6 +8,12 @@ import { CatalogService } from '../catalog/catalog.service.js';
 import { seedCustomer, seedOrder } from '../orders/orders.testing.js';
 import { insertPublicImageRow, insertTestSiteKey, type TestSiteKey } from './storefront.testing.js';
 import { tokenHash } from './tokens.js';
+import {
+  prepareWebMarketingFixtures,
+  WEB_MARKETING_PUBLIC_FIXTURES,
+  WEB_MARKETING_PUBLIC_WRITE_FIXTURES,
+  WEB_MARKETING_ROUTE_FIXTURES,
+} from './web-marketing.route-fixtures.js';
 
 /**
  * How the route-matrix suite and the cost sweep call M33's routes (D-070).
@@ -165,6 +171,8 @@ export async function prepareStorefrontFixtures(): Promise<void> {
     categoryId: category.id,
     ...web,
   };
+  // M35b: a campaign link for the reads and the website's code.
+  await prepareWebMarketingFixtures();
 }
 
 /**
@@ -410,6 +418,8 @@ export const STOREFRONT_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Ca
   'GET /v1/storefront/orders/:orderId': () => ({
     url: `/v1/storefront/orders/${state().orderId}`,
   }),
+  // M35b: campaign links and tracking.
+  ...WEB_MARKETING_ROUTE_FIXTURES,
 };
 
 /** The manifest entries, derived from the fixtures. */
@@ -446,6 +456,8 @@ export const STOREFRONT_PUBLIC_FIXTURES: Readonly<Record<string, () => string>> 
     `/storefront/v1/orders/${state().orderNo}?token=${state().viewToken}`,
   'GET /storefront/v1/flash-sales': () => '/storefront/v1/flash-sales',
   'GET /storefront/v1/flash-sales/:slug': () => `/storefront/v1/flash-sales/${state().flashSlug}`,
+  // M35b: campaign links and the tracking config.
+  ...WEB_MARKETING_PUBLIC_FIXTURES,
 };
 
 /**
@@ -537,6 +549,8 @@ export const STOREFRONT_PUBLIC_WRITE_FIXTURES: Readonly<
     path: '/storefront/v1/payments/sslcommerz/return',
     body: { kind: 'cancel', tranId: 'NOSUCHTRANSACTION0000' },
   }),
+  // M35b: a campaign link's view, and browser events.
+  ...WEB_MARKETING_PUBLIC_WRITE_FIXTURES,
 };
 
 let fixtureSku: string | undefined;

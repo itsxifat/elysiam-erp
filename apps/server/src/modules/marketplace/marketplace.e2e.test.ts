@@ -606,7 +606,7 @@ describe('back to ncom: the outbox', () => {
         await orders.transition(tx, { orgId: ORG_A, userId: admin.userId }, orderId, 'confirm');
         await service.queueChange(tx, ORG_A, orderId, 'confirmed', 'Status changed to confirmed');
       },
-      { orgId: ORG_A, userId: admin.userId },
+      { orgId: ORG_A },
     );
 
     const transport = harness.app.get(NcomTransport);
@@ -694,7 +694,7 @@ describe('back to ncom: the outbox', () => {
       async (tx) => {
         await service.queueChange(tx, ORG_A, orderId, 'on_hold', null);
       },
-      { orgId: ORG_A, userId: admin.userId },
+      { orgId: ORG_A },
     );
     answer = 409;
     await service.send(ORG_A, orderId);

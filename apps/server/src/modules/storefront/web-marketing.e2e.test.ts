@@ -6,7 +6,12 @@ import pino from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
-import { ORG_A, startHttpHarness, type HttpHarness, type RoleClient } from '../../testing/http-harness.js';
+import {
+  ORG_A,
+  startHttpHarness,
+  type HttpHarness,
+  type RoleClient,
+} from '../../testing/http-harness.js';
 import { seedProductWithSkus, warehouseId } from '../inventory/inventory.testing.js';
 import { applyOrderMigrations, seedStockLevel } from '../orders/orders.testing.js';
 import { MARKETPLACE_QUEUE_DEFINITIONS } from '../marketplace/marketplace.queues.js';
@@ -40,7 +45,12 @@ const suffix = randomUUID().slice(0, 6);
 const TOKEN = 'EAAB-test-access-token-never-real-0001';
 const API_SECRET = 'ga4-secret-test-0001';
 
-async function signed(method: 'GET' | 'POST', path: string, body?: unknown, idempotencyKey?: string) {
+async function signed(
+  method: 'GET' | 'POST',
+  path: string,
+  body?: unknown,
+  idempotencyKey?: string,
+) {
   const raw = body === undefined ? undefined : Buffer.from(JSON.stringify(body), 'utf8');
   const timestamp = String(Math.floor(Date.now() / 1000));
   const response = await harness.server.inject({
@@ -74,7 +84,13 @@ function link(overrides: Record<string, unknown> = {}) {
     categoryId,
     customPath: '',
     highlightProductIds: [productId],
-    banner: { enabled: true, text: 'Eid 20% off', bgColor: '#B85C3A', textColor: '#FFFFFF', link: '/shop' },
+    banner: {
+      enabled: true,
+      text: 'Eid 20% off',
+      bgColor: '#B85C3A',
+      textColor: '#FFFFFF',
+      link: '/shop',
+    },
     modal: {
       enabled: false,
       type: 'text',
@@ -101,8 +117,18 @@ function trackingSettings(overrides: Record<string, unknown> = {}) {
       testEventCode: 'TEST123',
       defaultCountryCode: '880',
     },
-    ga4: { clientEnabled: true, mpEnabled: true, measurementId: 'G-ABCDE12345', apiSecret: API_SECRET },
-    proxy: { metaScriptPath: '/e1/s.js', metaCollectPath: '/e1/t', ga4ScriptPath: '/e2/s.js', ga4CollectPath: '/e2' },
+    ga4: {
+      clientEnabled: true,
+      mpEnabled: true,
+      measurementId: 'G-ABCDE12345',
+      apiSecret: API_SECRET,
+    },
+    proxy: {
+      metaScriptPath: '/e1/s.js',
+      metaCollectPath: '/e1/t',
+      ga4ScriptPath: '/e2/s.js',
+      ga4CollectPath: '/e2',
+    },
     testMode: false,
     events: [
       { name: 'Purchase', enabled: true, client: true, server: true, meta: true, ga4: true },
@@ -115,26 +141,25 @@ function trackingSettings(overrides: Record<string, unknown> = {}) {
 
 async function eventRows(where: ReturnType<typeof sql>) {
   return withSystem(
-    async (tx) =>
-      [
-        ...(await tx.execute<{
-          id: string;
-          event_id: string;
-          event_name: string;
-          source: string;
-          status: string;
-          payload_sealed: Buffer | null;
-          user_masked: { email: string; phone: string };
-          match_keys: Record<string, boolean>;
-          custom_data: Record<string, unknown>;
-          meta: Record<string, unknown>;
-        }>(sql`
+    async (tx) => [
+      ...(await tx.execute<{
+        id: string;
+        event_id: string;
+        event_name: string;
+        source: string;
+        status: string;
+        payload_sealed: Buffer | null;
+        user_masked: { email: string; phone: string };
+        match_keys: Record<string, boolean>;
+        custom_data: Record<string, unknown>;
+        meta: Record<string, unknown>;
+      }>(sql`
           select id, event_id, event_name, source, status, payload_sealed, user_masked, match_keys,
                  custom_data, meta
           from storefront.tracking_events where org_id = ${ORG_A} and ${where}
           order by created_at
         `)),
-      ],
+    ],
     { orgId: ORG_A },
   );
 }
@@ -151,7 +176,8 @@ beforeAll(async () => {
     pollingIntervalSeconds: 0.5,
   });
   const bound: unknown = harness.app.get(TRACKING_GATEWAY, { strict: false });
-  if (!(bound instanceof FakeTrackingGateway)) throw new Error('the suite expects the fake gateway');
+  if (!(bound instanceof FakeTrackingGateway))
+    throw new Error('the suite expects the fake gateway');
   gateway = bound;
   admin = await harness.asRole('org_admin', ORG_A);
   marketing = await harness.asRole('marketing', ORG_A);
@@ -227,11 +253,14 @@ describe('campaign links', () => {
       banner: { text: 'Eid 20% off', link: '/shop' },
       modal: null,
     });
-    const cards = (read.body.customLink as { highlightProducts: { id: string }[] }).highlightProducts;
+    const cards = (read.body.customLink as { highlightProducts: { id: string }[] })
+      .highlightProducts;
     expect(cards.map((card) => card.id)).toEqual([productId]);
 
     for (let i = 0; i < 3; i += 1) {
-      expect((await signed('POST', `/storefront/v1/custom-links/${code}/views`, {})).status).toBe(200);
+      expect((await signed('POST', `/storefront/v1/custom-links/${code}/views`, {})).status).toBe(
+        200,
+      );
     }
     const after = JSON.parse(
       (await marketing.client.request('GET', `/v1/storefront/campaign-links/${id}`)).body,
@@ -243,7 +272,9 @@ describe('campaign links', () => {
       body: link({ isActive: false }),
     });
     expect((await signed('GET', `/storefront/v1/custom-links/${code}`)).status).toBe(404);
-    expect((await signed('POST', `/storefront/v1/custom-links/${code}/views`, {})).status).toBe(404);
+    expect((await signed('POST', `/storefront/v1/custom-links/${code}/views`, {})).status).toBe(
+      404,
+    );
   });
 
   it('refuse an unsafe path, a foreign image and a sales agent', async () => {
@@ -265,7 +296,9 @@ describe('campaign links', () => {
       }),
     });
     expect(notPublic.statusCode).toBe(400);
-    const bySales = await sales.client.request('POST', '/v1/storefront/campaign-links', { body: link() });
+    const bySales = await sales.client.request('POST', '/v1/storefront/campaign-links', {
+      body: link(),
+    });
     expect(bySales.statusCode).toBe(403);
   });
 });
@@ -304,7 +337,12 @@ describe('tracking', () => {
       tracking: {
         meta: { pixelEnabled: true, pixelId: '123456789012345' },
         ga4: { clientEnabled: true, measurementId: 'G-ABCDE12345' },
-        proxy: { metaScriptPath: '/e1/s.js', metaCollectPath: '/e1/t', ga4ScriptPath: '/e2/s.js', ga4CollectPath: '/e2' },
+        proxy: {
+          metaScriptPath: '/e1/s.js',
+          metaCollectPath: '/e1/t',
+          ga4ScriptPath: '/e2/s.js',
+          ga4CollectPath: '/e2',
+        },
         testMode: false,
         events: [
           { name: 'Purchase', enabled: true, client: true },
@@ -370,7 +408,10 @@ describe('tracking', () => {
     const current = await admin.client.request('GET', '/v1/storefront/settings');
     const settings = JSON.parse(current.body) as { siteInfo: Record<string, unknown> };
     await admin.client.request('PATCH', '/v1/storefront/settings', {
-      body: { siteInfo: { ...settings.siteInfo, siteUrl: 'https://shop.example' }, payments: { cod: true, sslcommerz: false } },
+      body: {
+        siteInfo: { ...settings.siteInfo, siteUrl: 'https://shop.example' },
+        payments: { cod: true, sslcommerz: false },
+      },
     });
     const quoted = await signed('POST', '/storefront/v1/cart/quote', {
       lines: [{ skuId, qty: 1 }],
@@ -386,7 +427,11 @@ describe('tracking', () => {
         address: { ...area, addressLine: 'House 7, Road 3' },
         paymentMethod: 'cod',
         expected: { totalPoisha: total },
-        tracking: { fbp: 'fb.1.9.9', eventSourceUrl: 'https://shop.example/checkout', gaClientId: '333.444' },
+        tracking: {
+          fbp: 'fb.1.9.9',
+          eventSourceUrl: 'https://shop.example/checkout',
+          gaClientId: '333.444',
+        },
         client: { ip: '203.0.113.10' },
       },
       randomUUID(),
@@ -396,7 +441,11 @@ describe('tracking', () => {
     const rows = await eventRows(sql`event_id = ${`purchase_${orderNo}`}`);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ source: 'server', event_name: 'Purchase', status: 'queued' });
-    expect(rows[0]?.custom_data).toMatchObject({ order_id: orderNo, currency: 'BDT', num_items: 1 });
+    expect(rows[0]?.custom_data).toMatchObject({
+      order_id: orderNo,
+      currency: 'BDT',
+      num_items: 1,
+    });
 
     await harness.app.get(TrackingService).send(ORG_A, rows[0]?.id ?? '');
     const event = gateway.meta.at(-1)?.event as {
@@ -433,7 +482,10 @@ describe('tracking', () => {
     const answer = await signed('POST', '/storefront/v1/events', {
       events: [{ eventName: 'PageView', eventId: `pv_${suffix}`, userData: { email: 'x@y.z' } }],
     });
-    expect(answer.body).toEqual({ ok: true, results: [{ eventId: `pv_${suffix}`, status: 'skipped' }] });
+    expect(answer.body).toEqual({
+      ok: true,
+      results: [{ eventId: `pv_${suffix}`, status: 'skipped' }],
+    });
     expect(await eventRows(sql`event_id = ${`pv_${suffix}`}`)).toHaveLength(0);
   });
 });
