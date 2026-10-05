@@ -20,13 +20,11 @@ const en = {
   'mg.usedBy': '{name} is used by',
   'mg.cannotDelete': 'It cannot be deleted while these use it.',
   'mg.andMore': 'and more',
-  'mg.delete': 'Delete',
   'mg.deleteForGood': 'Delete for good',
   'mg.archived': '{name} is archived: it is hidden from new work and kept wherever it is used.',
   'mg.archivedBadge': 'Archived',
   'mg.restore': 'Restore',
   'mg.showArchived': 'Show archived',
-  'mg.deleted': 'Deleted.',
 
   // Empty and delete (categories, size charts).
   'mg.empty.title': 'Empty and delete',
@@ -82,8 +80,6 @@ const en = {
   'mg.reason.system_template': 'Sent by the system itself',
 
   // Catalog setup.
-  'mg.setup.archiveList': 'Archive list',
-  'mg.setup.valueActions': 'Actions for {name}',
   'mg.setup.rename': 'Rename',
   'mg.setup.order': 'Change order',
   'mg.setup.orderTitle': 'Order of {name}',
@@ -93,7 +89,6 @@ const en = {
   'mg.setup.saveOrder': 'Save order',
   'mg.setup.manage': 'Delete or archive',
   'mg.setup.manageNamed': 'Delete or archive {name}',
-  'mg.setup.restoreNamed': 'Restore {name}',
   'mg.setup.locationCodeFixed':
     'The code stays the same: stock records, transfers and counts already name it.',
 
@@ -130,7 +125,6 @@ const en = {
   'mg.heads.expense': 'Expense',
   'mg.heads.income': 'Income',
   'mg.heads.add': 'Add head',
-  'mg.heads.code': 'Code',
   'mg.heads.system': 'Standard',
   'mg.heads.systemHint': 'A standard head keeps its name and stays in use.',
   'mg.heads.renameTitle': 'Rename head',

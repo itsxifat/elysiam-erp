@@ -90,7 +90,7 @@ export function DeleteOrArchive(props: DeleteOrArchiveProps) {
     } catch (error) {
       setProblem(error);
       // Something started using it since the report was read: read it again.
-      if (error instanceof ApiError && error.code !== null && error.code.endsWith('_IN_USE')) {
+      if (error instanceof ApiError && error.code?.endsWith('_IN_USE') === true) {
         await usage.refetch();
       }
     } finally {

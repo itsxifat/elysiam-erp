@@ -52,7 +52,9 @@ export class PromoCatalogReferences implements CatalogReferenceChecker, OnModule
         return [
           { reason: 'discounts', ...(await refs.discountsNaming(tx, orgId, 'category_ids', ids)) },
         ];
-      default:
+      case 'attribute':
+      case 'attribute_value':
+        // A discount names SKUs, products and categories, never a size or a colour.
         return [];
     }
   }

@@ -650,10 +650,12 @@ describe('products and variants (D-625, D-626)', () => {
       ).toBe(0);
     }
     const audit = await auditRowsFor(ORG_A, doomed.id);
-    expect(audit.find((row) => row.action === 'catalog.product.deleted')?.before).toMatchObject({
-      name: 'Mistake product',
-      skus: expect.arrayContaining([expect.objectContaining({ code: doomed.skus[0]?.skuCode })]),
-    });
+    const before = audit.find((row) => row.action === 'catalog.product.deleted')?.before as
+      { name: string; skus: { code: string }[] } | undefined;
+    expect(before?.name).toBe('Mistake product');
+    expect(before?.skus.map((sku) => sku.code).sort()).toEqual(
+      doomed.skus.map((sku) => sku.skuCode).sort(),
+    );
   });
 
   it('keeps a product whose SKU moved stock, and names it (check 1)', async () => {

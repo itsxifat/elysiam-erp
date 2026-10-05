@@ -16,14 +16,12 @@ const bn: Record<ManageKey, string> = {
   'mg.usedBy': '{name} যেখানে ব্যবহার হচ্ছে',
   'mg.cannotDelete': 'এগুলো ব্যবহার করছে বলে এটি মোছা যাবে না।',
   'mg.andMore': 'এবং আরও',
-  'mg.delete': 'মুছুন',
   'mg.deleteForGood': 'স্থায়ীভাবে মুছুন',
   'mg.archived':
     '{name} আর্কাইভ করা আছে: নতুন কাজে দেখা যায় না, যেখানে ব্যবহার হয়েছে সেখানে থেকে যায়।',
   'mg.archivedBadge': 'আর্কাইভ',
   'mg.restore': 'ফিরিয়ে আনুন',
   'mg.showArchived': 'আর্কাইভ করাগুলো দেখান',
-  'mg.deleted': 'মুছে ফেলা হয়েছে।',
 
   'mg.empty.title': 'খালি করে মুছুন',
   'mg.empty.categoryHelp':
@@ -77,8 +75,6 @@ const bn: Record<ManageKey, string> = {
   'mg.reason.messages_sent': 'পাঠানো মেসেজ',
   'mg.reason.system_template': 'সিস্টেম নিজেই পাঠায়',
 
-  'mg.setup.archiveList': 'তালিকা আর্কাইভ করুন',
-  'mg.setup.valueActions': '{name}-এর জন্য কাজ',
   'mg.setup.rename': 'নাম বদলান',
   'mg.setup.order': 'ক্রম বদলান',
   'mg.setup.orderTitle': '{name}-এর ক্রম',
@@ -88,7 +84,6 @@ const bn: Record<ManageKey, string> = {
   'mg.setup.saveOrder': 'ক্রম সেভ করুন',
   'mg.setup.manage': 'মুছুন বা আর্কাইভ করুন',
   'mg.setup.manageNamed': '{name} মুছুন বা আর্কাইভ করুন',
-  'mg.setup.restoreNamed': '{name} ফিরিয়ে আনুন',
   'mg.setup.locationCodeFixed': 'কোড একই থাকবে: স্টকের রেকর্ড, ট্রান্সফার ও গণনায় এটি আছে।',
 
   'mg.menu.withChildren':
@@ -120,7 +115,6 @@ const bn: Record<ManageKey, string> = {
   'mg.heads.expense': 'খরচ',
   'mg.heads.income': 'আয়',
   'mg.heads.add': 'খাত যোগ করুন',
-  'mg.heads.code': 'কোড',
   'mg.heads.system': 'স্ট্যান্ডার্ড',
   'mg.heads.systemHint': 'স্ট্যান্ডার্ড খাতের নাম বদলায় না এবং এটি সবসময় চালু থাকে।',
   'mg.heads.renameTitle': 'খাতের নাম বদলান',
