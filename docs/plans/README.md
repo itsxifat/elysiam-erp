@@ -83,3 +83,18 @@ Not a milestone: `gaps-orders-settings.md`, the console gaps M30's research foun
 Part-built: M30 (part 2 waits for staging, D-360) and M14b. Removed from scope by the owner: M27 Chatwoot and M29 landing page builder (D-290), M13 fraud check with its code (D-291), M28 activity extension (D-292). M21 and M22, the Beownz reseller platform, are out of scope by the client's instruction.
 
 The plain-language summary with percentages is `docs/build-status.md`.
+
+## Wave 3 (D-469, from 2026-10-05)
+
+One ERP per brand, the mother ERP, and each brand's website run from its ERP. Overview:
+`wave3.md`.
+
+| Plan | Milestone                                     | State on 2026-10-05 |
+| ---- | --------------------------------------------- | ------------------- |
+| M31  | One ERP per brand (brand edition)             | being built         |
+| M32  | The mother ERP                                | being built         |
+| M33  | Website catalog and content from the ERP      | being built         |
+| M34  | Website buying: checkout, accounts, payment   | planned             |
+| M35  | Website offers, landing pages, tracking, ncom | planned             |
+| M36  | Elysium website on the ERP, old data moved    | planned             |
+| M37  | Go live: brand servers, mother, switch-over   | planned             |
