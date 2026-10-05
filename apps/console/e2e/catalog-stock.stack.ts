@@ -166,7 +166,7 @@ test('new product: sizes and colours as chips, a variant price and opening stock
   const opening = page.getByRole('region', { name: 'Stock', exact: true });
   const fromSupplier = opening.getByRole('radio', { name: 'Received from a supplier' });
   if (await fromSupplier.isVisible()) await fromSupplier.check();
-  await choose(opening.getByLabel('Supplier'), `${SUPPLIER} (${SUPPLIER_CODE})`);
+  await choose(opening.getByLabel('Supplier', { exact: true }), `${SUPPLIER} (${SUPPLIER_CODE})`);
   await opening.getByLabel('Cost per piece (৳)').fill('1200');
   await expect(opening).toContainText('15 pieces');
 
@@ -240,14 +240,18 @@ test('receive a second delivery from the product page', async () => {
 
   await page.getByRole('button', { name: 'Receive stock' }).click();
   const dialog = page.getByRole('dialog', { name: 'Receive stock from a supplier' });
-  await choose(dialog.getByLabel('Supplier'), `${SUPPLIER} (${SUPPLIER_CODE})`);
+  await choose(dialog.getByLabel('Supplier', { exact: true }), `${SUPPLIER} (${SUPPLIER_CODE})`);
   await dialog.getByLabel('Cost per piece (৳)').fill('1180.50');
   await dialog.getByLabel('Quantity M / Navy Blue').fill('4');
   await expect(dialog).toContainText('৳4,722');
   await shot('07-receive');
   await dialog.getByRole('button', { name: 'Receive stock' }).click();
-  await expect(dialog.getByRole('status')).toContainText('Received');
-  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  // M38a: a receipt ends on its stickers, one per piece received (D-604).
+  await expect(dialog).toBeHidden();
+  const stickers = page.getByRole('dialog', { name: 'Print stickers' });
+  await expect(stickers.getByText('Stickers in all: 4')).toBeVisible();
+  await stickers.getByRole('button', { name: 'Close' }).first().click();
+  await expect(stickers).toBeHidden();
 
   const variants = page.getByRole('table', { name: 'Variants and stock' });
   const mRed = variants.getByRole('row', { name: /M \/ Red/ });

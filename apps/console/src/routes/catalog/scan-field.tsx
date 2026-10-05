@@ -85,10 +85,12 @@ export function ScanField({
       <p id={`${id}-hint`} className="text-xs text-muted-foreground">
         {t('st.scan.hint')}
       </p>
+      {/* A live region without the status role: the dialog around the field has its own
+          status line, and two in one dialog would make "the status" ambiguous. */}
       <p
         id={`${id}-status`}
-        role="status"
         aria-live="polite"
+        aria-atomic="true"
         className={cn('min-h-5 text-sm', tone === 'error' ? 'text-destructive' : 'text-foreground')}
       >
         {message ?? ''}

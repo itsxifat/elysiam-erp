@@ -31,6 +31,9 @@ export function ScanListener() {
   const navigate = useNavigate();
   const mayOpen = ability.can('read', 'Catalog');
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
+  // Marked once the key listener is attached: the chunk loads after the shell paints, and a
+  // test (or a support person) can see when scans start being heard.
+  const status = useRef<HTMLDivElement>(null);
   const timer = useRef(0);
 
   const say = useCallback((text: string, error: boolean) => {
@@ -94,6 +97,7 @@ export function ScanListener() {
     }
     // Capture, so the scan is seen before a dialog's own key handling.
     window.addEventListener('keydown', onKeyDown, true);
+    status.current?.setAttribute('data-listening', 'true');
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
       window.clearTimeout(timer.current);
@@ -111,6 +115,8 @@ export function ScanListener() {
       <div
         role="status"
         aria-live="polite"
+        ref={status}
+        data-testid="scan-listener"
         className="pointer-events-none fixed inset-x-0 bottom-16 z-50 flex justify-center px-4 md:bottom-6"
       >
         {notice === null ? null : (

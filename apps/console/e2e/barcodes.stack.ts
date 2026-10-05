@@ -27,6 +27,29 @@ const PRODUCT = `Cotton Kurti ${RUN}`;
 const FIT = `Fit ${RUN}`;
 const VALUES = ['S', 'M', 'L'] as const;
 const PIECES = { S: '4', M: '3', L: '2' } as const;
+const KIND_OTHER = 'Other';
+
+/**
+ * A scanner's burst, as the browser receives it: one keydown per character and Enter, a few
+ * milliseconds apart. Dispatched inside the page rather than through Playwright's keyboard,
+ * whose round trips on a loaded machine can space keys further apart than any scanner does
+ * and turn the test into a timing lottery. `gap` is the pause between keys, in ms.
+ */
+async function typeKeys(code: string, gap: number): Promise<void> {
+  // The scanner's listener is its own chunk, loaded after the shell paints.
+  await expect(page.getByTestId('scan-listener')).toHaveAttribute('data-listening', 'true');
+  await page.evaluate(
+    async ({ keys, pause }) => {
+      for (const key of keys) {
+        document.body.dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+        );
+        if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));
+      }
+    },
+    { keys: [...code, 'Enter'], pause: gap },
+  );
+}
 
 let page: Page;
 let productUrl = '';
@@ -81,7 +104,9 @@ test('a list of sizes to choose from', async () => {
   await page.goto('/catalog/structure');
   const lists = page.getByRole('region', { name: 'Sizes, colours and other lists' });
   await lists.getByLabel('List name').fill(FIT);
-  await choose(lists.getByLabel('Kind'), 'Size');
+  // Kind "Other": a size-kind list's card says "Size", and catalog-stock.stack.ts finds its
+  // own Size list by that word, so this suite's list must not answer to it.
+  await choose(lists.getByLabel('Kind'), KIND_OTHER);
   await lists.getByRole('button', { name: 'Add list' }).click();
   const card = lists.getByRole('listitem').filter({ hasText: FIT }).first();
   await expect(card).toBeVisible();
@@ -203,8 +228,7 @@ test('a scanner anywhere opens the product at the scanned variant', async () => 
   await expect(page.getByRole('heading', { name: 'Stock', level: 1 })).toBeVisible();
   // Focus on the page itself, not a text box: a scanner types into whatever has focus.
   await page.getByRole('heading', { name: 'Stock', level: 1 }).click();
-  await page.keyboard.type(code, { delay: 5 });
-  await page.keyboard.press('Enter');
+  await typeKeys(code, 0);
 
   await expect(page).toHaveURL(new RegExp(`/catalog/[0-9a-f-]+\\?variant=`));
   expect(page.url().split('?')[0]).toBe(productUrl.split('?')[0]);
@@ -216,8 +240,7 @@ test('a scanner anywhere opens the product at the scanned variant', async () => 
   // Typing the same digits slowly is a person, and opens nothing.
   await page.goto('/stock');
   await page.getByRole('heading', { name: 'Stock', level: 1 }).click();
-  await page.keyboard.type(code, { delay: 120 });
-  await page.keyboard.press('Enter');
+  await typeKeys(code, 120);
   await page.waitForTimeout(500);
   await expect(page).toHaveURL(/\/stock/);
 });
