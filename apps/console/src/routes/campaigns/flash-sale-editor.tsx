@@ -1,6 +1,7 @@
 import type { Locale } from '@elysium/i18n';
 import {
   Button,
+  cn,
   FileUpload,
   Money,
   PermissionGate,
@@ -325,7 +326,7 @@ function EditorForm({
                 <textarea
                   {...input('description')}
                   rows={3}
-                  className={`${control} h-auto py-2`}
+                  className={cn(control, 'h-auto min-h-20 py-2')}
                   value={values.description}
                   onChange={(event) => set('description', event.target.value)}
                 />
