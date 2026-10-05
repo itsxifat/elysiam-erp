@@ -210,7 +210,11 @@ export function DeleteOrArchive(props: DeleteOrArchiveProps) {
             </section>
           ) : null}
 
-          {report.canArchive && props.onArchive !== undefined && !report.canDelete ? (
+          {/* Archive when something keeps the row, or when this person may not delete it
+              (marketing archives a discount nobody used; only org_admin deletes). */}
+          {report.canArchive &&
+          props.onArchive !== undefined &&
+          (!report.canDelete || props.onDelete === undefined) ? (
             <section className="space-y-3 rounded-lg border border-border p-4">
               <h3 className="font-medium">{t('mg.archive.title')}</h3>
               <p className="text-muted-foreground">
