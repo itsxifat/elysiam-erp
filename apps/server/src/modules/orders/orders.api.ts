@@ -26,6 +26,7 @@ import { mapOrderErrors } from './orders.errors.js';
 import * as repo from './orders.repository.js';
 import { deliveredNetItems } from './revenue.js';
 import type { CreateOrderInput } from './orders.schemas.js';
+import * as references from './references.repository.js';
 
 /**
  * Orders' service interface for other modules (invariant 12).
@@ -368,6 +369,17 @@ export interface GatewayAdvanceInput {
 
 export interface OrdersApi {
   /**
+   * Orders whose recorded source names a campaign by its id or one of its refs (M39a, D-632):
+   * marketing keeps such a campaign rather than orphan their attribution.
+   */
+  ordersAttributedTo(
+    tx: Tx,
+    orgId: string,
+    campaignId: string,
+    refValues: readonly string[],
+  ): Promise<number>;
+
+  /**
    * Take an order inside the caller's transaction.
    *
    * The same path the HTTP endpoint uses, minus the scope check the caller owns: the
@@ -639,6 +651,10 @@ export class OrdersApiService implements OrdersApi {
     private readonly advances: AdvancesService,
     private readonly courier: CourierBookingRegistry,
   ) {}
+
+  ordersAttributedTo(tx: Tx, orgId: string, campaignId: string, refValues: readonly string[]) {
+    return references.ordersAttributedTo(tx, orgId, campaignId, refValues);
+  }
 
   async createOrder(
     tx: Tx,

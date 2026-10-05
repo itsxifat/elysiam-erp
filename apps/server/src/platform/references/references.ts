@@ -162,6 +162,7 @@ const REASON_WORDS: Readonly<Record<UsageReason, readonly [string, string]>> = {
   ad_spend: ['ad spend entry', 'ad spend entries'],
   messages_sent: ['message sent', 'messages sent'],
   system_template: ['system message', 'system messages'],
+  ledger_lines: ['entry in the books', 'entries in the books'],
 };
 
 /** "3 stock movements, 2 order lines and 1 discount", for an error's detail. */

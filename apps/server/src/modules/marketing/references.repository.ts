@@ -76,6 +76,19 @@ export async function campaignUses(
   return { spend: rows[0]?.spend ?? 0, leads: rows[0]?.leads ?? 0 };
 }
 
+/** The values the campaign's refs carry (Meta ids, `utm_campaign`s). */
+export async function campaignRefValues(
+  tx: Tx,
+  orgId: string,
+  campaignId: string,
+): Promise<string[]> {
+  const rows = await tx.execute<{ value: string }>(sql`
+    select value from marketing.campaign_refs
+    where org_id = ${orgId} and campaign_id = ${campaignId}
+  `);
+  return rows.map((row) => row.value);
+}
+
 export async function campaignRefsImage(
   tx: Tx,
   orgId: string,

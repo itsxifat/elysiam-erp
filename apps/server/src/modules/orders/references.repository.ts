@@ -36,3 +36,24 @@ export async function ordersNamingDiscount(tx: Tx, orgId: string, codeId: string
   `);
   return rows[0]?.n ?? 0;
 }
+
+/**
+ * Orders whose recorded source names a campaign, by its id or by one of its refs (a Meta ad
+ * id, a `utm_campaign`): what §11's attribution reads, so deleting the campaign would orphan
+ * them (M39a, D-632).
+ */
+export async function ordersAttributedTo(
+  tx: Tx,
+  orgId: string,
+  campaignId: string,
+  refValues: readonly string[],
+): Promise<number> {
+  const rows = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from sales.orders
+    where org_id = ${orgId}
+      and (source->>'campaignId' = ${campaignId}
+           or source->>'utmCampaign' = any (${sql.param([...refValues])}::text[])
+           or source->>'adId' = any (${sql.param([...refValues])}::text[]))
+  `);
+  return rows[0]?.n ?? 0;
+}

@@ -10,7 +10,13 @@ import { sql } from 'drizzle-orm';
  * never deletes one (§7). `ledger.accounts` has no DELETE grant; a head is archived.
  */
 
-/** The branch's wallets that still hold money (any balance but zero, all time). */
+/**
+ * The branch's wallet accounts that still hold money (any balance but zero, all time).
+ *
+ * Every wallet-subtype ledger account of the branch, whether or not a `wallets.wallets` row
+ * names it: the seed makes each branch's hand-cash account before any wallet row, and payroll
+ * and loans pay out through a wallet account by id (ledger audit W2).
+ */
 export async function walletsHoldingMoney(
   tx: Tx,
   orgId: string,
@@ -18,11 +24,12 @@ export async function walletsHoldingMoney(
 ): Promise<number> {
   const rows = await tx.execute<{ n: number }>(sql`
     select count(*)::int as n
-    from wallets.wallets w
-    where w.org_id = ${orgId} and w.branch_id = ${branchId}
+    from ledger.accounts a
+    where a.org_id = ${orgId} and a.branch_id = ${branchId}
+      and a.subtype::text in ('wallet_cash', 'wallet_bank', 'wallet_bkash', 'wallet_mfs_other')
       and coalesce((
         select sum(l.debit_poisha) - sum(l.credit_poisha) from ledger.journal_lines l
-        where l.org_id = w.org_id and l.account_id = w.ledger_account_id
+        where l.org_id = a.org_id and l.account_id = a.id
       ), 0) <> 0
   `);
   return rows[0]?.n ?? 0;
@@ -55,7 +62,7 @@ export async function lockHead(tx: Tx, orgId: string, id: string): Promise<HeadR
   const rows = await tx.execute<HeadRow>(sql`
     select id, code, name, subtype::text as subtype, is_active, is_system
     from ledger.accounts
-    where org_id = ${orgId} and id = ${id}
+    where org_id = ${orgId} and id = ${id} and branch_id is null
       and subtype::text in ('other_income', 'operating_expense')
     for update
   `);

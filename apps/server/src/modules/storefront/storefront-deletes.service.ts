@@ -69,9 +69,13 @@ export class StorefrontDeletesService {
     input: EmptySizeChartInput,
   ) {
     const result = await withOrg(context, async (tx) => {
+      const replacement = input.replacementId;
+      // Both charts in id order, so two opposite empties queue instead of deadlocking.
+      if (replacement !== null && replacement < id) {
+        await refs.lockSizeChart(tx, context.orgId, replacement, 'share');
+      }
       const chart = await refs.lockSizeChart(tx, context.orgId, id);
       if (chart === undefined) throw notFound('size chart');
-      const replacement = input.replacementId;
       if (replacement !== null) {
         if (replacement === id) {
           throw new StorefrontError(
@@ -85,6 +89,20 @@ export class StorefrontDeletesService {
         }
       }
       const moved = await this.catalog.reassignSizeChart(tx, context.orgId, id, replacement);
+      // One row per product given another chart, for each product's own history (D-622).
+      for (const productId of moved) {
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'update',
+          action: 'catalog.product.size_chart_moved',
+          entityType: 'Product',
+          entityId: productId,
+          before: { sizeChartId: id },
+          after: { sizeChartId: replacement, because: `${chart.name} was emptied and deleted` },
+          requestId: context.requestId,
+        });
+      }
       await refs.forgetLegacyIds(tx, context.orgId, 'size_chart', [id]);
       if (!(await repo.deleteSizeChart(tx, context.orgId, id))) throw notFound('size chart');
       await this.audit.record(tx, {

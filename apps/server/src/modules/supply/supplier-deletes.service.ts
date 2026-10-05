@@ -12,8 +12,8 @@ import { mapSupplyErrors, SupplyError } from './supply.errors.js';
 /**
  * Deleting a supplier nothing names (M39a, D-630): a duplicate typed by mistake. Its
  * contacts and documents go with it (the files stay in storage); a single entry (draft or
- * received), return, payment, advance or note keeps it, and it is deactivated instead,
- * which the supplier screen already does.
+ * received), return, payment, advance, note or journal line naming it as a party (an opening
+ * due) keeps it, and it is deactivated instead, which the supplier screen already does.
  */
 @Injectable()
 export class SupplierDeletesService {
@@ -51,7 +51,7 @@ export class SupplierDeletesService {
             `${supplier.name} has ${describeUses(uses)}. Deactivate the supplier instead; its history stays.`,
           );
         }
-        const attachments = await refs.supplierAttachments(tx, context.orgId, id);
+        const image = await refs.supplierImage(tx, context.orgId, id);
         if (!(await refs.deleteSupplier(tx, context.orgId, id))) throw notFound();
         await this.audit.record(tx, {
           orgId: context.orgId,
@@ -60,7 +60,7 @@ export class SupplierDeletesService {
           action: 'supply.supplier.deleted',
           entityType: 'Supplier',
           entityId: id,
-          before: { ...supplier, ...attachments },
+          before: image,
           after: null,
           requestId: context.requestId,
           request,
@@ -76,6 +76,7 @@ export class SupplierDeletesService {
       { reason: 'supply_entries', count: uses.entries },
       { reason: 'supplier_payments', count: uses.payments },
       { reason: 'supplier_notes', count: uses.notes },
+      { reason: 'ledger_lines', count: uses.ledgerLines },
     ]);
   }
 }

@@ -78,6 +78,7 @@ const en = {
   'mg.reason.ad_spend': 'Ad spend entries',
   'mg.reason.messages_sent': 'Messages sent',
   'mg.reason.system_template': 'Sent by the system itself',
+  'mg.reason.ledger_lines': 'Entries in the books',
 
   // Catalog setup.
   'mg.setup.rename': 'Rename',

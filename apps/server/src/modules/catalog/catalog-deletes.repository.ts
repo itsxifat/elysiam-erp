@@ -619,3 +619,22 @@ export async function reassignSizeChart(
   `);
   return rows.map((row) => row.id);
 }
+
+/** The nearest archived category at or above this one, if any (D-623). */
+export async function archivedAtOrAbove(
+  tx: Tx,
+  orgId: string,
+  categoryId: string,
+): Promise<{ name: string } | undefined> {
+  const rows = await tx.execute<{ name: string }>(sql`
+    select a.name
+    from catalog.categories c
+    join catalog.categories a
+      on a.org_id = c.org_id and not a.is_active
+     and (a.id = c.id or starts_with(c.path, a.path || '/'))
+    where c.org_id = ${orgId} and c.id = ${categoryId}
+    order by length(a.path) desc
+    limit 1
+  `);
+  return rows[0];
+}

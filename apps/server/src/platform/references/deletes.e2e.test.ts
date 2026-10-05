@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { withOrg, withSystem } from '@elysium/db';
-import { poisha } from '@elysium/domain';
+import { businessDate, poisha } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -16,6 +16,8 @@ import {
   type HttpHarness,
   type RoleClient,
 } from '../../testing/http-harness.js';
+import { LEDGER_API, type LedgerApi } from '../../modules/ledger/ledger.api.js';
+import { seedEmployee } from '../../modules/hr/hr.testing.js';
 
 /**
  * Deleting and archiving everything that is not the catalog (M39a, D-628 to D-634; M39
@@ -95,6 +97,54 @@ interface Usage {
 
 const reasons = (usage: Usage) =>
   Object.fromEntries(usage.uses.map((use) => [use.reason, use.count]));
+
+/** A balanced journal through the real ledger (`ledger.post`), on chart accounts by code. */
+async function postJournal(
+  event: string,
+  lines: readonly {
+    readonly code: string;
+    readonly debit?: bigint;
+    readonly credit?: bigint;
+    readonly party?: { readonly type: 'supplier'; readonly id: string };
+    readonly accountId?: string;
+    readonly branchId?: string;
+  }[],
+): Promise<void> {
+  const ledger = harness.app.get<LedgerApi>(LEDGER_API, { strict: false });
+  const accountRows = await withSystem(
+    async (tx) =>
+      tx.execute<{ id: string; code: string }>(sql`
+        select id, code from ledger.accounts where org_id = ${ORG_A}
+      `),
+    { orgId: ORG_A },
+  );
+  const byCode = new Map(accountRows.map((row) => [row.code, row.id]));
+  const sourceId = randomUUID();
+  await withOrg({ orgId: ORG_A, userId: accounts.userId }, (tx) =>
+    ledger.post(
+      tx,
+      { orgId: ORG_A, userId: accounts.userId },
+      {
+        businessDate: businessDate(new Date()),
+        sourceType: 'm39a_fixture',
+        sourceId,
+        event,
+        idempotencyKey: `m39a_fixture:${sourceId}:${event}`,
+        memo: null,
+        reversesJournalId: null,
+        lines: lines.map((line) => ({
+          accountId: line.accountId ?? byCode.get(line.code) ?? '',
+          debitPoisha: poisha(line.debit ?? 0n),
+          creditPoisha: poisha(line.credit ?? 0n),
+          branchId: line.branchId ?? null,
+          partyType: line.party?.type ?? null,
+          partyId: line.party?.id ?? null,
+          memo: null,
+        })),
+      },
+    ),
+  );
+}
 
 async function deletedWithBefore(entityId: string, action: string): Promise<unknown> {
   const rows = await auditRowsFor(ORG_A, entityId);
@@ -231,10 +281,13 @@ describe('suppliers (D-630)', () => {
       404,
     );
     await ok(admin, 'DELETE', `/v1/supply/suppliers/${duplicate.id}`);
-    expect(await deletedWithBefore(duplicate.id, 'supply.supplier.deleted')).toMatchObject({
-      name: 'Duplicate Mills',
-      contacts: [expect.objectContaining({ name: 'Rahim' })],
-    });
+    const before = await deletedWithBefore(duplicate.id, 'supply.supplier.deleted');
+    expect(before).toMatchObject({ name: 'Duplicate Mills' });
+    expect((before as { contacts: { is_primary: boolean }[] }).contacts).toEqual([
+      { id: expect.any(String) as string, is_primary: false },
+    ]);
+    // The audit log keeps who the supplier was, never a contact's name, phone or email.
+    expect(JSON.stringify(before)).not.toContain('Rahim');
 
     const real = await ok<{ id: string }>(admin, 'POST', '/v1/supply/suppliers', {
       code: `REAL-${token(6)}`,
@@ -267,6 +320,31 @@ describe('suppliers (D-630)', () => {
     );
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe('SUPPLY_IN_USE');
+  });
+
+  it('keeps a supplier the books name as a party, with no supply row behind it (an opening due)', async () => {
+    const opening = await ok<{ id: string }>(admin, 'POST', '/v1/supply/suppliers', {
+      code: `OPEN-${token(6)}`,
+      name: 'Opening Due Mills',
+    });
+    await postJournal('opening_due', [
+      { code: '5890', debit: 75_000n },
+      { code: '2100', credit: 75_000n, party: { type: 'supplier', id: opening.id } },
+    ]);
+    const usage = await ok<Usage>(admin, 'GET', `/v1/supply/suppliers/${opening.id}/usage`);
+    expect(reasons(usage)).toMatchObject({ ledger_lines: 1 });
+    expect(usage.canDelete).toBe(false);
+    const refused = await call<{ code: string }>(
+      admin,
+      'DELETE',
+      `/v1/supply/suppliers/${opening.id}`,
+    );
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('SUPPLY_IN_USE');
+    expect(refused.raw).toContain('entry in the books');
+    expect(
+      await count(sql`select count(*) as n from supply.suppliers where id = ${opening.id}`),
+    ).toBe(1);
   });
 });
 
@@ -483,6 +561,46 @@ describe('SMS templates and ad campaigns (D-632)', () => {
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe('MARKETING_IN_USE');
   });
+
+  it('keeps a campaign an order came from, by its id or by one of its refs', async () => {
+    const customer = await seedCustomer(ORG_A, {
+      phoneE164: '+8801711000654',
+      name: 'Campaign buyer',
+    });
+    const product = await aProduct();
+    for (const via of ['id', 'ref'] as const) {
+      const campaign = await ok<{ id: string }>(admin, 'POST', '/v1/marketing/campaigns', {
+        name: `Attributed by ${via}`,
+        platform: 'other',
+      });
+      const ref = `attributed-${token(6).toLowerCase()}`;
+      await ok(admin, 'POST', `/v1/marketing/campaigns/${campaign.id}/refs`, {
+        kind: 'utm_campaign',
+        value: ref,
+      });
+      const order = await seedOrder(ORG_A, {
+        customerId: customer,
+        status: 'pending',
+        lines: [
+          { skuId: product.skuId, skuCode: 'X', productName: 'X', qty: 1, unitPricePoisha: 1n },
+        ],
+      });
+      const source = via === 'id' ? { campaignId: campaign.id } : { utmCampaign: ref };
+      await run(sql`
+        update sales.orders set source = ${JSON.stringify(source)}::jsonb where id = ${order.id}
+      `);
+      expect(
+        reasons(await ok<Usage>(marketing, 'GET', `/v1/marketing/campaigns/${campaign.id}/usage`)),
+      ).toMatchObject({ orders: 1 });
+      const refused = await call<{ code: string }>(
+        admin,
+        'DELETE',
+        `/v1/marketing/campaigns/${campaign.id}`,
+      );
+      expect(refused.status).toBe(409);
+      expect(refused.body.code).toBe('MARKETING_IN_USE');
+    }
+  });
 });
 
 describe('the website: size charts and the menu (D-628)', () => {
@@ -669,6 +787,140 @@ describe('branches: renamed and switched off, never deleted (D-633)', () => {
     });
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe('BRANCH_IN_USE');
+  });
+
+  async function handCash(branchId: string, name: string): Promise<string> {
+    return withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ id: string }>(sql`
+            insert into ledger.accounts (org_id, code, name, class, subtype, normal_balance, branch_id)
+            values (${ORG_A}, ${`1010-${token(5)}`}, ${name}, 'asset', 'wallet_cash', 'debit', ${branchId})
+            returning id
+          `)
+        )[0]?.id ?? '',
+      { orgId: ORG_A },
+    );
+  }
+
+  async function showroom(branchId: string, name: string): Promise<string> {
+    return withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ id: string }>(sql`
+            insert into org.locations (org_id, branch_id, code, name, kind)
+            values (${ORG_A}, ${branchId}, ${`L${token(6)}`}, ${name}, 'showroom') returning id
+          `)
+        )[0]?.id ?? '',
+      { orgId: ORG_A },
+    );
+  }
+
+  it('refuses while its hand cash holds money (wallet row or not), staff work there or stock sits there', async () => {
+    const holdsOf = async (id: string) =>
+      ok<{ canDeactivate: boolean; holds: Record<string, number> }>(
+        admin,
+        'GET',
+        `/v1/pos/branches/${id}/holds`,
+      );
+    const switchOff = (id: string) =>
+      call<{ code: string }>(admin, 'PATCH', `/v1/pos/branches/${id}`, { isActive: false });
+
+    // Money in a wallet-subtype account of the branch that no wallets row names (W2).
+    const moneyed = await branch();
+    const cash = await handCash(moneyed, 'Hand cash');
+    await postJournal('float', [
+      { code: '', accountId: cash, branchId: moneyed, debit: 20_000n },
+      { code: '3100', credit: 20_000n },
+    ]);
+    expect(await holdsOf(moneyed)).toMatchObject({
+      canDeactivate: false,
+      holds: { walletsWithMoney: 1 },
+    });
+    expect((await switchOff(moneyed)).body.code).toBe('BRANCH_IN_USE');
+
+    // Somebody employed there.
+    const staffed = await branch();
+    await seedEmployee(ORG_A, {
+      code: `E${token(6)}`,
+      fullName: 'Branch employee',
+      joinDate: '2026-01-01',
+      branchId: staffed,
+    });
+    expect(await holdsOf(staffed)).toMatchObject({ holds: { employees: 1 } });
+    expect((await switchOff(staffed)).body.code).toBe('BRANCH_IN_USE');
+
+    // Stock at one of its locations.
+    const stocked = await branch();
+    const shelf = await showroom(stocked, 'Stocked shelf');
+    const product = await aProduct();
+    const actor = { orgId: ORG_A, userId: 'usr_m39a_e2e' };
+    await withOrg(actor, (tx) =>
+      inventory.receiveSupply(tx, actor, {
+        supplyId: randomUUID(),
+        supplierId: randomUUID(),
+        locationId: shelf,
+        branchId: stocked,
+        occurredAt: new Date(),
+        lines: [{ skuId: product.skuId, qty: 1, unitCostPoisha: poisha(50_000) }],
+      }),
+    );
+    expect(await holdsOf(stocked)).toMatchObject({ holds: { stockPlaces: 1 } });
+    expect((await switchOff(stocked)).body.code).toBe('BRANCH_IN_USE');
+  });
+
+  it('opens no till and no shift at a switched-off branch', async () => {
+    const closed = await branch();
+    const location = await showroom(closed, 'Closed showroom');
+    const cash = await handCash(closed, 'Closed hand cash');
+    const wallet = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ id: string }>(sql`
+            insert into wallets.wallets (org_id, ledger_account_id, branch_id)
+            values (${ORG_A}, ${cash}, ${closed}) returning id
+          `)
+        )[0]?.id ?? '',
+      { orgId: ORG_A },
+    );
+    const bank = await seedWallet(ORG_A, '1100', { provider: 'Bank' });
+    const manager = await harness.asRole('branch_manager', ORG_A, { branchIds: [closed] });
+    const till = {
+      branchId: closed,
+      locationId: location,
+      name: 'Closed till',
+      cashWalletId: wallet,
+      cardWalletId: bank.id,
+    };
+    // A till made while the branch ran; then the branch is switched off under it (as a row
+    // from before M39a could be), so the shift guard is reached on its own.
+    const register = await ok<{ id: string }>(manager, 'POST', '/v1/pos/registers', {
+      ...till,
+      code: `R${token(3)}`,
+    });
+    await run(sql`update org.branches set is_active = false where id = ${closed}`);
+
+    const newTill = await call<{ code: string }>(manager, 'POST', '/v1/pos/registers', {
+      ...till,
+      code: `R${token(3)}`,
+    });
+    expect(newTill.body.code, newTill.raw).toBe('POS_REGISTER_INVALID');
+    const shift = await call<{ code: string }>(manager, 'POST', '/v1/pos/shifts', {
+      shiftId: randomUUID(),
+      registerId: register.id,
+      openingFloatPoisha: '0',
+    });
+    expect(shift.body.code, shift.raw).toBe('POS_REGISTER_INVALID');
+
+    // A till switched off there is not switched back on.
+    await ok(manager, 'PATCH', `/v1/pos/registers/${register.id}`, { isActive: false });
+    const back = await call<{ code: string }>(
+      manager,
+      'PATCH',
+      `/v1/pos/registers/${register.id}`,
+      { isActive: true },
+    );
+    expect(back.body.code, back.raw).toBe('POS_REGISTER_INVALID');
   });
 });
 

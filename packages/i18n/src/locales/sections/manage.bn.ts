@@ -74,6 +74,7 @@ const bn: Record<ManageKey, string> = {
   'mg.reason.ad_spend': 'বিজ্ঞাপন খরচের এন্ট্রি',
   'mg.reason.messages_sent': 'পাঠানো মেসেজ',
   'mg.reason.system_template': 'সিস্টেম নিজেই পাঠায়',
+  'mg.reason.ledger_lines': 'হিসাবের এন্ট্রি',
 
   'mg.setup.rename': 'নাম বদলান',
   'mg.setup.order': 'ক্রম বদলান',

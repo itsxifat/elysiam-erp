@@ -393,6 +393,16 @@ describe('categories (D-623)', () => {
     ).toMatchObject({
       slug: shirts.slug,
     });
+    // Each moved product's own history shows the move (D-622).
+    for (const item of [first, second]) {
+      const moved = (await auditRowsFor(ORG_A, item.id)).find(
+        (row) => row.action === 'catalog.product.category_moved',
+      );
+      expect(moved).toMatchObject({
+        before: { categoryId: shirts.id },
+        after: { categoryId: tops.id },
+      });
+    }
 
     // The website shows the products under the new category.
     const shop = await signedGet(
@@ -503,6 +513,28 @@ describe('categories (D-623)', () => {
     });
     expect(refused.status).toBe(400);
     expect(refused.body.code).toBe('CATALOG_CATEGORY_INVALID');
+    // A category under the archived one is refused too: the website would not show it.
+    const below = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ id: string }>(sql`
+            insert into catalog.categories (org_id, parent_id, name, slug, code)
+            values (${ORG_A}, ${winter.id}, 'Parkas', ${`parkas-${token(6).toLowerCase()}`},
+                    ${`P${token(5)}`})
+            returning id
+          `)
+        )[0]?.id ?? '',
+      { orgId: ORG_A },
+    );
+    const underneath = await call<{ code: string }>(admin, 'POST', '/v1/catalog/products', {
+      name: 'New parka',
+      slug: `new-parka-${token(4).toLowerCase()}`,
+      pricePoisha: '100000',
+      categoryId: below,
+    });
+    expect(underneath.status).toBe(400);
+    expect(underneath.body.code).toBe('CATALOG_CATEGORY_INVALID');
+    expect(underneath.raw).toContain('Winter');
 
     await ok(admin, 'POST', `/v1/catalog/categories/${winter.id}/restore`);
     expect(await shown()).toBe(true);

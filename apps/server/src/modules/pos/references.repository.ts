@@ -49,13 +49,25 @@ export async function lockBranch(
   tx: Tx,
   orgId: string,
   id: string,
+  lock = true,
 ): Promise<BranchImage | undefined> {
   const rows = await tx.execute<BranchImage>(sql`
     select id, code, name, kind::text as kind, is_active
     from org.branches where org_id = ${orgId} and id = ${id}
-    for update
+    ${lock ? sql`for update` : sql``}
   `);
   return rows[0];
+}
+
+/**
+ * Whether a branch is switched on, read `for share` so a switch-off waits for a till or a
+ * shift being opened there, and an opening waits for a switch-off (D-633).
+ */
+export async function branchIsActive(tx: Tx, orgId: string, id: string): Promise<boolean> {
+  const rows = await tx.execute<{ is_active: boolean }>(sql`
+    select is_active from org.branches where org_id = ${orgId} and id = ${id} for share
+  `);
+  return rows[0]?.is_active === true;
 }
 
 export async function updateBranch(

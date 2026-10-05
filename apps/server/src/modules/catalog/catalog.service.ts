@@ -330,7 +330,7 @@ export class CatalogService {
         ? undefined
         : await repo.categoryById(tx, context.orgId, input.categoryId);
     if (input.categoryId != null && category === undefined) throw notFound('category');
-    assertCategoryLive(category);
+    await assertCategoryLive(tx, context.orgId, category);
     const categoryCode = category?.code;
 
     const product = await repo.insertProduct(tx, context.orgId, {
@@ -392,7 +392,9 @@ export class CatalogService {
         const category = await repo.categoryById(tx, context.orgId, input.categoryId);
         if (category === undefined) throw notFound('category');
         const current = await repo.productById(tx, context.orgId, id);
-        if (current?.category_id !== input.categoryId) assertCategoryLive(category);
+        if (current?.category_id !== input.categoryId) {
+          await assertCategoryLive(tx, context.orgId, category);
+        }
       }
       const row = await repo.updateProduct(tx, context.orgId, id, {
         name: input.name,

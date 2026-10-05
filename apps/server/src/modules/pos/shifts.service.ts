@@ -11,6 +11,7 @@ import type { ActiveContext } from '../../platform/http/context.js';
 import { posHttpError } from './pos.errors.js';
 import * as repo from './pos.repository.js';
 import type { CloseShiftInput, OpenShiftInput } from './pos.schemas.js';
+import { branchIsActive } from './references.repository.js';
 
 /**
  * Shifts: a float counted in, a drawer counted out (§14).
@@ -81,6 +82,10 @@ export class ShiftsService {
       }
       if (!register.is_active) {
         throw posHttpError('POS_REGISTER_INVALID', 'That register is deactivated.');
+      }
+      // M39a (D-633): a switched-off branch opens no shift.
+      if (!(await branchIsActive(tx, context.orgId, register.branch_id))) {
+        throw posHttpError('POS_REGISTER_INVALID', 'That branch is switched off.');
       }
 
       // A retried open — the reply was lost on the way back — is the same shift.

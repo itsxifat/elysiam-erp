@@ -171,10 +171,15 @@ export class CatalogDeletesService {
     input: EmptyCategoryInput,
   ) {
     return withOrg(context, async (tx) => {
+      const targetId = input.targetCategoryId;
+      // Both rows in id order, so two opposite empties (A into B, B into A) queue instead of
+      // deadlocking (ledger audit).
+      if (targetId !== null && targetId < id) {
+        await del.lockCategory(tx, context.orgId, targetId, 'share');
+      }
       const category = await del.lockCategory(tx, context.orgId, id);
       if (category === undefined) throw notFound('category');
 
-      const targetId = input.targetCategoryId;
       if (targetId !== null) {
         if (await del.isInSubtree(tx, context.orgId, id, targetId)) {
           throw new CatalogError(
@@ -207,6 +212,21 @@ export class CatalogDeletesService {
         userId: context.userId,
         requestId: context.requestId,
       });
+
+      // One row per product moved, so each product's own history shows the change (D-622).
+      for (const productId of movedProducts) {
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'update',
+          action: 'catalog.product.category_moved',
+          entityType: 'Product',
+          entityId: productId,
+          before: { categoryId: id },
+          after: { categoryId: targetId, because: `${category.name} was emptied and deleted` },
+          requestId: context.requestId,
+        });
+      }
 
       await this.references.release(tx, context.orgId, 'category', [id]);
       if (!(await del.deleteCategory(tx, context.orgId, id))) throw notFound('category');
@@ -644,12 +664,23 @@ export class CatalogDeletesService {
 
 // --- helpers CatalogService uses on its create path ------------------------------------------
 
-/** Refuse a category that is archived (or under an archived one) for a new or moved product. */
-export function assertCategoryLive(category: CategoryRow | undefined): void {
-  if (category !== undefined && !category.is_active) {
+/**
+ * Refuse a category that is archived, or under an archived one, for a new or moved product:
+ * the website would not show the product (D-623).
+ */
+export async function assertCategoryLive(
+  tx: Tx,
+  orgId: string,
+  category: CategoryRow | undefined,
+): Promise<void> {
+  if (category === undefined) return;
+  const archived = await del.archivedAtOrAbove(tx, orgId, category.id);
+  if (archived !== undefined) {
     throw new CatalogError(
       'CATALOG_CATEGORY_INVALID',
-      `${category.name} is archived. Restore it in Catalog setup, or choose another category.`,
+      archived.name === category.name
+        ? `${category.name} is archived. Restore it in Catalog setup, or choose another category.`
+        : `${category.name} is under ${archived.name}, which is archived. Restore it in Catalog setup, or choose another category.`,
     );
   }
 }

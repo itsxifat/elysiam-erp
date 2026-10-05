@@ -702,7 +702,8 @@ used it), and the answer says what uses it. Branches and ledger accounts are nev
   owner's own uses, then every checker's; refuse with `*_IN_USE` (409) and the counts in words;
   let each checker release what exists only because of the row (the old site's ids); delete;
   write the audit row **with the deleted row's content** (`before`), because after a hard delete
-  nothing else holds it. A reference committing first is counted; one arriving after the lock
+  nothing else holds it (contact details excepted, invariant 10), and one row per product an
+  empty-and-delete moved. A reference committing first is counted; one arriving after the lock
   waits and then fails on its foreign key. A delete refused by a foreign key the counts missed
   (SQLSTATE 23503 on the deleting side) answers the same `*_IN_USE`, never a 500.
 - **Cascades only from a deleted parent** (D-627). A SKU's price history and its empty stock
@@ -731,8 +732,10 @@ used it), and the answer says what uses it. Branches and ledger accounts are nev
 - **Locations** (D-629), **suppliers** (D-630), **discounts and flash sales** (D-631), **SMS
   templates and ad campaigns** (D-632): deleted when never used; otherwise switched off or
   archived (a discount comes back paused; a flash sale gains `archived_at`). **Size charts and
-  the menu** are the website's (§31). **Branches** (D-633) are renamed and switched off once
-  nothing runs there (tills, open shifts, money in their wallets, staff, stock). **Expense and
+  the menu** are the website's (§31). A supplier the books name as a party (an opening due)
+  stays; so does a campaign an order's recorded source names. **Branches** (D-633) are renamed
+  and switched off once nothing runs there (tills, open shifts, money in any of their wallet
+  accounts, staff, stock); a switched-off branch opens no till and no shift. **Expense and
   income heads** (D-634) are added, renamed and archived, never deleted (§7).
 - **Who:** `delete <Subject>` deletes (org_admin; M39a adds it for `Supply`, `LandingPage` and
   `Campaign`); `update <Subject>` asks what uses a row and archives or restores it; the new

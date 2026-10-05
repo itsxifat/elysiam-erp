@@ -53,6 +53,8 @@ export const USAGE_REASONS = [
   'ad_spend',
   'messages_sent',
   'system_template',
+  // The books (a journal line naming the row as its party).
+  'ledger_lines',
 ] as const;
 
 export type UsageReason = (typeof USAGE_REASONS)[number];

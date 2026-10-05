@@ -10,14 +10,15 @@ import { CatalogReferences } from '../catalog/ports/catalog-references.port.js';
 import { PROMO_API, type PromoApi } from '../promo/promo.api.js';
 import { MarketingError, mapMarketingErrors } from './marketing.errors.js';
 import * as refs from './references.repository.js';
+import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 
 /**
  * Marketing's part in deleting things (M39a, D-621, D-632).
  *
  * - **Its answer to the catalog.** A lead keeps the SKU it asked about; a live campaign
  *   keeps the products it promotes (archive the campaign first).
- * - **Deleting a campaign** nobody spent on, no lead came from and no discount was made for:
- *   one created by mistake. Its refs (a Meta id, a `utm_campaign`) go with it. Anything else
+ * - **Deleting a campaign** nobody spent on, no lead came from, no discount was made for and
+ *   no order's source names (by its id or a ref): one created by mistake. Its refs (a Meta id, a `utm_campaign`) go with it. Anything else
  *   keeps it, archived, which the campaigns screen already does.
  */
 @Injectable()
@@ -25,6 +26,7 @@ export class CampaignDeletesService implements OnModuleInit {
   constructor(
     private readonly catalog: CatalogReferences,
     @Inject(PROMO_API) private readonly promo: PromoApi,
+    @Inject(ORDERS_API) private readonly orders: OrdersApi,
     private readonly audit: AuditService,
   ) {}
 
@@ -97,9 +99,16 @@ export class CampaignDeletesService implements OnModuleInit {
   private async uses(tx: Tx, orgId: string, id: string): Promise<UsageEntry[]> {
     const own = await refs.campaignUses(tx, orgId, id);
     const discounts = await this.promo.discountsForCampaign(tx, orgId, id);
+    const attributed = await this.orders.ordersAttributedTo(
+      tx,
+      orgId,
+      id,
+      await refs.campaignRefValues(tx, orgId, id),
+    );
     return mergeUses([
       { reason: 'ad_spend', count: own.spend },
       { reason: 'leads', count: own.leads },
+      { reason: 'orders', count: attributed },
       { reason: 'discounts', count: discounts.count, examples: [...discounts.examples] },
     ]);
   }

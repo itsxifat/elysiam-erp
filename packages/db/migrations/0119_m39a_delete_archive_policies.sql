@@ -125,9 +125,9 @@ create trigger flash_sale_items_delete_guard
   for each row execute function promo.refuse_flash_item_delete();
 --> statement-breakpoint
 
--- 5. An SMS template that was ever sent stays. `notify.messages` and `notify.emails` name it
--- by key rather than by a foreign key (a system message's key exists before any template row
--- does), so this is the only thing that holds the history to it.
+-- 5. An SMS template that was ever sent stays. `notify.messages` names it by key rather than
+-- by a foreign key (a system message's key exists before any template row does), so this is
+-- the only thing that holds the history to it.
 create or replace function notify.refuse_sent_template_delete()
 returns trigger
 language plpgsql

@@ -27,9 +27,11 @@ export interface BranchHolds {
  * day ledger lines, wallets, staff, orders and stock name it.
  *
  * Switching off is refused while anything still runs there, each part asked of the module
- * that owns it (invariant 12): its tills and shifts (here), its wallets' money (wallets),
- * its staff (HR) and the stock at its locations (inventory). The code stays: it is in every
- * order number and hand-cash account already made.
+ * that owns it (invariant 12): its tills and shifts (here), its wallet accounts' money
+ * (wallets), its staff (HR) and the stock at its locations (inventory). The code stays: it is
+ * in every order number and hand-cash account already made. Once off, the branch takes no new
+ * till, no till switched back on and no new shift (`registers.service.ts`,
+ * `shifts.service.ts`), each reading the branch `for share` against the switch-off's lock.
  */
 @Injectable()
 export class BranchAdminService {
@@ -42,7 +44,8 @@ export class BranchAdminService {
 
   async holds(context: ActiveContext, id: string) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-      const branch = await refs.lockBranch(tx, context.orgId, id);
+      // A read: no lock, so it never holds back the inserts that name the branch.
+      const branch = await refs.lockBranch(tx, context.orgId, id, false);
       if (branch === undefined) throw notFound();
       const holds = await this.holdsOf(tx, context.orgId, id);
       return {

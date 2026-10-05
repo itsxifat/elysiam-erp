@@ -24,6 +24,7 @@ import { BuyerHistoryRegistry } from './ports/buyer-history.port.js';
 import { PromoError } from './promo.errors.js';
 import * as repo from './promo.repository.js';
 import type { CreatePromoCodeInput } from './promo.schemas.js';
+import { lockCode } from './references.repository.js';
 
 /**
  * Discounts: what a basket is worth here, and the record that it was spent (M16, M35a; §10).
@@ -637,6 +638,9 @@ export class PromoService {
     status: 'active' | 'paused' | 'archived',
   ) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+      // Locked first, so an archive committing at the same moment is read, not overwritten
+      // (ledger audit W6).
+      await lockCode(tx, context.orgId, id);
       const before = await repo.codeById(tx, context.orgId, id);
       if (before === undefined) throw new PromoError('PROMO_NOT_FOUND', 'No such code.');
       if (before.status === 'archived' && status !== 'archived') {
