@@ -1907,3 +1907,27 @@ dry-run|commit --file <users.json>`.
     a stubbed fetch and transport; that the password fingerprint is keyed; D-534's sign-in,
     code-send and resend limits over HTTP.
 - Next: integrate M34 into `integration-wave2`; M36 builds the website on these routes.
+
+### 2026-10-05 · integration and deploy · M38a and M34 joined; Elysium's own ERP online · done
+
+- M38a fast-forwarded into `integration-wave2` (dffe5d2; its verify green there, migrations
+  0113–0114). M34 merged (7a0b0fd), its migrations renumbered after M38a's: 0115
+  (regenerated, identical), 0116, 0117 (unchanged). Conflicts were side-by-side additions
+  (stack provision users, docs, CLAUDE.md, §7's posting table).
+- The console's initial route reached 250.7 KB of 250 at the merge: the 236 website keys moved
+  into a section catalogue (D-607 amended), 247.8 KB after; the white-label check now scans
+  section catalogues (93a9765).
+- Verification at 93a9765: `pnpm verify` exit 0 — 218 test files, 3,364 passed, 1 skipped;
+  bundle, white-label (216 files), migrations, schema drift (116), route matrix (403 routes,
+  365 matrix-tested, 38 public), i18n, api-client all PASS.
+- **Elysium's brand ERP is live** at `https://erp.elysium-lifestyle.bd` (D-581) on the brands
+  server (103.129.209.29), deployed with `infra/brand/deploy.sh` after the owner's go-ahead:
+  compose project `erp-elysium-lifestyle-bd`, API on 127.0.0.1:3501, a fresh database seeded
+  with Elysium alone, certbot TLS, behind Cloudflare with the real-address snippet (D-580).
+  Deploys: a80598e (first), dffe5d2 (M38a: stickers, stock in hand, scanner), 93a9765 (M34;
+  `BRAND_STOREFRONT_CREDENTIALS_KEY` added to its `.env.brand` first). Health checks green
+  after each; the server's other sites still answer 200.
+- The first super admin (the owner's email) was created with `admin:bootstrap`; the one-time
+  link was given to the owner.
+- Every migration up to 0117 is now applied to a live database: frozen.
+- Next: M35b and M36 (building), then M38b, then M32 resumes.
