@@ -294,7 +294,13 @@ export class CatalogDeletesService {
         action: 'catalog.attribute.deleted',
         entityType: 'Attribute',
         entityId: id,
-        before: { ...attribute, values: values.map((value) => ({ ...value })) },
+        // Locked in id order (deadlocks), recorded in the list's own order.
+        before: {
+          ...attribute,
+          values: [...values]
+            .sort((a, b) => a.position - b.position || a.code.localeCompare(b.code))
+            .map((value) => ({ ...value })),
+        },
         after: null,
         requestId: context.requestId,
         request,

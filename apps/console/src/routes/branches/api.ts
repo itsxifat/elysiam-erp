@@ -25,6 +25,8 @@ export interface BranchRow {
   readonly openShifts: number;
   readonly openReviews: number;
   readonly closed: boolean;
+  /** M39a (D-633): false once switched off. */
+  readonly isActive?: boolean;
 }
 
 export interface RegisterRow {
