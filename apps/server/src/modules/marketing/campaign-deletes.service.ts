@@ -99,12 +99,10 @@ export class CampaignDeletesService implements OnModuleInit {
   private async uses(tx: Tx, orgId: string, id: string): Promise<UsageEntry[]> {
     const own = await refs.campaignUses(tx, orgId, id);
     const discounts = await this.promo.discountsForCampaign(tx, orgId, id);
-    const attributed = await this.orders.ordersAttributedTo(
-      tx,
-      orgId,
+    const attributed = await this.orders.ordersAttributedTo(tx, orgId, {
       id,
-      await refs.campaignRefValues(tx, orgId, id),
-    );
+      ...(await refs.campaignRefsByKind(tx, orgId, id)),
+    });
     return mergeUses([
       { reason: 'ad_spend', count: own.spend },
       { reason: 'leads', count: own.leads },

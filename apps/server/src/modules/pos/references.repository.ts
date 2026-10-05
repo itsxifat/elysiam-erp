@@ -45,6 +45,11 @@ export interface BranchImage extends Record<string, unknown> {
 }
 
 /** `org.branches` is §5's shared table; the till's module is where branches are run from. */
+/**
+ * A branch, `for no key update` when it is about to be renamed or switched off: that
+ * conflicts with an opener's `for share` (`branchIsActive`) but not with the KEY SHARE every
+ * insert naming the branch takes, so ordinary work there is not held up.
+ */
 export async function lockBranch(
   tx: Tx,
   orgId: string,
@@ -54,7 +59,7 @@ export async function lockBranch(
   const rows = await tx.execute<BranchImage>(sql`
     select id, code, name, kind::text as kind, is_active
     from org.branches where org_id = ${orgId} and id = ${id}
-    ${lock ? sql`for update` : sql``}
+    ${lock ? sql`for no key update` : sql``}
   `);
   return rows[0];
 }

@@ -2,6 +2,7 @@ import type { Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 
 import { USAGE_EXAMPLES } from '../../platform/references/references.js';
+import { normaliseRefValue, type CampaignRefKind } from '@elysium/domain/marketing';
 
 /**
  * What marketing holds about a SKU, a product or one of its own campaigns, for deletes
@@ -76,17 +77,23 @@ export async function campaignUses(
   return { spend: rows[0]?.spend ?? 0, leads: rows[0]?.leads ?? 0 };
 }
 
-/** The values the campaign's refs carry (Meta ids, `utm_campaign`s). */
-export async function campaignRefValues(
+/** The campaign's refs by kind, each value as attribution compares it (`normaliseRefValue`). */
+export async function campaignRefsByKind(
   tx: Tx,
   orgId: string,
   campaignId: string,
-): Promise<string[]> {
-  const rows = await tx.execute<{ value: string }>(sql`
-    select value from marketing.campaign_refs
+): Promise<{ metaCampaignIds: string[]; metaAdIds: string[]; utmCampaigns: string[] }> {
+  const rows = await tx.execute<{ kind: CampaignRefKind; value: string }>(sql`
+    select kind, value from marketing.campaign_refs
     where org_id = ${orgId} and campaign_id = ${campaignId}
   `);
-  return rows.map((row) => row.value);
+  const of = (kind: CampaignRefKind) =>
+    rows.filter((row) => row.kind === kind).map((row) => normaliseRefValue(kind, row.value));
+  return {
+    metaCampaignIds: of('meta_campaign'),
+    metaAdIds: of('meta_ad'),
+    utmCampaigns: of('utm_campaign'),
+  };
 }
 
 export async function campaignRefsImage(

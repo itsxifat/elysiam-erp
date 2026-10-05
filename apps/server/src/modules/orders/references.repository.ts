@@ -1,5 +1,6 @@
 import type { Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
+import type { CampaignMatch } from './orders.api.js';
 
 /**
  * What orders hold about a SKU, a location or a discount, counted for a delete (M39a,
@@ -38,22 +39,26 @@ export async function ordersNamingDiscount(tx: Tx, orgId: string, codeId: string
 }
 
 /**
- * Orders whose recorded source names a campaign, by its id or by one of its refs (a Meta ad
- * id, a `utm_campaign`): what §11's attribution reads, so deleting the campaign would orphan
- * them (M39a, D-632).
+ * Orders whose recorded source names a campaign, compared the way §11's attribution compares
+ * them (`resolveAttribution` in `@elysium/domain/marketing`): `campaignId` is the campaign's
+ * id or one of its Meta campaign ids, `adId` one of its Meta ad ids, each trimmed, and
+ * `utmCampaign` one of its UTM refs, trimmed and lower-cased (the refs are stored lower-cased).
+ * Deleting such a campaign would orphan them in past reports (M39a, D-632). An order another
+ * rule gives to a different campaign is counted too: keeping a campaign is the safe answer.
  */
 export async function ordersAttributedTo(
   tx: Tx,
   orgId: string,
-  campaignId: string,
-  refValues: readonly string[],
+  campaign: CampaignMatch,
 ): Promise<number> {
+  const explicit = [campaign.id, ...campaign.metaCampaignIds];
   const rows = await tx.execute<{ n: number }>(sql`
     select count(*)::int as n from sales.orders
     where org_id = ${orgId}
-      and (source->>'campaignId' = ${campaignId}
-           or source->>'utmCampaign' = any (${sql.param([...refValues])}::text[])
-           or source->>'adId' = any (${sql.param([...refValues])}::text[]))
+      and (btrim(source->>'campaignId') = any (${sql.param(explicit)}::text[])
+           or btrim(source->>'adId') = any (${sql.param([...campaign.metaAdIds])}::text[])
+           or lower(btrim(source->>'utmCampaign'))
+              = any (${sql.param([...campaign.utmCampaigns])}::text[]))
   `);
   return rows[0]?.n ?? 0;
 }

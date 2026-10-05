@@ -231,6 +231,7 @@ function Categories({
   const ability = useAbility();
   const mayWebsite = ability.can('update', 'Storefront');
   const suggested = code ?? codeFrom(name, 4);
+  const archivedPaths = items.filter((item) => !item.isActive).map((item) => item.path);
 
   const create = useMutation({
     mutationFn: () =>
@@ -376,13 +377,17 @@ function Categories({
               ? {
                   help: t('mg.empty.categoryHelp'),
                   noneLabel: t('mg.empty.noCategory'),
-                  // Not itself or anything below it (they go with it), and not an archived one.
+                  // Not itself or anything below it (they go with it), and not an archived one or
+                  // one under an archived one (the server refuses both).
                   targets: items
                     .filter(
                       (other) =>
-                        other.isActive &&
                         other.id !== managing.id &&
-                        !other.path.startsWith(`${managing.path}/`),
+                        !other.path.startsWith(`${managing.path}/`) &&
+                        !archivedPaths.some(
+                          (archived) =>
+                            other.path === archived || other.path.startsWith(`${archived}/`),
+                        ),
                     )
                     .map((other) => ({
                       value: other.id,

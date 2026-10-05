@@ -25,6 +25,8 @@ import {
 import { seedWallet } from '../wallets/wallets.testing.js';
 import { toCatalogHttpError } from './catalog.errors.js';
 import { CatalogReferences } from './ports/catalog-references.port.js';
+import { makeBankWallet, makeCourier, seedShippedOrder } from '../courier/courier.testing.js';
+import { LocationReferences } from '../inventory/ports/location-references.port.js';
 
 /**
  * Deleting and archiving the catalog (M39a, D-621 to D-626; M39 checks 1 and 2), over HTTP
@@ -271,6 +273,48 @@ describe('every module that points at catalog rows answers (D-621)', () => {
     expect(
       keys.filter((key) => key.action === 'c').map((key) => `${key.child}->${key.parent}`),
     ).toEqual(['inventory.stock_levels->catalog.skus']);
+  });
+
+  it('counts or cascades every foreign key into a stock location, read from the database', async () => {
+    const registry = harness.app.get(LocationReferences, { strict: false });
+    expect(registry.modules()).toEqual(['courier', 'orders', 'pos', 'storefront', 'supply']);
+    const keys = await withSystem(async (tx) =>
+      tx.execute<{ child: string; action: string }>(sql`
+        select distinct cn.nspname || '.' || c.relname as child, con.confdeltype::text as action
+        from pg_constraint con
+        join pg_class c on c.oid = con.conrelid
+        join pg_namespace cn on cn.oid = c.relnamespace
+        join pg_class p on p.oid = con.confrelid
+        join pg_namespace pn on pn.oid = p.relnamespace
+        where con.contype = 'f' and pn.nspname = 'org' and p.relname = 'locations'
+        order by 1
+      `),
+    );
+    // Inventory owns locations and counts its own tables; the rest are its checkers'.
+    const counted: Readonly<Record<string, string>> = {
+      'courier.return_receipts': 'courier',
+      'inventory.adjustments': 'inventory',
+      'inventory.count_sessions': 'inventory',
+      'inventory.reservations': 'inventory',
+      'inventory.stock_in_hand_entries': 'inventory',
+      'inventory.stock_movements': 'inventory',
+      'inventory.stock_transfers': 'inventory',
+      'pos.registers': 'pos',
+      'pos.returns': 'pos',
+      'pos.sales': 'pos',
+      'sales.orders': 'orders',
+      'storefront.web_locations': 'storefront',
+      'supply.returns': 'supply',
+      'supply.supplies': 'supply',
+    };
+    const uncovered = keys
+      .filter((key) => key.action !== 'c')
+      .map((key) => key.child)
+      .filter((name) => counted[name] === undefined);
+    expect(uncovered, 'a new foreign key into org.locations needs a checker').toEqual([]);
+    expect(keys.filter((key) => key.action === 'c').map((key) => key.child)).toEqual([
+      'inventory.stock_levels',
+    ]);
   });
 });
 
@@ -535,6 +579,19 @@ describe('categories (D-623)', () => {
     expect(underneath.status).toBe(400);
     expect(underneath.body.code).toBe('CATALOG_CATEGORY_INVALID');
     expect(underneath.raw).toContain('Winter');
+    // Nor may a category's products be emptied into it: they would leave the website unasked.
+    const leaving = await category('Leaving');
+    await product('Leaving product', { categoryId: leaving.id });
+    const intoArchived = await call<{ code: string }>(
+      admin,
+      'POST',
+      `/v1/catalog/categories/${leaving.id}/empty-and-delete`,
+      { targetCategoryId: below },
+    );
+    expect(intoArchived.status).toBe(400);
+    expect(intoArchived.body.code).toBe('CATALOG_CATEGORY_INVALID');
+    expect(intoArchived.raw).toContain('Winter');
+    expect(await exists('categories', leaving.id)).toBe(true);
 
     await ok(admin, 'POST', `/v1/catalog/categories/${winter.id}/restore`);
     expect(await shown()).toBe(true);
@@ -618,6 +675,40 @@ describe('lists and values (D-624)', () => {
       pricePoisha: '100000',
       axes: [{ attributeId: sizes.id, valueIds: [huge] }],
     });
+
+    // An archived list refuses a new variant on any of its values, live ones included.
+    await ok(admin, 'POST', `/v1/catalog/attributes/${sizes.id}/archive`);
+    const listArchived = await call<{ code: string }>(admin, 'POST', '/v1/catalog/products', {
+      name: 'Needs S',
+      slug: `needs-s-${token(4).toLowerCase()}`,
+      pricePoisha: '100000',
+      axes: [{ attributeId: sizes.id, valueIds: [small] }],
+    });
+    expect(listArchived.status).toBe(400);
+    expect(listArchived.body.code).toBe('CATALOG_VARIANT_INVALID');
+    await ok(admin, 'POST', `/v1/catalog/attributes/${sizes.id}/restore`);
+  });
+
+  it('never lets another brand ask about, delete or archive a list or a value', async () => {
+    const sizes = await list('Private sizes', ['S']);
+    const [small] = sizes.values;
+    const calls: readonly (readonly ['GET' | 'DELETE' | 'POST', string])[] = [
+      ['GET', `/v1/catalog/attributes/${sizes.id}/usage`],
+      ['DELETE', `/v1/catalog/attributes/${sizes.id}`],
+      ['POST', `/v1/catalog/attributes/${sizes.id}/archive`],
+      ['GET', `/v1/catalog/attributes/${sizes.id}/values/${small}/usage`],
+      ['DELETE', `/v1/catalog/attributes/${sizes.id}/values/${small}`],
+      ['POST', `/v1/catalog/attributes/${sizes.id}/values/${small}/archive`],
+    ];
+    for (const [method, url] of calls) {
+      const answer = await call(otherAdmin, method, url, method === 'POST' ? {} : undefined);
+      expect(answer.status, `${method} ${url}`).toBe(404);
+    }
+    expect(
+      await scalar(
+        sql`select count(*)::text as n from catalog.attribute_values where id = ${small} and is_active`,
+      ),
+    ).toBe(1);
   });
 
   it('reorders a list, every value once', async () => {
@@ -781,6 +872,115 @@ describe('products and variants (D-625, D-626)', () => {
     // An archived discount's scope is history; it keeps nothing (and is never rewritten).
     await ok(admin, 'PATCH', `/v1/promo/codes/${discount.id}`, { status: 'archived' });
     await ok(admin, 'DELETE', `/v1/catalog/products/${onDiscount.id}`);
+  });
+
+  it('keeps a SKU a courier return names, and a product a live campaign or a product-wide discount names', async () => {
+    // A received courier return (0048's foreign key, counted by the couriers' checker).
+    const courierId = await makeCourier(ORG_A, 'fake', 'Fake Courier');
+    const walletId = await makeBankWallet(ORG_A, '1116');
+    const shipped = await seedShippedOrder(ORG_A, { orgCode: 'DEL' });
+    await withSystem(
+      async (tx) => {
+        // The fixture numbers its product past the catalog's counter; move the counter on so
+        // the products made through the API after it take fresh numbers.
+        await tx.execute(sql`
+          update catalog.sku_settings
+          set last_sequence = greatest(last_sequence, (
+            select max(sequence) from catalog.products where org_id = ${ORG_A}
+          ))
+          where org_id = ${ORG_A}
+        `);
+        const account = await tx.execute<{ id: string }>(sql`
+          insert into courier.courier_accounts
+            (org_id, courier_id, provider_code, label, supports_webhook, settlement_wallet_id,
+             verified, is_active)
+          values (${ORG_A}, ${courierId}, 'fake', 'Delete test courier', true, ${walletId},
+                  true, true)
+          on conflict (org_id, courier_id) do update set label = excluded.label
+          returning id
+        `);
+        const consignment = await tx.execute<{ id: string }>(sql`
+          insert into courier.consignments
+            (org_id, order_id, courier_account_id, courier_id, branch_id, consignment_no,
+             reference, booking_state, status, cod_amount_poisha, collected_poisha, booked_at,
+             delivered_at, created_by)
+          values (${ORG_A}, ${shipped.orderId}, ${account[0]?.id ?? ''}, ${courierId},
+                  ${shipped.branchId}, ${`DEL-${token(8)}`}, ${shipped.orderNo}, 'booked',
+                  'delivered', ${shipped.codAmountPoisha.toString()},
+                  ${shipped.codAmountPoisha.toString()}, now(), now(), 'usr_deletes_e2e')
+          returning id
+        `);
+        const receipt = await tx.execute<{ id: string }>(sql`
+          insert into courier.return_receipts
+            (org_id, consignment_id, order_id, branch_id, location_id, received_at,
+             business_date, received_by, reason)
+          values (${ORG_A}, ${consignment[0]?.id ?? ''}, ${shipped.orderId}, ${shipped.branchId},
+                  ${shipped.locationId}, now(), (now() at time zone 'Asia/Dhaka')::date,
+                  'usr_deletes_e2e', 'refused')
+          returning id
+        `);
+        await tx.execute(sql`
+          insert into courier.return_receipt_lines (org_id, receipt_id, sku_id, sellable_qty)
+          values (${ORG_A}, ${receipt[0]?.id ?? ''}, ${shipped.skuId}, 1)
+        `);
+      },
+      { orgId: ORG_A },
+    );
+    const returned = await ok<Usage>(admin, 'GET', `/v1/catalog/skus/${shipped.skuId}/usage`);
+    expect(reasons(returned)).toMatchObject({ courier_returns: 1, order_lines: 1 });
+    expect((await call(admin, 'DELETE', `/v1/catalog/skus/${shipped.skuId}`)).status).toBe(409);
+
+    // A live ad campaign promoting the product.
+    const promoted = await product('Promoted product');
+    const campaign = await ok<{ id: string }>(marketing, 'POST', '/v1/marketing/campaigns', {
+      name: 'Promotes a product',
+      platform: 'other',
+      productIds: [promoted.id],
+    });
+    expect(
+      reasons(await ok<Usage>(admin, 'GET', `/v1/catalog/products/${promoted.id}/usage`)),
+    ).toMatchObject({ campaigns: 1 });
+    const keptByCampaign = await call<{ code: string }>(
+      admin,
+      'DELETE',
+      `/v1/catalog/products/${promoted.id}`,
+    );
+    expect(keptByCampaign.status).toBe(409);
+    expect(keptByCampaign.body.code).toBe('CATALOG_IN_USE');
+
+    // A live discount on the whole product.
+    const discounted = await product('Discounted product');
+    await ok(admin, 'POST', '/v1/promo/codes', {
+      code: `PRD${token(6)}`,
+      kind: 'percent',
+      valueBps: 500,
+      productIds: [discounted.id],
+    });
+    expect(
+      reasons(await ok<Usage>(admin, 'GET', `/v1/catalog/products/${discounted.id}/usage`)),
+    ).toMatchObject({ discounts: 1 });
+    expect((await call(admin, 'DELETE', `/v1/catalog/products/${discounted.id}`)).status).toBe(409);
+    for (const id of [promoted.id, discounted.id]) expect(await exists('products', id)).toBe(true);
+    expect(campaign.id).not.toBe('');
+  });
+
+  it("forgets the old website's ids of a deleted product and its variants", async () => {
+    const old = await product('Old site product');
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          insert into storefront.legacy_ids (org_id, kind, legacy_id, erp_id)
+          values (${ORG_A}, 'product', ${`p${token(12)}`}, ${old.id}),
+                 (${ORG_A}, 'variant', ${`v${token(12)}`}, ${skuOf(old)})
+        `),
+      { orgId: ORG_A },
+    );
+    await ok(admin, 'DELETE', `/v1/catalog/products/${old.id}`);
+    expect(
+      await scalar(
+        sql`select count(*)::text as n from storefront.legacy_ids where erp_id in (${old.id}, ${skuOf(old)})`,
+      ),
+    ).toBe(0);
   });
 
   it('keeps a SKU a till sold, and refuses an offline sale of a deleted SKU as a bad payload (D-625)', async () => {

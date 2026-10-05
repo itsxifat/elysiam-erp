@@ -172,8 +172,16 @@ export class CatalogDeletesService {
   ) {
     return withOrg(context, async (tx) => {
       const targetId = input.targetCategoryId;
-      // Both rows in id order, so two opposite empties (A into B, B into A) queue instead of
-      // deadlocking (ledger audit).
+      // The parent first, `for share`: the subcategories move up to it, and their foreign keys
+      // would otherwise take its KEY SHARE after this category's own lock, the opposite order
+      // to the parent's own empty-and-delete, which locks it and then its children.
+      const unlocked = await del.categoryImage(tx, context.orgId, id);
+      if (unlocked === undefined) throw notFound('category');
+      if (unlocked.parent_id !== null) {
+        await del.lockCategory(tx, context.orgId, unlocked.parent_id, 'share');
+      }
+      // The target and this category in id order, so two opposite empties (A into B, B into
+      // A) queue instead of deadlocking (ledger audit).
       if (targetId !== null && targetId < id) {
         await del.lockCategory(tx, context.orgId, targetId, 'share');
       }
@@ -189,12 +197,13 @@ export class CatalogDeletesService {
         }
         const target = await del.lockCategory(tx, context.orgId, targetId, 'share');
         if (target === undefined) throw notFound('category');
-        if (!target.is_active) {
-          throw new CatalogError(
-            'CATALOG_CATEGORY_INVALID',
-            `${target.name} is archived. Restore it, or choose another category for the products.`,
-          );
-        }
+        // Archived, or under an archived one: the products would leave the website unasked.
+        await assertCategoryLive(
+          tx,
+          context.orgId,
+          target,
+          'Restore it, or choose another category for the products.',
+        );
       }
 
       const uses = await this.categoryUses(tx, context.orgId, id);
@@ -671,16 +680,17 @@ export class CatalogDeletesService {
 export async function assertCategoryLive(
   tx: Tx,
   orgId: string,
-  category: CategoryRow | undefined,
+  category: Pick<CategoryRow, 'id' | 'name'> | undefined,
+  forWhat = 'Restore it in Catalog setup, or choose another category.',
 ): Promise<void> {
   if (category === undefined) return;
   const archived = await del.archivedAtOrAbove(tx, orgId, category.id);
   if (archived !== undefined) {
     throw new CatalogError(
       'CATALOG_CATEGORY_INVALID',
-      archived.name === category.name
-        ? `${category.name} is archived. Restore it in Catalog setup, or choose another category.`
-        : `${category.name} is under ${archived.name}, which is archived. Restore it in Catalog setup, or choose another category.`,
+      archived.id === category.id
+        ? `${category.name} is archived. ${forWhat}`
+        : `${category.name} is under ${archived.name}, which is archived. ${forWhat}`,
     );
   }
 }

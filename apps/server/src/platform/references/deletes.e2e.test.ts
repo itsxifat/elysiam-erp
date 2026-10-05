@@ -562,22 +562,29 @@ describe('SMS templates and ad campaigns (D-632)', () => {
     expect(refused.body.code).toBe('MARKETING_IN_USE');
   });
 
-  it('keeps a campaign an order came from, by its id or by one of its refs', async () => {
+  it('keeps a campaign an order came from, matched the way attribution matches (§11)', async () => {
     const customer = await seedCustomer(ORG_A, {
       phoneE164: '+8801711000654',
       name: 'Campaign buyer',
     });
     const product = await aProduct();
-    for (const via of ['id', 'ref'] as const) {
+    const digits = () => String(Date.now()) + String(Math.floor(Math.random() * 1_000_000));
+    for (const via of ['id', 'utm', 'meta_campaign', 'meta_ad'] as const) {
       const campaign = await ok<{ id: string }>(admin, 'POST', '/v1/marketing/campaigns', {
         name: `Attributed by ${via}`,
         platform: 'other',
       });
-      const ref = `attributed-${token(6).toLowerCase()}`;
-      await ok(admin, 'POST', `/v1/marketing/campaigns/${campaign.id}/refs`, {
-        kind: 'utm_campaign',
-        value: ref,
-      });
+      const utm = `Attributed-${token(6)}`;
+      const metaCampaign = digits();
+      const metaAd = digits();
+      const refs = [
+        { kind: 'utm_campaign', value: utm },
+        { kind: 'meta_campaign', value: metaCampaign },
+        { kind: 'meta_ad', value: metaAd },
+      ];
+      for (const ref of refs) {
+        await ok(admin, 'POST', `/v1/marketing/campaigns/${campaign.id}/refs`, ref);
+      }
       const order = await seedOrder(ORG_A, {
         customerId: customer,
         status: 'pending',
@@ -585,12 +592,19 @@ describe('SMS templates and ad campaigns (D-632)', () => {
           { skuId: product.skuId, skuCode: 'X', productName: 'X', qty: 1, unitPricePoisha: 1n },
         ],
       });
-      const source = via === 'id' ? { campaignId: campaign.id } : { utmCampaign: ref };
+      // As an order records them: a UTM in any case, ids with stray spaces.
+      const source = {
+        id: { campaignId: campaign.id },
+        utm: { utmCampaign: ` ${utm.toUpperCase()} ` },
+        meta_campaign: { campaignId: metaCampaign },
+        meta_ad: { adId: ` ${metaAd}` },
+      }[via];
       await run(sql`
         update sales.orders set source = ${JSON.stringify(source)}::jsonb where id = ${order.id}
       `);
       expect(
         reasons(await ok<Usage>(marketing, 'GET', `/v1/marketing/campaigns/${campaign.id}/usage`)),
+        via,
       ).toMatchObject({ orders: 1 });
       const refused = await call<{ code: string }>(
         admin,
@@ -645,6 +659,15 @@ describe('the website: size charts and the menu (D-628)', () => {
         sql`select count(*)::text as n from catalog.products where size_chart_id = ${replacement}`,
       ),
     ).toBe(2);
+    for (const product of [first, second]) {
+      const moved = (await auditRowsFor(ORG_A, product.id)).find(
+        (row) => row.action === 'catalog.product.size_chart_moved',
+      );
+      expect(moved).toMatchObject({
+        before: { sizeChartId: old },
+        after: { sizeChartId: replacement },
+      });
+    }
     expect(
       await count(sql`select count(*)::text as n from storefront.size_charts where id = ${old}`),
     ).toBe(0);
@@ -971,6 +994,91 @@ describe('expense and income heads (D-634)', () => {
     expect((await call(admin, 'DELETE', `/v1/accounts/heads/${head.id}`)).status).toBe(404);
     expect(
       await count(sql`select count(*)::text as n from ledger.accounts where id = ${head.id}`),
+    ).toBe(1);
+  });
+});
+
+describe('another brand never reaches them (RLS)', () => {
+  it('answers 404 to another brand for every usage, delete, archive and restore, and changes nothing', async () => {
+    const product = await aProduct();
+    const discount = await ok<{ id: string }>(admin, 'POST', '/v1/promo/codes', {
+      code: `PRIV${token(6)}`,
+      kind: 'percent',
+      valueBps: 500,
+    });
+    const sale = await ok<{ id: string }>(admin, 'POST', '/v1/promo/flash-sales', {
+      title: 'Private sale',
+      slug: `private-${token(6).toLowerCase()}`,
+      items: [{ skuId: product.skuId, salePricePoisha: '100000', unitLimit: 3 }],
+    });
+    const key = `promo.private_${token(4).toLowerCase()}`;
+    await ok(admin, 'PUT', '/v1/notify/templates', {
+      key,
+      category: 'marketing',
+      bodyBn: 'হ্যালো {name}',
+      bodyEn: 'Hello {name}',
+    });
+    const template =
+      (
+        await ok<{ items: { id: string; key: string }[] }>(admin, 'GET', '/v1/notify/templates')
+      ).items.find((item) => item.key === key)?.id ?? '';
+    const campaign = await ok<{ id: string }>(admin, 'POST', '/v1/marketing/campaigns', {
+      name: 'Private campaign',
+      platform: 'other',
+    });
+    const chart = await ok<{ id: string }>(admin, 'POST', '/v1/storefront/size-charts', {
+      name: `Private chart ${token(4)}`,
+      columns: ['Size', 'Chest'],
+      rows: [['M', '40']],
+    });
+    const nav = await ok<{ id: string }>(admin, 'POST', '/v1/storefront/nav-items', {
+      parentId: null,
+      kind: 'link',
+      label: 'Private link',
+      href: '/shop',
+      categoryId: null,
+      highlighted: false,
+      isActive: true,
+    });
+    const head = await ok<{ id: string }>(admin, 'POST', '/v1/accounts/heads', {
+      name: `Private head ${token(4)}`,
+      kind: 'expense',
+    });
+
+    const calls: readonly (readonly ['GET' | 'DELETE' | 'POST' | 'PATCH', string, unknown?])[] = [
+      ['GET', `/v1/promo/codes/${discount.id}/usage`],
+      ['DELETE', `/v1/promo/codes/${discount.id}`],
+      ['POST', `/v1/promo/codes/${discount.id}/restore`, {}],
+      ['GET', `/v1/promo/flash-sales/${sale.id}/usage`],
+      ['DELETE', `/v1/promo/flash-sales/${sale.id}`],
+      ['POST', `/v1/promo/flash-sales/${sale.id}/archive`, {}],
+      ['POST', `/v1/promo/flash-sales/${sale.id}/restore`, {}],
+      ['GET', `/v1/notify/templates/${template}/usage`],
+      ['DELETE', `/v1/notify/templates/${template}`],
+      ['GET', `/v1/marketing/campaigns/${campaign.id}/usage`],
+      ['DELETE', `/v1/marketing/campaigns/${campaign.id}`],
+      ['GET', `/v1/storefront/size-charts/${chart.id}/usage`],
+      ['POST', `/v1/storefront/size-charts/${chart.id}/empty-and-delete`, { replacementId: null }],
+      ['GET', `/v1/storefront/nav-items/${nav.id}/usage`],
+      ['PATCH', `/v1/accounts/heads/${head.id}`, { isActive: false }],
+    ];
+    for (const [method, url, body] of calls) {
+      const answer = await call(otherAdmin, method, url, body);
+      expect(answer.status, `${method} ${url}: ${answer.raw}`).toBe(404);
+    }
+
+    const still = async (table: string, id: string) =>
+      count(sql`select count(*)::text as n from ${sql.raw(table)} where id = ${id}`);
+    expect(await still('promo.codes', discount.id)).toBe(1);
+    expect(await still('promo.flash_sales', sale.id)).toBe(1);
+    expect(await still('notify.templates', template)).toBe(1);
+    expect(await still('marketing.campaigns', campaign.id)).toBe(1);
+    expect(await still('storefront.size_charts', chart.id)).toBe(1);
+    expect(await still('storefront.nav_items', nav.id)).toBe(1);
+    expect(
+      await count(
+        sql`select count(*)::text as n from ledger.accounts where id = ${head.id} and is_active`,
+      ),
     ).toBe(1);
   });
 });

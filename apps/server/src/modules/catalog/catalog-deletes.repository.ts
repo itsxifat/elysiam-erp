@@ -625,9 +625,9 @@ export async function archivedAtOrAbove(
   tx: Tx,
   orgId: string,
   categoryId: string,
-): Promise<{ name: string } | undefined> {
-  const rows = await tx.execute<{ name: string }>(sql`
-    select a.name
+): Promise<{ id: string; name: string } | undefined> {
+  const rows = await tx.execute<{ id: string; name: string }>(sql`
+    select a.id, a.name
     from catalog.categories c
     join catalog.categories a
       on a.org_id = c.org_id and not a.is_active

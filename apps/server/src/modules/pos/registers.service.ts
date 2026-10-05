@@ -129,7 +129,7 @@ export class RegistersService {
   ): Promise<RegisterView> {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const before = await this.inScope(tx, context, request, id);
-      if (patch.isActive === true && !before.is_active) {
+      if (patch.isActive === true) {
         await assertBranchActive(tx, context.orgId, before.branch_id);
       }
       await this.assertWallets(tx, context.orgId, before.branch_id, {
