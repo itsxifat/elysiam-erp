@@ -97,7 +97,8 @@ const CONSTRAINTS: Readonly<Record<string, { code: ErrorCode; message: string }>
   // A claim names a whole line of its own order, of its own SKU (ledger re-audit W2).
   flash_claims_order_line_fk: {
     code: 'FLASH_SALE_INVALID',
-    message: 'A flash claim has to name a whole line of its own order, of the same SKU.',
+    message:
+      'A flash claim has to name a whole line of its own order, of the same SKU, charged at the sale price.',
   },
 };
 

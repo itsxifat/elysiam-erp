@@ -4,13 +4,13 @@ import type { Poisha } from '@elysium/domain';
 import type { FlashOffer } from '@elysium/domain/promo';
 
 import type { ActiveContext } from '../../platform/http/context.js';
-import { FlashService, type FlashClaimLine } from './flash.service.js';
+import { FlashService, type FlashClaimLine, type StorefrontFlashSale } from './flash.service.js';
 import { PromoError, promoHttpError } from './promo.errors.js';
 import * as repo from './promo.repository.js';
 import { PromoService, type AppliedDiscountView, type DiscountQuote } from './promo.service.js';
 
 export type { AppliedDiscountView, DiscountQuote, QuoteRefusal } from './promo.service.js';
-export type { FlashClaimLine } from './flash.service.js';
+export type { FlashClaimLine, StorefrontFlashSale } from './flash.service.js';
 
 /**
  * A code, priced for one order and not yet spent.
@@ -220,6 +220,25 @@ export interface PromoApi {
   ): Promise<number>;
 
   /**
+   * The switched-on sales that have not ended, live and upcoming, in listing order, for the
+   * storefront's `GET /storefront/v1/flash-sales` (M33/M34 build the route; D-548). Drafts
+   * never appear; product visibility is the storefront's to apply.
+   */
+  storefrontFlashSales(
+    tx: Tx,
+    orgId: string,
+    input: { readonly now: Date; readonly homeOnly: boolean },
+  ): Promise<readonly StorefrontFlashSale[]>;
+
+  /** One sale by slug for `GET /storefront/v1/flash-sales/:slug`: live, upcoming or ended. */
+  storefrontFlashSale(
+    tx: Tx,
+    orgId: string,
+    slug: string,
+    now: Date,
+  ): Promise<StorefrontFlashSale | undefined>;
+
+  /**
    * What still prices this order: discounts applied and flash claims held. The orders
    * module refuses an edit that would re-price around either (D-542).
    */
@@ -391,6 +410,23 @@ export class PromoApiService implements PromoApi {
     returned?: readonly { readonly orderLineId: string; readonly qty: number }[],
   ): Promise<number> {
     return this.flash.release(tx, orgId, orderId, returned);
+  }
+
+  async storefrontFlashSales(
+    tx: Tx,
+    orgId: string,
+    input: { readonly now: Date; readonly homeOnly: boolean },
+  ): Promise<readonly StorefrontFlashSale[]> {
+    return this.flash.storefrontSales(tx, orgId, input);
+  }
+
+  async storefrontFlashSale(
+    tx: Tx,
+    orgId: string,
+    slug: string,
+    now: Date,
+  ): Promise<StorefrontFlashSale | undefined> {
+    return this.flash.storefrontSale(tx, orgId, slug, now);
   }
 
   async holdsOnOrder(

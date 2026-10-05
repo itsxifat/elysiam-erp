@@ -40,6 +40,27 @@ export interface FlashClaimLine {
   readonly salePricePoisha: Poisha | bigint | string;
 }
 
+/** A sale as the storefront shows it: no counts beyond what is left, no staff fields. */
+export interface StorefrontFlashSale {
+  readonly id: string;
+  readonly slug: string;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly description: string;
+  readonly bannerFileId: string | null;
+  readonly showOnHome: boolean;
+  readonly startsAt: Date | null;
+  readonly endsAt: Date | null;
+  readonly status: 'scheduled' | 'live' | 'ended';
+  readonly items: readonly {
+    readonly flashSaleItemId: string;
+    readonly skuId: string;
+    readonly salePricePoisha: Poisha;
+    /** Null: all the stock there is (the shelf is the cap). */
+    readonly unitsLeft: number | null;
+  }[];
+}
+
 export interface FlashSkuView {
   readonly skuId: string;
   readonly skuCode: string;
@@ -405,6 +426,62 @@ export class FlashService {
       units += give;
     }
     return units;
+  }
+
+  /**
+   * The switched-on sales that have not ended, live and upcoming, in listing order, for the
+   * storefront's sale pages (M33, M34). Drafts never appear. Which SKUs a shopper may see
+   * (published products, stock at the web locations) is the storefront's to apply.
+   */
+  async storefrontSales(
+    tx: Tx,
+    orgId: string,
+    input: { readonly now: Date; readonly homeOnly: boolean },
+  ): Promise<StorefrontFlashSale[]> {
+    const sales = await repo.openSales(tx, orgId, input.now, input.homeOnly);
+    return Promise.all(sales.map((sale) => this.storefrontView(tx, orgId, sale, input.now)));
+  }
+
+  /** One sale by its slug, live, upcoming or ended; a draft is not found. */
+  async storefrontSale(
+    tx: Tx,
+    orgId: string,
+    slug: string,
+    now: Date,
+  ): Promise<StorefrontFlashSale | undefined> {
+    const sale = await repo.saleBySlug(tx, orgId, slug.trim().toLowerCase());
+    if (!sale?.enabled) return undefined;
+    return this.storefrontView(tx, orgId, sale, now);
+  }
+
+  private async storefrontView(
+    tx: Tx,
+    orgId: string,
+    sale: repo.FlashSaleRow,
+    now: Date,
+  ): Promise<StorefrontFlashSale> {
+    const startsAt = instant(sale.starts_at);
+    const endsAt = instant(sale.ends_at);
+    const status = flashSaleStatus({ enabled: true, startsAt, endsAt }, now);
+    const items = (await repo.itemsOfSale(tx, orgId, sale.id)).filter((item) => item.enabled);
+    return {
+      id: sale.id,
+      slug: sale.slug,
+      title: sale.title,
+      subtitle: sale.subtitle,
+      description: sale.description,
+      bannerFileId: sale.banner_file_id,
+      showOnHome: sale.show_on_home,
+      startsAt,
+      endsAt,
+      status: status === 'draft' ? 'scheduled' : status,
+      items: items.map((item) => ({
+        flashSaleItemId: item.id,
+        skuId: item.sku_id,
+        salePricePoisha: poisha(item.sale_price_poisha),
+        unitsLeft: item.unit_limit === null ? null : Math.max(0, item.unit_limit - item.units_sold),
+      })),
+    };
   }
 
   /** Claims an order still holds: the orders module refuses to edit lines that hold them. */

@@ -71,9 +71,13 @@ interface SeededOrder {
   readonly lineIds: readonly string[];
 }
 
-/** An order with lines of these SKUs (one unit of SKU 0 when none are given). */
+/**
+ * An order with lines of these SKUs (one unit of SKU 0 when none are given), each charged
+ * `price` per unit (the shelf price when absent). A flash claim names a line charged the sale
+ * price, so a test claiming at a sale price takes an order priced at it.
+ */
 async function order(
-  lines: readonly { skuIndex: number; qty: number }[] = [{ skuIndex: 0, qty: 1 }],
+  lines: readonly { skuIndex: number; qty: number; price?: bigint }[] = [{ skuIndex: 0, qty: 1 }],
   buyer = customerId,
   status: 'pending' | 'cancelled' = 'pending',
 ): Promise<SeededOrder> {
@@ -85,7 +89,7 @@ async function order(
       skuCode: sku(line.skuIndex).code,
       productName: 'Offer product',
       qty: line.qty,
-      unitPricePoisha: SHELF,
+      unitPricePoisha: line.price ?? SHELF,
     })),
   });
   return { id: seeded.id, lineIds: await linesOf(seeded.id) };
@@ -220,7 +224,10 @@ describe('a flash sale’s units under concurrent checkouts (M35a check 1)', () 
     ({
       itemIds: [itemId = ''],
     } = await sale({ items: [{ skuId: sku(0).id, price: 100_000n, limit: 5 }] }));
-    const orders = await Promise.all(Array.from({ length: 20 }, () => order()));
+    // Every order's line is charged the sale price, so the five sold are sold at it.
+    const orders = await Promise.all(
+      Array.from({ length: 20 }, () => order([{ skuIndex: 0, qty: 1, price: 100_000n }])),
+    );
 
     /*
      * Twenty transactions started together. `withOrg` borrows from the real pool, so ten
@@ -291,7 +298,7 @@ describe('a flash sale’s units under concurrent checkouts (M35a check 1)', () 
     expect(state.sold).toBe(4);
 
     // And the unit is there to be sold again.
-    await claim(await order(), itemId);
+    await claim(await order([{ skuIndex: 0, qty: 1, price: 100_000n }]), itemId);
     expect((await itemState(itemId)).sold).toBe(5);
   });
 
@@ -322,11 +329,17 @@ describe('what a claim checks inside its own UPDATE (D-542)', () => {
     });
 
     const refused = { response: { code: 'FLASH_SALE_UNAVAILABLE' } };
-    const stale = await order([{ skuIndex: 1, qty: 1 }]);
+    const stale = await order([{ skuIndex: 1, qty: 1, price: 90_000n }]);
     await expect(claim(stale, live.itemIds[0] ?? '', 1, 95_000n, 1)).rejects.toMatchObject(refused);
     for (const offer of [later, over, off]) {
       await expect(
-        claim(await order([{ skuIndex: 1, qty: 1 }]), offer.itemIds[0] ?? '', 1, 90_000n, 1),
+        claim(
+          await order([{ skuIndex: 1, qty: 1, price: 90_000n }]),
+          offer.itemIds[0] ?? '',
+          1,
+          90_000n,
+          1,
+        ),
       ).rejects.toMatchObject(refused);
     }
     await claim(stale, live.itemIds[0] ?? '', 1, 90_000n, 1);
@@ -344,11 +357,17 @@ describe('what a claim checks inside its own UPDATE (D-542)', () => {
   it('takes nothing when one line is refused, even if the caller catches it and commits', async () => {
     const plenty = await sale({ items: [{ skuId: sku(2).id, price: 80_000n, limit: 10 }] });
     const scarce = await sale({ items: [{ skuId: sku(3).id, price: 80_000n, limit: 1 }] });
-    await claim(await order([{ skuIndex: 3, qty: 1 }]), scarce.itemIds[0] ?? '', 1, 80_000n, 3);
+    await claim(
+      await order([{ skuIndex: 3, qty: 1, price: 80_000n }]),
+      scarce.itemIds[0] ?? '',
+      1,
+      80_000n,
+      3,
+    );
 
     const target = await order([
-      { skuIndex: 2, qty: 3 },
-      { skuIndex: 3, qty: 1 },
+      { skuIndex: 2, qty: 3, price: 80_000n },
+      { skuIndex: 3, qty: 1, price: 80_000n },
     ]);
     const caught = await withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => {
       try {
@@ -385,7 +404,7 @@ describe('what a claim checks inside its own UPDATE (D-542)', () => {
 
   it('sells as many as asked of an all-stock offer, and a retried claim takes nothing more', async () => {
     const all = await sale({ items: [{ skuId: sku(2).id, price: 70_000n, limit: null }] });
-    const target = await order([{ skuIndex: 2, qty: 40 }]);
+    const target = await order([{ skuIndex: 2, qty: 40, price: 70_000n }]);
     await claim(target, all.itemIds[0] ?? '', 40, 70_000n, 2);
     await claim(target, all.itemIds[0] ?? '', 40, 70_000n, 2);
     expect((await itemState(all.itemIds[0] ?? '')).sold).toBe(40);
@@ -395,8 +414,8 @@ describe('what a claim checks inside its own UPDATE (D-542)', () => {
     const x = await sale({ items: [{ skuId: sku(1).id, price: 60_000n, limit: 10 }] });
     const y = await sale({ items: [{ skuId: sku(2).id, price: 65_000n, limit: 10 }] });
     const target = await order([
-      { skuIndex: 1, qty: 2 },
-      { skuIndex: 2, qty: 3 },
+      { skuIndex: 1, qty: 2, price: 60_000n },
+      { skuIndex: 2, qty: 3, price: 65_000n },
     ]);
     await claim(target, x.itemIds[0] ?? '', 2, 60_000n, 1, 0);
     await claim(target, y.itemIds[0] ?? '', 3, 65_000n, 2, 1);
@@ -425,10 +444,10 @@ describe('what a claim checks inside its own UPDATE (D-542)', () => {
     });
   });
 
-  it('refuses a claim for another order’s line, or for part of a line (re-audit W2)', async () => {
+  it('refuses a claim for another order’s line, part of a line, or a line at the shelf price', async () => {
     const offer = await sale({ items: [{ skuId: sku(1).id, price: 90_000n, limit: 10 }] });
-    const mine = await order([{ skuIndex: 1, qty: 2 }]);
-    const theirs = await order([{ skuIndex: 1, qty: 2 }]);
+    const mine = await order([{ skuIndex: 1, qty: 2, price: 90_000n }]);
+    const theirs = await order([{ skuIndex: 1, qty: 2, price: 90_000n }]);
     const invalid = { response: { code: 'FLASH_SALE_INVALID' } };
 
     // Another order's line.
@@ -450,13 +469,19 @@ describe('what a claim checks inside its own UPDATE (D-542)', () => {
     ).rejects.toMatchObject(invalid);
     // One unit of a line of two.
     await expect(claim(mine, offer.itemIds[0] ?? '', 1, 90_000n, 1)).rejects.toMatchObject(invalid);
+    // A whole line, but charged the shelf price: units sold at the sale price are units a
+    // line charges the sale price for.
+    const shelf = await order([{ skuIndex: 1, qty: 2 }]);
+    await expect(claim(shelf, offer.itemIds[0] ?? '', 2, 90_000n, 1)).rejects.toMatchObject(
+      invalid,
+    );
     // Nothing was taken by either.
     expect((await itemState(offer.itemIds[0] ?? '')).sold).toBe(0);
   });
 
   it('refuses to edit the lines of an order that holds flash units (re-audit W1)', async () => {
     const offer = await sale({ items: [{ skuId: sku(1).id, price: 90_000n, limit: 10 }] });
-    const target = await order([{ skuIndex: 1, qty: 1 }]);
+    const target = await order([{ skuIndex: 1, qty: 1, price: 90_000n }]);
     await claim(target, offer.itemIds[0] ?? '', 1, 90_000n, 1);
     const admin = await harness.asRole('org_admin', ORG_A);
 
@@ -475,7 +500,7 @@ describe('what a claim checks inside its own UPDATE (D-542)', () => {
 
   it('refuses to change or remove a claim once it is released', async () => {
     const offer = await sale({ items: [{ skuId: sku(1).id, price: 60_000n, limit: 10 }] });
-    const target = await order([{ skuIndex: 1, qty: 1 }]);
+    const target = await order([{ skuIndex: 1, qty: 1, price: 60_000n }]);
     await claim(target, offer.itemIds[0] ?? '', 1, 60_000n, 1);
     await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
       api.releaseFlashUnits(tx, ORG_A, target.id),
@@ -633,6 +658,63 @@ describe('a return after a partial delivery, through the real transitions (ledge
   });
 });
 
+describe('what the storefront reads (D-548)', () => {
+  it('lists switched-on sales that have not ended, in listing order, and finds one by slug', async () => {
+    const now = new Date();
+    const first = await sale({
+      items: [{ skuId: sku(3).id, price: 55_000n, limit: 4 }],
+      priority: 90,
+      endsAt: new Date(now.getTime() + 2 * HOUR),
+    });
+    const upcoming = await sale({
+      items: [{ skuId: sku(3).id, price: 56_000n, limit: null }],
+      priority: 90,
+      startsAt: new Date(now.getTime() + HOUR),
+      endsAt: new Date(now.getTime() + 3 * HOUR),
+    });
+    const draft = await sale({ items: [], enabled: false, priority: 90 });
+    const over = await sale({
+      items: [],
+      priority: 90,
+      startsAt: null,
+      endsAt: new Date(now.getTime() - HOUR),
+    });
+
+    const listed = await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
+      api.storefrontFlashSales(tx, ORG_A, { now, homeOnly: false }),
+    );
+    const ids = listed.map((entry) => entry.id);
+    expect(ids.indexOf(first.saleId)).toBeLessThan(ids.indexOf(upcoming.saleId));
+    expect(ids).not.toContain(draft.saleId);
+    expect(ids).not.toContain(over.saleId);
+    expect(listed.find((entry) => entry.id === first.saleId)).toMatchObject({
+      status: 'live',
+      items: [{ skuId: sku(3).id, salePricePoisha: 55_000n, unitsLeft: 4 }],
+    });
+    expect(listed.find((entry) => entry.id === upcoming.saleId)).toMatchObject({
+      status: 'scheduled',
+      items: [{ unitsLeft: null }],
+    });
+
+    const slugOf = async (saleId: string) =>
+      withSystem(
+        async (tx) =>
+          (
+            await tx.execute<{ slug: string }>(sql`
+              select slug from promo.flash_sales where org_id = ${ORG_A} and id = ${saleId}
+            `)
+          )[0]?.slug ?? '',
+        { orgId: ORG_A },
+      );
+    const found = await withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => ({
+      ended: await api.storefrontFlashSale(tx, ORG_A, await slugOf(over.saleId), now),
+      draft: await api.storefrontFlashSale(tx, ORG_A, await slugOf(draft.saleId), now),
+    }));
+    expect(found.ended).toMatchObject({ id: over.saleId, status: 'ended' });
+    expect(found.draft).toBeUndefined();
+  });
+});
+
 describe('the flash-sale editor over HTTP (D-542)', () => {
   it('creates, edits, switches on, duplicates, and keeps what sold', async () => {
     const created = await marketing.client.request('POST', '/v1/promo/flash-sales', {
@@ -664,7 +746,7 @@ describe('the flash-sale editor over HTTP (D-542)', () => {
 
     // Sell two units, then edit: the price changes, sku(1) leaves, sold stays.
     const firstItem = view.items.find((item) => item.skuId === sku(0).id)?.id ?? '';
-    await claim(await order([{ skuIndex: 0, qty: 2 }]), firstItem, 2, 120_000n, 0);
+    await claim(await order([{ skuIndex: 0, qty: 2, price: 120_000n }]), firstItem, 2, 120_000n, 0);
     const edited = await marketing.client.request('PUT', `/v1/promo/flash-sales/${view.id}`, {
       body: {
         title: 'Eid Flash',

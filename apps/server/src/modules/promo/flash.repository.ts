@@ -173,6 +173,39 @@ export async function setSaleEnabled(
   return rows.length > 0;
 }
 
+/**
+ * Switched-on sales that have not ended, in listing order: priority, then the one ending
+ * soonest (an open end last), then the newest (the old site's `byListingOrder`). For the
+ * storefront's sale pages (M33, M34).
+ */
+export async function openSales(
+  tx: Tx,
+  orgId: string,
+  now: Date,
+  homeOnly: boolean,
+): Promise<FlashSaleRow[]> {
+  const rows = await tx.execute<FlashSaleRow>(sql`
+    select ${SALE_COLUMNS} from promo.flash_sales s
+    where s.org_id = ${orgId} and s.enabled
+      and (s.ends_at is null or s.ends_at >= ${now.toISOString()}::timestamptz)
+      and ${homeOnly ? sql`s.show_on_home` : sql`true`}
+    order by s.priority desc, s.ends_at asc nulls last, s.created_at desc, s.id
+  `);
+  return [...rows];
+}
+
+export async function saleBySlug(
+  tx: Tx,
+  orgId: string,
+  slug: string,
+): Promise<FlashSaleRow | undefined> {
+  const rows = await tx.execute<FlashSaleRow>(sql`
+    select ${SALE_COLUMNS} from promo.flash_sales s
+    where s.org_id = ${orgId} and s.slug = ${slug}
+  `);
+  return rows[0];
+}
+
 /** Whether a slug is free in this brand. A hint for choosing one; the unique index decides. */
 export async function slugTaken(tx: Tx, orgId: string, slug: string): Promise<boolean> {
   const rows = await tx.execute<{ id: string }>(sql`

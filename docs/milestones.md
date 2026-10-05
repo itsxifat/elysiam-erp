@@ -1141,6 +1141,9 @@ Phase 6 · Effort MAX · Depends on: M33 · Architecture: §31
 
 Phase 6 · Effort MAX · Depends on: M33, M34 · Architecture: §31
 
+Built in two parts (plan `docs/plans/M35.md`): M35a, flash sales and discounts (checks 1, 2
+and 6 for them); M35b, the rest.
+
 **Build**
 
 - Flash sales, the old site's discount engine in integer poisha, landing pages and their editor, campaign links.
