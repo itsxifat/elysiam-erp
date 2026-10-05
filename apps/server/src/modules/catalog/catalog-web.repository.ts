@@ -490,3 +490,46 @@ export async function webImagesOf(
   `);
   return [...rows];
 }
+
+export interface WebSkuFactRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly product_id: string;
+  readonly code: string;
+  readonly price_poisha: string;
+  readonly product_name: string;
+  readonly product_slug: string;
+  readonly category_id: string | null;
+  readonly sellable: boolean;
+  readonly attrs: { kind: string; name: string; label: string; position: number }[];
+}
+
+/**
+ * SKUs by id as the website's cart sees them (M34, D-520): the selling price, the product, and
+ * whether the website may sell it — an active SKU of an active product shown on the website.
+ * Any status, so a cart line for a SKU that left the website says so rather than vanishing.
+ */
+export async function webSkuFactsOf(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+): Promise<WebSkuFactRow[]> {
+  if (skuIds.length === 0) return [];
+  const rows = await tx.execute<WebSkuFactRow>(sql`
+    select s.id, s.product_id, s.code, s.price_poisha::text as price_poisha,
+      p.name as product_name, p.slug as product_slug, p.category_id,
+      (s.status = 'active' and p.status = 'active' and p.web_visible) as sellable,
+      coalesce(
+        json_agg(json_build_object('kind', a.kind::text, 'name', a.name, 'label', av.label,
+                                   'position', av.position)
+                 order by a.position, a.code) filter (where v.sku_id is not null),
+        '[]'::json) as attrs
+    from catalog.skus s
+    join catalog.products p on p.org_id = s.org_id and p.id = s.product_id
+    left join catalog.sku_values v on v.org_id = s.org_id and v.sku_id = s.id
+    left join catalog.attributes a on a.org_id = v.org_id and a.id = v.attribute_id
+    left join catalog.attribute_values av on av.org_id = v.org_id and av.id = v.value_id
+    where s.org_id = ${orgId} and s.id = any (${sql.param([...skuIds])}::uuid[])
+    group by s.id, p.id
+  `);
+  return [...rows];
+}

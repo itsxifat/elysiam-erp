@@ -217,6 +217,9 @@ export class TransitionsService {
        */
       parcelBooked: trigger === 'cancel' && (await this.parcelBooked(tx, context.orgId, order.id)),
       returnReason: options.returnReason ?? null,
+      // A website checkout reserved this order's stock as it was placed (D-532): the machine
+      // decides that its confirm reserves nothing more and a pending cancel releases.
+      stockHeld: order.stock_held_at !== null,
     });
 
     /*

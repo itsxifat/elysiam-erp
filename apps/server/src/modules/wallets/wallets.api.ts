@@ -48,6 +48,24 @@ export interface WalletsApi {
     orgId: string,
     codes: readonly string[],
   ): Promise<ReadonlyMap<string, { readonly walletId: string; readonly account: PostingAccount }>>;
+
+  /**
+   * A wallet the system itself needs, created on first use (M34, D-526): the SSLCommerz
+   * clearing wallet the website's online payments land in, until the gateway settles them to
+   * the bank (a wallet transfer). Org-level, never a branch's. Its ledger account is created
+   * with the given code if there is none; a code that already names a different kind of
+   * account is refused rather than reused.
+   */
+  ensureSystemWallet(
+    tx: Tx,
+    orgId: string,
+    spec: {
+      readonly code: string;
+      readonly name: string;
+      readonly subtype: 'wallet_bank' | 'wallet_mfs_other';
+      readonly provider: string;
+    },
+  ): Promise<PostingAccount>;
 }
 
 /** The Nest injection token for `WalletsApi`. */
@@ -90,5 +108,46 @@ export class WalletsApiService implements WalletsApi {
       });
     }
     return found;
+  }
+
+  async ensureSystemWallet(
+    tx: Tx,
+    orgId: string,
+    spec: {
+      readonly code: string;
+      readonly name: string;
+      readonly subtype: 'wallet_bank' | 'wallet_mfs_other';
+      readonly provider: string;
+    },
+  ): Promise<PostingAccount> {
+    const info = subtypeInfo(spec.subtype);
+    const inserted = await repo.insertLedgerAccount(tx, {
+      orgId,
+      code: spec.code,
+      name: spec.name,
+      subtype: spec.subtype,
+      class: info.class,
+      normalBalance: info.normalBalance,
+      branchId: null,
+    });
+    const account = inserted ?? (await repo.accountByCode(tx, orgId, spec.code));
+    if (account === undefined) throw new Error(`account ${spec.code} vanished while being set up`);
+    if (inserted === undefined) {
+      const existing = await repo.accountByCode(tx, orgId, spec.code);
+      if (existing?.subtype !== spec.subtype) {
+        throw new Error(
+          `Account code ${spec.code} already belongs to a ${existing?.subtype ?? 'missing'} account, not a ${spec.subtype} wallet.`,
+        );
+      }
+    }
+    await repo.insertWalletIfMissing(tx, {
+      orgId,
+      ledgerAccountId: account.id,
+      branchId: null,
+      provider: spec.provider,
+      accountRefMasked: null,
+      requiresDailyClosing: false,
+    });
+    return { accountId: account.id, subtype: spec.subtype, branchId: null };
   }
 }

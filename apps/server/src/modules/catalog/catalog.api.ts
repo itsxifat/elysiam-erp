@@ -165,6 +165,12 @@ export interface CatalogApi {
   /** The active SKUs of these products, with their sizes, colours and selling prices. */
   webSkus(tx: Tx, orgId: string, productIds: readonly string[]): Promise<WebSku[]>;
 
+  /**
+   * SKUs by id as the website's cart sees them (M34): selling price, product, size and colour,
+   * and whether the website may sell it now. Ids not of this brand are absent.
+   */
+  webSkuFacts(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<WebSkuFact[]>;
+
   /** These products' images, in order. */
   webImages(
     tx: Tx,
@@ -253,6 +259,15 @@ export interface WebSku {
     readonly label: string;
     readonly position: number;
   }[];
+}
+
+/** One SKU as the website's cart sees it (M34, D-520). Selling price only, never a cost. */
+export interface WebSkuFact extends WebSku {
+  readonly productName: string;
+  readonly productSlug: string;
+  readonly categoryId: string | null;
+  /** An active SKU of an active product shown on the website. */
+  readonly sellable: boolean;
 }
 
 export interface SkuFacets {
@@ -508,6 +523,20 @@ export class CatalogApiService implements CatalogApi {
       code: row.code,
       pricePoisha: BigInt(row.price_poisha),
       values: row.attrs,
+    }));
+  }
+
+  async webSkuFacts(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<WebSkuFact[]> {
+    return (await web.webSkuFactsOf(tx, orgId, [...new Set(skuIds)])).map((row) => ({
+      id: row.id,
+      productId: row.product_id,
+      code: row.code,
+      pricePoisha: BigInt(row.price_poisha),
+      values: row.attrs,
+      productName: row.product_name,
+      productSlug: row.product_slug,
+      categoryId: row.category_id,
+      sellable: row.sellable,
     }));
   }
 

@@ -765,3 +765,18 @@ export async function agingAsOf(
   `);
   return [...rows];
 }
+
+/**
+ * A wallet row for an account, unless one exists (M34's system wallets): `on conflict do
+ * nothing` on the one-wallet-per-account index, so two callers racing to set it up both end
+ * with the same row.
+ */
+export async function insertWalletIfMissing(tx: Tx, wallet: NewWallet): Promise<void> {
+  await tx.execute(sql`
+    insert into wallets.wallets
+      (org_id, ledger_account_id, branch_id, provider, account_ref_masked, requires_daily_closing)
+    values (${wallet.orgId}, ${wallet.ledgerAccountId}, ${wallet.branchId}::uuid,
+            ${wallet.provider}, ${wallet.accountRefMasked}, ${wallet.requiresDailyClosing})
+    on conflict (org_id, ledger_account_id) do nothing
+  `);
+}

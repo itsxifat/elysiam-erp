@@ -18,6 +18,7 @@ import {
   type AdvancePolicy,
   type AdvanceStatus,
   type AdvanceSettlement,
+  type GatewayAdvanceMethod,
   type HeldAdvance,
   type OrderStatus,
   type PostingAccount,
@@ -537,6 +538,164 @@ export class AdvancesService {
     );
   }
 
+  // --- a payment gateway ----------------------------------------------------------
+
+  /**
+   * A website payment the gateway validated, booked as a verified advance at once (M34,
+   * D-526): Dr the gateway's clearing wallet / Cr Customer advance, through the same rule an
+   * accounts verification posts (`customerAdvanceDraft`), and, before the parcel moves, the
+   * COD down by the amount in the same transaction.
+   *
+   * The four eyes are two system actors and the gateway: the website's checkout records the
+   * claim (`recordedBy`) and SSLCommerz's own validation decides it (`decidedBy`). The caller
+   * has already compared the validated amount with what the order still collects; nothing
+   * here takes a figure on trust from a request.
+   *
+   * - Before shipping, no parcel booked: applied to the order (the COD falls).
+   * - The order already ended (an unpaid order cancelled at sixty minutes, then paid): the
+   *   money is received and ended in one step by the brand's cancel policy, so it is owed
+   *   back and accounts refunds it (D-527).
+   * - A parcel booked or on the road: left as a **pending claim** for accounts to verify into
+   *   the same wallet once the order ends; nothing posts and the COD stays (D-231).
+   *
+   * Idempotent per transaction reference: the live-reference index refuses a second claim for
+   * the same gateway transaction, and the journal key is the advance's own.
+   */
+  async recordGatewayAdvance(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly recordedBy: string; readonly decidedBy: string },
+    input: {
+      readonly orderId: string;
+      readonly method: GatewayAdvanceMethod;
+      readonly transactionRef: string;
+      readonly amountPoisha: bigint;
+      readonly wallet: PostingAccount;
+      readonly note: string | null;
+    },
+  ): Promise<{ readonly advanceId: string; readonly outcome: 'applied' | 'settled' | 'held' }> {
+    const order = await repo.orderForUpdate(tx, actor.orgId, input.orderId);
+    if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
+    const reference = normalizeTransactionRef(input.transactionRef);
+    if (reference === null) {
+      throw new OrdersError('ADVANCE_INVALID', 'A gateway transaction reference is malformed.');
+    }
+    if (input.amountPoisha <= 0n) {
+      throw new OrdersError('ADVANCE_INVALID', 'A gateway payment must be a positive amount.');
+    }
+    if (!input.wallet.subtype.startsWith('wallet_')) {
+      throw new OrdersError('LEDGER_ACCOUNT_NOT_FOUND', 'A gateway payment lands in a wallet.');
+    }
+    const existing = await advances.liveClaimFor(tx, actor.orgId, reference);
+    if (existing !== undefined) {
+      throw new OrdersError(
+        'ADVANCE_DUPLICATE',
+        'That gateway transaction already backs an advance in this brand.',
+      );
+    }
+
+    const id = await advances.insertClaim(tx, {
+      orgId: actor.orgId,
+      orderId: order.id,
+      method: input.method,
+      transactionRef: reference,
+      amountPoisha: input.amountPoisha,
+      note: input.note,
+      recordedBy: actor.recordedBy,
+    });
+    const context = gatewayContext(actor.orgId, actor.decidedBy);
+
+    const status = order.status as OrderStatus;
+    const parcelLive =
+      acceptsAdvanceClaim(status) && (await this.parcelLive(tx, actor.orgId, order.id));
+    const outcome = advanceVerification({
+      status,
+      parcelLive,
+      policy: await this.policy(tx, actor.orgId),
+    });
+    if (outcome.kind === 'wait') {
+      // The courier holds the COD it was given; accounts verifies this claim once the order
+      // ends, into the wallet the gateway paid (D-231).
+      await this.audit.record(tx, {
+        orgId: actor.orgId,
+        actorUserId: actor.recordedBy,
+        operation: 'create',
+        action: 'order.advance_claimed',
+        entityType: 'order',
+        entityId: order.id,
+        after: { advanceId: id, method: input.method, amountPoisha: input.amountPoisha.toString() },
+        request: {},
+      });
+      return { advanceId: id, outcome: 'held' };
+    }
+
+    if (outcome.kind === 'apply') {
+      const applied = await repo.applyAdvance(tx, {
+        orgId: actor.orgId,
+        orderId: order.id,
+        amountPoisha: input.amountPoisha,
+      });
+      if (!applied) {
+        throw new OrdersError(
+          'ORDER_TOTAL_INVALID',
+          'That payment is more than this order still collects.',
+        );
+      }
+    }
+
+    const customerAdvance = await this.account(tx, actor.orgId, 'customer_advance');
+    const posted = await this.ledger.post(
+      tx,
+      { orgId: actor.orgId, userId: actor.decidedBy },
+      customerAdvanceDraft({
+        advanceId: id,
+        occurredAt: new Date(),
+        direction: 'received',
+        wallet: input.wallet,
+        customerAdvance,
+        amountPoisha: poisha(input.amountPoisha),
+        branchId: order.branch_id,
+        memo: `Order ${order.order_no} paid online ${reference}`,
+      }),
+    );
+    const marked = await advances.markVerified(tx, {
+      orgId: actor.orgId,
+      id,
+      decidedBy: actor.decidedBy,
+      walletAccountId: input.wallet.accountId,
+      journalId: posted.journalId,
+    });
+    if (!marked)
+      throw new OrdersError('ADVANCE_INVALID', 'A gateway advance moved as it was booked.');
+
+    if (outcome.kind === 'settle') {
+      const cap = await advances.keepCap(tx, actor.orgId, order.id);
+      const [settlement] = settlementsFor(
+        [{ id, amountPoisha: poisha(input.amountPoisha), appliedPoisha: poisha(0n) }],
+        outcome.disposition,
+        poisha(cap),
+      );
+      if (settlement !== undefined) await this.settle(tx, context, order, settlement, new Date());
+    }
+
+    await this.audit.record(tx, {
+      orgId: actor.orgId,
+      actorUserId: actor.decidedBy,
+      operation: 'approve',
+      action: 'order.advance_verified',
+      entityType: 'order',
+      entityId: order.id,
+      after: {
+        advanceId: id,
+        method: input.method,
+        walletAccountId: input.wallet.accountId,
+        journalId: posted.journalId,
+        outcome: outcome.kind === 'settle' ? outcome.disposition : 'applied_to_cod',
+      },
+      request: {},
+    });
+    return { advanceId: id, outcome: outcome.kind === 'settle' ? 'settled' : 'applied' };
+  }
+
   // --- the transitions' effects -----------------------------------------------------
 
   /**
@@ -756,5 +915,18 @@ export function toAdvanceView(row: advances.AdvanceRow) {
     refundRef: row.refund_ref,
     voidReason: row.void_reason,
     voidedAt: row.voided_at === null ? null : new Date(row.voided_at).toISOString(),
+  };
+}
+
+/** The gateway acting as the decider, for the ending a late payment is settled by (D-527). */
+function gatewayContext(orgId: string, userId: string): ActiveContext {
+  return {
+    orgId,
+    userId,
+    isSuperAdmin: false,
+    roles: [],
+    branchIds: [],
+    branchIdsByRole: {},
+    requestId: '',
   };
 }

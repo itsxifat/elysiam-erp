@@ -1,5 +1,4 @@
 import { add, mulQty, poisha, sub, sum, ZERO, type Poisha } from '../money/index.js';
-import { storefrontPrice, type FlashOffer } from './price.js';
 import { shipsFree, webZoneFor, type ShippingRule, type WebZone } from './shipping.js';
 
 /**
@@ -14,8 +13,9 @@ import { shipsFree, webZoneFor, type ShippingRule, type WebZone } from './shippi
  *    locations hold fewer units than it asks for; an unavailable line is reported with its
  *    reason and left out of every total, so the website can say "only 2 left" without the
  *    figures lying about what can be bought.
- * 2. **Unit price.** The shelf price, or a live flash offer below it (`storefrontPrice`; M35a
- *    passes the offers).
+ * 2. **Unit price.** The shelf price, or the flash sale price the caller planned for the line
+ *    (M35a's `planFlashLines`: the cheapest live offer below the shelf price that still covers
+ *    the whole line). A planned price at or above the shelf price is ignored.
  * 3. **Delivery.** The shopper's address resolves to an ERP delivery zone, the zone to one of
  *    the website's three zones (`webZoneFor`), and that zone's fee applies — or nothing when
  *    the order ships free. Free shipping when switched on and the items total reaches the
@@ -59,14 +59,17 @@ export interface CartDiscount {
 export interface CartQuoteInput {
   readonly lines: readonly CartLineInput[];
   readonly skus: ReadonlyMap<string, CartSku>;
-  /** Live flash offers (M35a); none until then. */
-  readonly offers?: readonly FlashOffer[];
+  /**
+   * The flash sale price each SKU's line is planned at (M35a's `planFlashLines`, on the
+   * available lines), by SKU id. A SKU not here is sold at its shelf price.
+   */
+  readonly flashPrices?: ReadonlyMap<string, Poisha>;
   readonly rule: ShippingRule;
   /**
    * The ERP delivery zone the shopper's address falls in: a zone id, null when the address
    * falls in no zone, undefined when no address was given yet.
    */
-  readonly deliveryZoneId?: string | null;
+  readonly deliveryZoneId?: string | null | undefined;
   readonly discounts?: readonly CartDiscount[];
 }
 
@@ -117,7 +120,7 @@ export class CartError extends Error {
 }
 
 /** Lines for the same SKU folded into one, in first-seen order; unmatched lines kept apart. */
-function foldLines(lines: readonly CartLineInput[]): CartLineInput[] {
+export function foldCartLines(lines: readonly CartLineInput[]): CartLineInput[] {
   const folded: CartLineInput[] = [];
   const bySku = new Map<string, number>();
   for (const line of lines) {
@@ -144,7 +147,7 @@ export function quoteCart(input: CartQuoteInput): CartQuote {
   const lines: QuotedLine[] = [];
   const unavailable: UnavailableLine[] = [];
 
-  for (const line of foldLines(input.lines)) {
+  for (const line of foldCartLines(input.lines)) {
     const sku = line.skuId === null ? undefined : input.skus.get(line.skuId);
     if (sku === undefined) {
       unavailable.push({ ...line, reason: 'not_found', availableQty: 0 });
@@ -164,14 +167,16 @@ export function quoteCart(input: CartQuoteInput): CartQuote {
       });
       continue;
     }
-    const price = storefrontPrice({ id: sku.id, pricePoisha: sku.pricePoisha }, input.offers);
+    const flash = input.flashPrices?.get(sku.id);
+    const onSale = flash !== undefined && flash > 0n && flash < sku.pricePoisha;
+    const unitPricePoisha = onSale ? flash : sku.pricePoisha;
     lines.push({
       key: line.key,
       skuId: sku.id,
       qty: line.qty,
-      unitPricePoisha: price.pricePoisha,
-      compareAtPoisha: price.compareAtPoisha,
-      lineTotalPoisha: mulQty(price.pricePoisha, line.qty),
+      unitPricePoisha,
+      compareAtPoisha: onSale ? sku.pricePoisha : null,
+      lineTotalPoisha: mulQty(unitPricePoisha, line.qty),
       availableQty,
     });
   }

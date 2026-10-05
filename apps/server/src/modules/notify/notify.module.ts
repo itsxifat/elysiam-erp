@@ -2,9 +2,17 @@ import { Module, type Provider } from '@nestjs/common';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { NOTIFY_API, NotifyApiService } from './notify.api.js';
-import { gatewayFor, NOTIFY_CONFIG, notifyConfig, type NotifyConfig } from './notify.config.js';
+import { EmailService } from './emails.service.js';
+import {
+  gatewayFor,
+  mailerFor,
+  NOTIFY_CONFIG,
+  notifyConfig,
+  type NotifyConfig,
+} from './notify.config.js';
 import { NotifyController } from './notify.controller.js';
 import { NotifyService } from './notify.service.js';
+import { MAILER } from './providers/mailer.js';
 import { SMS_GATEWAY } from './providers/sms-gateway.js';
 
 /**
@@ -23,16 +31,24 @@ const gatewayProvider: Provider = {
   inject: [NOTIFY_CONFIG],
 };
 
+const mailerProvider: Provider = {
+  provide: MAILER,
+  useFactory: (config: NotifyConfig) => mailerFor(config),
+  inject: [NOTIFY_CONFIG],
+};
+
 @Module({
   controllers: [NotifyController],
   providers: [
     configProvider,
     gatewayProvider,
+    mailerProvider,
+    EmailService,
     // Provided rather than imported, as every other module does it.
     AuditService,
     NotifyService,
     { provide: NOTIFY_API, useClass: NotifyApiService },
   ],
-  exports: [NOTIFY_API, NotifyService, SMS_GATEWAY],
+  exports: [NOTIFY_API, NotifyService, SMS_GATEWAY, EmailService, MAILER],
 })
 export class NotifyModule {}

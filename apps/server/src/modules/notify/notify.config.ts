@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { BulkSmsBdGateway } from './providers/bulksmsbd.gateway.js';
+import { FakeMailer, SmtpMailer, type Mailer } from './providers/mailer.js';
 import { FakeSmsGateway, type SmsGateway } from './providers/sms-gateway.js';
 
 /**
@@ -23,6 +24,13 @@ const schema = z.object({
   NOTIFY_BULKSMSBD_SENDER_ID: z.string().min(1).optional(),
   /** How long one send may take before the job gives up and tries later. */
   NOTIFY_SMS_TIMEOUT_MS: z.coerce.number().int().min(500).max(30_000).default(8_000),
+  /**
+   * M34 (D-529): where email goes. `smtp`, each brand's own server from its settings, is the
+   * default because a brand's emails only leave once its org admin has set a server up and
+   * switched it on; `fake` records instead of sending (tests).
+   */
+  NOTIFY_EMAIL_PROVIDER: z.enum(['smtp', 'fake']).default('smtp'),
+  NOTIFY_EMAIL_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(15_000),
 });
 
 export type NotifyConfig = z.infer<typeof schema>;
@@ -55,4 +63,9 @@ export function gatewayFor(config: NotifyConfig): SmsGateway {
     apiKey: config.NOTIFY_BULKSMSBD_API_KEY,
     senderId: config.NOTIFY_BULKSMSBD_SENDER_ID,
   });
+}
+
+/** The mailer the config names (M34). */
+export function mailerFor(config: NotifyConfig): Mailer {
+  return config.NOTIFY_EMAIL_PROVIDER === 'fake' ? new FakeMailer() : new SmtpMailer();
 }

@@ -1,9 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
 import { normalizeBdPhone } from '@elysium/domain';
+import type { EmailLocale } from '@elysium/domain/notify';
 
+import {
+  EmailService,
+  type EmailSettingsView,
+  type QueueEmailInput,
+  type QueuedEmail,
+} from './emails.service.js';
 import * as repo from './notify.repository.js';
 import { NotifyService } from './notify.service.js';
+import type { MailResult } from './providers/mailer.js';
 
 /**
  * What another module may ask of notifications (M16; invariant 12).
@@ -43,13 +51,51 @@ export interface NotifyApi {
    * module stores a buyer's phone; the opt-out table keeps the national form.
    */
   optedOutPhones(tx: Tx, orgId: string): Promise<readonly string[]>;
+
+  // --- M34: email (D-529) ------------------------------------------------------------
+
+  /**
+   * Queue one email from a template, inside the caller's transaction; sent by the worker. A
+   * brand with no email server switched on gets it recorded as `skipped`. With a `dedupeKey`
+   * a second request for the same key writes nothing (`duplicate`).
+   */
+  queueEmail(tx: Tx, orgId: string, input: QueueEmailInput): Promise<QueuedEmail>;
+
+  /** The brand's email server, as a screen shows it: never the password. */
+  emailSettings(tx: Tx, orgId: string): Promise<EmailSettingsView>;
+
+  /** Save the brand's email server; the password is sealed, or kept when none is sent. */
+  saveEmailSettings(
+    tx: Tx,
+    orgId: string,
+    input: Parameters<EmailService['saveSettings']>[2],
+    userId: string,
+  ): Promise<void>;
+
+  /** A test email through the saved server, now, with no transaction open. */
+  sendTestEmail(
+    orgId: string,
+    to: string,
+    brand: string,
+    locale?: EmailLocale,
+  ): Promise<MailResult>;
+
+  /** The latest emails, newest first, without bodies. */
+  recentEmails(
+    tx: Tx,
+    orgId: string,
+    limit: number,
+  ): Promise<Awaited<ReturnType<EmailService['recent']>>>;
 }
 
 export const NOTIFY_API = Symbol('NotifyApi');
 
 @Injectable()
 export class NotifyApiService implements NotifyApi {
-  constructor(@Inject(NotifyService) private readonly notify: NotifyService) {}
+  constructor(
+    @Inject(NotifyService) private readonly notify: NotifyService,
+    @Inject(EmailService) private readonly emails: EmailService,
+  ) {}
 
   async queue(
     tx: Tx,
@@ -63,5 +109,35 @@ export class NotifyApiService implements NotifyApi {
   async optedOutPhones(tx: Tx, orgId: string): Promise<readonly string[]> {
     const national = await repo.optedOutPhones(tx, orgId, 'sms');
     return national.map((phone) => normalizeBdPhone(phone));
+  }
+
+  async queueEmail(tx: Tx, orgId: string, input: QueueEmailInput): Promise<QueuedEmail> {
+    return this.emails.queue(tx, orgId, input);
+  }
+
+  async emailSettings(tx: Tx, orgId: string): Promise<EmailSettingsView> {
+    return this.emails.settingsView(tx, orgId);
+  }
+
+  async saveEmailSettings(
+    tx: Tx,
+    orgId: string,
+    input: Parameters<EmailService['saveSettings']>[2],
+    userId: string,
+  ): Promise<void> {
+    await this.emails.saveSettings(tx, orgId, input, userId);
+  }
+
+  async sendTestEmail(
+    orgId: string,
+    to: string,
+    brand: string,
+    locale?: EmailLocale,
+  ): Promise<MailResult> {
+    return this.emails.sendTest(orgId, to, brand, locale);
+  }
+
+  async recentEmails(tx: Tx, orgId: string, limit: number) {
+    return this.emails.recent(tx, orgId, limit);
   }
 }

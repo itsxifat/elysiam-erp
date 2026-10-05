@@ -100,6 +100,25 @@ export class BookingService implements OnModuleInit {
     return existing.booking_state === 'pending' || existing.booking_state === 'booked';
   }
 
+  /** The booked parcel's codes, for the buyer's tracking (M34, D-524). Null before booking. */
+  async parcelTracking(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+  ): Promise<{
+    courierId: string;
+    consignmentNo: string | null;
+    trackingCode: string | null;
+  } | null> {
+    const parcel = await repo.consignmentByOrder(tx, orgId, orderId);
+    if (parcel?.booking_state !== 'booked') return null;
+    return {
+      courierId: parcel.courier_id,
+      consignmentNo: parcel.consignment_no,
+      trackingCode: parcel.tracking_code,
+    };
+  }
+
   /**
    * Create the consignment row and queue the booking, inside the caller's transaction.
    *

@@ -556,6 +556,8 @@ export interface OrderRow extends Record<string, unknown> {
   readonly exchange_of_order_id: string | null;
   /** The promo code that priced this order, when one did (M16). */
   readonly promo_code_id: string | null;
+  /** When a website checkout reserved its stock (M34, D-532); null for every other order. */
+  readonly stock_held_at: string | null;
   readonly notes: string | null;
   readonly created_at: string;
 }
@@ -568,7 +570,7 @@ const ORDER_COLUMNS = sql`o.id, o.branch_id, o.order_no, o.channel::text as chan
   o.cod_amount_poisha, o.status::text as status, o.hold_reason, o.assigned_to, o.created_by,
   o.confirmed_at, o.packed_at, o.handed_over_at, o.delivered_at, o.returned_at,
   o.cancelled_at, o.cancel_reason, o.reseller_id, o.exchange_of_order_id, o.promo_code_id,
-  o.notes, o.created_at`;
+  o.stock_held_at, o.notes, o.created_at`;
 
 export async function insertOrder(
   tx: Tx,
@@ -598,6 +600,8 @@ export async function insertOrder(
     readonly createdBy: string;
     readonly notes: string | null;
     readonly exchangeOfOrderId: string | null;
+    /** Set when the caller reserves the stock in this transaction (M34, D-532). */
+    readonly stockHeldAt?: Date | null;
   },
 ): Promise<string> {
   const rows = await tx.execute<{ id: string }>(sql`
@@ -606,7 +610,7 @@ export async function insertOrder(
       ship_name, ship_phone_e164, ship_district_id, ship_thana_id, ship_area, ship_address_line,
       delivery_zone_id, courier_id, location_id,
       items_poisha, discount_poisha, delivery_charge_poisha, advance_paid_poisha, cod_amount_poisha,
-      promo_code_id, assigned_to, created_by, notes, exchange_of_order_id
+      promo_code_id, assigned_to, created_by, notes, exchange_of_order_id, stock_held_at
     ) values (
       ${input.orgId}, ${input.branchId}::uuid, ${input.orderNo},
       ${input.channel}::sales.order_channel, ${JSON.stringify(input.source)}::jsonb,
@@ -618,7 +622,7 @@ export async function insertOrder(
       ${input.deliveryChargePoisha.toString()}::bigint, ${input.advancePaidPoisha.toString()}::bigint,
       ${input.codAmountPoisha.toString()}::bigint,
       ${input.promoCodeId}::uuid, ${input.assignedTo}, ${input.createdBy}, ${input.notes},
-      ${input.exchangeOfOrderId}::uuid
+      ${input.exchangeOfOrderId}::uuid, ${input.stockHeldAt?.toISOString() ?? null}::timestamptz
     )
     returning id
   `);
@@ -1577,4 +1581,92 @@ export async function standingOrderCount(
       and ${excludingOrderId === null ? sql`true` : sql`id <> ${excludingOrderId}`}
   `);
   return rows[0]?.n ?? 0;
+}
+
+// --- M34: the website's questions (through `OrdersApi`) --------------------------------------
+
+/** The buyer this E.164 phone names in the brand, or undefined. */
+export async function buyerIdByPhone(
+  tx: Tx,
+  orgId: string,
+  phoneE164: string,
+): Promise<string | undefined> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select id from sales.customers where org_id = ${orgId} and phone_e164 = ${phoneE164}
+  `);
+  return rows[0]?.id;
+}
+
+/** Order headers by id, for the website's order list and view: selling-side money only. */
+export interface ShopperOrderRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly order_no: string;
+  readonly channel: string;
+  readonly status: string;
+  readonly customer_id: string;
+  readonly ship_name: string;
+  readonly ship_phone_e164: string;
+  readonly ship_district_id: number;
+  readonly ship_thana_id: number;
+  readonly ship_area: string | null;
+  readonly ship_address_line: string;
+  readonly items_poisha: string;
+  readonly discount_poisha: string;
+  readonly delivery_charge_poisha: string;
+  readonly advance_paid_poisha: string;
+  readonly cod_amount_poisha: string;
+  readonly courier_id: string | null;
+  readonly created_at: string;
+  readonly confirmed_at: string | null;
+  readonly handed_over_at: string | null;
+  readonly delivered_at: string | null;
+  readonly returned_at: string | null;
+  readonly cancelled_at: string | null;
+  readonly line_count: number;
+  readonly unit_count: number;
+  readonly district_en: string | null;
+  readonly district_bn: string | null;
+  readonly thana_en: string | null;
+  readonly thana_bn: string | null;
+}
+
+export async function shopperOrderRows(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+): Promise<ShopperOrderRow[]> {
+  if (ids.length === 0) return [];
+  return tx.execute<ShopperOrderRow>(sql`
+    select o.id, o.order_no, o.channel::text as channel, o.status::text as status, o.customer_id,
+           o.ship_name, o.ship_phone_e164, o.ship_district_id, o.ship_thana_id, o.ship_area,
+           o.ship_address_line, o.items_poisha::text as items_poisha,
+           o.discount_poisha::text as discount_poisha,
+           o.delivery_charge_poisha::text as delivery_charge_poisha,
+           o.advance_paid_poisha::text as advance_paid_poisha,
+           o.cod_amount_poisha::text as cod_amount_poisha, o.courier_id,
+           o.created_at, o.confirmed_at, o.handed_over_at, o.delivered_at, o.returned_at,
+           o.cancelled_at,
+           (select count(*)::int from sales.order_lines l
+             where l.org_id = o.org_id and l.order_id = o.id) as line_count,
+           (select coalesce(sum(l.qty), 0)::int from sales.order_lines l
+             where l.org_id = o.org_id and l.order_id = o.id) as unit_count,
+           d.name_en as district_en, d.name_bn as district_bn,
+           t.name_en as thana_en, t.name_bn as thana_bn
+    from sales.orders o
+    left join ref.districts d on d.id = o.ship_district_id
+    left join ref.thanas t on t.id = o.ship_thana_id
+    where o.org_id = ${orgId} and o.id = any (${sql.param([...ids])}::uuid[])
+  `);
+}
+
+/** An order's id by its number, or undefined. */
+export async function orderIdByNo(
+  tx: Tx,
+  orgId: string,
+  orderNo: string,
+): Promise<string | undefined> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select id from sales.orders where org_id = ${orgId} and order_no = ${orderNo}
+  `);
+  return rows[0]?.id;
 }

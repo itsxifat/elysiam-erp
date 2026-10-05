@@ -162,16 +162,28 @@ describe('quoteCart (M34, D-520)', () => {
     ).toThrow(CartError);
   });
 
-  it('uses a flash offer below the shelf price, with the shelf price as compare-at', () => {
+  it('uses a planned flash price below the shelf price, with the shelf price as compare-at', () => {
     const quote = quoteCart({
-      lines: [{ key: 'a', skuId: 'a', qty: 2 }],
-      skus: new Map([['a', sku('a', 100_000n, 5)]]),
-      offers: [{ skuId: 'a', pricePoisha: poisha(80_000n) }],
+      lines: [
+        { key: 'a', skuId: 'a', qty: 2 },
+        { key: 'b', skuId: 'b', qty: 1 },
+      ],
+      skus: new Map([
+        ['a', sku('a', 100_000n, 5)],
+        ['b', sku('b', 50_000n, 5)],
+      ]),
+      flashPrices: new Map([
+        ['a', poisha(80_000n)],
+        // Not below the shelf price: ignored.
+        ['b', poisha(60_000n)],
+      ]),
       rule: rule(),
     });
     expect(quote.lines[0]?.unitPricePoisha).toBe(80_000n);
     expect(quote.lines[0]?.compareAtPoisha).toBe(100_000n);
-    expect(quote.itemsPoisha).toBe(160_000n);
+    expect(quote.lines[1]?.unitPricePoisha).toBe(50_000n);
+    expect(quote.lines[1]?.compareAtPoisha).toBeNull();
+    expect(quote.itemsPoisha).toBe(210_000n);
   });
 
   const arbitraryCart = fc

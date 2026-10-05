@@ -9,6 +9,7 @@ import {
   basisPointsAsPercent,
   discountAllowed,
   formatOrderNo,
+  holdsStock as holdsStockNow,
   mulQty,
   normalizeBdPhone,
   orderDiscountCeilingBps,
@@ -307,6 +308,18 @@ export interface CreateOrderOptions {
    * every HTTP path leaves it out and is checked.
    */
   readonly systemPricing?: true;
+  /**
+   * Reserve the lines at this location as the order is placed, in this transaction (a website
+   * checkout, M34, D-532). The order is then `stock_held_at`: confirming it reserves nothing
+   * more and cancelling it while pending releases the hold, both by the state machine. All or
+   * nothing: a line the location cannot hold refuses the order with `STOCK_INSUFFICIENT`.
+   */
+  readonly holdStockAt?: string;
+  /**
+   * The discount the order's `promo_code_id` names, for a server caller that priced and
+   * redeems its discounts itself (the website, M34, D-539). Never from a request body.
+   */
+  readonly promoCodeId?: string | null;
 }
 
 export interface CreatedOrder {
@@ -707,6 +720,16 @@ export class OrdersService {
       // the agent is still on the phone rather than at the confirm that reserves stock.
       await this.assertShippableLocation(tx, context, input.locationId);
     }
+    const holdAt = options.holdStockAt;
+    if (holdAt !== undefined) {
+      if (input.locationId !== undefined && input.locationId !== holdAt) {
+        throw new OrdersError(
+          'STOCK_LOCATION_INVALID',
+          'An order is held at the location it ships from; name one location, not two.',
+        );
+      }
+      await this.assertShippableLocation(tx, context, holdAt);
+    }
 
     const orderNo = await this.nextOrderNo(tx, context, at);
     const orderId = await repo.insertOrder(tx, {
@@ -724,13 +747,14 @@ export class OrdersService {
       shipAddressLine: shipTo.addressLine,
       deliveryZoneId: zone?.id ?? options.fallbackDeliveryZoneId ?? null,
       courierId: input.courierId ?? zone?.defaultCourierId ?? null,
-      locationId: input.locationId ?? null,
+      locationId: holdAt ?? input.locationId ?? null,
+      stockHeldAt: holdAt === undefined ? null : at,
       itemsPoisha: BigInt(totals.itemsPoisha),
       discountPoisha: BigInt(totals.discountPoisha),
       deliveryChargePoisha: BigInt(totals.deliveryChargePoisha),
       advancePaidPoisha: BigInt(totals.advancePaidPoisha),
       codAmountPoisha: BigInt(totals.codAmountPoisha),
-      promoCodeId: priced?.codeId ?? null,
+      promoCodeId: priced?.codeId ?? options.promoCodeId ?? null,
       assignedTo: input.assignedTo ?? null,
       createdBy: context.userId,
       notes: input.notes ?? null,
@@ -755,6 +779,23 @@ export class OrdersService {
         discountPoisha: line.discountPoisha,
         position: index,
       });
+    }
+
+    if (holdAt !== undefined) {
+      /*
+       * The website's hold (D-532): the lines are reserved now, with M07's atomic conditional
+       * UPDATE, so two shoppers racing for the last unit cannot both be sold it. A line the
+       * location cannot hold throws `STOCK_INSUFFICIENT` and the whole order rolls back.
+       */
+      await this.inventory.reserve(
+        tx,
+        { orgId: context.orgId, userId: context.userId },
+        {
+          refType: 'order',
+          refId: orderId,
+          lines: lines.map((line) => ({ skuId: line.skuId, locationId: holdAt, qty: line.qty })),
+        },
+      );
     }
 
     /*
@@ -975,7 +1016,8 @@ export class OrdersService {
         const linesChanged = patch.lines !== undefined && !sameLines(existing, lines);
         const nextLocationId = patch.locationId ?? order.location_id;
         const locationChanged = nextLocationId !== order.location_id;
-        const holdsStock = order.status === 'confirmed' || order.status === 'on_hold';
+        // A confirmed or held order, and a website order its checkout held (D-532).
+        const holdsStock = holdsStockNow(order.status as OrderStatus, order.stock_held_at !== null);
         /*
          * A moved fulfilment location needs the hold moved with it.
          *

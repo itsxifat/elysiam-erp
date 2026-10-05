@@ -28,6 +28,24 @@ export class StorefrontError extends Error {
   }
 }
 
+/**
+ * A refusal the website needs more than a sentence for (M34): `CART_REPRICED` carries the new
+ * quote and `OUT_OF_STOCK` the lines that are short. The storefront controller writes these as
+ * problem+json itself, with the extension members passed through the storefront allow-list,
+ * because the global problem filter keeps only `code`, `detail` and `reason`.
+ */
+export class StorefrontRefusal extends StorefrontError {
+  constructor(
+    code: ErrorCode,
+    status: number,
+    message: string,
+    readonly extensions: Readonly<Record<string, unknown>>,
+  ) {
+    super(code, status, message);
+    this.name = 'StorefrontRefusal';
+  }
+}
+
 export const storefrontNotFound = (what: string): StorefrontError =>
   new StorefrontError(
     'STOREFRONT_NOT_FOUND',

@@ -9,7 +9,22 @@ import { ApprovalsModule } from '../approvals/approvals.module.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
 import { FilesModule } from '../files/files.module.js';
 import { InventoryModule } from '../inventory/inventory.module.js';
+import { NotifyModule } from '../notify/notify.module.js';
 import { OrdersModule } from '../orders/orders.module.js';
+import { PromoModule } from '../promo/promo.module.js';
+import { WalletsModule } from '../wallets/wallets.module.js';
+import { AccountsService } from './accounts.service.js';
+import { BuyingService } from './buying.service.js';
+import { CommerceController } from './commerce.controller.js';
+import { CommerceService } from './commerce.service.js';
+import { FlashSalesReader } from './flash-sales.reader.js';
+import { OrderMail } from './order-mail.js';
+import { PaymentsService } from './payments.service.js';
+import { StorefrontRawBody } from './raw-body.js';
+import { ShopperOrdersService } from './shopper-orders.service.js';
+import { FakePaymentGateway, PAYMENT_GATEWAY, SslcommerzGateway } from './sslcommerz.gateway.js';
+import { SslcommerzIpnController } from './sslcommerz-ipn.controller.js';
+import { StorefrontBuyingController } from './storefront-buying.controller.js';
 import { SiteCache } from './site-cache.js';
 import { STOREFRONT_API, StorefrontApiService } from './storefront.api.js';
 import { STOREFRONT_CONFIG, storefrontConfig, type StorefrontConfig } from './storefront.config.js';
@@ -68,8 +83,23 @@ class StorefrontValkey implements OnModuleDestroy {
  * `STOREFRONT_API` for M34 to M36.
  */
 @Module({
-  imports: [CatalogModule, InventoryModule, OrdersModule, FilesModule, ApprovalsModule],
-  controllers: [StorefrontController, StorefrontPublicController],
+  imports: [
+    CatalogModule,
+    InventoryModule,
+    OrdersModule,
+    FilesModule,
+    ApprovalsModule,
+    PromoModule,
+    NotifyModule,
+    WalletsModule,
+  ],
+  controllers: [
+    StorefrontController,
+    StorefrontPublicController,
+    StorefrontBuyingController,
+    SslcommerzIpnController,
+    CommerceController,
+  ],
   providers: [
     { provide: STOREFRONT_CONFIG, useFactory: () => storefrontConfig() },
     {
@@ -87,7 +117,24 @@ class StorefrontValkey implements OnModuleDestroy {
     StorefrontPublicService,
     StorefrontSignatureGuard,
     { provide: STOREFRONT_API, useClass: StorefrontApiService },
+    // M34: buying on the website.
+    StorefrontRawBody,
+    {
+      provide: PAYMENT_GATEWAY,
+      useFactory: (config: StorefrontConfig) =>
+        config.STOREFRONT_SSLCOMMERZ_PROVIDER === 'fake'
+          ? new FakePaymentGateway()
+          : new SslcommerzGateway(),
+      inject: [STOREFRONT_CONFIG],
+    },
+    OrderMail,
+    BuyingService,
+    AccountsService,
+    ShopperOrdersService,
+    PaymentsService,
+    CommerceService,
+    FlashSalesReader,
   ],
-  exports: [STOREFRONT_API],
+  exports: [STOREFRONT_API, PaymentsService, OrderMail, PAYMENT_GATEWAY],
 })
 export class StorefrontModule {}
