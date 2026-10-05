@@ -61,6 +61,11 @@ export function OrdersNav() {
       <Link to={ordersPath('/orders/returns')} className={TAB} activeProps={ACTIVE}>
         {t('orders.nav.returns')}
       </Link>
+      {ability.can('update', 'Order') ? (
+        <Link to={ordersPath('/orders/packing')} className={TAB} activeProps={ACTIVE}>
+          {tr('pk.nav.pack')}
+        </Link>
+      ) : null}
       <Link to={ordersPath('/orders/scan')} className={TAB} activeProps={ACTIVE}>
         {tr('pk.nav.scan')}
       </Link>

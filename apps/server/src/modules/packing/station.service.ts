@@ -84,7 +84,7 @@ export class PackStationService {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const orderId = await this.findOrder(tx, context.orgId, request, input);
         const existing = await repo.sessionByOrder(tx, context.orgId, orderId);
-        if (existing !== undefined) return this.view(tx, context.orgId, existing);
+        if (existing !== undefined) return this.view(tx, context.orgId, existing, context.userId);
 
         const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
         if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
@@ -109,7 +109,7 @@ export class PackStationService {
             request,
           });
         }
-        return this.view(tx, context.orgId, row);
+        return this.view(tx, context.orgId, row, context.userId);
       }),
     );
   }
@@ -119,7 +119,7 @@ export class PackStationService {
     return mapPackingErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const session = await this.sessionInScope(tx, context.orgId, request, sessionId, false);
-        return this.view(tx, context.orgId, session);
+        return this.view(tx, context.orgId, session, context.userId);
       }),
     );
   }
@@ -137,7 +137,7 @@ export class PackStationService {
         const again = await repo.scanByScanId(tx, context.orgId, sessionId, input.scanId);
         if (again !== undefined) {
           return this.scanAnswer(again.outcome as PackScanOutcome, again.sku_id, {
-            view: await this.view(tx, context.orgId, session),
+            view: await this.view(tx, context.orgId, session, context.userId),
             repeated: true,
           });
         }
@@ -180,7 +180,7 @@ export class PackStationService {
           request,
         });
         return this.scanAnswer(outcome, found?.skuId ?? null, {
-          view: await this.view(tx, context.orgId, session),
+          view: await this.view(tx, context.orgId, session, context.userId),
           repeated: false,
         });
       }),
@@ -198,7 +198,7 @@ export class PackStationService {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const session = await this.sessionInScope(tx, context.orgId, request, sessionId, true);
         const again = await repo.scanByScanId(tx, context.orgId, sessionId, input.scanId);
-        if (again !== undefined) return this.view(tx, context.orgId, session);
+        if (again !== undefined) return this.view(tx, context.orgId, session, context.userId);
         this.assertOpen(session);
         const facts = await this.lockedFacts(tx, context.orgId, session.order_id);
         this.assertPackable(facts);
@@ -233,7 +233,7 @@ export class PackStationService {
           after: { orderId: session.order_id, skuId: input.skuId },
           request,
         });
-        return this.view(tx, context.orgId, session);
+        return this.view(tx, context.orgId, session, context.userId);
       }),
     );
   }
@@ -247,7 +247,7 @@ export class PackStationService {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const session = await this.sessionInScope(tx, context.orgId, request, sessionId, true);
         if (session.status === 'completed') {
-          return { ...(await this.view(tx, context.orgId, session)), alreadyCompleted: true };
+          return { ...(await this.view(tx, context.orgId, session, context.userId)), alreadyCompleted: true };
         }
         const facts = await this.lockedFacts(tx, context.orgId, session.order_id);
         this.assertPackable(facts);
@@ -292,7 +292,7 @@ export class PackStationService {
         });
         const done = await repo.sessionById(tx, context.orgId, sessionId);
         return {
-          ...(await this.view(tx, context.orgId, done ?? session)),
+          ...(await this.view(tx, context.orgId, done ?? session, context.userId)),
           alreadyCompleted: false,
         };
       }),
@@ -377,7 +377,7 @@ export class PackStationService {
         }
         const session = await repo.sessionByOrder(tx, context.orgId, orderId);
         if (session === undefined) return { session: null, canPlay };
-        return { ...(await this.view(tx, context.orgId, session)), canPlay };
+        return { ...(await this.view(tx, context.orgId, session, context.userId)), canPlay };
       }),
     );
   }
@@ -532,7 +532,7 @@ export class PackStationService {
   }
 
   /** Everything the station and the order page show about one session. */
-  private async view(tx: Tx, orgId: string, session: repo.SessionRow) {
+  private async view(tx: Tx, orgId: string, session: repo.SessionRow, callerId: string) {
     const [facts] = await this.orders.packingFacts(tx, orgId, [session.order_id]);
     if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
     const [list, scans, videos, names] = await Promise.all([
@@ -562,6 +562,8 @@ export class PackStationService {
     const itemOf = new Map(list.items.map((item) => [item.skuId, item]));
     const completedAt = at(session.completed_at);
     return {
+      /** Who is asking: the name the station draws onto the video. */
+      you: { id: callerId, name: names.get(callerId) ?? null },
       session: {
         id: session.id,
         orderId: session.order_id,

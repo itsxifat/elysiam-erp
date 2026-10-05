@@ -59,11 +59,18 @@ export function ordersRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./scan.js'), 'OrderScanPage'),
   });
 
+  // M38b: the packing station (D-610). Its `?order=` is read by the page itself.
+  const packing = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/orders/packing',
+    component: lazyRouteComponent(() => import('./pack-station.js'), 'PackStationPage'),
+  });
+
   const detail = createRoute({
     getParentRoute: () => rootRoute,
     path: '/orders/$orderId',
     component: lazyRouteComponent(() => import('./order-detail.js'), 'OrderDetailPage'),
   });
 
-  return [list, desk, queue, buyers, returns, scan, detail] as const;
+  return [list, desk, queue, buyers, returns, scan, packing, detail] as const;
 }
