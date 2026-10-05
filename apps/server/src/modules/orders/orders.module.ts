@@ -25,6 +25,7 @@ import { ReturnReasonsService } from './returns.service.js';
 import { TransitionsService } from './transitions.service.js';
 import { PROMO_API } from '../promo/promo.api.js';
 import { BuyerHistoryBinding } from './buyer-history.binding.js';
+import { OrdersReferencesBinding } from './references.binding.js';
 import { PromoModule } from '../promo/promo.module.js';
 import { NOTIFY_API } from '../notify/notify.api.js';
 import { NotifyModule } from '../notify/notify.module.js';
@@ -119,6 +120,8 @@ import { PROMO_PORT } from './ports/promo.port.js';
     { provide: PROMO_PORT, useExisting: PROMO_API },
     // M35a: first-order discounts ask the promo module, which asks this one (D-543).
     BuyerHistoryBinding,
+    // M39a: what orders hold about a SKU, a location or a discount (D-621).
+    OrdersReferencesBinding,
     // M16: the CRM's greetings queue a message through their own port, in their own
     // transaction, beside the code they announce.
     { provide: NOTIFY_PORT, useExisting: NOTIFY_API },

@@ -4,6 +4,7 @@ import { isAccountSubtype, subtypeInfo, type PostingAccount } from '@elysium/dom
 
 import { walletsHttpError } from './wallets.errors.js';
 import * as repo from './wallets.repository.js';
+import * as references from './references.repository.js';
 
 /**
  * The wallets module's service interface for other modules (invariant 12).
@@ -72,8 +73,17 @@ export interface WalletsApi {
 /** The Nest injection token for `WalletsApi`. */
 export const WALLETS_API = Symbol('WalletsApi');
 
+/** M39a (D-633): a branch's wallets that still hold money. */
+export interface WalletsBranchMoney {
+  walletsHoldingMoney(tx: Tx, orgId: string, branchId: string): Promise<number>;
+}
+
 @Injectable()
-export class WalletsApiService implements WalletsApi {
+export class WalletsApiService implements WalletsApi, WalletsBranchMoney {
+  walletsHoldingMoney(tx: Tx, orgId: string, branchId: string): Promise<number> {
+    return references.walletsHoldingMoney(tx, orgId, branchId);
+  }
+
   async walletAccount(tx: Tx, orgId: string, walletId: string): Promise<PostingAccount | null> {
     const wallet = await repo.walletById(tx, orgId, walletId);
     if (wallet === undefined) return null;

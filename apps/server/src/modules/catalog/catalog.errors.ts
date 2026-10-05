@@ -14,6 +14,8 @@ import {
   VariantMatrixError,
 } from '@elysium/domain';
 
+import { isStillReferenced } from '../../platform/references/references.js';
+
 /**
  * Catalog failures, as the API reports them (architecture §23, D-087).
  *
@@ -37,6 +39,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   CATALOG_PRODUCT_IMMUTABLE: 409,
   CATALOG_CATEGORY_CYCLE: 409,
   CATALOG_IMPORT_REJECTED: 422,
+  // M39a (D-621): something still points at the row being deleted.
+  CATALOG_IN_USE: 409,
 };
 
 export class CatalogError extends Error {
@@ -125,6 +129,16 @@ export function databaseCatalogCode(error: unknown): { code: ErrorCode; message:
       return {
         code: 'CATALOG_PRICE_INVALID',
         message: 'A regular price must be above the selling price it is shown beside.',
+      };
+    }
+    if (isStillReferenced(current)) {
+      // The backstop behind the delete's own count (D-621): a reference the checkers did not
+      // name — a new module's foreign key, or one that committed after the count — refused
+      // the delete. The same answer the count gives, never a 500.
+      return {
+        code: 'CATALOG_IN_USE',
+        message:
+          'Something still uses this, so it was not deleted. Archive it instead, or look at what uses it.',
       };
     }
     if (sqlstate === '23505') {

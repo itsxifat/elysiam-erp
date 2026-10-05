@@ -27,13 +27,15 @@ export interface FlashSaleRow extends Record<string, unknown> {
   /** `timestamptz` arrives from a raw query as text; the service reads it with `instant()`. */
   readonly starts_at: string | Date | null;
   readonly ends_at: string | Date | null;
+  /** M39a (D-631): set while the sale is archived. */
+  readonly archived_at: string | Date | null;
   readonly created_at: string | Date;
   readonly updated_at: string | Date;
 }
 
 const SALE_COLUMNS = sql`
   s.id, s.title, s.subtitle, s.description, s.slug, s.banner_file_id, s.enabled,
-  s.show_on_home, s.priority, s.starts_at, s.ends_at, s.created_at, s.updated_at
+  s.show_on_home, s.priority, s.starts_at, s.ends_at, s.archived_at, s.created_at, s.updated_at
 `;
 
 export interface FlashSaleSummaryRow extends FlashSaleRow {
@@ -48,6 +50,7 @@ export async function listSales(
   tx: Tx,
   orgId: string,
   limit: number,
+  archived = false,
 ): Promise<FlashSaleSummaryRow[]> {
   const rows = await tx.execute<FlashSaleSummaryRow>(sql`
     select ${SALE_COLUMNS},
@@ -59,6 +62,7 @@ export async function listSales(
     from promo.flash_sales s
     left join promo.flash_sale_items i on i.org_id = s.org_id and i.flash_sale_id = s.id
     where s.org_id = ${orgId}
+      and ${archived ? sql`s.archived_at is not null` : sql`s.archived_at is null`}
     group by s.id
     order by s.created_at desc, s.id
     limit ${limit}

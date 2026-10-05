@@ -1160,22 +1160,21 @@ and 6 for them); M35b, the rest.
 5. Scanner sign-in and lookup work; a revoked token is refused.
 6. `pnpm verify` green; ledger-auditor on pricing, stock and promo.
 
-## M36: Elysium website on the ERP, old data moved
+## M36: The new Elysium website on the ERP
 
-Phase 6 · Effort MAX · Depends on: M34, M35
+Phase 6 · Effort MAX · Depends on: M34, M35 · Amended on 2026-10-05 (D-561: start fresh; D-550: no landing pages)
 
 **Build**
 
-- The website (`D:\Projects\elysium`) reads and writes only through the storefront API; its admin panel, database and demo kit go; `/admin` redirects to the ERP.
-- `pnpm migration legacy-site`: the old Mongo export imported through the real services, with a dry run, a cost sheet for opening stock, and a read-only history for finished orders.
+- The website (`D:\Projects\elysium`, branch `erp-storefront`) reads and writes only through the brand ERP's signed storefront API; its admin panel, database, demo kit and landing pages go; `/admin` redirects to the ERP.
+- Nothing old is imported except, optionally, the customers (M34's `pnpm migration legacy-customers`).
+- A deploy kit for `demo.elysium-lifestyle.bd` on the brands server.
 
 **Acceptance checks**
 
-1. The dry run reports everything; the commit creates exactly that or nothing.
-2. Counts, stock and every old URL and variant id match after the import.
-3. A Playwright pass of the shopper journeys against a preview brand ERP.
-4. No database connection or admin route is left in the website.
-5. `pnpm verify` green; the website builds and lints.
+1. A Playwright pass of the shopper journeys against a brand ERP: browse, search, product, cart, checkout (COD), sign up with the emailed code, sign in, reset password, account orders, an old address redirecting, `/admin` going to the ERP.
+2. No database connection and no admin route left in the website (a check in its CI).
+3. The website builds and lints; the ERP's `pnpm verify` stays green.
 
 ## M37: Go live: brand servers, mother, switch-over
 

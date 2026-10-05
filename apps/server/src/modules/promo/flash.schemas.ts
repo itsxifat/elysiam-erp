@@ -79,7 +79,11 @@ export type FlashSaleBody = z.infer<typeof flashSaleBodySchema>;
 export const flashEnabledSchema = z.object({ enabled: z.boolean() }).strict();
 
 export const flashListSchema = z
-  .object({ limit: z.coerce.number().int().min(1).max(200).default(100) })
+  .object({
+    limit: z.coerce.number().int().min(1).max(200).default(100),
+    // M39a (D-631): the archived sales instead of the current ones.
+    archived: z.enum(['true', 'false']).optional(),
+  })
   .strict();
 
 export const flashIdParamSchema = uuid;

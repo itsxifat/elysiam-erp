@@ -64,6 +64,10 @@ import {
   prepareStorefrontFixtures,
   STOREFRONT_ROUTE_FIXTURES,
 } from '../../modules/storefront/storefront.route-fixtures.js';
+import {
+  DELETE_ROUTE_FIXTURES,
+  prepareDeleteFixtures,
+} from '../references/deletes.route-fixtures.js';
 import { describeRoutes, type RouteDeclaration } from './route-map.js';
 import { ROUTE_MATRIX_MANIFEST, routeKey } from './route-matrix.manifest.js';
 
@@ -104,6 +108,7 @@ beforeAll(async () => {
   await prepareMarketingFixtures();
   await prepareLoanFixtures();
   await prepareStorefrontFixtures();
+  await prepareDeleteFixtures();
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 }, 300_000);
 
@@ -278,6 +283,8 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...LOANS_ROUTE_FIXTURES,
   ...USERS_ROUTE_FIXTURES,
   ...STOREFRONT_ROUTE_FIXTURES,
+  // M39a: delete and archive everywhere (D-621 to D-634).
+  ...DELETE_ROUTE_FIXTURES,
 };
 
 function testedRoutes(): RouteDeclaration[] {

@@ -947,12 +947,14 @@ export interface BranchRow extends Record<string, unknown> {
   readonly code: string;
   readonly name: string;
   readonly kind: string;
+  /** M39a (D-633): false once switched off. Only `branches` selects it. */
+  readonly is_active?: boolean;
 }
 
 /** The platform's `org.branches`, which every module reads (§5: org is shared). */
 export async function branches(tx: Tx, orgId: string, scope: SQL): Promise<BranchRow[]> {
   const rows = await tx.execute<BranchRow>(sql`
-    select b.id, b.code, b.name, b.kind::text as kind
+    select b.id, b.code, b.name, b.kind::text as kind, b.is_active
     from org.branches b
     where b.org_id = ${orgId} and ${scope}
     order by b.code

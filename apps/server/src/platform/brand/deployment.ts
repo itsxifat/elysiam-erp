@@ -27,7 +27,49 @@ export async function loadDeploymentBrand(
   slug: string | undefined,
 ): Promise<DeploymentBrand | null> {
   if (slug === undefined) return null;
-  // `org.organizations` is global (§5 exception 5): erp_app reads it with no org chosen.
+  const result = checkBrandDeployment(await organizations(), slug);
+  if (!result.ok) throw new BrandDeploymentError(result.message);
+  return result.brand;
+}
+
+/**
+ * The brand an operator's command on the server acts for (`main.admin.ts`'s website
+ * commands, D-582). With `ERP_BRAND_SLUG` set, that brand, checked exactly as the API checks
+ * it at boot. Unset, the database's one brand beside the training org. Anything else is
+ * refused rather than guessed: a website key issued for the wrong brand would read that
+ * brand's shop.
+ */
+export async function commandBrand(slug: string | undefined): Promise<DeploymentBrand> {
+  const named = slug?.trim();
+  if (named !== undefined && named !== '') {
+    const brand = await loadDeploymentBrand(named);
+    if (brand === null) throw new BrandDeploymentError('No brand named.');
+    return brand;
+  }
+  const brands = (await organizations()).filter((org) => !org.isTraining);
+  const [only] = brands;
+  if (only === undefined) {
+    throw new BrandDeploymentError(
+      'This database holds no brand yet. Seed it first: pnpm db:seed --brand <slug>.',
+    );
+  }
+  if (brands.length > 1) {
+    const names = brands
+      .map((org) => org.slug)
+      .sort()
+      .join(', ');
+    throw new BrandDeploymentError(
+      `This database holds ${String(brands.length)} brands (${names}). Set ERP_BRAND_SLUG to the brand this is for.`,
+    );
+  }
+  if (!only.isActive) {
+    throw new BrandDeploymentError(`This database's brand, "${only.slug}", is switched off.`);
+  }
+  return only;
+}
+
+/** Every org row, active or not. `org.organizations` is global (§5 exception 5). */
+async function organizations(): Promise<DeploymentOrgRow[]> {
   const rows = await withGlobal(async (tx) =>
     tx.execute<{
       id: string;
@@ -41,17 +83,12 @@ export async function loadDeploymentBrand(
       from org.organizations
     `),
   );
-  const result = checkBrandDeployment(
-    rows.map((row) => ({
-      id: row.id,
-      slug: row.slug,
-      displayName: row.display_name,
-      legalName: row.legal_name,
-      isActive: row.is_active,
-      isTraining: row.is_training,
-    })),
-    slug,
-  );
-  if (!result.ok) throw new BrandDeploymentError(result.message);
-  return result.brand;
+  return rows.map((row) => ({
+    id: row.id,
+    slug: row.slug,
+    displayName: row.display_name,
+    legalName: row.legal_name,
+    isActive: row.is_active,
+    isTraining: row.is_training,
+  }));
 }

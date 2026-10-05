@@ -212,6 +212,12 @@ export const attributes = catalog.table(
      */
     isVariant: boolean('is_variant').notNull().default(true),
     position: integer('position').notNull().default(0),
+    /**
+     * Archived lists are hidden from the new-product form and "Add sizes or colours" (M39a,
+     * D-624); the variants that already carry one keep showing its name. A list nothing uses
+     * is deleted instead.
+     */
+    isActive: boolean('is_active').notNull().default(true),
     ...timestamps,
   },
   (table) => [
@@ -240,6 +246,11 @@ export const attributeValues = catalog.table(
      * screen and every label sheet.
      */
     position: integer('position').notNull().default(0),
+    /**
+     * An archived value (a size no longer made) cannot go on a new variant; the variants that
+     * carry it keep it, on screens and stickers (M39a, D-624).
+     */
+    isActive: boolean('is_active').notNull().default(true),
     ...timestamps,
   },
   (table) => [
@@ -531,11 +542,17 @@ export const skuPriceHistory = catalog.table(
   (table) => [
     index('sku_price_history_org_idx').on(table.orgId),
     index('sku_price_history_org_sku_idx').on(table.orgId, table.skuId, table.createdAt),
+    /*
+     * Cascade since M39a (D-627): a SKU nothing else references (a variant added by mistake)
+     * may be deleted, and its price history goes with it. `erp_app` still holds no DELETE on
+     * this table, and the M39a policies migration's trigger refuses a history row's delete
+     * while its SKU exists, so the cascade is the only way a row leaves.
+     */
     foreignKey({
       name: 'sku_price_history_org_id_sku_id_fk',
       columns: [table.orgId, table.skuId],
       foreignColumns: [skus.orgId, skus.id],
-    }).onDelete('restrict'),
+    }).onDelete('cascade'),
     check('sku_price_history_to_positive', sql`${table.toPoisha} > 0`),
     check(
       'sku_price_history_changed',

@@ -40,6 +40,14 @@
     "./locales/sections/catalog-pricing.bn": {
       "types": "./dist/locales/sections/catalog-pricing.bn.d.ts",
       "default": "./dist/locales/sections/catalog-pricing.bn.js"
+    },
+    "./locales/sections/manage.en": {
+      "types": "./dist/locales/sections/manage.en.d.ts",
+      "default": "./dist/locales/sections/manage.en.js"
+    },
+    "./locales/sections/manage.bn": {
+      "types": "./dist/locales/sections/manage.bn.d.ts",
+      "default": "./dist/locales/sections/manage.bn.js"
     }
   },
   "files": [

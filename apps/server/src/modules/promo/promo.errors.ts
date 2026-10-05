@@ -7,6 +7,8 @@ import {
 import type { ErrorCode } from '@elysium/contracts';
 import type { PromoReason } from '@elysium/domain/promo';
 
+import { isStillReferenced } from '../../platform/references/references.js';
+
 /**
  * Promo failures, as the API reports them (architecture §23, D-087).
  *
@@ -44,6 +46,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   FLASH_SALE_SLUG_TAKEN: 409,
   FLASH_SALE_INVALID: 400,
   FLASH_CLAIM_IMMUTABLE: 409,
+  // M39a (D-631): a discount someone used, or a flash sale that sold.
+  PROMO_IN_USE: 409,
 };
 
 export function promoHttpError(error: PromoError): HttpException {
@@ -90,6 +94,11 @@ const CONSTRAINTS: Readonly<Record<string, { code: ErrorCode; message: string }>
     code: 'FLASH_SALE_SLUG_TAKEN',
     message: 'Another sale already uses that slug.',
   },
+  // M39a (D-631): an archived sale is switched off until it is restored.
+  flash_sales_archived_off: {
+    code: 'FLASH_SALE_INVALID',
+    message: 'This sale is archived. Restore it before switching it on.',
+  },
   flash_sale_items_sold_within_limit: {
     code: 'FLASH_SALE_INVALID',
     message: 'A limit cannot be below what has already sold.',
@@ -122,6 +131,15 @@ export async function mapPromoErrors<T>(work: () => Promise<T>): Promise<T> {
     return await work();
   } catch (cause) {
     if (cause instanceof PromoError) throw promoHttpError(cause);
+    if (isStillReferenced(cause)) {
+      // The backstop behind a discount's or flash sale's own count (D-621, D-631).
+      throw promoHttpError(
+        new PromoError(
+          'PROMO_IN_USE',
+          'Something still uses this, so it was not deleted. Archive it instead.',
+        ),
+      );
+    }
     const refusal = constraintRefusal(cause);
     if (refusal !== null) throw promoHttpError(refusal);
     throw cause;

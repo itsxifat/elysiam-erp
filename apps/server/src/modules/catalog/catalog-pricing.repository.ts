@@ -48,7 +48,7 @@ export async function skuPricesForUpdate(
 }
 
 /**
- * Write a SKU's price and regular price. The history row is migration 0119's trigger's;
+ * Write a SKU's price and regular price. The history row is migration 0121's trigger's;
  * the reason reaches it through `setPriceContext`.
  */
 export async function writeSkuPrices(

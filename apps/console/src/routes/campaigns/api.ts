@@ -124,6 +124,8 @@ export interface FlashSaleSummary {
   readonly startsAt: string | null;
   readonly endsAt: string | null;
   readonly status: FlashSaleStatus;
+  /** M39a (D-631): set while the sale is archived. */
+  readonly archivedAt?: string | null;
   readonly skus: number;
   readonly unitsSold: number;
   /** Null when a SKU on the sale offers all its stock. */
@@ -267,8 +269,10 @@ export const removeOptOut = (phone: string) =>
 export const listMessages = (state: MessageState | undefined) =>
   api.get<{ items: SentMessage[] }>(`/v1/notify/messages${query({ state, limit: 200 })}`);
 
-export const listFlashSales = () =>
-  api.get<{ items: FlashSaleSummary[] }>('/v1/promo/flash-sales?limit=200');
+export const listFlashSales = (archived = false) =>
+  api.get<{ items: FlashSaleSummary[] }>(
+    `/v1/promo/flash-sales?limit=200${archived ? '&archived=true' : ''}`,
+  );
 
 export const getFlashSale = (id: string) =>
   api.get<FlashSale>(`/v1/promo/flash-sales/${encodeURIComponent(id)}`);

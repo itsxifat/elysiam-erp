@@ -100,6 +100,8 @@ export interface AttributeRow extends Record<string, unknown> {
   readonly kind: string;
   readonly is_variant: boolean;
   readonly position: number;
+  /** M39a (D-624): false once archived; only `listAttributes` selects it. */
+  readonly is_active?: boolean;
 }
 
 export interface AttributeValueRow extends Record<string, unknown> {
@@ -108,6 +110,8 @@ export interface AttributeValueRow extends Record<string, unknown> {
   readonly code: string;
   readonly label: string;
   readonly position: number;
+  /** M39a (D-624): false once archived; only `listAttributeValues` selects it. */
+  readonly is_active?: boolean;
 }
 
 // --- the per-org SKU counter and prefix -------------------------------------
@@ -309,7 +313,7 @@ export async function categoryById(
 
 export async function listAttributes(tx: Tx, orgId: string): Promise<AttributeRow[]> {
   const rows = await tx.execute<AttributeRow>(sql`
-    select id, code, name, kind::text as kind, is_variant, position
+    select id, code, name, kind::text as kind, is_variant, position, is_active
     from catalog.attributes where org_id = ${orgId}
     order by position, code
   `);
@@ -322,7 +326,7 @@ export async function listAttributeValues(
   attributeIds?: readonly string[],
 ): Promise<AttributeValueRow[]> {
   const rows = await tx.execute<AttributeValueRow>(sql`
-    select id, attribute_id, code, label, position
+    select id, attribute_id, code, label, position, is_active
     from catalog.attribute_values
     where org_id = ${orgId}
       and ${

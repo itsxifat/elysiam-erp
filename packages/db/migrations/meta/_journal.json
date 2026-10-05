@@ -817,15 +817,29 @@
     {
       "idx": 118,
       "version": "7",
-      "when": 1791217516261,
-      "tag": "0118_m39b_variant_pricing_schema",
+      "when": 1791217437208,
+      "tag": "0118_m39a_delete_archive_schema",
       "breakpoints": true
     },
     {
       "idx": 119,
       "version": "7",
-      "when": 1791217532986,
-      "tag": "0119_m39b_variant_pricing_policies",
+      "when": 1791217444034,
+      "tag": "0119_m39a_delete_archive_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1791226706882,
+      "tag": "0120_m39b_variant_pricing_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1791226717010,
+      "tag": "0121_m39b_variant_pricing_policies",
       "breakpoints": true
     }
   ]

@@ -29,6 +29,7 @@ import {
   type WalletSubtype,
 } from './api.js';
 import { useAccountsT, type AccountsMessageKey } from './messages.js';
+import { HeadsSection } from './heads.js';
 
 /**
  * Setting up the brand's wallets (M08, §7): the tills, bank accounts and mobile
@@ -453,6 +454,9 @@ export function WalletsSetupPage() {
           </Form>
         )}
       </Dialog>
+
+      {/* M39a (D-634): the heads a cash entry is booked against. */}
+      <HeadsSection />
     </div>
   );
 }

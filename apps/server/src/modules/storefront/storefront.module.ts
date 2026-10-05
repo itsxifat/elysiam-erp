@@ -34,6 +34,9 @@ import { StorefrontPublicController } from './storefront-public.controller.js';
 import { StorefrontPublicService } from './storefront-public.service.js';
 import { StorefrontService } from './storefront.service.js';
 import { STOREFRONT_RATE_LIMITER, StorefrontSignatureGuard } from './signature.guard.js';
+import { StorefrontReferencesBinding } from './references.binding.js';
+import { StorefrontDeletesController } from './storefront-deletes.controller.js';
+import { StorefrontDeletesService } from './storefront-deletes.service.js';
 
 /**
  * The rate limiter's own Valkey connection (the intake's arrangement, M11): `lazyConnect`,
@@ -102,6 +105,8 @@ class StorefrontValkey implements OnModuleDestroy {
     StorefrontBuyingController,
     SslcommerzIpnController,
     CommerceController,
+    // M39a: what uses a size chart or a menu item, and a chart's "Empty and delete" (D-628).
+    StorefrontDeletesController,
   ],
   providers: [
     { provide: STOREFRONT_CONFIG, useFactory: () => storefrontConfig() },
@@ -117,6 +122,9 @@ class StorefrontValkey implements OnModuleDestroy {
     },
     SiteCache,
     StorefrontService,
+    // M39a: what the website holds about catalog rows, locations and promotions (D-621).
+    StorefrontReferencesBinding,
+    StorefrontDeletesService,
     StorefrontPublicService,
     StorefrontSignatureGuard,
     { provide: STOREFRONT_API, useClass: StorefrontApiService },

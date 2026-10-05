@@ -1,5 +1,5 @@
 {
-  "id": "a04035c3-2e9a-4673-a4bb-a6b3040a60e4",
+  "id": "14dd45a5-be4a-4338-9eaa-b1484661615a",
   "prevId": "7bea6b89-4ee0-4abc-afa5-b88b548b26a0",
   "version": "7",
   "dialect": "postgresql",
@@ -1956,6 +1956,13 @@
           "notNull": true,
           "default": 0
         },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2129,6 +2136,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         },
         "created_at": {
           "name": "created_at",
@@ -2313,12 +2327,6 @@
         },
         "image_file_id": {
           "name": "image_file_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "default_size_chart_id": {
-          "name": "default_size_chart_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -2560,12 +2568,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "colour_value_id": {
-          "name": "colour_value_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2575,27 +2577,6 @@
         }
       },
       "indexes": {
-        "product_images_org_colour_idx": {
-          "name": "product_images_org_colour_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "colour_value_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "product_images_org_idx": {
           "name": "product_images_org_idx",
           "columns": [
@@ -2858,12 +2839,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "weight_grams": {
-          "name": "weight_grams",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3103,10 +3078,6 @@
         "products_previous_slugs_bounded": {
           "name": "products_previous_slugs_bounded",
           "value": "cardinality(\"catalog\".\"products\".\"previous_slugs\") <= 20"
-        },
-        "products_weight_bounded": {
-          "name": "products_weight_bounded",
-          "value": "\"catalog\".\"products\".\"weight_grams\" is null or \"catalog\".\"products\".\"weight_grams\" between 1 and 100000"
         }
       },
       "isRLSEnabled": false
@@ -3145,18 +3116,6 @@
           "type": "bigint",
           "primaryKey": false,
           "notNull": true
-        },
-        "compare_at_from_poisha": {
-          "name": "compare_at_from_poisha",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "compare_at_to_poisha": {
-          "name": "compare_at_to_poisha",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
         },
         "changed_by": {
           "name": "changed_by",
@@ -3240,7 +3199,7 @@
           "schemaTo": "catalog",
           "columnsFrom": ["org_id", "sku_id"],
           "columnsTo": ["org_id", "id"],
-          "onDelete": "restrict",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -3254,7 +3213,7 @@
         },
         "sku_price_history_changed": {
           "name": "sku_price_history_changed",
-          "value": "\"catalog\".\"sku_price_history\".\"from_poisha\" is null or \"catalog\".\"sku_price_history\".\"from_poisha\" <> \"catalog\".\"sku_price_history\".\"to_poisha\"\n        or \"catalog\".\"sku_price_history\".\"compare_at_from_poisha\" is distinct from \"catalog\".\"sku_price_history\".\"compare_at_to_poisha\""
+          "value": "\"catalog\".\"sku_price_history\".\"from_poisha\" is null or \"catalog\".\"sku_price_history\".\"from_poisha\" <> \"catalog\".\"sku_price_history\".\"to_poisha\""
         },
         "sku_price_history_reason_length": {
           "name": "sku_price_history_reason_length",
@@ -3545,18 +3504,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "compare_at_poisha": {
-          "name": "compare_at_poisha",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "weight_grams": {
-          "name": "weight_grams",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "status": {
           "name": "status",
           "type": "sku_status",
@@ -3738,14 +3685,6 @@
         "skus_price_bounded": {
           "name": "skus_price_bounded",
           "value": "\"catalog\".\"skus\".\"price_poisha\" <= 9000000000000000"
-        },
-        "skus_compare_at_above_price": {
-          "name": "skus_compare_at_above_price",
-          "value": "\"catalog\".\"skus\".\"compare_at_poisha\" is null\n        or (\"catalog\".\"skus\".\"compare_at_poisha\" > \"catalog\".\"skus\".\"price_poisha\"\n            and \"catalog\".\"skus\".\"compare_at_poisha\" <= 9000000000000000)"
-        },
-        "skus_weight_bounded": {
-          "name": "skus_weight_bounded",
-          "value": "\"catalog\".\"skus\".\"weight_grams\" is null or \"catalog\".\"skus\".\"weight_grams\" between 1 and 100000"
         },
         "skus_barcode_printable_ascii": {
           "name": "skus_barcode_printable_ascii",
@@ -13944,7 +13883,7 @@
           "schemaTo": "catalog",
           "columnsFrom": ["org_id", "sku_id"],
           "columnsTo": ["org_id", "id"],
-          "onDelete": "restrict",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "stock_levels_org_id_location_id_fk": {
@@ -13954,7 +13893,7 @@
           "schemaTo": "org",
           "columnsFrom": ["org_id", "location_id"],
           "columnsTo": ["org_id", "id"],
-          "onDelete": "restrict",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -25635,7 +25574,7 @@
           "schemaTo": "promo",
           "columnsFrom": ["org_id", "flash_sale_id"],
           "columnsTo": ["org_id", "id"],
-          "onDelete": "restrict",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "flash_sale_items_org_id_sku_id_fk": {
@@ -25753,6 +25692,12 @@
         },
         "ends_at": {
           "name": "ends_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archived_at": {
+          "name": "archived_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -25880,6 +25825,10 @@
         "flash_sales_priority": {
           "name": "flash_sales_priority",
           "value": "\"promo\".\"flash_sales\".\"priority\" between -100 and 100"
+        },
+        "flash_sales_archived_off": {
+          "name": "flash_sales_archived_off",
+          "value": "\"promo\".\"flash_sales\".\"archived_at\" is null or not \"promo\".\"flash_sales\".\"enabled\""
         },
         "flash_sales_window": {
           "name": "flash_sales_window",
@@ -26454,7 +26403,7 @@
           "schemaTo": "promo",
           "columnsFrom": ["org_id", "code_id"],
           "columnsTo": ["org_id", "id"],
-          "onDelete": "restrict",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -29495,180 +29444,6 @@
         "advance_applications_amount_positive": {
           "name": "advance_applications_amount_positive",
           "value": "\"supply\".\"advance_applications\".\"amount_poisha\" > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "supply.sku_purchase_prices": {
-      "name": "sku_purchase_prices",
-      "schema": "supply",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sku_id": {
-          "name": "sku_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "supplier_id": {
-          "name": "supplier_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "standard_unit_cost_poisha": {
-          "name": "standard_unit_cost_poisha",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "sku_purchase_prices_org_idx": {
-          "name": "sku_purchase_prices_org_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "sku_purchase_prices_org_supplier_idx": {
-          "name": "sku_purchase_prices_org_supplier_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "supplier_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "sku_purchase_prices_org_sku_supplier_idx": {
-          "name": "sku_purchase_prices_org_sku_supplier_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sku_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "coalesce(\"supplier_id\", '00000000-0000-0000-0000-000000000000'::uuid)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "sku_purchase_prices_org_id_organizations_id_fk": {
-          "name": "sku_purchase_prices_org_id_organizations_id_fk",
-          "tableFrom": "sku_purchase_prices",
-          "tableTo": "organizations",
-          "schemaTo": "org",
-          "columnsFrom": ["org_id"],
-          "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "sku_purchase_prices_org_id_sku_id_fk": {
-          "name": "sku_purchase_prices_org_id_sku_id_fk",
-          "tableFrom": "sku_purchase_prices",
-          "tableTo": "skus",
-          "schemaTo": "catalog",
-          "columnsFrom": ["org_id", "sku_id"],
-          "columnsTo": ["org_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "sku_purchase_prices_org_id_supplier_id_fk": {
-          "name": "sku_purchase_prices_org_id_supplier_id_fk",
-          "tableFrom": "sku_purchase_prices",
-          "tableTo": "suppliers",
-          "schemaTo": "supply",
-          "columnsFrom": ["org_id", "supplier_id"],
-          "columnsTo": ["org_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "sku_purchase_prices_org_id_id_key": {
-          "name": "sku_purchase_prices_org_id_id_key",
-          "nullsNotDistinct": false,
-          "columns": ["org_id", "id"]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "sku_purchase_prices_cost_positive": {
-          "name": "sku_purchase_prices_cost_positive",
-          "value": "\"supply\".\"sku_purchase_prices\".\"standard_unit_cost_poisha\" > 0 and \"supply\".\"sku_purchase_prices\".\"standard_unit_cost_poisha\" <= 9000000000000000"
-        },
-        "sku_purchase_prices_updated_by_length": {
-          "name": "sku_purchase_prices_updated_by_length",
-          "value": "\"supply\".\"sku_purchase_prices\".\"updated_by\" is null or length(\"supply\".\"sku_purchase_prices\".\"updated_by\") <= 120"
         }
       },
       "isRLSEnabled": false

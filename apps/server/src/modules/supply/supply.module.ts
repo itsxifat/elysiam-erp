@@ -13,6 +13,9 @@ import { SuppliesService } from './supplies.service.js';
 import { SuppliersService } from './suppliers.service.js';
 import { SUPPLY_API, SupplyApiService } from './supply.api.js';
 import { SupplyController } from './supply.controller.js';
+import { SupplyReferencesBinding } from './references.binding.js';
+import { SupplierDeletesController } from './supplier-deletes.controller.js';
+import { SupplierDeletesService } from './supplier-deletes.service.js';
 
 /**
  * Suppliers, supply entries, returns, advances and payments (architecture §7, §8).
@@ -30,11 +33,16 @@ import { SupplyController } from './supply.controller.js';
  *   posts it.
  */
 @Module({
-  // M39b (D-638): `CatalogModule` for `CATALOG_API` (variant names and codes for the
-  // standard buying price spreadsheet); nothing here reads the catalog's tables.
+  // M39a: the catalog for its references registry (D-621); the catalog is a leaf, no cycle.
+  // M39b (D-638): and for `CATALOG_API` (variant names and codes for the standard buying
+  // price spreadsheet); nothing here reads the catalog's tables.
   imports: [InventoryModule, LedgerModule, ApprovalsModule, CatalogModule],
-  controllers: [SupplyController, SkuCostsController],
+  // M39a: deleting a supplier nothing names (D-630).
+  controllers: [SupplyController, SupplierDeletesController, SkuCostsController],
   providers: [
+    // M39a: what supply holds about a SKU or a location (D-621, D-629).
+    SupplyReferencesBinding,
+    SupplierDeletesService,
     SkuCostsService,
     SuppliersService,
     SuppliesService,

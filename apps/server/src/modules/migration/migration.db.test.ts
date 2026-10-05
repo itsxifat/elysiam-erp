@@ -404,6 +404,37 @@ describe('posting the opening', () => {
     }
   });
 
+  it('refuses to post a balance for a supplier deleted after its file was staged (M39a)', async () => {
+    const code = `GONE-${randomUUID().slice(0, 6).toUpperCase()}`;
+    const supplierId = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ id: string }>(sql`
+            insert into supply.suppliers (org_id, code, name)
+            values (${ORG_A}, ${code}, 'Gone Mills') returning id
+          `)
+        )[0]?.id ?? '',
+      { orgId: ORG_A },
+    );
+    const staged = await service.commit(actor, {
+      kind: 'supplier_balances',
+      fileName: 'gone-supplier.csv',
+      csv: `supplier,kind,amount_taka\n${code},payable,40\n`,
+    });
+    expect(staged).toMatchObject({ created: true, status: 'staged' });
+    // A staged balance is no journal line yet, so the supplier's delete is not refused.
+    const admin = await harness.asRole('org_admin', ORG_A);
+    const deleted = await admin.client.request('DELETE', `/v1/supply/suppliers/${supplierId}`, {});
+    expect(deleted.statusCode, deleted.body).toBe(200);
+    await expect(
+      service.postOpening(actor, { asOf: TODAY, approvedBy: ACCOUNTANT }),
+    ).rejects.toMatchObject({
+      code: 'MIGRATION_IMPORT_REJECTED',
+      message: expect.stringContaining(code) as string,
+    });
+    await service.discard(actor, staged.batchId);
+  });
+
   it('check 4: posts one journal whose trial balance is zero and whose stock is the valuation', async () => {
     const before = await footprint();
     await expect(

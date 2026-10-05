@@ -437,6 +437,12 @@ This summary is authoritative until M02b writes the code matrix. After that, the
 | Org dashboard (analytics)          | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
 | Users, roles, settings             | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
 | Website (M33, D-508)               | all         | org           | read                    | —                           | org          | —       | —                              | —                   | —                   | —        |
+| Branch name, switch off (M39a)     | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+
+M39a (D-621, D-630 to D-633): deleting a row nothing uses is the org admin's alone (`delete
+Catalog`, `Supply`, `LandingPage`, `Campaign`); the website's own rows keep D-508's `delete
+Storefront` (org_admin and marketing). Archiving and restoring are the row's `update`. The
+`Branch` subject is new.
 
 ### Maker-checker actions
 
@@ -743,6 +749,66 @@ D-635 to D-646. The selling side lives in the catalog, purchase cost in supply a
 - **Lookup** (D-609): `GET /v1/catalog/lookup?code=` resolves a barcode or a SKU code to the product, the variant, the selling price and (with `read Stock`) where its pieces are; no cost without `read:cost`.
 - **Stickers** (D-604): `POST /v1/catalog/labels` with a `medium` — thermal rolls `38x25`, `40x30`, `50x25` mm (one sticker per PDF page, the page the sticker's size, no margin) or A4 sheets `3x8` and `4x10` with a start position — at most 1,000 a PDF. Each carries the brand's short name (from its org row), the product name, the variant, the price on request, the EAN-13 with its digits and the SKU code; bars are whole modules sized in thermal dots. Offered with one sticker per piece wherever pieces arrive.
 - **Scanning** (D-605, D-606): the console tells a scanner from typing (≥ 8 characters, ≤ 35 ms apart, ended by Enter, not inside a text box); a scan opens the product at its variant, or, on a stock screen, adds the line or one more piece. A count is counted by scanning (`POST /v1/inventory/counts/:id/scans`, one piece per scan, idempotent per scan); a typed correction over a counted figure carries a note. "Scan with camera" uses the browser's `BarcodeDetector` where there is one.
+
+### Deleting and archiving (M39a)
+
+**The rule** (D-620): anything never used is really deleted; anything used by stock, orders,
+the till, supply or the books is archived instead (hidden from new work, kept on everything that
+used it), and the answer says what uses it. Branches and ledger accounts are never deleted.
+
+- **Asked, not assumed** (D-621). The owner of a row exports a registry built on
+  `ReferenceRegistry` (`platform/references/references.ts`): `CatalogReferences` (categories,
+  lists, values, products, SKUs), `LocationReferences`, `DiscountReferences` (discounts and flash
+  sales). Every module that points at those rows registers a checker when it starts and counts
+  **its own** rows (invariant 12): inventory, orders, the till, supply, couriers, promotions,
+  the website and marketing for the catalog; orders, the till, supply, couriers and the website
+  for locations; orders and the website for discounts. `GET …/:id/usage` returns the counts by
+  reason with a few names (`UsageReport` in `@elysium/contracts`); the delete asks again.
+- **Inside the delete's transaction:** lock the rows (`for update`, in id order); count the
+  owner's own uses, then every checker's; refuse with `*_IN_USE` (409) and the counts in words;
+  let each checker release what exists only because of the row (the old site's ids); delete;
+  write the audit row **with the deleted row's content** (`before`), because after a hard delete
+  nothing else holds it (contact details excepted, invariant 10), and one row per product an
+  empty-and-delete moved. A reference committing first is counted; one arriving after the lock
+  waits and then fails on its foreign key. A delete refused by a foreign key the counts missed
+  (SQLSTATE 23503 on the deleting side) answers the same `*_IN_USE`, never a 500.
+- **Cascades only from a deleted parent** (D-627). A SKU's price history and its empty stock
+  rows, a location's empty stock rows, a discount's tiers and a flash sale's items cascade from
+  their parent (0118); `erp_app` holds no DELETE on them, and 0119's triggers refuse any other
+  delete of them — a price row while its SKU exists, a stock row holding or reserving a piece,
+  or while its SKU and location both exist — for every role. Every other foreign key stays
+  `restrict`; a test reads the foreign keys into the catalog from `pg_constraint` and fails on
+  one that no checker counts.
+- **Categories** (D-623): delete when no product (any status), subcategory, menu entry or live
+  discount names it; **Empty and delete** moves its products to a target (or none), its
+  subcategories up to its parent (a slug taken there becomes `-2`, `-3`), points its menu
+  entries at the target (or removes them, audited), then deletes, in one transaction. A live
+  discount naming it refuses: discount scopes are terms and are never rewritten (D-541).
+  Archive and Restore are explicit; an archived category refuses new products and takes its
+  products off the website (§31). Products keep their printed codes, and a variant added later
+  takes the prefix the product's codes already have (`skuCodePrefix`).
+- **Lists and values** (D-624): `is_active` on both; delete when no variant carries it; archive
+  hides it from every picker for a new variant and the server refuses one that names it, with
+  "also archive the N variants" in the same call; values reorder.
+- **Products and SKUs** (D-625): deleted only when no stock movement, level holding stock,
+  stock document, order line, till line, supply line, courier return line, flash sale item,
+  live discount, live campaign or lead names any of its SKUs; its values, images, price
+  history, empty stock rows and old ids go with it. Otherwise archive (D-423). A new product
+  whose address an archived one holds takes the next free `-2`, `-3` (D-626).
+- **Locations** (D-629), **suppliers** (D-630), **discounts and flash sales** (D-631), **SMS
+  templates and ad campaigns** (D-632): deleted when never used; otherwise switched off or
+  archived (a discount comes back paused; a flash sale gains `archived_at`). **Size charts and
+  the menu** are the website's (§31). A supplier the books name as a party (an opening due)
+  stays; so does a campaign an order's recorded source names. **Branches** (D-633) are renamed
+  and switched off once nothing runs there (tills, open shifts, money in any of their wallet
+  accounts, staff, stock); a switched-off branch opens no till and no shift. **Expense and
+  income heads** (D-634) are added, renamed and archived, never deleted (§7).
+- **Who:** `delete <Subject>` deletes (org_admin; M39a adds it for `Supply`, `LandingPage` and
+  `Campaign`); `update <Subject>` asks what uses a row and archives or restores it; the new
+  `Branch` subject is org_admin's.
+- **The console:** one `DeleteOrArchive` dialog (`apps/console/src/ui/delete-or-archive.tsx`)
+  asks for the usage first and offers only what can work: Delete, Empty and delete with a
+  target picker, Archive (with the variants option), Restore.
 
 ---
 
@@ -1551,8 +1617,14 @@ stale-while-revalidate=300`, `304` on a match; `site` is also kept thirty second
   a pooled connection while waiting for another, and ten concurrent shop pages would starve the
   pool (the M33 ledger audit's H1, tested with 24 concurrent signed reads).
 - **Audit.** Issuing and revoking a website key and saving the settings write their audit rows
-  inside the same transaction; a settings row records the delivery fees, the payment switches
-  and the web locations under names the audit's redaction leaves alone.
+  inside the same transaction; a settings row records the delivery fees, the payment switches,
+  the web locations and the Site URL under names the audit's redaction leaves alone.
+- **From the server** (D-582). `node dist/main.admin.js website-key --label …` issues a key
+  through the same service method as Website → Connection and prints only
+  `ERP_SITE_KEY_ID=…` and `ERP_SITE_SECRET=…` on stdout, for piping into the website's env
+  file; `website-site-url --url https://…` saves Settings' Site URL through the same lock, merge
+  and audit as a console save. Both act for `ERP_BRAND_SLUG` (else the database's one brand)
+  as the system actor `system:admin-cli`, with `via: 'cli'` on the audit row.
 
 ### Images
 
@@ -1646,3 +1718,23 @@ the account routes answer with an account id and the website keeps its own sessi
   shows its account and payments, a buyer's profile its website account.
 - **The old site's shoppers.** `pnpm migration legacy-customers --org <slug> dry-run|commit
 --file <users.json>` imports accounts with their bcrypt hashes and buyers by phone (D-531).
+
+### Deletes and archives on the website (M39a)
+
+- **An archived category takes its products off the website** until they are moved or it is
+  restored (D-623): `webWhere` and a cart line's `sellable` require that no category above the
+  product, its own included, is archived. A category only switched off the website still hides
+  just itself and its subtree from the menu and the filter (D-501).
+- **Size charts** (D-628): the usage names the products a chart is on (the console links them);
+  **Empty and delete** gives them another chart, or none, through `CatalogApi.reassignSizeChart`,
+  then deletes the chart, its grid kept in the audit row. A plain delete of a chart in use names
+  its products in the refusal.
+- **The menu**: deleting a dropdown deletes its items (0103's cascade); the console asks
+  `GET /v1/storefront/nav-items/:id/usage` and says how many go, and the audit row keeps the
+  item and every child. A category's menu entries move with the category's "Empty and delete".
+- **Old ids** (`legacy_ids`) of a deleted category, product, variant, discount, flash sale or
+  size chart are forgotten in the same transaction. A location the website sells from is kept
+  until Website → Settings stops using it.
+- **Flash sales**: an archived sale is switched off, leaves the list and every website read.
+- M35b's campaign links (`storefront.custom_links`) count as the website's references to a
+  category and its highlighted products when that branch joins.

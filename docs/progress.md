@@ -1391,7 +1391,7 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
 - The owner's instruction (D-469): every business gets its own ERP deployment and database, with
   no clue of the others or of a head office; a separate mother ERP on its own server and domain
   shows and handles everything; each brand's ERP becomes its website's back office, starting
-  with Elysium Lifestyle BD's Next.js site at `D:\Projects\elysium`.
+  with Elysium Lifestyle BD's Next.js site at `D:Projectselysium`.
 - Delivered so far (branch `integration-wave2`):
   - The redesign (`design-refresh`, verified 2026-10-03: verify exit 0, the stack and preview
     Playwright runs green) fast-forwarded into `integration-wave2`, so wave 3 builds on the new
@@ -1931,6 +1931,210 @@ dry-run|commit --file <users.json>`.
   link was given to the owner.
 - Every migration up to 0117 is now applied to a live database: frozen.
 - Next: M35b and M36 (building), then M38b, then M32 resumes.
+
+### 2026-10-05 · M36 · The new Elysium website on its ERP · built (website repo)
+
+- Delivered in `D:\Projects\elysium` on branch `erp-storefront` (seven commits from
+  f379c9d to aba9ecb): the site reads and writes only through the brand ERP's signed storefront
+  API; the admin panel, the Mongo models, `mongoose`, the demo kit, Cloudinary, the ncom and
+  Steadfast routes, scanner, upload and image routes, fraud and courier code and the landing
+  pages are gone (about −46k / +6k lines); `/admin` answers 308 to the ERP. Shopper features
+  kept: home, shop with filters and search, product page with sizes, size chart and flash prices,
+  cart and checkout priced by the ERP (district and thana pickers, COD and SSLCommerz through the
+  ERP), the order page by token or account, sign-up with an emailed code, sign-in, reset and
+  change password, profile, addresses and orders, the frame from `GET /site`.
+- Verification: Playwright 14 of 14 against a local preview brand ERP (`elysium_preview_m36`,
+  API on 3300), including a COD checkout checked through the ERP (website channel, pending,
+  stock held), sign-up and reset through a local TLS mail sink, an SSLCommerz return the ERP
+  refuses, sign-in refusing off-site callbacks; `next build`, lint, the no-database check and
+  11 unit tests green; the Docker image healthy read-only. acceptance-auditor: two real bugs
+  (open redirect through `callbackUrl`; a checkout idempotency key lost after a gateway timeout)
+  fixed and covered; its remaining points were these ERP docs.
+- Decisions: D-560, D-562 to D-564 (D-561 is the owner's start-fresh decision).
+- Waiting for M35b: campaign links, tracking, the scanner app's sign-in.
+- Owner inputs for the demo: the website key and Site URL (a server command is being added so
+  the key's secret is never shown), SMTP in Website → Email, SSLCommerz sandbox or live keys,
+  a Google OAuth client for the demo host, products switched on for the website.
+
+### 2026-10-05 · ops · A brand's website connected from the server (D-582) · built
+
+- Branch `ops-website-key` from `integration-wave2` at 0e90e4a. Not merged, not deployed.
+- `main.admin.ts` gains two commands beside `bootstrap` (unchanged):
+  - `website-key --label "<label>"` issues a storefront site key for the deployment's brand
+    through `StorefrontService.issueKey`, the console's own method (same derivation,
+    fingerprint row and in-transaction audit row), and prints on stdout exactly
+    `ERP_SITE_KEY_ID=…` and `ERP_SITE_SECRET=…`, for
+    `… | sudo tee -a /etc/elysium-web/<site>.env >/dev/null`. The key id and everything else go
+    to stderr; log lines too (`LOG_DESTINATION=stderr`, and stdout is redirected to stderr
+    while a command runs). Refuses without `INTAKE_KEY_SECRET`.
+  - `website-site-url --url https://…` saves Website → Settings' Site URL through the new
+    `StorefrontService.setSiteUrl`: `patchSettings`' lock, merge and audit, with the other site
+    details read inside the lock. `https://` only, no query or fragment; `http://localhost` is
+    refused too (D-582 says why).
+  - Both boot `WebsiteAdminModule` (the storefront service with the catalog, orders, files and
+    approvals modules) as an application context, the way `pnpm migration legacy-customers`
+    boots its importer, and act as `system:admin-cli` with `via: 'cli'` on the audit row. The
+    brand is `ERP_BRAND_SLUG` (the boot check) or the database's one brand (`commandBrand` in
+    `platform/brand/deployment.ts`); two brands, none or a switched-off one are refused.
+- The settings audit summary now records `siteUrl` for every save. The HTTP harness takes
+  `brands` to boot on a one-brand database.
+- Scripts: `pnpm admin:website-key`, `pnpm admin:website-site-url` (root and server), beside
+  `admin:bootstrap`. pnpm 12 prints its `$ …` lines on stderr, so the pnpm form pipes cleanly
+  too. Runbook: `docs/runbooks/brand-deploy.md` §5; architecture §31; CLAUDE.md Commands.
+- Tests: `website-admin.e2e.test.ts` (10, real PostgreSQL holding one brand beside the
+  training org): the two lines and nothing else on stdout; the key signs
+  `GET /storefront/v1/site` through the real guard (200; a wrong secret 401); the row and audit
+  row with the system actor, `via: 'cli'` and no secret; `ERP_BRAND_SLUG` named; the Site URL
+  saved with the other site details kept, and a save holding the settings lock is waited for
+  and kept (the command is seen queued on the lock in `pg_locks` first); refusals without
+  `INTAKE_KEY_SECRET`, without a label, for eight non-https or malformed addresses (nothing
+  saved), for a switched-off brand, the training org named, and a second brand, named or
+  not. The built CLI was also run end to end on a throwaway database with
+  `NODE_ENV=production LOG_LEVEL=debug`, piped through `tee`: the file held exactly the two
+  lines.
+- ledger-auditor: 0 critical, 2 warnings. Fixed: the missing tests above (S2); the address is
+  checked before the database is touched; a failure to close the modules no longer hides an
+  issued key; exit 1 when stdout could not be written; an unknown command says `admin`; the
+  saved address is compared with what reads back. S1, a Website → Settings page opened before
+  the command and saved after it puts the old Site URL back (the form sends the whole
+  section): a runbook warning for now. Not changed: the slug is read from the raw environment
+  (the tests change it per call; `serverEnv()` still rejects a malformed one when the modules
+  boot).
+- Verification at 38d7059: `pnpm verify` exit 0 under the heavy lock (`VITEST_MAX_WORKERS=4`) —
+  219 test files, 3,374 passed, 1 skipped; bundle, white-label (216 files), migrations, schema
+  drift (116), route matrix (403 routes, 365 matrix-tested, 38 public), i18n, api-client all
+  PASS. The rebuilt CLI run end to end again afterwards: the same two lines in the file.
+- Follow-ups:
+  - Settings saves conditional on `updatedAt` (409 when the section changed since the form
+    loaded), so a stale console form cannot undo the CLI's or another person's save (owner:
+    claude).
+- Dependencies: none added.
+
+### 2026-10-05 · deploy · The new Elysium website online at demo.elysium-lifestyle.bd · done
+
+- Elysium's ERP redeployed at 550f5e5 (the website-key and Site URL commands, D-582); health
+  green.
+- The website (`erp-storefront` at cb7379e) copied to `/srv/elysium-web/releases/cb7379e23132`
+  on the brands server (`/srv/elysium-web/current`), its settings in the root-only
+  `/etc/elysium-web/demo.env` (NEXTAUTH secret generated on the server), the website key
+  issued by `admin website-key --label "demo website"` and piped straight into that file (the
+  secret was never displayed), the ERP's Site URL set to `https://demo.elysium-lifestyle.bd`
+  by `admin website-site-url`. Container `elysium-web-demo-web-1` on 127.0.0.1:3601 (host
+  network, read-only), healthy; `/api/health?erp=1` answers `"erp":"ok"`.
+- nginx site `elysium-web-demo.conf` (Cloudflare real-IP include, rate limits) installed after
+  `nginx -t`, certbot TLS; `https://demo.elysium-lifestyle.bd` 200, `/admin` 308 to the ERP;
+  the server's other sites still 200.
+- The owner still sets Website → Email (SMTP), Website → Payments (SSLCommerz), switches
+  products on for the website, and optionally a Google OAuth client for the demo host.
+
+### 2026-10-06 · M39a · Delete and archive everywhere · built
+
+- Why: the owner's first use of the live ERP: "we don't have any option to delete categories,
+  size chart and sizes and others" (D-620; plan `docs/plans/M39.md`, part M39a; investigation
+  `docs/review/M39/investigation.json`). Built in parallel with M39b.
+- Delivered (branch `m39a-delete-archive` from `integration-wave2` at 28e0c4c, not merged):
+  - **What uses a row is asked of the modules that hold it** (D-621): `ReferenceRegistry` in
+    `platform/references/`, with `CatalogReferences`, `LocationReferences` and
+    `DiscountReferences`; inventory, orders, the till, supply, couriers, promotions, the website
+    and marketing each register a checker counting their own tables (invariant 12). Inside each
+    delete: lock, count, refuse with `*_IN_USE` and the counts in words, release, delete, audit.
+    A delete-side 23503 maps to the same code. `GET …/:id/usage` answers what uses a row.
+  - **Every delete keeps what it deleted** (D-622): the audit row's `before`, in the same
+    transaction; the website's size chart, menu and hero slide deletes retrofitted.
+  - **Catalog** (D-623 to D-626): categories (delete, empty-and-delete with subcategories moved
+    up and menu entries moved, archive/restore; an archived category's products leave the
+    website; discount scopes never rewritten); lists and values (`is_active`, delete, archive
+    with their variants in one call, restore, reorder; the server refuses an archived value on
+    a new variant); products and SKUs deleted when nothing references them; an archived
+    product's address goes to the next product as `-2`; new variants keep a product's code
+    prefix after it moves category.
+  - **Cascades only from a deleted parent** (D-627): price history, empty stock levels,
+    discount tiers and flash sale items, each guarded by a trigger for every role.
+  - **Everything else** (D-628 to D-634): size charts' empty-and-delete and the menu's child
+    count; locations, suppliers, discounts (restored paused), flash sales (archived), SMS
+    templates and ad campaigns deleted when never used; branches renamed and switched off with
+    guards (new `Branch` subject); expense and income heads added, renamed and archived, never
+    deleted. `delete Supply`, `delete LandingPage` and `delete Campaign` for org_admin.
+  - **Console**: the shared `DeleteOrArchive` dialog, on Catalog setup (explicit Archive and
+    Restore replace the hidden checkboxes; value order; the location dialog's copy and the
+    16-character code fixed), Website → Size charts and Menu, Campaigns → Discounts, Flash sales
+    and Templates, Marketing → Campaigns, Supply → Suppliers, Branches and Accounts → Wallets.
+    Strings in a `manage` section (D-607).
+  - **After the ledger audit**: a supplier the books name as a party (an opening due) is kept;
+    a supplier's audit row keeps no contact details; a branch is held by money in any of its
+    wallet accounts, and a switched-off branch opens no till or shift; the discount restore
+    guard reads under its lock; a category under an archived one is refused for a product;
+    empties lock in id order and write one audit row per product moved; a campaign an order's
+    recorded source names is kept, matched as §11's attribution matches
+    (`OrdersApi.ordersAttributedTo`); posting the opening refuses a supplier deleted after its
+    balance was staged (`SupplyApi.lockSuppliers`); an empty-and-delete refuses a target under
+    an archived category, and a parent and its child emptied at once queue.
+- Verification:
+  - `pnpm verify` at 52774e6 (under the heavy lock, `VITEST_MAX_WORKERS=4`): exit 0 — 222 test
+    files, 3,422 passed, 1 skipped; bundle 248.1 KB of 250 PASS; white-label (222 files) PASS;
+    migrations (36 on main unchanged) PASS; schema drift (118 migrations) PASS; route matrix
+    (446 routes, 408 matrix-tested, 38 public) PASS; i18n PASS; api-client PASS.
+  - `catalog-deletes.e2e.test.ts` 28 passed, `platform/references/deletes.e2e.test.ts` 18
+    passed, `migration.db.test.ts` passed, on throwaway databases.
+  - `delete-archive.stack.ts` on 52774e6 (`E2E_API_PORT=3220 E2E_CONSOLE_PORT=5293`, one
+    worker, under the heavy lock): 9 passed; screenshots `docs/review/M39/a-01` to `a-12`
+    retaken.
+- Acceptance checks:
+  - **Check 1** — every M39a entity is deleted when unused and refused (archived instead) with
+    its users named when used; nothing referenced by a stock movement, an order line, a till
+    line, a supply line, a flash sale, a live discount or a lead can be deleted; the courier
+    return line is counted (the `pg_constraint` test holds every foreign key into the catalog to
+    a checker); a reference committing while a delete waits on its lock refuses the delete, and
+    twelve racing rounds never leave a reference to nothing: `catalog-deletes.e2e.test.ts`,
+    `platform/references/deletes.e2e.test.ts`, `delete-archive.stack.ts`.
+  - **Check 2** — a category with two products, a subcategory (whose slug collides at the top
+    level) and a menu entry is emptied into another and deleted in one transaction, and the
+    signed storefront list shows the products under the new category:
+    `catalog-deletes.e2e.test.ts` › "empties a category …", `delete-archive.stack.ts` with
+    `docs/review/M39/a-02` and `a-03`.
+  - **Check 8 (M39a part)** — `pnpm verify` green; ledger-auditor on the deletes and tenancy
+    diff; the stack spec with screenshots `docs/review/M39/a-*.png`; acceptance-auditor.
+- Auditors:
+  - ledger-auditor (deletes, tenancy, branches, ledger parties), first pass: 1 critical (a
+    supplier named only by an opening due's journal lines could be deleted), 6 warnings
+    (supplier contact details in the audit row; branch money read from wallet rows only; no
+    branch-hold tests; the holds read locked the branch; tills and shifts at a switched-off
+    branch; the archived-discount restore race) and minors; all fixed in `00c1e2e`. Re-review:
+    0 critical, 2 warnings (campaign usage did not match orders as attribution does; a balance
+    staged before a supplier's delete) and notes; fixed in `52774e6`.
+  - acceptance-auditor: NOT READY with 5 gaps (this entry; the stack spec on HEAD; an
+    empty-and-delete target under an archived category; behaviour tests for courier returns,
+    legacy ids, a campaign's product, a product-wide discount and an archived list; another
+    brand's 404 on every route kind); all closed in `52774e6` and by this entry and run.
+- Decisions/assumptions: D-621 to D-634 (ASSUMED: D-623, D-625, D-626).
+- New dependencies: none.
+- Migrations: `0118_m39a_delete_archive_schema.sql`, `0119_m39a_delete_archive_policies.sql`
+  (renumbered at integration).
+- For M39b (it owns `product-detail.tsx`, `products.tsx`, `new-product.tsx`):
+  `productUsage`/`deleteProduct` and `skuUsage`/`deleteSku` in `apps/console/src/api/manage.ts`
+  with `<DeleteOrArchive>` from `apps/console/src/ui/delete-or-archive.tsx`; `isActive` on each
+  list and value of `GET /v1/catalog/attributes` (filter pickers for a new variant to
+  `isActive !== false`).
+- Follow-ups:
+  - M35b's `storefront.custom_links` (category key, highlighted products) join the website's
+    checker when that branch merges (owner: claude, at integration).
+  - Owner questions: an archived category's products on the website (D-623); a grace period
+    before deleting a never-stocked SKU if tills stay offline long (D-625); renaming the
+    standard expense heads (D-634).
+  - Product and variant delete buttons on the product page and list (M39b).
+  - An orphan sweep for files no product, category or banner uses any more (critic).
+  - Discount scope ids and a campaign's `product_ids` are soft references (no foreign key, no
+    lock), so a discount created while a product is being deleted can name it; harmless
+    (D-623), noted for whoever adds foreign keys there.
+  - `ordersAttributedTo` reads `sales.orders.source` with no index; fine now, watch at §29's
+    sizes.
+  - Supply's ledger-party count and wallets' branch-money read add to the existing
+    `module-boundaries` debt on `ledger.*`; a `LedgerApi` method would retire both.
+  - No test drives the hero slide delete's audit row (it needs a stored file), or the 23503
+    backstop in each module's mapper (only catalog's and the shared helper are tested).
+  - The website's cache is forgotten inside the delete's transaction, so a read in the same
+    instant can re-cache the old menu for up to 30 seconds (`SiteCache.TTL_MS`); an after-commit
+    hook in `withOrg` would close it.
 
 ### 2026-10-05 · M39b · Variant prices, buying prices and product management · built
 

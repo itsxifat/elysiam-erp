@@ -19,6 +19,7 @@ import { MovementsService } from './movements.service.js';
 import * as repo from './inventory.repository.js';
 import { StockError } from './inventory.errors.js';
 import { lockWindow } from './stock-in-hand.repository.js';
+import * as references from './references.repository.js';
 
 /**
  * Inventory's service interface for other modules (invariant 12).
@@ -340,6 +341,12 @@ export interface InventoryApi {
     skuIds: readonly string[],
     locationIds: readonly string[],
   ): Promise<readonly StockLevelAt[]>;
+
+  /**
+   * How many places at a branch's locations still hold or reserve stock (M39a, D-633): a
+   * branch with stock on its shelves is not switched off.
+   */
+  stockAtBranch(tx: Tx, orgId: string, branchId: string): Promise<number>;
 }
 
 /** A SKU's newest costed receipt (M39b, D-637). */
@@ -1015,6 +1022,10 @@ export class InventoryApiService implements InventoryApi {
 
   async heldSkus(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<ReadonlySet<string>> {
     return new Set(await repo.heldSkus(tx, orgId, skuIds));
+  }
+
+  stockAtBranch(tx: Tx, orgId: string, branchId: string): Promise<number> {
+    return references.stockAtBranch(tx, orgId, branchId);
   }
 
   async levelsAt(

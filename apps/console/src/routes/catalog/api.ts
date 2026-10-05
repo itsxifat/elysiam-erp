@@ -133,11 +133,18 @@ export interface CatalogAttribute {
   readonly kind: 'size' | 'colour' | 'custom';
   readonly isVariant: boolean;
   readonly position: number;
+  /**
+   * M39a (D-624): false once archived. A picker for a new variant shows only lists and values
+   * whose `isActive` is not false; existing variants keep showing archived ones.
+   */
+  readonly isActive?: boolean;
   readonly values: readonly {
     readonly id: string;
     readonly code: string;
     readonly label: string;
     readonly position: number;
+    /** M39a (D-624): false once archived. */
+    readonly isActive?: boolean;
   }[];
 }
 

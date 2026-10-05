@@ -73,6 +73,10 @@ import {
   type HttpHarness,
   type RoleClient,
 } from '../../testing/http-harness.js';
+import {
+  DELETE_ROUTE_FIXTURES,
+  prepareDeleteFixtures,
+} from '../references/deletes.route-fixtures.js';
 import { describeRoutes } from './route-map.js';
 import { ROUTE_MATRIX_MANIFEST, routeKey } from './route-matrix.manifest.js';
 
@@ -173,6 +177,8 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...LOANS_ROUTE_FIXTURES,
   ...USERS_ROUTE_FIXTURES,
   ...STOREFRONT_ROUTE_FIXTURES,
+  // M39a: the usage reads (what uses a row), swept like every other read (D-621).
+  ...DELETE_ROUTE_FIXTURES,
 };
 
 /**
@@ -253,6 +259,7 @@ beforeAll(async () => {
   await prepareMarketingFixtures();
   await prepareLoanFixtures();
   await prepareStorefrontFixtures();
+  await prepareDeleteFixtures();
 
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 

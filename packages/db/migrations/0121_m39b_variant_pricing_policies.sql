@@ -1,6 +1,6 @@
 -- M39b: variant prices, buying prices and product management (D-635 to D-649).
 --
--- Three things Drizzle cannot express, beside 0118's columns and table:
+-- Three things Drizzle cannot express, beside 0120's columns and table:
 --
 -- 1. Tenant isolation and grants for `supply.sku_purchase_prices` (the standard buying price,
 --    D-638), `tenantTableSql()`'s output pasted verbatim like every other tenant table's

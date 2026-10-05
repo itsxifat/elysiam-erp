@@ -18,6 +18,12 @@ import {
 } from '@elysium/domain';
 
 import { assertNotInternal, nextInternalBarcodes } from './barcodes.js';
+import {
+  assertCategoryLive,
+  assertValuesLive,
+  existingPrefix,
+  freeProductSlug,
+} from './catalog-deletes.service.js';
 import { CatalogError } from './catalog.errors.js';
 import * as pricing from './catalog-pricing.repository.js';
 import * as repo from './catalog.repository.js';
@@ -229,6 +235,9 @@ export class CatalogService {
           kind: attribute.kind,
           isVariant: attribute.is_variant,
           position: attribute.position,
+          // M39a (D-624): archived lists and values are listed, flagged, so Catalog setup can
+          // restore them; every picker for a new variant shows only `isActive` ones.
+          isActive: attribute.is_active ?? true,
           values: values
             .filter((value) => value.attribute_id === attribute.id)
             .map((value) => ({
@@ -236,6 +245,7 @@ export class CatalogService {
               code: value.code,
               label: value.label,
               position: value.position,
+              isActive: value.is_active ?? true,
             })),
         })),
       };
@@ -338,14 +348,17 @@ export class CatalogService {
       input.categoryId == null
         ? undefined
         : await repo.categoryById(tx, context.orgId, input.categoryId);
-    const categoryCode = category?.code;
     if (input.categoryId != null && category === undefined) throw notFound('category');
+    await assertCategoryLive(tx, context.orgId, category);
+    const categoryCode = category?.code;
 
     const product = await repo.insertProduct(tx, context.orgId, {
       categoryId: input.categoryId ?? null,
       sequence,
       name: input.name,
-      slug: input.slug,
+      // An archived product keeps its address; a new one that wants it takes the next free
+      // `-2`, `-3`, … instead of failing (M39a, D-626).
+      slug: await freeProductSlug(tx, context.orgId, input.slug),
       description: input.description ?? null,
       status: input.status,
       createdBy: context.userId,
@@ -407,6 +420,16 @@ export class CatalogService {
 
   async updateProduct(context: ActiveContext, id: string, input: UpdateProductInput) {
     return withOrg(context, async (tx) => {
+      if (input.categoryId != null) {
+        // Moving a product into an archived category would take it off the website without
+        // anyone deciding that (M39a, D-623).
+        const category = await repo.categoryById(tx, context.orgId, input.categoryId);
+        if (category === undefined) throw notFound('category');
+        const current = await repo.productById(tx, context.orgId, id);
+        if (current?.category_id !== input.categoryId) {
+          await assertCategoryLive(tx, context.orgId, category);
+        }
+      }
       const row = await repo.updateProduct(tx, context.orgId, id, {
         name: input.name,
         slug: input.slug,
@@ -532,14 +555,19 @@ export class CatalogService {
         prices.set(combination.key, { pricePoisha: poisha(price), compareAtPoisha: compareAt });
       }
 
+      // New variants carry the prefix the product's codes already have, so a product that
+      // moved category keeps one prefix on every label (M39a, D-623).
+      const prefix = await existingPrefix(tx, context.orgId, product.id, product.sequence);
       const categoryCode =
-        product.category_id === null
-          ? undefined
-          : (await repo.categoryById(tx, context.orgId, product.category_id))?.code;
+        prefix !== undefined
+          ? prefix.categoryCode
+          : product.category_id === null
+            ? undefined
+            : (await repo.categoryById(tx, context.orgId, product.category_id))?.code;
 
       const created = await this.addVariants(tx, context.orgId, {
         productId,
-        orgCode: (await repo.skuSettings(tx, context.orgId))?.orgCode ?? 'ORG',
+        orgCode: prefix?.orgCode ?? (await repo.skuSettings(tx, context.orgId))?.orgCode ?? 'ORG',
         categoryCode,
         sequence: product.sequence,
         axes,
@@ -968,6 +996,14 @@ export class CatalogService {
             orphaned: input.existingKeys.filter((key) => key !== ''),
           }
         : matrixPlan(input.axes, input.existingKeys);
+
+    // An archived size or colour stays on the variants that have it and goes on no new one
+    // (M39a, D-624): the pickers hide it, and this refuses a request that names it anyway.
+    await assertValuesLive(
+      tx,
+      orgId,
+      plan.additions.flatMap((combination) => combination.pairs.map((pair) => pair.valueId)),
+    );
 
     // One internal EAN-13 per new SKU (D-603), taken before the insert so the SKU is born
     // with its barcode and no row ever exists without one.

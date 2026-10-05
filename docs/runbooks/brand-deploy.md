@@ -138,6 +138,52 @@ The website calls the brand's ERP from its own server: the order intake (`/publi
 `docs/public-api.md`) and, from M33, the storefront (`/storefront`) and images (`/media`), all
 at `https://admin.<brand domain>`.
 
+### The website's key and Site URL
+
+The website signs every call with a site key (`ERP_SITE_KEY_ID`, `ERP_SITE_SECRET`). Issue it
+on the server, in the brand's release container, and pipe it straight into the website's
+root-only env file, so the secret is never displayed or copied (D-582). The example writes to
+`/etc/elysium-web/demo.env`; use the website's own env file and a label that names it:
+
+```sh
+cd ~/erp-brands/current && ERP_RELEASE=$(basename "$(readlink -f .)") docker compose \
+  -f infra/brand/docker-compose.brand.yml --env-file ~/erp-brands/brands/<slug>/.env.brand \
+  run --rm --no-deps -T release node dist/main.admin.js website-key --label "<label>" \
+  | sudo tee -a /etc/elysium-web/demo.env >/dev/null
+```
+
+- Stdout is exactly two lines, `ERP_SITE_KEY_ID=pk_…` and `ERP_SITE_SECRET=sk_…`. The key id is
+  also printed on the terminal (stderr) for the record. `-T` keeps a terminal's carriage
+  returns out of the file.
+- `tee -a` appends: take an older pair of lines out of the file first, then restart the website
+  so it reads the new one.
+- The key is listed on Website → Connection like any other; revoke it there. If the pipe
+  failed, the secret is gone: revoke that key and issue another.
+- It refuses without `INTAKE_KEY_SECRET` (the brand's `BRAND_INTAKE_KEY_SECRET`), which every
+  key is derived from.
+
+Then the website's own address, which the emails' links, password-reset links and SSLCommerz's
+return addresses are built from (Website → Settings → Site URL, `https://` only):
+
+```sh
+cd ~/erp-brands/current && ERP_RELEASE=$(basename "$(readlink -f .)") docker compose \
+  -f infra/brand/docker-compose.brand.yml --env-file ~/erp-brands/brands/<slug>/.env.brand \
+  run --rm --no-deps -T release node dist/main.admin.js website-site-url \
+  --url https://<website host>
+```
+
+It prints the saved address. Both commands act for the deployment's brand (`ERP_BRAND_SLUG`),
+are audited as `system:admin-cli` with `via: 'cli'`, and refuse unless the database holds
+exactly that one brand.
+
+**Ask staff to reload Website → Settings afterwards.** The form keeps the site details it
+loaded, and its Save sends the whole Site details section, so a page opened before the
+command and saved after it puts the old Site URL back, emptying the emails' links without a
+word. Reload the page, check the Site URL is the new one, and look again after anyone saves
+the site details that day.
+
+### The old `/admin` path
+
 Its old `/admin` path should land on the ERP (D-475): paste the two locations from
 `infra/brand/nginx-website-admin-redirect.conf` into the website's nginx `server` block,
 replacing `__ADMIN_HOST__`, then `sudo nginx -t && sudo systemctl reload nginx`. Do this once

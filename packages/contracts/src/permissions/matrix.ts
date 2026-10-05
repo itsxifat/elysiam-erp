@@ -297,7 +297,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
      */
     { action: 'read', subject: 'Stock', scope: 'org' },
     { action: ['read', 'request', 'approve'], subject: 'StockAdjustment', scope: 'org' },
-    { action: ['read', 'create', 'update'], subject: 'Supply', scope: 'org' },
+    // M39a (D-630): deleting a supplier nothing names is org_admin's alone.
+    { action: ['read', 'create', 'update', 'delete'], subject: 'Supply', scope: 'org' },
     { action: ['read', 'create', 'update', 'delete'], subject: 'Order', scope: 'org' },
     { action: ['read', 'update'], subject: 'Customer', scope: 'org' },
     { action: 'export', subject: 'BuyerExport', scope: 'org' },
@@ -307,9 +308,11 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     // period_reopen request only super_admin decides (D-083).
     { action: ['read', 'update'], subject: 'LedgerPeriod', scope: 'org' },
     { action: ['read', 'update'], subject: 'CourierSettlement', scope: 'org' },
-    { action: ['read', 'create', 'update'], subject: 'Campaign', scope: 'org' },
+    // M39a (D-632): deleting an ad campaign or an SMS template that never ran.
+    { action: ['read', 'create', 'update', 'delete'], subject: 'Campaign', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'CampaignSpend', scope: 'org' },
-    { action: ['read', 'create', 'update'], subject: 'LandingPage', scope: 'org' },
+    // M39a (D-631): deleting a discount or flash sale nobody used; marketing archives.
+    { action: ['read', 'create', 'update', 'delete'], subject: 'LandingPage', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Employee', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Payroll', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'Target', scope: 'org' },
@@ -330,6 +333,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'create', 'update', 'delete'], subject: 'Storefront', scope: 'org' },
     // M34 (D-528): the website's SSLCommerz and email server credentials, org_admin only.
     { action: ['read', 'update'], subject: 'WebsiteCredentials', scope: 'org' },
+    // M39a (D-633): rename a branch, or switch it off once nothing runs there.
+    { action: ['read', 'update'], subject: 'Branch', scope: 'org' },
     /*
      * §22's files. The grant is coarse and the row check is not (D-115).
      *
