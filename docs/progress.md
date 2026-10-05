@@ -1976,6 +1976,10 @@ dry-run|commit --file <users.json>`.
   section): a runbook warning for now. Not changed: the slug is read from the raw environment
   (the tests change it per call; `serverEnv()` still rejects a malformed one when the modules
   boot).
+- Verification at 38d7059: `pnpm verify` exit 0 under the heavy lock (`VITEST_MAX_WORKERS=4`) —
+  219 test files, 3,374 passed, 1 skipped; bundle, white-label (216 files), migrations, schema
+  drift (116), route matrix (403 routes, 365 matrix-tested, 38 public), i18n, api-client all
+  PASS. The rebuilt CLI run end to end again afterwards: the same two lines in the file.
 - Follow-ups:
   - Settings saves conditional on `updatedAt` (409 when the section changed since the form
     loaded), so a stale console form cannot undo the CLI's or another person's save (owner:
