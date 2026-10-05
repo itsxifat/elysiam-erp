@@ -152,7 +152,9 @@ function sectionFiles(directory) {
   const sections = path.join(directory, 'sections');
   if (!exists(sections)) return [];
   return readdirSync(sections)
-    .filter((name) => /^[a-z0-9-]+\.[a-z]{2}\.(ts|mts|js|mjs)$/.test(name) && !/\.test\./.test(name))
+    .filter(
+      (name) => /^[a-z0-9-]+\.[a-z]{2}\.(ts|mts|js|mjs)$/.test(name) && !/\.test\./.test(name),
+    )
     .sort()
     .map((name) => ({
       locale: name.split('.')[1] ?? '',

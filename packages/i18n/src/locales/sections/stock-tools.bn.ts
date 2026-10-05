@@ -86,7 +86,8 @@ const bn: Record<StockToolsKey, string> = {
   'st.photos.cropFrame': 'ছবির যে অংশ দেখাবে',
   'st.photos.zoom': 'Zoom',
   'st.photos.cropSave': 'এই crop রাখুন',
-  'st.photos.cropFailed': 'এখানে ছবিটি crop করা যায়নি। যেমন আছে তেমন যোগ করুন, বা অন্যটি চেষ্টা করুন।',
+  'st.photos.cropFailed':
+    'এখানে ছবিটি crop করা যায়নি। যেমন আছে তেমন যোগ করুন, বা অন্যটি চেষ্টা করুন।',
 
   'st.new.gridHelp':
     'দাম খালি রাখলে বিক্রয়মূল্য ধরা হবে। পিস মানে এখন প্রতিটি ভ্যারিয়েন্টের কয়টি আছে; না থাকলে খালি রাখুন।',
