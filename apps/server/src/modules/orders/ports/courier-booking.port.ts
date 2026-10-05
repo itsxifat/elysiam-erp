@@ -68,6 +68,12 @@ export interface CourierBookingPort {
     readonly trackingCode: string | null;
   } | null>;
 
+  /**
+   * The orders whose parcel carries this consignment number or tracking code (M35b: the packing
+   * scanner, D-554), newest first. Empty when none does.
+   */
+  ordersByParcelCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]>;
+
   /** Enqueue a cancellation with the courier, in the caller's transaction. */
   cancelConsignment(
     tx: Tx,

@@ -521,6 +521,23 @@ export async function legacyIds(
   return new Map(rows.map((row) => [row.legacy_id, row.erp_id]));
 }
 
+/** The old ids these ERP rows of one kind carry (the earliest recorded, for each). */
+export async function legacyIdsFor(
+  tx: Tx,
+  orgId: string,
+  kind: string,
+  erpIds: readonly string[],
+): Promise<Map<string, string>> {
+  if (erpIds.length === 0) return new Map();
+  const rows = await tx.execute<{ legacy_id: string; erp_id: string }>(sql`
+    select distinct on (erp_id) erp_id, legacy_id from storefront.legacy_ids
+    where org_id = ${orgId} and kind = ${kind}
+      and erp_id = any (${sql.param([...erpIds])}::uuid[])
+    order by erp_id, created_at, legacy_id
+  `);
+  return new Map(rows.map((row) => [row.erp_id, row.legacy_id]));
+}
+
 export async function insertLegacyIds(
   tx: Tx,
   orgId: string,

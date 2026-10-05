@@ -34,6 +34,9 @@ import { PaymentsService } from './modules/storefront/payments.service.js';
 import { StorefrontModule } from './modules/storefront/storefront.module.js';
 import { registerStorefrontJobs } from './modules/storefront/storefront.worker.js';
 import { TrackingService } from './modules/storefront/tracking.service.js';
+import { MarketplaceModule } from './modules/marketplace/marketplace.module.js';
+import { registerMarketplaceJobs } from './modules/marketplace/marketplace.worker.js';
+import { NcomOrdersService } from './modules/marketplace/ncom-orders.service.js';
 import type { OutboxDispatcher } from './platform/events/dispatcher.js';
 import { reportJobFailedThroughOutbox } from './platform/jobs/job-failed.js';
 import type { JobsRuntime } from './platform/jobs/jobs.runtime.js';
@@ -68,6 +71,8 @@ export const WORKER_MODULES = [
   LoansModule,
   // M34: the website's payments, its unpaid-order timer and its order emails.
   StorefrontModule,
+  // M35b: changes of ncom.bd's orders sent back to ncom.
+  MarketplaceModule,
 ] as const;
 
 export interface WorkerJobDependencies {
@@ -129,6 +134,12 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     payments: context.get(PaymentsService),
     mail: context.get(OrderMail),
     tracking: context.get(TrackingService),
+    report,
+  });
+  await registerMarketplaceJobs({
+    jobs,
+    dispatcher,
+    orders: context.get(NcomOrdersService),
     report,
   });
 

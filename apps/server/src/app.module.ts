@@ -16,6 +16,7 @@ import { InvestorsModule } from './modules/investors/investors.module.js';
 import { LedgerModule } from './modules/ledger/ledger.module.js';
 import { LoansModule } from './modules/loans/loans.module.js';
 import { MarketingModule } from './modules/marketing/marketing.module.js';
+import { MarketplaceModule } from './modules/marketplace/marketplace.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
 import { PosModule } from './modules/pos/pos.module.js';
 import { NotifyModule } from './modules/notify/notify.module.js';
@@ -104,6 +105,8 @@ export class AppModule {
         // M33. The brand's website: after the catalog, inventory, orders and files, whose
         // APIs it reads; it exports STOREFRONT_API for M34 to M36.
         StorefrontModule,
+        // M35b: the ncom.bd marketplace connector.
+        MarketplaceModule,
         ...(withDemo ? [DemoModule] : []),
       ],
     };

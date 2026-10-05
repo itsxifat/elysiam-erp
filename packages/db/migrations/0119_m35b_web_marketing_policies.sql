@@ -197,11 +197,11 @@ for each row execute function marketplace.assert_ncom_order_change();
 create or replace function marketplace.assert_ncom_outbox_change() returns trigger
 language plpgsql as $$
 begin
-  if (new.id, new.org_id, new.order_id, new.topic, new.idempotency_key, new.base_revision,
-      new.revision, new.created_at)
+  if (new.id, new.org_id, new.order_id, new.topic, new.idempotency_key, new.source_event_id,
+      new.base_revision, new.revision, new.created_at)
      is distinct from
-     (old.id, old.org_id, old.order_id, old.topic, old.idempotency_key, old.base_revision,
-      old.revision, old.created_at) then
+     (old.id, old.org_id, old.order_id, old.topic, old.idempotency_key, old.source_event_id,
+      old.base_revision, old.revision, old.created_at) then
     raise exception 'CONFLICT: an outbound marketplace message is fixed once queued.';
   end if;
   if old.status <> 'pending' then

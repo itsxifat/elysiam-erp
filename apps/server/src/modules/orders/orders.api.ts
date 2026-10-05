@@ -25,7 +25,7 @@ import { TransitionsService, type MoveOptions } from './transitions.service.js';
 import { mapOrderErrors } from './orders.errors.js';
 import * as repo from './orders.repository.js';
 import { deliveredNetItems } from './revenue.js';
-import type { CreateOrderInput } from './orders.schemas.js';
+import type { CreateOrderInput, UpdateOrderInput } from './orders.schemas.js';
 
 /**
  * Orders' service interface for other modules (invariant 12).
@@ -366,6 +366,53 @@ export interface GatewayAdvanceInput {
   readonly owedBack?: boolean;
 }
 
+/** One line as a packer picks it (M35b, D-554): what to put in the box, never a cost. */
+export interface PackingLine {
+  readonly skuId: string;
+  readonly skuCode: string;
+  readonly productName: string;
+  readonly qty: number;
+  readonly returnedQty: number;
+  /** The selling price charged, for a label's price rows. */
+  readonly unitPricePoisha: bigint;
+}
+
+/** An order as packing sees it (M35b: the scanner and the order labels, D-554, D-555). */
+export interface PackingFacts {
+  readonly id: string;
+  readonly orderNo: string;
+  readonly channel: string;
+  readonly status: OrderStatus;
+  readonly createdAt: Date;
+  readonly notes: string | null;
+  /** The scope columns: who may see the order (§6). */
+  readonly branchId: string | null;
+  readonly createdBy: string;
+  readonly assignedTo: string | null;
+  readonly itemsPoisha: bigint;
+  readonly discountPoisha: bigint;
+  readonly deliveryChargePoisha: bigint;
+  readonly advancePaidPoisha: bigint;
+  readonly codAmountPoisha: bigint;
+  readonly recipient: {
+    readonly name: string;
+    /** E.164, in full: the rider calls it. Never logged (invariant 10). */
+    readonly phoneE164: string;
+    readonly districtEn: string | null;
+    readonly districtBn: string | null;
+    readonly thanaEn: string | null;
+    readonly thanaBn: string | null;
+    readonly area: string | null;
+    readonly addressLine: string;
+  };
+  readonly parcel: {
+    readonly courierName: string;
+    readonly consignmentNo: string | null;
+    readonly trackingCode: string | null;
+  } | null;
+  readonly lines: readonly PackingLine[];
+}
+
 export interface OrdersApi {
   /**
    * Take an order inside the caller's transaction.
@@ -593,6 +640,29 @@ export interface OrdersApi {
     readonly consignmentNo: string | null;
     readonly trackingCode: string | null;
   } | null>;
+
+  // --- M35b: the marketplace and packing ----------------------------------------------
+
+  /**
+   * Change an order a server handed over and then changed (M35b: ncom.bd, D-556), through the
+   * desk's own edit (`OrdersService.editIn`) in the caller's transaction: the same rules on
+   * what may still change, no person's scope and no agent's discount ceiling. Refuses with
+   * `ORDER_IMMUTABLE` once the order is past `on_hold`.
+   */
+  editOrder(tx: Tx, actor: OrdersActor, orderId: string, patch: UpdateOrderInput): Promise<void>;
+
+  /**
+   * The orders a scanned code names (M35b, D-554): its order number, else a parcel's
+   * consignment number or tracking code. Newest first; empty when nothing matches.
+   */
+  orderIdsForShipmentCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]>;
+
+  /** These orders as packing sees them; ids not of this brand are absent. */
+  packingFacts(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+  ): Promise<readonly PackingFacts[]>;
 
   /** The SKUs with the most units delivered in the range, most first (M24). */
   topSkus(
@@ -1169,6 +1239,83 @@ export class OrdersApiService implements OrdersApi {
       consignmentNo: parcel.consignmentNo,
       trackingCode: parcel.trackingCode,
     };
+  }
+
+  async editOrder(
+    tx: Tx,
+    actor: OrdersActor,
+    orderId: string,
+    patch: UpdateOrderInput,
+  ): Promise<void> {
+    await mapOrderErrors(() =>
+      this.orders.editIn(tx, workerContext(actor), NO_REQUEST, orderId, patch, { system: true }),
+    );
+  }
+
+  async orderIdsForShipmentCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]> {
+    const trimmed = code.trim();
+    if (trimmed === '') return [];
+    const byNumber = await repo.orderIdByNo(tx, orgId, trimmed);
+    if (byNumber !== undefined) return [byNumber];
+    const byNumberUpper = await repo.orderIdByNo(tx, orgId, trimmed.toUpperCase());
+    if (byNumberUpper !== undefined) return [byNumberUpper];
+    const courier = this.courier.current();
+    if (courier === undefined) return [];
+    return courier.ordersByParcelCode(tx, orgId, trimmed);
+  }
+
+  async packingFacts(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+  ): Promise<readonly PackingFacts[]> {
+    const ids = [...new Set(orderIds)];
+    const [rows, lines] = await Promise.all([
+      repo.packingOrderRows(tx, orgId, ids),
+      repo.packingLines(tx, orgId, ids),
+    ]);
+    const facts: PackingFacts[] = [];
+    for (const row of rows) {
+      facts.push({
+        id: row.id,
+        orderNo: row.order_no,
+        channel: row.channel,
+        status: row.status as OrderStatus,
+        createdAt: instant(row.created_at) ?? new Date(0),
+        notes: row.notes,
+        branchId: row.branch_id,
+        createdBy: row.created_by,
+        assignedTo: row.assigned_to,
+        itemsPoisha: BigInt(row.items_poisha),
+        discountPoisha: BigInt(row.discount_poisha),
+        deliveryChargePoisha: BigInt(row.delivery_charge_poisha),
+        advancePaidPoisha: BigInt(row.advance_paid_poisha),
+        codAmountPoisha: BigInt(row.cod_amount_poisha),
+        recipient: {
+          name: row.ship_name,
+          phoneE164: row.ship_phone_e164,
+          districtEn: row.district_en,
+          districtBn: row.district_bn,
+          thanaEn: row.thana_en,
+          thanaBn: row.thana_bn,
+          area: row.ship_area,
+          addressLine: row.ship_address_line,
+        },
+        parcel: await this.parcelTracking(tx, orgId, row.id),
+        lines: lines
+          .filter((line) => line.order_id === row.id)
+          .map((line) => ({
+            skuId: line.sku_id,
+            skuCode: line.sku_code,
+            productName: line.product_name,
+            qty: line.qty,
+            returnedQty: line.returned_qty,
+            unitPricePoisha: BigInt(line.unit_price_poisha),
+          })),
+      });
+    }
+    const order = new Map(ids.map((id, index) => [id, index]));
+    return facts.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
   }
 
   async topSkus(

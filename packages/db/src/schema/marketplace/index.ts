@@ -242,6 +242,8 @@ export const ncomOutbox = marketplace.table(
     orderId: uuid('order_id').notNull(),
     topic: text('topic').notNull(),
     idempotencyKey: text('idempotency_key').notNull(),
+    /** The outbox event that queued it: a redelivered event queues nothing twice. */
+    sourceEventId: uuid('source_event_id'),
     baseRevision: integer('base_revision').notNull(),
     revision: integer('revision').notNull(),
     payloadSealed: sealedBytes('payload_sealed'),
@@ -258,6 +260,9 @@ export const ncomOutbox = marketplace.table(
     unique('ncom_outbox_org_id_id_key').on(table.orgId, table.id),
     index('ncom_outbox_org_idx').on(table.orgId),
     uniqueIndex('ncom_outbox_org_key_idx').on(table.orgId, table.idempotencyKey),
+    uniqueIndex('ncom_outbox_org_event_idx')
+      .on(table.orgId, table.sourceEventId)
+      .where(sql`${table.sourceEventId} is not null`),
     index('ncom_outbox_org_order_idx').on(table.orgId, table.orderId, table.revision),
     index('ncom_outbox_due_idx').on(table.status, table.nextAttemptAt),
     foreignKey({

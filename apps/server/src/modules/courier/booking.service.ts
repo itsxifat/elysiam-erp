@@ -119,6 +119,10 @@ export class BookingService implements OnModuleInit {
     };
   }
 
+  async ordersByParcelCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]> {
+    return repo.ordersByParcelCode(tx, orgId, code);
+  }
+
   /**
    * Create the consignment row and queue the booking, inside the caller's transaction.
    *

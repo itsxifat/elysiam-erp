@@ -73,6 +73,7 @@ CREATE TABLE "marketplace"."ncom_outbox" (
 	"order_id" uuid NOT NULL,
 	"topic" text NOT NULL,
 	"idempotency_key" text NOT NULL,
+	"source_event_id" uuid,
 	"base_revision" integer NOT NULL,
 	"revision" integer NOT NULL,
 	"payload_sealed" "bytea",
@@ -287,6 +288,7 @@ CREATE UNIQUE INDEX "ncom_orders_org_ncom_id_idx" ON "marketplace"."ncom_orders"
 CREATE UNIQUE INDEX "ncom_orders_org_key_idx" ON "marketplace"."ncom_orders" USING btree ("org_id","idempotency_key");--> statement-breakpoint
 CREATE INDEX "ncom_outbox_org_idx" ON "marketplace"."ncom_outbox" USING btree ("org_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "ncom_outbox_org_key_idx" ON "marketplace"."ncom_outbox" USING btree ("org_id","idempotency_key");--> statement-breakpoint
+CREATE UNIQUE INDEX "ncom_outbox_org_event_idx" ON "marketplace"."ncom_outbox" USING btree ("org_id","source_event_id") WHERE "marketplace"."ncom_outbox"."source_event_id" is not null;--> statement-breakpoint
 CREATE INDEX "ncom_outbox_org_order_idx" ON "marketplace"."ncom_outbox" USING btree ("org_id","order_id","revision");--> statement-breakpoint
 CREATE INDEX "ncom_outbox_due_idx" ON "marketplace"."ncom_outbox" USING btree ("status","next_attempt_at");--> statement-breakpoint
 CREATE INDEX "ncom_settings_org_idx" ON "marketplace"."ncom_settings" USING btree ("org_id");--> statement-breakpoint

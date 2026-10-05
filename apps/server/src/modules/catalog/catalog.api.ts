@@ -193,9 +193,41 @@ export interface CatalogApi {
 
   /** How many products point at a size chart (a chart in use is not deleted). */
   productsUsingSizeChart(tx: Tx, orgId: string, sizeChartId: string): Promise<number>;
+
+  /**
+   * M35b (D-553): what the ncom.bd marketplace may list — active products with an active size,
+   * on the website (`active`) or, when asked, not yet on it (`draft`) — paged by id. Selling
+   * prices come with `webSkus`; nothing here is a cost.
+   */
+  marketplaceProducts(
+    tx: Tx,
+    orgId: string,
+    filter: web.MarketplaceFilter,
+    limit: number,
+  ): Promise<MarketplaceProduct[]>;
+
+  marketplaceProductCount(tx: Tx, orgId: string, filter: web.MarketplaceFilter): Promise<number>;
+
+  /** A product's id by its slug or a slug it used to have. */
+  marketplaceProductIdBySlug(tx: Tx, orgId: string, slug: string): Promise<string | undefined>;
+}
+
+/** A product as the marketplace connector serialises it (M35b). */
+export interface MarketplaceProduct {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly categoryId: string | null;
+  readonly webVisible: boolean;
+  readonly material: string | null;
+  readonly gender: string | null;
+  readonly tags: readonly string[];
+  readonly updatedAt: Date;
 }
 
 export type {
+  MarketplaceFilter,
   WebFilter,
   ProductWebPatch,
   CategoryWebPatch,
@@ -591,6 +623,42 @@ export class CatalogApiService implements CatalogApi {
     return moved === undefined || moved === slug
       ? { kind: 'none' }
       : { kind: 'redirect', slug: moved };
+  }
+
+  async marketplaceProducts(
+    tx: Tx,
+    orgId: string,
+    filter: web.MarketplaceFilter,
+    limit: number,
+  ): Promise<MarketplaceProduct[]> {
+    return (await web.marketplaceProducts(tx, orgId, filter, limit)).map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      description: row.description,
+      categoryId: row.category_id,
+      webVisible: row.web_visible,
+      material: row.material,
+      gender: row.gender,
+      tags: row.tags,
+      updatedAt: new Date(row.updated_at),
+    }));
+  }
+
+  async marketplaceProductCount(
+    tx: Tx,
+    orgId: string,
+    filter: web.MarketplaceFilter,
+  ): Promise<number> {
+    return web.marketplaceProductCount(tx, orgId, filter);
+  }
+
+  async marketplaceProductIdBySlug(
+    tx: Tx,
+    orgId: string,
+    slug: string,
+  ): Promise<string | undefined> {
+    return web.marketplaceProductIdBySlug(tx, orgId, slug);
   }
 
   async webSkus(tx: Tx, orgId: string, productIds: readonly string[]): Promise<WebSku[]> {
