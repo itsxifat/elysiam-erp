@@ -135,9 +135,13 @@ the brand's staff work in the ERP (the website's own panel retires with M36).
 ## 6. Operating a brand
 
 ```sh
-dc() { ERP_RELEASE=$(basename "$(readlink -f ~/erp-brands/current)") \
-  docker compose -f ~/erp-brands/current/infra/brand/docker-compose.brand.yml \
-  --env-file ~/erp-brands/brands/"$1"/.env.brand "${@:2}"; }
+dc() {
+  slug=$1
+  shift
+  ERP_RELEASE=$(basename "$(readlink -f ~/erp-brands/current)") \
+    docker compose -f ~/erp-brands/current/infra/brand/docker-compose.brand.yml \
+    --env-file ~/erp-brands/brands/"$slug"/.env.brand "$@"
+}
 dc oura-lifestyle ps
 dc oura-lifestyle logs --tail 100 api worker
 dc oura-lifestyle restart api
