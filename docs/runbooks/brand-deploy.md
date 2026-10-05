@@ -77,6 +77,15 @@ there).
    brand must use a **different key pair** from production, or a production link would open
    it too (single use is per database).
 
+5. If the admin host is proxied by **Cloudflare** (an orange-cloud DNS record), set
+   `BRAND_BEHIND_CLOUDFLARE=true` in the brand's `.env.brand` before its first deploy (D-580).
+   nginx then takes the visitor's address from `CF-Connecting-IP`, trusted only from
+   Cloudflare's published ranges (`infra/brand/nginx-cloudflare-realip.conf`, refreshed on
+   every deploy); without it every visitor shares Cloudflare's addresses in the API's rate
+   limits and the audit log. Cloudflare's SSL/TLS mode must be **Full (strict)** once the
+   certificate below exists: "Flexible" makes Cloudflare call the server over plain HTTP, and
+   certbot's redirect would then loop.
+
 ## 3. Deploy
 
 From a workstation, at the repository root, with the commit to deploy:

@@ -67,6 +67,7 @@ deploy_brand() {
   HOST=$(setting BRAND_ADMIN_HOST)
   PORT=$(setting BRAND_API_PORT)
   CSP_EXTRA=$(setting BRAND_CSP_CONNECT_SRC)
+  BEHIND_CF=$(setting BRAND_BEHIND_CLOUDFLARE)
   [ -n "$HOST" ] && [ -n "$PORT" ] || fail "$ENV_FILE has no BRAND_ADMIN_HOST or BRAND_API_PORT"
   ID=$(printf '%s' "$SLUG" | tr '-' '_')
   WEB="$WEB_BASE/erp-$SLUG"
@@ -117,11 +118,20 @@ deploy_brand() {
   mv -Tf "$WEB/current.next" "$WEB/current"
 
   say "$SLUG: nginx"
+  if [ "$BEHIND_CF" = true ]; then
+    # Refreshed on every deploy, so a new range list reaches every brand behind Cloudflare.
+    sudo mkdir -p /etc/nginx/snippets
+    sudo cp "$SRC/infra/brand/nginx-cloudflare-realip.conf" /etc/nginx/snippets/erp-cloudflare-realip.conf
+    REAL_IP_LINE="include /etc/nginx/snippets/erp-cloudflare-realip.conf;"
+  else
+    REAL_IP_LINE=""
+  fi
   NEW_SITE=no
   if [ ! -e "$SITE" ]; then
     # First deploy only: certbot edits the file afterwards, so it is never overwritten here.
     sed -e "s/__ADMIN_HOST__/$HOST/g" -e "s/__SLUG__/$SLUG/g" -e "s/__ID__/$ID/g" \
-      -e "s/__API_PORT__/$PORT/g" "$SRC/infra/brand/nginx-brand.conf" |
+      -e "s/__API_PORT__/$PORT/g" -e "s|#__REAL_IP_INCLUDE__|$REAL_IP_LINE|" \
+      "$SRC/infra/brand/nginx-brand.conf" |
       sudo tee "$SITE" >/dev/null
     sudo ln -sf "$SITE" "$ENABLED/erp-$SLUG.conf"
     echo "installed $SITE"
