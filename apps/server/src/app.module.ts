@@ -17,6 +17,7 @@ import { LedgerModule } from './modules/ledger/ledger.module.js';
 import { LoansModule } from './modules/loans/loans.module.js';
 import { MarketingModule } from './modules/marketing/marketing.module.js';
 import { MarketplaceModule } from './modules/marketplace/marketplace.module.js';
+import { PackingModule } from './modules/packing/packing.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
 import { PosModule } from './modules/pos/pos.module.js';
 import { NotifyModule } from './modules/notify/notify.module.js';
@@ -107,6 +108,8 @@ export class AppModule {
         StorefrontModule,
         // M35b: the ncom.bd marketplace connector.
         MarketplaceModule,
+        // M35b: the packing scanner and the order labels.
+        PackingModule,
         ...(withDemo ? [DemoModule] : []),
       ],
     };

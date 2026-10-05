@@ -144,7 +144,8 @@ const SIGNED_MACHINE_PREFIXES = [
   // over the raw body (D-553); and the packing scanner's device routes, which take their
   // authority from a bearer device token, never from a cookie (D-554).
   '/ncom/',
-  '/v1/scanner/device/',
+  '/v1/scanner/sign-in',
+  '/v1/scanner/sign-out',
 ] as const;
 
 function isSignedMachineRoute(url: string): boolean {
