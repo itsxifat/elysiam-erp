@@ -97,6 +97,11 @@ export const OPERATIONS = {
     path: '/v1/supply/drafts/{id}',
     ability: 'update:Supply',
   },
+  getApiAdminScannerShipment: {
+    method: 'GET',
+    path: '/api/admin/scanner/shipment',
+    ability: 'public',
+  },
   getApproval: { method: 'GET', path: '/v1/approvals/{id}', ability: 'read:ApprovalRequest' },
   getMediaByOrgIdByFileIdByVariant: {
     method: 'GET',
@@ -863,6 +868,7 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}',
     ability: 'update:Supply',
   },
+  postApiAdminScannerLogin: { method: 'POST', path: '/api/admin/scanner/login', ability: 'public' },
   postNcomByOrgIdOrders: { method: 'POST', path: '/ncom/{orgId}/orders', ability: 'public' },
   postNcomByOrgIdV1Release: { method: 'POST', path: '/ncom/{orgId}/v1/release', ability: 'public' },
   postNcomByOrgIdV1Reserve: { method: 'POST', path: '/ncom/{orgId}/v1/reserve', ability: 'public' },
@@ -1752,6 +1758,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1SupplyDraftsById, input, options),
+    /** GET /api/admin/scanner/shipment */
+    getApiAdminScannerShipment: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getApiAdminScannerShipment, undefined, options),
     /** One approval request, with its decision lineage. */
     getApproval: (
       input: { readonly path: { readonly id: string } },
@@ -2637,6 +2646,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1SupplySuppliersById, input, options),
+    /** POST /api/admin/scanner/login */
+    postApiAdminScannerLogin: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postApiAdminScannerLogin, undefined, options),
     /** POST /ncom/:orgId/orders */
     postNcomByOrgIdOrders: (
       input: { readonly path: { readonly orgId: string } },
