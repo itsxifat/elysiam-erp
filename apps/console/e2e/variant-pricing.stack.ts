@@ -13,7 +13,8 @@ import { enrolSecondFactor, signIn, stack, user } from './stack/helpers.js';
  * size in one step, a buying price per variant on the first delivery (XL costs more), then on
  * the product page reads each variant's average cost, last buying price and margin, raises
  * every price by 10 % with a preview and one save, sets a standard buying price, and
- * duplicates the product. A sales user then opens the same page and sees no cost at all.
+ * duplicates the product, deletes the unused copy (M39a’s dialog) and is offered Archive for the
+ * shirt itself. A sales user then opens the same page and sees no cost at all.
  * Screenshots go to `docs/review/M39/b-*.png`.
  */
 
@@ -263,6 +264,31 @@ test('check 6: duplicate makes the same variants and prices, with no stock', asy
   await expect(tile('Variants')).toHaveText('12');
   await noBlockingViolations('duplicate');
   await shot('b-06-duplicate');
+});
+
+test('Delete, through M39a’s dialog: a used product is offered Archive; the unused copy is deleted', async () => {
+  // The copy is open: nothing uses it, so it can be deleted for good, and the page leaves.
+  const copyUrl = page.url();
+  await page.getByTestId('delete-product').click();
+  const unused = page.getByRole('dialog', { name: `Delete or archive ${PRODUCT} sand` });
+  await expect(unused.getByText(`Nothing uses ${PRODUCT} sand.`)).toBeVisible();
+  await noBlockingViolations('delete-unused');
+  await shot('b-08-delete-unused');
+  await unused.getByRole('button', { name: 'Delete for good' }).click();
+  await expect(page).toHaveURL(/\/catalog(\?|$)/);
+  await page.goto(copyUrl);
+  await expect(page.getByRole('heading', { name: `${PRODUCT} sand`, level: 1 })).toHaveCount(0);
+
+  // The shirt has stock, receipts and price history: no delete, Archive offered instead.
+  await page.goto(productUrl);
+  await page.getByTestId('delete-product').click();
+  const used = page.getByRole('dialog', { name: `Delete or archive ${PRODUCT}` });
+  await expect(used.getByRole('region', { name: `${PRODUCT} is used by` })).toBeVisible();
+  await expect(used.getByRole('button', { name: 'Delete for good' })).toHaveCount(0);
+  await expect(used.getByRole('button', { name: 'Archive' })).toBeVisible();
+  await shot('b-09-delete-used');
+  await used.getByRole('button', { name: 'Cancel' }).click();
+  await expect(used).toBeHidden();
 });
 
 test('a role without read:cost sees prices and no cost on the same page', async ({ browser }) => {

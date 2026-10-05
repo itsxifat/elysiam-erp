@@ -87,16 +87,24 @@ In **Sizes and colours** on the product page:
   pieces it still has; its stock stays and can still be moved or written off. If an order is
   holding pieces of it, it is refused until that order is dispatched or cancelled.
 - Adding colours to a product that had only sizes offers to archive the old size-only variants.
+- A size or colour archived in Catalog setup is not offered for new variants. If this product
+  already sells it, it still shows, so you can press it off.
 
 ## Copy a product, and the product list
 
 - **Duplicate** (product page, or the row menu on the list) makes a copy under a new name with the
   same category, description, sizes, colours, prices, photos and website details. It has no
-  stock and starts as a draft, off the website.
+  stock and starts as a draft, off the website. Variants with an archived size or colour are left
+  out of the copy, and a product in an archived category cannot be copied until the category is
+  restored or the product moved.
 - The **product list** shows each product's photo, stock, whether the website shows it and its
   prices. The **⋯** button on a row opens, duplicates, shows or hides it on the website, and
   archives it. Tick rows to do the same to many: show or hide on the website, set a size chart,
   move to a category, archive, or print their stickers.
+- **Delete** (org admins: the row menu, the product page's header, and the bin on each variant
+  row) first says what uses the product or variant. Something made by mistake that nothing uses
+  is deleted for good. Anything with stock, a sale or a receipt is offered **Archive** instead,
+  which keeps its history.
 
 ## Also on the product page
 

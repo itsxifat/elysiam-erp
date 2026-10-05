@@ -49,22 +49,33 @@ export function SizesAndColours({
 
   const skus = product?.skus ?? [];
   const kinds = new Map(attributes.map((attribute) => [attribute.id, attribute.kind]));
+  // Every value names itself, archived or not: the product's own variants may carry one.
+  const valueAxis = new Map<string, string>();
+  const valueLabel = new Map<string, string>();
+  for (const axis of attributes) {
+    for (const value of axis.values) {
+      valueAxis.set(value.id, axis.id);
+      valueLabel.set(value.id, value.label);
+    }
+  }
+  const used = new Set(skus.flatMap((sku) => sku.attributes.map((pair) => pair.valueId)));
+  // A new variant is offered only live lists and values (M39a, D-624); an archived one the
+  // product already sells stays as a chip, so it can still be unticked.
   const axes = attributes
-    .filter((axis) => axis.isVariant && axis.values.length > 0)
+    .filter((axis) => axis.isVariant)
+    .map((axis) => ({
+      ...axis,
+      values: axis.values.filter(
+        (value) => (axis.isActive !== false && value.isActive !== false) || used.has(value.id),
+      ),
+    }))
+    .filter((axis) => axis.values.length > 0)
     .sort(
       (a, b) =>
         attributeKindRank(a.kind) - attributeKindRank(b.kind) ||
         a.position - b.position ||
         (a.code < b.code ? -1 : 1),
     );
-  const valueAxis = new Map<string, string>();
-  const valueLabel = new Map<string, string>();
-  for (const axis of axes) {
-    for (const value of axis.values) {
-      valueAxis.set(value.id, axis.id);
-      valueLabel.set(value.id, value.label);
-    }
-  }
   const existing: ExistingVariant[] = skus.map((sku) => ({
     id: sku.id,
     valueIds: sku.attributes.map((pair) => pair.valueId),

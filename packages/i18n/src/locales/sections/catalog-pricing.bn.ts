@@ -100,6 +100,7 @@ const bn: Record<CatalogPricingKey, string> = {
   'cp.variant.archiveHeldRefused':
     'অর্ডার এই variant-এর পিস ধরে রেখেছে। আর্কাইভ করার আগে সেই অর্ডারগুলো পাঠান বা বাতিল করুন।',
 
+  'cp.delete': 'মুছুন',
   'cp.dup.action': 'কপি করুন',
   'cp.dup.title': 'এই পণ্যের কপি বানান',
   'cp.dup.help':

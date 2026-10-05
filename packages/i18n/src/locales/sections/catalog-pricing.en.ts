@@ -110,6 +110,7 @@ const en = {
 
   // Duplicate (D-641).
   'cp.dup.action': 'Duplicate',
+  'cp.delete': 'Delete',
   'cp.dup.title': 'Duplicate this product',
   'cp.dup.help':
     'Copies the category, description, variants and their prices, photos, website details and size chart. No stock, no buying prices, no history. The copy starts as a draft.',

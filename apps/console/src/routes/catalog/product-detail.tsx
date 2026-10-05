@@ -25,11 +25,13 @@ import {
 import { useRef, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
+import { deleteProduct, productUsage } from '../../api/manage.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/stock-tools.js';
 import '../../i18n/catalog-pricing.js';
 import { DEFAULT_PAGE_SIZE } from '../../lib/table-search.js';
+import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 import { listLocations, listMovements, listStock, type StockRow } from '../stock/api.js';
 import {
   attachImage,
@@ -83,12 +85,24 @@ import { WebsiteCard } from './website-card.js';
  * added with their prices or stopped in every colour; photos tied to a colour; a variant's own
  * barcode and weight; and Duplicate. Cost reaches this page only from `/v1/supply/sku-costs`,
  * which answers `read:cost` roles alone (invariant 5); the catalog's own answers carry none.
+ *
+ * Delete (M39a's routes, D-623) opens the shared Delete-or-archive dialog for the product, and
+ * each variant row has its own: the server says what uses it, and only something nothing uses
+ * is deleted; anything else is offered Archive instead.
  */
 
 const route = getRouteApi('/catalog/$productId');
 
 type Dialogs =
-  'receive' | 'adjust' | 'transfer' | 'reorder' | 'edit' | 'archive' | 'duplicate' | null;
+  | 'receive'
+  | 'adjust'
+  | 'transfer'
+  | 'reorder'
+  | 'edit'
+  | 'archive'
+  | 'duplicate'
+  | 'delete'
+  | null;
 
 /** The label a sticker row and a dialog line read as: `Linen Panjabi · M / White`. */
 function stickerLabel(product: CatalogProduct, sku: CatalogSku): string {
@@ -113,6 +127,12 @@ export function CatalogProductPage() {
   const mayCost = ability.can('read', 'Cost');
   const mayStandard = mayCost && ability.can('update', 'Supply');
   const mayCreate = ability.can('create', 'Catalog');
+  // M39a (D-623): org_admin deletes a product nothing uses; everyone else archives.
+  const mayDelete = ability.can('delete', 'Catalog');
+  const navigate = useNavigate();
+  // Set by a delete that went through, so the dialog's "done" leaves the page rather than
+  // reloading a product that is gone.
+  const deleted = useRef(false);
 
   const [open, setOpen] = useState<Dialogs>(null);
   // Stickers to print: from the Stickers button, a variant's own button, or a receipt.
@@ -297,10 +317,16 @@ export function CatalogProductPage() {
               <Button variant="ghost" onClick={() => setOpen('archive')}>
                 {data?.status === 'archived' ? t('cs.reactivate') : t('cs.archive')}
               </Button>
-              {/*
-               * M39a's Delete (D-623) goes here: its `DeleteOrArchive` dialog asks the server what
-               * uses the product and offers Delete or Archive. Wired at integration.
-               */}
+            </PermissionGate>
+            <PermissionGate allowed={mayDelete && data !== undefined}>
+              <Button
+                variant="ghost"
+                data-testid="delete-product"
+                onClick={() => setOpen('delete')}
+              >
+                <Trash2 aria-hidden="true" />
+                {t('cp.delete')}
+              </Button>
             </PermissionGate>
           </div>
         </header>
@@ -343,6 +369,7 @@ export function CatalogProductPage() {
           )}
           showStock={mayStock}
           mayWrite={mayWrite}
+          mayDelete={mayDelete}
           highlighted={scannedVariant}
           onReorder={() => setOpen('reorder')}
           onPrint={(sku) =>
@@ -493,6 +520,41 @@ export function CatalogProductPage() {
                 refresh();
               }}
             />
+            {open === 'delete' ? (
+              <DeleteOrArchive
+                open
+                onClose={() => setOpen(null)}
+                queryKey={['catalog', 'product-usage', data.id]}
+                loadUsage={() => productUsage(data.id)}
+                onDelete={
+                  mayDelete
+                    ? async () => {
+                        const result = await deleteProduct(data.id);
+                        deleted.current = true;
+                        return result;
+                      }
+                    : undefined
+                }
+                onArchive={
+                  mayWrite ? () => updateProduct(data.id, { status: 'archived' }) : undefined
+                }
+                onRestore={
+                  mayWrite ? () => updateProduct(data.id, { status: 'active' }) : undefined
+                }
+                onDone={() => {
+                  if (!deleted.current) {
+                    refresh();
+                    return;
+                  }
+                  queryClient.removeQueries({ queryKey: ['catalog', 'product', data.id] });
+                  void queryClient.invalidateQueries({ queryKey: ['catalog'] });
+                  void navigate({
+                    to: '/catalog',
+                    search: { page: 1, pageSize: DEFAULT_PAGE_SIZE },
+                  });
+                }}
+              />
+            ) : null}
           </>
         )}
       </div>

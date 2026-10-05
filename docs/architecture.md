@@ -685,7 +685,7 @@ D-635 to D-646. The selling side lives in the catalog, purchase cost in supply a
 - **Selling price and regular price** (`catalog.skus`): `price_poisha` is what the variant sells
   for; `compare_at_poisha` (nullable, D-640) is a regular ("was") price the website strikes
   through, a selling-side figure, so the catalog may hold it. A CHECK keeps it above the price
-  (`skus_compare_at_above_price`). Migration 0119 widens the price-history trigger to it: a row
+  (`skus_compare_at_above_price`). Migration 0121 widens the price-history trigger to it: a row
   whenever either changes (`compare_at_from_poisha`, `compare_at_to_poisha`), with the reason
   the request gave. `PUT /v1/catalog/prices` reprices up to 500 variants (price, regular price
   or both) in one transaction with one reason; the regular price is checked against the price
@@ -730,7 +730,8 @@ D-635 to D-646. The selling side lives in the catalog, purchase cost in supply a
   category, description, weight, website fields (off the website), size chart, photos with
   their colours, and every active variant with its price and regular price, coded under the
   copy's own sequence in the source's segment order with new barcodes. No stock, cost, orders,
-  history or old addresses. The copy is a draft.
+  history or old addresses. The copy is a draft. A variant with an archived size, colour or list
+  is left out (M39a's D-624), and a product in an archived category is not copied (D-623).
 - **Weights** (D-645): `products.weight_grams` and an optional `skus.weight_grams`; a courier
   booking declares Σ qty × weight (`parcelWeightGrams`, through `CatalogApi.skuWeights`) or the
   courier's default when any line has none.
@@ -740,8 +741,11 @@ D-635 to D-646. The selling side lives in the catalog, purchase cost in supply a
   the category's website fields; a product created in the category starts with it.
 - **The product list** (D-642): a photo, the stock (`GET /v1/inventory/stock/products`, scoped
   like the stock page), the website switch and the price range per row; row and bulk actions
-  through `PATCH /v1/catalog/products` (status, category; `update Catalog`) and
-  `PUT /v1/storefront/products` (shown on the website, size chart; `update Storefront`).
+  through `PATCH /v1/catalog/products` (status, category; `update Catalog`; never into an
+  archived category) and `PUT /v1/storefront/products` (shown on the website, size chart;
+  `update Storefront`). **Delete** on the list, the product page and each variant row is M39a's
+  (below): its dialog reads `GET …/usage` and deletes only what nothing uses, offering Archive
+  otherwise.
 
 ### Barcodes, stickers and scanning (M38a)
 

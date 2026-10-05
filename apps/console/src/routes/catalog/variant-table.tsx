@@ -22,13 +22,15 @@ import {
   takaToPoisha,
 } from '@elysium/ui';
 import { useMutation } from '@tanstack/react-query';
-import { Archive, ArchiveRestore, Pencil, Printer } from 'lucide-react';
+import { Archive, ArchiveRestore, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { ApiError } from '../../api.js';
+import { deleteSku, skuUsage } from '../../api/manage.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/catalog-pricing.js';
 import '../../i18n/stock-tools.js';
+import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 import type { StockRow } from '../stock/api.js';
 import type { CatalogAttribute, CatalogProduct, CatalogSku } from './api.js';
 import { Field } from './parts.js';
@@ -68,6 +70,8 @@ export interface VariantTableProps {
   readonly locations: readonly { id: string; name: string; code: string; kind: string }[];
   readonly showStock: boolean;
   readonly mayWrite: boolean;
+  /** M39a (D-623): may delete a variant nothing uses (org_admin). */
+  readonly mayDelete?: boolean | undefined;
   /** Cost per variant, present only for a role that may read cost. */
   readonly costs: ReadonlyMap<string, SkuCost> | undefined;
   readonly highlighted?: string | undefined;
@@ -95,6 +99,7 @@ export function VariantTable({
   locations,
   showStock,
   mayWrite,
+  mayDelete = false,
   costs,
   highlighted,
   onReorder,
@@ -114,6 +119,7 @@ export function VariantTable({
   const [reason, setReason] = useState('');
   const [archiving, setArchiving] = useState<CatalogSku | null>(null);
   const [editingSku, setEditingSku] = useState<CatalogSku | null>(null);
+  const [deleting, setDeleting] = useState<CatalogSku | null>(null);
   const skus = product?.skus ?? [];
   const marked = useRef<HTMLTableRowElement>(null);
   const kinds = new Map(attributes.map((attribute) => [attribute.id, attribute.kind]));
@@ -732,28 +738,42 @@ export function VariantTable({
                       </td>
                     ) : null}
                     <td className="sticky right-0 h-row bg-card px-2 text-right whitespace-nowrap group-hover:bg-accent">
-                      <PermissionGate allowed={mayWrite}>
+                      <PermissionGate allowed={mayWrite || mayDelete}>
                         <span className="inline-flex items-center gap-0.5">
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label={`${t('cp.variant.edit')}: ${label}`}
-                            onClick={() => setEditingSku(sku)}
-                          >
-                            <Pencil aria-hidden="true" />
-                          </Button>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label={`${sku.status === 'active' ? t('cs.archive') : t('cs.restore')}: ${label}`}
-                            onClick={() => setArchiving(sku)}
-                          >
-                            {sku.status === 'active' ? (
-                              <Archive aria-hidden="true" />
-                            ) : (
-                              <ArchiveRestore aria-hidden="true" />
-                            )}
-                          </Button>
+                          {mayWrite ? (
+                            <>
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                aria-label={`${t('cp.variant.edit')}: ${label}`}
+                                onClick={() => setEditingSku(sku)}
+                              >
+                                <Pencil aria-hidden="true" />
+                              </Button>
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                aria-label={`${sku.status === 'active' ? t('cs.archive') : t('cs.restore')}: ${label}`}
+                                onClick={() => setArchiving(sku)}
+                              >
+                                {sku.status === 'active' ? (
+                                  <Archive aria-hidden="true" />
+                                ) : (
+                                  <ArchiveRestore aria-hidden="true" />
+                                )}
+                              </Button>
+                            </>
+                          ) : null}
+                          {mayDelete ? (
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label={`${t('cp.delete')}: ${label}`}
+                              onClick={() => setDeleting(sku)}
+                            >
+                              <Trash2 aria-hidden="true" />
+                            </Button>
+                          ) : null}
                         </span>
                       </PermissionGate>
                     </td>
@@ -793,6 +813,21 @@ export function VariantTable({
           if (archiving !== null) await archive.mutateAsync(archiving);
         }}
       />
+      {deleting === null ? null : (
+        // A variant made by mistake and never used is deleted; one with stock, a sale or a
+        // receipt is offered Archive instead, through the guarded route (D-639).
+        <DeleteOrArchive
+          key={deleting.id}
+          open
+          onClose={() => setDeleting(null)}
+          queryKey={['catalog', 'sku-usage', deleting.id]}
+          loadUsage={() => skuUsage(deleting.id)}
+          onDelete={() => deleteSku(deleting.id)}
+          onArchive={mayWrite ? () => setSkuStatuses([deleting.id], 'archived') : undefined}
+          onRestore={mayWrite ? () => setSkuStatuses([deleting.id], 'active') : undefined}
+          onDone={onDone}
+        />
+      )}
       {editingSku === null ? null : (
         <EditVariantDialog
           key={editingSku.id}

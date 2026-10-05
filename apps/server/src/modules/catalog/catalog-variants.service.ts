@@ -5,6 +5,8 @@ import { axisOrderFromCode, buildSkuCode, productSlug, uniqueSlug } from '@elysi
 import type { ActiveContext } from '../../platform/http/context.js';
 import { nextInternalBarcodes } from './barcodes.js';
 import { CatalogError } from './catalog.errors.js';
+import { assertCategoryLive } from './catalog-deletes.service.js';
+import * as del from './catalog-deletes.repository.js';
 import * as pricing from './catalog-pricing.repository.js';
 import * as repo from './catalog.repository.js';
 import { CatalogService, type ProductView } from './catalog.service.js';
@@ -110,18 +112,45 @@ export class CatalogVariantsService {
         repo.skusOfProduct(tx, context.orgId, productId),
         web.webFieldsOf(tx, context.orgId, productId),
       ]);
-      const active = skus.filter((sku) => sku.status === 'active');
+      const selling = skus.filter((sku) => sku.status === 'active');
       const values = await repo.valuesOfSkus(
         tx,
         context.orgId,
-        active.map((sku) => sku.id),
+        selling.map((sku) => sku.id),
       );
+      // A size, colour or list archived since (M39a, D-624) goes on no new variant: the copy
+      // leaves out the variants that carry one, and refuses when that is every variant.
+      const archived = new Set(
+        (
+          await del.archivedAmong(
+            tx,
+            context.orgId,
+            values.map((value) => value.value_id),
+          )
+        ).map((value) => value.id),
+      );
+      const active = selling.filter(
+        (sku) => !values.some((value) => value.sku_id === sku.id && archived.has(value.value_id)),
+      );
+      if (selling.length > 0 && active.length === 0) {
+        throw new CatalogError(
+          'CATALOG_VARIANT_INVALID',
+          `Every variant of ${source.name} has an archived size, colour or list. Restore it in Catalog setup to copy them.`,
+        );
+      }
 
       const { sequence, orgCode } = await repo.takeSequence(tx, context.orgId);
       const category =
         source.category_id === null
           ? undefined
           : await repo.categoryById(tx, context.orgId, source.category_id);
+      // A copy is a new product, and no new product goes into an archived category (D-623).
+      await assertCategoryLive(
+        tx,
+        context.orgId,
+        category,
+        'Restore it in Catalog setup, or move this product to another category first.',
+      );
 
       const base = input.slug ?? productSlug(input.name, String(sequence));
       const slug = uniqueSlug(base, await pricing.slugsNear(tx, context.orgId, base));
@@ -215,6 +244,9 @@ export class CatalogVariantsService {
       if (input.categoryId != null) {
         const category = await repo.categoryById(tx, context.orgId, input.categoryId);
         if (category === undefined) throw notFound('category');
+        // Moving products into an archived category would take them off the website without
+        // anyone deciding that (M39a, D-623), as the one-product edit refuses.
+        await assertCategoryLive(tx, context.orgId, category);
       }
       const changed = await pricing.updateProducts(tx, context.orgId, ids, {
         status: input.status,

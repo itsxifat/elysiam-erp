@@ -2169,8 +2169,8 @@ dry-run|commit --file <users.json>`.
     the shelf and regular prices; "On sale" works (D-511 amended); photos grouped by colour.
   - **Couriers**: a booking declares Σ qty × weight when every variant is weighed (Pathao never
     below 500 g), else the courier's default.
-- Server: migrations `0118_m39b_variant_pricing_schema.sql` (columns, `supply.sku_purchase_prices`)
-  and `0119_m39b_variant_pricing_policies.sql` (RLS, two `on delete set null (column)` composite
+- Server: migrations `0120_m39b_variant_pricing_schema.sql` (columns, `supply.sku_purchase_prices`)
+  and `0121_m39b_variant_pricing_policies.sql` (RLS, two `on delete set null (column)` composite
   keys, the price-history trigger widened to the regular price). New routes:
   `GET /v1/catalog/products/:id/price-history`, `POST /v1/catalog/products/:id/duplicate`,
   `PATCH /v1/catalog/products`, `PUT /v1/catalog/products/:id/images/:imageId/colour`,

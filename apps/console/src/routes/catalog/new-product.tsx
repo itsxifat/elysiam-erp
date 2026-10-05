@@ -190,8 +190,14 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
   const stockMode: StockMode = windowOpen ? mode : 'supplier';
 
   // Size before colour before the rest: the order the codes read in (`…-XL-RED`).
+  // An archived list or value (M39a, D-624) is never offered for a new variant.
   const ordered = (attributes.data?.items ?? [])
-    .filter((attribute) => attribute.isVariant && attribute.values.length > 0)
+    .filter((attribute) => attribute.isVariant && attribute.isActive !== false)
+    .map((attribute) => ({
+      ...attribute,
+      values: attribute.values.filter((value) => value.isActive !== false),
+    }))
+    .filter((attribute) => attribute.values.length > 0)
     .sort((a, b) => rank(a.kind) - rank(b.kind) || a.position - b.position);
   const choice = ordered.map((axis) => ({
     attributeId: axis.id,

@@ -37,14 +37,17 @@ import {
   Printer,
   Settings2,
   SquarePen,
+  Trash2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { ApiError } from '../../api.js';
+import { deleteProduct, productUsage } from '../../api/manage.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/catalog-pricing.js';
 import { formatSort, keysetPage, mergeSearch, parseSort } from '../../lib/table-search.js';
+import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 import { listSizeCharts } from '../website/api.js';
 import {
   getProduct,
@@ -87,7 +90,8 @@ import { variantLabel } from './variant-table.js';
  * hide on the website, archive or restore); and, for rows ticked on this page, the same
  * changes in bulk plus "move to category", "set size chart" and "print stickers". The
  * selection is the page's own and is never taken from the address, so a shared link cannot
- * arrive with forty products chosen. Delete is M39a's (D-623), wired at integration.
+ * arrive with forty products chosen. Delete (M39a's routes, D-623) opens the shared
+ * Delete-or-archive dialog: a product nothing uses is deleted, anything else archived.
  */
 
 const route = getRouteApi('/catalog');
@@ -104,11 +108,13 @@ export function CatalogProductsPage() {
   const mayUpdate = ability.can('update', 'Catalog');
   const mayWeb = ability.can('update', 'Storefront');
   const mayStock = ability.can('read', 'Stock');
+  const mayDelete = ability.can('delete', 'Catalog');
   const queryClient = useQueryClient();
   const navigate2 = useNavigate();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [duplicating, setDuplicating] = useState<CatalogProductListItem | null>(null);
+  const [managing, setManaging] = useState<CatalogProductListItem | null>(null);
   const [stickers, setStickers] = useState<readonly StickerItem[] | null>(null);
 
   // Keyset pagination cannot compute "page 4"; it needs the last row of page 3.
@@ -378,8 +384,13 @@ export function CatalogProductsPage() {
                       )}
                       {row.status === 'archived' ? t('cp.list.restore') : t('cp.list.archive')}
                     </MenuItem>
-                    {/* M39a's Delete (D-623) joins this menu at integration. */}
                   </>
+                ) : null}
+                {mayDelete ? (
+                  <MenuItem destructive onSelect={() => setManaging(row)}>
+                    <Trash2 aria-hidden="true" />
+                    {t('cp.delete')}
+                  </MenuItem>
                 ) : null}
               </MenuContent>
             </Menu>
@@ -389,7 +400,19 @@ export function CatalogProductsPage() {
     ]);
     // The selection and the stock change the cells; the rest is stable per locale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ct, t, selected, allChosen, rows, stock.data, mayStock, mayWeb, mayUpdate, mayWrite]);
+  }, [
+    ct,
+    t,
+    selected,
+    allChosen,
+    rows,
+    stock.data,
+    mayStock,
+    mayWeb,
+    mayUpdate,
+    mayWrite,
+    mayDelete,
+  ]);
 
   const categoryOptions = [
     { value: '', label: ct('catalog.allCategories') },
@@ -657,6 +680,27 @@ export function CatalogProductsPage() {
             </div>
           }
         />
+        {managing === null ? null : (
+          <DeleteOrArchive
+            key={managing.id}
+            open
+            onClose={() => setManaging(null)}
+            queryKey={['catalog', 'product-usage', managing.id]}
+            loadUsage={() => productUsage(managing.id)}
+            onDelete={() => deleteProduct(managing.id)}
+            onArchive={
+              mayUpdate
+                ? () => bulkProducts({ productIds: [managing.id], status: 'archived' })
+                : undefined
+            }
+            onRestore={
+              mayUpdate
+                ? () => bulkProducts({ productIds: [managing.id], status: 'active' })
+                : undefined
+            }
+            onDone={() => done(t('cp.list.done'))}
+          />
+        )}
         {duplicating === null ? null : (
           <DuplicateFromList
             product={duplicating}

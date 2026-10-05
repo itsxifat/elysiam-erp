@@ -688,6 +688,108 @@ describe('duplicate a product (M39 check 6, D-641)', () => {
         .statusCode,
     ).toBe(404);
   });
+
+  it('leaves out a variant with an archived colour, and refuses an archived category (M39a)', async () => {
+    // A colour of its own, so archiving it touches no other test's products.
+    const sand = await value(colourAttribute, `SAND${suffix.slice(0, 3).toUpperCase()}`, 9);
+    const source = await call<Product>(
+      admin,
+      'POST',
+      '/v1/catalog/products',
+      {
+        name: `Sand tee ${suffix}`,
+        slug: `sand-tee-${suffix}`,
+        categoryId: category,
+        status: 'active',
+        pricePoisha: '99000',
+        axes: [
+          { attributeId: sizeAttribute, valueIds: [sizes.S, sizes.M] },
+          { attributeId: colourAttribute, valueIds: [colours.NAVY, sand] },
+        ],
+      },
+      201,
+    );
+    const allSand = await call<Product>(
+      admin,
+      'POST',
+      '/v1/catalog/products',
+      {
+        name: `All sand ${suffix}`,
+        slug: `all-sand-${suffix}`,
+        status: 'active',
+        pricePoisha: '99000',
+        axes: [{ attributeId: colourAttribute, valueIds: [sand] }],
+      },
+      201,
+    );
+    // Archived for new work only: the source's sand variants stay active (D-624).
+    await call(
+      admin,
+      'POST',
+      `/v1/catalog/attributes/${colourAttribute}/values/${sand}/archive`,
+      { archiveVariants: false },
+      200,
+    );
+    const copy = await call<Product>(
+      admin,
+      'POST',
+      `/v1/catalog/products/${source.id}/duplicate`,
+      { name: `Sand tee ${suffix} copy` },
+      201,
+    );
+    expect(copy.skus.map((sku) => sku.attributes.map((pair) => pair.valueId))).toEqual(
+      expect.not.arrayContaining([expect.arrayContaining([sand])]),
+    );
+    expect(copy.skus).toHaveLength(2);
+
+    // A product whose every variant carries it cannot be copied until it is restored.
+    const refused = await status(admin, 'POST', `/v1/catalog/products/${allSand.id}/duplicate`, {
+      name: `All sand ${suffix} copy`,
+    });
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect(refused.code).toBe('CATALOG_VARIANT_INVALID');
+    await call(
+      admin,
+      'POST',
+      `/v1/catalog/attributes/${colourAttribute}/values/${sand}/restore`,
+      undefined,
+      200,
+    );
+
+    // An archived category: no copy goes into it, and no product is moved into it in bulk.
+    const coats = await call<{ id: string }>(
+      admin,
+      'POST',
+      '/v1/catalog/categories',
+      { name: `Coats ${suffix}`, slug: `coats-${suffix}`, code: 'COT' },
+      201,
+    );
+    const coat = await call<Product>(
+      admin,
+      'POST',
+      '/v1/catalog/products',
+      {
+        name: `Coat ${suffix}`,
+        slug: `coat-${suffix}`,
+        categoryId: coats.id,
+        status: 'active',
+        pricePoisha: '299000',
+      },
+      201,
+    );
+    await call(admin, 'POST', `/v1/catalog/categories/${coats.id}/archive`, undefined, 200);
+    const copied = await status(admin, 'POST', `/v1/catalog/products/${coat.id}/duplicate`, {
+      name: `Coat ${suffix} copy`,
+    });
+    expect(copied.statusCode, copied.body).toBe(400);
+    expect(copied.code).toBe('CATALOG_CATEGORY_INVALID');
+    const moved = await status(admin, 'PATCH', '/v1/catalog/products', {
+      productIds: [source.id],
+      categoryId: coats.id,
+    });
+    expect(moved.statusCode, moved.body).toBe(400);
+    expect(moved.code).toBe('CATALOG_CATEGORY_INVALID');
+  });
 });
 
 describe('sizes and colours added later (D-639)', () => {
