@@ -13,5 +13,3 @@ docs/client-spec/
 packages/ui/src/assets/fonts/
 # The old website's discount engine, copied verbatim as a test oracle (M35a, D-540).
 packages/domain/src/promo/oracle/old-site-discounts.js
-# The old website's landing-page pricing, copied verbatim as a test oracle (M35b, D-550).
-packages/domain/src/storefront/oracle/old-site-landing.js

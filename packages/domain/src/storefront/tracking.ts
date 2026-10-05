@@ -9,9 +9,9 @@ import { poishaToMajorNumber, type Poisha } from '../money/index.js';
  *
  * The website forwards each browser event with the event id the browser fired it under; the
  * ERP's worker sends it to Meta's Conversions API and GA4's Measurement Protocol, and the ERP
- * itself fires the server-side `Purchase` when a website, landing-page or marketplace order is
- * placed (cash on delivery) or paid (SSLCommerz), under the old id `purchase_<order no>`, so a
- * browser event and a server event for one purchase are one purchase to Meta.
+ * itself fires the server-side `Purchase` when a website or marketplace order is placed (cash
+ * on delivery) or paid (SSLCommerz), under the old id `purchase_<order no>`, so a browser event
+ * and a server event for one purchase are one purchase to Meta.
  *
  * Personal data is normalised and SHA-256 hashed **before anything is stored**, as Meta's
  * customer information parameters ask: the ERP keeps the hashes (sealed until sent), the
