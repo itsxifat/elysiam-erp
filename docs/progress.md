@@ -2239,7 +2239,7 @@ dry-run|commit --file <users.json>`.
     (follow-up).
   - acceptance-auditor: NOT READY at 4e2e8f1 with four gaps (no stack run at HEAD, this entry
     stale, bulk "delete unused" missing, the website's "On sale" claim); all four closed in
-    2f4aece, d46e0c8 and this entry. Re-check: see the hand-off.
+    2f4aece, d46e0c8 and e324aeb. Re-check at e324aeb: READY.
 - Decisions/assumptions: D-635 to D-649 (ASSUMED: D-637, D-639, D-640, D-641, D-645, D-646);
   D-421 amended by D-635, D-511 by D-640.
 - New dependencies: none.
