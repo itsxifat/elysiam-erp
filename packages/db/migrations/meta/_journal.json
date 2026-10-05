@@ -862,6 +862,20 @@
       "when": 1791233061961,
       "tag": "0124_m35b_holds_final_events_purge",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1791235300425,
+      "tag": "0125_m38b_pack_video_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1791235309016,
+      "tag": "0126_m38b_pack_video_policies",
+      "breakpoints": true
     }
   ]
 }

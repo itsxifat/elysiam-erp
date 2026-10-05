@@ -34,7 +34,7 @@ export * from './migration/index.js';
 export * from './notify/index.js';
 export * from './org/index.js';
 export * from './orders/index.js';
-// M35b: the packing scanner's devices.
+// M35b: the packing scanner's devices; M38b: the packing station, scans, videos, settings.
 export * from './packing/index.js';
 export * from './pos/index.js';
 export * from './promo/index.js';
