@@ -67,6 +67,10 @@
     "./iam": {
       "types": "./dist/iam/index.d.ts",
       "default": "./dist/iam/index.js"
+    },
+    "./storefront": {
+      "types": "./dist/storefront/index.d.ts",
+      "default": "./dist/storefront/index.js"
     }
   },
   "files": [
