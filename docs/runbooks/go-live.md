@@ -34,13 +34,21 @@ the next one moves.
    the shell only for the session. A bad row anywhere leaves nothing behind; fix the file
    and run it again.
 4. **Post the opening**: `pnpm migration post --org <slug> --as-of <yesterday> --approved-by "<accountant>"`
-   (one journal, dated the evening before go-live, D-221). A brand that traded on the ERP
-   before its opening was posted starts with **opening stock closed** (migration 0114, D-602),
-   and a post with an opening stock file is refused with `OPENING_STOCK_CLOSED`: an org admin
-   asks to reopen it (Stock → Stock in hand → Ask to reopen), a second admin approves it in
+   (one journal, dated the evening before go-live, D-221). A brand that had already traded on
+   the ERP when migration 0114 was applied starts with **opening stock closed** (D-602), and a
+   post with an opening stock file is refused with `OPENING_STOCK_CLOSED`: an org admin asks
+   to reopen it (Stock → Stock in hand → Ask to reopen), a second admin approves it in
    Approvals, then post again.
-   A brand that starts fresh (D-561) counts its stock in on the ERP instead (Stock → Stock in
-   hand, or the new-product form; `docs/training/stickers-and-scanning.md`).
+   **A brand that starts fresh** (D-561) counts its stock in on the ERP instead of importing
+   it (Stock → Stock in hand, or the new-product form; `docs/training/stickers-and-scanning.md`).
+   For it, steps 3 to 5 cover only the balance files (supplier dues, wallets, courier COD), and
+   are skipped when there are none. **Sign the reconciliation (step 5) before counting any
+   stock in**: it compares the opening journal's stock with the live valuation, and stock
+   counted in first would read as a difference and block the sign-off. Then count the stock
+   in, close opening stock (step 6) and trade. The accountant checks the counted stock on
+   its own: the `stock_in_hand` journals' credits to 3350 equal the stock valuation while
+   nothing else has moved (to the poisha, unless one product was counted in at two costs:
+   the average rounds once per entry, §8).
 5. **Run the reconciliation and have the accountant sign it before the brand trades**
    (`pnpm migration reconcile --org <slug> --out reconciliation.csv`, then
    `pnpm migration sign-off --org <slug> --by "<accountant>"`, D-222). Stock is valued at the moment the report runs, so

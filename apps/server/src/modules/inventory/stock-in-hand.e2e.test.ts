@@ -905,9 +905,7 @@ describe('reversing a posted entry (D-602)', () => {
     );
     const decide = (who: RoleClient, id: string, decision: 'approved' | 'rejected') =>
       who.client.request('POST', `/v1/approvals/${id}/decide`, { body: { decision } });
-    expect((await decide(admin, raised.approvalId, 'approved')).statusCode).toBeGreaterThanOrEqual(
-      400,
-    );
+    expect((await decide(admin, raised.approvalId, 'approved')).statusCode).toBe(403);
     expect((await decide(accounts, raised.approvalId, 'approved')).statusCode).toBe(403);
 
     // The average moves while it waits: the approval is refused and nothing moves.

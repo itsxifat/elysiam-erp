@@ -956,15 +956,22 @@ export async function recordCount(
   return rows.length === 1;
 }
 
-/** A count's figures, locked until the transaction ends (a typed figure's overwrite check). */
+/**
+ * The count's figures for these SKUs, locked until the transaction ends (a typed figure's
+ * overwrite check). Only the lines being typed, in `sku_id` order, so a scan of another SKU
+ * never waits behind a correction and two corrections cannot deadlock.
+ */
 export async function lockCountLines(
   tx: Tx,
   orgId: string,
   sessionId: string,
+  skuIds: readonly string[],
 ): Promise<{ sku_id: string; counted_qty: number | null }[]> {
+  if (skuIds.length === 0) return [];
   const rows = await tx.execute<{ sku_id: string; counted_qty: number | null }>(sql`
     select sku_id, counted_qty from inventory.count_lines
     where org_id = ${orgId} and session_id = ${sessionId}
+      and sku_id = any (${sql.param([...new Set(skuIds)])}::uuid[])
     order by sku_id
     for update
   `);

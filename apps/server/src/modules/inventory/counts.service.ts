@@ -118,10 +118,14 @@ export class CountsService {
         // The lines locked first: a scan committing between this read and the write below
         // would otherwise be overwritten without the note this check asks for.
         const counted = new Map(
-          (await repo.lockCountLines(tx, context.orgId, session.id)).map((line) => [
-            line.sku_id,
-            line.counted_qty,
-          ]),
+          (
+            await repo.lockCountLines(
+              tx,
+              context.orgId,
+              session.id,
+              input.lines.map((line) => line.skuId),
+            )
+          ).map((line) => [line.sku_id, line.counted_qty]),
         );
         const overwrites = input.lines.some((line) => {
           const was = counted.get(line.skuId);
