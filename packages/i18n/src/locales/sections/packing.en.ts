@@ -13,6 +13,7 @@ const en = {
   'pk.scan.description':
     'Scan the courier’s parcel code or an order number to see what goes in the parcel.',
   'pk.scan.label': 'Parcel code or order number',
+  'pk.scan.hint': 'Scan the label with a scanner or the camera, or type the code and press Enter.',
   'pk.scan.looking': 'Looking it up…',
   'pk.scan.notFound': 'No order you can see has this code:',
   'pk.scan.failed': 'The lookup did not work. Try again.',

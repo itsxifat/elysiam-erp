@@ -24,6 +24,7 @@ export function ScanField({
   tone = 'neutral',
   autoFocus = true,
   label,
+  hint,
   className,
 }: {
   readonly onCode: (code: string) => void;
@@ -31,6 +32,8 @@ export function ScanField({
   readonly tone?: 'neutral' | 'error';
   readonly autoFocus?: boolean;
   readonly label?: string;
+  /** The line under the field; the stock screens' "each scan adds one piece" by default. */
+  readonly hint?: string;
   readonly className?: string;
 }) {
   const t = useT();
@@ -83,7 +86,7 @@ export function ScanField({
         <CameraScanButton onCode={submit} />
       </div>
       <p id={`${id}-hint`} className="text-xs text-muted-foreground">
-        {t('st.scan.hint')}
+        {hint ?? t('st.scan.hint')}
       </p>
       {/* A live region without the status role: the dialog around the field has its own
           status line, and two in one dialog would make "the status" ambiguous. */}

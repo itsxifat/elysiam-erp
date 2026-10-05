@@ -1,4 +1,4 @@
-import { ORDER_LABEL_SIZES, type OrderLabelSize } from '@elysium/contracts';
+import type { OrderLabelSize } from '@elysium/contracts';
 import type { MessageKey } from '@elysium/i18n';
 import { Button, Checkbox, Dialog, Select } from '@elysium/ui';
 import { useMutation } from '@tanstack/react-query';
@@ -76,6 +76,13 @@ const SIZE_KEYS: Readonly<Record<OrderLabelSize, MessageKey>> = {
   '100x150': 'pk.labels.size.100x150',
   '80mm': 'pk.labels.size.80mm',
 };
+
+/*
+ * The sizes, from the keys above rather than the contract's list: importing that value would
+ * bring the whole storefront-marketing contract module (its Zod schemas) into the orders
+ * list's chunk. The record's type makes it name every size the contract has.
+ */
+const ORDER_LABEL_SIZES = Object.keys(SIZE_KEYS) as OrderLabelSize[];
 
 export function LabelSheetDialog({
   orderIds,

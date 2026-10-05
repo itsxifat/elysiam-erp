@@ -77,6 +77,7 @@ export function OrderScanPage() {
         </h2>
         <ScanField
           label={t('pk.scan.label')}
+          hint={t('pk.scan.hint')}
           onCode={(code) => lookup.mutate(code)}
           message={
             lookup.isPending
