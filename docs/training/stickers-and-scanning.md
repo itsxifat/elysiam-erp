@@ -104,7 +104,8 @@ A USB or Bluetooth scanner works anywhere in the console, with nothing to set up
 ## Close the opening stock (org admin)
 
 Once every piece the shop held is counted in, open **Stock** → **Stock in hand** and press
-**Close opening stock**. From then on, stock arrives only from suppliers, transfers, returns
+**Close opening stock** (if an entry is waiting to be undone, approve or reject that in
+**Approvals** first). From then on, stock arrives only from suppliers, transfers, returns
 and approved adjustments, and **Already in hand** is no longer offered.
 
 If something was missed, press **Ask to reopen** and say what was found. A second admin decides
