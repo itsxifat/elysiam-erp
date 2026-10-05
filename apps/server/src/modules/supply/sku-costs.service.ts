@@ -12,6 +12,8 @@ import {
 } from '@elysium/domain';
 import { z } from 'zod';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
@@ -88,7 +90,35 @@ export class SkuCostsService {
   constructor(
     @Inject(CATALOG_API) private readonly catalog: CatalogApi,
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
+    private readonly audit: AuditService,
   ) {}
+
+  /**
+   * The audit row for a write to the standard buying prices, inside its transaction and with
+   * **counts only**: the request body carries the prices (a whole spreadsheet, as text the
+   * cost deny-list cannot see into), and the append-only log must not keep them (ledger audit
+   * W1). Writing it here stands the interceptor's net down for this request.
+   */
+  private async auditCounts(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    action: string,
+    after: Record<string, number>,
+  ): Promise<void> {
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'update',
+      action,
+      entityType: 'SkuPurchasePrice',
+      entityId: context.orgId,
+      before: null,
+      after,
+      requestId: context.requestId,
+      request,
+    });
+  }
 
   /**
    * Per variant: its standard buying prices, the last price it was bought at (when, from
@@ -156,7 +186,11 @@ export class SkuCostsService {
   }
 
   /** Set, replace or remove standard buying prices, all or nothing (D-638). */
-  async setStandards(context: ActiveContext, input: SetStandardCostsInput) {
+  async setStandards(
+    context: ActiveContext,
+    request: AuditableRequest,
+    input: SetStandardCostsInput,
+  ) {
     return mapSupplyErrors(async () => {
       this.assertCost(context);
       this.assertUpdateSupply(context);
@@ -205,6 +239,10 @@ export class SkuCostsService {
             set += 1;
           }
         }
+        await this.auditCounts(tx, context, request, 'supply.standard_costs.set', {
+          set,
+          removed,
+        });
         return { set, removed };
       });
     });
@@ -251,18 +289,23 @@ export class SkuCostsService {
   }
 
   /** Step one: report every problem, change nothing. */
-  async dryRun(context: ActiveContext, input: StandardCostImportInput) {
+  async dryRun(context: ActiveContext, request: AuditableRequest, input: StandardCostImportInput) {
     return mapSupplyErrors(async () => {
       this.assertCost(context);
       return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const { report } = await this.review(tx, context.orgId, input.csv);
+        await this.auditCounts(tx, context, request, 'supply.standard_costs.checked', {
+          rows: report.rows.length,
+          skipped: report.skipped,
+          problems: report.problems.length,
+        });
         return summary(report);
       });
     });
   }
 
   /** Step two: every priced row, or none (D-638). */
-  async commit(context: ActiveContext, input: StandardCostImportInput) {
+  async commit(context: ActiveContext, request: AuditableRequest, input: StandardCostImportInput) {
     return mapSupplyErrors(async () => {
       this.assertCost(context);
       this.assertUpdateSupply(context);
@@ -285,6 +328,10 @@ export class SkuCostsService {
             updatedBy: context.userId,
           });
         }
+        await this.auditCounts(tx, context, request, 'supply.standard_costs.imported', {
+          set: report.rows.length,
+          skipped: report.skipped,
+        });
         return { set: report.rows.length, skipped: report.skipped };
       });
     });

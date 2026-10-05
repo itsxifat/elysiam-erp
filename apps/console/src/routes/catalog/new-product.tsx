@@ -238,6 +238,12 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
     const own = (rowCost[row.key] ?? '').trim();
     return own === '' ? costPoisha : positiveCost(takaToPoisha(own));
   };
+  /** A line's cost, or a refusal: never a silent zero (ledger audit N1). */
+  const requireCost = (row: VariantRow): string => {
+    const cost = costOf(row);
+    if (cost === null) throw new Error(t('st.new.costMissing'));
+    return cost;
+  };
   const receivable = (locations.data?.items ?? []).filter(
     (location) =>
       location.isActive && (location.kind === 'warehouse' || location.kind === 'showroom'),
@@ -371,7 +377,17 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
       for (const [index, photo] of photos.entries()) {
         setProgress(`${t('st.new.uploading')} ${String(index + 1)} / ${String(photos.length)}`);
         const file = await uploadPhoto(photo.file);
-        await attachImage(product.id, { fileId: file.id });
+        // A photo tied to a chosen colour keeps it (D-643); a colour no longer chosen is dropped.
+        const colour =
+          photo.colourValueId !== undefined &&
+          photo.colourValueId !== null &&
+          colourChoice.some((value) => value.id === photo.colourValueId)
+            ? photo.colourValueId
+            : null;
+        await attachImage(product.id, {
+          fileId: file.id,
+          ...(colour === null ? {} : { colourValueId: colour }),
+        });
         URL.revokeObjectURL(photo.url);
         remaining = remaining.filter((entry) => entry.key !== photo.key);
         setPhotos(remaining);
@@ -400,7 +416,7 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
               lines: lines.map((line) => ({
                 skuId: line.skuId,
                 qty: line.qty,
-                unitCostPoisha: costOf(line.row) ?? '0',
+                unitCostPoisha: requireCost(line.row),
               })),
             });
           } else {
@@ -421,7 +437,7 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
               skuId: line.skuId,
               qty: line.qty,
               // A cost per variant from a supplier too (D-635); the common cost fills blanks.
-              unitCostPoisha: costOf(line.row) ?? '0',
+              unitCostPoisha: requireCost(line.row),
             })),
           });
         } else {
@@ -608,7 +624,12 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
           <h2 id="photos-heading" className={headingClass}>
             {t('cs.photos.title')}
           </h2>
-          <PhotoPicker photos={photos} onChange={setPhotos} disabled={save.isPending} />
+          <PhotoPicker
+            photos={photos}
+            onChange={setPhotos}
+            disabled={save.isPending}
+            colours={colourChoice}
+          />
         </section>
 
         <section aria-labelledby="variants-heading" className={sectionClass}>

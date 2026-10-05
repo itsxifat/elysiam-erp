@@ -122,9 +122,9 @@ export function isReplayConflict(error: unknown): boolean {
   );
 }
 
-/** A positive cost in taka, as poisha, or null: zero or blank is not a cost here. */
+/** A positive cost in taka, as poisha, or null: zero, a minus sign or blank is not a cost. */
 export function positiveCost(poisha: string | null): string | null {
-  return poisha === null || /^0+$/.test(poisha) ? null : poisha;
+  return poisha === null || !/^[1-9]\d*$/.test(poisha) ? null : poisha;
 }
 
 /**

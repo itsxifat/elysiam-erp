@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Get, Post, Put, Query, Req } fro
 import type { FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import {
@@ -11,6 +12,9 @@ import {
   standardCostExportSchema,
   standardCostImportSchema,
 } from './sku-costs.service.js';
+
+const auditable = (request: FastifyRequest): AuditableRequest =>
+  request as unknown as AuditableRequest;
 
 function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
   const parsed = schema.safeParse(value);
@@ -41,7 +45,11 @@ export class SkuCostsController {
   @RequireAbility('read', 'Cost')
   @Put('sku-costs')
   async set(@Req() request: FastifyRequest, @Body() body: unknown) {
-    return this.costs.setStandards(requireContext(request), parse(setStandardCostsSchema, body));
+    return this.costs.setStandards(
+      requireContext(request),
+      auditable(request),
+      parse(setStandardCostsSchema, body),
+    );
   }
 
   /** The standard buying price spreadsheet, every active variant (D-638). */
@@ -56,13 +64,21 @@ export class SkuCostsController {
   @RequireAbility('read', 'Cost')
   @Post('sku-costs/import/dry-run')
   async dryRun(@Req() request: FastifyRequest, @Body() body: unknown) {
-    return this.costs.dryRun(requireContext(request), parse(standardCostImportSchema, body));
+    return this.costs.dryRun(
+      requireContext(request),
+      auditable(request),
+      parse(standardCostImportSchema, body),
+    );
   }
 
   /** Import a spreadsheet: every priced row, or none. */
   @RequireAbility('read', 'Cost')
   @Post('sku-costs/import')
   async commit(@Req() request: FastifyRequest, @Body() body: unknown) {
-    return this.costs.commit(requireContext(request), parse(standardCostImportSchema, body));
+    return this.costs.commit(
+      requireContext(request),
+      auditable(request),
+      parse(standardCostImportSchema, body),
+    );
   }
 }

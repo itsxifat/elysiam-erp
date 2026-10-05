@@ -166,7 +166,8 @@ const en = {
 
   // The receive dialog and supply entries (D-637).
   'cp.receive.sameForAll': 'Same cost for all (৳)',
-  'cp.receive.sameForAllHint': 'Fills every variant without its own cost.',
+  'cp.receive.sameForAllHint':
+    'Used for every variant you have not typed a cost for, in place of the filled-in ones.',
   'cp.receive.prefilled': 'Filled from the standard or last buying price; change any of them.',
   'cp.receive.source.supplierStandard': "this supplier's standard",
   'cp.receive.source.standard': 'standard',

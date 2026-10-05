@@ -1,10 +1,11 @@
-import { Button, Dialog, type UploadTicket, type UploadedFile } from '@elysium/ui';
+import { Button, Dialog, Select, type UploadTicket, type UploadedFile } from '@elysium/ui';
 import { ArrowLeft, ArrowRight, Crop, ImagePlus, Star, Trash2 } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { api } from '../../api.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/stock-tools.js';
+import '../../i18n/catalog-pricing.js';
 import {
   centredView,
   clampOffset,
@@ -26,6 +27,8 @@ export interface PendingPhoto {
   readonly file: File;
   /** An object URL for the preview; let go when the photo leaves the list. */
   readonly url: string;
+  /** The colour the photo shows, when chosen (M39b, D-643); none for every colour. */
+  readonly colourValueId?: string | null;
 }
 
 let photoKey = 0;
@@ -67,10 +70,13 @@ export function PhotoPicker({
   photos,
   onChange,
   disabled,
+  colours = [],
 }: {
   readonly photos: readonly PendingPhoto[];
   readonly onChange: (next: PendingPhoto[]) => void;
   readonly disabled?: boolean;
+  /** The colours chosen for the product: a photo may be tied to one (M39b, D-643). */
+  readonly colours?: readonly { readonly id: string; readonly label: string }[];
 }) {
   const t = useT();
   const id = useId();
@@ -221,6 +227,34 @@ export function PhotoPicker({
                   <Trash2 aria-hidden="true" />
                 </Button>
               </div>
+              {colours.length > 0 ? (
+                <Select
+                  variant="filter"
+                  size="sm"
+                  aria-label={`${t('cp.photo.colour')} ${String(index + 1)}`}
+                  value={
+                    photo.colourValueId !== undefined &&
+                    photo.colourValueId !== null &&
+                    colours.some((colour) => colour.id === photo.colourValueId)
+                      ? photo.colourValueId
+                      : ''
+                  }
+                  disabled={disabled === true}
+                  onValueChange={(next) =>
+                    onChange(
+                      photos.map((entry) =>
+                        entry.key === photo.key
+                          ? { ...entry, colourValueId: next === '' ? null : next }
+                          : entry,
+                      ),
+                    )
+                  }
+                  options={[
+                    { value: '', label: t('cp.photo.anyColour') },
+                    ...colours.map((colour) => ({ value: colour.id, label: colour.label })),
+                  ]}
+                />
+              ) : null}
             </li>
           ))}
         </ol>
@@ -231,7 +265,11 @@ export function PhotoPicker({
           photo={cropping}
           onClose={() => setCropping(null)}
           onCropped={(file) => {
-            const replacement = pendingPhoto(file);
+            // A cropped photo keeps the colour it was given (D-643).
+            const replacement = {
+              ...pendingPhoto(file),
+              colourValueId: cropping.colourValueId ?? null,
+            };
             URL.revokeObjectURL(cropping.url);
             onChange(photos.map((entry) => (entry.key === cropping.key ? replacement : entry)));
             setCropping(null);

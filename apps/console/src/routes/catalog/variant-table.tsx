@@ -30,11 +30,12 @@ import { useT } from '../../i18n/locale.js';
 import '../../i18n/catalog-pricing.js';
 import '../../i18n/stock-tools.js';
 import type { StockRow } from '../stock/api.js';
-import { updateSku, type CatalogAttribute, type CatalogProduct, type CatalogSku } from './api.js';
+import type { CatalogAttribute, CatalogProduct, CatalogSku } from './api.js';
 import { Field } from './parts.js';
 import {
   saveVariantPrices,
   setSkuBarcode,
+  setSkuStatuses,
   setSkuWeight,
   type PriceChange,
   type SkuCost,
@@ -175,6 +176,8 @@ export function VariantTable({
     return [
       {
         skuId: sku.id,
+        // The price the change was made against: one changed elsewhere since is refused.
+        expectedPricePoisha: sku.pricePoisha,
         ...(priceChanged ? { pricePoisha: price } : {}),
         ...(regularChanged ? { compareAtPoisha: regular } : {}),
       },
@@ -202,9 +205,10 @@ export function VariantTable({
     },
   });
 
+  // Through the guarded route (D-639): refused while orders hold the variant's pieces.
   const archive = useMutation({
     mutationFn: (sku: CatalogSku) =>
-      updateSku(sku.id, sku.status === 'active' ? 'archived' : 'active'),
+      setSkuStatuses([sku.id], sku.status === 'active' ? 'archived' : 'active'),
     onSuccess: onDone,
   });
 
@@ -309,7 +313,13 @@ export function VariantTable({
               <Button
                 size="sm"
                 data-testid="save-prices"
-                disabled={changes.length === 0 || invalid || save.isPending}
+                // A preview with problems is fixed (or those variants unchosen) before saving.
+                disabled={
+                  changes.length === 0 ||
+                  invalid ||
+                  (plan?.problems.length ?? 0) > 0 ||
+                  save.isPending
+                }
                 onClick={() => save.mutate()}
               >
                 {`${t('cp.hub.saveCount')} (${String(changes.length)})`}

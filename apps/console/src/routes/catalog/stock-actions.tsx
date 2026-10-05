@@ -375,13 +375,18 @@ export function ReceiveStockDialog({
           ],
     ),
   );
+  // "Cost per piece" at the top speaks for every variant the person has not typed in,
+  // prefilled or not (ledger audit N3); with it blank, the prefill shows.
+  const commonTyped = costTaka.trim() !== '';
   const shownCosts: Record<string, string> = Object.fromEntries(
-    activeIds.map((id) => [id, costs[id] ?? prefilled.get(id)?.text ?? '']),
+    activeIds.map((id) => [id, costs[id] ?? (commonTyped ? '' : (prefilled.get(id)?.text ?? ''))]),
   );
   const sources = new Map<string, PrefillSource>(
-    [...prefilled.entries()]
-      .filter(([id]) => costs[id] === undefined)
-      .map(([id, entry]) => [id, entry.source]),
+    commonTyped
+      ? []
+      : [...prefilled.entries()]
+          .filter(([id]) => costs[id] === undefined)
+          .map(([id, entry]) => [id, entry.source]),
   );
 
   const lines = linesFrom(quantities);
@@ -391,6 +396,12 @@ export function ReceiveStockDialog({
   const costOf = (skuId: string): string | null => {
     const own = (shownCosts[skuId] ?? '').trim();
     return own === '' ? costPoisha : positiveCost(takaToPoisha(own));
+  };
+  /** A line's cost, or a refusal: never a silent zero (ledger audit N1). */
+  const requireCost = (skuId: string): string => {
+    const cost = costOf(skuId);
+    if (cost === null) throw new Error(t('cp.receive.costMissing'));
+    return cost;
   };
   const units = (lines ?? []).reduce((sum, line) => sum + line.qty, 0);
   const missing = new Set(
@@ -417,7 +428,7 @@ export function ReceiveStockDialog({
           await postStockInHand({
             entryId: key.current(),
             locationId: chosenLocation,
-            lines: chosen.map((line) => ({ ...line, unitCostPoisha: costOf(line.skuId) ?? '0' })),
+            lines: chosen.map((line) => ({ ...line, unitCostPoisha: requireCost(line.skuId) })),
           });
           return { kind: 'entry' as const, lines: chosen };
         }
@@ -432,7 +443,7 @@ export function ReceiveStockDialog({
         // Each variant at its own cost (D-637).
         const lines = chosen.map((line) => ({
           ...line,
-          unitCostPoisha: costOf(line.skuId) ?? '0',
+          unitCostPoisha: requireCost(line.skuId),
         }));
         await createEntry({
           supplyId: key.current(),

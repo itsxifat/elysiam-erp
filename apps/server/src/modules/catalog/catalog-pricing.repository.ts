@@ -24,7 +24,9 @@ export interface SkuPriceRow extends Record<string, unknown> {
 /**
  * The SKUs a reprice names, locked for the rest of the transaction.
  *
- * `for update` so the regular-price check the service makes against the current price
+ * `for no key update` (a price is not a key): it serialises two reprices of one SKU without
+ * blocking the key-share lock every stock movement, order line and till line takes on the SKU
+ * through its foreign key (ledger audit W3). It locks so the regular-price check the service makes against the current price
  * cannot be overtaken by another reprice of the same SKU between the read and the write
  * (the CHECK would still refuse it, but as a 500-shaped surprise rather than a message).
  */
@@ -40,7 +42,7 @@ export async function skuPricesForUpdate(
     from catalog.skus
     where org_id = ${orgId} and id = any (${sql.param([...skuIds])}::uuid[])
     order by id
-    for update
+    for no key update
   `);
   return [...rows];
 }
@@ -205,7 +207,7 @@ export async function skuOwners(
       select id, code, product_id, status::text as status from catalog.skus
       where org_id = ${orgId} and id = any (${sql.param([...skuIds])}::uuid[])
       order by id
-      for update
+      for no key update
     `,
   );
   return [...rows];

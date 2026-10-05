@@ -1,19 +1,20 @@
 import { randomUUID } from 'node:crypto';
 
 import { findCostFields } from '@elysium/contracts';
-import { withOrg } from '@elysium/db';
+import { withOrg, withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   ORG_A,
   ORG_B,
+  createBranch,
   startHttpHarness,
   type HttpHarness,
   type RoleClient,
 } from '../../testing/http-harness.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
-import { warehouseId } from '../inventory/inventory.testing.js';
+import { makeLocation, warehouseId } from '../inventory/inventory.testing.js';
 import {
   insertTestSiteKey,
   signedGet,
@@ -1116,6 +1117,38 @@ describe('the website: regular prices and live flash prices (M39 check 7, D-640)
     expect(sale.body.product.compareAt?.poisha).toBe('149000');
   });
 
+  it('a card never shows one size’s regular price beside another size’s price (W4)', async () => {
+    const mixed = await call<Product>(
+      admin,
+      'POST',
+      '/v1/catalog/products',
+      {
+        name: `Mixed ${suffix}`,
+        slug: `mixed-${suffix}`,
+        status: 'active',
+        pricePoisha: '99000',
+        axes: [{ attributeId: sizeAttribute, valueIds: [sizes.S, sizes.XL] }],
+        variantPrices: [{ valueIds: [sizes.XL], pricePoisha: '149000', compareAtPoisha: '189000' }],
+      },
+      201,
+    );
+    await call(marketing, 'PUT', `/v1/storefront/products/${mixed.id}`, { webVisible: true }, 200);
+    const page = await signed<{
+      items: {
+        id: string;
+        onSale: boolean;
+        compareAt: { poisha: string } | null;
+        price: { min: { poisha: string } };
+      }[];
+    }>(`/storefront/v1/catalog/products?onSale=true&limit=60`);
+    const card = page.body.items.find((item) => item.id === mixed.id);
+    expect(card).toMatchObject({
+      onSale: true,
+      compareAt: null,
+      price: { min: { poisha: '99000' } },
+    });
+  });
+
   it('the cards say so too, and "on sale" lists exactly those', async () => {
     const all = await signed<{
       items: { id: string; onSale: boolean; compareAt: { poisha: string } | null }[];
@@ -1136,6 +1169,164 @@ describe('the website: regular prices and live flash prices (M39 check 7, D-640)
     expect(ids).not.toContain(plain.id);
     // Nothing a margin could be read from reaches the website.
     expect(findCostFields(onSale.body)).toEqual([]);
+  });
+});
+
+describe('ledger audit follow-ups (W1, W4, W5, N4, N10)', () => {
+  it('a standard buying price never moves the average: the receipt’s own cost does', async () => {
+    const tee = await call<Product>(
+      admin,
+      'POST',
+      '/v1/catalog/products',
+      {
+        name: `Standard tee ${suffix}`,
+        slug: `standard-tee-${suffix}`,
+        status: 'active',
+        pricePoisha: '120000',
+        axes: [{ attributeId: sizeAttribute, valueIds: [sizes.M] }],
+      },
+      201,
+    );
+    const m = skuOf(tee, 'M');
+    await call(
+      accounts,
+      'PUT',
+      '/v1/supply/sku-costs',
+      { entries: [{ skuId: m.id, supplierId: null, standardUnitCostPoisha: '50000' }] },
+      200,
+    );
+    await call(
+      admin,
+      'POST',
+      '/v1/supply/entries',
+      {
+        supplyId: randomUUID(),
+        supplierId: supplier,
+        locationId: mainWarehouse,
+        lines: [{ skuId: m.id, qty: 4, unitCostPoisha: '70000' }],
+      },
+      201,
+    );
+    const costs = await call<{
+      items: { wacPoisha: string | null; standardUnitCostPoisha: string | null }[];
+    }>(accounts, 'GET', `/v1/supply/sku-costs?skuIds=${m.id}`, undefined, 200);
+    expect(costs.items[0]).toMatchObject({ wacPoisha: '70000', standardUnitCostPoisha: '50000' });
+  });
+
+  it('the spreadsheet import is a cost role’s, and the audit log keeps counts, never figures', async () => {
+    const lines = ['sku,standard_cost_taka', `NOPE-${suffix.toUpperCase()},1`, ''].join('\n');
+    for (const who of [sales, warehouse, marketing]) {
+      expect(
+        (await status(who, 'POST', '/v1/supply/sku-costs/import', { csv: lines })).statusCode,
+      ).toBe(403);
+      expect(
+        (await status(who, 'POST', '/v1/supply/sku-costs/import/dry-run', { csv: lines }))
+          .statusCode,
+      ).toBe(403);
+      expect((await status(who, 'GET', '/v1/supply/sku-costs/export')).statusCode).toBe(403);
+    }
+    const product = await shirtBySize(`Audited ${suffix}`, `audited-${suffix}`);
+    const sku = skuOf(product, 'M', 'NAVY');
+    const csv = ['sku,standard_cost_taka', `${sku.skuCode},987.65`, ''].join('\n');
+    await call(accounts, 'POST', '/v1/supply/sku-costs/import/dry-run', { csv }, 201);
+    await call(accounts, 'POST', '/v1/supply/sku-costs/import', { csv }, 201);
+    const rows = await withSystem(
+      async (tx) =>
+        tx.execute<{ action: string; after: unknown }>(sql`
+          select action, after from audit.audit_log
+          where org_id = ${ORG_A} and action like 'supply.standard_costs.%'
+        `),
+      { orgId: ORG_A },
+    );
+    expect(rows.map((row) => row.action)).toEqual(
+      expect.arrayContaining(['supply.standard_costs.checked', 'supply.standard_costs.imported']),
+    );
+    const everything = await withSystem(
+      async (tx) =>
+        tx.execute<{ body: string }>(sql`
+          select coalesce(after::text, '') || coalesce(before::text, '') as body
+          from audit.audit_log where org_id = ${ORG_A}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(everything.some((row) => row.body.includes('987.65'))).toBe(false);
+    expect(everything.some((row) => row.body.includes('standard_cost_taka'))).toBe(false);
+  });
+
+  it('a reprice made against an old price is refused rather than overwriting a newer one', async () => {
+    const product = await shirtBySize(`Raced ${suffix}`, `raced-${suffix}`);
+    const sku = skuOf(product, 'S', 'NAVY');
+    await call(
+      admin,
+      'PUT',
+      '/v1/catalog/prices',
+      { prices: [{ skuId: sku.id, pricePoisha: '155000' }] },
+      200,
+    );
+    const stale = await status(admin, 'PUT', '/v1/catalog/prices', {
+      prices: [{ skuId: sku.id, pricePoisha: '160000', expectedPricePoisha: sku.pricePoisha }],
+    });
+    expect(stale.statusCode, stale.body).toBe(400);
+    expect(stale.code).toBe('CATALOG_PRICE_INVALID');
+    const fresh = await status(admin, 'PUT', '/v1/catalog/prices', {
+      prices: [{ skuId: sku.id, pricePoisha: '160000', expectedPricePoisha: '155000' }],
+    });
+    expect(fresh.statusCode, fresh.body).toBe(200);
+  });
+
+  it('the product list’s stock: in the caller’s branches only, and none of another brand’s', async () => {
+    const branch = await createBranch(ORG_A, `BR-VP${suffix.toUpperCase().slice(0, 4)}`);
+    const showroom = await makeLocation(ORG_A, {
+      code: `SR-VP${suffix.toUpperCase().slice(0, 4)}`,
+      name: 'Variant price showroom',
+      kind: 'showroom',
+      branchId: branch,
+    });
+    const tee = await call<Product>(
+      admin,
+      'POST',
+      '/v1/catalog/products',
+      {
+        name: `Counted tee ${suffix}`,
+        slug: `counted-tee-${suffix}`,
+        status: 'active',
+        pricePoisha: '90000',
+      },
+      201,
+    );
+    const only = tee.skus[0]?.id ?? '';
+    for (const [locationId, qty] of [
+      [mainWarehouse, 3],
+      [showroom, 2],
+    ] as const) {
+      await call(
+        admin,
+        'POST',
+        '/v1/supply/entries',
+        {
+          supplyId: randomUUID(),
+          supplierId: supplier,
+          locationId,
+          lines: [{ skuId: only, qty, unitCostPoisha: '40000' }],
+        },
+        201,
+      );
+    }
+    const url = `/v1/inventory/stock/products?productIds=${tee.id}`;
+    const all = await call<{ items: { productId: string; onHand: number; available: number }[] }>(
+      admin,
+      'GET',
+      url,
+      undefined,
+      200,
+    );
+    expect(all.items).toEqual([{ productId: tee.id, onHand: 5, available: 5 }]);
+    const manager = await harness.asRole('branch_manager', ORG_A, { branchIds: [branch] });
+    const mine = await call<{ items: { onHand: number }[] }>(manager, 'GET', url, undefined, 200);
+    expect(mine.items).toEqual([{ productId: tee.id, onHand: 2, available: 2 }]);
+    const other = await call<{ items: unknown[] }>(adminB, 'GET', url, undefined, 200);
+    expect(other.items).toEqual([]);
+    expect(JSON.stringify(all)).not.toMatch(/cost|wac/i);
   });
 });
 

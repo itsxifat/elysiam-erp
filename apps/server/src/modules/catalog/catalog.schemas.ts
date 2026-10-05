@@ -241,6 +241,11 @@ export const setPricesSchema = z.object({
           pricePoisha: pricePoishaSchema.optional(),
           /** The regular price (M39b, D-640): absent leaves it, null clears it. */
           compareAtPoisha: compareAtPoishaSchema.optional(),
+          /**
+           * The selling price the change was worked out from (the bulk editor's preview): a
+           * price changed by someone else since is refused rather than overwritten.
+           */
+          expectedPricePoisha: pricePoishaSchema.optional(),
         })
         .refine(
           (entry) => entry.pricePoisha !== undefined || entry.compareAtPoisha !== undefined,

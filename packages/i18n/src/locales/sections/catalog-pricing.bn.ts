@@ -151,7 +151,8 @@ const bn: Record<CatalogPricingKey, string> = {
   'cp.list.selectPage': 'এই পাতার সব পণ্য বাছাই করুন',
 
   'cp.receive.sameForAll': 'সবার জন্য একই খরচ (৳)',
-  'cp.receive.sameForAllHint': 'নিজস্ব খরচ নেই এমন প্রতিটি variant পূরণ করে।',
+  'cp.receive.sameForAllHint':
+    'যে variant-গুলোর খরচ আপনি নিজে লেখেননি, আগে থেকে বসানোগুলোর বদলে সবগুলোতে এটি বসে।',
   'cp.receive.prefilled': 'নির্ধারিত বা শেষ কেনা দাম থেকে বসানো হয়েছে; যেকোনোটি বদলাতে পারেন।',
   'cp.receive.source.supplierStandard': 'এই সাপ্লায়ারের নির্ধারিত',
   'cp.receive.source.standard': 'নির্ধারিত',

@@ -544,7 +544,9 @@ export class CatalogService {
         sequence: product.sequence,
         axes,
         existingKeys: existing.map((sku) => sku.variant_key),
-        price: main ?? poisha(1),
+        // Every new variant has its entry in `prices` above; this is only the type's default and
+        // is never what a variant is created at (ledger audit N1).
+        price: [...prices.values()][0]?.pricePoisha ?? main ?? poisha(1),
         prices,
         startPosition: existing.length,
       });
@@ -704,6 +706,15 @@ export class CatalogService {
       for (const entry of input.prices) {
         const before = current.get(entry.skuId);
         if (before === undefined) continue;
+        if (
+          entry.expectedPricePoisha !== undefined &&
+          poisha(entry.expectedPricePoisha) !== before.pricePoisha
+        ) {
+          throw new CatalogError(
+            'CATALOG_PRICE_INVALID',
+            `${before.code}: its price changed since this page was opened. Reload and try again; nothing was repriced.`,
+          );
+        }
         // Absent leaves a figure as it is; a null regular price clears it (D-640).
         const price =
           entry.pricePoisha === undefined ? before.pricePoisha : poisha(entry.pricePoisha);

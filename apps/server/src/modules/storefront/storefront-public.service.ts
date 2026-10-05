@@ -656,8 +656,8 @@ function breadcrumbOf(
 
 /**
  * A card's prices (D-640): the lowest and highest a shopper pays now across the sizes, the
- * struck-through figure beside the lowest (when that size is discounted, else the first
- * discounted size's), and whether any size is discounted at all.
+ * struck-through figure beside the lowest (only when that size is itself discounted), and
+ * whether any size is discounted at all.
  */
 function cardPrices(
   row: WebCard,
@@ -688,11 +688,13 @@ function cardPrices(
     }
     if (price.pricePoisha > max) max = price.pricePoisha;
   }
+  // Only the lowest size's own "was" price sits beside the lowest price: another size's would
+  // read as a saving that size never had (ledger audit W4). `onSale` still says some size is.
   const discounted = shown.filter((price) => price.compareAtPoisha !== null);
   return {
     min: lowest.pricePoisha,
     max,
-    compareAt: lowest.compareAtPoisha ?? discounted[0]?.compareAtPoisha ?? null,
+    compareAt: lowest.compareAtPoisha,
     onSale: discounted.length > 0,
   };
 }

@@ -21,6 +21,8 @@ import type { CatalogProduct } from './api.js';
 
 export interface PriceChange {
   readonly skuId: string;
+  /** The price the change was made against; a price changed since is refused. */
+  readonly expectedPricePoisha?: string | undefined;
   readonly pricePoisha?: string | undefined;
   /** Absent leaves the regular price; null clears it. */
   readonly compareAtPoisha?: string | null | undefined;
