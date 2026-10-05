@@ -534,42 +534,43 @@ System subtypes:
 
 W = the wallet account used.
 
-| Business event                        | Journal                                                                                                                                                                                                                            |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Supply received (qty × unit cost)     | Dr Inventory / Cr Supplier payable (supplier)                                                                                                                                                                                      |
-| Supplier advance paid                 | Dr Supplier advance / Cr W                                                                                                                                                                                                         |
-| Advance applied to a supply           | Dr Supplier payable / Cr Supplier advance                                                                                                                                                                                          |
-| Supplier paid                         | Dr Supplier payable / Cr W                                                                                                                                                                                                         |
-| Supplier return                       | Dr Supplier payable (qty × original unit cost)<br>Cr Inventory (qty × current WAC)<br>Dr or Cr Purchase price variance (the difference)                                                                                            |
-| Order handed to courier               | Dr Goods in transit / Cr Inventory (qty × WAC at handover; this value is recorded on the movement)                                                                                                                                 |
-| Delivered (full)                      | Dr Courier receivable (COD collected) + Dr Customer advance (if an advance was taken)<br>Cr Sales revenue (net item value) + Cr Delivery charge income<br>and Dr COGS / Cr Goods in transit                                        |
-| Partially delivered                   | Delivered lines post as above. Any difference between the courier-reported collection and the computed value posts to Sales discounts, with a reason. Undelivered lines follow the return path.                                    |
-| Return received (sellable or damaged) | Dr Inventory / Cr Goods in transit (at dispatch value). Damaged units go to the `damaged` location; writing them off is a separate step that needs approval.                                                                       |
-| Courier charges (from settlement)     | Dr Courier charges and Dr Return charges / Cr Courier receivable                                                                                                                                                                   |
-| COD settlement received               | Dr W (bank or bKash) / Cr Courier receivable (net)                                                                                                                                                                                 |
-| Advance received before delivery      | Dr W / Cr Customer advance, when accounts **verifies** the claim an agent recorded; a claim alone posts nothing (D-230)                                                                                                            |
-| Advance at the order's ending         | Kept (per org policy, at most the delivery charge): Dr Customer advance / Cr Other income. Owed back: stays in Customer advance until the refund is paid, then Dr Customer advance / Cr W (D-232)                                  |
-| Advance verification undone           | The reversal of its received journal, and the COD restored; only before the parcel moves (D-236)                                                                                                                                   |
-| POS sale                              | Dr W (branch) / Cr Sales revenue, and Dr COGS / Cr Inventory                                                                                                                                                                       |
-| POS return (D-169)                    | Dr Sales revenue / Cr W (the tender refunded), and Dr Inventory / Cr COGS at the unit cost the sale recorded. An exchange is a return and a new sale, two journals. Taken only at the branch that made the sale.                   |
-| Cash in (category)                    | Dr W / Cr income account                                                                                                                                                                                                           |
-| Cash out / petty cash (category)      | Dr expense account / Cr W (receipt required)                                                                                                                                                                                       |
-| Wallet transfer                       | Dr W2 (+ Dr Bank charges) / Cr W1                                                                                                                                                                                                  |
-| Daily closing variance                | Dr or Cr Cash over/short against W (approval required)                                                                                                                                                                             |
-| Ad spend recorded                     | Dr Ad spend / Cr W or Cr Other payable                                                                                                                                                                                             |
-| Payroll posted                        | Dr Salary expense + Dr Bonus expense<br>Cr Salary payable + Cr Employee loan receivable (deductions)                                                                                                                               |
-| Salary paid                           | Dr Salary payable / Cr W                                                                                                                                                                                                           |
-| Employee loan disbursed               | Dr Employee loan receivable / Cr W                                                                                                                                                                                                 |
-| Reseller order delivered              | Dr Courier receivable (Σ customer selling price + delivery charge)<br>Cr Sales revenue (Σ reseller price + slab charge)<br>Cr Delivery charge income<br>Cr Reseller payable (reseller income)<br>and Dr COGS / Cr Goods in transit |
-| Reseller order returned               | No income accrues. Any return fee is charged to the reseller per policy (D-016): Dr Reseller payable / Cr Other income.                                                                                                            |
-| Reseller payout                       | Dr Reseller payable / Cr W                                                                                                                                                                                                         |
-| Investor capital received             | Dr W / Cr Investor capital (investor)                                                                                                                                                                                              |
-| Profit distribution declared          | Dr Profit distribution / Cr Investor payable                                                                                                                                                                                       |
-| Distribution or withdrawal paid       | Dr Investor payable (or Investor capital) / Cr W                                                                                                                                                                                   |
-| Company loan received                 | Dr W / Cr Loan payable (lender)                                                                                                                                                                                                    |
-| Loan instalment paid                  | Dr Loan payable (principal) + Dr Interest expense / Cr W, one whole instalment, keyed per instalment; interest expensed when paid (D-295, D-297)                                                                                   |
-| Stock write-off / count loss          | Dr Inventory write-off / Cr Inventory (approval required)                                                                                                                                                                          |
-| Stock gain                            | Dr Inventory / Cr Inventory adjustment gain (approval required)                                                                                                                                                                    |
+| Business event                        | Journal                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Supply received (qty × unit cost)     | Dr Inventory / Cr Supplier payable (supplier)                                                                                                                                                                                                                                                                                                          |
+| Supplier advance paid                 | Dr Supplier advance / Cr W                                                                                                                                                                                                                                                                                                                             |
+| Advance applied to a supply           | Dr Supplier payable / Cr Supplier advance                                                                                                                                                                                                                                                                                                              |
+| Supplier paid                         | Dr Supplier payable / Cr W                                                                                                                                                                                                                                                                                                                             |
+| Supplier return                       | Dr Supplier payable (qty × original unit cost)<br>Cr Inventory (qty × current WAC)<br>Dr or Cr Purchase price variance (the difference)                                                                                                                                                                                                                |
+| Order handed to courier               | Dr Goods in transit / Cr Inventory (qty × WAC at handover; this value is recorded on the movement)                                                                                                                                                                                                                                                     |
+| Delivered (full)                      | Dr Courier receivable (COD collected) + Dr Customer advance (if an advance was taken)<br>Cr Sales revenue (net item value) + Cr Delivery charge income<br>and Dr COGS / Cr Goods in transit                                                                                                                                                            |
+| Partially delivered                   | Delivered lines post as above. Any difference between the courier-reported collection and the computed value posts to Sales discounts, with a reason. Undelivered lines follow the return path.                                                                                                                                                        |
+| Return received (sellable or damaged) | Dr Inventory / Cr Goods in transit (at dispatch value). Damaged units go to the `damaged` location; writing them off is a separate step that needs approval.                                                                                                                                                                                           |
+| Courier charges (from settlement)     | Dr Courier charges and Dr Return charges / Cr Courier receivable                                                                                                                                                                                                                                                                                       |
+| COD settlement received               | Dr W (bank or bKash) / Cr Courier receivable (net)                                                                                                                                                                                                                                                                                                     |
+| Advance received before delivery      | Dr W / Cr Customer advance, when accounts **verifies** the claim an agent recorded; a claim alone posts nothing (D-230)                                                                                                                                                                                                                                |
+| Advance at the order's ending         | Kept (per org policy, at most the delivery charge): Dr Customer advance / Cr Other income. Owed back: stays in Customer advance until the refund is paid, then Dr Customer advance / Cr W (D-232)                                                                                                                                                      |
+| Advance verification undone           | The reversal of its received journal, and the COD restored; only before the parcel moves (D-236)                                                                                                                                                                                                                                                       |
+| Website payment (SSLCommerz)          | The same posting as a verified advance: Dr SSLCommerz clearing (`1120`, `wallet_mfs_other`) / Cr Customer advance, when the Order Validation API confirms the exact amount; recorded by `storefront:checkout`, decided by `gateway:sslcommerz`. Accounts moves the clearing balance to the bank with a wallet transfer when SSLCommerz settles (D-526) |
+| POS sale                              | Dr W (branch) / Cr Sales revenue, and Dr COGS / Cr Inventory                                                                                                                                                                                                                                                                                           |
+| POS return (D-169)                    | Dr Sales revenue / Cr W (the tender refunded), and Dr Inventory / Cr COGS at the unit cost the sale recorded. An exchange is a return and a new sale, two journals. Taken only at the branch that made the sale.                                                                                                                                       |
+| Cash in (category)                    | Dr W / Cr income account                                                                                                                                                                                                                                                                                                                               |
+| Cash out / petty cash (category)      | Dr expense account / Cr W (receipt required)                                                                                                                                                                                                                                                                                                           |
+| Wallet transfer                       | Dr W2 (+ Dr Bank charges) / Cr W1                                                                                                                                                                                                                                                                                                                      |
+| Daily closing variance                | Dr or Cr Cash over/short against W (approval required)                                                                                                                                                                                                                                                                                                 |
+| Ad spend recorded                     | Dr Ad spend / Cr W or Cr Other payable                                                                                                                                                                                                                                                                                                                 |
+| Payroll posted                        | Dr Salary expense + Dr Bonus expense<br>Cr Salary payable + Cr Employee loan receivable (deductions)                                                                                                                                                                                                                                                   |
+| Salary paid                           | Dr Salary payable / Cr W                                                                                                                                                                                                                                                                                                                               |
+| Employee loan disbursed               | Dr Employee loan receivable / Cr W                                                                                                                                                                                                                                                                                                                     |
+| Reseller order delivered              | Dr Courier receivable (Σ customer selling price + delivery charge)<br>Cr Sales revenue (Σ reseller price + slab charge)<br>Cr Delivery charge income<br>Cr Reseller payable (reseller income)<br>and Dr COGS / Cr Goods in transit                                                                                                                     |
+| Reseller order returned               | No income accrues. Any return fee is charged to the reseller per policy (D-016): Dr Reseller payable / Cr Other income.                                                                                                                                                                                                                                |
+| Reseller payout                       | Dr Reseller payable / Cr W                                                                                                                                                                                                                                                                                                                             |
+| Investor capital received             | Dr W / Cr Investor capital (investor)                                                                                                                                                                                                                                                                                                                  |
+| Profit distribution declared          | Dr Profit distribution / Cr Investor payable                                                                                                                                                                                                                                                                                                           |
+| Distribution or withdrawal paid       | Dr Investor payable (or Investor capital) / Cr W                                                                                                                                                                                                                                                                                                       |
+| Company loan received                 | Dr W / Cr Loan payable (lender)                                                                                                                                                                                                                                                                                                                        |
+| Loan instalment paid                  | Dr Loan payable (principal) + Dr Interest expense / Cr W, one whole instalment, keyed per instalment; interest expensed when paid (D-295, D-297)                                                                                                                                                                                                       |
+| Stock write-off / count loss          | Dr Inventory write-off / Cr Inventory (approval required)                                                                                                                                                                                                                                                                                              |
+| Stock gain                            | Dr Inventory / Cr Inventory adjustment gain (approval required)                                                                                                                                                                                                                                                                                        |
 
 Accounting policies:
 
@@ -1407,8 +1408,9 @@ _To be written by M32: `apps/mother-server` and `apps/mother-console`, its own d
 ## 31. The brand's website, run from its ERP
 
 M33 (D-500 to D-512), after D-469: each brand's ERP is its website's back office, and the
-website keeps no database of its own. This section covers what a shopper **looks at**; buying
-(M34), offers and landing pages (M35) and the website's conversion (M36) build on it.
+website keeps no database of its own. This section covers what a shopper **looks at** and, from
+M34, what a shopper **buys**; offers and landing pages (M35) and the website's conversion (M36)
+build on it.
 
 ### The module
 
@@ -1494,3 +1496,56 @@ stays org_admin's (D-508).
 The slug triggers read and release other products of the same brand under row-level security,
 so anything that writes products in bulk (M36's importer) must write them inside that brand's
 `withOrg()`: under `withSystem` with no org set, the history would not see the other products.
+
+### Buying (M34)
+
+D-520 to D-539. The website's server prices carts, places orders, signs shoppers in and starts
+online payments through signed `POST` and `PATCH` routes under the same prefix and keys
+(`docs/storefront-api.md`). The ERP sets no cookie for the website and keeps no shopper session:
+the account routes answer with an account id and the website keeps its own session.
+
+- **Tables** (`storefront` schema, RLS, composite foreign keys): `customer_accounts` (one per
+  lower-cased email per brand, bcrypt hash, verified-at, `google_sub` allowed only once
+  verified, linked to `sales.customers`), `account_codes` (HMAC of the email code or SHA-256 of
+  the reset token, expiry, tries, used once), `web_orders` (the website's facts about an order:
+  account, email, locale, payment method; written once), `order_view_tokens` (SHA-256),
+  `checkout_submissions` (idempotency: key, request hash, order), `gateway_settings`
+  (SSLCommerz per brand, the store password sealed) and `payment_sessions` (our transaction
+  id, amount, status `initiating → ready → validating → paid | refused`, or `failed`,
+  `cancelled`, `expired`). `notify` gains `email_settings` and `emails` (the outbox and log).
+- **Pricing.** `quoteCart` in `packages/domain/src/storefront/cart.ts` is the one rule for the
+  quote and the checkout: shelf or flash price per line, M35a's `quoteDiscounts` on the charged
+  prices and the delivery fee, the website's zone fee and free-shipping threshold, and the
+  total the order's COD will equal (property-tested against `computeOrderTotals`).
+- **The checkout** is one `withOrg` transaction: claim the idempotency key, re-price and refuse
+  a moved figure (`409 CART_REPRICED` with the new quote), create the order through
+  `OrdersApi.createOrder` (`channel = website`, `pending`), hold its stock at one web location
+  with the atomic conditional reserve (`stock_held_at`), `redeem` the discounts, then
+  `claimFlashUnits`, write `web_orders` and the view token, queue the "placed" email, and for
+  SSLCommerz the 60-minute unpaid timer. A held order's confirm reserves nothing and its
+  pending cancel releases the hold: the state machine takes `stockHeld` (D-532, invariant 7).
+- **Payments.** `init` records a session and enqueues `storefront.sslcommerz_open`; the worker
+  calls SSLCommerz with no transaction open (invariant 6) while the route waits on the row
+  outside any transaction. The shopper's return (relayed by the website) and the public IPN
+  (`/storefront/ipn/sslcommerz/<org id>`) only enqueue `storefront.sslcommerz_validate`, which
+  asks the Order Validation API and accepts VALID or VALIDATED for this transaction, in BDT,
+  for exactly the session's amount, which must still be what the order collects
+  (`judgeValidation`). Accepted, it becomes a verified `sslcommerz` advance through
+  `OrdersApi.recordGatewayAdvance` and §7's advance posting into the SSLCommerz clearing
+  wallet, and the COD drops by it (D-526). `storefront.expire_unpaid` cancels an online order
+  still pending and unpaid after 60 minutes; a later valid payment is still booked and owed back.
+- **Accounts.** bcrypt cost 12 (`bcryptjs`, which also checks the old site's `$2a$`/`$2b$`
+  hashes), email codes as HMACs under a key derived from `INTAKE_KEY_SECRET`, reset and view
+  tokens as SHA-256 of 32 random bytes; Google links only to a verified address (D-522).
+  Per-shopper limits count the `client.ip` the website signs into the body (D-534).
+- **Email.** `notify`'s SMTP channel (nodemailer) per brand, Bangla and English templates in
+  `packages/domain/src/notify/emails.ts`, written in the caller's transaction and sent by
+  `notify.send_email` with the body sealed until sent (D-529, D-530).
+- **Secrets.** `STOREFRONT_CREDENTIALS_KEY` seals the SSLCommerz and SMTP passwords and queued
+  email bodies (AES-256-GCM, bound to brand, row and field); changing them is
+  `update WebsiteCredentials`, org_admin only (D-528).
+- **The console.** Website → Payments (SSLCommerz, the IPN address, the online payments),
+  Email (the server, a test, the log) and Customers (the accounts); a website order's page
+  shows its account and payments, a buyer's profile its website account.
+- **The old site's shoppers.** `pnpm migration legacy-customers --org <slug> dry-run|commit
+--file <users.json>` imports accounts with their bcrypt hashes and buyers by phone (D-531).
