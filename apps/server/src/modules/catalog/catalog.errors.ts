@@ -117,6 +117,16 @@ export function databaseCatalogCode(error: unknown): { code: ErrorCode; message:
         message: 'This brand has used every internal barcode number; ask an admin to look.',
       };
     }
+    if (
+      sqlstate === '23514' &&
+      (current as { constraint_name?: unknown }).constraint_name === 'skus_compare_at_above_price'
+    ) {
+      // The service checks first (M39b, D-640); this is the backstop for a race or a script.
+      return {
+        code: 'CATALOG_PRICE_INVALID',
+        message: 'A regular price must be above the selling price it is shown beside.',
+      };
+    }
     if (sqlstate === '23505') {
       const constraint = (current as { constraint_name?: unknown }).constraint_name;
       const known = typeof constraint === 'string' ? CONSTRAINT_MESSAGES[constraint] : undefined;

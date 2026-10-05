@@ -26,10 +26,19 @@ import { sql, type SQL } from 'drizzle-orm';
 
 /** Columns of a catalog row that leaves the module. Never a cost column. */
 const PRODUCT_COLUMNS = sql`p.id, p.org_id, p.category_id, p.sequence, p.name, p.slug,
-  p.description, p.status::text as status, p.created_by, p.created_at, p.updated_at`;
+  p.description, p.status::text as status, p.created_by, p.created_at, p.updated_at,
+  p.weight_grams`;
 
+/** `compare_at_poisha` is the regular (selling-side) price and `weight_grams` a weight (M39b). */
 const SKU_COLUMNS = sql`s.id, s.org_id, s.product_id, s.code, s.variant_key, s.barcode,
-  s.price_poisha, s.status::text as status, s.position`;
+  s.price_poisha, s.status::text as status, s.position, s.compare_at_poisha, s.weight_grams`;
+
+/** The same columns in a `returning` clause, which cannot use the `s.` alias. */
+const SKU_RETURNING = sql`id, org_id, product_id, code, variant_key, barcode, price_poisha,
+  status::text as status, position, compare_at_poisha, weight_grams`;
+
+const PRODUCT_RETURNING = sql`id, org_id, category_id, sequence, name, slug, description,
+  status::text as status, created_by, created_at, updated_at, weight_grams`;
 
 export interface ProductRow extends Record<string, unknown> {
   readonly id: string;
@@ -43,6 +52,8 @@ export interface ProductRow extends Record<string, unknown> {
   readonly created_by: string | null;
   readonly created_at: Date;
   readonly updated_at: Date;
+  /** Grams per piece (M39b, D-645). */
+  readonly weight_grams: number | null;
 }
 
 export interface SkuRow extends Record<string, unknown> {
@@ -56,6 +67,10 @@ export interface SkuRow extends Record<string, unknown> {
   readonly price_poisha: string;
   readonly status: string;
   readonly position: number;
+  /** The regular ("was") price, a decimal string, or null (M39b, D-640). */
+  readonly compare_at_poisha: string | null;
+  /** This variant's own weight in grams, over the product's (D-645). */
+  readonly weight_grams: number | null;
 }
 
 export interface CategoryRow extends Record<string, unknown> {
@@ -74,6 +89,8 @@ export interface CategoryRow extends Record<string, unknown> {
   readonly gender?: string | null;
   readonly description?: string | null;
   readonly image_file_id?: string | null;
+  /** The size chart new products here start with (M39b, D-646). */
+  readonly default_size_chart_id?: string | null;
 }
 
 export interface AttributeRow extends Record<string, unknown> {
@@ -211,7 +228,7 @@ export async function setOrgCode(tx: Tx, orgId: string, orgCode: string): Promis
 export async function listCategories(tx: Tx, orgId: string): Promise<CategoryRow[]> {
   const rows = await tx.execute<CategoryRow>(sql`
     select id, parent_id, name, slug, code, path, depth, position, is_active,
-           web_visible, featured, gender, description, image_file_id
+           web_visible, featured, gender, description, image_file_id, default_size_chart_id
     from catalog.categories
     where org_id = ${orgId}
     order by path
@@ -281,7 +298,8 @@ export async function categoryById(
   id: string,
 ): Promise<CategoryRow | undefined> {
   const rows = await tx.execute<CategoryRow>(sql`
-    select id, parent_id, name, slug, code, path, depth, position, is_active
+    select id, parent_id, name, slug, code, path, depth, position, is_active,
+           default_size_chart_id
     from catalog.categories where org_id = ${orgId} and id = ${id}
   `);
   return rows[0];
@@ -375,15 +393,16 @@ export async function insertProduct(
     readonly description: string | null;
     readonly status: string;
     readonly createdBy: string | null;
+    readonly weightGrams?: number | null | undefined;
   },
 ): Promise<ProductRow> {
   const rows = await tx.execute<ProductRow>(sql`
     insert into catalog.products
-      (org_id, category_id, sequence, name, slug, description, status, created_by)
+      (org_id, category_id, sequence, name, slug, description, status, created_by, weight_grams)
     values (${orgId}, ${input.categoryId}, ${input.sequence}, ${input.name}, ${input.slug},
-            ${input.description}, ${input.status}::catalog.product_status, ${input.createdBy})
-    returning id, org_id, category_id, sequence, name, slug, description,
-              status::text as status, created_by, created_at, updated_at
+            ${input.description}, ${input.status}::catalog.product_status, ${input.createdBy},
+            ${input.weightGrams ?? null}::integer)
+    returning ${PRODUCT_RETURNING}
   `);
   const row = rows[0];
   if (row === undefined) throw new Error('The product insert returned no row.');
@@ -414,6 +433,9 @@ export async function updateProduct(
     readonly categoryId: string | null;
     readonly changeDescription: boolean;
     readonly description: string | null;
+    /** M39b (D-645): true writes `weightGrams` (null clears it); false leaves the weight. */
+    readonly changeWeight?: boolean | undefined;
+    readonly weightGrams?: number | null | undefined;
   },
 ): Promise<ProductRow | undefined> {
   const rows = await tx.execute<ProductRow>(sql`
@@ -423,10 +445,11 @@ export async function updateProduct(
       status = coalesce(${input.status ?? null}::catalog.product_status, p.status),
       category_id = case when ${input.changeCategory} then ${input.categoryId}::uuid else p.category_id end,
       description = case when ${input.changeDescription} then ${input.description} else p.description end,
+      weight_grams = case when ${input.changeWeight === true} then ${input.weightGrams ?? null}::integer else p.weight_grams end,
       updated_at = now()
     where p.org_id = ${orgId} and p.id = ${id}
     returning p.id, p.org_id, p.category_id, p.sequence, p.name, p.slug, p.description,
-              p.status::text as status, p.created_by, p.created_at, p.updated_at
+              p.status::text as status, p.created_by, p.created_at, p.updated_at, p.weight_grams
   `);
   return rows[0];
 }
@@ -438,6 +461,8 @@ export interface ProductListRow extends ProductRow {
   readonly min_price_poisha: string | null;
   readonly max_price_poisha: string | null;
   readonly image_file_id: string | null;
+  /** Whether the product is shown on the website (M33's flag; a list column since M39b). */
+  readonly web_visible: boolean;
 }
 
 /**
@@ -473,7 +498,8 @@ export async function searchProducts(
         where s.org_id = p.org_id and s.product_id = p.id and s.status = 'active') as max_price_poisha,
       (select i.file_id from catalog.product_images i
         where i.org_id = p.org_id and i.product_id = p.id
-        order by i.position, i.created_at limit 1) as image_file_id
+        order by i.position, i.created_at limit 1) as image_file_id,
+      p.web_visible
     from catalog.products p
     left join catalog.categories c on c.org_id = p.org_id and c.id = p.category_id
     where p.org_id = ${orgId}
@@ -530,6 +556,10 @@ export interface NewSku {
   /** An internal EAN-13 or a supplier's barcode (M38a, D-603). */
   readonly barcode: string | null;
   readonly values: readonly { readonly attributeId: string; readonly valueId: string }[];
+  /** The regular price (M39b, D-640); absent or null for none. */
+  readonly compareAtPoisha?: bigint | null | undefined;
+  /** The variant's own weight (M39b, D-645). */
+  readonly weightGrams?: number | null | undefined;
 }
 
 /**
@@ -548,17 +578,20 @@ export async function insertSkus(
   if (newSkus.length === 0) return [];
 
   const skuRows = await tx.execute<SkuRow>(sql`
-    insert into catalog.skus (org_id, product_id, code, variant_key, price_poisha, position, barcode)
+    insert into catalog.skus
+      (org_id, product_id, code, variant_key, price_poisha, position, barcode, compare_at_poisha,
+       weight_grams)
     values ${sql.join(
       newSkus.map(
         (sku) =>
           sql`(${orgId}, ${sku.productId}, ${sku.code}, ${sku.variantKey},
-               ${sku.pricePoisha.toString()}::bigint, ${sku.position}, ${sku.barcode})`,
+               ${sku.pricePoisha.toString()}::bigint, ${sku.position}, ${sku.barcode},
+               ${sku.compareAtPoisha == null ? null : sku.compareAtPoisha.toString()}::bigint,
+               ${sku.weightGrams ?? null}::integer)`,
       ),
       sql`, `,
     )}
-    returning id, org_id, product_id, code, variant_key, barcode, price_poisha,
-              status::text as status, position
+    returning ${SKU_RETURNING}
   `);
 
   const byKey = new Map(skuRows.map((row) => [row.variant_key, row.id]));
@@ -841,6 +874,8 @@ export async function priceHistory(
   {
     from_poisha: string | null;
     to_poisha: string;
+    compare_at_from_poisha: string | null;
+    compare_at_to_poisha: string | null;
     changed_by: string | null;
     reason: string | null;
     created_at: Date;
@@ -849,11 +884,14 @@ export async function priceHistory(
   const rows = await tx.execute<{
     from_poisha: string | null;
     to_poisha: string;
+    compare_at_from_poisha: string | null;
+    compare_at_to_poisha: string | null;
     changed_by: string | null;
     reason: string | null;
     created_at: Date;
   }>(sql`
-    select from_poisha, to_poisha, changed_by, reason, created_at
+    select from_poisha, to_poisha, compare_at_from_poisha, compare_at_to_poisha, changed_by,
+           reason, created_at
     from catalog.sku_price_history
     where org_id = ${orgId} and sku_id = ${skuId}
     order by created_at desc, id desc
@@ -869,6 +907,8 @@ export interface ImageRow extends Record<string, unknown> {
   readonly file_id: string;
   readonly position: number;
   readonly alt_text: string | null;
+  /** The colour value this photo shows (M39b, D-643), or null for every colour. */
+  readonly colour_value_id: string | null;
 }
 
 export async function imagesOfProduct(
@@ -877,7 +917,7 @@ export async function imagesOfProduct(
   productId: string,
 ): Promise<ImageRow[]> {
   const rows = await tx.execute<ImageRow>(sql`
-    select i.id, i.file_id, i.position, i.alt_text
+    select i.id, i.file_id, i.position, i.alt_text, i.colour_value_id
     from catalog.product_images i
     where i.org_id = ${orgId} and i.product_id = ${productId}
     order by i.position, i.created_at
@@ -900,20 +940,22 @@ export async function attachImage(
   productId: string,
   fileId: string,
   altText: string | null,
+  colourValueId: string | null = null,
 ): Promise<ImageRow | undefined> {
   const rows = await tx.execute<ImageRow>(sql`
-    insert into catalog.product_images (org_id, product_id, file_id, position, alt_text)
+    insert into catalog.product_images
+      (org_id, product_id, file_id, position, alt_text, colour_value_id)
     select ${orgId}, ${productId}, f.id,
       coalesce((select max(i.position) + 1 from catalog.product_images i
                 where i.org_id = ${orgId} and i.product_id = ${productId}), 0),
-      ${altText}
+      ${altText}, ${colourValueId}::uuid
     from files.objects f
     where f.org_id = ${orgId}
       and f.id = ${fileId}
       and f.status = 'stored'
       and f.visibility = 'public'
       and f.purpose = 'product-image'
-    returning id, file_id, position, alt_text
+    returning id, file_id, position, alt_text, colour_value_id
   `);
   return rows[0];
 }
@@ -1041,8 +1083,7 @@ export async function setSkuStatus(
   const rows = await tx.execute<SkuRow>(sql`
     update catalog.skus set status = ${status}::catalog.sku_status, updated_at = now()
     where org_id = ${orgId} and id = ${skuId}
-    returning id, org_id, product_id, code, variant_key, barcode, price_poisha,
-              status::text as status, position
+    returning ${SKU_RETURNING}
   `);
   return rows[0];
 }

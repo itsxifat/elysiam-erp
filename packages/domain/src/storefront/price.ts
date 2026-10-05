@@ -1,12 +1,19 @@
 import { poisha, takaParts, type Poisha } from '../money/index.js';
 
 /**
- * The price a shopper sees (M33; M35 adds flash offers).
+ * The price a shopper sees (M33; M35 flash offers; M39b regular prices, D-640).
  *
- * Today it is the SKU's shelf price, the catalog's `price_poisha`. M35 passes the live
- * flash offers and this returns the lower of the two with the shelf price as the "was"
- * figure; until then `compareAtPoisha` is always null, so the website never draws a
- * strike-through it cannot justify.
+ * The SKU's shelf price is the catalog's `price_poisha`. A live flash offer below it is what
+ * the shopper pays; a regular ("was") price the brand set on the variant, `compare_at_poisha`,
+ * is only ever shown struck through, never charged.
+ *
+ * What is struck through:
+ *
+ * - with a flash price, the higher of the shelf price and the regular price (a ৳1,890
+ *   regular, ৳1,490 shelf, ৳1,190 flash reads "৳1,190, was ৳1,890");
+ * - without one, the regular price when it is above the shelf price (the catalog refuses
+ *   any other, `skus_compare_at_above_price`);
+ * - otherwise nothing: the website never draws a strike-through the ERP cannot justify.
  */
 
 export interface FlashOffer {
@@ -16,12 +23,16 @@ export interface FlashOffer {
 
 export interface StorefrontPrice {
   readonly pricePoisha: Poisha;
-  /** The shelf price, when an offer undercuts it. Null when nothing is on offer. */
+  /** The struck-through figure, or null when nothing is on offer and no regular price is set. */
   readonly compareAtPoisha: Poisha | null;
 }
 
 export function storefrontPrice(
-  sku: { readonly id: string; readonly pricePoisha: Poisha },
+  sku: {
+    readonly id: string;
+    readonly pricePoisha: Poisha;
+    readonly compareAtPoisha?: Poisha | null;
+  },
   offers: readonly FlashOffer[] = [],
 ): StorefrontPrice {
   let best: Poisha | null = null;
@@ -30,9 +41,16 @@ export function storefrontPrice(
     if (offer.pricePoisha <= 0n || offer.pricePoisha >= sku.pricePoisha) continue;
     if (best === null || offer.pricePoisha < best) best = offer.pricePoisha;
   }
-  return best === null
-    ? { pricePoisha: sku.pricePoisha, compareAtPoisha: null }
-    : { pricePoisha: best, compareAtPoisha: sku.pricePoisha };
+  const regular =
+    sku.compareAtPoisha !== undefined &&
+    sku.compareAtPoisha !== null &&
+    sku.compareAtPoisha > sku.pricePoisha
+      ? sku.compareAtPoisha
+      : null;
+  if (best !== null) {
+    return { pricePoisha: best, compareAtPoisha: regular ?? sku.pricePoisha };
+  }
+  return { pricePoisha: sku.pricePoisha, compareAtPoisha: regular };
 }
 
 /**

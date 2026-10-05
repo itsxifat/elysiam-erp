@@ -109,10 +109,12 @@ export interface CategoryWebRow extends Record<string, unknown> {
   readonly gender: string | null;
   readonly description: string | null;
   readonly image_file_id: string | null;
+  /** The size chart new products filed here start with (M39b, D-646). */
+  readonly default_size_chart_id: string | null;
 }
 
 const CATEGORY_WEB_COLUMNS = sql`id, parent_id, name, slug, position, is_active, web_visible,
-  featured, gender, description, image_file_id`;
+  featured, gender, description, image_file_id, default_size_chart_id`;
 
 export async function webCategories(tx: Tx, orgId: string): Promise<CategoryWebRow[]> {
   const rows = await tx.execute<CategoryWebRow>(sql`
@@ -127,6 +129,7 @@ export interface CategoryWebPatch {
   readonly gender?: Change<string | null>;
   readonly description?: Change<string | null>;
   readonly imageFileId?: Change<string | null>;
+  readonly defaultSizeChartId?: Change<string | null>;
 }
 
 export async function setCategoryWebFields(
@@ -142,6 +145,11 @@ export async function setCategoryWebFields(
       gender = ${assign(patch.gender, sql`gender`, sql`text`)},
       description = ${assign(patch.description, sql`description`, sql`text`)},
       image_file_id = ${assign(patch.imageFileId, sql`image_file_id`, sql`uuid`)},
+      default_size_chart_id = ${assign(
+        patch.defaultSizeChartId,
+        sql`default_size_chart_id`,
+        sql`uuid`,
+      )},
       updated_at = now()
     where org_id = ${orgId} and id = ${categoryId}
     returning ${CATEGORY_WEB_COLUMNS}
@@ -174,6 +182,12 @@ export interface WebFilter {
   readonly featured: boolean;
   readonly newArrival: boolean;
   readonly onSale: boolean;
+  /**
+   * The live flash offers the "on sale" filter counts beside regular prices (M39b, D-640),
+   * as the promo module answered them (invariant 12: the catalog never reads promo's tables).
+   * An offer counts when its sale price is below the SKU's selling price.
+   */
+  readonly onSaleOffers?: readonly { readonly skuId: string; readonly salePricePoisha: bigint }[];
   /** Lower-case words, every one of which must match. */
   readonly search: readonly string[];
   readonly excludeIds?: readonly string[];
@@ -229,9 +243,24 @@ function webWhere(orgId: string, filter: WebFilter): SQL {
   }
   if (filter.featured) conditions.push(sql`p.featured`);
   if (filter.newArrival) conditions.push(sql`p.new_arrival`);
-  // Nothing is on offer until M35's flash sales exist (D-511): the old shop's "on sale"
-  // filter also matched nothing, through a field its products never had.
-  if (filter.onSale) conditions.push(sql`false`);
+  // On sale (D-511, amended by M39b's D-640): an active SKU with a regular price above its
+  // price, or one in a live flash sale below its price.
+  if (filter.onSale) {
+    const offers = filter.onSaleOffers ?? [];
+    const flash =
+      offers.length === 0
+        ? sql`false`
+        : sql`exists (
+            select 1 from unnest(
+              ${sql.param(offers.map((offer) => offer.skuId))}::uuid[],
+              ${sql.param(offers.map((offer) => offer.salePricePoisha.toString()))}::bigint[]
+            ) as offer(sku_id, sale_price)
+            where offer.sku_id = s.id and offer.sale_price < s.price_poisha)`;
+    conditions.push(sql`exists (
+      select 1 from catalog.skus s
+      where s.org_id = p.org_id and s.product_id = p.id and s.status = 'active'
+        and (s.compare_at_poisha > s.price_poisha or ${flash}))`);
+  }
   for (const word of filter.search) {
     const pattern = `%${escapeLike(word)}%`;
     conditions.push(sql`(
@@ -434,6 +463,8 @@ export interface WebSkuRow extends Record<string, unknown> {
   readonly product_id: string;
   readonly code: string;
   readonly price_poisha: string;
+  /** The regular ("was") price, or null (M39b, D-640). */
+  readonly compare_at_poisha: string | null;
   readonly position: number;
   /** `[{ kind, name, label, position }]`, attribute order. */
   readonly attrs: readonly {
@@ -452,7 +483,8 @@ export async function webSkusOf(
 ): Promise<WebSkuRow[]> {
   if (productIds.length === 0) return [];
   const rows = await tx.execute<WebSkuRow>(sql`
-    select s.id, s.product_id, s.code, s.price_poisha::text as price_poisha, s.position,
+    select s.id, s.product_id, s.code, s.price_poisha::text as price_poisha,
+      s.compare_at_poisha::text as compare_at_poisha, s.position,
       coalesce(
         json_agg(json_build_object('kind', a.kind::text, 'name', a.name, 'label', av.label,
                                    'position', av.position)
@@ -475,6 +507,8 @@ export interface WebImageRow extends Record<string, unknown> {
   readonly product_id: string;
   readonly file_id: string;
   readonly alt_text: string | null;
+  /** The colour this photo shows, as the website names it (M39b, D-643), or null. */
+  readonly colour: string | null;
 }
 
 export async function webImagesOf(
@@ -484,7 +518,10 @@ export async function webImagesOf(
 ): Promise<WebImageRow[]> {
   if (productIds.length === 0) return [];
   const rows = await tx.execute<WebImageRow>(sql`
-    select i.product_id, i.file_id, i.alt_text from catalog.product_images i
+    select i.product_id, i.file_id, i.alt_text, av.label as colour
+    from catalog.product_images i
+    left join catalog.attribute_values av
+      on av.org_id = i.org_id and av.id = i.colour_value_id
     where i.org_id = ${orgId} and i.product_id = any (${sql.param([...productIds])}::uuid[])
     order by i.product_id, i.position, i.created_at
   `);
@@ -496,6 +533,7 @@ export interface WebSkuFactRow extends Record<string, unknown> {
   readonly product_id: string;
   readonly code: string;
   readonly price_poisha: string;
+  readonly compare_at_poisha: string | null;
   readonly product_name: string;
   readonly product_slug: string;
   readonly category_id: string | null;
@@ -516,6 +554,7 @@ export async function webSkuFactsOf(
   if (skuIds.length === 0) return [];
   const rows = await tx.execute<WebSkuFactRow>(sql`
     select s.id, s.product_id, s.code, s.price_poisha::text as price_poisha,
+      s.compare_at_poisha::text as compare_at_poisha,
       p.name as product_name, p.slug as product_slug, p.category_id,
       (s.status = 'active' and p.status = 'active' and p.web_visible) as sellable,
       coalesce(

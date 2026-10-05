@@ -236,6 +236,17 @@ export interface InventoryApi {
   /** The weighted average per SKU, for a module that needs to value something. */
   costFor(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<Map<string, Poisha>>;
 
+  /**
+   * The last price each SKU was bought at (M39b, D-637): its newest supply receipt or
+   * opening / in-hand stock, with when and what it was. Purchase cost (invariant 5): the
+   * supply module reads it for `read:cost` routes only. A SKU never received is absent.
+   */
+  lastReceiptCosts(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+  ): Promise<Map<string, LastReceiptCost>>;
+
   /** Available units per SKU at one location: on hand minus reserved. */
   availability(
     tx: Tx,
@@ -329,6 +340,17 @@ export interface InventoryApi {
     skuIds: readonly string[],
     locationIds: readonly string[],
   ): Promise<readonly StockLevelAt[]>;
+}
+
+/** A SKU's newest costed receipt (M39b, D-637). */
+export interface LastReceiptCost {
+  readonly unitCostPoisha: Poisha;
+  readonly occurredAt: Date;
+  /** The Asia/Dhaka business date (invariant 8). */
+  readonly businessDate: string;
+  /** `supply` for a supply receipt, `stock_in_hand` or `opening` for stock already held. */
+  readonly refType: string;
+  readonly refId: string | null;
 }
 
 /** One `stock_levels` row's quantities. */
@@ -853,6 +875,26 @@ export class InventoryApiService implements InventoryApi {
   async costFor(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<Map<string, Poisha>> {
     const rows = await repo.costsFor(tx, orgId, skuIds);
     return new Map(rows.map((row) => [row.sku_id, poisha(BigInt(row.wac_poisha))]));
+  }
+
+  async lastReceiptCosts(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+  ): Promise<Map<string, LastReceiptCost>> {
+    const rows = await repo.lastReceiptCosts(tx, orgId, skuIds);
+    return new Map(
+      rows.map((row) => [
+        row.sku_id,
+        {
+          unitCostPoisha: poisha(BigInt(row.unit_cost_poisha)),
+          occurredAt: row.occurred_at instanceof Date ? row.occurred_at : new Date(row.occurred_at),
+          businessDate: row.business_date,
+          refType: row.ref_type,
+          refId: row.ref_id,
+        },
+      ]),
+    );
   }
 
   async availability(

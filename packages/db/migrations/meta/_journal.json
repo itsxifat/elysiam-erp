@@ -813,6 +813,20 @@
       "when": 1791213012330,
       "tag": "0117_m34_session_validating",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1791217516261,
+      "tag": "0118_m39b_variant_pricing_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1791217532986,
+      "tag": "0119_m39b_variant_pricing_policies",
+      "breakpoints": true
     }
   ]
 }

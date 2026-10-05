@@ -49,6 +49,9 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   IDEMPOTENCY_CONFLICT: 409,
   IDEMPOTENCY_IN_FLIGHT: 409,
   FORBIDDEN: 403,
+  // M39b (D-639): variants whose pieces orders hold are not archived together.
+  CATALOG_SKU_HELD: 409,
+  CATALOG_NOT_FOUND: 404,
 };
 
 export class StockError extends Error {

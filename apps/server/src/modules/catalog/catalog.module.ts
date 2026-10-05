@@ -4,6 +4,8 @@ import { FilesModule } from '../files/files.module.js';
 import { CATALOG_API, CatalogApiService } from './catalog.api.js';
 import { CatalogController } from './catalog.controller.js';
 import { CatalogService } from './catalog.service.js';
+import { CatalogVariantsController } from './catalog-variants.controller.js';
+import { CatalogVariantsService } from './catalog-variants.service.js';
 import { CatalogImportService } from './import.service.js';
 import { LabelsService } from './labels.service.js';
 import { ProductImportService } from './product-import.service.js';
@@ -21,9 +23,11 @@ import { ProductImportService } from './product-import.service.js';
  */
 @Module({
   imports: [FilesModule],
-  controllers: [CatalogController],
+  // M39b: duplicate, product-wide price history, photo colours, weights, bulk changes.
+  controllers: [CatalogController, CatalogVariantsController],
   providers: [
     CatalogService,
+    CatalogVariantsService,
     CatalogImportService,
     ProductImportService,
     LabelsService,

@@ -10,6 +10,8 @@ import { INVENTORY_API, InventoryApiService } from './inventory.api.js';
 import { LookupService } from './lookup.service.js';
 import { MovementsService } from './movements.service.js';
 import { ReconcileService } from './reconcile.service.js';
+import { SkuStatusController } from './sku-status.controller.js';
+import { SkuStatusService } from './sku-status.service.js';
 import { LookupController, StockInHandController } from './stock-in-hand.controller.js';
 import { StockInHandService } from './stock-in-hand.service.js';
 import { StockService } from './stock.service.js';
@@ -35,8 +37,10 @@ import { TransfersService } from './transfers.service.js';
 @Module({
   imports: [LedgerModule, ApprovalsModule, CatalogModule],
   // M38a: stock in hand and its window (D-602), and what a scanned code is (D-605).
-  controllers: [InventoryController, StockInHandController, LookupController],
+  // M39b: archive or restore many variants, with the stock-held guard (D-639).
+  controllers: [InventoryController, StockInHandController, LookupController, SkuStatusController],
   providers: [
+    SkuStatusService,
     StockInHandService,
     LookupService,
     MovementsService,

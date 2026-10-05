@@ -3,6 +3,7 @@ import { poisha, variantKey } from '@elysium/domain';
 import { importSlug, type ImportProduct, type SkusRefs } from '@elysium/domain/migration';
 
 import { assertNotInternal, nextInternalBarcodes } from './barcodes.js';
+import * as pricing from './catalog-pricing.repository.js';
 import * as repo from './catalog.repository.js';
 import * as web from './catalog-web.repository.js';
 
@@ -184,15 +185,64 @@ export interface CatalogApi {
    */
   webSkuFacts(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<WebSkuFact[]>;
 
-  /** These products' images, in order. */
+  /** These products' images, in order, each with the colour it shows (M39b, D-643) or null. */
   webImages(
     tx: Tx,
     orgId: string,
     productIds: readonly string[],
-  ): Promise<{ productId: string; fileId: string; altText: string | null }[]>;
+  ): Promise<
+    { productId: string; fileId: string; altText: string | null; colour: string | null }[]
+  >;
 
   /** How many products point at a size chart (a chart in use is not deleted). */
   productsUsingSizeChart(tx: Tx, orgId: string, sizeChartId: string): Promise<number>;
+
+  // --- M39b (D-639, D-642, D-645, D-638) -----------------------------------------------------
+
+  /**
+   * Each SKU's weight for a courier (D-645): its own, else its product's, null when neither
+   * has one. An unknown id is absent.
+   */
+  skuWeights(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<Map<string, number | null>>;
+
+  /**
+   * Archive or restore many SKUs in the caller's transaction (D-639), after the caller has
+   * checked what may stop them (stock held for orders is inventory's question). Returns the
+   * SKUs whose status changed; ids not of this brand are refused by the caller's count.
+   */
+  setSkuStatuses(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+    status: 'active' | 'archived',
+  ): Promise<readonly { readonly id: string; readonly code: string }[]>;
+
+  /** These SKUs with their code, product and status, locked for the caller's transaction. */
+  skusForStatusChange(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+  ): Promise<readonly { readonly id: string; readonly code: string; readonly status: string }[]>;
+
+  /**
+   * Every SKU (or one product's) with its product's name and variant in words, for the supply
+   * module's standard buying price spreadsheet and receipt grid (D-638). Never a price.
+   */
+  skuDirectory(
+    tx: Tx,
+    orgId: string,
+    filter: { readonly productId?: string | undefined; readonly activeOnly: boolean },
+  ): Promise<readonly DirectorySku[]>;
+}
+
+/** One SKU as the supply module's spreadsheet names it (D-638). */
+export interface DirectorySku {
+  readonly id: string;
+  readonly code: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly variantLabel: string;
+  readonly status: string;
 }
 
 export type {
@@ -229,6 +279,8 @@ export interface WebCategory {
   readonly gender: string | null;
   readonly description: string | null;
   readonly imageFileId: string | null;
+  /** The size chart a new product filed here starts with (M39b, D-646). */
+  readonly defaultSizeChartId: string | null;
 }
 
 export interface WebCard {
@@ -266,6 +318,8 @@ export interface WebSku {
   readonly code: string;
   /** The **selling** price. */
   readonly pricePoisha: bigint;
+  /** The regular ("was") price, above the selling price, or null (M39b, D-640). */
+  readonly compareAtPoisha: bigint | null;
   readonly values: readonly {
     readonly kind: string;
     readonly name: string;
@@ -599,6 +653,7 @@ export class CatalogApiService implements CatalogApi {
       productId: row.product_id,
       code: row.code,
       pricePoisha: BigInt(row.price_poisha),
+      compareAtPoisha: row.compare_at_poisha === null ? null : BigInt(row.compare_at_poisha),
       values: row.attrs,
     }));
   }
@@ -609,6 +664,7 @@ export class CatalogApiService implements CatalogApi {
       productId: row.product_id,
       code: row.code,
       pricePoisha: BigInt(row.price_poisha),
+      compareAtPoisha: row.compare_at_poisha === null ? null : BigInt(row.compare_at_poisha),
       values: row.attrs,
       productName: row.product_name,
       productSlug: row.product_slug,
@@ -621,16 +677,74 @@ export class CatalogApiService implements CatalogApi {
     tx: Tx,
     orgId: string,
     productIds: readonly string[],
-  ): Promise<{ productId: string; fileId: string; altText: string | null }[]> {
+  ): Promise<
+    { productId: string; fileId: string; altText: string | null; colour: string | null }[]
+  > {
     return (await web.webImagesOf(tx, orgId, productIds)).map((row) => ({
       productId: row.product_id,
       fileId: row.file_id,
       altText: row.alt_text,
+      colour: row.colour,
     }));
   }
 
   async productsUsingSizeChart(tx: Tx, orgId: string, sizeChartId: string): Promise<number> {
     return web.productsUsingSizeChart(tx, orgId, sizeChartId);
+  }
+
+  // --- M39b -----------------------------------------------------------------------------------
+
+  async skuWeights(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+  ): Promise<Map<string, number | null>> {
+    return pricing.skuWeights(tx, orgId, [...new Set(skuIds)]);
+  }
+
+  async setSkuStatuses(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+    status: 'active' | 'archived',
+  ): Promise<readonly { readonly id: string; readonly code: string }[]> {
+    return (await pricing.setSkuStatuses(tx, orgId, [...new Set(skuIds)], status)).map((row) => ({
+      id: row.id,
+      code: row.code,
+    }));
+  }
+
+  async skusForStatusChange(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+  ): Promise<readonly { readonly id: string; readonly code: string; readonly status: string }[]> {
+    return (await pricing.skuOwners(tx, orgId, [...new Set(skuIds)])).map((row) => ({
+      id: row.id,
+      code: row.code,
+      status: row.status,
+    }));
+  }
+
+  async skuDirectory(
+    tx: Tx,
+    orgId: string,
+    filter: { readonly productId?: string | undefined; readonly activeOnly: boolean },
+  ): Promise<readonly DirectorySku[]> {
+    const rows = await pricing.skuDirectory(tx, orgId, filter);
+    const labels = await repo.variantLabels(
+      tx,
+      orgId,
+      rows.map((row) => row.id),
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      productId: row.product_id,
+      productName: row.product_name,
+      variantLabel: labels.get(row.id) ?? '',
+      status: row.status,
+    }));
   }
 }
 
@@ -663,6 +777,7 @@ function toWebCategory(row: web.CategoryWebRow): WebCategory {
     gender: row.gender,
     description: row.description,
     imageFileId: row.image_file_id,
+    defaultSizeChartId: row.default_size_chart_id,
   };
 }
 

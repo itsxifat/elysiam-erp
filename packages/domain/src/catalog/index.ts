@@ -67,7 +67,13 @@ export {
   type PriceImportRow,
 } from './price-import.js';
 
-export { variantPrices, type VariantPriceOverride } from './variant-prices.js';
+export {
+  variantOverrides,
+  variantPriceEntries,
+  variantPrices,
+  type VariantPriceEntry,
+  type VariantPriceOverride,
+} from './variant-prices.js';
 
 export {
   productSlug,

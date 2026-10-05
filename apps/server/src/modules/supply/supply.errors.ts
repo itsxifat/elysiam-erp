@@ -2,8 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   NotFoundException,
-  type HttpException,
 } from '@nestjs/common';
 import type { ErrorCode } from '@elysium/contracts';
 
@@ -44,6 +44,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   CONFLICT: 409,
   NOT_FOUND: 404,
   PERIOD_CLOSED: 409,
+  // M39b (D-638): a standard buying price file that does not import; the body names why.
+  SUPPLY_IMPORT_REJECTED: 422,
 };
 
 /** The trigger-raised codes in migration 0037, in the order that file declares them. */
@@ -113,6 +115,8 @@ export function supplyHttpError(code: ErrorCode, message: string): HttpException
       return new NotFoundException(body);
     case 409:
       return new ConflictException(body);
+    case 422:
+      return new HttpException(body, 422);
     default:
       return new BadRequestException(body);
   }

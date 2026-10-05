@@ -183,6 +183,25 @@ export const COST_FIELDS = [
    */
   'originalUnitCostPoisha',
   'original_unit_cost_poisha',
+  /**
+   * A variant's standard buying price (M39b, D-638): `supply.sku_purchase_prices`, what
+   * the next receipt is prefilled with. Purchase cost by any measure.
+   */
+  'standardUnitCostPoisha',
+  'standard_unit_cost_poisha',
+  /** The last price a variant was bought at (M39b, D-637), read from receipts. */
+  'lastUnitCostPoisha',
+  'last_unit_cost_poisha',
+  /** The cost a receipt line starts at (standard, else last): one of the two above. */
+  'prefillUnitCostPoisha',
+  'prefill_unit_cost_poisha',
+  /**
+   * A margin on a selling price. No route sends one (the console computes it from a cost
+   * the role already reads, D-636), and it is listed so none ever can: a margin beside a
+   * price is the cost (investigation critic, "a server-computed margin would leak cost").
+   */
+  'marginBps',
+  'margin_bps',
 ] as const;
 
 /**
