@@ -249,7 +249,7 @@ function Discounts() {
                 size="sm"
                 variant="ghost"
                 disabled={busy}
-                aria-label={tm('mg.setup.manageNamed').replace('{name}', code.code ?? code.title)}
+                aria-label={`${t('campaigns.codes.archive')}: ${code.code ?? code.title}`}
                 onClick={() => setManaging(code)}
               >
                 <Trash2 aria-hidden="true" />

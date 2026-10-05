@@ -87,6 +87,38 @@ go further. When an agent asks, take the order yourself on the order desk. At th
 sale above the seller's limit waits in **Branches** → **Held for review** for you to
 **Post** or **Void**.
 
+## Deleting and archiving
+
+Anything nobody has used yet can be deleted for good: a category, a size or colour, a product
+or variant added by mistake, a stock location, a supplier, a discount, a flash sale, an SMS
+template, an ad campaign or a size chart. Anything that stock, orders, the till, supply or the
+books already use is **archived** instead: it is hidden from new work and stays wherever it
+was used, and you can restore it.
+
+1. Press the bin button beside the row (on **Catalog** → **Categories and attributes**,
+   **Website** → **Size charts**, **Campaigns**, **Marketing** → **Campaigns** or **Supply**).
+2. The window first checks what uses it and lists it in plain words, with counts.
+3. It offers only what works:
+   - **Delete for good** when nothing uses it.
+   - **Empty and delete** for a category or a size chart: choose where its products go (or
+     none). A category's subcategories move up one level and its menu entries follow the
+     products. Product codes already printed keep their old category letters.
+   - **Archive** when something uses it. For a size or a colour, tick **Also archive the N
+     variants with it** to stop selling them in one step.
+   - **Restore** when it is archived. A restored discount comes back paused: switch it on when
+     you are ready.
+4. If something started using it while the window was open, it says so and shows the new list.
+
+- A category or discount that a live discount names cannot be deleted. Archive the discount
+  first. Discounts are never changed after they are made.
+- An archived category's products leave the website until you move them or restore it.
+- **Branches** are never deleted. **Branches** → the gear button renames one, or switches it off
+  once nothing runs there (no till switched on, no open shift, no money in its wallets, no staff,
+  no stock).
+- **Expense and income heads** are on **Accounts** → **Wallets**. Add your own, rename or archive
+  them. They are never deleted, so the books keep every entry against them.
+- Every delete is recorded with what was deleted.
+
 ## Permissions that surprise people
 
 - **Accounts cannot decide petty cash or closing differences.** They come to you (small
