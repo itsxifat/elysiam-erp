@@ -33,6 +33,14 @@
       "types": "./dist/locales/sections/website.bn.d.ts",
       "default": "./dist/locales/sections/website.bn.js"
     },
+    "./locales/sections/catalog-pricing.en": {
+      "types": "./dist/locales/sections/catalog-pricing.en.d.ts",
+      "default": "./dist/locales/sections/catalog-pricing.en.js"
+    },
+    "./locales/sections/catalog-pricing.bn": {
+      "types": "./dist/locales/sections/catalog-pricing.bn.d.ts",
+      "default": "./dist/locales/sections/catalog-pricing.bn.js"
+    },
     "./locales/sections/manage.en": {
       "types": "./dist/locales/sections/manage.en.d.ts",
       "default": "./dist/locales/sections/manage.en.js"

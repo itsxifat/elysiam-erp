@@ -1,5 +1,6 @@
 import { add, mulQty, poisha, sub, sum, ZERO, type Poisha } from '../money/index.js';
 import { shipsFree, webZoneFor, type ShippingRule, type WebZone } from './shipping.js';
+import { storefrontPrice } from './price.js';
 
 /**
  * What a website cart costs (M34, D-520): the pure rule behind `POST /storefront/v1/cart/quote`
@@ -43,6 +44,11 @@ export interface CartSku {
   readonly id: string;
   /** The catalog's selling price: the shelf price. Never a cost. */
   readonly pricePoisha: Poisha;
+  /**
+   * The regular ("was") price the brand set on the variant (M39b, D-640), above the shelf
+   * price, or null. Shown struck through; never charged.
+   */
+  readonly compareAtPoisha?: Poisha | null;
   /** Active, on an active product shown on the website. */
   readonly sellable: boolean;
   /** Units the web locations can sell now (`availableForWeb`). */
@@ -78,7 +84,10 @@ export interface QuotedLine {
   readonly skuId: string;
   readonly qty: number;
   readonly unitPricePoisha: Poisha;
-  /** The shelf price, when an offer undercuts it. */
+  /**
+   * The struck-through price (D-640): with a flash price, the higher of the shelf price and
+   * the regular price; without one, the regular price. Null when nothing is struck through.
+   */
   readonly compareAtPoisha: Poisha | null;
   readonly lineTotalPoisha: Poisha;
   readonly availableQty: number;
@@ -168,14 +177,17 @@ export function quoteCart(input: CartQuoteInput): CartQuote {
       continue;
     }
     const flash = input.flashPrices?.get(sku.id);
-    const onSale = flash !== undefined && flash > 0n && flash < sku.pricePoisha;
-    const unitPricePoisha = onSale ? flash : sku.pricePoisha;
+    const shown = storefrontPrice(
+      { id: sku.id, pricePoisha: sku.pricePoisha, compareAtPoisha: sku.compareAtPoisha ?? null },
+      flash === undefined ? [] : [{ skuId: sku.id, pricePoisha: flash }],
+    );
+    const unitPricePoisha = shown.pricePoisha;
     lines.push({
       key: line.key,
       skuId: sku.id,
       qty: line.qty,
       unitPricePoisha,
-      compareAtPoisha: onSale ? sku.pricePoisha : null,
+      compareAtPoisha: shown.compareAtPoisha,
       lineTotalPoisha: mulQty(unitPricePoisha, line.qty),
       availableQty,
     });

@@ -370,6 +370,11 @@ export const STOREFRONT_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Ca
     url: `/v1/storefront/products/${state().productId}`,
     body: { featured: true, tags: ['fixture', randomUUID().slice(0, 6)] },
   }),
+  // M39b (D-642): the product list's bulk website switches.
+  'PUT /v1/storefront/products': () => ({
+    url: '/v1/storefront/products',
+    body: { productIds: [state().productId], webVisible: true },
+  }),
   'PUT /v1/storefront/categories/:id': () => ({
     url: `/v1/storefront/categories/${state().categoryId}`,
     body: { description: `Route matrix ${randomUUID().slice(0, 6)}` },

@@ -9,37 +9,46 @@ import {
   StatusBadge,
   cn,
   controlClassName,
-  takaToPoisha,
-  poishaToTaka,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, getRouteApi } from '@tanstack/react-router';
-import { ArrowDown, ArrowLeft, ArrowUp, ImagePlus, Pencil, Printer, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link, getRouteApi, useNavigate } from '@tanstack/react-router';
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Copy,
+  ImagePlus,
+  Pencil,
+  Printer,
+  Trash2,
+} from 'lucide-react';
+import { useRef, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
+import { deleteProduct, productUsage } from '../../api/manage.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/stock-tools.js';
+import '../../i18n/catalog-pricing.js';
 import { DEFAULT_PAGE_SIZE } from '../../lib/table-search.js';
+import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 import { listLocations, listMovements, listStock, type StockRow } from '../stock/api.js';
 import {
-  addVariants,
   attachImage,
   detachImage,
   getProduct,
   listAttributes,
   listCategories,
-  priceHistory,
   reorderImages,
-  setPrices,
   updateProduct,
-  updateSku,
   type CatalogAttribute,
   type CatalogProduct,
   type CatalogSku,
 } from './api.js';
-import { ChipGroup, Field, Thumb } from './parts.js';
+import { BuyingPrices } from './buying-prices.js';
+import { Field, Thumb } from './parts.js';
+import { duplicateProduct, productPriceHistory, setImageColour, skuCosts } from './pricing-api.js';
+import { SizesAndColours } from './sizes-colours.js';
 import { PhotoTooLargeError, uploadPhoto } from './photo-picker.js';
 import {
   AdjustStockDialog,
@@ -48,8 +57,9 @@ import {
   TransferStockDialog,
   type VariantInfo,
 } from './stock-actions.js';
-import { CopyCode, EanBars, StickerDialog, type StickerItem } from './stickers.js';
-import { total } from './variant-grid.js';
+import { StickerDialog, type StickerItem } from './stickers.js';
+import { parseGrams, total } from './variant-grid.js';
+import { VariantTable, variantLabel } from './variant-table.js';
 import { WebsiteCard } from './website-card.js';
 
 /**
@@ -66,17 +76,37 @@ import { WebsiteCard } from './website-card.js';
  * history and printed labels joined to it.
  *
  * Prices are integer-poisha strings, shown through `<Money>` and edited in taka through
- * `takaToPoisha`. There is no cost on this page: cost lives in supply, inventory and the
- * ledger (invariant 5), and the stock grid shows quantities only.
+ * `takaToPoisha`.
+ *
+ * M39b (D-636 to D-646): the regular price beside each price; for a role that may read cost,
+ * each variant's average cost, last buying price and margin (worked out on this page from what
+ * the supply module sends that role, never sent as a margin) and its standard buying price; a
+ * bulk price editor with a preview; one price history for every variant; sizes and colours
+ * added with their prices or stopped in every colour; photos tied to a colour; a variant's own
+ * barcode and weight; and Duplicate. Cost reaches this page only from `/v1/supply/sku-costs`,
+ * which answers `read:cost` roles alone (invariant 5); the catalog's own answers carry none.
+ *
+ * Delete (M39a's routes, D-623) opens the shared Delete-or-archive dialog for the product, and
+ * each variant row has its own: the server says what uses it, and only something nothing uses
+ * is deleted; anything else is offered Archive instead.
  */
 
 const route = getRouteApi('/catalog/$productId');
 
-type Dialogs = 'receive' | 'adjust' | 'transfer' | 'reorder' | 'edit' | 'archive' | null;
+type Dialogs =
+  | 'receive'
+  | 'adjust'
+  | 'transfer'
+  | 'reorder'
+  | 'edit'
+  | 'archive'
+  | 'duplicate'
+  | 'delete'
+  | null;
 
 /** The label a sticker row and a dialog line read as: `Linen Panjabi · M / White`. */
 function stickerLabel(product: CatalogProduct, sku: CatalogSku): string {
-  const variant = labelOf(sku);
+  const variant = variantLabel(sku);
   return variant === '' ? product.name : `${product.name} · ${variant}`;
 }
 
@@ -93,6 +123,16 @@ export function CatalogProductPage() {
   const mayStock = ability.can('read', 'Stock');
   const mayReceive = ability.can('create', 'Supply');
   const mayAdjust = ability.can('request', 'StockAdjustment');
+  // Cost on this page only for a role the server would send it to (invariant 5, D-636).
+  const mayCost = ability.can('read', 'Cost');
+  const mayStandard = mayCost && ability.can('update', 'Supply');
+  const mayCreate = ability.can('create', 'Catalog');
+  // M39a (D-623): org_admin deletes a product nothing uses; everyone else archives.
+  const mayDelete = ability.can('delete', 'Catalog');
+  const navigate = useNavigate();
+  // Set by a delete that went through, so the dialog's "done" leaves the page rather than
+  // reloading a product that is gone.
+  const deleted = useRef(false);
 
   const [open, setOpen] = useState<Dialogs>(null);
   // Stickers to print: from the Stickers button, a variant's own button, or a receipt.
@@ -139,19 +179,37 @@ export function CatalogProductPage() {
     enabled: mayStock,
     staleTime: 5 * 60_000,
   });
+  const attributes = useQuery({
+    queryKey: ['catalog', 'attributes'],
+    queryFn: listAttributes,
+    enabled: mayRead,
+    staleTime: 5 * 60_000,
+  });
+  const skuIds = (product.data?.skus ?? []).map((sku) => sku.id);
+  const costs = useQuery({
+    queryKey: ['supply', 'sku-costs', productId, skuIds.join(',')],
+    queryFn: () => skuCosts(skuIds),
+    enabled: mayCost && skuIds.length > 0,
+  });
+  const costMap =
+    mayCost && costs.data !== undefined
+      ? new Map(costs.data.items.map((item) => [item.skuId, item]))
+      : undefined;
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['catalog'] });
     void queryClient.invalidateQueries({ queryKey: ['stock'] });
+    void queryClient.invalidateQueries({ queryKey: ['supply', 'sku-costs'] });
   };
 
   const data = product.data;
   const skus = data?.skus ?? [];
+  const kinds = new Map((attributes.data?.items ?? []).map((entry) => [entry.id, entry.kind]));
   const variants: VariantInfo[] = skus.map((sku) => ({
     id: sku.id,
     skuCode: sku.skuCode,
     barcode: sku.barcode,
-    label: labelOf(sku),
+    label: variantLabel(sku, kinds),
     status: sku.status,
   }));
   /** One sticker per piece on hand, or one when there is none yet. */
@@ -173,6 +231,12 @@ export function CatalogProductPage() {
   const category = categories.data?.items.find((entry) => entry.id === data?.categoryId);
   const available = total(rows.map((row) => row.available));
   const onHand = total(rows.map((row) => row.onHand));
+  // The stock's value at average cost, for a role that may read cost (the field is stripped
+  // for anyone else, so it is absent and the tile is not shown).
+  const stockValue = rows.reduce(
+    (sum, row) => (row.stockValuePoisha === undefined ? sum : sum + BigInt(row.stockValuePoisha)),
+    0n,
+  );
 
   return (
     <PermissionGate
@@ -238,8 +302,30 @@ export function CatalogProductPage() {
                 <Pencil aria-hidden="true" />
                 {t('cs.edit')}
               </Button>
+            </PermissionGate>
+            <PermissionGate allowed={mayCreate && data !== undefined}>
+              <Button
+                variant="ghost"
+                data-testid="duplicate-product"
+                onClick={() => setOpen('duplicate')}
+              >
+                <Copy aria-hidden="true" />
+                {t('cp.dup.action')}
+              </Button>
+            </PermissionGate>
+            <PermissionGate allowed={mayWrite}>
               <Button variant="ghost" onClick={() => setOpen('archive')}>
                 {data?.status === 'archived' ? t('cs.reactivate') : t('cs.archive')}
+              </Button>
+            </PermissionGate>
+            <PermissionGate allowed={mayDelete && data !== undefined}>
+              <Button
+                variant="ghost"
+                data-testid="delete-product"
+                onClick={() => setOpen('delete')}
+              >
+                <Trash2 aria-hidden="true" />
+                {t('cp.delete')}
               </Button>
             </PermissionGate>
           </div>
@@ -251,20 +337,31 @@ export function CatalogProductPage() {
           </p>
         ) : null}
 
-        <PermissionGate allowed={mayStock}>
-          <section
-            aria-label={t('cs.hub.summary')}
-            className="grid overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4 sm:divide-x sm:divide-border"
-          >
-            <Tile label={t('cs.hub.available')} value={String(available)} />
-            <Tile label={t('cs.hub.onHand')} value={String(onHand)} />
-            <Tile label={t('cs.hub.variants')} value={String(skus.length)} />
-            <Tile label={t('cs.hub.price')} value={<PriceRange skus={skus} />} />
-          </section>
-        </PermissionGate>
+        {/*
+         * The price is catalog data every reader may see (M39b fix); the stock tiles need
+         * `read Stock`, the stock value `read:cost`.
+         */}
+        <section
+          aria-label={t('cs.hub.summary')}
+          className="grid overflow-hidden rounded-lg border border-border bg-card sm:auto-cols-fr sm:grid-flow-col sm:divide-x sm:divide-border"
+        >
+          {mayStock ? (
+            <>
+              <Tile label={t('cs.hub.available')} value={String(available)} />
+              <Tile label={t('cs.hub.onHand')} value={String(onHand)} />
+              <Tile label={t('cs.hub.variants')} value={String(skus.length)} />
+            </>
+          ) : null}
+          <Tile label={t('cs.hub.price')} value={<PriceRange skus={skus} />} />
+          {mayCost && mayStock ? (
+            <Tile label={t('cp.hub.stockValue')} value={<Money poisha={stockValue.toString()} />} />
+          ) : null}
+        </section>
 
-        <VariantGrid
+        <VariantTable
           product={data}
+          attributes={attributes.data?.items ?? []}
+          costs={costMap}
           rows={rows}
           locations={(locations.data?.items ?? []).filter(
             (location) =>
@@ -272,6 +369,7 @@ export function CatalogProductPage() {
           )}
           showStock={mayStock}
           mayWrite={mayWrite}
+          mayDelete={mayDelete}
           highlighted={scannedVariant}
           onReorder={() => setOpen('reorder')}
           onPrint={(sku) =>
@@ -282,9 +380,30 @@ export function CatalogProductPage() {
           onDone={refresh}
         />
 
+        {data !== undefined && mayStandard && costMap !== undefined ? (
+          <BuyingPrices
+            product={data}
+            attributes={attributes.data?.items ?? []}
+            costs={costMap}
+            onDone={refresh}
+          />
+        ) : null}
+
         <PermissionGate allowed={mayWrite}>
-          <AddVariants productId={productId} product={data} onDone={refresh} />
-          <Photos productId={productId} images={data?.images ?? []} onDone={refresh} />
+          <SizesAndColours
+            // Starts again from the product as saved, after every change.
+            key={skus.map((sku) => `${sku.id}:${sku.status}`).join(',')}
+            product={data}
+            attributes={attributes.data?.items ?? []}
+            stock={rows}
+            onDone={refresh}
+          />
+          <Photos
+            productId={productId}
+            images={data?.images ?? []}
+            colours={colourValuesOf(skus, attributes.data?.items ?? [])}
+            onDone={refresh}
+          />
         </PermissionGate>
 
         {data === undefined ? null : (
@@ -302,7 +421,7 @@ export function CatalogProductPage() {
           <StockHistory productId={productId} variants={variants} />
         </PermissionGate>
 
-        <PriceHistory variants={variants} />
+        <PriceHistory productId={productId} />
 
         <PermissionGate allowed={mayRead}>
           <section
@@ -377,6 +496,12 @@ export function CatalogProductPage() {
               product={data}
               onDone={refresh}
             />
+            <DuplicateDialog
+              key={open === 'duplicate' ? 'duplicate-open' : 'duplicate-closed'}
+              open={open === 'duplicate'}
+              onOpenChange={(next) => setOpen(next ? 'duplicate' : null)}
+              product={data}
+            />
             <ConfirmDialog
               open={open === 'archive'}
               onOpenChange={(next) => setOpen(next ? 'archive' : null)}
@@ -395,22 +520,46 @@ export function CatalogProductPage() {
                 refresh();
               }}
             />
+            {open === 'delete' ? (
+              <DeleteOrArchive
+                open
+                onClose={() => setOpen(null)}
+                queryKey={['catalog', 'product-usage', data.id]}
+                loadUsage={() => productUsage(data.id)}
+                onDelete={
+                  mayDelete
+                    ? async () => {
+                        const result = await deleteProduct(data.id);
+                        deleted.current = true;
+                        return result;
+                      }
+                    : undefined
+                }
+                onArchive={
+                  mayWrite ? () => updateProduct(data.id, { status: 'archived' }) : undefined
+                }
+                onRestore={
+                  mayWrite ? () => updateProduct(data.id, { status: 'active' }) : undefined
+                }
+                onDone={() => {
+                  if (!deleted.current) {
+                    refresh();
+                    return;
+                  }
+                  queryClient.removeQueries({ queryKey: ['catalog', 'product', data.id] });
+                  void queryClient.invalidateQueries({ queryKey: ['catalog'] });
+                  void navigate({
+                    to: '/catalog',
+                    search: { page: 1, pageSize: DEFAULT_PAGE_SIZE },
+                  });
+                }}
+              />
+            ) : null}
           </>
         )}
       </div>
     </PermissionGate>
   );
-}
-
-function labelOf(sku: CatalogSku): string {
-  const rank = (code: string, name: string) => {
-    const text = `${code} ${name}`.toLowerCase();
-    return text.includes('size') ? 0 : text.includes('colo') ? 1 : 2;
-  };
-  return [...sku.attributes]
-    .sort((a, b) => rank(a.code, a.name) - rank(b.code, b.name))
-    .map((pair) => pair.valueLabel)
-    .join(' / ');
 }
 
 function Tile({ label, value }: { readonly label: string; readonly value: ReactNode }) {
@@ -440,439 +589,83 @@ function PriceRange({ skus }: { readonly skus: readonly CatalogSku[] }) {
   );
 }
 
-// --- the variant grid ------------------------------------------------------------
-
-function VariantGrid({
-  product,
-  rows,
-  locations,
-  showStock,
-  mayWrite,
-  highlighted,
-  onReorder,
-  onPrint,
-  onDone,
-}: {
-  readonly onReorder: () => void;
-  readonly highlighted?: string | undefined;
-  readonly onPrint: (sku: CatalogSku) => void;
-  readonly product: CatalogProduct | undefined;
-  readonly rows: readonly StockRow[];
-  readonly locations: readonly { id: string; name: string; code: string; kind: string }[];
-  readonly showStock: boolean;
-  readonly mayWrite: boolean;
-  readonly onDone: () => void;
-}) {
-  const t = useT();
-  const [editing, setEditing] = useState(false);
-  const [prices, setPricesState] = useState<Record<string, string>>({});
-  const [archiving, setArchiving] = useState<CatalogSku | null>(null);
-  const skus = product?.skus ?? [];
-  const marked = useRef<HTMLTableRowElement>(null);
-
-  // A scanned variant scrolls into view and takes focus, so the person sees which one it is.
-  useEffect(() => {
-    if (highlighted === undefined || product === undefined) return;
-    marked.current?.scrollIntoView({ block: 'center' });
-    marked.current?.focus();
-  }, [highlighted, product]);
-
-  // Every active warehouse, then every showroom, then anywhere else this product has
-  // stock right now (in transit, damaged). An empty in-transit column is noise.
-  const columns = [
-    ...locations.filter((location) => location.kind === 'warehouse'),
-    ...locations.filter((location) => location.kind !== 'warehouse'),
-    ...rows
-      .filter((row) => row.onHand > 0)
-      .filter((row) => !locations.some((location) => location.id === row.locationId))
-      .filter(
-        (row, index, all) =>
-          all.findIndex((other) => other.locationId === row.locationId) === index,
-      )
-      .map((row) => ({ id: row.locationId, name: row.locationName, code: row.locationCode })),
-  ];
-  const cell = (skuId: string, locationId: string) =>
-    rows.find((row) => row.skuId === skuId && row.locationId === locationId);
-
-  const changed = skus.flatMap((sku) => {
-    const text = prices[sku.id];
-    if (text === undefined || text.trim() === '') return [];
-    const value = takaToPoisha(text);
-    return value === null || value === sku.pricePoisha
-      ? []
-      : [{ skuId: sku.id, pricePoisha: value }];
-  });
-  const invalid = skus.some((sku) => {
-    const text = prices[sku.id];
-    return text !== undefined && text.trim() !== '' && takaToPoisha(text) === null;
-  });
-
-  const save = useMutation({
-    mutationFn: () => setPrices({ prices: changed, reason: t('cs.hub.priceReason') }),
-    onSuccess: () => {
-      setEditing(false);
-      setPricesState({});
-      onDone();
-    },
-  });
-
-  const archive = useMutation({
-    mutationFn: (sku: CatalogSku) =>
-      updateSku(sku.id, sku.status === 'active' ? 'archived' : 'active'),
-    onSuccess: onDone,
-  });
-
-  return (
-    <section aria-labelledby="variants-heading" className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="variants-heading" className="text-base font-semibold tracking-tight">
-          {t('cs.hub.variantsStock')}
-        </h2>
-        <PermissionGate allowed={mayWrite && skus.length > 0}>
-          {editing ? (
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setEditing(false);
-                  setPricesState({});
-                }}
-              >
-                {t('cs.cancel')}
-              </Button>
-              <Button
-                size="sm"
-                disabled={changed.length === 0 || invalid || save.isPending}
-                onClick={() => save.mutate()}
-              >
-                {t('cs.hub.savePrices')}
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              {showStock ? (
-                <Button size="sm" variant="ghost" onClick={onReorder}>
-                  {t('cs.reorder.action')}
-                </Button>
-              ) : null}
-              <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-                {t('cs.hub.editPrices')}
-              </Button>
-            </div>
-          )}
-        </PermissionGate>
-      </div>
-
-      {skus.length === 0 && product !== undefined ? (
-        <p className="text-sm text-muted-foreground">{t('cs.hub.noVariants')}</p>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-card">
-          <table className="w-full text-sm">
-            <caption className="sr-only">{t('cs.hub.variantsStock')}</caption>
-            <thead>
-              <tr className="border-b border-border bg-muted/50 text-left">
-                <th
-                  scope="col"
-                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
-                >
-                  {t('cs.col.variant')}
-                </th>
-                <th
-                  scope="col"
-                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
-                >
-                  {t('catalog.colCode')}
-                </th>
-                <th
-                  scope="col"
-                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
-                >
-                  {t('catalog.colBarcode')}
-                </th>
-                <th
-                  scope="col"
-                  className="h-10 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
-                >
-                  {t('cs.col.price')}
-                </th>
-                {showStock
-                  ? columns.map((location) => (
-                      <th
-                        key={location.id}
-                        scope="col"
-                        className="h-10 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
-                      >
-                        {location.name}
-                      </th>
-                    ))
-                  : null}
-                {showStock ? (
-                  <th
-                    scope="col"
-                    className="h-10 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
-                  >
-                    {t('cs.col.available')}
-                  </th>
-                ) : null}
-                <th
-                  scope="col"
-                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
-                >
-                  <span className="sr-only">{t('cs.col.actions')}</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {skus.map((sku) => {
-                const mine = rows.filter((row) => row.skuId === sku.id);
-                const free = total(mine.map((row) => row.available));
-                const low = mine.some(
-                  (row) => row.reorderLevel > 0 && row.available <= row.reorderLevel,
-                );
-                return (
-                  <tr
-                    key={sku.id}
-                    ref={sku.id === highlighted ? marked : undefined}
-                    tabIndex={sku.id === highlighted ? -1 : undefined}
-                    data-scanned={sku.id === highlighted ? 'true' : undefined}
-                    aria-current={sku.id === highlighted ? 'true' : undefined}
-                    className={cn(
-                      'border-b border-border last:border-b-0 hover:bg-accent/60 focus-visible:outline-none',
-                      sku.id === highlighted ? 'bg-primary-subtle ring-2 ring-ring ring-inset' : '',
-                    )}
-                  >
-                    <td className="h-row px-4">
-                      <span className="font-medium">{labelOf(sku) || t('cs.new.oneVariant')}</span>
-                      {sku.status === 'archived' ? (
-                        <span className="ms-2">
-                          <StatusBadge tone="neutral">{t('catalog.status.archived')}</StatusBadge>
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="h-row px-4 text-xs text-muted-foreground tabular-nums">
-                      {sku.skuCode}
-                    </td>
-                    <td className="h-row px-4">
-                      {sku.barcode === null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5">
-                          <EanBars code={sku.barcode} className="hidden sm:block" />
-                          <span className="font-mono text-xs tabular-nums">{sku.barcode}</span>
-                          <CopyCode code={sku.barcode} />
-                          {sku.status === 'active' ? (
-                            <Button
-                              type="button"
-                              size="icon-sm"
-                              variant="ghost"
-                              aria-label={`${t('st.barcode.print')} ${sku.skuCode}`}
-                              onClick={() => onPrint(sku)}
-                            >
-                              <Printer aria-hidden="true" />
-                            </Button>
-                          ) : null}
-                        </span>
-                      )}
-                    </td>
-                    <td className="h-row px-4 text-right">
-                      {editing ? (
-                        <>
-                          <label className="sr-only" htmlFor={`price-${sku.id}`}>
-                            {`${t('cs.col.price')} ${sku.skuCode}`}
-                          </label>
-                          <input
-                            id={`price-${sku.id}`}
-                            inputMode="decimal"
-                            value={prices[sku.id] ?? poishaToTaka(sku.pricePoisha)}
-                            onChange={(event) =>
-                              setPricesState((current) => ({
-                                ...current,
-                                [sku.id]: event.target.value,
-                              }))
-                            }
-                            className={cn(
-                              controlClassName,
-                              'h-control-sm w-28 text-right tabular-nums',
-                            )}
-                          />
-                        </>
-                      ) : (
-                        <Money poisha={sku.pricePoisha} />
-                      )}
-                    </td>
-                    {showStock
-                      ? columns.map((location) => {
-                          const level = cell(sku.id, location.id);
-                          return (
-                            <td key={location.id} className="h-row px-4 text-right tabular-nums">
-                              {level === undefined ? (
-                                <span className="text-muted-foreground">0</span>
-                              ) : (
-                                <span title={`${t('cs.hub.onHand')} ${String(level.onHand)}`}>
-                                  {level.available}
-                                  {level.reserved > 0 ? (
-                                    <span className="ms-1 text-xs text-muted-foreground">
-                                      {`(+${String(level.reserved)} ${t('cs.hub.held')})`}
-                                    </span>
-                                  ) : null}
-                                </span>
-                              )}
-                            </td>
-                          );
-                        })
-                      : null}
-                    {showStock ? (
-                      <td className="h-row px-4 text-right">
-                        <span className="inline-flex items-center gap-2 tabular-nums">
-                          {free}
-                          {sku.status === 'active' && free === 0 ? (
-                            <StatusBadge tone="danger">{t('cs.hub.out')}</StatusBadge>
-                          ) : low ? (
-                            <StatusBadge tone="warning">{t('cs.hub.low')}</StatusBadge>
-                          ) : null}
-                        </span>
-                      </td>
-                    ) : null}
-                    <td className="h-row px-4 text-right">
-                      <PermissionGate allowed={mayWrite}>
-                        <Button size="sm" variant="ghost" onClick={() => setArchiving(sku)}>
-                          {sku.status === 'active' ? t('cs.archive') : t('cs.restore')}
-                        </Button>
-                      </PermissionGate>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {save.error !== null || archive.error !== null ? (
-        <p role="alert" className="text-sm text-destructive">
-          {(save.error ?? archive.error) instanceof ApiError
-            ? (save.error ?? archive.error)?.message
-            : t('cs.saveFailed')}
-        </p>
-      ) : null}
-
-      <ConfirmDialog
-        open={archiving !== null}
-        onOpenChange={(next) => {
-          if (!next) setArchiving(null);
-        }}
-        title={archiving?.status === 'active' ? t('cs.hub.archiveSku') : t('cs.hub.restoreSku')}
-        description={
-          archiving?.status === 'active' ? t('cs.hub.archiveSkuHelp') : t('cs.hub.restoreSkuHelp')
-        }
-        confirmLabel={archiving?.status === 'active' ? t('cs.archive') : t('cs.restore')}
-        cancelLabel={t('cs.cancel')}
-        closeLabel={t('cs.close')}
-        onConfirm={async () => {
-          if (archiving !== null) await archive.mutateAsync(archiving);
-        }}
-      />
-    </section>
+/** The product's colour values, for tying a photo to a colour (D-643). */
+function colourValuesOf(
+  skus: readonly CatalogSku[],
+  attributes: readonly CatalogAttribute[],
+): { id: string; label: string }[] {
+  const colourAxes = new Set(
+    attributes.filter((attribute) => attribute.kind === 'colour').map((attribute) => attribute.id),
   );
+  const seen = new Map<string, string>();
+  for (const sku of skus) {
+    for (const pair of sku.attributes) {
+      if (colourAxes.has(pair.attributeId)) seen.set(pair.valueId, pair.valueLabel);
+    }
+  }
+  return [...seen.entries()].map(([id, label]) => ({ id, label }));
 }
 
-// --- add sizes or colours ----------------------------------------------------------
-
-function AddVariants({
-  productId,
+/** A copy of the product under a new name (D-641); opens the copy when it is made. */
+function DuplicateDialog({
+  open,
+  onOpenChange,
   product,
-  onDone,
 }: {
-  readonly productId: string;
-  readonly product: CatalogProduct | undefined;
-  readonly onDone: () => void;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly product: CatalogProduct;
 }) {
   const t = useT();
-  const attributes = useQuery({
-    queryKey: ['catalog', 'attributes'],
-    queryFn: listAttributes,
-    staleTime: 5 * 60_000,
-  });
-  const [chosen, setChosen] = useState<Record<string, string[]> | null>(null);
-  const [result, setResult] = useState<number | null>(null);
-
-  // Start from what the product already has, so adding XXL is one click.
-  const existing = (axis: CatalogAttribute) => [
-    ...new Set(
-      (product?.skus ?? []).flatMap((sku) =>
-        sku.attributes.filter((pair) => pair.attributeId === axis.id).map((pair) => pair.valueId),
-      ),
-    ),
-  ];
-  const axes = (attributes.data?.items ?? []).filter(
-    (axis) => axis.isVariant && axis.values.length > 0,
-  );
-  const current = (axis: CatalogAttribute) => chosen?.[axis.id] ?? existing(axis);
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      addVariants(productId, {
-        axes: axes
-          .map((axis) => ({ attributeId: axis.id, valueIds: current(axis) }))
-          .filter((axis) => axis.valueIds.length > 0),
-      }),
-    onSuccess: (data) => {
-      setResult(data.created.length);
-      setChosen(null);
-      onDone();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(`${product.name} ${t('cp.dup.copySuffix')}`.slice(0, 200));
+  const make = useMutation({
+    mutationFn: () => duplicateProduct(product.id, { name: name.trim() }),
+    onSuccess: (copy) => {
+      void queryClient.invalidateQueries({ queryKey: ['catalog'] });
+      onOpenChange(false);
+      void navigate({ to: '/catalog/$productId', params: { productId: copy.id } });
     },
   });
-
   return (
-    <section
-      aria-labelledby="add-variants-heading"
-      className="space-y-4 rounded-lg border border-border bg-card p-5"
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('cp.dup.title')}
+      description={t('cp.dup.help')}
+      closeLabel={t('cp.close')}
+      footer={
+        <>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t('cp.cancel')}
+          </Button>
+          <Button
+            data-testid="duplicate-submit"
+            disabled={name.trim() === '' || make.isPending}
+            onClick={() => make.mutate()}
+          >
+            {t('cp.dup.submit')}
+          </Button>
+        </>
+      }
     >
-      <h2 id="add-variants-heading" className="text-base font-semibold tracking-tight">
-        {t('cs.hub.addVariants')}
-      </h2>
-      <p className="text-sm text-muted-foreground">{t('cs.hub.addVariantsHelp')}</p>
-      {axes.map((axis) => (
-        <ChipGroup
-          key={axis.id}
-          legend={axis.name}
-          values={axis.values}
-          chosen={current(axis)}
-          onToggle={(valueId) => {
-            const list = current(axis);
-            // An existing value cannot be taken off here; archive its variants instead.
-            if (list.includes(valueId) && existing(axis).includes(valueId)) return;
-            setChosen((state) => ({
-              ...(state ?? {}),
-              [axis.id]: list.includes(valueId)
-                ? list.filter((id) => id !== valueId)
-                : [...list, valueId],
-            }));
-          }}
-        />
-      ))}
-      <div className="flex items-center gap-3">
-        <Button
-          size="sm"
-          disabled={chosen === null || mutation.isPending}
-          onClick={() => mutation.mutate()}
-        >
-          {t('cs.hub.addVariantsSubmit')}
-        </Button>
-        {result !== null ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            {result === 0
-              ? t('catalog.variantsNoneAdded')
-              : `${String(result)} ${t('catalog.variantsAdded')}`}
+      <div className="space-y-4">
+        <Field label={t('cp.dup.name')}>
+          <input
+            value={name}
+            maxLength={200}
+            onChange={(event) => setName(event.target.value)}
+            className={cn(controlClassName, 'w-full')}
+          />
+        </Field>
+        {make.error !== null ? (
+          <p role="alert" className="text-sm text-destructive">
+            {make.error instanceof ApiError ? make.error.message : t('cp.saveFailed')}
           </p>
         ) : null}
       </div>
-      {mutation.error !== null ? (
-        <p role="alert" className="text-sm text-destructive">
-          {mutation.error instanceof ApiError ? mutation.error.message : t('cs.saveFailed')}
-        </p>
-      ) : null}
-    </section>
+    </Dialog>
   );
 }
 
@@ -881,13 +674,26 @@ function AddVariants({
 function Photos({
   productId,
   images,
+  colours,
   onDone,
 }: {
   readonly productId: string;
-  readonly images: readonly { id: string; fileId: string; altText: string | null }[];
+  readonly images: readonly {
+    id: string;
+    fileId: string;
+    altText: string | null;
+    colourValueId: string | null;
+  }[];
+  /** The product's colours: a photo may show one of them (D-643). */
+  readonly colours: readonly { id: string; label: string }[];
   readonly onDone: () => void;
 }) {
   const t = useT();
+  const colour = useMutation({
+    mutationFn: (input: { imageId: string; colourValueId: string | null }) =>
+      setImageColour(productId, input.imageId, input.colourValueId),
+    onSuccess: onDone,
+  });
   const attach = useMutation({
     mutationFn: async (fileIds: readonly string[]) => {
       for (const fileId of fileIds) await attachImage(productId, { fileId });
@@ -958,6 +764,22 @@ function Photos({
                   <Trash2 aria-hidden className="size-4" />
                 </Button>
               </div>
+              {colours.length > 0 ? (
+                <Select
+                  variant="filter"
+                  size="sm"
+                  aria-label={`${t('cp.photo.colour')} ${String(index + 1)}`}
+                  value={image.colourValueId ?? ''}
+                  disabled={colour.isPending}
+                  onValueChange={(next) =>
+                    colour.mutate({ imageId: image.id, colourValueId: next === '' ? null : next })
+                  }
+                  options={[
+                    { value: '', label: t('cp.photo.anyColour') },
+                    ...colours.map((value) => ({ value: value.id, label: value.label })),
+                  ]}
+                />
+              ) : null}
             </li>
           ))}
         </ol>
@@ -1053,6 +875,10 @@ function EditProductDialog({
   const [categoryId, setCategoryId] = useState(product.categoryId ?? '');
   const [description, setDescription] = useState(product.description ?? '');
   const [status, setStatus] = useState(product.status);
+  const [weight, setWeight] = useState(
+    product.weightGrams === null ? '' : String(product.weightGrams),
+  );
+  const grams = parseGrams(weight);
   const categories = useQuery({
     queryKey: ['catalog', 'categories'],
     queryFn: listCategories,
@@ -1069,6 +895,8 @@ function EditProductDialog({
         categoryId: categoryId === '' ? null : categoryId,
         description: description.trim() === '' ? null : description.trim(),
         status,
+        // Grams per piece for couriers (D-645); blank clears it.
+        weightGrams: grams === undefined ? null : grams,
       }),
     onSuccess: () => {
       onDone();
@@ -1090,7 +918,10 @@ function EditProductDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('cs.cancel')}
           </Button>
-          <Button disabled={name.trim() === '' || save.isPending} onClick={() => save.mutate()}>
+          <Button
+            disabled={name.trim() === '' || grams === null || save.isPending}
+            onClick={() => save.mutate()}
+          >
             {t('cs.save')}
           </Button>
         </>
@@ -1145,6 +976,18 @@ function EditProductDialog({
             rows={3}
             onChange={(event) => setDescription(event.target.value)}
             className={cn(controlClassName, 'h-auto w-full py-2')}
+          />
+        </Field>
+        <Field
+          label={t('cp.new.weight')}
+          hint={grams === null ? t('cp.new.weightInvalid') : t('cp.new.weightHint')}
+        >
+          <input
+            inputMode="numeric"
+            value={weight}
+            aria-invalid={grams === null}
+            onChange={(event) => setWeight(event.target.value)}
+            className={cn(control, 'text-right tabular-nums')}
           />
         </Field>
         {save.error !== null ? (
@@ -1268,86 +1111,79 @@ function StockHistory({
   );
 }
 
-function PriceHistory({ variants }: { readonly variants: readonly VariantInfo[] }) {
+/** One price history for every variant of the product, newest first (D-636). */
+function PriceHistory({ productId }: { readonly productId: string }) {
   const t = useT();
-  const [skuId, setSkuId] = useState('');
-  const chosen = skuId === '' ? variants[0]?.id : skuId;
-
   const history = useQuery({
-    queryKey: ['catalog', 'price-history', chosen],
-    queryFn: () => priceHistory(chosen ?? ''),
-    enabled: chosen !== undefined,
+    queryKey: ['catalog', 'price-history', productId],
+    queryFn: () => productPriceHistory(productId),
   });
+  const items = history.data?.items ?? [];
+  const th = 'h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground';
+  const change = (from: string | null, to: string | null) =>
+    from === to ? (
+      <span className="text-muted-foreground">—</span>
+    ) : (
+      <span className="inline-flex items-center gap-1 tabular-nums">
+        {from === null ? '—' : <Money poisha={from} />}
+        <span aria-hidden="true">→</span>
+        {to === null ? '—' : <Money poisha={to} />}
+      </span>
+    );
 
   return (
     <section aria-labelledby="price-history-heading" className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 id="price-history-heading" className="text-base font-semibold tracking-tight">
-          {t('catalog.priceHistory')}
-        </h2>
-        <Select
-          variant="filter"
-          size="sm"
-          aria-label={t('cs.col.variant')}
-          value={chosen ?? ''}
-          onValueChange={setSkuId}
-          options={variants.map((variant) => ({
-            value: variant.id,
-            label: variant.label === '' ? variant.skuCode : `${variant.label} · ${variant.skuCode}`,
-          }))}
-        />
-      </div>
-
-      {(history.data?.items ?? []).length === 0 ? (
+      <h2 id="price-history-heading" className="text-base font-semibold tracking-tight">
+        {t('cp.history.title')}
+      </h2>
+      {items.length === 0 ? (
         <p className="rounded-lg border border-border px-5 py-4 text-sm text-muted-foreground">
-          {t('catalog.priceNoHistory')}
+          {history.isPending ? t('cs.loading') : t('cp.history.none')}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <table className="w-full text-sm">
-            <caption className="sr-only">{t('catalog.priceHistory')}</caption>
+            <caption className="sr-only">{t('cp.history.title')}</caption>
             <thead>
               <tr className="border-b border-border bg-muted/50 text-left">
-                <th
-                  scope="col"
-                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
-                >
+                <th scope="col" className={th}>
                   {t('catalog.priceWhen')}
                 </th>
-                <th
-                  scope="col"
-                  className="h-10 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
-                >
-                  {t('catalog.priceFrom')}
+                <th scope="col" className={th}>
+                  {t('cs.col.variant')}
                 </th>
-                <th
-                  scope="col"
-                  className="h-10 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
-                >
-                  {t('catalog.priceTo')}
+                <th scope="col" className={cn(th, 'text-right')}>
+                  {t('cp.history.price')}
                 </th>
-                <th
-                  scope="col"
-                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
-                >
+                <th scope="col" className={cn(th, 'text-right')}>
+                  {t('cp.history.regular')}
+                </th>
+                <th scope="col" className={th}>
                   {t('catalog.priceReason')}
                 </th>
               </tr>
             </thead>
             <tbody>
-              {(history.data?.items ?? []).map((row, index) => (
+              {items.map((row, index) => (
                 <tr
-                  key={`${row.changedAt}-${String(index)}`}
+                  key={`${row.skuId}-${row.changedAt}-${String(index)}`}
                   className="border-b border-border last:border-b-0 hover:bg-accent/60"
                 >
                   <td className="h-row px-4 whitespace-nowrap text-muted-foreground">
                     <DateTime value={row.changedAt} />
                   </td>
-                  <td className="h-row px-4 text-right">
-                    {row.fromPricePoisha === null ? '—' : <Money poisha={row.fromPricePoisha} />}
+                  <td className="h-row px-4 whitespace-nowrap">
+                    {row.variantLabel === '' ? row.skuCode : row.variantLabel}
                   </td>
-                  <td className="h-row px-4 text-right">
-                    <Money poisha={row.toPricePoisha} />
+                  <td className="h-row px-4 text-right whitespace-nowrap">
+                    {row.fromPricePoisha === null ? (
+                      <Money poisha={row.toPricePoisha} />
+                    ) : (
+                      change(row.fromPricePoisha, row.toPricePoisha)
+                    )}
+                  </td>
+                  <td className="h-row px-4 text-right whitespace-nowrap">
+                    {change(row.compareAtFromPoisha, row.compareAtToPoisha)}
                   </td>
                   <td className="h-row px-4 text-muted-foreground">{row.reason ?? ''}</td>
                 </tr>

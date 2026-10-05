@@ -6,19 +6,22 @@ import {
   PageHeader,
   PermissionGate,
   Select,
+  StatusBadge,
   cn,
   controlClassName,
+  poishaToTaka,
   takaToPoisha,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { CheckCircle2, Printer } from 'lucide-react';
+import { ArrowDownToLine, CheckCircle2, Printer } from 'lucide-react';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/stock-tools.js';
+import '../../i18n/catalog-pricing.js';
 import { DEFAULT_PAGE_SIZE } from '../../lib/table-search.js';
 import {
   draftStockInHand,
@@ -40,10 +43,15 @@ import { PhotoPicker, PhotoTooLargeError, uploadPhoto, type PendingPhoto } from 
 import { slugify } from './slug.js';
 import { StickerDialog, type StickerItem } from './stickers.js';
 import {
+  copyDown,
+  fillRows,
   isReplayConflict,
+  parseGrams,
   parseQty,
   positiveCost,
+  positivePrice,
   requestKey,
+  resolveRowPrices,
   variantRows,
   type VariantRow,
 } from './variant-grid.js';
@@ -73,6 +81,12 @@ import '../../i18n/website.js';
  * exactly one sticker per piece (D-604).
  *
  * Every price is typed in taka and converted by `takaToPoisha`, integer arithmetic.
+ *
+ * M39b (D-635): prices by size and by colour in one step (a row's own price wins, then its
+ * size's, then its colour's, then the main price), a regular ("was") price per variant, rows
+ * chosen and set together or copied down, and a buying price per variant whether the pieces
+ * are already in hand or come from a supplier (a supplier receipt has a cost per line). A zero
+ * or negative figure is refused here, before the long form is sent.
  */
 
 type StockMode = 'in-hand' | 'supplier';
@@ -113,6 +127,14 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
   const [locationId, setLocationId] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const [costTaka, setCostTaka] = useState('');
+  // M39b: quick fills, regular prices, chosen rows, the weight and the size chart's source.
+  const [sizeFill, setSizeFill] = useState<Record<string, string>>({});
+  const [colourFill, setColourFill] = useState<Record<string, string>>({});
+  const [rowCompare, setRowCompare] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [bulk, setBulk] = useState({ price: '', compareAt: '', qty: '', cost: '' });
+  const [weight, setWeight] = useState('');
+  const [chartTouched, setChartTouched] = useState(false);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [web, setWeb] = useState<WebDraft>(EMPTY_WEB);
   const [created, setCreated] = useState<CatalogProduct | null>(null);
@@ -168,8 +190,14 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
   const stockMode: StockMode = windowOpen ? mode : 'supplier';
 
   // Size before colour before the rest: the order the codes read in (`…-XL-RED`).
+  // An archived list or value (M39a, D-624) is never offered for a new variant.
   const ordered = (attributes.data?.items ?? [])
-    .filter((attribute) => attribute.isVariant && attribute.values.length > 0)
+    .filter((attribute) => attribute.isVariant && attribute.isActive !== false)
+    .map((attribute) => ({
+      ...attribute,
+      values: attribute.values.filter((value) => value.isActive !== false),
+    }))
+    .filter((attribute) => attribute.values.length > 0)
     .sort((a, b) => rank(a.kind) - rank(b.kind) || a.position - b.position);
   const choice = ordered.map((axis) => ({
     attributeId: axis.id,
@@ -179,12 +207,53 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
   }));
   const rows = variantRows(choice);
 
-  const pricePoisha = takaToPoisha(taka);
+  // Prices (D-635): typed text to poisha; a zero, a minus or text is a problem, not a price.
+  const typedPrice = (text: string | undefined): { poisha: string | null; invalid: boolean } => {
+    const trimmed = (text ?? '').trim();
+    if (trimmed === '') return { poisha: null, invalid: false };
+    const value = positivePrice(takaToPoisha(trimmed));
+    return { poisha: value, invalid: value === null };
+  };
+  // The size and colour lists the person picked from: a brand may keep several of each
+  // ("Shirt size", "Trouser size"), and the quick prices follow the one in use.
+  const pickedAxis = (kind: 'size' | 'colour') =>
+    ordered.find((axis) => axis.kind === kind && (chosen[axis.id] ?? []).length > 0) ??
+    ordered.find((axis) => axis.kind === kind);
+  const sizeAxis = pickedAxis('size');
+  const colourAxis = pickedAxis('colour');
+  const sizeChoice = choice.find((axis) => axis.attributeId === sizeAxis?.id)?.values ?? [];
+  const colourChoice = choice.find((axis) => axis.attributeId === colourAxis?.id)?.values ?? [];
+  const main = typedPrice(taka);
+  const pricePoisha = main.poisha;
+  const fills = (values: Readonly<Record<string, string>>) =>
+    Object.fromEntries(Object.entries(values).map(([id, text]) => [id, typedPrice(text).poisha]));
+  const resolved = resolveRowPrices(rows, {
+    own: Object.fromEntries(rows.map((row) => [row.key, typedPrice(rowPrice[row.key]).poisha])),
+    bySize: fills(sizeFill),
+    byColour: fills(colourFill),
+    main: pricePoisha,
+  });
+  const compareOf = (row: VariantRow): string | null => typedPrice(rowCompare[row.key]).poisha;
+  const compareInvalid = (row: VariantRow): boolean => {
+    const typed = typedPrice(rowCompare[row.key]);
+    const price = resolved.get(row.key) ?? null;
+    return (
+      typed.invalid ||
+      (typed.poisha !== null && price !== null && BigInt(typed.poisha) <= BigInt(price))
+    );
+  };
+
   // A stray 0 would put every piece in at nothing and drag the average down (audit L6).
   const costPoisha = positiveCost(takaToPoisha(costTaka));
   const costOf = (row: VariantRow): string | null => {
     const own = (rowCost[row.key] ?? '').trim();
     return own === '' ? costPoisha : positiveCost(takaToPoisha(own));
+  };
+  /** A line's cost, or a refusal: never a silent zero (ledger audit N1). */
+  const requireCost = (row: VariantRow): string => {
+    const cost = costOf(row);
+    if (cost === null) throw new Error(t('st.new.costMissing'));
+    return cost;
   };
   const receivable = (locations.data?.items ?? []).filter(
     (location) =>
@@ -193,21 +262,24 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
   const chosenLocation =
     locationId !== '' ? locationId : (receivable.find((l) => l.kind === 'warehouse')?.id ?? '');
 
-  const priceProblem = rows.some(
-    (row) =>
-      (rowPrice[row.key] ?? '').trim() !== '' && takaToPoisha(rowPrice[row.key] ?? '') === null,
-  );
+  const priceProblem =
+    main.invalid ||
+    rows.some((row) => typedPrice(rowPrice[row.key]).invalid) ||
+    Object.values(sizeFill).some((text) => typedPrice(text).invalid) ||
+    Object.values(colourFill).some((text) => typedPrice(text).invalid);
+  const unpriced = rows.some((row) => (resolved.get(row.key) ?? null) === null);
+  const regularProblem = rows.some(compareInvalid);
   const qtyProblem = rows.some(
     (row) => (rowQty[row.key] ?? '').trim() !== '' && parseQty(rowQty[row.key] ?? '') === null,
   );
+  const weightGrams = parseGrams(weight);
   const stockLines = rows.flatMap((row) => {
     const qty = parseQty(rowQty[row.key] ?? '');
     return qty === null ? [] : [{ row, qty }];
   });
   const wantsStock = mayReceive && stockLines.length > 0;
-  const costMissing =
-    mayPrice &&
-    stockLines.some((entry) => (stockMode === 'in-hand' ? costOf(entry.row) : costPoisha) === null);
+  // A cost per variant in both modes (D-635): a supplier receipt has a cost per line too.
+  const costMissing = mayPrice && stockLines.some((entry) => costOf(entry.row) === null);
   const stockReady =
     !wantsStock ||
     (chosenLocation !== '' &&
@@ -216,13 +288,60 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
   const units = stockLines.reduce((sum, entry) => sum + entry.qty, 0);
   const stockValue = mayPrice
     ? stockLines.reduce((sum, entry) => {
-        const cost = stockMode === 'in-hand' ? costOf(entry.row) : costPoisha;
+        const cost = costOf(entry.row);
         return cost === null ? sum : sum + BigInt(cost) * BigInt(entry.qty);
       }, 0n)
     : 0n;
 
   const ready =
-    name.trim() !== '' && pricePoisha !== null && !priceProblem && !qtyProblem && stockReady;
+    name.trim() !== '' &&
+    !priceProblem &&
+    !unpriced &&
+    !regularProblem &&
+    !qtyProblem &&
+    weightGrams !== null &&
+    stockReady;
+
+  // The size chart a new product starts with: the category's default (D-646), until the
+  // person picks one in the website details.
+  const chosenCategory = (categories.data?.items ?? []).find((entry) => entry.id === categoryId);
+  const chooseCategory = (next: string) => {
+    setCategoryId(next);
+    if (chartTouched) return;
+    const fallback =
+      (categories.data?.items ?? []).find((entry) => entry.id === next)?.web.defaultSizeChartId ??
+      '';
+    setWeb((current) => ({ ...current, sizeChartId: fallback ?? '' }));
+  };
+  const chartName = (charts.data?.items ?? []).find((chart) => chart.id === web.sizeChartId)?.name;
+
+  const toggleRow = (key: string) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const applyBulk = () => {
+    if (bulk.price.trim() !== '') setRowPrice((current) => fillRows(current, selected, bulk.price));
+    if (bulk.compareAt.trim() !== '') {
+      setRowCompare((current) => fillRows(current, selected, bulk.compareAt));
+    }
+    if (bulk.qty.trim() !== '') setRowQty((current) => fillRows(current, selected, bulk.qty));
+    if (bulk.cost.trim() !== '') setRowCost((current) => fillRows(current, selected, bulk.cost));
+    setBulk({ price: '', compareAt: '', qty: '', cost: '' });
+  };
+  const copyRowDown = (key: string) => {
+    setRowPrice((current) => copyDown(current, rows, key));
+    setRowCompare((current) => copyDown(current, rows, key));
+    setRowQty((current) => copyDown(current, rows, key));
+    setRowCost((current) => copyDown(current, rows, key));
+  };
+
+  const basePrice =
+    pricePoisha ?? [...resolved.values()].find((price): price is string => price !== null) ?? '';
+  const onlyRow = rows.length === 1 ? rows[0] : undefined;
+  const plainRegular = onlyRow?.valueIds.length === 0 ? compareOf(onlyRow) : null;
 
   const save = useMutation({
     mutationFn: async (): Promise<Saved> => {
@@ -234,7 +353,8 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
           slug: slugify(name),
           categoryId: categoryId === '' ? undefined : categoryId,
           description: description.trim() === '' ? undefined : description.trim(),
-          pricePoisha: pricePoisha ?? '',
+          // The main price, or (every row priced by size or colour) the first row's.
+          pricePoisha: basePrice,
           status,
           axes: choice
             .filter((axis) => axis.values.length > 0)
@@ -245,11 +365,19 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
           variantPrices: rows.flatMap((row) => {
             // A plain product's one row has no values to name; its price is the product's.
             if (row.valueIds.length === 0) return [];
-            const own = takaToPoisha(rowPrice[row.key] ?? '');
-            return own === null || own === pricePoisha
-              ? []
-              : [{ valueIds: row.valueIds, pricePoisha: own }];
+            const price = resolved.get(row.key) ?? null;
+            const regular = compareOf(row);
+            if (price === null || (price === basePrice && regular === null)) return [];
+            return [
+              {
+                valueIds: row.valueIds,
+                pricePoisha: price,
+                ...(regular === null ? {} : { compareAtPoisha: regular }),
+              },
+            ];
           }),
+          ...(plainRegular === null ? {} : { compareAtPoisha: plainRegular }),
+          ...(weightGrams === undefined || weightGrams === null ? {} : { weightGrams }),
         }));
       // Kept, so a retry after a failed later step does not create it twice.
       setCreated(product);
@@ -260,7 +388,17 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
       for (const [index, photo] of photos.entries()) {
         setProgress(`${t('st.new.uploading')} ${String(index + 1)} / ${String(photos.length)}`);
         const file = await uploadPhoto(photo.file);
-        await attachImage(product.id, { fileId: file.id });
+        // A photo tied to a chosen colour keeps it (D-643); a colour no longer chosen is dropped.
+        const colour =
+          photo.colourValueId !== undefined &&
+          photo.colourValueId !== null &&
+          colourChoice.some((value) => value.id === photo.colourValueId)
+            ? photo.colourValueId
+            : null;
+        await attachImage(product.id, {
+          fileId: file.id,
+          ...(colour === null ? {} : { colourValueId: colour }),
+        });
         URL.revokeObjectURL(photo.url);
         remaining = remaining.filter((entry) => entry.key !== photo.key);
         setPhotos(remaining);
@@ -289,7 +427,7 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
               lines: lines.map((line) => ({
                 skuId: line.skuId,
                 qty: line.qty,
-                unitCostPoisha: costOf(line.row) ?? '0',
+                unitCostPoisha: requireCost(line.row),
               })),
             });
           } else {
@@ -309,7 +447,8 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
             lines: lines.map((line) => ({
               skuId: line.skuId,
               qty: line.qty,
-              unitCostPoisha: costPoisha ?? '0',
+              // A cost per variant from a supplier too (D-635); the common cost fills blanks.
+              unitCostPoisha: requireCost(line.row),
             })),
           });
         } else {
@@ -358,7 +497,7 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
   const cell = cn(controlClassName, 'text-right tabular-nums');
   const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';
   const headingClass = 'text-base font-semibold tracking-tight';
-  const showCostColumn = mayReceive && mayPrice && stockMode === 'in-hand';
+  const showCostColumn = mayReceive && mayPrice;
 
   if (saved !== null) {
     return (
@@ -431,7 +570,7 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
             <Field label={t('catalog.productCategory')}>
               <Select
                 value={categoryId}
-                onValueChange={setCategoryId}
+                onValueChange={chooseCategory}
                 disabled={created !== null}
                 options={[
                   { value: '', label: t('cs.noCategory') },
@@ -451,7 +590,7 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
                 value={taka}
                 disabled={created !== null}
                 onChange={(event) => setTaka(event.target.value)}
-                aria-invalid={taka.trim() !== '' && pricePoisha === null}
+                aria-invalid={main.invalid}
                 className={cn(cell, 'w-full')}
               />
             </Field>
@@ -464,6 +603,19 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
                   { value: 'active', label: t('cs.status.activeHelp') },
                   { value: 'draft', label: t('cs.status.draftHelp') },
                 ]}
+              />
+            </Field>
+            <Field
+              label={t('cp.new.weight')}
+              hint={weightGrams === null ? t('cp.new.weightInvalid') : t('cp.new.weightHint')}
+            >
+              <input
+                inputMode="numeric"
+                value={weight}
+                disabled={created !== null}
+                onChange={(event) => setWeight(event.target.value)}
+                aria-invalid={weightGrams === null}
+                className={cn(cell, 'w-full')}
               />
             </Field>
             <Field label={t('cs.description')} className="sm:col-span-2">
@@ -483,7 +635,12 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
           <h2 id="photos-heading" className={headingClass}>
             {t('cs.photos.title')}
           </h2>
-          <PhotoPicker photos={photos} onChange={setPhotos} disabled={save.isPending} />
+          <PhotoPicker
+            photos={photos}
+            onChange={setPhotos}
+            disabled={save.isPending}
+            colours={colourChoice}
+          />
         </section>
 
         <section aria-labelledby="variants-heading" className={sectionClass}>
@@ -523,16 +680,138 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
             />
           ))}
 
+          {mayWeb && chosenCategory !== undefined ? (
+            <p className="text-sm text-muted-foreground">
+              {`${t('cp.new.sizeChart')}: ${chartName ?? t('cp.none')}`}
+              {!chartTouched && chartName !== undefined
+                ? ` (${t('cp.new.sizeChartFromCategory')})`
+                : ''}
+            </p>
+          ) : null}
+
+          {rows.length > 1 && (sizeChoice.length > 0 || colourChoice.length > 0) ? (
+            <div className="space-y-3 rounded-md border border-border bg-muted/30 p-3">
+              <div>
+                <p className="text-sm font-medium">{t('cp.new.quickFills')}</p>
+                <p className="text-xs text-muted-foreground">{t('cp.new.quickFillsHelp')}</p>
+              </div>
+              {[
+                {
+                  legend: t('cp.new.bySize'),
+                  values: sizeChoice,
+                  fill: sizeFill,
+                  set: setSizeFill,
+                  id: 'size',
+                },
+                {
+                  legend: t('cp.new.byColour'),
+                  values: colourChoice,
+                  fill: colourFill,
+                  set: setColourFill,
+                  id: 'colour',
+                },
+              ]
+                .filter((group) => group.values.length > 0)
+                .map((group) => (
+                  <fieldset key={group.id} className="space-y-1.5">
+                    <legend className="text-xs font-medium text-muted-foreground">
+                      {group.legend}
+                    </legend>
+                    <div className="flex flex-wrap gap-2">
+                      {group.values.map((value) => (
+                        <label key={value.id} className="flex flex-col gap-1 text-xs">
+                          <span className="font-medium">{value.label}</span>
+                          <input
+                            inputMode="decimal"
+                            data-testid={`fill-${group.id}-${value.label}`}
+                            value={group.fill[value.id] ?? ''}
+                            placeholder={taka}
+                            disabled={created !== null}
+                            aria-invalid={typedPrice(group.fill[value.id]).invalid}
+                            onChange={(event) =>
+                              group.set((current) => ({
+                                ...current,
+                                [value.id]: event.target.value,
+                              }))
+                            }
+                            className={cn(cell, 'w-24')}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                ))}
+            </div>
+          ) : null}
+
+          {selected.size > 0 ? (
+            <div
+              role="group"
+              aria-label={t('cp.new.setSelected')}
+              className="flex flex-wrap items-end gap-2 rounded-md bg-selected px-3 py-2"
+            >
+              <p className="me-2 self-center text-sm font-medium">
+                {`${String(selected.size)} ${t('cp.selected')}`}
+              </p>
+              {(
+                [
+                  ['price', t('cs.col.price')],
+                  ['compareAt', t('cp.col.regular')],
+                  ...(mayReceive ? [['qty', t('st.col.pieces')]] : []),
+                  ...(showCostColumn ? [['cost', t('st.col.costPerPiece')]] : []),
+                ] as [keyof typeof bulk, string][]
+              ).map(([field, label]) => (
+                <label key={field} className="flex flex-col gap-1 text-xs">
+                  <span>{label}</span>
+                  <input
+                    inputMode={field === 'qty' ? 'numeric' : 'decimal'}
+                    data-testid={`bulk-${field}`}
+                    value={bulk[field]}
+                    onChange={(event) =>
+                      setBulk((current) => ({ ...current, [field]: event.target.value }))
+                    }
+                    className={cn(cell, 'w-24')}
+                  />
+                </label>
+              ))}
+              <Button size="sm" data-testid="bulk-apply" onClick={applyBulk}>
+                {t('cp.new.apply')}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                {t('cp.clearSelection')}
+              </Button>
+            </div>
+          ) : null}
+
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm">
               <caption className="sr-only">{t('cs.new.grid')}</caption>
               <thead>
                 <tr className="border-b border-border bg-muted/50 text-left text-xs text-muted-foreground">
-                  <th scope="col" className="h-10 px-4 font-medium">
+                  <th scope="col" className="h-10 w-10 px-3">
+                    {rows.length > 1 ? (
+                      <Checkbox
+                        aria-label={t('cp.selectAll')}
+                        disabled={created !== null}
+                        checked={selected.size === rows.length}
+                        onCheckedChange={() =>
+                          setSelected(
+                            selected.size === rows.length
+                              ? new Set()
+                              : new Set(rows.map((row) => row.key)),
+                          )
+                        }
+                      />
+                    ) : null}
+                  </th>
+                  <th scope="col" className="h-10 px-3 font-medium">
                     {t('cs.col.variant')}
                   </th>
                   <th scope="col" className="h-10 w-32 px-3 text-right font-medium">
                     {t('cs.col.price')}
+                  </th>
+                  <th scope="col" className="h-10 w-32 px-3 text-right font-medium">
+                    {t('cp.col.regular')}
                   </th>
                   {mayReceive ? (
                     <th scope="col" className="h-10 w-28 px-3 text-right font-medium">
@@ -544,84 +823,162 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
                       {t('st.col.costPerPiece')}
                     </th>
                   ) : null}
+                  <th scope="col" className="h-10 w-12 px-2">
+                    <span className="sr-only">{t('cs.col.actions')}</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, index) => (
-                  <tr key={row.key} className="border-b border-border last:border-b-0">
-                    <td className="px-4 py-2 font-medium">
-                      {row.label === '' ? t('cs.new.oneVariant') : row.label}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {row.valueIds.length === 0 ? (
-                        // A plain product: its price is the selling price above.
-                        <span className="text-muted-foreground tabular-nums">{taka || '—'}</span>
-                      ) : (
-                        <>
-                          <label className="sr-only" htmlFor={`price-${String(index)}`}>
-                            {`${t('cs.col.price')} ${row.label}`}
+                {rows.map((row, index) => {
+                  const price = resolved.get(row.key) ?? null;
+                  const own = price !== null && pricePoisha !== null && price !== pricePoisha;
+                  const label = row.label === '' ? t('cs.new.oneVariant') : row.label;
+                  return (
+                    <tr
+                      key={row.key}
+                      className={cn(
+                        'border-b border-border last:border-b-0',
+                        selected.has(row.key) ? 'bg-selected/60' : '',
+                      )}
+                    >
+                      <td className="px-3 py-2">
+                        {rows.length > 1 ? (
+                          <Checkbox
+                            aria-label={`${t('cp.selectRow')} ${label}`}
+                            disabled={created !== null}
+                            checked={selected.has(row.key)}
+                            onCheckedChange={() => toggleRow(row.key)}
+                          />
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 font-medium">
+                        <span>{label}</span>
+                        {own ? (
+                          <span className="ms-2">
+                            <StatusBadge tone="info">{t('cp.new.ownPrice')}</StatusBadge>
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {row.valueIds.length === 0 ? (
+                          // A plain product: its price is the selling price above.
+                          <span className="text-muted-foreground tabular-nums">{taka || '—'}</span>
+                        ) : (
+                          <>
+                            <label className="sr-only" htmlFor={`price-${String(index)}`}>
+                              {`${t('cs.col.price')} ${row.label}`}
+                            </label>
+                            <input
+                              id={`price-${String(index)}`}
+                              inputMode="decimal"
+                              value={rowPrice[row.key] ?? ''}
+                              placeholder={price === null ? '' : poishaToTaka(price)}
+                              disabled={created !== null}
+                              aria-invalid={typedPrice(rowPrice[row.key]).invalid}
+                              onChange={(event) =>
+                                setRowPrice((current) => ({
+                                  ...current,
+                                  [row.key]: event.target.value,
+                                }))
+                              }
+                              className={cn(cell, 'w-28')}
+                            />
+                          </>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <label className="sr-only" htmlFor={`regular-${String(index)}`}>
+                          {`${t('cp.col.regularShort')} ${label}`}
+                        </label>
+                        <input
+                          id={`regular-${String(index)}`}
+                          inputMode="decimal"
+                          value={rowCompare[row.key] ?? ''}
+                          disabled={created !== null}
+                          aria-invalid={compareInvalid(row)}
+                          onChange={(event) =>
+                            setRowCompare((current) => ({
+                              ...current,
+                              [row.key]: event.target.value,
+                            }))
+                          }
+                          className={cn(cell, 'w-28')}
+                        />
+                      </td>
+                      {mayReceive ? (
+                        <td className="px-3 py-2 text-right">
+                          <label className="sr-only" htmlFor={`qty-${String(index)}`}>
+                            {`${t('st.col.pieces')} ${row.label}`}
                           </label>
                           <input
-                            id={`price-${String(index)}`}
-                            inputMode="decimal"
-                            value={rowPrice[row.key] ?? ''}
-                            placeholder={taka}
+                            id={`qty-${String(index)}`}
+                            inputMode="numeric"
+                            value={rowQty[row.key] ?? ''}
+                            placeholder="0"
                             disabled={created !== null}
+                            aria-invalid={
+                              (rowQty[row.key] ?? '').trim() !== '' &&
+                              parseQty(rowQty[row.key] ?? '') === null
+                            }
                             onChange={(event) =>
-                              setRowPrice((current) => ({
+                              setRowQty((current) => ({
+                                ...current,
+                                [row.key]: event.target.value,
+                              }))
+                            }
+                            className={cn(cell, 'w-24')}
+                          />
+                        </td>
+                      ) : null}
+                      {showCostColumn ? (
+                        <td className="px-3 py-2 text-right">
+                          <label className="sr-only" htmlFor={`cost-${String(index)}`}>
+                            {`${t('st.col.costPerPiece')} ${row.label}`}
+                          </label>
+                          <input
+                            id={`cost-${String(index)}`}
+                            inputMode="decimal"
+                            value={rowCost[row.key] ?? ''}
+                            placeholder={costTaka}
+                            disabled={created !== null}
+                            aria-invalid={
+                              (rowCost[row.key] ?? '').trim() !== '' && costOf(row) === null
+                            }
+                            onChange={(event) =>
+                              setRowCost((current) => ({
                                 ...current,
                                 [row.key]: event.target.value,
                               }))
                             }
                             className={cn(cell, 'w-28')}
                           />
-                        </>
-                      )}
-                    </td>
-                    {mayReceive ? (
-                      <td className="px-3 py-2 text-right">
-                        <label className="sr-only" htmlFor={`qty-${String(index)}`}>
-                          {`${t('st.col.pieces')} ${row.label}`}
-                        </label>
-                        <input
-                          id={`qty-${String(index)}`}
-                          inputMode="numeric"
-                          value={rowQty[row.key] ?? ''}
-                          placeholder="0"
-                          disabled={created !== null}
-                          onChange={(event) =>
-                            setRowQty((current) => ({ ...current, [row.key]: event.target.value }))
-                          }
-                          className={cn(cell, 'w-24')}
-                        />
+                        </td>
+                      ) : null}
+                      <td className="px-2 py-2 text-right">
+                        {index < rows.length - 1 ? (
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                            disabled={created !== null}
+                            aria-label={`${t('cp.new.copyDown')}: ${label}`}
+                            onClick={() => copyRowDown(row.key)}
+                          >
+                            <ArrowDownToLine aria-hidden="true" />
+                          </Button>
+                        ) : null}
                       </td>
-                    ) : null}
-                    {showCostColumn ? (
-                      <td className="px-3 py-2 text-right">
-                        <label className="sr-only" htmlFor={`cost-${String(index)}`}>
-                          {`${t('st.col.costPerPiece')} ${row.label}`}
-                        </label>
-                        <input
-                          id={`cost-${String(index)}`}
-                          inputMode="decimal"
-                          value={rowCost[row.key] ?? ''}
-                          placeholder={costTaka}
-                          disabled={created !== null}
-                          aria-invalid={
-                            (rowCost[row.key] ?? '').trim() !== '' && costOf(row) === null
-                          }
-                          onChange={(event) =>
-                            setRowCost((current) => ({ ...current, [row.key]: event.target.value }))
-                          }
-                          className={cn(cell, 'w-28')}
-                        />
-                      </td>
-                    ) : null}
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+          {priceProblem || regularProblem ? (
+            <p role="alert" className="text-sm text-destructive">
+              {priceProblem ? t('cp.new.pricePositive') : t('cp.new.regularAbove')}
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground">{t('st.new.gridHelp')}</p>
         </section>
 
@@ -685,10 +1042,7 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
                 </Field>
               ) : null}
               {mayPrice ? (
-                <Field
-                  label={t('cs.costPerPiece')}
-                  hint={stockMode === 'in-hand' ? t('st.new.costHint') : undefined}
-                >
+                <Field label={t('cs.costPerPiece')} hint={t('cp.new.costEach')}>
                   <input
                     inputMode="decimal"
                     value={costTaka}
@@ -727,7 +1081,10 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
             <div className="space-y-4 px-5 pb-5">
               <WebDetails
                 value={web}
-                onChange={setWeb}
+                onChange={(next) => {
+                  if (next.sizeChartId !== web.sizeChartId) setChartTouched(true);
+                  setWeb(next);
+                }}
                 disabled={created !== null && steps.web}
                 charts={(charts.data?.items ?? []).map((chart) => ({
                   id: chart.id,

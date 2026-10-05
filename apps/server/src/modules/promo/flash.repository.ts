@@ -434,3 +434,28 @@ export async function returnUnits(
     throw new Error('a flash release would take a sale below zero units sold');
   }
 }
+
+/**
+ * Every SKU's lowest sale price in a flash sale that is live now and still has units (M39b,
+ * D-640), for the website's "on sale" filter. Whether the price is below the SKU's selling
+ * price is the catalog's comparison; this is only what promo offers.
+ */
+export async function liveSkuPrices(
+  tx: Tx,
+  orgId: string,
+  now: Date,
+): Promise<{ sku_id: string; sale_price_poisha: string }[]> {
+  const rows = await tx.execute<{ sku_id: string; sale_price_poisha: string }>(sql`
+    select i.sku_id, min(i.sale_price_poisha)::text as sale_price_poisha
+    from promo.flash_sale_items i
+    join promo.flash_sales s on s.org_id = i.org_id and s.id = i.flash_sale_id
+    where i.org_id = ${orgId}
+      and i.enabled and s.enabled
+      and (s.starts_at is null or s.starts_at <= ${now.toISOString()}::timestamptz)
+      and (s.ends_at is null or s.ends_at >= ${now.toISOString()}::timestamptz)
+      and (i.unit_limit is null or i.units_sold < i.unit_limit)
+    group by i.sku_id
+    limit 20000
+  `);
+  return [...rows];
+}

@@ -40,6 +40,8 @@ export interface CatalogProductListItem {
   readonly fromPricePoisha: string | null;
   readonly toPricePoisha: string | null;
   readonly imageFileId: string | null;
+  /** Shown on the website (M39b's product list column, D-642). */
+  readonly webVisible: boolean;
 }
 
 export interface CatalogSku {
@@ -47,6 +49,10 @@ export interface CatalogSku {
   readonly skuCode: string;
   readonly barcode: string | null;
   readonly pricePoisha: string;
+  /** The regular ("was") selling price, or null (M39b, D-640). Never a cost. */
+  readonly compareAtPoisha: string | null;
+  /** This variant's own weight in grams, or null for the product's (D-645). */
+  readonly weightGrams: number | null;
   readonly status: 'active' | 'archived';
   readonly attributes: readonly {
     readonly attributeId: string;
@@ -72,9 +78,13 @@ export interface CatalogProduct {
     readonly fileId: string;
     readonly position: number;
     readonly altText: string | null;
+    /** The colour value the photo shows (M39b, D-643), or null for every colour. */
+    readonly colourValueId: string | null;
   }[];
   /** The website's fields (M33, D-500), for the product page's Website card. */
   readonly web: ProductWebFields;
+  /** Grams per piece, as couriers are told (M39b, D-645). */
+  readonly weightGrams: number | null;
 }
 
 export interface ProductWebFields {
@@ -99,6 +109,8 @@ export interface CategoryWebFields {
   readonly gender: string | null;
   readonly description: string | null;
   readonly imageFileId: string | null;
+  /** The size chart new products filed here start with (M39b, D-646). */
+  readonly defaultSizeChartId?: string | null;
 }
 
 export interface CatalogCategory {
@@ -205,7 +217,12 @@ export function createProduct(input: {
   readonly variantPrices?: readonly {
     readonly valueIds: readonly string[];
     readonly pricePoisha: string;
+    /** M39b (D-640): absent for the product's regular price, null for none. */
+    readonly compareAtPoisha?: string | null;
   }[];
+  /** M39b: the regular price every variant starts with, and the weight per piece. */
+  readonly compareAtPoisha?: string | undefined;
+  readonly weightGrams?: number | undefined;
 }): Promise<CatalogProduct> {
   const { axes, variantPrices, ...rest } = input;
   return api.post('/v1/catalog/products', {
@@ -225,6 +242,8 @@ export function updateProduct(
     readonly categoryId?: string | null;
     readonly description?: string | null;
     readonly status?: 'draft' | 'active' | 'archived';
+    /** Grams per piece, or null to clear it (M39b, D-645). */
+    readonly weightGrams?: number | null;
   },
 ): Promise<CatalogProduct> {
   return api.patch(`/v1/catalog/products/${id}`, patch);
@@ -383,7 +402,12 @@ export function priceHistory(skuId: string): Promise<{
 
 export function attachImage(
   productId: string,
-  input: { readonly fileId: string; readonly altText?: string | undefined },
+  input: {
+    readonly fileId: string;
+    readonly altText?: string | undefined;
+    /** The colour the photo shows (M39b, D-643). */
+    readonly colourValueId?: string | null | undefined;
+  },
 ): Promise<{ id: string; fileId: string; position: number }> {
   return api.post(`/v1/catalog/products/${productId}/images`, input);
 }

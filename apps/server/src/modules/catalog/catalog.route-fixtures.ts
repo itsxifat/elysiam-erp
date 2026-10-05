@@ -300,6 +300,36 @@ Route matrix import ${token()},1500
     url: '/v1/catalog/labels',
     body: { items: [{ skuId: randomUUID(), copies: 1 }] },
   }),
+
+  // --- M39b (D-636 to D-645) ----------------------------------------------------------
+  'GET /v1/catalog/products/:id/price-history': () => ({
+    url: `/v1/catalog/products/${state().productId}/price-history`,
+  }),
+  // A fresh name per call: each admitted role makes its own copy (a duplicate is a new
+  // product, `create Catalog`).
+  'POST /v1/catalog/products/:id/duplicate': () => ({
+    url: `/v1/catalog/products/${state().productId}/duplicate`,
+    body: { name: `Route matrix copy ${token()}` },
+  }),
+  // `active` again is still a real, audited write.
+  'PATCH /v1/catalog/products': () => ({
+    url: '/v1/catalog/products',
+    body: { productIds: [state().productId], status: 'active' },
+  }),
+  // An image that does not exist: an admitted role gets a 404, a refused one a 403.
+  'PUT /v1/catalog/products/:id/images/:imageId/colour': () => ({
+    url: `/v1/catalog/products/${state().productId}/images/${randomUUID()}/colour`,
+    body: { colourValueId: null },
+  }),
+  'PUT /v1/catalog/skus/:id/weight': () => ({
+    url: `/v1/catalog/skus/${state().skuId}/weight`,
+    body: { weightGrams: 450 },
+  }),
+  // Served by the inventory module (the held-stock guard), under the catalog's path.
+  'PATCH /v1/catalog/skus': () => ({
+    url: '/v1/catalog/skus',
+    body: { skuIds: [state().skuId], status: 'active' },
+  }),
 };
 
 /** The manifest entries the integrator appends, derived from the fixtures. */

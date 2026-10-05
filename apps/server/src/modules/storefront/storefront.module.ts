@@ -29,6 +29,7 @@ import { SiteCache } from './site-cache.js';
 import { STOREFRONT_API, StorefrontApiService } from './storefront.api.js';
 import { STOREFRONT_CONFIG, storefrontConfig, type StorefrontConfig } from './storefront.config.js';
 import { StorefrontController } from './storefront.controller.js';
+import { StorefrontBulkController } from './storefront-bulk.controller.js';
 import { StorefrontPublicController } from './storefront-public.controller.js';
 import { StorefrontPublicService } from './storefront-public.service.js';
 import { StorefrontService } from './storefront.service.js';
@@ -98,6 +99,8 @@ class StorefrontValkey implements OnModuleDestroy {
   ],
   controllers: [
     StorefrontController,
+    // M39b (D-642): the product list's website switches for many products.
+    StorefrontBulkController,
     StorefrontPublicController,
     StorefrontBuyingController,
     SslcommerzIpnController,

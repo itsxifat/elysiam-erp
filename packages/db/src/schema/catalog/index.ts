@@ -136,6 +136,12 @@ export const categories = catalog.table(
     gender: text('gender'),
     description: text('description'),
     imageFileId: uuid('image_file_id'),
+    /**
+     * The size chart a new product filed here starts with (M39b, D-646). Points at
+     * `storefront.size_charts` through a composite foreign key declared in M39b's migration
+     * SQL (`on delete set null`), for the same reason as `products.size_chart_id`.
+     */
+    defaultSizeChartId: uuid('default_size_chart_id'),
     ...timestamps,
   },
   (table) => [
@@ -323,6 +329,12 @@ export const products = catalog.table(
      */
     searchText: text('search_text').notNull().default(''),
     createdBy: text('created_by'),
+    /**
+     * What one piece weighs, in grams, as a courier is told (M39b, D-645). A variant may
+     * override it (`skus.weight_grams`); a booking sums qty × weight and falls back to the
+     * courier's default when any line has none.
+     */
+    weightGrams: integer('weight_grams'),
     ...timestamps,
   },
   (table) => [
@@ -373,6 +385,10 @@ export const products = catalog.table(
         and (${table.seoDescription} is null or length(${table.seoDescription}) <= 320)`,
     ),
     check('products_previous_slugs_bounded', sql`cardinality(${table.previousSlugs}) <= 20`),
+    check(
+      'products_weight_bounded',
+      sql`${table.weightGrams} is null or ${table.weightGrams} between 1 and 100000`,
+    ),
   ],
 );
 
@@ -405,6 +421,13 @@ export const skus = catalog.table(
     barcode: text('barcode'),
     /** The **selling** price. Never a cost (invariant 5). */
     pricePoisha: bigint('price_poisha', { mode: 'bigint' }).notNull(),
+    /**
+     * The regular ("was") price the website strikes through (M39b, D-640): a selling-side
+     * figure, so the catalog may hold it. Null for none; above the price when set.
+     */
+    compareAtPoisha: bigint('compare_at_poisha', { mode: 'bigint' }),
+    /** This variant's own weight in grams, over the product's (M39b, D-645). */
+    weightGrams: integer('weight_grams'),
     status: skuStatus('status').notNull().default('active'),
     position: integer('position').notNull().default(0),
     ...timestamps,
@@ -429,6 +452,16 @@ export const skus = catalog.table(
     ),
     check('skus_price_positive', sql`${table.pricePoisha} > 0`),
     check('skus_price_bounded', sql`${table.pricePoisha} <= 9000000000000000`),
+    check(
+      'skus_compare_at_above_price',
+      sql`${table.compareAtPoisha} is null
+        or (${table.compareAtPoisha} > ${table.pricePoisha}
+            and ${table.compareAtPoisha} <= 9000000000000000)`,
+    ),
+    check(
+      'skus_weight_bounded',
+      sql`${table.weightGrams} is null or ${table.weightGrams} between 1 and 100000`,
+    ),
     check(
       'skus_barcode_printable_ascii',
       // `[ -~]` rather than `[\x20-\x7e]`: a literal range needs no escape
@@ -494,6 +527,13 @@ export const skuPriceHistory = catalog.table(
     /** Null on the first row: there was no price before. */
     fromPoisha: bigint('from_poisha', { mode: 'bigint' }),
     toPoisha: bigint('to_poisha', { mode: 'bigint' }).notNull(),
+    /**
+     * The regular price before and after (M39b, D-640). A row is written when the price or
+     * the regular price changes; a regular-price-only change repeats the price in both
+     * `from_poisha` and `to_poisha`.
+     */
+    compareAtFromPoisha: bigint('compare_at_from_poisha', { mode: 'bigint' }),
+    compareAtToPoisha: bigint('compare_at_to_poisha', { mode: 'bigint' }),
     /** The Asia/Dhaka business date the change took effect (invariant 8). */
     changedBy: text('changed_by'),
     reason: text('reason'),
@@ -516,7 +556,8 @@ export const skuPriceHistory = catalog.table(
     check('sku_price_history_to_positive', sql`${table.toPoisha} > 0`),
     check(
       'sku_price_history_changed',
-      sql`${table.fromPoisha} is null or ${table.fromPoisha} <> ${table.toPoisha}`,
+      sql`${table.fromPoisha} is null or ${table.fromPoisha} <> ${table.toPoisha}
+        or ${table.compareAtFromPoisha} is distinct from ${table.compareAtToPoisha}`,
     ),
     check(
       'sku_price_history_reason_length',
@@ -544,10 +585,17 @@ export const productImages = catalog.table(
     fileId: uuid('file_id').notNull(),
     position: integer('position').notNull().default(0),
     altText: text('alt_text'),
+    /**
+     * The colour this photo shows (M39b, D-643), or null for every colour. A colour value of
+     * the brand's, through a composite foreign key declared in M39b's migration SQL
+     * (`on delete set null (colour_value_id)`, which Drizzle cannot express).
+     */
+    colourValueId: uuid('colour_value_id'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (table) => [
     unique('product_images_org_id_id_key').on(table.orgId, table.id),
+    index('product_images_org_colour_idx').on(table.orgId, table.colourValueId),
     index('product_images_org_idx').on(table.orgId),
     index('product_images_org_product_idx').on(table.orgId, table.productId, table.position),
     uniqueIndex('product_images_org_product_file_idx').on(

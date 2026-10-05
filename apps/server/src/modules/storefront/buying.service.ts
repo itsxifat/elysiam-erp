@@ -181,6 +181,8 @@ export class BuyingService {
         {
           id: fact.id,
           pricePoisha: poisha(fact.pricePoisha),
+          // Struck through on the cart line beside the shelf or flash price (M39b, D-640).
+          compareAtPoisha: fact.compareAtPoisha === null ? null : poisha(fact.compareAtPoisha),
           sellable: fact.sellable,
           availableQty: available.get(fact.id) ?? 0,
         },

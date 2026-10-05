@@ -53,6 +53,9 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   FORBIDDEN: 403,
   // M39a (D-629): a location something still names.
   INVENTORY_IN_USE: 409,
+  // M39b (D-639): variants whose pieces orders hold are not archived together.
+  CATALOG_SKU_HELD: 409,
+  CATALOG_NOT_FOUND: 404,
 };
 
 export class StockError extends Error {

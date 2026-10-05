@@ -94,11 +94,31 @@ export const categoryWebFieldsSchema = z
     gender: webGenderSchema.nullable(),
     description: text(2000).nullable(),
     imageFileId: uuid.nullable(),
+    /** The size chart new products filed here start with (M39b, D-646), or none. */
+    defaultSizeChartId: uuid.nullable(),
   })
   .partial()
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'Nothing to change.');
 export type CategoryWebFieldsInput = z.infer<typeof categoryWebFieldsSchema>;
+
+/**
+ * The product list's bulk website switches (M39b, D-642): show or hide many products on the
+ * website, or give them one size chart. `update Storefront`, like the product's own Website
+ * card (D-508).
+ */
+export const bulkProductWebFieldsSchema = z
+  .object({
+    productIds: z.array(uuid).min(1, 'Choose at least one product.').max(100),
+    webVisible: z.boolean().optional(),
+    sizeChartId: uuid.nullable().optional(),
+  })
+  .strict()
+  .refine(
+    (value) => value.webVisible !== undefined || value.sizeChartId !== undefined,
+    'Nothing to change.',
+  );
+export type BulkProductWebFieldsInput = z.infer<typeof bulkProductWebFieldsSchema>;
 
 // --- settings (D-503) -----------------------------------------------------------------------
 
