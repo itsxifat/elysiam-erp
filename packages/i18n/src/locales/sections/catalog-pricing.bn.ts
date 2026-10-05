@@ -153,7 +153,7 @@ const bn: Record<CatalogPricingKey, string> = {
   'cp.receive.sameForAll': 'সবার জন্য একই খরচ (৳)',
   'cp.receive.sameForAllHint': 'নিজস্ব খরচ নেই এমন প্রতিটি variant পূরণ করে।',
   'cp.receive.prefilled': 'নির্ধারিত বা শেষ কেনা দাম থেকে বসানো হয়েছে; যেকোনোটি বদলাতে পারেন।',
-  'cp.receive.source.supplier-standard': 'এই সাপ্লায়ারের নির্ধারিত',
+  'cp.receive.source.supplierStandard': 'এই সাপ্লায়ারের নির্ধারিত',
   'cp.receive.source.standard': 'নির্ধারিত',
   'cp.receive.source.last': 'শেষ কেনা',
   'cp.receive.archivedScan': 'এই variant আর্কাইভ করা। রিসিভ করতে পণ্যের পাতায় সেটি ফিরিয়ে আনুন।',

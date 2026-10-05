@@ -154,7 +154,7 @@ function QtyTable({
 }) {
   const t = useT();
   const sourceLabel = {
-    'supplier-standard': t('cp.receive.source.supplier-standard'),
+    'supplier-standard': t('cp.receive.source.supplierStandard'),
     standard: t('cp.receive.source.standard'),
     last: t('cp.receive.source.last'),
   } as const;

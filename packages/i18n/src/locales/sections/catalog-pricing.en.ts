@@ -168,7 +168,7 @@ const en = {
   'cp.receive.sameForAll': 'Same cost for all (৳)',
   'cp.receive.sameForAllHint': 'Fills every variant without its own cost.',
   'cp.receive.prefilled': 'Filled from the standard or last buying price; change any of them.',
-  'cp.receive.source.supplier-standard': "this supplier's standard",
+  'cp.receive.source.supplierStandard': "this supplier's standard",
   'cp.receive.source.standard': 'standard',
   'cp.receive.source.last': 'last bought',
   'cp.receive.archivedScan':
