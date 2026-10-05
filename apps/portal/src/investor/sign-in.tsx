@@ -378,7 +378,11 @@ function EnrolStep({
           ))}
         </ul>
         <div className="mt-3 space-y-3">
-          <Button variant="outline" size="sm" onClick={() => downloadCodes(enrolment.backupCodes)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => downloadCodes(enrolment.backupCodes, null)}
+          >
             <Download aria-hidden="true" />
             {t('auth.enrol.download')}
           </Button>
@@ -441,12 +445,22 @@ function secretFrom(totpURI: string): string {
   }
 }
 
-function downloadCodes(codes: readonly string[]): void {
+/**
+ * `<brand>-recovery-codes.txt`, after the brand's own slug when the screen knows it, so a
+ * person with accounts in several places can tell the files apart (D-472).
+ */
+function recoveryCodesFileName(brandSlug: string | null | undefined): string {
+  return typeof brandSlug === 'string' && /^[a-z0-9-]+$/.test(brandSlug)
+    ? `${brandSlug}-recovery-codes.txt`
+    : 'recovery-codes.txt';
+}
+
+function downloadCodes(codes: readonly string[], brandSlug: string | null | undefined): void {
   const blob = new Blob([`${codes.join('\n')}\n`], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = 'elysium-recovery-codes.txt';
+  link.download = recoveryCodesFileName(brandSlug);
   link.click();
   URL.revokeObjectURL(url);
 }

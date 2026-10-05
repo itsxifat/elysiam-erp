@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { canReadCost } from '@elysium/contracts';
-import { withAnalytics, withOrg } from '@elysium/db';
+import { withOrg } from '@elysium/db';
 import {
   ageOpenItems,
   aggregateBalanceOf,
@@ -13,12 +13,11 @@ import { sql } from 'drizzle-orm';
 import { scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import * as repo from './wallets.repository.js';
-import { walletsHttpError } from './wallets.errors.js';
 
 /**
  * The reports M08 adds on top of M03's day book, cash book and trial balance
  * (architecture §7 "Reports"): P&L by org and by branch, the balance sheet,
- * payable and receivable aging, and the Super Admin consolidated views.
+ * payable and receivable aging. Nothing here reads across brands (D-471).
  *
  * Every number is a sum over `ledger.journal_lines`. Nothing here reads a
  * maintained total, which is why the cash book and the ledger cannot disagree
@@ -299,112 +298,6 @@ export class WalletReportsService {
   }
 
   /**
-   * Every brand's wallet total, in one answer, for Super Admin (M08 check 3).
-   *
-   * `withAnalytics()`, never `withOrg()` in a loop. §5 exception 3 allows exactly
-   * this read and requires it to be read-only, and the role is what makes that
-   * true: `erp_analytics` has SELECT on three ledger tables (migration 0030) and no
-   * INSERT, UPDATE or DELETE on anything. The loop would produce the same numbers
-   * today and leave nothing in the database to stop a write being added to it
-   * tomorrow.
-   *
-   * Refused for anyone but a platform super admin. `read LedgerReport` is held at
-   * `org` by org_admin and accounts too, so the ability alone is not the check —
-   * the `all` scope is, and `isSuperAdmin` is how §5 expresses it.
-   */
-  async consolidatedWallets(context: ActiveContext) {
-    this.assertSuperAdmin(context);
-
-    return withAnalytics(async (tx) => {
-      const rows = await repo.consolidatedWalletTotals(tx);
-      const byOrg = new Map<
-        string,
-        { orgId: string; orgName: string; totalPoisha: bigint; bySubtype: Record<string, string> }
-      >();
-
-      for (const row of rows) {
-        const balance = aggregateBalanceOf(
-          'debit',
-          BigInt(row.debit_poisha),
-          BigInt(row.credit_poisha),
-        );
-        const org = byOrg.get(row.org_id) ?? {
-          orgId: row.org_id,
-          orgName: row.org_name,
-          totalPoisha: 0n,
-          bySubtype: {},
-        };
-        org.bySubtype[row.subtype] = money(BigInt(org.bySubtype[row.subtype] ?? '0') + balance);
-        byOrg.set(row.org_id, { ...org, totalPoisha: org.totalPoisha + balance });
-      }
-
-      const orgs = [...byOrg.values()];
-      return {
-        orgs: orgs.map((org) => ({
-          orgId: org.orgId,
-          orgName: org.orgName,
-          totalPoisha: money(org.totalPoisha),
-          bySubtype: org.bySubtype,
-        })),
-        // The check the milestone measures: this equals the sum of the orgs'
-        // totals, because it is computed from the same rows rather than from a
-        // second query that could filter differently.
-        totalPoisha: money(orgs.reduce((total, org) => total + org.totalPoisha, 0n)),
-      };
-    });
-  }
-
-  /** Every brand's income, expense and net over a range. Same role, same rules. */
-  async consolidatedProfitAndLoss(
-    context: ActiveContext,
-    range: { readonly from: string; readonly to: string },
-  ) {
-    this.assertSuperAdmin(context);
-
-    return withAnalytics(async (tx) => {
-      const rows = await repo.consolidatedProfitAndLoss(tx, range);
-      const byOrg = new Map<
-        string,
-        { orgId: string; orgName: string; income: bigint; expense: bigint }
-      >();
-
-      for (const row of rows) {
-        const org = byOrg.get(row.org_id) ?? {
-          orgId: row.org_id,
-          orgName: row.org_name,
-          income: 0n,
-          expense: 0n,
-        };
-        // Income is credit-normal, expense debit-normal. `sales_discounts` is a
-        // debit-normal income account, so summing income as credit − debit nets
-        // the discounts off revenue exactly as the per-org P&L does.
-        if (row.class === 'income') {
-          org.income += BigInt(row.credit_poisha) - BigInt(row.debit_poisha);
-        } else {
-          org.expense += BigInt(row.debit_poisha) - BigInt(row.credit_poisha);
-        }
-        byOrg.set(row.org_id, org);
-      }
-
-      const orgs = [...byOrg.values()];
-      return {
-        from: range.from,
-        to: range.to,
-        orgs: orgs.map((org) => ({
-          orgId: org.orgId,
-          orgName: org.orgName,
-          incomePoisha: money(org.income),
-          expensePoisha: money(org.expense),
-          netPoisha: money(org.income - org.expense),
-        })),
-        incomePoisha: money(orgs.reduce((total, org) => total + org.income, 0n)),
-        expensePoisha: money(orgs.reduce((total, org) => total + org.expense, 0n)),
-        netPoisha: money(orgs.reduce((total, org) => total + org.income - org.expense, 0n)),
-      };
-    });
-  }
-
-  /**
    * A branch filter on top of the caller's own scope, never instead of it.
    *
    * An org-wide caller asking for one branch gets that branch; a branch manager
@@ -415,14 +308,5 @@ export class WalletReportsService {
     const scope = scopeWhere(request, { branchId: sql`l.branch_id` });
     if (branchId === undefined) return scope;
     return sql`(${scope} and l.branch_id = ${branchId}::uuid)`;
-  }
-
-  private assertSuperAdmin(context: ActiveContext): void {
-    if (!context.isSuperAdmin) {
-      throw walletsHttpError(
-        'FORBIDDEN',
-        'The consolidated view is the platform super admin’s (§5 exception 3).',
-      );
-    }
   }
 }

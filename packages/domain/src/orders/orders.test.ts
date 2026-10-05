@@ -798,6 +798,26 @@ describe('a promo code goes back on a cancel, and only on a cancel (D-204)', () 
   });
 });
 
+describe('flash units go back on a cancel and on a received return (M35a, D-542)', () => {
+  it('declares release_flash_units on every cancel and every received return', () => {
+    const endings = TRANSITIONS.filter(
+      (row) => row.to === 'cancelled' || row.trigger === 'receive_return',
+    );
+    expect(endings.length).toBe(5);
+    for (const row of endings) expect(row.effects).toContain('release_flash_units');
+  });
+
+  it('declares it nowhere else: a delivered unit stays sold at the sale price', () => {
+    const elsewhere = TRANSITIONS.filter(
+      (row) =>
+        row.to !== 'cancelled' &&
+        row.trigger !== 'receive_return' &&
+        row.effects.includes('release_flash_units'),
+    );
+    expect(elsewhere).toEqual([]);
+  });
+});
+
 describe('a website order holds its stock from the checkout (M34, D-532)', () => {
   it('does not reserve again on confirm, and releases on a pending cancel', () => {
     expect(
@@ -813,7 +833,12 @@ describe('a website order holds its stock from the checkout (M34, D-532)', () =>
       reason: 'unpaid',
       stockHeld: true,
     });
-    expect(heldCancel.effects).toEqual(['release_reservation', 'release_promo', 'settle_advances']);
+    expect(heldCancel.effects).toEqual([
+      'release_reservation',
+      'release_promo',
+      'release_flash_units',
+      'settle_advances',
+    ]);
     const plainCancel = transition({ from: 'pending', trigger: 'cancel', at: AT, reason: 'dup' });
     expect(plainCancel.effects).not.toContain('release_reservation');
   });

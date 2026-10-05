@@ -1,4 +1,4 @@
-import { SEED_ORG_IDS, TRAINING_ORG_SLUG, trainingOrgId } from '@elysium/db';
+import { SEED_ORGS, seedOrgId, TRAINING_ORG_SLUG, trainingOrgId } from '@elysium/db';
 
 import {
   ensureCash,
@@ -27,18 +27,24 @@ import {
 /**
  * The preview's demo activity, in the order a brand's first weeks happen (D-380).
  *
- * The brand is Elysium Lifestyle BD — the first of the five — because the logins are
- * there. The other four brands keep only the seed's set-up, and the training brand keeps
- * what `pnpm demo:org` imports.
+ * The brand is the first of the five by default, because the logins are there; the other
+ * four keep only the seed's set-up, and the training brand keeps what `pnpm demo:org`
+ * imports. `preview:seed --brand <slug>` seeds only that brand and demos it, the way a
+ * brand's own ERP is previewed (D-470).
  */
 
-export const PREVIEW_ORG_SLUG = 'elysium-lifestyle-bd';
-export const PREVIEW_BRAND_NAME = 'Elysium Lifestyle BD';
+export const DEFAULT_PREVIEW_ORG_SLUG = 'elysium-lifestyle-bd';
 
-export function previewOrgId(): string {
-  const id = SEED_ORG_IDS[PREVIEW_ORG_SLUG];
-  if (id === undefined) throw new Error('preview: the seed has no Elysium Lifestyle BD.');
-  return id;
+export interface PreviewBrand {
+  readonly slug: string;
+  readonly name: string;
+  readonly orgId: string;
+}
+
+export function previewBrand(slug: string = DEFAULT_PREVIEW_ORG_SLUG): PreviewBrand {
+  const org = SEED_ORGS.find((entry) => entry.slug === slug);
+  if (org === undefined) throw new Error(`preview: the seed has no brand "${slug}".`);
+  return { slug, name: org.legalName, orgId: seedOrgId(slug) };
 }
 
 /** The branch the branch manager's membership is scoped to, needed before the invites. */
@@ -106,11 +112,11 @@ export interface BooksCheck {
 export async function checkBooks(
   people: People,
   today: string,
-  options: { readonly training: boolean },
+  options: { readonly training: boolean; readonly brand: PreviewBrand },
 ): Promise<BooksCheck[]> {
   const root = await people.robot('root');
   const brands = [
-    { name: PREVIEW_BRAND_NAME, orgId: previewOrgId(), demo: true },
+    { name: options.brand.name, orgId: options.brand.orgId, demo: true },
     ...(options.training
       ? [{ name: `Training (${TRAINING_ORG_SLUG})`, orgId: trainingOrgId(), demo: false }]
       : []),
@@ -163,7 +169,7 @@ export async function checkBooks(
       },
     });
   }
-  await root.client.post('/v1/me/active-org', { orgId: previewOrgId() });
+  await root.client.post('/v1/me/active-org', { orgId: options.brand.orgId });
   return checks;
 }
 

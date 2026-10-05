@@ -41,7 +41,9 @@ export interface OpenReset {
   readonly kind: 'password' | 'two_factor';
   readonly status: 'pending_approval' | 'approved';
   readonly requestedBy: string;
+  /** Null for an owner unless the viewer is one too (D-473). */
   readonly requestedByName: string | null;
+  readonly requestedByOwner?: boolean;
   readonly reason: string;
   readonly approvalRequestId: string | null;
   readonly createdAt: string;

@@ -19,15 +19,13 @@ import { NARRATIVE_PROVIDER } from './providers/narrative.provider.js';
 import { RollupService } from './rollup.service.js';
 
 /**
- * Analytics (architecture §18; M24): the rollups and their jobs, the org and consolidated
- * dashboards, the leaderboard, insight rules, the narrative and exports.
+ * Analytics (architecture §18; M24): the rollups and their jobs, the brand's dashboard,
+ * insight rules, the narrative and exports. Nothing compares brands (D-471).
  *
  * Reads every source through its owner's `*.api.ts` (invariant 12): orders, marketing, HR,
  * the ledger and inventory. Nothing imports this module; the arrows all point out of it.
- * It is the one module that uses the cross-org read-only role (invariant 4, D-329).
  *
- * The config is a factory run at `app.init()`, so bad leaderboard weights stop the process
- * at boot (D-323).
+ * The config is a factory run at `app.init()`, so a bad value stops the process at boot.
  */
 const configProvider: Provider = {
   provide: ANALYTICS_CONFIG,

@@ -79,7 +79,7 @@ export function planCredentialReset(input: {
   if (target.inOtherBrand && !actor.isSuperAdmin) {
     return refuse(
       'USER_PROTECTED',
-      'This person also belongs to another brand, so only a super admin can reset their sign-in.',
+      'Their sign-in also opens another workspace, so only a super admin can reset it.',
     );
   }
   if (kind === 'two_factor' && !target.twoFactorEnabled) {

@@ -61,16 +61,6 @@ export function accountsRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./periods.js'), 'PeriodsPage'),
   });
 
-  const consolidated = createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/accounts/consolidated',
-    validateSearch: (search: Record<string, unknown>): { from?: string; to?: string } => ({
-      ...(typeof search.from === 'string' ? { from: search.from } : {}),
-      ...(typeof search.to === 'string' ? { to: search.to } : {}),
-    }),
-    component: lazyRouteComponent(() => import('./consolidated.js'), 'ConsolidatedPage'),
-  });
-
   // M17: the accounts queue for advance claims and refunds owed.
   const advances = createRoute({
     getParentRoute: () => rootRoute,
@@ -78,15 +68,5 @@ export function accountsRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./advances.js'), 'AdvancesPage'),
   });
 
-  return [
-    cash,
-    transfers,
-    setup,
-    wallet,
-    reports,
-    ledger,
-    periods,
-    consolidated,
-    advances,
-  ] as const;
+  return [cash, transfers, setup, wallet, reports, ledger, periods, advances] as const;
 }

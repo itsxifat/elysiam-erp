@@ -113,7 +113,15 @@ async function adminConnectionUrl(): Promise<string> {
 /** An arbitrary constant: "only one test-database bootstrap at a time". */
 const BOOTSTRAP_LOCK_KEY = 720_240_001;
 
-export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
+export interface TestDatabaseOptions {
+  /** Seed only these brands (a brand's own ERP, D-470); all five when absent. */
+  readonly brands?: readonly string[];
+}
+
+export async function startTestDatabase(
+  label = 'test',
+  options: TestDatabaseOptions = {},
+): Promise<TestDatabase> {
   const adminUrl = await adminConnectionUrl();
   const databaseName = `elysium_${label}_${Date.now().toString(36)}${Math.random()
     .toString(36)
@@ -209,7 +217,7 @@ export async function startTestDatabase(label = 'test'): Promise<TestDatabase> {
   });
 
   await seedGeography();
-  await seedOrganizations();
+  await seedOrganizations({ brands: options.brands });
 
   return {
     adminUrl,

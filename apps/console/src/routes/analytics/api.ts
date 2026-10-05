@@ -86,47 +86,6 @@ export interface Dashboard {
   readonly stockValuePoisha?: string;
 }
 
-export const LEADERBOARD_METRICS = [
-  'revenueGrowth',
-  'deliverySuccess',
-  'returnRate',
-  'roas',
-  'cpdo',
-  'aovGrowth',
-  'pickupTime',
-] as const;
-export type LeaderboardMetric = (typeof LEADERBOARD_METRICS)[number];
-
-interface MonthFigures {
-  readonly ordersDelivered: number;
-  readonly ordersReturned: number;
-  readonly ordersCancelled: number;
-  readonly deliveredRevenuePoisha: string;
-  readonly spendPoisha: string;
-  readonly pickupCount: number;
-  readonly pickupSeconds: number;
-}
-
-export interface BoardRow {
-  /** `full`: the viewer's own brand, or any brand for Super Admin. `normalized`: D-023. */
-  readonly visibility: 'full' | 'normalized';
-  readonly orgId: string;
-  readonly orgName: string;
-  readonly rank: number;
-  readonly compositeBps: number;
-  readonly metrics: Readonly<Record<LeaderboardMetric, string | null>>;
-  readonly ranks: Readonly<Record<LeaderboardMetric, number | null>>;
-  readonly scores: Readonly<Record<LeaderboardMetric, number>>;
-  readonly raw?: { readonly current: MonthFigures; readonly previous: MonthFigures };
-}
-
-export interface Leaderboard {
-  readonly month: string;
-  readonly metrics: readonly LeaderboardMetric[];
-  readonly weights: Readonly<Record<LeaderboardMetric, number>>;
-  readonly rows: readonly BoardRow[];
-}
-
 export const INSIGHT_CODES = [
   'outside_dhaka_returns',
   'return_rate_rising',
@@ -134,7 +93,7 @@ export const INSIGHT_CODES = [
   'cpdo_rising',
   'slow_pickup',
   'channel_returns',
-  'delivery_success_below_group',
+  'delivery_success_below_usual',
 ] as const;
 export type InsightCode = (typeof INSIGHT_CODES)[number];
 
@@ -156,14 +115,6 @@ export type Narrative =
       readonly cached: boolean;
     };
 
-export interface Consolidated {
-  readonly from: string;
-  readonly to: string;
-  readonly brands: readonly (OrderMetrics &
-    Kpis & { readonly orgId: string; readonly orgName: string; readonly spendPoisha: string })[];
-  readonly group: OrderMetrics & Kpis & { readonly spendPoisha: string };
-}
-
 function query(params: Record<string, string>): string {
   return `?${new URLSearchParams(params).toString()}`;
 }
@@ -182,12 +133,6 @@ export const refreshRollups = (from: string, to: string) =>
     from,
     to,
   });
-
-export const getLeaderboard = (month: string) =>
-  api.get<Leaderboard>(`/v1/analytics/leaderboard${query({ month })}`);
-
-export const getConsolidated = (from: string, to: string) =>
-  api.get<Consolidated>(`/v1/analytics/consolidated${query({ from, to })}`);
 
 /** A link, not a script download: the browser saves the file the server names. */
 export const exportUrl = (from: string, to: string, format: 'csv' | 'xlsx') =>

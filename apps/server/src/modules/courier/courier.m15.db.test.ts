@@ -1508,7 +1508,7 @@ describe('M15’s routes over HTTP', () => {
 describe('a courier webhook over HTTP', () => {
   /*
    * The platform's CSRF hook used to refuse every state-changing request with no
-   * `elysium_csrf` cookie, and a courier's server has none — so over real HTTP M12's webhook
+   * `erp_csrf` cookie, and a courier's server has none — so over real HTTP M12's webhook
    * route answered 403 before it ran, for every courier, while M12's suite (which calls
    * `acceptWebhook` directly) never saw it. The exemption for `/v1/courier/webhooks/` has now
    * landed in `csrf.ts`; this test is what keeps it there — through the real pipeline, no

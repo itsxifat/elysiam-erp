@@ -4,11 +4,12 @@ import { withSystem } from '../client.js';
 import { branches, locations, organizations } from '../schema/org/index.js';
 import { seedDeliveryZones } from './delivery-zones.js';
 import { seedChartOfAccounts } from './ledger.js';
-import { deterministicUuid, SEED_ORGS, seedOrgId } from './orgs.js';
+import { deterministicUuid, SEED_ORGS, seedOrgId, type SeedOrg } from './orgs.js';
 
 /**
- * Seed the five orgs, each with an HQ branch, a warehouse location and its
- * chart of accounts (M03).
+ * Seed the five orgs (or one, for a brand's own ERP: D-470), each with an HQ branch, a
+ * warehouse location, its chart of accounts with a hand-cash wallet, and its delivery
+ * zones (M03).
  *
  * Idempotent by construction: ids are derived from natural keys and every
  * insert is an upsert, so running it twice changes nothing. That matters more
@@ -34,10 +35,64 @@ export interface SeedResult {
   readonly accounts: number;
 }
 
-export async function seedOrganizations(): Promise<SeedResult> {
+export interface SeedOptions {
+  /**
+   * Seed only these brands, by slug (D-470, M31). A brand's ERP runs on a database of its
+   * own, so its seed writes that one brand: `pnpm db:seed --brand <slug>` or
+   * `SEED_BRANDS=<slug>`. Absent means all five, the many-brand mode of the tests and local
+   * development.
+   */
+  readonly brands?: readonly string[] | undefined;
+}
+
+/** The brands a seed run writes: all five, or the named ones. An unknown slug throws. */
+export function seedOrgsFor(brands: readonly string[] | undefined): readonly SeedOrg[] {
+  if (brands === undefined) return SEED_ORGS;
+  const unknown = brands.filter((slug) => !SEED_ORGS.some((org) => org.slug === slug));
+  if (unknown.length > 0 || brands.length === 0) {
+    throw new Error(
+      `db:seed: no brand with the slug ${unknown.join(', ') || '(none given)'}. ` +
+        `Known slugs: ${SEED_ORGS.map((org) => org.slug).join(', ')}.`,
+    );
+  }
+  return SEED_ORGS.filter((org) => brands.includes(org.slug));
+}
+
+/**
+ * `--brand <slug>` (repeatable) or `SEED_BRANDS=<slug>[,<slug>]`; undefined when neither.
+ * The command line wins over the environment.
+ */
+export function seedBrandsFrom(
+  argv: readonly string[],
+  env: Readonly<Record<string, string | undefined>>,
+): string[] | undefined {
+  const fromArgs: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index] ?? '';
+    if (arg === '--brand') {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith('--')) {
+        throw new Error('db:seed: --brand needs a slug, e.g. --brand oura-lifestyle.');
+      }
+      fromArgs.push(value);
+      index += 1;
+    } else if (arg.startsWith('--brand=')) {
+      fromArgs.push(arg.slice('--brand='.length));
+    }
+  }
+  if (fromArgs.length > 0) return fromArgs;
+  const fromEnv = (env.SEED_BRANDS ?? '')
+    .split(',')
+    .map((slug) => slug.trim())
+    .filter(Boolean);
+  return fromEnv.length > 0 ? fromEnv : undefined;
+}
+
+export async function seedOrganizations(options: SeedOptions = {}): Promise<SeedResult> {
+  const orgs = seedOrgsFor(options.brands);
   // organizations is global (§5 exception 5), so it needs no org context.
   await withSystem(async (tx) => {
-    for (const org of SEED_ORGS) {
+    for (const org of orgs) {
       await tx
         .insert(organizations)
         .values({
@@ -66,7 +121,7 @@ export async function seedOrganizations(): Promise<SeedResult> {
     }
   });
 
-  for (const org of SEED_ORGS) {
+  for (const org of orgs) {
     const orgId = seedOrgId(org.slug);
     const branchId = deterministicUuid(BRANCH_NAMESPACE, `${org.slug}:HQ`);
 
@@ -112,7 +167,7 @@ export async function seedOrganizations(): Promise<SeedResult> {
   const totals = { organizations: 0, branches: 0, locations: 0, accounts: 0 };
 
   // The chart of accounts, after the branches it keeps a wallet for (§7).
-  for (const org of SEED_ORGS) {
+  for (const org of orgs) {
     totals.accounts += await seedChartOfAccounts(seedOrgId(org.slug));
   }
 
@@ -126,7 +181,7 @@ export async function seedOrganizations(): Promise<SeedResult> {
    * the tenancy suite asserts that shape, and zones are not one of the four things it is
    * about.
    */
-  await seedDeliveryZones(SEED_ORGS.map((org) => seedOrgId(org.slug)));
+  await seedDeliveryZones(orgs.map((org) => seedOrgId(org.slug)));
 
   totals.organizations = await withSystem(async (tx) => {
     const rows = await tx.execute<{ count: string }>(
@@ -135,7 +190,7 @@ export async function seedOrganizations(): Promise<SeedResult> {
     return Number(rows[0]?.count ?? 0);
   });
 
-  for (const org of SEED_ORGS) {
+  for (const org of orgs) {
     const perOrg = await withSystem(
       async (tx) => {
         const rows = await tx.execute<{ branches: string; locations: string }>(sql`

@@ -28,8 +28,8 @@ import { posSyncSchema } from '@elysium/contracts';
 
 const PORT = Number(process.env.STUB_API_PORT ?? 3975);
 const ORIGIN = process.env.POS_ORIGIN ?? 'http://localhost:5176';
-const CSRF_COOKIE = 'elysium_csrf';
-const CSRF_HEADER = 'x-elysium-csrf';
+const CSRF_COOKIE = 'erp_csrf';
+const CSRF_HEADER = 'x-csrf-token';
 
 const REGISTER = {
   id: '7d0c5f2e-5b1a-4c2f-9e1b-0a1b2c3d4e01',

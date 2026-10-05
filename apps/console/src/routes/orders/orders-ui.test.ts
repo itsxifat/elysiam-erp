@@ -172,7 +172,7 @@ describe('the desk preview with a promo code (M16)', () => {
 
   it('sends each line as price times quantity, in poisha, past 2^53', () => {
     expect(promoLines([line(3, '3002399751580331')])).toEqual([
-      { skuId: 'sku-3002399751580331', netPoisha: '9007199254740993' },
+      { skuId: 'sku-3002399751580331', qty: 3, netPoisha: '9007199254740993' },
     ]);
   });
 });

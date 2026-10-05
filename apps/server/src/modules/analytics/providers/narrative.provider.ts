@@ -61,9 +61,6 @@ export class FakeNarrativeProvider implements NarrativeProvider {
         `(${String(before.ordersDelivered)} the month before) worth ${taka(now.deliveredRevenuePoisha)}.`,
       `Return rate ${percent(now.returnRateBps)}, delivery success ${percent(now.deliverySuccessBps)}, ` +
         `ROAS ${multiple(now.roasBps)}.`,
-      payload.leaderboard.rank === null
-        ? 'The brand is not ranked this month.'
-        : `It ranks ${String(payload.leaderboard.rank)} of ${String(payload.leaderboard.brands)} on the leaderboard.`,
       payload.insights.length === 0
         ? 'No rule flagged anything.'
         : `Flagged: ${payload.insights.map((insight) => insight.code).join(', ')}.`,

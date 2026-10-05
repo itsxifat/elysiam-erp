@@ -57,8 +57,8 @@ async function contextFor(
   });
   await context.addInitScript(
     ([theme, locale]) => {
-      localStorage.setItem('elysium-theme', theme);
-      localStorage.setItem('elysium-locale', locale);
+      localStorage.setItem('erp-theme', theme);
+      localStorage.setItem('erp-locale', locale);
     },
     [options.theme ?? 'light', options.locale ?? 'en'] as const,
   );

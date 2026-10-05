@@ -186,8 +186,10 @@ function brandFor(
 ): PayslipBrand {
   const brand = (row?.brand ?? {}) as { address?: unknown; accentHue?: unknown };
   return {
-    displayName: row?.display_name ?? 'Elysium',
-    legalName: row?.legal_name ?? row?.display_name ?? 'Elysium',
+    // The brand's own row always exists for a payslip of its own; no name is invented when it
+    // does not (D-472).
+    displayName: row?.display_name ?? '',
+    legalName: row?.legal_name ?? row?.display_name ?? '',
     address: typeof brand.address === 'string' ? brand.address : undefined,
     accentHue: typeof brand.accentHue === 'number' ? brand.accentHue : undefined,
   };

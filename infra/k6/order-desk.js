@@ -92,7 +92,7 @@ function headers(op, mutation) {
   const out = { cookie: s.cookie, origin: data.origin, accept: 'application/json' };
   if (mutation) {
     out['content-type'] = 'application/json';
-    out['x-elysium-csrf'] = s.csrf;
+    out['x-csrf-token'] = s.csrf;
     out['idempotency-key'] = `${op}-${String(__VU)}-${String(__ITER)}-${String(Date.now())}`;
   }
   return out;

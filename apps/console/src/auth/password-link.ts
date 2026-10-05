@@ -14,6 +14,14 @@ export function passwordLinkPage(pathname: string): PasswordLinkPage | null {
   return null;
 }
 
+/**
+ * The owner sign-in link's page (M31, D-473): `/owner-link#token=…`. Its own page because
+ * it signs the person in rather than setting a password.
+ */
+export function isOwnerLinkPage(pathname: string): boolean {
+  return pathname.replace(/\/+$/, '') === '/owner-link';
+}
+
 /** The token from `#token=…`. Anything else in the fragment is ignored. */
 export function tokenFromHash(hash: string): string | null {
   const token = new URLSearchParams(hash.replace(/^#/, '')).get('token');

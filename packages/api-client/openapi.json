@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Elysium Mother ERP",
+    "title": "ERP API",
     "version": "1.0.0",
-    "description": "Generated from the Zod contracts in @elysium/contracts and the routes the API registers. Do not edit by hand: `pnpm api:client` regenerates it and `pnpm check:api-client` fails the build if the committed copy disagrees."
+    "description": "Generated from the shared Zod contracts and the routes the API registers. Do not edit by hand: `pnpm api:client` regenerates it and `pnpm check:api-client` fails the build if the committed copy disagrees."
   },
   "servers": [
     {
@@ -520,6 +520,11 @@
               "PROMO_CODE_TAKEN",
               "PROMO_INVALID",
               "PROMO_REDEMPTION_IMMUTABLE",
+              "FLASH_SALE_NOT_FOUND",
+              "FLASH_SALE_UNAVAILABLE",
+              "FLASH_SALE_SLUG_TAKEN",
+              "FLASH_SALE_INVALID",
+              "FLASH_CLAIM_IMMUTABLE",
               "NOTIFY_TEMPLATE_INVALID",
               "NOTIFY_MESSAGE_IMMUTABLE",
               "CRM_OCCASION_IMMUTABLE",
@@ -658,7 +663,7 @@
         "operationId": "healthLive",
         "summary": "Liveness probe.",
         "tags": ["health"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -707,7 +712,7 @@
         "operationId": "healthReady",
         "summary": "Readiness probe.",
         "tags": ["health"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -756,7 +761,7 @@
         "operationId": "getMediaByOrgIdByFileIdByVariant",
         "summary": "GET /media/:orgId/:fileId/:variant",
         "tags": ["media"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "parameters": [
           {
             "name": "orgId",
@@ -841,7 +846,7 @@
         "operationId": "postPublicV1Orders",
         "summary": "POST /public/v1/orders",
         "tags": ["public"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -905,7 +910,7 @@
         "operationId": "getStorefrontV1CatalogCategories",
         "summary": "GET /storefront/v1/catalog/categories",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -954,7 +959,7 @@
         "operationId": "getStorefrontV1CatalogProducts",
         "summary": "GET /storefront/v1/catalog/products",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1003,7 +1008,7 @@
         "operationId": "getStorefrontV1CatalogProductsBySlug",
         "summary": "GET /storefront/v1/catalog/products/:slug",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "parameters": [
           {
             "name": "slug",
@@ -1072,7 +1077,7 @@
         "operationId": "getStorefrontV1CatalogSearch",
         "summary": "GET /storefront/v1/catalog/search",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1121,7 +1126,7 @@
         "operationId": "getStorefrontV1GeoDistricts",
         "summary": "GET /storefront/v1/geo/districts",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1170,7 +1175,7 @@
         "operationId": "getStorefrontV1GeoThanas",
         "summary": "GET /storefront/v1/geo/thanas",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1219,7 +1224,7 @@
         "operationId": "getStorefrontV1Site",
         "summary": "GET /storefront/v1/site",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1268,7 +1273,7 @@
         "operationId": "getStorefrontV1SizeChartsById",
         "summary": "GET /storefront/v1/size-charts/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "parameters": [
           {
             "name": "id",
@@ -1337,7 +1342,7 @@
         "operationId": "getV1AccountsCashEntries",
         "summary": "GET /v1/accounts/cash-entries",
         "tags": ["accounts"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1403,7 +1408,7 @@
         "operationId": "postV1AccountsCashEntries",
         "summary": "POST /v1/accounts/cash-entries",
         "tags": ["accounts"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -1486,7 +1491,7 @@
         "operationId": "getV1AccountsCategories",
         "summary": "GET /v1/accounts/categories",
         "tags": ["accounts"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1554,7 +1559,7 @@
         "operationId": "getV1AccountsClosings",
         "summary": "GET /v1/accounts/closings",
         "tags": ["accounts"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1620,7 +1625,7 @@
         "operationId": "postV1AccountsClosings",
         "summary": "POST /v1/accounts/closings",
         "tags": ["accounts"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -1703,7 +1708,7 @@
         "operationId": "getV1AccountsReportsAging",
         "summary": "GET /v1/accounts/reports/aging",
         "tags": ["accounts"],
-        "x-elysium-ability": "read:LedgerReport",
+        "x-ability": "read:LedgerReport",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1771,143 +1776,7 @@
         "operationId": "getV1AccountsReportsBalanceSheet",
         "summary": "GET /v1/accounts/reports/balance-sheet",
         "tags": ["accounts"],
-        "x-elysium-ability": "read:LedgerReport",
-        "responses": {
-          "200": {
-            "description": "Success.",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "The request failed validation.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "No session, or the session has expired.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The session has no ability for this route.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Rate limited. Honour `retry-after`.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "An unexpected failure. Already logged; the detail is generic.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/accounts/reports/consolidated-profit-and-loss": {
-      "get": {
-        "operationId": "getV1AccountsReportsConsolidatedProfitAndLoss",
-        "summary": "GET /v1/accounts/reports/consolidated-profit-and-loss",
-        "tags": ["accounts"],
-        "x-elysium-ability": "read:LedgerReport",
-        "responses": {
-          "200": {
-            "description": "Success.",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "The request failed validation.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "No session, or the session has expired.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The session has no ability for this route.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Rate limited. Honour `retry-after`.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "An unexpected failure. Already logged; the detail is generic.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/accounts/reports/consolidated-wallets": {
-      "get": {
-        "operationId": "getV1AccountsReportsConsolidatedWallets",
-        "summary": "GET /v1/accounts/reports/consolidated-wallets",
-        "tags": ["accounts"],
-        "x-elysium-ability": "read:LedgerReport",
+        "x-ability": "read:LedgerReport",
         "responses": {
           "200": {
             "description": "Success.",
@@ -1975,7 +1844,7 @@
         "operationId": "getV1AccountsReportsProfitAndLoss",
         "summary": "GET /v1/accounts/reports/profit-and-loss",
         "tags": ["accounts"],
-        "x-elysium-ability": "read:LedgerReport",
+        "x-ability": "read:LedgerReport",
         "responses": {
           "200": {
             "description": "Success.",
@@ -2043,7 +1912,7 @@
         "operationId": "postV1AccountsTransfers",
         "summary": "POST /v1/accounts/transfers",
         "tags": ["accounts"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -2126,7 +1995,7 @@
         "operationId": "getV1AccountsWallets",
         "summary": "GET /v1/accounts/wallets",
         "tags": ["accounts"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "responses": {
           "200": {
             "description": "Success.",
@@ -2192,7 +2061,7 @@
         "operationId": "postV1AccountsWallets",
         "summary": "POST /v1/accounts/wallets",
         "tags": ["accounts"],
-        "x-elysium-ability": "create:Wallet",
+        "x-ability": "create:Wallet",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -2275,7 +2144,7 @@
         "operationId": "patchV1AccountsWalletsById",
         "summary": "PATCH /v1/accounts/wallets/:id",
         "tags": ["accounts"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -2371,80 +2240,12 @@
         }
       }
     },
-    "/v1/analytics/consolidated": {
-      "get": {
-        "operationId": "getV1AnalyticsConsolidated",
-        "summary": "GET /v1/analytics/consolidated",
-        "tags": ["analytics"],
-        "x-elysium-ability": "read:Dashboard",
-        "responses": {
-          "200": {
-            "description": "Success.",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "The request failed validation.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "No session, or the session has expired.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The session has no ability for this route.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Rate limited. Honour `retry-after`.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "An unexpected failure. Already logged; the detail is generic.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/analytics/dashboard": {
       "get": {
         "operationId": "getV1AnalyticsDashboard",
         "summary": "GET /v1/analytics/dashboard",
         "tags": ["analytics"],
-        "x-elysium-ability": "read:Dashboard",
+        "x-ability": "read:Dashboard",
         "responses": {
           "200": {
             "description": "Success.",
@@ -2512,7 +2313,7 @@
         "operationId": "getV1AnalyticsExport",
         "summary": "GET /v1/analytics/export",
         "tags": ["analytics"],
-        "x-elysium-ability": "read:Dashboard",
+        "x-ability": "read:Dashboard",
         "responses": {
           "200": {
             "description": "Success.",
@@ -2580,75 +2381,7 @@
         "operationId": "getV1AnalyticsInsights",
         "summary": "GET /v1/analytics/insights",
         "tags": ["analytics"],
-        "x-elysium-ability": "read:Dashboard",
-        "responses": {
-          "200": {
-            "description": "Success.",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "The request failed validation.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "No session, or the session has expired.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The session has no ability for this route.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Rate limited. Honour `retry-after`.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "An unexpected failure. Already logged; the detail is generic.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/analytics/leaderboard": {
-      "get": {
-        "operationId": "getV1AnalyticsLeaderboard",
-        "summary": "GET /v1/analytics/leaderboard",
-        "tags": ["analytics"],
-        "x-elysium-ability": "read:Leaderboard",
+        "x-ability": "read:Dashboard",
         "responses": {
           "200": {
             "description": "Success.",
@@ -2716,7 +2449,7 @@
         "operationId": "getV1AnalyticsNarrative",
         "summary": "GET /v1/analytics/narrative",
         "tags": ["analytics"],
-        "x-elysium-ability": "read:Dashboard",
+        "x-ability": "read:Dashboard",
         "responses": {
           "200": {
             "description": "Success.",
@@ -2784,7 +2517,7 @@
         "operationId": "postV1AnalyticsRollupsRefresh",
         "summary": "POST /v1/analytics/rollups/refresh",
         "tags": ["analytics"],
-        "x-elysium-ability": "update:Dashboard",
+        "x-ability": "update:Dashboard",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -2867,7 +2600,7 @@
         "operationId": "listApprovals",
         "summary": "Approval requests, filtered and cursor-paginated.",
         "tags": ["approvals"],
-        "x-elysium-ability": "read:ApprovalRequest",
+        "x-ability": "read:ApprovalRequest",
         "parameters": [
           {
             "name": "cursor",
@@ -2990,7 +2723,7 @@
         "operationId": "createApproval",
         "summary": "Raise an approval request for a money-moving action.",
         "tags": ["approvals"],
-        "x-elysium-ability": "request:ApprovalRequest",
+        "x-ability": "request:ApprovalRequest",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -3005,7 +2738,7 @@
               }
             }
           },
-          "x-elysium-type": "ApprovalRequestInput"
+          "x-body-type": "ApprovalRequestInput"
         },
         "responses": {
           "201": {
@@ -3084,7 +2817,7 @@
         "operationId": "getApproval",
         "summary": "One approval request, with its decision lineage.",
         "tags": ["approvals"],
-        "x-elysium-ability": "read:ApprovalRequest",
+        "x-ability": "read:ApprovalRequest",
         "parameters": [
           {
             "name": "id",
@@ -3172,7 +2905,7 @@
         "operationId": "decideApproval",
         "summary": "Approve or reject a request as the checker.",
         "tags": ["approvals"],
-        "x-elysium-ability": "approve:ApprovalRequest",
+        "x-ability": "approve:ApprovalRequest",
         "parameters": [
           {
             "name": "id",
@@ -3195,7 +2928,7 @@
               }
             }
           },
-          "x-elysium-type": "ApprovalDecisionInput"
+          "x-body-type": "ApprovalDecisionInput"
         },
         "responses": {
           "201": {
@@ -3284,7 +3017,7 @@
         "operationId": "getV1ApprovalsThresholds",
         "summary": "GET /v1/approvals/thresholds",
         "tags": ["approvals"],
-        "x-elysium-ability": "read:ApprovalThreshold",
+        "x-ability": "read:ApprovalThreshold",
         "responses": {
           "200": {
             "description": "Success.",
@@ -3350,7 +3083,7 @@
         "operationId": "setApprovalThresholds",
         "summary": "Set this organization's maker-checker thresholds.",
         "tags": ["approvals"],
-        "x-elysium-ability": "update:ApprovalThreshold",
+        "x-ability": "update:ApprovalThreshold",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -3365,7 +3098,7 @@
               }
             }
           },
-          "x-elysium-type": "ThresholdInput"
+          "x-body-type": "ThresholdInput"
         },
         "responses": {
           "200": {
@@ -3444,7 +3177,7 @@
         "operationId": "loginBranding",
         "summary": "The brand name and logo for the login screen, chosen by hostname.",
         "tags": ["auth"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -3488,12 +3221,76 @@
         "security": []
       }
     },
+    "/v1/auth/owner-link": {
+      "post": {
+        "operationId": "postV1AuthOwnerLink",
+        "summary": "POST /v1/auth/owner-link",
+        "tags": ["auth"],
+        "x-ability": "public",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/v1/buyers": {
       "get": {
         "operationId": "getV1Buyers",
         "summary": "GET /v1/buyers",
         "tags": ["buyers"],
-        "x-elysium-ability": "export:BuyerExport",
+        "x-ability": "export:BuyerExport",
         "responses": {
           "200": {
             "description": "Success.",
@@ -3561,7 +3358,7 @@
         "operationId": "getV1BuyersExport",
         "summary": "GET /v1/buyers/export",
         "tags": ["buyers"],
-        "x-elysium-ability": "export:BuyerExport",
+        "x-ability": "export:BuyerExport",
         "responses": {
           "200": {
             "description": "Success.",
@@ -3629,7 +3426,7 @@
         "operationId": "getV1CatalogAttributes",
         "summary": "GET /v1/catalog/attributes",
         "tags": ["catalog"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "responses": {
           "200": {
             "description": "Success.",
@@ -3695,7 +3492,7 @@
         "operationId": "postV1CatalogAttributes",
         "summary": "POST /v1/catalog/attributes",
         "tags": ["catalog"],
-        "x-elysium-ability": "create:Catalog",
+        "x-ability": "create:Catalog",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -3778,7 +3575,7 @@
         "operationId": "patchV1CatalogAttributesById",
         "summary": "PATCH /v1/catalog/attributes/:id",
         "tags": ["catalog"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -3879,7 +3676,7 @@
         "operationId": "postV1CatalogAttributesByIdValues",
         "summary": "POST /v1/catalog/attributes/:id/values",
         "tags": ["catalog"],
-        "x-elysium-ability": "create:Catalog",
+        "x-ability": "create:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -3980,7 +3777,7 @@
         "operationId": "patchV1CatalogAttributesByIdValuesByValueId",
         "summary": "PATCH /v1/catalog/attributes/:id/values/:valueId",
         "tags": ["catalog"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -4089,7 +3886,7 @@
         "operationId": "getV1CatalogCategories",
         "summary": "GET /v1/catalog/categories",
         "tags": ["catalog"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "responses": {
           "200": {
             "description": "Success.",
@@ -4155,7 +3952,7 @@
         "operationId": "postV1CatalogCategories",
         "summary": "POST /v1/catalog/categories",
         "tags": ["catalog"],
-        "x-elysium-ability": "create:Catalog",
+        "x-ability": "create:Catalog",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -4238,7 +4035,7 @@
         "operationId": "patchV1CatalogCategoriesById",
         "summary": "PATCH /v1/catalog/categories/:id",
         "tags": ["catalog"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -4339,7 +4136,7 @@
         "operationId": "postV1CatalogImportsPrices",
         "summary": "POST /v1/catalog/imports/prices",
         "tags": ["catalog"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -4422,7 +4219,7 @@
         "operationId": "postV1CatalogImportsPricesDryRun",
         "summary": "POST /v1/catalog/imports/prices/dry-run",
         "tags": ["catalog"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -4505,7 +4302,7 @@
         "operationId": "postV1CatalogImportsProducts",
         "summary": "POST /v1/catalog/imports/products",
         "tags": ["catalog"],
-        "x-elysium-ability": "create:Catalog",
+        "x-ability": "create:Catalog",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -4588,7 +4385,7 @@
         "operationId": "postV1CatalogImportsProductsDryRun",
         "summary": "POST /v1/catalog/imports/products/dry-run",
         "tags": ["catalog"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -4671,7 +4468,7 @@
         "operationId": "postV1CatalogLabels",
         "summary": "POST /v1/catalog/labels",
         "tags": ["catalog"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -4754,7 +4551,7 @@
         "operationId": "putV1CatalogPrices",
         "summary": "PUT /v1/catalog/prices",
         "tags": ["catalog"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -4837,7 +4634,7 @@
         "operationId": "getV1CatalogProducts",
         "summary": "GET /v1/catalog/products",
         "tags": ["catalog"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "responses": {
           "200": {
             "description": "Success.",
@@ -4903,7 +4700,7 @@
         "operationId": "postV1CatalogProducts",
         "summary": "POST /v1/catalog/products",
         "tags": ["catalog"],
-        "x-elysium-ability": "create:Catalog",
+        "x-ability": "create:Catalog",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -4986,7 +4783,7 @@
         "operationId": "getV1CatalogProductsById",
         "summary": "GET /v1/catalog/products/:id",
         "tags": ["catalog"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -5072,7 +4869,7 @@
         "operationId": "patchV1CatalogProductsById",
         "summary": "PATCH /v1/catalog/products/:id",
         "tags": ["catalog"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -5173,7 +4970,7 @@
         "operationId": "postV1CatalogProductsByIdImages",
         "summary": "POST /v1/catalog/products/:id/images",
         "tags": ["catalog"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -5274,7 +5071,7 @@
         "operationId": "deleteV1CatalogProductsByIdImagesByImageId",
         "summary": "DELETE /v1/catalog/products/:id/images/:imageId",
         "tags": ["catalog"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -5383,7 +5180,7 @@
         "operationId": "putV1CatalogProductsByIdImagesOrder",
         "summary": "PUT /v1/catalog/products/:id/images/order",
         "tags": ["catalog"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -5484,7 +5281,7 @@
         "operationId": "postV1CatalogProductsByIdVariants",
         "summary": "POST /v1/catalog/products/:id/variants",
         "tags": ["catalog"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -5585,7 +5382,7 @@
         "operationId": "getV1CatalogSkus",
         "summary": "GET /v1/catalog/skus",
         "tags": ["catalog"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "responses": {
           "200": {
             "description": "Success.",
@@ -5653,7 +5450,7 @@
         "operationId": "patchV1CatalogSkusById",
         "summary": "PATCH /v1/catalog/skus/:id",
         "tags": ["catalog"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -5754,7 +5551,7 @@
         "operationId": "putV1CatalogSkusByIdBarcode",
         "summary": "PUT /v1/catalog/skus/:id/barcode",
         "tags": ["catalog"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -5855,7 +5652,7 @@
         "operationId": "getV1CatalogSkusByIdPriceHistory",
         "summary": "GET /v1/catalog/skus/:id/price-history",
         "tags": ["catalog"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -5943,7 +5740,7 @@
         "operationId": "getV1CourierAccounts",
         "summary": "GET /v1/courier/accounts",
         "tags": ["courier"],
-        "x-elysium-ability": "read:CourierSettlement",
+        "x-ability": "read:CourierSettlement",
         "responses": {
           "200": {
             "description": "Success.",
@@ -6009,7 +5806,7 @@
         "operationId": "postV1CourierAccounts",
         "summary": "POST /v1/courier/accounts",
         "tags": ["courier"],
-        "x-elysium-ability": "update:CourierSettlement",
+        "x-ability": "update:CourierSettlement",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -6092,7 +5889,7 @@
         "operationId": "getV1CourierLabels",
         "summary": "GET /v1/courier/labels",
         "tags": ["courier"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "responses": {
           "200": {
             "description": "Success.",
@@ -6160,7 +5957,7 @@
         "operationId": "getV1CourierParcels",
         "summary": "GET /v1/courier/parcels",
         "tags": ["courier"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "responses": {
           "200": {
             "description": "Success.",
@@ -6226,7 +6023,7 @@
         "operationId": "postV1CourierParcels",
         "summary": "POST /v1/courier/parcels",
         "tags": ["courier"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -6309,7 +6106,7 @@
         "operationId": "getV1CourierParcelsById",
         "summary": "GET /v1/courier/parcels/:id",
         "tags": ["courier"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "parameters": [
           {
             "name": "id",
@@ -6397,7 +6194,7 @@
         "operationId": "postV1CourierParcelsByIdEscalations",
         "summary": "POST /v1/courier/parcels/:id/escalations",
         "tags": ["courier"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -6498,7 +6295,7 @@
         "operationId": "postV1CourierParcelsByIdHandover",
         "summary": "POST /v1/courier/parcels/:id/handover",
         "tags": ["courier"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -6599,7 +6396,7 @@
         "operationId": "postV1CourierParcelsByIdReceiveReturn",
         "summary": "POST /v1/courier/parcels/:id/receive-return",
         "tags": ["courier"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -6700,7 +6497,7 @@
         "operationId": "getV1CourierParcelsByIdReturnable",
         "summary": "GET /v1/courier/parcels/:id/returnable",
         "tags": ["courier"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "parameters": [
           {
             "name": "id",
@@ -6788,7 +6585,7 @@
         "operationId": "postV1CourierParcelsByIdStatus",
         "summary": "POST /v1/courier/parcels/:id/status",
         "tags": ["courier"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -6889,7 +6686,7 @@
         "operationId": "postV1CourierParcelsBulk",
         "summary": "POST /v1/courier/parcels/bulk",
         "tags": ["courier"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -6972,7 +6769,7 @@
         "operationId": "getV1CourierProviders",
         "summary": "GET /v1/courier/providers",
         "tags": ["courier"],
-        "x-elysium-ability": "read:CourierSettlement",
+        "x-ability": "read:CourierSettlement",
         "responses": {
           "200": {
             "description": "Success.",
@@ -7040,7 +6837,7 @@
         "operationId": "getV1CourierReportsCodReconciliation",
         "summary": "GET /v1/courier/reports/cod-reconciliation",
         "tags": ["courier"],
-        "x-elysium-ability": "read:LedgerReport",
+        "x-ability": "read:LedgerReport",
         "responses": {
           "200": {
             "description": "Success.",
@@ -7108,7 +6905,7 @@
         "operationId": "getV1CourierReportsPerformance",
         "summary": "GET /v1/courier/reports/performance",
         "tags": ["courier"],
-        "x-elysium-ability": "read:LedgerReport",
+        "x-ability": "read:LedgerReport",
         "responses": {
           "200": {
             "description": "Success.",
@@ -7176,7 +6973,7 @@
         "operationId": "getV1CourierSelectionRules",
         "summary": "GET /v1/courier/selection-rules",
         "tags": ["courier"],
-        "x-elysium-ability": "read:CourierSettlement",
+        "x-ability": "read:CourierSettlement",
         "responses": {
           "200": {
             "description": "Success.",
@@ -7242,7 +7039,7 @@
         "operationId": "putV1CourierSelectionRules",
         "summary": "PUT /v1/courier/selection-rules",
         "tags": ["courier"],
-        "x-elysium-ability": "update:CourierSettlement",
+        "x-ability": "update:CourierSettlement",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -7325,7 +7122,7 @@
         "operationId": "getV1CourierSelectionPreview",
         "summary": "GET /v1/courier/selection/preview",
         "tags": ["courier"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "responses": {
           "200": {
             "description": "Success.",
@@ -7393,7 +7190,7 @@
         "operationId": "getV1CourierSettlements",
         "summary": "GET /v1/courier/settlements",
         "tags": ["courier"],
-        "x-elysium-ability": "read:CourierSettlement",
+        "x-ability": "read:CourierSettlement",
         "responses": {
           "200": {
             "description": "Success.",
@@ -7459,7 +7256,7 @@
         "operationId": "postV1CourierSettlements",
         "summary": "POST /v1/courier/settlements",
         "tags": ["courier"],
-        "x-elysium-ability": "create:CourierSettlement",
+        "x-ability": "create:CourierSettlement",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -7542,7 +7339,7 @@
         "operationId": "getV1CourierSettlementsById",
         "summary": "GET /v1/courier/settlements/:id",
         "tags": ["courier"],
-        "x-elysium-ability": "read:CourierSettlement",
+        "x-ability": "read:CourierSettlement",
         "parameters": [
           {
             "name": "id",
@@ -7630,7 +7427,7 @@
         "operationId": "postV1CourierSettlementsByIdApproval",
         "summary": "POST /v1/courier/settlements/:id/approval",
         "tags": ["courier"],
-        "x-elysium-ability": "update:CourierSettlement",
+        "x-ability": "update:CourierSettlement",
         "parameters": [
           {
             "name": "id",
@@ -7731,7 +7528,7 @@
         "operationId": "getV1CourierSettlementsByIdExceptions",
         "summary": "GET /v1/courier/settlements/:id/exceptions",
         "tags": ["courier"],
-        "x-elysium-ability": "read:CourierSettlement",
+        "x-ability": "read:CourierSettlement",
         "parameters": [
           {
             "name": "id",
@@ -7819,7 +7616,7 @@
         "operationId": "postV1CourierSettlementsByIdReject",
         "summary": "POST /v1/courier/settlements/:id/reject",
         "tags": ["courier"],
-        "x-elysium-ability": "update:CourierSettlement",
+        "x-ability": "update:CourierSettlement",
         "parameters": [
           {
             "name": "id",
@@ -7920,7 +7717,7 @@
         "operationId": "postV1CourierSettlementsFetch",
         "summary": "POST /v1/courier/settlements/fetch",
         "tags": ["courier"],
-        "x-elysium-ability": "create:CourierSettlement",
+        "x-ability": "create:CourierSettlement",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -8003,7 +7800,7 @@
         "operationId": "getV1CourierSettlementsFetchRuns",
         "summary": "GET /v1/courier/settlements/fetch-runs",
         "tags": ["courier"],
-        "x-elysium-ability": "read:CourierSettlement",
+        "x-ability": "read:CourierSettlement",
         "responses": {
           "200": {
             "description": "Success.",
@@ -8071,7 +7868,7 @@
         "operationId": "getV1CourierStuck",
         "summary": "GET /v1/courier/stuck",
         "tags": ["courier"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "responses": {
           "200": {
             "description": "Success.",
@@ -8139,7 +7936,7 @@
         "operationId": "getV1CourierStuckExport",
         "summary": "GET /v1/courier/stuck/export",
         "tags": ["courier"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "responses": {
           "200": {
             "description": "Success.",
@@ -8207,7 +8004,7 @@
         "operationId": "postV1CourierStuckRepoll",
         "summary": "POST /v1/courier/stuck/repoll",
         "tags": ["courier"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -8290,7 +8087,7 @@
         "operationId": "postV1CourierWebhooksByOrgIdByProvider",
         "summary": "POST /v1/courier/webhooks/:orgId/:provider",
         "tags": ["courier"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "parameters": [
           {
             "name": "orgId",
@@ -8380,7 +8177,7 @@
         "operationId": "getV1CrmReengagement",
         "summary": "GET /v1/crm/reengagement",
         "tags": ["crm"],
-        "x-elysium-ability": "export:BuyerExport",
+        "x-ability": "export:BuyerExport",
         "responses": {
           "200": {
             "description": "Success.",
@@ -8448,7 +8245,7 @@
         "operationId": "getV1CrmReengagementExport",
         "summary": "GET /v1/crm/reengagement/export",
         "tags": ["crm"],
-        "x-elysium-ability": "export:BuyerExport",
+        "x-ability": "export:BuyerExport",
         "responses": {
           "200": {
             "description": "Success.",
@@ -8516,7 +8313,7 @@
         "operationId": "getV1Customers",
         "summary": "GET /v1/customers",
         "tags": ["customers"],
-        "x-elysium-ability": "read:Customer",
+        "x-ability": "read:Customer",
         "responses": {
           "200": {
             "description": "Success.",
@@ -8582,7 +8379,7 @@
         "operationId": "postV1Customers",
         "summary": "POST /v1/customers",
         "tags": ["customers"],
-        "x-elysium-ability": "create:Customer",
+        "x-ability": "create:Customer",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -8665,7 +8462,7 @@
         "operationId": "getV1CustomersById",
         "summary": "GET /v1/customers/:id",
         "tags": ["customers"],
-        "x-elysium-ability": "read:Customer",
+        "x-ability": "read:Customer",
         "parameters": [
           {
             "name": "id",
@@ -8751,7 +8548,7 @@
         "operationId": "patchV1CustomersById",
         "summary": "PATCH /v1/customers/:id",
         "tags": ["customers"],
-        "x-elysium-ability": "update:Customer",
+        "x-ability": "update:Customer",
         "parameters": [
           {
             "name": "id",
@@ -8852,7 +8649,7 @@
         "operationId": "getV1CustomersByIdProfile",
         "summary": "GET /v1/customers/:id/profile",
         "tags": ["customers"],
-        "x-elysium-ability": "read:Customer",
+        "x-ability": "read:Customer",
         "parameters": [
           {
             "name": "id",
@@ -8940,7 +8737,7 @@
         "operationId": "getV1CustomersLookup",
         "summary": "GET /v1/customers/lookup",
         "tags": ["customers"],
-        "x-elysium-ability": "read:Customer",
+        "x-ability": "read:Customer",
         "responses": {
           "200": {
             "description": "Success.",
@@ -9008,7 +8805,7 @@
         "operationId": "getV1DeliveryZones",
         "summary": "GET /v1/delivery-zones",
         "tags": ["delivery-zones"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "responses": {
           "200": {
             "description": "Success.",
@@ -9074,7 +8871,7 @@
         "operationId": "putV1DeliveryZones",
         "summary": "PUT /v1/delivery-zones",
         "tags": ["delivery-zones"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -9157,7 +8954,7 @@
         "operationId": "getV1DeliveryZonesAreas",
         "summary": "GET /v1/delivery-zones/areas",
         "tags": ["delivery-zones"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "responses": {
           "200": {
             "description": "Success.",
@@ -9225,7 +9022,7 @@
         "operationId": "getV1DeliveryZonesForArea",
         "summary": "GET /v1/delivery-zones/for-area",
         "tags": ["delivery-zones"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "responses": {
           "200": {
             "description": "Success.",
@@ -9293,7 +9090,7 @@
         "operationId": "listDemoCostedItems",
         "summary": "Test fixture for the permission matrix. Not deployed to production.",
         "tags": ["demo"],
-        "x-elysium-ability": "read:CostedItem",
+        "x-ability": "read:CostedItem",
         "responses": {
           "200": {
             "description": "Success.",
@@ -9359,7 +9156,7 @@
         "operationId": "createDemoCostedItem",
         "summary": "Test fixture for the permission matrix. Not deployed to production.",
         "tags": ["demo"],
-        "x-elysium-ability": "create:CostedItem",
+        "x-ability": "create:CostedItem",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -9442,7 +9239,7 @@
         "operationId": "postV1Files",
         "summary": "POST /v1/files",
         "tags": ["files"],
-        "x-elysium-ability": "create:FileObject",
+        "x-ability": "create:FileObject",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -9525,7 +9322,7 @@
         "operationId": "getV1FilesByIdDownload",
         "summary": "GET /v1/files/:id/download",
         "tags": ["files"],
-        "x-elysium-ability": "read:FileObject",
+        "x-ability": "read:FileObject",
         "parameters": [
           {
             "name": "id",
@@ -9613,7 +9410,7 @@
         "operationId": "postV1FilesByIdFinalize",
         "summary": "POST /v1/files/:id/finalize",
         "tags": ["files"],
-        "x-elysium-ability": "create:FileObject",
+        "x-ability": "create:FileObject",
         "parameters": [
           {
             "name": "id",
@@ -9714,7 +9511,7 @@
         "operationId": "getV1FilesContent",
         "summary": "GET /v1/files/content",
         "tags": ["files"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "responses": {
           "200": {
             "description": "Success.",
@@ -9761,7 +9558,7 @@
         "operationId": "putV1FilesContent",
         "summary": "PUT /v1/files/content",
         "tags": ["files"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -9825,7 +9622,7 @@
         "operationId": "getV1HrAttendance",
         "summary": "GET /v1/hr/attendance",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Employee",
+        "x-ability": "read:Employee",
         "responses": {
           "200": {
             "description": "Success.",
@@ -9891,7 +9688,7 @@
         "operationId": "putV1HrAttendance",
         "summary": "PUT /v1/hr/attendance",
         "tags": ["hr"],
-        "x-elysium-ability": "update:Employee",
+        "x-ability": "update:Employee",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -9974,7 +9771,7 @@
         "operationId": "getV1HrAttendanceImports",
         "summary": "GET /v1/hr/attendance/imports",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Payroll",
+        "x-ability": "read:Payroll",
         "responses": {
           "200": {
             "description": "Success.",
@@ -10040,7 +9837,7 @@
         "operationId": "postV1HrAttendanceImports",
         "summary": "POST /v1/hr/attendance/imports",
         "tags": ["hr"],
-        "x-elysium-ability": "update:Employee",
+        "x-ability": "update:Employee",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -10123,7 +9920,7 @@
         "operationId": "getV1HrBonusRules",
         "summary": "GET /v1/hr/bonus-rules",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Payroll",
+        "x-ability": "read:Payroll",
         "responses": {
           "200": {
             "description": "Success.",
@@ -10189,7 +9986,7 @@
         "operationId": "postV1HrBonusRules",
         "summary": "POST /v1/hr/bonus-rules",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -10272,7 +10069,7 @@
         "operationId": "postV1HrBonusRulesByIdVersions",
         "summary": "POST /v1/hr/bonus-rules/:id/versions",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -10373,7 +10170,7 @@
         "operationId": "getV1HrBonusRulesVersionsByVersionIdPreview",
         "summary": "GET /v1/hr/bonus-rules/versions/:versionId/preview",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Payroll",
+        "x-ability": "read:Payroll",
         "parameters": [
           {
             "name": "versionId",
@@ -10461,7 +10258,7 @@
         "operationId": "postV1HrBonusRulesVersionsByVersionIdSubmit",
         "summary": "POST /v1/hr/bonus-rules/versions/:versionId/submit",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "name": "versionId",
@@ -10562,7 +10359,7 @@
         "operationId": "getV1HrBranchOptions",
         "summary": "GET /v1/hr/branch-options",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Employee",
+        "x-ability": "create:Employee",
         "responses": {
           "200": {
             "description": "Success.",
@@ -10630,7 +10427,7 @@
         "operationId": "getV1HrCalendars",
         "summary": "GET /v1/hr/calendars",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Employee",
+        "x-ability": "read:Employee",
         "responses": {
           "200": {
             "description": "Success.",
@@ -10696,7 +10493,7 @@
         "operationId": "postV1HrCalendars",
         "summary": "POST /v1/hr/calendars",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -10779,7 +10576,7 @@
         "operationId": "postV1HrCalendarsByIdHolidays",
         "summary": "POST /v1/hr/calendars/:id/holidays",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -10880,7 +10677,7 @@
         "operationId": "getV1HrEmployees",
         "summary": "GET /v1/hr/employees",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Employee",
+        "x-ability": "read:Employee",
         "responses": {
           "200": {
             "description": "Success.",
@@ -10946,7 +10743,7 @@
         "operationId": "postV1HrEmployees",
         "summary": "POST /v1/hr/employees",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Employee",
+        "x-ability": "create:Employee",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -11029,7 +10826,7 @@
         "operationId": "getV1HrEmployeesById",
         "summary": "GET /v1/hr/employees/:id",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Employee",
+        "x-ability": "read:Employee",
         "parameters": [
           {
             "name": "id",
@@ -11115,7 +10912,7 @@
         "operationId": "patchV1HrEmployeesById",
         "summary": "PATCH /v1/hr/employees/:id",
         "tags": ["hr"],
-        "x-elysium-ability": "update:Employee",
+        "x-ability": "update:Employee",
         "parameters": [
           {
             "name": "id",
@@ -11216,7 +11013,7 @@
         "operationId": "getV1HrEmployeesByIdPayoutRef",
         "summary": "GET /v1/hr/employees/:id/payout-ref",
         "tags": ["hr"],
-        "x-elysium-ability": "update:Payroll",
+        "x-ability": "update:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -11304,7 +11101,7 @@
         "operationId": "getV1HrEmployeesByIdSalary",
         "summary": "GET /v1/hr/employees/:id/salary",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Payroll",
+        "x-ability": "read:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -11390,7 +11187,7 @@
         "operationId": "postV1HrEmployeesByIdSalary",
         "summary": "POST /v1/hr/employees/:id/salary",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -11491,7 +11288,7 @@
         "operationId": "getV1HrLoans",
         "summary": "GET /v1/hr/loans",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Payroll",
+        "x-ability": "read:Payroll",
         "responses": {
           "200": {
             "description": "Success.",
@@ -11557,7 +11354,7 @@
         "operationId": "postV1HrLoans",
         "summary": "POST /v1/hr/loans",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -11640,7 +11437,7 @@
         "operationId": "getV1HrLoansById",
         "summary": "GET /v1/hr/loans/:id",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Payroll",
+        "x-ability": "read:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -11728,7 +11525,7 @@
         "operationId": "postV1HrLoansByIdDisburse",
         "summary": "POST /v1/hr/loans/:id/disburse",
         "tags": ["hr"],
-        "x-elysium-ability": "update:Payroll",
+        "x-ability": "update:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -11829,7 +11626,7 @@
         "operationId": "getV1HrLoginOptions",
         "summary": "GET /v1/hr/login-options",
         "tags": ["hr"],
-        "x-elysium-ability": "update:Payroll",
+        "x-ability": "update:Payroll",
         "responses": {
           "200": {
             "description": "Success.",
@@ -11897,7 +11694,7 @@
         "operationId": "getV1HrPayrollRuns",
         "summary": "GET /v1/hr/payroll/runs",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Payroll",
+        "x-ability": "read:Payroll",
         "responses": {
           "200": {
             "description": "Success.",
@@ -11963,7 +11760,7 @@
         "operationId": "postV1HrPayrollRuns",
         "summary": "POST /v1/hr/payroll/runs",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -12046,7 +11843,7 @@
         "operationId": "getV1HrPayrollRunsById",
         "summary": "GET /v1/hr/payroll/runs/:id",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Payroll",
+        "x-ability": "read:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -12134,7 +11931,7 @@
         "operationId": "getV1HrPayrollRunsByIdBonuses",
         "summary": "GET /v1/hr/payroll/runs/:id/bonuses",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Payroll",
+        "x-ability": "read:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -12220,7 +12017,7 @@
         "operationId": "postV1HrPayrollRunsByIdBonuses",
         "summary": "POST /v1/hr/payroll/runs/:id/bonuses",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -12321,7 +12118,7 @@
         "operationId": "postV1HrPayrollRunsByIdCancel",
         "summary": "POST /v1/hr/payroll/runs/:id/cancel",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -12422,7 +12219,7 @@
         "operationId": "getV1HrPayrollRunsByIdInputs",
         "summary": "GET /v1/hr/payroll/runs/:id/inputs",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Payroll",
+        "x-ability": "read:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -12508,7 +12305,7 @@
         "operationId": "postV1HrPayrollRunsByIdInputs",
         "summary": "POST /v1/hr/payroll/runs/:id/inputs",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -12609,7 +12406,7 @@
         "operationId": "deleteV1HrPayrollRunsByIdInputsByInputId",
         "summary": "DELETE /v1/hr/payroll/runs/:id/inputs/:inputId",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -12718,7 +12515,7 @@
         "operationId": "postV1HrPayrollRunsByIdPay",
         "summary": "POST /v1/hr/payroll/runs/:id/pay",
         "tags": ["hr"],
-        "x-elysium-ability": "update:Payroll",
+        "x-ability": "update:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -12819,7 +12616,7 @@
         "operationId": "getV1HrPayrollRunsByIdPayslips",
         "summary": "GET /v1/hr/payroll/runs/:id/payslips",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Payroll",
+        "x-ability": "read:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -12907,7 +12704,7 @@
         "operationId": "getV1HrPayrollRunsByIdPayslipsByEmployeeIdPdf",
         "summary": "GET /v1/hr/payroll/runs/:id/payslips/:employeeId/pdf",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Employee",
+        "x-ability": "read:Employee",
         "parameters": [
           {
             "name": "id",
@@ -13003,7 +12800,7 @@
         "operationId": "getV1HrPayrollRunsByIdPreview",
         "summary": "GET /v1/hr/payroll/runs/:id/preview",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Payroll",
+        "x-ability": "read:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -13091,7 +12888,7 @@
         "operationId": "postV1HrPayrollRunsByIdSubmit",
         "summary": "POST /v1/hr/payroll/runs/:id/submit",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Payroll",
+        "x-ability": "create:Payroll",
         "parameters": [
           {
             "name": "id",
@@ -13192,7 +12989,7 @@
         "operationId": "getV1HrPayrollWallets",
         "summary": "GET /v1/hr/payroll/wallets",
         "tags": ["hr"],
-        "x-elysium-ability": "update:Payroll",
+        "x-ability": "update:Payroll",
         "responses": {
           "200": {
             "description": "Success.",
@@ -13260,7 +13057,7 @@
         "operationId": "getV1HrPerformanceMe",
         "summary": "GET /v1/hr/performance/me",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Target",
+        "x-ability": "read:Target",
         "responses": {
           "200": {
             "description": "Success.",
@@ -13328,7 +13125,7 @@
         "operationId": "getV1HrProductivity",
         "summary": "GET /v1/hr/productivity",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Target",
+        "x-ability": "read:Target",
         "responses": {
           "200": {
             "description": "Success.",
@@ -13396,7 +13193,7 @@
         "operationId": "getV1HrTargets",
         "summary": "GET /v1/hr/targets",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Target",
+        "x-ability": "read:Target",
         "responses": {
           "200": {
             "description": "Success.",
@@ -13462,7 +13259,7 @@
         "operationId": "postV1HrTargets",
         "summary": "POST /v1/hr/targets",
         "tags": ["hr"],
-        "x-elysium-ability": "create:Target",
+        "x-ability": "create:Target",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -13545,7 +13342,7 @@
         "operationId": "getV1HrTargetsById",
         "summary": "GET /v1/hr/targets/:id",
         "tags": ["hr"],
-        "x-elysium-ability": "read:Target",
+        "x-ability": "read:Target",
         "parameters": [
           {
             "name": "id",
@@ -13633,7 +13430,7 @@
         "operationId": "postV1HrTargetsByIdCancel",
         "summary": "POST /v1/hr/targets/:id/cancel",
         "tags": ["hr"],
-        "x-elysium-ability": "update:Target",
+        "x-ability": "update:Target",
         "parameters": [
           {
             "name": "id",
@@ -13734,7 +13531,7 @@
         "operationId": "postV1HrTargetsRefresh",
         "summary": "POST /v1/hr/targets/refresh",
         "tags": ["hr"],
-        "x-elysium-ability": "update:Target",
+        "x-ability": "update:Target",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -13817,7 +13614,7 @@
         "operationId": "getV1IntakeSiteKeys",
         "summary": "GET /v1/intake/site-keys",
         "tags": ["intake"],
-        "x-elysium-ability": "read:LandingPage",
+        "x-ability": "read:LandingPage",
         "responses": {
           "200": {
             "description": "Success.",
@@ -13883,7 +13680,7 @@
         "operationId": "postV1IntakeSiteKeys",
         "summary": "POST /v1/intake/site-keys",
         "tags": ["intake"],
-        "x-elysium-ability": "create:LandingPage",
+        "x-ability": "create:LandingPage",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -13966,7 +13763,7 @@
         "operationId": "postV1IntakeSiteKeysByIdRevoke",
         "summary": "POST /v1/intake/site-keys/:id/revoke",
         "tags": ["intake"],
-        "x-elysium-ability": "update:LandingPage",
+        "x-ability": "update:LandingPage",
         "parameters": [
           {
             "name": "id",
@@ -14067,7 +13864,7 @@
         "operationId": "getV1InventoryAdjustments",
         "summary": "GET /v1/inventory/adjustments",
         "tags": ["inventory"],
-        "x-elysium-ability": "read:StockAdjustment",
+        "x-ability": "read:StockAdjustment",
         "responses": {
           "200": {
             "description": "Success.",
@@ -14133,7 +13930,7 @@
         "operationId": "postV1InventoryAdjustments",
         "summary": "POST /v1/inventory/adjustments",
         "tags": ["inventory"],
-        "x-elysium-ability": "request:StockAdjustment",
+        "x-ability": "request:StockAdjustment",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -14216,7 +14013,7 @@
         "operationId": "getV1InventoryCounts",
         "summary": "GET /v1/inventory/counts",
         "tags": ["inventory"],
-        "x-elysium-ability": "read:Stock",
+        "x-ability": "read:Stock",
         "responses": {
           "200": {
             "description": "Success.",
@@ -14282,7 +14079,7 @@
         "operationId": "postV1InventoryCounts",
         "summary": "POST /v1/inventory/counts",
         "tags": ["inventory"],
-        "x-elysium-ability": "request:StockAdjustment",
+        "x-ability": "request:StockAdjustment",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -14365,7 +14162,7 @@
         "operationId": "getV1InventoryCountsById",
         "summary": "GET /v1/inventory/counts/:id",
         "tags": ["inventory"],
-        "x-elysium-ability": "read:Stock",
+        "x-ability": "read:Stock",
         "parameters": [
           {
             "name": "id",
@@ -14453,7 +14250,7 @@
         "operationId": "postV1InventoryCountsByIdClose",
         "summary": "POST /v1/inventory/counts/:id/close",
         "tags": ["inventory"],
-        "x-elysium-ability": "request:StockAdjustment",
+        "x-ability": "request:StockAdjustment",
         "parameters": [
           {
             "name": "id",
@@ -14554,7 +14351,7 @@
         "operationId": "putV1InventoryCountsByIdLines",
         "summary": "PUT /v1/inventory/counts/:id/lines",
         "tags": ["inventory"],
-        "x-elysium-ability": "request:StockAdjustment",
+        "x-ability": "request:StockAdjustment",
         "parameters": [
           {
             "name": "id",
@@ -14655,7 +14452,7 @@
         "operationId": "postV1InventoryCountsByIdSubmit",
         "summary": "POST /v1/inventory/counts/:id/submit",
         "tags": ["inventory"],
-        "x-elysium-ability": "request:StockAdjustment",
+        "x-ability": "request:StockAdjustment",
         "parameters": [
           {
             "name": "id",
@@ -14756,7 +14553,7 @@
         "operationId": "getV1InventoryLocations",
         "summary": "GET /v1/inventory/locations",
         "tags": ["inventory"],
-        "x-elysium-ability": "read:Stock",
+        "x-ability": "read:Stock",
         "responses": {
           "200": {
             "description": "Success.",
@@ -14822,7 +14619,7 @@
         "operationId": "postV1InventoryLocations",
         "summary": "POST /v1/inventory/locations",
         "tags": ["inventory"],
-        "x-elysium-ability": "create:Catalog",
+        "x-ability": "create:Catalog",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -14905,7 +14702,7 @@
         "operationId": "patchV1InventoryLocationsById",
         "summary": "PATCH /v1/inventory/locations/:id",
         "tags": ["inventory"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -15006,7 +14803,7 @@
         "operationId": "getV1InventoryMovements",
         "summary": "GET /v1/inventory/movements",
         "tags": ["inventory"],
-        "x-elysium-ability": "read:Stock",
+        "x-ability": "read:Stock",
         "responses": {
           "200": {
             "description": "Success.",
@@ -15074,7 +14871,7 @@
         "operationId": "getV1InventoryReconciliations",
         "summary": "GET /v1/inventory/reconciliations",
         "tags": ["inventory"],
-        "x-elysium-ability": "read:StockAdjustment",
+        "x-ability": "read:StockAdjustment",
         "responses": {
           "200": {
             "description": "Success.",
@@ -15142,7 +14939,7 @@
         "operationId": "putV1InventoryReorderLevels",
         "summary": "PUT /v1/inventory/reorder-levels",
         "tags": ["inventory"],
-        "x-elysium-ability": "update:Catalog",
+        "x-ability": "update:Catalog",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -15225,7 +15022,7 @@
         "operationId": "getV1InventoryStock",
         "summary": "GET /v1/inventory/stock",
         "tags": ["inventory"],
-        "x-elysium-ability": "read:Stock",
+        "x-ability": "read:Stock",
         "responses": {
           "200": {
             "description": "Success.",
@@ -15293,7 +15090,7 @@
         "operationId": "getV1InventoryTransfers",
         "summary": "GET /v1/inventory/transfers",
         "tags": ["inventory"],
-        "x-elysium-ability": "read:Stock",
+        "x-ability": "read:Stock",
         "responses": {
           "200": {
             "description": "Success.",
@@ -15359,7 +15156,7 @@
         "operationId": "postV1InventoryTransfers",
         "summary": "POST /v1/inventory/transfers",
         "tags": ["inventory"],
-        "x-elysium-ability": "request:StockAdjustment",
+        "x-ability": "request:StockAdjustment",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -15442,7 +15239,7 @@
         "operationId": "postV1InventoryTransfersByIdReceive",
         "summary": "POST /v1/inventory/transfers/:id/receive",
         "tags": ["inventory"],
-        "x-elysium-ability": "request:StockAdjustment",
+        "x-ability": "request:StockAdjustment",
         "parameters": [
           {
             "name": "id",
@@ -15543,7 +15340,7 @@
         "operationId": "getV1InventoryValuation",
         "summary": "GET /v1/inventory/valuation",
         "tags": ["inventory"],
-        "x-elysium-ability": "read:Cost",
+        "x-ability": "read:Cost",
         "responses": {
           "200": {
             "description": "Success.",
@@ -15611,7 +15408,7 @@
         "operationId": "getV1Investors",
         "summary": "GET /v1/investors",
         "tags": ["investors"],
-        "x-elysium-ability": "read:Investor",
+        "x-ability": "read:Investor",
         "responses": {
           "200": {
             "description": "Success.",
@@ -15677,7 +15474,7 @@
         "operationId": "postV1Investors",
         "summary": "POST /v1/investors",
         "tags": ["investors"],
-        "x-elysium-ability": "create:Investor",
+        "x-ability": "create:Investor",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -15760,7 +15557,7 @@
         "operationId": "getV1InvestorsById",
         "summary": "GET /v1/investors/:id",
         "tags": ["investors"],
-        "x-elysium-ability": "read:Investor",
+        "x-ability": "read:Investor",
         "parameters": [
           {
             "name": "id",
@@ -15846,7 +15643,7 @@
         "operationId": "patchV1InvestorsById",
         "summary": "PATCH /v1/investors/:id",
         "tags": ["investors"],
-        "x-elysium-ability": "update:Investor",
+        "x-ability": "update:Investor",
         "parameters": [
           {
             "name": "id",
@@ -15947,7 +15744,7 @@
         "operationId": "getV1InvestorsByIdStatement",
         "summary": "GET /v1/investors/:id/statement",
         "tags": ["investors"],
-        "x-elysium-ability": "read:Investor",
+        "x-ability": "read:Investor",
         "parameters": [
           {
             "name": "id",
@@ -16035,7 +15832,7 @@
         "operationId": "getV1InvestorsDistributions",
         "summary": "GET /v1/investors/distributions",
         "tags": ["investors"],
-        "x-elysium-ability": "read:Investor",
+        "x-ability": "read:Investor",
         "responses": {
           "200": {
             "description": "Success.",
@@ -16101,7 +15898,7 @@
         "operationId": "postV1InvestorsDistributions",
         "summary": "POST /v1/investors/distributions",
         "tags": ["investors"],
-        "x-elysium-ability": "create:Investor",
+        "x-ability": "create:Investor",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -16184,7 +15981,7 @@
         "operationId": "getV1InvestorsDistributionsById",
         "summary": "GET /v1/investors/distributions/:id",
         "tags": ["investors"],
-        "x-elysium-ability": "read:Investor",
+        "x-ability": "read:Investor",
         "parameters": [
           {
             "name": "id",
@@ -16272,7 +16069,7 @@
         "operationId": "postV1InvestorsDistributionsByIdReject",
         "summary": "POST /v1/investors/distributions/:id/reject",
         "tags": ["investors"],
-        "x-elysium-ability": "create:Investor",
+        "x-ability": "create:Investor",
         "parameters": [
           {
             "name": "id",
@@ -16373,7 +16170,7 @@
         "operationId": "getV1InvestorsDocuments",
         "summary": "GET /v1/investors/documents",
         "tags": ["investors"],
-        "x-elysium-ability": "read:Investor",
+        "x-ability": "read:Investor",
         "responses": {
           "200": {
             "description": "Success.",
@@ -16439,7 +16236,7 @@
         "operationId": "postV1InvestorsDocuments",
         "summary": "POST /v1/investors/documents",
         "tags": ["investors"],
-        "x-elysium-ability": "create:Investor",
+        "x-ability": "create:Investor",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -16522,7 +16319,7 @@
         "operationId": "getV1InvestorsDocumentsByIdDownload",
         "summary": "GET /v1/investors/documents/:id/download",
         "tags": ["investors"],
-        "x-elysium-ability": "read:Investor",
+        "x-ability": "read:Investor",
         "parameters": [
           {
             "name": "id",
@@ -16610,7 +16407,7 @@
         "operationId": "getV1InvestorsInvestments",
         "summary": "GET /v1/investors/investments",
         "tags": ["investors"],
-        "x-elysium-ability": "read:Investor",
+        "x-ability": "read:Investor",
         "responses": {
           "200": {
             "description": "Success.",
@@ -16676,7 +16473,7 @@
         "operationId": "postV1InvestorsInvestments",
         "summary": "POST /v1/investors/investments",
         "tags": ["investors"],
-        "x-elysium-ability": "create:Investor",
+        "x-ability": "create:Investor",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -16759,7 +16556,7 @@
         "operationId": "getV1InvestorsLoginOptions",
         "summary": "GET /v1/investors/login-options",
         "tags": ["investors"],
-        "x-elysium-ability": "update:Investor",
+        "x-ability": "update:Investor",
         "responses": {
           "200": {
             "description": "Success.",
@@ -16827,7 +16624,7 @@
         "operationId": "getV1InvestorsWalletAccounts",
         "summary": "GET /v1/investors/wallet-accounts",
         "tags": ["investors"],
-        "x-elysium-ability": "create:Investor",
+        "x-ability": "create:Investor",
         "responses": {
           "200": {
             "description": "Success.",
@@ -16895,7 +16692,7 @@
         "operationId": "getV1InvestorsWithdrawals",
         "summary": "GET /v1/investors/withdrawals",
         "tags": ["investors"],
-        "x-elysium-ability": "read:Investor",
+        "x-ability": "read:Investor",
         "responses": {
           "200": {
             "description": "Success.",
@@ -16961,7 +16758,7 @@
         "operationId": "postV1InvestorsWithdrawals",
         "summary": "POST /v1/investors/withdrawals",
         "tags": ["investors"],
-        "x-elysium-ability": "create:Investor",
+        "x-ability": "create:Investor",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -17044,7 +16841,7 @@
         "operationId": "postV1InvestorsWithdrawalsByIdPay",
         "summary": "POST /v1/investors/withdrawals/:id/pay",
         "tags": ["investors"],
-        "x-elysium-ability": "update:Investor",
+        "x-ability": "update:Investor",
         "parameters": [
           {
             "name": "id",
@@ -17145,7 +16942,7 @@
         "operationId": "postV1InvestorsWithdrawalsByIdReject",
         "summary": "POST /v1/investors/withdrawals/:id/reject",
         "tags": ["investors"],
-        "x-elysium-ability": "update:Investor",
+        "x-ability": "update:Investor",
         "parameters": [
           {
             "name": "id",
@@ -17246,7 +17043,7 @@
         "operationId": "postV1InvestorsWithdrawalsByIdReview",
         "summary": "POST /v1/investors/withdrawals/:id/review",
         "tags": ["investors"],
-        "x-elysium-ability": "update:Investor",
+        "x-ability": "update:Investor",
         "parameters": [
           {
             "name": "id",
@@ -17347,7 +17144,7 @@
         "operationId": "getV1JobsFailed",
         "summary": "GET /v1/jobs/failed",
         "tags": ["jobs"],
-        "x-elysium-ability": "read:AuditLog",
+        "x-ability": "read:AuditLog",
         "responses": {
           "200": {
             "description": "Success.",
@@ -17415,7 +17212,7 @@
         "operationId": "listLedgerAccounts",
         "summary": "The chart of accounts visible to this caller.",
         "tags": ["ledger"],
-        "x-elysium-ability": "read:LedgerReport",
+        "x-ability": "read:LedgerReport",
         "responses": {
           "200": {
             "description": "Success.",
@@ -17483,7 +17280,7 @@
         "operationId": "accountLedger",
         "summary": "Every posting to one account over a date range.",
         "tags": ["ledger"],
-        "x-elysium-ability": "read:LedgerReport",
+        "x-ability": "read:LedgerReport",
         "parameters": [
           {
             "name": "id",
@@ -17587,7 +17384,7 @@
         "operationId": "cashIn",
         "summary": "Record money received into a wallet.",
         "tags": ["ledger"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -17602,7 +17399,7 @@
               }
             }
           },
-          "x-elysium-type": "CashInInput"
+          "x-body-type": "CashInInput"
         },
         "responses": {
           "201": {
@@ -17681,7 +17478,7 @@
         "operationId": "dayBook",
         "summary": "Every journal posted in a date range, newest first.",
         "tags": ["ledger"],
-        "x-elysium-ability": "read:LedgerReport",
+        "x-ability": "read:LedgerReport",
         "parameters": [
           {
             "name": "from",
@@ -17767,7 +17564,7 @@
         "operationId": "partyBalances",
         "summary": "Outstanding balances per customer, supplier or reseller.",
         "tags": ["ledger"],
-        "x-elysium-ability": "read:LedgerReport",
+        "x-ability": "read:LedgerReport",
         "parameters": [
           {
             "name": "asOf",
@@ -17864,7 +17661,7 @@
         "operationId": "listPeriods",
         "summary": "Accounting periods and whether each is closed.",
         "tags": ["ledger"],
-        "x-elysium-ability": "read:LedgerPeriod",
+        "x-ability": "read:LedgerPeriod",
         "responses": {
           "200": {
             "description": "Success.",
@@ -17932,7 +17729,7 @@
         "operationId": "closePeriod",
         "summary": "Close a month, locking every date up to its end.",
         "tags": ["ledger"],
-        "x-elysium-ability": "update:LedgerPeriod",
+        "x-ability": "update:LedgerPeriod",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -17947,7 +17744,7 @@
               }
             }
           },
-          "x-elysium-type": "ClosePeriodInput"
+          "x-body-type": "ClosePeriodInput"
         },
         "responses": {
           "201": {
@@ -18026,7 +17823,7 @@
         "operationId": "reopenPeriod",
         "summary": "Ask to reopen a closed month. Needs an approval.",
         "tags": ["ledger"],
-        "x-elysium-ability": "update:LedgerPeriod",
+        "x-ability": "update:LedgerPeriod",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -18041,7 +17838,7 @@
               }
             }
           },
-          "x-elysium-type": "ReopenPeriodInput"
+          "x-body-type": "ReopenPeriodInput"
         },
         "responses": {
           "201": {
@@ -18120,7 +17917,7 @@
         "operationId": "trialBalance",
         "summary": "Debit and credit totals per account as of a business date.",
         "tags": ["ledger"],
-        "x-elysium-ability": "read:LedgerReport",
+        "x-ability": "read:LedgerReport",
         "parameters": [
           {
             "name": "asOf",
@@ -18198,7 +17995,7 @@
         "operationId": "listWallets",
         "summary": "Cash, bank and mobile-money wallets with their balances.",
         "tags": ["ledger"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "responses": {
           "200": {
             "description": "Success.",
@@ -18266,7 +18063,7 @@
         "operationId": "cashBook",
         "summary": "Movements through one wallet over a date range.",
         "tags": ["ledger"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -18370,7 +18167,7 @@
         "operationId": "getV1Loans",
         "summary": "GET /v1/loans",
         "tags": ["loans"],
-        "x-elysium-ability": "read:CompanyLoan",
+        "x-ability": "read:CompanyLoan",
         "responses": {
           "200": {
             "description": "Success.",
@@ -18436,7 +18233,7 @@
         "operationId": "postV1Loans",
         "summary": "POST /v1/loans",
         "tags": ["loans"],
-        "x-elysium-ability": "create:CompanyLoan",
+        "x-ability": "create:CompanyLoan",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -18519,7 +18316,7 @@
         "operationId": "getV1LoansById",
         "summary": "GET /v1/loans/:id",
         "tags": ["loans"],
-        "x-elysium-ability": "read:CompanyLoan",
+        "x-ability": "read:CompanyLoan",
         "parameters": [
           {
             "name": "id",
@@ -18607,7 +18404,7 @@
         "operationId": "postV1LoansByIdPayments",
         "summary": "POST /v1/loans/:id/payments",
         "tags": ["loans"],
-        "x-elysium-ability": "update:CompanyLoan",
+        "x-ability": "update:CompanyLoan",
         "parameters": [
           {
             "name": "id",
@@ -18708,7 +18505,7 @@
         "operationId": "postV1LoansByIdVoid",
         "summary": "POST /v1/loans/:id/void",
         "tags": ["loans"],
-        "x-elysium-ability": "update:CompanyLoan",
+        "x-ability": "update:CompanyLoan",
         "parameters": [
           {
             "name": "id",
@@ -18809,7 +18606,7 @@
         "operationId": "getV1LoansLenders",
         "summary": "GET /v1/loans/lenders",
         "tags": ["loans"],
-        "x-elysium-ability": "read:CompanyLoan",
+        "x-ability": "read:CompanyLoan",
         "responses": {
           "200": {
             "description": "Success.",
@@ -18875,7 +18672,7 @@
         "operationId": "postV1LoansLenders",
         "summary": "POST /v1/loans/lenders",
         "tags": ["loans"],
-        "x-elysium-ability": "create:CompanyLoan",
+        "x-ability": "create:CompanyLoan",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -18958,7 +18755,7 @@
         "operationId": "postV1LoansPreview",
         "summary": "POST /v1/loans/preview",
         "tags": ["loans"],
-        "x-elysium-ability": "read:CompanyLoan",
+        "x-ability": "read:CompanyLoan",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -19041,7 +18838,7 @@
         "operationId": "getV1MarketingCampaigns",
         "summary": "GET /v1/marketing/campaigns",
         "tags": ["marketing"],
-        "x-elysium-ability": "read:Campaign",
+        "x-ability": "read:Campaign",
         "responses": {
           "200": {
             "description": "Success.",
@@ -19107,7 +18904,7 @@
         "operationId": "postV1MarketingCampaigns",
         "summary": "POST /v1/marketing/campaigns",
         "tags": ["marketing"],
-        "x-elysium-ability": "create:Campaign",
+        "x-ability": "create:Campaign",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -19190,7 +18987,7 @@
         "operationId": "patchV1MarketingCampaignsById",
         "summary": "PATCH /v1/marketing/campaigns/:id",
         "tags": ["marketing"],
-        "x-elysium-ability": "update:Campaign",
+        "x-ability": "update:Campaign",
         "parameters": [
           {
             "name": "id",
@@ -19291,7 +19088,7 @@
         "operationId": "postV1MarketingCampaignsByIdRefs",
         "summary": "POST /v1/marketing/campaigns/:id/refs",
         "tags": ["marketing"],
-        "x-elysium-ability": "update:Campaign",
+        "x-ability": "update:Campaign",
         "parameters": [
           {
             "name": "id",
@@ -19392,7 +19189,7 @@
         "operationId": "deleteV1MarketingCampaignsByIdRefsByRefId",
         "summary": "DELETE /v1/marketing/campaigns/:id/refs/:refId",
         "tags": ["marketing"],
-        "x-elysium-ability": "update:Campaign",
+        "x-ability": "update:Campaign",
         "parameters": [
           {
             "name": "id",
@@ -19501,7 +19298,7 @@
         "operationId": "getV1MarketingCapiEvents",
         "summary": "GET /v1/marketing/capi-events",
         "tags": ["marketing"],
-        "x-elysium-ability": "read:Campaign",
+        "x-ability": "read:Campaign",
         "responses": {
           "200": {
             "description": "Success.",
@@ -19569,7 +19366,7 @@
         "operationId": "getV1MarketingDashboard",
         "summary": "GET /v1/marketing/dashboard",
         "tags": ["marketing"],
-        "x-elysium-ability": "read:Campaign",
+        "x-ability": "read:Campaign",
         "responses": {
           "200": {
             "description": "Success.",
@@ -19637,7 +19434,7 @@
         "operationId": "getV1MarketingLeads",
         "summary": "GET /v1/marketing/leads",
         "tags": ["marketing"],
-        "x-elysium-ability": "read:Campaign",
+        "x-ability": "read:Campaign",
         "responses": {
           "200": {
             "description": "Success.",
@@ -19703,7 +19500,7 @@
         "operationId": "postV1MarketingLeads",
         "summary": "POST /v1/marketing/leads",
         "tags": ["marketing"],
-        "x-elysium-ability": "create:Campaign",
+        "x-ability": "create:Campaign",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -19786,7 +19583,7 @@
         "operationId": "patchV1MarketingLeadsById",
         "summary": "PATCH /v1/marketing/leads/:id",
         "tags": ["marketing"],
-        "x-elysium-ability": "update:Campaign",
+        "x-ability": "update:Campaign",
         "parameters": [
           {
             "name": "id",
@@ -19887,7 +19684,7 @@
         "operationId": "getV1MarketingLeadsSegments",
         "summary": "GET /v1/marketing/leads/segments",
         "tags": ["marketing"],
-        "x-elysium-ability": "read:Campaign",
+        "x-ability": "read:Campaign",
         "responses": {
           "200": {
             "description": "Success.",
@@ -19955,7 +19752,7 @@
         "operationId": "getV1MarketingMetaConnection",
         "summary": "GET /v1/marketing/meta-connection",
         "tags": ["marketing"],
-        "x-elysium-ability": "read:Campaign",
+        "x-ability": "read:Campaign",
         "responses": {
           "200": {
             "description": "Success.",
@@ -20021,7 +19818,7 @@
         "operationId": "putV1MarketingMetaConnection",
         "summary": "PUT /v1/marketing/meta-connection",
         "tags": ["marketing"],
-        "x-elysium-ability": "update:Campaign",
+        "x-ability": "update:Campaign",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -20104,7 +19901,7 @@
         "operationId": "postV1MarketingMetaImport",
         "summary": "POST /v1/marketing/meta/import",
         "tags": ["marketing"],
-        "x-elysium-ability": "create:CampaignSpend",
+        "x-ability": "create:CampaignSpend",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -20187,7 +19984,7 @@
         "operationId": "getV1MarketingSpend",
         "summary": "GET /v1/marketing/spend",
         "tags": ["marketing"],
-        "x-elysium-ability": "read:CampaignSpend",
+        "x-ability": "read:CampaignSpend",
         "responses": {
           "200": {
             "description": "Success.",
@@ -20253,7 +20050,7 @@
         "operationId": "putV1MarketingSpend",
         "summary": "PUT /v1/marketing/spend",
         "tags": ["marketing"],
-        "x-elysium-ability": "create:CampaignSpend",
+        "x-ability": "create:CampaignSpend",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -20336,7 +20133,7 @@
         "operationId": "getV1MarketingSpendCampaigns",
         "summary": "GET /v1/marketing/spend/campaigns",
         "tags": ["marketing"],
-        "x-elysium-ability": "read:CampaignSpend",
+        "x-ability": "read:CampaignSpend",
         "responses": {
           "200": {
             "description": "Success.",
@@ -20404,7 +20201,7 @@
         "operationId": "me",
         "summary": "The signed-in user, their roles and active org.",
         "tags": ["me"],
-        "x-elysium-ability": "authenticated",
+        "x-ability": "authenticated",
         "responses": {
           "200": {
             "description": "Success.",
@@ -20472,7 +20269,7 @@
         "operationId": "switchOrg",
         "summary": "Enter an organization for the rest of this session.",
         "tags": ["me"],
-        "x-elysium-ability": "authenticated",
+        "x-ability": "authenticated",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -20487,7 +20284,7 @@
               }
             }
           },
-          "x-elysium-type": "SwitchOrg"
+          "x-body-type": "SwitchOrg"
         },
         "responses": {
           "201": {
@@ -20566,7 +20363,7 @@
         "operationId": "listMyOrgs",
         "summary": "The organizations this user may enter.",
         "tags": ["me"],
-        "x-elysium-ability": "authenticated",
+        "x-ability": "authenticated",
         "responses": {
           "200": {
             "description": "Success.",
@@ -20634,7 +20431,7 @@
         "operationId": "getV1NotifyMessages",
         "summary": "GET /v1/notify/messages",
         "tags": ["notify"],
-        "x-elysium-ability": "read:Campaign",
+        "x-ability": "read:Campaign",
         "responses": {
           "200": {
             "description": "Success.",
@@ -20702,7 +20499,7 @@
         "operationId": "getV1NotifyOptOuts",
         "summary": "GET /v1/notify/opt-outs",
         "tags": ["notify"],
-        "x-elysium-ability": "read:Campaign",
+        "x-ability": "read:Campaign",
         "responses": {
           "200": {
             "description": "Success.",
@@ -20768,7 +20565,7 @@
         "operationId": "postV1NotifyOptOuts",
         "summary": "POST /v1/notify/opt-outs",
         "tags": ["notify"],
-        "x-elysium-ability": "update:Campaign",
+        "x-ability": "update:Campaign",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -20851,7 +20648,7 @@
         "operationId": "deleteV1NotifyOptOutsByPhone",
         "summary": "DELETE /v1/notify/opt-outs/:phone",
         "tags": ["notify"],
-        "x-elysium-ability": "update:Campaign",
+        "x-ability": "update:Campaign",
         "parameters": [
           {
             "name": "phone",
@@ -20952,7 +20749,7 @@
         "operationId": "getV1NotifyTemplates",
         "summary": "GET /v1/notify/templates",
         "tags": ["notify"],
-        "x-elysium-ability": "read:Campaign",
+        "x-ability": "read:Campaign",
         "responses": {
           "200": {
             "description": "Success.",
@@ -21018,7 +20815,7 @@
         "operationId": "putV1NotifyTemplates",
         "summary": "PUT /v1/notify/templates",
         "tags": ["notify"],
-        "x-elysium-ability": "update:Campaign",
+        "x-ability": "update:Campaign",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -21101,7 +20898,7 @@
         "operationId": "getV1OrderAdvances",
         "summary": "GET /v1/order-advances",
         "tags": ["order-advances"],
-        "x-elysium-ability": "create:Wallet",
+        "x-ability": "create:Wallet",
         "responses": {
           "200": {
             "description": "Success.",
@@ -21169,7 +20966,7 @@
         "operationId": "postV1OrderAdvancesByIdRefund",
         "summary": "POST /v1/order-advances/:id/refund",
         "tags": ["order-advances"],
-        "x-elysium-ability": "create:Wallet",
+        "x-ability": "create:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -21270,7 +21067,7 @@
         "operationId": "postV1OrderAdvancesByIdReject",
         "summary": "POST /v1/order-advances/:id/reject",
         "tags": ["order-advances"],
-        "x-elysium-ability": "create:Wallet",
+        "x-ability": "create:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -21371,7 +21168,7 @@
         "operationId": "postV1OrderAdvancesByIdVerify",
         "summary": "POST /v1/order-advances/:id/verify",
         "tags": ["order-advances"],
-        "x-elysium-ability": "create:Wallet",
+        "x-ability": "create:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -21472,7 +21269,7 @@
         "operationId": "postV1OrderAdvancesByIdVoid",
         "summary": "POST /v1/order-advances/:id/void",
         "tags": ["order-advances"],
-        "x-elysium-ability": "create:Wallet",
+        "x-ability": "create:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -21573,7 +21370,7 @@
         "operationId": "getV1Orders",
         "summary": "GET /v1/orders",
         "tags": ["orders"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "responses": {
           "200": {
             "description": "Success.",
@@ -21639,7 +21436,7 @@
         "operationId": "postV1Orders",
         "summary": "POST /v1/orders",
         "tags": ["orders"],
-        "x-elysium-ability": "create:Order",
+        "x-ability": "create:Order",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -21722,7 +21519,7 @@
         "operationId": "getV1OrdersById",
         "summary": "GET /v1/orders/:id",
         "tags": ["orders"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "parameters": [
           {
             "name": "id",
@@ -21808,7 +21605,7 @@
         "operationId": "patchV1OrdersById",
         "summary": "PATCH /v1/orders/:id",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -21909,7 +21706,7 @@
         "operationId": "getV1OrdersByIdAdvances",
         "summary": "GET /v1/orders/:id/advances",
         "tags": ["orders"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "parameters": [
           {
             "name": "id",
@@ -21995,7 +21792,7 @@
         "operationId": "postV1OrdersByIdAdvances",
         "summary": "POST /v1/orders/:id/advances",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -22096,7 +21893,7 @@
         "operationId": "postV1OrdersByIdAssign",
         "summary": "POST /v1/orders/:id/assign",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -22197,7 +21994,7 @@
         "operationId": "postV1OrdersByIdCancel",
         "summary": "POST /v1/orders/:id/cancel",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -22298,7 +22095,7 @@
         "operationId": "postV1OrdersByIdClaim",
         "summary": "POST /v1/orders/:id/claim",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -22399,7 +22196,7 @@
         "operationId": "postV1OrdersByIdConfirm",
         "summary": "POST /v1/orders/:id/confirm",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -22500,7 +22297,7 @@
         "operationId": "postV1OrdersByIdDeliver",
         "summary": "POST /v1/orders/:id/deliver",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -22601,7 +22398,7 @@
         "operationId": "getV1OrdersByIdDocument",
         "summary": "GET /v1/orders/:id/document",
         "tags": ["orders"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "parameters": [
           {
             "name": "id",
@@ -22689,7 +22486,7 @@
         "operationId": "postV1OrdersByIdExchange",
         "summary": "POST /v1/orders/:id/exchange",
         "tags": ["orders"],
-        "x-elysium-ability": "create:Order",
+        "x-ability": "create:Order",
         "parameters": [
           {
             "name": "id",
@@ -22790,7 +22587,7 @@
         "operationId": "postV1OrdersByIdHold",
         "summary": "POST /v1/orders/:id/hold",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -22891,7 +22688,7 @@
         "operationId": "postV1OrdersByIdPack",
         "summary": "POST /v1/orders/:id/pack",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -22992,7 +22789,7 @@
         "operationId": "postV1OrdersByIdPartialDelivery",
         "summary": "POST /v1/orders/:id/partial-delivery",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -23093,7 +22890,7 @@
         "operationId": "postV1OrdersByIdReceiveReturn",
         "summary": "POST /v1/orders/:id/receive-return",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -23194,7 +22991,7 @@
         "operationId": "postV1OrdersByIdReleaseHold",
         "summary": "POST /v1/orders/:id/release-hold",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -23295,7 +23092,7 @@
         "operationId": "postV1OrdersByIdShip",
         "summary": "POST /v1/orders/:id/ship",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -23396,7 +23193,7 @@
         "operationId": "postV1OrdersByIdStartReturn",
         "summary": "POST /v1/orders/:id/start-return",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "name": "id",
@@ -23497,7 +23294,7 @@
         "operationId": "getV1OrdersAgents",
         "summary": "GET /v1/orders/agents",
         "tags": ["orders"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "responses": {
           "200": {
             "description": "Success.",
@@ -23565,7 +23362,7 @@
         "operationId": "getV1OrdersAvailability",
         "summary": "GET /v1/orders/availability",
         "tags": ["orders"],
-        "x-elysium-ability": "read:Stock",
+        "x-ability": "read:Stock",
         "responses": {
           "200": {
             "description": "Success.",
@@ -23633,7 +23430,7 @@
         "operationId": "postV1OrdersBulkConfirm",
         "summary": "POST /v1/orders/bulk-confirm",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -23716,7 +23513,7 @@
         "operationId": "postV1OrdersBulkTransition",
         "summary": "POST /v1/orders/bulk-transition",
         "tags": ["orders"],
-        "x-elysium-ability": "update:Order",
+        "x-ability": "update:Order",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -23799,7 +23596,7 @@
         "operationId": "getV1OrdersDocuments",
         "summary": "GET /v1/orders/documents",
         "tags": ["orders"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "responses": {
           "200": {
             "description": "Success.",
@@ -23867,7 +23664,7 @@
         "operationId": "getV1OrdersDuplicates",
         "summary": "GET /v1/orders/duplicates",
         "tags": ["orders"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "responses": {
           "200": {
             "description": "Success.",
@@ -23935,7 +23732,7 @@
         "operationId": "getV1OrdersReturnReasons",
         "summary": "GET /v1/orders/return-reasons",
         "tags": ["orders"],
-        "x-elysium-ability": "read:Order",
+        "x-ability": "read:Order",
         "responses": {
           "200": {
             "description": "Success.",
@@ -24003,7 +23800,7 @@
         "operationId": "getV1PosBranches",
         "summary": "GET /v1/pos/branches",
         "tags": ["pos"],
-        "x-elysium-ability": "read:LedgerReport",
+        "x-ability": "read:LedgerReport",
         "responses": {
           "200": {
             "description": "Success.",
@@ -24071,7 +23868,7 @@
         "operationId": "getV1PosBranchesByIdClosings",
         "summary": "GET /v1/pos/branches/:id/closings",
         "tags": ["pos"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -24157,7 +23954,7 @@
         "operationId": "postV1PosBranchesByIdClosings",
         "summary": "POST /v1/pos/branches/:id/closings",
         "tags": ["pos"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -24258,7 +24055,7 @@
         "operationId": "getV1PosBranchesByIdSummary",
         "summary": "GET /v1/pos/branches/:id/summary",
         "tags": ["pos"],
-        "x-elysium-ability": "read:LedgerReport",
+        "x-ability": "read:LedgerReport",
         "parameters": [
           {
             "name": "id",
@@ -24346,7 +24143,7 @@
         "operationId": "postV1PosPromoCodesCheck",
         "summary": "POST /v1/pos/promo-codes/check",
         "tags": ["pos"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -24429,7 +24226,7 @@
         "operationId": "getV1PosReceiptsByReceiptNo",
         "summary": "GET /v1/pos/receipts/:receiptNo",
         "tags": ["pos"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "parameters": [
           {
             "name": "receiptNo",
@@ -24517,7 +24314,7 @@
         "operationId": "getV1PosRegisters",
         "summary": "GET /v1/pos/registers",
         "tags": ["pos"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "responses": {
           "200": {
             "description": "Success.",
@@ -24583,7 +24380,7 @@
         "operationId": "postV1PosRegisters",
         "summary": "POST /v1/pos/registers",
         "tags": ["pos"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -24666,7 +24463,7 @@
         "operationId": "patchV1PosRegistersById",
         "summary": "PATCH /v1/pos/registers/:id",
         "tags": ["pos"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -24767,7 +24564,7 @@
         "operationId": "getV1PosRegistersByIdPriceList",
         "summary": "GET /v1/pos/registers/:id/price-list",
         "tags": ["pos"],
-        "x-elysium-ability": "read:Catalog",
+        "x-ability": "read:Catalog",
         "parameters": [
           {
             "name": "id",
@@ -24855,7 +24652,7 @@
         "operationId": "getV1PosRegistersByIdSession",
         "summary": "GET /v1/pos/registers/:id/session",
         "tags": ["pos"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -24943,7 +24740,7 @@
         "operationId": "getV1PosReviews",
         "summary": "GET /v1/pos/reviews",
         "tags": ["pos"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "responses": {
           "200": {
             "description": "Success.",
@@ -25011,7 +24808,7 @@
         "operationId": "postV1PosReviewsByIdResolve",
         "summary": "POST /v1/pos/reviews/:id/resolve",
         "tags": ["pos"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -25112,7 +24909,7 @@
         "operationId": "getV1PosSalesById",
         "summary": "GET /v1/pos/sales/:id",
         "tags": ["pos"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -25200,7 +24997,7 @@
         "operationId": "getV1PosShifts",
         "summary": "GET /v1/pos/shifts",
         "tags": ["pos"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "responses": {
           "200": {
             "description": "Success.",
@@ -25266,7 +25063,7 @@
         "operationId": "postV1PosShifts",
         "summary": "POST /v1/pos/shifts",
         "tags": ["pos"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -25349,7 +25146,7 @@
         "operationId": "getV1PosShiftsById",
         "summary": "GET /v1/pos/shifts/:id",
         "tags": ["pos"],
-        "x-elysium-ability": "read:Wallet",
+        "x-ability": "read:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -25437,7 +25234,7 @@
         "operationId": "postV1PosShiftsByIdClose",
         "summary": "POST /v1/pos/shifts/:id/close",
         "tags": ["pos"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "name": "id",
@@ -25538,7 +25335,7 @@
         "operationId": "postV1PosSync",
         "summary": "POST /v1/pos/sync",
         "tags": ["pos"],
-        "x-elysium-ability": "update:Wallet",
+        "x-ability": "update:Wallet",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -25621,7 +25418,7 @@
         "operationId": "postV1PromoCheck",
         "summary": "POST /v1/promo/check",
         "tags": ["promo"],
-        "x-elysium-ability": "read:LandingPage",
+        "x-ability": "read:LandingPage",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -25704,7 +25501,7 @@
         "operationId": "getV1PromoCodes",
         "summary": "GET /v1/promo/codes",
         "tags": ["promo"],
-        "x-elysium-ability": "read:LandingPage",
+        "x-ability": "read:LandingPage",
         "responses": {
           "200": {
             "description": "Success.",
@@ -25770,7 +25567,7 @@
         "operationId": "postV1PromoCodes",
         "summary": "POST /v1/promo/codes",
         "tags": ["promo"],
-        "x-elysium-ability": "create:LandingPage",
+        "x-ability": "create:LandingPage",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -25853,7 +25650,7 @@
         "operationId": "patchV1PromoCodesById",
         "summary": "PATCH /v1/promo/codes/:id",
         "tags": ["promo"],
-        "x-elysium-ability": "update:LandingPage",
+        "x-ability": "update:LandingPage",
         "parameters": [
           {
             "name": "id",
@@ -25954,7 +25751,7 @@
         "operationId": "getV1PromoCodesByIdRedemptions",
         "summary": "GET /v1/promo/codes/:id/redemptions",
         "tags": ["promo"],
-        "x-elysium-ability": "read:LandingPage",
+        "x-ability": "read:LandingPage",
         "parameters": [
           {
             "name": "id",
@@ -26037,12 +25834,548 @@
         }
       }
     },
+    "/v1/promo/flash-sales": {
+      "get": {
+        "operationId": "getV1PromoFlashSales",
+        "summary": "GET /v1/promo/flash-sales",
+        "tags": ["promo"],
+        "x-ability": "read:LandingPage",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postV1PromoFlashSales",
+        "summary": "POST /v1/promo/flash-sales",
+        "tags": ["promo"],
+        "x-ability": "create:LandingPage",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/promo/flash-sales/{id}": {
+      "get": {
+        "operationId": "getV1PromoFlashSalesById",
+        "summary": "GET /v1/promo/flash-sales/:id",
+        "tags": ["promo"],
+        "x-ability": "read:LandingPage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patchV1PromoFlashSalesById",
+        "summary": "PATCH /v1/promo/flash-sales/:id",
+        "tags": ["promo"],
+        "x-ability": "update:LandingPage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putV1PromoFlashSalesById",
+        "summary": "PUT /v1/promo/flash-sales/:id",
+        "tags": ["promo"],
+        "x-ability": "update:LandingPage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/promo/flash-sales/{id}/duplicate": {
+      "post": {
+        "operationId": "postV1PromoFlashSalesByIdDuplicate",
+        "summary": "POST /v1/promo/flash-sales/:id/duplicate",
+        "tags": ["promo"],
+        "x-ability": "create:LandingPage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/storefront/categories/{id}": {
       "put": {
         "operationId": "putV1StorefrontCategoriesById",
         "summary": "PUT /v1/storefront/categories/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -26143,7 +26476,7 @@
         "operationId": "getV1StorefrontHeroSlides",
         "summary": "GET /v1/storefront/hero-slides",
         "tags": ["storefront"],
-        "x-elysium-ability": "read:Storefront",
+        "x-ability": "read:Storefront",
         "responses": {
           "200": {
             "description": "Success.",
@@ -26209,7 +26542,7 @@
         "operationId": "postV1StorefrontHeroSlides",
         "summary": "POST /v1/storefront/hero-slides",
         "tags": ["storefront"],
-        "x-elysium-ability": "create:Storefront",
+        "x-ability": "create:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -26292,7 +26625,7 @@
         "operationId": "deleteV1StorefrontHeroSlidesById",
         "summary": "DELETE /v1/storefront/hero-slides/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "delete:Storefront",
+        "x-ability": "delete:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -26391,7 +26724,7 @@
         "operationId": "putV1StorefrontHeroSlidesById",
         "summary": "PUT /v1/storefront/hero-slides/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -26492,7 +26825,7 @@
         "operationId": "putV1StorefrontHeroSlidesOrder",
         "summary": "PUT /v1/storefront/hero-slides/order",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -26575,7 +26908,7 @@
         "operationId": "getV1StorefrontNavItems",
         "summary": "GET /v1/storefront/nav-items",
         "tags": ["storefront"],
-        "x-elysium-ability": "read:Storefront",
+        "x-ability": "read:Storefront",
         "responses": {
           "200": {
             "description": "Success.",
@@ -26641,7 +26974,7 @@
         "operationId": "postV1StorefrontNavItems",
         "summary": "POST /v1/storefront/nav-items",
         "tags": ["storefront"],
-        "x-elysium-ability": "create:Storefront",
+        "x-ability": "create:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -26724,7 +27057,7 @@
         "operationId": "deleteV1StorefrontNavItemsById",
         "summary": "DELETE /v1/storefront/nav-items/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "delete:Storefront",
+        "x-ability": "delete:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -26823,7 +27156,7 @@
         "operationId": "putV1StorefrontNavItemsById",
         "summary": "PUT /v1/storefront/nav-items/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -26924,7 +27257,7 @@
         "operationId": "putV1StorefrontNavItemsLayout",
         "summary": "PUT /v1/storefront/nav-items/layout",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -27007,7 +27340,7 @@
         "operationId": "putV1StorefrontProductsById",
         "summary": "PUT /v1/storefront/products/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -27108,7 +27441,7 @@
         "operationId": "getV1StorefrontSettings",
         "summary": "GET /v1/storefront/settings",
         "tags": ["storefront"],
-        "x-elysium-ability": "read:Storefront",
+        "x-ability": "read:Storefront",
         "responses": {
           "200": {
             "description": "Success.",
@@ -27174,7 +27507,7 @@
         "operationId": "patchV1StorefrontSettings",
         "summary": "PATCH /v1/storefront/settings",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -27257,7 +27590,7 @@
         "operationId": "getV1StorefrontSiteKeys",
         "summary": "GET /v1/storefront/site-keys",
         "tags": ["storefront"],
-        "x-elysium-ability": "read:Storefront",
+        "x-ability": "read:Storefront",
         "responses": {
           "200": {
             "description": "Success.",
@@ -27323,7 +27656,7 @@
         "operationId": "postV1StorefrontSiteKeys",
         "summary": "POST /v1/storefront/site-keys",
         "tags": ["storefront"],
-        "x-elysium-ability": "create:Storefront",
+        "x-ability": "create:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -27406,7 +27739,7 @@
         "operationId": "postV1StorefrontSiteKeysByIdRevoke",
         "summary": "POST /v1/storefront/site-keys/:id/revoke",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -27507,7 +27840,7 @@
         "operationId": "getV1StorefrontSizeCharts",
         "summary": "GET /v1/storefront/size-charts",
         "tags": ["storefront"],
-        "x-elysium-ability": "read:Storefront",
+        "x-ability": "read:Storefront",
         "responses": {
           "200": {
             "description": "Success.",
@@ -27573,7 +27906,7 @@
         "operationId": "postV1StorefrontSizeCharts",
         "summary": "POST /v1/storefront/size-charts",
         "tags": ["storefront"],
-        "x-elysium-ability": "create:Storefront",
+        "x-ability": "create:Storefront",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -27656,7 +27989,7 @@
         "operationId": "deleteV1StorefrontSizeChartsById",
         "summary": "DELETE /v1/storefront/size-charts/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "delete:Storefront",
+        "x-ability": "delete:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -27755,7 +28088,7 @@
         "operationId": "putV1StorefrontSizeChartsById",
         "summary": "PUT /v1/storefront/size-charts/:id",
         "tags": ["storefront"],
-        "x-elysium-ability": "update:Storefront",
+        "x-ability": "update:Storefront",
         "parameters": [
           {
             "name": "id",
@@ -27856,7 +28189,7 @@
         "operationId": "postV1SupplyAdvanceApplications",
         "summary": "POST /v1/supply/advance-applications",
         "tags": ["supply"],
-        "x-elysium-ability": "read:Cost",
+        "x-ability": "read:Cost",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -27939,7 +28272,7 @@
         "operationId": "postV1SupplyDrafts",
         "summary": "POST /v1/supply/drafts",
         "tags": ["supply"],
-        "x-elysium-ability": "create:Supply",
+        "x-ability": "create:Supply",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -28022,7 +28355,7 @@
         "operationId": "deleteV1SupplyDraftsById",
         "summary": "DELETE /v1/supply/drafts/:id",
         "tags": ["supply"],
-        "x-elysium-ability": "update:Supply",
+        "x-ability": "update:Supply",
         "parameters": [
           {
             "name": "id",
@@ -28121,7 +28454,7 @@
         "operationId": "patchV1SupplyDraftsById",
         "summary": "PATCH /v1/supply/drafts/:id",
         "tags": ["supply"],
-        "x-elysium-ability": "update:Supply",
+        "x-ability": "update:Supply",
         "parameters": [
           {
             "name": "id",
@@ -28222,7 +28555,7 @@
         "operationId": "getV1SupplyEntries",
         "summary": "GET /v1/supply/entries",
         "tags": ["supply"],
-        "x-elysium-ability": "read:Supply",
+        "x-ability": "read:Supply",
         "responses": {
           "200": {
             "description": "Success.",
@@ -28288,7 +28621,7 @@
         "operationId": "postV1SupplyEntries",
         "summary": "POST /v1/supply/entries",
         "tags": ["supply"],
-        "x-elysium-ability": "read:Cost",
+        "x-ability": "read:Cost",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -28371,7 +28704,7 @@
         "operationId": "getV1SupplyEntriesById",
         "summary": "GET /v1/supply/entries/:id",
         "tags": ["supply"],
-        "x-elysium-ability": "read:Supply",
+        "x-ability": "read:Supply",
         "parameters": [
           {
             "name": "id",
@@ -28459,7 +28792,7 @@
         "operationId": "postV1SupplyEntriesByIdReceive",
         "summary": "POST /v1/supply/entries/:id/receive",
         "tags": ["supply"],
-        "x-elysium-ability": "read:Cost",
+        "x-ability": "read:Cost",
         "parameters": [
           {
             "name": "id",
@@ -28560,7 +28893,7 @@
         "operationId": "getV1SupplyPayments",
         "summary": "GET /v1/supply/payments",
         "tags": ["supply"],
-        "x-elysium-ability": "read:Supply",
+        "x-ability": "read:Supply",
         "responses": {
           "200": {
             "description": "Success.",
@@ -28626,7 +28959,7 @@
         "operationId": "postV1SupplyPayments",
         "summary": "POST /v1/supply/payments",
         "tags": ["supply"],
-        "x-elysium-ability": "read:Cost",
+        "x-ability": "read:Cost",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -28709,7 +29042,7 @@
         "operationId": "getV1SupplyReturns",
         "summary": "GET /v1/supply/returns",
         "tags": ["supply"],
-        "x-elysium-ability": "read:Supply",
+        "x-ability": "read:Supply",
         "responses": {
           "200": {
             "description": "Success.",
@@ -28775,7 +29108,7 @@
         "operationId": "postV1SupplyReturns",
         "summary": "POST /v1/supply/returns",
         "tags": ["supply"],
-        "x-elysium-ability": "read:Cost",
+        "x-ability": "read:Cost",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -28858,7 +29191,7 @@
         "operationId": "getV1SupplySupplierOptions",
         "summary": "GET /v1/supply/supplier-options",
         "tags": ["supply"],
-        "x-elysium-ability": "create:Supply",
+        "x-ability": "create:Supply",
         "responses": {
           "200": {
             "description": "Success.",
@@ -28926,7 +29259,7 @@
         "operationId": "getV1SupplySuppliers",
         "summary": "GET /v1/supply/suppliers",
         "tags": ["supply"],
-        "x-elysium-ability": "read:Supply",
+        "x-ability": "read:Supply",
         "responses": {
           "200": {
             "description": "Success.",
@@ -28992,7 +29325,7 @@
         "operationId": "postV1SupplySuppliers",
         "summary": "POST /v1/supply/suppliers",
         "tags": ["supply"],
-        "x-elysium-ability": "create:Supply",
+        "x-ability": "create:Supply",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -29075,7 +29408,7 @@
         "operationId": "getV1SupplySuppliersById",
         "summary": "GET /v1/supply/suppliers/:id",
         "tags": ["supply"],
-        "x-elysium-ability": "read:Supply",
+        "x-ability": "read:Supply",
         "parameters": [
           {
             "name": "id",
@@ -29161,7 +29494,7 @@
         "operationId": "patchV1SupplySuppliersById",
         "summary": "PATCH /v1/supply/suppliers/:id",
         "tags": ["supply"],
-        "x-elysium-ability": "update:Supply",
+        "x-ability": "update:Supply",
         "parameters": [
           {
             "name": "id",
@@ -29262,7 +29595,7 @@
         "operationId": "postV1SupplySuppliersByIdContacts",
         "summary": "POST /v1/supply/suppliers/:id/contacts",
         "tags": ["supply"],
-        "x-elysium-ability": "update:Supply",
+        "x-ability": "update:Supply",
         "parameters": [
           {
             "name": "id",
@@ -29363,7 +29696,7 @@
         "operationId": "postV1SupplySuppliersByIdDocuments",
         "summary": "POST /v1/supply/suppliers/:id/documents",
         "tags": ["supply"],
-        "x-elysium-ability": "update:Supply",
+        "x-ability": "update:Supply",
         "parameters": [
           {
             "name": "id",
@@ -29464,7 +29797,7 @@
         "operationId": "postV1SupplySuppliersByIdNotes",
         "summary": "POST /v1/supply/suppliers/:id/notes",
         "tags": ["supply"],
-        "x-elysium-ability": "update:Supply",
+        "x-ability": "update:Supply",
         "parameters": [
           {
             "name": "id",
@@ -29565,7 +29898,7 @@
         "operationId": "getV1SupplySuppliersByIdStatement",
         "summary": "GET /v1/supply/suppliers/:id/statement",
         "tags": ["supply"],
-        "x-elysium-ability": "read:Cost",
+        "x-ability": "read:Cost",
         "parameters": [
           {
             "name": "id",
@@ -29653,7 +29986,7 @@
         "operationId": "postV1Track",
         "summary": "POST /v1/track",
         "tags": ["track"],
-        "x-elysium-ability": "public",
+        "x-ability": "public",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -29717,7 +30050,7 @@
         "operationId": "listUsers",
         "summary": "This organization's staff, their roles and sign-in state, and open resets.",
         "tags": ["users"],
-        "x-elysium-ability": "read:User",
+        "x-ability": "read:User",
         "responses": {
           "200": {
             "description": "Success.",
@@ -29783,7 +30116,7 @@
         "operationId": "createUser",
         "summary": "Invite a user into this organization with one or more roles.",
         "tags": ["users"],
-        "x-elysium-ability": "create:User",
+        "x-ability": "create:User",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -29798,7 +30131,7 @@
               }
             }
           },
-          "x-elysium-type": "CreateUser"
+          "x-body-type": "CreateUser"
         },
         "responses": {
           "201": {
@@ -29877,7 +30210,7 @@
         "operationId": "deactivateUser",
         "summary": "Switch a leaver off here: their roles end, and so do their sessions.",
         "tags": ["users"],
-        "x-elysium-ability": "update:User",
+        "x-ability": "update:User",
         "parameters": [
           {
             "name": "id",
@@ -29900,7 +30233,7 @@
               }
             }
           },
-          "x-elysium-type": "DeactivateUser"
+          "x-body-type": "DeactivateUser"
         },
         "responses": {
           "201": {
@@ -29989,7 +30322,7 @@
         "operationId": "userPasswordLink",
         "summary": "Issue, ask for, or collect a one-time link that sets a password.",
         "tags": ["users"],
-        "x-elysium-ability": "update:User",
+        "x-ability": "update:User",
         "parameters": [
           {
             "name": "id",
@@ -30012,7 +30345,7 @@
               }
             }
           },
-          "x-elysium-type": "CredentialResetInput"
+          "x-body-type": "CredentialResetInput"
         },
         "responses": {
           "201": {
@@ -30101,7 +30434,7 @@
         "operationId": "setUserRoles",
         "summary": "Replace a person's roles and branch scope in this organization.",
         "tags": ["users"],
-        "x-elysium-ability": "update:User",
+        "x-ability": "update:User",
         "parameters": [
           {
             "name": "id",
@@ -30124,7 +30457,7 @@
               }
             }
           },
-          "x-elysium-type": "SetRoles"
+          "x-body-type": "SetRoles"
         },
         "responses": {
           "200": {
@@ -30213,7 +30546,7 @@
         "operationId": "resetUserTwoFactor",
         "summary": "Remove a person's second factor, so they enrol again at next sign-in.",
         "tags": ["users"],
-        "x-elysium-ability": "update:User",
+        "x-ability": "update:User",
         "parameters": [
           {
             "name": "id",
@@ -30236,7 +30569,7 @@
               }
             }
           },
-          "x-elysium-type": "CredentialResetInput"
+          "x-body-type": "CredentialResetInput"
         },
         "responses": {
           "201": {

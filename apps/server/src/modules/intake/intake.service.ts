@@ -38,9 +38,20 @@ export const INTAKE_RATE_LIMITER = Symbol('INTAKE_RATE_LIMITER');
 export const TURNSTILE_VERIFIER = Symbol('TURNSTILE_VERIFIER');
 
 /** The request headers the public API reads. Lower-case, as Node hands them over. */
-export const KEY_HEADER = 'x-elysium-key';
-export const TIMESTAMP_HEADER = 'x-elysium-timestamp';
-export const SIGNATURE_HEADER = 'x-elysium-signature';
+export const KEY_HEADER = 'x-api-key';
+export const TIMESTAMP_HEADER = 'x-api-timestamp';
+export const SIGNATURE_HEADER = 'x-api-signature';
+
+/**
+ * The names the first integration sent, before the headers became neutral (D-472). Still
+ * read, after the neutral ones, so a site that has not been updated keeps taking orders.
+ * Server-side only: no document or browser file names them.
+ */
+export const LEGACY_HEADERS = {
+  [KEY_HEADER]: 'x-elysium-key',
+  [TIMESTAMP_HEADER]: 'x-elysium-timestamp',
+  [SIGNATURE_HEADER]: 'x-elysium-signature',
+} as const;
 
 export interface IntakeReceipt {
   readonly orderId: string;
@@ -55,7 +66,11 @@ export interface IntakeOutcome {
 
 function header(request: FastifyRequest, name: string): string | undefined {
   const value = request.headers[name];
-  return typeof value === 'string' ? value : undefined;
+  if (typeof value === 'string') return value;
+  const legacy = (LEGACY_HEADERS as Readonly<Record<string, string>>)[name];
+  if (legacy === undefined) return undefined;
+  const older = request.headers[legacy];
+  return typeof older === 'string' ? older : undefined;
 }
 
 /**

@@ -21,7 +21,7 @@ import { applyWalletsMigrations, seedWallet } from './wallets.testing.js';
  * fresh id per call: the suite runs each fixture once per role, and every one of
  * these routes is reached by more than one.
  *
- * Three things about this module make its fixtures unlike the others':
+ * Two things about this module make its fixtures unlike the others':
  *
  * - **A branch-scoped caller answers 404, not 403.** §6 gives branch_manager
  *   `Wallet` at `branch` scope, and the suite signs its roles in with no branch
@@ -29,14 +29,6 @@ import { applyWalletsMigrations, seedWallet } from './wallets.testing.js';
  *   (which is deliberate: a till you may not see must be indistinguishable from one
  *   that does not exist). That is an *admission* by the guard and the suite reads it
  *   as one, which is exactly the assertion this milestone wants.
- * - **The consolidated reports are Super Admin's, and must still be driven.** They
- *   declare `read LedgerReport` like every other report, and `assertSuperAdmin`
- *   then answers 403 with the wallets module's own wording (§5 exception 3). The
- *   suite's guard-refusal test looks for the *guard's* wording — "You cannot … in
- *   this organization" — so this 403 counts as admitted, and the matrix assertion is
- *   about the `LedgerReport` grant, which is the one thing a membership role can be
- *   right or wrong about here. Giving these a skip, or a fixture whose query is
- *   invalid enough to 400 first, would throw that assertion away.
  * - **Every closing gets its own business date.** `wallet_closings_org_wallet_date_idx`
  *   is unique on (org, wallet, date), so a shared date would answer 409 to every
  *   role after the first. The dates are in 2019, before anything this suite posts:
@@ -182,12 +174,6 @@ export const WALLETS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call>
   }),
   'GET /v1/accounts/reports/aging': () => ({
     url: '/v1/accounts/reports/aging?asOf=2030-12-31&side=payable',
-  }),
-  'GET /v1/accounts/reports/consolidated-wallets': () => ({
-    url: '/v1/accounts/reports/consolidated-wallets',
-  }),
-  'GET /v1/accounts/reports/consolidated-profit-and-loss': () => ({
-    url: '/v1/accounts/reports/consolidated-profit-and-loss?from=2000-01-01&to=2030-12-31',
   }),
 };
 

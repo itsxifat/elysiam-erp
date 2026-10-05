@@ -6,6 +6,7 @@ import { currentDatabaseConfig } from '@elysium/db';
 
 import { ALL_QUEUES } from './job-queues.js';
 import { OutboxDispatcher } from './platform/events/dispatcher.js';
+import { loadDeploymentBrand } from './platform/brand/deployment.js';
 import { serverEnv } from './platform/config/env.js';
 import { JobsRuntime } from './platform/jobs/jobs.runtime.js';
 import { createLogger } from './platform/logging/logger.js';
@@ -39,6 +40,10 @@ import { registerWorkerJobs, runDispatchLoop, WORKER_MODULES } from './worker-jo
 async function bootstrap(): Promise<void> {
   const env = serverEnv();
   const logger = createLogger('worker');
+
+  // One brand per deployment (D-470): refuse a database holding another real brand.
+  const brand = await loadDeploymentBrand(env.ERP_BRAND_SLUG);
+  if (brand !== null) logger.info({ brand: brand.slug }, 'brand deployment');
 
   // The owner URL, not `DATABASE_URL`: pg-boss creates and migrates its own
   // schema, which needs CREATE on the database. Read through `@elysium/db`'s

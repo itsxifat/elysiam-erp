@@ -84,6 +84,14 @@ export const users = iam.table('users', {
    * deciding whether an account is still used should not have to read the audit log.
    */
   lastSignInAt: timestamp('last_sign_in_at', { withTimezone: true, mode: 'date' }),
+
+  /**
+   * An owner (M31, D-473): a super admin who reaches this brand only by an owner sign-in
+   * link — no password here, no membership, never on the Staff screen. Shown to everyone
+   * but other owners as "Owner" in the brand's records. Set when the link first creates
+   * the identity; never on an account that has a password or a role here.
+   */
+  isOwner: boolean('is_owner').notNull().default(false),
   ...timestamps,
 });
 
@@ -105,6 +113,13 @@ export const sessions = iam.table(
     activeOrgId: uuid('active_org_id').references(() => organizations.id, {
       onDelete: 'set null',
     }),
+
+    /**
+     * Opened by an owner sign-in link (M31, D-473). Its second factor was checked where
+     * the link was minted, so the enrolment wall lets it through; it lasts two hours from
+     * creation and is never extended, whatever the cookies say.
+     */
+    ownerLink: boolean('owner_link').notNull().default(false),
 
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
@@ -362,4 +377,22 @@ export const membershipGranters = iam.table(
       sql`${table.reason} in ('role_granted', 'link_issued', 'backfill')`,
     ),
   ],
+);
+
+/**
+ * Every owner sign-in link this brand has accepted, by its `jti` (M31, D-473).
+ *
+ * Global (identity, like `users`): a link names a brand by its audience, not an org row.
+ * The route inserts the `jti` before it creates a session, `on conflict do nothing`, and
+ * refuses the link when nothing was inserted: a link opens one session, once. Rows are
+ * pruned a day after use by the worker; a link lives two minutes, so a pruned `jti` can
+ * never be presented in time again.
+ */
+export const ownerLinkUses = iam.table(
+  'owner_link_uses',
+  {
+    jti: text('jti').primaryKey(),
+    usedAt: timestamp('used_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [index('owner_link_uses_used_at_idx').on(table.usedAt)],
 );
