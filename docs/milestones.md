@@ -54,6 +54,7 @@
 | M36  | Elysium website on the ERP, old data moved       | 6      | MAX    | M34, M35           |
 | M37  | Go live: brand servers, mother, switch-over      | 6      | XHIGH  | M31–M36            |
 | M38  | Barcode stickers, strict stock, scan-to-pack     | 6      | MAX    | M33                |
+| M39  | Catalog management: delete, variant prices       | 6      | MAX    | M38a, M34          |
 
 ---
 
@@ -1208,3 +1209,23 @@ Phase 6 · Effort MAX · Depends on: M33, catalog-stock-ux · Decisions D-600 to
 5. A wrong or extra scan at packing is refused; a complete order becomes packed.
 6. The packing video is deleted seven days after delivery.
 7. `pnpm verify` green; ledger-auditor on the posting, the window and the packing transition.
+
+## M39: Catalog management the way a fashion brand works
+
+Phase 6 · Effort MAX · Depends on: M38a, M34 · Decisions D-620 to D-649
+
+**Build**
+
+- M39a: delete when unused, archive when used, everywhere a brand keeps a list; "empty and delete" for categories and size charts; a reference port so the catalog asks other modules.
+- M39b: prices by size or colour and in bulk; buying price per variant on every receipt; a standard buying price in supply; regular (compare-at) price; duplicate product; product list row and bulk actions; per-colour photos; variant barcode, weight, default size chart.
+
+**Acceptance checks**
+
+1. Unused rows delete; used rows archive with the reason; nothing referenced by stock, orders, POS, supply or journals can be deleted.
+2. A category in use is emptied into another and deleted in one transaction.
+3. Prices by size in one step; a bulk +10% previewed and saved, with history.
+4. Per-variant buying prices on a receipt give the right WAC; cost and margin only for read:cost.
+5. A standard buying price pre-fills the next receipt and never appears in a catalog response.
+6. Duplicate product copies variants and prices, not stock.
+7. The website shows regular-price and flash-sale strike-throughs; "On sale" works.
+8. `pnpm verify` green; ledger-auditor; stack specs with screenshots; acceptance-auditor.
