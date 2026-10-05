@@ -1,11 +1,12 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import type {
-  CategoryWebFieldsInput,
-  HeroSlideInput,
-  NavItemInput,
-  ProductWebFieldsInput,
-  SizeChartInput,
-  StorefrontSettingsPatch,
+import {
+  siteInfoSchema,
+  type CategoryWebFieldsInput,
+  type HeroSlideInput,
+  type NavItemInput,
+  type ProductWebFieldsInput,
+  type SizeChartInput,
+  type StorefrontSettingsPatch,
 } from '@elysium/contracts';
 import { withOrg, type Tx } from '@elysium/db';
 import { poisha } from '@elysium/domain';
@@ -65,6 +66,20 @@ export interface SettingsView extends StorefrontSettings {
   };
   readonly updatedAt: string | null;
 }
+
+/**
+ * Who writes the website's settings and keys: a person at the console (an `ActiveContext`
+ * fits), or the operator's command on the server, recorded as a system actor
+ * (`main.admin.ts`, D-582).
+ */
+export interface StorefrontActor {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly requestId?: string | undefined;
+}
+
+/** How a write arrived when it was not the console: recorded on its audit row (D-582). */
+export type StorefrontWriteVia = 'cli';
 
 function change<T>(present: boolean, value: T): Change<T> {
   return present ? { set: true, value } : undefined;
@@ -144,13 +159,44 @@ export class StorefrontService {
    * audit M1: a key named `shipping` matches the `pin` pattern and was stored redacted).
    */
   async patchSettings(
-    context: ActiveContext,
+    context: StorefrontActor,
     request: AuditableRequest,
     patch: StorefrontSettingsPatch,
+  ): Promise<SettingsView> {
+    return this.saveSettings(context, request, () => patch);
+  }
+
+  /**
+   * Website → Settings' Site URL alone, from the operator's `website-site-url` on the server
+   * (D-582). The rest of the site details are read inside the save's lock and kept, so a
+   * console save at the same moment is not overwritten with what was read before it; then
+   * saved and audited as a console save is, with `via` on the audit row. The address is
+   * `normaliseSiteUrl`'s.
+   */
+  async setSiteUrl(
+    context: StorefrontActor,
+    siteUrl: string,
+    via: StorefrontWriteVia,
+  ): Promise<SettingsView> {
+    const value = normaliseSiteUrl(siteUrl);
+    return this.saveSettings(
+      context,
+      undefined,
+      (current) => ({ siteInfo: { ...current.siteInfo, siteUrl: value } }),
+      via,
+    );
+  }
+
+  private async saveSettings(
+    context: StorefrontActor,
+    request: AuditableRequest | undefined,
+    patchOf: (current: StorefrontSettings) => StorefrontSettingsPatch,
+    via?: StorefrontWriteVia,
   ): Promise<SettingsView> {
     const result = await withOrg(context, async (tx) => {
       await repo.lockSettings(tx, context.orgId);
       const current = await this.settingsIn(tx, context.orgId);
+      const patch = patchOf(current);
       const next: StorefrontSettings = { ...current, ...patch };
 
       if (patch.siteInfo !== undefined && patch.siteInfo.logoFileId !== null) {
@@ -215,9 +261,13 @@ export class StorefrontService {
         entityType: 'storefront.settings',
         entityId: context.orgId,
         before: auditSummary(current),
-        after: { sections: Object.keys(patch), ...auditSummary(next) },
+        after: {
+          sections: Object.keys(patch),
+          ...auditSummary(next),
+          ...(via === undefined ? {} : { via }),
+        },
         requestId: context.requestId,
-        request,
+        ...(request === undefined ? {} : { request }),
       });
       return this.view(tx, context.orgId);
     });
@@ -423,8 +473,17 @@ export class StorefrontService {
     }));
   }
 
-  /** Issue a key. The secret is in this response and in no other, ever. */
-  async issueKey(context: ActiveContext, request: AuditableRequest, label: string) {
+  /**
+   * Issue a key. The secret is in this response and in no other, ever. The console's
+   * Website → Connection and the operator's `website-key` on the server (D-582, `via: 'cli'`)
+   * both come here, so a key is the same whichever issued it.
+   */
+  async issueKey(
+    context: StorefrontActor,
+    request: AuditableRequest | undefined,
+    label: string,
+    via?: StorefrontWriteVia,
+  ) {
     const master = this.config.INTAKE_KEY_SECRET;
     if (master === undefined) {
       throw new StorefrontError(
@@ -450,9 +509,9 @@ export class StorefrontService {
         entityType: 'storefront.site_key',
         entityId: inserted.id,
         // The key id is public; the secret is not in here, under any name.
-        after: { label, keyId },
+        after: { label, keyId, ...(via === undefined ? {} : { via }) },
         requestId: context.requestId,
-        request,
+        ...(request === undefined ? {} : { request }),
       });
       return inserted;
     });
@@ -600,9 +659,29 @@ function auditSummary(settings: StorefrontSettings): Record<string, unknown> {
     },
     payments: settings.payments,
     sellsFrom: settings.webLocationIds,
+    // Where the emails' and the payment gateway's links point (D-582).
+    siteUrl: settings.siteInfo.siteUrl,
     announcementOn: settings.announcement.enabled,
     promoOn: settings.promoBanner.enabled,
   };
+}
+
+/**
+ * A Site URL as `setSiteUrl` stores it (D-582): an `https://` address, the form's own rule
+ * (`siteInfoSchema`, which every read parses the stored details with), with no query or
+ * fragment, because the email, password-reset and payment links are built by appending paths
+ * to it. Trailing slashes are dropped. Anything else is refused.
+ */
+export function normaliseSiteUrl(raw: string): string {
+  const value = raw.trim().replace(/\/+$/, '');
+  if (value === '' || !siteInfoSchema.shape.siteUrl.safeParse(value).success) {
+    throw storefrontInvalid('The Site URL is an https:// address, like https://shop.example.com.');
+  }
+  const url = new URL(value);
+  if (url.search !== '' || url.hash !== '' || value.includes('?') || value.includes('#')) {
+    throw storefrontInvalid('The Site URL is the website’s address alone, with no ? or #.');
+  }
+  return value;
 }
 
 function blankToNull(value: string | null | undefined): string | null {

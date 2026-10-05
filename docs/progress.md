@@ -1931,3 +1931,53 @@ dry-run|commit --file <users.json>`.
   link was given to the owner.
 - Every migration up to 0117 is now applied to a live database: frozen.
 - Next: M35b and M36 (building), then M38b, then M32 resumes.
+
+### 2026-10-05 · ops · A brand's website connected from the server (D-582) · built
+
+- Branch `ops-website-key` from `integration-wave2` at 0e90e4a. Not merged, not deployed.
+- `main.admin.ts` gains two commands beside `bootstrap` (unchanged):
+  - `website-key --label "<label>"` issues a storefront site key for the deployment's brand
+    through `StorefrontService.issueKey`, the console's own method (same derivation,
+    fingerprint row and in-transaction audit row), and prints on stdout exactly
+    `ERP_SITE_KEY_ID=…` and `ERP_SITE_SECRET=…`, for
+    `… | sudo tee -a /etc/elysium-web/<site>.env >/dev/null`. The key id and everything else go
+    to stderr; log lines too (`LOG_DESTINATION=stderr`, and stdout is redirected to stderr
+    while a command runs). Refuses without `INTAKE_KEY_SECRET`.
+  - `website-site-url --url https://…` saves Website → Settings' Site URL through the new
+    `StorefrontService.setSiteUrl`: `patchSettings`' lock, merge and audit, with the other site
+    details read inside the lock. `https://` only, no query or fragment; `http://localhost` is
+    refused too (D-582 says why).
+  - Both boot `WebsiteAdminModule` (the storefront service with the catalog, orders, files and
+    approvals modules) as an application context, the way `pnpm migration legacy-customers`
+    boots its importer, and act as `system:admin-cli` with `via: 'cli'` on the audit row. The
+    brand is `ERP_BRAND_SLUG` (the boot check) or the database's one brand (`commandBrand` in
+    `platform/brand/deployment.ts`); two brands, none or a switched-off one are refused.
+- The settings audit summary now records `siteUrl` for every save. The HTTP harness takes
+  `brands` to boot on a one-brand database.
+- Scripts: `pnpm admin:website-key`, `pnpm admin:website-site-url` (root and server), beside
+  `admin:bootstrap`. pnpm 12 prints its `$ …` lines on stderr, so the pnpm form pipes cleanly
+  too. Runbook: `docs/runbooks/brand-deploy.md` §5; architecture §31; CLAUDE.md Commands.
+- Tests: `website-admin.e2e.test.ts` (10, real PostgreSQL holding one brand beside the
+  training org): the two lines and nothing else on stdout; the key signs
+  `GET /storefront/v1/site` through the real guard (200; a wrong secret 401); the row and audit
+  row with the system actor, `via: 'cli'` and no secret; `ERP_BRAND_SLUG` named; the Site URL
+  saved with the other site details kept, and a save holding the settings lock is waited for
+  and kept (the command is seen queued on the lock in `pg_locks` first); refusals without
+  `INTAKE_KEY_SECRET`, without a label, for eight non-https or malformed addresses (nothing
+  saved), for a switched-off brand, the training org named, and a second brand, named or
+  not. The built CLI was also run end to end on a throwaway database with
+  `NODE_ENV=production LOG_LEVEL=debug`, piped through `tee`: the file held exactly the two
+  lines.
+- ledger-auditor: 0 critical, 2 warnings. Fixed: the missing tests above (S2); the address is
+  checked before the database is touched; a failure to close the modules no longer hides an
+  issued key; exit 1 when stdout could not be written; an unknown command says `admin`; the
+  saved address is compared with what reads back. S1, a Website → Settings page opened before
+  the command and saved after it puts the old Site URL back (the form sends the whole
+  section): a runbook warning for now. Not changed: the slug is read from the raw environment
+  (the tests change it per call; `serverEnv()` still rejects a malformed one when the modules
+  boot).
+- Follow-ups:
+  - Settings saves conditional on `updatedAt` (409 when the section changed since the form
+    loaded), so a stale console form cannot undo the CLI's or another person's save (owner:
+    claude).
+- Dependencies: none added.

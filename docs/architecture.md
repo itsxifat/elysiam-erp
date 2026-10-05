@@ -1485,8 +1485,14 @@ stale-while-revalidate=300`, `304` on a match; `site` is also kept thirty second
   a pooled connection while waiting for another, and ten concurrent shop pages would starve the
   pool (the M33 ledger audit's H1, tested with 24 concurrent signed reads).
 - **Audit.** Issuing and revoking a website key and saving the settings write their audit rows
-  inside the same transaction; a settings row records the delivery fees, the payment switches
-  and the web locations under names the audit's redaction leaves alone.
+  inside the same transaction; a settings row records the delivery fees, the payment switches,
+  the web locations and the Site URL under names the audit's redaction leaves alone.
+- **From the server** (D-582). `node dist/main.admin.js website-key --label …` issues a key
+  through the same service method as Website → Connection and prints only
+  `ERP_SITE_KEY_ID=…` and `ERP_SITE_SECRET=…` on stdout, for piping into the website's env
+  file; `website-site-url --url https://…` saves Settings' Site URL through the same lock, merge
+  and audit as a console save. Both act for `ERP_BRAND_SLUG` (else the database's one brand)
+  as the system actor `system:admin-cli`, with `via: 'cli'` on the audit row.
 
 ### Images
 
