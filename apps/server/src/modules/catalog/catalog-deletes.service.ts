@@ -211,7 +211,7 @@ export class CatalogDeletesService {
       if (keeping.length > 0) {
         throw inUse(
           `${category.name} is used by ${describeUses(keeping)}, which cannot be moved.`,
-          'Archive the discount first, or archive the category instead.',
+          keepingHint(keeping),
         );
       }
 
@@ -775,6 +775,22 @@ function report(
     canArchive: !archived,
     uses,
   };
+}
+
+/**
+ * What to do about the uses "Empty and delete" cannot move: a live discount is archived first
+ * (its scope is its terms, D-541); a campaign link is edited or deleted first (a shared link
+ * is never re-pointed, joined at the M35b merge). Archiving the category is always open.
+ */
+function keepingHint(keeping: readonly { readonly reason: string }[]): string {
+  const steps: string[] = [];
+  if (keeping.some((use) => use.reason === 'discounts')) steps.push('archive the discount');
+  if (keeping.some((use) => use.reason === 'campaign_links')) {
+    steps.push('point the campaign link elsewhere or delete it');
+  }
+  const first = steps.length === 0 ? '' : `${steps.join(' and ')} first, or `;
+  const sentence = `${first}archive the category instead.`;
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
 }
 
 function inUse(what: string, instead: string): CatalogError {

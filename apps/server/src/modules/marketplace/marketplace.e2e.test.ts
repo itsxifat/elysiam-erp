@@ -493,7 +493,7 @@ describe('joined to delete and archive (M39a)', () => {
     expect(JSON.parse(refusedPlace.body)).toMatchObject({ code: 'INVENTORY_IN_USE' });
   });
 
-  it('drops an archived category’s products from the listing until it is restored', async () => {
+  it('drops an archived category’s products and subcategories from the listing until it is restored', async () => {
     const seeded = await seedProductWithSkus(ORG_A, `ncarc${suffix}`, 1);
     const category = await withSystem(
       async (tx) => {
@@ -517,6 +517,32 @@ describe('joined to delete and archive (M39a)', () => {
       ).map((product) => product.id);
     expect(await listed()).toEqual([seeded.productId]);
 
+    // A live subcategory under it, both on the website: ncom sees it until its parent is archived.
+    const child = await admin.client.request('POST', '/v1/catalog/categories', {
+      body: {
+        name: `ncom child ${suffix}`,
+        slug: `ncom-child-${suffix}`,
+        code: `NCC${suffix.toUpperCase().slice(0, 5)}`,
+        parentId: category,
+      },
+    });
+    expect(child.statusCode, child.body).toBeLessThan(300);
+    const childId = (JSON.parse(child.body) as { id: string }).id;
+    await withSystem(
+      async (tx) => {
+        await tx.execute(sql`
+          update catalog.categories set web_visible = true
+          where org_id = ${ORG_A} and id in (${String(category)}, ${childId})
+        `);
+      },
+      { orgId: ORG_A },
+    );
+    const categoryIds = async () =>
+      ((await connector('GET', '/categories')).body.categories as { id: string }[]).map(
+        (entry) => entry.id,
+      );
+    expect(await categoryIds()).toEqual(expect.arrayContaining([String(category), childId]));
+
     const archived = await admin.client.request(
       'POST',
       `/v1/catalog/categories/${String(category)}/archive`,
@@ -524,6 +550,9 @@ describe('joined to delete and archive (M39a)', () => {
     );
     expect(archived.statusCode, archived.body).toBeLessThan(300);
     expect(await listed()).toEqual([]);
+    const afterArchive = await categoryIds();
+    expect(afterArchive).not.toContain(String(category));
+    expect(afterArchive).not.toContain(childId);
 
     const restored = await admin.client.request(
       'POST',
@@ -532,6 +561,7 @@ describe('joined to delete and archive (M39a)', () => {
     );
     expect(restored.statusCode, restored.body).toBeLessThan(300);
     expect(await listed()).toEqual([seeded.productId]);
+    expect(await categoryIds()).toEqual(expect.arrayContaining([String(category), childId]));
   });
 });
 

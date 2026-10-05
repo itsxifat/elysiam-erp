@@ -243,8 +243,15 @@ test('a list is put in order', async () => {
   await noBlockingViolations('order a list');
   await dialog.getByRole('button', { name: 'Save order' }).click();
   await expect(dialog).toBeHidden();
-  const labels = await card.getByRole('button', { name: /^Rename / }).allTextContents();
-  expect(labels.map((label) => label.replace(/W\d+$/, '').trim())).toEqual(['30', '32', '34']);
+  // Polled: the card shows the new order once the list is read again after the save (a single
+  // read right after the dialog closed raced the refetch at the M35b merge).
+  await expect
+    .poll(async () =>
+      (await card.getByRole('button', { name: /^Rename / }).allTextContents()).map((label) =>
+        label.replace(/W\d+$/, '').trim(),
+      ),
+    )
+    .toEqual(['30', '32', '34']);
 });
 
 test('a stock location made by mistake is deleted; the edit dialog no longer says its code is in product codes', async () => {

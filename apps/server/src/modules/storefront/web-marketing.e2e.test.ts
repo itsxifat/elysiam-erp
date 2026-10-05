@@ -359,11 +359,17 @@ describe('campaign links', () => {
     const refusedCategory = await refusal('DELETE', `/v1/catalog/categories/${category}`);
     expect(refusedCategory).toMatchObject({ status: 409, code: 'CATALOG_IN_USE' });
     expect(refusedCategory.detail).toContain('1 campaign link');
-    expect(
-      await refusal('POST', `/v1/catalog/categories/${category}/empty-and-delete`, {
-        targetCategoryId: categoryId,
-      }),
-    ).toMatchObject({ status: 409, code: 'CATALOG_IN_USE' });
+    const refusedEmpty = await refusal(
+      'POST',
+      `/v1/catalog/categories/${category}/empty-and-delete`,
+      { targetCategoryId: categoryId },
+    );
+    expect(refusedEmpty).toMatchObject({ status: 409, code: 'CATALOG_IN_USE' });
+    // The way out names the link, not a discount.
+    expect(refusedEmpty.detail).toContain(
+      'Point the campaign link elsewhere or delete it first, or archive the category instead.',
+    );
+    expect(refusedEmpty.detail).not.toContain('discount');
 
     // The highlighted product.
     const productUsage = await usageOf(`/v1/catalog/products/${product}/usage`);

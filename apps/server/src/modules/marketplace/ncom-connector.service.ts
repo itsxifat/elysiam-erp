@@ -201,7 +201,19 @@ export class NcomConnectorService {
     const { orgId } = context;
     return withOrg({ orgId }, async (tx) => {
       const all = await this.catalog.webCategories(tx, orgId);
-      const shown = all.filter((category) => category.isActive && category.webVisible);
+      // The website's rule (D-501, D-623): a category is shown when it and every category above
+      // it are switched on and on the website, so an archived or hidden one takes its subtree
+      // with it, as its products already leave the listing (joined at the M35b merge).
+      const byId = new Map(all.map((category) => [category.id, category]));
+      const live = (category: (typeof all)[number]): boolean => {
+        let current: (typeof all)[number] | undefined = category;
+        for (let depth = 0; current !== undefined && depth <= all.length; depth += 1) {
+          if (!current.isActive || !current.webVisible) return false;
+          current = current.parentId === null ? undefined : byId.get(current.parentId);
+        }
+        return true;
+      };
+      const shown = all.filter(live);
       const legacy = await this.storefront.legacyIdsFor(
         tx,
         orgId,

@@ -18,13 +18,15 @@ export async function holdsForSkus(
   orgId: string,
   skuIds: readonly string[],
 ): Promise<{ count: number; examples: { id: string; label: string }[] }> {
+  // Containment rather than `jsonb_array_elements`: a `lines` value that is not an array
+  // matches nothing instead of raising for every SKU or product delete in the brand.
   const rows = await tx.execute<{ id: string; label: string; total: number }>(sql`
     select h.id, h.order_ref as label, count(*) over ()::int as total
     from marketplace.ncom_holds h
     where h.org_id = ${orgId}
       and exists (
-        select 1 from jsonb_array_elements(h.lines) line
-        where line ->> 'skuId' = any (${sql.param(skuIds.map(String))}::text[])
+        select 1 from unnest(${sql.param(skuIds.map(String))}::text[]) as wanted(sku_id)
+        where h.lines @> jsonb_build_array(jsonb_build_object('skuId', wanted.sku_id))
       )
     order by h.held_at desc
     limit ${USAGE_EXAMPLES}

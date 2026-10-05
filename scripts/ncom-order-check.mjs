@@ -48,7 +48,7 @@ const variantTitle = arg('size');
 // PORT: a product and variant of this shop are required (D-556).
 if (!url || !secret || !key || !productId || !variantId) {
   console.error(
-    'usage: ncom-order-check.mjs --url <url> --key <keyId> --secret <secret> [--product <id> --variant <id>]',
+    'usage: ncom-order-check.mjs --url <url> --key <keyId> --secret <secret> --product <id> --variant <id>',
   );
   process.exit(2);
 }
