@@ -1,3 +1,4 @@
+import { MAX_STICKERS_PER_PDF, STICKER_MEDIA_IDS } from '@elysium/domain';
 import { z } from 'zod';
 
 /**
@@ -297,18 +298,31 @@ export type ProductImportInput = z.infer<typeof productImportSchema>;
 
 // --- labels -----------------------------------------------------------------
 
-export const labelSheetSchema = z.object({
-  /** The SKUs to print, and how many labels of each. */
-  items: z
-    .array(
-      z.object({
-        skuId: catalogIdSchema,
-        copies: z.number().int().min(1).max(200).default(1),
-      }),
-    )
-    .min(1)
-    .max(200),
-  /** Show the selling price on the label. Off by default. */
-  showPrice: z.boolean().default(false),
-});
+export const labelSheetSchema = z
+  .object({
+    /**
+     * The SKUs to print, and how many stickers of each: one per piece (M38a). At most
+     * `MAX_STICKERS_PER_PDF` in all, which the service checks (the console prints more in
+     * parts).
+     */
+    items: z
+      .array(
+        z.object({
+          skuId: catalogIdSchema,
+          copies: z.number().int().min(1).max(MAX_STICKERS_PER_PDF).default(1),
+        }),
+      )
+      .min(1)
+      .max(500),
+    /** Show the selling price on the sticker. Off unless asked; the console asks by default. */
+    showPrice: z.boolean().default(false),
+    /**
+     * What the stickers print on (D-604): a thermal roll (one sticker a page, at the
+     * sticker's size) or an A4 sheet. M06's A4 3 × 8 sheet when absent.
+     */
+    medium: z.enum(STICKER_MEDIA_IDS).default('a4-3x8'),
+    /** On a sheet, the first unused position (1 = top left); the ones before stay blank. */
+    startAt: z.number().int().min(1).max(40).default(1),
+  })
+  .strict();
 export type LabelSheetInput = z.infer<typeof labelSheetSchema>;

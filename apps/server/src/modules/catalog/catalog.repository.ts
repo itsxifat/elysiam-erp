@@ -129,6 +129,51 @@ export async function takeSequence(
   return { sequence: row.last_sequence, orgCode: row.org_code };
 }
 
+/**
+ * Take `count` internal barcode sequences for this org, atomically (M38a, D-603).
+ *
+ * The same one-statement upsert as `takeSequence`, on the same row, so it also takes that
+ * row's lock until the transaction ends: two product creations in one brand get disjoint
+ * ranges, never the same number. Returns the last sequence of the range; the range is
+ * `last - count + 1 … last`.
+ */
+export async function takeBarcodeSequences(tx: Tx, orgId: string, count: number): Promise<number> {
+  const rows = await tx.execute<{ last_barcode_sequence: string | number }>(sql`
+    insert into catalog.sku_settings (org_id, org_code, last_sequence, last_barcode_sequence)
+    values (
+      ${orgId},
+      coalesce(
+        (select upper(substring(regexp_replace(o.slug, '[^A-Za-z0-9]', '', 'g') from 1 for 3))
+         from org.organizations o where o.id = ${orgId}),
+        'ORG'
+      ),
+      0,
+      ${count}
+    )
+    on conflict (org_id) do update
+      set last_barcode_sequence = catalog.sku_settings.last_barcode_sequence + ${count},
+          updated_at = now()
+    returning last_barcode_sequence
+  `);
+  const row = rows[0];
+  if (row === undefined) throw new Error('The barcode counter returned no row.');
+  return Number(row.last_barcode_sequence);
+}
+
+/** Which of these barcodes some SKU of this org already carries. */
+export async function barcodesInUse(
+  tx: Tx,
+  orgId: string,
+  barcodes: readonly string[],
+): Promise<Set<string>> {
+  if (barcodes.length === 0) return new Set();
+  const rows = await tx.execute<{ barcode: string }>(sql`
+    select barcode from catalog.skus
+    where org_id = ${orgId} and barcode = any (${sql.param([...barcodes])}::text[])
+  `);
+  return new Set(rows.map((row) => row.barcode));
+}
+
 export async function skuSettings(
   tx: Tx,
   orgId: string,
@@ -138,6 +183,19 @@ export async function skuSettings(
   `);
   const row = rows[0];
   return row === undefined ? undefined : { orgCode: row.org_code, lastSequence: row.last_sequence };
+}
+
+/**
+ * The name a sticker prints for the brand (M38a, D-604): its short name when the brand
+ * has set one in its branding, otherwise its display name. Read from the brand's own row,
+ * so one build prints for any brand (white label).
+ */
+export async function brandShortName(tx: Tx, orgId: string): Promise<string> {
+  const rows = await tx.execute<{ name: string }>(sql`
+    select coalesce(nullif(trim(o.brand->>'shortName'), ''), o.display_name) as name
+    from org.organizations o where o.id = ${orgId}
+  `);
+  return rows[0]?.name ?? '';
 }
 
 export async function setOrgCode(tx: Tx, orgId: string, orgCode: string): Promise<void> {
@@ -469,6 +527,8 @@ export interface NewSku {
   readonly variantKey: string;
   readonly pricePoisha: bigint;
   readonly position: number;
+  /** An internal EAN-13 or a supplier's barcode (M38a, D-603). */
+  readonly barcode: string | null;
   readonly values: readonly { readonly attributeId: string; readonly valueId: string }[];
 }
 
@@ -488,12 +548,12 @@ export async function insertSkus(
   if (newSkus.length === 0) return [];
 
   const skuRows = await tx.execute<SkuRow>(sql`
-    insert into catalog.skus (org_id, product_id, code, variant_key, price_poisha, position)
+    insert into catalog.skus (org_id, product_id, code, variant_key, price_poisha, position, barcode)
     values ${sql.join(
       newSkus.map(
         (sku) =>
           sql`(${orgId}, ${sku.productId}, ${sku.code}, ${sku.variantKey},
-               ${sku.pricePoisha.toString()}::bigint, ${sku.position})`,
+               ${sku.pricePoisha.toString()}::bigint, ${sku.position}, ${sku.barcode})`,
       ),
       sql`, `,
     )}
@@ -549,6 +609,29 @@ export async function searchSkus(
     limit ${query.limit}
   `);
   return [...rows];
+}
+
+/**
+ * A scanned code (M38a): the SKU whose barcode is exactly it, or whose code is it in
+ * capitals. A barcode match wins: an EAN-13 is digits, and a SKU code made only of digits
+ * that equalled another SKU's barcode is the one ambiguous case worth settling the same
+ * way every time.
+ */
+export async function lookupSku(
+  tx: Tx,
+  orgId: string,
+  code: string,
+): Promise<(SkuRow & { product_name: string; product_status: string }) | undefined> {
+  const rows = await tx.execute<SkuRow & { product_name: string; product_status: string }>(sql`
+    select ${SKU_COLUMNS}, p.name as product_name, p.status::text as product_status
+    from catalog.skus s
+    join catalog.products p on p.org_id = s.org_id and p.id = s.product_id
+    where s.org_id = ${orgId}
+      and (s.barcode = ${code} or s.code = ${code.toUpperCase()})
+    order by (s.barcode = ${code}) desc nulls last
+    limit 1
+  `);
+  return rows[0];
 }
 
 /**

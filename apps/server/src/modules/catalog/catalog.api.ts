@@ -2,6 +2,7 @@ import type { RequestContext, Tx } from '@elysium/db';
 import { poisha, variantKey } from '@elysium/domain';
 import { importSlug, type ImportProduct, type SkusRefs } from '@elysium/domain/migration';
 
+import { nextInternalBarcodes } from './barcodes.js';
 import * as repo from './catalog.repository.js';
 import * as web from './catalog-web.repository.js';
 import { CatalogError } from './catalog.errors.js';
@@ -53,6 +54,18 @@ export interface CatalogApi {
 
   /** Resolve a scanned code or barcode to one SKU, or nothing (M23's POS). */
   skuByCode(tx: Tx, orgId: string, code: string): Promise<CatalogSku | undefined>;
+
+  /**
+   * What a scanned sticker is (M38a, D-605): the SKU by its barcode or its code, with its
+   * product, its variant in words and its selling price. Never a cost (invariant 5).
+   */
+  lookupCode(tx: Tx, orgId: string, code: string): Promise<CodeLookup | undefined>;
+
+  /**
+   * What a sticker prints for each SKU (M38a, D-604): product name, variant in words,
+   * selling price, barcode and code. Never a cost.
+   */
+  stickerData(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<StickerSku[]>;
 
   /**
    * Active SKUs of active products, ordered by code, after `afterCode` (exclusive).
@@ -260,6 +273,31 @@ export interface SellableSku {
   readonly pricePoisha: bigint;
 }
 
+/** A scanned code, resolved (M38a). */
+export interface CodeLookup {
+  readonly skuId: string;
+  readonly skuCode: string;
+  readonly barcode: string | null;
+  readonly skuStatus: 'active' | 'archived';
+  /** The **selling** price, integer poisha as a decimal string (§23). */
+  readonly pricePoisha: string;
+  /** `M / Red`, or empty for a product with no sizes or colours. */
+  readonly variantLabel: string;
+  readonly productId: string;
+  readonly productName: string;
+  readonly productStatus: string;
+}
+
+/** One SKU's sticker text (M38a). */
+export interface StickerSku {
+  readonly skuId: string;
+  readonly skuCode: string;
+  readonly barcode: string | null;
+  readonly productName: string;
+  readonly variantLabel: string;
+  readonly pricePoisha: string;
+}
+
 export const CATALOG_API = Symbol('CatalogApi');
 
 /** The implementation. Registered under `CATALOG_API` by `CatalogModule`. */
@@ -275,6 +313,38 @@ export class CatalogApiService implements CatalogApi {
     // impossible within either column, so returning nothing rather than guessing
     // is the honest answer if it ever happens.
     return rows.length === 1 && rows[0] !== undefined ? toSku(rows[0]) : undefined;
+  }
+
+  async lookupCode(tx: Tx, orgId: string, code: string): Promise<CodeLookup | undefined> {
+    const row = await repo.lookupSku(tx, orgId, code);
+    if (row === undefined) return undefined;
+    const labels = await repo.variantLabels(tx, orgId, [row.id]);
+    return {
+      skuId: row.id,
+      skuCode: row.code,
+      barcode: row.barcode,
+      skuStatus: row.status === 'archived' ? 'archived' : 'active',
+      pricePoisha: row.price_poisha,
+      variantLabel: labels.get(row.id) ?? '',
+      productId: row.product_id,
+      productName: row.product_name,
+      productStatus: row.product_status,
+    };
+  }
+
+  async stickerData(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<StickerSku[]> {
+    const [rows, labels] = await Promise.all([
+      repo.skusByIds(tx, orgId, skuIds),
+      repo.variantLabels(tx, orgId, skuIds),
+    ]);
+    return rows.map((row) => ({
+      skuId: row.id,
+      skuCode: row.code,
+      barcode: row.barcode,
+      productName: row.product_name,
+      variantLabel: labels.get(row.id) ?? '',
+      pricePoisha: row.price_poisha,
+    }));
   }
 
   async sellableSkus(
@@ -369,6 +439,14 @@ export class CatalogApiService implements CatalogApi {
         createdBy: actor.userId,
       });
 
+      // A supplier's barcode when the file carries one, otherwise the brand's next internal
+      // EAN-13 (D-603): the SKU is born with it.
+      const internal = await nextInternalBarcodes(
+        tx,
+        actor.orgId,
+        product.skus.filter((sku) => sku.barcode === null).length,
+      );
+      let nextInternal = 0;
       const created = await repo.insertSkus(
         tx,
         actor.orgId,
@@ -377,24 +455,18 @@ export class CatalogApiService implements CatalogApi {
             attributeId: product.axisAttributeIds[axis] ?? '',
             valueId,
           }));
+          const barcode = sku.barcode ?? internal[nextInternal++] ?? null;
           return {
             productId: row.id,
             code: sku.code,
             variantKey: variantKey(pairs),
             pricePoisha: poisha(sku.pricePoisha),
             position: index,
+            barcode,
             values: pairs,
           };
         }),
       );
-
-      const idByCode = new Map(created.map((sku) => [sku.code, sku.id]));
-      for (const sku of product.skus) {
-        const id = idByCode.get(sku.code);
-        if (sku.barcode !== null && id !== undefined) {
-          await repo.setSkuBarcode(tx, actor.orgId, id, sku.barcode);
-        }
-      }
       skuCount += created.length;
     }
 

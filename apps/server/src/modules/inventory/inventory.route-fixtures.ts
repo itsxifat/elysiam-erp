@@ -42,9 +42,15 @@ interface Fixtures {
   readonly warehouseLocation: string;
   readonly showroomLocation: string;
   readonly skuId: string;
+  readonly skuCode: string;
   readonly countId: string;
   readonly transferId: string;
   readonly adjustmentId: string;
+  /** M38a: stock-in-hand drafts to read, post, edit and delete (D-602). */
+  readonly draftToRead: string;
+  readonly draftToPost: string;
+  readonly draftToEdit: string;
+  readonly draftToDelete: string;
 }
 
 let prepared: Fixtures | undefined;
@@ -110,17 +116,43 @@ export async function prepareInventoryFixtures(): Promise<void> {
       returning id
     `);
 
-    return { countId, transferId: transfer[0]?.id ?? '' };
+    /*
+     * M38a: four stock-in-hand drafts, written while the brand's opening stock window is
+     * still open (the suite's window-close fixture closes it later, after which the entry
+     * routes answer 409 for every admitted role, which is still not a 403).
+     */
+    const drafts: string[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      const id = randomUUID();
+      await tx.execute(sql`
+        insert into inventory.stock_in_hand_entries
+          (id, org_id, location_id, branch_id, status, created_by)
+        select ${id}, ${ORG_A}, l.id, l.branch_id, 'draft', 'usr_route_matrix'
+        from org.locations l where l.org_id = ${ORG_A} and l.id = ${warehouseLocation}
+      `);
+      await tx.execute(sql`
+        insert into inventory.stock_in_hand_lines (org_id, entry_id, line_no, sku_id, qty)
+        values (${ORG_A}, ${id}, 1, ${skuId}, 2)
+      `);
+      drafts.push(id);
+    }
+
+    return { countId, transferId: transfer[0]?.id ?? '', drafts };
   });
 
   prepared = {
     warehouseLocation,
     showroomLocation,
     skuId,
+    skuCode: skus[0]?.code ?? '',
     countId: ids.countId,
     transferId: ids.transferId,
     // No adjustment is pre-made: every adjustment route here creates its own.
     adjustmentId: randomUUID(),
+    draftToRead: ids.drafts[0] ?? randomUUID(),
+    draftToPost: ids.drafts[1] ?? randomUUID(),
+    draftToEdit: ids.drafts[2] ?? randomUUID(),
+    draftToDelete: ids.drafts[3] ?? randomUUID(),
   };
 }
 
@@ -199,6 +231,55 @@ export const INVENTORY_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Cal
     url: `/v1/inventory/counts/${state().countId}/close`,
   }),
   'GET /v1/inventory/reconciliations': () => ({ url: '/v1/inventory/reconciliations' }),
+
+  // --- M38a: scanning, stock in hand and its window (D-602, D-605, D-606) ---------------
+  'POST /v1/inventory/counts/:id/scans': () => ({
+    url: `/v1/inventory/counts/${state().countId}/scans`,
+    body: { scanId: randomUUID(), code: state().skuCode },
+  }),
+  'GET /v1/catalog/lookup': () => ({
+    url: `/v1/catalog/lookup?code=${encodeURIComponent(state().skuCode)}`,
+  }),
+  'GET /v1/inventory/stock-in-hand/window': () => ({ url: '/v1/inventory/stock-in-hand/window' }),
+  'GET /v1/inventory/stock-in-hand': () => ({ url: '/v1/inventory/stock-in-hand' }),
+  'GET /v1/inventory/stock-in-hand/:id': () => ({
+    url: `/v1/inventory/stock-in-hand/${state().draftToRead}`,
+  }),
+  'POST /v1/inventory/stock-in-hand/drafts': () => ({
+    url: '/v1/inventory/stock-in-hand/drafts',
+    body: {
+      entryId: randomUUID(),
+      locationId: state().warehouseLocation,
+      lines: [{ skuId: state().skuId, qty: 1 }],
+    },
+  }),
+  'PATCH /v1/inventory/stock-in-hand/drafts/:id': () => ({
+    url: `/v1/inventory/stock-in-hand/drafts/${state().draftToEdit}`,
+    body: { lines: [{ skuId: state().skuId, qty: 3 }] },
+  }),
+  'DELETE /v1/inventory/stock-in-hand/drafts/:id': () => ({
+    url: `/v1/inventory/stock-in-hand/drafts/${state().draftToDelete}`,
+  }),
+  'POST /v1/inventory/stock-in-hand': () => ({
+    url: '/v1/inventory/stock-in-hand',
+    body: {
+      entryId: randomUUID(),
+      locationId: state().warehouseLocation,
+      lines: [{ skuId: state().skuId, qty: 1, unitCostPoisha: '50000' }],
+    },
+  }),
+  'POST /v1/inventory/stock-in-hand/:id/post': () => ({
+    url: `/v1/inventory/stock-in-hand/${state().draftToPost}/post`,
+    body: { lines: [{ skuId: state().skuId, unitCostPoisha: '50000' }] },
+  }),
+  'POST /v1/inventory/stock-in-hand/window/close': () => ({
+    url: '/v1/inventory/stock-in-hand/window/close',
+    body: { note: 'Route matrix fixture' },
+  }),
+  'POST /v1/inventory/stock-in-hand/window/reopen': () => ({
+    url: '/v1/inventory/stock-in-hand/window/reopen',
+    body: { reason: 'Route matrix fixture' },
+  }),
 };
 
 /** The manifest entries the integrator appends, derived from the fixtures. */

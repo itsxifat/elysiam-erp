@@ -7,8 +7,11 @@ import { AdjustmentsService } from './adjustments.service.js';
 import { CountsService } from './counts.service.js';
 import { InventoryController } from './inventory.controller.js';
 import { INVENTORY_API, InventoryApiService } from './inventory.api.js';
+import { LookupService } from './lookup.service.js';
 import { MovementsService } from './movements.service.js';
 import { ReconcileService } from './reconcile.service.js';
+import { LookupController, StockInHandController } from './stock-in-hand.controller.js';
+import { StockInHandService } from './stock-in-hand.service.js';
 import { StockService } from './stock.service.js';
 import { TransfersService } from './transfers.service.js';
 
@@ -31,8 +34,11 @@ import { TransfersService } from './transfers.service.js';
  */
 @Module({
   imports: [LedgerModule, ApprovalsModule, CatalogModule],
-  controllers: [InventoryController],
+  // M38a: stock in hand and its window (D-602), and what a scanned code is (D-605).
+  controllers: [InventoryController, StockInHandController, LookupController],
   providers: [
+    StockInHandService,
+    LookupService,
     MovementsService,
     StockService,
     AdjustmentsService,

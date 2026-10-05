@@ -6,6 +6,7 @@ import {
   mulQty,
   poisha,
   sum,
+  stockInHandDraft,
   supplyReceivedDraft,
   supplierReturnDraft,
   type AccountSubtype,
@@ -134,6 +135,29 @@ export interface InventoryApi {
     input: {
       supplyId: string;
       supplierId: string;
+      locationId: string;
+      branchId: string | null;
+      occurredAt: Date;
+      lines: readonly SupplyLine[];
+      memo?: string | null;
+    },
+  ): Promise<PostedStockEvent>;
+
+  /**
+   * Stock a brand already holds when it starts (M38a, D-602): `opening_balance` movements
+   * at each line's cost, blended into the weighted average exactly as a receipt is, and
+   * one journal for the entry, Dr Inventory / Cr Opening balance equity, keyed
+   * `stock_in_hand:<entryId>:posted`.
+   *
+   * Movements and journal in the caller's transaction, by this one function, for the same
+   * reason as `receiveSupply`. Whether the brand's window is open is the caller's check
+   * (and the database's); this only pairs the stock with its value.
+   */
+  receiveStockInHand(
+    tx: Tx,
+    actor: { orgId: string; userId: string },
+    input: {
+      entryId: string;
       locationId: string;
       branchId: string | null;
       occurredAt: Date;
@@ -526,6 +550,61 @@ export class InventoryApiService implements InventoryApi {
         inventory,
         payable,
         supplierId: input.supplierId,
+        lines: input.lines.map((line) => ({ qty: line.qty, unitCostPoisha: line.unitCostPoisha })),
+        branchId: input.branchId,
+        memo: input.memo ?? null,
+      }),
+    );
+    const total = input.lines.reduce(
+      (sum, line) => sum + line.unitCostPoisha * BigInt(line.qty),
+      0n,
+    );
+    return { movementIds, journalId: posted.journalId, valuePoisha: total.toString() };
+  }
+
+  async receiveStockInHand(
+    tx: Tx,
+    actor: { orgId: string; userId: string },
+    input: {
+      entryId: string;
+      locationId: string;
+      branchId: string | null;
+      occurredAt: Date;
+      lines: readonly SupplyLine[];
+      memo?: string | null;
+    },
+  ): Promise<PostedStockEvent> {
+    const movementIds: string[] = [];
+    for (const line of input.lines) {
+      const applied = await this.movements.apply(tx, actor, {
+        skuId: line.skuId,
+        locationId: input.locationId,
+        // §8's opening kind: an outside cost, blended into WAC like a receipt (D-142).
+        kind: 'opening_balance',
+        qty: line.qty,
+        unitCostPoisha: line.unitCostPoisha,
+        refType: 'stock_in_hand',
+        refId: input.entryId,
+        dedupeKey: `stock_in_hand:${input.entryId}:${line.skuId}:${input.locationId}`,
+        occurredAt: input.occurredAt,
+        memo: input.memo ?? 'Stock in hand',
+      });
+      if (applied.created) movementIds.push(applied.movementId);
+    }
+
+    const [inventory, equity] = await Promise.all([
+      this.account(tx, actor.orgId, 'inventory'),
+      this.account(tx, actor.orgId, 'opening_equity'),
+    ]);
+
+    const posted = await this.ledger.post(
+      tx,
+      actor,
+      stockInHandDraft({
+        entryId: input.entryId,
+        occurredAt: input.occurredAt,
+        inventory,
+        equity,
         lines: input.lines.map((line) => ({ qty: line.qty, unitCostPoisha: line.unitCostPoisha })),
         branchId: input.branchId,
         memo: input.memo ?? null,

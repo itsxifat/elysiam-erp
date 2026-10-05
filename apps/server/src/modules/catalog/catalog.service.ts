@@ -12,6 +12,7 @@ import {
   type VariantAxis,
 } from '@elysium/domain';
 
+import { assertNotInternal, nextInternalBarcodes } from './barcodes.js';
 import { CatalogError } from './catalog.errors.js';
 import * as repo from './catalog.repository.js';
 import * as web from './catalog-web.repository.js';
@@ -553,6 +554,11 @@ export class CatalogService {
 
   async setBarcode(context: ActiveContext, skuId: string, input: SetBarcodeInput) {
     return withOrg(context, async (tx) => {
+      const [current] = await repo.skusByIds(tx, context.orgId, [skuId]);
+      if (current === undefined) throw notFound('SKU');
+      // A supplier's barcode may replace the ERP's; a number in the ERP's own range may not
+      // be typed in (D-603), or it could equal one the counter hands out later.
+      assertNotInternal(input.barcode, current.barcode);
       const applied = await repo.setSkuBarcode(tx, context.orgId, skuId, input.barcode);
       if (!applied) throw notFound('SKU');
       return { id: skuId, barcode: input.barcode };
@@ -726,11 +732,15 @@ export class CatalogService {
           }
         : matrixPlan(input.axes, input.existingKeys);
 
+    // One internal EAN-13 per new SKU (D-603), taken before the insert so the SKU is born
+    // with its barcode and no row ever exists without one.
+    const barcodes = await nextInternalBarcodes(tx, orgId, plan.additions.length);
     const created = await repo.insertSkus(
       tx,
       orgId,
       plan.additions.map((combination, index) => ({
         productId: input.productId,
+        barcode: barcodes[index] ?? null,
         code: buildSkuCode({
           orgCode: input.orgCode,
           categoryCode: input.categoryCode,

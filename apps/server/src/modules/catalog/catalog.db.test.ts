@@ -9,6 +9,7 @@ import {
 import { SEED_ORG_IDS, withOrg } from '@elysium/db';
 import { startTestDatabase, stopSharedContainer, type TestDatabase } from '@elysium/db/testing';
 import { sql } from 'drizzle-orm';
+import { STICKER_MEDIA } from '@elysium/domain';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { ActiveContext } from '../../platform/http/context.js';
@@ -17,7 +18,7 @@ import type { CreateProductInput } from './catalog.schemas.js';
 import { toCatalogHttpError } from './catalog.errors.js';
 import { applyCatalogMigrations } from './catalog.testing.js';
 import { CatalogImportService } from './import.service.js';
-import { renderLabelSheetHtml, LABELS_PER_SHEET } from './labels.service.js';
+import { renderStickersHtml, LABELS_PER_SHEET } from './labels.service.js';
 
 /**
  * The catalog against real PostgreSQL (M06 checks 1, 3 and 4, plus the tenancy
@@ -907,41 +908,34 @@ describe('no cost, for any role (check 3)', () => {
 });
 
 describe('the label sheet', () => {
+  const sticker = (code: string, priceText: string | null, productName = 'Oxford') => ({
+    barcode: null,
+    code,
+    productName,
+    variantLabel: 'M / Red',
+    priceText,
+    brand: 'Brand',
+  });
+
   it('renders one Code 128 symbol per label, with the same string in bars and text', () => {
-    const html = renderLabelSheetHtml({
-      labels: [
-        {
-          payload: 'ELY-SHRT-0001-RED-M',
-          code: 'ELY-SHRT-0001-RED-M',
-          productName: 'Oxford',
-          priceTaka: null,
-        },
-        {
-          payload: 'ELY-SHRT-0001-RED-L',
-          code: 'ELY-SHRT-0001-RED-L',
-          productName: 'Oxford',
-          priceTaka: '৳1490.00',
-        },
-      ],
+    const html = renderStickersHtml({
+      stickers: [sticker('ELY-SHRT-0001-RED-M', null), sticker('ELY-SHRT-0001-RED-L', '৳1,490')],
+      medium: STICKER_MEDIA['a4-3x8'],
+      startAt: 1,
       fontCss: '',
     });
 
     expect([...html.matchAll(/<svg /g)]).toHaveLength(2);
     expect(html).toContain('aria-label="ELY-SHRT-0001-RED-M"');
-    expect(html).toContain('৳1490.00');
+    expect(html).toContain('৳1,490');
     expect(LABELS_PER_SHEET).toBe(24);
   });
 
   it('escapes a product name rather than letting it become markup', () => {
-    const html = renderLabelSheetHtml({
-      labels: [
-        {
-          payload: 'ELY-0001',
-          code: 'ELY-0001',
-          productName: '<script>x</script>',
-          priceTaka: null,
-        },
-      ],
+    const html = renderStickersHtml({
+      stickers: [sticker('ELY-0001', null, '<script>x</script>')],
+      medium: STICKER_MEDIA['a4-3x8'],
+      startAt: 1,
       fontCss: '',
     });
     expect(html).not.toContain('<script>');
