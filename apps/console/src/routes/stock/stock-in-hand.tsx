@@ -12,7 +12,7 @@ import {
   takaToPoisha,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Boxes, Lock, Plus, Printer, Trash2, Unlock } from 'lucide-react';
+import { Boxes, Lock, Plus, Printer, Trash2, Undo2, Unlock } from 'lucide-react';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
@@ -41,7 +41,9 @@ import {
   postStockInHand,
   postStockInHandDraft,
   requestOpeningStockReopen,
+  requestStockInHandReversal,
   type StockInHandEntry,
+  type StockInHandStatus,
 } from './api.js';
 import {
   control,
@@ -67,7 +69,10 @@ import {
  *   journal, Dr Inventory / Cr Opening balance equity, and its pieces show in each
  *   product's stock history as opening stock.
  * - **Warehouse** counts without costs and saves a draft; someone who may see costs prices
- *   it and posts it (D-005's split, as for supply).
+ *   it and posts it (D-005's split, as for supply), as it stood when they opened it.
+ * - **A mistake** (a shelf counted in twice) is reversed while the window is open: someone
+ *   who may see costs asks, a second admin approves, and the pieces and the books come back
+ *   out exactly.
  *
  * After saving, the entry's stickers are one click away: one per piece.
  */
@@ -95,6 +100,8 @@ export function StockInHandPage() {
   const [closing, setClosing] = useState(false);
   const [reopening, setReopening] = useState(false);
   const [pricing, setPricing] = useState<string | null>(null);
+  const [reversing, setReversing] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const openingWindow = useQuery({
     queryKey: ['stock', 'opening-window'],
@@ -197,6 +204,11 @@ export function StockInHandPage() {
             <h2 id="entries-heading" className="text-base font-semibold tracking-tight">
               {t('st.inHand.entries')}
             </h2>
+            {notice === null ? null : (
+              <p role="status" className="text-sm">
+                {notice}
+              </p>
+            )}
             {(entries.data?.items ?? []).length === 0 ? (
               <EmptyState icon={Boxes} title={t('st.inHand.none')} />
             ) : (
@@ -240,10 +252,8 @@ export function StockInHandPage() {
                           )}
                         </td>
                         <td className={TD}>
-                          <StatusBadge tone={entry.status === 'posted' ? 'success' : 'warning'}>
-                            {entry.status === 'posted'
-                              ? t('st.inHand.posted')
-                              : t('st.inHand.draft')}
+                          <StatusBadge tone={STATUS_TONE[entry.status]}>
+                            {t(STATUS_LABEL[entry.status])}
                           </StatusBadge>
                         </td>
                         <td className={TD_NUM}>{entry.totalQty}</td>
@@ -267,14 +277,29 @@ export function StockInHandPage() {
                                 {t('st.inHand.priceAndPost')}
                               </Button>
                             ) : null}
-                            <Button
-                              size="icon-sm"
-                              variant="ghost"
-                              aria-label={t('st.inHand.printEntry')}
-                              onClick={() => void printEntry(entry.id)}
-                            >
-                              <Printer aria-hidden="true" />
-                            </Button>
+                            {entry.status === 'reversed' ? null : (
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                aria-label={t('st.inHand.printEntry')}
+                                onClick={() => void printEntry(entry.id)}
+                              >
+                                <Printer aria-hidden="true" />
+                              </Button>
+                            )}
+                            {entry.status === 'posted' && mayPrice && open ? (
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                aria-label={t('st.inHand.reverse')}
+                                onClick={() => {
+                                  setNotice(null);
+                                  setReversing(entry.id);
+                                }}
+                              >
+                                <Undo2 aria-hidden="true" />
+                              </Button>
+                            ) : null}
                             {entry.status === 'draft' ? (
                               <DeleteDraft id={entry.id} onDone={refresh} />
                             ) : null}
@@ -303,6 +328,17 @@ export function StockInHandPage() {
           }}
         />
         <ReopenDialog open={reopening} onOpenChange={setReopening} onDone={refresh} />
+        {reversing === null ? null : (
+          <ReverseDialog
+            id={reversing}
+            onClose={() => setReversing(null)}
+            onSent={() => {
+              setReversing(null);
+              setNotice(t('st.inHand.reverseSent'));
+              refresh();
+            }}
+          />
+        )}
         {pricing === null ? null : (
           <PriceDraftDialog
             id={pricing}
@@ -325,6 +361,18 @@ export function StockInHandPage() {
     </PermissionGate>
   );
 }
+
+const STATUS_TONE: Readonly<Record<StockInHandStatus, 'success' | 'warning' | 'neutral'>> = {
+  draft: 'warning',
+  posted: 'success',
+  reversed: 'neutral',
+};
+
+const STATUS_LABEL = {
+  draft: 'st.inHand.draft',
+  posted: 'st.inHand.posted',
+  reversed: 'st.inHand.reversed',
+} as const satisfies Readonly<Record<StockInHandStatus, string>>;
 
 function entryStickers(entry: StockInHandEntry): StickerItem[] {
   return entry.lines.map((line) => ({
@@ -781,7 +829,77 @@ function ReopenDialog({
   );
 }
 
-/** Price a warehouse draft and post it (read:cost). */
+/** Ask to reverse a posted entry: a reason, for the second admin who decides it. */
+function ReverseDialog({
+  id,
+  onClose,
+  onSent,
+}: {
+  readonly id: string;
+  readonly onClose: () => void;
+  readonly onSent: () => void;
+}) {
+  const t = useT();
+  const [reason, setReason] = useState('');
+  const ask = useMutation({
+    mutationFn: () => requestStockInHandReversal(id, reason.trim()),
+    onSuccess: onSent,
+  });
+  const failure =
+    ask.error === null
+      ? null
+      : ask.error instanceof ApiError && ask.error.code === 'STOCK_IN_HAND_REVERSAL_BLOCKED'
+        ? t('st.inHand.reverseBlocked')
+        : ask.error instanceof ApiError
+          ? ask.error.message
+          : t('st.saveFailed');
+  return (
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      title={t('st.inHand.reverseTitle')}
+      description={t('st.inHand.reverseHelp')}
+      closeLabel={t('st.close')}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            {t('st.cancel')}
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={reason.trim().length < 3 || ask.isPending}
+            onClick={() => ask.mutate()}
+          >
+            {t('st.inHand.reverseAsk')}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-1.5">
+        <label htmlFor="reverse-reason" className="text-sm font-medium">
+          {t('st.inHand.reverseReason')}
+        </label>
+        <textarea
+          id="reverse-reason"
+          value={reason}
+          maxLength={500}
+          rows={3}
+          onChange={(event) => setReason(event.target.value)}
+          className={cn(control, 'h-auto py-2')}
+        />
+        {failure === null ? null : (
+          <p role="alert" className="text-sm text-destructive">
+            {failure}
+          </p>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+/** Price a warehouse draft and post it (read:cost), exactly as it was read. */
 function PriceDraftDialog({
   id,
   onClose,
@@ -804,15 +922,34 @@ function PriceDraftDialog({
   }));
   const ready = lines.length > 0 && priced.every((line) => line.unitCostPoisha !== null);
   const post = useMutation({
+    // The location and the pieces as this dialog shows them: a draft changed since is
+    // refused, and the dialog reloads it so the person sees what they would post.
     mutationFn: () =>
-      postStockInHandDraft(
-        id,
-        priced.map((line) => ({ skuId: line.skuId, unitCostPoisha: line.unitCostPoisha ?? '0' })),
-      ),
+      postStockInHandDraft(id, {
+        locationId: entry.data?.locationId ?? '',
+        lines: lines.map((line, index) => ({
+          skuId: line.skuId,
+          qty: line.qty,
+          unitCostPoisha: priced[index]?.unitCostPoisha ?? '0',
+        })),
+      }),
     onSuccess: () => {
       if (entry.data !== undefined) onPosted(entryStickers(entry.data));
     },
+    onError: (error) => {
+      if (error instanceof ApiError && error.code === 'STOCK_IN_HAND_CHANGED') {
+        void entry.refetch();
+      }
+    },
   });
+  const failure =
+    post.error === null
+      ? null
+      : post.error instanceof ApiError && post.error.code === 'STOCK_IN_HAND_CHANGED'
+        ? t('st.inHand.changed')
+        : post.error instanceof ApiError
+          ? post.error.message
+          : t('st.saveFailed');
   return (
     <Dialog
       open
@@ -857,9 +994,9 @@ function PriceDraftDialog({
             />
           </div>
         ))}
-        {post.error === null ? null : (
+        {failure === null ? null : (
           <p role="alert" className="text-sm text-destructive">
-            {post.error instanceof ApiError ? post.error.message : t('st.saveFailed')}
+            {failure}
           </p>
         )}
       </div>

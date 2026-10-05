@@ -17,6 +17,7 @@ import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { MovementsService } from './movements.service.js';
 import * as repo from './inventory.repository.js';
 import { StockError } from './inventory.errors.js';
+import { lockWindow } from './stock-in-hand.repository.js';
 
 /**
  * Inventory's service interface for other modules (invariant 12).
@@ -150,8 +151,9 @@ export interface InventoryApi {
    * `stock_in_hand:<entryId>:posted`.
    *
    * Movements and journal in the caller's transaction, by this one function, for the same
-   * reason as `receiveSupply`. Whether the brand's window is open is the caller's check
-   * (and the database's); this only pairs the stock with its value.
+   * reason as `receiveSupply`. Refused with `OPENING_STOCK_CLOSED` once the brand's window
+   * is closed: checked here too, under the window's share lock, so no caller can credit
+   * equity after the close by forgetting to ask (the database's triggers check the entry).
    */
   receiveStockInHand(
     tx: Tx,
@@ -163,6 +165,33 @@ export interface InventoryApi {
       occurredAt: Date;
       lines: readonly SupplyLine[];
       memo?: string | null;
+    },
+  ): Promise<PostedStockEvent>;
+
+  /**
+   * Take a posted stock-in-hand entry back out (M38a, D-602), after its approval: the
+   * same pieces leave the same location at the cost they came in at (`adjustment_loss`
+   * movements, keyed per entry, SKU and location), and the ledger reverses the entry's
+   * journal (Dr Opening balance equity / Cr Inventory, invariant 2).
+   *
+   * Exact or refused: the journal relieves inventory at the entry's cost, so each SKU's
+   * weighted average must still be that cost. Once the pieces have been averaged with
+   * stock at another cost, taking them out at the entry's cost would leave the stock
+   * ledger and 1300 Inventory describing different stock, so it is refused with
+   * `STOCK_IN_HAND_REVERSAL_BLOCKED` and corrected by a count instead. Pieces no longer
+   * at the location, or promised to orders, are refused by the movement as any removal is.
+   * Refused too once the window is closed.
+   */
+  reverseStockInHand(
+    tx: Tx,
+    actor: { orgId: string; userId: string },
+    input: {
+      entryId: string;
+      locationId: string;
+      journalId: string;
+      occurredAt: Date;
+      lines: readonly SupplyLine[];
+      reason: string;
     },
   ): Promise<PostedStockEvent>;
 
@@ -574,6 +603,7 @@ export class InventoryApiService implements InventoryApi {
       memo?: string | null;
     },
   ): Promise<PostedStockEvent> {
+    await this.assertOpeningWindowOpen(tx, actor.orgId);
     const movementIds: string[] = [];
     for (const line of input.lines) {
       const applied = await this.movements.apply(tx, actor, {
@@ -590,6 +620,14 @@ export class InventoryApiService implements InventoryApi {
         memo: input.memo ?? 'Stock in hand',
       });
       if (applied.created) movementIds.push(applied.movementId);
+    }
+    // The journal below is for every line; a line whose movement was already recorded would
+    // be valued twice. Unreachable while the entry's status guards the post, and kept so.
+    if (movementIds.length !== input.lines.length) {
+      throw new StockError(
+        'IDEMPOTENCY_CONFLICT',
+        'Part of that entry’s stock was already recorded; nothing was posted.',
+      );
     }
 
     const [inventory, equity] = await Promise.all([
@@ -615,6 +653,70 @@ export class InventoryApiService implements InventoryApi {
       0n,
     );
     return { movementIds, journalId: posted.journalId, valuePoisha: total.toString() };
+  }
+
+  async reverseStockInHand(
+    tx: Tx,
+    actor: { orgId: string; userId: string },
+    input: {
+      entryId: string;
+      locationId: string;
+      journalId: string;
+      occurredAt: Date;
+      lines: readonly SupplyLine[];
+      reason: string;
+    },
+  ): Promise<PostedStockEvent> {
+    await this.assertOpeningWindowOpen(tx, actor.orgId);
+
+    // The averages first, each under its cost row's lock (held to commit), before anything
+    // moves: a refusal then leaves nothing half done.
+    for (const line of input.lines) {
+      const cost = await repo.lockCost(tx, actor.orgId, line.skuId);
+      if (cost.wacPoisha !== line.unitCostPoisha) {
+        throw new StockError(
+          'STOCK_IN_HAND_REVERSAL_BLOCKED',
+          'Those pieces have since been averaged with stock at another cost, so they cannot be taken out at the cost they came in at. Correct the stock with a count instead.',
+        );
+      }
+    }
+
+    const movementIds: string[] = [];
+    for (const line of input.lines) {
+      const applied = await this.movements.apply(tx, actor, {
+        skuId: line.skuId,
+        locationId: input.locationId,
+        kind: 'adjustment_loss',
+        qty: line.qty,
+        // The cost it came in at, which the check above holds equal to the average.
+        unitCostPoisha: line.unitCostPoisha,
+        refType: 'stock_in_hand',
+        refId: input.entryId,
+        dedupeKey: `stock_in_hand:${input.entryId}:${line.skuId}:${input.locationId}:reversed`,
+        occurredAt: input.occurredAt,
+        memo: `Stock in hand reversed: ${input.reason}`.slice(0, 500),
+      });
+      if (applied.created) movementIds.push(applied.movementId);
+    }
+    if (movementIds.length !== input.lines.length) {
+      throw new StockError(
+        'IDEMPOTENCY_CONFLICT',
+        'Part of that reversal was already recorded; nothing was reversed.',
+      );
+    }
+
+    const reversed = await this.ledger.reverse(
+      tx,
+      actor,
+      input.journalId,
+      input.reason,
+      input.occurredAt,
+    );
+    const total = input.lines.reduce(
+      (sum, line) => sum + line.unitCostPoisha * BigInt(line.qty),
+      0n,
+    );
+    return { movementIds, journalId: reversed.journalId, valuePoisha: total.toString() };
   }
 
   async returnToSupplier(
@@ -815,6 +917,10 @@ export class InventoryApiService implements InventoryApi {
       readonly lines: readonly OpeningStockLine[];
     },
   ): Promise<{ readonly movementIds: readonly string[]; readonly valuePoisha: Poisha }> {
+    // Opening stock credits equity like stock in hand, so it waits for the same window
+    // (M38a, D-602): once an org admin said everything was counted in, M14a's opening
+    // cannot bring more in either.
+    if (input.lines.length > 0) await this.assertOpeningWindowOpen(tx, actor.orgId);
     const movementIds: string[] = [];
     const values: Poisha[] = [];
     for (const line of input.lines) {
@@ -866,6 +972,17 @@ export class InventoryApiService implements InventoryApi {
       onHand: row.on_hand,
       reserved: row.reserved,
     }));
+  }
+
+  /** The brand's opening stock window, held `for share` to commit, and open (D-602). */
+  private async assertOpeningWindowOpen(tx: Tx, orgId: string): Promise<void> {
+    const window = await lockWindow(tx, orgId, 'share');
+    if (window.status === 'closed') {
+      throw new StockError(
+        'OPENING_STOCK_CLOSED',
+        'The opening stock window is closed: stock now comes in from a supplier, a transfer, a return or an approved adjustment.',
+      );
+    }
   }
 
   /** One of the four accounts §7's inventory rules name, or a clear refusal. */

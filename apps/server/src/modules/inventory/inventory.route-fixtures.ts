@@ -270,7 +270,15 @@ export const INVENTORY_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Cal
   }),
   'POST /v1/inventory/stock-in-hand/:id/post': () => ({
     url: `/v1/inventory/stock-in-hand/${state().draftToPost}/post`,
-    body: { lines: [{ skuId: state().skuId, unitCostPoisha: '50000' }] },
+    body: {
+      locationId: state().warehouseLocation,
+      lines: [{ skuId: state().skuId, qty: 2, unitCostPoisha: '50000' }],
+    },
+  }),
+  // A draft has nothing to reverse, so an admitted role is told so (400); never a 403.
+  'POST /v1/inventory/stock-in-hand/:id/reverse': () => ({
+    url: `/v1/inventory/stock-in-hand/${state().draftToRead}/reverse`,
+    body: { reason: 'Route matrix fixture' },
   }),
   'POST /v1/inventory/stock-in-hand/window/close': () => ({
     url: '/v1/inventory/stock-in-hand/window/close',

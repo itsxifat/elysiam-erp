@@ -1,7 +1,7 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
-import { canReadCost } from '@elysium/contracts';
+import { canReadCost, defineAbilityFor } from '@elysium/contracts';
 import { withOrg, type Tx } from '@elysium/db';
-import { businessDate, poisha, sameReceipt } from '@elysium/domain';
+import { businessDate, poisha, sameReceipt, stockInHandValue, type Poisha } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -13,12 +13,14 @@ import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import { INVENTORY_API, type InventoryApi } from './inventory.api.js';
 import { mapStockErrors, StockError } from './inventory.errors.js';
 import * as stockRepo from './inventory.repository.js';
+import { stockIdSchema } from './inventory.schemas.js';
 import * as repo from './stock-in-hand.repository.js';
 import type {
   CloseWindowInput,
   CreateStockInHandInput,
   PostStockInHandInput,
   ReopenWindowInput,
+  ReverseStockInHandInput,
   StockInHandDraftInput,
   StockInHandListQuery,
   UpdateStockInHandDraftInput,
@@ -38,17 +40,22 @@ import type {
  * - The warehouse counts: `create Supply` writes a **draft** of quantities. Its schema has
  *   no cost field, and it is strict.
  * - Someone holding `read:cost` (org_admin, accounts) prices and posts: `POST /:id/post`,
- *   or enters and posts in one go. `assertMayPrice` repeats the route's check, because a
+ *   repeating the location and the pieces they read (a draft changed since is refused), or
+ *   enters and posts in one go. `assertMayPrice` repeats the route's check, because a
  *   decorator is one refactor from being dropped and what it protects is the brand's cost.
+ * - A posted entry is taken back out only by an approved `stock_in_hand_reversal`, asked
+ *   for by someone who may post and decided by an org admin who did not ask, while the
+ *   window is open (invariant 2: the ledger reverses the entry's journal).
  *
  * ## The window
  *
- * Open on a new brand. An org admin closes it once everything is counted in; after that,
- * stock arrives only from suppliers, transfers, returns and approved adjustments, and both
- * a draft and a post are refused with `OPENING_STOCK_CLOSED` here and again by the
- * database. Reopening is an `opening_stock_reopen` approval, raised here and carried out by
- * the executor below in the approving transaction; the database refuses closed → open
- * without that approval, decided after the close.
+ * Open on a new brand (migration 0114 closed it for every brand that had already opened its
+ * books or traded). An org admin closes it once everything is counted in; after that, stock
+ * arrives only from suppliers, transfers, returns and approved adjustments, and a draft, a
+ * post and a reversal are refused with `OPENING_STOCK_CLOSED` here, in `InventoryApi`, and
+ * again by the database. Reopening is an `opening_stock_reopen` approval for that close,
+ * raised here under the window's lock and carried out by the executor below in the
+ * approving transaction; the database refuses closed → open without that approval.
  *
  * ## Retries (D-432's pattern)
  *
@@ -63,9 +70,16 @@ const WINDOW_PAYLOAD = { window: 'opening_stock' } as const;
 export interface WindowView {
   readonly open: boolean;
   readonly closedAt: Date | null;
-  readonly closedBy: string | null;
+  /** Who closed it: only for a caller who may close and reopen it (`approve StockAdjustment`). */
+  readonly closedBy?: string | null;
   readonly reopenedAt: Date | null;
   readonly reopenPending: boolean;
+}
+
+interface CostedLine {
+  readonly skuId: string;
+  readonly qty: number;
+  readonly unitCostPoisha: Poisha;
 }
 
 @Injectable()
@@ -79,6 +93,7 @@ export class StockInHandService implements OnModuleInit {
 
   onModuleInit(): void {
     this.approvals.registerExecutor('opening_stock_reopen', this.executeReopen);
+    this.approvals.registerExecutor('stock_in_hand_reversal', this.executeReversal);
   }
 
   // --- the window -----------------------------------------------------------------------
@@ -94,10 +109,12 @@ export class StockInHandService implements OnModuleInit {
         payloadKey: 'window',
         value: WINDOW_PAYLOAD.window,
       }));
+    // A user id is for the people who decide the window, not for every role reading stock.
+    const mayDecide = defineAbilityFor(context).can('approve', 'StockAdjustment');
     return {
       open: row === undefined || row.status === 'open',
       closedAt: repo.toInstant(row?.closed_at ?? null),
-      closedBy: row?.closed_by ?? null,
+      ...(mayDecide ? { closedBy: row?.closed_by ?? null } : {}),
       reopenedAt: repo.toInstant(row?.reopened_at ?? null),
       reopenPending,
     };
@@ -135,69 +152,92 @@ export class StockInHandService implements OnModuleInit {
 
   /**
    * Ask to reopen a closed window. Raises an `opening_stock_reopen` for a second org admin
-   * (or a super admin): never auto-approved, no amount, raised only here.
+   * (or a super admin): never auto-approved, no amount, raised only here, for this close.
+   *
+   * In one transaction under the window's `for update` lock, so two people asking at once
+   * raise one request, and the request names the close it reopens (`closedAt`): one left
+   * over from an earlier close is refused by the executor and by the database.
    */
   async requestReopen(context: ActiveContext, request: AuditableRequest, input: ReopenWindowInput) {
-    return mapStockErrors(async () => {
-      const row = await withOrg({ orgId: context.orgId, userId: context.userId }, (tx) =>
-        repo.windowOf(tx, context.orgId),
-      );
-      if (row === undefined || row.status === 'open') {
-        throw new StockError('OPENING_STOCK_INVALID', 'The opening stock window is already open.');
-      }
-      if (
-        await this.approvals.hasPending(context, {
+    return mapStockErrors(() =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const row = await repo.lockWindow(tx, context.orgId, 'update');
+        if (row.status === 'open') {
+          throw new StockError(
+            'OPENING_STOCK_INVALID',
+            'The opening stock window is already open.',
+          );
+        }
+        if (
+          await this.approvals.hasPending(
+            context,
+            {
+              type: 'opening_stock_reopen',
+              payloadKey: 'window',
+              value: WINDOW_PAYLOAD.window,
+            },
+            tx,
+          )
+        ) {
+          throw new StockError(
+            'OPENING_STOCK_REOPEN_PENDING',
+            'A request to reopen it is already waiting for a second admin.',
+          );
+        }
+        const raised = await this.approvals.request(context, {
           type: 'opening_stock_reopen',
-          payloadKey: 'window',
-          value: WINDOW_PAYLOAD.window,
-        })
-      ) {
-        throw new StockError(
-          'OPENING_STOCK_REOPEN_PENDING',
-          'A request to reopen it is already waiting for a second admin.',
-        );
-      }
-      const raised = await this.approvals.request(context, {
-        type: 'opening_stock_reopen',
-        amountPoisha: null,
-        payload: {
-          ...WINDOW_PAYLOAD,
-          closedAt: repo.toInstant(row.closed_at)?.toISOString() ?? null,
-        },
-        reason: input.reason,
-        request,
-        raisedByModule: true,
-        holdForChecker: true,
-      });
-      return { approvalId: raised.id, status: raised.status };
-    });
+          amountPoisha: null,
+          payload: {
+            ...WINDOW_PAYLOAD,
+            closedAt: repo.toInstant(row.closed_at)?.toISOString() ?? null,
+          },
+          reason: input.reason,
+          request,
+          raisedByModule: true,
+          holdForChecker: true,
+          tx,
+        });
+        return { approvalId: raised.id, status: raised.status };
+      }),
+    );
   }
 
   /**
-   * The executor: runs inside the approving transaction, as the checker. The database's
-   * trigger checks the approval it names again (type, approved, decided after the close).
+   * The reopen executor: runs inside the approving transaction, as the checker. A request
+   * raised for an earlier close is refused, so the checker rejects it and the admin asks
+   * again; the database's trigger checks the approval it names again (type, approved,
+   * decided after the close, for this close).
    */
-  private readonly executeReopen: ApprovalExecutor = async (tx, { context, approval, request }) => {
-    await repo.lockWindow(tx, context.orgId, 'update');
-    const reopened = await repo.reopenWindow(tx, context.orgId, {
-      approvalId: approval.id,
-      userId: context.userId,
+  private readonly executeReopen: ApprovalExecutor = async (tx, { context, approval, request }) =>
+    mapStockErrors(async () => {
+      const window = await repo.lockWindow(tx, context.orgId, 'update');
+      // Already open (another request reopened it first): nothing to do, nothing to undo.
+      if (window.status === 'open') return;
+      const closedAt = repo.toInstant(window.closed_at)?.toISOString() ?? null;
+      if (approval.payload.closedAt !== closedAt) {
+        throw new StockError(
+          'OPENING_STOCK_REOPEN_UNAPPROVED',
+          'That request was raised for an earlier close of the window. Reject it, and ask again if the window still needs reopening.',
+        );
+      }
+      const reopened = await repo.reopenWindow(tx, context.orgId, {
+        approvalId: approval.id,
+        userId: context.userId,
+      });
+      if (reopened === undefined) return;
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'update',
+        action: 'inventory.opening_stock.reopened',
+        entityType: 'OpeningStockWindow',
+        entityId: context.orgId,
+        before: { status: 'closed', closedAt },
+        after: { status: 'open', approvalId: approval.id, requestedBy: approval.requestedBy },
+        requestId: context.requestId,
+        ...(request === undefined ? {} : { request }),
+      });
     });
-    // Already open (another request reopened it first): nothing to do, and nothing to undo.
-    if (reopened === undefined) return;
-    await this.audit.record(tx, {
-      orgId: context.orgId,
-      actorUserId: context.userId,
-      operation: 'update',
-      action: 'inventory.opening_stock.reopened',
-      entityType: 'OpeningStockWindow',
-      entityId: context.orgId,
-      before: { status: 'closed' },
-      after: { status: 'open', approvalId: approval.id, requestedBy: approval.requestedBy },
-      requestId: context.requestId,
-      ...(request === undefined ? {} : { request }),
-    });
-  };
 
   // --- reading entries ------------------------------------------------------------------
 
@@ -228,6 +268,7 @@ export class StockInHandService implements OnModuleInit {
             createdBy: row.created_by,
             createdAt: row.created_at,
             postedAt: row.posted_at,
+            reversedAt: row.reversed_at,
             // `stockValuePoisha` is in COST_FIELDS, so `serializeFor` removes it for a role
             // without `read:cost` too; it is left out here as well (D-085's lesson).
             ...(withCost ? { stockValuePoisha: row.stock_value_poisha } : {}),
@@ -258,6 +299,9 @@ export class StockInHandService implements OnModuleInit {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const existing = await repo.entryById(tx, context.orgId, input.entryId);
         if (existing !== undefined) {
+          assertInScope(request, { branchId: existing.branch_id });
+          // Quantities only, whatever the entry has become since: a draft retried after
+          // accounts priced and posted it is the same count, and answers with what it is.
           await this.assertSameEntry(tx, context.orgId, existing, {
             locationId: input.locationId,
             lines: input.lines.map((line) => ({ ...line, unitCostPoisha: null })),
@@ -295,7 +339,7 @@ export class StockInHandService implements OnModuleInit {
           before: null,
           after: {
             locationId: location.id,
-            lineCount: input.lines.length,
+            lines: input.lines.map((line) => ({ skuId: line.skuId, qty: line.qty })),
             totalQty: input.lines.reduce((sum, line) => sum + line.qty, 0),
           },
           requestId: context.requestId,
@@ -322,10 +366,11 @@ export class StockInHandService implements OnModuleInit {
         if (entry.status !== 'draft') {
           throw new StockError(
             'STOCK_IN_HAND_IMMUTABLE',
-            'That entry is posted; correct it with a stock count or an adjustment.',
+            'That entry is posted; ask to reverse it, or correct the stock with a count.',
           );
         }
         await this.assertWindowOpen(tx, context.orgId);
+        const before = await this.draftSnapshot(tx, context.orgId, entry);
 
         if (patch.locationId !== undefined) {
           const location = await this.receivingLocation(tx, context.orgId, patch.locationId);
@@ -350,6 +395,9 @@ export class StockInHandService implements OnModuleInit {
           );
         }
 
+        const changed = await repo.entryById(tx, context.orgId, entryId);
+        const after =
+          changed === undefined ? null : await this.draftSnapshot(tx, context.orgId, changed);
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,
@@ -357,11 +405,9 @@ export class StockInHandService implements OnModuleInit {
           action: 'inventory.stock_in_hand.draft_updated',
           entityType: 'StockInHand',
           entityId: entryId,
-          before: null,
-          after: {
-            locationId: patch.locationId ?? null,
-            lineCount: patch.lines?.length ?? null,
-          },
+          // The pieces before and after: what the person posting it later may not have seen.
+          before,
+          after,
           requestId: context.requestId,
           request,
         });
@@ -411,8 +457,10 @@ export class StockInHandService implements OnModuleInit {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const existing = await repo.lockEntry(tx, context.orgId, input.entryId);
         if (existing !== undefined) {
+          assertInScope(request, { branchId: existing.branch_id });
           await this.assertSameEntry(tx, context.orgId, existing, input);
           if (existing.status === 'posted') return this.postedAnswer(existing, false);
+          if (existing.status === 'reversed') throw this.reversedError();
           // A draft under this key with these lines: price and post it.
         } else {
           await this.assertWindowOpen(tx, context.orgId);
@@ -443,7 +491,11 @@ export class StockInHandService implements OnModuleInit {
     );
   }
 
-  /** Price a draft and post it. */
+  /**
+   * Price a draft and post it: only the draft the person posting it read. The request
+   * repeats the location and every SKU's pieces; a draft changed since (relocated, a line
+   * added or recounted) is refused with `STOCK_IN_HAND_CHANGED` rather than posted.
+   */
   async post(
     context: ActiveContext,
     request: AuditableRequest,
@@ -459,7 +511,43 @@ export class StockInHandService implements OnModuleInit {
           throw new StockError('STOCK_IN_HAND_NOT_FOUND', 'No such stock-in-hand entry.');
         }
         assertInScope(request, { branchId: entry.branch_id });
-        if (entry.status === 'posted') return this.postedAnswer(entry, false);
+        if (entry.status !== 'draft') {
+          // A retry of this post replays; any other post of a posted entry is a conflict.
+          await this.assertSameEntry(tx, context.orgId, entry, {
+            locationId: input.locationId,
+            lines: input.lines,
+          });
+          if (entry.status === 'reversed') throw this.reversedError();
+          return this.postedAnswer(entry, false);
+        }
+
+        const lines = await repo.linesOf(tx, context.orgId, entryId);
+        const seen = sameReceipt(
+          {
+            supplierId: '',
+            locationId: entry.location_id,
+            lines: lines.map((line) => ({
+              skuId: line.sku_id,
+              qty: line.qty,
+              unitCostPoisha: null,
+            })),
+          },
+          {
+            supplierId: '',
+            locationId: input.locationId,
+            lines: input.lines.map((line) => ({
+              skuId: line.skuId,
+              qty: line.qty,
+              unitCostPoisha: null,
+            })),
+          },
+        );
+        if (!seen) {
+          throw new StockError(
+            'STOCK_IN_HAND_CHANGED',
+            'That draft changed after you opened it: other pieces or another location. Open it again and check the pieces before posting.',
+          );
+        }
         return this.postLocked(tx, context, request, entryId, input.lines, now);
       }),
     );
@@ -471,7 +559,8 @@ export class StockInHandService implements OnModuleInit {
    * The order is load-bearing: the window is locked `for share` first (a close waits for
    * this transaction, or this one sees it closed); the lines are priced before the header
    * flips (the trigger refuses a posted entry with an unpriced line); the header flips
-   * after the journal exists (the CHECK refuses a posted entry with no journal).
+   * after the journal exists (the CHECK refuses a posted entry with no journal, and the
+   * trigger one whose journal is not its own or not worth what its lines are).
    */
   private async postLocked(
     tx: Tx,
@@ -507,7 +596,7 @@ export class StockInHandService implements OnModuleInit {
       );
     }
 
-    const costed = lines.map((line) => ({
+    const costed: CostedLine[] = lines.map((line) => ({
       skuId: line.sku_id,
       qty: line.qty,
       unitCostPoisha: poisha(priced.get(line.sku_id) ?? '0'),
@@ -588,6 +677,181 @@ export class StockInHandService implements OnModuleInit {
     };
   }
 
+  private reversedError(): StockError {
+    return new StockError(
+      'STOCK_IN_HAND_IMMUTABLE',
+      'That entry was posted and has since been reversed; enter the stock again as a new entry.',
+    );
+  }
+
+  // --- reversing a posted entry (read:cost asks, an org admin decides) -------------------
+
+  /**
+   * Ask to take a posted entry back out (D-602): a `stock_in_hand_reversal` for an org
+   * admin who did not ask (or a super admin), valued at what the entry posted, never
+   * auto-approved, raised only here. Refused now rather than at the decision when the
+   * window is closed, when one is already waiting, or when an entry's SKU is no longer at
+   * the cost the entry brought it in at (the reversal is exact or not at all).
+   */
+  async requestReversal(
+    context: ActiveContext,
+    request: AuditableRequest,
+    entryId: string,
+    input: ReverseStockInHandInput,
+  ) {
+    this.assertMayPrice(context);
+    return mapStockErrors(() =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        await this.assertWindowOpen(tx, context.orgId);
+        const entry = await repo.lockEntry(tx, context.orgId, entryId);
+        if (entry === undefined) {
+          throw new StockError('STOCK_IN_HAND_NOT_FOUND', 'No such stock-in-hand entry.');
+        }
+        assertInScope(request, { branchId: entry.branch_id });
+        if (entry.status === 'draft') {
+          throw new StockError(
+            'STOCK_IN_HAND_INVALID',
+            'A draft has posted nothing to reverse; delete it instead.',
+          );
+        }
+        if (entry.status === 'reversed') {
+          throw new StockError('STOCK_IN_HAND_IMMUTABLE', 'That entry is already reversed.');
+        }
+        if (
+          await this.approvals.hasPending(
+            context,
+            { type: 'stock_in_hand_reversal', payloadKey: 'entryId', value: entryId },
+            tx,
+          )
+        ) {
+          throw new StockError(
+            'STOCK_IN_HAND_REVERSAL_BLOCKED',
+            'A reversal of this entry is already waiting for a second admin.',
+          );
+        }
+
+        const lines = this.costedLines(await repo.linesOf(tx, context.orgId, entryId));
+        await this.assertStillAtEntryCost(tx, context.orgId, lines);
+        const value = stockInHandValue(lines);
+
+        const raised = await this.approvals.request(context, {
+          type: 'stock_in_hand_reversal',
+          amountPoisha: value,
+          // The entry the executor reverses and why; never an amount (D-078).
+          payload: { entryId, journalId: entry.journal_id, reason: input.reason },
+          reason: input.reason,
+          request,
+          amountDerivedByServer: true,
+          raisedByModule: true,
+          holdForChecker: true,
+          tx,
+        });
+        return { approvalId: raised.id, status: raised.status };
+      }),
+    );
+  }
+
+  /**
+   * The reversal executor, inside the approving transaction, as the checker: the entry's
+   * pieces out at their cost and the ledger's reversal of its journal
+   * (`InventoryApi.reverseStockInHand`), then the entry marked reversed. Indifferent to a
+   * request naming no entry it can reverse (nothing else raises this type, D-078's shape);
+   * an approval for another value than the entry's is refused.
+   */
+  private readonly executeReversal: ApprovalExecutor = async (tx, { context, approval, request }) =>
+    mapStockErrors(async () => {
+      const parsedId = stockIdSchema.safeParse(approval.payload.entryId);
+      if (!parsedId.success) return;
+      const entryId = parsedId.data;
+      const entry = await repo.lockEntry(tx, context.orgId, entryId);
+      if (entry?.status !== 'posted' || entry.journal_id === null) return;
+
+      const lines = this.costedLines(await repo.linesOf(tx, context.orgId, entryId));
+      const value = stockInHandValue(lines);
+      if (approval.amountPoisha === null || approval.amountPoisha !== value) {
+        throw new StockError(
+          'IDEMPOTENCY_CONFLICT',
+          'That approval is for a different value than the entry it names.',
+        );
+      }
+      const reason =
+        typeof approval.payload.reason === 'string' && approval.payload.reason.trim() !== ''
+          ? approval.payload.reason.trim()
+          : 'Stock in hand reversed';
+
+      const reversed = await this.inventory.reverseStockInHand(
+        tx,
+        { orgId: context.orgId, userId: context.userId },
+        {
+          entryId,
+          locationId: entry.location_id,
+          journalId: entry.journal_id,
+          occurredAt: new Date(),
+          lines,
+          reason,
+        },
+      );
+      if (reversed.journalId === null) {
+        throw new StockError('STOCK_IN_HAND_INVALID', 'The ledger did not reverse that entry.');
+      }
+      await repo.markReversed(tx, context.orgId, entryId, {
+        reversalJournalId: reversed.journalId,
+        approvalId: approval.id,
+        reversedBy: context.userId,
+      });
+
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'update',
+        action: 'inventory.stock_in_hand.reversed',
+        entityType: 'StockInHand',
+        entityId: entryId,
+        before: { status: 'posted', journalId: entry.journal_id },
+        after: {
+          status: 'reversed',
+          reversalJournalId: reversed.journalId,
+          approvalId: approval.id,
+          requestedBy: approval.requestedBy,
+          totalQty: lines.reduce((sum, line) => sum + line.qty, 0),
+          valuePoisha: value.toString(),
+        },
+        requestId: context.requestId,
+        ...(request === undefined ? {} : { request }),
+      });
+    });
+
+  private costedLines(lines: readonly repo.LineRow[]): CostedLine[] {
+    return lines.map((line) => {
+      if (line.unit_cost_poisha === null) {
+        throw new StockError('STOCK_IN_HAND_INVALID', 'A posted line has no cost.');
+      }
+      return { skuId: line.sku_id, qty: line.qty, unitCostPoisha: poisha(line.unit_cost_poisha) };
+    });
+  }
+
+  /** The early answer to `reverseStockInHand`'s own check, read without a lock. */
+  private async assertStillAtEntryCost(
+    tx: Tx,
+    orgId: string,
+    lines: readonly CostedLine[],
+  ): Promise<void> {
+    const costs = await stockRepo.costsFor(
+      tx,
+      orgId,
+      lines.map((line) => line.skuId),
+    );
+    const average = new Map(costs.map((row) => [row.sku_id, BigInt(row.wac_poisha)]));
+    for (const line of lines) {
+      if (average.get(line.skuId) !== line.unitCostPoisha) {
+        throw new StockError(
+          'STOCK_IN_HAND_REVERSAL_BLOCKED',
+          'Those pieces have since been averaged with stock at another cost, so they cannot be taken out at the cost they came in at. Correct the stock with a count instead.',
+        );
+      }
+    }
+  }
+
   // --- checks ---------------------------------------------------------------------------
 
   /** Refused with a typed error once the brand's window is closed (D-602). */
@@ -638,8 +902,10 @@ export class StockInHandService implements OnModuleInit {
 
   /**
    * A replayed id answers only for the same entry (D-432): the same location and the same
-   * lines, order aside. A draft compared with a priced request matches on quantities, so a
-   * warehouse draft can be posted through the enter-and-post call with its own key.
+   * lines, order aside. Costs are compared when both sides have them (a posted entry and a
+   * priced request); otherwise quantities alone, so a warehouse draft can be posted through
+   * the enter-and-post call with its own key, and a draft retried after it was posted
+   * replays.
    */
   private async assertSameEntry(
     tx: Tx,
@@ -655,7 +921,11 @@ export class StockInHandService implements OnModuleInit {
     },
   ): Promise<void> {
     const lines = await repo.linesOf(tx, orgId, stored.id);
-    const compareCost = stored.status === 'posted';
+    const compareCost =
+      stored.status !== 'draft' &&
+      requested.lines.every(
+        (line) => line.unitCostPoisha !== undefined && line.unitCostPoisha !== null,
+      );
     const same = sameReceipt(
       {
         supplierId: '',
@@ -693,6 +963,16 @@ export class StockInHandService implements OnModuleInit {
     }
   }
 
+  /** What a draft holds, for its audit entries: where, and how many of each SKU. */
+  private async draftSnapshot(tx: Tx, orgId: string, entry: repo.EntryRow) {
+    const lines = await repo.linesOf(tx, orgId, entry.id);
+    return {
+      locationId: entry.location_id,
+      memo: entry.memo,
+      lines: lines.map((line) => ({ skuId: line.sku_id, qty: line.qty })),
+    };
+  }
+
   // --- views ----------------------------------------------------------------------------
 
   private async view(
@@ -720,6 +1000,13 @@ export class StockInHandService implements OnModuleInit {
           .reduce((sum, line) => sum + BigInt(line.unit_cost_poisha ?? '0') * BigInt(line.qty), 0n)
           .toString()
       : null;
+    const reversalPending =
+      entry.status === 'posted' &&
+      (await this.approvals.hasPending(
+        context,
+        { type: 'stock_in_hand_reversal', payloadKey: 'entryId', value: entry.id },
+        tx,
+      ));
 
     return {
       id: entry.id,
@@ -734,6 +1021,10 @@ export class StockInHandService implements OnModuleInit {
       createdAt: entry.created_at,
       postedBy: entry.posted_by,
       postedAt: entry.posted_at,
+      reversalJournalId: entry.reversal_journal_id,
+      reversedBy: entry.reversed_by,
+      reversedAt: entry.reversed_at,
+      reversalPending,
       costWithheld: !withCost,
       ...(withCost ? { stockValuePoisha: total } : {}),
       lines: lines.map((line) => {

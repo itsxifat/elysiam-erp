@@ -1,8 +1,9 @@
+import { readdirSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
 import { findCostFields } from '@elysium/contracts';
 import { withOrg, withSystem } from '@elysium/db';
-import { internalEan13, isInternalEan13 } from '@elysium/domain';
+import { internalEan13, isInternalEan13, poisha } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 import fc from 'fast-check';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -14,18 +15,21 @@ import {
   type HttpHarness,
   type RoleClient,
 } from '../../testing/http-harness.js';
+import { INVENTORY_API, type InventoryApi } from './inventory.api.js';
 import { warehouseId } from './inventory.testing.js';
 
 /**
  * M38a over HTTP against real PostgreSQL (D-602 to D-606): every SKU gets a valid, unique
  * internal EAN-13; a scan resolves to its variant; stock in hand posts one balanced journal
  * per entry (Dr Inventory / Cr Opening balance equity) with `opening_balance` movements, is
- * idempotent on its key, keeps cost from the warehouse role, and is refused once the brand's
- * opening stock window is closed; reopening needs a second admin's approval; a count is
- * counted by scanning.
+ * idempotent on its key, keeps cost from the warehouse role, posts only the draft its poster
+ * read, and is refused once the brand's opening stock window is closed; a posted entry is
+ * taken back out exactly, through a second admin's approval, or not at all; reopening needs
+ * a second admin's approval for that close; a count is counted by scanning; and migration
+ * 0114's backfill closes the window of a brand with history and numbers every SKU.
  *
- * The window tests run last in this file: closing it is the point of no return the owner
- * asked for, and everything before needs it open.
+ * The window tests run after the entry tests: closing it is the point of no return the owner
+ * asked for, and everything before needs it open. The backfill runs last.
  */
 
 let harness: HttpHarness;
@@ -38,6 +42,10 @@ let otherAdmin: RoleClient;
 
 let mainWarehouse = '';
 let size = { id: '', values: {} as Record<string, string> };
+/** A posted entry the window tests try to reverse after the close. */
+let postedEntryId = '';
+/** When the first close happened, as a reopen request's payload names it. */
+let firstClosedAt = '';
 
 interface Product {
   readonly id: string;
@@ -108,6 +116,29 @@ async function journalOf(key: string) {
   );
 }
 
+async function journalById(id: string) {
+  return withSystem(
+    async (tx) => {
+      const rows = await tx.execute<{
+        reverses_journal_id: string | null;
+        subtype: string;
+        debit: string;
+        credit: string;
+      }>(sql`
+        select j.reverses_journal_id, a.subtype::text as subtype,
+               l.debit_poisha::text as debit, l.credit_poisha::text as credit
+        from ledger.journals j
+        join ledger.journal_lines l on l.org_id = j.org_id and l.journal_id = j.id
+        join ledger.accounts a on a.org_id = l.org_id and a.id = l.account_id
+        where j.org_id = ${ORG_A} and j.id = ${id}
+        order by l.line_no
+      `);
+      return [...rows];
+    },
+    { orgId: ORG_A },
+  );
+}
+
 async function movementsOf(entryId: string) {
   return withSystem(
     async (tx) => {
@@ -145,17 +176,41 @@ async function databaseRefusal(work: Promise<unknown>): Promise<string> {
 async function auditRowsFor(
   orgId: string,
   action: string,
-): Promise<{ entity_id: string; after: unknown }[]> {
+): Promise<{ entity_id: string; before: unknown; after: unknown }[]> {
   return withSystem(
     async (tx) => {
-      const rows = await tx.execute<{ entity_id: string; after: unknown }>(sql`
-        select entity_id, after from audit.audit_log
+      const rows = await tx.execute<{ entity_id: string; before: unknown; after: unknown }>(sql`
+        select entity_id, before, after from audit.audit_log
         where org_id = ${orgId} and action = ${action}
         order by created_at
       `);
       return [...rows];
     },
     { orgId },
+  );
+}
+
+async function enterStock(
+  lines: readonly { skuId: string | undefined; qty: number; unitCostPoisha: string }[],
+): Promise<{ id: string; journalId: string }> {
+  const entryId = randomUUID();
+  const posted = await call<{ journalId: string }>(
+    admin,
+    'POST',
+    '/v1/inventory/stock-in-hand',
+    { entryId, locationId: mainWarehouse, lines },
+    201,
+  );
+  return { id: entryId, journalId: posted.journalId };
+}
+
+async function lookup(code: string | null | undefined) {
+  return call<{ wacPoisha: string; stock: { onHand: number } }>(
+    admin,
+    'GET',
+    `/v1/catalog/lookup?code=${code ?? ''}`,
+    undefined,
+    200,
   );
 }
 
@@ -321,6 +376,7 @@ describe('stock in hand at the start (D-602)', () => {
     // 4 × 80,000 + 5 × 85,000 + 6 × 90,000 = 320,000 + 425,000 + 540,000 = 1,285,000.
     expect(posted.status).toBe('posted');
     expect(posted.stockValuePoisha).toBe('1285000');
+    postedEntryId = entryId;
 
     const journal = await journalOf(`stock_in_hand:${entryId}:posted`);
     expect(new Set(journal.map((line) => line.id)).size).toBe(1);
@@ -335,15 +391,9 @@ describe('stock in hand at the start (D-602)', () => {
     expect(movements.reduce((sum, movement) => sum + movement.qty_delta, 0)).toBe(15);
 
     // The average blends exactly as a receipt: first stock, so WAC = the cost per piece.
-    const lookup = await call<{ wacPoisha: string; stock: { onHand: number } }>(
-      admin,
-      'GET',
-      `/v1/catalog/lookup?code=${made.skus[2]?.barcode ?? ''}`,
-      undefined,
-      200,
-    );
-    expect(lookup.wacPoisha).toBe('90000');
-    expect(lookup.stock.onHand).toBe(6);
+    const found = await lookup(made.skus[2]?.barcode);
+    expect(found.wacPoisha).toBe('90000');
+    expect(found.stock.onHand).toBe(6);
 
     // On the product's stock history, as opening stock.
     const history = await call<{ items: { kind: string }[] }>(
@@ -357,6 +407,16 @@ describe('stock in hand at the start (D-602)', () => {
 
     const audit = await auditRowsFor(ORG_A, 'inventory.stock_in_hand.posted');
     expect(audit.some((row) => row.entity_id === entryId)).toBe(true);
+  });
+
+  it('blends into the weighted average onto stock already there, like a receipt (§8)', async () => {
+    const blended = await product('Blended in', 'blended-in-sih');
+    const sku = blended.skus[0];
+    await enterStock([{ skuId: sku?.id, qty: 4, unitCostPoisha: '80000' }]);
+    await enterStock([{ skuId: sku?.id, qty: 2, unitCostPoisha: '110000' }]);
+    // (4 × 80,000 + 2 × 110,000) / 6 = 540,000 / 6 = 90,000.
+    const found = await lookup(sku?.barcode);
+    expect(found).toMatchObject({ wacPoisha: '90000', stock: { onHand: 6 } });
   });
 
   it('replays a retried entry instead of posting it twice, and refuses other stock under its key', async () => {
@@ -427,14 +487,16 @@ describe('stock in hand at the start (D-602)', () => {
       },
       201,
     );
+    const priced = {
+      locationId: mainWarehouse,
+      lines: lines.map((line) => ({ ...line, unitCostPoisha: '77700' })),
+    };
 
     // The warehouse cannot post, nor send a cost through the draft route.
     const posting = await warehouse.client.request(
       'POST',
       `/v1/inventory/stock-in-hand/${entryId}/post`,
-      {
-        body: { lines: lines.map((line) => ({ skuId: line.skuId, unitCostPoisha: '1000' })) },
-      },
+      { body: priced },
     );
     expect(posting.statusCode).toBe(403);
     const sneaky = await warehouse.client.request('POST', '/v1/inventory/stock-in-hand/drafts', {
@@ -452,12 +514,11 @@ describe('stock in hand at the start (D-602)', () => {
       expect(refused.statusCode).toBe(403);
     }
 
-    const priced = lines.map((line) => ({ skuId: line.skuId, unitCostPoisha: '77700' }));
     const posted = await call<{ status: string }>(
       accounts,
       'POST',
       `/v1/inventory/stock-in-hand/${entryId}/post`,
-      { lines: priced },
+      priced,
       201,
     );
     expect(posted.status).toBe('posted');
@@ -489,6 +550,16 @@ describe('stock in hand at the start (D-602)', () => {
     );
     expect(withCost.lines.map((line) => line.unitCostPoisha)).toEqual(['77700', '77700']);
 
+    // A draft retried after it was posted is the same count, and says what it became.
+    const retried = await call<{ status: string }>(
+      warehouse,
+      'POST',
+      '/v1/inventory/stock-in-hand/drafts',
+      { entryId, locationId: mainWarehouse, lines },
+      201,
+    );
+    expect(retried.status).toBe('posted');
+
     // A posted entry is never edited or deleted.
     const edit = await warehouse.client.request(
       'PATCH',
@@ -503,6 +574,83 @@ describe('stock in hand at the start (D-602)', () => {
       `/v1/inventory/stock-in-hand/drafts/${entryId}`,
     );
     expect(remove.statusCode).toBe(404);
+  });
+
+  it('posts only the draft its poster read, and audits what a change to it was', async () => {
+    const entryId = randomUUID();
+    const [first, second] = made.skus;
+    if (first === undefined || second === undefined) throw new Error('no SKUs');
+    await call(
+      warehouse,
+      'POST',
+      '/v1/inventory/stock-in-hand/drafts',
+      { entryId, locationId: mainWarehouse, lines: [{ skuId: first.id, qty: 2 }] },
+      201,
+    );
+    // Accounts reads two pieces; the warehouse, on another phone, makes it twelve and adds a line.
+    const read = await call<{ lines: { skuId: string; qty: number }[] }>(
+      accounts,
+      'GET',
+      `/v1/inventory/stock-in-hand/${entryId}`,
+      undefined,
+      200,
+    );
+    await call(
+      warehouse,
+      'PATCH',
+      `/v1/inventory/stock-in-hand/drafts/${entryId}`,
+      {
+        lines: [
+          { skuId: first.id, qty: 12 },
+          { skuId: second.id, qty: 1 },
+        ],
+      },
+      200,
+    );
+
+    const stale = await accounts.client.request(
+      'POST',
+      `/v1/inventory/stock-in-hand/${entryId}/post`,
+      {
+        body: {
+          locationId: mainWarehouse,
+          lines: read.lines.map((line) => ({
+            skuId: line.skuId,
+            qty: line.qty,
+            unitCostPoisha: '50000',
+          })),
+        },
+      },
+    );
+    expect(stale.statusCode, stale.body).toBe(409);
+    expect(body<{ code: string }>(stale).code).toBe('STOCK_IN_HAND_CHANGED');
+    expect(await movementsOf(entryId)).toHaveLength(0);
+
+    const updated = (await auditRowsFor(ORG_A, 'inventory.stock_in_hand.draft_updated')).find(
+      (row) => row.entity_id === entryId,
+    );
+    expect(updated?.before).toMatchObject({ lines: [{ skuId: first.id, qty: 2 }] });
+    expect(updated?.after).toMatchObject({
+      lines: [
+        { skuId: first.id, qty: 12 },
+        { skuId: second.id, qty: 1 },
+      ],
+    });
+
+    // Read again, posted as read.
+    await call(
+      accounts,
+      'POST',
+      `/v1/inventory/stock-in-hand/${entryId}/post`,
+      {
+        locationId: mainWarehouse,
+        lines: [
+          { skuId: first.id, qty: 12, unitCostPoisha: '50000' },
+          { skuId: second.id, qty: 1, unitCostPoisha: '50000' },
+        ],
+      },
+      201,
+    );
   });
 
   it('withholds cost from the lookup for a role without read:cost', async () => {
@@ -541,6 +689,175 @@ describe('stock in hand at the start (D-602)', () => {
         ),
       ),
     ).toMatch(/STOCK_IN_HAND_IMMUTABLE/);
+    // Nor flipped to reversed without the ledger's reversal and an approval.
+    expect(
+      await databaseRefusal(
+        withOrg({ orgId: ORG_A, userId: 'usr_test' }, (tx) =>
+          tx.execute(sql`
+            update inventory.stock_in_hand_entries
+            set status = 'reversed', reversal_journal_id = journal_id,
+                reversal_approval_id = gen_random_uuid(), reversed_by = 'usr_test',
+                reversed_at = now()
+            where org_id = ${ORG_A} and id = ${entryId}
+          `),
+        ),
+      ),
+    ).toMatch(/STOCK_IN_HAND_INVALID/);
+  });
+});
+
+describe('reversing a posted entry (D-602)', () => {
+  it('takes a shelf counted in twice back out, exactly, through a second admin', async () => {
+    const twice = await product('Counted twice', 'counted-twice-sih');
+    const [first, second] = twice.skus;
+    if (first === undefined || second === undefined) throw new Error('no SKUs');
+    const lines = [
+      { skuId: first.id, qty: 3, unitCostPoisha: '50000' },
+      { skuId: second.id, qty: 2, unitCostPoisha: '50000' },
+    ];
+    await enterStock(lines);
+    const duplicate = await enterStock(lines);
+
+    // Whoever may not price may not ask; the generic route never raises one.
+    const refused = await warehouse.client.request(
+      'POST',
+      `/v1/inventory/stock-in-hand/${duplicate.id}/reverse`,
+      { body: { reason: 'Counted twice' } },
+    );
+    expect(refused.statusCode).toBe(403);
+    const generic = await accounts.client.request('POST', '/v1/approvals', {
+      body: {
+        type: 'stock_in_hand_reversal',
+        amountPoisha: '250000',
+        payload: { entryId: duplicate.id },
+      },
+    });
+    expect(generic.statusCode).toBeGreaterThanOrEqual(400);
+
+    const raised = await call<{ approvalId: string; status: string }>(
+      accounts,
+      'POST',
+      `/v1/inventory/stock-in-hand/${duplicate.id}/reverse`,
+      { reason: 'Shelf B counted in twice' },
+      201,
+    );
+    expect(raised.status).toBe('pending');
+    const again = await accounts.client.request(
+      'POST',
+      `/v1/inventory/stock-in-hand/${duplicate.id}/reverse`,
+      { body: { reason: 'Again' } },
+    );
+    expect(body<{ code: string }>(again).code).toBe('STOCK_IN_HAND_REVERSAL_BLOCKED');
+    const waiting = await call<{ status: string; reversalPending: boolean }>(
+      accounts,
+      'GET',
+      `/v1/inventory/stock-in-hand/${duplicate.id}`,
+      undefined,
+      200,
+    );
+    expect(waiting).toMatchObject({ status: 'posted', reversalPending: true });
+    // Nothing moved while it waits.
+    expect((await lookup(first.barcode)).stock.onHand).toBe(6);
+
+    await call(
+      admin,
+      'POST',
+      `/v1/approvals/${raised.approvalId}/decide`,
+      { decision: 'approved' },
+      201,
+    );
+
+    const reversed = await call<{ status: string; reversalJournalId: string }>(
+      accounts,
+      'GET',
+      `/v1/inventory/stock-in-hand/${duplicate.id}`,
+      undefined,
+      200,
+    );
+    expect(reversed.status).toBe('reversed');
+
+    // The ledger's own reversal of the entry's journal: Dr equity, Cr inventory, 250,000.
+    const journal = await journalById(reversed.reversalJournalId);
+    expect(journal.every((line) => line.reverses_journal_id === duplicate.journalId)).toBe(true);
+    expect(journal.map(({ subtype, debit, credit }) => ({ subtype, debit, credit }))).toEqual(
+      expect.arrayContaining([
+        { subtype: 'inventory', debit: '0', credit: '250000' },
+        { subtype: 'opening_equity', debit: '250000', credit: '0' },
+      ]),
+    );
+
+    // The same pieces out at the cost they came in at; the average untouched.
+    const movements = await movementsOf(duplicate.id);
+    expect(movements.filter((row) => row.kind === 'adjustment_loss')).toHaveLength(2);
+    expect(movements.reduce((sum, row) => sum + row.qty_delta, 0)).toBe(0);
+    for (const row of movements) expect(row.unit_cost_poisha).toBe('50000');
+    expect(await lookup(first.barcode)).toMatchObject({
+      wacPoisha: '50000',
+      stock: { onHand: 3 },
+    });
+    expect((await lookup(second.barcode)).stock.onHand).toBe(2);
+    const audit = await auditRowsFor(ORG_A, 'inventory.stock_in_hand.reversed');
+    expect(audit.some((row) => row.entity_id === duplicate.id)).toBe(true);
+
+    // Once reversed, never again, and never edited or removed.
+    const twiceMore = await accounts.client.request(
+      'POST',
+      `/v1/inventory/stock-in-hand/${duplicate.id}/reverse`,
+      { body: { reason: 'Again' } },
+    );
+    expect(body<{ code: string }>(twiceMore).code).toBe('STOCK_IN_HAND_IMMUTABLE');
+    expect(
+      await databaseRefusal(
+        withOrg({ orgId: ORG_A, userId: 'usr_test' }, (tx) =>
+          tx.execute(sql`
+            update inventory.stock_in_hand_entries set memo = 'edited'
+            where org_id = ${ORG_A} and id = ${duplicate.id}
+          `),
+        ),
+      ),
+    ).toMatch(/STOCK_IN_HAND_IMMUTABLE/);
+    expect(
+      await databaseRefusal(
+        withOrg({ orgId: ORG_A, userId: 'usr_test' }, (tx) =>
+          tx.execute(sql`
+            delete from inventory.stock_in_hand_entries
+            where org_id = ${ORG_A} and id = ${duplicate.id}
+          `),
+        ),
+      ),
+    ).toMatch(/STOCK_IN_HAND_IMMUTABLE/);
+  });
+
+  it('refuses once the pieces were averaged with stock at another cost, and a draft', async () => {
+    const averaged = await product('Averaged', 'averaged-sih');
+    const sku = averaged.skus[0];
+    const cheap = await enterStock([{ skuId: sku?.id, qty: 2, unitCostPoisha: '40000' }]);
+    const dear = await enterStock([{ skuId: sku?.id, qty: 2, unitCostPoisha: '60000' }]);
+    for (const entry of [cheap, dear]) {
+      const refused = await accounts.client.request(
+        'POST',
+        `/v1/inventory/stock-in-hand/${entry.id}/reverse`,
+        { body: { reason: 'Wrong cost typed' } },
+      );
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(body<{ code: string }>(refused).code).toBe('STOCK_IN_HAND_REVERSAL_BLOCKED');
+    }
+
+    const draftId = randomUUID();
+    await call(
+      warehouse,
+      'POST',
+      '/v1/inventory/stock-in-hand/drafts',
+      { entryId: draftId, locationId: mainWarehouse, lines: [{ skuId: sku?.id, qty: 1 }] },
+      201,
+    );
+    const draft = await accounts.client.request(
+      'POST',
+      `/v1/inventory/stock-in-hand/${draftId}/reverse`,
+      { body: { reason: 'Not posted' } },
+    );
+    expect(draft.statusCode).toBe(400);
+    expect(body<{ code: string }>(draft).code).toBe('STOCK_IN_HAND_INVALID');
   });
 });
 
@@ -549,17 +866,7 @@ describe('counting by scanning (D-606)', () => {
     const made = await product('Scan count', 'scan-count-sih');
     const [counted, absent] = made.skus;
     if (counted === undefined || absent === undefined) throw new Error('no SKUs');
-    await call(
-      admin,
-      'POST',
-      '/v1/inventory/stock-in-hand',
-      {
-        entryId: randomUUID(),
-        locationId: mainWarehouse,
-        lines: [{ skuId: counted.id, qty: 5, unitCostPoisha: '60000' }],
-      },
-      201,
-    );
+    await enterStock([{ skuId: counted.id, qty: 5, unitCostPoisha: '60000' }]);
 
     // Any open count at the warehouse is closed out of the way first.
     await withSystem(
@@ -623,6 +930,15 @@ describe('counting by scanning (D-606)', () => {
     );
     expect(unknown.statusCode).toBe(404);
 
+    // Typing over a counted figure needs a note, on the server as on the screen.
+    const unexplained = await warehouse.client.request(
+      'PUT',
+      `/v1/inventory/counts/${count.id}/lines`,
+      { body: { lines: [{ skuId: counted.id, countedQty: 5 }] } },
+    );
+    expect(unexplained.statusCode, unexplained.body).toBe(409);
+    expect(body<{ code: string }>(unexplained).code).toBe('STOCK_COUNT_INVALID');
+
     // A manual correction with a note keeps the note in the audit log.
     await call(
       warehouse,
@@ -636,6 +952,32 @@ describe('counting by scanning (D-606)', () => {
     );
     const audit = await auditRowsFor(ORG_A, 'inventory.count.recorded');
     expect(JSON.stringify(audit.map((row) => row.after))).toContain('Three behind the rack');
+
+    // Two phones scanning one shelf at once: every scan counts, none twice.
+    const scans = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        warehouse.client.request('POST', `/v1/inventory/counts/${count.id}/scans`, {
+          body: { scanId: randomUUID(), code: counted.barcode },
+        }),
+      ),
+    );
+    for (const response of scans) expect(response.statusCode, response.body).toBe(201);
+    const after = await call<{ lines: { skuId: string; countedQty: number | null }[] }>(
+      warehouse,
+      'GET',
+      `/v1/inventory/counts/${count.id}`,
+      undefined,
+      200,
+    );
+    expect(after.lines.find((line) => line.skuId === counted.id)?.countedQty).toBe(13);
+    // Repeating the figure already there is not a correction.
+    await call(
+      warehouse,
+      'PUT',
+      `/v1/inventory/counts/${count.id}/lines`,
+      { lines: [{ skuId: counted.id, countedQty: 13 }] },
+      200,
+    );
   });
 });
 
@@ -674,7 +1016,7 @@ describe('the opening stock window (D-602)', () => {
       201,
     );
 
-    const closed = await call<{ open: boolean; closedAt: string }>(
+    const closed = await call<{ open: boolean; closedAt: string; closedBy?: string }>(
       admin,
       'POST',
       '/v1/inventory/stock-in-hand/window/close',
@@ -682,7 +1024,19 @@ describe('the opening stock window (D-602)', () => {
       201,
     );
     expect(closed.open).toBe(false);
+    expect(closed.closedBy).toBe(admin.userId);
+    firstClosedAt = closed.closedAt;
     expect((await auditRowsFor(ORG_A, 'inventory.opening_stock.closed')).length).toBe(1);
+    // Who closed it is for the people who decide the window.
+    const seenBySales = await call<Record<string, unknown>>(
+      sales,
+      'GET',
+      '/v1/inventory/stock-in-hand/window',
+      undefined,
+      200,
+    );
+    expect(seenBySales).toMatchObject({ open: false });
+    expect(seenBySales).not.toHaveProperty('closedBy');
 
     const direct = await admin.client.request('POST', '/v1/inventory/stock-in-hand', {
       body: {
@@ -703,15 +1057,61 @@ describe('the opening stock window (D-602)', () => {
     });
     expect(body<{ code: string }>(drafted).code).toBe('OPENING_STOCK_CLOSED');
 
-    // The draft written before the close cannot be posted after it.
+    // The draft written before the close can be neither changed nor posted after it.
+    const edited = await warehouse.client.request(
+      'PATCH',
+      `/v1/inventory/stock-in-hand/drafts/${draftId}`,
+      { body: { lines: [{ skuId: sku.id, qty: 4 }] } },
+    );
+    expect(body<{ code: string }>(edited).code).toBe('OPENING_STOCK_CLOSED');
     const late = await accounts.client.request(
       'POST',
       `/v1/inventory/stock-in-hand/${draftId}/post`,
       {
-        body: { lines: [{ skuId: sku.id, unitCostPoisha: '1000' }] },
+        body: {
+          locationId: mainWarehouse,
+          lines: [{ skuId: sku.id, qty: 1, unitCostPoisha: '1000' }],
+        },
       },
     );
     expect(body<{ code: string }>(late).code).toBe('OPENING_STOCK_CLOSED');
+
+    // A posted entry is no longer reversed against equity either.
+    const reversal = await accounts.client.request(
+      'POST',
+      `/v1/inventory/stock-in-hand/${postedEntryId}/reverse`,
+      { body: { reason: 'Too late' } },
+    );
+    expect(body<{ code: string }>(reversal).code).toBe('OPENING_STOCK_CLOSED');
+
+    // Nor through inventory's interface by another module: stock in hand, or M14a's opening.
+    const inventory = harness.app.get<InventoryApi>(INVENTORY_API, { strict: false });
+    const actor = { orgId: ORG_A, userId: admin.userId };
+    const line = { skuId: sku.id, qty: 1, unitCostPoisha: poisha(1000n) };
+    expect(
+      await databaseRefusal(
+        withOrg(actor, (tx) =>
+          inventory.receiveStockInHand(tx, actor, {
+            entryId: randomUUID(),
+            locationId: mainWarehouse,
+            branchId: null,
+            occurredAt: new Date(),
+            lines: [line],
+          }),
+        ),
+      ),
+    ).toMatch(/opening stock window is closed/);
+    expect(
+      await databaseRefusal(
+        withOrg(actor, (tx) =>
+          inventory.receiveOpening(tx, actor, {
+            openingId: randomUUID(),
+            occurredAt: new Date(),
+            lines: [{ ...line, locationId: mainWarehouse }],
+          }),
+        ),
+      ),
+    ).toMatch(/opening stock window is closed/);
 
     // And the database refuses it too, for a path that skipped the service.
     expect(
@@ -726,7 +1126,17 @@ describe('the opening stock window (D-602)', () => {
         ),
       ),
     ).toMatch(/OPENING_STOCK_CLOSED/);
-    // Nor can anyone reopen it by writing the row.
+    expect(
+      await databaseRefusal(
+        withOrg({ orgId: ORG_A, userId: 'usr_test' }, (tx) =>
+          tx.execute(sql`
+            update inventory.stock_in_hand_lines set qty = 9
+            where org_id = ${ORG_A} and entry_id = ${draftId}
+          `),
+        ),
+      ),
+    ).toMatch(/OPENING_STOCK_CLOSED/);
+    // Nor can anyone reopen it, or move its close, by writing the row.
     expect(
       await databaseRefusal(
         withOrg({ orgId: ORG_A, userId: 'usr_test' }, (tx) =>
@@ -736,6 +1146,17 @@ describe('the opening stock window (D-602)', () => {
         ),
       ),
     ).toMatch(/OPENING_STOCK_REOPEN_UNAPPROVED/);
+    expect(
+      await databaseRefusal(
+        withOrg({ orgId: ORG_A, userId: 'usr_test' }, (tx) =>
+          tx.execute(sql`
+            update inventory.opening_stock_windows
+            set closed_at = closed_at - interval '30 days', closed_by = 'usr_test'
+            where org_id = ${ORG_A}
+          `),
+        ),
+      ),
+    ).toMatch(/OPENING_STOCK_INVALID/);
 
     // Another brand's window is its own.
     const otherWindow = await call<{ open: boolean }>(
@@ -804,16 +1225,259 @@ describe('the opening stock window (D-602)', () => {
     expect((await auditRowsFor(ORG_A, 'inventory.opening_stock.reopened')).length).toBe(1);
 
     const made = await product('After reopening', 'after-reopen-sih');
-    await call(
-      admin,
-      'POST',
-      '/v1/inventory/stock-in-hand',
-      {
+    await enterStock([{ skuId: made.skus[0]?.id, qty: 1, unitCostPoisha: '1000' }]);
+  });
+
+  it('closes only after an entry being written commits, and refuses the next one', async () => {
+    const draftId = randomUUID();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let holding: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      holding = resolve;
+    });
+
+    // An entry mid-write: it holds the window `for share`, as every post and draft does.
+    const inFlight = withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) => {
+      await tx.execute(sql`
+        select status from inventory.opening_stock_windows where org_id = ${ORG_A} for share
+      `);
+      holding();
+      await gate;
+      await tx.execute(sql`
+        insert into inventory.stock_in_hand_entries
+          (id, org_id, location_id, branch_id, status, created_by)
+        select ${draftId}, ${ORG_A}, l.id, l.branch_id, 'draft', ${admin.userId}
+        from org.locations l where l.org_id = ${ORG_A} and l.id = ${mainWarehouse}
+      `);
+    });
+    await held;
+
+    let settled = false;
+    const closing = admin.client
+      .request('POST', '/v1/inventory/stock-in-hand/window/close', { body: {} })
+      .then((response) => {
+        settled = true;
+        return response;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(settled).toBe(false);
+
+    release();
+    await inFlight;
+    const closed = await closing;
+    expect(closed.statusCode, closed.body).toBe(201);
+    expect(body<{ open: boolean }>(closed).open).toBe(false);
+
+    // The entry written under the open window is there; the next one is refused.
+    const written = await call<{ status: string }>(
+      warehouse,
+      'GET',
+      `/v1/inventory/stock-in-hand/${draftId}`,
+      undefined,
+      200,
+    );
+    expect(written.status).toBe('draft');
+    const next = await warehouse.client.request('POST', '/v1/inventory/stock-in-hand/drafts', {
+      body: {
         entryId: randomUUID(),
         locationId: mainWarehouse,
-        lines: [{ skuId: made.skus[0]?.id, qty: 1, unitCostPoisha: '1000' }],
+        lines: [{ skuId: (await product('Next', 'next-sih')).skus[0]?.id, qty: 1 }],
+      },
+    });
+    expect(body<{ code: string }>(next).code).toBe('OPENING_STOCK_CLOSED');
+  });
+
+  it('refuses a reopen request raised for an earlier close', async () => {
+    // A request left over from the first close (two raised at once before the lock existed):
+    // approving it now must not reopen the second close.
+    const staleId = await withSystem(
+      async (tx) => {
+        const rows = await tx.execute<{ id: string }>(sql`
+          insert into approvals.approval_requests
+            (org_id, type, status, requested_by, payload, reason)
+          values (${ORG_A}, 'opening_stock_reopen', 'pending', ${admin.userId},
+                  ${JSON.stringify({ window: 'opening_stock', closedAt: firstClosedAt })}::jsonb,
+                  'Left over from the first close')
+          returning id
+        `);
+        return rows[0]?.id ?? '';
+      },
+      { orgId: ORG_A },
+    );
+
+    const decided = await secondAdmin.client.request('POST', `/v1/approvals/${staleId}/decide`, {
+      body: { decision: 'approved' },
+    });
+    expect(decided.statusCode, decided.body).toBe(409);
+    expect(body<{ code: string }>(decided).code).toBe('OPENING_STOCK_REOPEN_UNAPPROVED');
+    const window = await call<{ open: boolean }>(
+      admin,
+      'GET',
+      '/v1/inventory/stock-in-hand/window',
+      undefined,
+      200,
+    );
+    expect(window.open).toBe(false);
+
+    // The database says the same for a hand-written reopen naming an approved one.
+    expect(
+      await databaseRefusal(
+        withSystem(
+          async (tx) => {
+            await tx.execute(sql`
+              update approvals.approval_requests
+              set status = 'approved', decided_by = ${secondAdmin.userId}, decided_at = now()
+              where org_id = ${ORG_A} and id = ${staleId}
+            `);
+            await tx.execute(sql`
+              update inventory.opening_stock_windows
+              set status = 'open', reopen_approval_id = ${staleId}, reopened_by = 'usr_test'
+              where org_id = ${ORG_A}
+            `);
+          },
+          { orgId: ORG_A },
+        ),
+      ),
+    ).toMatch(/raised for an earlier close/);
+
+    await call(
+      secondAdmin,
+      'POST',
+      `/v1/approvals/${staleId}/decide`,
+      { decision: 'rejected', note: 'Raised for an earlier close' },
+      201,
+    );
+  });
+});
+
+describe('the migration’s backfill (0114)', () => {
+  /** Migration 0114's per-brand block, run as the migration runs it: as the owner, no org. */
+  async function runBackfill(): Promise<void> {
+    const directory = new URL('../../../../../packages/db/migrations/', import.meta.url);
+    const file = readdirSync(directory).find((name) => name.endsWith('_m38a_policies.sql'));
+    if (file === undefined) throw new Error('no M38a policies migration');
+    const migration = readFileSync(new URL(file, directory), 'utf8');
+    const block = migration.slice(
+      migration.indexOf('-- m38a:backfill:start'),
+      migration.indexOf('-- m38a:backfill:end'),
+    );
+    await withSystem(async (tx) => {
+      await tx.execute(sql.raw(block));
+    });
+  }
+
+  async function brandState(orgId: string) {
+    return withSystem(
+      async (tx) => {
+        const window = await tx.execute<{ status: string; closed_by: string; closed_at: string }>(
+          sql`select status, closed_by, closed_at::text from inventory.opening_stock_windows
+              where org_id = ${orgId}`,
+        );
+        const settings = await tx.execute<{ last_sequence: number; last_barcode_sequence: string }>(
+          sql`select last_sequence, last_barcode_sequence::text from catalog.sku_settings
+              where org_id = ${orgId}`,
+        );
+        const skus = await tx.execute<{ id: string; barcode: string | null }>(
+          sql`select id, barcode from catalog.skus where org_id = ${orgId} order by created_at`,
+        );
+        return { window: window[0], settings: settings[0], skus: [...skus] };
+      },
+      { orgId },
+    );
+  }
+
+  it('numbers every SKU above the codes the brand holds, and closes only a brand with history', async () => {
+    // A brand whose SKUs predate barcodes, with no counter row, holding two supplier codes in
+    // the ERP's range: one low (a floor), one near the top (ignored, or nothing would fit).
+    const made: string[] = [];
+    for (const index of [1, 2, 3, 4]) {
+      const created = await call<{ skus: { id: string }[] }>(
+        otherAdmin,
+        'POST',
+        '/v1/catalog/products',
+        {
+          name: `Old stock ${String(index)}`,
+          slug: `old-stock-backfill-${String(index)}`,
+          status: 'active',
+          pricePoisha: '99000',
+        },
+        201,
+      );
+      made.push(created.skus[0]?.id ?? '');
+    }
+    const low = internalEan13(500);
+    await withSystem(
+      async (tx) => {
+        await tx.execute(sql`update catalog.skus set barcode = null where org_id = ${ORG_B}`);
+        await tx.execute(sql`update catalog.skus set barcode = ${low} where id = ${made[0]}`);
+        await tx.execute(
+          sql`update catalog.skus set barcode = '2999999999990' where id = ${made[1]}`,
+        );
+        await tx.execute(sql`delete from catalog.sku_settings where org_id = ${ORG_B}`);
+      },
+      { orgId: ORG_B },
+    );
+
+    await runBackfill();
+    const once = await brandState(ORG_B);
+    // No history yet: the window stays open (no row).
+    expect(once.window).toBeUndefined();
+    const numbered = once.skus.filter((sku) => sku.id === made[2] || sku.id === made[3]);
+    expect(numbered).toHaveLength(2);
+    for (const sku of numbered) {
+      expect(sku.barcode !== null && isInternalEan13(sku.barcode)).toBe(true);
+      const sequence = Number(sku.barcode?.slice(1, 12));
+      expect(sequence).toBeGreaterThan(500);
+      expect(sequence).toBeLessThan(1000);
+    }
+    expect(new Set(once.skus.map((sku) => sku.barcode)).size).toBe(once.skus.length);
+    // The counter row, made the way the SKU counter makes it: past every product sequence.
+    expect(once.settings?.last_sequence).toBeGreaterThanOrEqual(4);
+    expect(Number(once.settings?.last_barcode_sequence)).toBe(
+      Math.max(...numbered.map((sku) => Number(sku.barcode?.slice(1, 12)))),
+    );
+    // So the next product neither repeats a sequence nor a barcode.
+    const next = await call<{ skus: { barcode: string }[] }>(
+      otherAdmin,
+      'POST',
+      '/v1/catalog/products',
+      {
+        name: 'After the backfill',
+        slug: 'after-backfill',
+        status: 'active',
+        pricePoisha: '99000',
       },
       201,
     );
+    expect(once.skus.map((sku) => sku.barcode)).not.toContain(next.skus[0]?.barcode);
+
+    // History: a movement other than opening stock. Run again: closed by the system, and the
+    // numbers already given are left alone.
+    const location = await warehouseId(ORG_B);
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          insert into inventory.stock_movements
+            (org_id, sku_id, location_id, kind, qty_delta, unit_cost_poisha, ref_type,
+             business_date, created_by)
+          values (${ORG_B}, ${made[2]}, ${location}, 'adjustment_gain', 1, 0, 'test',
+                  current_date, 'usr_test')
+        `),
+      { orgId: ORG_B },
+    );
+    await runBackfill();
+    const twice = await brandState(ORG_B);
+    expect(twice.window).toMatchObject({ status: 'closed', closed_by: 'system' });
+    expect(twice.window?.closed_at).toBeTruthy();
+    expect(twice.skus.find((sku) => sku.id === made[2])?.barcode).toBe(
+      once.skus.find((sku) => sku.id === made[2])?.barcode,
+    );
+
+    // A brand whose window an admin already closed keeps that close.
+    const brandA = await brandState(ORG_A);
+    expect(brandA.window).toMatchObject({ status: 'closed', closed_by: admin.userId });
   });
 });

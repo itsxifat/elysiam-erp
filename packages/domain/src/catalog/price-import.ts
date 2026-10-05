@@ -82,7 +82,16 @@ export function takaTextToPoisha(text: string): Poisha {
 export interface KnownSku {
   readonly code: string;
   readonly pricePoisha: Poisha;
+  /** The barcode it carries now: a file may repeat the SKU's own internal number (D-603). */
+  readonly barcode?: string | null;
 }
+
+/**
+ * `2` and twelve digits: the range the ERP numbers its own SKUs in (D-603). A file may not
+ * write one onto a SKU that does not already carry it, or a later SKU would be born with
+ * the same number.
+ */
+const INTERNAL_RANGE = /^2\d{12}$/;
 
 /**
  * Judge a parsed file against the SKUs that exist.
@@ -214,6 +223,15 @@ function reviewRow(
       line,
       column: 'barcode',
       message: 'A Code 128 barcode holds printable ASCII, up to 48 characters.',
+    });
+    return undefined;
+  }
+  if (INTERNAL_RANGE.test(barcodeText) && byCode.get(sku)?.barcode !== barcodeText) {
+    problems.push({
+      line,
+      column: 'barcode',
+      message:
+        'Thirteen digits starting with 2 are the ERP’s own barcodes; leave the cell empty to keep the SKU’s.',
     });
     return undefined;
   }

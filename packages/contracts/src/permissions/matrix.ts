@@ -81,6 +81,8 @@ export const CHECKER_TYPES: Readonly<Record<MembershipRole, readonly string[]>> 
     'credential_reset',
     // M38a: reopening the opening stock window needs a second org admin (D-602).
     'opening_stock_reopen',
+    // M38a: so does taking a posted stock-in-hand entry back out (D-602).
+    'stock_in_hand_reversal',
   ],
   // §6: payments.
   /*
@@ -172,6 +174,8 @@ export const REQUESTER_TYPES: Readonly<Record<MembershipRole, readonly string[]>
     'credential_reset',
     // Raised only by the inventory module's window route (D-602).
     'opening_stock_reopen',
+    // Raised only by the inventory module's reverse route, by whoever may post (D-602).
+    'stock_in_hand_reversal',
   ],
   accounts: [
     'wallet_adjustment',
@@ -185,6 +189,8 @@ export const REQUESTER_TYPES: Readonly<Record<MembershipRole, readonly string[]>
     'investor_distribution',
     'investor_withdrawal',
     'loan_repayment',
+    // M38a: accounts posts stock in hand, so it may ask to reverse an entry (D-602).
+    'stock_in_hand_reversal',
   ],
   hr: ['payroll_run', 'bonus_rule'],
   branch_manager: ['stock_write_off', 'stock_gain', 'closing_variance', 'wallet_adjustment'],

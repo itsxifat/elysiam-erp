@@ -124,6 +124,7 @@ const CONSOLE_KEYS = [
   'approvals.type.loan_repayment',
   'approvals.type.credential_reset',
   'approvals.type.opening_stock_reopen',
+  'approvals.type.stock_in_hand_reversal',
   'approvals.status.approved',
   'approvals.status.rejected',
   'approvals.status.cancelled',

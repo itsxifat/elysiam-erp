@@ -8,6 +8,7 @@ import type { ErrorCode } from '@elysium/contracts';
 import {
   Code128Error,
   CsvError,
+  Ean13Error,
   MoneyError,
   SkuCodeError,
   VariantMatrixError,
@@ -104,6 +105,18 @@ export function databaseCatalogCode(error: unknown): { code: ErrorCode; message:
     }
 
     const sqlstate = (current as { code?: unknown }).code;
+    if (
+      sqlstate === '23514' &&
+      (current as { constraint_name?: unknown }).constraint_name ===
+        'sku_settings_barcode_sequence_range'
+    ) {
+      // The brand's internal barcode counter is at its end (D-603): never in practice, and
+      // a refusal that says so rather than a 500 if it ever is.
+      return {
+        code: 'CATALOG_BARCODE_INVALID',
+        message: 'This brand has used every internal barcode number; ask an admin to look.',
+      };
+    }
     if (sqlstate === '23505') {
       const constraint = (current as { constraint_name?: unknown }).constraint_name;
       const known = typeof constraint === 'string' ? CONSTRAINT_MESSAGES[constraint] : undefined;
@@ -128,6 +141,8 @@ export function toCatalogHttpError(error: unknown): unknown {
   }
   if (error instanceof Code128Error)
     return catalogHttpError('CATALOG_VARIANT_INVALID', error.message);
+  if (error instanceof Ean13Error)
+    return catalogHttpError('CATALOG_BARCODE_INVALID', error.message);
   if (error instanceof CsvError) {
     return catalogHttpError(
       'CATALOG_IMPORT_REJECTED',

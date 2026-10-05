@@ -106,6 +106,7 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/inventory/stock-in-hand/:id',
   'POST /v1/inventory/stock-in-hand',
   'POST /v1/inventory/stock-in-hand/:id/post',
+  'POST /v1/inventory/stock-in-hand/:id/reverse',
   'POST /v1/inventory/stock-in-hand/drafts',
   'PATCH /v1/inventory/stock-in-hand/drafts/:id',
   'DELETE /v1/inventory/stock-in-hand/drafts/:id',

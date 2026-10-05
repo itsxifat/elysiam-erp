@@ -113,6 +113,25 @@ export class CountsService {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const session = await this.requireOpen(tx, context, request, sessionId);
 
+        // D-606: a figure typed over one already counted (by scanning or typing) says why,
+        // in the count's audit entry. The console asks for it; this is where it is required.
+        const counted = new Map(
+          (await repo.countLines(tx, context.orgId, session.id)).map((line) => [
+            line.sku_id,
+            line.counted_qty,
+          ]),
+        );
+        const overwrites = input.lines.some((line) => {
+          const was = counted.get(line.skuId);
+          return was !== undefined && was !== null && was !== line.countedQty;
+        });
+        if (overwrites && (input.note ?? '').trim() === '') {
+          throw new StockError(
+            'STOCK_COUNT_INVALID',
+            'Changing a figure that was already counted needs a note saying why.',
+          );
+        }
+
         for (const line of input.lines) {
           // A SKU with no frozen line was not at this location when the session
           // opened. Refused rather than inserted: a line added mid-count has no
@@ -249,7 +268,9 @@ export class CountsService {
   ): Promise<CountSessionView> {
     return mapStockErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const session = await this.requireOpen(tx, context, request, sessionId);
+        // `for update`: every scan and figure still being written holds the session `for
+        // share`, so the lines read below are the last ones.
+        const session = await this.requireOpen(tx, context, request, sessionId, 'update');
         const lines = await repo.countLines(tx, context.orgId, session.id);
         if (lines.every((line) => line.counted_qty === null)) {
           throw new StockError('STOCK_COUNT_INVALID', 'Nothing has been counted yet.');
@@ -387,8 +408,9 @@ export class CountsService {
     context: ActiveContext,
     request: object,
     sessionId: string,
+    lock: 'share' | 'update' = 'share',
   ): Promise<repo.CountSessionRow> {
-    const session = await repo.countSessionById(tx, context.orgId, sessionId);
+    const session = await repo.countSessionById(tx, context.orgId, sessionId, lock);
     if (session === undefined) throw new StockError('STOCK_NOT_FOUND', 'No such count.');
     assertInScope(request, { branchId: session.branch_id });
     if (session.status !== 'open') {

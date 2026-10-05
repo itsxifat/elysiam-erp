@@ -107,6 +107,13 @@ export const ERROR_CODES = [
   'STOCK_IN_HAND_IMMUTABLE',
   /** A stock-in-hand line has no cost per piece, and every line needs one to post. */
   'STOCK_IN_HAND_COST_REQUIRED',
+  /** The draft's pieces or location changed after the person posting it read it. */
+  'STOCK_IN_HAND_CHANGED',
+  /**
+   * A posted entry cannot be reversed now: a reversal is already waiting, or its pieces
+   * have since been costed with other stock or have left the location.
+   */
+  'STOCK_IN_HAND_REVERSAL_BLOCKED',
   /*
    * Suppliers and purchasing (M09, §7, §8).
    *

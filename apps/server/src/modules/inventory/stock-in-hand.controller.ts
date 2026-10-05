@@ -25,6 +25,7 @@ import {
   lookupQuerySchema,
   postStockInHandSchema,
   reopenWindowSchema,
+  reverseStockInHandSchema,
   stockInHandDraftSchema,
   stockInHandListSchema,
   updateStockInHandDraftSchema,
@@ -47,8 +48,8 @@ const auditable = (request: FastifyRequest): AuditableRequest =>
  *
  * - **`create Supply`** reads and writes **drafts**: warehouse, accounts and org_admin.
  *   The draft schemas carry no cost field; a warehouse clerk counts pieces in.
- * - **`read Cost`** prices and posts: org_admin and accounts. The service checks
- *   `canReadCost` again.
+ * - **`read Cost`** prices and posts, and asks to reverse a posted entry (an approval an
+ *   org admin decides): org_admin and accounts. The service checks `canReadCost` again.
  * - **`update Supply`** deletes a draft (the matrix grants `delete Supply` to nobody, so
  *   declaring it would make the route unreachable, as supply's own draft delete says).
  * - The window: **`read Stock`** reads it (everyone who works with stock sees whether
@@ -114,6 +115,24 @@ export class StockInHandController {
     const entryId = parse(stockIdSchema, id);
     const input = parse(postStockInHandSchema, body);
     return this.stockInHand.post(requireContext(request), auditable(request), entryId, input);
+  }
+
+  /**
+   * Ask to take a posted entry back out: an approval for an org admin who did not ask
+   * (D-602). `read Cost`, like posting it: whoever may credit equity with stock may ask to
+   * debit it back, and a second person decides.
+   */
+  @RequireAbility('read', 'Cost')
+  @Post(':id/reverse')
+  async reverse(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    const entryId = parse(stockIdSchema, id);
+    const input = parse(reverseStockInHandSchema, body);
+    return this.stockInHand.requestReversal(
+      requireContext(request),
+      auditable(request),
+      entryId,
+      input,
+    );
   }
 
   // --- drafts (quantities only) ---------------------------------------------------------

@@ -175,6 +175,18 @@ const en = {
   'st.inHand.deleteDraftHelp': 'The counted quantities are thrown away. Nothing was posted.',
   'st.inHand.priceTitle': 'Enter what each piece cost',
   'st.inHand.priceHelp': 'Every line needs a cost per piece above zero, in taka.',
+  'st.inHand.changed':
+    'Someone changed this draft after you opened it. Check the pieces below, then post again.',
+  'st.inHand.reversed': 'Reversed',
+  'st.inHand.reverse': 'Reverse this entry',
+  'st.inHand.reverseTitle': 'Reverse this entry?',
+  'st.inHand.reverseHelp':
+    'For an entry made by mistake, such as a shelf counted in twice. A second admin approves it; then its pieces come out of stock and the books are reversed. If the products have since been costed together with other stock, correct it with a stock count instead.',
+  'st.inHand.reverseReason': 'Why it is being reversed',
+  'st.inHand.reverseAsk': 'Ask to reverse',
+  'st.inHand.reverseSent': 'Sent for approval. The entry is reversed once a second admin approves.',
+  'st.inHand.reverseBlocked':
+    'This entry cannot be reversed now: a reversal is already waiting, or its products have been costed together with other stock since. Correct it with a stock count.',
   'st.window.title': 'Opening stock',
   'st.window.open': 'Open',
   'st.window.closed': 'Closed',

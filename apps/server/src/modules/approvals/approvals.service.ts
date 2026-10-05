@@ -193,6 +193,8 @@ const EXECUTOR_REQUIRED_TYPES: readonly ApprovalType[] = [
   'credential_reset',
   // M38a: only the inventory module's executor reopens the opening stock window (D-602).
   'opening_stock_reopen',
+  // M38a: and only it takes a posted stock-in-hand entry back out (D-602).
+  'stock_in_hand_reversal',
 ];
 
 /**
@@ -217,6 +219,9 @@ export const MODULE_RAISED_TYPES: readonly ApprovalType[] = [
   'credential_reset',
   // M38a: raised only by `POST /v1/inventory/stock-in-hand/window/reopen` (D-602).
   'opening_stock_reopen',
+  // M38a: the payload names the entry the executor reverses; raised only by
+  // `POST /v1/inventory/stock-in-hand/:id/reverse` (D-602).
+  'stock_in_hand_reversal',
 ];
 
 function magnitude(amount: bigint): bigint {
@@ -326,13 +331,18 @@ export class ApprovalsService {
    * Is a request of this type already pending whose payload names this value
    * under this key? Lets an owning module refuse a duplicate (a second reopen
    * of the same period) without reading this module's tables (invariant 12).
+   *
+   * `tx`: the owning module's transaction, so the check and the request it guards see the
+   * same rows under the module's own lock (M38a, the ledger audit's W5). Omitted, it opens
+   * its own.
    */
   async hasPending(
     context: ActiveContext,
     input: { type: ApprovalType; payloadKey: string; value: string },
+    tx?: Tx,
   ): Promise<boolean> {
-    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-      const rows = await tx.execute<{ found: boolean }>(sql`
+    const work = async (inner: Tx) => {
+      const rows = await inner.execute<{ found: boolean }>(sql`
         select exists (
           select 1 from approvals.approval_requests
           where org_id = ${context.orgId}
@@ -342,7 +352,9 @@ export class ApprovalsService {
         ) as found
       `);
       return rows[0]?.found === true;
-    });
+    };
+    if (tx !== undefined) return work(tx);
+    return withOrg({ orgId: context.orgId, userId: context.userId }, work);
   }
 
   async isRequired(

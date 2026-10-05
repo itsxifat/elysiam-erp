@@ -11,8 +11,8 @@ import { enrolSecondFactor, signIn, user } from './stack/helpers.js';
  * already in hand at a cost per piece, prints exactly one sticker per piece on a thermal
  * roll (a real PDF from the real Gotenberg, its pages the sticker's size), then a barcode
  * scanner (fast keystrokes and Enter, as a USB scanner sends them) opens that product at the
- * scanned variant, and the stock in hand screen shows the entry. Screenshots go to
- * `docs/review/M38a/`.
+ * scanned variant, the stock in hand screen shows the entry, and a second entry counted in by
+ * mistake is sent to a second admin to reverse. Screenshots go to `docs/review/M38a/`.
  *
  * The opening stock window is left open: closing it is the brand's one-way decision, covered
  * over HTTP in `stock-in-hand.e2e.test.ts`, and the suites after this one still receive
@@ -265,4 +265,30 @@ test('stock in hand: the window, the entry, and a scan adding a piece', async ()
   await expect(lines.getByLabel(new RegExp(`^Pieces ${PRODUCT}`))).toHaveValue('2');
   await noBlockingViolations('stock in hand');
   await shot('06-stock-in-hand');
+});
+
+test('a shelf counted in by mistake is sent to a second admin to reverse', async () => {
+  // Post the two scanned pieces, at the cost the product came in at.
+  await page.locator('#in-hand-cost').fill('850');
+  await page.getByTestId('save-in-hand').click();
+  const stickers = page.getByRole('dialog', { name: 'Print stickers' });
+  await expect(stickers).toBeVisible();
+  await stickers.getByRole('button', { name: 'Close' }).first().click();
+
+  const entries = page.getByRole('table', { name: 'Entries' });
+  const newest = entries.getByRole('row').nth(1);
+  await expect(newest).toContainText('Posted');
+  await expect(newest).toContainText('2');
+  await newest.getByRole('button', { name: 'Reverse this entry' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Reverse this entry?' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Why it is being reversed').fill('These two were counted on shelf A too');
+  await noBlockingViolations('reverse entry');
+  await shot('07-reverse-entry');
+  await dialog.getByRole('button', { name: 'Ask to reverse' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('status').filter({ hasText: 'Sent for approval' })).toBeVisible();
+  // Nothing moves until the second admin approves: the entry still reads Posted.
+  await expect(newest).toContainText('Posted');
 });

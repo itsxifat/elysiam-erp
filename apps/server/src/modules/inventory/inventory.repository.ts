@@ -917,15 +917,22 @@ export async function freezeCountLines(
   return rows.length;
 }
 
+/**
+ * A count session, optionally locked (M38a's ledger audit, N7): `share` while a figure or a
+ * scan is written to it, `update` while it is submitted, so a submit waits for every scan in
+ * flight and a scan after the submit sees it submitted.
+ */
 export async function countSessionById(
   tx: Tx,
   orgId: string,
   id: string,
+  lock?: 'share' | 'update',
 ): Promise<CountSessionRow | undefined> {
   const rows = await tx.execute<CountSessionRow>(sql`
     select id, location_id, branch_id, status::text as status, memo, created_by
     from inventory.count_sessions
     where org_id = ${orgId} and id = ${id}
+    ${lock === 'share' ? sql`for share` : lock === 'update' ? sql`for update` : sql``}
   `);
   return rows[0];
 }

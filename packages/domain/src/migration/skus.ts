@@ -186,6 +186,15 @@ export function reviewSkus(table: CsvTable, refs: SkusRefs): SkusReview {
           column: 'barcode',
           message: 'A Code 128 barcode holds printable ASCII, up to 48 characters.',
         });
+      } else if (/^2\d{12}$/.test(barcodeText)) {
+        // The ERP numbers its own SKUs in this range (D-603): an imported one could equal a
+        // number this same import hands another SKU, or one handed out later.
+        problems.push({
+          line,
+          column: 'barcode',
+          message:
+            'Thirteen digits starting with 2 are the ERP’s own barcodes; leave the cell empty and the ERP gives the SKU one.',
+        });
       } else {
         const first = barcodes.claim(barcodeText, line);
         if (first !== undefined) {

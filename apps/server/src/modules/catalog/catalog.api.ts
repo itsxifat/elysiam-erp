@@ -2,7 +2,7 @@ import type { RequestContext, Tx } from '@elysium/db';
 import { poisha, variantKey } from '@elysium/domain';
 import { importSlug, type ImportProduct, type SkusRefs } from '@elysium/domain/migration';
 
-import { nextInternalBarcodes } from './barcodes.js';
+import { assertNotInternal, nextInternalBarcodes } from './barcodes.js';
 import * as repo from './catalog.repository.js';
 import * as web from './catalog-web.repository.js';
 
@@ -429,6 +429,11 @@ export class CatalogApiService implements CatalogApi {
     actor: { readonly orgId: string; readonly userId: string },
     products: readonly ImportProduct[],
   ): Promise<{ readonly products: number; readonly skus: number }> {
+    // The file's parser refuses these already; a barcode in the ERP's own range could equal
+    // a number handed to another SKU of this same import (D-603).
+    for (const product of products) {
+      for (const sku of product.skus) assertNotInternal(sku.barcode, null);
+    }
     const slugs = new Set(
       (await repo.productNamesAndSlugs(tx, actor.orgId)).map((row) => row.slug),
     );

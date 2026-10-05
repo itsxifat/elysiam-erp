@@ -74,19 +74,26 @@ export const createStockInHandSchema = z
   })
   .strict();
 
-/** Price a draft and post it. Every line of the draft is priced, and only those. */
+/**
+ * Price a draft and post it. Every line of the draft is priced, and only those, and the
+ * request repeats the location and the pieces the person posting it read: a draft changed
+ * since (another phone, the warehouse) is refused with `STOCK_IN_HAND_CHANGED`, so equity is
+ * never credited for pieces nobody who could see the cost looked at.
+ */
 export const postStockInHandSchema = z
   .object({
-    lines: z
-      .array(z.object({ skuId: stockIdSchema, unitCostPoisha: costSchema }).strict())
-      .min(1)
-      .max(500)
-      .refine(uniqueSkus, 'Price each SKU once.'),
+    locationId: stockIdSchema,
+    lines: pricedLines,
   })
   .strict();
 
+/** Ask to take a posted entry back out: a reason, which the checker reads. */
+export const reverseStockInHandSchema = z
+  .object({ reason: z.string().trim().min(3, 'Say why it is being reversed.').max(500) })
+  .strict();
+
 export const stockInHandListSchema = z
-  .object({ status: z.enum(['draft', 'posted']).optional() })
+  .object({ status: z.enum(['draft', 'posted', 'reversed']).optional() })
   .strict();
 
 /** Closing the window: an optional word on why now. */
@@ -114,6 +121,7 @@ export type StockInHandDraftInput = z.infer<typeof stockInHandDraftSchema>;
 export type UpdateStockInHandDraftInput = z.infer<typeof updateStockInHandDraftSchema>;
 export type CreateStockInHandInput = z.infer<typeof createStockInHandSchema>;
 export type PostStockInHandInput = z.infer<typeof postStockInHandSchema>;
+export type ReverseStockInHandInput = z.infer<typeof reverseStockInHandSchema>;
 export type StockInHandListQuery = z.infer<typeof stockInHandListSchema>;
 export type CloseWindowInput = z.infer<typeof closeWindowSchema>;
 export type ReopenWindowInput = z.infer<typeof reopenWindowSchema>;

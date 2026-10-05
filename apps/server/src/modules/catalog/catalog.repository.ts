@@ -759,9 +759,10 @@ export async function productNamesAndSlugs(
 export async function allSkuCodesAndPrices(
   tx: Tx,
   orgId: string,
-): Promise<{ code: string; price_poisha: string }[]> {
-  const rows = await tx.execute<{ code: string; price_poisha: string }>(sql`
-    select code, price_poisha from catalog.skus where org_id = ${orgId} and status = 'active'
+): Promise<{ code: string; price_poisha: string; barcode: string | null }[]> {
+  const rows = await tx.execute<{ code: string; price_poisha: string; barcode: string | null }>(sql`
+    select code, price_poisha, barcode from catalog.skus
+    where org_id = ${orgId} and status = 'active'
   `);
   return [...rows];
 }

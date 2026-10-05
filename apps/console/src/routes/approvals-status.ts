@@ -73,6 +73,7 @@ const TYPE_KEYS: Readonly<Record<ApprovalType, ConsoleMessageKey>> = {
   loan_repayment: 'approvals.type.loan_repayment',
   credential_reset: 'approvals.type.credential_reset',
   opening_stock_reopen: 'approvals.type.opening_stock_reopen',
+  stock_in_hand_reversal: 'approvals.type.stock_in_hand_reversal',
 };
 
 /**

@@ -58,10 +58,11 @@ export async function lockWindow(
   return row;
 }
 
+/** `closed_at` is stamped by the window's trigger, to the millisecond (D-602). */
 export async function closeWindow(tx: Tx, orgId: string, userId: string): Promise<WindowRow> {
   const rows = await tx.execute<WindowRow>(sql`
     update inventory.opening_stock_windows
-    set status = 'closed', closed_at = now(), closed_by = ${userId}
+    set status = 'closed', closed_by = ${userId}
     where org_id = ${orgId}
     returning ${WINDOW_COLUMNS}
   `);
@@ -75,10 +76,10 @@ export async function reopenWindow(
   orgId: string,
   input: { readonly approvalId: string; readonly userId: string },
 ): Promise<WindowRow | undefined> {
+  // `reopened_at` is stamped by the trigger, which also checks the approval (D-602).
   const rows = await tx.execute<WindowRow>(sql`
     update inventory.opening_stock_windows
-    set status = 'open', reopen_approval_id = ${input.approvalId}, reopened_at = now(),
-        reopened_by = ${input.userId}
+    set status = 'open', reopen_approval_id = ${input.approvalId}, reopened_by = ${input.userId}
     where org_id = ${orgId} and status = 'closed'
     returning ${WINDOW_COLUMNS}
   `);
@@ -87,11 +88,13 @@ export async function reopenWindow(
 
 // --- entries ------------------------------------------------------------------------------
 
+export type EntryStatus = 'draft' | 'posted' | 'reversed';
+
 export interface EntryRow extends Record<string, unknown> {
   readonly id: string;
   readonly location_id: string;
   readonly branch_id: string | null;
-  readonly status: 'draft' | 'posted';
+  readonly status: EntryStatus;
   readonly memo: string | null;
   readonly occurred_at: string | Date | null;
   readonly business_date: string | null;
@@ -100,11 +103,14 @@ export interface EntryRow extends Record<string, unknown> {
   readonly posted_by: string | null;
   readonly posted_at: string | Date | null;
   readonly created_at: string | Date;
+  readonly reversal_journal_id: string | null;
+  readonly reversed_by: string | null;
+  readonly reversed_at: string | Date | null;
 }
 
 const ENTRY_COLUMNS = sql`e.id, e.location_id, e.branch_id, e.status, e.memo, e.occurred_at,
   e.business_date::text as business_date, e.journal_id, e.created_by, e.posted_by, e.posted_at,
-  e.created_at`;
+  e.created_at, e.reversal_journal_id, e.reversed_by, e.reversed_at`;
 
 export async function entryById(tx: Tx, orgId: string, id: string): Promise<EntryRow | undefined> {
   const rows = await tx.execute<EntryRow>(sql`
@@ -186,6 +192,31 @@ export async function markPosted(
   `);
 }
 
+/**
+ * A posted entry, taken back out by its approved reversal (D-602). The trigger checks the
+ * journal reverses the entry's and the approval names it; `reversed_at` is the clock's.
+ */
+export async function markReversed(
+  tx: Tx,
+  orgId: string,
+  id: string,
+  input: {
+    readonly reversalJournalId: string;
+    readonly approvalId: string;
+    readonly reversedBy: string;
+  },
+): Promise<boolean> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    update inventory.stock_in_hand_entries
+    set status = 'reversed', reversal_journal_id = ${input.reversalJournalId},
+        reversal_approval_id = ${input.approvalId}, reversed_by = ${input.reversedBy},
+        reversed_at = now()
+    where org_id = ${orgId} and id = ${id} and status = 'posted'
+    returning id
+  `);
+  return rows.length === 1;
+}
+
 export async function deleteDraft(tx: Tx, orgId: string, id: string): Promise<number> {
   const rows = await tx.execute<{ id: string }>(sql`
     delete from inventory.stock_in_hand_entries
@@ -205,7 +236,7 @@ export interface EntryListRow extends EntryRow {
 export async function listEntries(
   tx: Tx,
   orgId: string,
-  filters: { readonly scope: SQL; readonly status?: 'draft' | 'posted' | undefined },
+  filters: { readonly scope: SQL; readonly status?: EntryStatus | undefined },
 ): Promise<EntryListRow[]> {
   const rows = await tx.execute<EntryListRow>(sql`
     select ${ENTRY_COLUMNS},

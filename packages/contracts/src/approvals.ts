@@ -52,6 +52,13 @@ export const APPROVAL_TYPES = [
    * raised only by the inventory module, decided by a second org admin.
    */
   'opening_stock_reopen',
+  /**
+   * M38a: reversing a posted stock-in-hand entry while the window is open (D-602). Takes
+   * the pieces out again and debits opening balance equity, so it is a write-off of stock
+   * in all but name: valued at what the entry posted (a cost figure), never auto-approved,
+   * raised only by the inventory module, decided by an org admin who did not ask.
+   */
+  'stock_in_hand_reversal',
 ] as const;
 
 export const approvalTypeSchema = z.enum(APPROVAL_TYPES);
@@ -82,6 +89,8 @@ export const NO_AMOUNT_APPROVAL_TYPES: readonly ApprovalType[] = [
 export const NEVER_AUTO_APPROVE_TYPES: readonly ApprovalType[] = [
   ...NO_AMOUNT_APPROVAL_TYPES,
   'back_dated_entry',
+  // M38a (D-602): taking counted stock back out against equity; never "small".
+  'stock_in_hand_reversal',
 ];
 
 /**
@@ -129,6 +138,8 @@ export const SERVER_DERIVED_AMOUNT_TYPES: readonly ApprovalType[] = [
 export const COST_VALUED_APPROVAL_TYPES: readonly ApprovalType[] = [
   'stock_write_off',
   'stock_gain',
+  // M38a: the amount is what the entry's pieces cost (D-602).
+  'stock_in_hand_reversal',
 ];
 
 /**

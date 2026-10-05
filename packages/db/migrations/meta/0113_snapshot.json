@@ -1,5 +1,5 @@
 {
-  "id": "0e355fdc-90d8-44b7-ba0f-e6ebe6d960ed",
+  "id": "08752e27-b2cb-4125-a74d-549eb1b0105e",
   "prevId": "2bec534c-ed39-40f7-baf2-e178eb8bb766",
   "version": "7",
   "dialect": "postgresql",
@@ -1605,7 +1605,7 @@
         },
         "approval_requests_never_auto_approved": {
           "name": "approval_requests_never_auto_approved",
-          "value": "\"approvals\".\"approval_requests\".\"status\"::text <> 'auto_approved' or \"approvals\".\"approval_requests\".\"type\"::text not in ('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry', 'credential_reset', 'opening_stock_reopen')"
+          "value": "\"approvals\".\"approval_requests\".\"status\"::text <> 'auto_approved' or \"approvals\".\"approval_requests\".\"type\"::text not in ('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry', 'credential_reset', 'opening_stock_reopen', 'stock_in_hand_reversal')"
         },
         "approval_requests_branch_items_never_auto_approved": {
           "name": "approval_requests_branch_items_never_auto_approved",
@@ -1715,7 +1715,7 @@
       "checkConstraints": {
         "approval_thresholds_never_for_controls": {
           "name": "approval_thresholds_never_for_controls",
-          "value": "\"approvals\".\"approval_thresholds\".\"type\"::text not in ('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry', 'credential_reset', 'opening_stock_reopen')"
+          "value": "\"approvals\".\"approval_thresholds\".\"type\"::text not in ('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry', 'credential_reset', 'opening_stock_reopen', 'stock_in_hand_reversal')"
         },
         "approval_thresholds_not_negative": {
           "name": "approval_thresholds_not_negative",
@@ -13361,6 +13361,30 @@
           "primaryKey": false,
           "notNull": false
         },
+        "reversal_journal_id": {
+          "name": "reversal_journal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reversal_approval_id": {
+          "name": "reversal_approval_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reversed_by": {
+          "name": "reversed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reversed_at": {
+          "name": "reversed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -13475,6 +13499,26 @@
           "columnsTo": ["org_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
+        },
+        "stock_in_hand_entries_org_id_reversal_journal_id_fk": {
+          "name": "stock_in_hand_entries_org_id_reversal_journal_id_fk",
+          "tableFrom": "stock_in_hand_entries",
+          "tableTo": "journals",
+          "schemaTo": "ledger",
+          "columnsFrom": ["org_id", "reversal_journal_id"],
+          "columnsTo": ["org_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "stock_in_hand_entries_org_id_reversal_approval_id_fk": {
+          "name": "stock_in_hand_entries_org_id_reversal_approval_id_fk",
+          "tableFrom": "stock_in_hand_entries",
+          "tableTo": "approval_requests",
+          "schemaTo": "approvals",
+          "columnsFrom": ["org_id", "reversal_approval_id"],
+          "columnsTo": ["org_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -13489,7 +13533,7 @@
       "checkConstraints": {
         "stock_in_hand_entries_status_known": {
           "name": "stock_in_hand_entries_status_known",
-          "value": "\"inventory\".\"stock_in_hand_entries\".\"status\" in ('draft', 'posted')"
+          "value": "\"inventory\".\"stock_in_hand_entries\".\"status\" in ('draft', 'posted', 'reversed')"
         },
         "stock_in_hand_entries_memo_length": {
           "name": "stock_in_hand_entries_memo_length",
@@ -13497,7 +13541,11 @@
         },
         "stock_in_hand_entries_posted_is_complete": {
           "name": "stock_in_hand_entries_posted_is_complete",
-          "value": "case \"inventory\".\"stock_in_hand_entries\".\"status\"\n            when 'posted' then \"inventory\".\"stock_in_hand_entries\".\"journal_id\" is not null and \"inventory\".\"stock_in_hand_entries\".\"occurred_at\" is not null\n              and \"inventory\".\"stock_in_hand_entries\".\"business_date\" is not null and \"inventory\".\"stock_in_hand_entries\".\"posted_by\" is not null\n              and \"inventory\".\"stock_in_hand_entries\".\"posted_at\" is not null\n            else \"inventory\".\"stock_in_hand_entries\".\"journal_id\" is null and \"inventory\".\"stock_in_hand_entries\".\"occurred_at\" is null\n              and \"inventory\".\"stock_in_hand_entries\".\"business_date\" is null and \"inventory\".\"stock_in_hand_entries\".\"posted_by\" is null\n              and \"inventory\".\"stock_in_hand_entries\".\"posted_at\" is null\n          end"
+          "value": "case \"inventory\".\"stock_in_hand_entries\".\"status\"\n            when 'draft' then \"inventory\".\"stock_in_hand_entries\".\"journal_id\" is null and \"inventory\".\"stock_in_hand_entries\".\"occurred_at\" is null\n              and \"inventory\".\"stock_in_hand_entries\".\"business_date\" is null and \"inventory\".\"stock_in_hand_entries\".\"posted_by\" is null\n              and \"inventory\".\"stock_in_hand_entries\".\"posted_at\" is null\n            else \"inventory\".\"stock_in_hand_entries\".\"journal_id\" is not null and \"inventory\".\"stock_in_hand_entries\".\"occurred_at\" is not null\n              and \"inventory\".\"stock_in_hand_entries\".\"business_date\" is not null and \"inventory\".\"stock_in_hand_entries\".\"posted_by\" is not null\n              and \"inventory\".\"stock_in_hand_entries\".\"posted_at\" is not null\n          end"
+        },
+        "stock_in_hand_entries_reversal_is_complete": {
+          "name": "stock_in_hand_entries_reversal_is_complete",
+          "value": "case \"inventory\".\"stock_in_hand_entries\".\"status\"\n            when 'reversed' then \"inventory\".\"stock_in_hand_entries\".\"reversal_journal_id\" is not null\n              and \"inventory\".\"stock_in_hand_entries\".\"reversal_approval_id\" is not null and \"inventory\".\"stock_in_hand_entries\".\"reversed_by\" is not null\n              and \"inventory\".\"stock_in_hand_entries\".\"reversed_at\" is not null\n            else \"inventory\".\"stock_in_hand_entries\".\"reversal_journal_id\" is null and \"inventory\".\"stock_in_hand_entries\".\"reversal_approval_id\" is null\n              and \"inventory\".\"stock_in_hand_entries\".\"reversed_by\" is null and \"inventory\".\"stock_in_hand_entries\".\"reversed_at\" is null\n          end"
         }
       },
       "isRLSEnabled": false
@@ -31655,7 +31703,8 @@
         "investor_withdrawal",
         "loan_repayment",
         "credential_reset",
-        "opening_stock_reopen"
+        "opening_stock_reopen",
+        "stock_in_hand_reversal"
       ]
     },
     "audit.audit_operation": {

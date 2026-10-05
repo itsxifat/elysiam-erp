@@ -3357,6 +3357,7 @@ const en = {
   'nav.users': 'Staff',
   'approvals.type.credential_reset': 'Sign-in reset',
   'approvals.type.opening_stock_reopen': 'Reopen opening stock',
+  'approvals.type.stock_in_hand_reversal': 'Reverse stock in hand',
   'auth.inactive': 'This account is not active. Ask your admin for access.',
   'setPassword.inviteTitle': 'Set your password',
   'setPassword.resetTitle': 'Choose a new password',

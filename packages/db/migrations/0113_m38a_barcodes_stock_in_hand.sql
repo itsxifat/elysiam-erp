@@ -1,4 +1,5 @@
 ALTER TYPE "approvals"."approval_type" ADD VALUE 'opening_stock_reopen';--> statement-breakpoint
+ALTER TYPE "approvals"."approval_type" ADD VALUE 'stock_in_hand_reversal';--> statement-breakpoint
 CREATE TABLE "inventory"."count_scans" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"org_id" uuid NOT NULL,
@@ -42,18 +43,29 @@ CREATE TABLE "inventory"."stock_in_hand_entries" (
 	"created_by" text NOT NULL,
 	"posted_by" text,
 	"posted_at" timestamp with time zone,
+	"reversal_journal_id" uuid,
+	"reversal_approval_id" uuid,
+	"reversed_by" text,
+	"reversed_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "stock_in_hand_entries_org_id_id_key" UNIQUE("org_id","id"),
-	CONSTRAINT "stock_in_hand_entries_status_known" CHECK ("inventory"."stock_in_hand_entries"."status" in ('draft', 'posted')),
+	CONSTRAINT "stock_in_hand_entries_status_known" CHECK ("inventory"."stock_in_hand_entries"."status" in ('draft', 'posted', 'reversed')),
 	CONSTRAINT "stock_in_hand_entries_memo_length" CHECK ("inventory"."stock_in_hand_entries"."memo" is null or length("inventory"."stock_in_hand_entries"."memo") <= 500),
 	CONSTRAINT "stock_in_hand_entries_posted_is_complete" CHECK (case "inventory"."stock_in_hand_entries"."status"
-            when 'posted' then "inventory"."stock_in_hand_entries"."journal_id" is not null and "inventory"."stock_in_hand_entries"."occurred_at" is not null
-              and "inventory"."stock_in_hand_entries"."business_date" is not null and "inventory"."stock_in_hand_entries"."posted_by" is not null
-              and "inventory"."stock_in_hand_entries"."posted_at" is not null
-            else "inventory"."stock_in_hand_entries"."journal_id" is null and "inventory"."stock_in_hand_entries"."occurred_at" is null
+            when 'draft' then "inventory"."stock_in_hand_entries"."journal_id" is null and "inventory"."stock_in_hand_entries"."occurred_at" is null
               and "inventory"."stock_in_hand_entries"."business_date" is null and "inventory"."stock_in_hand_entries"."posted_by" is null
               and "inventory"."stock_in_hand_entries"."posted_at" is null
+            else "inventory"."stock_in_hand_entries"."journal_id" is not null and "inventory"."stock_in_hand_entries"."occurred_at" is not null
+              and "inventory"."stock_in_hand_entries"."business_date" is not null and "inventory"."stock_in_hand_entries"."posted_by" is not null
+              and "inventory"."stock_in_hand_entries"."posted_at" is not null
+          end),
+	CONSTRAINT "stock_in_hand_entries_reversal_is_complete" CHECK (case "inventory"."stock_in_hand_entries"."status"
+            when 'reversed' then "inventory"."stock_in_hand_entries"."reversal_journal_id" is not null
+              and "inventory"."stock_in_hand_entries"."reversal_approval_id" is not null and "inventory"."stock_in_hand_entries"."reversed_by" is not null
+              and "inventory"."stock_in_hand_entries"."reversed_at" is not null
+            else "inventory"."stock_in_hand_entries"."reversal_journal_id" is null and "inventory"."stock_in_hand_entries"."reversal_approval_id" is null
+              and "inventory"."stock_in_hand_entries"."reversed_by" is null and "inventory"."stock_in_hand_entries"."reversed_at" is null
           end)
 );
 --> statement-breakpoint
@@ -85,6 +97,8 @@ ALTER TABLE "inventory"."stock_in_hand_entries" ADD CONSTRAINT "stock_in_hand_en
 ALTER TABLE "inventory"."stock_in_hand_entries" ADD CONSTRAINT "stock_in_hand_entries_org_id_location_id_fk" FOREIGN KEY ("org_id","location_id") REFERENCES "org"."locations"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "inventory"."stock_in_hand_entries" ADD CONSTRAINT "stock_in_hand_entries_org_id_branch_id_fk" FOREIGN KEY ("org_id","branch_id") REFERENCES "org"."branches"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "inventory"."stock_in_hand_entries" ADD CONSTRAINT "stock_in_hand_entries_org_id_journal_id_fk" FOREIGN KEY ("org_id","journal_id") REFERENCES "ledger"."journals"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "inventory"."stock_in_hand_entries" ADD CONSTRAINT "stock_in_hand_entries_org_id_reversal_journal_id_fk" FOREIGN KEY ("org_id","reversal_journal_id") REFERENCES "ledger"."journals"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "inventory"."stock_in_hand_entries" ADD CONSTRAINT "stock_in_hand_entries_org_id_reversal_approval_id_fk" FOREIGN KEY ("org_id","reversal_approval_id") REFERENCES "approvals"."approval_requests"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "inventory"."stock_in_hand_lines" ADD CONSTRAINT "stock_in_hand_lines_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "org"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "inventory"."stock_in_hand_lines" ADD CONSTRAINT "stock_in_hand_lines_org_id_entry_id_fk" FOREIGN KEY ("org_id","entry_id") REFERENCES "inventory"."stock_in_hand_entries"("org_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "inventory"."stock_in_hand_lines" ADD CONSTRAINT "stock_in_hand_lines_org_id_sku_id_fk" FOREIGN KEY ("org_id","sku_id") REFERENCES "catalog"."skus"("org_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -97,6 +111,6 @@ CREATE INDEX "stock_in_hand_entries_org_branch_idx" ON "inventory"."stock_in_han
 CREATE INDEX "stock_in_hand_lines_org_idx" ON "inventory"."stock_in_hand_lines" USING btree ("org_id");--> statement-breakpoint
 CREATE INDEX "stock_in_hand_lines_org_sku_idx" ON "inventory"."stock_in_hand_lines" USING btree ("org_id","sku_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "stock_in_hand_lines_org_entry_sku_idx" ON "inventory"."stock_in_hand_lines" USING btree ("org_id","entry_id","sku_id");--> statement-breakpoint
-ALTER TABLE "approvals"."approval_requests" ADD CONSTRAINT "approval_requests_never_auto_approved" CHECK ("approvals"."approval_requests"."status"::text <> 'auto_approved' or "approvals"."approval_requests"."type"::text not in ('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry', 'credential_reset', 'opening_stock_reopen'));--> statement-breakpoint
-ALTER TABLE "approvals"."approval_thresholds" ADD CONSTRAINT "approval_thresholds_never_for_controls" CHECK ("approvals"."approval_thresholds"."type"::text not in ('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry', 'credential_reset', 'opening_stock_reopen'));--> statement-breakpoint
+ALTER TABLE "approvals"."approval_requests" ADD CONSTRAINT "approval_requests_never_auto_approved" CHECK ("approvals"."approval_requests"."status"::text <> 'auto_approved' or "approvals"."approval_requests"."type"::text not in ('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry', 'credential_reset', 'opening_stock_reopen', 'stock_in_hand_reversal'));--> statement-breakpoint
+ALTER TABLE "approvals"."approval_thresholds" ADD CONSTRAINT "approval_thresholds_never_for_controls" CHECK ("approvals"."approval_thresholds"."type"::text not in ('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry', 'credential_reset', 'opening_stock_reopen', 'stock_in_hand_reversal'));--> statement-breakpoint
 ALTER TABLE "catalog"."sku_settings" ADD CONSTRAINT "sku_settings_barcode_sequence_range" CHECK ("catalog"."sku_settings"."last_barcode_sequence" between 0 and 99999999999);

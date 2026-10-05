@@ -112,11 +112,15 @@ export class CatalogImportService {
 
 function review(
   csv: string,
-  known: readonly { code: string; price_poisha: string }[],
+  known: readonly { code: string; price_poisha: string; barcode: string | null }[],
 ): PriceImportReport {
   return reviewPriceImport(
     parseCsv(csv),
-    known.map((sku) => ({ code: sku.code, pricePoisha: poisha(sku.price_poisha) })),
+    known.map((sku) => ({
+      code: sku.code,
+      pricePoisha: poisha(sku.price_poisha),
+      barcode: sku.barcode,
+    })),
   );
 }
 

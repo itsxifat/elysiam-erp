@@ -809,12 +809,15 @@ export const openingStockWindows = inventory.table(
  * Stock in hand at the start: one entry is a location and the pieces counted into it, each
  * at what it cost (M38a, D-602).
  *
- * Two states, like a supply entry (D-005): `draft` holds quantities only (warehouse counts,
- * and has no `read:cost`), `posted` has a cost on every line, its `opening_balance`
+ * Three states. `draft` holds quantities only (warehouse counts, and has no `read:cost`),
+ * like a supply entry (D-005); `posted` has a cost on every line, its `opening_balance`
  * movements and its own journal (`stock_in_hand:<id>:posted`, Dr Inventory / Cr Opening
- * balance equity). The id is the client's key, so a retried save finds the first one
- * (D-432's pattern). A posted entry never changes: the M38a policies migration's triggers
- * refuse an update or delete of a posted entry or its lines.
+ * balance equity); `reversed` is a posted entry taken back out by an approved
+ * `stock_in_hand_reversal` while the window was open: its pieces left again at the cost
+ * they came in at, and `reversal_journal_id` is the ledger's reversal of `journal_id`
+ * (invariant 2). The id is the client's key, so a retried save finds the first one (D-432's
+ * pattern). The M38a policies migration's triggers refuse any other change to a posted
+ * entry, any change at all to a reversed one, and a delete of either, or of their lines.
  */
 export const stockInHandEntries = inventory.table(
   'stock_in_hand_entries',
@@ -835,6 +838,12 @@ export const stockInHandEntries = inventory.table(
     createdBy: text('created_by').notNull(),
     postedBy: text('posted_by'),
     postedAt: timestamp('posted_at', { withTimezone: true, mode: 'date' }),
+    /** The ledger's reversal of `journal_id`; set only with `status = 'reversed'`. */
+    reversalJournalId: uuid('reversal_journal_id'),
+    /** The approved `stock_in_hand_reversal` that took the entry back out. */
+    reversalApprovalId: uuid('reversal_approval_id'),
+    reversedBy: text('reversed_by'),
+    reversedAt: timestamp('reversed_at', { withTimezone: true, mode: 'date' }),
     ...timestamps,
   },
   (table) => [
@@ -857,7 +866,20 @@ export const stockInHandEntries = inventory.table(
       columns: [table.orgId, table.journalId],
       foreignColumns: [journals.orgId, journals.id],
     }).onDelete('restrict'),
-    check('stock_in_hand_entries_status_known', sql`${table.status} in ('draft', 'posted')`),
+    foreignKey({
+      name: 'stock_in_hand_entries_org_id_reversal_journal_id_fk',
+      columns: [table.orgId, table.reversalJournalId],
+      foreignColumns: [journals.orgId, journals.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'stock_in_hand_entries_org_id_reversal_approval_id_fk',
+      columns: [table.orgId, table.reversalApprovalId],
+      foreignColumns: [approvalRequests.orgId, approvalRequests.id],
+    }).onDelete('restrict'),
+    check(
+      'stock_in_hand_entries_status_known',
+      sql`${table.status} in ('draft', 'posted', 'reversed')`,
+    ),
     check(
       'stock_in_hand_entries_memo_length',
       sql`${table.memo} is null or length(${table.memo}) <= 500`,
@@ -865,12 +887,22 @@ export const stockInHandEntries = inventory.table(
     check(
       'stock_in_hand_entries_posted_is_complete',
       sql`case ${table.status}
-            when 'posted' then ${table.journalId} is not null and ${table.occurredAt} is not null
-              and ${table.businessDate} is not null and ${table.postedBy} is not null
-              and ${table.postedAt} is not null
-            else ${table.journalId} is null and ${table.occurredAt} is null
+            when 'draft' then ${table.journalId} is null and ${table.occurredAt} is null
               and ${table.businessDate} is null and ${table.postedBy} is null
               and ${table.postedAt} is null
+            else ${table.journalId} is not null and ${table.occurredAt} is not null
+              and ${table.businessDate} is not null and ${table.postedBy} is not null
+              and ${table.postedAt} is not null
+          end`,
+    ),
+    check(
+      'stock_in_hand_entries_reversal_is_complete',
+      sql`case ${table.status}
+            when 'reversed' then ${table.reversalJournalId} is not null
+              and ${table.reversalApprovalId} is not null and ${table.reversedBy} is not null
+              and ${table.reversedAt} is not null
+            else ${table.reversalJournalId} is null and ${table.reversalApprovalId} is null
+              and ${table.reversedBy} is null and ${table.reversedAt} is null
           end`,
     ),
   ],

@@ -342,14 +342,17 @@ export function listBranchOptions(): Promise<{
 export interface OpeningStockWindow {
   readonly open: boolean;
   readonly closedAt: string | null;
-  readonly closedBy: string | null;
+  /** Only for those who may close and reopen it (`approve StockAdjustment`). */
+  readonly closedBy?: string | null;
   readonly reopenedAt: string | null;
   readonly reopenPending: boolean;
 }
 
+export type StockInHandStatus = 'draft' | 'posted' | 'reversed';
+
 export interface StockInHandListItem {
   readonly id: string;
-  readonly status: 'draft' | 'posted';
+  readonly status: StockInHandStatus;
   readonly locationId: string;
   readonly locationName: string;
   readonly memo: string | null;
@@ -358,18 +361,22 @@ export interface StockInHandListItem {
   readonly businessDate: string | null;
   readonly createdAt: string;
   readonly postedAt: string | null;
+  readonly reversedAt: string | null;
   /** Cost: absent for a role without `read Cost`. Null while a line is unpriced. */
   readonly stockValuePoisha?: string | null | undefined;
 }
 
 export interface StockInHandEntry {
   readonly id: string;
-  readonly status: 'draft' | 'posted';
+  readonly status: StockInHandStatus;
   readonly locationId: string;
   readonly locationName: string;
   readonly memo: string | null;
   readonly businessDate: string | null;
   readonly postedAt: string | null;
+  readonly reversedAt: string | null;
+  /** A reversal is waiting for a second admin. */
+  readonly reversalPending: boolean;
   readonly costWithheld: boolean;
   readonly stockValuePoisha?: string | null | undefined;
   readonly lines: readonly {
@@ -443,10 +450,24 @@ export function deleteStockInHandDraft(id: string): Promise<{ id: string }> {
   return api.delete(`/v1/inventory/stock-in-hand/drafts/${id}`);
 }
 
-/** Price a draft and post it (`read Cost`). */
+/**
+ * Price a draft and post it (`read Cost`), repeating the location and the pieces the person
+ * read: a draft changed since is refused (`STOCK_IN_HAND_CHANGED`) rather than posted.
+ */
 export function postStockInHandDraft(
   id: string,
-  lines: readonly { skuId: string; unitCostPoisha: string }[],
+  input: {
+    readonly locationId: string;
+    readonly lines: readonly { skuId: string; qty: number; unitCostPoisha: string }[];
+  },
 ): Promise<{ id: string; status: 'posted' }> {
-  return api.post(`/v1/inventory/stock-in-hand/${id}/post`, { lines });
+  return api.post(`/v1/inventory/stock-in-hand/${id}/post`, input);
+}
+
+/** Ask to take a posted entry back out: an approval a second admin decides (D-602). */
+export function requestStockInHandReversal(
+  id: string,
+  reason: string,
+): Promise<{ approvalId: string; status: string }> {
+  return api.post(`/v1/inventory/stock-in-hand/${id}/reverse`, { reason });
 }
