@@ -71,6 +71,10 @@
     "./storefront": {
       "types": "./dist/storefront/index.d.ts",
       "default": "./dist/storefront/index.js"
+    },
+    "./barcode": {
+      "types": "./dist/barcode/index.d.ts",
+      "default": "./dist/barcode/index.js"
     }
   },
   "files": [

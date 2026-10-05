@@ -17,6 +17,8 @@ export * from './wallet-transfer.js';
 // at weighted average, and the two adjustments that need an approval.
 // M14a: the opening-balance journal, whose equity line is a declared plug (D-213).
 export * from './opening-balance.js';
+// M38a: stock a brand already holds when it starts, one journal per entry (D-602).
+export * from './stock-in-hand.js';
 export * from './supply-received.js';
 export * from './supplier-return.js';
 export * from './handover.js';
