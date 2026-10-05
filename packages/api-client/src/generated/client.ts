@@ -639,6 +639,7 @@ export const OPERATIONS = {
     path: '/v1/analytics/rollups/refresh',
     ability: 'update:Dashboard',
   },
+  postV1AuthOwnerLink: { method: 'POST', path: '/v1/auth/owner-link', ability: 'public' },
   postV1CatalogAttributes: {
     method: 'POST',
     path: '/v1/catalog/attributes',
@@ -1926,6 +1927,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/analytics/rollups/refresh */
     postV1AnalyticsRollupsRefresh: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1AnalyticsRollupsRefresh, undefined, options),
+    /** POST /v1/auth/owner-link */
+    postV1AuthOwnerLink: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1AuthOwnerLink, undefined, options),
     /** POST /v1/catalog/attributes */
     postV1CatalogAttributes: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogAttributes, undefined, options),
