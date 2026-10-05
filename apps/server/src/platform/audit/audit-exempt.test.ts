@@ -46,6 +46,7 @@ describe('@AuditExempt', () => {
       'modules/files/files.controller.ts#upload',
       // M35b: the packing scanner app's sign-in (the device it creates is audited by the
       // packing module in its own transaction) and sign-out (the device row says when).
+      'modules/iam/scanner-sign-in.ts#login',
       'modules/iam/scanner-sign-in.ts#post',
       // ncom.bd's connector (M35b, D-553, D-556): no session and no person. A stock read and an
       // unknown address change nothing; holds, handovers and webhooks are recorded in the

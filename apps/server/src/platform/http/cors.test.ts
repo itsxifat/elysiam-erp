@@ -29,6 +29,7 @@ beforeAll(async () => {
   }
   app.get('/v1/scanner/shipment', () => ({ found: false }));
   app.post('/v1/scanner/sign-in', () => ({ ok: true }));
+  app.get('/api/admin/scanner/shipment', () => ({ found: false }));
   await app.ready();
 });
 
@@ -122,6 +123,21 @@ describe('the scanner device routes', () => {
       url: '/v1/scanner/sign-in',
       headers: { origin: APP, 'content-type': 'application/json' },
       payload: '{}',
+    });
+
+    expect(response.headers['access-control-allow-origin']).toBe(APP);
+    expect(response.headers['access-control-allow-credentials']).toBeUndefined();
+  });
+
+  it('answers the app as it ships at the old address the same way', async () => {
+    const response = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/admin/scanner/shipment?code=EL-1001',
+      headers: {
+        origin: APP,
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'authorization',
+      },
     });
 
     expect(response.headers['access-control-allow-origin']).toBe(APP);

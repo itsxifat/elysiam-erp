@@ -146,6 +146,8 @@ const SIGNED_MACHINE_PREFIXES = [
   '/ncom/',
   '/v1/scanner/sign-in',
   '/v1/scanner/sign-out',
+  // The scanner app as it ships signs in at the old site's address (D-554).
+  '/api/admin/scanner/login',
 ] as const;
 
 function isSignedMachineRoute(url: string): boolean {

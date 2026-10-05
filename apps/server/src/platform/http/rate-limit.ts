@@ -63,6 +63,7 @@ export const CREDENTIAL_RULES: Readonly<Record<string, RateLimitRule>> = {
   // console's; the old site allowed eight tries in ten minutes per address, and so does this,
   // per address and per email.
   '/v1/scanner/sign-in': { windowSeconds: 600, perIp: 8, perIdentifier: 8 },
+  '/api/admin/scanner/login': { windowSeconds: 600, perIp: 8, perIdentifier: 8 },
 };
 
 /**

@@ -224,6 +224,51 @@ describe('a scanner phone (check 5)', () => {
     expect((await lookup(live, orderNo)).status).toBe(401);
   });
 
+  it('answers the app as it ships at the old addresses, in its words', async () => {
+    const person = await harness.asRole('warehouse', ORG_A);
+    const wrong = await post('/api/admin/scanner/login', {
+      email: person.email,
+      password: 'not-it-at-all',
+    });
+    expect(wrong.status).toBe(401);
+    // The app shows `error`.
+    expect(wrong.body).toMatchObject({ code: 'SCANNER_CREDENTIALS_INVALID' });
+    expect(typeof wrong.body.error).toBe('string');
+
+    const signedIn = await post('/api/admin/scanner/login', {
+      email: person.email,
+      password: PASSWORD,
+    });
+    expect(signedIn.status).toBe(200);
+    expect(signedIn.body.user).toMatchObject({ email: person.email, role: 'warehouse' });
+    const found = await harness.server.inject({
+      method: 'GET',
+      url: `/api/admin/scanner/shipment?code=${encodeURIComponent(orderNo)}`,
+      headers: {
+        authorization: `Bearer ${signedIn.body.token as string}`,
+        origin: 'https://localhost',
+      },
+    });
+    expect(found.statusCode).toBe(200);
+    expect(JSON.parse(found.body)).toMatchObject({ found: true, order: { orderNumber: orderNo } });
+  });
+
+  it('refuses a token past its thirty days', async () => {
+    const token = `sdt_${ORG_A.replaceAll('-', '')}_${'x'.repeat(43)}`;
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          insert into packing.scanner_devices
+            (org_id, user_id, label, token_sha256, via, expires_at, created_at)
+          values (${ORG_A}, ${packer.userId}, 'Old phone',
+                  encode(sha256(${token}::bytea), 'hex'), 'console',
+                  now() - interval '1 day', now() - interval '31 days')
+        `),
+      { orgId: ORG_A },
+    );
+    expect((await lookup(token, orderNo)).status).toBe(401);
+  });
+
   it('asks an account with two-step sign-in for its code, and takes the right one', async () => {
     const person = await adminWithAuthenticator();
     const noCode = await post('/v1/scanner/sign-in', { email: person.email, password: PASSWORD });

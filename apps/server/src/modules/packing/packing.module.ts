@@ -9,7 +9,11 @@ import { StorefrontModule } from '../storefront/storefront.module.js';
 import { OrderLabelsService } from './order-labels.service.js';
 import { PACKING_API, PackingApiService } from './packing.api.js';
 import { PackingController } from './packing.controller.js';
-import { ScannerController, ScannerDeviceGuard } from './scanner.controller.js';
+import {
+  ScannerAppController,
+  ScannerController,
+  ScannerDeviceGuard,
+} from './scanner.controller.js';
 import { ScannerService } from './scanner.service.js';
 
 /**
@@ -20,7 +24,7 @@ import { ScannerService } from './scanner.service.js';
  */
 @Module({
   imports: [OrdersModule, CatalogModule, StorefrontModule, FilesModule, IamDirectoryModule],
-  controllers: [ScannerController, PackingController],
+  controllers: [ScannerController, ScannerAppController, PackingController],
   providers: [
     AuditService,
     ScannerService,

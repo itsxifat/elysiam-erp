@@ -1616,6 +1616,8 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   (`POST /v1/scanner/sign-in`, Better Auth's own checks, no session kept), then reads
   `GET /v1/scanner/shipment?code=` in the person's own order scope (order number or the
   courier's parcel codes). Those three routes are exempt from CSRF and allow any origin without
-  credentials (the app is not a browser page). The console's **Orders → Scan** does the same
+  credentials (the app is not a browser page). The app as it ships calls the old site's
+  `/api/admin/scanner/login` and `/shipment`, which the ERP serves too, answering refusals as
+  `{ error, code }`. The console's **Orders → Scan** does the same
   lookup and pairs or signs out phones. `POST /v1/packing/labels` renders the old site's label
   sheet (eight paper sizes, QR codes drawn in-house from `uqr`) through Gotenberg.

@@ -11,7 +11,11 @@ import { OwnerLinkService } from './owner-link.service.js';
 import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
 import { PackingModule } from '../packing/packing.module.js';
-import { ScannerSignInController, ScannerSignInService } from './scanner-sign-in.js';
+import {
+  ScannerAppSignInController,
+  ScannerSignInController,
+  ScannerSignInService,
+} from './scanner-sign-in.js';
 
 /**
  * Identity (architecture §6). Exports the service so later modules can resolve
@@ -38,7 +42,13 @@ export class IamModule {
       module: IamModule,
       // M35b: the packing module issues the scanner device the sign-in checks for (D-554).
       imports: [ApprovalsModule, PackingModule],
-      controllers: [IamController, UsersController, OwnerLinkController, ScannerSignInController],
+      controllers: [
+        IamController,
+        UsersController,
+        OwnerLinkController,
+        ScannerSignInController,
+        ScannerAppSignInController,
+      ],
       providers: [
         IamService,
         UsersService,

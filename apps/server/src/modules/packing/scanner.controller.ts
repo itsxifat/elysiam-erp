@@ -9,19 +9,21 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UnauthorizedException,
   UseGuards,
   type CanActivate,
   type ExecutionContext,
 } from '@nestjs/common';
 import { defineAbilityFor, scannerPairSchema, shipmentCodeSchema } from '@elysium/contracts';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import { AuditExempt } from '../../platform/audit/audit.interceptor.js';
 import { Public, RequireAbility } from '../../platform/auth/abilities.js';
 import { scopeHasNoRowDimension } from '../../platform/auth/scope.js';
 import { requireContext } from '../../platform/http/context.js';
+import { answerForApp } from './app-compat.js';
 import { bearerOf } from './device-token.js';
 import { ScannerService, type DeviceCaller } from './scanner.service.js';
 
@@ -149,5 +151,26 @@ export class ScannerController {
       parse(idSchema, id),
       defineAbilityFor(context).can('update', 'User'),
     );
+  }
+}
+
+/** The same packing list at the old site's address, for the scanner app as it ships (D-554). */
+@Controller('api/admin/scanner')
+export class ScannerAppController {
+  constructor(private readonly scanner: ScannerService) {}
+
+  @Public(DEVICE_TOKEN)
+  @UseGuards(ScannerDeviceGuard)
+  @Get('shipment')
+  async shipment(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Query('code') code: unknown,
+  ): Promise<void> {
+    await answerForApp(reply, async () => {
+      const caller = deviceOf(request);
+      const scanned = parse(shipmentCodeSchema, typeof code === 'string' ? code : '');
+      return this.scanner.shipment(caller.orgId, request, scanned, null);
+    });
   }
 }

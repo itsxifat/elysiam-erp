@@ -258,6 +258,13 @@ describe('the old site’s conformance checkers, against the ERP (check 4)', () 
       { timeout: 60_000 },
     );
     expect(stdout).not.toContain('FAIL');
+    // The one warning a test server earns: it listens on plain http. Any other WARN (a foreign
+    // key id let through, a mistyped path answered without JSON) is a regression.
+    const warnings = stdout
+      .split(String.fromCharCode(10))
+      .filter((text) => text.includes('WARN'))
+      .map((text) => text.replaceAll(String.fromCharCode(27), ''));
+    expect(warnings.filter((text) => !text.includes('Base URL is HTTPS'))).toEqual([]);
     expect(stdout).toMatch(/All essential checks passed|Every check passed/);
     expect(stdout).toContain('POST /reserve refuses an impossible quantity');
   });

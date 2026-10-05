@@ -10,14 +10,16 @@ import {
   Injectable,
   Post,
   Req,
+  Res,
 } from '@nestjs/common';
 import { defineAbilityFor, scannerSignInSchema, type ScannerSignIn } from '@elysium/contracts';
 import { mustEnrolTwoFactor, resolveContext, withUser, type Auth } from '@elysium/db';
 import { sql } from 'drizzle-orm';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { AuditExempt } from '../../platform/audit/audit.interceptor.js';
 import { Public } from '../../platform/auth/abilities.js';
+import { answerForApp } from '../packing/app-compat.js';
 import { PACKING_API, type PackingApi } from '../packing/packing.api.js';
 import { AUTH } from './iam.service.js';
 
@@ -197,5 +199,50 @@ export class ScannerSignInController {
       );
     }
     return this.signIn.signIn(parsed.data);
+  }
+}
+
+/**
+ * The same sign-in at the old site's address, for the scanner app as it ships (D-554): a
+ * refusal comes back as `{ error, code }`, the words the app shows. An account that needs an
+ * authenticator code is told to pair the phone from Orders → Scan, since that app never asks
+ * for one.
+ */
+@Controller('api/admin/scanner')
+export class ScannerAppSignInController {
+  constructor(private readonly signIn: ScannerSignInService) {}
+
+  @Public(
+    "The packing scanner app as it ships signs in at the old site's address with an email and a password; the answer is a device token (D-554).",
+  )
+  @AuditExempt('The device it creates is audited by the packing module in its own transaction.')
+  @Post('login')
+  @HttpCode(200)
+  async login(@Body() body: unknown, @Res() reply: FastifyReply): Promise<void> {
+    await answerForApp(reply, async () => {
+      const parsed = scannerSignInSchema.safeParse(body);
+      if (!parsed.success) {
+        throw refusal(
+          HttpStatus.BAD_REQUEST,
+          'VALIDATION_FAILED',
+          'Enter your email and password.',
+        );
+      }
+      try {
+        return await this.signIn.signIn(parsed.data);
+      } catch (error) {
+        const code = (
+          error instanceof HttpException ? (error.getResponse() as { code?: unknown }) : {}
+        ).code;
+        if (code === 'SCANNER_CODE_REQUIRED') {
+          throw refusal(
+            HttpStatus.UNAUTHORIZED,
+            'SCANNER_CODE_REQUIRED',
+            'This account uses two-step sign-in: pair this phone from Orders → Scan in the console and paste the code here.',
+          );
+        }
+        throw error;
+      }
+    });
   }
 }

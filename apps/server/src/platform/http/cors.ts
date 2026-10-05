@@ -64,6 +64,9 @@ export const SCANNER_DEVICE_PATHS: readonly string[] = [
   '/v1/scanner/sign-in',
   '/v1/scanner/sign-out',
   '/v1/scanner/shipment',
+  // The same two, at the old site's addresses the app as it ships calls.
+  '/api/admin/scanner/login',
+  '/api/admin/scanner/shipment',
 ];
 
 export function isScannerDevicePath(url: string): boolean {
