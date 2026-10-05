@@ -463,10 +463,17 @@ export const flashClaims = promo.table(
       columns: [table.orgId, table.flashSaleItemId, table.skuId],
       foreignColumns: [flashSaleItems.orgId, flashSaleItems.id, flashSaleItems.skuId],
     }).onDelete('restrict'),
+    // A whole line of this claim's own order, of this claim's SKU (ledger re-audit W2).
     foreignKey({
-      name: 'flash_claims_org_id_order_line_id_fk',
-      columns: [table.orgId, table.orderLineId],
-      foreignColumns: [orderLines.orgId, orderLines.id],
+      name: 'flash_claims_order_line_fk',
+      columns: [table.orgId, table.orderId, table.orderLineId, table.skuId, table.qty],
+      foreignColumns: [
+        orderLines.orgId,
+        orderLines.orderId,
+        orderLines.id,
+        orderLines.skuId,
+        orderLines.qty,
+      ],
     }).onDelete('restrict'),
     foreignKey({
       name: 'flash_claims_org_id_order_id_fk',

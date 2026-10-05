@@ -649,6 +649,7 @@ describe('the old site’s float amounts', () => {
     expect(oldTakaToPoisha(0.1 + 0.2)).toBe(30n);
     expect(oldTakaToPoisha(99.99)).toBe(9_999n);
     expect(oldTakaToPoisha(1e21)).toBe(0n);
+    expect(oldTakaToPoisha(1e17)).toBe(0n);
     expect(oldTakaToPoisha(-5)).toBe(0n);
   });
 });

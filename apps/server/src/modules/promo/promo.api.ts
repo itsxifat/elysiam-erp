@@ -218,6 +218,16 @@ export interface PromoApi {
     orderId: string,
     returned?: readonly { readonly orderLineId: string; readonly qty: number }[],
   ): Promise<number>;
+
+  /**
+   * What still prices this order: discounts applied and flash claims held. The orders
+   * module refuses an edit that would re-price around either (D-542).
+   */
+  holdsOnOrder(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+  ): Promise<{ readonly appliedDiscounts: number; readonly flashClaims: number }>;
 }
 
 export const PROMO_API = Symbol('PromoApi');
@@ -381,5 +391,16 @@ export class PromoApiService implements PromoApi {
     returned?: readonly { readonly orderLineId: string; readonly qty: number }[],
   ): Promise<number> {
     return this.flash.release(tx, orgId, orderId, returned);
+  }
+
+  async holdsOnOrder(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+  ): Promise<{ readonly appliedDiscounts: number; readonly flashClaims: number }> {
+    return {
+      appliedDiscounts: await this.promo.appliedCount(tx, orgId, orderId),
+      flashClaims: await this.flash.claimsHeld(tx, orgId, orderId),
+    };
   }
 }

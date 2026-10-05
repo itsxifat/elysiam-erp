@@ -12,7 +12,7 @@ import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import { FILES_API, type FilesApi } from '../files/files.api.js';
 import type { FlashSaleBody } from './flash.schemas.js';
 import * as repo from './flash.repository.js';
-import { PromoError } from './promo.errors.js';
+import { constraintRefusal, PromoError } from './promo.errors.js';
 import { instant } from './promo.service.js';
 
 /**
@@ -130,7 +130,15 @@ export class FlashService {
       if (outcome === 'slug_taken') {
         throw new PromoError('FLASH_SALE_SLUG_TAKEN', `Another sale already uses ${slug}.`);
       }
-      for (const item of body.items) await repo.upsertItem(tx, context.orgId, id, toItem(item));
+      // In offer order, the order checkout's claims lock these rows in, so a save racing a
+      // checkout cannot deadlock (ledger re-audit note 4); new SKUs, with no row yet, last.
+      const order = new Map(itemsBefore.map((item) => [item.sku_id, item.id]));
+      const upserts = [...body.items].sort((a, b) => {
+        const left = order.get(a.skuId) ?? '~';
+        const right = order.get(b.skuId) ?? '~';
+        return left < right ? -1 : left > right ? 1 : 0;
+      });
+      for (const item of upserts) await repo.upsertItem(tx, context.orgId, id, toItem(item));
       await repo.disableItemsExcept(
         tx,
         context.orgId,
@@ -319,47 +327,53 @@ export class FlashService {
      * catches the error and carries on in the same transaction (to price the line at the
      * shelf instead, say). All or nothing does not depend on the caller rolling back.
      */
-    return tx.transaction(async (savepoint) => {
-      const claimIds: string[] = [];
-      const refused: string[] = [];
-      for (const line of lines) {
-        if (held.has(line.orderLineId)) continue;
-        const price = BigInt(line.salePricePoisha);
-        const took = await repo.claimUnits(savepoint, orgId, {
-          itemId: line.flashSaleItemId,
-          skuId: line.skuId,
-          qty: line.qty,
-          salePricePoisha: price,
-        });
-        if (!took) {
-          refused.push(line.skuId);
-          continue;
+    try {
+      return await tx.transaction(async (savepoint) => {
+        const claimIds: string[] = [];
+        const refused: string[] = [];
+        for (const line of lines) {
+          if (held.has(line.orderLineId)) continue;
+          const price = BigInt(line.salePricePoisha);
+          const took = await repo.claimUnits(savepoint, orgId, {
+            itemId: line.flashSaleItemId,
+            skuId: line.skuId,
+            qty: line.qty,
+            salePricePoisha: price,
+          });
+          if (!took) {
+            refused.push(line.skuId);
+            continue;
+          }
+          const claimId = await repo.insertClaim(savepoint, {
+            orgId,
+            itemId: line.flashSaleItemId,
+            orderId: input.orderId,
+            orderLineId: line.orderLineId,
+            skuId: line.skuId,
+            qty: line.qty,
+            salePricePoisha: price,
+          });
+          if (claimId === undefined) {
+            throw new Error('a flash claim for this order line appeared mid-claim');
+          }
+          claimIds.push(claimId);
         }
-        const claimId = await repo.insertClaim(savepoint, {
-          orgId,
-          itemId: line.flashSaleItemId,
-          orderId: input.orderId,
-          orderLineId: line.orderLineId,
-          skuId: line.skuId,
-          qty: line.qty,
-          salePricePoisha: price,
-        });
-        if (claimId === undefined) {
-          throw new Error('a flash claim for this order line appeared mid-claim');
-        }
-        claimIds.push(claimId);
-      }
 
-      if (refused.length > 0) {
-        throw new PromoError(
-          'FLASH_SALE_UNAVAILABLE',
-          'The flash price is no longer available for some of these items.',
-          null,
-          { skuIds: [...new Set(refused)] },
-        );
-      }
-      return { claimIds };
-    });
+        if (refused.length > 0) {
+          throw new PromoError(
+            'FLASH_SALE_UNAVAILABLE',
+            'The flash price is no longer available for some of these items.',
+            null,
+            { skuIds: [...new Set(refused)] },
+          );
+        }
+        return { claimIds };
+      });
+    } catch (error) {
+      // A line that is not a whole line of this order, of this SKU: the savepoint has rolled
+      // back, so the caller's transaction is still usable, and the refusal is a 400.
+      throw constraintRefusal(error) ?? error;
+    }
   }
 
   /**
@@ -391,6 +405,11 @@ export class FlashService {
       units += give;
     }
     return units;
+  }
+
+  /** Claims an order still holds: the orders module refuses to edit lines that hold them. */
+  async claimsHeld(tx: Tx, orgId: string, orderId: string): Promise<number> {
+    return (await repo.heldClaims(tx, orgId, orderId)).length;
   }
 
   // --- helpers ---------------------------------------------------------------------------

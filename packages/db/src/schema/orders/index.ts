@@ -590,6 +590,16 @@ export const orderLines = sales.table(
   },
   (table) => [
     unique('order_lines_org_id_id_key').on(table.orgId, table.id),
+    // M35a: what a flash claim names, so a claim is for a whole line of its own order and
+    // its own SKU (D-542). Redundant with the primary key as a constraint; it exists to be
+    // the target of `promo.flash_claims`' composite foreign key.
+    unique('order_lines_org_order_id_sku_qty_key').on(
+      table.orgId,
+      table.orderId,
+      table.id,
+      table.skuId,
+      table.qty,
+    ),
     index('order_lines_org_idx').on(table.orgId),
     index('order_lines_org_order_idx').on(table.orgId, table.orderId),
     index('order_lines_org_sku_idx').on(table.orgId, table.skuId),

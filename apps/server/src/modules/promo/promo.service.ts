@@ -246,19 +246,26 @@ export class PromoService {
     const ordered = [...input.applied].sort((a, b) =>
       a.discountId < b.discountId ? -1 : a.discountId > b.discountId ? 1 : 0,
     );
-    const redemptionIds: string[] = [];
-    for (const entry of ordered) {
-      const { redemptionId } = await this.redeem(tx, context, {
-        codeId: entry.discountId,
-        orderId: input.orderId,
-        posSaleId: null,
-        customerId: input.customerId,
-        discountPoisha: entry.discountPoisha,
-        deliveryDiscountPoisha: entry.deliveryDiscountPoisha,
-      });
-      redemptionIds.push(redemptionId);
-    }
-    return { redemptionIds };
+    /*
+     * Inside a savepoint (ledger re-audit note 2): a refusal undoes every use this call took,
+     * so a checkout that catches it and carries on (to drop the discount and reprice) is not
+     * left holding half a stack's uses.
+     */
+    return tx.transaction(async (savepoint) => {
+      const redemptionIds: string[] = [];
+      for (const entry of ordered) {
+        const { redemptionId } = await this.redeem(savepoint, context, {
+          codeId: entry.discountId,
+          orderId: input.orderId,
+          posSaleId: null,
+          customerId: input.customerId,
+          discountPoisha: entry.discountPoisha,
+          deliveryDiscountPoisha: entry.deliveryDiscountPoisha,
+        });
+        redemptionIds.push(redemptionId);
+      }
+      return { redemptionIds };
+    });
   }
 
   /** Rows as the engine reads them, with their tiers, in one query for the tiers. */
@@ -441,6 +448,11 @@ export class PromoService {
     }
 
     return { redemptionId, replayed: false };
+  }
+
+  /** Discounts still applied to an order: the orders module refuses to re-price around them. */
+  async appliedCount(tx: Tx, orgId: string, orderId: string): Promise<number> {
+    return (await repo.appliedForOrder(tx, orgId, orderId)).length;
   }
 
   /**

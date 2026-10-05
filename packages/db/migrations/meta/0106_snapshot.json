@@ -1,5 +1,5 @@
 {
-  "id": "1d89822f-4075-4472-b1b8-530ac34f1115",
+  "id": "1d70826f-eeba-4b90-96d5-5a2fe0e4472e",
   "prevId": "72ad42ed-9259-469d-b75c-827430ee31be",
   "version": "7",
   "dialect": "postgresql",
@@ -20689,6 +20689,11 @@
           "name": "order_lines_org_id_id_key",
           "nullsNotDistinct": false,
           "columns": ["org_id", "id"]
+        },
+        "order_lines_org_order_id_sku_qty_key": {
+          "name": "order_lines_org_order_id_sku_qty_key",
+          "nullsNotDistinct": false,
+          "columns": ["org_id", "order_id", "id", "sku_id", "qty"]
         }
       },
       "policies": {},
@@ -23959,13 +23964,13 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "flash_claims_org_id_order_line_id_fk": {
-          "name": "flash_claims_org_id_order_line_id_fk",
+        "flash_claims_order_line_fk": {
+          "name": "flash_claims_order_line_fk",
           "tableFrom": "flash_claims",
           "tableTo": "order_lines",
           "schemaTo": "sales",
-          "columnsFrom": ["org_id", "order_line_id"],
-          "columnsTo": ["org_id", "id"],
+          "columnsFrom": ["org_id", "order_id", "order_line_id", "sku_id", "qty"],
+          "columnsTo": ["org_id", "order_id", "id", "sku_id", "qty"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },

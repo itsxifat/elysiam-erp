@@ -425,6 +425,54 @@ describe('what a claim checks inside its own UPDATE (D-542)', () => {
     });
   });
 
+  it('refuses a claim for another order’s line, or for part of a line (re-audit W2)', async () => {
+    const offer = await sale({ items: [{ skuId: sku(1).id, price: 90_000n, limit: 10 }] });
+    const mine = await order([{ skuIndex: 1, qty: 2 }]);
+    const theirs = await order([{ skuIndex: 1, qty: 2 }]);
+    const invalid = { response: { code: 'FLASH_SALE_INVALID' } };
+
+    // Another order's line.
+    await expect(
+      withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
+        api.claimFlashUnits(tx, ORG_A, {
+          orderId: mine.id,
+          lines: [
+            {
+              orderLineId: theirs.lineIds[0] ?? '',
+              skuId: sku(1).id,
+              qty: 2,
+              flashSaleItemId: offer.itemIds[0] ?? '',
+              salePricePoisha: 90_000n,
+            },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject(invalid);
+    // One unit of a line of two.
+    await expect(claim(mine, offer.itemIds[0] ?? '', 1, 90_000n, 1)).rejects.toMatchObject(invalid);
+    // Nothing was taken by either.
+    expect((await itemState(offer.itemIds[0] ?? '')).sold).toBe(0);
+  });
+
+  it('refuses to edit the lines of an order that holds flash units (re-audit W1)', async () => {
+    const offer = await sale({ items: [{ skuId: sku(1).id, price: 90_000n, limit: 10 }] });
+    const target = await order([{ skuIndex: 1, qty: 1 }]);
+    await claim(target, offer.itemIds[0] ?? '', 1, 90_000n, 1);
+    const admin = await harness.asRole('org_admin', ORG_A);
+
+    const edit = await admin.client.request('PATCH', `/v1/orders/${target.id}`, {
+      body: { lines: [{ skuId: sku(1).id, qty: 2, unitPricePoisha: SHELF.toString() }] },
+    });
+    expect(edit.statusCode, edit.body).toBe(409);
+    expect(JSON.parse(edit.body)).toMatchObject({ code: 'ORDER_IMMUTABLE' });
+
+    const note = await admin.client.request('PATCH', `/v1/orders/${target.id}`, {
+      body: { notes: 'Call before delivery' },
+    });
+    expect(note.statusCode, note.body).toBe(200);
+    expect((await itemState(offer.itemIds[0] ?? '')).sold).toBe(1);
+  });
+
   it('refuses to change or remove a claim once it is released', async () => {
     const offer = await sale({ items: [{ skuId: sku(1).id, price: 60_000n, limit: 10 }] });
     const target = await order([{ skuIndex: 1, qty: 1 }]);
@@ -811,6 +859,64 @@ describe('the website’s discounts, through the one engine (D-540, D-541)', () 
 
     // Paused, so the next suites price without it.
     for (const id of [tiered, bxgy]) {
+      await marketing.client.request('PATCH', `/v1/promo/codes/${id}`, {
+        body: { status: 'paused' },
+      });
+    }
+  });
+
+  it('takes no use at all when one of a stack’s discounts is refused and the caller carries on', async () => {
+    const open = await createDiscount({
+      method: 'automatic',
+      title: `Open ${randomUUID().slice(0, 6)}`,
+      kind: 'flat',
+      valuePoisha: '1000',
+      allowStacking: true,
+    });
+    const spent = await createDiscount({
+      method: 'automatic',
+      title: `Spent ${randomUUID().slice(0, 6)}`,
+      kind: 'flat',
+      valuePoisha: '1000',
+      allowStacking: true,
+      totalLimit: 1,
+    });
+    const answer = await quote({ lines: [{ skuIndex: 0, qty: 1 }] });
+    const stack = answer.applied.filter((entry) => [open, spent].includes(entry.discountId));
+    expect(stack).toHaveLength(2);
+    // The limited one's last use goes to another order first.
+    await withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) =>
+      api.redeem(tx, ORG_A, {
+        orderId: (await order()).id,
+        customerId,
+        applied: stack.filter((entry) => entry.discountId === spent),
+      }),
+    );
+
+    const target = await order();
+    const outcome = await withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => {
+      try {
+        await api.redeem(tx, ORG_A, { orderId: target.id, customerId, applied: stack });
+        return 'redeemed';
+      } catch {
+        // A checkout that drops the discounts and carries on in the same transaction.
+        return 'refused';
+      }
+    });
+    expect(outcome).toBe('refused');
+    const used = await withSystem(
+      (tx) =>
+        tx.execute<{ id: string; used_count: number }>(sql`
+          select id, used_count from promo.codes where org_id = ${ORG_A}
+            and id = any (${sql.param([open, spent])}::uuid[])
+        `),
+      { orgId: ORG_A },
+    );
+    expect(Object.fromEntries([...used].map((row) => [row.id, row.used_count]))).toEqual({
+      [open]: 0,
+      [spent]: 1,
+    });
+    for (const id of [open, spent]) {
       await marketing.client.request('PATCH', `/v1/promo/codes/${id}`, {
         body: { status: 'paused' },
       });

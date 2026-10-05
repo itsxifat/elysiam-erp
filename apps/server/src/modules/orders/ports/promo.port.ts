@@ -70,6 +70,13 @@ export interface PromoPort {
     returned?: readonly { readonly orderLineId: string; readonly qty: number }[],
   ): Promise<number>;
 
+  /** Discounts applied and flash claims held on this order (M35a): an edit keeps its price. */
+  holdsOnOrder(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+  ): Promise<{ readonly appliedDiscounts: number; readonly flashClaims: number }>;
+
   /**
    * A personal single-use code for a buyer's occasion (M16 check 2), in the caller's
    * transaction — the CRM's greeting, its code and the record that it went out commit

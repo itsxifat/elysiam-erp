@@ -94,9 +94,14 @@ const CONSTRAINTS: Readonly<Record<string, { code: ErrorCode; message: string }>
     code: 'FLASH_SALE_INVALID',
     message: 'A limit cannot be below what has already sold.',
   },
+  // A claim names a whole line of its own order, of its own SKU (ledger re-audit W2).
+  flash_claims_order_line_fk: {
+    code: 'FLASH_SALE_INVALID',
+    message: 'A flash claim has to name a whole line of its own order, of the same SKU.',
+  },
 };
 
-function constraintRefusal(error: unknown): PromoError | null {
+export function constraintRefusal(error: unknown): PromoError | null {
   for (let current: unknown = error; current instanceof Error; current = current.cause) {
     const fields = current as { code?: unknown; constraint_name?: unknown };
     if (

@@ -93,6 +93,8 @@ export function oldTakaToPoisha(value: number | undefined): Poisha {
   const match = /^(\d+)(?:\.(\d+))?$/.exec(String(value));
   if (match === null) return ZERO;
   const [, whole = '0', fraction = ''] = match;
+  // Past sixteen whole digits is past §7's bound, not an amount (ledger re-audit note 5).
+  if (whole.length > 16) return ZERO;
   return decimalToPoisha(fraction === '' ? whole : `${whole}.${fraction.slice(0, 12)}`);
 }
 
