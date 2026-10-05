@@ -19,6 +19,7 @@
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:routes": "node scripts/check-route-matrix.mjs",
     "check:schema": "node scripts/check-schema-drift.mjs",
+    "check:white-label": "node scripts/check-white-label.mjs",
     "clean": "turbo run clean",
     "db:bootstrap": "pnpm --filter @elysium/db run db:bootstrap",
     "db:generate": "pnpm --filter @elysium/db run db:generate",
@@ -42,7 +43,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:bundle && pnpm run check:migrations && pnpm run check:schema && pnpm run check:routes && pnpm run check:i18n && pnpm run check:api-client",
+    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:bundle && pnpm run check:white-label && pnpm run check:migrations && pnpm run check:schema && pnpm run check:routes && pnpm run check:i18n && pnpm run check:api-client",
     "db:dev-users": "pnpm --filter @elysium/db run db:dev-users"
   },
   "devDependencies": {

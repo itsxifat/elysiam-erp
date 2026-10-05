@@ -94,6 +94,7 @@ export function LoginScreen({ branding, onAuthenticated }: LoginScreenProps) {
           {step === 'enrol' ? (
             <EnrolStep
               password={password}
+              brandSlug={branding?.slug ?? null}
               error={error}
               onError={setError}
               onEnrolled={() => finish(onAuthenticated, setStep, setError, t)}
@@ -101,9 +102,12 @@ export function LoginScreen({ branding, onAuthenticated }: LoginScreenProps) {
           ) : null}
         </div>
 
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          {branding?.brand?.legalName ?? 'Elysium'}
-        </p>
+        {/* The brand's own legal name, from its row; nothing at all when no brand is known. */}
+        {typeof branding?.brand?.legalName === 'string' ? (
+          <p className="mt-6 text-center text-xs text-muted-foreground">
+            {branding.brand.legalName}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -163,7 +167,8 @@ function messageFor(cause: unknown, fallback: string, t: ReturnType<typeof useT>
 
 export function BrandMark({ branding }: { readonly branding: LoginBranding | null }) {
   const t = useT();
-  const name = branding?.displayName ?? 'Elysium';
+  // The brand's own name from its row (D-472); a neutral word when none is known.
+  const name = branding?.displayName ?? t('workspace.title');
   const logo = typeof branding?.brand?.logo === 'string' ? branding.brand.logo : null;
 
   return (
@@ -325,11 +330,14 @@ function SecondFactorStep({
  */
 function EnrolStep({
   password,
+  brandSlug,
   error,
   onError,
   onEnrolled,
 }: {
   readonly password: string;
+  /** Names the downloaded recovery codes after the brand (D-472). */
+  readonly brandSlug: string | null;
   readonly error: string | null;
   readonly onError: (message: string | null) => void;
   readonly onEnrolled: () => Promise<void>;
@@ -445,7 +453,7 @@ function EnrolStep({
         {/* Stacked, not side by side: at the card's width the two controls
             collided and the checkbox label wrapped across the button. */}
         <div className="mt-3 space-y-3">
-          <Button variant="link" onClick={() => downloadCodes(enrolment.backupCodes)}>
+          <Button variant="link" onClick={() => downloadCodes(enrolment.backupCodes, brandSlug)}>
             <Download className="size-4" aria-hidden="true" />
             {t('auth.enrol.download')}
           </Button>
@@ -511,12 +519,22 @@ function secretFrom(totpURI: string): string {
   }
 }
 
-function downloadCodes(codes: readonly string[]): void {
+/**
+ * `<brand>-recovery-codes.txt`, after the brand's own slug when the screen knows it, so a
+ * person with accounts in several places can tell the files apart (D-472).
+ */
+function recoveryCodesFileName(brandSlug: string | null | undefined): string {
+  return typeof brandSlug === 'string' && /^[a-z0-9-]+$/.test(brandSlug)
+    ? `${brandSlug}-recovery-codes.txt`
+    : 'recovery-codes.txt';
+}
+
+function downloadCodes(codes: readonly string[], brandSlug: string | null | undefined): void {
   const blob = new Blob([`${codes.join('\n')}\n`], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = 'elysium-recovery-codes.txt';
+  link.download = recoveryCodesFileName(brandSlug);
   link.click();
   URL.revokeObjectURL(url);
 }

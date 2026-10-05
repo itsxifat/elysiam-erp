@@ -5,10 +5,7 @@
  * the guard admits. Each one is repeatable by every admitted role:
  *
  * - the refresh recomputes three long-past days, which a rerun replaces rather than adds to;
- * - the narrative answers `{ enabled: false }`, because the flag is off by default (D-327);
- * - the consolidated view answers 403 FORBIDDEN from the service for an org admin — a
- *   refusal the suite tells apart from the guard's, as it does for M08's consolidated
- *   reports, because the ability cannot express "all orgs".
+ * - the narrative answers `{ enabled: false }`, because the flag is off by default (D-327).
  */
 
 interface Call {
@@ -29,10 +26,6 @@ export const ANALYTICS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Cal
   'GET /v1/analytics/export': () => ({
     url: '/v1/analytics/export?from=2026-09-01&to=2026-09-30&format=csv',
   }),
-  'GET /v1/analytics/consolidated': () => ({
-    url: '/v1/analytics/consolidated?from=2026-09-01&to=2026-09-30',
-  }),
-  'GET /v1/analytics/leaderboard': () => ({ url: '/v1/analytics/leaderboard?month=2026-09' }),
 };
 
 export const ANALYTICS_ROUTE_KEYS: readonly string[] = Object.keys(ANALYTICS_ROUTE_FIXTURES);

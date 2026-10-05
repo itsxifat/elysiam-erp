@@ -56,17 +56,14 @@ export function readOperations(document: JsonObject): OperationDescription[] {
     for (const [method, operation] of Object.entries(methods)) {
       const parameters = (operation.parameters ?? []) as ParameterSpec[];
       const body = operation.requestBody as JsonObject | undefined;
-      const bodyType = body?.['x-elysium-type'];
+      const bodyType = body?.['x-body-type'];
 
       operations.push({
         operationId: String(operation.operationId),
         method: method.toUpperCase(),
         path,
         summary: typeof operation.summary === 'string' ? operation.summary : '',
-        ability:
-          typeof operation['x-elysium-ability'] === 'string'
-            ? operation['x-elysium-ability']
-            : null,
+        ability: typeof operation['x-ability'] === 'string' ? operation['x-ability'] : null,
         pathParams: parameters.filter((p) => p.in === 'path').map((p) => p.name),
         query: parameters
           .filter((p) => p.in === 'query')

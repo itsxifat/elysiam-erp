@@ -26,12 +26,10 @@ const auditable = (request: FastifyRequest): AuditableRequest =>
 /**
  * Analytics over HTTP (architecture §18; M24).
  *
- * - **`Dashboard`** (D-325): the brand's own dashboard, insights, narrative, export and
- *   rollup refresh — org_admin at `org`. The consolidated view across brands declares it too
- *   and then refuses anyone who is not a platform super admin, because the ability cannot
- *   express "all orgs" (§5 exception 3), as M08's consolidated reports do.
- * - **`Leaderboard`**: org_admin at `all` and Super Admin. What each sees of the other
- *   brands is D-023, applied in the service.
+ * **`Dashboard`** (D-325): the brand's own dashboard, insights, narrative, export and rollup
+ * refresh — org_admin at `org`. Nothing here compares brands: a brand's ERP runs on its own
+ * database and knows no other (D-469); the combined figures and the leaderboard left with
+ * M31 (D-471).
  */
 @Controller('v1/analytics')
 export class AnalyticsController {
@@ -84,19 +82,5 @@ export class AnalyticsController {
       .header('x-row-count', String(file.rows))
       .header('cache-control', 'no-store')
       .send(file.bytes);
-  }
-
-  @RequireAbility('read', 'Dashboard')
-  @Get('consolidated')
-  async consolidated(@Req() request: FastifyRequest, @Query() query: unknown) {
-    const parsed = parse(dashboardQuerySchema, query ?? {});
-    return mapAnalyticsErrors(() => this.analytics.consolidated(requireContext(request), parsed));
-  }
-
-  @RequireAbility('read', 'Leaderboard')
-  @Get('leaderboard')
-  async leaderboard(@Req() request: FastifyRequest, @Query() query: unknown) {
-    const parsed = parse(monthQuerySchema, query ?? {});
-    return mapAnalyticsErrors(() => this.analytics.leaderboard(requireContext(request), parsed));
   }
 }

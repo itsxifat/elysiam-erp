@@ -23,22 +23,22 @@ import {
   checkBooks,
   Context,
   prepareScenario,
-  PREVIEW_BRAND_NAME,
-  PREVIEW_ORG_SLUG,
-  previewOrgId,
+  previewBrand,
   runScenario,
 } from './preview/scenario.js';
 
 /**
  * `pnpm preview:seed` — make a database previewable by hand (D-380).
  *
- *   pnpm preview:seed [--out <file> | --out -] [--allow-existing-users]
+ *   pnpm preview:seed [--brand <slug>] [--out <file> | --out -] [--allow-existing-users]
  *
  * One command, idempotent, needing only the server's usual environment
  * (`DATABASE_URL`, `DATABASE_OWNER_URL`, `AUTH_SECRET`, …), so it runs on a developer's PC
  * and inside the server image alike. Build the server first. It:
  *
- * 1. runs `pnpm db:seed`'s steps and the training brand's import (`pnpm demo:org`);
+ * 1. runs `pnpm db:seed`'s steps and the training brand's import (`pnpm demo:org`); with
+ *    `--brand <slug>` (or `ERP_BRAND_SLUG`) only that brand is seeded and demoed, the way
+ *    a brand's own ERP is previewed (D-470);
  * 2. boots the application in this process and creates one login per role through the
  *    real invite flow (`preview/people.ts`);
  * 3. creates a few weeks' worth of a brand's work through the real routes
@@ -120,8 +120,13 @@ async function main(args: readonly string[]): Promise<void> {
   });
   print(`  database: ${database} (marked as a preview)`);
 
+  // One brand, as a brand's own ERP has (D-470), or all five, as before.
+  const onlyBrand = argument(args, 'brand') ?? process.env.ERP_BRAND_SLUG;
+  const brand = previewBrand(onlyBrand === '' ? undefined : onlyBrand);
   const geography = await seedGeography();
-  const seeded = await seedOrganizations();
+  const seeded = await seedOrganizations(
+    onlyBrand === undefined || onlyBrand === '' ? {} : { brands: [brand.slug] },
+  );
   print(
     `  base seed: ${String(seeded.organizations)} brands, ${String(geography.thanas)} thanas, ` +
       `${String(seeded.accounts)} ledger accounts`,
@@ -140,19 +145,19 @@ async function main(args: readonly string[]): Promise<void> {
             `books ${demo.reconciliation.journalBalanced ? 'balanced' : 'NOT BALANCED'}`,
     );
 
-    const orgId = previewOrgId();
+    const orgId = brand.orgId;
     const people = new People(runtime, orgId);
     retire = () => people.retireRobots();
     await people.retireRobots();
-    const ctx = new Context(runtime, people, orgId, PREVIEW_ORG_SLUG);
+    const ctx = new Context(runtime, people, orgId, brand.slug);
     const branchIds = await prepareScenario(ctx);
     await people.ensureLogins({ branchIds });
     print(`  ${String(people.credentials().length)} logins ready, with new passwords`);
 
-    print(`  demo activity in ${PREVIEW_BRAND_NAME}:`);
+    print(`  demo activity in ${brand.name}:`);
     await runScenario(ctx, print);
 
-    const books = await checkBooks(people, ctx.today(), { training: demo !== undefined });
+    const books = await checkBooks(people, ctx.today(), { training: demo !== undefined, brand });
     let unbalanced = demo !== undefined && !demo.reconciliation.journalBalanced;
     for (const check of books) {
       unbalanced ||= !check.ok;
@@ -177,7 +182,7 @@ async function main(args: readonly string[]): Promise<void> {
       note: spec.note,
     }));
     const text = credentialsMarkdown(logins, previewUrls(), {
-      brand: PREVIEW_BRAND_NAME,
+      brand: brand.name,
       training: demo !== undefined,
       ...(ctx.summary.trackingOrder === undefined ? {} : { tracking: ctx.summary.trackingOrder }),
     });

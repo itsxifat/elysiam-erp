@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import '@elysium/ui/styles/tailwind.css';
+import { STORAGE_KEYS, writeStored } from '@elysium/ui';
 
 import { ConsoleApp } from './console-app.js';
 import { preloadStoredLocale } from './i18n/locale.js';
@@ -25,10 +26,7 @@ const mount = () =>
   );
 
 preloadStoredLocale().then(mount, () => {
-  try {
-    localStorage.removeItem('elysium-locale');
-  } catch {
-    // Storage denied: the default applies anyway.
-  }
+  // Storage denied: the default applies anyway.
+  writeStored(STORAGE_KEYS.consoleLocale, null);
   mount();
 });

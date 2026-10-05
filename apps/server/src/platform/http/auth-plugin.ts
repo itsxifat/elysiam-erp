@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { mustEnrolTwoFactor, resolveContext, withGlobal } from '@elysium/db';
+import { mustEnrolTwoFactor, OWNER_SESSION_SECONDS, resolveContext, withGlobal } from '@elysium/db';
 import type { createAuth, RequestContext } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -138,15 +138,27 @@ export async function resolveIdentity(input: {
   const user: AuthUser = { id: session.user.id, email: session.user.email };
   const sessionId = session.session.id;
 
-  if (await mustEnrolTwoFactor(session.user.id)) {
-    return { kind: 'enrolment_required', user, sessionId };
-  }
-
+  // `owner_link` counts only on an owner's session; a trigger holds the same rule (0105).
   const [row] = await withGlobal(async (tx) =>
-    tx.execute<{ active_org_id: string | null }>(
-      sql`select active_org_id from iam.sessions where id = ${sessionId}`,
+    tx.execute<{ active_org_id: string | null; owner_link: boolean; created_at: Date | string }>(
+      sql`
+        select s.active_org_id, (s.owner_link and u.is_owner) as owner_link, s.created_at
+        from iam.sessions s join iam.users u on u.id = s.user_id
+        where s.id = ${sessionId}
+      `,
     ),
   );
+
+  /*
+   * An owner sign-in link's session (M31, D-473): its second factor was checked where the
+   * link was minted, so the enrolment wall does not apply — and it lasts two hours from
+   * creation, read from the row, whatever a refresh may have done to its expiry.
+   */
+  if (row?.owner_link === true) {
+    if (ownerSessionExpired(row.created_at)) return { kind: 'anonymous' };
+  } else if (await mustEnrolTwoFactor(session.user.id)) {
+    return { kind: 'enrolment_required', user, sessionId };
+  }
 
   const orgId = row?.active_org_id ?? null;
   const context =
@@ -155,6 +167,26 @@ export async function resolveIdentity(input: {
       : await resolveContext({ userId: session.user.id, orgId, requestId: input.requestId });
 
   return { kind: 'authenticated', user, sessionId, orgId, context };
+}
+
+/**
+ * The session, when it is an owner sign-in link's (D-473): flagged, and its user an owner.
+ * Read from the rows rather than from Better Auth's session object, so the flag counts only
+ * where the database says it may (a trigger holds the same rule, migration 0107).
+ */
+async function ownerLinkSession(sessionId: string): Promise<{ createdAt: Date | string } | null> {
+  const [row] = await withGlobal(async (tx) =>
+    tx.execute<{ created_at: Date | string }>(sql`
+      select s.created_at from iam.sessions s join iam.users u on u.id = s.user_id
+      where s.id = ${sessionId} and s.owner_link and u.is_owner
+    `),
+  );
+  return row === undefined ? null : { createdAt: row.created_at };
+}
+
+/** An owner-link session older than its two hours (D-473), by the row's own creation time. */
+export function ownerSessionExpired(createdAt: Date | string, now: number = Date.now()): boolean {
+  return now - new Date(createdAt).getTime() > OWNER_SESSION_SECONDS * 1000;
 }
 
 /**
@@ -308,6 +340,19 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
 
     const session = await options.auth.api.getSession({ headers });
     if (session === null) return;
+
+    // An owner sign-in link's session carries its second factor from where it was minted
+    // (D-473); one past its two hours may do nothing here but read itself and sign out.
+    const ownerLink = await ownerLinkSession(session.session.id);
+    if (ownerLink !== null) {
+      if (ownerSessionExpired(ownerLink.createdAt)) {
+        return reply
+          .status(401)
+          .header('content-type', PROBLEM_CONTENT_TYPE)
+          .send(problemFor({ status: 401, code: 'UNAUTHENTICATED', instance: path }));
+      }
+      return;
+    }
 
     if (await mustEnrolTwoFactor(session.user.id)) {
       return reply.status(403).send({

@@ -74,7 +74,7 @@ const en = {
   'org.chooseOne': 'Choose an organisation to continue.',
 
   // The placeholder shell, replaced by M05.
-  'workspace.title': 'Elysium Console',
+  'workspace.title': 'Console',
   'workspace.placeholder':
     'M05 replaces this page with the real application shell. Until then it shows what the server says about this request, which is the whole of M02a.',
   'workspace.organisation': 'Organisation',
@@ -1361,15 +1361,15 @@ const en = {
   'portal.investor.subtitle': 'Your investments, profit and documents',
   'portal.investor.enrolSubtitle':
     'Investors must use a second step when signing in. Setting it up takes about a minute.',
-  'portal.investor.brands': 'Your brands',
+  'portal.investor.brands': 'Where you invest',
   'portal.investor.switching': 'Switching…',
-  'portal.investor.switchFailed': 'That brand could not be opened. Try again.',
-  'portal.investor.chooseBrandTitle': 'Choose one of your brands',
+  'portal.investor.switchFailed': 'That could not be opened. Try again.',
+  'portal.investor.chooseBrandTitle': 'Choose where to look',
   'portal.investor.chooseBrandDetail':
-    'Your sign-in is open in a brand where you work rather than invest, perhaps in the staff console. Choose a brand above to see your figures.',
+    'Your sign-in is open where you work rather than invest, perhaps in the staff console. Choose above to see your figures.',
   'portal.investor.notInvestorTitle': 'This portal is for investors',
   'portal.investor.notInvestorDetail':
-    'Your sign-in holds no investor role in any brand. Staff work in the console.',
+    'Your sign-in holds no investor role. Staff work in the console.',
   'portal.investor.noProfileTitle': 'No investor profile in this brand',
   'portal.investor.noProfileDetail':
     'Ask the brand’s accounts team to link your profile to this sign-in.',
@@ -1674,6 +1674,7 @@ const en = {
   'orders.timeline.courier': 'Courier booking queued',
   'orders.timeline.other': 'Activity',
   'orders.timeline.system': 'the system',
+  'orders.timeline.owner': 'Owner',
 
   'orders.buyers.title': 'Buyer list',
   'orders.buyers.subtitle': 'Everyone who bought, filtered. Every export is logged.',
@@ -2054,7 +2055,7 @@ const en = {
   'branch.closing.countInvalid': 'Enter the count as taka, for example 12500 or 12500.50.',
 
   // The showroom till (M23). `pos.receipt.*` is customer-facing: Bangla by default.
-  'pos.app.name': 'Elysium POS',
+  'pos.app.name': 'Till',
   'pos.app.skipToContent': 'Skip to the till',
   'pos.status.online': 'Online',
   'pos.status.offline': 'Offline — sales are kept on this till',
@@ -2242,7 +2243,7 @@ const en = {
   'pos.error.generic': 'Something went wrong.',
   'pos.error.permission': 'Your role cannot use the till for this branch.',
 
-  // Accounts: transfers, cash books, statements, ledger, periods, all brands (M08).
+  // Accounts: transfers, cash books, statements, ledger, periods (M08).
   'accounts.nav.cash': 'Wallets and cash',
   'accounts.nav.transfers': 'Transfers',
   'accounts.nav.wallets': 'Wallets',
@@ -2291,7 +2292,6 @@ const en = {
   'accounts.nav.reports': 'Statements',
   'accounts.nav.ledger': 'Ledger',
   'accounts.nav.periods': 'Periods',
-  'accounts.nav.consolidated': 'All brands',
   'accounts.nav.advances': 'Advances',
   'accounts.advances.title': 'Advances to check',
   'accounts.advances.subtitle':
@@ -2436,15 +2436,6 @@ const en = {
   'accounts.periods.laterClosed': 'A later month is closed. Reopen that one first.',
   'accounts.periods.reopenUnauthorised': 'Your role cannot request a reopen.',
   'accounts.periods.failed': 'That could not be done.',
-  'accounts.consolidated.title': 'All brands',
-  'accounts.consolidated.subtitle': 'Every brand’s cash and results side by side.',
-  'accounts.consolidated.deniedTitle': 'This view is for the group owner',
-  'accounts.consolidated.deniedDetail': 'Only a super admin sees every brand together.',
-  'accounts.consolidated.wallets': 'Cash in every wallet',
-  'accounts.consolidated.pnl': 'Profit and loss by brand',
-  'accounts.consolidated.brand': 'Brand',
-  'accounts.consolidated.group': 'Group total',
-  'accounts.consolidated.empty': 'Nothing has been posted yet.',
   // What a journal came from, for the cash book and the day book.
   'accounts.source.cash_in': 'Cash in',
   'accounts.source.cash_out': 'Cash out',
@@ -2854,9 +2845,6 @@ const en = {
   'marketing.capi.emptyTitle': 'No conversions yet',
   'marketing.capi.emptyDetail': 'When conversions are on, each delivered order appears here.',
   'analytics.title': 'Analytics',
-  'analytics.nav.dashboard': 'Dashboard',
-  'analytics.nav.leaderboard': 'Leaderboard',
-  'analytics.nav.group': 'All brands',
   'analytics.deniedTitle': 'The brand dashboard is the org admin’s',
   'analytics.deniedDetail':
     'Ask your org admin for the figures you need, or open the dashboard of your own section.',
@@ -2899,9 +2887,6 @@ const en = {
   'analytics.metric.cash': 'Cash in wallets',
   'analytics.metric.cashHint': 'Every wallet’s balance today.',
   'analytics.metric.stockValue': 'Stock value',
-  'analytics.metric.revenueGrowth': 'Revenue growth',
-  'analytics.metric.aovGrowth': 'Average order growth',
-  'analytics.metric.pickupTime': 'Pickup time',
   'analytics.trend': 'Delivered revenue by day',
   'analytics.trend.table': 'Show the days as a table',
   'analytics.col.date': 'Date',
@@ -2921,11 +2906,11 @@ const en = {
   'analytics.unknownAgent': 'Not on the staff list',
   'analytics.unnamedBranch': 'Showroom',
   'analytics.insights': 'What the rules noticed',
-  'analytics.insights.month': 'For {month}, against the other brands',
+  'analytics.insights.month': 'For {month}, against your own three months before it',
   'analytics.insights.none': 'No rule fired for this month.',
   'analytics.insight.outsideDhakaReturns.title': 'Outside-Dhaka returns are high',
   'analytics.insight.outsideDhakaReturns.detail':
-    '{rate} of outside-Dhaka parcels came back, {gap} above the group median of {median}. Consider an advance delivery charge on outside-Dhaka COD orders.',
+    '{rate} of outside-Dhaka parcels came back, {gap} above your usual of {median}. Consider an advance delivery charge on outside-Dhaka COD orders.',
   'analytics.insight.returnRateRising.title': 'The return rate is rising',
   'analytics.insight.returnRateRising.detail':
     'Returns are {rate}, up from {previous} last month. Check which channels and products the returns come from.',
@@ -2941,9 +2926,9 @@ const en = {
   'analytics.insight.channelReturns.title': 'One channel returns more',
   'analytics.insight.channelReturns.detail':
     '{channel} orders come back at {rate}, against {brand} for the brand.',
-  'analytics.insight.deliverySuccessBelowGroup.title': 'Delivery success is below the group',
-  'analytics.insight.deliverySuccessBelowGroup.detail':
-    '{success} of finished orders were delivered, {gap} below the group median of {median}.',
+  'analytics.insight.deliverySuccessBelowUsual.title': 'Delivery success is below your usual',
+  'analytics.insight.deliverySuccessBelowUsual.detail':
+    '{success} of finished orders were delivered, {gap} below your usual of {median}.',
   'analytics.severity.warning': 'Needs attention',
   'analytics.severity.info': 'Worth a look',
   'analytics.narrative': 'Summary',
@@ -2951,25 +2936,6 @@ const en = {
     'Written by the {provider} provider from the figures alone: no names, phones or addresses leave the system.',
   'analytics.narrative.failed':
     'The summary could not be written just now. The figures are unaffected.',
-  'analytics.leaderboard.subtitle':
-    'Every brand on the same normalized measures. You see other brands’ rates and ranks, never their revenue or profit.',
-  'analytics.leaderboard.month': 'Month',
-  'analytics.leaderboard.deniedTitle': 'The leaderboard is for org admins',
-  'analytics.leaderboard.deniedDetail':
-    'It compares the brands, so it is shown to the people who run them.',
-  'analytics.leaderboard.yours': 'Your brand',
-  'analytics.leaderboard.weights': 'Score weights',
-  'analytics.leaderboard.raw': '{revenue} delivered from {orders} orders',
-  'analytics.leaderboard.scoreLabel': 'Score {score} of 100',
-  'analytics.col.rank': 'Rank',
-  'analytics.col.brand': 'Brand',
-  'analytics.col.score': 'Score',
-  'analytics.group.subtitle':
-    'Every brand side by side, read through the read-only analytics role.',
-  'analytics.group.deniedTitle': 'All brands is the super admin’s view',
-  'analytics.group.deniedDetail':
-    'It shows every brand’s revenue and profit, so only the platform super admin sees it.',
-  'analytics.group.total': 'All brands',
   'analytics.seconds': '{n} s',
   'analytics.minutes': '{m} min {s} s',
 
@@ -3284,6 +3250,15 @@ const en = {
   'setPassword.doneTitle': 'Password set',
   'setPassword.doneDetail': 'Sign in with your email and the password you just chose.',
   'setPassword.toSignIn': 'Go to sign in',
+  // The owner sign-in link's page (M31, D-473).
+  'ownerLink.title': 'Signing you in',
+  'ownerLink.working': 'Checking your sign-in link…',
+  'ownerLink.refused':
+    'This sign-in link cannot be used. It may have expired or been used already. Ask for a new one.',
+  'ownerLink.noToken': 'This page needs the sign-in link it was opened with. Open the link again.',
+  'ownerLink.offline':
+    'The server could not be reached. Check the connection and open the link again.',
+  'ownerLink.toSignIn': 'Go to sign in',
   'setPassword.failed': 'The password could not be saved. Try again.',
   'users.title': 'Staff',
   'users.subtitle': 'Who can sign in to this brand, what each person may do, and how they sign in.',
@@ -3301,6 +3276,8 @@ const en = {
   'users.never': 'Never',
   'users.you': 'You',
   'users.superAdmin': 'Super admin',
+  // An owner on a record, to everyone but another owner (M31, D-473).
+  'users.owner': 'Owner',
   'users.statusActive': 'Active',
   'users.statusInvited': 'Invited',
   'users.statusDeactivated': 'Deactivated',
@@ -3355,7 +3332,7 @@ const en = {
   'users.selfNote': 'This is you. Ask another admin to change your access or reset your sign-in.',
   'users.protectedNote': 'Only a super admin can change this person.',
   'users.otherBrandNote':
-    'They also work in another brand, so only a super admin can reset their sign-in.',
+    'Their sign-in also opens another workspace, so only a super admin can reset it.',
   'users.deactivatedNote': 'Deactivated here. Tick a role and save to give them access again.',
   'users.deactivate': 'Deactivate',
   'users.deactivateTitle': 'Deactivate this person?',
@@ -3395,7 +3372,7 @@ const en = {
   'users.pickRole': 'Choose a role',
   'users.inviteSubmit': 'Invite',
   'users.alreadyHasAccount':
-    'They already have an account from another brand and can sign in with it. The role is added.',
+    'They already have an account and can sign in with it. The role is added.',
   'users.invalidEmail': 'Enter an email address.',
   'users.nameRequired': 'Enter their name.',
   // The design refresh (D-440 onward): the shell, the palette and the overview.

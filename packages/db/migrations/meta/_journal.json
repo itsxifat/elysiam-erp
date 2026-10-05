@@ -722,6 +722,34 @@
       "when": 1791191708968,
       "tag": "0104_m33_storefront_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1791201042694,
+      "tag": "0105_m31_owner_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1791201057694,
+      "tag": "0106_m31_owner_link_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1791201063183,
+      "tag": "0107_m31_owner_link_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1791201068177,
+      "tag": "0108_m31_owner_no_password",
+      "breakpoints": true
     }
   ]
 }

@@ -35,7 +35,9 @@ interface WorkerScope {
 }
 
 const worker = self as unknown as WorkerScope;
-const SHELL_CACHE = 'elysium-pos-shell-v1';
+// A neutral name (D-472). `activate` below deletes every other cache on the origin, an older
+// build's shell included, so a rename needs no migration: the shell is re-fetched.
+const SHELL_CACHE = 'erp-pos-shell-v1';
 
 /**
  * The till's own path: the directory this worker is served from, `/` on Pages and `/pos/`

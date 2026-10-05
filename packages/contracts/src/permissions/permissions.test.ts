@@ -143,18 +143,14 @@ describe('the matrix is well formed', () => {
     }
   });
 
-  it('grants `all` scope for one documented cell and nothing else', () => {
+  it('grants `all` scope to no membership role', () => {
     /*
-     * Cross-org reach is §5 exception 3 and belongs to super_admin. §18 makes
-     * exactly one carve-out: an org admin sees other orgs' **normalized
-     * metrics and ranks only**, never their raw financials (D-023), read
-     * through `erp_analytics` rather than through a tenant query.
-     *
-     * So this is an allow-list of one rather than a blanket refusal. Written
-     * as `not.toBe('all')` it would have had to be deleted to add the
-     * leaderboard, and deleting it takes the check with it.
+     * Cross-org reach belongs to super_admin alone. §18's one carve-out, the org admins'
+     * leaderboard across brands (D-023), left the brand's ERP with M31 (D-471): a brand's
+     * ERP runs on its own database and knows no other brand. Kept as an allow-list (now
+     * empty) so a future exception has to be named here.
      */
-    const ALLOWED_CROSS_ORG = ['org_admin|read|Leaderboard'];
+    const ALLOWED_CROSS_ORG: string[] = [];
 
     const crossOrg: string[] = [];
     for (const [role, rules] of Object.entries(MATRIX)) {

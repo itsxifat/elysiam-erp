@@ -115,6 +115,37 @@ describe('admin:bootstrap', () => {
     ).rejects.toThrow(/already exists/);
   });
 
+  it('does not count an owner as the first super admin (D-477)', async () => {
+    await noSuperAdmins();
+    // An owner, as the owner sign-in link makes one (super admin, no password, no role).
+    await withSystem((tx) =>
+      tx.execute(sql`
+        insert into iam.users (id, email, name, email_verified, is_super_admin, is_owner)
+        values ('usr_bootstrap_owner', 'link-owner@example.invalid', 'Owner', true, true, true)
+      `),
+    );
+    try {
+      const local = await bootstrapSuperAdmin({
+        email: 'local-admin@example.invalid',
+        name: 'Local Admin',
+        consoleUrl: CONSOLE,
+      });
+      expect(local.userId).toMatch(/^usr_/);
+      // And the brand's own super admin, once made, still counts.
+      await expect(
+        bootstrapSuperAdmin({ email: 'third@example.invalid', name: 'Third', consoleUrl: CONSOLE }),
+      ).rejects.toThrow(/already exists/);
+    } finally {
+      await noSuperAdmins();
+      await withSystem((tx) =>
+        tx.execute(sql`delete from iam.users where id = 'usr_bootstrap_owner'`),
+      );
+      await withSystem((tx) =>
+        tx.execute(sql`update iam.users set is_super_admin = true where id = ${first.userId}`),
+      );
+    }
+  });
+
   it('never promotes an existing account', async () => {
     await noSuperAdmins();
     try {

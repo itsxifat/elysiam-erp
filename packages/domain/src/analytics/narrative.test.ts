@@ -90,7 +90,6 @@ function plantedInput(): NarrativeInput {
     month: '2026-09',
     current: { ...monthFigures(0), agentName: 'Rahim Uddin', phone: '+8801711223344' },
     previous: monthFigures(5),
-    leaderboard: { rank: 2, brands: 5, compositeBps: 6_400 },
     insights,
     channelCodes: CHANNELS,
     // Fields the type does not declare, as a careless caller might pass a whole row.

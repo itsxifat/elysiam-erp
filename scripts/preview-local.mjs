@@ -5,6 +5,9 @@
  *   pnpm preview:local            a fresh preview: new database, new demo data, new passwords
  *   pnpm preview:local --keep     start again on the existing preview data
  *   pnpm preview:local --no-start prepare the database and stop (no servers)
+ *   pnpm preview:local --brand <slug>
+ *                                 one brand's own ERP (D-470): only that brand is seeded and
+ *                                 demoed, and the API and worker run with ERP_BRAND_SLUG
  *
  * Steps: start Docker's Postgres and Valkey if they are not up, build the server, make a
  * fresh `elysium_preview` database (never `elysium_dev`), migrate it, run `preview:seed`,
@@ -37,6 +40,12 @@ import {
 const args = process.argv.slice(2);
 const keep = args.includes('--keep');
 const noStart = args.includes('--no-start');
+const brandIndex = args.indexOf('--brand');
+const brand = brandIndex === -1 ? undefined : args[brandIndex + 1];
+if (brandIndex !== -1 && (brand === undefined || brand.startsWith('--'))) {
+  throw new Error('--brand needs a slug, e.g. --brand oura-lifestyle');
+}
+const brandEnv = brand === undefined ? {} : { ERP_BRAND_SLUG: brand };
 const database = process.env.PREVIEW_DATABASE ?? 'elysium_preview';
 const ports = {
   api: Number(process.env.PREVIEW_API_PORT ?? 3000),
@@ -96,7 +105,7 @@ async function main() {
     urls = databaseUrls(database);
     await bootstrapAndMigrate(urls);
     say('- filling it with demo data (about a minute)');
-    await seedPreview(urls, ports, { out: credentials });
+    await seedPreview(urls, ports, { out: credentials, env: brandEnv });
   }
 
   if (noStart) {
@@ -105,7 +114,7 @@ async function main() {
   }
 
   say('- starting the API, the worker and the three apps');
-  const children = startStack(urls, ports, { logDir });
+  const children = startStack(urls, ports, { logDir, env: brandEnv });
   const stop = () => {
     for (const child of children) killTree(child);
   };
@@ -137,7 +146,7 @@ async function main() {
   say(`  Staff console          http://localhost:${String(ports.console)}`);
   say(`  Investor portal        http://localhost:${String(ports.portal)}`);
   say(
-    `  Order tracking         http://localhost:${String(ports.portal)}/track/elysium-lifestyle-bd`,
+    `  Order tracking         http://localhost:${String(ports.portal)}/track/${brand ?? 'elysium-lifestyle-bd'}`,
   );
   say(`  Showroom till          http://localhost:${String(ports.pos)}`);
   say('');

@@ -1,4 +1,4 @@
-import { cn } from '@elysium/ui';
+import { cn, readStored, STORAGE_KEYS, writeStored } from '@elysium/ui';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { ChevronDown, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -23,11 +23,9 @@ import { visibleNavigation, type NavItem, type NavSection } from './navigation.j
  * accent, plus `aria-current="page"`, so "where am I" is never carried by colour alone.
  */
 
-const GROUPS_KEY = 'elysium-nav-groups';
-
 function readFolded(): ReadonlySet<string> {
   try {
-    const raw = localStorage.getItem(GROUPS_KEY);
+    const raw = readStored(STORAGE_KEYS.navGroups);
     const parsed: unknown = raw === null ? [] : JSON.parse(raw);
     return new Set(Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'string') : []);
   } catch {
@@ -36,11 +34,8 @@ function readFolded(): ReadonlySet<string> {
 }
 
 function writeFolded(folded: ReadonlySet<string>): void {
-  try {
-    localStorage.setItem(GROUPS_KEY, JSON.stringify([...folded]));
-  } catch {
-    // Storage denied: the fold holds for this visit only.
-  }
+  // Storage denied: the fold holds for this visit only.
+  writeStored(STORAGE_KEYS.navGroups, JSON.stringify([...folded]));
 }
 
 export function isActive(item: NavItem, pathname: string): boolean {

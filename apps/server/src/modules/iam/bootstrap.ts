@@ -100,8 +100,10 @@ export async function bootstrapSuperAdmin(raw: BootstrapInput): Promise<Bootstra
     // One at a time, so "no super admin exists" cannot be true for two runs at once.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('iam.admin-bootstrap'))`);
 
+    // Owners (D-473) are not local accounts: they arrive by owner sign-in link and hold no
+    // password here, so they do not stand in for the brand's first super admin.
     const admins = await tx.execute<{ n: number }>(
-      sql`select count(*)::int as n from iam.users where is_super_admin`,
+      sql`select count(*)::int as n from iam.users where is_super_admin and not is_owner`,
     );
     if ((admins[0]?.n ?? 0) > 0) {
       throw new BootstrapRefused(

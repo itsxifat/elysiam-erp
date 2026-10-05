@@ -24,8 +24,8 @@ import { isTrustedOrigin } from './origins.js';
  * for the Chatwoot iframe.
  */
 
-export const CSRF_COOKIE = 'elysium_csrf';
-export const CSRF_HEADER = 'x-elysium-csrf';
+export const CSRF_COOKIE = 'erp_csrf';
+export const CSRF_HEADER = 'x-csrf-token';
 
 /** Methods that cannot change state, so cannot be the target of CSRF. */
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);

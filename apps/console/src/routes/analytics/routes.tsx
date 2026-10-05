@@ -1,9 +1,9 @@
 import { createRoute, lazyRouteComponent, type AnyRoute } from '@tanstack/react-router';
 
 /**
- * M24's analytics screens: the brand dashboard, the cross-brand leaderboard and Super
- * Admin's view of all brands. A factory the router calls, as every module since M06 does;
- * each screen is its own chunk, and the dashboard's chart is a further one.
+ * M24's analytics screen: the brand dashboard. A factory the router calls, as every module
+ * since M06 does; the screen is its own chunk, and the dashboard's chart is a further one.
+ * The leaderboard and the all-brands view left with M31 (D-471).
  */
 export function analyticsRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
   const page = (path: string, load: () => Promise<Record<string, unknown>>, name: string) =>
@@ -13,9 +13,5 @@ export function analyticsRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
       component: lazyRouteComponent(load as never, name as never),
     });
 
-  return [
-    page('/analytics', () => import('./dashboard.js'), 'AnalyticsDashboardPage'),
-    page('/analytics/leaderboard', () => import('./leaderboard.js'), 'LeaderboardPage'),
-    page('/analytics/group', () => import('./group.js'), 'GroupPage'),
-  ] as const;
+  return [page('/analytics', () => import('./dashboard.js'), 'AnalyticsDashboardPage')] as const;
 }

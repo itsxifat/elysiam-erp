@@ -64,7 +64,7 @@ export const LOGINS: readonly LoginSpec[] = [
     label: 'Super admin (owner)',
     app: 'console',
     twoFactor: true,
-    note: 'Every brand, the all-brands dashboards, every approval',
+    note: 'The whole brand, the dashboards, every approval',
   },
   {
     key: 'admin',

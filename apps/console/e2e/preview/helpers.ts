@@ -119,7 +119,7 @@ export async function accessible(
 ): Promise<void> {
   for (const theme of ['light', 'dark'] as const) {
     if (theme === 'dark') {
-      await page.evaluate(() => localStorage.setItem('elysium-theme', 'dark'));
+      await page.evaluate(() => localStorage.setItem('erp-theme', 'dark'));
       await page.reload();
       await ready();
       await expect(page.locator('html')).toHaveClass(/dark/);
@@ -137,7 +137,7 @@ export async function accessible(
     expect.soft(blocking, `${label} (${theme})`).toEqual([]);
   }
   // Back to light for whatever the test does next, as it started.
-  await page.evaluate(() => localStorage.setItem('elysium-theme', 'light'));
+  await page.evaluate(() => localStorage.setItem('erp-theme', 'light'));
   await page.reload();
   await ready();
 }

@@ -1,3 +1,4 @@
+import { readStored, STORAGE_KEYS, writeStored } from '@elysium/ui';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
@@ -12,8 +13,6 @@ import { POS_MESSAGES, type PosMessageKey } from './messages.js';
  */
 
 export type PosLocale = 'en' | 'bn';
-
-const STORAGE_KEY = 'elysium-pos-locale';
 
 type Translate = (key: PosMessageKey, values?: Readonly<Record<string, string>>) => string;
 
@@ -36,12 +35,9 @@ export function translate(
 }
 
 function stored(): PosLocale {
-  try {
-    const value = localStorage.getItem(STORAGE_KEY);
-    if (value === 'bn' || value === 'en') return value;
-  } catch {
-    // Storage denied: English for this session.
-  }
+  // Storage denied: English for this session.
+  const value = readStored(STORAGE_KEYS.tillLocale);
+  if (value === 'bn' || value === 'en') return value;
   return 'en';
 }
 
@@ -58,11 +54,8 @@ export function LocaleProvider({ children }: { readonly children: ReactNode }) {
 
   const setLocale = useCallback((next: PosLocale) => {
     setState(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // Still applies to this session.
-    }
+    // Storage denied: still applies to this session.
+    writeStored(STORAGE_KEYS.tillLocale, next);
   }, []);
 
   const value = useMemo<LocaleValue>(

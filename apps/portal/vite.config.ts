@@ -27,7 +27,9 @@ export default defineConfig(({ mode }) => {
     // M05 import through it.
     resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },
     server: { port: 5174, strictPort: true },
-    // Production sourcemaps come back in M14b, wired to Sentry upload. Enabling
-    // them now only adds a Tailwind sourcemap warning to every CI run.
+    // No source maps in a build that ships: a map carries the original source, package names
+    // and comments included, to anyone with the browser's tools (D-472). Sentry, when it
+    // comes, uploads hidden maps that are not published. `check:white-label` fails on one.
+    build: { sourcemap: false },
   };
 });

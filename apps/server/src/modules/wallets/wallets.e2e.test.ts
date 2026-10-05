@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import { SEED_ORG_IDS, withOrg, withSystem } from '@elysium/db';
+import { withOrg, withSystem } from '@elysium/db';
 import { asUser } from '@elysium/db/testing';
 import { addDays, poisha, toIsoDate, ZERO } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
@@ -12,7 +12,6 @@ import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 
 import {
   ORG_A,
-  ORG_B,
   startHttpHarness,
   type Client,
   type HttpHarness,
@@ -42,13 +41,9 @@ import { applyWalletsMigrations } from './wallets.testing.js';
  * stored anywhere: if one were, all three would read it and agree while being
  * wrong together.
  *
- * `ORG_C` is the third brand, for check 3's consolidated total. Three orgs rather
- * than two because a sum of two is the same as a difference and the same as a
- * maximum for some inputs, and a bug that returns "the first org's total" passes a
- * two-org test half the time.
+ * Check 3, the consolidated total across brands, left with M31 (D-471): a brand's ERP
+ * runs on its own database, and the mother ERP adds the brands up (M32).
  */
-
-const ORG_C = SEED_ORG_IDS.orvo ?? '';
 
 let harness: HttpHarness;
 let accounts: RoleClient;
@@ -546,112 +541,21 @@ describe('check 2: petty cash needs a receipt, and the receipt is private', () =
 
 // --- check 3 ------------------------------------------------------------------
 
-describe('check 3: the consolidated total is the sum of the orgs', () => {
-  it('adds three brands up, read through the analytics role', async () => {
-    // Money in two more brands, posted through each org's own scoped path.
-    const inB = await harness.asRole('accounts', ORG_B);
-    const inC = await harness.asRole('accounts', ORG_C);
-    await postCashIn(inB, ORG_B, '70000');
-    await postCashIn(inC, ORG_C, '110000');
-
-    const consolidated = body<{
-      orgs: { orgId: string; totalPoisha: string }[];
-      totalPoisha: string;
-    }>(await superAdmin.client.request('GET', '/v1/accounts/reports/consolidated-wallets'));
-
-    const sum = consolidated.orgs.reduce((total, org) => total + BigInt(org.totalPoisha), 0n);
-    expect(consolidated.totalPoisha).toBe(sum.toString());
-
-    const byOrg = new Map(consolidated.orgs.map((org) => [org.orgId, org.totalPoisha]));
-    // ORG_A: ৳530 in the till + ৳1,000 in the bank.
-    expect(byOrg.get(ORG_A)).toBe('153000');
-    expect(byOrg.get(ORG_B)).toBe('70000');
-    expect(byOrg.get(ORG_C)).toBe('110000');
-    expect(BigInt(consolidated.totalPoisha)).toBe(153_000n + 70_000n + 110_000n);
-  });
-
-  it('refuses an org admin, whose LedgerReport grant is org-wide and not cross-org', async () => {
-    const response = await admin.client.request('GET', '/v1/accounts/reports/consolidated-wallets');
-    expect(response.statusCode).toBe(403);
-  });
-
-  it('gives each brand the P&L its own accounts team reads, and adds them up', async () => {
-    const range = `from=${addDays(toIsoDate(today()), -60)}&to=${today()}`;
-    const consolidated = body<{
-      orgs: { orgId: string; incomePoisha: string; expensePoisha: string; netPoisha: string }[];
-      incomePoisha: string;
-      expensePoisha: string;
-      netPoisha: string;
-    }>(
-      await superAdmin.client.request(
-        'GET',
-        `/v1/accounts/reports/consolidated-profit-and-loss?${range}`,
-      ),
-    );
-
-    // Each brand's line, against that brand's own P&L read through its own scope.
-    for (const [orgId, role] of [
-      [ORG_A, accounts],
-      [ORG_B, await harness.asRole('accounts', ORG_B)],
-      [ORG_C, await harness.asRole('accounts', ORG_C)],
-    ] as const) {
-      const own = body<{ incomePoisha: string; expensePoisha: string }>(
-        await role.client.request('GET', `/v1/accounts/reports/profit-and-loss?${range}`),
-      );
-      const line = consolidated.orgs.find((org) => org.orgId === orgId);
-      expect(line, `${orgId} is in the consolidated P&L`).toBeDefined();
-      expect(line?.incomePoisha).toBe(own.incomePoisha);
-      expect(line?.expensePoisha).toBe(own.expensePoisha);
-      expect(BigInt(line?.netPoisha ?? '0')).toBe(
-        BigInt(own.incomePoisha) - BigInt(own.expensePoisha),
-      );
+describe('check 3 (since M31): no report reads across brands', () => {
+  it('answers 404 for the combined wallet and P&L views, to a super admin and an org admin alike', async () => {
+    // A brand's ERP runs on its own database and knows no other brand; the combined views
+    // moved to the mother ERP (D-469, D-471).
+    for (const client of [superAdmin, admin]) {
+      for (const route of [
+        '/v1/accounts/reports/consolidated-wallets',
+        `/v1/accounts/reports/consolidated-profit-and-loss?from=${today()}&to=${today()}`,
+      ]) {
+        const response = await client.client.request('GET', route);
+        expect(response.statusCode, `GET ${route}`).toBe(404);
+      }
     }
-
-    // ORG_B and ORG_C took ৳700 and ৳1,100 of other income above, and nothing else.
-    expect(consolidated.orgs.find((org) => org.orgId === ORG_B)?.incomePoisha).toBe('70000');
-    expect(consolidated.orgs.find((org) => org.orgId === ORG_C)?.incomePoisha).toBe('110000');
-
-    const sum = (field: 'incomePoisha' | 'expensePoisha' | 'netPoisha') =>
-      consolidated.orgs.reduce((total, org) => total + BigInt(org[field]), 0n).toString();
-    expect(consolidated.incomePoisha).toBe(sum('incomePoisha'));
-    expect(consolidated.expensePoisha).toBe(sum('expensePoisha'));
-    expect(consolidated.netPoisha).toBe(sum('netPoisha'));
-  });
-
-  it('refuses the consolidated P&L to an org admin too', async () => {
-    const response = await admin.client.request(
-      'GET',
-      `/v1/accounts/reports/consolidated-profit-and-loss?from=${today()}&to=${today()}`,
-    );
-    expect(response.statusCode).toBe(403);
   });
 });
-
-/** Register a hand-cash wallet in another org and take money into it. */
-async function postCashIn(role: RoleClient, orgId: string, amountPoisha: string): Promise<void> {
-  const accountList = body<{ items: { id: string; code: string; branchId: string | null }[] }>(
-    await role.client.request('GET', '/v1/ledger/accounts'),
-  );
-  const cash = accountList.items.find((item) => item.code === '1010-HQ');
-  const income = accountList.items.find((item) => item.code === '4300');
-  expect(cash?.branchId, `${orgId} has a hand-cash account`).toBeTruthy();
-
-  const wallet = body<{ id: string }>(
-    await role.client.request('POST', '/v1/accounts/wallets', {
-      body: { account: { existingAccountId: cash?.id }, branchId: cash?.branchId },
-    }),
-  );
-  const response = await role.client.request('POST', '/v1/accounts/cash-entries', {
-    body: {
-      entryId: randomUUID(),
-      walletId: wallet.id,
-      kind: 'cash_in',
-      categoryAccountId: income?.id,
-      amountPoisha,
-    },
-  });
-  expect(response.statusCode, response.body).toBe(201);
-}
 
 // --- check 4 ------------------------------------------------------------------
 
@@ -771,7 +675,6 @@ describe('check 5: the role matrix', () => {
     `/v1/accounts/reports/profit-and-loss?from=${today()}&to=${today()}`,
     `/v1/accounts/reports/balance-sheet?asOf=${today()}`,
     `/v1/accounts/reports/aging?asOf=${today()}`,
-    '/v1/accounts/reports/consolidated-wallets',
   ];
 
   it('refuses a sales agent on every accounts route', async () => {
@@ -801,7 +704,7 @@ describe('check 5: the role matrix', () => {
   });
 
   it('lets accounts use everything in the milestone', async () => {
-    for (const route of readRoutes.filter((route) => !route.includes('consolidated'))) {
+    for (const route of readRoutes) {
       const response = await accounts.client.request('GET', route);
       expect(response.statusCode, `GET ${route}`).toBe(200);
     }

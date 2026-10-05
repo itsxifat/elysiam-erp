@@ -41,12 +41,12 @@ async function noBlockingViolations(page: Page, label: string): Promise<void> {
 async function bothThemes(page: Page, name: string): Promise<void> {
   await noBlockingViolations(page, `${name} (light)`);
   await shot(page, `${name}-light`);
-  await page.evaluate(() => localStorage.setItem('elysium-theme', 'dark'));
+  await page.evaluate(() => localStorage.setItem('erp-theme', 'dark'));
   await page.reload();
   await page.waitForLoadState('networkidle');
   await noBlockingViolations(page, `${name} (dark)`);
   await shot(page, `${name}-dark`);
-  await page.evaluate(() => localStorage.setItem('elysium-theme', 'light'));
+  await page.evaluate(() => localStorage.setItem('erp-theme', 'light'));
   await page.reload();
   await page.waitForLoadState('networkidle');
 }
@@ -155,7 +155,7 @@ test('an admin invites someone, who sets a password from the link and signs in',
   await expect(preview.getByRole('heading', { name: 'Set your password' })).toBeVisible();
   await noBlockingViolations(preview, 'set password (light)');
   await shot(preview, 'set-password-light');
-  await preview.evaluate(() => localStorage.setItem('elysium-theme', 'dark'));
+  await preview.evaluate(() => localStorage.setItem('erp-theme', 'dark'));
   // A real load, not a fragment change: the stored theme is applied as the page loads.
   await preview.goto('about:blank');
   await preview.goto('/accept-invite#token=preview-only');
