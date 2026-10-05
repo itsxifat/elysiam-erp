@@ -1,6 +1,11 @@
 import { createRoute, lazyRouteComponent, type AnyRoute } from '@tanstack/react-router';
 
+import { z } from 'zod';
+
 import { tableSearchSchema } from '../../lib/table-search.js';
+
+/** The product page's search: the variant a scan landed on, or none. */
+const productSearchSchema = z.object({ variant: z.string().uuid().optional().catch(undefined) });
 
 /**
  * The catalog's four routes, as a factory the router calls.
@@ -62,6 +67,8 @@ export function catalogRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
   const detail = createRoute({
     getParentRoute: () => rootRoute,
     path: '/catalog/$productId',
+    // `?variant=` is the SKU a scan opened the page at (M38a, D-605): its row is marked.
+    validateSearch: productSearchSchema,
     component: lazyRouteComponent(() => import('./product-detail.js'), 'CatalogProductPage'),
   });
 

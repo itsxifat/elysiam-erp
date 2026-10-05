@@ -1,4 +1,4 @@
-import { CSRF_HEADER, api, csrfToken } from '../../api.js';
+import { ApiError, CSRF_HEADER, api, csrfToken } from '../../api.js';
 import { env } from '../../env.js';
 
 /**
@@ -404,24 +404,67 @@ export function commitPriceImport(
   });
 }
 
+/** Where stickers are printed (M38a, D-604): a thermal roll, or an A4 sheet. */
+export type StickerMediumId =
+  'thermal-38x25' | 'thermal-40x30' | 'thermal-50x25' | 'a4-3x8' | 'a4-4x10';
+
 /**
- * The label sheet, as a blob.
+ * Barcode stickers, as a PDF blob (M06's label sheet, M38a's media).
  *
- * Not through `api.post`, which parses JSON: this response is a PDF. Written out
- * here rather than adding a method to the shared client, which is one of the files
- * other milestones are editing in this working tree — M06's INTEGRATION section
- * hands the integrator the shared `api.blob()` it should become.
+ * Not through `api.post`, which parses JSON: this response is a PDF. A refusal still comes
+ * back as problem+json, and its message is kept so the dialog can say what was wrong.
  */
-export async function labelSheetPdf(
-  items: readonly { readonly skuId: string; readonly copies: number }[],
-  showPrice: boolean,
-): Promise<Blob> {
+export async function stickersPdf(input: {
+  readonly items: readonly { readonly skuId: string; readonly copies: number }[];
+  readonly showPrice: boolean;
+  readonly medium: StickerMediumId;
+  readonly startAt: number;
+}): Promise<Blob> {
   const response = await fetch(new URL('/v1/catalog/labels', env.VITE_API_URL), {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json', ...csrfHeader() },
-    body: JSON.stringify({ items, showPrice }),
+    body: JSON.stringify(input),
   });
-  if (!response.ok) throw new Error('The label sheet could not be produced.');
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => null)) as {
+      code?: string;
+      detail?: string;
+      message?: string;
+    } | null;
+    throw new ApiError(
+      response.status,
+      problem?.code ?? null,
+      problem?.detail ?? problem?.message ?? 'The stickers could not be produced.',
+    );
+  }
   return response.blob();
+}
+
+/** What a scanned code is (M38a, D-605). No cost unless the caller may read it. */
+export interface CodeLookup {
+  readonly code: string;
+  readonly product: { readonly id: string; readonly name: string; readonly status: string };
+  readonly sku: {
+    readonly id: string;
+    readonly code: string;
+    readonly barcode: string | null;
+    readonly status: 'active' | 'archived';
+    readonly variantLabel: string;
+    readonly pricePoisha: string;
+  };
+  readonly stock: {
+    readonly onHand: number;
+    readonly available: number;
+    readonly locations: readonly {
+      readonly locationId: string;
+      readonly locationName: string;
+      readonly onHand: number;
+      readonly available: number;
+    }[];
+  } | null;
+}
+
+export function lookupCode(code: string): Promise<CodeLookup> {
+  return api.get(`/v1/catalog/lookup?code=${encodeURIComponent(code)}`);
 }

@@ -25,7 +25,9 @@
 
 import { DEFAULT_LOCALE, type Locale } from './locale.js';
 import { bn } from './locales/bn.js';
-import { en, type MessageKey } from './locales/en.js';
+import { en, type MessageKey as CoreMessageKey } from './locales/en.js';
+import { bn as stockToolsBn } from './locales/sections/stock-tools.bn.js';
+import { en as stockToolsEn, type StockToolsKey } from './locales/sections/stock-tools.en.js';
 
 export {
   CUSTOMER_LOCALE,
@@ -51,7 +53,16 @@ export {
   type IsoDate,
 } from './dates.js';
 
-export { type MessageKey } from './locales/en.js';
+/**
+ * Every key that exists: the core catalogue's and every section's (M38a, D-607).
+ *
+ * A section is one area's strings in its own file (`locales/sections/<area>.<locale>.ts`),
+ * typed exactly like the core one, so the console can ship it with that area's screens
+ * instead of in the first download. On the server, and in `messages`, it is simply part of
+ * its locale.
+ */
+export type MessageKey = CoreMessageKey | StockToolsKey;
+export type { CoreMessageKey, StockToolsKey };
 
 /**
  * Every catalogue, by locale.
@@ -62,7 +73,10 @@ export { type MessageKey } from './locales/en.js';
  * object literals, so a mutation is a compile error rather than a runtime
  * surprise in one process and not another.
  */
-export const messages: Record<Locale, Record<MessageKey, string>> = { en, bn };
+export const messages: Record<Locale, Record<MessageKey, string>> = {
+  en: { ...en, ...stockToolsEn },
+  bn: { ...bn, ...stockToolsBn },
+};
 
 /**
  * Look a message up.

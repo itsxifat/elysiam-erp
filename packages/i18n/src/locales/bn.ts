@@ -452,6 +452,7 @@ const bn: Record<MessageKey, string> = {
   'stock.status.cancelled': 'বাতিল',
 
   'stock.counts': 'স্টক গণনা',
+  'nav.stockInHand': 'হাতে থাকা স্টক',
   'stock.countsHint': 'গণনা শুরু হলে তখনকার হিসাব আটকে যায়। পার্থক্যটি সমন্বয় হয়ে যায়।',
   'stock.openCount': 'গণনা শুরু করুন',
   'stock.colSnapshot': 'সিস্টেমে',

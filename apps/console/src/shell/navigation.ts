@@ -503,6 +503,14 @@ export const PALETTE_PAGES: readonly PalettePage[] = [
     icon: ClipboardList,
     required: { action: 'read', subject: 'Stock' },
   },
+  // M38a: stock the brand already holds when it starts, and its window (D-602).
+  {
+    to: '/stock/in-hand',
+    labelKey: 'nav.stockInHand',
+    parentKey: 'nav.stock',
+    icon: PackagePlus,
+    required: { action: 'read', subject: 'Stock' },
+  },
   {
     to: '/supply/entries',
     labelKey: 'supply.entries',

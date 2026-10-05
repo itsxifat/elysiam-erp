@@ -117,6 +117,52 @@ describe('check-i18n', () => {
     expect(result.output).toContain('duplicate key "a.one" in bn');
   });
 
+  /*
+   * Section catalogues (M38a, D-607): `sections/<area>.<locale>.ts` join their locale, so a
+   * key used from code may live there, must exist in every locale, and may not repeat a key
+   * the locale file already has.
+   */
+  it('reads section catalogues as part of their locale', () => {
+    mkdirSync(path.join(fixture, 'locales/sections'), { recursive: true });
+    writeFileSync(
+      path.join(fixture, 'locales/sections/area.en.ts'),
+      catalogue([['s.one', 'Section one']]).replace('as LOCALE', 'as en'),
+      'utf8',
+    );
+    writeFileSync(
+      path.join(fixture, 'locales/sections/area.bn.ts'),
+      catalogue([['s.one', 'অংশ এক']]).replace('as LOCALE', 'as bn'),
+      'utf8',
+    );
+    const passing = fixtureWith({
+      en: catalogue([['a.one', 'One']]),
+      bn: catalogue([['a.one', 'এক']]),
+      source: "export const label = t('s.one') + t('a.one');\n",
+    });
+    expect(passing.output).toContain('PASS');
+    expect(passing.code).toBe(0);
+
+    fixture = mkdtempSync(path.join(tmpdir(), 'elysium-i18n-'));
+    mkdirSync(path.join(fixture, 'locales/sections'), { recursive: true });
+    writeFileSync(
+      path.join(fixture, 'locales/sections/area.en.ts'),
+      catalogue([['s.one', 'Section one']]).replace('as LOCALE', 'as en'),
+      'utf8',
+    );
+    writeFileSync(
+      path.join(fixture, 'locales/sections/area.bn.ts'),
+      catalogue([['a.one', 'এক আবার']]).replace('as LOCALE', 'as bn'),
+      'utf8',
+    );
+    const failing = fixtureWith({
+      en: catalogue([['a.one', 'One']]),
+      bn: catalogue([['a.one', 'এক']]),
+    });
+    expect(failing.code).toBe(1);
+    expect(failing.output).toContain('missing from bn: s.one');
+    expect(failing.output).toContain('duplicate key "a.one" in bn');
+  });
+
   it('fails rather than passing vacuously when a locale is missing entirely', () => {
     const result = fixtureWith({ en: catalogue([['a.one', 'One']]) });
     expect(result.code).toBe(1);

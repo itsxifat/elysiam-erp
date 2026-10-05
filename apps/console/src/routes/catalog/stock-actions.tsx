@@ -5,15 +5,27 @@ import { useState, type ReactNode } from 'react';
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
+import '../../i18n/stock-tools.js';
 import {
   dispatchTransfer,
+  draftStockInHand,
   listLocations,
+  openingStockWindow,
+  postStockInHand,
   requestAdjustment,
   setReorderLevel,
   type StockRow,
 } from '../stock/api.js';
 import { createDraft, createEntry, listSupplierOptions } from '../supply/api.js';
-import { isReplayConflict, parseQty, positiveCost, requestKey } from './variant-grid.js';
+import { ScanField } from './scan-field.js';
+import {
+  addScannedPiece,
+  isReplayConflict,
+  parseQty,
+  positiveCost,
+  requestKey,
+  variantForCode,
+} from './variant-grid.js';
 
 /**
  * The product page's three stock actions (D-420): receive, adjust and transfer, each a
@@ -35,8 +47,46 @@ import { isReplayConflict, parseQty, positiveCost, requestKey } from './variant-
 export interface VariantInfo {
   readonly id: string;
   readonly skuCode: string;
+  /** What a scanner reads off the sticker (M38a, D-603). */
+  readonly barcode: string | null;
   readonly label: string;
   readonly status: 'active' | 'archived';
+}
+
+/**
+ * A scan field over a dialog's quantity boxes (M38a, D-605): each scan of one of this
+ * product's stickers adds one piece to its variant's box; a sticker of another product says
+ * so and adds nothing.
+ */
+function ScanIntoQuantities({
+  variants,
+  setQuantities,
+}: {
+  readonly variants: readonly VariantInfo[];
+  readonly setQuantities: (
+    update: (current: Record<string, string>) => Record<string, string>,
+  ) => void;
+}) {
+  const t = useT();
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  return (
+    <ScanField
+      message={message?.text ?? null}
+      tone={message?.error === true ? 'error' : 'neutral'}
+      onCode={(code) => {
+        const variant = variantForCode(variants, code);
+        if (variant === undefined) {
+          setMessage({ text: t('st.scan.notThisProduct'), error: true });
+          return;
+        }
+        setQuantities((current) => addScannedPiece(current, variant.id));
+        setMessage({
+          text: `${t('st.scan.added')} ${variant.label === '' ? variant.skuCode : variant.label}`,
+          error: false,
+        });
+      }}
+    />
+  );
 }
 
 const control = cn(controlClassName, 'w-full');
@@ -176,15 +226,20 @@ export function ReceiveStockDialog({
   onOpenChange,
   variants,
   onDone,
+  onReceived,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly variants: readonly VariantInfo[];
   readonly onDone: () => void;
+  /** The pieces just received, for their stickers (D-604). */
+  readonly onReceived?: (lines: readonly { skuId: string; qty: number }[]) => void;
 }) {
   const t = useT();
   const ability = useAbility();
   const mayPrice = ability.can('read', 'Cost');
+  // From a supplier, or stock the brand already holds while its window is open (D-602).
+  const [source, setSource] = useState<'supplier' | 'in-hand'>('supplier');
 
   const [supplierId, setSupplierId] = useState('');
   const [locationId, setLocationId] = useState('');
@@ -194,6 +249,14 @@ export function ReceiveStockDialog({
   const [done, setDone] = useState<'entry' | 'draft' | null>(null);
   // One key per receipt being saved, kept across retries (ledger audit H1).
   const [key] = useState(() => requestKey());
+
+  const openingWindow = useQuery({
+    queryKey: ['stock', 'opening-window'],
+    queryFn: openingStockWindow,
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const inHand = source === 'in-hand' && openingWindow.data?.open === true;
 
   const suppliers = useQuery({
     queryKey: ['supply', 'suppliers', 'options'],
@@ -220,7 +283,7 @@ export function ReceiveStockDialog({
   const costPoisha = positiveCost(takaToPoisha(costTaka));
   const units = (lines ?? []).reduce((sum, line) => sum + line.qty, 0);
   const ready =
-    supplierId !== '' &&
+    (inHand || supplierId !== '') &&
     chosenLocation !== '' &&
     lines !== null &&
     lines.length > 0 &&
@@ -229,6 +292,22 @@ export function ReceiveStockDialog({
   const submit = useMutation({
     mutationFn: async () => {
       const chosen = lines ?? [];
+      if (inHand) {
+        if (mayPrice) {
+          await postStockInHand({
+            entryId: key.current(),
+            locationId: chosenLocation,
+            lines: chosen.map((line) => ({ ...line, unitCostPoisha: costPoisha ?? '0' })),
+          });
+          return { kind: 'entry' as const, lines: chosen };
+        }
+        await draftStockInHand({
+          entryId: key.current(),
+          locationId: chosenLocation,
+          lines: chosen,
+        });
+        return { kind: 'draft' as const, lines: chosen };
+      }
       if (mayPrice) {
         const lines = chosen.map((line) => ({ ...line, unitCostPoisha: costPoisha ?? '0' }));
         await createEntry({
@@ -238,7 +317,7 @@ export function ReceiveStockDialog({
           ...(invoice.trim() === '' ? {} : { invoiceNumber: invoice.trim() }),
           lines,
         });
-        return 'entry' as const;
+        return { kind: 'entry' as const, lines: chosen };
       }
       await createDraft({
         draftId: key.current(),
@@ -247,17 +326,18 @@ export function ReceiveStockDialog({
         ...(invoice.trim() === '' ? {} : { invoiceNumber: invoice.trim() }),
         lines: chosen,
       });
-      return 'draft' as const;
+      return { kind: 'draft' as const, lines: chosen };
     },
     // Told an earlier save went through with other goods: the next press is a new receipt.
     onError: (error) => {
       if (isReplayConflict(error)) key.settle();
     },
-    onSuccess: (kind) => {
+    onSuccess: (result) => {
       key.settle();
-      setDone(kind);
+      setDone(result.kind);
       setQuantities({});
       onDone();
+      onReceived?.(result.lines);
     },
   });
 
@@ -270,7 +350,11 @@ export function ReceiveStockDialog({
         onOpenChange(next);
       }}
       title={t('cs.receive.title')}
-      description={t(mayPrice ? 'cs.receive.help' : 'cs.receive.helpDraft')}
+      description={
+        inHand
+          ? t(mayPrice ? 'st.receive.inHandHelp' : 'st.receive.inHandHelpDraft')
+          : t(mayPrice ? 'cs.receive.help' : 'cs.receive.helpDraft')
+      }
       closeLabel={t('cs.close')}
       className={wide}
       footer={
@@ -285,19 +369,41 @@ export function ReceiveStockDialog({
       }
     >
       <div className="space-y-4">
+        {openingWindow.data?.open === true ? (
+          <fieldset className="space-y-1.5">
+            <legend className="text-sm font-medium">{t('st.new.stockFrom')}</legend>
+            <div className="flex flex-wrap gap-4">
+              {(['supplier', 'in-hand'] as const).map((value) => (
+                <label key={value} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="receive-source"
+                    value={value}
+                    checked={source === value}
+                    onChange={() => setSource(value)}
+                    className="size-4 accent-primary"
+                  />
+                  {t(value === 'in-hand' ? 'st.new.inHand' : 'st.new.fromSupplier')}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={t('cs.supplier')} id="receive-supplier">
-            <Select
-              id="receive-supplier"
-              value={supplierId}
-              onValueChange={setSupplierId}
-              placeholder={t('cs.chooseSupplier')}
-              options={(suppliers.data?.items ?? []).map((supplier) => ({
-                value: supplier.id,
-                label: `${supplier.name} (${supplier.code})`,
-              }))}
-            />
-          </Field>
+          {inHand ? null : (
+            <Field label={t('cs.supplier')} id="receive-supplier">
+              <Select
+                id="receive-supplier"
+                value={supplierId}
+                onValueChange={setSupplierId}
+                placeholder={t('cs.chooseSupplier')}
+                options={(suppliers.data?.items ?? []).map((supplier) => ({
+                  value: supplier.id,
+                  label: `${supplier.name} (${supplier.code})`,
+                }))}
+              />
+            </Field>
+          )}
           <Field label={t('cs.location')} id="receive-location">
             <Select
               id="receive-location"
@@ -317,19 +423,23 @@ export function ReceiveStockDialog({
               />
             </Field>
           ) : null}
-          <Field label={t('cs.invoice')} id="receive-invoice">
-            <input
-              id="receive-invoice"
-              value={invoice}
-              maxLength={64}
-              onChange={(event) => setInvoice(event.target.value)}
-              className={control}
-            />
-          </Field>
+          {inHand ? null : (
+            <Field label={t('cs.invoice')} id="receive-invoice">
+              <input
+                id="receive-invoice"
+                value={invoice}
+                maxLength={64}
+                onChange={(event) => setInvoice(event.target.value)}
+                className={control}
+              />
+            </Field>
+          )}
         </div>
-        {(suppliers.data?.items ?? []).length === 0 && suppliers.isSuccess ? (
+        {!inHand && (suppliers.data?.items ?? []).length === 0 && suppliers.isSuccess ? (
           <p className="text-sm text-muted-foreground">{t('cs.noSuppliers')}</p>
         ) : null}
+
+        <ScanIntoQuantities variants={variants} setQuantities={setQuantities} />
 
         <QtyTable
           idPrefix="receive"
@@ -510,6 +620,8 @@ export function AdjustStockDialog({
           />
         </fieldset>
 
+        <ScanIntoQuantities variants={variants} setQuantities={setQuantities} />
+
         <QtyTable
           idPrefix="adjust"
           variants={variants}
@@ -650,6 +762,8 @@ export function TransferStockDialog({
             className={control}
           />
         </Field>
+
+        <ScanIntoQuantities variants={variants} setQuantities={setQuantities} />
 
         <QtyTable
           idPrefix="transfer"

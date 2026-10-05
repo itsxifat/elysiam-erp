@@ -140,6 +140,27 @@ function catalogueFiles(directory) {
 }
 
 /**
+ * Section catalogues (M38a, D-607): `sections/<section>.<locale>.ts` beside the locale files.
+ *
+ * A section holds one area's strings, which the console loads with that area's screens
+ * rather than in the first download, so the initial route stays inside its budget as the
+ * product grows. For this check a section is simply more of its locale: its keys join that
+ * locale's catalogue, every locale must have them, and a key defined both in a locale file
+ * and in a section (or in two sections) is a duplicate — the later value would silently win.
+ */
+function sectionFiles(directory) {
+  const sections = path.join(directory, 'sections');
+  if (!exists(sections)) return [];
+  return readdirSync(sections)
+    .filter((name) => /^[a-z0-9-]+\.[a-z]{2}\.(ts|mts|js|mjs)$/.test(name) && !/\.test\./.test(name))
+    .sort()
+    .map((name) => ({
+      locale: name.split('.')[1] ?? '',
+      file: path.join(sections, name),
+    }));
+}
+
+/**
  * The exported catalogue object.
  *
  * Named export first (`export { bn }`), then default. Anything else is a file
@@ -273,6 +294,29 @@ async function main() {
           'the later value silently wins, so the earlier translation is lost.',
       );
     }
+  }
+
+  for (const { locale, file } of sectionFiles(catalogueDir)) {
+    const module = await import(`file://${file.replace(/\\/g, '/')}`);
+    const section = catalogueOf(module, locale, file);
+    const { duplicates } = duplicateKeysIn(file);
+    for (const { key, first, again } of duplicates) {
+      failures.push(
+        `duplicate key "${key}" in ${path.basename(file)}: line ${first} and line ${again} — ` +
+          'the later value silently wins, so the earlier translation is lost.',
+      );
+    }
+    const merged = { ...(catalogues.get(locale) ?? {}) };
+    for (const [key, value] of Object.entries(section)) {
+      if (key in merged) {
+        failures.push(
+          `duplicate key "${key}" in ${locale}: defined in ${path.basename(file)} and again ` +
+            'elsewhere in the catalogue — one of the two values is silently lost.',
+        );
+      }
+      merged[key] = value;
+    }
+    catalogues.set(locale, merged);
   }
 
   const union = new Set();

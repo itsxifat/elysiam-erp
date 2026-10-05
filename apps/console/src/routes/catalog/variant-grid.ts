@@ -124,3 +124,26 @@ export function isReplayConflict(error: unknown): boolean {
 export function positiveCost(poisha: string | null): string | null {
   return poisha === null || /^0+$/.test(poisha) ? null : poisha;
 }
+
+/**
+ * The variant a scanned code names, among one product's variants (M38a, D-605): its barcode
+ * exactly, or its SKU code in any case.
+ */
+export function variantForCode<
+  V extends { readonly skuCode: string; readonly barcode: string | null },
+>(variants: readonly V[], code: string): V | undefined {
+  const trimmed = code.trim();
+  return (
+    variants.find((variant) => variant.barcode !== null && variant.barcode === trimmed) ??
+    variants.find((variant) => variant.skuCode === trimmed.toUpperCase())
+  );
+}
+
+/** One more piece in a quantity box: blank or unreadable counts as none so far. */
+export function addScannedPiece(
+  quantities: Readonly<Record<string, string>>,
+  skuId: string,
+): Record<string, string> {
+  const current = parseQty(quantities[skuId] ?? '') ?? 0;
+  return { ...quantities, [skuId]: String(current + 1) };
+}

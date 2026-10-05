@@ -9,6 +9,8 @@ import {
 import { Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { useT } from '../../i18n/locale.js';
+import '../../i18n/stock-tools.js';
 import { DEFAULT_PAGE_SIZE } from '../../lib/table-search.js';
 import { useStockT } from './messages.js';
 
@@ -28,6 +30,7 @@ import { useStockT } from './messages.js';
  */
 export function StockNav() {
   const st = useStockT();
+  const t = useT();
   const tab = tabClassName;
   const active = { className: tabActiveClassName };
 
@@ -52,6 +55,9 @@ export function StockNav() {
       </Link>
       <Link to="/stock/counts" className={tab} activeProps={active}>
         {st('stock.counts')}
+      </Link>
+      <Link to="/stock/in-hand" className={tab} activeProps={active}>
+        {t('st.inHand.tab')}
       </Link>
     </TabList>
   );

@@ -1,6 +1,5 @@
 import {
   Button,
-  Checkbox,
   ConfirmDialog,
   DateTime,
   Dialog,
@@ -15,12 +14,13 @@ import {
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, getRouteApi } from '@tanstack/react-router';
-import { ArrowDown, ArrowLeft, ArrowUp, Pencil, Trash2 } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { ArrowDown, ArrowLeft, ArrowUp, Pencil, Printer, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
+import '../../i18n/stock-tools.js';
 import { DEFAULT_PAGE_SIZE } from '../../lib/table-search.js';
 import { listLocations, listMovements, listStock, type StockRow } from '../stock/api.js';
 import {
@@ -28,7 +28,6 @@ import {
   attachImage,
   detachImage,
   getProduct,
-  labelSheetPdf,
   listAttributes,
   listCategories,
   priceHistory,
@@ -48,6 +47,7 @@ import {
   TransferStockDialog,
   type VariantInfo,
 } from './stock-actions.js';
+import { CopyCode, EanBars, StickerDialog, type StickerItem } from './stickers.js';
 import { total } from './variant-grid.js';
 import { WebsiteCard } from './website-card.js';
 
@@ -73,10 +73,18 @@ const route = getRouteApi('/catalog/$productId');
 
 type Dialogs = 'receive' | 'adjust' | 'transfer' | 'reorder' | 'edit' | 'archive' | null;
 
+/** The label a sticker row and a dialog line read as: `Linen Panjabi · M / White`. */
+function stickerLabel(product: CatalogProduct, sku: CatalogSku): string {
+  const variant = labelOf(sku);
+  return variant === '' ? product.name : `${product.name} · ${variant}`;
+}
+
 export function CatalogProductPage() {
   const ability = useAbility();
   const t = useT();
   const { productId } = route.useParams();
+  // The variant a scan opened this page at (M38a, D-605), marked in the grid.
+  const { variant: scannedVariant } = route.useSearch();
   const queryClient = useQueryClient();
 
   const mayRead = ability.can('read', 'Catalog');
@@ -86,6 +94,8 @@ export function CatalogProductPage() {
   const mayAdjust = ability.can('request', 'StockAdjustment');
 
   const [open, setOpen] = useState<Dialogs>(null);
+  // Stickers to print: from the Stickers button, a variant's own button, or a receipt.
+  const [stickers, setStickers] = useState<readonly StickerItem[] | null>(null);
 
   const product = useQuery({
     queryKey: ['catalog', 'product', productId],
@@ -139,9 +149,25 @@ export function CatalogProductPage() {
   const variants: VariantInfo[] = skus.map((sku) => ({
     id: sku.id,
     skuCode: sku.skuCode,
+    barcode: sku.barcode,
     label: labelOf(sku),
     status: sku.status,
   }));
+  /** One sticker per piece on hand, or one when there is none yet. */
+  const onHandOf = (skuId: string) =>
+    total(rows.filter((row) => row.skuId === skuId).map((row) => row.onHand));
+  const stickerItems = (pick: (sku: CatalogSku) => number): StickerItem[] =>
+    data === undefined
+      ? []
+      : skus
+          .filter((sku) => sku.status === 'active')
+          .map((sku) => ({
+            skuId: sku.id,
+            label: stickerLabel(data, sku),
+            skuCode: sku.skuCode,
+            count: pick(sku),
+          }))
+          .filter((item) => item.count > 0);
   const rows = stock.data?.items ?? [];
   const category = categories.data?.items.find((entry) => entry.id === data?.categoryId);
   const available = total(rows.map((row) => row.available));
@@ -245,7 +271,13 @@ export function CatalogProductPage() {
           )}
           showStock={mayStock}
           mayWrite={mayWrite}
+          highlighted={scannedVariant}
           onReorder={() => setOpen('reorder')}
+          onPrint={(sku) =>
+            setStickers(
+              stickerItems((entry) => (entry.id === sku.id ? Math.max(1, onHandOf(sku.id)) : 0)),
+            )
+          }
           onDone={refresh}
         />
 
@@ -272,14 +304,46 @@ export function CatalogProductPage() {
         <PriceHistory variants={variants} />
 
         <PermissionGate allowed={mayRead}>
-          <Labels skus={skus} />
+          <section
+            aria-labelledby="stickers-heading"
+            className="space-y-3 rounded-lg border border-border bg-card p-5"
+          >
+            <h2 id="stickers-heading" className="text-base font-semibold tracking-tight">
+              {t('st.stickers.sectionTitle')}
+            </h2>
+            <p className="text-sm text-muted-foreground">{t('st.stickers.sectionHelp')}</p>
+            <Button
+              variant="outline"
+              data-testid="product-stickers"
+              disabled={skus.every((sku) => sku.status !== 'active')}
+              onClick={() => setStickers(stickerItems((sku) => Math.max(1, onHandOf(sku.id))))}
+            >
+              <Printer aria-hidden="true" />
+              {t('st.stickers.choose')}
+            </Button>
+          </section>
         </PermissionGate>
+
+        <StickerDialog
+          open={stickers !== null}
+          onOpenChange={(next) => {
+            if (!next) setStickers(null);
+          }}
+          items={stickers ?? []}
+        />
 
         <ReceiveStockDialog
           open={open === 'receive'}
           onOpenChange={(next) => setOpen(next ? 'receive' : null)}
           variants={variants}
           onDone={refresh}
+          onReceived={(lines) => {
+            // One sticker per piece just received (D-604).
+            setOpen(null);
+            setStickers(
+              stickerItems((sku) => lines.find((line) => line.skuId === sku.id)?.qty ?? 0),
+            );
+          }}
         />
         <AdjustStockDialog
           open={open === 'adjust'}
@@ -383,10 +447,14 @@ function VariantGrid({
   locations,
   showStock,
   mayWrite,
+  highlighted,
   onReorder,
+  onPrint,
   onDone,
 }: {
   readonly onReorder: () => void;
+  readonly highlighted?: string | undefined;
+  readonly onPrint: (sku: CatalogSku) => void;
   readonly product: CatalogProduct | undefined;
   readonly rows: readonly StockRow[];
   readonly locations: readonly { id: string; name: string; code: string; kind: string }[];
@@ -399,6 +467,14 @@ function VariantGrid({
   const [prices, setPricesState] = useState<Record<string, string>>({});
   const [archiving, setArchiving] = useState<CatalogSku | null>(null);
   const skus = product?.skus ?? [];
+  const marked = useRef<HTMLTableRowElement>(null);
+
+  // A scanned variant scrolls into view and takes focus, so the person sees which one it is.
+  useEffect(() => {
+    if (highlighted === undefined || product === undefined) return;
+    marked.current?.scrollIntoView({ block: 'center' });
+    marked.current?.focus();
+  }, [highlighted, product]);
 
   // Every active warehouse, then every showroom, then anywhere else this product has
   // stock right now (in transit, damaged). An empty in-transit column is noise.
@@ -509,6 +585,12 @@ function VariantGrid({
                 </th>
                 <th
                   scope="col"
+                  className="h-10 px-4 text-xs font-medium whitespace-nowrap text-muted-foreground"
+                >
+                  {t('catalog.colBarcode')}
+                </th>
+                <th
+                  scope="col"
                   className="h-10 px-4 text-right text-xs font-medium whitespace-nowrap text-muted-foreground"
                 >
                   {t('cs.col.price')}
@@ -550,7 +632,14 @@ function VariantGrid({
                 return (
                   <tr
                     key={sku.id}
-                    className="border-b border-border last:border-b-0 hover:bg-accent/60"
+                    ref={sku.id === highlighted ? marked : undefined}
+                    tabIndex={sku.id === highlighted ? -1 : undefined}
+                    data-scanned={sku.id === highlighted ? 'true' : undefined}
+                    aria-current={sku.id === highlighted ? 'true' : undefined}
+                    className={cn(
+                      'border-b border-border last:border-b-0 hover:bg-accent/60 focus-visible:outline-none',
+                      sku.id === highlighted ? 'bg-primary-subtle ring-2 ring-ring ring-inset' : '',
+                    )}
                   >
                     <td className="h-row px-4">
                       <span className="font-medium">{labelOf(sku) || t('cs.new.oneVariant')}</span>
@@ -562,6 +651,28 @@ function VariantGrid({
                     </td>
                     <td className="h-row px-4 text-xs text-muted-foreground tabular-nums">
                       {sku.skuCode}
+                    </td>
+                    <td className="h-row px-4">
+                      {sku.barcode === null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5">
+                          <EanBars code={sku.barcode} className="hidden sm:block" />
+                          <span className="font-mono text-xs tabular-nums">{sku.barcode}</span>
+                          <CopyCode code={sku.barcode} />
+                          {sku.status === 'active' ? (
+                            <Button
+                              type="button"
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label={`${t('st.barcode.print')} ${sku.skuCode}`}
+                              onClick={() => onPrint(sku)}
+                            >
+                              <Printer aria-hidden="true" />
+                            </Button>
+                          ) : null}
+                        </span>
+                      )}
                     </td>
                     <td className="h-row px-4 text-right">
                       {editing ? (
@@ -1164,66 +1275,6 @@ function PriceHistory({ variants }: { readonly variants: readonly VariantInfo[] 
           </table>
         </div>
       )}
-    </section>
-  );
-}
-
-/** The barcode label sheet, one or more labels per variant. */
-function Labels({ skus }: { readonly skus: readonly CatalogSku[] }) {
-  const t = useT();
-  const [copies, setCopies] = useState(1);
-  const [showPrice, setShowPrice] = useState(true);
-
-  const download = useMutation({
-    mutationFn: () =>
-      labelSheetPdf(
-        skus.filter((sku) => sku.status === 'active').map((sku) => ({ skuId: sku.id, copies })),
-        showPrice,
-      ),
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener');
-      setTimeout(() => URL.revokeObjectURL(url), 30_000);
-    },
-  });
-
-  return (
-    <section
-      aria-labelledby="labels-heading"
-      className="space-y-4 rounded-lg border border-border bg-card p-5"
-    >
-      <h2 id="labels-heading" className="text-base font-semibold tracking-tight">
-        {t('catalog.labels')}
-      </h2>
-      <p className="text-sm text-muted-foreground">{t('catalog.labelsHelp')}</p>
-      <div className="flex flex-wrap items-end gap-3">
-        <Field label={t('catalog.labelsCopies')}>
-          <input
-            type="number"
-            min={1}
-            max={200}
-            value={copies}
-            onChange={(event) => setCopies(Math.min(200, Math.max(1, Number(event.target.value))))}
-            className={cn(controlClassName, 'w-24 text-right tabular-nums')}
-          />
-        </Field>
-        <label className="flex h-control items-center gap-2 text-sm">
-          <Checkbox checked={showPrice} onCheckedChange={(next) => setShowPrice(next === true)} />
-          {t('catalog.labelsShowPrice')}
-        </label>
-        <Button
-          variant="outline"
-          disabled={skus.length === 0 || download.isPending}
-          onClick={() => download.mutate()}
-        >
-          {t('catalog.labelsDownload')}
-        </Button>
-      </div>
-      {download.error !== null ? (
-        <p role="alert" className="text-sm text-destructive">
-          {t('cs.labelsFailed')}
-        </p>
-      ) : null}
     </section>
   );
 }

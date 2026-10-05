@@ -445,6 +445,9 @@ importers:
       '@elysium/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@elysium/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@elysium/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n

@@ -38,6 +38,13 @@ const AccountMenu = lazy(() =>
 const MobileNav = lazy(() =>
   import('./mobile-nav.js').then((module) => ({ default: module.MobileNav })),
 );
+/*
+ * The barcode scanner, anywhere in the console (M38a, D-605): its own chunk, fetched once
+ * the shell has painted, so the first screen does not wait for it.
+ */
+const ScanListener = lazy(() =>
+  import('./scan-listener.js').then((module) => ({ default: module.ScanListener })),
+);
 
 const RAIL_KEY = 'elysium-sidebar';
 
@@ -132,6 +139,12 @@ export function AppShell() {
           <MobileNav open={drawerOpen} onOpenChange={setDrawerOpen} />
         </Suspense>
       ) : null}
+
+      {session.context === null ? null : (
+        <Suspense fallback={null}>
+          <ScanListener />
+        </Suspense>
+      )}
 
       <div className="flex min-h-dvh">
         <aside

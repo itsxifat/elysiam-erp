@@ -489,6 +489,7 @@ const en = {
   'stock.status.cancelled': 'Cancelled',
 
   'stock.counts': 'Stock counts',
+  'nav.stockInHand': 'Stock in hand',
   'stock.countsHint': 'A count freezes a snapshot. The difference becomes an adjustment.',
   'stock.openCount': 'Start a count',
   'stock.colSnapshot': 'System',
