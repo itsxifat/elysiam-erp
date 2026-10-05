@@ -129,19 +129,6 @@ export interface CategoryWebPatch {
   readonly imageFileId?: Change<string | null>;
 }
 
-/**
- * Whether a file may be a category's picture: stored, public, uploaded for category images.
- * The same three conditions as a product image (`attachImage`), for the same reasons.
- */
-export async function isCategoryImage(tx: Tx, orgId: string, fileId: string): Promise<boolean> {
-  const rows = await tx.execute<{ id: string }>(sql`
-    select f.id from files.objects f
-    where f.org_id = ${orgId} and f.id = ${fileId}
-      and f.status = 'stored' and f.visibility = 'public' and f.purpose = 'category-image'
-  `);
-  return rows.length === 1;
-}
-
 export async function setCategoryWebFields(
   tx: Tx,
   orgId: string,

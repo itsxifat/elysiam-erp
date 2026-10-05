@@ -1440,10 +1440,13 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
     every live `/storefront/v1` route with a website key and finds no cost or cost-like key.
     PASS.
   - Check 4 (round trip through the console): `website.stack.ts` against the real stack, 7 of
-    7 passed (ports 3213/5286): settings by section, two hero slides reordered, a menu with a
-    dropdown, a size chart, a key issued and the saved site read back through the signed API
-    with it, a product put on the website from its card. axe clean (serious and critical) on
-    settings, hero, menu and size charts. Screenshots in `docs/review/M33/`. PASS.
+    7 passed (ports 3213/5286), first at `ef62846` and again after the audit fixes at
+    `21672da` (48.2 s): settings by section, two hero slides reordered, a menu with a dropdown,
+    a size chart, a key issued and the saved site read back through the signed API with it, a
+    product put on the website from its card. axe clean (serious and critical) on settings,
+    hero, menu and size charts. Screenshots in `docs/review/M33/` (`dd30f7a`); the dialog that
+    shows a key's secret is not screenshotted (`b2792ae`; an earlier commit carried one from a
+    throwaway database, useless without that database's key row). PASS.
   - Check 5: `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at `21672da`:
     194 test files, 3,083 passed, 1 skipped (pre-existing); format, lint, typecheck, build,
     bundle (initial route 246.1 KB of 250), migrations, schema drift (103 migrations agree),
@@ -1454,7 +1457,11 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
   settings saves audited only after the response; the `pin` pattern redacted the whole
   shipping section), 6 low, 6 notes — all fixed (`7808488`) except the notes recorded below;
   re-check 0 critical, 0 high, 0 medium, 1 low (a repeated query parameter), 6 notes — the low
-  and five notes fixed (`21672da`). acceptance-auditor: see below.
+  and five notes fixed (`21672da`). acceptance-auditor: READY, all five checks PASS; its
+  scope notes fixed after: the category picture is checked through `FilesService`
+  (`publicImagesIn` with a purpose), not by a new catalog read of `files.objects`; the old-id
+  map, a shown product with no active size and a pending category picture gained tests; the
+  doc nits.
 - Decisions/assumptions: D-500 to D-512 (D-500, D-501, D-503, D-506, D-507, D-509, D-510,
   D-511 and D-512 ASSUMED).
 - New dependencies: none.

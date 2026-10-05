@@ -21,6 +21,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { AuditService } from '../../platform/audit/audit.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi, type Change } from '../catalog/catalog.api.js';
+import type { FilePurpose } from '../files/files.policy.js';
 import { FilesService } from '../files/files.service.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import { STOREFRONT_CONFIG, type StorefrontConfig } from './storefront.config.js';
@@ -525,6 +526,11 @@ export class StorefrontService {
     input: CategoryWebFieldsInput,
   ) {
     const category = await withOrg(context, async (tx) => {
+      if (input.imageFileId !== undefined && input.imageFileId !== null) {
+        await this.assertPublicImages(tx, context.orgId, [input.imageFileId], 'category picture', [
+          'category-image',
+        ]);
+      }
       const saved = await this.catalog.setCategoryWebFields(tx, context.orgId, categoryId, {
         webVisible: change(input.webVisible !== undefined, input.webVisible ?? true),
         featured: change(input.featured !== undefined, input.featured ?? false),
@@ -550,9 +556,10 @@ export class StorefrontService {
     orgId: string,
     ids: readonly string[],
     what: string,
+    purposes?: readonly FilePurpose[],
   ): Promise<void> {
     if (ids.length === 0) return;
-    const found = await this.files.publicImagesIn(tx, orgId, ids);
+    const found = await this.files.publicImagesIn(tx, orgId, ids, purposes);
     if (ids.some((id) => !found.has(id))) {
       throw new StorefrontError(
         'STOREFRONT_NOT_FOUND',

@@ -4,7 +4,6 @@ import { importSlug, type ImportProduct, type SkusRefs } from '@elysium/domain/m
 
 import * as repo from './catalog.repository.js';
 import * as web from './catalog-web.repository.js';
-import { CatalogError } from './catalog.errors.js';
 
 /**
  * What other modules may ask the catalog (invariant 12).
@@ -126,8 +125,9 @@ export interface CatalogApi {
   ): Promise<ProductWebFields | undefined>;
 
   /**
-   * Write a category's website fields. A picture must be a stored public upload made for
-   * category images (`CATALOG_NOT_FOUND` otherwise, one answer for every reason).
+   * Write a category's website fields. The caller has checked a picture is a stored public
+   * upload made for category images (the files module's question, not the catalog's); the
+   * composite foreign key keeps it inside the brand.
    */
   setCategoryWebFields(
     tx: Tx,
@@ -440,13 +440,6 @@ export class CatalogApiService implements CatalogApi {
     categoryId: string,
     patch: web.CategoryWebPatch,
   ): Promise<WebCategory | undefined> {
-    const image = patch.imageFileId?.value;
-    if (typeof image === 'string' && !(await web.isCategoryImage(tx, orgId, image))) {
-      throw new CatalogError(
-        'CATALOG_NOT_FOUND',
-        'That file cannot be a category picture. It must be a finished public upload made for category images.',
-      );
-    }
     const row = await web.setCategoryWebFields(tx, orgId, categoryId, patch);
     return row === undefined ? undefined : toWebCategory(row);
   }

@@ -578,9 +578,11 @@ export class FilesService {
     tx: Tx,
     orgId: string,
     fileIds: readonly string[],
+    purposes: readonly FilePurpose[] = PUBLIC_MEDIA_PURPOSES,
   ): Promise<ReadonlyMap<string, PublicImage>> {
     const ids = [...new Set(fileIds)].filter((id) => UUID.test(id));
-    return describePublic(await publicMediaRowsIn(tx, orgId, ids, PUBLIC_MEDIA_PURPOSES));
+    const allowed = purposes.filter((purpose) => PUBLIC_MEDIA_PURPOSES.includes(purpose));
+    return describePublic(await publicMediaRowsIn(tx, orgId, ids, allowed));
   }
 
   /**
