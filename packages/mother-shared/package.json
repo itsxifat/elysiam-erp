@@ -1,0 +1,32 @@
+{
+  "name": "@elysium/mother-shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@elysium/domain": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@elysium/config": "workspace:*",
+    "eslint": "catalog:",
+    "fast-check": "catalog:",
+    "typescript": "catalog:"
+  }
+}

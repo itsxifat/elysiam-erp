@@ -172,11 +172,86 @@ export const ANALYTICS_READABLE: readonly string[] = [
    * insight rules' group medians and the consolidated dashboard compare brands, and this is
    * everything they read — counts and sums per day, no buyer or phone. It carries gross
    * profit, so revenue minus it is every brand's cost of goods: a cross-brand read for
-   * anyone but Super Admin leaves that column out (`brandRates`). The per-branch, channel,
-   * campaign and agent rollups and the narrative cache are deliberately absent.
+   * anyone but Super Admin leaves that column out (`brandRates`). The per-branch and agent
+   * rollups and the narrative cache are deliberately absent (channel and campaign: below).
    */
   'analytics.daily_org',
+  /*
+   * The owner's reporting reads (migration 0103, D-483). With one brand per database
+   * (D-469) the owner's figures across brands are read from each brand's database through
+   * this role, so the channel and campaign rollups open too. Counts and sums per day; no
+   * buyer, no cost.
+   */
+  'analytics.daily_channel',
+  'analytics.daily_campaign',
+  /* Which schema version the database holds, read before anything else (D-481). */
+  'drizzle.__drizzle_migrations',
 ];
+
+/**
+ * Tables `erp_analytics` may read some columns of, and exactly which (migration 0103, D-483).
+ *
+ * A column grant rather than the table, because each of these also holds a person's details
+ * or a cost: the buyer's name, phone and address on an order, a line's dispatch cost, a staff
+ * member's phone, national id and payout details. Only counts, statuses, codes, names the
+ * brand gave things, selling prices and dates are here. The guard compares the database's
+ * column privileges with this list in both directions, so a column granted by accident, or
+ * one listed and never granted, fails the build.
+ */
+export const ANALYTICS_READABLE_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  'sales.orders': [
+    'id',
+    'org_id',
+    'order_no',
+    'channel',
+    'status',
+    'items_poisha',
+    'discount_poisha',
+    'delivery_charge_poisha',
+    'created_at',
+    'confirmed_at',
+    'delivered_at',
+    'returned_at',
+    'cancelled_at',
+  ],
+  'sales.order_lines': [
+    'org_id',
+    'order_id',
+    'sku_id',
+    'sku_code',
+    'product_name',
+    'qty',
+    'unit_price_poisha',
+    'discount_poisha',
+    'delivered_qty',
+    'returned_qty',
+  ],
+  'sales.couriers': ['id', 'org_id', 'code', 'name'],
+  'catalog.skus': ['id', 'org_id', 'product_id', 'code', 'status'],
+  'catalog.products': ['id', 'org_id', 'name', 'status'],
+  'inventory.stock_levels': [
+    'org_id',
+    'sku_id',
+    'location_id',
+    'on_hand',
+    'reserved',
+    'reorder_level',
+  ],
+  'org.branches': ['id', 'org_id', 'code', 'name'],
+  'org.locations': ['id', 'org_id', 'code', 'name'],
+  'hr.employees': [
+    'id',
+    'org_id',
+    'branch_id',
+    'code',
+    'full_name',
+    'designation',
+    'status',
+    'join_date',
+    'leave_date',
+  ],
+  'marketing.campaigns': ['id', 'org_id', 'name'],
+};
 
 /**
  * Tables `erp_app` must never be able to UPDATE or DELETE.

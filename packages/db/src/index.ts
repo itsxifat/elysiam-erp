@@ -28,6 +28,7 @@ export { runMigrations, type MigrationResult } from './migrations.js';
 
 export {
   ANALYTICS_READABLE,
+  ANALYTICS_READABLE_COLUMNS,
   APPEND_ONLY_TABLES,
   ANALYTICS_READABLE_SCHEMAS,
   APPEND_ONLY,

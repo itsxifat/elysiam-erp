@@ -655,20 +655,19 @@ describe('the rollups are tenant data, and only the analytics role reads across 
     expect([...seen].map((row) => row.org_id)).toEqual([ORG_A]);
   });
 
-  it('shows erp_analytics every brand’s daily_org, and nothing else in the schema', async () => {
+  it('shows erp_analytics every brand’s org, channel and campaign days, and nothing else in the schema', async () => {
     const seen = await withAnalytics((tx) =>
       tx.execute<Row>(sql`select distinct org_id from analytics.daily_org order by 1`),
     );
     expect([...seen].map((row) => row.org_id).sort()).toEqual([ORG_A, ORG_B].sort());
 
-    // The other rollups are single-brand (D-329), and so is the narrative cache.
-    for (const table of [
-      'daily_branch',
-      'daily_channel',
-      'daily_campaign',
-      'daily_agent',
-      'narratives',
-    ]) {
+    // The owner's reporting reads (migration 0103, D-483): counts and sums per day.
+    for (const table of ['daily_channel', 'daily_campaign']) {
+      await withAnalytics((tx) => tx.execute(sql.raw(`select count(*) from analytics.${table}`)));
+    }
+
+    // The branch and agent rollups stay single-brand (D-329), and so does the narrative cache.
+    for (const table of ['daily_branch', 'daily_agent', 'narratives']) {
       await expect(
         withAnalytics((tx) => tx.execute(sql.raw(`select count(*) from analytics.${table}`))),
         table,

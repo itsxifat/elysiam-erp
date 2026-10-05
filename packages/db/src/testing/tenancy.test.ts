@@ -828,6 +828,46 @@ describe('check 5: the guard — every tenant table is isolated', () => {
 
     expect(await findAnalyticsReadProblems()).toEqual([]);
   });
+
+  it("would notice a column grant on a buyer's phone (D-483)", async () => {
+    // A column grant is invisible to `has_table_privilege`, so the guard reads column
+    // privileges too. Grant the one column that must never be readable and prove it shows.
+    await withSystem(async (tx) => {
+      await tx.execute(sql`grant select (ship_phone_e164) on "sales"."orders" to "erp_analytics"`);
+    });
+
+    try {
+      expect(await findAnalyticsReadProblems()).toContain('sales.orders.ship_phone_e164');
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(
+          sql`revoke select (ship_phone_e164) on "sales"."orders" from "erp_analytics"`,
+        );
+      });
+    }
+
+    expect(await findAnalyticsReadProblems()).toEqual([]);
+  });
+
+  it("reads an order's status but never its buyer (D-483)", async () => {
+    await withAnalytics(async (tx) =>
+      tx.execute(sql`select id, order_no, status, items_poisha from sales.orders limit 1`),
+    );
+    await expectRefused(
+      withAnalytics(async (tx) => tx.execute(sql`select ship_phone_e164 from sales.orders`)),
+      /permission denied/i,
+    );
+    await expectRefused(
+      withAnalytics(async (tx) =>
+        tx.execute(sql`select dispatch_unit_cost_poisha from sales.order_lines`),
+      ),
+      /permission denied/i,
+    );
+    await expectRefused(
+      withAnalytics(async (tx) => tx.execute(sql`select phone_cipher from hr.employees`)),
+      /permission denied/i,
+    );
+  });
 });
 
 describe('the harness reproduces the real role setup', () => {
