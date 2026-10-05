@@ -148,6 +148,18 @@ export function percentOf(amount: Poisha, basisPoints: bigint | number): Poisha 
 }
 
 /**
+ * `numerator / denominator` poisha, rounded half away from zero to **whole taka** (M35b,
+ * D-550).
+ *
+ * The old website priced its landing-page offers in whole taka: a percentage off ৳1,290 was
+ * rounded to the taka before the shopper saw it. The port keeps that, through the one rounding
+ * rule: the exact ratio in poisha, divided by 100 and rounded once.
+ */
+export function roundedToTaka(numerator: bigint, denominator: bigint): Poisha {
+  return checked(divideRounded(numerator, denominator * 100n) * 100n);
+}
+
+/**
  * Split `total` in proportion to `weights`, so the parts sum to `total`
  * exactly (largest-remainder method).
  *
