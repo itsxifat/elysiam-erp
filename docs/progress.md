@@ -1931,3 +1931,89 @@ dry-run|commit --file <users.json>`.
   link was given to the owner.
 - Every migration up to 0117 is now applied to a live database: frozen.
 - Next: M35b and M36 (building), then M38b, then M32 resumes.
+
+### 2026-10-05 · M39b · Variant prices, buying prices and product management · built
+
+- Delivered (D-635 to D-649; branch `m39b-variant-pricing` from `integration-wave2` at 28e0c4c):
+  - **New product**: prices by size and by colour in one step (a row's own price wins, then its
+    size's, then its colour's, then the main price), rows chosen and set together (price,
+    regular price, pieces, cost) or copied down, zero and negative figures refused on the
+    screen, a regular ("was") price per variant, a weight, the category's default size chart,
+    a colour per photo, and **a buying price per variant whether the stock is in hand or from a
+    supplier** (D-421's one cost for all is gone).
+  - **Product page**: each variant's price and regular price; for a `read:cost` role its average
+    cost, last buying price (date, supplier) and a margin worked out in the browser; a stock-value
+    tile; **Edit prices** with a bulk editor (all, a size, a colour or ticked rows; set, add,
+    subtract, raise or lower by %, round; preview into the boxes; one save with one reason); one
+    price history for every variant (price and regular price); **Buying prices** (the standard
+    buying price per variant); **Sizes and colours** (new variants listed with the price they
+    start at, never the cheapest or an archived one's; untick a size to stop it in every colour;
+    a new axis offers to archive the old variants); a colour per photo; **Edit variant** (a
+    supplier's barcode, a weight); **Duplicate**; the price tile for every reader; the 1440 px
+    layout (codes on one line, icon actions in a sticky column).
+  - **Receipts**: the receive dialog and Supply → Entries ("Add a product": every variant as a
+    line) take a cost per variant, prefilled from the supplier's standard price, else the
+    standard price, else the last buying price; a draft being priced is prefilled the same way;
+    a scanned archived variant is refused; the draft-pricing Cancel label.
+  - **Supply → Buying prices**: the standard buying price spreadsheet (download, check, import
+    all or nothing). `supply.sku_purchase_prices` lives in supply only (invariant 5).
+  - **Product list**: photo, stock, website switch, price range; a row menu (open, duplicate,
+    show or hide on the website, archive) and bulk actions (show or hide, size chart, move to a
+    category, archive, stickers). Delete is M39a's and joins at integration (seams marked).
+  - **Website**: the product page, the cards and the cart show the same price (a live flash
+    price included) and strike through the regular price, or under a flash price the higher of
+    the shelf and regular prices; "On sale" works (D-511 amended); photos grouped by colour.
+  - **Couriers**: a booking declares Σ qty × weight when every variant is weighed (Pathao never
+    below 500 g), else the courier's default.
+- Server: migrations `0118_m39b_variant_pricing_schema.sql` (columns, `supply.sku_purchase_prices`)
+  and `0119_m39b_variant_pricing_policies.sql` (RLS, two `on delete set null (column)` composite
+  keys, the price-history trigger widened to the regular price). New routes:
+  `GET /v1/catalog/products/:id/price-history`, `POST /v1/catalog/products/:id/duplicate`,
+  `PATCH /v1/catalog/products`, `PUT /v1/catalog/products/:id/images/:imageId/colour`,
+  `PUT /v1/catalog/skus/:id/weight`, `PATCH /v1/catalog/skus` (inventory, the held-stock guard),
+  `GET /v1/inventory/stock/products`, `GET`/`PUT /v1/supply/sku-costs`,
+  `GET /v1/supply/sku-costs/export`, `POST /v1/supply/sku-costs/import/dry-run`,
+  `POST /v1/supply/sku-costs/import`, `PUT /v1/storefront/products`; wider bodies on
+  `POST /v1/catalog/products`, `POST …/variants`, `PUT /v1/catalog/prices` (regular price,
+  expected price) and the category's website fields. Errors `CATALOG_SKU_HELD`,
+  `SUPPLY_IMPORT_REJECTED`. Domain: `@elysium/domain/pricing` (new entry point).
+- Verification:
+  - `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`): see the Verification Report in
+    the hand-off; the first run's one failure (an i18n key not in lowerCamel) is fixed.
+  - M39 checks 3 to 7 on real Postgres in `apps/server/src/modules/catalog/variant-pricing.e2e.test.ts`
+    (prices by size and +10 % with a history row each; per-variant receipt costs giving WAC 750
+    after 700 and 800; cost to cost roles only and never through the catalog; the standard price
+    prefilling, never moving WAC, its spreadsheet, the audit keeping counts only; duplicate with
+    no stock; extend prices and code order; held-stock guard; the storefront's regular and flash
+    prices and "on sale"; product stock totals by branch scope; stale reprices refused).
+    Domain: `packages/domain/src/pricing/pricing.test.ts` (fast-check). Console:
+    `m39b-ui.test.ts`. Route matrix and cost sweep cover every new route.
+  - `variant-pricing.stack.ts` against the real stack (ports 3221/5294): 6 passed with axe,
+    and `catalog-stock.stack.ts` and `barcodes.stack.ts` still pass (21 in all); screenshots
+    `docs/review/M39/b-01` to `b-07`.
+- Auditors:
+  - ledger-auditor: 0 critical, 5 warnings, 11 notes. Fixed: W1 (the standard-price
+    spreadsheet went into the audit log through the request body: the service now writes
+    counts only, tested), W2 (the product page's per-variant archive now goes through the
+    guarded route), W3 (`for no key update`, so repricing or archiving no longer blocks stock
+    movements' key-share locks or risks a deadlock), W4 (a card only strikes through the lowest
+    size's own regular price, tested), W5 (the product stock route tested by branch scope and
+    brand), N1 (no silent zero cost or ৳0.01 fallback), N2 (a negative cost is refused), N3
+    ("Cost per piece" now speaks for every untyped variant), N4 (a reprice carries the price it
+    was made against; a stale one is refused), N5 (Save waits until the preview has no problems),
+    N7 (Pathao never below 500 g), N10 (tests: standard price never moves WAC, import refused for
+    non-cost roles). Left as recorded: W3's reserve-path re-check of the variant's status (an
+    order confirmed in the same instant as an archive can still reserve it, as D-423 already
+    allows for orders taken before an archive), N6 (price sort uses shelf prices, documented),
+    N8 (kept), N9 (requests are chunked at 200), N11 (follow-up below).
+  - acceptance-auditor: see the hand-off.
+- Decisions/assumptions: D-635 to D-649 (ASSUMED: D-637, D-639, D-640, D-641, D-645, D-646);
+  D-421 amended by D-635, D-511 by D-640.
+- New dependencies: none.
+- Deviations from the milestone spec: none in scope; item 8's "delete unused" waits for M39a's
+  route (the seam is in place).
+- Follow-ups: the catalog price CSV dry run does not check regular prices (N11, owner: claude);
+  the archive guard sees reserved stock, not pending orders without a reservation (M39a's
+  reference port, owner: claude); a check that a "was" price was ever real (D-640, owner:
+  human); Pathao's real minimum weight (owner: human, with credentials).
+- Next: integrate with M39a (wire Delete into the product page and list), renumber migrations.
