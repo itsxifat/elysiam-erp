@@ -708,6 +708,27 @@
       "when": 1790967531452,
       "tag": "0102_m30_followups_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1791192019961,
+      "tag": "0103_m35a_offers_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1791192034282,
+      "tag": "0104_m35a_offers_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1791192037087,
+      "tag": "0105_m35a_offers_integrity",
+      "breakpoints": true
     }
   ]
 }
