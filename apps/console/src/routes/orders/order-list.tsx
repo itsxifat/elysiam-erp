@@ -21,6 +21,7 @@ import {
   FileText,
   PackageCheck,
   Plus,
+  Printer,
   SlidersHorizontal,
   Tag,
   Truck,
@@ -42,6 +43,7 @@ import {
   type OrderRow,
   type OrderStatus,
 } from './api.js';
+import { LabelSheetDialog } from './label-sheet.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { LiveIndicator, OrdersNav, OrderStatusBadge, useOrderEvents } from './parts.js';
 import { ordersPath, useSchemaSearch } from './paths.js';
@@ -84,6 +86,8 @@ function OrderList() {
   const [search, setSearch] = useSchemaSearch(orderListSearchSchema);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+  // M35b (D-555): the label sheet, in a size the person picks, for the orders ticked.
+  const [labelSheet, setLabelSheet] = useState(false);
   // Agent, zone and dates are a second row, shown on request or while one is set: most
   // visits filter by status and nothing else (D-452).
   const advancedSet =
@@ -448,8 +452,13 @@ function OrderList() {
             <Tag aria-hidden="true" />
             {t('orders.bulk.printLabels')}
           </Button>
+          <Button size="sm" variant="outline" onClick={() => setLabelSheet(true)}>
+            <Printer aria-hidden="true" />
+            {common('pk.labels.action')}
+          </Button>
         </div>
       )}
+      {labelSheet ? <LabelSheetDialog orderIds={chosen} open onOpenChange={setLabelSheet} /> : null}
       {bulkMessage === null ? null : (
         <p role="status" className="text-sm text-muted-foreground">
           {bulkMessage}

@@ -52,11 +52,18 @@ export function ordersRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./returns.js'), 'ReturnReasonsPage'),
   });
 
+  // M35b: scan a parcel to see what goes in it, and the phones signed in to the scanner app.
+  const scan = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/orders/scan',
+    component: lazyRouteComponent(() => import('./scan.js'), 'OrderScanPage'),
+  });
+
   const detail = createRoute({
     getParentRoute: () => rootRoute,
     path: '/orders/$orderId',
     component: lazyRouteComponent(() => import('./order-detail.js'), 'OrderDetailPage'),
   });
 
-  return [list, desk, queue, buyers, returns, detail] as const;
+  return [list, desk, queue, buyers, returns, scan, detail] as const;
 }

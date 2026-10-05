@@ -53,5 +53,34 @@ export function websiteRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     path: '/website/customers',
     component: lazyRouteComponent(() => import('./customers.js'), 'WebsiteCustomersPage'),
   });
-  return [index, settings, hero, menu, sizeCharts, connection, payments, email, customers] as const;
+  // M35b: campaign links, tracking and the marketplace (D-551 to D-553).
+  const campaignLinks = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/website/campaign-links',
+    component: lazyRouteComponent(() => import('./campaign-links.js'), 'WebsiteCampaignLinksPage'),
+  });
+  const tracking = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/website/tracking',
+    component: lazyRouteComponent(() => import('./tracking.js'), 'WebsiteTrackingPage'),
+  });
+  const marketplace = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/website/marketplace',
+    component: lazyRouteComponent(() => import('./marketplace.js'), 'WebsiteMarketplacePage'),
+  });
+  return [
+    index,
+    settings,
+    hero,
+    menu,
+    sizeCharts,
+    connection,
+    payments,
+    email,
+    customers,
+    campaignLinks,
+    tracking,
+    marketplace,
+  ] as const;
 }

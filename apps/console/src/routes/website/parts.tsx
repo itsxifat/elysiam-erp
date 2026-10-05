@@ -231,7 +231,7 @@ export function ImagePicker({
   onUploaded,
   disabled,
 }: {
-  readonly purpose: 'storefront-image' | 'category-image';
+  readonly purpose: 'storefront-image' | 'category-image' | 'campaign-asset';
   readonly onUploaded: (fileId: string) => void;
   readonly disabled?: boolean;
 }) {
