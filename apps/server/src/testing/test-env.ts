@@ -51,6 +51,8 @@ export function setServerTestEnv(overrides: TestEnvOverrides = {}): void {
   // buckets in the process so a suite needs no Valkey.
   process.env.INTAKE_KEY_SECRET ??= 'test-intake-key-secret-at-least-32-characters';
   process.env.INTAKE_RATE_LIMIT_STORE ??= 'memory';
+  // M33: the website API's counters in the process too.
+  process.env.STOREFRONT_RATE_LIMIT_STORE ??= 'memory';
   process.env.COURIER_CREDENTIALS_KEY ??= Buffer.alloc(32, 7).toString('base64');
   // M18: sealing a brand's Meta token, as the courier key seals courier credentials.
   process.env.MARKETING_CREDENTIALS_KEY ??= Buffer.alloc(32, 9).toString('base64');

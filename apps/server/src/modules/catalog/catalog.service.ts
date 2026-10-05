@@ -14,6 +14,7 @@ import {
 
 import { CatalogError } from './catalog.errors.js';
 import * as repo from './catalog.repository.js';
+import * as web from './catalog-web.repository.js';
 import type {
   AttachImageInput,
   CreateAttributeInput,
@@ -73,6 +74,22 @@ export interface ProductView {
   readonly updatedAt: Date;
   readonly skus: readonly SkuView[];
   readonly images: readonly ImageView[];
+  /** The website's fields (M33, D-500): shown on the product page's Website card. */
+  readonly web: WebFieldsView;
+}
+
+export interface WebFieldsView {
+  readonly webVisible: boolean;
+  readonly featured: boolean;
+  readonly newArrival: boolean;
+  readonly gender: string | null;
+  readonly material: string | null;
+  readonly careInstructions: string | null;
+  readonly tags: readonly string[];
+  readonly sizeChartId: string | null;
+  readonly seoTitle: string | null;
+  readonly seoDescription: string | null;
+  readonly previousSlugs: readonly string[];
 }
 
 export interface SkuView {
@@ -131,6 +148,13 @@ export class CatalogService {
           depth: row.depth,
           position: row.position,
           isActive: row.is_active,
+          web: {
+            webVisible: row.web_visible ?? true,
+            featured: row.featured ?? false,
+            gender: row.gender ?? null,
+            description: row.description ?? null,
+            imageFileId: row.image_file_id ?? null,
+          },
         })),
       };
     });
@@ -728,9 +752,10 @@ export class CatalogService {
   }
 
   private async viewOf(tx: Tx, orgId: string, product: repo.ProductRow): Promise<ProductView> {
-    const [skus, images] = await Promise.all([
+    const [skus, images, webRow] = await Promise.all([
       repo.skusOfProduct(tx, orgId, product.id),
       repo.imagesOfProduct(tx, orgId, product.id),
+      web.webFieldsOf(tx, orgId, product.id),
     ]);
     const values = await repo.valuesOfSkus(
       tx,
@@ -771,6 +796,19 @@ export class CatalogService {
         position: image.position,
         altText: image.alt_text,
       })),
+      web: {
+        webVisible: webRow?.web_visible ?? false,
+        featured: webRow?.featured ?? false,
+        newArrival: webRow?.new_arrival ?? false,
+        gender: webRow?.gender ?? null,
+        material: webRow?.material ?? null,
+        careInstructions: webRow?.care_instructions ?? null,
+        tags: webRow?.tags ?? [],
+        sizeChartId: webRow?.size_chart_id ?? null,
+        seoTitle: webRow?.seo_title ?? null,
+        seoDescription: webRow?.seo_description ?? null,
+        previousSlugs: webRow?.previous_slugs ?? [],
+      },
     };
   }
 }

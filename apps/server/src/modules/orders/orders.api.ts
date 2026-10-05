@@ -285,6 +285,16 @@ export interface TopSku {
   readonly units: number;
 }
 
+/** A delivery zone as another module sees it (M33). */
+export interface DeliveryZoneSummary {
+  readonly id: string;
+  readonly code: string;
+  readonly nameEn: string;
+  readonly nameBn: string;
+  readonly chargePoisha: bigint;
+  readonly isActive: boolean;
+}
+
 export interface OrdersApi {
   /**
    * Take an order inside the caller's transaction.
@@ -340,6 +350,12 @@ export interface OrdersApi {
     orgId: string,
     codes: readonly string[],
   ): Promise<ReadonlyMap<string, CourierParty & { readonly isActive: boolean }>>;
+
+  /**
+   * The brand's delivery zones, active or not (M33): what the website's shipping rule maps
+   * its three zones onto (D-503). Charges are selling-side money, never a cost.
+   */
+  deliveryZones(tx: Tx, orgId: string): Promise<readonly DeliveryZoneSummary[]>;
 
   /** Of these E.164 phones, the ones already a buyer of this brand. */
   buyerPhones(tx: Tx, orgId: string, phones: readonly string[]): Promise<ReadonlySet<string>>;
@@ -553,6 +569,18 @@ export class OrdersApiService implements OrdersApi {
   ): Promise<readonly CourierParty[]> {
     const rows = await repo.couriersByIds(tx, orgId, [...new Set(ids)]);
     return rows.map((row) => ({ id: row.id, code: row.code, name: row.name }));
+  }
+
+  async deliveryZones(tx: Tx, orgId: string): Promise<readonly DeliveryZoneSummary[]> {
+    const rows = await repo.listZones(tx, orgId);
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      nameEn: row.name_en,
+      nameBn: row.name_bn,
+      chargePoisha: BigInt(row.charge_poisha),
+      isActive: row.is_active,
+    }));
   }
 
   async couriersByCodes(

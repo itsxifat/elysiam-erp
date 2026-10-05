@@ -65,6 +65,9 @@ const OWNER: Readonly<Record<string, string>> = {
   pos: 'pos',
   promo: 'promo',
   sales: 'orders',
+  // M33: the website's settings, hero, menu, size charts, old ids and keys. The catalog,
+  // inventory, files and delivery zones are reached through their APIs, so no debt.
+  storefront: 'storefront',
   supply: 'supply',
   wallets: 'wallets',
 };

@@ -61,6 +61,13 @@ export const FILE_PURPOSES = [
    * finance team the very documents they file.
    */
   'investor-document',
+  /** A category's picture on the brand's website (M33, D-501). Public. */
+  'category-image',
+  /**
+   * The website's own imagery: hero slides and the site logo (M33, D-504). Public. Read
+   * through `Storefront`, the subject of the screens that upload it.
+   */
+  'storefront-image',
 ] as const;
 
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
@@ -118,4 +125,24 @@ export const PURPOSE_RULES: Readonly<Record<FilePurpose, PurposeRule>> = {
     readRequires: { action: 'read', subject: 'Investor' },
     mayBePublic: false,
   },
+  'category-image': { readRequires: { action: 'read', subject: 'Catalog' }, mayBePublic: true },
+  'storefront-image': {
+    readRequires: { action: 'read', subject: 'Storefront' },
+    mayBePublic: true,
+  },
 };
+
+/**
+ * The purposes the public media path serves (M33, D-507): what the brand's website shows.
+ *
+ * An allow-list, and narrower than "may be public". `campaign-asset` may be public but is
+ * not the website's, so it is not served here; every private purpose is refused by
+ * construction, and so is a public file of any purpose added later until somebody decides
+ * the website needs it. The row must also be `public` and `stored`: a purpose alone never
+ * makes a file servable.
+ */
+export const PUBLIC_MEDIA_PURPOSES: readonly FilePurpose[] = [
+  'product-image',
+  'category-image',
+  'storefront-image',
+];
