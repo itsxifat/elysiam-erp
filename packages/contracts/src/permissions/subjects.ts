@@ -282,6 +282,8 @@ export const STOREFRONT_VISIBLE_FIELDS = [
   'attributes',
   'value',
   'availableQty',
+  // M39b (D-643): the product page's photos grouped by colour.
+  'galleries',
   'related',
   'children',
   'subcategories',

@@ -1460,3 +1460,29 @@ export async function reservedBySku(
   }
   return totals;
 }
+
+/**
+ * Pieces on hand and free to sell per product, across the locations in the caller's scope
+ * (M39b, D-642): the product list's stock column. Quantities only, never a cost.
+ */
+export async function productStockTotals(
+  tx: Tx,
+  orgId: string,
+  filters: { readonly scope: SQL; readonly productIds: readonly string[] },
+): Promise<{ product_id: string; on_hand: number; available: number }[]> {
+  if (filters.productIds.length === 0) return [];
+  const rows = await tx.execute<{ product_id: string; on_hand: number; available: number }>(sql`
+    select s.product_id,
+           coalesce(sum(sl.on_hand), 0)::int as on_hand,
+           coalesce(sum(sl.on_hand - sl.reserved), 0)::int as available
+    from inventory.stock_levels sl
+    join catalog.skus s on s.org_id = sl.org_id and s.id = sl.sku_id
+    join org.locations l on l.org_id = sl.org_id and l.id = sl.location_id
+    where sl.org_id = ${orgId}
+      and ${filters.scope}
+      and l.kind in ('warehouse', 'showroom')
+      and s.product_id = any (${sql.param([...new Set(filters.productIds)])}::uuid[])
+    group by s.product_id
+  `);
+  return [...rows];
+}

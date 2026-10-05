@@ -1,9 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
-import type { Poisha } from '@elysium/domain';
+import { poisha, type Poisha } from '@elysium/domain';
 import type { FlashOffer } from '@elysium/domain/promo';
 
 import type { ActiveContext } from '../../platform/http/context.js';
+import * as flashRepo from './flash.repository.js';
 import { FlashService, type FlashClaimLine, type StorefrontFlashSale } from './flash.service.js';
 import { PromoError, promoHttpError } from './promo.errors.js';
 import * as repo from './promo.repository.js';
@@ -192,6 +193,16 @@ export interface PromoApi {
     skuIds: readonly string[],
     now: Date,
   ): Promise<readonly FlashOffer[]>;
+
+  /**
+   * Every SKU's lowest sale price in a flash sale live now with units left (M39b, D-640): the
+   * website's "on sale" filter. Whether it undercuts the shelf price is the caller's check.
+   */
+  liveFlashSkuPrices(
+    tx: Tx,
+    orgId: string,
+    now: Date,
+  ): Promise<readonly { readonly skuId: string; readonly salePricePoisha: Poisha }[]>;
 
   /**
    * Take the flash units an order was priced with, all or nothing, in its transaction and
@@ -393,6 +404,17 @@ export class PromoApiService implements PromoApi {
     now: Date,
   ): Promise<readonly FlashOffer[]> {
     return this.flash.liveOffers(tx, orgId, skuIds, now);
+  }
+
+  async liveFlashSkuPrices(
+    tx: Tx,
+    orgId: string,
+    now: Date,
+  ): Promise<readonly { readonly skuId: string; readonly salePricePoisha: Poisha }[]> {
+    return (await flashRepo.liveSkuPrices(tx, orgId, now)).map((row) => ({
+      skuId: row.sku_id,
+      salePricePoisha: poisha(row.sale_price_poisha),
+    }));
   }
 
   async claimFlashUnits(

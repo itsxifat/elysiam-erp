@@ -3,6 +3,7 @@ import type { Tx } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import {
   computePartialDelivery,
+  parcelWeightGrams,
   poisha,
   TRANSITIONS,
   transitionFor,
@@ -17,6 +18,7 @@ import {
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { AdvancesService } from './advances.service.js';
 import { OrdersService, type CreateOrderOptions, type CreatedOrder } from './orders.service.js';
@@ -120,6 +122,11 @@ export interface OrderBookingSnapshot {
   /** For the courier's parcel description. Never an item's cost. */
   readonly itemSummary: string | null;
   readonly notes: string | null;
+  /**
+   * Σ qty × weight in grams (M39b, D-645), or null when any line's variant has no weight:
+   * the courier then declares its configured default.
+   */
+  readonly weightGrams: number | null;
 }
 
 /**
@@ -638,6 +645,7 @@ export class OrdersApiService implements OrdersApi {
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
     private readonly advances: AdvancesService,
     private readonly courier: CourierBookingRegistry,
+    @Inject(CATALOG_API) private readonly catalog: CatalogApi,
   ) {}
 
   async createOrder(
@@ -774,6 +782,12 @@ export class OrdersApiService implements OrdersApi {
 
     const area = await repo.areaNames(tx, order.ship_district_id, order.ship_thana_id);
     const lines = await repo.orderLines(tx, orgId, orderId);
+    // What the parcel weighs (D-645), through the catalog's interface (invariant 12).
+    const weights = await this.catalog.skuWeights(
+      tx,
+      orgId,
+      lines.map((line) => line.sku_id),
+    );
 
     return {
       orderId: order.id,
@@ -799,6 +813,9 @@ export class OrdersApiService implements OrdersApi {
       addressLine: order.ship_address_line,
       itemSummary: itemSummaryOf(lines),
       notes: order.notes,
+      weightGrams: parcelWeightGrams(
+        lines.map((line) => ({ qty: line.qty, grams: weights.get(line.sku_id) ?? null })),
+      ),
     };
   }
 

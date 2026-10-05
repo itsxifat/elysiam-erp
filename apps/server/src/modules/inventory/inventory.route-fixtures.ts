@@ -180,6 +180,11 @@ export const INVENTORY_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Cal
     body: { name: 'Main Warehouse' },
   }),
   'GET /v1/inventory/stock': () => ({ url: '/v1/inventory/stock' }),
+  // M39b (D-642): the product list's stock column; a product that does not exist answers an
+  // empty list, which is all the guard question needs.
+  'GET /v1/inventory/stock/products': () => ({
+    url: `/v1/inventory/stock/products?productIds=${randomUUID()}`,
+  }),
   'GET /v1/inventory/valuation': () => ({ url: '/v1/inventory/valuation' }),
   'GET /v1/inventory/movements': () => ({ url: '/v1/inventory/movements' }),
   'PUT /v1/inventory/reorder-levels': () => ({

@@ -15,6 +15,8 @@ import {
   type StorefrontCursor,
   type StorefrontProductQuery,
 } from '@elysium/domain/storefront';
+import { bestFlashOffer } from '@elysium/domain/promo';
+import { poisha, type Poisha } from '@elysium/domain';
 
 import { serverEnv } from '../../platform/config/env.js';
 import {
@@ -27,6 +29,7 @@ import {
 } from '../catalog/catalog.api.js';
 import { FilesService, type PublicImage } from '../files/files.service.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
+import { PROMO_API, type PromoApi } from '../promo/promo.api.js';
 import { STOREFRONT_CONFIG, type StorefrontConfig } from './storefront.config.js';
 import { StorefrontError } from './storefront.errors.js';
 import * as repo from './storefront.repository.js';
@@ -54,7 +57,12 @@ export interface WireImage {
   readonly width: number;
   readonly height: number;
   readonly urls: Readonly<Record<Variant, string>>;
+  /** The colour this photo shows (M39b, D-643), or null for every colour. */
+  readonly colour?: string | null;
 }
+
+/** What a shopper pays per SKU now, and what is struck through (M39b, D-640). */
+type ShownPrices = ReadonlyMap<string, { pricePoisha: Poisha; compareAtPoisha: Poisha | null }>;
 
 interface CategoryRef {
   readonly id: string;
@@ -68,6 +76,7 @@ export class StorefrontPublicService {
     @Inject(STOREFRONT_CONFIG) private readonly config: StorefrontConfig,
     @Inject(CATALOG_API) private readonly catalog: CatalogApi,
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
+    @Inject(PROMO_API) private readonly promo: PromoApi,
     private readonly files: FilesService,
     private readonly settings: StorefrontService,
   ) {}
@@ -85,7 +94,12 @@ export class StorefrontPublicService {
     }
     return withOrg({ orgId }, async (tx) => {
       const categories = await this.catalog.webCategories(tx, orgId);
-      const filter = this.filterOf(query, categories);
+      // "On sale" counts live flash offers as well as regular prices (D-640), and promo's
+      // offers reach the catalog's filter as data, never as a join (invariant 12).
+      const onSaleOffers = query.onSale
+        ? await this.promo.liveFlashSkuPrices(tx, orgId, new Date())
+        : [];
+      const filter = { ...this.filterOf(query, categories), onSaleOffers };
       const offset =
         query.cursor === null && query.page !== null ? (query.page - 1) * query.limit : 0;
       const [rows, total] = await Promise.all([
@@ -168,6 +182,7 @@ export class StorefrontPublicService {
         orgId,
         images.map((image) => image.fileId),
       );
+      const shown = await this.shownPrices(tx, orgId, skus);
       const card = this.card(
         orgId,
         product,
@@ -176,7 +191,11 @@ export class StorefrontPublicService {
         media,
         available,
         visibleCategories(categories),
+        shown,
       );
+      const pictures = images
+        .map((image) => this.image(orgId, image.fileId, image.altText, media, image.colour))
+        .filter((image): image is WireImage => image !== null);
 
       return {
         product: {
@@ -187,9 +206,10 @@ export class StorefrontPublicService {
           seoTitle: product.seoTitle,
           seoDescription: product.seoDescription,
           breadcrumb: breadcrumbOf(product.categoryId, categories),
-          images: images
-            .map((image) => this.image(orgId, image.fileId, image.altText, media))
-            .filter((image): image is WireImage => image !== null),
+          images: pictures,
+          // The gallery by colour (D-643): the photos for every colour first, then each
+          // colour's own, so the website can switch photos when a shopper picks a colour.
+          galleries: galleriesOf(pictures),
           sizeChart:
             chart === undefined
               ? null
@@ -200,7 +220,10 @@ export class StorefrontPublicService {
                   rows: Array.isArray(chart.rows) ? chart.rows : [],
                 },
           variants: skus.map((sku) => {
-            const price = storefrontPrice({ id: sku.id, pricePoisha: sku.pricePoisha as never });
+            const price = shown.get(sku.id) ?? {
+              pricePoisha: poisha(sku.pricePoisha),
+              compareAtPoisha: null,
+            };
             const qty = available.get(sku.id) ?? 0;
             return {
               skuId: sku.id,
@@ -449,6 +472,7 @@ export class StorefrontPublicService {
       orgId,
       firstTwo.map((image) => image.fileId),
     );
+    const prices = await this.shownPrices(tx, orgId, skus);
     return rows.map((row) =>
       this.card(
         orgId,
@@ -458,8 +482,46 @@ export class StorefrontPublicService {
         media,
         available,
         shown,
+        prices,
       ),
     );
+  }
+
+  /**
+   * What each SKU sells for on the website now and what is struck through (D-640): the live
+   * flash offer that undercuts the shelf price (the same `bestFlashOffer` the cart charges
+   * by), and the regular price the brand set. Read on every call, like availability.
+   */
+  private async shownPrices(tx: Tx, orgId: string, skus: readonly WebSku[]): Promise<ShownPrices> {
+    if (skus.length === 0) return new Map();
+    const now = new Date();
+    const offers = await this.promo.liveFlashOffers(
+      tx,
+      orgId,
+      skus.map((sku) => sku.id),
+      now,
+    );
+    const shown = new Map<string, { pricePoisha: Poisha; compareAtPoisha: Poisha | null }>();
+    for (const sku of skus) {
+      const shelf = poisha(sku.pricePoisha);
+      const best = bestFlashOffer(
+        shelf,
+        offers.filter((offer) => offer.skuId === sku.id),
+        now,
+      );
+      shown.set(
+        sku.id,
+        storefrontPrice(
+          {
+            id: sku.id,
+            pricePoisha: shelf,
+            compareAtPoisha: sku.compareAtPoisha === null ? null : poisha(sku.compareAtPoisha),
+          },
+          best === null ? [] : [{ skuId: sku.id, pricePoisha: best.salePricePoisha }],
+        ),
+      );
+    }
+    return shown;
   }
 
   private card(
@@ -470,6 +532,7 @@ export class StorefrontPublicService {
     media: ReadonlyMap<string, PublicImage>,
     available: ReadonlyMap<string, number>,
     categories: readonly WebCategory[],
+    prices: ShownPrices,
   ) {
     // Only a category the website shows (D-501): a hidden one is not named on a card. The
     // caller passes the visible ones, worked out once per request.
@@ -478,6 +541,7 @@ export class StorefrontPublicService {
       .map((image) => this.image(orgId, image.fileId, image.altText ?? row.name, media))
       .filter((image): image is WireImage => image !== null);
     const sizes = sizesOf(skus);
+    const shown = cardPrices(row, skus, prices);
     return {
       id: row.id,
       slug: row.slug,
@@ -487,9 +551,11 @@ export class StorefrontPublicService {
       tags: row.tags,
       featured: row.featured,
       newArrival: row.newArrival,
-      price: { min: wireMoney(row.minPricePoisha), max: wireMoney(row.maxPricePoisha) },
-      compareAt: null,
-      onSale: false,
+      // What the shopper pays now (flash prices included, D-640), the figure struck through
+      // beside the lowest one, and whether any size is discounted.
+      price: { min: wireMoney(shown.min), max: wireMoney(shown.max) },
+      compareAt: shown.compareAt === null ? null : wireMoney(shown.compareAt),
+      onSale: shown.onSale,
       image: pictures[0] ?? null,
       images: pictures.slice(0, 2),
       sizes,
@@ -503,6 +569,7 @@ export class StorefrontPublicService {
     fileId: string,
     alt: string | null,
     media: ReadonlyMap<string, PublicImage>,
+    colour?: string | null,
   ): WireImage | null {
     const found = media.get(fileId);
     if (found === undefined) return null;
@@ -514,6 +581,7 @@ export class StorefrontPublicService {
       width: full?.width ?? 0,
       height: full?.height ?? 0,
       urls: { thumb: `${base}/thumb`, card: `${base}/card`, full: `${base}/full` },
+      ...(colour === undefined ? {} : { colour }),
     };
   }
 
@@ -584,6 +652,63 @@ function breadcrumbOf(
       parentId === null ? undefined : categories.find((category) => category.id === parentId);
   }
   return trail;
+}
+
+/**
+ * A card's prices (D-640): the lowest and highest a shopper pays now across the sizes, the
+ * struck-through figure beside the lowest (when that size is discounted, else the first
+ * discounted size's), and whether any size is discounted at all.
+ */
+function cardPrices(
+  row: WebCard,
+  skus: readonly WebSku[],
+  prices: ShownPrices,
+): { min: Poisha; max: Poisha; compareAt: Poisha | null; onSale: boolean } {
+  const shown = skus
+    .map((sku) => prices.get(sku.id))
+    .filter((price): price is NonNullable<typeof price> => price !== undefined);
+  if (shown.length === 0) {
+    return {
+      min: poisha(row.minPricePoisha),
+      max: poisha(row.maxPricePoisha),
+      compareAt: null,
+      onSale: false,
+    };
+  }
+  let lowest = shown[0] ?? { pricePoisha: poisha(row.minPricePoisha), compareAtPoisha: null };
+  let max = lowest.pricePoisha;
+  for (const price of shown) {
+    if (
+      price.pricePoisha < lowest.pricePoisha ||
+      (price.pricePoisha === lowest.pricePoisha &&
+        lowest.compareAtPoisha === null &&
+        price.compareAtPoisha !== null)
+    ) {
+      lowest = price;
+    }
+    if (price.pricePoisha > max) max = price.pricePoisha;
+  }
+  const discounted = shown.filter((price) => price.compareAtPoisha !== null);
+  return {
+    min: lowest.pricePoisha,
+    max,
+    compareAt: lowest.compareAtPoisha ?? discounted[0]?.compareAtPoisha ?? null,
+    onSale: discounted.length > 0,
+  };
+}
+
+/** The product page's photos by colour (D-643): every-colour photos first, then each colour. */
+function galleriesOf(
+  pictures: readonly WireImage[],
+): { colour: string | null; images: WireImage[] }[] {
+  const groups = new Map<string | null, WireImage[]>();
+  for (const picture of pictures) {
+    const key = picture.colour ?? null;
+    groups.set(key, [...(groups.get(key) ?? []), picture]);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => (a === null ? -1 : b === null ? 1 : 0))
+    .map(([colour, images]) => ({ colour, images }));
 }
 
 function labelOf(sku: WebSku, kind: string): string | null {

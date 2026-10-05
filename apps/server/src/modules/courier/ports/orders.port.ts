@@ -58,6 +58,8 @@ export interface OrderBookingSnapshot {
   /** For the courier's parcel description. Never an item's cost. */
   readonly itemSummary: string | null;
   readonly notes: string | null;
+  /** Σ qty × weight in grams (M39b, D-645); null for the courier's default. */
+  readonly weightGrams: number | null;
 }
 
 /** One line of a parcel coming back, with what it was worth when it left. */

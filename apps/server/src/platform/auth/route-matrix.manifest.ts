@@ -78,10 +78,19 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/catalog/imports/products/dry-run',
   'POST /v1/catalog/imports/products',
   'POST /v1/catalog/labels',
+  // M39b (D-636 to D-645).
+  'GET /v1/catalog/products/:id/price-history',
+  'POST /v1/catalog/products/:id/duplicate',
+  'PATCH /v1/catalog/products',
+  'PUT /v1/catalog/products/:id/images/:imageId/colour',
+  'PUT /v1/catalog/skus/:id/weight',
+  'PATCH /v1/catalog/skus',
   'GET /v1/inventory/locations',
   'POST /v1/inventory/locations',
   'PATCH /v1/inventory/locations/:id',
   'GET /v1/inventory/stock',
+  // M39b (D-642): the product list's stock column.
+  'GET /v1/inventory/stock/products',
   'GET /v1/inventory/valuation',
   'GET /v1/inventory/movements',
   'PUT /v1/inventory/reorder-levels',
@@ -267,6 +276,12 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/supply/payments',
   'POST /v1/supply/payments',
   'POST /v1/supply/advance-applications',
+  // M39b: buying prices per variant (D-637, D-638).
+  'GET /v1/supply/sku-costs',
+  'PUT /v1/supply/sku-costs',
+  'GET /v1/supply/sku-costs/export',
+  'POST /v1/supply/sku-costs/import/dry-run',
+  'POST /v1/supply/sku-costs/import',
   'GET /v1/orders/duplicates',
   'GET /v1/orders/agents',
   'POST /v1/orders/bulk-confirm',
@@ -299,6 +314,8 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/storefront/site-keys',
   'POST /v1/storefront/site-keys/:id/revoke',
   'PUT /v1/storefront/products/:id',
+  // M39b (D-642): the product list's bulk website switches.
+  'PUT /v1/storefront/products',
   // M34: Website → Payments, Email and Customers, and the order page's website card.
   'GET /v1/storefront/payments',
   'PUT /v1/storefront/payments',

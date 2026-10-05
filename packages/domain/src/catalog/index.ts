@@ -67,6 +67,8 @@ export {
   type PriceImportRow,
 } from './price-import.js';
 
+export { parcelWeightGrams } from './parcel-weight.js';
+
 export {
   variantOverrides,
   variantPriceEntries,

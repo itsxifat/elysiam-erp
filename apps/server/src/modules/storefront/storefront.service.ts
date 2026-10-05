@@ -1,5 +1,6 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import type {
+  BulkProductWebFieldsInput,
   CategoryWebFieldsInput,
   HeroSlideInput,
   NavItemInput,
@@ -520,6 +521,28 @@ export class StorefrontService {
     return { productId, web: fields };
   }
 
+  /**
+   * Show or hide many products on the website, or give them one size chart (M39b, D-642). All
+   * or nothing: a product that is not this brand's refuses the whole change.
+   */
+  async setProductsWebFields(context: ActiveContext, input: BulkProductWebFieldsInput) {
+    return withOrg(context, async (tx) => {
+      if (input.sizeChartId !== undefined && input.sizeChartId !== null) {
+        const chart = await repo.sizeChartById(tx, context.orgId, input.sizeChartId);
+        if (chart === undefined) throw storefrontNotFound('size chart');
+      }
+      const ids = [...new Set(input.productIds)];
+      for (const productId of ids) {
+        const saved = await this.catalog.setProductWebFields(tx, context.orgId, productId, {
+          webVisible: change(input.webVisible !== undefined, input.webVisible ?? false),
+          sizeChartId: change(input.sizeChartId !== undefined, input.sizeChartId ?? null),
+        });
+        if (saved === undefined) throw storefrontNotFound('product');
+      }
+      return { updated: ids.length };
+    });
+  }
+
   async setCategoryWebFields(
     context: ActiveContext,
     categoryId: string,
@@ -531,12 +554,20 @@ export class StorefrontService {
           'category-image',
         ]);
       }
+      if (input.defaultSizeChartId !== undefined && input.defaultSizeChartId !== null) {
+        const chart = await repo.sizeChartById(tx, context.orgId, input.defaultSizeChartId);
+        if (chart === undefined) throw storefrontNotFound('size chart');
+      }
       const saved = await this.catalog.setCategoryWebFields(tx, context.orgId, categoryId, {
         webVisible: change(input.webVisible !== undefined, input.webVisible ?? true),
         featured: change(input.featured !== undefined, input.featured ?? false),
         gender: change(input.gender !== undefined, input.gender ?? null),
         description: change(input.description !== undefined, blankToNull(input.description)),
         imageFileId: change(input.imageFileId !== undefined, input.imageFileId ?? null),
+        defaultSizeChartId: change(
+          input.defaultSizeChartId !== undefined,
+          input.defaultSizeChartId ?? null,
+        ),
       });
       if (saved === undefined) throw storefrontNotFound('category');
       return saved;
