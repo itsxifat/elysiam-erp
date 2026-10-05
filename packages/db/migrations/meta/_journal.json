@@ -708,6 +708,20 @@
       "when": 1790967531452,
       "tag": "0102_m30_followups_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1791191670587,
+      "tag": "0103_m33_storefront_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1791191708968,
+      "tag": "0104_m33_storefront_policies",
+      "breakpoints": true
     }
   ]
 }
