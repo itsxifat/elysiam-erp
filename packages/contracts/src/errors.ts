@@ -63,7 +63,10 @@ export const ERROR_CODES = [
    * its own SKUs from (`2` and twelve digits), typed by hand.
    */
   'CATALOG_BARCODE_INVALID',
-  /** A sticker request the layout cannot print: too many, or a position off the sheet. */
+  /**
+   * A sticker request the layout cannot print: too many, a position off the sheet, or a
+   * custom size too small to hold a barcode a scanner reads (D-650).
+   */
   'CATALOG_LABELS_INVALID',
   /**
    * Variants that cannot be archived together because stock is held for orders (M39b,

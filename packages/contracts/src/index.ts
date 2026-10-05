@@ -56,3 +56,5 @@ export * from './storefront-buying.js';
 export * from './usage.js';
 // M35b: campaign links, tracking, the ncom.bd marketplace, the scanner and order labels.
 export * from './storefront-marketing.js';
+// M38a: stickers of a custom size, and the extra line (D-650, D-651).
+export * from './stickers.js';

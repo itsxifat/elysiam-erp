@@ -1,4 +1,9 @@
-import { MAX_STICKERS_PER_PDF, STICKER_MEDIA_IDS } from '@elysium/domain';
+import {
+  stickerExtraLineSchema,
+  stickerHeightMmSchema,
+  stickerWidthMmSchema,
+} from '@elysium/contracts';
+import { CUSTOM_STICKER_MEDIUM, MAX_STICKERS_PER_PDF, STICKER_MEDIA_IDS } from '@elysium/domain';
 import { z } from 'zod';
 
 /**
@@ -364,14 +369,38 @@ export const labelSheetSchema = z
     /** Show the selling price on the sticker. Off unless asked; the console asks by default. */
     showPrice: z.boolean().default(false),
     /**
-     * What the stickers print on (D-604): a thermal roll (one sticker a page, at the
-     * sticker's size) or an A4 sheet. M06's A4 3 × 8 sheet when absent.
+     * What the stickers print on (D-604, D-650): a thermal roll (one sticker a page, at the
+     * sticker's size), an A4 sheet, or `custom`, a roll sticker of `widthMm × heightMm`.
+     * M06's A4 3 × 8 sheet when absent.
      */
-    medium: z.enum(STICKER_MEDIA_IDS).default('a4-3x8'),
+    medium: z.enum([...STICKER_MEDIA_IDS, CUSTOM_STICKER_MEDIUM]).default('a4-3x8'),
+    /** A custom sticker's size in millimetres, one decimal at most (D-650); custom only. */
+    widthMm: stickerWidthMmSchema.optional(),
+    heightMm: stickerHeightMmSchema.optional(),
     /** On a sheet, the first unused position (1 = top left); the ones before stay blank. */
     startAt: z.number().int().min(1).max(40).default(1),
+    /** A short line printed on every sticker of this print (D-651); blank for none. */
+    extraLine: stickerExtraLineSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    const sized = input.widthMm !== undefined || input.heightMm !== undefined;
+    if (input.medium === CUSTOM_STICKER_MEDIUM) {
+      if (input.widthMm === undefined || input.heightMm === undefined) {
+        context.addIssue({
+          code: 'custom',
+          path: [input.widthMm === undefined ? 'widthMm' : 'heightMm'],
+          message: 'A custom sticker needs its width and height in millimetres.',
+        });
+      }
+    } else if (sized) {
+      context.addIssue({
+        code: 'custom',
+        path: ['medium'],
+        message: 'A width and height are given only with the custom size.',
+      });
+    }
+  });
 export type LabelSheetInput = z.infer<typeof labelSheetSchema>;
 
 // --- M39b: product management (D-641 to D-646) -------------------------------------
