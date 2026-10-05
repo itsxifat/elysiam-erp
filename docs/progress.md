@@ -2345,3 +2345,18 @@ dry-run|commit --file <users.json>`.
   `GET /v1/inventory/stock/products` asks for a random product (owner: claude).
 - Next: the coordinator fast-forwards `integration-wave2` and deploys (migrations 0122–0124
   become frozen).
+
+### 2026-10-06 · deploy · M35b live on Elysium's ERP · done
+
+- `integration-wave2` fast-forwarded to the M35b integration (f69fdea; verify at 67349fc green:
+  232 test files, 3,581 passed; stack 24 of 24; ledger and acceptance audits run). Migrations
+  0122–0124 follow M39b's 0121 and are now frozen.
+- Elysium's ERP redeployed at f69fdea: health green, the website still reads it.
+- Its nginx site (installed once and never rewritten by a deploy, because certbot edits it) was
+  patched by hand to the template's API paths: `/ncom/` (the ncom.bd connector) and
+  `/api/admin/scanner/` (the shipped scanner APK's old addresses) now reach the API (an unsigned
+  ncom ping answers 401, the scanner login 400); `nginx -t` passed before the reload, with a
+  backup to roll back to; the server's other sites still 200.
+- Still to do: the website repo shows the new regular prices, colour photos and campaign links,
+  and turns tracking on; ncom.bd's credentials go into Website → Marketplace when the owner has
+  them.
