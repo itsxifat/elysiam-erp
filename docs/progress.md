@@ -2136,9 +2136,10 @@ dry-run|commit --file <users.json>`.
     instant can re-cache the old menu for up to 30 seconds (`SiteCache.TTL_MS`); an after-commit
     hook in `withOrg` would close it.
 
-### 2026-10-05 · M39b · Variant prices, buying prices and product management · built
+### 2026-10-06 · M39b · Variant prices, buying prices and product management · built
 
-- Delivered (D-635 to D-649; branch `m39b-variant-pricing` from `integration-wave2` at 28e0c4c):
+- Delivered (D-635 to D-649; branch `m39b-variant-pricing` from `integration-wave2` at 28e0c4c,
+  with `integration-wave2` at ff89eb8, M39a, merged in on 2026-10-06):
   - **New product**: prices by size and by colour in one step (a row's own price wins, then its
     size's, then its colour's, then the main price), rows chosen and set together (price,
     regular price, pieces, cost) or copied down, zero and negative figures refused on the
@@ -2163,13 +2164,23 @@ dry-run|commit --file <users.json>`.
     all or nothing). `supply.sku_purchase_prices` lives in supply only (invariant 5).
   - **Product list**: photo, stock, website switch, price range; a row menu (open, duplicate,
     show or hide on the website, archive) and bulk actions (show or hide, size chart, move to a
-    category, archive, stickers). Delete is M39a's and joins at integration (seams marked).
+    category, archive, stickers).
+  - **Delete** (M39a's routes and dialog, `delete Catalog`): in the product page's header, on
+    each variant row and in the list's row menu. The dialog says what uses it; something nothing
+    uses is deleted (its standard buying prices go with it, counted in the audit log); anything
+    else is offered Archive or Restore. Pickers for a new variant offer only live lists and
+    values; Sizes and colours keeps an archived one the product sells so it can be unticked and
+    never adds a combination with one; a duplicate leaves such variants out and refuses an
+    archived category, as the bulk move does. **Delete unused** on the list's ticked rows
+    deletes the ones nothing uses and says how many it kept.
   - **Website**: the product page, the cards and the cart show the same price (a live flash
     price included) and strike through the regular price, or under a flash price the higher of
-    the shelf and regular prices; "On sale" works (D-511 amended); photos grouped by colour.
+    the shelf and regular prices; the storefront API's "on sale" filter works (D-511
+    amended); photos grouped by colour. (The website's own "On sale" link still opens its
+    flash-sale page: a website follow-up.)
   - **Couriers**: a booking declares Σ qty × weight when every variant is weighed (Pathao never
     below 500 g), else the courier's default.
-- Server: migrations `0120_m39b_variant_pricing_schema.sql` (columns, `supply.sku_purchase_prices`)
+- Server: migrations (renumbered after M39a's frozen 0118 and 0119) `0120_m39b_variant_pricing_schema.sql` (columns, `supply.sku_purchase_prices`)
   and `0121_m39b_variant_pricing_policies.sql` (RLS, two `on delete set null (column)` composite
   keys, the price-history trigger widened to the regular price). New routes:
   `GET /v1/catalog/products/:id/price-history`, `POST /v1/catalog/products/:id/duplicate`,
@@ -2182,20 +2193,27 @@ dry-run|commit --file <users.json>`.
   expected price) and the category's website fields. Errors `CATALOG_SKU_HELD`,
   `SUPPLY_IMPORT_REJECTED`. Domain: `@elysium/domain/pricing` (new entry point).
 - Verification:
-  - `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`): see the Verification Report in
-    the hand-off; the first run's one failure (an i18n key not in lowerCamel) is fixed.
+  - `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`): exit 0 at d46e0c8 (226 test files; every gate passed; initial route 248.5 KB of 250). Before the
+    merge: exit 0 at 98f9ed0 (221 files). The first merged run had one failure outside M39b,
+    `storefront.e2e.test.ts` "refuses a timestamp outside five minutes" (a `now + 301` that
+    lands on 300 when a second ticks over under load); it passed on its own and in the next run.
   - M39 checks 3 to 7 on real Postgres in `apps/server/src/modules/catalog/variant-pricing.e2e.test.ts`
     (prices by size and +10 % with a history row each; per-variant receipt costs giving WAC 750
     after 700 and 800; cost to cost roles only and never through the catalog; the standard price
     prefilling, never moving WAC, its spreadsheet, the audit keeping counts only; duplicate with
     no stock; extend prices and code order; held-stock guard; the storefront's regular and flash
     prices and "on sale"; product stock totals, never another brand's; stale reprices refused; the catalog price
-    spreadsheet naming a price that would reach its regular price).
+    spreadsheet naming a price that would reach its regular price; with M39a: a duplicate
+    without archived values or categories, a bulk move refused into an archived category,
+    standard prices through the real SKU, product and supplier deletes with their audit
+    counts, the supplier keys swept from `pg_constraint`, a size chart emptied into another
+    moving the category default). M39a's `catalog-deletes.e2e.test.ts` now lists the standard
+    price's cascade from its SKU.
     Domain: `packages/domain/src/pricing/pricing.test.ts` (fast-check). Console:
     `m39b-ui.test.ts`. Route matrix and cost sweep cover every new route.
-  - `variant-pricing.stack.ts` against the real stack (ports 3221/5294): 6 passed with axe,
-    and `catalog-stock.stack.ts` and `barcodes.stack.ts` still pass (21 in all); screenshots
-    `docs/review/M39/b-01` to `b-07`.
+  - `variant-pricing.stack.ts` against the real stack (ports 3221/5294), now with Delete (the
+    unused copy deleted, the shirt offered Archive, "Delete unused" on two rows): 7 passed with axe, with `catalog-stock.stack.ts`, `barcodes.stack.ts` and M39a's `delete-archive.stack.ts` in the same run (31 passed, d46e0c8). The first run at HEAD failed check 3: with several size lists in the brand, the quick prices followed the first list, not the one picked (fixed in d46e0c8). Screenshots
+    `docs/review/M39/b-01` to `b-10`.
 - Auditors:
   - ledger-auditor: 0 critical, 5 warnings, 11 notes. Fixed: W1 (the standard-price
     spreadsheet went into the audit log through the request body: the service now writes
@@ -2212,13 +2230,26 @@ dry-run|commit --file <users.json>`.
     order confirmed in the same instant as an archive can still reserve it, as D-423 already
     allows for orders taken before an archive), N6 (price sort uses shelf prices, documented),
     N8 (kept), N9 (requests are chunked at 200).
-  - acceptance-auditor: see the hand-off.
+  - ledger-auditor on the integration (ba851b0, 7eb3ca5): 0 critical, 2 warnings, 4 notes, all
+    fixed in 4e2e8f1: W1 (standard prices tested through the real deletes, the supplier keys
+    swept), W2 (a delete's standard prices counted in the audit log), N1 (shared locks in the
+    duplicate and bulk move), N2 (`SUPPLY_NOT_FOUND` for a standard price racing a delete), N3
+    (a size chart emptied into another moves category defaults), N4 (Sizes and colours adds no
+    archived combination). Same unlocked check remains in M39a's own create and extend paths
+    (follow-up).
+  - acceptance-auditor: NOT READY at 4e2e8f1 with four gaps (no stack run at HEAD, this entry
+    stale, bulk "delete unused" missing, the website's "On sale" claim); all four closed in
+    2f4aece, d46e0c8 and this entry. Re-check: see the hand-off.
 - Decisions/assumptions: D-635 to D-649 (ASSUMED: D-637, D-639, D-640, D-641, D-645, D-646);
   D-421 amended by D-635, D-511 by D-640.
 - New dependencies: none.
-- Deviations from the milestone spec: none in scope; item 8's "delete unused" waits for M39a's
-  route (the seam is in place).
-- Follow-ups: the archive guard sees reserved stock, not pending orders without a reservation (M39a's
+- Deviations from the milestone spec: none.
+- Follow-ups: M39a's create and extend paths check archived categories and values without a
+  shared lock (owner: claude, with M39a's next change); `storefront.e2e.test.ts`'s timestamp
+  test is flaky under load (owner: claude, M33); the catalog price spreadsheet's text is kept
+  whole by the audit net (selling prices, not costs; owner: claude); the website's "On sale"
+  link should open `?onSale=true` on its shop page rather than the flash-sale page, so regular
+  prices show there too (owner: claude, website repo); the archive guard sees reserved stock, not pending orders without a reservation (M39a's
   reference port, owner: claude); a check that a "was" price was ever real (D-640, owner:
   human); Pathao's real minimum weight (owner: human, with credentials).
-- Next: integrate with M39a (wire Delete into the product page and list), renumber migrations.
+- Next: merge into `integration-wave2` (coordinator).
