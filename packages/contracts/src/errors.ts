@@ -564,6 +564,17 @@ export const ERROR_CODES = [
   'SCANNER_NOT_ALLOWED',
   /** No order has that order number, tracking code or consignment id. */
   'SHIPMENT_NOT_FOUND',
+  // M38b: the packing station and the packing video
+  /** The order is not confirmed (pending, on hold, already packed or further on), so it is not packed now. */
+  'PACKING_NOT_PACKABLE',
+  /** Some line still needs pieces, or the box holds a piece the order does not: the order cannot be finished. */
+  'PACKING_INCOMPLETE',
+  /** That SKU has no piece in the box to take out. */
+  'PACKING_NOTHING_TO_REMOVE',
+  /** The file is not this person's stored, private packing video, or is already another part's. */
+  'PACKING_VIDEO_INVALID',
+  /** The packing video was deleted (kept until seven days after delivery), or never arrived. */
+  'PACKING_VIDEO_GONE',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

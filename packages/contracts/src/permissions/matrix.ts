@@ -335,6 +335,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'update'], subject: 'WebsiteCredentials', scope: 'org' },
     // M39a (D-633): rename a branch, or switch it off once nothing runs there.
     { action: ['read', 'update'], subject: 'Branch', scope: 'org' },
+    // M38b (D-614): the packing videos, and the brand's packing settings.
+    { action: ['read', 'update'], subject: 'PackingVideo', scope: 'org' },
     /*
      * §22's files. The grant is coarse and the row check is not (D-115).
      *
@@ -402,6 +404,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'Storefront', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'read', subject: 'Target', scope: 'own' },
+    // M38b (D-614): a parcel's packing video, for a complaint about an order of their own.
+    { action: 'read', subject: 'PackingVideo', scope: 'own' },
     // No `request ApprovalRequest`: §6 gives sales no action that goes through
     // maker-checker, and REQUESTER_TYPES lists none (D-072).
     /*
@@ -521,6 +525,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     // Qty-only supply drafts (D-005): create and update, never read cost.
     { action: ['create', 'update'], subject: 'Supply', scope: 'org' },
     { action: ['read', 'update'], subject: 'Order', scope: 'org' },
+    // M38b (D-614): the packing videos of the brand's parcels.
+    { action: 'read', subject: 'PackingVideo', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'request', subject: 'ApprovalRequest', scope: 'org' },
     /*

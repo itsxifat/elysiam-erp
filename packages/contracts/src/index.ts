@@ -56,3 +56,5 @@ export * from './storefront-buying.js';
 export * from './usage.js';
 // M35b: campaign links, tracking, the ncom.bd marketplace, the scanner and order labels.
 export * from './storefront-marketing.js';
+// M38b: the packing station and the packing video.
+export * from './packing.js';

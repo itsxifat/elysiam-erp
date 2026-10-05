@@ -11,6 +11,7 @@ import {
   packProgress,
   packedCounts,
   packingVideoExpiry,
+  packingVideoState,
   PACKING_VIDEO_RETENTION_REASONS,
   type PackOrderLine,
   type PackScanOutcome,
@@ -317,5 +318,55 @@ describe('packingVideoExpiry (D-612)', () => {
         new Date(Date.UTC(2040, 0)),
       ),
     ).toBe(false);
+  });
+});
+
+describe('packingVideoState (D-611)', () => {
+  const now = new Date('2026-10-06T10:00:00Z');
+  const finished = (minutesAgo: number) => new Date(now.getTime() - minutesAgo * 60_000);
+
+  it('is off when recording was off and nothing was recorded', () => {
+    expect(
+      packingVideoState({
+        videoRequired: false,
+        sessionOpen: false,
+        completedAt: finished(500),
+        parts: [],
+        now,
+      }),
+    ).toBe('off');
+  });
+
+  it('waits for a video while the session is open or just finished, then calls it missing', () => {
+    const base = { videoRequired: true, parts: [], now };
+    expect(packingVideoState({ ...base, sessionOpen: true, completedAt: null })).toBe('pending');
+    expect(packingVideoState({ ...base, sessionOpen: false, completedAt: finished(30) })).toBe(
+      'pending',
+    );
+    expect(packingVideoState({ ...base, sessionOpen: false, completedAt: finished(121) })).toBe(
+      'missing',
+    );
+    const unarrived = [
+      { attached: true, deleted: false },
+      { attached: false, deleted: false },
+    ];
+    expect(
+      packingVideoState({
+        ...base,
+        parts: unarrived,
+        sessionOpen: false,
+        completedAt: finished(121),
+      }),
+    ).toBe('missing');
+  });
+
+  it('is uploaded when every part arrived, and deleted once retention took them all', () => {
+    const base = { videoRequired: true, sessionOpen: false, completedAt: finished(5000), now };
+    expect(packingVideoState({ ...base, parts: [{ attached: true, deleted: false }] })).toBe(
+      'uploaded',
+    );
+    expect(packingVideoState({ ...base, parts: [{ attached: false, deleted: true }] })).toBe(
+      'deleted',
+    );
   });
 });

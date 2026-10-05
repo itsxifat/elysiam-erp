@@ -163,7 +163,8 @@ export class ScannerService {
     });
   }
 
-  private async packingList(tx: Tx, orgId: string, facts: PackingFacts) {
+  /** The packing list for one order (the old app's shape); the station shows it too (M38b). */
+  async packingList(tx: Tx, orgId: string, facts: PackingFacts) {
     const skuIds = [...new Set(facts.lines.map((line) => line.skuId))];
     const [skuFacts, stickers] = await Promise.all([
       this.catalog.webSkuFacts(tx, orgId, skuIds),

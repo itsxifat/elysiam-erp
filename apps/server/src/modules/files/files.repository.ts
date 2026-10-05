@@ -344,3 +344,45 @@ export async function publicAssetExists(
   `);
   return rows.length > 0;
 }
+
+/**
+ * One file's row inside the caller's transaction (M38b): what a module checks before it
+ * attaches a file it was handed (the packing video's purpose, owner and state). RLS bounds it
+ * to the brand; null when there is no such row here.
+ */
+export async function findByIdIn(tx: Tx, orgId: string, id: string): Promise<FileRow | null> {
+  const rows = await tx.execute<RawFileRow>(sql`
+    select ${COLUMNS} from files.objects where org_id = ${orgId} and id = ${id}::uuid
+    for update
+  `);
+  const row = rows[0];
+  return row === undefined ? null : hydrate(row);
+}
+
+/**
+ * Delete one file's row of this purpose inside the caller's transaction (M38b, D-612): the
+ * retention job's deletion. Returns every key that held its bytes (the object and any image
+ * variants) for the job that removes them once the transaction has committed, or null when
+ * there was no such row.
+ */
+export async function deleteIn(
+  tx: Tx,
+  orgId: string,
+  id: string,
+  purpose: FilePurpose,
+): Promise<{ readonly storageKey: string; readonly keys: readonly string[] } | null> {
+  const rows = await tx.execute<RawFileRow>(sql`
+    delete from files.objects
+    where org_id = ${orgId} and id = ${id}::uuid and purpose = ${purpose}
+    returning ${COLUMNS}
+  `);
+  const raw = rows[0];
+  if (raw === undefined) return null;
+  const row = hydrate(raw);
+  const keys = [row.storageKey];
+  for (const variant of Object.values(row.variants)) {
+    const key = (variant as { key?: unknown } | null)?.key;
+    if (typeof key === 'string') keys.push(key);
+  }
+  return { storageKey: row.storageKey, keys };
+}

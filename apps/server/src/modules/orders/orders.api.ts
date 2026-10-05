@@ -395,6 +395,13 @@ export interface PackingLine {
   readonly unitPricePoisha: bigint;
 }
 
+/** An order's status and when it reached it (M38b, D-612). */
+export interface OrderRetentionFacts {
+  readonly orderId: string;
+  readonly status: OrderStatus;
+  readonly statusSince: Date | null;
+}
+
 /** An order as packing sees it (M35b: the scanner and the order labels, D-554, D-555). */
 export interface PackingFacts {
   readonly id: string;
@@ -687,6 +694,29 @@ export interface OrdersApi {
     orgId: string,
     orderIds: readonly string[],
   ): Promise<readonly PackingFacts[]>;
+
+  // --- M38b: the packing station and the packing video ---------------------------------
+
+  /**
+   * Each order's status and when it reached it (the latest history row into that status),
+   * for the packing video's retention (D-612). Ids not of this brand are absent.
+   */
+  retentionFacts(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+  ): Promise<readonly OrderRetentionFacts[]>;
+
+  /**
+   * Of these orders, the ones the caller may see under the route's own declared scope (hung
+   * on the request by the guard, as `orderVisibleTo`). Marks the scope applied.
+   */
+  visibleOrderIds(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+    request: object,
+  ): Promise<ReadonlySet<string>>;
 
   /** The SKUs with the most units delivered in the range, most first (M24). */
   topSkus(
@@ -1299,6 +1329,33 @@ export class OrdersApiService implements OrdersApi {
         system: true,
       });
     });
+  }
+
+  async retentionFacts(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+  ): Promise<readonly OrderRetentionFacts[]> {
+    const rows = await repo.retentionFacts(tx, orgId, [...new Set(orderIds)]);
+    return rows.map((row) => ({
+      orderId: row.id,
+      status: row.status as OrderStatus,
+      statusSince: instant(row.status_since),
+    }));
+  }
+
+  async visibleOrderIds(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+    request: object,
+  ): Promise<ReadonlySet<string>> {
+    const scope = scopeWhere(request, {
+      createdBy: sql`o.created_by`,
+      assignedTo: sql`o.assigned_to`,
+      branchId: sql`o.branch_id`,
+    });
+    return new Set(await repo.orderIdsInScope(tx, orgId, [...new Set(orderIds)], scope));
   }
 
   async orderIdsForShipmentCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]> {

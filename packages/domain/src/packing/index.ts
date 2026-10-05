@@ -34,3 +34,10 @@ export {
   type PackingVideoOrderFacts,
   type PackingVideoRetentionReason,
 } from './retention.js';
+
+export {
+  PACKING_VIDEO_GRACE_MS,
+  packingVideoState,
+  type PackingVideoPartFacts,
+  type PackingVideoState,
+} from './video-state.js';

@@ -128,6 +128,14 @@ export const SUBJECTS = [
    * dashboards stays `read LedgerReport`.
    */
   'Branch',
+  /**
+   * The packing video (M38b, D-614): the camera's record of a parcel being packed, kept until
+   * seven days after delivery, for complaints. Read by org_admin and warehouse across the brand
+   * and by sales for the orders in their own scope (the order's row decides, as the order desk
+   * does); `update` is the brand's packing settings (recording on or off), org_admin only. Not
+   * a row in §6's grid, which predates the packing station.
+   */
+  'PackingVideo',
 ] as const;
 
 export type Subject = (typeof SUBJECTS)[number];

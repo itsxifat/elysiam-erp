@@ -491,6 +491,19 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/scanner/devices',
   'POST /v1/scanner/devices/:id/revoke',
   'POST /v1/packing/labels',
+  // M38b: the packing station (`update Order`) and the packing video (`read PackingVideo`).
+  'POST /v1/packing/sessions',
+  'GET /v1/packing/sessions',
+  'GET /v1/packing/sessions/:id',
+  'POST /v1/packing/sessions/:id/scans',
+  'POST /v1/packing/sessions/:id/removals',
+  'POST /v1/packing/sessions/:id/complete',
+  'POST /v1/packing/sessions/:id/videos',
+  'POST /v1/packing/sessions/:id/videos/:videoId/file',
+  'GET /v1/packing/videos/:id/url',
+  'GET /v1/packing/orders/:orderId',
+  'GET /v1/packing/settings',
+  'PUT /v1/packing/settings',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

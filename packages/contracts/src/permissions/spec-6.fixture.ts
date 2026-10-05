@@ -389,4 +389,12 @@ export const SPEC_6_GRANTS: readonly string[] = [
   // §6's "users, roles, settings" cell: org_admin renames a branch or switches it off.
   'org_admin|read|Branch|org',
   'org_admin|update|Branch|org',
+
+  // | (not a row in the grid) | the packing video (M38b, D-614) |
+  // Evidence for a complaint about a parcel: org_admin and the warehouse across the brand,
+  // sales for the orders in their own scope. The brand's recording setting is org_admin's.
+  'org_admin|read|PackingVideo|org',
+  'org_admin|update|PackingVideo|org',
+  'sales|read|PackingVideo|own',
+  'warehouse|read|PackingVideo|org',
 ];
