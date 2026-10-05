@@ -126,7 +126,9 @@ export function checkWhiteLabel({
       }
       // The name of a file is downloaded too.
       hits.push(...findHits(path.basename(file), `${relative} (file name)`));
-      if (!SCANNED.has(path.extname(file).toLowerCase())) continue;
+      // Extensionless files too: `_headers` becomes the pages' response headers.
+      const extension = path.extname(file).toLowerCase();
+      if (extension !== '' && !SCANNED.has(extension)) continue;
       scanned += 1;
       hits.push(...findHits(readFileSync(file, 'utf8'), relative));
     }
