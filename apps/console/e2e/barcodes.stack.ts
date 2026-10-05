@@ -55,10 +55,14 @@ let page: Page;
 let productUrl = '';
 let scanned = '';
 
-async function shot(name: string): Promise<void> {
+/**
+ * A review screenshot. `fullPage` off for a dialog over a scrolled page: the dialog locks the
+ * page's scroll, and a full-page capture then stitches the page out of place.
+ */
+async function shot(name: string, fullPage = true): Promise<void> {
   mkdirSync(REVIEW_DIR, { recursive: true });
   await page.waitForTimeout(300);
-  await page.screenshot({ path: path.join(REVIEW_DIR, `${name}.png`), fullPage: true });
+  await page.screenshot({ path: path.join(REVIEW_DIR, `${name}.png`), fullPage });
 }
 
 /** Pick an option from one of the kit's selects: open the list, click the option. */
@@ -285,7 +289,7 @@ test('a shelf counted in by mistake is sent to a second admin to reverse', async
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Why it is being reversed').fill('These two were counted on shelf A too');
   await noBlockingViolations('reverse entry');
-  await shot('07-reverse-entry');
+  await shot('07-reverse-entry', false);
   await dialog.getByRole('button', { name: 'Ask to reverse' }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('status').filter({ hasText: 'Sent for approval' })).toBeVisible();
