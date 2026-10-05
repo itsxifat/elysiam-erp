@@ -33,6 +33,7 @@ import { OrderMail } from './modules/storefront/order-mail.js';
 import { PaymentsService } from './modules/storefront/payments.service.js';
 import { StorefrontModule } from './modules/storefront/storefront.module.js';
 import { registerStorefrontJobs } from './modules/storefront/storefront.worker.js';
+import { TrackingService } from './modules/storefront/tracking.service.js';
 import type { OutboxDispatcher } from './platform/events/dispatcher.js';
 import { reportJobFailedThroughOutbox } from './platform/jobs/job-failed.js';
 import type { JobsRuntime } from './platform/jobs/jobs.runtime.js';
@@ -127,6 +128,7 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     dispatcher,
     payments: context.get(PaymentsService),
     mail: context.get(OrderMail),
+    tracking: context.get(TrackingService),
     report,
   });
 

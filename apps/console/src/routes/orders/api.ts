@@ -43,6 +43,7 @@ export const ORDER_CHANNELS = [
   'phone',
   'walk_in',
   'reseller',
+  'marketplace',
 ] as const;
 export type OrderChannel = (typeof ORDER_CHANNELS)[number];
 

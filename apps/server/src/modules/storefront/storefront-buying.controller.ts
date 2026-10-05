@@ -354,7 +354,7 @@ export class StorefrontBuyingController {
 }
 
 /** A personal or moving answer: the allow-list, then JSON, never stored by a cache. */
-async function answer(
+export async function answer(
   request: FastifyRequest,
   reply: FastifyReply,
   status: number,
@@ -394,7 +394,7 @@ async function answer(
 }
 
 /** A shared read (the flash sales): M33's caching, ETag and 304. */
-async function cached(
+export async function cached(
   request: FastifyRequest,
   reply: FastifyReply,
   work: () => Promise<unknown>,

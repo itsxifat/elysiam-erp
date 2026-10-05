@@ -61,6 +61,7 @@ const ORDERS_KEYS = [
   'orders.channel.phone',
   'orders.channel.walk_in',
   'orders.channel.reseller',
+  'orders.channel.marketplace',
   'orders.desk.title',
   'orders.desk.subtitle',
   'orders.desk.phone',

@@ -35,6 +35,26 @@ export const shopperClientSchema = z
   })
   .strict();
 
+/**
+ * The browser's half of a purchase, sent with the checkout so the ERP's own server-side
+ * `Purchase` carries Meta's browser ids and GA4's client id (M35b, D-552). Optional.
+ */
+export const purchaseTrackingSchema = z
+  .object({
+    fbp: z.string().max(200).optional(),
+    fbc: z.string().max(200).optional(),
+    eventSourceUrl: z
+      .string()
+      .max(1000)
+      .regex(/^https:\/\/[^\s]+$/, 'An https:// page.')
+      .optional(),
+    gaClientId: z.string().max(100).optional(),
+    gaSessionId: z.string().max(100).optional(),
+  })
+  .strict();
+
+export type PurchaseTracking = z.infer<typeof purchaseTrackingSchema>;
+
 export const cartLineSchema = z
   .object({
     skuId: uuid.optional(),
@@ -109,6 +129,8 @@ export const checkoutSchema = z
       })
       .strict(),
     client: shopperClientSchema.optional(),
+    /** M35b: the browser's ids for the server-side `Purchase` (D-552). */
+    tracking: purchaseTrackingSchema.optional(),
   })
   .strict();
 

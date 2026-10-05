@@ -52,3 +52,5 @@ export * from './channels.js';
 export * from './storefront.js';
 // M34: buying on the website: cart, checkout, accounts, payments, emails.
 export * from './storefront-buying.js';
+// M35b: campaign links, tracking, the ncom.bd marketplace, the scanner and order labels.
+export * from './storefront-marketing.js';

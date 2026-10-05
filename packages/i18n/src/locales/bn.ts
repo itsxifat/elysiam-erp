@@ -1402,6 +1402,7 @@ const bn: Record<MessageKey, string> = {
   'orders.channel.phone': 'ফোন কল',
   'orders.channel.walk_in': 'সরাসরি',
   'orders.channel.reseller': 'রিসেলার',
+  'orders.channel.marketplace': 'মার্কেটপ্লেস',
 
   'orders.desk.title': 'নতুন অর্ডার',
   'orders.desk.subtitle':

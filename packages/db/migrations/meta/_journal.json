@@ -813,6 +813,20 @@
       "when": 1791213012330,
       "tag": "0117_m34_session_validating",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1791215308587,
+      "tag": "0118_m35b_web_marketing_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1791215325127,
+      "tag": "0119_m35b_web_marketing_policies",
+      "breakpoints": true
     }
   ]
 }

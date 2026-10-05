@@ -5,18 +5,22 @@ import type { JobFailureReporter, JobsRuntime } from '../../platform/jobs/jobs.r
 import type { OrderMail } from './order-mail.js';
 import type { PaymentsService } from './payments.service.js';
 import { STOREFRONT_QUEUES } from './storefront.queues.js';
+import type { TrackingService } from './tracking.service.js';
 
 const sessionPayload = z.object({ sessionId: z.string().uuid() }).strict();
 const validatePayload = z
   .object({ sessionId: z.string().uuid(), valId: z.string().min(1).max(80) })
   .strict();
 const orderPayload = z.object({ orderId: z.string().uuid() }).strict();
+const trackingPayload = z.object({ eventId: z.string().uuid() }).strict();
 
 export interface StorefrontWorkerDependencies {
   readonly jobs: JobsRuntime;
   readonly dispatcher: OutboxDispatcher;
   readonly payments: PaymentsService;
   readonly mail: OrderMail;
+  /** M35b: the website's events to Meta and GA4, and the log's retention (D-552). */
+  readonly tracking: TrackingService;
   readonly report: JobFailureReporter;
 }
 
@@ -27,7 +31,7 @@ export interface StorefrontWorkerDependencies {
  * email already written are left as they are.
  */
 export async function registerStorefrontJobs(deps: StorefrontWorkerDependencies): Promise<void> {
-  const { jobs, dispatcher, payments, mail, report } = deps;
+  const { jobs, dispatcher, payments, mail, tracking, report } = deps;
 
   dispatcher.on('order.status_changed', (event) => mail.onStatusChanged(event));
 
@@ -58,6 +62,23 @@ export async function registerStorefrontJobs(deps: StorefrontWorkerDependencies)
         throw new Error(`${STOREFRONT_QUEUES.expireUnpaid.name} is tenant-scoped`);
       const { orderId } = orderPayload.parse(job.payload);
       await payments.expireUnpaid(job.orgId, orderId);
+    },
+    report,
+  );
+  await jobs.work(
+    STOREFRONT_QUEUES.trackingSend.name,
+    async (job) => {
+      if (job.orgId === null)
+        throw new Error(`${STOREFRONT_QUEUES.trackingSend.name} is tenant-scoped`);
+      const { eventId } = trackingPayload.parse(job.payload);
+      await tracking.send(job.orgId, eventId);
+    },
+    report,
+  );
+  await jobs.work(
+    STOREFRONT_QUEUES.trackingPurge.name,
+    async () => {
+      await tracking.purgeAll();
     },
     report,
   );

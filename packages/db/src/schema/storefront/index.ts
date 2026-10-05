@@ -703,3 +703,212 @@ export const paymentSessions = storefront.table(
     ),
   ],
 );
+
+// --- M35b: campaign links and tracking -----------------------------------------------------
+
+/**
+ * A campaign link (D-551): the old site's "custom URL". A five-digit code laid over an existing
+ * shop address (a category, the shop, or a path that lists products), with products to
+ * highlight, a banner and a pop-up. The website reads it by code (`?cu=<code>`).
+ *
+ * The highlighted products are ids in order: the website shows those still on sale and skips
+ * the rest, so a product taken off the website never breaks a link already shared. The banner
+ * and the pop-up are small fixed forms, kept as JSON checked by the contract schema on every
+ * write. `views` is counted by the website's `POST …/views`.
+ */
+export const customLinks = storefront.table(
+  'custom_links',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    code: text('code').notNull(),
+    title: text('title').notNull(),
+    baseType: text('base_type').notNull(),
+    categoryId: uuid('category_id'),
+    customPath: text('custom_path'),
+    highlightProductIds: uuid('highlight_product_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    banner: jsonb('banner').notNull().default({}),
+    modal: jsonb('modal').notNull().default({}),
+    isActive: boolean('is_active').notNull().default(true),
+    views: bigint('views', { mode: 'bigint' })
+      .notNull()
+      .default(sql`0`),
+    createdBy: text('created_by').notNull(),
+    updatedBy: text('updated_by').notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    unique('custom_links_org_id_id_key').on(table.orgId, table.id),
+    index('custom_links_org_idx').on(table.orgId),
+    uniqueIndex('custom_links_org_code_idx').on(table.orgId, table.code),
+    foreignKey({
+      name: 'custom_links_org_id_category_id_fk',
+      columns: [table.orgId, table.categoryId],
+      foreignColumns: [categories.orgId, categories.id],
+    }).onDelete('restrict'),
+    check('custom_links_code_shape', sql`${table.code} ~ '^[1-9][0-9]{4}$'`),
+    check('custom_links_title_length', sql`length(${table.title}) between 1 and 120`),
+    check('custom_links_base_type', sql`${table.baseType} in ('category', 'shop', 'custom')`),
+    check(
+      'custom_links_base_complete',
+      sql`(${table.baseType} <> 'category' or ${table.categoryId} is not null)
+          and (${table.baseType} <> 'custom' or ${table.customPath} is not null)`,
+    ),
+    check(
+      'custom_links_custom_path_shape',
+      sql`${table.customPath} is null or (${table.customPath} ~ '^/[^/]' and length(${table.customPath}) <= 300)`,
+    ),
+    check('custom_links_highlights_bounded', sql`cardinality(${table.highlightProductIds}) <= 24`),
+    check('custom_links_views', sql`${table.views} >= 0`),
+    check(
+      'custom_links_sections_bounded',
+      sql`pg_column_size(${table.banner}) + pg_column_size(${table.modal}) < 16384`,
+    ),
+  ],
+);
+
+/**
+ * The website's tracking settings (D-552): one row per brand, the old site's `TrackingConfig`.
+ *
+ * The Meta access token and the GA4 API secret are **sealed** under `STOREFRONT_CREDENTIALS_KEY`
+ * (D-528's box), write-only, shown as a fingerprint. The pixel id and the measurement id are
+ * not secrets (every page carries them). `events` is the per-event routing, `proxy` the
+ * website's first-party paths; both small and checked by the contract on every write.
+ */
+export const trackingSettings = storefront.table(
+  'tracking_settings',
+  {
+    orgId: uuid('org_id')
+      .primaryKey()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    metaPixelEnabled: boolean('meta_pixel_enabled').notNull().default(false),
+    metaCapiEnabled: boolean('meta_capi_enabled').notNull().default(false),
+    metaPixelId: text('meta_pixel_id').notNull().default(''),
+    metaDatasetId: text('meta_dataset_id').notNull().default(''),
+    metaApiVersion: text('meta_api_version').notNull().default('v21.0'),
+    metaTokenSealed: sealedBytes('meta_token_sealed'),
+    metaTokenFingerprint: text('meta_token_fingerprint'),
+    metaTestEventCode: text('meta_test_event_code').notNull().default(''),
+    defaultCountryCode: text('default_country_code').notNull().default('880'),
+    ga4ClientEnabled: boolean('ga4_client_enabled').notNull().default(false),
+    ga4MpEnabled: boolean('ga4_mp_enabled').notNull().default(false),
+    ga4MeasurementId: text('ga4_measurement_id').notNull().default(''),
+    ga4SecretSealed: sealedBytes('ga4_secret_sealed'),
+    ga4SecretFingerprint: text('ga4_secret_fingerprint'),
+    /** The installation key the two secrets were sealed under (rotation). */
+    keyId: text('key_id'),
+    proxy: jsonb('proxy').notNull().default({}),
+    testMode: boolean('test_mode').notNull().default(false),
+    events: jsonb('events').notNull().default([]),
+    logRetentionDays: integer('log_retention_days').notNull().default(30),
+    updatedBy: text('updated_by').notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    index('tracking_settings_org_idx').on(table.orgId),
+    check('tracking_settings_pixel_id_shape', sql`${table.metaPixelId} ~ '^[0-9]{0,24}$'`),
+    check('tracking_settings_dataset_id_shape', sql`${table.metaDatasetId} ~ '^[0-9]{0,24}$'`),
+    check('tracking_settings_api_version', sql`${table.metaApiVersion} ~ '^v[0-9]{1,3}[.][0-9]$'`),
+    check(
+      'tracking_settings_measurement_id_shape',
+      sql`${table.ga4MeasurementId} ~ '^(G-[A-Z0-9]{4,20})?$'`,
+    ),
+    check('tracking_settings_country_code', sql`${table.defaultCountryCode} ~ '^[0-9]{1,4}$'`),
+    check('tracking_settings_retention', sql`${table.logRetentionDays} between 1 and 365`),
+    check(
+      'tracking_settings_secrets_complete',
+      sql`(${table.metaTokenSealed} is null) = (${table.metaTokenFingerprint} is null)
+          and (${table.ga4SecretSealed} is null) = (${table.ga4SecretFingerprint} is null)
+          and ((${table.metaTokenSealed} is null and ${table.ga4SecretSealed} is null)
+               or ${table.keyId} is not null)`,
+    ),
+    check(
+      'tracking_settings_sections_bounded',
+      sql`pg_column_size(${table.proxy}) + pg_column_size(${table.events}) < 16384`,
+    ),
+  ],
+);
+
+/**
+ * One tracked event (D-552): the old site's `TrackingEvent` log, and the job's outbox.
+ *
+ * Written when the website forwards a browser event or the ERP fires a `Purchase`, sent by
+ * `storefront.tracking_send` with no transaction open (invariant 6). What is sent (the hashed
+ * identifiers, Meta's browser ids, the address and browser Meta and GA4 take in the clear) is
+ * **sealed** until it goes and cleared after, so the log keeps only a masked view, which
+ * matching inputs were present, the bounded `custom_data`, and each platform's outcome.
+ * `waiting` is a purchase paid online that has not been paid yet. Kept for the brand's
+ * retention (`expires_at`) and then deleted by the daily purge.
+ */
+export const trackingEvents = storefront.table(
+  'tracking_events',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    eventId: text('event_id').notNull(),
+    eventName: text('event_name').notNull(),
+    source: text('source').notNull(),
+    testMode: boolean('test_mode').notNull().default(false),
+    orderId: uuid('order_id'),
+    userMasked: jsonb('user_masked').notNull().default({}),
+    matchKeys: jsonb('match_keys').notNull().default({}),
+    customData: jsonb('custom_data').notNull().default({}),
+    valuePoisha: bigint('value_poisha', { mode: 'bigint' }),
+    currency: text('currency'),
+    payloadSealed: sealedBytes('payload_sealed'),
+    keyId: text('key_id'),
+    status: text('status').notNull().default('queued'),
+    meta: jsonb('meta').notNull().default({}),
+    ga4: jsonb('ga4').notNull().default({}),
+    attempts: integer('attempts').notNull().default(0),
+    sentAt: timestamp('sent_at', { withTimezone: true, mode: 'date' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    unique('tracking_events_org_id_id_key').on(table.orgId, table.id),
+    index('tracking_events_org_idx').on(table.orgId),
+    index('tracking_events_org_created_idx').on(table.orgId, table.createdAt),
+    index('tracking_events_org_status_idx').on(table.orgId, table.status, table.createdAt),
+    index('tracking_events_expires_idx').on(table.expiresAt),
+    // The server's own Purchase is written once per order, however often it is asked for.
+    uniqueIndex('tracking_events_org_server_event_idx')
+      .on(table.orgId, table.eventId)
+      .where(sql`${table.source} = 'server'`),
+    foreignKey({
+      name: 'tracking_events_org_id_order_id_fk',
+      columns: [table.orgId, table.orderId],
+      foreignColumns: [orders.orgId, orders.id],
+    }).onDelete('restrict'),
+    check('tracking_events_event_id_shape', sql`${table.eventId} ~ '^[!-~]{1,100}$'`),
+    check(
+      'tracking_events_event_name_shape',
+      sql`${table.eventName} ~ '^[A-Za-z][A-Za-z0-9_]{0,39}$'`,
+    ),
+    check('tracking_events_source', sql`${table.source} in ('client', 'server')`),
+    check(
+      'tracking_events_status',
+      sql`${table.status} in ('waiting', 'queued', 'success', 'partial', 'error', 'skipped')`,
+    ),
+    // A payload is held only while the event can still be sent.
+    check(
+      'tracking_events_payload_only_while_pending',
+      sql`${table.payloadSealed} is null or ${table.status} in ('waiting', 'queued')`,
+    ),
+    check(
+      'tracking_events_payload_keyed',
+      sql`${table.payloadSealed} is null or ${table.keyId} is not null`,
+    ),
+    check(
+      'tracking_events_sections_bounded',
+      sql`pg_column_size(${table.customData}) + pg_column_size(${table.meta}) + pg_column_size(${table.ga4}) < 65536`,
+    ),
+  ],
+);

@@ -5,6 +5,9 @@ import type { ShippingRule } from '@elysium/domain/storefront';
 
 import * as repo from './storefront.repository.js';
 import { StorefrontService } from './storefront.service.js';
+import { TrackingService, type PurchaseFacts } from './tracking.service.js';
+
+export type { PurchaseFacts };
 
 /**
  * What other modules may ask the website module (invariant 12; M33, D-503, D-505).
@@ -35,13 +38,49 @@ export interface StorefrontApi {
     orgId: string,
     rows: readonly { readonly kind: string; readonly legacyId: string; readonly erpId: string }[],
   ): Promise<number>;
+
+  /**
+   * The website's own name and address and the courier merchant id the brand prints on its
+   * labels (M35b: the order labels, D-555, and the marketplace connector's product links).
+   */
+  siteFacts(
+    tx: Tx,
+    orgId: string,
+  ): Promise<{
+    readonly siteName: string;
+    /** Without a trailing slash; empty when the brand has not set one. */
+    readonly siteUrl: string;
+    readonly merchantId: string;
+  }>;
+
+  /**
+   * The server-side `Purchase` for an order another module placed (M35b, D-552: the
+   * marketplace's), logged and queued in the caller's transaction.
+   */
+  recordPurchase(tx: Tx, orgId: string, facts: PurchaseFacts): Promise<void>;
 }
 
 export const STOREFRONT_API = Symbol('StorefrontApi');
 
 @Injectable()
 export class StorefrontApiService implements StorefrontApi {
-  constructor(private readonly storefront: StorefrontService) {}
+  constructor(
+    private readonly storefront: StorefrontService,
+    private readonly tracking: TrackingService,
+  ) {}
+
+  async siteFacts(tx: Tx, orgId: string) {
+    const settings = await this.storefront.settingsIn(tx, orgId);
+    return {
+      siteName: settings.siteInfo.siteName,
+      siteUrl: settings.siteInfo.siteUrl.replace(/\/+$/, ''),
+      merchantId: settings.siteInfo.merchantId,
+    };
+  }
+
+  async recordPurchase(tx: Tx, orgId: string, facts: PurchaseFacts): Promise<void> {
+    await this.tracking.recordPurchase(tx, orgId, facts);
+  }
 
   async webLocationIds(tx: Tx, orgId: string): Promise<readonly string[]> {
     return (await this.storefront.settingsIn(tx, orgId)).webLocationIds;

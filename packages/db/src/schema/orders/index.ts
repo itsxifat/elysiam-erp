@@ -66,6 +66,8 @@ export const orderChannel = sales.enum('order_channel', [
   'phone',
   'walk_in',
   'reseller',
+  // M35b (D-556): orders the ncom.bd marketplace hands over.
+  'marketplace',
 ]);
 
 /**
