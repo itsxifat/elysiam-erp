@@ -214,8 +214,13 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
     const value = positivePrice(takaToPoisha(trimmed));
     return { poisha: value, invalid: value === null };
   };
-  const sizeAxis = ordered.find((axis) => axis.kind === 'size');
-  const colourAxis = ordered.find((axis) => axis.kind === 'colour');
+  // The size and colour lists the person picked from: a brand may keep several of each
+  // ("Shirt size", "Trouser size"), and the quick prices follow the one in use.
+  const pickedAxis = (kind: 'size' | 'colour') =>
+    ordered.find((axis) => axis.kind === kind && (chosen[axis.id] ?? []).length > 0) ??
+    ordered.find((axis) => axis.kind === kind);
+  const sizeAxis = pickedAxis('size');
+  const colourAxis = pickedAxis('colour');
   const sizeChoice = choice.find((axis) => axis.attributeId === sizeAxis?.id)?.values ?? [];
   const colourChoice = choice.find((axis) => axis.attributeId === colourAxis?.id)?.values ?? [];
   const main = typedPrice(taka);

@@ -104,7 +104,8 @@ In **Sizes and colours** on the product page:
 - **Delete** (org admins: the row menu, the product page's header, and the bin on each variant
   row) first says what uses the product or variant. Something made by mistake that nothing uses
   is deleted for good. Anything with stock, a sale or a receipt is offered **Archive** instead,
-  which keeps its history.
+  which keeps its history. On the list, tick several and press **Delete unused**: the ones
+  nothing uses are deleted, and the screen says how many were kept because they are in use.
 
 ## Also on the product page
 
