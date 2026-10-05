@@ -197,7 +197,6 @@ export class AccountsService {
         orgId,
         accountId: account.id,
         email: account.email,
-        phoneE164: account.phone_e164,
       });
       await this.audit.record(tx, {
         orgId,
@@ -305,7 +304,7 @@ export class AccountsService {
           emailVerifiedAt: new Date(),
         });
         if (accountId === undefined) return 'race' as const;
-        await buying.claimGuestOrders(tx, { orgId, accountId, email, phoneE164: null });
+        await buying.claimGuestOrders(tx, { orgId, accountId, email });
         await buying.touchSignIn(tx, orgId, accountId);
         await this.audit.record(tx, {
           orgId,
@@ -418,7 +417,6 @@ export class AccountsService {
           orgId,
           accountId: account.id,
           email: account.email,
-          phoneE164: account.phone_e164,
         });
       }
       await this.audit.record(tx, {

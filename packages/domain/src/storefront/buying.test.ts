@@ -519,7 +519,7 @@ describe('shopper accounts (D-522, D-523)', () => {
     expect(normaliseCode('12345')).toBeNull();
   });
 
-  it('claims a guest order by verified email, or by phone when the order gave no email', () => {
+  it('claims a guest order by verified email only, never by an unverified phone', () => {
     const account = { email: 'r@example.com', emailVerified: true, phoneE164: '+8801711000001' };
     expect(
       claimsGuestOrder(account, {
@@ -530,7 +530,7 @@ describe('shopper accounts (D-522, D-523)', () => {
     ).toBe(true);
     expect(
       claimsGuestOrder(account, { email: null, phoneE164: '+8801711000001', accountId: null }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       claimsGuestOrder(account, {
         email: 'other@example.com',

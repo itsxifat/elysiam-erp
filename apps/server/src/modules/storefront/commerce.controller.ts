@@ -15,7 +15,6 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
-import { AuditExempt } from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { CommerceService } from './commerce.service.js';
@@ -105,7 +104,6 @@ export class CommerceController {
   }
 
   @RequireAbility('update', 'WebsiteCredentials')
-  @AuditExempt('A test email changes nothing; the email server answers and nothing is stored.')
   @Post('email/test')
   @HttpCode(200)
   async testEmail(@Req() request: FastifyRequest, @Body() body: unknown) {

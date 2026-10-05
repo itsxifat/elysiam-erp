@@ -109,17 +109,15 @@ export interface ClaimingAccount {
 /**
  * Whether a past guest order belongs in this account (D-523).
  *
- * Only for an account whose email is verified, and only an order no account holds yet:
- *
- * - **the same email** — the strong link: whoever reads that inbox placed the order;
- * - **the same phone, on an order that gave no email** — the old site's guest stubs folded by
- *   phone; an order that named a different email belongs to that address, not to whoever
- *   typed the phone number in a profile.
+ * Only for an account whose email is verified, only an order no account holds yet, and only
+ * by **the same email**: whoever reads that inbox placed the order. Never by phone — an
+ * account's phone is typed, not verified, so a phone match would hand a stranger's orders
+ * (name, address, items, tracking) to whoever typed that number into a profile (M34 ledger
+ * audit W5). An order placed without an email stays with its view link.
  */
 export function claimsGuestOrder(account: ClaimingAccount, order: GuestOrderContact): boolean {
   if (!account.emailVerified || order.accountId !== null) return false;
-  if (order.email !== null) return order.email === account.email;
-  return account.phoneE164 !== null && account.phoneE164 === order.phoneE164;
+  return order.email !== null && order.email === account.email;
 }
 
 // --- saved addresses -----------------------------------------------------------------------------

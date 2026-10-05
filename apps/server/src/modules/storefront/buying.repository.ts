@@ -394,7 +394,7 @@ export async function webOrdersOfAccount(
 
 /**
  * Claim past guest orders into a verified account (D-523, the domain's `claimsGuestOrder`):
- * those that gave this email, and those that gave no email and this phone.
+ * those that gave this email. Never by phone (M34 ledger audit W5).
  */
 export async function claimGuestOrders(
   tx: Tx,
@@ -402,15 +402,12 @@ export async function claimGuestOrders(
     readonly orgId: string;
     readonly accountId: string;
     readonly email: string;
-    readonly phoneE164: string | null;
   },
 ): Promise<number> {
   const rows = await tx.execute<{ order_id: string }>(sql`
     update storefront.web_orders set account_id = ${input.accountId}, updated_at = now()
     where org_id = ${input.orgId} and account_id is null
-      and (email = ${input.email}
-           or (email is null and ${input.phoneE164}::text is not null
-               and phone_e164 = ${input.phoneE164}))
+      and email = ${input.email}
     returning order_id
   `);
   return rows.length;
