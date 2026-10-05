@@ -417,6 +417,15 @@ export const orders = sales.table(
      * for an order that already shipped.
      */
     locationId: uuid('location_id'),
+    /**
+     * When the order's units were reserved as it was placed (M34, D-532).
+     *
+     * A website checkout holds the stock at once, at `location_id`, so a shopper is never sold
+     * a unit somebody else has just paid for; every other order reserves on confirm. The state
+     * machine reads it (`stockHeld`): confirming a held order reserves nothing more, and
+     * cancelling it while still pending releases what the checkout held. Written at insert only.
+     */
+    stockHeldAt: timestamp('stock_held_at', { withTimezone: true, mode: 'date' }),
 
     itemsPoisha: bigint('items_poisha', { mode: 'bigint' }).notNull(),
     discountPoisha: bigint('discount_poisha', { mode: 'bigint' })
@@ -540,6 +549,11 @@ export const orders = sales.table(
     check(
       'orders_exchange_not_self',
       sql`${table.exchangeOfOrderId} is null or ${table.exchangeOfOrderId} <> ${table.id}`,
+    ),
+    // A held order holds its stock somewhere (D-532): the location it was reserved at.
+    check(
+      'orders_stock_held_has_location',
+      sql`${table.stockHeldAt} is null or ${table.locationId} is not null`,
     ),
   ],
 );

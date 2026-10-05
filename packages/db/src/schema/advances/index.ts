@@ -44,7 +44,7 @@ export const orderAdvances = sales.table(
       .notNull()
       .references(() => organizations.id, { onDelete: 'restrict' }),
     orderId: uuid('order_id').notNull(),
-    /** `bkash`, `nagad` or `bank` (D-013 names bKash). */
+    /** `bkash`, `nagad` or `bank` (D-013 names bKash); `sslcommerz` from the website (D-526). */
     method: text('method').notNull(),
     /** Normalised: upper case, no spaces or dashes (`normalizeTransactionRef`). */
     transactionRef: text('transaction_ref').notNull(),
@@ -136,7 +136,11 @@ export const orderAdvances = sales.table(
       columns: [table.orgId, table.voidJournalId],
       foreignColumns: [journals.orgId, journals.id],
     }).onDelete('restrict'),
-    check('order_advances_method', sql`${table.method} in ('bkash', 'nagad', 'bank')`),
+    // M34 (D-526): `sslcommerz`, a website payment the gateway validated.
+    check(
+      'order_advances_method',
+      sql`${table.method} in ('bkash', 'nagad', 'bank', 'sslcommerz')`,
+    ),
     check('order_advances_ref_format', sql`${table.transactionRef} ~ '^[A-Z0-9]{6,30}$'`),
     check(
       'order_advances_amounts',

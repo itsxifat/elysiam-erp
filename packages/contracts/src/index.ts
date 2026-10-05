@@ -48,3 +48,5 @@ export * from './pos.js';
 export * from './channels.js';
 // M33: the brand's website, run from its ERP.
 export * from './storefront.js';
+// M34: buying on the website: cart, checkout, accounts, payments, emails.
+export * from './storefront-buying.js';

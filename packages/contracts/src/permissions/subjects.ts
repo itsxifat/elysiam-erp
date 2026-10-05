@@ -120,6 +120,14 @@ export const SUBJECTS = [
    * website moving into the ERP (D-469).
    */
   'Storefront',
+  /**
+   * The website's payment gateway and email server credentials (M34, D-528): where shoppers'
+   * money goes and where password-reset links are sent from. org_admin only: a marketing
+   * user who could point SSLCommerz at another store, or the email server at their own,
+   * could take shoppers' money or their accounts. Showing that they are set up is
+   * `read Storefront`; the secrets are never shown to anyone.
+   */
+  'WebsiteCredentials',
 ] as const;
 
 export type Subject = (typeof SUBJECTS)[number];

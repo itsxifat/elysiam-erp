@@ -381,5 +381,7 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'org_admin|delete|Storefront|org',
   'org_admin|read|Storefront|org',
   'org_admin|update|Storefront|org',
+  'org_admin|read|WebsiteCredentials|org',
+  'org_admin|update|WebsiteCredentials|org',
   'sales|read|Storefront|org',
 ];
