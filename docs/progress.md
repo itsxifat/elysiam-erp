@@ -1768,7 +1768,8 @@ dry-run|commit --file <users.json>`.
   - acceptance-auditor: NOT READY with five gaps (the API client not regenerated after the
     scope change, check 5 unrecorded, no progress entry, no test of discounts through the
     checkout, the new key missing from the deploy configs), fixed in 62794f3 and 91c9426 and
-    this entry, plus the bundle budget in f3398a2. Not re-run.
+    this entry, plus the bundle budget in f3398a2. Re-run at ff1a32c: READY (29 of 29
+    end-to-end tests passing).
 - Decisions/assumptions: D-520 to D-539 (ASSUMED: D-520, D-522, D-527, D-528, D-529, D-531,
   D-534, D-538); an "Unverified integrations" row for the SSLCommerz adapter.
 - New dependencies:
@@ -1798,4 +1799,7 @@ dry-run|commit --file <users.json>`.
     need the section catalogues lazy-loaded first (owner: claude).
   - Kamal's deploy leaves `STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX` off for staging too; set it
     per environment if staging should take sandbox payments (owner: human).
+  - Tests still to write (owner: claude): the real `SslcommerzGateway` and `SmtpMailer` against
+    a stubbed fetch and transport; that the password fingerprint is keyed; D-534's sign-in,
+    code-send and resend limits over HTTP.
 - Next: integrate M34 into `integration-wave2`; M36 builds the website on these routes.
