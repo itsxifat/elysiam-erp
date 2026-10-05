@@ -406,6 +406,33 @@ export const STOREFRONT_VISIBLE_FIELDS = [
   'showOnHome',
   'banner',
   'unitsLeft',
+  // M35b: campaign links (D-551)
+  'customLink',
+  'basePath',
+  'bgColor',
+  'textColor',
+  'modal',
+  'type',
+  'ctaText',
+  'ctaLink',
+  'highlightProducts',
+  // M35b: tracking (D-552): the client-safe config and the events' answers
+  'meta',
+  'pixelEnabled',
+  'pixelId',
+  'ga4',
+  'clientEnabled',
+  'measurementId',
+  'proxy',
+  'metaScriptPath',
+  'metaCollectPath',
+  'ga4ScriptPath',
+  'ga4CollectPath',
+  'testMode',
+  'events',
+  'client',
+  'results',
+  'eventId',
 ] as const;
 
 export type CostField = (typeof COST_FIELDS)[number];

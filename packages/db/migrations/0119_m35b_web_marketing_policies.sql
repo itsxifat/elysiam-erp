@@ -248,10 +248,10 @@ create or replace function storefront.assert_tracking_event_change() returns tri
 language plpgsql as $$
 begin
   if (new.id, new.org_id, new.event_id, new.event_name, new.source, new.order_id,
-      new.created_at, new.expires_at)
+      new.created_at)
      is distinct from
      (old.id, old.org_id, old.event_id, old.event_name, old.source, old.order_id,
-      old.created_at, old.expires_at) then
+      old.created_at) then
     raise exception 'CONFLICT: a tracked event''s identity is fixed.';
   end if;
   return new;
