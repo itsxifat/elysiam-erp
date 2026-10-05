@@ -1447,11 +1447,12 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
     hero, menu and size charts. Screenshots in `docs/review/M33/` (`dd30f7a`); the dialog that
     shows a key's secret is not screenshotted (`b2792ae`; an earlier commit carried one from a
     throwaway database, useless without that database's key row). PASS.
-  - Check 5: `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at `21672da`:
-    194 test files, 3,083 passed, 1 skipped (pre-existing); format, lint, typecheck, build,
-    bundle (initial route 246.1 KB of 250), migrations, schema drift (103 migrations agree),
-    route matrix (358 routes, 341 matrix-tested, 17 public), i18n (3,256 keys) and api-client
-    all pass. The route-matrix and cost-sweep suites pass with the 21 new console routes.
+  - Check 5: `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at `8a3414c`,
+    the last code commit: 194 test files, 3,086 passed, 1 skipped (pre-existing); format, lint,
+    typecheck, build, bundle (initial route 246.1 KB of 250), migrations, schema drift (103
+    migrations agree), route matrix (358 routes, 341 matrix-tested, 17 public), i18n (3,256
+    keys) and api-client all pass. The route-matrix and cost-sweep suites pass with the 21 new
+    console routes and the 8 signed reads.
 - Auditors: ledger-auditor first pass 0 critical, 1 high (a nested `withOrg` in the public
   reads could starve the pool under concurrent traffic), 1 medium (key issue and revoke and
   settings saves audited only after the response; the `pin` pattern redacted the whole
