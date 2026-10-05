@@ -271,6 +271,25 @@ describe('the session it opens', () => {
       `),
     );
     expect((await client.request('GET', '/v1/me')).statusCode).toBe(401);
+    // Better Auth's own endpoints too, beyond reading the session and signing out.
+    const update = await client.request('POST', '/api/auth/update-user', {
+      body: { name: 'Owner' },
+    });
+    expect(update.statusCode).toBe(401);
+  });
+
+  it('opens once when the same link arrives twice at once', async () => {
+    const token = mint(claims());
+    const [first, second] = [harness.client(), harness.client()];
+    await Promise.all([
+      first.request('GET', '/v1/auth/login-branding'),
+      second.request('GET', '/v1/auth/login-branding'),
+    ]);
+    const answers = await Promise.all([
+      first.request('POST', '/v1/auth/owner-link', { body: { token } }),
+      second.request('POST', '/v1/auth/owner-link', { body: { token } }),
+    ]);
+    expect(answers.map((answer) => answer.statusCode).sort()).toEqual([200, 401]);
   });
 });
 
@@ -331,15 +350,35 @@ describe('an owner on the brand’s records', () => {
         ),
       ),
     ).toContain('only the owner role makes an owner');
+    // The single-use record is the owner role's alone: the application can neither write a
+    // use of its own (to spend or pre-spend a link) nor read the list.
+    expect(
+      await failure(
+        withGlobal((tx) =>
+          tx.execute(sql`insert into iam.owner_link_uses (jti) values (${randomUUID()})`),
+        ),
+      ),
+    ).toContain('permission denied');
+    expect(
+      await failure(withGlobal((tx) => tx.execute(sql`select count(*) from iam.owner_link_uses`))),
+    ).toContain('permission denied');
+    // And only an owner's session may say it came by link, from the start.
     expect(
       await failure(
         withGlobal((tx) =>
           tx.execute(
-            sql`select iam.ensure_owner_identity(${randomUUID()}, 'forged@example.invalid', 'Forged')`,
+            sql`update iam.sessions set owner_link = true where user_id = ${admin.userId}`,
           ),
         ),
       ),
-    ).toContain('OWNER_LINK_UNSPENT');
+    ).toContain('OWNER_LINK');
+    expect(
+      await failure(
+        withGlobal((tx) =>
+          tx.execute(sql`update iam.sessions set owner_link = false where user_id = ${ownerId}`),
+        ),
+      ),
+    ).toContain('OWNER_LINK_FIXED');
   });
 
   it('reads "Owner" on an order to staff, and the name to another owner', async () => {

@@ -19,7 +19,6 @@ x-server-env: &server-env
   # other real brand (D-470), and it is the audience an owner sign-in link must name (D-473).
   ERP_BRAND_SLUG: ${BRAND_SLUG}
   DATABASE_URL: postgres://erp_app:${BRAND_DB_APP_PASSWORD:?run infra/brand/new-brand.sh}@postgres:5432/erp
-  DATABASE_ANALYTICS_URL: postgres://erp_analytics:${BRAND_DB_ANALYTICS_PASSWORD:?}@postgres:5432/erp
   VALKEY_URL: redis://:${BRAND_VALKEY_PASSWORD:?}@valkey:6379
   # The brand's admin host serves the console, portal, till and API on one origin. Cookies
   # are scoped to it alone, so the brand's website on the parent domain never receives them.
@@ -123,6 +122,9 @@ services:
       <<: *server-env
       DATABASE_OWNER_URL: postgres://erp_owner:${BRAND_DB_OWNER_PASSWORD:?}@postgres:5432/erp
       DATABASE_ADMIN_URL: postgres://postgres:${BRAND_DB_ROOT_PASSWORD:?}@postgres:5432/erp
+      # The read-only role's password, which the bootstrap sets. Only here: nothing in a
+      # brand's API or worker reads across orgs (D-471), so neither holds this URL.
+      DATABASE_ANALYTICS_URL: postgres://erp_analytics:${BRAND_DB_ANALYTICS_PASSWORD:?}@postgres:5432/erp
     depends_on:
       postgres:
         condition: service_healthy

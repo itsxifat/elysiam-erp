@@ -722,6 +722,13 @@
       "when": 1791192931153,
       "tag": "0104_m31_owner_link_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1791195810204,
+      "tag": "0105_m31_owner_link_hardening",
+      "breakpoints": true
     }
   ]
 }

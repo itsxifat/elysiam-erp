@@ -33,13 +33,14 @@ import { verifyOwnerLink } from './owner-link.verify.js';
  * 2. **Parse, verify, then the rules.** The signature covers the payload's base64url text,
  *    so nothing is re-serialised before it is checked; the audience must be this brand,
  *    the lifetime two minutes at most, the time now.
- * 3. **Single use.** The `jti` is recorded before anything is created (`on conflict do
- *    nothing`); a link whose `jti` is already there is refused. A link that fails after
- *    this point is spent, and the owner asks for a new one.
- * 4. **The owner's identity.** Found by the email the link names, or made: a super admin
- *    flagged as an owner, with no password and no membership. A staff account, a local
- *    super admin or a switched-off identity with that email is never taken over.
- * 5. **The session**, made inside Better Auth (`auth.api.createOwnerSession`, server-only)
+ * 3. **Single use, then the owner's identity**, in one statement as the owner role
+ *    (`iam.accept_owner_link`): the `jti` is recorded (`on conflict do nothing`) and a link
+ *    whose `jti` is already there is refused; then the owner is found by the email the link
+ *    names, or made — a super admin flagged as an owner, with no password and no
+ *    membership. A staff account, a local super admin or a switched-off owner with that
+ *    email is never taken over, and such a refusal leaves the `jti` unspent. A link that
+ *    fails after this point (the session) is spent, and the owner asks for a new one.
+ * 4. **The session**, made inside Better Auth (`auth.api.createOwnerSession`, server-only)
  *    so its row and cookie are a normal sign-in's; then the audit row in the brand's log.
  *
  * Every refusal is the same `401` to the caller. The reason goes to the server's log, so
@@ -116,8 +117,8 @@ export class OwnerLinkService {
     if (!verdict.ok) throw new OwnerLinkRefused(verdict.reason);
     const claims = verdict.claims;
 
-    const orgId = await this.recordUseAndFindBrand(claims, audience);
-    const userId = await this.ownerIdentity(claims);
+    const orgId = await this.brandId(audience);
+    const userId = await this.spendAndFindOwner(claims);
 
     const headers = new Headers();
     const userAgent = request.headers['user-agent'];
@@ -153,52 +154,53 @@ export class OwnerLinkService {
     return { cookies, userId, expiresAt: created.response.expiresAt };
   }
 
-  /**
-   * Spend the link's `jti`, and find the brand it opens. One transaction: a link is spent
-   * whether or not the rest succeeds, and a use older than a day is forgotten on the way.
-   */
-  private async recordUseAndFindBrand(claims: OwnerLinkClaims, audience: string): Promise<string> {
-    return withGlobal(async (tx) => {
-      const inserted = await tx.execute<{ jti: string }>(sql`
-        insert into iam.owner_link_uses (jti) values (${claims.jti})
-        on conflict (jti) do nothing
-        returning jti
-      `);
-      if (inserted.length === 0) throw new OwnerLinkRefused('replayed');
-      await tx.execute(
-        sql`delete from iam.owner_link_uses where used_at < now() - interval '1 day'`,
-      );
-      const [brand] = await tx.execute<{ id: string }>(sql`
+  /** The brand the link opens: this deployment's, active and not the training org. */
+  private async brandId(audience: string): Promise<string> {
+    const [brand] = await withGlobal((tx) =>
+      tx.execute<{ id: string }>(sql`
         select id from org.organizations
         where slug = ${audience} and is_active and not is_training
-      `);
-      if (brand === undefined) throw new OwnerLinkRefused('brand_missing');
-      return brand.id;
-    });
+      `),
+    );
+    if (brand === undefined) throw new OwnerLinkRefused('brand_missing');
+    return brand.id;
   }
 
   /**
-   * The owner's identity here, by the link's email: made on the first link, its name kept
-   * to the minter's on later ones. Never anyone else's account.
-   *
-   * Through `iam.ensure_owner_identity` (migration 0104), which runs as the owner role:
-   * nothing the application role does may set `is_super_admin` or `is_owner` (0015, 0104),
-   * and that function makes an owner only for a link spent in the last few minutes.
+   * Spend the link's `jti` and find or make its owner, in one statement as the owner role
+   * (`iam.accept_owner_link`, migration 0105): a `jti` already spent is refused, uses older
+   * than a day are forgotten, an owner is made on the first link and keeps the minter's
+   * name on later ones, and an address belonging to anyone else is never taken over. The
+   * application role can neither write the single-use record nor set `is_super_admin` or
+   * `is_owner` itself (0015, 0104, 0105). A refusal rolls the whole statement back.
    */
-  private async ownerIdentity(claims: OwnerLinkClaims): Promise<string> {
+  private async spendAndFindOwner(claims: OwnerLinkClaims): Promise<string> {
+    let id: string | null | undefined;
     try {
-      return await withGlobal(async (tx) => {
-        const [row] = await tx.execute<{ id: string }>(sql`
-          select iam.ensure_owner_identity(${claims.jti}, ${claims.sub}, ${claims.name}) as id
-        `);
-        if (row === undefined) throw new OwnerLinkRefused('identity_conflict');
-        return row.id;
-      });
+      const rows = await withGlobal((tx) =>
+        tx.execute<{ id: string | null }>(sql`
+          select iam.accept_owner_link(${claims.jti}, ${claims.sub}, ${claims.name}) as id
+        `),
+      );
+      id = rows[0]?.id;
     } catch (error) {
-      const text = String((error as { cause?: unknown }).cause ?? error);
+      const text = causes(error);
+      if (text.includes('OWNER_LINK_REPLAYED')) throw new OwnerLinkRefused('replayed');
+      if (text.includes('OWNER_LINK_INVALID')) throw new OwnerLinkRefused('malformed');
       if (text.includes('OWNER_IDENTITY_INACTIVE')) throw new OwnerLinkRefused('identity_inactive');
       if (text.includes('OWNER_IDENTITY_')) throw new OwnerLinkRefused('identity_conflict');
       throw error;
     }
+    if (typeof id !== 'string' || id === '') throw new OwnerLinkRefused('identity_conflict');
+    return id;
   }
+}
+
+/** Every message down an error's causes: a database refusal arrives wrapped by the driver. */
+function causes(error: unknown): string {
+  const messages: string[] = [];
+  for (let cause: unknown = error; cause instanceof Error; cause = cause.cause) {
+    messages.push(cause.message);
+  }
+  return messages.join(' | ');
 }

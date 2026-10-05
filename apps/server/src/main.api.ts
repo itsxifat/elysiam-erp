@@ -41,15 +41,29 @@ import { loadDeploymentBrand } from './platform/brand/deployment.js';
  * passing pino to `logger` threw `FST_ERR_LOG_INVALID_LOGGER_CONFIG` before the first
  * request, with 1,500 tests green.
  */
+/**
+ * `TRUSTED_PROXY_COUNT` as Fastify's `trustProxy` (§25, D-479): trust the `count` nearest
+ * hops, the socket's peer first, and take the first address beyond them as the client.
+ *
+ * A function, not the number. Fastify 5.12 turns a numeric `trustProxy` into "trust
+ * nothing" (`getTrustProxyFn`: hop-count trust "cannot validate the immediate peer", so it
+ * fails closed), which made `request.ip` the proxy's own address for every visitor: one
+ * per-address rate-limit bucket for the whole country behind nginx. Trusting by hop is
+ * safe here because the API is only reachable through its proxy: every deployment
+ * publishes its port on 127.0.0.1 alone (infra/brand, infra/preview, infra/kamal), and the
+ * proxy sets `X-Forwarded-For` to the visitor rather than appending to what they sent.
+ * 0 means no proxy: the socket's peer is the client and the header is ignored.
+ */
+export function trustProxyFor(count: number): false | ((address: string, hop: number) => boolean) {
+  if (!Number.isSafeInteger(count) || count <= 0) return false;
+  return (_address, hop) => hop < count;
+}
+
 export function createApiAdapter(trustedProxyCount: number, logger: Logger): FastifyAdapter {
   return new FastifyAdapter({
     // `trustProxy` is what makes `request.ip` the client rather than the proxy,
     // and the per-IP rate limit is only meaningful if it is right (§25).
-    //
-    // Cast: Fastify passes this straight to `proxy-addr`, which accepts a hop
-    // count, but the published type only lists the boolean/string/function
-    // forms. 0 becomes `false` — trust the socket, no proxy.
-    trustProxy: trustedProxyCount === 0 ? false : (trustedProxyCount as unknown as boolean),
+    trustProxy: trustProxyFor(trustedProxyCount),
     /*
      * The logger Fastify hands to `request.log` (§26).
      *

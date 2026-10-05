@@ -73,7 +73,9 @@ there).
 4. Optional, when the mother ERP is ready (M32): paste its owner-link public key into
    `OWNER_LINK_PUBLIC_KEY` (base64 of an Ed25519 public key in SPKI DER). Empty keeps owner
    sign-in links off (`POST /v1/auth/owner-link` answers 404). Only the public key ever lives
-   on a brand.
+   on a brand. A link names its brand by slug, so a staging, preview or restored copy of a
+   brand must use a **different key pair** from production, or a production link would open
+   it too (single use is per database).
 
 ## 3. Deploy
 
@@ -151,6 +153,16 @@ dc oura-lifestyle restart api
   forward-only (invariant 9), so a rollback past a migration is a restore (`restore.md`).
 - Backups: one `pg_dump` per brand database (`restore.md`), and the brand's `.env.brand`.
 - Old server images: `docker image prune -a` removes the ones no brand runs.
+- Shutting an owner out of one brand (the Staff screen does not list owners): new links stop
+  when `OWNER_LINK_PUBLIC_KEY` is emptied and the API restarted; sessions already open last
+  up to two hours, so end them too, as the owner role:
+
+  ```sh
+  dc <slug> exec -T postgres psql -U postgres -d erp -c     "update iam.users set is_active = false where is_owner and email = '<owner email>';
+     delete from iam.sessions s using iam.users u where s.user_id = u.id and u.email = '<owner email>';"
+  ```
+
+  A switched-off owner's next link is refused (`identity_inactive` in the API's log).
 
 ## Checks
 

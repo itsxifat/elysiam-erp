@@ -24,12 +24,17 @@
  *
  * The database is `erp-pos`: every brand runs its own copy of the till, and nothing it
  * keeps in a browser names whose it is. An older build kept the same stores under a
- * product-specific `<word>-pos` name. On the first open, everything in such a database
- * on this origin — the queue above all, sales not yet synced — is copied into `erp-pos`
- * in one transaction, and the old database is deleted only after that transaction has
- * committed. A tab closed half-way leaves the old database whole, and the next start
- * copies again; an entry already in the new database is never overwritten, so nothing
- * synced since is undone. The old name is matched by its shape, never spelled out.
+ * product-specific `<word>-pos` name. On every start, everything in such a database on
+ * this origin — the queue above all, sales not yet synced — is copied into `erp-pos` in
+ * one transaction: an entry already there is never overwritten (it may have synced since),
+ * copied entries queue after the till's own, and each counter keeps the higher value so
+ * no receipt number is handed out twice. The old name is matched by its shape, never
+ * spelled out.
+ *
+ * The old database is deleted only once the till holds it alone and it has nothing the
+ * copy did not take: an older build still open in another tab keeps it (and may keep
+ * queuing sales into it, which the next start copies), because a delete that waits for
+ * that tab to close would run after its last sales and lose them.
  */
 
 export const DB_NAME = 'erp-pos';
@@ -71,7 +76,14 @@ function openTill(factory: IDBFactory): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
     };
     request.onsuccess = () => {
-      resolve(request.result);
+      const db = request.result;
+      // A later build that needs the database to itself gets it; this tab reopens on its
+      // next read instead of holding a connection the other cannot get past.
+      db.onversionchange = () => {
+        db.close();
+        opened = undefined;
+      };
+      resolve(db);
     };
     request.onerror = () => {
       reject(request.error ?? new Error('IndexedDB would not open.'));
@@ -134,7 +146,8 @@ async function readAll(db: IDBDatabase): Promise<LegacyContents> {
 function deleteDatabase(factory: IDBFactory, name: string): Promise<void> {
   return new Promise((resolve) => {
     const request = factory.deleteDatabase(name);
-    // Blocked or failed: it is tried again on the next start, and the copy is idempotent.
+    // Called only with the database to ourselves (`retireIfDrained`); failed or blocked, it
+    // is tried again on the next start, and the copy is idempotent.
     request.onsuccess = () => {
       resolve();
     };
@@ -168,6 +181,7 @@ export async function moveLegacyDatabases(
   for (const name of names) {
     const legacy = await openExisting(factory, name);
     if (legacy === undefined) continue;
+    const legacyVersion = legacy.version;
     let contents: LegacyContents;
     try {
       contents = await readAll(legacy);
@@ -178,27 +192,99 @@ export async function moveLegacyDatabases(
     const transaction = target.transaction(['kv', 'outbox'], 'readwrite');
     const outbox = transaction.objectStore('outbox');
     const kv = transaction.objectStore('kv');
-    for (const entry of contents.outbox) {
+    // Copied entries queue after the till's own, in their old order: `seq` is unique.
+    const ours = (await result(outbox.getAll())) as OutboxEntry[];
+    const counter: unknown = await result(kv.get(QUEUE_COUNTER));
+    let next = Math.max(
+      typeof counter === 'number' ? counter : 0,
+      ...ours.map((entry) => entry.seq),
+      0,
+    );
+    const held = new Set(ours.map((entry) => entry.id));
+    for (const entry of [...contents.outbox].sort((a, b) => a.seq - b.seq)) {
       // Never over an entry the new database already has: it may have synced since.
-      if ((await result(outbox.getKey(entry.id))) === undefined) {
-        outbox.add(entry);
-        copied += 1;
-      }
+      if (held.has(entry.id)) continue;
+      next += 1;
+      outbox.add({ ...entry, seq: next });
+      copied += 1;
     }
     for (const { key, value } of contents.kv) {
+      if (key === QUEUE_COUNTER) continue;
       const existing: unknown = await result(kv.get(key));
       if (existing === undefined) kv.put(value, key);
       else if (typeof existing === 'number' && typeof value === 'number' && value > existing) {
-        // A receipt or queue counter: the higher, so no number is handed out twice.
+        // A receipt counter: the higher, so no number is handed out twice.
         kv.put(value, key);
       }
     }
+    kv.put(next, QUEUE_COUNTER);
     await done(transaction);
 
-    // Only now, with the copy committed, may the old database go.
-    await deleteDatabase(factory, name);
+    // Only now, with the copy committed, and only if nothing else holds it and it has
+    // nothing the copy did not take, may the old database go.
+    await retireIfDrained(
+      factory,
+      name,
+      legacyVersion,
+      new Set(contents.outbox.map((entry) => entry.id)),
+    );
   }
   return copied;
+}
+
+/** The queue's own counter in `kv` (`recordDocument`). */
+const QUEUE_COUNTER = 'outbox-seq';
+
+/**
+ * Delete an older build's database, but only with the till holding it alone.
+ *
+ * Opening it at the next version asks every other connection to let go; an older build has
+ * no handler for that, so a tab of it still open blocks the request, and then nothing is
+ * deleted (the request finishes on its own when that tab closes, and changes nothing). With
+ * no other connection, the version change runs at once, with the database to itself: if its
+ * queue holds anything the copy did not take — a sale queued after the copy — it is left for
+ * the next start; otherwise the database is deleted. Never waits on another tab.
+ */
+function retireIfDrained(
+  factory: IDBFactory,
+  name: string,
+  version: number,
+  copiedIds: ReadonlySet<string>,
+): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let blocked = false;
+    let drained = false;
+    const request = factory.open(name, version + 1);
+    request.onblocked = () => {
+      blocked = true;
+      resolve();
+    };
+    request.onupgradeneeded = () => {
+      const upgrade = request.transaction;
+      if (upgrade === null) return;
+      if (blocked || !request.result.objectStoreNames.contains('outbox')) {
+        upgrade.abort();
+        return;
+      }
+      const keys = upgrade.objectStore('outbox').getAllKeys();
+      keys.onsuccess = () => {
+        drained = keys.result.every((key) => typeof key === 'string' && copiedIds.has(key));
+        if (!drained) upgrade.abort();
+      };
+    };
+    request.onsuccess = () => {
+      request.result.close();
+      if (blocked || !drained) {
+        resolve();
+        return;
+      }
+      void deleteDatabase(factory, name).then(resolve);
+    };
+    request.onerror = () => {
+      // Aborted on purpose (another tab, or something left to copy): the next start retries.
+      resolve();
+    };
+  });
 }
 
 function done(transaction: IDBTransaction): Promise<void> {

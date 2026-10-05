@@ -9,7 +9,7 @@ import { sql } from 'drizzle-orm';
  * Every caller is **`withOrg()`** (the `erp_app` pool, one brand): the rollup's writes and
  * the dashboard's reads. RLS scopes every row; the `org_id` filters are belt and braces.
  * The cross-brand reads through `erp_analytics` left the brand's ERP with M31 (D-471); the
- * role stays, for the mother ERP's reads (M32).
+ * read-only role itself stays part of every database (§5).
  */
 
 // --- writing a day (withOrg) -------------------------------------------------------

@@ -57,7 +57,7 @@ import { daysOf, RollupService } from './rollup.service.js';
  * only one there is. A brand's ERP runs on its own database and knows no other brand
  * (D-469), so the cross-brand reads (the leaderboard, the consolidated view, the insight
  * rules' group medians) left with M31 (D-471): the insight rules now measure a month
- * against the brand's own recent months, and the mother ERP (M32) compares brands.
+ * against the brand's own recent months.
  */
 
 const text = (value: bigint | null): string | null => (value === null ? null : value.toString());

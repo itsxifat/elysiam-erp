@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createApiAdapter } from './main.api.js';
+import { createApiAdapter, trustProxyFor } from './main.api.js';
 import { createLogger } from './platform/logging/logger.js';
 import { setServerTestEnv } from './testing/test-env.js';
 
@@ -38,5 +38,49 @@ describe('the API adapter the production process builds', () => {
     const instance = adapter.getInstance();
     expect(instance.log).toBeDefined();
     expect(typeof instance.log.error).toBe('function');
+  });
+});
+
+/**
+ * `TRUSTED_PROXY_COUNT` really means "trust the n nearest hops" (D-479). Fastify 5.12
+ * reads a numeric `trustProxy` as "trust nothing", which left `request.ip` the proxy's own
+ * address for every visitor; the adapter now hands it a hop function.
+ */
+describe('the client address behind the proxy', () => {
+  async function ipSeen(count: number, headers: Record<string, string>): Promise<string> {
+    setServerTestEnv();
+    const instance = createApiAdapter(count, createLogger('api-adapter-test')).getInstance();
+    instance.get('/ip', (request, reply) => {
+      void reply.send({ ip: request.ip });
+    });
+    await instance.ready();
+    const response = await instance.inject({
+      method: 'GET',
+      url: '/ip',
+      remoteAddress: '127.0.0.1',
+      headers,
+    });
+    await instance.close();
+    return (JSON.parse(response.body) as { ip: string }).ip;
+  }
+
+  it('is the forwarded visitor with one proxy in front', async () => {
+    expect(await ipSeen(1, { 'x-forwarded-for': '203.0.113.7' })).toBe('203.0.113.7');
+    // A visitor's own header before the proxy's is not believed past the one hop.
+    expect(await ipSeen(1, { 'x-forwarded-for': '198.51.100.9, 203.0.113.7' })).toBe('203.0.113.7');
+  });
+
+  it('ignores the header with no proxy', async () => {
+    expect(await ipSeen(0, { 'x-forwarded-for': '203.0.113.7' })).toBe('127.0.0.1');
+  });
+
+  it('trusts no more hops than it is told', () => {
+    expect(trustProxyFor(0)).toBe(false);
+    const two = trustProxyFor(2);
+    expect(two === false ? [] : [0, 1, 2].map((hop) => two('10.0.0.1', hop))).toEqual([
+      true,
+      true,
+      false,
+    ]);
   });
 });
