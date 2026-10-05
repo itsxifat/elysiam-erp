@@ -34,7 +34,7 @@ const MIGRATIONS = [
   '0027_wallets_schema.sql',
   '0028_wallets_policies.sql',
   '0029_wallets_integrity.sql',
-  // The analytics role's cross-org read, for the super-admin consolidated views.
+  // The analytics role's read of the ledger (§5 exception 3).
   '0030_ledger_analytics_reads.sql',
 ] as const;
 

@@ -2235,7 +2235,6 @@ const bn: Record<MessageKey, string> = {
   'accounts.nav.reports': 'হিসাব বিবরণী',
   'accounts.nav.ledger': 'খতিয়ান',
   'accounts.nav.periods': 'হিসাবকাল',
-  'accounts.nav.consolidated': 'সব ব্র্যান্ড',
   'accounts.nav.advances': 'অগ্রিম',
   'accounts.advances.title': 'যাচাইয়ের অপেক্ষায় অগ্রিম',
   'accounts.advances.subtitle':
@@ -2379,15 +2378,6 @@ const bn: Record<MessageKey, string> = {
   'accounts.periods.laterClosed': 'পরের একটি মাস বন্ধ আছে। আগে সেটি খুলুন।',
   'accounts.periods.reopenUnauthorised': 'আপনার ভূমিকা আবার খোলার অনুরোধ করতে পারে না।',
   'accounts.periods.failed': 'এটি করা যায়নি।',
-  'accounts.consolidated.title': 'সব ব্র্যান্ড',
-  'accounts.consolidated.subtitle': 'প্রতিটি ব্র্যান্ডের নগদ ও ফলাফল পাশাপাশি।',
-  'accounts.consolidated.deniedTitle': 'এই পাতা গ্রুপের মালিকের জন্য',
-  'accounts.consolidated.deniedDetail': 'শুধু সুপার অ্যাডমিন সব ব্র্যান্ড একসাথে দেখতে পারেন।',
-  'accounts.consolidated.wallets': 'সব ওয়ালেটের নগদ',
-  'accounts.consolidated.pnl': 'ব্র্যান্ড অনুযায়ী লাভ-ক্ষতি',
-  'accounts.consolidated.brand': 'ব্র্যান্ড',
-  'accounts.consolidated.group': 'গ্রুপের মোট',
-  'accounts.consolidated.empty': 'এখনো কিছু পোস্ট হয়নি।',
   // What a journal came from, for the cash book and the day book.
   'accounts.source.cash_in': 'নগদ জমা',
   'accounts.source.cash_out': 'নগদ খরচ',
@@ -2793,9 +2783,6 @@ const bn: Record<MessageKey, string> = {
   'marketing.capi.emptyTitle': 'এখনো কোনো কনভার্শন নেই',
   'marketing.capi.emptyDetail': 'কনভার্শন চালু থাকলে প্রতিটি ডেলিভারড অর্ডার এখানে দেখাবে।',
   'analytics.title': 'বিশ্লেষণ',
-  'analytics.nav.dashboard': 'ড্যাশবোর্ড',
-  'analytics.nav.leaderboard': 'লিডারবোর্ড',
-  'analytics.nav.group': 'সব ব্র্যান্ড',
   'analytics.deniedTitle': 'ব্র্যান্ড ড্যাশবোর্ড অর্গ অ্যাডমিনের জন্য',
   'analytics.deniedDetail':
     'যে হিসাব দরকার তা আপনার অর্গ অ্যাডমিনের কাছে চান, অথবা নিজের বিভাগের ড্যাশবোর্ড খুলুন।',
@@ -2836,9 +2823,6 @@ const bn: Record<MessageKey, string> = {
   'analytics.metric.cash': 'ওয়ালেটে নগদ',
   'analytics.metric.cashHint': 'আজ প্রতিটি ওয়ালেটের ব্যালান্স।',
   'analytics.metric.stockValue': 'স্টকের মূল্য',
-  'analytics.metric.revenueGrowth': 'আয়ের প্রবৃদ্ধি',
-  'analytics.metric.aovGrowth': 'গড় অর্ডারের প্রবৃদ্ধি',
-  'analytics.metric.pickupTime': 'পিকআপ সময়',
   'analytics.trend': 'দিনভিত্তিক ডেলিভারড আয়',
   'analytics.trend.table': 'দিনগুলো টেবিলে দেখুন',
   'analytics.col.date': 'তারিখ',
@@ -2858,11 +2842,11 @@ const bn: Record<MessageKey, string> = {
   'analytics.unknownAgent': 'স্টাফ তালিকায় নেই',
   'analytics.unnamedBranch': 'শোরুম',
   'analytics.insights': 'নিয়মগুলো যা লক্ষ্য করেছে',
-  'analytics.insights.month': '{month}, অন্য ব্র্যান্ডগুলোর তুলনায়',
+  'analytics.insights.month': '{month}, আগের তিন মাসের তুলনায়',
   'analytics.insights.none': 'এই মাসে কোনো নিয়ম সতর্ক করেনি।',
   'analytics.insight.outsideDhakaReturns.title': 'ঢাকার বাইরে রিটার্ন বেশি',
   'analytics.insight.outsideDhakaReturns.detail':
-    'ঢাকার বাইরের পার্সেলের {rate} ফেরত এসেছে, গ্রুপের মধ্যমা {median} থেকে {gap} বেশি। ঢাকার বাইরের COD অর্ডারে অগ্রিম ডেলিভারি চার্জ নেওয়ার কথা ভাবুন।',
+    'ঢাকার বাইরের পার্সেলের {rate} ফেরত এসেছে, আপনার স্বাভাবিক হার {median} থেকে {gap} বেশি। ঢাকার বাইরের COD অর্ডারে অগ্রিম ডেলিভারি চার্জ নেওয়ার কথা ভাবুন।',
   'analytics.insight.returnRateRising.title': 'রিটার্নের হার বাড়ছে',
   'analytics.insight.returnRateRising.detail':
     'রিটার্ন এখন {rate}, গত মাসে ছিল {previous}। কোন চ্যানেল আর কোন পণ্য থেকে রিটার্ন আসছে দেখুন।',
@@ -2878,33 +2862,15 @@ const bn: Record<MessageKey, string> = {
   'analytics.insight.channelReturns.title': 'একটি চ্যানেলে রিটার্ন বেশি',
   'analytics.insight.channelReturns.detail':
     '{channel} অর্ডার {rate} হারে ফেরত আসছে, ব্র্যান্ডের হার {brand}।',
-  'analytics.insight.deliverySuccessBelowGroup.title': 'ডেলিভারি সাফল্য গ্রুপের চেয়ে কম',
-  'analytics.insight.deliverySuccessBelowGroup.detail':
-    'শেষ হওয়া অর্ডারের {success} ডেলিভারড হয়েছে, গ্রুপের মধ্যমা {median} থেকে {gap} কম।',
+  'analytics.insight.deliverySuccessBelowUsual.title': 'ডেলিভারি সাফল্য স্বাভাবিকের চেয়ে কম',
+  'analytics.insight.deliverySuccessBelowUsual.detail':
+    'শেষ হওয়া অর্ডারের {success} ডেলিভারড হয়েছে, আপনার স্বাভাবিক হার {median} থেকে {gap} কম।',
   'analytics.severity.warning': 'নজর দরকার',
   'analytics.severity.info': 'দেখে নেওয়ার মতো',
   'analytics.narrative': 'সারাংশ',
   'analytics.narrative.note':
     '{provider} প্রোভাইডার শুধু হিসাব থেকে লিখেছে: কোনো নাম, ফোন বা ঠিকানা সিস্টেমের বাইরে যায় না।',
   'analytics.narrative.failed': 'সারাংশ এখন লেখা যায়নি। হিসাবগুলোতে কোনো প্রভাব পড়েনি।',
-  'analytics.leaderboard.subtitle':
-    'সব ব্র্যান্ড একই নরমালাইজড মাপে। অন্য ব্র্যান্ডের হার আর র‍্যাংক দেখবেন, তাদের আয় বা মুনাফা কখনো নয়।',
-  'analytics.leaderboard.month': 'মাস',
-  'analytics.leaderboard.deniedTitle': 'লিডারবোর্ড অর্গ অ্যাডমিনদের জন্য',
-  'analytics.leaderboard.deniedDetail':
-    'এটি ব্র্যান্ডগুলোর তুলনা, তাই যারা ব্র্যান্ড চালান তাদের দেখানো হয়।',
-  'analytics.leaderboard.yours': 'আপনার ব্র্যান্ড',
-  'analytics.leaderboard.weights': 'স্কোরের ওজন',
-  'analytics.leaderboard.raw': '{orders}টি অর্ডারে {revenue} ডেলিভারড',
-  'analytics.leaderboard.scoreLabel': '১০০-এর মধ্যে স্কোর {score}',
-  'analytics.col.rank': 'র‍্যাংক',
-  'analytics.col.brand': 'ব্র্যান্ড',
-  'analytics.col.score': 'স্কোর',
-  'analytics.group.subtitle': 'সব ব্র্যান্ড পাশাপাশি, শুধু-পড়ার অ্যানালিটিক্স রোল দিয়ে পড়া।',
-  'analytics.group.deniedTitle': 'সব ব্র্যান্ড সুপার অ্যাডমিনের দৃশ্য',
-  'analytics.group.deniedDetail':
-    'এখানে প্রতিটি ব্র্যান্ডের আয় আর মুনাফা দেখা যায়, তাই শুধু প্ল্যাটফর্ম সুপার অ্যাডমিন দেখেন।',
-  'analytics.group.total': 'সব ব্র্যান্ড',
   'analytics.seconds': '{n} সে.',
   'analytics.minutes': '{m} মি. {s} সে.',
 

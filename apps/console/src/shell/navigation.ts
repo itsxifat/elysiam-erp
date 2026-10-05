@@ -102,10 +102,7 @@ export const NAVIGATION: readonly NavSection[] = [
     untitled: true,
     items: [
       { to: '/', labelKey: 'nav.overview', icon: LayoutDashboard, required: 'always' },
-      /*
-       * M24. `read Dashboard`, org_admin's (D-325): the brand dashboard, with the leaderboard
-       * and, for Super Admin, all brands as tabs inside the section.
-       */
+      // M24. `read Dashboard`, org_admin's (D-325): the brand's own dashboard.
       {
         to: '/analytics',
         labelKey: 'nav.analytics',
@@ -532,13 +529,6 @@ export const PALETTE_PAGES: readonly PalettePage[] = [
     parentKey: 'nav.performance',
     icon: Target,
     required: { action: 'read', subject: 'Target' },
-  },
-  {
-    to: '/analytics/leaderboard',
-    labelKey: 'analytics.nav.leaderboard',
-    parentKey: 'nav.analytics',
-    icon: ChartLine,
-    required: { action: 'read', subject: 'Leaderboard' },
   },
   ...SETTINGS_TABS.map((tab): PalettePage => ({
     to: tab.path,

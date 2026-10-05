@@ -109,8 +109,6 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/accounts/reports/profit-and-loss',
   'GET /v1/accounts/reports/balance-sheet',
   'GET /v1/accounts/reports/aging',
-  'GET /v1/accounts/reports/consolidated-wallets',
-  'GET /v1/accounts/reports/consolidated-profit-and-loss',
   'GET /v1/orders',
   'POST /v1/orders',
   'GET /v1/orders/availability',
@@ -341,15 +339,12 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/marketing/leads',
   'PATCH /v1/marketing/leads/:id',
   // M24: analytics. `Dashboard` (org_admin; D-325) for the brand's own dashboard, insights,
-  // narrative, export and rollup refresh, and for the consolidated view, which the service
-  // then keeps to a platform super admin. `Leaderboard` for the cross-brand ranking (D-023).
+  // narrative, export and rollup refresh. The cross-brand views left with M31 (D-471).
   'GET /v1/analytics/dashboard',
   'GET /v1/analytics/insights',
   'GET /v1/analytics/narrative',
   'POST /v1/analytics/rollups/refresh',
   'GET /v1/analytics/export',
-  'GET /v1/analytics/consolidated',
-  'GET /v1/analytics/leaderboard',
   // M26: company loans, one subject (`CompanyLoan`, org_admin and accounts).
   'GET /v1/loans/lenders',
   'POST /v1/loans/lenders',

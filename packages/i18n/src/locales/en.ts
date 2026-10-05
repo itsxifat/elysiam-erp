@@ -2291,7 +2291,6 @@ const en = {
   'accounts.nav.reports': 'Statements',
   'accounts.nav.ledger': 'Ledger',
   'accounts.nav.periods': 'Periods',
-  'accounts.nav.consolidated': 'All brands',
   'accounts.nav.advances': 'Advances',
   'accounts.advances.title': 'Advances to check',
   'accounts.advances.subtitle':
@@ -2436,15 +2435,6 @@ const en = {
   'accounts.periods.laterClosed': 'A later month is closed. Reopen that one first.',
   'accounts.periods.reopenUnauthorised': 'Your role cannot request a reopen.',
   'accounts.periods.failed': 'That could not be done.',
-  'accounts.consolidated.title': 'All brands',
-  'accounts.consolidated.subtitle': 'Every brand’s cash and results side by side.',
-  'accounts.consolidated.deniedTitle': 'This view is for the group owner',
-  'accounts.consolidated.deniedDetail': 'Only a super admin sees every brand together.',
-  'accounts.consolidated.wallets': 'Cash in every wallet',
-  'accounts.consolidated.pnl': 'Profit and loss by brand',
-  'accounts.consolidated.brand': 'Brand',
-  'accounts.consolidated.group': 'Group total',
-  'accounts.consolidated.empty': 'Nothing has been posted yet.',
   // What a journal came from, for the cash book and the day book.
   'accounts.source.cash_in': 'Cash in',
   'accounts.source.cash_out': 'Cash out',
@@ -2854,9 +2844,6 @@ const en = {
   'marketing.capi.emptyTitle': 'No conversions yet',
   'marketing.capi.emptyDetail': 'When conversions are on, each delivered order appears here.',
   'analytics.title': 'Analytics',
-  'analytics.nav.dashboard': 'Dashboard',
-  'analytics.nav.leaderboard': 'Leaderboard',
-  'analytics.nav.group': 'All brands',
   'analytics.deniedTitle': 'The brand dashboard is the org admin’s',
   'analytics.deniedDetail':
     'Ask your org admin for the figures you need, or open the dashboard of your own section.',
@@ -2899,9 +2886,6 @@ const en = {
   'analytics.metric.cash': 'Cash in wallets',
   'analytics.metric.cashHint': 'Every wallet’s balance today.',
   'analytics.metric.stockValue': 'Stock value',
-  'analytics.metric.revenueGrowth': 'Revenue growth',
-  'analytics.metric.aovGrowth': 'Average order growth',
-  'analytics.metric.pickupTime': 'Pickup time',
   'analytics.trend': 'Delivered revenue by day',
   'analytics.trend.table': 'Show the days as a table',
   'analytics.col.date': 'Date',
@@ -2921,11 +2905,11 @@ const en = {
   'analytics.unknownAgent': 'Not on the staff list',
   'analytics.unnamedBranch': 'Showroom',
   'analytics.insights': 'What the rules noticed',
-  'analytics.insights.month': 'For {month}, against the other brands',
+  'analytics.insights.month': 'For {month}, against your own three months before it',
   'analytics.insights.none': 'No rule fired for this month.',
   'analytics.insight.outsideDhakaReturns.title': 'Outside-Dhaka returns are high',
   'analytics.insight.outsideDhakaReturns.detail':
-    '{rate} of outside-Dhaka parcels came back, {gap} above the group median of {median}. Consider an advance delivery charge on outside-Dhaka COD orders.',
+    '{rate} of outside-Dhaka parcels came back, {gap} above your usual of {median}. Consider an advance delivery charge on outside-Dhaka COD orders.',
   'analytics.insight.returnRateRising.title': 'The return rate is rising',
   'analytics.insight.returnRateRising.detail':
     'Returns are {rate}, up from {previous} last month. Check which channels and products the returns come from.',
@@ -2941,9 +2925,9 @@ const en = {
   'analytics.insight.channelReturns.title': 'One channel returns more',
   'analytics.insight.channelReturns.detail':
     '{channel} orders come back at {rate}, against {brand} for the brand.',
-  'analytics.insight.deliverySuccessBelowGroup.title': 'Delivery success is below the group',
-  'analytics.insight.deliverySuccessBelowGroup.detail':
-    '{success} of finished orders were delivered, {gap} below the group median of {median}.',
+  'analytics.insight.deliverySuccessBelowUsual.title': 'Delivery success is below your usual',
+  'analytics.insight.deliverySuccessBelowUsual.detail':
+    '{success} of finished orders were delivered, {gap} below your usual of {median}.',
   'analytics.severity.warning': 'Needs attention',
   'analytics.severity.info': 'Worth a look',
   'analytics.narrative': 'Summary',
@@ -2951,25 +2935,6 @@ const en = {
     'Written by the {provider} provider from the figures alone: no names, phones or addresses leave the system.',
   'analytics.narrative.failed':
     'The summary could not be written just now. The figures are unaffected.',
-  'analytics.leaderboard.subtitle':
-    'Every brand on the same normalized measures. You see other brands’ rates and ranks, never their revenue or profit.',
-  'analytics.leaderboard.month': 'Month',
-  'analytics.leaderboard.deniedTitle': 'The leaderboard is for org admins',
-  'analytics.leaderboard.deniedDetail':
-    'It compares the brands, so it is shown to the people who run them.',
-  'analytics.leaderboard.yours': 'Your brand',
-  'analytics.leaderboard.weights': 'Score weights',
-  'analytics.leaderboard.raw': '{revenue} delivered from {orders} orders',
-  'analytics.leaderboard.scoreLabel': 'Score {score} of 100',
-  'analytics.col.rank': 'Rank',
-  'analytics.col.brand': 'Brand',
-  'analytics.col.score': 'Score',
-  'analytics.group.subtitle':
-    'Every brand side by side, read through the read-only analytics role.',
-  'analytics.group.deniedTitle': 'All brands is the super admin’s view',
-  'analytics.group.deniedDetail':
-    'It shows every brand’s revenue and profit, so only the platform super admin sees it.',
-  'analytics.group.total': 'All brands',
   'analytics.seconds': '{n} s',
   'analytics.minutes': '{m} min {s} s',
 

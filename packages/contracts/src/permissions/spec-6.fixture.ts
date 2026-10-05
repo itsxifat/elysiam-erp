@@ -304,19 +304,13 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'org_admin|read|ApprovalThreshold|org',
   'org_admin|update|ApprovalThreshold|org',
 
-  // | Leaderboard | org_admin all orgs (normalized metrics only) | rest — |
-  /*
-   * The only cross-org grant an ordinary role holds. §18 and D-023 bound it to
-   * normalized metrics and ranks, read through `erp_analytics`. The matrix
-   * test allows this one cell by name and fails on any other `all`.
-   */
-  'org_admin|read|Leaderboard|all',
+  // | Leaderboard | (removed by M31, D-471: a brand's ERP ranks no brands) |
 
   // | (not a row in the grid) | §18's org dashboard (M24, D-325) |
   /*
    * §6 has no dashboard row. The org dashboard puts the brand's revenue, gross profit,
    * cash and stock value on one screen, which is the org admin's; Super Admin holds it
-   * through `manage all` and is the only one who may see it across brands. `update` is
+   * through `manage all`. `update` is
    * recomputing the brand's rollups for a range.
    */
   'org_admin|read|Dashboard|org',

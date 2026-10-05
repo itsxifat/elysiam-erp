@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { withAnalytics, withOrg, withSystem } from '@elysium/db';
+import { withOrg, withSystem } from '@elysium/db';
 import { seedDemoSetUp } from '@elysium/db/testing';
 import {
   businessDate,
@@ -24,10 +24,6 @@ import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { NOTIFY_API, type NotifyApi } from '../notify/notify.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import { WALLETS_API, type WalletsApi } from '../wallets/wallets.api.js';
-import {
-  consolidatedProfitAndLoss,
-  consolidatedWalletTotals,
-} from '../wallets/wallets.repository.js';
 import { runDemo, SAMPLE_FILES, sampleDirectory } from './demo.js';
 import { MigrationError } from './migration.errors.js';
 import { MigrationModule } from './migration.module.js';
@@ -592,46 +588,12 @@ describe('the training org, seeded from anonymised data (D-223)', () => {
     }
   });
 
-  it('is idempotent, and stays out of the consolidated totals', async () => {
+  it('is idempotent', async () => {
+    // (Its practice money also stayed out of the cross-brand totals; those left the brand's
+    // ERP with M31, D-471, and the mother ERP leaves the training org out, M32.)
     const again = await runDemo(service, { asOf: TODAY });
     expect(again.imported.every((file) => !file.created)).toBe(true);
     expect(again.opening.created).toBe(false);
-
-    // Practice income in the training org, so the P&L read has something to leave out.
-    const trainee = { orgId: again.orgId, userId: 'usr_trainee' };
-    const sale = randomUUID();
-    await withOrg(trainee, async (tx) => {
-      const bank = (await wallets.walletsByAccountCodes(tx, again.orgId, ['1100'])).get('1100');
-      const income = await ledger.accountBySubtype(tx, again.orgId, 'other_income');
-      if (bank === undefined || income === null) throw new Error('The training set-up is missing.');
-      const line = { branchId: null, partyType: null, partyId: null, memo: null };
-      await ledger.post(tx, trainee, {
-        businessDate: toIsoDate(TODAY),
-        sourceType: 'training_test',
-        sourceId: sale,
-        event: 'posted',
-        idempotencyKey: idempotencyKey('training_test', sale, 'posted'),
-        memo: 'Practice income',
-        reversesJournalId: null,
-        lines: [
-          {
-            ...line,
-            accountId: bank.account.accountId,
-            debitPoisha: poisha(500),
-            creditPoisha: ZERO,
-          },
-          { ...line, accountId: income.accountId, debitPoisha: ZERO, creditPoisha: poisha(500) },
-        ],
-      });
-    });
-
-    const totals = await withAnalytics((tx) => consolidatedWalletTotals(tx));
-    expect(totals.map((row) => row.org_id)).not.toContain(again.orgId);
-    expect(totals.map((row) => row.org_id)).toContain(ORG_A);
-    const pnl = await withAnalytics((tx) =>
-      consolidatedProfitAndLoss(tx, { from: TODAY, to: TODAY }),
-    );
-    expect(pnl.map((row) => row.org_id)).not.toContain(again.orgId);
   });
 
   it('sends no SMS, whatever a trainee sets up', async () => {

@@ -94,27 +94,12 @@ export const OPERATIONS = {
     path: '/v1/accounts/reports/balance-sheet',
     ability: 'read:LedgerReport',
   },
-  getV1AccountsReportsConsolidatedProfitAndLoss: {
-    method: 'GET',
-    path: '/v1/accounts/reports/consolidated-profit-and-loss',
-    ability: 'read:LedgerReport',
-  },
-  getV1AccountsReportsConsolidatedWallets: {
-    method: 'GET',
-    path: '/v1/accounts/reports/consolidated-wallets',
-    ability: 'read:LedgerReport',
-  },
   getV1AccountsReportsProfitAndLoss: {
     method: 'GET',
     path: '/v1/accounts/reports/profit-and-loss',
     ability: 'read:LedgerReport',
   },
   getV1AccountsWallets: { method: 'GET', path: '/v1/accounts/wallets', ability: 'read:Wallet' },
-  getV1AnalyticsConsolidated: {
-    method: 'GET',
-    path: '/v1/analytics/consolidated',
-    ability: 'read:Dashboard',
-  },
   getV1AnalyticsDashboard: {
     method: 'GET',
     path: '/v1/analytics/dashboard',
@@ -125,11 +110,6 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/analytics/insights',
     ability: 'read:Dashboard',
-  },
-  getV1AnalyticsLeaderboard: {
-    method: 'GET',
-    path: '/v1/analytics/leaderboard',
-    ability: 'read:Leaderboard',
   },
   getV1AnalyticsNarrative: {
     method: 'GET',
@@ -1284,26 +1264,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/accounts/reports/balance-sheet */
     getV1AccountsReportsBalanceSheet: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsReportsBalanceSheet, undefined, options),
-    /** GET /v1/accounts/reports/consolidated-profit-and-loss */
-    getV1AccountsReportsConsolidatedProfitAndLoss: (options?: RequestOptions): Promise<unknown> =>
-      request(
-        runtime,
-        OPERATIONS.getV1AccountsReportsConsolidatedProfitAndLoss,
-        undefined,
-        options,
-      ),
-    /** GET /v1/accounts/reports/consolidated-wallets */
-    getV1AccountsReportsConsolidatedWallets: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1AccountsReportsConsolidatedWallets, undefined, options),
     /** GET /v1/accounts/reports/profit-and-loss */
     getV1AccountsReportsProfitAndLoss: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsReportsProfitAndLoss, undefined, options),
     /** GET /v1/accounts/wallets */
     getV1AccountsWallets: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsWallets, undefined, options),
-    /** GET /v1/analytics/consolidated */
-    getV1AnalyticsConsolidated: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1AnalyticsConsolidated, undefined, options),
     /** GET /v1/analytics/dashboard */
     getV1AnalyticsDashboard: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AnalyticsDashboard, undefined, options),
@@ -1313,9 +1279,6 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/analytics/insights */
     getV1AnalyticsInsights: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AnalyticsInsights, undefined, options),
-    /** GET /v1/analytics/leaderboard */
-    getV1AnalyticsLeaderboard: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1AnalyticsLeaderboard, undefined, options),
     /** GET /v1/analytics/narrative */
     getV1AnalyticsNarrative: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AnalyticsNarrative, undefined, options),

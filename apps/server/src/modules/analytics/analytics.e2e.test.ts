@@ -1,4 +1,3 @@
-import { MEMBERSHIP_ROLES } from '@elysium/contracts';
 import { SEED_ORG_IDS, withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -16,19 +15,21 @@ import { seedCustomer } from '../orders/orders.testing.js';
 import { FakeNarrativeProvider, NARRATIVE_PROVIDER } from './providers/narrative.provider.js';
 
 /**
- * Analytics over HTTP (M24).
+ * Analytics over HTTP (M24, M31).
  *
- * - **Check 2: leaderboard visibility follows D-023.** Rollups are written for every brand
- *   with raw figures nobody could mistake for anything else (revenue ৳9,876,543.21). An
- *   org admin sees every brand's normalized metrics and ranks, their own brand's raw
- *   figures, and **no other brand's raw figure anywhere in the response**; Super Admin sees
- *   everything; every other role is refused by the guard.
+ * - **The cross-brand views are gone (M31 check 2, D-471).** A brand's ERP runs on its own
+ *   database and knows no other brand: the leaderboard and the consolidated view answer
+ *   404 to everyone, a super admin included, and no answer here carries another brand's
+ *   figure. Rollups are written for three brands with raw figures nobody could mistake for
+ *   anything else (revenue ৳9,876,543.21), so a leak would show.
+ * - **Insights measure a month against the brand's own recent months**, never against
+ *   other brands.
  * - **Check 4, the server's half:** with the narrative flag on, the prompt the provider
  *   receives — read back from the fake — carries none of the buyer's, the agent's or the
  *   campaign's names or numbers, though all of them are in the brand's data and the
  *   dashboard shows the agent's name.
- * - The rest of the module's routes, once each: the dashboard, the consolidated view kept
- *   to Super Admin, insights, the refresh and the export.
+ * - The rest of the module's routes, once each: the dashboard, insights, the refresh and
+ *   the export.
  */
 
 const ORG_C = SEED_ORG_IDS.orvo ?? '';
@@ -41,19 +42,6 @@ let harness: HttpHarness;
 let superAdmin: RoleClient;
 let adminA: RoleClient;
 let adminB: RoleClient;
-
-interface BoardRow {
-  readonly visibility: 'full' | 'normalized';
-  readonly orgId: string;
-  readonly orgName: string;
-  readonly rank: number;
-  readonly compositeBps: number;
-  readonly metrics: Record<string, string | null>;
-  readonly ranks: Record<string, number | null>;
-  readonly raw?: {
-    readonly current: { readonly deliveredRevenuePoisha: string; readonly spendPoisha: string };
-  };
-}
 
 const body = <T>(response: { body: string }): T => JSON.parse(response.body) as T;
 
@@ -138,6 +126,18 @@ beforeAll(async () => {
     pickups: 400,
     pickupSeconds: 80_000,
   });
+  // Orvo's own April and May: 90% delivery success, its usual (June has nothing).
+  for (const date of ['2026-04-01', '2026-05-01']) {
+    await seedMonth(ORG_C, date, {
+      delivered: 90,
+      returned: 5,
+      cancelled: 5,
+      revenue: '9000000',
+      spend: '1000000',
+      pickups: 10,
+      pickupSeconds: 3_000,
+    });
+  }
   await seedMonth(ORG_C, '2026-07-01', {
     delivered: 50,
     returned: 25,
@@ -153,133 +153,18 @@ afterAll(async () => {
   await harness?.close();
 }, 120_000);
 
-describe('check 2: leaderboard visibility follows D-023', () => {
-  it('shows an org admin every brand’s normalized metrics and ranks, and only their own raw figures', async () => {
-    const response = await adminA.client.request('GET', `/v1/analytics/leaderboard?month=${JULY}`);
-    expect(response.statusCode, response.body).toBe(200);
-    const board = body<{ rows: BoardRow[] }>(response);
-
-    const own = board.rows.find((row) => row.orgId === ORG_A);
-    const peer = board.rows.find((row) => row.orgId === ORG_B);
-    expect(own?.visibility).toBe('full');
-    expect(own?.raw?.current.deliveredRevenuePoisha).toBe('12000000');
-    expect(peer?.visibility).toBe('normalized');
-    expect(peer?.orgName).toBeTruthy();
-
-    // A peer row carries the allow-list and nothing else.
-    for (const row of board.rows.filter((entry) => entry.orgId !== ORG_A)) {
-      expect(Object.keys(row).sort()).toEqual(
-        [
-          'compositeBps',
-          'metrics',
-          'orgId',
-          'orgName',
-          'rank',
-          'ranks',
-          'scores',
-          'visibility',
-        ].sort(),
-      );
-    }
-
-    // The peer's normalized figures are there: revenue up 700%, ranked first on growth.
-    expect(peer?.metrics.revenueGrowth).toBe('70000');
-    expect(peer?.ranks.revenueGrowth).toBe(1);
-
-    // And its raw figures are nowhere in the response, in any field — nor anybody's gross
-    // profit, which with revenue would give a brand's cost of goods (D-329).
-    for (const raw of [ORG_B_REVENUE, ORG_B_SPEND, ORG_B_PREVIOUS]) {
-      expect(response.body).not.toContain(raw);
-    }
-    expect(response.body).not.toMatch(/grossProfit/i);
-  });
-
-  it('is the same rule from the other side: B’s admin sees A normalized', async () => {
-    const response = await adminB.client.request('GET', `/v1/analytics/leaderboard?month=${JULY}`);
-    expect(response.statusCode, response.body).toBe(200);
-    const rows = body<{ rows: BoardRow[] }>(response).rows;
-    expect(rows.find((row) => row.orgId === ORG_B)?.visibility).toBe('full');
-    expect(rows.find((row) => row.orgId === ORG_A)?.visibility).toBe('normalized');
-    // A's July revenue and spend and its June revenue, all absent.
-    for (const raw of ['"12000000"', '"2400000"', '"10000000"']) {
-      expect(response.body).not.toContain(raw);
-    }
-    expect(response.body).not.toMatch(/grossProfit/i);
-    expect(response.body).toContain(ORG_B_REVENUE);
-  });
-
-  it('shows Super Admin every brand’s raw figures', async () => {
-    const response = await superAdmin.client.request(
-      'GET',
-      `/v1/analytics/leaderboard?month=${JULY}`,
-    );
-    expect(response.statusCode, response.body).toBe(200);
-    const rows = body<{ rows: BoardRow[] }>(response).rows;
-    expect(rows.length).toBeGreaterThanOrEqual(3);
-    expect(rows.every((row) => row.visibility === 'full')).toBe(true);
-    expect(rows.find((row) => row.orgId === ORG_B)?.raw?.current.deliveredRevenuePoisha).toBe(
-      ORG_B_REVENUE,
-    );
-  });
-
-  it('refuses every other role at the guard', async () => {
-    const others = MEMBERSHIP_ROLES.filter((role) => role !== 'org_admin');
-    expect(others.length).toBeGreaterThan(5);
-    for (const role of others) {
-      const client = await harness.asRole(role, ORG_A);
-      const response = await client.client.request(
-        'GET',
+describe('M31 check 2: the cross-brand views answer 404', () => {
+  it('has no leaderboard and no consolidated view, for a super admin or an org admin', async () => {
+    for (const client of [superAdmin, adminA, adminB]) {
+      for (const route of [
         `/v1/analytics/leaderboard?month=${JULY}`,
-      );
-      expect(response.statusCode, `${role}: ${response.body}`).toBe(403);
-      expect(response.body).not.toContain(ORG_B_REVENUE);
+        '/v1/analytics/consolidated?from=2026-07-01&to=2026-07-31',
+      ]) {
+        const response = await client.client.request('GET', route);
+        expect(response.statusCode, `GET ${route}`).toBe(404);
+        expect(response.body).not.toContain(ORG_B_REVENUE);
+      }
     }
-  });
-
-  it('ranks by the composite, with the weights it used', async () => {
-    const response = await superAdmin.client.request(
-      'GET',
-      `/v1/analytics/leaderboard?month=${JULY}`,
-    );
-    const board = body<{ rows: BoardRow[]; weights: Record<string, number> }>(response);
-    expect(board.weights.revenueGrowth).toBe(3);
-    const ranks = board.rows.map((row) => row.rank);
-    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
-    const composites = board.rows.map((row) => row.compositeBps);
-    expect(composites).toEqual([...composites].sort((a, b) => b - a));
-  });
-});
-
-describe('the consolidated view is Super Admin’s', () => {
-  it('refuses an org admin, though the guard admits them to the subject', async () => {
-    const response = await adminA.client.request(
-      'GET',
-      '/v1/analytics/consolidated?from=2026-07-01&to=2026-07-31',
-    );
-    expect(response.statusCode).toBe(403);
-    expect(response.body).toContain('FORBIDDEN');
-    expect(response.body).not.toContain(ORG_B_REVENUE);
-  });
-
-  it('gives Super Admin every brand and the group total, through the analytics role', async () => {
-    const response = await superAdmin.client.request(
-      'GET',
-      '/v1/analytics/consolidated?from=2026-07-01&to=2026-07-31',
-    );
-    expect(response.statusCode, response.body).toBe(200);
-    const view = body<{
-      brands: { orgId: string; deliveredRevenuePoisha: string; grossProfitPoisha: string }[];
-      group: { deliveredRevenuePoisha: string };
-    }>(response);
-    const total = view.brands.reduce(
-      (sum, brand) => sum + BigInt(brand.deliveredRevenuePoisha),
-      0n,
-    );
-    expect(view.group.deliveredRevenuePoisha).toBe(total.toString());
-    expect(view.brands.find((brand) => brand.orgId === ORG_B)?.deliveredRevenuePoisha).toBe(
-      ORG_B_REVENUE,
-    );
-    expect(view.brands[0]?.grossProfitPoisha).toBeDefined();
   });
 });
 
@@ -442,23 +327,23 @@ describe('the org dashboard, insights, refresh, export and the narrative', () =>
     expect(String(xlsx.headers['content-type'])).toContain('spreadsheetml');
   });
 
-  it('lists the insight rules that fire for the month, measured against the group', async () => {
-    // Orvo's July: 50 delivered, 25 returned, 5 cancelled — 62.50% delivery success against a
-    // group median of 87.30% (A 87.30%, B 94.74%, C itself) — and a mean pickup of 2,000 s.
+  it('lists the insight rules that fire for the month, measured against the brand’s own usual', async () => {
+    // Orvo's July: 50 delivered, 25 returned, 5 cancelled — 62.50% delivery success against
+    // its own usual of 90.00% (April and May; June has too little to count) — and a mean
+    // pickup of 2,000 s. The other brands' months, far better and far worse, change nothing.
     const adminC = await harness.asRole('org_admin', ORG_C);
     const response = await adminC.client.request('GET', `/v1/analytics/insights?month=${JULY}`);
     expect(response.statusCode, response.body).toBe(200);
     const view = body<{ items: { code: string; params: Record<string, string> }[] }>(response);
     expect(view.items.map((item) => item.code)).toEqual([
-      'delivery_success_below_group',
+      'delivery_success_below_usual',
       'slow_pickup',
     ]);
     expect(view.items[0]?.params).toEqual({
       successBps: '6250',
-      medianBps: '8730',
-      gapBps: '2480',
+      medianBps: '9000',
+      gapBps: '2750',
     });
-    // The group median is a normalized figure; no peer's raw figure or cost comes with it.
     expect(response.body).not.toContain(ORG_B_REVENUE);
     expect(response.body).not.toMatch(/grossProfit/i);
   });

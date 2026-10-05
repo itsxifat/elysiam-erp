@@ -1,73 +1,5 @@
-import {
-  PageHeader,
-  TabList,
-  cn,
-  controlClassName,
-  tabActiveClassName,
-  tabClassName,
-} from '@elysium/ui';
-import { Link } from '@tanstack/react-router';
-import { Fragment, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
-
-import { useAbility, useSession } from '../../auth/session.js';
-import { useAnalyticsT } from './messages.js';
-
-/** An analytics path, widened once until the routes are in the router's type. */
-export type AnalyticsPath = ComponentProps<typeof Link>['to'];
-export const analyticsPath = (path: string): AnalyticsPath => path;
-
-/**
- * The analytics screens as tabs, each shown only to whoever can open it (D-325, D-023):
- * the dashboard to `read Dashboard`, the leaderboard to `read Leaderboard`, and all brands
- * to the platform super admin.
- */
-export function AnalyticsNav() {
-  const t = useAnalyticsT();
-  const ability = useAbility();
-  const session = useSession();
-
-  const tab = tabClassName;
-  const active = { className: tabActiveClassName };
-
-  const tabs = [
-    {
-      path: '/analytics',
-      label: t('analytics.nav.dashboard'),
-      show: ability.can('read', 'Dashboard'),
-      exact: true,
-    },
-    {
-      path: '/analytics/leaderboard',
-      label: t('analytics.nav.leaderboard'),
-      show: ability.can('read', 'Leaderboard'),
-      exact: false,
-    },
-    {
-      path: '/analytics/group',
-      label: t('analytics.nav.group'),
-      show: session.context?.isSuperAdmin === true,
-      exact: false,
-    },
-  ];
-
-  return (
-    <TabList label={t('analytics.title')}>
-      {tabs
-        .filter((entry) => entry.show)
-        .map((entry) => (
-          <Link
-            key={entry.path}
-            to={analyticsPath(entry.path)}
-            className={tab}
-            activeProps={active}
-            activeOptions={{ exact: entry.exact }}
-          >
-            {entry.label}
-          </Link>
-        ))}
-    </TabList>
-  );
-}
+import { PageHeader, cn, controlClassName } from '@elysium/ui';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 
 export function AnalyticsHeader({
   title,
@@ -78,12 +10,12 @@ export function AnalyticsHeader({
   readonly caption: string;
   readonly actions?: ReactNode;
 }) {
+  // One screen since M31 (D-471), so no tabs: the brand's own dashboard.
   return (
     <PageHeader
       title={title}
       description={caption}
       {...(actions === undefined ? {} : { actions })}
-      tabs={<AnalyticsNav />}
     />
   );
 }

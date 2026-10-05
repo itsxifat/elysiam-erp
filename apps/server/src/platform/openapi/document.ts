@@ -88,10 +88,12 @@ export function buildOpenApiDocument(options: OpenApiOptions): JsonObject {
   return {
     openapi: '3.1.0',
     info: {
-      title: 'Elysium Mother ERP',
+      // Neutral on purpose: every brand runs its own copy of this API, and the document may
+      // be handed to a brand's website developer (D-472).
+      title: 'ERP API',
       version: options.version,
       description:
-        'Generated from the Zod contracts in @elysium/contracts and the routes the API ' +
+        'Generated from the shared Zod contracts and the routes the API ' +
         'registers. Do not edit by hand: `pnpm api:client` regenerates it and ' +
         '`pnpm check:api-client` fails the build if the committed copy disagrees.',
     },
@@ -176,7 +178,7 @@ function buildOperation(
      * change every generated file and fail the drift check on a commit that
      * changed no API at all — which is how a gate stops being trusted.
      */
-    'x-elysium-ability': isPublic ? 'public' : route.declared,
+    'x-ability': isPublic ? 'public' : route.declared,
     ...(parameters.length === 0 ? {} : { parameters }),
     ...(spec?.body === undefined
       ? {}
@@ -186,7 +188,7 @@ function buildOperation(
             content: {
               'application/json': { schema: reference(register(components, spec.body)) },
             },
-            ...(spec.body.type === undefined ? {} : { 'x-elysium-type': spec.body.type }),
+            ...(spec.body.type === undefined ? {} : { 'x-body-type': spec.body.type }),
           },
         }),
     responses: {

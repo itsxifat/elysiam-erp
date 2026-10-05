@@ -108,7 +108,7 @@ describe('the wallets schema under the tenancy guard', () => {
   });
 
   it('lets the analytics role read ledger lines across orgs, and write nothing', async () => {
-    // §5 exception 3, which is what the consolidated view is built on.
+    // §5 exception 3: the read-only role the mother ERP reads a brand through (M32).
     const rows = await withAnalytics(async (tx) =>
       tx.execute<{ count: string }>(sql`select count(*) as count from ledger.accounts`),
     );

@@ -6,13 +6,10 @@ import { sql } from 'drizzle-orm';
  * and nothing else: every source figure arrives through its owner's `*.api.ts`
  * (invariant 12), and the module-boundary ratchet holds this file to that.
  *
- * Two kinds of caller, and the comments say which each function is for:
- *
- * - **`withOrg()`** (the `erp_app` pool, one brand): the rollup's writes and the org
- *   dashboard's reads. RLS scopes every row; the `org_id` filters are belt and braces.
- * - **`withAnalytics()`** (the `erp_analytics` pool, every brand, read-only): the
- *   leaderboard, the insight rules' group medians and the consolidated dashboard. That role
- *   can read the five `daily_*` tables and `org.organizations`, and write nothing (D-329).
+ * Every caller is **`withOrg()`** (the `erp_app` pool, one brand): the rollup's writes and
+ * the dashboard's reads. RLS scopes every row; the `org_id` filters are belt and braces.
+ * The cross-brand reads through `erp_analytics` left the brand's ERP with M31 (D-471); the
+ * role stays, for the mother ERP's reads (M32).
  */
 
 // --- writing a day (withOrg) -------------------------------------------------------
@@ -333,14 +330,7 @@ export async function insertNarrative(
   `);
 }
 
-// --- every brand (withAnalytics only) ---------------------------------------------
-
-export interface BrandSumRow extends OrgTotals {
-  readonly org_id: string;
-  readonly org_name: string;
-}
-
-/** A brand's figures without gross profit: what a comparison between brands may carry. */
+/** A month's figures as the insight rules and the narrative read them. */
 export interface RateFigures extends Record<string, unknown> {
   readonly orders_placed: number;
   readonly orders_confirmed: number;
@@ -355,60 +345,6 @@ export interface RateFigures extends Record<string, unknown> {
   readonly pickup_seconds: string;
 }
 
-export interface BrandRateRow extends RateFigures {
-  readonly org_id: string;
-  readonly org_name: string;
-}
-
-const BRAND_COLUMNS = sql`
-  o.id as org_id, o.display_name as org_name,
-  coalesce(sum(d.orders_placed), 0)::int as orders_placed,
-  coalesce(sum(d.orders_confirmed), 0)::int as orders_confirmed,
-  coalesce(sum(d.orders_delivered), 0)::int as orders_delivered,
-  coalesce(sum(d.orders_returned), 0)::int as orders_returned,
-  coalesce(sum(d.orders_cancelled), 0)::int as orders_cancelled,
-  coalesce(sum(d.delivered_revenue_poisha), 0)::text as delivered_revenue_poisha,
-  coalesce(sum(d.delivered_outside_dhaka), 0)::int as delivered_outside_dhaka,
-  coalesce(sum(d.returned_outside_dhaka), 0)::int as returned_outside_dhaka,
-  coalesce(sum(d.spend_poisha), 0)::text as spend_poisha,
-  coalesce(sum(d.pickup_count), 0)::int as pickup_count,
-  coalesce(sum(d.pickup_seconds), 0)::text as pickup_seconds`;
-
-const BRAND_FROM = (from: string, to: string) => sql`
-  from org.organizations o
-  left join analytics.daily_org d
-    on d.org_id = o.id and d.business_date between ${from}::date and ${to}::date
-  where o.is_active and not o.is_training
-  group by o.id, o.display_name
-  order by o.display_name, o.id`;
-
-/**
- * Every active brand's sums for a range, a brand with no rows included as zeros, **without
- * gross profit**: the leaderboard and the insight rules' group medians, which an org admin
- * reads, compare brands on rates and never need another brand's cost (D-023, D-329).
- *
- * A training brand is left out, as the consolidated wallet total leaves it out: its figures
- * are practice. Through `erp_analytics` only: under `erp_app` RLS would show one brand and
- * call it the group.
- */
-export async function brandRates(tx: Tx, from: string, to: string): Promise<BrandRateRow[]> {
-  const rows = await tx.execute<BrandRateRow>(sql`select ${BRAND_COLUMNS} ${BRAND_FROM(from, to)}`);
-  return [...rows];
-}
-
-/**
- * The same with gross profit, for Super Admin's consolidated view only — the one cross-brand
- * reader entitled to every brand's cost (§5 exception 3).
- */
-export async function brandSums(tx: Tx, from: string, to: string): Promise<BrandSumRow[]> {
-  const rows = await tx.execute<BrandSumRow>(sql`
-    select ${BRAND_COLUMNS},
-           coalesce(sum(d.gross_profit_poisha), 0)::text as gross_profit_poisha
-    ${BRAND_FROM(from, to)}
-  `);
-  return [...rows];
-}
-
 // --- summing rows that were already read ----------------------------------------------
 
 /** A brand's figures over a period: the order sums plus spend and pickups. */
@@ -417,21 +353,6 @@ export interface OrgTotals extends MetricSumRow {
   readonly pickup_count: number;
   readonly pickup_seconds: string;
 }
-
-export const ZERO_BRAND: OrgTotals = {
-  orders_placed: 0,
-  orders_confirmed: 0,
-  orders_delivered: 0,
-  orders_returned: 0,
-  orders_cancelled: 0,
-  delivered_revenue_poisha: '0',
-  gross_profit_poisha: '0',
-  delivered_outside_dhaka: 0,
-  returned_outside_dhaka: 0,
-  spend_poisha: '0',
-  pickup_count: 0,
-  pickup_seconds: '0',
-};
 
 /** Add up rows of the same shape, exactly (integers and bigints, never floats). */
 export function sumTotals(rows: readonly OrgTotals[]): OrgTotals {

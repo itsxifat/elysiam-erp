@@ -5,10 +5,8 @@ import { sql, type SQL } from 'drizzle-orm';
  * Every SQL statement the wallets module runs (tenancy rules: raw SQL lives in
  * repositories, parameterised, never built by string interpolation).
  *
- * All of it runs inside a caller's `withOrg()` transaction — except the
- * consolidated reads at the bottom, which run inside `withAnalytics()` and are
- * the only statements here without an `org_id` filter. Those are marked, and they
- * are §5 exception 3 and nothing wider.
+ * All of it runs inside a caller's `withOrg()` transaction. The consolidated reads
+ * across brands left with M31 (D-471): a brand's ERP runs on its own database.
  *
  * **No statement in this file reads a stored balance, because there is not one.**
  * A wallet's balance is `Σ debit − Σ credit` over its account's journal lines,
@@ -764,72 +762,6 @@ export async function agingAsOf(
     group by l.party_type, l.party_id, a.id, a.code, a.name, a.subtype, a.normal_balance,
              j.business_date
     order by l.party_type, l.party_id, j.business_date, a.code
-  `);
-  return [...rows];
-}
-
-// --- consolidated, through erp_analytics (§5 exception 3) --------------------
-
-export interface ConsolidatedWalletRow extends Record<string, unknown> {
-  readonly org_id: string;
-  readonly org_name: string;
-  readonly subtype: string;
-  readonly debit_poisha: string;
-  readonly credit_poisha: string;
-}
-
-/**
- * Every org's wallet totals, by org and wallet subtype.
- *
- * **No `org_id` filter, and that is deliberate.** This runs on the
- * `erp_analytics` pool inside a read-only transaction, whose policies allow all
- * orgs and whose role holds no INSERT, UPDATE or DELETE anywhere (§5 exception 3,
- * migration 0030). `withOrg()` must never be used for it: the loop would work and
- * would leave nothing in the database saying that cross-org code may not write.
- */
-export async function consolidatedWalletTotals(tx: Tx): Promise<ConsolidatedWalletRow[]> {
-  const rows = await tx.execute<ConsolidatedWalletRow>(sql`
-    select o.id as org_id, o.display_name as org_name, a.subtype::text as subtype,
-           coalesce(sum(l.debit_poisha), 0)::text as debit_poisha,
-           coalesce(sum(l.credit_poisha), 0)::text as credit_poisha
-    from ledger.accounts a
-    join org.organizations o on o.id = a.org_id
-    left join ledger.journal_lines l on l.org_id = a.org_id and l.account_id = a.id
-    where a.subtype::text like 'wallet\\_%'
-      -- The training org's practice money is not the group's (M14a, D-223).
-      and not o.is_training
-    group by o.id, o.display_name, a.subtype
-    order by o.display_name, a.subtype
-  `);
-  return [...rows];
-}
-
-export interface ConsolidatedResultRow extends Record<string, unknown> {
-  readonly org_id: string;
-  readonly org_name: string;
-  readonly class: string;
-  readonly debit_poisha: string;
-  readonly credit_poisha: string;
-}
-
-/** Every org's income and expense totals over a range. Same role, same rules. */
-export async function consolidatedProfitAndLoss(
-  tx: Tx,
-  range: { readonly from: string; readonly to: string },
-): Promise<ConsolidatedResultRow[]> {
-  const rows = await tx.execute<ConsolidatedResultRow>(sql`
-    select o.id as org_id, o.display_name as org_name, a.class::text as class,
-           coalesce(sum(l.debit_poisha), 0)::text as debit_poisha,
-           coalesce(sum(l.credit_poisha), 0)::text as credit_poisha
-    from ledger.journal_lines l
-    join ledger.journals j on j.org_id = l.org_id and j.id = l.journal_id
-    join ledger.accounts a on a.org_id = l.org_id and a.id = l.account_id
-    join org.organizations o on o.id = a.org_id
-    where j.business_date between ${range.from} and ${range.to}
-      and a.class::text in ('income', 'expense')
-      and not o.is_training
-    group by o.id, o.display_name, a.class
-    order by o.display_name, a.class
   `);
   return [...rows];
 }
