@@ -1,5 +1,10 @@
 import { baseEnvShape, createEnv } from '@elysium/config/env';
+import { BRAND_SLUG_PATTERN } from '@elysium/domain/iam';
 import { z } from 'zod';
+
+/** An optional value where an empty string, as compose writes an unset `${VAR:-}`, means unset. */
+const optional = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value) => (value === '' ? undefined : value), schema.optional());
 
 /**
  * Server configuration.
@@ -11,6 +16,18 @@ const schema = z.object({
   ...baseEnvShape,
 
   API_HOST: z.string().min(1).default('0.0.0.0'),
+
+  /**
+   * The one brand this deployment serves (D-470, M31).
+   *
+   * Set on a brand's API and worker: each brand's ERP runs on a database of its own, and
+   * both processes refuse to start unless that database holds this brand and no other real
+   * one (`platform/brand/deployment.ts`). It is also the audience an owner sign-in link
+   * must name (D-473). Unset is the many-brand mode the tests and local development keep.
+   */
+  ERP_BRAND_SLUG: optional(
+    z.string().regex(BRAND_SLUG_PATTERN, 'A brand slug: a-z, 0-9 and dashes.'),
+  ),
   API_PORT: z.coerce.number().int().positive().max(65535).default(3000),
 
   /**

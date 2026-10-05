@@ -12,6 +12,7 @@ export {
   startTestDatabase,
   stopSharedContainer,
   type TestDatabase,
+  type TestDatabaseOptions,
 } from './harness.js';
 export {
   findAnalyticsReadProblems,

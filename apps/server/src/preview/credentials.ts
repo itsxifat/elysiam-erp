@@ -80,7 +80,7 @@ export function credentialsMarkdown(
       `| ${login.label} | ${appUrl(login.app)} | \`${login.email}\` | \`${login.password}\` | ${login.twoFactor ? 'Yes, on first sign-in' : 'No'} | ${login.note} |`,
   );
   return [
-    '# Elysium ERP preview: sign-ins',
+    '# ERP preview: sign-ins',
     '',
     `Made by \`pnpm preview:seed\` on ${now.toISOString().slice(0, 16).replace('T', ' ')} UTC.`,
     'Keep this file private. It is never committed (it is in `.gitignore`).',

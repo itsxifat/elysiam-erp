@@ -28,6 +28,7 @@ import { withBrandOrigins } from './platform/http/origins.js';
 import { ValkeyRateLimiter } from './platform/http/rate-limit.valkey.js';
 import { createRealtimeGateway } from './platform/realtime/index.js';
 import { useTrackingRateLimitStore } from './modules/courier/tracking.service.js';
+import { loadDeploymentBrand } from './platform/brand/deployment.js';
 
 /**
  * The Fastify adapter, exactly as the running API builds it.
@@ -97,6 +98,14 @@ async function bootstrap(): Promise<void> {
   const logger = createLogger('api');
 
   /*
+   * One brand per deployment (D-470). With `ERP_BRAND_SLUG` set, a database holding any
+   * other real brand stops the process here, before it serves anything. The brand's own
+   * name then signs the second factor and the sign-in texts (D-472).
+   */
+  const brand = await loadDeploymentBrand(env.ERP_BRAND_SLUG);
+  if (brand !== null) logger.info({ brand: brand.slug }, 'brand deployment');
+
+  /*
    * The trusted origins, resolved once (architecture §25, D-035, D-054).
    *
    * Enumerated, never patterned: the configured origins plus one per active
@@ -107,7 +116,13 @@ async function bootstrap(): Promise<void> {
    * three cannot drift apart or interpret a pattern differently.
    */
   const originPolicy = {
-    trustedOrigins: withBrandOrigins(env.TRUSTED_ORIGINS, env.APP_DOMAIN, await activeOrgSlugs()),
+    // A brand's own deployment serves one host per app, all listed in TRUSTED_ORIGINS: it
+    // has no per-brand hostnames to add (D-474).
+    trustedOrigins: withBrandOrigins(
+      env.TRUSTED_ORIGINS,
+      env.APP_DOMAIN,
+      brand === null ? await activeOrgSlugs() : [],
+    ),
   };
   logger.info({ origins: originPolicy.trustedOrigins.length }, 'trusted origins resolved');
 
@@ -126,6 +141,7 @@ async function bootstrap(): Promise<void> {
     trustedOrigins: originPolicy.trustedOrigins,
     cookieDomain: env.APP_DOMAIN === 'localhost' ? undefined : `.${env.APP_DOMAIN}`,
     sms: new RecordingSmsProvider(),
+    ...(brand === null ? {} : { brandName: brand.displayName }),
     onPasswordToken: ({ email, token }) => {
       tokens.put(email, token);
       return Promise.resolve();
