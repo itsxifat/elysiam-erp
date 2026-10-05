@@ -196,11 +196,13 @@ interface SignOptions {
   /** Leave the CSRF pair off, as a real server-to-server call would. */
   readonly withoutCsrf?: boolean;
   readonly omitIdempotencyKey?: boolean;
+  /** Send the first integration's header names, which are still accepted (D-472). */
+  readonly legacyHeaders?: boolean;
 }
 
 function csrfPair(): { cookie: string; token: string } {
   const cookie = anonymous.cookieHeader();
-  const token = /elysium_csrf=([^;]+)/.exec(cookie)?.[1] ?? '';
+  const token = /erp_csrf=([^;]+)/.exec(cookie)?.[1] ?? '';
   return { cookie, token };
 }
 
@@ -229,11 +231,19 @@ async function postSigned(
       host: APP_DOMAIN,
       'content-type': 'application/json',
       'x-forwarded-for': '203.0.113.50',
-      'x-elysium-key': options.keyId ?? keyId,
-      'x-elysium-timestamp': timestamp,
-      'x-elysium-signature': signature,
+      ...(options.legacyHeaders === true
+        ? {
+            'x-elysium-key': options.keyId ?? keyId,
+            'x-elysium-timestamp': timestamp,
+            'x-elysium-signature': signature,
+          }
+        : {
+            'x-api-key': options.keyId ?? keyId,
+            'x-api-timestamp': timestamp,
+            'x-api-signature': signature,
+          }),
       ...(options.omitIdempotencyKey === true ? {} : { 'idempotency-key': key }),
-      ...(options.withoutCsrf === true ? {} : { cookie, 'x-elysium-csrf': token, origin: ORIGIN }),
+      ...(options.withoutCsrf === true ? {} : { cookie, 'x-csrf-token': token, origin: ORIGIN }),
     },
     payload: options.tamper ?? raw,
   });
@@ -297,6 +307,11 @@ describe('check 3: a signed request', () => {
     expect(call?.token).toBe('pass');
     expect(call?.remoteip).toMatch(/^198\.51\.100\./);
     expect(call?.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+  }, 60_000);
+
+  it('still accepts the first integration’s header names (D-472)', async () => {
+    const response = await postSigned(orderBody(), { legacyHeaders: true });
+    expect(response.statusCode, response.body).toBe(201);
   }, 60_000);
 
   it('asks Turnstile with no transaction held open (invariant 6)', async () => {

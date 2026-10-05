@@ -287,7 +287,7 @@ export function Monogram({
   );
 }
 
-/** "Elysium Lifestyle BD" is EL; "Orvo" is OR; a Bangla name keeps its first letter. */
+/** "Acme Lifestyle BD" is AL; "Orbit" is OR; a Bangla name keeps its first letter. */
 export function initials(name: string): string {
   // Words that start with a letter or digit only: "(preview seed)" is not a name.
   const words = name

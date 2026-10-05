@@ -96,9 +96,9 @@ describe('the remembered sticker choice', () => {
 
   it('falls back to the defaults on anything it cannot read', () => {
     const storage = new MemoryStorage() as unknown as Storage;
-    storage.setItem('elysium-stickers:usr_a', '{"medium":"a5","showPrice":"yes"}');
+    storage.setItem('erp-stickers:usr_a', '{"medium":"a5","showPrice":"yes"}');
     expect(readStickerPrefs('usr_a', storage)).toEqual(DEFAULT_STICKER_PREFS);
-    storage.setItem('elysium-stickers:usr_a', 'not json');
+    storage.setItem('erp-stickers:usr_a', 'not json');
     expect(readStickerPrefs('usr_a', storage)).toEqual(DEFAULT_STICKER_PREFS);
     const broken = {
       getItem: () => {

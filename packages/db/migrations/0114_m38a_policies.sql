@@ -175,7 +175,7 @@ for each row execute function inventory.guard_stock_in_hand_line();--> statement
 -- The window's one hard transition (D-602): closed → open rests on an approved
 -- `opening_stock_reopen` of this brand, decided after the close, so neither a code path
 -- nor a hand-written UPDATE can reopen it alone. Closing only narrows what may happen, and
--- stamps who and when. Compared as text: the sibling migration adds the enum value, and a
+-- stamps who and when. Compared as text: 0113 adds the enum value, and a
 -- new enum value is not used as a literal near the transaction that adds it.
 create or replace function inventory.guard_opening_stock_window() returns trigger
 language plpgsql as $$

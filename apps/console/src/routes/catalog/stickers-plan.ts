@@ -64,7 +64,7 @@ export interface StickerPrefs {
 export const DEFAULT_STICKER_PREFS: StickerPrefs = { medium: 'thermal-38x25', showPrice: true };
 
 function storageKey(userId: string): string {
-  return `elysium-stickers:${userId}`;
+  return `erp-stickers:${userId}`;
 }
 
 /** The person's last choice of stock and price, or the defaults. Never throws. */

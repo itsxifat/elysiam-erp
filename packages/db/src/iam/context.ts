@@ -27,6 +27,12 @@ export type MembershipRole =
 export interface RequestContext {
   readonly userId: string;
   readonly isSuperAdmin: boolean;
+  /**
+   * An owner (M31, D-473): a super admin who arrived by owner sign-in link. Only another
+   * owner sees an owner's name on the brand's records; everyone else sees "Owner".
+   * Absent means no.
+   */
+  readonly isOwner?: boolean;
   /** The org this request acts in. Null before an org has been chosen. */
   readonly orgId: string | null;
   readonly roles: readonly MembershipRole[];
@@ -132,7 +138,11 @@ export async function resolveContext(input: {
 }): Promise<RequestContext | null> {
   const [user] = await withUser({ userId: input.userId, requestId: input.requestId }, async (tx) =>
     tx
-      .select({ isSuperAdmin: users.isSuperAdmin, isActive: users.isActive })
+      .select({
+        isSuperAdmin: users.isSuperAdmin,
+        isActive: users.isActive,
+        isOwner: users.isOwner,
+      })
       .from(users)
       .where(eq(users.id, input.userId)),
   );
@@ -143,6 +153,7 @@ export async function resolveContext(input: {
     return {
       userId: input.userId,
       isSuperAdmin: true,
+      ...(user.isOwner ? { isOwner: true } : {}),
       orgId: input.orgId,
       roles: ['org_admin'],
       branchIds: [],

@@ -17,6 +17,7 @@ import {
   users,
   verifications,
 } from '../schema/iam/index.js';
+import { ownerSession } from './owner-session.js';
 
 /**
  * Authentication (architecture §6, §25).
@@ -80,6 +81,12 @@ export interface AuthOptions {
   readonly secret: string;
   readonly trustedOrigins: readonly string[];
   readonly sms: SmsProvider;
+  /**
+   * The deployment's brand, as its staff know it (D-472, M31): the authenticator app's
+   * issuer and the sign-in text's sender. Every brand runs its own ERP, so nothing here
+   * may name another; without one (tests, local development) both stay neutral.
+   */
+  readonly brandName?: string | undefined;
   /** Off only in tests that need to drive many logins. */
   readonly rateLimitEnabled?: boolean;
   /**
@@ -130,9 +137,11 @@ export function createAuth(options: AuthOptions) {
   const config = currentDatabaseConfig();
   const driver = postgres(config.DATABASE_URL, { max: 5, onnotice: () => undefined });
   const db = drizzle(driver, { schema });
+  const brand = options.brandName?.trim() ?? '';
+  const issuer = brand === '' ? 'ERP' : brand;
 
   const auth = betterAuth({
-    appName: 'Elysium ERP',
+    appName: issuer,
     baseURL: options.baseUrl,
     secret: options.secret,
     trustedOrigins: [...options.trustedOrigins],
@@ -259,6 +268,8 @@ export function createAuth(options: AuthOptions) {
       updateAge: 60 * 60,
       additionalFields: {
         activeOrgId: { type: 'string', required: false, input: false },
+        // Opened by an owner sign-in link (M31, D-473): set by `ownerSession()` only.
+        ownerLink: { type: 'boolean', required: false, input: false, defaultValue: false },
       },
     },
 
@@ -285,17 +296,19 @@ export function createAuth(options: AuthOptions) {
 
     plugins: [
       twoFactor({
-        issuer: 'Elysium ERP',
+        issuer,
         // A lost authenticator must not mean a lost account.
         backupCodeOptions: { amount: 10, length: 10 },
       }),
       phoneNumber({
         sendOTP: async ({ phoneNumber: to, code }) => {
-          await options.sms.send(to, `Your Elysium verification code is ${code}`);
+          await options.sms.send(to, verificationText(brand, code));
         },
         otpLength: 6,
         expiresIn: 300,
       }),
+      // The owner sign-in link's session (M31, D-473). Server-only: no HTTP path reaches it.
+      ownerSession(),
     ],
 
     databaseHooks: {
@@ -356,6 +369,13 @@ export function createAuth(options: AuthOptions) {
 }
 
 export type Auth = ReturnType<typeof createAuth>['auth'];
+
+/** The sign-in code's text, signed with the brand's own name when the deployment has one. */
+export function verificationText(brandName: string, code: string): string {
+  return brandName === ''
+    ? `Your verification code is ${code}`
+    : `Your ${brandName} verification code is ${code}`;
+}
 
 /**
  * Must this user enrol a second factor before they may act? (§6)

@@ -48,6 +48,9 @@ export class IamController {
    * reading our own Host header would resolve every branded login to the org
    * called "api". Accepting it from the client is no wider a door than the
    * `slug` parameter beside it, and both return only public brand facts.
+   *
+   * A brand's own deployment (`ERP_BRAND_SLUG`, D-470) has one brand: every login screen
+   * is that brand's, whatever host or slug is asked about, so the route names no other.
    */
   @Public('Runs before anyone has signed in, and returns only public brand facts.')
   @Get('auth/login-branding')
@@ -57,6 +60,9 @@ export class IamController {
     @Query('host') host?: string,
   ) {
     const env = serverEnv();
+    if (env.ERP_BRAND_SLUG !== undefined) {
+      return resolveLoginBranding({ slug: env.ERP_BRAND_SLUG, appDomain: env.APP_DOMAIN });
+    }
     return resolveLoginBranding({
       host: host ?? request.headers.host,
       slug,

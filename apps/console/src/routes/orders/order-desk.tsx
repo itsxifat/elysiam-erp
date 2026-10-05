@@ -101,7 +101,9 @@ const PROMO_REASONS: Readonly<Record<string, OrdersMessageKey>> = {
   wrong_channel: 'orders.desk.promoReason.wrong_channel',
   limit_reached: 'orders.desk.promoReason.limit_reached',
   customer_limit_reached: 'orders.desk.promoReason.customer_limit_reached',
+  first_order_only: 'orders.desk.promoReason.first_order_only',
   min_order_not_met: 'orders.desk.promoReason.min_order_not_met',
+  min_quantity_not_met: 'orders.desk.promoReason.min_quantity_not_met',
   out_of_scope: 'orders.desk.promoReason.out_of_scope',
   nothing_to_discount: 'orders.desk.promoReason.nothing_to_discount',
 };

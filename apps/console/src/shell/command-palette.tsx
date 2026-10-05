@@ -1,4 +1,4 @@
-import { Kbd } from '@elysium/ui';
+import { Kbd, readStored, STORAGE_KEYS, writeStored } from '@elysium/ui';
 import { useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import { ArrowRight, CornerDownLeft, History, Languages, Moon, Search, Sun } from 'lucide-react';
@@ -41,12 +41,11 @@ import { applyTheme, isDark } from '../theme.js';
  * state, and loads this the moment the first screen has rendered.
  */
 
-const RECENT_KEY = 'elysium-palette-recent';
 const RECENT_LIMIT = 4;
 
 function readRecent(): readonly string[] {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
+    const parsed: unknown = JSON.parse(readStored(STORAGE_KEYS.paletteRecent) ?? '[]');
     return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
   } catch {
     return [];
@@ -54,12 +53,9 @@ function readRecent(): readonly string[] {
 }
 
 function remember(to: string): void {
-  try {
-    const next = [to, ...readRecent().filter((entry) => entry !== to)].slice(0, RECENT_LIMIT);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-  } catch {
-    // Storage denied: no recents this visit, nothing else lost.
-  }
+  // Storage denied: no recents this visit, nothing else lost.
+  const next = [to, ...readRecent().filter((entry) => entry !== to)].slice(0, RECENT_LIMIT);
+  writeStored(STORAGE_KEYS.paletteRecent, JSON.stringify(next));
 }
 
 interface Entry {

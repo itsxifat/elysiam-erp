@@ -1,5 +1,5 @@
 /*
- * Elysium design tokens (architecture §24, D-033; the design refresh, D-440).
+ * The design tokens (architecture §24, D-033; the design refresh, D-440).
  *
  * Every colour, radius, shadow and duration in this product resolves here. No
  * component hard-codes a value, and no app reaches for a raw Tailwind palette

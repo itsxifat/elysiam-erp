@@ -206,8 +206,13 @@ export class IamService {
     const email = input.email;
 
     const existing = await withGlobal(async (tx) =>
-      tx.execute<{ id: string; email_verified: boolean; is_super_admin: boolean }>(
-        sql`select id, email_verified, is_super_admin from iam.users where email = ${email}`,
+      tx.execute<{
+        id: string;
+        email_verified: boolean;
+        is_super_admin: boolean;
+        is_owner: boolean;
+      }>(
+        sql`select id, email_verified, is_super_admin, is_owner from iam.users where email = ${email}`,
       ),
     );
 
@@ -228,6 +233,14 @@ export class IamService {
     }
     if (existing[0]?.is_super_admin === true && !input.caller.isSuperAdmin) {
       throw usersHttpError('USER_PROTECTED', 'Only a super admin can change a super admin.');
+    }
+    // An owner (D-473) arrives by owner sign-in link only: never a role, never a password
+    // here. A database trigger refuses the membership as well.
+    if (existing[0]?.is_owner === true) {
+      throw usersHttpError(
+        'USER_PROTECTED',
+        'This address belongs to an owner, who signs in by owner link and holds no role here.',
+      );
     }
 
     if (userId !== undefined) {
@@ -269,7 +282,7 @@ export class IamService {
         ) {
           throw usersHttpError(
             'USER_PROTECTED',
-            'This person already has an account with another brand. A super admin adds them here.',
+            'This person already has an account here. Only a super admin can add a role to it.',
           );
         }
         const inserted = await tx.execute<{ id: string }>(sql`

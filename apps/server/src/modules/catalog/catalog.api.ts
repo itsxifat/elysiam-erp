@@ -124,6 +124,16 @@ export interface CatalogApi {
   /** A category's id and every id below it; empty when the brand has no such category. */
   categorySubtree(tx: Tx, orgId: string, categoryId: string): Promise<string[]>;
 
+  /**
+   * Each category with itself and every category above it, nearest first (M35a): a discount
+   * scoped to a category covers its sub-categories. An unknown id is absent from the map.
+   */
+  categoryLineage(
+    tx: Tx,
+    orgId: string,
+    categoryIds: readonly string[],
+  ): Promise<Map<string, string[]>>;
+
   // --- the brand's website (M33, D-500, D-501, D-506) -----------------------------------------
 
   /** A product's website fields, or nothing when the brand has no such product. */
@@ -483,6 +493,14 @@ export class CatalogApiService implements CatalogApi {
 
   async categorySubtree(tx: Tx, orgId: string, categoryId: string): Promise<string[]> {
     return repo.categorySubtree(tx, orgId, categoryId);
+  }
+
+  async categoryLineage(
+    tx: Tx,
+    orgId: string,
+    categoryIds: readonly string[],
+  ): Promise<Map<string, string[]>> {
+    return repo.categoryLineage(tx, orgId, categoryIds);
   }
 
   // --- the brand's website (M33) --------------------------------------------------------------

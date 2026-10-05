@@ -31,6 +31,7 @@ import { emit } from '../../platform/events/outbox.js';
 import { assertInScope } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi, type CatalogSku } from '../catalog/catalog.api.js';
+import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { CustomersService } from './customers.service.js';
@@ -323,6 +324,7 @@ export class OrdersService {
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
     @Inject(LEDGER_API) private readonly ledger: LedgerApi,
     @Inject(PROMO_PORT) private readonly promo: PromoPort,
+    @Inject(IAM_API) private readonly iam: IamApi,
     private readonly customers: CustomersService,
     private readonly transitions: TransitionsService,
     private readonly audit: AuditService,
@@ -394,11 +396,28 @@ export class OrdersService {
           actorUserId: event.actor_user_id,
           occurredAt: new Date(event.occurred_at).toISOString(),
         }));
+        const timeline = orderTimeline(history, audited);
+        /*
+         * The owners among the people on this order (M31, D-473): an owner holds no role,
+         * so the console cannot name them from its list of staff. Their names go to other
+         * owners only; everyone else reads "Owner".
+         */
+        const owners = await this.iam.ownersAmong(
+          tx,
+          [
+            ...timeline.flatMap((entry) => (entry.actorUserId === null ? [] : [entry.actorUserId])),
+            ...[order.assigned_to, order.created_by].filter(
+              (id): id is string => typeof id === 'string',
+            ),
+          ],
+          context,
+        );
         return {
           ...toOrderView(order),
           lines: lines.map(toLineView),
           history,
-          timeline: orderTimeline(history, audited),
+          timeline,
+          owners,
           transitions: transitionsFrom(order.status as OrderStatus),
         };
       }),
@@ -619,6 +638,7 @@ export class OrdersService {
             channel: input.channel,
             lines: lines.map((line) => ({
               skuId: line.skuId,
+              qty: line.qty,
               netPoisha: sub(
                 mulQty(poisha(line.unitPricePoisha), line.qty),
                 poisha(line.discountPoisha),
@@ -839,15 +859,29 @@ export class OrdersService {
          * off. Re-pricing a code on an edit is its own decision; until then the honest path
          * is to cancel the order (which gives the use back) and take it again.
          */
-        if (
-          order.promo_code_id !== null &&
-          (patch.lines !== undefined ||
-            patch.discountPoisha !== undefined ||
-            patch.deliveryChargePoisha !== undefined)
-        ) {
+        const repricing =
+          patch.lines !== undefined ||
+          patch.discountPoisha !== undefined ||
+          patch.deliveryChargePoisha !== undefined;
+        /*
+         * M35a: a website order can carry several discounts and no single `promo_code_id`,
+         * and its lines can hold flash-sale units claimed at a sale price (D-542). A line
+         * edit replaces the lines, which would orphan the claims (their foreign key refuses
+         * it) and leave the sale's sold count describing lines that no longer exist.
+         */
+        const holds = repricing
+          ? await this.promo.holdsOnOrder(tx, context.orgId, order.id)
+          : { appliedDiscounts: 0, flashClaims: 0 };
+        if (repricing && (order.promo_code_id !== null || holds.appliedDiscounts > 0)) {
           throw new OrdersError(
             'ORDER_IMMUTABLE',
             'A promo code priced this order, so its lines, discount and delivery charge are fixed. Cancel it and take it again to change them.',
+          );
+        }
+        if (patch.lines !== undefined && holds.flashClaims > 0) {
+          throw new OrdersError(
+            'ORDER_IMMUTABLE',
+            'Flash-sale prices priced this order’s lines, so they are fixed. Cancel it and take it again to change them.',
           );
         }
 

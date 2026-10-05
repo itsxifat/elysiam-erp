@@ -373,6 +373,12 @@ function TopBar({
   const { locale, setLocale } = useLocale();
   const [dark, setDark] = useState(isDark);
   const selling = session?.openShift?.mine === true;
+  const brandName = session?.receiptHeader.displayName ?? '';
+
+  // The tab carries the brand's own name, from its row (D-472); the shipped page names none.
+  useEffect(() => {
+    document.title = brandName === '' ? t('pos.app.name') : `${brandName} · ${t('pos.app.name')}`;
+  }, [brandName, t]);
 
   const status = !online
     ? { tone: 'warning' as const, label: t('pos.status.offline') }

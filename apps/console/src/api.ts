@@ -9,8 +9,8 @@ import { env } from './env.js';
  * us — carry cookies cross-origin, and echo the CSRF token back as a header.
  */
 
-export const CSRF_COOKIE = 'elysium_csrf';
-export const CSRF_HEADER = 'x-elysium-csrf';
+export const CSRF_COOKIE = 'erp_csrf';
+export const CSRF_HEADER = 'x-csrf-token';
 
 /** Methods the server treats as unable to change state, so never CSRF-checked. */
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -163,6 +163,8 @@ export interface EnrolmentResult {
 export const endpoints = {
   branding: (host: string) =>
     api.get<LoginBranding>(`/v1/auth/login-branding?host=${encodeURIComponent(host)}`),
+  /** An owner sign-in link's token for a session (M31, D-473). Sets the cookie; says no more. */
+  ownerLink: (token: string) => api.post<{ ok: true }>('/v1/auth/owner-link', { token }),
   signIn: (email: string, password: string) =>
     api.post<SignInResult>('/api/auth/sign-in/email', { email, password }),
   signOut: () => api.post<unknown>('/api/auth/sign-out'),

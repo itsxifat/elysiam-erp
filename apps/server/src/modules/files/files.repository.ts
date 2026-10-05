@@ -325,3 +325,22 @@ export async function insertStored(
     )
   `);
 }
+
+/**
+ * Whether this brand holds a stored, public file of this purpose with this id (M35a): what
+ * another module asks before it publishes a file it was handed, such as a flash sale's
+ * banner. Inside the caller's transaction.
+ */
+export async function publicAssetExists(
+  tx: Tx,
+  orgId: string,
+  fileId: string,
+  purpose: FilePurpose,
+): Promise<boolean> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select id from files.objects
+    where org_id = ${orgId} and id = ${fileId} and status = 'stored'
+      and visibility = 'public' and purpose = ${purpose}
+  `);
+  return rows.length > 0;
+}

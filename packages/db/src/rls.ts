@@ -417,6 +417,9 @@ export const GLOBAL_TABLES: readonly string[] = [
   'iam.accounts',
   'iam.verifications',
   'iam.two_factors',
+  // M31 (D-473): the owner sign-in links already used, by `jti`. Identity, like the
+  // tables above; a link names a brand by its audience, not an org row.
+  'iam.owner_link_uses',
 ];
 
 /**

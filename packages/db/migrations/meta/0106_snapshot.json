@@ -1,6 +1,6 @@
 {
-  "id": "af90a4d9-2396-4f1c-9f63-d7a62c168786",
-  "prevId": "dd0c4cb8-8458-4d76-b257-3a9d752a1623",
+  "id": "6ead47c3-2e5a-4a7d-adad-c86aa1bdb3c1",
+  "prevId": "b4148504-85fb-4d85-966d-60a6d15195ba",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1605,7 +1605,7 @@
         },
         "approval_requests_never_auto_approved": {
           "name": "approval_requests_never_auto_approved",
-          "value": "\"approvals\".\"approval_requests\".\"status\"::text <> 'auto_approved' or \"approvals\".\"approval_requests\".\"type\"::text not in ('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry', 'credential_reset', 'opening_stock_reopen')"
+          "value": "\"approvals\".\"approval_requests\".\"status\"::text <> 'auto_approved' or \"approvals\".\"approval_requests\".\"type\"::text not in ('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry', 'credential_reset')"
         },
         "approval_requests_branch_items_never_auto_approved": {
           "name": "approval_requests_branch_items_never_auto_approved",
@@ -1715,7 +1715,7 @@
       "checkConstraints": {
         "approval_thresholds_never_for_controls": {
           "name": "approval_thresholds_never_for_controls",
-          "value": "\"approvals\".\"approval_thresholds\".\"type\"::text not in ('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry', 'credential_reset', 'opening_stock_reopen')"
+          "value": "\"approvals\".\"approval_thresholds\".\"type\"::text not in ('period_reopen', 'bonus_rule', 'threshold_change', 'back_dated_entry', 'credential_reset')"
         },
         "approval_thresholds_not_negative": {
           "name": "approval_thresholds_not_negative",
@@ -3231,13 +3231,6 @@
           "notNull": true,
           "default": 0
         },
-        "last_barcode_sequence": {
-          "name": "last_barcode_sequence",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3293,10 +3286,6 @@
         "sku_settings_sequence_not_negative": {
           "name": "sku_settings_sequence_not_negative",
           "value": "\"catalog\".\"sku_settings\".\"last_sequence\" >= 0"
-        },
-        "sku_settings_barcode_sequence_range": {
-          "name": "sku_settings_barcode_sequence_range",
-          "value": "\"catalog\".\"sku_settings\".\"last_barcode_sequence\" between 0 and 99999999999"
         }
       },
       "isRLSEnabled": false
@@ -10964,6 +10953,48 @@
       },
       "isRLSEnabled": false
     },
+    "iam.owner_link_uses": {
+      "name": "owner_link_uses",
+      "schema": "iam",
+      "columns": {
+        "jti": {
+          "name": "jti",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "owner_link_uses_used_at_idx": {
+          "name": "owner_link_uses_used_at_idx",
+          "columns": [
+            {
+              "expression": "used_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "iam.sessions": {
       "name": "sessions",
       "schema": "iam",
@@ -10997,6 +11028,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "owner_link": {
+          "name": "owner_link",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "ip_address": {
           "name": "ip_address",
@@ -11249,6 +11287,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "is_owner": {
+          "name": "is_owner",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "created_at": {
           "name": "created_at",
@@ -12301,152 +12346,6 @@
       },
       "isRLSEnabled": false
     },
-    "inventory.count_scans": {
-      "name": "count_scans",
-      "schema": "inventory",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sku_id": {
-          "name": "sku_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "code": {
-          "name": "code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "qty": {
-          "name": "qty",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "count_scans_org_idx": {
-          "name": "count_scans_org_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "count_scans_org_session_idx": {
-          "name": "count_scans_org_session_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "count_scans_org_id_organizations_id_fk": {
-          "name": "count_scans_org_id_organizations_id_fk",
-          "tableFrom": "count_scans",
-          "columnsFrom": ["org_id"],
-          "tableTo": "organizations",
-          "schemaTo": "org",
-          "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        },
-        "count_scans_org_id_session_id_fk": {
-          "name": "count_scans_org_id_session_id_fk",
-          "tableFrom": "count_scans",
-          "columnsFrom": ["org_id", "session_id"],
-          "tableTo": "count_sessions",
-          "schemaTo": "inventory",
-          "columnsTo": ["org_id", "id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        },
-        "count_scans_org_id_sku_id_fk": {
-          "name": "count_scans_org_id_sku_id_fk",
-          "tableFrom": "count_scans",
-          "columnsFrom": ["org_id", "sku_id"],
-          "tableTo": "skus",
-          "schemaTo": "catalog",
-          "columnsTo": ["org_id", "id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "count_scans_org_id_id_key": {
-          "name": "count_scans_org_id_id_key",
-          "columns": ["org_id", "id"],
-          "nullsNotDistinct": false
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "count_scans_qty_positive": {
-          "name": "count_scans_qty_positive",
-          "value": "\"inventory\".\"count_scans\".\"qty\" between 1 and 1000"
-        },
-        "count_scans_code_length": {
-          "name": "count_scans_code_length",
-          "value": "length(\"inventory\".\"count_scans\".\"code\") between 1 and 64"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "inventory.count_sessions": {
       "name": "count_sessions",
       "schema": "inventory",
@@ -12633,126 +12532,6 @@
         "count_sessions_memo_length": {
           "name": "count_sessions_memo_length",
           "value": "\"inventory\".\"count_sessions\".\"memo\" is null or length(\"inventory\".\"count_sessions\".\"memo\") <= 500"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "inventory.opening_stock_windows": {
-      "name": "opening_stock_windows",
-      "schema": "inventory",
-      "columns": {
-        "org_id": {
-          "name": "org_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'open'"
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "closed_by": {
-          "name": "closed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reopen_approval_id": {
-          "name": "reopen_approval_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reopened_at": {
-          "name": "reopened_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reopened_by": {
-          "name": "reopened_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "opening_stock_windows_org_idx": {
-          "name": "opening_stock_windows_org_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "opening_stock_windows_org_id_organizations_id_fk": {
-          "name": "opening_stock_windows_org_id_organizations_id_fk",
-          "tableFrom": "opening_stock_windows",
-          "columnsFrom": ["org_id"],
-          "tableTo": "organizations",
-          "schemaTo": "org",
-          "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        },
-        "opening_stock_windows_org_id_reopen_approval_id_fk": {
-          "name": "opening_stock_windows_org_id_reopen_approval_id_fk",
-          "tableFrom": "opening_stock_windows",
-          "columnsFrom": ["org_id", "reopen_approval_id"],
-          "tableTo": "approval_requests",
-          "schemaTo": "approvals",
-          "columnsTo": ["org_id", "id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "opening_stock_windows_status_known": {
-          "name": "opening_stock_windows_status_known",
-          "value": "\"inventory\".\"opening_stock_windows\".\"status\" in ('open', 'closed')"
-        },
-        "opening_stock_windows_closed_is_complete": {
-          "name": "opening_stock_windows_closed_is_complete",
-          "value": "\"inventory\".\"opening_stock_windows\".\"status\" <> 'closed' or (\"inventory\".\"opening_stock_windows\".\"closed_at\" is not null and \"inventory\".\"opening_stock_windows\".\"closed_by\" is not null)"
-        },
-        "opening_stock_windows_reopen_is_complete": {
-          "name": "opening_stock_windows_reopen_is_complete",
-          "value": "(\"inventory\".\"opening_stock_windows\".\"reopen_approval_id\" is null) = (\"inventory\".\"opening_stock_windows\".\"reopened_at\" is null)\n          and (\"inventory\".\"opening_stock_windows\".\"reopened_at\" is null) = (\"inventory\".\"opening_stock_windows\".\"reopened_by\" is null)"
         }
       },
       "isRLSEnabled": false
@@ -13224,408 +13003,6 @@
         "sku_costs_basis_not_negative": {
           "name": "sku_costs_basis_not_negative",
           "value": "\"inventory\".\"sku_costs\".\"qty_basis\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "inventory.stock_in_hand_entries": {
-      "name": "stock_in_hand_entries",
-      "schema": "inventory",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "location_id": {
-          "name": "location_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "branch_id": {
-          "name": "branch_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "memo": {
-          "name": "memo",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "occurred_at": {
-          "name": "occurred_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "business_date": {
-          "name": "business_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "journal_id": {
-          "name": "journal_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "posted_by": {
-          "name": "posted_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "posted_at": {
-          "name": "posted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "stock_in_hand_entries_org_idx": {
-          "name": "stock_in_hand_entries_org_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "stock_in_hand_entries_org_status_idx": {
-          "name": "stock_in_hand_entries_org_status_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "stock_in_hand_entries_org_branch_idx": {
-          "name": "stock_in_hand_entries_org_branch_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "branch_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "stock_in_hand_entries_org_id_organizations_id_fk": {
-          "name": "stock_in_hand_entries_org_id_organizations_id_fk",
-          "tableFrom": "stock_in_hand_entries",
-          "columnsFrom": ["org_id"],
-          "tableTo": "organizations",
-          "schemaTo": "org",
-          "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        },
-        "stock_in_hand_entries_org_id_location_id_fk": {
-          "name": "stock_in_hand_entries_org_id_location_id_fk",
-          "tableFrom": "stock_in_hand_entries",
-          "columnsFrom": ["org_id", "location_id"],
-          "tableTo": "locations",
-          "schemaTo": "org",
-          "columnsTo": ["org_id", "id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        },
-        "stock_in_hand_entries_org_id_branch_id_fk": {
-          "name": "stock_in_hand_entries_org_id_branch_id_fk",
-          "tableFrom": "stock_in_hand_entries",
-          "columnsFrom": ["org_id", "branch_id"],
-          "tableTo": "branches",
-          "schemaTo": "org",
-          "columnsTo": ["org_id", "id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        },
-        "stock_in_hand_entries_org_id_journal_id_fk": {
-          "name": "stock_in_hand_entries_org_id_journal_id_fk",
-          "tableFrom": "stock_in_hand_entries",
-          "columnsFrom": ["org_id", "journal_id"],
-          "tableTo": "journals",
-          "schemaTo": "ledger",
-          "columnsTo": ["org_id", "id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "stock_in_hand_entries_org_id_id_key": {
-          "name": "stock_in_hand_entries_org_id_id_key",
-          "columns": ["org_id", "id"],
-          "nullsNotDistinct": false
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "stock_in_hand_entries_status_known": {
-          "name": "stock_in_hand_entries_status_known",
-          "value": "\"inventory\".\"stock_in_hand_entries\".\"status\" in ('draft', 'posted')"
-        },
-        "stock_in_hand_entries_memo_length": {
-          "name": "stock_in_hand_entries_memo_length",
-          "value": "\"inventory\".\"stock_in_hand_entries\".\"memo\" is null or length(\"inventory\".\"stock_in_hand_entries\".\"memo\") <= 500"
-        },
-        "stock_in_hand_entries_posted_is_complete": {
-          "name": "stock_in_hand_entries_posted_is_complete",
-          "value": "case \"inventory\".\"stock_in_hand_entries\".\"status\"\n            when 'posted' then \"inventory\".\"stock_in_hand_entries\".\"journal_id\" is not null and \"inventory\".\"stock_in_hand_entries\".\"occurred_at\" is not null\n              and \"inventory\".\"stock_in_hand_entries\".\"business_date\" is not null and \"inventory\".\"stock_in_hand_entries\".\"posted_by\" is not null\n              and \"inventory\".\"stock_in_hand_entries\".\"posted_at\" is not null\n            else \"inventory\".\"stock_in_hand_entries\".\"journal_id\" is null and \"inventory\".\"stock_in_hand_entries\".\"occurred_at\" is null\n              and \"inventory\".\"stock_in_hand_entries\".\"business_date\" is null and \"inventory\".\"stock_in_hand_entries\".\"posted_by\" is null\n              and \"inventory\".\"stock_in_hand_entries\".\"posted_at\" is null\n          end"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "inventory.stock_in_hand_lines": {
-      "name": "stock_in_hand_lines",
-      "schema": "inventory",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "entry_id": {
-          "name": "entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "line_no": {
-          "name": "line_no",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sku_id": {
-          "name": "sku_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "qty": {
-          "name": "qty",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "unit_cost_poisha": {
-          "name": "unit_cost_poisha",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "stock_in_hand_lines_org_idx": {
-          "name": "stock_in_hand_lines_org_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "stock_in_hand_lines_org_sku_idx": {
-          "name": "stock_in_hand_lines_org_sku_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sku_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "stock_in_hand_lines_org_entry_sku_idx": {
-          "name": "stock_in_hand_lines_org_entry_sku_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "entry_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sku_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "stock_in_hand_lines_org_id_organizations_id_fk": {
-          "name": "stock_in_hand_lines_org_id_organizations_id_fk",
-          "tableFrom": "stock_in_hand_lines",
-          "columnsFrom": ["org_id"],
-          "tableTo": "organizations",
-          "schemaTo": "org",
-          "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        },
-        "stock_in_hand_lines_org_id_entry_id_fk": {
-          "name": "stock_in_hand_lines_org_id_entry_id_fk",
-          "tableFrom": "stock_in_hand_lines",
-          "columnsFrom": ["org_id", "entry_id"],
-          "tableTo": "stock_in_hand_entries",
-          "schemaTo": "inventory",
-          "columnsTo": ["org_id", "id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "stock_in_hand_lines_org_id_sku_id_fk": {
-          "name": "stock_in_hand_lines_org_id_sku_id_fk",
-          "tableFrom": "stock_in_hand_lines",
-          "columnsFrom": ["org_id", "sku_id"],
-          "tableTo": "skus",
-          "schemaTo": "catalog",
-          "columnsTo": ["org_id", "id"],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "stock_in_hand_lines_org_id_id_key": {
-          "name": "stock_in_hand_lines_org_id_id_key",
-          "columns": ["org_id", "id"],
-          "nullsNotDistinct": false
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "stock_in_hand_lines_qty_positive": {
-          "name": "stock_in_hand_lines_qty_positive",
-          "value": "\"inventory\".\"stock_in_hand_lines\".\"qty\" > 0 and \"inventory\".\"stock_in_hand_lines\".\"qty\" <= 1000000"
-        },
-        "stock_in_hand_lines_cost_positive": {
-          "name": "stock_in_hand_lines_cost_positive",
-          "value": "\"inventory\".\"stock_in_hand_lines\".\"unit_cost_poisha\" is null or (\"inventory\".\"stock_in_hand_lines\".\"unit_cost_poisha\" > 0 and \"inventory\".\"stock_in_hand_lines\".\"unit_cost_poisha\" <= 9000000000000000)"
-        },
-        "stock_in_hand_lines_line_no_positive": {
-          "name": "stock_in_hand_lines_line_no_positive",
-          "value": "\"inventory\".\"stock_in_hand_lines\".\"line_no\" > 0"
         }
       },
       "isRLSEnabled": false
@@ -30640,8 +30017,7 @@
         "investor_distribution",
         "investor_withdrawal",
         "loan_repayment",
-        "credential_reset",
-        "opening_stock_reopen"
+        "credential_reset"
       ]
     },
     "audit.audit_operation": {

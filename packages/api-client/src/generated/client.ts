@@ -151,27 +151,12 @@ export const OPERATIONS = {
     path: '/v1/accounts/reports/balance-sheet',
     ability: 'read:LedgerReport',
   },
-  getV1AccountsReportsConsolidatedProfitAndLoss: {
-    method: 'GET',
-    path: '/v1/accounts/reports/consolidated-profit-and-loss',
-    ability: 'read:LedgerReport',
-  },
-  getV1AccountsReportsConsolidatedWallets: {
-    method: 'GET',
-    path: '/v1/accounts/reports/consolidated-wallets',
-    ability: 'read:LedgerReport',
-  },
   getV1AccountsReportsProfitAndLoss: {
     method: 'GET',
     path: '/v1/accounts/reports/profit-and-loss',
     ability: 'read:LedgerReport',
   },
   getV1AccountsWallets: { method: 'GET', path: '/v1/accounts/wallets', ability: 'read:Wallet' },
-  getV1AnalyticsConsolidated: {
-    method: 'GET',
-    path: '/v1/analytics/consolidated',
-    ability: 'read:Dashboard',
-  },
   getV1AnalyticsDashboard: {
     method: 'GET',
     path: '/v1/analytics/dashboard',
@@ -182,11 +167,6 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/analytics/insights',
     ability: 'read:Dashboard',
-  },
-  getV1AnalyticsLeaderboard: {
-    method: 'GET',
-    path: '/v1/analytics/leaderboard',
-    ability: 'read:Leaderboard',
   },
   getV1AnalyticsNarrative: {
     method: 'GET',
@@ -601,6 +581,16 @@ export const OPERATIONS = {
     path: '/v1/promo/codes/{id}/redemptions',
     ability: 'read:LandingPage',
   },
+  getV1PromoFlashSales: {
+    method: 'GET',
+    path: '/v1/promo/flash-sales',
+    ability: 'read:LandingPage',
+  },
+  getV1PromoFlashSalesById: {
+    method: 'GET',
+    path: '/v1/promo/flash-sales/{id}',
+    ability: 'read:LandingPage',
+  },
   getV1StorefrontHeroSlides: {
     method: 'GET',
     path: '/v1/storefront/hero-slides',
@@ -730,6 +720,11 @@ export const OPERATIONS = {
     path: '/v1/promo/codes/{id}',
     ability: 'update:LandingPage',
   },
+  patchV1PromoFlashSalesById: {
+    method: 'PATCH',
+    path: '/v1/promo/flash-sales/{id}',
+    ability: 'update:LandingPage',
+  },
   patchV1StorefrontSettings: {
     method: 'PATCH',
     path: '/v1/storefront/settings',
@@ -767,6 +762,7 @@ export const OPERATIONS = {
     path: '/v1/analytics/rollups/refresh',
     ability: 'update:Dashboard',
   },
+  postV1AuthOwnerLink: { method: 'POST', path: '/v1/auth/owner-link', ability: 'public' },
   postV1CatalogAttributes: {
     method: 'POST',
     path: '/v1/catalog/attributes',
@@ -1213,6 +1209,16 @@ export const OPERATIONS = {
   postV1PosSync: { method: 'POST', path: '/v1/pos/sync', ability: 'update:Wallet' },
   postV1PromoCheck: { method: 'POST', path: '/v1/promo/check', ability: 'read:LandingPage' },
   postV1PromoCodes: { method: 'POST', path: '/v1/promo/codes', ability: 'create:LandingPage' },
+  postV1PromoFlashSales: {
+    method: 'POST',
+    path: '/v1/promo/flash-sales',
+    ability: 'create:LandingPage',
+  },
+  postV1PromoFlashSalesByIdDuplicate: {
+    method: 'POST',
+    path: '/v1/promo/flash-sales/{id}/duplicate',
+    ability: 'create:LandingPage',
+  },
   postV1StorefrontHeroSlides: {
     method: 'POST',
     path: '/v1/storefront/hero-slides',
@@ -1309,6 +1315,11 @@ export const OPERATIONS = {
     ability: 'create:CampaignSpend',
   },
   putV1NotifyTemplates: { method: 'PUT', path: '/v1/notify/templates', ability: 'update:Campaign' },
+  putV1PromoFlashSalesById: {
+    method: 'PUT',
+    path: '/v1/promo/flash-sales/{id}',
+    ability: 'update:LandingPage',
+  },
   putV1StorefrontCategoriesById: {
     method: 'PUT',
     path: '/v1/storefront/categories/{id}',
@@ -1548,26 +1559,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/accounts/reports/balance-sheet */
     getV1AccountsReportsBalanceSheet: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsReportsBalanceSheet, undefined, options),
-    /** GET /v1/accounts/reports/consolidated-profit-and-loss */
-    getV1AccountsReportsConsolidatedProfitAndLoss: (options?: RequestOptions): Promise<unknown> =>
-      request(
-        runtime,
-        OPERATIONS.getV1AccountsReportsConsolidatedProfitAndLoss,
-        undefined,
-        options,
-      ),
-    /** GET /v1/accounts/reports/consolidated-wallets */
-    getV1AccountsReportsConsolidatedWallets: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1AccountsReportsConsolidatedWallets, undefined, options),
     /** GET /v1/accounts/reports/profit-and-loss */
     getV1AccountsReportsProfitAndLoss: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsReportsProfitAndLoss, undefined, options),
     /** GET /v1/accounts/wallets */
     getV1AccountsWallets: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsWallets, undefined, options),
-    /** GET /v1/analytics/consolidated */
-    getV1AnalyticsConsolidated: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1AnalyticsConsolidated, undefined, options),
     /** GET /v1/analytics/dashboard */
     getV1AnalyticsDashboard: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AnalyticsDashboard, undefined, options),
@@ -1577,9 +1574,6 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/analytics/insights */
     getV1AnalyticsInsights: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AnalyticsInsights, undefined, options),
-    /** GET /v1/analytics/leaderboard */
-    getV1AnalyticsLeaderboard: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1AnalyticsLeaderboard, undefined, options),
     /** GET /v1/analytics/narrative */
     getV1AnalyticsNarrative: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AnalyticsNarrative, undefined, options),
@@ -2050,6 +2044,14 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1PromoCodesByIdRedemptions, input, options),
+    /** GET /v1/promo/flash-sales */
+    getV1PromoFlashSales: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PromoFlashSales, undefined, options),
+    /** GET /v1/promo/flash-sales/:id */
+    getV1PromoFlashSalesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PromoFlashSalesById, input, options),
     /** GET /v1/storefront/hero-slides */
     getV1StorefrontHeroSlides: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1StorefrontHeroSlides, undefined, options),
@@ -2235,6 +2237,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1PromoCodesById, input, options),
+    /** PATCH /v1/promo/flash-sales/:id */
+    patchV1PromoFlashSalesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.patchV1PromoFlashSalesById, input, options),
     /** PATCH /v1/storefront/settings */
     patchV1StorefrontSettings: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.patchV1StorefrontSettings, undefined, options),
@@ -2266,6 +2273,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/analytics/rollups/refresh */
     postV1AnalyticsRollupsRefresh: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1AnalyticsRollupsRefresh, undefined, options),
+    /** POST /v1/auth/owner-link */
+    postV1AuthOwnerLink: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1AuthOwnerLink, undefined, options),
     /** POST /v1/catalog/attributes */
     postV1CatalogAttributes: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogAttributes, undefined, options),
@@ -2742,6 +2752,15 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/promo/codes */
     postV1PromoCodes: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PromoCodes, undefined, options),
+    /** POST /v1/promo/flash-sales */
+    postV1PromoFlashSales: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PromoFlashSales, undefined, options),
+    /** POST /v1/promo/flash-sales/:id/duplicate */
+    postV1PromoFlashSalesByIdDuplicate: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PromoFlashSalesByIdDuplicate, input, options),
     /** POST /v1/storefront/hero-slides */
     postV1StorefrontHeroSlides: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1StorefrontHeroSlides, undefined, options),
@@ -2849,6 +2868,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/notify/templates */
     putV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1NotifyTemplates, undefined, options),
+    /** PUT /v1/promo/flash-sales/:id */
+    putV1PromoFlashSalesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1PromoFlashSalesById, input, options),
     /** PUT /v1/storefront/categories/:id */
     putV1StorefrontCategoriesById: (
       input: { readonly path: { readonly id: string } },

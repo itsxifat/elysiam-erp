@@ -25,6 +25,7 @@ const USERS_KEYS = [
   'users.never',
   'users.you',
   'users.superAdmin',
+  'users.owner',
   'users.statusActive',
   'users.statusInvited',
   'users.statusDeactivated',

@@ -777,7 +777,7 @@ describe('phone OTP goes through the SMS provider (D-012)', () => {
     // number, but never writes them out together.
     const phoneNumber = '+8801700000001';
     sms.clear();
-    await sms.send(phoneNumber, 'Your Elysium verification code is 123456');
+    await sms.send(phoneNumber, 'Your verification code is 123456');
 
     expect(sms.lastCodeFor(phoneNumber)).toBe('123456');
     expect(sms.sent.some((entry) => entry.message.includes(phoneNumber))).toBe(false);

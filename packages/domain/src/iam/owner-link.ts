@@ -1,5 +1,5 @@
 /**
- * The owner sign-in link (D-473, M31; minted by the mother ERP, M32).
+ * The owner sign-in link (D-473; minted by whoever holds the owner key).
  *
  * A brand's ERP lets an owner in without a password of their own there: whoever holds the
  * private key mints a short-lived, single-use assertion, and the brand checks it against the

@@ -3,7 +3,7 @@ import type { MembershipRole } from '@elysium/contracts';
 import type { Tx } from '@elysium/db';
 import { maskEmail } from '@elysium/domain';
 
-import { activeMembers } from './users.repository.js';
+import { activeMembers, ownersAmong } from './users.repository.js';
 
 /**
  * Identity's service interface for other modules (invariant 12, D-419).
@@ -29,7 +29,24 @@ export interface BrandMember {
   readonly roles: readonly MembershipRole[];
 }
 
+/** An owner on a record (D-473): their name only for another owner, else null ("Owner"). */
+export interface OwnerOnRecord {
+  readonly userId: string;
+  readonly name: string | null;
+}
+
 export interface IamApi {
+  /**
+   * Which of these people are owners (M31, D-473), for a record that names who did what.
+   * An owner's name goes only to another owner; everyone else is told "Owner" (`name`
+   * null). Everyone not listed is a person the caller names the usual way.
+   */
+  ownersAmong(
+    tx: Tx,
+    userIds: readonly string[],
+    viewer: { readonly isOwner?: boolean | undefined },
+  ): Promise<readonly OwnerOnRecord[]>;
+
   /**
    * People with an enabled account and an active role in this brand, by name. With
    * `roles`, only those holding one of them, and only those roles are reported: the
@@ -46,6 +63,18 @@ export const IAM_API = Symbol('IAM_API');
 
 @Injectable()
 export class IamApiService implements IamApi {
+  async ownersAmong(
+    tx: Tx,
+    userIds: readonly string[],
+    viewer: { readonly isOwner?: boolean | undefined },
+  ): Promise<readonly OwnerOnRecord[]> {
+    const rows = await ownersAmong(tx, userIds);
+    return rows.map((row) => ({
+      userId: row.id,
+      name: viewer.isOwner === true ? row.name : null,
+    }));
+  }
+
   async activeMembers(
     tx: Tx,
     orgId: string,

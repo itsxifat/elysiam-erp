@@ -21,18 +21,17 @@ import { INSIGHT_CODES, type Insight, type InsightCode, type InsightMonth } from
  *    change to the builder that let something through fails closed, not open.
  */
 
-export const NARRATIVE_PAYLOAD_VERSION = 1;
+/**
+ * 2 since M31: the leaderboard block (a rank among the brands) left the payload with the
+ * leaderboard itself, because a brand's ERP knows no other brand (D-471).
+ */
+export const NARRATIVE_PAYLOAD_VERSION = 2;
 
 export interface NarrativeInput {
   /** `YYYY-MM`, Asia/Dhaka. */
   readonly month: string;
   readonly current: InsightMonth;
   readonly previous: InsightMonth;
-  readonly leaderboard: {
-    readonly rank: number | null;
-    readonly brands: number;
-    readonly compositeBps: number | null;
-  };
   readonly insights: readonly Insight[];
   /** The order-channel vocabulary (`ORDER_CHANNELS`); any other channel value is dropped. */
   readonly channelCodes: readonly string[];
@@ -67,11 +66,6 @@ export interface NarrativePayload {
   readonly rateUnit: 'basis_points';
   readonly current: NarrativeFigures;
   readonly previous: NarrativeFigures;
-  readonly leaderboard: {
-    readonly rank: number | null;
-    readonly brands: number;
-    readonly compositeBps: number | null;
-  };
   readonly insights: readonly NarrativeInsight[];
 }
 
@@ -168,11 +162,6 @@ export function buildNarrativePayload(input: NarrativeInput): NarrativePayload {
     rateUnit: 'basis_points',
     current: figures(input.current),
     previous: figures(input.previous),
-    leaderboard: {
-      rank: input.leaderboard.rank,
-      brands: input.leaderboard.brands,
-      compositeBps: input.leaderboard.compositeBps,
-    },
     insights,
   };
 }
@@ -241,7 +230,6 @@ export function assertNarrativePayloadSafe(
     'rateUnit',
     'current',
     'previous',
-    'leaderboard',
     'insights',
   ]);
   const record = payload as Record<string, unknown>;
@@ -257,14 +245,6 @@ export function assertNarrativePayloadSafe(
   if (record.rateUnit !== 'basis_points') throw new NarrativePayloadError('$.rateUnit');
   checkFigures(record.current, '$.current');
   checkFigures(record.previous, '$.previous');
-
-  const board = record.leaderboard as Record<string, unknown> | null;
-  if (typeof board !== 'object' || board === null) throw new NarrativePayloadError('$.leaderboard');
-  for (const [key, leaf] of Object.entries(board)) {
-    if (!['rank', 'brands', 'compositeBps'].includes(key) || !integerOrNull(leaf)) {
-      throw new NarrativePayloadError(`$.leaderboard.${key}`);
-    }
-  }
 
   if (!Array.isArray(record.insights)) throw new NarrativePayloadError('$.insights');
   record.insights.forEach((entry: unknown, index) => {

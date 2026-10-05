@@ -60,9 +60,8 @@ const auditable = (request: FastifyRequest): AuditableRequest =>
  * - Every **report** is `read LedgerReport`: accounts and org_admin at `org`, a
  *   branch manager at `branch` — §6's "branch P&L without cost detail", where the
  *   scope grants the report and the cost strip in the service keeps cost out of it.
- * - The consolidated views declare `read LedgerReport` like the rest and then
- *   refuse anyone who is not a platform super admin, because the ability cannot
- *   express "all orgs" (§5 exception 3).
+ * - Nothing reports across brands: a brand's ERP runs on its own database, and the
+ *   combined wallet and profit-and-loss views left with M31 (D-471).
  *
  * There is deliberately no route that posts an arbitrary journal, and none that
  * approves a variance: a variance is decided through `POST /v1/approvals/:id/decide`
@@ -198,21 +197,5 @@ export class WalletsController {
   async aging(@Req() request: FastifyRequest, @Query() query: unknown) {
     const parsed = parse(agingQuerySchema, query);
     return mapWalletErrors(() => this.reports.aging(requireContext(request), request, parsed));
-  }
-
-  /** Super Admin only, read through `erp_analytics` (§5 exception 3). */
-  @RequireAbility('read', 'LedgerReport')
-  @Get('reports/consolidated-wallets')
-  async consolidatedWallets(@Req() request: FastifyRequest) {
-    return mapWalletErrors(() => this.reports.consolidatedWallets(requireContext(request)));
-  }
-
-  @RequireAbility('read', 'LedgerReport')
-  @Get('reports/consolidated-profit-and-loss')
-  async consolidatedProfitAndLoss(@Req() request: FastifyRequest, @Query() query: unknown) {
-    const range = parse(reportRangeSchema, query);
-    return mapWalletErrors(() =>
-      this.reports.consolidatedProfitAndLoss(requireContext(request), range),
-    );
   }
 }

@@ -136,7 +136,7 @@ const customers = customersRoutes(rootRoute);
 const campaigns = campaignsRoutes(rootRoute);
 /** M18 owns `/marketing`: the dashboard, campaigns, spend, leads and the Meta link. */
 const marketing = marketingRoutes(rootRoute);
-/** M24 owns `/analytics`: the brand dashboard, the leaderboard and all brands. */
+/** M24 owns `/analytics`: the brand's own dashboard. */
 const analytics = analyticsRoutes(rootRoute);
 const courier = courierRoutes(rootRoute);
 /** M23 owns `/branches` and the branch dashboard, defined in `./branches/routes.tsx`. */

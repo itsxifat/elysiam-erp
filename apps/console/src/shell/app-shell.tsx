@@ -1,4 +1,13 @@
-import { Button, cn, Hint, Kbd, Monogram } from '@elysium/ui';
+import {
+  Button,
+  cn,
+  Hint,
+  Kbd,
+  Monogram,
+  readStored,
+  STORAGE_KEYS,
+  writeStored,
+} from '@elysium/ui';
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { Bell, ChevronRight, Menu as MenuIcon, Moon, Search, Sun } from 'lucide-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
@@ -46,14 +55,8 @@ const ScanListener = lazy(() =>
   import('./scan-listener.js').then((module) => ({ default: module.ScanListener })),
 );
 
-const RAIL_KEY = 'elysium-sidebar';
-
 function readRail(): boolean {
-  try {
-    return localStorage.getItem(RAIL_KEY) === 'rail';
-  } catch {
-    return false;
-  }
+  return readStored(STORAGE_KEYS.sidebar) === 'rail';
 }
 
 /**
@@ -112,11 +115,8 @@ export function AppShell() {
   function toggleRail() {
     const next = !rail;
     setRail(next);
-    try {
-      localStorage.setItem(RAIL_KEY, next ? 'rail' : 'full');
-    } catch {
-      // Storage denied: the choice holds for this visit.
-    }
+    // Storage denied: the choice holds for this visit.
+    writeStored(STORAGE_KEYS.sidebar, next ? 'rail' : 'full');
   }
 
   return (

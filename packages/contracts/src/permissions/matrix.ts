@@ -317,15 +317,7 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     // raise it could exempt their own team's requests.
     { action: ['read', 'update'], subject: 'ApprovalThreshold', scope: 'org' },
     { action: 'read', subject: 'AuditLog', scope: 'org' },
-    /*
-     * The one cross-org grant an ordinary role holds, and §18 is explicit
-     * about why it is not a tenancy hole: org admins see other orgs'
-     * **normalized metrics and ranks only**, never raw financials (D-023),
-     * read through `erp_analytics` (§5 exception 2), carrying no money at all.
-     * The matrix test allows exactly this cell by name and fails on any other
-     * `all` scope.
-     */
-    { action: 'read', subject: 'Leaderboard', scope: 'all' },
+    // No cross-org grant: the leaderboard across brands left the brand's ERP (M31, D-471).
     // M24 (D-325): the brand's own dashboard, and recomputing its rollups.
     { action: ['read', 'update'], subject: 'Dashboard', scope: 'org' },
     // M33 (D-508): the brand's website: settings, hero, menu, size charts, web fields, keys.

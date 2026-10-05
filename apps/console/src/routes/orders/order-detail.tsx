@@ -136,11 +136,15 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
   );
   // An intake order is created by the site key, not by a person (`intake:<key>`), and is
   // named as the channel it came through rather than shown as an opaque id.
+  // An owner is named only to another owner; everyone else reads "Owner" (D-473).
+  const owners = new Map((order.owners ?? []).map((owner) => [owner.userId, owner.name]));
   const nameOf = (userId: string | null): string =>
     userId === null
       ? t('orders.timeline.system')
-      : (names.get(userId) ??
-        (userId.startsWith('intake:') ? t('orders.channel.landing_page') : userId));
+      : owners.has(userId)
+        ? (owners.get(userId) ?? t('orders.timeline.owner'))
+        : (names.get(userId) ??
+          (userId.startsWith('intake:') ? t('orders.channel.landing_page') : userId));
 
   const area = areas.data?.areas.find((entry) => entry.thanaId === order.shipTo.thanaId);
   const zone = areas.data?.zones.find((entry) => entry.id === order.deliveryZoneId);

@@ -1,11 +1,12 @@
 import { Skeleton } from '@elysium/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 
 import { endpoints, type LoginBranding } from './api.js';
 import { applyBrand, clearBrand } from './brand.js';
 import { LoginScreen } from './auth/login-screen.js';
+import { isOwnerLinkPage } from './auth/password-link.js';
 import { passwordLinkPage, SetPasswordScreen } from './auth/set-password-screen.js';
 import { SessionProvider, useSessionQuery } from './auth/session.js';
 import { LocaleProvider, useT } from './i18n/locale.js';
@@ -26,6 +27,11 @@ import { router } from './routes/router.js';
  * than a hand-written cascade of refetches. The session provider and the router
  * are innermost, so every route can assume both.
  */
+
+/** Its own chunk: only an owner ever opens it (M31, D-473). */
+const OwnerLinkScreen = lazy(() =>
+  import('./auth/owner-link-screen.js').then((module) => ({ default: module.OwnerLinkScreen })),
+);
 
 function createQueryClient(): QueryClient {
   return new QueryClient({
@@ -100,6 +106,15 @@ function Boot() {
    */
   const linkPage = passwordLinkPage(window.location.pathname);
   if (linkPage !== null) return <SetPasswordScreen page={linkPage} branding={branding} />;
+
+  // An owner sign-in link (M31, D-473): it makes the session, so it comes before one is read.
+  if (isOwnerLinkPage(window.location.pathname)) {
+    return (
+      <Suspense fallback={<BootSkeleton />}>
+        <OwnerLinkScreen branding={branding} />
+      </Suspense>
+    );
+  }
 
   if (session.isPending) return <BootSkeleton />;
 

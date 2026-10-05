@@ -43,12 +43,12 @@ async function noBlockingViolations(label: string): Promise<void> {
 async function bothThemes(name: string): Promise<void> {
   await noBlockingViolations(`${name} (light)`);
   await shot(`${name}-light`);
-  await page.evaluate(() => localStorage.setItem('elysium-theme', 'dark'));
+  await page.evaluate(() => localStorage.setItem('erp-theme', 'dark'));
   await page.reload();
   await page.waitForLoadState('networkidle');
   await noBlockingViolations(`${name} (dark)`);
   await shot(`${name}-dark`);
-  await page.evaluate(() => localStorage.setItem('elysium-theme', 'light'));
+  await page.evaluate(() => localStorage.setItem('erp-theme', 'light'));
   await page.reload();
   await page.waitForLoadState('networkidle');
 }
@@ -66,26 +66,27 @@ test.afterAll(async () => {
   await page.context().close();
 });
 
-test('promo codes: marketing makes a code, sees it listed, and pauses it', async () => {
+test('discounts: marketing makes a code, sees it listed, and pauses it', async () => {
   await page.goto('/campaigns');
-  await expect(page.getByRole('heading', { name: 'Promo codes' })).toBeVisible();
+  // M35a renamed the screen Discounts; a code is still made the M16 way (D-541).
+  await expect(page.getByRole('heading', { name: 'Discounts' })).toBeVisible();
   // The desk's seeded code is already there.
   await expect(page.getByText(stack().promoCode, { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'New code' }).click();
-  const dialog = page.getByRole('dialog', { name: 'New promo code' });
+  await page.getByRole('button', { name: 'New discount' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New discount' });
   const code = `WIN${run}`;
   await dialog.getByRole('textbox', { name: 'Code' }).fill(code);
   // A wrong rate is named beside the field, not sent.
   await dialog.getByRole('textbox', { name: 'Percent off' }).fill('150');
-  await dialog.getByRole('button', { name: 'Create code' }).click();
+  await dialog.getByRole('button', { name: 'Create discount' }).click();
   await expect(dialog.getByRole('alert')).toContainText('between 0.01 and 100');
 
   await dialog.getByRole('textbox', { name: 'Percent off' }).fill('12.5');
   await dialog.getByRole('textbox', { name: 'Minimum order (Tk)' }).fill('1000');
   await dialog.getByRole('textbox', { name: 'Total uses' }).fill('200');
   await dialog.getByRole('checkbox', { name: 'Facebook' }).check();
-  await dialog.getByRole('button', { name: 'Create code' }).click();
+  await dialog.getByRole('button', { name: 'Create discount' }).click();
   await expect(dialog).toBeHidden();
 
   const row = page.getByRole('row', { name: new RegExp(code) });

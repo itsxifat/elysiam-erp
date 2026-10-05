@@ -391,6 +391,14 @@ export const ERROR_CODES = [
   'PROMO_CODE_TAKEN',
   'PROMO_INVALID',
   'PROMO_REDEMPTION_IMMUTABLE',
+  // Flash sales (M35a)
+  'FLASH_SALE_NOT_FOUND',
+  /** A claim refused: sold out, not live, switched off, or the sale price moved. */
+  'FLASH_SALE_UNAVAILABLE',
+  /** Another sale of this brand already has that slug. */
+  'FLASH_SALE_SLUG_TAKEN',
+  'FLASH_SALE_INVALID',
+  'FLASH_CLAIM_IMMUTABLE',
   'NOTIFY_TEMPLATE_INVALID',
   'NOTIFY_MESSAGE_IMMUTABLE',
   'CRM_OCCASION_IMMUTABLE',
