@@ -570,25 +570,19 @@ export class FilesService {
 
   /**
    * The public images among these ids, with each size's dimensions, for the storefront API
-   * to describe. A file that is private, pending, of another purpose or of another brand is
-   * simply absent: the website is never told it exists.
+   * to describe — inside the caller's transaction, never a second connection inside one (the
+   * M33 ledger audit's H1). A file that is private, pending, of another purpose or of another
+   * brand is simply absent: the website is never told it exists.
    */
-  async publicImages(
-    orgId: string,
-    fileIds: readonly string[],
-  ): Promise<ReadonlyMap<string, PublicImage>> {
-    const ids = [...new Set(fileIds)].filter((id) => UUID.test(id));
-    return describePublic(await publicMediaRows(orgId, ids, PUBLIC_MEDIA_PURPOSES));
-  }
-
-  /** The same, inside the caller's transaction (never a second connection inside one). */
   async publicImagesIn(
     tx: Tx,
     orgId: string,
     fileIds: readonly string[],
+    purposes: readonly FilePurpose[] = PUBLIC_MEDIA_PURPOSES,
   ): Promise<ReadonlyMap<string, PublicImage>> {
     const ids = [...new Set(fileIds)].filter((id) => UUID.test(id));
-    return describePublic(await publicMediaRowsIn(tx, orgId, ids, PUBLIC_MEDIA_PURPOSES));
+    const allowed = purposes.filter((purpose) => PUBLIC_MEDIA_PURPOSES.includes(purpose));
+    return describePublic(await publicMediaRowsIn(tx, orgId, ids, allowed));
   }
 
   /**

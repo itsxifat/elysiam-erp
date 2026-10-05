@@ -168,7 +168,15 @@ export class StorefrontPublicService {
         orgId,
         images.map((image) => image.fileId),
       );
-      const card = this.card(orgId, product, skus, images, media, available, categories);
+      const card = this.card(
+        orgId,
+        product,
+        skus,
+        images,
+        media,
+        available,
+        visibleCategories(categories),
+      );
 
       return {
         product: {
@@ -415,6 +423,7 @@ export class StorefrontPublicService {
   ) {
     if (rows.length === 0) return [];
     const ids = rows.map((row) => row.id);
+    const shown = visibleCategories(categories);
     const [skus, images, webLocations] = await Promise.all([
       this.catalog.webSkus(tx, orgId, ids),
       this.catalog.webImages(tx, orgId, ids),
@@ -448,7 +457,7 @@ export class StorefrontPublicService {
         firstTwo.filter((image) => image.productId === row.id),
         media,
         available,
-        categories,
+        shown,
       ),
     );
   }
@@ -462,10 +471,9 @@ export class StorefrontPublicService {
     available: ReadonlyMap<string, number>,
     categories: readonly WebCategory[],
   ) {
-    // Only a category the website shows (D-501): a hidden one is not named on a card.
-    const category = visibleCategories(categories).find(
-      (candidate) => candidate.id === row.categoryId,
-    );
+    // Only a category the website shows (D-501): a hidden one is not named on a card. The
+    // caller passes the visible ones, worked out once per request.
+    const category = categories.find((candidate) => candidate.id === row.categoryId);
     const pictures = images
       .map((image) => this.image(orgId, image.fileId, image.altText ?? row.name, media))
       .filter((image): image is WireImage => image !== null);

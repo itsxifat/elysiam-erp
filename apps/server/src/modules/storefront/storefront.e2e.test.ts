@@ -22,6 +22,7 @@ import {
 import { resetFilesEnv } from '../files/files.config.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { makeLocation, warehouseId } from '../inventory/inventory.testing.js';
+import { STOREFRONT_API, type StorefrontApi } from './storefront.api.js';
 import { newKeyId } from '../intake/signature.js';
 import {
   insertTestSiteKey,
@@ -1226,6 +1227,9 @@ describe('audit, isolation and load (the M33 ledger audit)', () => {
     ).toString('base64url');
     expect((await signed(`/storefront/v1/catalog/products?cursor=${impossible}`)).status).toBe(400);
     expect((await signed('/storefront/v1/catalog/products?size=M%00')).status).toBe(400);
+    // A repeated parameter is an array to the server; the last one wins, never a 500.
+    expect((await signed('/storefront/v1/catalog/search?q=shirt&q=oxford')).status).toBe(200);
+    expect((await signed('/storefront/v1/geo/thanas?districtId=1&districtId=2')).status).toBe(200);
   });
 
   it('lets only the website’s managers upload website images', async () => {
@@ -1257,4 +1261,85 @@ describe('audit, isolation and load (the M33 ledger audit)', () => {
     expect(answers.map((answer) => answer.statusCode)).toEqual(answers.map(() => 200));
     expect(Date.now() - started).toBeLessThan(20_000);
   }, 30_000);
+});
+
+describe('old ids, products with nothing to sell and category pictures', () => {
+  it('keeps the old site’s ids per brand, once each', async () => {
+    const storefront = harness.app.get<StorefrontApi>(STOREFRONT_API, { strict: false });
+    const recorded = await withOrg({ orgId: ORG_A, userId: admin.userId }, (tx) =>
+      storefront.recordLegacyIds(tx, ORG_A, [
+        { kind: 'product', legacyId: '64f0c0ffee0000000000aa01', erpId: seeded.shirt.id },
+        { kind: 'product', legacyId: '64f0c0ffee0000000000aa02', erpId: seeded.polo.id },
+      ]),
+    );
+    expect(recorded).toBe(2);
+    // Recording one again changes nothing: an old id maps to what it became, once.
+    const again = await withOrg({ orgId: ORG_A, userId: admin.userId }, (tx) =>
+      storefront.recordLegacyIds(tx, ORG_A, [
+        { kind: 'product', legacyId: '64f0c0ffee0000000000aa01', erpId: seeded.polo.id },
+      ]),
+    );
+    expect(again).toBe(0);
+    const found = await withOrg({ orgId: ORG_A }, (tx) =>
+      storefront.legacyIds(tx, ORG_A, 'product', [
+        '64f0c0ffee0000000000aa01',
+        '64f0c0ffee0000000000aa02',
+        'unknown',
+      ]),
+    );
+    expect(Object.fromEntries(found)).toEqual({
+      '64f0c0ffee0000000000aa01': seeded.shirt.id,
+      '64f0c0ffee0000000000aa02': seeded.polo.id,
+    });
+    // Another brand sees none of them.
+    const theirs = await withOrg({ orgId: ORG_B }, (tx) =>
+      storefront.legacyIds(tx, ORG_B, 'product', ['64f0c0ffee0000000000aa01']),
+    );
+    expect(theirs.size).toBe(0);
+  });
+
+  it('keeps a shown product with no active size off the website', async () => {
+    const bare = await json<{ id: string; slug: string }>(
+      admin.client,
+      'POST',
+      '/v1/catalog/products',
+      {
+        name: `Coming soon ${suffix}`,
+        slug: `coming-soon-${suffix}`,
+        status: 'active',
+        pricePoisha: '100000',
+        generateSkus: false,
+      },
+    );
+    expect(bare.status, bare.raw).toBe(201);
+    await setWeb(bare.body.id, { webVisible: true });
+    const list = await signed<{ items: { id: string }[] }>(
+      '/storefront/v1/catalog/products?limit=60',
+    );
+    expect(list.body.items.some((item) => item.id === bare.body.id)).toBe(false);
+    expect((await signed(`/storefront/v1/catalog/products/${bare.body.slug}`)).status).toBe(404);
+  });
+
+  it('takes a category picture only from a category-image upload', async () => {
+    const ticket = async (purpose: string) => {
+      const created = await json<{ fileId: string }>(marketing.client, 'POST', '/v1/files', {
+        purpose,
+        contentType: 'image/png',
+        sizeBytes: 1024,
+        visibility: 'public',
+      });
+      expect(created.status, created.raw).toBe(201);
+      return created.body.fileId;
+    };
+    // A pending upload is not a picture yet, whatever its purpose.
+    const pending = await ticket('category-image');
+    const refused = await json<{ code: string }>(
+      marketing.client,
+      'PUT',
+      `/v1/storefront/categories/${seeded.menswear}`,
+      { imageFileId: pending },
+    );
+    expect(refused.status).toBe(404);
+    expect(refused.body.code).toBe('STOREFRONT_NOT_FOUND');
+  });
 });

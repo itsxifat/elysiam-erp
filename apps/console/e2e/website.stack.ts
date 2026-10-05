@@ -250,7 +250,7 @@ test('the website key is issued once, and the website reads what was saved', asy
   expect(keyId).toMatch(/^pk_/);
   expect(secret).toMatch(/^sk_/);
   issued = { keyId, secret };
-  await shot('website-connection-secret');
+  // No screenshot of this dialog: even a throwaway stack's secret does not go into the repo.
   await dialog.getByRole('button', { name: 'Close' }).first().click();
   await expect(page.getByRole('cell', { name: keyId })).toBeVisible();
   // Listed without its secret: the page holds no copy of it any more.

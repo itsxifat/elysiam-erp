@@ -205,7 +205,8 @@ The district and thana lists couriers deliver by, for M34's checkout:
 
 ## Images
 
-Image URLs in every answer point at `https://<api host or CDN>/media/<org id>/<file id>/<thumb|card|full>`
+Image URLs in every answer point at `<STOREFRONT_MEDIA_BASE_URL>/media/<org id>/<file id>/<thumb|card|full>`
+(the API's public address unless the brand sets a CDN in front of `/media/`)
 (160, 640 and 1600 pixels on the longest side, WebP, metadata stripped). They are public,
 served with `Cache-Control: public, max-age=31536000, immutable` and the variant's SHA-256 as
 `ETag`, so a browser or the website's image optimiser may load them directly. Only product,

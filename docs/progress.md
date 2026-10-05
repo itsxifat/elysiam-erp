@@ -1417,3 +1417,103 @@ destination?)` and adds the preview kit's `LOG_DESTINATION=stderr`. Migrations 0
   SSLCommerz, SMTP, Meta, GA4 and ncom credentials; the accountant's cost per piece for the
   website's stock; a switch-over date.
 - Next: integrate M31, M32 and M33; then M34 and M35.
+
+### 2026-10-05 · M33 · The website's catalog and content, run from the ERP · built
+
+- Delivered (branch `m33-storefront-catalog`, continuous build mode, plan `docs/plans/M33.md`):
+  - **The data.** Web fields on `catalog.products` (`web_visible` separate from `status` and off
+    for a new product, featured, new arrival, gender, material, care, tags, size chart, SEO
+    title and description, `previous_slugs` kept by a trigger; descriptions to 20,000
+    characters) and on `catalog.categories` (shown on the website, featured, gender,
+    description, picture). A new tenant schema `storefront`: `settings`, `web_locations`,
+    `hero_slides`, `nav_items`, `size_charts`, `legacy_ids`, `site_keys`, all RLS ENABLE and
+    FORCE from `tenantTableSql()` with composite foreign keys. Migrations
+    `0103_m33_storefront_schema.sql` (generated) and `0104_m33_storefront_policies.sql`
+    (policies, grants, the size-chart foreign key, the slug-history triggers, search text with
+    tags and material).
+  - **The rules** (`packages/domain/src/storefront/`, fast-check): `availableForWeb`,
+    `storefrontPrice` and the `{ poisha, taka }` wire money, the slug history
+    (`recordSlugChange`, `releaseSlug`, `resolveSlug`), the shipping rule, the product list's
+    parameters and cursor, tags, safe links, size charts, the category tree and the menu.
+  - **The storefront read API** `/storefront/v1/*` (`docs/storefront-api.md`): products with
+    category subtree, gender, tags, size, price range, featured, new arrival, on sale and
+    search, six sorts, a keyset cursor plus `page` and `total`; a product by slug with each
+    size's live availability at the web locations, images, size chart, breadcrumb and related
+    products, and `{ redirect: { slug } }` for an old address; the category tree; search; the
+    site in one answer (settings, hero, menu, announcement, promo, testimonials, shipping,
+    payments); size charts; districts and thanas. Signed with `X-Api-Key`, `X-Api-Timestamp`,
+    `X-Api-Signature` over `timestamp.METHOD.path?query`, ±5 minutes, keys derived from
+    `INTAKE_KEY_SECRET` under their own label; every answer through `serializeForStorefront`
+    (an allow-list at every depth, then the cost deny-list), with an ETag, `304` and
+    `Cache-Control: private, max-age=30, stale-while-revalidate=300`.
+  - **Public images**: `GET /media/<org>/<file>/<thumb|card|full>` for stored public product,
+    category and website images only, never an original, cached a year.
+  - **The console**: a **Website** section in the Sell group (Settings by section, Hero slides
+    and Menu with drag and arrows, a Size chart grid editor, Connection for the website's keys
+    with the secret shown once), the product page's **Website** card with "View on website",
+    and a **Website** dialog per category on Catalog setup. A `Storefront` subject: org_admin
+    and marketing manage, sales reads. Lazy-loaded; strings in bn and en.
+  - **For M34 to M36**: `STOREFRONT_API` (web locations, the shipping rule, old ids),
+    `OrdersApi.deliveryZones`, `InventoryApi.levelsAt`, `CatalogApi` web reads,
+    `FilesService.publicImagesIn`, the POST signing base for M34's checkout.
+- Verification:
+  - Acceptance check 1 (hidden never reaches the website; live availability at the web
+    locations only): `storefront.e2e.test.ts` › "what the shop shows" — a hidden and an
+    archived product absent from list and search and 404 on their pages; the shirt's sizes
+    read S 5, M 3 (4 less 1 held), L 0 at the warehouse, then S 5, M 12, L 3 once the showroom
+    is a web location. PASS.
+  - Check 2 (an old slug redirects): "old addresses" — a renamed product's old slug answers
+    `{ redirect: { slug } }`; another product taking it stops the redirect; another brand
+    taking it leaves this brand's redirect alone; domain property test of the history rule.
+    PASS.
+  - Check 3 (401s; no cost field): "the signature" — no headers, a malformed, unknown,
+    revoked, other-master or landing-page key, a wrong signature, another path or query, and
+    a timestamp 301 s either side all answer the same 401; `cost-sweep.e2e.test.ts` drives
+    every live `/storefront/v1` route with a website key and finds no cost or cost-like key.
+    PASS.
+  - Check 4 (round trip through the console): `website.stack.ts` against the real stack, 7 of
+    7 passed (ports 3213/5286), first at `ef62846` and again after the audit fixes at
+    `21672da` (48.2 s): settings by section, two hero slides reordered, a menu with a dropdown,
+    a size chart, a key issued and the saved site read back through the signed API with it, a
+    product put on the website from its card. axe clean (serious and critical) on settings,
+    hero, menu and size charts. Screenshots in `docs/review/M33/` (`dd30f7a`); the dialog that
+    shows a key's secret is not screenshotted (`b2792ae`; an earlier commit carried one from a
+    throwaway database, useless without that database's key row). PASS.
+  - Check 5: `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at `21672da`:
+    194 test files, 3,083 passed, 1 skipped (pre-existing); format, lint, typecheck, build,
+    bundle (initial route 246.1 KB of 250), migrations, schema drift (103 migrations agree),
+    route matrix (358 routes, 341 matrix-tested, 17 public), i18n (3,256 keys) and api-client
+    all pass. The route-matrix and cost-sweep suites pass with the 21 new console routes.
+- Auditors: ledger-auditor first pass 0 critical, 1 high (a nested `withOrg` in the public
+  reads could starve the pool under concurrent traffic), 1 medium (key issue and revoke and
+  settings saves audited only after the response; the `pin` pattern redacted the whole
+  shipping section), 6 low, 6 notes — all fixed (`7808488`) except the notes recorded below;
+  re-check 0 critical, 0 high, 0 medium, 1 low (a repeated query parameter), 6 notes — the low
+  and five notes fixed (`21672da`). acceptance-auditor: READY, all five checks PASS; its
+  scope notes fixed after: the category picture is checked through `FilesService`
+  (`publicImagesIn` with a purpose), not by a new catalog read of `files.objects`; the old-id
+  map, a shown product with no active size and a pending category picture gained tests; the
+  doc nits.
+- Decisions/assumptions: D-500 to D-512 (D-500, D-501, D-503, D-506, D-507, D-509, D-510,
+  D-511 and D-512 ASSUMED).
+- New dependencies: none.
+- Deviations from the milestone spec: two migration files (schema, then policies and
+  triggers), as every milestone writes them; `Cache-Control` is `private` as well (D-506);
+  the list also takes `page` and returns `total` for the old shop's numbered pages (D-506);
+  website keys reuse `INTAKE_KEY_SECRET` under their own label (D-509); "drag to reorder" is
+  native drag and drop plus arrow buttons, no library.
+- Owner questions: exact stock quantities on the website, or only in and out of stock
+  (D-510); new products start off the website (D-500); the product path for "View on
+  website" is the old site's `/shop/<slug>` (D-503, confirm in M36).
+- Follow-ups: the audit redaction matches `pin` and `nid` as substrings (`shipping`,
+  `locationIds`), which redacts innocent keys across the system — match whole segments
+  (owner: claude); `storefront_settings_org_idx` duplicates the settings primary key (drop in
+  a later migration; harmless); M36's importer must write products inside the brand's
+  `withOrg()` so the slug triggers see the brand (§31); a 1,920-pixel image size if the hero
+  looks soft (D-507); nginx or a CDN cache in front of `/media/` at go-live (M37).
+- Integration notes: migrations `0103_m33_storefront_schema.sql` and
+  `0104_m33_storefront_policies.sql` (renumber at integration; 0103's journal entry and
+  snapshots come with them); the i18n blocks sit before `common.today` in both catalogues;
+  `openapi.json` and the generated client are regenerated by `pnpm api:client`; M31's
+  neutral header names are what this API uses from the start.
+- Next: M34 (buying on the website) on the storefront API; M36 converts the website onto it.
