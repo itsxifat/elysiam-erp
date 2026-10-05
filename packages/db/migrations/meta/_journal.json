@@ -729,6 +729,13 @@
       "when": 1791195810204,
       "tag": "0105_m31_owner_link_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1791197922263,
+      "tag": "0106_m31_owner_no_password",
+      "breakpoints": true
     }
   ]
 }

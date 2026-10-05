@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createApiAdapter, trustProxyFor } from './main.api.js';
+import { createApiAdapter, isPrivateAddress, trustProxyFor } from './main.api.js';
 import { createLogger } from './platform/logging/logger.js';
 import { setServerTestEnv } from './testing/test-env.js';
 
@@ -47,7 +47,11 @@ describe('the API adapter the production process builds', () => {
  * address for every visitor; the adapter now hands it a hop function.
  */
 describe('the client address behind the proxy', () => {
-  async function ipSeen(count: number, headers: Record<string, string>): Promise<string> {
+  async function ipSeen(
+    count: number,
+    headers: Record<string, string>,
+    peer = '127.0.0.1',
+  ): Promise<string> {
     setServerTestEnv();
     const instance = createApiAdapter(count, createLogger('api-adapter-test')).getInstance();
     instance.get('/ip', (request, reply) => {
@@ -57,7 +61,7 @@ describe('the client address behind the proxy', () => {
     const response = await instance.inject({
       method: 'GET',
       url: '/ip',
-      remoteAddress: '127.0.0.1',
+      remoteAddress: peer,
       headers,
     });
     await instance.close();
@@ -82,5 +86,18 @@ describe('the client address behind the proxy', () => {
       true,
       false,
     ]);
+  });
+
+  it('trusts no header from a peer on a public address, as a port published by mistake', async () => {
+    expect(await ipSeen(1, { 'x-forwarded-for': '203.0.113.7' }, '198.51.100.20')).toBe(
+      '198.51.100.20',
+    );
+    expect(await ipSeen(1, { 'x-forwarded-for': '203.0.113.7' }, '172.18.0.1')).toBe('203.0.113.7');
+    expect(
+      ['127.0.0.1', '::1', '::ffff:10.0.0.4', '192.168.1.2', 'fd00::1'].every(isPrivateAddress),
+    ).toBe(true);
+    expect(['8.8.8.8', '172.32.0.1', '2001:db8::1', 'not-an-ip'].some(isPrivateAddress)).toBe(
+      false,
+    );
   });
 });

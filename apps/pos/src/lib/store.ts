@@ -93,15 +93,19 @@ function openTill(factory: IDBFactory): Promise<IDBDatabase> {
 
 function database(): Promise<IDBDatabase> {
   opened ??= openTill(indexedDB).then(async (db) => {
-    try {
-      await moveLegacyDatabases(indexedDB, db);
-    } catch {
-      // The old database stays whole and the next start tries again; the till works on.
-    }
+    // The old database stays whole on any failure, and the next start tries again.
+    const move = moveLegacyDatabases(indexedDB, db).catch(() => 0);
+    // Never held up by an older build's tab: an open of its database can wait in the
+    // browser's queue behind another tab's, so after a few seconds the till works on and
+    // the move finishes behind it (its entries join the queue the next time it is read).
+    await Promise.race([move, new Promise((resolve) => setTimeout(resolve, LEGACY_MOVE_WAIT_MS))]);
     return db;
   });
   return opened;
 }
+
+/** How long a start waits for an older build's queue before the till works on. */
+const LEGACY_MOVE_WAIT_MS = 3_000;
 
 function openExisting(factory: IDBFactory, name: string): Promise<IDBDatabase | undefined> {
   return new Promise((resolve, reject) => {
@@ -193,17 +197,16 @@ export async function moveLegacyDatabases(
     const outbox = transaction.objectStore('outbox');
     const kv = transaction.objectStore('kv');
     // Copied entries queue after the till's own, in their old order: `seq` is unique.
-    const ours = (await result(outbox.getAll())) as OutboxEntry[];
+    // The highest `seq` the till holds: its counter, or its newest entry if that is higher.
     const counter: unknown = await result(kv.get(QUEUE_COUNTER));
+    const newest = await result(outbox.index('seq').openCursor(null, 'prev'));
     let next = Math.max(
       typeof counter === 'number' ? counter : 0,
-      ...ours.map((entry) => entry.seq),
-      0,
+      newest === null ? 0 : (newest.value as OutboxEntry).seq,
     );
-    const held = new Set(ours.map((entry) => entry.id));
     for (const entry of [...contents.outbox].sort((a, b) => a.seq - b.seq)) {
       // Never over an entry the new database already has: it may have synced since.
-      if (held.has(entry.id)) continue;
+      if ((await result(outbox.getKey(entry.id))) !== undefined) continue;
       next += 1;
       outbox.add({ ...entry, seq: next });
       copied += 1;

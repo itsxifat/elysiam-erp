@@ -379,6 +379,17 @@ describe('an owner on the brand’s records', () => {
         ),
       ),
     ).toContain('OWNER_LINK_FIXED');
+    // Nor a password, by any road: an owner never holds an account row.
+    expect(
+      await failure(
+        withGlobal((tx) =>
+          tx.execute(sql`
+            insert into iam.accounts (id, account_id, provider_id, user_id, password)
+            values ('acc_forged', ${ownerId}, 'credential', ${ownerId}, 'not-a-hash')
+          `),
+        ),
+      ),
+    ).toContain('OWNER_HAS_NO_PASSWORD');
   });
 
   it('reads "Owner" on an order to staff, and the name to another owner', async () => {

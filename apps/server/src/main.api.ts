@@ -21,6 +21,7 @@ import { serverEnv } from './platform/config/env.js';
 import { createLogger } from './platform/logging/logger.js';
 import { reportError, shutdownObservability } from './platform/observability/errors.js';
 import type { Logger } from 'pino';
+import { isIP } from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { registerAuth } from './platform/http/auth-plugin.js';
 import { corsOptions } from './platform/http/cors.js';
@@ -56,7 +57,30 @@ import { loadDeploymentBrand } from './platform/brand/deployment.js';
  */
 export function trustProxyFor(count: number): false | ((address: string, hop: number) => boolean) {
   if (!Number.isSafeInteger(count) || count <= 0) return false;
-  return (_address, hop) => hop < count;
+  // The nearest hop must also be a machine of ours (loopback or a private network, as the
+  // host's nginx and Docker's bridge are): a port published to the internet by mistake
+  // then trusts nothing, rather than a visitor's own header.
+  return (address, hop) => hop < count && (hop > 0 || isPrivateAddress(address));
+}
+
+/** Loopback, private (RFC 1918), unique-local or link-local, IPv4-mapped included. */
+export function isPrivateAddress(address: string): boolean {
+  const lower = address.toLowerCase();
+  const v4 = lower.startsWith('::ffff:') ? lower.slice('::ffff:'.length) : lower;
+  if (isIP(v4) === 4) {
+    const [a = -1, b = -1] = v4.split('.').map(Number);
+    return (
+      a === 127 ||
+      a === 10 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254)
+    );
+  }
+  if (isIP(lower) === 6) {
+    return lower === '::1' || /^f[cd]/.test(lower) || /^fe[89ab]/.test(lower);
+  }
+  return false;
 }
 
 export function createApiAdapter(trustedProxyCount: number, logger: Logger): FastifyAdapter {
