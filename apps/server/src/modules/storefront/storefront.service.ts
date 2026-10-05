@@ -130,7 +130,7 @@ export class StorefrontService {
           isActive: zone.isActive,
         })),
       },
-      updatedAt: row === undefined ? null : row.updated_at.toISOString(),
+      updatedAt: row === undefined ? null : iso(row.updated_at),
     };
   }
 
@@ -509,6 +509,14 @@ export class StorefrontService {
   }
 }
 
+/**
+ * A timestamp as ISO text. `tx.execute` hands `timestamptz` back as the driver's text, not a
+ * `Date`, so both are accepted and normalised here.
+ */
+function iso(value: Date | string): string {
+  return (value instanceof Date ? value : new Date(value)).toISOString();
+}
+
 function blankToNull(value: string | null | undefined): string | null {
   if (value === undefined || value === null) return null;
   const trimmed = value.trim();
@@ -566,7 +574,7 @@ export function chartView(row: repo.SizeChartRow) {
     name: row.name,
     columns: row.columns,
     rows: Array.isArray(row.rows) ? row.rows : [],
-    updatedAt: row.updated_at.toISOString(),
+    updatedAt: iso(row.updated_at),
   };
 }
 
@@ -575,8 +583,8 @@ function keyView(row: repo.SiteKeyRow) {
     id: row.id,
     label: row.label,
     keyId: row.key_id,
-    lastUsedAt: row.last_used_at === null ? null : row.last_used_at.toISOString(),
-    revokedAt: row.revoked_at === null ? null : row.revoked_at.toISOString(),
-    createdAt: row.created_at.toISOString(),
+    lastUsedAt: row.last_used_at === null ? null : iso(row.last_used_at),
+    revokedAt: row.revoked_at === null ? null : iso(row.revoked_at),
+    createdAt: iso(row.created_at),
   };
 }

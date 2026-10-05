@@ -25,7 +25,7 @@ export interface SettingsRow extends Record<string, unknown> {
   readonly testimonials: unknown;
   readonly shipping: unknown;
   readonly payments: unknown;
-  readonly updated_at: Date;
+  readonly updated_at: Date | string;
 }
 
 export async function settingsOf(tx: Tx, orgId: string): Promise<SettingsRow | undefined> {
@@ -116,7 +116,7 @@ export async function replaceWebLocations(
 
 export async function orgName(tx: Tx, orgId: string): Promise<string | undefined> {
   const rows = await tx.execute<{ name: string }>(sql`
-    select name from org.organizations where id = ${orgId}
+    select display_name as name from org.organizations where id = ${orgId}
   `);
   return rows[0]?.name;
 }
@@ -351,7 +351,7 @@ export interface SizeChartRow extends Record<string, unknown> {
   readonly name: string;
   readonly columns: string[];
   readonly rows: string[][];
-  readonly updated_at: Date;
+  readonly updated_at: Date | string;
 }
 
 const CHART_COLUMNS = sql`id, name, columns, rows, updated_at`;
@@ -420,9 +420,9 @@ export interface SiteKeyRow extends Record<string, unknown> {
   readonly label: string;
   readonly key_id: string;
   readonly secret_sha256: string;
-  readonly last_used_at: Date | null;
-  readonly revoked_at: Date | null;
-  readonly created_at: Date;
+  readonly last_used_at: Date | string | null;
+  readonly revoked_at: Date | string | null;
+  readonly created_at: Date | string;
 }
 
 const KEY_COLUMNS = sql`id, label, key_id, secret_sha256, last_used_at, revoked_at, created_at`;

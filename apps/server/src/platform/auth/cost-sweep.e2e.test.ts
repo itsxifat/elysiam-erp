@@ -58,6 +58,13 @@ import {
 } from '../../modules/wallets/wallets.route-fixtures.js';
 import { USERS_ROUTE_FIXTURES } from '../../modules/iam/users.route-fixtures.js';
 import {
+  prepareStorefrontFixtures,
+  STOREFRONT_PUBLIC_FIXTURES,
+  STOREFRONT_ROUTE_FIXTURES,
+  storefrontTestKey,
+} from '../../modules/storefront/storefront.route-fixtures.js';
+import { signedGet } from '../../modules/storefront/storefront.testing.js';
+import {
   ORG_A,
   startHttpHarness,
   type HttpHarness,
@@ -162,6 +169,7 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...ANALYTICS_ROUTE_FIXTURES,
   ...LOANS_ROUTE_FIXTURES,
   ...USERS_ROUTE_FIXTURES,
+  ...STOREFRONT_ROUTE_FIXTURES,
 };
 
 /**
@@ -241,6 +249,7 @@ beforeAll(async () => {
   await preparePromoFixtures();
   await prepareMarketingFixtures();
   await prepareLoanFixtures();
+  await prepareStorefrontFixtures();
 
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 
@@ -347,4 +356,44 @@ describe('invariant 5, across every endpoint', () => {
       `only ${String(answered.size)} of ${String(routes.length)} routes answered a role without cost`,
     ).toBeGreaterThan(routes.length / 2);
   }, 600_000);
+});
+
+/**
+ * The brand's website (M33, D-506): the signed read API has no role to sweep as, so it is
+ * swept as the website — with a website key, over every live `/storefront/v1` route, with
+ * real rows behind each (the fixtures put a product, a category, a size chart and a slide on
+ * the website). Every answer must be 2xx, carry no cost field, and carry no key that smells
+ * of cost: the storefront allow-list is the fence, and this is the check that it holds.
+ */
+describe('invariant 5, across the storefront API', () => {
+  function storefrontRoutes(): string[] {
+    return describeRoutes(harness.app)
+      .filter((route) => route.method === 'GET' && route.path.startsWith('/storefront/v1/'))
+      .map(routeKey)
+      .sort();
+  }
+
+  it('has a fixture for every signed read route', () => {
+    const live = storefrontRoutes();
+    expect(live.length).toBeGreaterThanOrEqual(8);
+    expect(live.filter((key) => STOREFRONT_PUBLIC_FIXTURES[key] === undefined)).toEqual([]);
+  });
+
+  it('sends the website no cost field from any of them', async () => {
+    const key = await storefrontTestKey();
+    const problems: string[] = [];
+    for (const route of storefrontRoutes()) {
+      const path = STOREFRONT_PUBLIC_FIXTURES[route]?.();
+      if (path === undefined) continue;
+      const response = await signedGet(harness.server, key, path);
+      if (response.statusCode !== 200) {
+        problems.push(`${route}: ${String(response.statusCode)} ${response.body.slice(0, 200)}`);
+        continue;
+      }
+      const parsed: unknown = JSON.parse(response.body);
+      const leaks = [...findCostFields(parsed), ...suspectKeys(parsed)];
+      if (leaks.length > 0) problems.push(`${route}: ${leaks.slice(0, 5).join(', ')}`);
+    }
+    expect(problems).toEqual([]);
+  }, 120_000);
 });
