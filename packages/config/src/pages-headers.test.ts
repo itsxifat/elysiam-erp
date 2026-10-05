@@ -60,6 +60,32 @@ describe('contentSecurityPolicy', () => {
   });
 });
 
+describe('the camera and recorded video (M38b, D-616)', () => {
+  it('plays video from the page, the API and the extra origins, and from a recording in place', () => {
+    const policy = contentSecurityPolicy('', {
+      ...API,
+      extraConnectSrc: 'https://0123abcd.r2.cloudflarestorage.com wss://socket.example',
+    });
+    expect(policy).toContain(
+      "media-src 'self' blob: https://api.elysium.example https://0123abcd.r2.cloudflarestorage.com",
+    );
+    expect(policy).not.toMatch(/media-src[^;]*wss:/);
+  });
+
+  it('lets only an app that asks use the camera, and only on its own origin', () => {
+    const permissions = (allowCamera: boolean) =>
+      pagesHeadersFile('', { ...API, allowCamera })
+        .split('\n')
+        .find((line) => line.includes('Permissions-Policy'));
+    expect(permissions(true)).toContain('camera=(self)');
+    expect(permissions(false)).toContain('camera=()');
+    for (const allowCamera of [true, false]) {
+      expect(permissions(allowCamera)).toContain('microphone=()');
+      expect(permissions(allowCamera)).toContain('geolocation=()');
+    }
+  });
+});
+
 describe('pagesHeadersFile', () => {
   it("is Pages' _headers format: a pattern, then indented headers", () => {
     const file = pagesHeadersFile('<script>paint()</script>', API);
