@@ -98,6 +98,8 @@ const PATHAO_INTEGRATION_HEADER_VALUE = 'f3992ecc-59da-4cbe-a049-a13da2018d51';
 const DELIVERY_TYPE_NORMAL = 48;
 /** Pathao's `item_type` for a parcel, as opposed to a document. */
 const ITEM_TYPE_PARCEL = 2;
+/** The least weight a parcel is declared at (M39b, D-645): the old blanket 500 g default. */
+const PATHAO_MIN_WEIGHT_GRAMS = 500;
 
 interface PathaoCredentials {
   readonly clientId: string;
@@ -283,7 +285,13 @@ export class PathaoCourierAdapter implements CourierAdapter {
       );
     }
 
-    const grams = input.weightGrams ?? courierEnv().COURIER_PATHAO_DEFAULT_WEIGHT_GRAMS;
+    // A weighed order's own weight (M39b, D-645), never under half a kilo, what every parcel
+    // was declared at before weights existed (Pathao's own minimum is unverified, like the rest
+    // of this adapter); the configured default when the order is not weighed.
+    const grams = Math.max(
+      PATHAO_MIN_WEIGHT_GRAMS,
+      input.weightGrams ?? courierEnv().COURIER_PATHAO_DEFAULT_WEIGHT_GRAMS,
+    );
     const address = [
       input.address.addressLine,
       input.address.area,

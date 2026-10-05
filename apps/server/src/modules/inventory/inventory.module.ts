@@ -10,6 +10,9 @@ import { INVENTORY_API, InventoryApiService } from './inventory.api.js';
 import { LookupService } from './lookup.service.js';
 import { MovementsService } from './movements.service.js';
 import { ReconcileService } from './reconcile.service.js';
+import { ProductStockController } from './product-stock.controller.js';
+import { SkuStatusController } from './sku-status.controller.js';
+import { SkuStatusService } from './sku-status.service.js';
 import { LookupController, StockInHandController } from './stock-in-hand.controller.js';
 import { StockInHandService } from './stock-in-hand.service.js';
 import { StockService } from './stock.service.js';
@@ -40,17 +43,21 @@ import { LocationReferences } from './ports/location-references.port.js';
   imports: [LedgerModule, ApprovalsModule, CatalogModule],
   // M38a: stock in hand and its window (D-602), and what a scanned code is (D-605).
   // M39a: deleting, archiving and restoring a location (D-629).
+  // M39b: archive or restore many variants, with the stock-held guard (D-639).
   controllers: [
     InventoryController,
     StockInHandController,
     LookupController,
     LocationDeletesController,
+    SkuStatusController,
+    ProductStockController,
   ],
   providers: [
     // M39a: what inventory holds about a SKU (D-621), and who else names a location (D-629).
     InventoryCatalogReferences,
     LocationReferences,
     LocationDeletesService,
+    SkuStatusService,
     StockInHandService,
     LookupService,
     MovementsService,

@@ -30,6 +30,7 @@ export type StackRole =
   | 'merchandiser'
   | 'stocker'
   | 'webadmin'
+  | 'pricer'
   | 'remover';
 
 export function user(role: StackRole) {

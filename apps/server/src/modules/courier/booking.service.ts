@@ -465,7 +465,9 @@ export class BookingService implements OnModuleInit {
       codAmountPoisha: poisha(BigInt(consignment.cod_amount_poisha)),
       itemDescription: order.itemSummary,
       note: order.notes,
-      weightGrams: null,
+      // The order's weight when every variant in it is weighed (M39b, D-645); otherwise the
+      // adapter's configured default.
+      weightGrams: order.weightGrams,
     };
 
     let result;

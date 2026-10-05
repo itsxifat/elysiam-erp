@@ -26,6 +26,11 @@
 import { DEFAULT_LOCALE, type Locale } from './locale.js';
 import { bn } from './locales/bn.js';
 import { en, type MessageKey as CoreMessageKey } from './locales/en.js';
+import { bn as catalogPricingBn } from './locales/sections/catalog-pricing.bn.js';
+import {
+  en as catalogPricingEn,
+  type CatalogPricingKey,
+} from './locales/sections/catalog-pricing.en.js';
 import { bn as packingBn } from './locales/sections/packing.bn.js';
 import { en as packingEn, type PackingKey } from './locales/sections/packing.en.js';
 import { bn as stockToolsBn } from './locales/sections/stock-tools.bn.js';
@@ -70,8 +75,22 @@ export {
  * its locale.
  */
 export type MessageKey =
-  CoreMessageKey | StockToolsKey | WebsiteKey | ManageKey | WebMarketingKey | PackingKey;
-export type { CoreMessageKey, ManageKey, PackingKey, StockToolsKey, WebMarketingKey, WebsiteKey };
+  | CoreMessageKey
+  | StockToolsKey
+  | WebsiteKey
+  | CatalogPricingKey
+  | ManageKey
+  | WebMarketingKey
+  | PackingKey;
+export type {
+  CatalogPricingKey,
+  CoreMessageKey,
+  ManageKey,
+  PackingKey,
+  StockToolsKey,
+  WebMarketingKey,
+  WebsiteKey,
+};
 
 /**
  * Every catalogue, by locale.
@@ -83,8 +102,24 @@ export type { CoreMessageKey, ManageKey, PackingKey, StockToolsKey, WebMarketing
  * surprise in one process and not another.
  */
 export const messages: Record<Locale, Record<MessageKey, string>> = {
-  en: { ...en, ...stockToolsEn, ...websiteEn, ...manageEn, ...webMarketingEn, ...packingEn },
-  bn: { ...bn, ...stockToolsBn, ...websiteBn, ...manageBn, ...webMarketingBn, ...packingBn },
+  en: {
+    ...en,
+    ...stockToolsEn,
+    ...websiteEn,
+    ...catalogPricingEn,
+    ...manageEn,
+    ...webMarketingEn,
+    ...packingEn,
+  },
+  bn: {
+    ...bn,
+    ...stockToolsBn,
+    ...websiteBn,
+    ...catalogPricingBn,
+    ...manageBn,
+    ...webMarketingBn,
+    ...packingBn,
+  },
 };
 
 /**

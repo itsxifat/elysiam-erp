@@ -21,6 +21,17 @@ import { VariantMatrixError, type VariantCombination } from './variant-matrix.js
 export interface VariantPriceOverride {
   readonly valueIds: readonly string[];
   readonly pricePoisha: Poisha;
+  /**
+   * The variant's regular ("was") price (M39b, D-640): absent for the product's, null for
+   * none. Above `pricePoisha` when set.
+   */
+  readonly compareAtPoisha?: Poisha | null | undefined;
+}
+
+/** A variant's starting price and regular price. */
+export interface VariantPriceEntry {
+  readonly pricePoisha: Poisha;
+  readonly compareAtPoisha: Poisha | null;
 }
 
 function setKey(valueIds: readonly string[]): string {
@@ -33,13 +44,60 @@ export function variantPrices(
   base: Poisha,
   overrides: readonly VariantPriceOverride[],
 ): Map<string, Poisha> {
+  const entries = variantPriceEntries(combinations, base, null, overrides);
+  return new Map([...entries].map(([key, entry]) => [key, entry.pricePoisha]));
+}
+
+/**
+ * The price and regular price for every combination (M39b, D-635, D-640), with the same two
+ * refusals as `variantPrices`, plus a third: a regular price at or below its variant's price
+ * (the database refuses it too, `skus_compare_at_above_price`), so the person is told which
+ * variant before anything is created.
+ */
+export function variantPriceEntries(
+  combinations: readonly VariantCombination[],
+  base: Poisha,
+  baseCompareAt: Poisha | null,
+  overrides: readonly VariantPriceOverride[],
+): Map<string, VariantPriceEntry> {
+  const named = variantOverrides(combinations, overrides);
+  const prices = new Map<string, VariantPriceEntry>();
+  for (const combination of combinations) {
+    const override = named.get(combination.key);
+    prices.set(
+      combination.key,
+      override === undefined
+        ? { pricePoisha: base, compareAtPoisha: baseCompareAt }
+        : {
+            pricePoisha: override.pricePoisha,
+            compareAtPoisha:
+              override.compareAtPoisha === undefined ? baseCompareAt : override.compareAtPoisha,
+          },
+    );
+  }
+  for (const entry of prices.values()) {
+    if (entry.compareAtPoisha !== null && entry.compareAtPoisha <= entry.pricePoisha) {
+      throw new VariantMatrixError(
+        'A regular price must be above the selling price it is shown beside. Raise it or leave it blank.',
+      );
+    }
+  }
+  return prices;
+}
+
+/**
+ * Each override, keyed by the variant key of the combination it names, with D-422's two
+ * refusals: a combination the axes do not make, and two overrides for one combination.
+ */
+export function variantOverrides(
+  combinations: readonly VariantCombination[],
+  overrides: readonly VariantPriceOverride[],
+): Map<string, VariantPriceOverride> {
   const byValues = new Map<string, string>();
   for (const combination of combinations) {
     byValues.set(setKey(combination.pairs.map((pair) => pair.valueId)), combination.key);
   }
-
-  const prices = new Map<string, Poisha>(combinations.map((c) => [c.key, base]));
-  const seen = new Set<string>();
+  const named = new Map<string, VariantPriceOverride>();
   for (const override of overrides) {
     const valueSet = new Set(override.valueIds);
     if (valueSet.size !== override.valueIds.length) {
@@ -51,11 +109,10 @@ export function variantPrices(
         'A variant price names a combination this product does not have. Choose one value from every size and colour list.',
       );
     }
-    if (seen.has(key)) {
+    if (named.has(key)) {
       throw new VariantMatrixError('Two prices were given for the same variant.');
     }
-    seen.add(key);
-    prices.set(key, override.pricePoisha);
+    named.set(key, override);
   }
-  return prices;
+  return named;
 }

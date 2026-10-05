@@ -42,6 +42,7 @@ interface Fixtures {
   readonly walletAccount: string;
   readonly supplier: string;
   readonly skuId: string;
+  readonly skuCode: string;
   readonly draftId: string;
 }
 
@@ -62,6 +63,7 @@ export async function prepareSupplyFixtures(): Promise<void> {
     walletAccount,
     supplier,
     skuId: seeded.skus[0]?.id ?? '',
+    skuCode: seeded.skus[0]?.code ?? '',
     // A draft is not pre-made: `POST /drafts` creates its own, and the receive and
     // patch fixtures point at a uuid that does not exist on purpose — an admitted role
     // gets a 404 from the handler, which is not a 403 and is all the suite asks.
@@ -161,6 +163,24 @@ export const SUPPLY_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
       amountPoisha: '100',
     },
   }),
+  // --- M39b: buying prices per variant (D-637, D-638), `read Cost` throughout ---------
+  'GET /v1/supply/sku-costs': () => ({ url: `/v1/supply/sku-costs?skuIds=${state().skuId}` }),
+  'PUT /v1/supply/sku-costs': () => ({
+    url: '/v1/supply/sku-costs',
+    body: {
+      entries: [{ skuId: state().skuId, supplierId: null, standardUnitCostPoisha: '80000' }],
+    },
+  }),
+  'GET /v1/supply/sku-costs/export': () => ({ url: '/v1/supply/sku-costs/export' }),
+  'POST /v1/supply/sku-costs/import/dry-run': () => ({
+    url: '/v1/supply/sku-costs/import/dry-run',
+    body: { csv: ['sku,standard_cost_taka', `${state().skuCode},800`, ''].join('\n') },
+  }),
+  'POST /v1/supply/sku-costs/import': () => ({
+    url: '/v1/supply/sku-costs/import',
+    body: { csv: ['sku,standard_cost_taka', `${state().skuCode},810`, ''].join('\n') },
+  }),
+
   'POST /v1/supply/advance-applications': () => ({
     url: '/v1/supply/advance-applications',
     // Points at no advance on purpose: an admitted role gets a 404, not a 403.

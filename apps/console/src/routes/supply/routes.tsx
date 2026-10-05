@@ -43,11 +43,18 @@ export function supplyRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./payments.js'), 'SupplyPaymentsPage'),
   });
 
+  // M39b (D-638): the standard buying price spreadsheet.
+  const buyingPrices = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/supply/buying-prices',
+    component: lazyRouteComponent(() => import('./buying-prices.js'), 'SupplyBuyingPricesPage'),
+  });
+
   const supplier = createRoute({
     getParentRoute: () => rootRoute,
     path: '/supply/suppliers/$supplierId',
     component: lazyRouteComponent(() => import('./supplier-detail.js'), 'SupplierDetailPage'),
   });
 
-  return [suppliers, entries, returns, payments, supplier] as const;
+  return [suppliers, entries, returns, payments, buyingPrices, supplier] as const;
 }

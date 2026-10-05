@@ -1,23 +1,22 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-06** (M35b joined: campaign links, the Facebook pixel and Google Analytics with server events, the ncom.bd link, the packing scanner app and order label sheets are built and merged with M39a's delete and archive; they go live on Elysium's ERP with the next deploy). This is the short, plain-language view. The
+Last updated: **2026-10-06** (M39b live; M35b joined: campaign links, the Facebook pixel and Google Analytics with server events, the ncom.bd link, the packing scanner app and order label sheets are built and merged with M39's delete, archive and variant prices; they go live on Elysium's ERP with the next deploy). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Everything     [##################--]  92%   (about 33.5 of 36 milestones)
+Everything     [##################--]  94%   (about 34 of 36 milestones)
 First plan     [###################-]  98%   (M00 to M30)
-Wave 3         [###############-----]  77%   (M31 to M39)
+Wave 3         [################----]  82%   (M31 to M39)
 ```
 
 - The first plan had 33 milestones; six are out on the owner's instruction (M13, M21, M22, M27,
   M28, M29), so **27 count** from it. **Wave 3 adds 9** (D-469, D-600, D-620), so **36 count** in all.
 - A milestone counts 100% when it is built, tested and passed its audits; a part-built one counts
   for the share that is done.
-- Today: **30 done** (M35 finished with M35b on 2026-10-06), **4 part-built** (M14b, M30, M32
-  paused, M38 half done), **2 not started** (M36 is being built, M37 has begun with Elysium's
-  ERP online).
+- Today: **31 done** (M35 finished with M35b and M39 with M39b on 2026-10-06), **5 part-built**
+  (M14b, M30, M32 paused, M37 begun with Elysium's ERP online, M38 half done).
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
 [What the owner needs to do](#what-the-owner-needs-to-do).
@@ -51,50 +50,50 @@ Wave 3         [###############-----]  77%   (M31 to M39)
 
 ## By milestone
 
-| ID   | What                                         | Built | Note                                                                                                                                             |
-| ---- | -------------------------------------------- | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| M00  | Project setup                                |  100% |                                                                                                                                                  |
-| M01  | Database and brand separation                |  100% |                                                                                                                                                  |
-| M02a | Sign-in and sessions                         |  100% |                                                                                                                                                  |
-| M02b | Roles, audit log, approvals                  |  100% |                                                                                                                                                  |
-| M03  | Ledger (the books)                           |  100% |                                                                                                                                                  |
-| M04  | Background jobs, files, PDFs                 |  100% |                                                                                                                                                  |
-| M05  | Console screens and design kit               |  100% | Redesigned 2026-10-03 at the owner's request (`plans/design-refresh.md`)                                                                         |
-| M06  | Products                                     |  100% |                                                                                                                                                  |
-| M07  | Stock and costing                            |  100% |                                                                                                                                                  |
-| M08  | Accounts and wallets                         |  100% |                                                                                                                                                  |
-| M09  | Suppliers and purchases                      |  100% |                                                                                                                                                  |
-| M10  | Order engine                                 |  100% |                                                                                                                                                  |
-| M11  | Order desk, buyer list, website intake       |  100% |                                                                                                                                                  |
-| M12  | Courier booking and COD                      |  100% | Steadfast adapter not yet tried on a live account                                                                                                |
-| M13  | Fraud check                                  |     - | Removed by the owner; code deleted                                                                                                               |
-| M14a | Data migration and opening balances          |  100% | Accountant must sign the pilot brand's report                                                                                                    |
-| M14b | Server deploy, monitoring, backups           |   75% | Test site live; backup and rollback drills still need a staging server                                                                           |
-| M15  | Pathao, RedX, tracking page                  |  100% | RedX needs a merchant account to confirm its status words                                                                                        |
-| M16  | Buyer profiles, SMS, promo codes             |  100% | SMS gateway not chosen yet; a stand-in is used                                                                                                   |
-| M17  | Advance payments and return reasons          |  100% | Policy defaults need the client's OK                                                                                                             |
-| M18  | Marketing                                    |  100% | Meta link untested until a real token exists                                                                                                     |
-| M19  | HR and payroll                               |  100% |                                                                                                                                                  |
-| M20  | Targets and bonuses                          |  100% | How a team bonus is shared needs the client's answer                                                                                             |
-| M21  | Reseller engine                              |     - | Set aside                                                                                                                                        |
-| M22  | Reseller portal                              |     - | Set aside                                                                                                                                        |
-| M23  | Showroom POS                                 |  100% |                                                                                                                                                  |
-| M24  | Dashboards and leaderboard                   |  100% | AI summary built but switched off                                                                                                                |
-| M25  | Investors                                    |  100% | Investor login pages added 2026-10-02                                                                                                            |
-| M26  | Company loans                                |  100% |                                                                                                                                                  |
-| M27  | Unified inbox (Chatwoot)                     |     - | Removed by the owner                                                                                                                             |
-| M28  | Staff activity extension                     |     - | Removed by the owner                                                                                                                             |
-| M29  | Landing pages                                |     - | Removed by the owner                                                                                                                             |
-| M30  | Final hardening before launch                |   75% | Part 1 and its follow-ups done; part 2 (backup drill, alerts, retention, sign-off) needs staging                                                 |
-| M31  | One ERP per brand                            |  100% | Done; Elysium's runs at erp.elysium-lifestyle.bd                                                                                                 |
-| M32  | The mother ERP                               |   70% | Paused until the website is done                                                                                                                 |
-| M33  | Website products and content                 |  100% | Done; live in Elysium's ERP                                                                                                                      |
-| M34  | Website checkout, accounts, payment          |  100% | Done; live in Elysium's ERP (SSLCommerz needs the store's keys)                                                                                  |
-| M35  | Website offers, tracking, ncom               |  100% | Done: discounts and flash sales live; campaign links, tracking, ncom, scanner app and labels joined, live with the next deploy                   |
-| M36  | The new Elysium website on the ERP           |  100% | Done; live at demo.elysium-lifestyle.bd (campaign links and tracking arrive with M35b)                                                           |
-| M37  | Servers, addresses, go-live                  |   25% | Elysium's ERP live on the brands server; the website and the final domains to come                                                               |
-| M38  | Barcode stickers, strict stock, scan-to-pack |   50% | Stickers, stock in hand and the scanner done and live (M38a); packing station and video next (M38b)                                              |
-| M39  | Catalog management: delete, variant prices   |   50% | Delete and archive everywhere done and live (M39a); prices by size, bulk price changes, buying prices per variant, duplicate product next (M39b) |
+| ID   | What                                         | Built | Note                                                                                                                                                                                   |
+| ---- | -------------------------------------------- | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M00  | Project setup                                |  100% |                                                                                                                                                                                        |
+| M01  | Database and brand separation                |  100% |                                                                                                                                                                                        |
+| M02a | Sign-in and sessions                         |  100% |                                                                                                                                                                                        |
+| M02b | Roles, audit log, approvals                  |  100% |                                                                                                                                                                                        |
+| M03  | Ledger (the books)                           |  100% |                                                                                                                                                                                        |
+| M04  | Background jobs, files, PDFs                 |  100% |                                                                                                                                                                                        |
+| M05  | Console screens and design kit               |  100% | Redesigned 2026-10-03 at the owner's request (`plans/design-refresh.md`)                                                                                                               |
+| M06  | Products                                     |  100% |                                                                                                                                                                                        |
+| M07  | Stock and costing                            |  100% |                                                                                                                                                                                        |
+| M08  | Accounts and wallets                         |  100% |                                                                                                                                                                                        |
+| M09  | Suppliers and purchases                      |  100% |                                                                                                                                                                                        |
+| M10  | Order engine                                 |  100% |                                                                                                                                                                                        |
+| M11  | Order desk, buyer list, website intake       |  100% |                                                                                                                                                                                        |
+| M12  | Courier booking and COD                      |  100% | Steadfast adapter not yet tried on a live account                                                                                                                                      |
+| M13  | Fraud check                                  |     - | Removed by the owner; code deleted                                                                                                                                                     |
+| M14a | Data migration and opening balances          |  100% | Accountant must sign the pilot brand's report                                                                                                                                          |
+| M14b | Server deploy, monitoring, backups           |   75% | Test site live; backup and rollback drills still need a staging server                                                                                                                 |
+| M15  | Pathao, RedX, tracking page                  |  100% | RedX needs a merchant account to confirm its status words                                                                                                                              |
+| M16  | Buyer profiles, SMS, promo codes             |  100% | SMS gateway not chosen yet; a stand-in is used                                                                                                                                         |
+| M17  | Advance payments and return reasons          |  100% | Policy defaults need the client's OK                                                                                                                                                   |
+| M18  | Marketing                                    |  100% | Meta link untested until a real token exists                                                                                                                                           |
+| M19  | HR and payroll                               |  100% |                                                                                                                                                                                        |
+| M20  | Targets and bonuses                          |  100% | How a team bonus is shared needs the client's answer                                                                                                                                   |
+| M21  | Reseller engine                              |     - | Set aside                                                                                                                                                                              |
+| M22  | Reseller portal                              |     - | Set aside                                                                                                                                                                              |
+| M23  | Showroom POS                                 |  100% |                                                                                                                                                                                        |
+| M24  | Dashboards and leaderboard                   |  100% | AI summary built but switched off                                                                                                                                                      |
+| M25  | Investors                                    |  100% | Investor login pages added 2026-10-02                                                                                                                                                  |
+| M26  | Company loans                                |  100% |                                                                                                                                                                                        |
+| M27  | Unified inbox (Chatwoot)                     |     - | Removed by the owner                                                                                                                                                                   |
+| M28  | Staff activity extension                     |     - | Removed by the owner                                                                                                                                                                   |
+| M29  | Landing pages                                |     - | Removed by the owner                                                                                                                                                                   |
+| M30  | Final hardening before launch                |   75% | Part 1 and its follow-ups done; part 2 (backup drill, alerts, retention, sign-off) needs staging                                                                                       |
+| M31  | One ERP per brand                            |  100% | Done; Elysium's runs at erp.elysium-lifestyle.bd                                                                                                                                       |
+| M32  | The mother ERP                               |   70% | Paused until the website is done                                                                                                                                                       |
+| M33  | Website products and content                 |  100% | Done; live in Elysium's ERP                                                                                                                                                            |
+| M34  | Website checkout, accounts, payment          |  100% | Done; live in Elysium's ERP (SSLCommerz needs the store's keys)                                                                                                                        |
+| M35  | Website offers, tracking, ncom               |  100% | Done: discounts and flash sales live; campaign links, tracking, ncom, scanner app and labels joined, live with the next deploy                                                         |
+| M36  | The new Elysium website on the ERP           |  100% | Done; live at demo.elysium-lifestyle.bd (campaign links and tracking arrive with M35b)                                                                                                 |
+| M37  | Servers, addresses, go-live                  |   25% | Elysium's ERP live on the brands server; the website and the final domains to come                                                                                                     |
+| M38  | Barcode stickers, strict stock, scan-to-pack |   50% | Stickers, stock in hand and the scanner done and live (M38a); packing station and video next (M38b)                                                                                    |
+| M39  | Catalog management: delete, variant prices   |  100% | Done and live: delete or archive everywhere; prices by size or colour, bulk price changes, buying price per variant, margins, standard buying prices, duplicate product, regular price |
 
 ## Being built now
 
@@ -104,10 +103,8 @@ Wave 3         [###############-----]  77%   (M31 to M39)
    payments and email screens are there too.
 2. **Joined, live with the next deploy:** M35b (campaign links, Facebook pixel and Google
    Analytics with server events, the ncom.bd link, the packing scanner app's sign-in, order
-   label sheets), merged with M39a's delete and archive: a category or product a campaign link
-   uses, and a SKU or place an ncom hold names, is kept and named.
-   **Being built:** M39b (selling and buying prices per variant, bulk price changes, duplicate
-   product, regular price struck through on the website).
+   label sheets), merged after M39a and M39b: a category or product a campaign link uses, and
+   a SKU or place an ncom hold names, is kept and named.
 3. **Then:** M38b (scan every item at packing, packing video kept 7 days after delivery), then
    the mother ERP resumes (M32), then the final addresses (M37).
 

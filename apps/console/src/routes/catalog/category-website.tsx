@@ -1,14 +1,15 @@
 import type { WebGender } from '@elysium/contracts';
 import { Button, Checkbox, Dialog, Select, controlClassName } from '@elysium/ui';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useT } from '../../i18n/locale.js';
-import { saveCategoryWebFields } from '../website/api.js';
+import { listSizeCharts, saveCategoryWebFields } from '../website/api.js';
 import { ImagePicker, Preview } from '../website/parts.js';
 import type { CatalogCategory } from './api.js';
 import '../../i18n/website.js';
+import '../../i18n/catalog-pricing.js';
 
 const control = `${controlClassName} w-full disabled:opacity-50`;
 
@@ -17,6 +18,8 @@ const control = `${controlClassName} w-full disabled:opacity-50`;
  * featured on the home page's category grid, its shelf, a description and a picture.
  * Saved under `update Storefront`, so marketing manages how a category looks on the website
  * while its name, code and place in the tree stay org_admin's (`update Catalog`).
+ *
+ * M39b (D-646): a default size chart, which a new product filed under the category starts with.
  */
 export function CategoryWebsiteDialog({
   category,
@@ -34,6 +37,12 @@ export function CategoryWebsiteDialog({
   const [gender, setGender] = useState(category.web.gender ?? '');
   const [description, setDescription] = useState(category.web.description ?? '');
   const [imageFileId, setImageFileId] = useState<string | null>(category.web.imageFileId);
+  const [chartId, setChartId] = useState(category.web.defaultSizeChartId ?? '');
+  const charts = useQuery({
+    queryKey: ['website', 'size-charts'],
+    queryFn: listSizeCharts,
+    staleTime: 60_000,
+  });
 
   const save = useMutation({
     mutationFn: () =>
@@ -43,6 +52,7 @@ export function CategoryWebsiteDialog({
         gender: gender === '' ? null : (gender as WebGender),
         description: description.trim() === '' ? null : description.trim(),
         imageFileId,
+        defaultSizeChartId: chartId === '' ? null : chartId,
       }),
     onSuccess: () => {
       onDone();
@@ -93,6 +103,23 @@ export function CategoryWebsiteDialog({
               { value: 'women', label: t('web.gender.women') },
               { value: 'kids', label: t('web.gender.kids') },
               { value: 'unisex', label: t('web.gender.unisex') },
+            ]}
+          />
+        </div>
+        <div className="space-y-1.5 text-sm">
+          <label htmlFor={`${id}-chart`} className="block font-medium">
+            {t('cp.new.sizeChart')}
+          </label>
+          <Select
+            id={`${id}-chart`}
+            value={chartId}
+            onValueChange={setChartId}
+            options={[
+              { value: '', label: t('web.card.noSizeChart') },
+              ...(charts.data?.items ?? []).map((chart) => ({
+                value: chart.id,
+                label: chart.name,
+              })),
             ]}
           />
         </div>

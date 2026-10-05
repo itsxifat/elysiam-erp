@@ -65,6 +65,11 @@ export const ERROR_CODES = [
   'CATALOG_BARCODE_INVALID',
   /** A sticker request the layout cannot print: too many, or a position off the sheet. */
   'CATALOG_LABELS_INVALID',
+  /**
+   * Variants that cannot be archived together because stock is held for orders (M39b,
+   * D-639): archiving would leave confirmed orders holding pieces nobody may sell or edit.
+   */
+  'CATALOG_SKU_HELD',
   /*
    * Stock, locations and costing (M07, §8).
    *
@@ -134,6 +139,8 @@ export const ERROR_CODES = [
   'SUPPLY_ADVANCE_INVALID',
   /** A supplier payment's terms are fixed once its approval is raised. */
   'SUPPLY_PAYMENT_FROZEN',
+  /** A standard buying price file with problems (M39b, D-638): nothing was imported. */
+  'SUPPLY_IMPORT_REJECTED',
 
   /*
    * Orders (M10, §9, §23).

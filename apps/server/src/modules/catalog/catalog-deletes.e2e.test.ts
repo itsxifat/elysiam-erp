@@ -273,10 +273,11 @@ describe('every module that points at catalog rows answers (D-621)', () => {
       .map((key) => `${key.child}->${key.parent}`)
       .filter((name) => counted[name] === undefined);
     expect(uncovered, 'a new foreign key into the catalog needs a checker').toEqual([]);
-    // Cascades are only the ones 0118 made, guarded by 0119.
+    // Cascades are only the ones 0118 made, guarded by 0119, and M39b's standard buying
+    // price (D-638): a setting kept for a SKU, not evidence, so it leaves with its SKU.
     expect(
       keys.filter((key) => key.action === 'c').map((key) => `${key.child}->${key.parent}`),
-    ).toEqual(['inventory.stock_levels->catalog.skus']);
+    ).toEqual(['inventory.stock_levels->catalog.skus', 'supply.sku_purchase_prices->catalog.skus']);
   });
 
   it('counts or cascades every foreign key into a stock location, read from the database', async () => {

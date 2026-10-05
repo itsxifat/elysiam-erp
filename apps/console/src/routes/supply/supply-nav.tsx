@@ -10,6 +10,9 @@ import {
 import { Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { useAbility } from '../../auth/session.js';
+import { useT } from '../../i18n/locale.js';
+import '../../i18n/catalog-pricing.js';
 import { useSupplyT } from './messages.js';
 
 /**
@@ -28,6 +31,9 @@ import { useSupplyT } from './messages.js';
  */
 export function SupplyNav() {
   const st = useSupplyT();
+  const t = useT();
+  // Buying prices are purchase cost (M39b, D-638): the tab is there only for a cost role.
+  const mayCost = useAbility().can('read', 'Cost');
   const tab = tabClassName;
   const active = { className: tabActiveClassName };
 
@@ -45,6 +51,11 @@ export function SupplyNav() {
       <Link to="/supply/payments" className={tab} activeProps={active}>
         {st('supply.payments')}
       </Link>
+      {mayCost ? (
+        <Link to="/supply/buying-prices" className={tab} activeProps={active}>
+          {t('cp.costs.title')}
+        </Link>
+      ) : null}
     </TabList>
   );
 }

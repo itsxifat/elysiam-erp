@@ -7,6 +7,7 @@ import {
   Section,
   Select,
   StatusBadge,
+  poishaToTaka,
   takaToPoisha,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -17,10 +18,13 @@ import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/stock-tools.js';
-import { lookupCode, searchSkus } from '../catalog/api.js';
+import '../../i18n/catalog-pricing.js';
+import { getProduct, listProducts, lookupCode, searchSkus } from '../catalog/api.js';
+import { skuCosts } from '../catalog/pricing-api.js';
 import { ScanField } from '../catalog/scan-field.js';
 import { StickerDialog, type StickerItem } from '../catalog/stickers.js';
-import { isReplayConflict, requestKey } from '../catalog/variant-grid.js';
+import { isReplayConflict, positiveCost, requestKey } from '../catalog/variant-grid.js';
+import { variantLabel } from '../catalog/variant-table.js';
 import {
   createDraft,
   createEntry,
@@ -66,6 +70,13 @@ import {
  * poisha by `takaToPoisha`, which parses the digits as integers and refuses more than two
  * decimals, so no float is involved (invariant 1). It used to be typed in poisha, which
  * meant an owner pricing a ৳1,180.50 shirt had to type 118050.
+ *
+ * M39b (D-637): **Add a product** puts every active variant of a product on the entry as its
+ * own line (receiving 30 sizes and colours of one style was 30 dropdown picks), and for a cost
+ * role each line's cost is prefilled from the variant's standard buying price for the chosen
+ * supplier, else for any supplier, else the last price it was bought at; "same cost for all"
+ * fills the ones left blank. A draft being priced is prefilled the same way. Every line still
+ * posts at the cost on the screen when it is received.
  */
 
 interface DraftLine {
@@ -74,6 +85,8 @@ interface DraftLine {
   qty: string;
   /** Taka as typed; converted by `takaToPoisha` when sent. */
   unitCostTaka: string;
+  /** The person typed this line's cost (M39b): the prefill no longer speaks for it. */
+  costTyped?: boolean;
 }
 
 const STATUS_TONE: Readonly<Record<'draft' | 'received', 'warning' | 'success'>> = {
@@ -110,6 +123,9 @@ export function SupplyEntriesPage() {
   const [scannedOptions, setScannedOptions] = useState<{ skuId: string; label: string }[]>([]);
   const [scanMessage, setScanMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [stickers, setStickers] = useState<readonly StickerItem[] | null>(null);
+  // M39b: the product finder, the common cost, and which lines the prefill wrote.
+  const [productFind, setProductFind] = useState('');
+  const [sameCost, setSameCost] = useState('');
 
   /*
    * The picker reads `GET /v1/supply/supplier-options` (`create Supply`, D-419): ids, codes
@@ -172,7 +188,65 @@ export function SupplyEntriesPage() {
     enabled: mayRead,
   });
 
-  const totalPoisha = lines.reduce((sum, line) => {
+  const productMatches = useQuery({
+    queryKey: ['supply', 'product-find', productFind.trim()],
+    queryFn: () => listProducts({ q: productFind.trim(), status: 'active', limit: 8 }),
+    enabled: productFind.trim().length >= 3 && (mayDraft || mayPrice),
+    staleTime: 30_000,
+  });
+
+  /** Every active variant of a product as its own line (D-637), after any already there. */
+  async function addProduct(productId: string): Promise<void> {
+    const product = await getProduct(productId);
+    const active = product.skus.filter((sku) => sku.status === 'active');
+    setScannedOptions((current) => [
+      ...current,
+      ...active
+        .filter((sku) => !current.some((option) => option.skuId === sku.id))
+        .map((sku) => {
+          const variant = variantLabel(sku);
+          return {
+            skuId: sku.id,
+            label: `${sku.skuCode} · ${product.name}${variant === '' ? '' : ` · ${variant}`}`,
+          };
+        }),
+    ]);
+    setLines((current) => {
+      const kept = current.filter((line) => line.skuId !== '');
+      const added = active
+        .filter((sku) => !kept.some((line) => line.skuId === sku.id))
+        .map((sku) => ({ ...blankLine(), skuId: sku.id, qty: '' }));
+      const next = [...kept, ...added];
+      return next.length === 0 ? [blankLine()] : next;
+    });
+    setProductFind('');
+  }
+
+  // The prefill (D-637, D-638): a cost role's blank lines take the variant's standard buying
+  // price for this supplier, else for any supplier, else its last buying price.
+  const lineSkuIds = [...new Set(lines.map((line) => line.skuId).filter((id) => id !== ''))];
+  const prefill = useQuery({
+    queryKey: ['supply', 'sku-costs', 'entry', lineSkuIds.join(','), supplierId],
+    queryFn: () => skuCosts(lineSkuIds, supplierId),
+    enabled: mayPrice && supplierId !== '' && lineSkuIds.length > 0,
+  });
+  const prefillOf = new Map(
+    (prefill.data?.items ?? []).flatMap((item) =>
+      item.prefillUnitCostPoisha === null
+        ? []
+        : [[item.skuId, poishaToTaka(item.prefillUnitCostPoisha)] as const],
+    ),
+  );
+  /** A line's cost as the screen shows it: typed, else the prefill, else blank. */
+  const costText = (line: DraftLine): string =>
+    line.costTyped === true || line.unitCostTaka !== ''
+      ? line.unitCostTaka
+      : (prefillOf.get(line.skuId) ?? '');
+
+  const usable = lines
+    .filter((line) => line.skuId !== '' && Number(line.qty) > 0)
+    .map((line) => ({ ...line, unitCostTaka: costText(line) }));
+  const totalPoisha = usable.reduce((sum, line) => {
     const qty = BigInt(Number.isInteger(Number(line.qty)) ? Math.max(Number(line.qty), 0) : 0);
     const parsed = takaToPoisha(line.unitCostTaka);
     const cost = parsed === null ? 0n : BigInt(parsed);
@@ -249,7 +323,7 @@ export function SupplyEntriesPage() {
         supplierId,
         locationId,
         ...(invoiceNumber.trim() === '' ? {} : { invoiceNumber: invoiceNumber.trim() }),
-        lines: lines.map((line) => ({
+        lines: usable.map((line) => ({
           skuId: line.skuId,
           qty: Number(line.qty),
           unitCostPoisha: takaToPoisha(line.unitCostTaka) ?? '',
@@ -273,7 +347,7 @@ export function SupplyEntriesPage() {
         supplierId,
         locationId,
         ...(invoiceNumber.trim() === '' ? {} : { invoiceNumber: invoiceNumber.trim() }),
-        lines: lines.map((line) => ({ skuId: line.skuId, qty: Number(line.qty) })),
+        lines: usable.map((line) => ({ skuId: line.skuId, qty: Number(line.qty) })),
       }),
     onError: (error) => {
       // Told an earlier save went through with other goods: the next press is new.
@@ -298,13 +372,28 @@ export function SupplyEntriesPage() {
     queryFn: () => getEntry(pricing ?? ''),
     enabled: pricing !== null && mayPrice,
   });
+  // A draft being priced starts from the same prefill as a new entry (D-637).
+  const draftSkuIds = [...new Set((draft.data?.lines ?? []).map((line) => line.skuId))];
+  const draftPrefill = useQuery({
+    queryKey: ['supply', 'sku-costs', 'draft', pricing, draftSkuIds.join(',')],
+    queryFn: () => skuCosts(draftSkuIds, draft.data?.supplierId),
+    enabled: pricing !== null && mayPrice && draftSkuIds.length > 0,
+  });
+  const draftPrefillOf = new Map(
+    (draftPrefill.data?.items ?? []).flatMap((item) =>
+      item.prefillUnitCostPoisha === null
+        ? []
+        : [[item.skuId, poishaToTaka(item.prefillUnitCostPoisha)] as const],
+    ),
+  );
+  const priceText = (skuId: string): string => prices[skuId] ?? draftPrefillOf.get(skuId) ?? '';
 
   const price = useMutation({
     mutationFn: () =>
       receiveEntry(pricing ?? '', {
         lines: (draft.data?.lines ?? []).map((line) => ({
           skuId: line.skuId,
-          unitCostPoisha: takaToPoisha(prices[line.skuId] ?? '') ?? '',
+          unitCostPoisha: takaToPoisha(priceText(line.skuId)) ?? '',
         })),
       }),
     onSuccess: () => {
@@ -320,12 +409,23 @@ export function SupplyEntriesPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['supply'] }),
   });
 
-  const linesReady = lines.every(
-    (line) =>
-      line.skuId !== '' &&
-      Number(line.qty) > 0 &&
-      (!mayPrice || takaToPoisha(line.unitCostTaka) !== null),
-  );
+  // A line with no quantity is left out (D-637: a product's variants are all added, and not
+  // every one arrives); a line with a quantity needs its SKU and, for a cost role, its cost.
+  const linesReady =
+    usable.length > 0 &&
+    lines.every((line) => line.qty.trim() === '' || Number(line.qty) > 0) &&
+    usable.every((line) => !mayPrice || takaToPoisha(line.unitCostTaka) !== null);
+  const fillBlanks = () => {
+    const cost = positiveCost(takaToPoisha(sameCost));
+    if (cost === null) return;
+    setLines((current) =>
+      current.map((line) =>
+        costText(line).trim() === ''
+          ? { ...line, unitCostTaka: poishaToTaka(cost), costTyped: true }
+          : line,
+      ),
+    );
+  };
   const canSubmit = supplierId !== '' && locationId !== '' && linesReady;
   const pending = submitEntry.isPending || submitDraft.isPending;
   const error = submitEntry.error ?? submitDraft.error;
@@ -403,6 +503,45 @@ export function SupplyEntriesPage() {
                 onCode={(code) => void scan(code)}
               />
 
+              <div className="space-y-2">
+                <Field label={t('cp.entries.addProduct')} id="entry-product">
+                  <SearchInput
+                    id="entry-product"
+                    value={productFind}
+                    maxLength={80}
+                    placeholder={t('cp.entries.addProductHint')}
+                    className="sm:w-full"
+                    onChange={(event) => setProductFind(event.target.value)}
+                  />
+                </Field>
+                {(productMatches.data?.items ?? []).length > 0 && productFind.trim().length >= 3 ? (
+                  <ul className="divide-y divide-border rounded-md border border-border">
+                    {(productMatches.data?.items ?? []).map((product) => (
+                      <li
+                        key={product.id}
+                        className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                      >
+                        <span>
+                          <span className="font-medium">{product.name}</span>
+                          <span className="ms-2 text-xs text-muted-foreground tabular-nums">
+                            {product.skuCount}
+                          </span>
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          data-testid={`add-product-${product.id}`}
+                          onClick={() => void addProduct(product.id)}
+                        >
+                          {t('cp.entries.addAll')}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+
               <Field label={t('cs.findItem')} id="entry-find">
                 <SearchInput
                   id="entry-find"
@@ -468,7 +607,6 @@ export function SupplyEntriesPage() {
                             min={1}
                             step={1}
                             value={line.qty}
-                            required
                             className={numericControl}
                             onChange={(event) =>
                               setLines((current) =>
@@ -489,14 +627,17 @@ export function SupplyEntriesPage() {
                               // Taka, up to two decimals; `takaToPoisha` converts it with
                               // integer arithmetic (invariant 1).
                               inputMode="decimal"
-                              value={line.unitCostTaka}
-                              required
+                              value={costText(line)}
                               className={numericControl}
                               onChange={(event) =>
                                 setLines((current) =>
                                   current.map((row, position) =>
                                     position === index
-                                      ? { ...row, unitCostTaka: event.target.value }
+                                      ? {
+                                          ...row,
+                                          unitCostTaka: event.target.value,
+                                          costTyped: true,
+                                        }
                                       : row,
                                   ),
                                 )
@@ -536,6 +677,30 @@ export function SupplyEntriesPage() {
                   <Plus aria-hidden="true" />
                   {st('supply.addLine')}
                 </Button>
+                {mayPrice ? (
+                  <span className="flex items-center gap-2">
+                    <label className="sr-only" htmlFor="entry-same-cost">
+                      {t('cp.receive.sameForAll')}
+                    </label>
+                    <input
+                      id="entry-same-cost"
+                      inputMode="decimal"
+                      value={sameCost}
+                      placeholder={t('cp.receive.sameForAll')}
+                      onChange={(event) => setSameCost(event.target.value)}
+                      className={`${numericControl} w-44`}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={positiveCost(takaToPoisha(sameCost)) === null}
+                      onClick={fillBlanks}
+                    >
+                      {t('cp.entries.fillBlank')}
+                    </Button>
+                  </span>
+                ) : null}
                 {mayPrice ? (
                   <p className="text-sm text-muted-foreground">
                     {st('supply.total')}:{' '}
@@ -603,7 +768,7 @@ export function SupplyEntriesPage() {
                             id={`price-${line.id}`}
                             inputMode="decimal"
                             required
-                            value={prices[line.skuId] ?? ''}
+                            value={priceText(line.skuId)}
                             className={numericControl}
                             onChange={(event) =>
                               setPrices((current) => ({
@@ -630,7 +795,7 @@ export function SupplyEntriesPage() {
                     setPrices({});
                   }}
                 >
-                  {st('supply.removeLine')}
+                  {t('cp.entries.cancelPricing')}
                 </Button>
                 {price.error !== null ? (
                   <p role="alert" className="text-sm text-destructive">

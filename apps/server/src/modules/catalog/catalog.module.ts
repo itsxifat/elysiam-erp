@@ -7,6 +7,8 @@ import { CatalogController } from './catalog.controller.js';
 import { CatalogDeletesController } from './catalog-deletes.controller.js';
 import { CatalogDeletesService } from './catalog-deletes.service.js';
 import { CatalogService } from './catalog.service.js';
+import { CatalogVariantsController } from './catalog-variants.controller.js';
+import { CatalogVariantsService } from './catalog-variants.service.js';
 import { CatalogReferences } from './ports/catalog-references.port.js';
 import { CatalogImportService } from './import.service.js';
 import { LabelsService } from './labels.service.js';
@@ -29,13 +31,15 @@ import { ProductImportService } from './product-import.service.js';
  */
 @Module({
   imports: [FilesModule],
-  controllers: [CatalogController, CatalogDeletesController],
+  // M39b: duplicate, product-wide price history, photo colours, weights, bulk changes.
+  controllers: [CatalogController, CatalogDeletesController, CatalogVariantsController],
   providers: [
     // Provided rather than imported, as every other module does it.
     AuditService,
     CatalogService,
     CatalogDeletesService,
     CatalogReferences,
+    CatalogVariantsService,
     CatalogImportService,
     ProductImportService,
     LabelsService,

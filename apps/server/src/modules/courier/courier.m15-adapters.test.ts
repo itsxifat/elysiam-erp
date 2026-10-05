@@ -181,6 +181,19 @@ describe('the Pathao adapter (UNVERIFIED — see the file comment)', () => {
     expect(body).not.toHaveProperty('recipient_zone');
   });
 
+  it('declares a weighed order’s own weight, never under half a kilo (M39b, D-645)', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(PATHAO_LOGIN))
+      .mockResolvedValueOnce(jsonResponse(PATHAO_CREATED))
+      .mockResolvedValueOnce(jsonResponse(PATHAO_CREATED));
+    await adapter.createParcel(PATHAO_CONTEXT, parcel({ weightGrams: 1200 }));
+    await adapter.createParcel(PATHAO_CONTEXT, parcel({ weightGrams: 200 }));
+    const weights = fetchMock.mock.calls
+      .slice(1)
+      .map((call) => bodyOf((call as [string, RequestInit])[1]).item_weight);
+    expect(weights).toEqual([1.2, 0.5]);
+  });
+
   it('uses the live host for a live account', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(PATHAO_LOGIN))

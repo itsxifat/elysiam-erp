@@ -748,3 +748,66 @@ export const advanceApplications = supply.table(
     check('advance_applications_amount_positive', sql`${table.amountPoisha} > 0`),
   ],
 );
+
+/**
+ * A variant's standard buying price, for any supplier or for one (M39b, D-638).
+ *
+ * What the next receipt of this variant is **prefilled** with (the receive dialog, Supply →
+ * Entries, a draft being priced, the new-product form), and nothing more: the cost that
+ * enters inventory and the books is still the one on the posted receipt (invariants 2 and
+ * 5). It never feeds the weighted average and no journal reads it.
+ *
+ * Purchase cost, so it lives here in supply rather than on `catalog.skus` (invariant 5):
+ * `standard_unit_cost_poisha` is in `COST_FIELDS`, every route that reads it declares
+ * `read Cost`, and the catalog's responses and the reseller allow-list never join it.
+ *
+ * One row per (variant, supplier), the supplier null for "any supplier": the unique index
+ * coalesces a null supplier so two "any" rows cannot exist. Both foreign keys cascade: a
+ * standard price is a preference, and a variant or supplier deleted because it was never
+ * used (M39a) takes its preference with it rather than being refused over one. RLS and the
+ * grants are in M39b's policies migration.
+ */
+export const skuPurchasePrices = supply.table(
+  'sku_purchase_prices',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    skuId: uuid('sku_id').notNull(),
+    /** Null: the standard for any supplier. */
+    supplierId: uuid('supplier_id'),
+    /** Purchase cost (invariant 5): integer poisha, above zero. */
+    standardUnitCostPoisha: bigint('standard_unit_cost_poisha', { mode: 'bigint' }).notNull(),
+    updatedBy: text('updated_by'),
+    ...timestamps,
+  },
+  (table) => [
+    unique('sku_purchase_prices_org_id_id_key').on(table.orgId, table.id),
+    index('sku_purchase_prices_org_idx').on(table.orgId),
+    index('sku_purchase_prices_org_supplier_idx').on(table.orgId, table.supplierId),
+    uniqueIndex('sku_purchase_prices_org_sku_supplier_idx').on(
+      table.orgId,
+      table.skuId,
+      sql`coalesce(${table.supplierId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+    ),
+    foreignKey({
+      name: 'sku_purchase_prices_org_id_sku_id_fk',
+      columns: [table.orgId, table.skuId],
+      foreignColumns: [skus.orgId, skus.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'sku_purchase_prices_org_id_supplier_id_fk',
+      columns: [table.orgId, table.supplierId],
+      foreignColumns: [suppliers.orgId, suppliers.id],
+    }).onDelete('cascade'),
+    check(
+      'sku_purchase_prices_cost_positive',
+      sql`${table.standardUnitCostPoisha} > 0 and ${table.standardUnitCostPoisha} <= 9000000000000000`,
+    ),
+    check(
+      'sku_purchase_prices_updated_by_length',
+      sql`${table.updatedBy} is null or length(${table.updatedBy}) <= 120`,
+    ),
+  ],
+);

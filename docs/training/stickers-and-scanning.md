@@ -19,7 +19,9 @@ print stickers, and accounts enters what the counted pieces cost. Sign-in help i
    **Pieces** you have of it now.
 5. **Stock**: choose **Already in hand (opening stock)** for stock the shop already holds, or
    **Received from a supplier** for a delivery. Pick the location, and type the **Cost per
-   piece**: one figure for all, or a different one in a row's **Cost per piece** box.
+   piece**: one figure for all, or a different one in a row's **Cost per piece** box (in both
+   modes; prices by size, regular prices and costs per variant are in
+   [Prices and buying prices](prices-and-buying-prices.md)).
 6. **Website details** (optional): open it to choose whether the product shows on the website,
    featured or new arrival, the shelf, tags, size chart, material, care and the words a search
    engine shows.
