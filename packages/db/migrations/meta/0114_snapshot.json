@@ -1,6 +1,6 @@
 {
-  "id": "a154c98a-0098-4a44-8f2b-018fea5c6ec8",
-  "prevId": "c0ae858d-9963-4e60-870f-055badc862cb",
+  "id": "993211b1-dc9a-4cda-b741-b36004a1734c",
+  "prevId": "dac225b7-fd96-4c81-b628-a675b9f9014f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -26699,7 +26699,7 @@
         },
         "customer_accounts_can_sign_in": {
           "name": "customer_accounts_can_sign_in",
-          "value": "\"storefront\".\"customer_accounts\".\"password_hash\" is not null or \"storefront\".\"customer_accounts\".\"google_sub\" is not null"
+          "value": "\"storefront\".\"customer_accounts\".\"password_hash\" is not null or \"storefront\".\"customer_accounts\".\"google_sub\" is not null\n          or \"storefront\".\"customer_accounts\".\"source\" = 'legacy_import'"
         },
         "customer_accounts_google_verified": {
           "name": "customer_accounts_google_verified",

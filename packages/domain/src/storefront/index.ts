@@ -16,5 +16,6 @@ export * from './price.js';
 export * from './query.js';
 export * from './shipping.js';
 export * from './shopper.js';
+export * from './legacy-customers.js';
 export * from './slugs.js';
 export * from './sslcommerz.js';

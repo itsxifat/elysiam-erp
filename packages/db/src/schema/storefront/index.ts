@@ -414,10 +414,12 @@ export const customerAccounts = storefront.table(
       sql`${table.passwordHash} is null
           or ${table.passwordHash} ~ '^[$]2[aby][$][0-9]{2}[$][./A-Za-z0-9]{53}$'`,
     ),
-    // Something to sign in with: a password, or a Google login.
+    // Something to sign in with: a password, or a Google login. An account imported from the
+    // old site without a password (a Google sign-up there) links Google on first use (D-531).
     check(
       'customer_accounts_can_sign_in',
-      sql`${table.passwordHash} is not null or ${table.googleSub} is not null`,
+      sql`${table.passwordHash} is not null or ${table.googleSub} is not null
+          or ${table.source} = 'legacy_import'`,
     ),
     // Google is linked only to a verified address (D-522).
     check(

@@ -1229,3 +1229,138 @@ describe('a five-unit flash sale and twenty shoppers (D-548, M35 check 1)', () =
     ).rejects.toThrow();
   });
 });
+
+// --- the old site's customers (D-531) ---------------------------------------------------------
+
+describe('importing the old website’s customers (D-531)', () => {
+  it('dry-runs, commits once, keeps the old passwords working, and links Google by email', async () => {
+    const { hash } = await import('bcryptjs');
+    const { LegacyCustomersImporter } = await import('./legacy-customers.js');
+    const { ORDERS_API } = await import('../orders/orders.api.js');
+    const importer = new LegacyCustomersImporter(harness.app.get(ORDERS_API, { strict: false }));
+    const oldHash = (await hash('old-site-password', 4)).replace(/^\$2b\$/, '$2a$');
+    const file = JSON.stringify([
+      {
+        _id: { $oid: `a${suffix}` },
+        name: 'Old Shopper',
+        email: `old-${suffix}@example.com`,
+        password: oldHash,
+        role: 'customer',
+        emailVerified: true,
+        phone: '01811000123',
+        createdAt: { $date: '2025-01-02T03:04:05Z' },
+      },
+      {
+        _id: { $oid: `b${suffix}` },
+        name: 'Old Google',
+        email: `oldg-${suffix}@example.com`,
+        role: 'customer',
+        emailVerified: true,
+      },
+      {
+        _id: { $oid: `c${suffix}` },
+        name: 'Old Admin',
+        email: `olda-${suffix}@example.com`,
+        password: oldHash,
+        role: 'admin',
+      },
+      { _id: { $oid: `d${suffix}` }, name: 'Guest', isGuest: true, phone: '01811000456' },
+    ]);
+
+    const dry = await importer.dryRun(ORG_A, file);
+    expect(dry.written).toBeNull();
+    expect(dry.plan.counts).toMatchObject({ accounts: 2, buyers: 2, staff: 1, guests: 1 });
+    expect(
+      await one<{ n: number }>(sql`
+        select count(*)::int as n from storefront.customer_accounts where org_id = ${ORG_A}
+          and email = ${`old-${suffix}@example.com`}
+      `),
+    ).toEqual({ n: 0 });
+
+    const committed = await importer.commit(ORG_A, file);
+    expect(committed.written).toEqual({ accounts: 2, buyers: 2 });
+    const again = await importer.commit(ORG_A, file);
+    expect(again.written).toEqual({ accounts: 0, buyers: 0 });
+    expect(again.plan.counts.alreadyImported).toBe(2);
+
+    const account = await one<{
+      password_hash: string;
+      source: string;
+      customer: string | null;
+      verified: boolean;
+    }>(sql`
+      select password_hash, source, customer_id as customer, email_verified_at is not null as verified
+      from storefront.customer_accounts where org_id = ${ORG_A} and email = ${`old-${suffix}@example.com`}
+    `);
+    expect(account).toMatchObject({
+      password_hash: oldHash,
+      source: 'legacy_import',
+      verified: true,
+    });
+    expect(account?.customer).not.toBeNull();
+    const mapped = await one<{ n: number }>(sql`
+      select count(*)::int as n from storefront.legacy_ids where org_id = ${ORG_A} and kind = 'customer'
+        and legacy_id in (${`a${suffix}`}, ${`b${suffix}`}, ${`d${suffix}`})
+    `);
+    expect(mapped?.n).toBe(3);
+    const staff = await one<{ n: number }>(sql`
+      select count(*)::int as n from storefront.customer_accounts where org_id = ${ORG_A}
+        and email = ${`olda-${suffix}@example.com`}
+    `);
+    expect(staff?.n).toBe(0);
+
+    const signIn = await signed('POST', '/storefront/v1/accounts/sign-in', {
+      email: `old-${suffix}@example.com`,
+      password: 'old-site-password',
+    });
+    expect(signIn.status, signIn.raw).toBe(200);
+    const google = await signed<{ created: boolean; account: { googleLinked: boolean } }>(
+      'POST',
+      '/storefront/v1/accounts/google',
+      { email: `oldg-${suffix}@example.com`, emailVerified: true, googleSub: `oldsub-${suffix}` },
+    );
+    expect(google.status, google.raw).toBe(200);
+    expect(google.body).toMatchObject({ created: false, account: { googleLinked: true } });
+  });
+});
+
+// --- the signed writes (D-506, M34) -------------------------------------------------------------
+
+describe('a signed write', () => {
+  it('is refused when the body or the idempotency key is not the one signed', async () => {
+    const body = { lines: [{ skuId: sku(0), qty: 1 }] };
+    const raw = Buffer.from(JSON.stringify(body));
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = signStorefront(key.secret, {
+      timestamp,
+      method: 'POST',
+      pathAndQuery: '/storefront/v1/cart/quote',
+      idempotencyKey: 'key-one-12345',
+      rawBody: raw,
+    });
+    const send = (payload: Buffer, idempotencyKey: string) =>
+      harness.server.inject({
+        method: 'POST',
+        url: '/storefront/v1/cart/quote',
+        headers: {
+          'x-api-key': key.keyId,
+          'x-api-timestamp': timestamp,
+          'x-api-signature': signature,
+          'idempotency-key': idempotencyKey,
+          'content-type': 'application/json',
+        },
+        payload,
+      });
+    expect((await send(raw, 'key-one-12345')).statusCode).toBe(200);
+    const tampered = Buffer.from(JSON.stringify({ lines: [{ skuId: sku(0), qty: 9 }] }));
+    expect((await send(tampered, 'key-one-12345')).statusCode).toBe(401);
+    expect((await send(raw, 'key-two-12345')).statusCode).toBe(401);
+    const unsigned = await harness.server.inject({
+      method: 'POST',
+      url: '/storefront/v1/accounts/sign-in',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ email: 'a@b.co', password: 'x' }),
+    });
+    expect(unsigned.statusCode).toBe(401);
+  });
+});

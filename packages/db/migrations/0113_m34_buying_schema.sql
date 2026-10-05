@@ -99,7 +99,8 @@ CREATE TABLE "storefront"."customer_accounts" (
           and length("storefront"."customer_accounts"."email") <= 254),
 	CONSTRAINT "customer_accounts_password_hash_shape" CHECK ("storefront"."customer_accounts"."password_hash" is null
           or "storefront"."customer_accounts"."password_hash" ~ '^[$]2[aby][$][0-9]{2}[$][./A-Za-z0-9]{53}$'),
-	CONSTRAINT "customer_accounts_can_sign_in" CHECK ("storefront"."customer_accounts"."password_hash" is not null or "storefront"."customer_accounts"."google_sub" is not null),
+	CONSTRAINT "customer_accounts_can_sign_in" CHECK ("storefront"."customer_accounts"."password_hash" is not null or "storefront"."customer_accounts"."google_sub" is not null
+          or "storefront"."customer_accounts"."source" = 'legacy_import'),
 	CONSTRAINT "customer_accounts_google_verified" CHECK ("storefront"."customer_accounts"."google_sub" is null or "storefront"."customer_accounts"."email_verified_at" is not null),
 	CONSTRAINT "customer_accounts_phone_shape" CHECK ("storefront"."customer_accounts"."phone_e164" is null or "storefront"."customer_accounts"."phone_e164" ~ '^[+]8801[3-9][0-9]{8}$'),
 	CONSTRAINT "customer_accounts_name_length" CHECK (length("storefront"."customer_accounts"."name") between 1 and 120),

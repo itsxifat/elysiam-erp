@@ -5,7 +5,9 @@ import { sql } from 'drizzle-orm';
 
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CatalogService } from '../catalog/catalog.service.js';
+import { seedCustomer, seedOrder } from '../orders/orders.testing.js';
 import { insertPublicImageRow, insertTestSiteKey, type TestSiteKey } from './storefront.testing.js';
+import { tokenHash } from './tokens.js';
 
 /**
  * How the route-matrix suite and the cost sweep call M33's routes (D-070).
@@ -36,7 +38,18 @@ interface Fixtures {
   readonly productId: string;
   readonly productSlug: string;
   readonly categoryId: string;
+  /** M34: a website account, one of its orders, a guest token for it and a live flash sale. */
+  readonly accountId: string;
+  readonly accountEmail: string;
+  readonly orderId: string;
+  readonly orderNo: string;
+  readonly viewToken: string;
+  readonly flashSlug: string;
 }
+
+/** The fixture account's password: its hash is bcrypt of this, made once (cost 4). */
+export const FIXTURE_ACCOUNT_PASSWORD = 'route-matrix-password';
+const FIXTURE_ACCOUNT_HASH = '$2b$04$SxV0oWDX3cssBpphEGZxxeNnrTRMolPVGao2PD76lhXPMkIiklzC.';
 
 let prepared: Fixtures | undefined;
 
@@ -141,6 +154,7 @@ export async function prepareStorefrontFixtures(): Promise<void> {
     { orgId: ORG_A },
   );
   const imageId = await insertPublicImageRow(ORG_A);
+  const web = await prepareWebsiteRows(product.id, suffix);
   prepared = {
     imageId,
     slideId: await insertSlide(imageId),
@@ -149,6 +163,82 @@ export async function prepareStorefrontFixtures(): Promise<void> {
     productId: product.id,
     productSlug: product.slug,
     categoryId: category.id,
+    ...web,
+  };
+}
+
+/**
+ * M34's rows: a verified account with a known password, a website order of it with a guest
+ * view token, and a live flash sale on the fixture product, so every signed read answers 200.
+ */
+async function prepareWebsiteRows(productId: string, suffix: string) {
+  const sku = await withSystem(
+    async (tx) =>
+      (
+        await tx.execute<{ id: string; code: string }>(sql`
+          select id, code from catalog.skus where org_id = ${ORG_A} and product_id = ${productId}
+          order by code limit 1
+        `)
+      )[0],
+    { orgId: ORG_A },
+  );
+  if (sku === undefined) throw new Error('the fixture product has no SKU');
+  const phone = `+8801712${String(Date.now() % 1_000_000).padStart(6, '0')}`;
+  const customerId = await seedCustomer(ORG_A, { phoneE164: phone, name: 'Website fixture' });
+  const order = await seedOrder(ORG_A, {
+    status: 'pending',
+    customerId,
+    lines: [
+      {
+        skuId: sku.id,
+        skuCode: sku.code,
+        productName: 'Website fixture tee',
+        qty: 1,
+        unitPricePoisha: 150_000n,
+      },
+    ],
+  });
+  const accountEmail = `fixture-${suffix}@example.com`;
+  const viewToken = `fixturetoken${suffix}`.padEnd(43, 'x').slice(0, 43);
+  const flashSlug = `fixture-flash-${suffix}`;
+  const accountId = await withSystem(
+    async (tx) => {
+      const rows = await tx.execute<{ id: string }>(sql`
+        insert into storefront.customer_accounts
+          (org_id, email, email_verified_at, password_hash, name, phone_e164, customer_id)
+        values (${ORG_A}, ${accountEmail}, now(), ${FIXTURE_ACCOUNT_HASH}, 'Website fixture',
+                ${phone}, ${customerId})
+        returning id
+      `);
+      const id = rows[0]?.id ?? '';
+      await tx.execute(sql`
+        insert into storefront.web_orders (org_id, order_id, account_id, email, locale, payment_method, phone_e164)
+        values (${ORG_A}, ${order.id}, ${id}, ${accountEmail}, 'en', 'cod', ${phone})
+      `);
+      await tx.execute(sql`
+        insert into storefront.order_view_tokens (org_id, order_id, token_sha256, purpose)
+        values (${ORG_A}, ${order.id}, ${tokenHash(viewToken)}, 'confirmation')
+      `);
+      const sale = await tx.execute<{ id: string }>(sql`
+        insert into promo.flash_sales (org_id, title, slug, enabled, created_by)
+        values (${ORG_A}, 'Fixture flash', ${flashSlug}, true, 'usr_storefront_fixture')
+        returning id
+      `);
+      await tx.execute(sql`
+        insert into promo.flash_sale_items (org_id, flash_sale_id, sku_id, sale_price_poisha, unit_limit)
+        values (${ORG_A}, ${sale[0]?.id ?? ''}, ${sku.id}, 120000, 5)
+      `);
+      return id;
+    },
+    { orgId: ORG_A },
+  );
+  return {
+    accountId,
+    accountEmail,
+    orderId: order.id,
+    orderNo: order.orderNo,
+    viewToken,
+    flashSlug,
   };
 }
 
@@ -284,6 +374,42 @@ export const STOREFRONT_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Ca
     url: `/v1/storefront/categories/${state().categoryId}`,
     body: { description: `Route matrix ${randomUUID().slice(0, 6)}` },
   }),
+
+  // M34: Website → Payments, Email and Customers, and the order page's website card.
+  'GET /v1/storefront/payments': () => ({ url: '/v1/storefront/payments' }),
+  'PUT /v1/storefront/payments': () => ({
+    url: '/v1/storefront/payments',
+    body: {
+      enabled: false,
+      mode: 'sandbox',
+      storeId: 'routematrix',
+      storePassword: `rm-${randomUUID().slice(0, 8)}`,
+    },
+  }),
+  'GET /v1/storefront/payments/sessions': () => ({ url: '/v1/storefront/payments/sessions' }),
+  'GET /v1/storefront/email': () => ({ url: '/v1/storefront/email' }),
+  'PUT /v1/storefront/email': () => ({
+    url: '/v1/storefront/email',
+    body: {
+      enabled: false,
+      host: 'smtp.example.com',
+      port: 587,
+      secure: false,
+      username: 'routematrix',
+      password: `rm-${randomUUID().slice(0, 8)}`,
+      fromName: 'Route matrix',
+      fromEmail: 'route-matrix@example.com',
+    },
+  }),
+  'POST /v1/storefront/email/test': () => ({
+    url: '/v1/storefront/email/test',
+    body: { to: 'route-matrix@example.com' },
+  }),
+  'GET /v1/storefront/email/log': () => ({ url: '/v1/storefront/email/log' }),
+  'GET /v1/storefront/accounts': () => ({ url: '/v1/storefront/accounts' }),
+  'GET /v1/storefront/orders/:orderId': () => ({
+    url: `/v1/storefront/orders/${state().orderId}`,
+  }),
 };
 
 /** The manifest entries, derived from the fixtures. */
@@ -310,4 +436,125 @@ export const STOREFRONT_PUBLIC_FIXTURES: Readonly<Record<string, () => string>> 
   'GET /storefront/v1/size-charts/:id': () => `/storefront/v1/size-charts/${state().chartId}`,
   'GET /storefront/v1/geo/districts': () => '/storefront/v1/geo/districts',
   'GET /storefront/v1/geo/thanas': () => '/storefront/v1/geo/thanas?districtId=1',
+  // M34
+  'GET /storefront/v1/accounts/:id': () => `/storefront/v1/accounts/${state().accountId}`,
+  'GET /storefront/v1/accounts/:id/orders': () =>
+    `/storefront/v1/accounts/${state().accountId}/orders`,
+  'GET /storefront/v1/accounts/:id/orders/:orderNo': () =>
+    `/storefront/v1/accounts/${state().accountId}/orders/${state().orderNo}`,
+  'GET /storefront/v1/orders/:orderNo': () =>
+    `/storefront/v1/orders/${state().orderNo}?token=${state().viewToken}`,
+  'GET /storefront/v1/flash-sales': () => '/storefront/v1/flash-sales',
+  'GET /storefront/v1/flash-sales/:slug': () => `/storefront/v1/flash-sales/${state().flashSlug}`,
 };
+
+/**
+ * Every signed write route (M34), with a body: the cost sweep sends each and requires that no
+ * answer — a success or a refusal — carries a cost field.
+ */
+export const STOREFRONT_PUBLIC_WRITE_FIXTURES: Readonly<
+  Record<
+    string,
+    () => { readonly method: 'POST' | 'PATCH'; readonly path: string; readonly body: unknown }
+  >
+> = {
+  'POST /storefront/v1/cart/quote': () => ({
+    method: 'POST',
+    path: '/storefront/v1/cart/quote',
+    body: { lines: [{ skuId: skuOf(), qty: 1 }] },
+  }),
+  'POST /storefront/v1/checkout': () => ({
+    method: 'POST',
+    path: '/storefront/v1/checkout',
+    body: {
+      lines: [{ skuId: skuOf(), qty: 1 }],
+      contact: { name: 'Sweep', phone: '01711000222' },
+      address: { districtId: 1, thanaId: 1, addressLine: 'Road 1' },
+      paymentMethod: 'cod',
+      expected: { totalPoisha: '0' },
+    },
+  }),
+  'POST /storefront/v1/accounts/register': () => ({
+    method: 'POST',
+    path: '/storefront/v1/accounts/register',
+    body: {
+      email: `sweep-${randomUUID().slice(0, 8)}@example.com`,
+      password: 'sweep-password',
+      name: 'Sweep',
+    },
+  }),
+  'POST /storefront/v1/accounts/verify-email': () => ({
+    method: 'POST',
+    path: '/storefront/v1/accounts/verify-email',
+    body: { email: state().accountEmail, code: '123456' },
+  }),
+  'POST /storefront/v1/accounts/resend-code': () => ({
+    method: 'POST',
+    path: '/storefront/v1/accounts/resend-code',
+    body: { email: state().accountEmail },
+  }),
+  'POST /storefront/v1/accounts/sign-in': () => ({
+    method: 'POST',
+    path: '/storefront/v1/accounts/sign-in',
+    body: { email: state().accountEmail, password: FIXTURE_ACCOUNT_PASSWORD },
+  }),
+  'POST /storefront/v1/accounts/google': () => ({
+    method: 'POST',
+    path: '/storefront/v1/accounts/google',
+    body: {
+      email: `sweep-g-${randomUUID().slice(0, 8)}@example.com`,
+      emailVerified: true,
+      googleSub: randomUUID(),
+    },
+  }),
+  'POST /storefront/v1/accounts/forgot-password': () => ({
+    method: 'POST',
+    path: '/storefront/v1/accounts/forgot-password',
+    body: { email: state().accountEmail },
+  }),
+  'POST /storefront/v1/accounts/reset-password': () => ({
+    method: 'POST',
+    path: '/storefront/v1/accounts/reset-password',
+    body: { token: 'x'.repeat(43), password: 'sweep-password' },
+  }),
+  'PATCH /storefront/v1/accounts/:id': () => ({
+    method: 'PATCH',
+    path: `/storefront/v1/accounts/${state().accountId}`,
+    body: { name: 'Website fixture' },
+  }),
+  'POST /storefront/v1/accounts/:id/change-password': () => ({
+    method: 'POST',
+    path: `/storefront/v1/accounts/${state().accountId}/change-password`,
+    body: { currentPassword: 'not-it', newPassword: 'sweep-password' },
+  }),
+  'POST /storefront/v1/payments/sslcommerz/init': () => ({
+    method: 'POST',
+    path: '/storefront/v1/payments/sslcommerz/init',
+    body: { orderNo: state().orderNo, token: state().viewToken },
+  }),
+  'POST /storefront/v1/payments/sslcommerz/return': () => ({
+    method: 'POST',
+    path: '/storefront/v1/payments/sslcommerz/return',
+    body: { kind: 'cancel', tranId: 'NOSUCHTRANSACTION0000' },
+  }),
+};
+
+let fixtureSku: string | undefined;
+
+function skuOf(): string {
+  return fixtureSku ?? '00000000-0000-4000-8000-000000000000';
+}
+
+/** The fixture product's SKU, for the write fixtures. */
+export async function loadFixtureSku(): Promise<void> {
+  const productId = state().productId;
+  fixtureSku = await withSystem(
+    async (tx) =>
+      (
+        await tx.execute<{ id: string }>(sql`
+          select id from catalog.skus where org_id = ${ORG_A} and product_id = ${productId} limit 1
+        `)
+      )[0]?.id,
+    { orgId: ORG_A },
+  );
+}
