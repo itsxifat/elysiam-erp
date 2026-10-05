@@ -68,7 +68,15 @@ const FACES: readonly { file: string; weight: 400 | 600; subset: 'bengali' | 'la
  * it sets `PDF_FONT_DIR`. The failure below names that variable rather than
  * printing a path nobody can act on.
  */
-function defaultFontDir(): string | null {
+export function defaultFontDir(env: NodeJS.ProcessEnv = process.env): string | null {
+  // The container image ships the fonts at PDF_FONT_DIR (infra/docker/server.Dockerfile) and
+  // keeps a pnpm-workspace.yaml at /app, so the walk below would stop there and look for a
+  // packages/ui that the image does not have. The variable wins whenever it is set; until
+  // 2026-10-06 nothing read it, and every PDF on a deployed server failed (stickers, labels,
+  // invoices, payslips).
+  const configured = env.PDF_FONT_DIR?.trim();
+  if (configured !== undefined && configured !== '') return configured;
+
   let directory = path.dirname(fileURLToPath(import.meta.url));
   for (let depth = 0; depth < 12; depth += 1) {
     if (existsSync(path.join(directory, 'pnpm-workspace.yaml'))) {

@@ -2360,3 +2360,44 @@ dry-run|commit --file <users.json>`.
 - Still to do: the website repo shows the new regular prices, colour photos and campaign links,
   and turns tracking on; ncom.bd's credentials go into Website → Marketplace when the owner has
   them.
+
+### 2026-10-06 · website · Regular prices, colour photos, campaign links and tracking on the new site · done
+
+- The website repo's `erp-storefront` gained b433c66 and 8451835: the ERP's regular price
+  struck through everywhere a price shows, "On sale" through the ERP's filter, photos switched
+  by colour, campaign links (`?cu=`) mapped to the real ERP route with a view counted once per
+  visit, and tracking from the ERP (off until switched on in Website → Tracking; browser events
+  batched to the ERP, never Purchase; the confirmation page's pixel uses `purchase_<orderNo>` so
+  the ERP's server Purchase deduplicates). Playwright 20 of 20 against the live code's ERP,
+  37 unit tests, lint clean, no-database check; acceptance-auditor READY. No ERP change.
+- Redeployed to demo.elysium-lifestyle.bd (release 845183525925, the previous image kept as
+  `elysium-web:previous`): healthy, reads the ERP, home and the on-sale shop answer 200.
+- To switch tracking on later: the nginx tracking-proxy include on the demo site, the pixel and
+  GA4 ids in Website → Tracking, and `STOREFRONT_TRACKING_PROVIDER=live` with
+  `STOREFRONT_TRACKING_ENABLED=true` on the brand ERP.
+
+### 2026-10-06 · hotfix · Sticker and every other PDF failed on the live ERP · fixed
+
+- The owner's "Print stickers" failed with "the failure is logged". The live API's log:
+  `Cannot find the Bangla fonts. Set PDF_FONT_DIR …` from `loadFonts` (catalog labels).
+- Cause: `apps/server/src/modules/files/pdf/fonts.ts` never read `PDF_FONT_DIR`. The server
+  image sets it to `/app/fonts` (where the fonts are) and also keeps a `pnpm-workspace.yaml` at
+  `/app`, so the workspace walk stopped there, looked for a `packages/ui` the image does not have,
+  and threw. All seven production callers (SKU stickers, courier labels, packing order labels,
+  invoices and their documents, payslips) were affected on any deployed server, including the
+  test site; every local and CI test passed because a checkout has the folder the walk finds.
+- Fix 8f68372: the variable wins whenever it is set; `fonts.test.ts` reproduces the image's
+  layout (marker at the root, no packages/ui, fonts in their own folder). PDF tests 19 of 19,
+  typecheck and lint green; deployed to Elysium's ERP at once; on the live server the four faces
+  load and Gotenberg returns a PDF with Bangla text. Full verify run afterwards (below).
+- Lesson: deployed images need a smoke test that renders one PDF; added as a follow-up for
+  M14b/M30 part 2 (a post-deploy check in `infra/brand/server-deploy.sh`).
+
+### 2026-10-06 · pause · Weekly usage limit reached
+
+- The hotfix's full verify passed at 613efaf: 233 test files, 3,585 passed, 1 skipped.
+- Builders stopped by the account's weekly limit (resets 2026-10-09, 07:00 Asia/Dhaka), work
+  safe on disk (no zeroed files): M38b on `m38b-pack-video` at 8982c9c (station screen, recorder
+  and upload queue committed; 4 files uncommitted), M32 on `m32-mother` at 84265aa (merged with
+  today's integration; deploy scripts in progress; 9 files uncommitted), stickers (45 × 35 mm,
+  custom size, extra line) on `stickers-sizes` not started.
