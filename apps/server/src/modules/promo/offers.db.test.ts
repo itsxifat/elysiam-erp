@@ -6,14 +6,23 @@ import { bestFlashOffer, planFlashLines } from '@elysium/domain/promo';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { attachScope } from '../../platform/auth/scope.js';
+import type { ActiveContext } from '../../platform/http/context.js';
 import {
   ORG_A,
   startHttpHarness,
   type HttpHarness,
   type RoleClient,
 } from '../../testing/http-harness.js';
-import { seedProductWithSkus, type SeededSku } from '../inventory/inventory.testing.js';
-import { seedCustomer, seedOrder } from '../orders/orders.testing.js';
+import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
+import {
+  seedProductWithSkus,
+  warehouseId,
+  type SeededSku,
+} from '../inventory/inventory.testing.js';
+import { OrdersService } from '../orders/orders.service.js';
+import { ownRiderCourier, seedCustomer, seedOrder } from '../orders/orders.testing.js';
 import { PROMO_API, type PromoApi } from './promo.api.js';
 
 /**
@@ -23,8 +32,9 @@ import { PROMO_API, type PromoApi } from './promo.api.js';
  * claiming one each at the same instant, exactly five sold; and a cancel that gives its unit
  * back exactly once, through the order's real cancel transition. Around it, what only a
  * database can prove: the savepoint that makes a claim all-or-nothing even for a caller who
- * catches the refusal, the price and window conditions inside the claim's UPDATE, a partial
- * return, the editor over HTTP, and the website's discount quote and redemptions.
+ * catches the refusal, the price and window conditions inside the claim's UPDATE, a return
+ * after a partial delivery through the real transitions, two lines of one SKU priced by two
+ * sales, the editor over HTTP, and the website's discount quote and redemptions.
  */
 
 const ACTOR = 'usr_offers_db';
@@ -55,21 +65,43 @@ function sku(index: number): SeededSku {
   return found;
 }
 
-async function order(buyer = customerId, status: 'pending' | 'cancelled' = 'pending') {
+interface SeededOrder {
+  readonly id: string;
+  /** The order's lines, in the order given. */
+  readonly lineIds: readonly string[];
+}
+
+/** An order with lines of these SKUs (one unit of SKU 0 when none are given). */
+async function order(
+  lines: readonly { skuIndex: number; qty: number }[] = [{ skuIndex: 0, qty: 1 }],
+  buyer = customerId,
+  status: 'pending' | 'cancelled' = 'pending',
+): Promise<SeededOrder> {
   const seeded = await seedOrder(ORG_A, {
     status,
     customerId: buyer,
-    lines: [
-      {
-        skuId: sku(0).id,
-        skuCode: sku(0).code,
-        productName: 'Offer product',
-        qty: 1,
-        unitPricePoisha: SHELF,
-      },
-    ],
+    lines: lines.map((line) => ({
+      skuId: sku(line.skuIndex).id,
+      skuCode: sku(line.skuIndex).code,
+      productName: 'Offer product',
+      qty: line.qty,
+      unitPricePoisha: SHELF,
+    })),
   });
-  return seeded.id;
+  return { id: seeded.id, lineIds: await linesOf(seeded.id) };
+}
+
+async function linesOf(orderId: string): Promise<string[]> {
+  return withSystem(
+    async (tx) =>
+      [
+        ...(await tx.execute<{ id: string }>(sql`
+          select id from sales.order_lines where org_id = ${ORG_A} and order_id = ${orderId}
+          order by position, created_at, id
+        `)),
+      ].map((row) => row.id),
+    { orgId: ORG_A },
+  );
 }
 
 /** A sale written directly: the fixture for the claim tests, which do not test the editor. */
@@ -80,6 +112,8 @@ async function sale(input: {
   readonly endsAt?: Date | null;
   readonly priority?: number;
 }): Promise<{ saleId: string; itemIds: string[] }> {
+  const startsAt = input.startsAt === undefined ? new Date(Date.now() - HOUR) : input.startsAt;
+  const endsAt = input.endsAt === undefined ? new Date(Date.now() + HOUR) : input.endsAt;
   return withSystem(
     async (tx) => {
       const slug = `t-${randomUUID().slice(0, 8)}`;
@@ -87,16 +121,16 @@ async function sale(input: {
         insert into promo.flash_sales (
           org_id, title, slug, enabled, priority, starts_at, ends_at, created_by)
         values (${ORG_A}, 'Test sale', ${slug}, ${input.enabled ?? true}, ${input.priority ?? 0},
-                ${input.startsAt === undefined ? new Date(Date.now() - HOUR).toISOString() : (input.startsAt?.toISOString() ?? null)}::timestamptz,
-                ${input.endsAt === undefined ? new Date(Date.now() + HOUR).toISOString() : (input.endsAt?.toISOString() ?? null)}::timestamptz,
-                ${ACTOR})
+                ${startsAt?.toISOString() ?? null}::timestamptz,
+                ${endsAt?.toISOString() ?? null}::timestamptz, ${ACTOR})
         returning id
       `);
       const saleId = row?.id ?? '';
       const itemIds: string[] = [];
       for (const item of input.items) {
         const [itemRow] = await tx.execute<{ id: string }>(sql`
-          insert into promo.flash_sale_items (org_id, flash_sale_id, sku_id, sale_price_poisha, unit_limit)
+          insert into promo.flash_sale_items (
+            org_id, flash_sale_id, sku_id, sale_price_poisha, unit_limit)
           values (${ORG_A}, ${saleId}, ${item.skuId}, ${item.price.toString()}, ${item.limit})
           returning id
         `);
@@ -125,12 +159,27 @@ async function itemState(itemId: string) {
   );
 }
 
-function claim(orderId: string, itemId: string, qty = 1, price = 100_000n, skuIndex = 0) {
+/** Claim the order's first line (or `line`) from one offer. */
+function claim(
+  target: SeededOrder,
+  itemId: string,
+  qty = 1,
+  price = 100_000n,
+  skuIndex = 0,
+  line = 0,
+) {
   return withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
     api.claimFlashUnits(tx, ORG_A, {
-      orderId,
-      lines: [{ skuId: sku(skuIndex).id, qty, flashSaleItemId: itemId, salePricePoisha: price }],
-      now: new Date(),
+      orderId: target.id,
+      lines: [
+        {
+          orderLineId: target.lineIds[line] ?? '',
+          skuId: sku(skuIndex).id,
+          qty,
+          flashSaleItemId: itemId,
+          salePricePoisha: price,
+        },
+      ],
     }),
   );
 }
@@ -165,7 +214,7 @@ function barrier(parties: number): () => Promise<void> {
 
 describe('a flash sale’s units under concurrent checkouts (M35a check 1)', () => {
   let itemId = '';
-  let winners: string[] = [];
+  let winners: SeededOrder[] = [];
 
   it('sells exactly five of five units to twenty orders claiming at once', async () => {
     ({
@@ -182,24 +231,24 @@ describe('a flash sale’s units under concurrent checkouts (M35a check 1)', () 
      */
     const ready = barrier(10);
     const results = await Promise.allSettled(
-      orders.map((orderId) =>
+      orders.map((target) =>
         withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => {
           // Every transaction is open and has done work before any claims.
           await tx.execute(sql`select 1`);
           await ready();
           await api.claimFlashUnits(tx, ORG_A, {
-            orderId,
+            orderId: target.id,
             lines: [
               {
+                orderLineId: target.lineIds[0] ?? '',
                 skuId: sku(0).id,
                 qty: 1,
                 flashSaleItemId: itemId,
                 salePricePoisha: 100_000n,
               },
             ],
-            now: new Date(),
           });
-          return orderId;
+          return target;
         }),
       ),
     );
@@ -220,8 +269,9 @@ describe('a flash sale’s units under concurrent checkouts (M35a check 1)', () 
   });
 
   it('gives a cancelled order’s unit back exactly once, through the real cancel', async () => {
-    const [cancelled = ''] = winners;
-    const response = await marketingAdminCancel(cancelled);
+    const [cancelled] = winners;
+    if (cancelled === undefined) throw new Error('no winning order');
+    const response = await adminCancel(cancelled.id);
     expect(response.statusCode, response.body).toBeLessThan(300);
 
     let state = await itemState(itemId);
@@ -231,10 +281,10 @@ describe('a flash sale’s units under concurrent checkouts (M35a check 1)', () 
     ]);
 
     // Told again, by a second cancel and by a direct release: nothing more goes back.
-    const again = await marketingAdminCancel(cancelled);
+    const again = await adminCancel(cancelled.id);
     expect(again.statusCode).toBe(409);
     const released = await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
-      api.releaseFlashUnits(tx, ORG_A, cancelled),
+      api.releaseFlashUnits(tx, ORG_A, cancelled.id),
     );
     expect(released).toBe(0);
     state = await itemState(itemId);
@@ -245,7 +295,7 @@ describe('a flash sale’s units under concurrent checkouts (M35a check 1)', () 
     expect((await itemState(itemId)).sold).toBe(5);
   });
 
-  async function marketingAdminCancel(orderId: string) {
+  async function adminCancel(orderId: string) {
     const admin = await harness.asRole('org_admin', ORG_A);
     return admin.client.request('POST', `/v1/orders/${orderId}/cancel`, {
       body: { reason: 'Buyer changed their mind' },
@@ -272,42 +322,54 @@ describe('what a claim checks inside its own UPDATE (D-542)', () => {
     });
 
     const refused = { response: { code: 'FLASH_SALE_UNAVAILABLE' } };
-    const stale = await order();
+    const stale = await order([{ skuIndex: 1, qty: 1 }]);
     await expect(claim(stale, live.itemIds[0] ?? '', 1, 95_000n, 1)).rejects.toMatchObject(refused);
     for (const offer of [later, over, off]) {
       await expect(
-        claim(await order(), offer.itemIds[0] ?? '', 1, 90_000n, 1),
+        claim(await order([{ skuIndex: 1, qty: 1 }]), offer.itemIds[0] ?? '', 1, 90_000n, 1),
       ).rejects.toMatchObject(refused);
     }
     await claim(stale, live.itemIds[0] ?? '', 1, 90_000n, 1);
     expect((await itemState(live.itemIds[0] ?? '')).sold).toBe(1);
   });
 
+  it('refuses a claim naming one SKU for another SKU’s offer', async () => {
+    const offer = await sale({ items: [{ skuId: sku(1).id, price: 90_000n, limit: 10 }] });
+    // The order's line is SKU 0; the claim says SKU 0 but names SKU 1's offer.
+    await expect(claim(await order(), offer.itemIds[0] ?? '', 1, 90_000n, 0)).rejects.toMatchObject(
+      { response: { code: 'FLASH_SALE_UNAVAILABLE' } },
+    );
+  });
+
   it('takes nothing when one line is refused, even if the caller catches it and commits', async () => {
     const plenty = await sale({ items: [{ skuId: sku(2).id, price: 80_000n, limit: 10 }] });
     const scarce = await sale({ items: [{ skuId: sku(3).id, price: 80_000n, limit: 1 }] });
-    await claim(await order(), scarce.itemIds[0] ?? '', 1, 80_000n, 3);
+    await claim(await order([{ skuIndex: 3, qty: 1 }]), scarce.itemIds[0] ?? '', 1, 80_000n, 3);
 
-    const orderId = await order();
+    const target = await order([
+      { skuIndex: 2, qty: 3 },
+      { skuIndex: 3, qty: 1 },
+    ]);
     const caught = await withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => {
       try {
         await api.claimFlashUnits(tx, ORG_A, {
-          orderId,
+          orderId: target.id,
           lines: [
             {
+              orderLineId: target.lineIds[0] ?? '',
               skuId: sku(2).id,
               qty: 3,
               flashSaleItemId: plenty.itemIds[0] ?? '',
               salePricePoisha: 80_000n,
             },
             {
+              orderLineId: target.lineIds[1] ?? '',
               skuId: sku(3).id,
               qty: 1,
               flashSaleItemId: scarce.itemIds[0] ?? '',
               salePricePoisha: 80_000n,
             },
           ],
-          now: new Date(),
         });
         return 'claimed';
       } catch (error) {
@@ -323,52 +385,66 @@ describe('what a claim checks inside its own UPDATE (D-542)', () => {
 
   it('sells as many as asked of an all-stock offer, and a retried claim takes nothing more', async () => {
     const all = await sale({ items: [{ skuId: sku(2).id, price: 70_000n, limit: null }] });
-    const orderId = await order();
-    await claim(orderId, all.itemIds[0] ?? '', 40, 70_000n, 2);
-    await claim(orderId, all.itemIds[0] ?? '', 40, 70_000n, 2);
+    const target = await order([{ skuIndex: 2, qty: 40 }]);
+    await claim(target, all.itemIds[0] ?? '', 40, 70_000n, 2);
+    await claim(target, all.itemIds[0] ?? '', 40, 70_000n, 2);
     expect((await itemState(all.itemIds[0] ?? '')).sold).toBe(40);
   });
 
-  it('gives back only the returned units after a partial delivery, once', async () => {
-    const offer = await sale({ items: [{ skuId: sku(1).id, price: 60_000n, limit: 10 }] });
-    const orderId = await order();
-    await claim(orderId, offer.itemIds[0] ?? '', 3, 60_000n, 1);
+  it('gives back each line’s own units: one line delivered, the other returned', async () => {
+    const x = await sale({ items: [{ skuId: sku(1).id, price: 60_000n, limit: 10 }] });
+    const y = await sale({ items: [{ skuId: sku(2).id, price: 65_000n, limit: 10 }] });
+    const target = await order([
+      { skuIndex: 1, qty: 2 },
+      { skuIndex: 2, qty: 3 },
+    ]);
+    await claim(target, x.itemIds[0] ?? '', 2, 60_000n, 1, 0);
+    await claim(target, y.itemIds[0] ?? '', 3, 65_000n, 2, 1);
 
-    const returned = [{ skuId: sku(1).id, qty: 1 }];
+    // Line one was delivered whole; line two came back whole. Only Y gets units back, and
+    // X's claim stays held: those two units sold at the sale price.
+    const returned = [
+      { orderLineId: target.lineIds[0] ?? '', qty: 0 },
+      { orderLineId: target.lineIds[1] ?? '', qty: 3 },
+    ];
     const first = await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
-      api.releaseFlashUnits(tx, ORG_A, orderId, returned),
+      api.releaseFlashUnits(tx, ORG_A, target.id, returned),
     );
     const second = await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
-      api.releaseFlashUnits(tx, ORG_A, orderId, returned),
+      api.releaseFlashUnits(tx, ORG_A, target.id, returned),
     );
 
-    expect([first, second]).toEqual([1, 0]);
-    expect(await itemState(offer.itemIds[0] ?? '')).toEqual({
+    expect([first, second]).toEqual([3, 0]);
+    expect(await itemState(x.itemIds[0] ?? '')).toEqual({
       sold: 2,
-      claims: [{ status: 'released', qty: 3, released_qty: 1 }],
+      claims: [{ status: 'claimed', qty: 2, released_qty: 0 }],
+    });
+    expect(await itemState(y.itemIds[0] ?? '')).toEqual({
+      sold: 0,
+      claims: [{ status: 'released', qty: 3, released_qty: 3 }],
     });
   });
 
   it('refuses to change or remove a claim once it is released', async () => {
     const offer = await sale({ items: [{ skuId: sku(1).id, price: 60_000n, limit: 10 }] });
-    const orderId = await order();
-    await claim(orderId, offer.itemIds[0] ?? '', 1, 60_000n, 1);
+    const target = await order([{ skuIndex: 1, qty: 1 }]);
+    await claim(target, offer.itemIds[0] ?? '', 1, 60_000n, 1);
     await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
-      api.releaseFlashUnits(tx, ORG_A, orderId),
+      api.releaseFlashUnits(tx, ORG_A, target.id),
     );
 
     const change = await failure(
       withSystem(
         (tx) =>
           tx.execute(
-            sql`update promo.flash_claims set released_qty = 0 where order_id = ${orderId}`,
+            sql`update promo.flash_claims set released_qty = 0 where order_id = ${target.id}`,
           ),
         { orgId: ORG_A },
       ),
     );
     const remove = await failure(
       withSystem(
-        (tx) => tx.execute(sql`delete from promo.flash_claims where order_id = ${orderId}`),
+        (tx) => tx.execute(sql`delete from promo.flash_claims where order_id = ${target.id}`),
         { orgId: ORG_A },
       ),
     );
@@ -403,6 +479,95 @@ describe('what a claim checks inside its own UPDATE (D-542)', () => {
     expect(plan[1]?.offer?.flashSaleItemId).not.toBe(soon.itemIds[0]);
     expect(plan[1]?.unitPricePoisha).toBe(50_000n);
   });
+});
+
+describe('a return after a partial delivery, through the real transitions (ledger audit W10)', () => {
+  function request(): AuditableRequest {
+    const value = {} as AuditableRequest;
+    attachScope(value, 'update', 'Order', { kind: 'all' });
+    return value;
+  }
+
+  function agent(): ActiveContext {
+    return {
+      orgId: ORG_A,
+      userId: ACTOR,
+      isSuperAdmin: false,
+      roles: ['org_admin'],
+      branchIds: [],
+      branchIdsByRole: {},
+      requestId: 'offers-db-test',
+    };
+  }
+
+  it('gives back the undelivered units of a flash-priced line, and keeps the delivered ones', async () => {
+    const orders = harness.app.get(OrdersService);
+    const inventory = harness.app.get<InventoryApi>(INVENTORY_API, { strict: false });
+    const [item] = (await seedProductWithSkus(ORG_A, 'offersret', 1)).skus;
+    if (item === undefined) throw new Error('no SKU seeded');
+    const location = await warehouseId(ORG_A);
+    const courierId = await ownRiderCourier(ORG_A);
+    await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
+      inventory.receiveSupply(
+        tx,
+        { orgId: ORG_A, userId: ACTOR },
+        {
+          supplyId: randomUUID(),
+          supplierId: randomUUID(),
+          locationId: location,
+          branchId: null,
+          occurredAt: new Date(),
+          lines: [{ skuId: item.id, qty: 10, unitCostPoisha: poisha(40_000n) }],
+        },
+      ),
+    );
+    const offer = await sale({ items: [{ skuId: item.id, price: 100_000n, limit: 5 }] });
+    const itemId = offer.itemIds[0] ?? '';
+
+    const created = await orders.create(agent(), request(), {
+      channel: 'website',
+      customerId,
+      locationId: location,
+      courierId,
+      deliveryChargePoisha: '6000',
+      lines: [{ skuId: item.id, qty: 3, unitPricePoisha: '100000' }],
+    });
+    const lineIds = await linesOf(created.id);
+    await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
+      api.claimFlashUnits(tx, ORG_A, {
+        orderId: created.id,
+        lines: [
+          {
+            orderLineId: lineIds[0] ?? '',
+            skuId: item.id,
+            qty: 3,
+            flashSaleItemId: itemId,
+            salePricePoisha: 100_000n,
+          },
+        ],
+      }),
+    );
+    expect((await itemState(itemId)).sold).toBe(3);
+
+    const move = (trigger: Parameters<OrdersService['transition']>[3], options = {}) =>
+      orders.transition(agent(), request(), created.id, trigger, options);
+    await move('confirm');
+    await move('ship', { courierId });
+    await move('deliver_partially', {
+      deliver: { lines: [{ skuId: item.id, deliveredQty: 2 }], collectedPoisha: '206000' },
+    });
+    expect((await itemState(itemId)).sold).toBe(3);
+    await move('receive_return', {
+      reason: 'One came back',
+      returnReason: 'size_issue',
+      ret: { reason: 'One came back', locationId: location },
+    });
+
+    expect(await itemState(itemId)).toEqual({
+      sold: 2,
+      claims: [{ status: 'released', qty: 3, released_qty: 1 }],
+    });
+  }, 240_000);
 
   it('keeps every sale’s sold count equal to what its claims hold', async () => {
     const drift = await withSystem(
@@ -451,7 +616,7 @@ describe('the flash-sale editor over HTTP (D-542)', () => {
 
     // Sell two units, then edit: the price changes, sku(1) leaves, sold stays.
     const firstItem = view.items.find((item) => item.skuId === sku(0).id)?.id ?? '';
-    await claim(await order(), firstItem, 2, 120_000n, 0);
+    await claim(await order([{ skuIndex: 0, qty: 2 }]), firstItem, 2, 120_000n, 0);
     const edited = await marketing.client.request('PUT', `/v1/promo/flash-sales/${view.id}`, {
       body: {
         title: 'Eid Flash',
@@ -469,6 +634,19 @@ describe('the flash-sale editor over HTTP (D-542)', () => {
         { skuId: sku(1).id, enabled: false },
       ],
     });
+
+    // The audit row names every SKU's price before and after.
+    const audit = await withSystem(
+      (tx) =>
+        tx.execute<{ before: unknown; after: unknown }>(sql`
+          select before, after from audit.audit_log
+          where org_id = ${ORG_A} and action = 'promo.flash_sale.updated' and entity_id = ${view.id}
+          order by created_at desc limit 1
+        `),
+      { orgId: ORG_A },
+    );
+    expect(JSON.stringify(audit[0])).toContain('"salePricePoisha":"120000"');
+    expect(JSON.stringify(audit[0])).toContain('"salePricePoisha":"115000"');
 
     // A limit below what sold, and a sale price at the shelf price, are refused.
     for (const item of [
@@ -506,6 +684,40 @@ describe('the flash-sale editor over HTTP (D-542)', () => {
     const list = await marketing.client.request('GET', '/v1/promo/flash-sales');
     const listed = (JSON.parse(list.body) as { items: { id: string; unitsSold: number }[] }).items;
     expect(listed.find((row) => row.id === view.id)).toMatchObject({ unitsSold: 2 });
+  });
+
+  it('takes a public campaign image as the banner, and nothing else (ledger audit W6)', async () => {
+    async function file(purpose: string, visibility: 'public' | 'private'): Promise<string> {
+      const fileId = randomUUID();
+      await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
+        tx.execute(sql`
+          insert into files.objects
+            (id, org_id, storage_key, driver, visibility, status, purpose, mime, size_bytes,
+             sha256)
+          values (
+            ${fileId}, ${ORG_A}, ${`${visibility}/${ORG_A}/${fileId}.webp`}, 'local',
+            ${visibility}::files.file_visibility, 'stored', ${purpose}, 'image/webp', 1024,
+            ${'a'.repeat(64)})
+        `),
+      );
+      return fileId;
+    }
+    const banner = await file('campaign-asset', 'public');
+    for (const bannerFileId of [
+      await file('payslip', 'private'),
+      await file('campaign-asset', 'private'),
+      randomUUID(),
+    ]) {
+      const refused = await marketing.client.request('POST', '/v1/promo/flash-sales', {
+        body: { title: 'Banner test', bannerFileId },
+      });
+      expect(refused.statusCode, refused.body).toBe(400);
+      expect(JSON.parse(refused.body)).toMatchObject({ code: 'FLASH_SALE_INVALID' });
+    }
+    const accepted = await marketing.client.request('POST', '/v1/promo/flash-sales', {
+      body: { title: 'Banner test', bannerFileId: banner },
+    });
+    expect(accepted.statusCode, accepted.body).toBe(201);
   });
 
   it('is not the warehouse’s to see', async () => {
@@ -570,6 +782,7 @@ describe('the website’s discounts, through the one engine (D-540, D-541)', () 
     // ৳4,500: 5% (৳225) and one of three free (৳1,500), together ৳1,725.
     expect(answer.discountPoisha).toBe(172_500n);
     expect(answer.applied.map((entry) => entry.discountId).sort()).toEqual([bxgy, tiered].sort());
+    expect(answer.applied.find((entry) => entry.discountId === bxgy)?.title).toBe(word);
     expect(answer.refused).toEqual([{ code: 'NOPE123', reason: 'not_found' }]);
 
     // The desk does not see automatic discounts (D-544).
@@ -577,19 +790,20 @@ describe('the website’s discounts, through the one engine (D-540, D-541)', () 
       [],
     );
 
-    const orderId = await order();
+    const target = await order();
     const { redemptionIds } = await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
-      api.redeem(tx, ORG_A, { orderId, customerId, applied: answer.applied }),
+      api.redeem(tx, ORG_A, { orderId: target.id, customerId, applied: answer.applied }),
     );
     expect(redemptionIds).toHaveLength(2);
     const released = await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
-      api.releaseForOrder(tx, ORG_A, orderId),
+      api.releaseForOrder(tx, ORG_A, target.id),
     );
     expect(released).toBe(true);
     const statuses = await withSystem(
       (tx) =>
         tx.execute<{ status: string }>(sql`
-          select status from promo.redemptions where org_id = ${ORG_A} and order_id = ${orderId}
+          select status from promo.redemptions
+          where org_id = ${ORG_A} and order_id = ${target.id}
         `),
       { orgId: ORG_A },
     );
@@ -616,7 +830,7 @@ describe('the website’s discounts, through the one engine (D-540, D-541)', () 
       phoneE164: '+8801711000353',
       name: 'Cancelled Buyer',
     });
-    await order(cancelledOnly, 'cancelled');
+    await order(undefined, cancelledOnly, 'cancelled');
 
     for (const buyer of [fresh, cancelledOnly, null]) {
       const answer = await quote({ lines: [{ skuIndex: 0, qty: 1 }], codes: [word], buyer });
@@ -625,6 +839,50 @@ describe('the website’s discounts, through the one engine (D-540, D-541)', () 
     // `customerId` has ordered before (the suites above took orders for them).
     const returning = await quote({ lines: [{ skuIndex: 0, qty: 1 }], codes: [word] });
     expect(returning.refused).toEqual([{ code: word, reason: 'first_order_only' }]);
+  });
+
+  it('gives a new buyer’s first-order discount to one of two orders placed at once (W3)', async () => {
+    const word = `ONE${randomUUID().slice(0, 6).toUpperCase()}`;
+    await createDiscount({ code: word, kind: 'flat', valuePoisha: '20000', firstOrderOnly: true });
+    const buyer = await seedCustomer(ORG_A, { phoneE164: '+8801711000354', name: 'Twice Buyer' });
+    const answer = await quote({ lines: [{ skuIndex: 0, qty: 1 }], codes: [word], buyer });
+    expect(answer.refused).toEqual([]);
+    expect(answer.applied).toHaveLength(1);
+
+    // Both orders exist (each in its own transaction, as checkout writes it), both quoted
+    // before either redeemed; only the code's row lock stands between them.
+    const ready = barrier(2);
+    const attempts = await Promise.allSettled(
+      [0, 1].map(() =>
+        withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => {
+          const placed = await tx.execute<{ id: string }>(sql`
+            insert into sales.orders (
+              org_id, order_no, channel, customer_id, ship_name, ship_phone_e164,
+              ship_district_id, ship_thana_id, ship_address_line, items_poisha,
+              discount_poisha, delivery_charge_poisha, advance_paid_poisha, cod_amount_poisha,
+              status, created_by)
+            select ${ORG_A}, ${`TST-2609-9${String(Math.floor(Math.random() * 90_000) + 10_000)}`},
+                   'website', ${buyer},
+                   'Twice Buyer', '+8801711000354', t.district_id, t.id, 'House 2', 150000,
+                   20000, 6000, 0, 136000, 'pending', ${ACTOR}
+            from ref.thanas t order by t.id limit 1
+            returning id
+          `);
+          await ready();
+          return api.redeem(tx, ORG_A, {
+            orderId: placed[0]?.id ?? '',
+            customerId: buyer,
+            applied: answer.applied,
+          });
+        }),
+      ),
+    );
+    const refused = attempts.filter((attempt) => attempt.status === 'rejected');
+    expect(attempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(1);
+    expect(refused).toHaveLength(1);
+    expect(refused[0]?.status === 'rejected' ? refused[0].reason : null).toMatchObject({
+      response: { reason: 'first_order_only' },
+    });
   });
 
   it('reaches a sub-category’s products from a discount on the parent category', async () => {
@@ -678,6 +936,42 @@ describe('the website’s discounts, through the one engine (D-540, D-541)', () 
     expect(response.statusCode, response.body).toBe(201);
     // ৳4,500 for three, one of them free (৳1,500), plus ৳60 delivery.
     expect(JSON.parse(response.body)).toMatchObject({ codAmountPoisha: '306000' });
+  });
+
+  it('titles a code made before M35a with its own word (the 0105 backfill, ledger audit W2)', async () => {
+    // A code as M16 left it: no title. Then 0105's own statement, run as the migration runs
+    // it: as the owner, with no org context of its own.
+    const word = `OLD${randomUUID().slice(0, 6).toUpperCase()}`;
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          insert into promo.codes (org_id, code, kind, value_bps, created_by)
+          values (${ORG_A}, ${word}, 'percent', 500, ${ACTOR})
+        `),
+      { orgId: ORG_A },
+    );
+    const { readFileSync } = await import('node:fs');
+    const migration = readFileSync(
+      new URL(
+        '../../../../../packages/db/migrations/0105_m35a_offers_integrity.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+    const backfill = migration.slice(migration.indexOf('DO $$'), migration.indexOf('$$;') + 3);
+    const title = await withSystem(
+      async (tx) => {
+        await tx.execute(sql`select set_config('app.org_id', '', true)`);
+        await tx.execute(sql.raw(backfill));
+        await tx.execute(sql`select set_config('app.org_id', ${ORG_A}, true)`);
+        const rows = await tx.execute<{ title: string }>(sql`
+          select title from promo.codes where org_id = ${ORG_A} and code = ${word}
+        `);
+        return rows[0]?.title;
+      },
+      { orgId: ORG_A },
+    );
+    expect(title).toBe(word);
   });
 
   it('refuses an automatic discount with a code, and a code without one', async () => {

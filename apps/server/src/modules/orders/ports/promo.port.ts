@@ -59,15 +59,15 @@ export interface PromoPort {
   releaseForOrder(tx: Tx, orgId: string, orderId: string): Promise<boolean>;
 
   /**
-   * Give the order's flash-sale units back (M35a, D-542): all of them on a cancel, or the
-   * units returned per SKU when a return is received. Once, however often; nothing to do for
-   * an order that claimed none.
+   * Give the order's flash-sale units back (M35a, D-542): all of them on a cancel, or each
+   * line's undelivered units when a return is received. Once, however often; nothing to do
+   * for an order that claimed none.
    */
   releaseFlashUnits(
     tx: Tx,
     orgId: string,
     orderId: string,
-    returned?: readonly { readonly skuId: string; readonly qty: number }[],
+    returned?: readonly { readonly orderLineId: string; readonly qty: number }[],
   ): Promise<number>;
 
   /**

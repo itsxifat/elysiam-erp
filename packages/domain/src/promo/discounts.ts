@@ -190,24 +190,44 @@ function inScope(discount: Discount, line: DiscountLine): boolean {
   );
 }
 
+interface UnitGroup {
+  readonly price: bigint;
+  readonly count: number;
+}
+
 /**
- * The unit prices of the lines, one entry per unit, cheapest first.
+ * The units of the lines as groups of one price each, cheapest first.
  *
- * A line's net is split across its units with `allocate`, so a line the agent discounted to
- * an amount that does not divide by its quantity still has units that sum to it exactly.
+ * A line's net split evenly across its units, as `allocate` splits it: `net = qty × base +
+ * extra` gives `extra` units at `base + 1` and the rest at `base`, so units sum to the net
+ * exactly however the agent discounted the line. Grouped rather than one entry per unit, so
+ * a line of ten thousand is two groups and not ten thousand numbers to sort (ledger audit
+ * W13); the multiset is the same one `allocate` gives.
  */
-function unitsCheapestFirst(lines: readonly DiscountLine[]): Poisha[] {
-  const units: Poisha[] = [];
+function unitGroups(lines: readonly DiscountLine[]): UnitGroup[] {
+  const groups: UnitGroup[] = [];
   for (const line of lines) {
-    if (line.qty <= 0) continue;
-    units.push(
-      ...allocate(
-        line.netPoisha,
-        Array.from({ length: line.qty }, () => 1),
-      ),
-    );
+    if (line.qty <= 0 || line.netPoisha < 0n) continue;
+    const qty = BigInt(line.qty);
+    const base = line.netPoisha / qty;
+    const extra = Number(line.netPoisha % qty);
+    if (extra > 0) groups.push({ price: base + 1n, count: extra });
+    if (line.qty - extra > 0) groups.push({ price: base, count: line.qty - extra });
   }
-  return units.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return groups.sort((a, b) => (a.price < b.price ? -1 : a.price > b.price ? 1 : 0));
+}
+
+/** The sum of the `count` cheapest units. */
+function cheapest(groups: readonly UnitGroup[], count: number): Poisha {
+  let left = count;
+  let total = 0n;
+  for (const group of groups) {
+    if (left <= 0) break;
+    const take = Math.min(left, group.count);
+    total += group.price * BigInt(take);
+    left -= take;
+  }
+  return poisha(total);
 }
 
 /** The tier the whole basket reaches: the highest minimum at or below it, first-listed on a tie. */
@@ -238,10 +258,10 @@ function goodsAmount(
       return min(discount.valuePoisha, scopedSubtotal);
     case 'buy_x_get_y': {
       if (discount.buyQuantity <= 0 || discount.getQuantity <= 0) return ZERO;
-      const units = unitsCheapestFirst(scoped);
-      const sets = Math.floor(units.length / (discount.buyQuantity + discount.getQuantity));
-      const discounted = sum(units.slice(0, sets * discount.getQuantity));
-      return percentOf(discounted, discount.getDiscountBps);
+      const groups = unitGroups(scoped);
+      const units = groups.reduce((total, group) => total + group.count, 0);
+      const sets = Math.floor(units / (discount.buyQuantity + discount.getQuantity));
+      return percentOf(cheapest(groups, sets * discount.getQuantity), discount.getDiscountBps);
     }
     case 'tiered': {
       const tier = tierFor(discount.tiers, subtotal);
@@ -371,15 +391,24 @@ function valueOf(candidate: Candidate): Poisha {
 /**
  * The stackable candidates applied together, each trimmed to what is left to give.
  *
- * Goods discounts add up to at most the basket, taken in priority order; a delivery charge
- * is waived once, by the stackable discount that waives the most of it. The old engine
- * valued a stack as the plain sum of its members, so two free-shipping discounts counted
- * the delivery charge twice and a stack worth more than the basket counted the excess; both
- * could make it choose a stack worth less than the best single discount. Valued as what it
- * actually gives, a stack is chosen only when it is at least as good.
+ * Each line can lose at most what it costs. A stacked discount is taken off **its own
+ * lines**, in priority order: it gives at most what is still left on the lines in its scope,
+ * and what it gives comes off those lines in proportion to what each has left (`allocate`,
+ * so no line goes below zero). Two ৳500 discounts on a ৳600 panjabi therefore give ৳600
+ * between them, never ৳1,000 with the excess off a shirt neither covers (ledger audit W1).
+ * A delivery charge is waived once, by the stackable discount that waives the most of it.
+ *
+ * The old engine summed a stack's members and capped the sum at the whole basket only, so
+ * it over-gave on scoped stacks, counted the delivery charge once per free-shipping member,
+ * and counted goods beyond the basket; each could make it choose a stack worth less than
+ * the best single discount. Valued as what it actually gives, a stack is chosen only when it
+ * is at least as good (D-540).
  */
-function chooseStack(stackables: readonly Candidate[], subtotal: Poisha): Candidate[] {
-  let left: Poisha = subtotal;
+function chooseStack(
+  stackables: readonly Candidate[],
+  lines: readonly DiscountLine[],
+): Candidate[] {
+  const left: Poisha[] = lines.map((line) => (line.netPoisha > 0n ? line.netPoisha : ZERO));
   let waiver: Candidate | undefined;
   for (const candidate of stackables) {
     if (candidate.deliveryDiscountPoisha > (waiver?.deliveryDiscountPoisha ?? 0n)) {
@@ -388,8 +417,21 @@ function chooseStack(stackables: readonly Candidate[], subtotal: Poisha): Candid
   }
   const trimmed: Candidate[] = [];
   for (const candidate of stackables) {
-    const goods = min(candidate.discountPoisha, left);
-    left = poisha(left - goods);
+    const scope = lines
+      .map((line, index) => ({ line, index }))
+      .filter((entry) => inScope(candidate.discount, entry.line))
+      .map((entry) => entry.index);
+    const room = sum(scope.map((index) => left[index] ?? ZERO));
+    const goods = min(candidate.discountPoisha, room);
+    if (goods > 0n) {
+      const parts = allocate(
+        goods,
+        scope.map((index) => left[index] ?? ZERO),
+      );
+      scope.forEach((lineIndex, at) => {
+        left[lineIndex] = poisha((left[lineIndex] ?? ZERO) - (parts[at] ?? ZERO));
+      });
+    }
     const delivery = candidate === waiver ? candidate.deliveryDiscountPoisha : ZERO;
     if (goods > 0n || delivery > 0n) {
       trimmed.push({
@@ -449,9 +491,8 @@ export function computeDiscounts(input: DiscountsInput): DiscountsResult {
     return difference === 0n ? 0 : difference > 0n ? 1 : -1;
   })[0]!;
 
-  const subtotal = sum(input.basket.lines.map((line) => line.netPoisha));
   const stackables = ordered.filter((candidate) => candidate.discount.allowStacking);
-  const stack = chooseStack(stackables, subtotal);
+  const stack = chooseStack(stackables, input.basket.lines);
   const stackValue = sum(stack.map(valueOf));
   const applied = stackables.length >= 2 && stackValue >= valueOf(best) ? stack : [best];
 

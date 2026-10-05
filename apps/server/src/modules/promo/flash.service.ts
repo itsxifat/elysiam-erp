@@ -9,6 +9,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { AuditService } from '../../platform/audit/audit.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
+import { FILES_API, type FilesApi } from '../files/files.api.js';
 import type { FlashSaleBody } from './flash.schemas.js';
 import * as repo from './flash.repository.js';
 import { PromoError } from './promo.errors.js';
@@ -30,6 +31,8 @@ import { instant } from './promo.service.js';
 
 /** One line of an order priced by a flash offer: what the caller charged and for what. */
 export interface FlashClaimLine {
+  /** The order line, written before the claim; a line claims from one offer, whole. */
+  readonly orderLineId: string;
   readonly skuId: string;
   readonly qty: number;
   readonly flashSaleItemId: string;
@@ -50,6 +53,7 @@ export interface FlashSkuView {
 export class FlashService {
   constructor(
     @Inject(CATALOG_API) private readonly catalog: CatalogApi,
+    @Inject(FILES_API) private readonly files: FilesApi,
     private readonly audit: AuditService,
   ) {}
 
@@ -79,6 +83,7 @@ export class FlashService {
   async create(context: ActiveContext, request: AuditableRequest, body: FlashSaleBody) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       await this.assertItems(tx, context.orgId, body.items);
+      await this.assertBanner(tx, context.orgId, body.bannerFileId);
       const slug = body.slug ?? (await this.freeSlug(tx, context.orgId, body.title));
       const id = await repo.insertSale(tx, {
         orgId: context.orgId,
@@ -99,7 +104,7 @@ export class FlashService {
         entityType: 'FlashSale',
         entityId: id,
         before: null,
-        after: { title: body.title, slug, enabled: body.enabled, skus: body.items.length },
+        after: { ...auditTerms(body), slug },
         requestId: context.requestId,
         request,
       });
@@ -117,6 +122,8 @@ export class FlashService {
       const before = await repo.saleById(tx, context.orgId, id);
       if (before === undefined) throw new PromoError('FLASH_SALE_NOT_FOUND', 'No such sale.');
       await this.assertItems(tx, context.orgId, body.items);
+      await this.assertBanner(tx, context.orgId, body.bannerFileId);
+      const itemsBefore = await repo.itemsOfSale(tx, context.orgId, id);
 
       const slug = body.slug ?? before.slug;
       const outcome = await repo.updateSale(tx, context.orgId, id, { ...terms(body), slug });
@@ -138,8 +145,22 @@ export class FlashService {
         action: 'promo.flash_sale.updated',
         entityType: 'FlashSale',
         entityId: id,
-        before: { title: before.title, slug: before.slug, enabled: before.enabled },
-        after: { title: body.title, slug, enabled: body.enabled, skus: body.items.length },
+        // Every SKU's price and limit, before and after: who set a sale price, and from what,
+        // is the question an audit of a sale is asked (ledger audit W8).
+        before: {
+          title: before.title,
+          slug: before.slug,
+          enabled: before.enabled,
+          startsAt: instant(before.starts_at)?.toISOString() ?? null,
+          endsAt: instant(before.ends_at)?.toISOString() ?? null,
+          items: itemsBefore.map((item) => ({
+            skuId: item.sku_id,
+            salePricePoisha: item.sale_price_poisha,
+            unitLimit: item.unit_limit,
+            enabled: item.enabled,
+          })),
+        },
+        after: { ...auditTerms(body), slug },
         requestId: context.requestId,
         request,
       });
@@ -258,10 +279,10 @@ export class FlashService {
   /**
    * Take the flash units an order was priced with, all or nothing, in its transaction.
    *
-   * Lines naming the same offer are taken together; offers are claimed in id order, so two
-   * orders racing for the same offers lock them in the same order and cannot deadlock. A
-   * second call for an order that already holds a claim on an offer takes nothing more for
-   * it (a retried submission). Any refusal throws, naming the SKUs that could not be had.
+   * One claim per order line (a line is priced whole by one offer). Lines are claimed in
+   * offer order, so two orders racing for the same offers lock them in the same order and
+   * cannot deadlock. A line that already holds its claim takes nothing more (a retried
+   * submission). Any refusal throws, naming the SKUs that could not be had.
    */
   async claim(
     tx: Tx,
@@ -269,28 +290,28 @@ export class FlashService {
     input: {
       readonly orderId: string;
       readonly lines: readonly FlashClaimLine[];
-      readonly now: Date;
     },
   ): Promise<{ readonly claimIds: readonly string[] }> {
-    const byItem = new Map<string, { skuId: string; qty: number; price: bigint }>();
-    for (const line of input.lines) {
+    const lines = [...input.lines].sort((a, b) =>
+      a.flashSaleItemId === b.flashSaleItemId
+        ? a.orderLineId < b.orderLineId
+          ? -1
+          : 1
+        : a.flashSaleItemId < b.flashSaleItemId
+          ? -1
+          : 1,
+    );
+    if (new Set(lines.map((line) => line.orderLineId)).size !== lines.length) {
+      throw new PromoError('FLASH_SALE_INVALID', 'An order line can claim from one offer once.');
+    }
+    for (const line of lines) {
       if (!Number.isInteger(line.qty) || line.qty <= 0) {
         throw new PromoError('FLASH_SALE_INVALID', 'A flash line needs a whole quantity.');
       }
-      const price = BigInt(line.salePricePoisha);
-      const existing = byItem.get(line.flashSaleItemId);
-      if (existing !== undefined && (existing.skuId !== line.skuId || existing.price !== price)) {
-        throw new PromoError('FLASH_SALE_INVALID', 'One offer was given two prices or SKUs.');
-      }
-      byItem.set(line.flashSaleItemId, {
-        skuId: line.skuId,
-        qty: (existing?.qty ?? 0) + line.qty,
-        price,
-      });
     }
 
     const held = new Set(
-      (await repo.heldClaims(tx, orgId, input.orderId)).map((claim) => claim.flash_sale_item_id),
+      (await repo.heldClaims(tx, orgId, input.orderId)).map((claim) => claim.order_line_id),
     );
 
     /*
@@ -301,15 +322,14 @@ export class FlashService {
     return tx.transaction(async (savepoint) => {
       const claimIds: string[] = [];
       const refused: string[] = [];
-      for (const itemId of [...byItem.keys()].sort()) {
-        const line = byItem.get(itemId);
-        if (line === undefined || held.has(itemId)) continue;
+      for (const line of lines) {
+        if (held.has(line.orderLineId)) continue;
+        const price = BigInt(line.salePricePoisha);
         const took = await repo.claimUnits(savepoint, orgId, {
-          itemId,
+          itemId: line.flashSaleItemId,
           skuId: line.skuId,
           qty: line.qty,
-          salePricePoisha: line.price,
-          now: input.now,
+          salePricePoisha: price,
         });
         if (!took) {
           refused.push(line.skuId);
@@ -317,14 +337,15 @@ export class FlashService {
         }
         const claimId = await repo.insertClaim(savepoint, {
           orgId,
-          itemId,
+          itemId: line.flashSaleItemId,
           orderId: input.orderId,
+          orderLineId: line.orderLineId,
           skuId: line.skuId,
           qty: line.qty,
-          salePricePoisha: line.price,
+          salePricePoisha: price,
         });
         if (claimId === undefined) {
-          throw new Error('a flash claim for this order appeared mid-claim');
+          throw new Error('a flash claim for this order line appeared mid-claim');
         }
         claimIds.push(claimId);
       }
@@ -334,7 +355,7 @@ export class FlashService {
           'FLASH_SALE_UNAVAILABLE',
           'The flash price is no longer available for some of these items.',
           null,
-          { skuIds: refused },
+          { skuIds: [...new Set(refused)] },
         );
       }
       return { claimIds };
@@ -342,30 +363,30 @@ export class FlashService {
   }
 
   /**
-   * Give an order's flash units back: all of them (a cancel), or up to the quantities
-   * returned per SKU (a return after a partial delivery). Once: every claim row is
-   * released by a conditional UPDATE and the sale's count moves by exactly what it released.
-   * Returns the number of units given back.
+   * Give an order's flash units back: all of them (a cancel), or each line's own returned
+   * units (a return, `qty - delivered` per order line). Once: each claim moves from
+   * `claimed` to `released` by a conditional UPDATE and the sale's count goes down by what it
+   * released and nothing else. A line with nothing to give back (fully delivered) keeps its
+   * claim: those units stay sold at the sale price. Returns the units given back.
    */
   async release(
     tx: Tx,
     orgId: string,
     orderId: string,
-    returned?: readonly { readonly skuId: string; readonly qty: number }[],
+    returned?: readonly { readonly orderLineId: string; readonly qty: number }[],
   ): Promise<number> {
-    const budget =
+    const byLine =
       returned === undefined
         ? undefined
-        : returned.reduce(
-            (map, line) => map.set(line.skuId, (map.get(line.skuId) ?? 0) + Math.max(0, line.qty)),
-            new Map<string, number>(),
-          );
+        : new Map(returned.map((line) => [line.orderLineId, Math.max(0, line.qty)]));
     let units = 0;
     for (const claim of await repo.heldClaims(tx, orgId, orderId)) {
-      const left = budget === undefined ? claim.qty : (budget.get(claim.sku_id) ?? 0);
-      const give = Math.min(claim.qty, left);
+      const give = Math.min(
+        claim.qty,
+        byLine === undefined ? claim.qty : (byLine.get(claim.order_line_id) ?? 0),
+      );
+      if (give <= 0) continue;
       if (!(await repo.releaseClaim(tx, orgId, claim.id, give))) continue;
-      if (budget !== undefined) budget.set(claim.sku_id, left - give);
       await repo.returnUnits(tx, orgId, claim.flash_sale_item_id, give);
       units += give;
     }
@@ -453,6 +474,21 @@ export class FlashService {
     }
   }
 
+  /**
+   * A banner is published on the website, so it has to be a finished, public campaign image
+   * of this brand: not any file id somebody pasted, which could be a payslip (ledger audit
+   * W6). Asked of the files module (invariant 12).
+   */
+  private async assertBanner(tx: Tx, orgId: string, fileId: string | null): Promise<void> {
+    if (fileId === null) return;
+    if (!(await this.files.isPublicAsset(tx, orgId, fileId, 'campaign-asset'))) {
+      throw new PromoError(
+        'FLASH_SALE_INVALID',
+        'The banner has to be an uploaded public campaign image.',
+      );
+    }
+  }
+
   /** A slug from the title (or another slug) that no sale of this brand has yet. */
   private async freeSlug(tx: Tx, orgId: string, from: string): Promise<string> {
     const base = slugify(from);
@@ -474,6 +510,21 @@ export function slugify(text: string): string {
     .slice(0, 60)
     .replace(/-+$/g, '');
   return slug === '' ? 'flash-sale' : slug;
+}
+
+/** A sale's terms for the audit row: the window and every SKU's price and limit (W8). */
+function auditTerms(body: FlashSaleBody) {
+  return {
+    title: body.title,
+    enabled: body.enabled,
+    startsAt: body.startsAt,
+    endsAt: body.endsAt,
+    items: body.items.map((item) => ({
+      skuId: item.skuId,
+      salePricePoisha: item.salePricePoisha,
+      unitLimit: item.unitLimit,
+    })),
+  };
 }
 
 function terms(body: FlashSaleBody) {

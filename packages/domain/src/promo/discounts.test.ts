@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { toIsoDate } from '../dates/index.js';
-import { poisha, type Poisha } from '../money/index.js';
+import { allocate, poisha, type Poisha } from '../money/index.js';
 import {
   computeDiscounts,
   evaluateDiscount,
@@ -11,6 +11,7 @@ import {
   type DiscountKind,
   type DiscountLine,
 } from './discounts.js';
+import { oldTakaToPoisha } from './legacy.js';
 
 /**
  * The discount engine's own rules (M35a, D-540), beside the differential test that holds it
@@ -515,5 +516,139 @@ describe('properties (D-540)', () => {
       ),
       { numRuns: 1_000 },
     );
+  });
+});
+
+describe('a stack takes each discount off its own lines (ledger audit W1)', () => {
+  it('two ৳500 discounts on a ৳600 line give ৳600, and nothing off the shirt they skip', () => {
+    const result = computeDiscounts({
+      discounts: [
+        {
+          ...base,
+          id: 'a',
+          kind: 'flat',
+          valuePoisha: poisha(50_000),
+          skuIds: ['panjabi'],
+          allowStacking: true,
+        },
+        {
+          ...base,
+          id: 'b',
+          kind: 'flat',
+          valuePoisha: poisha(50_000),
+          skuIds: ['panjabi'],
+          allowStacking: true,
+        },
+      ],
+      basket: { ...basket, lines: [line('panjabi', 600, 1), line('shirt', 2_000, 1)] },
+      codes: [],
+      usage: new Map(),
+    });
+    expect(result.discountPoisha).toBe(60_000n);
+    expect(result.applied.map((entry) => [entry.discount.id, entry.discountPoisha])).toEqual([
+      ['a', 50_000n],
+      ['b', 10_000n],
+    ]);
+  });
+
+  it('never takes more off any set of lines than those lines cost', () => {
+    fc.assert(
+      fc.property(fc.array(discountArb, { maxLength: 6 }), basketArb, (discounts, cart) => {
+        const stackable = discounts.map((discount) => ({ ...discount, allowStacking: true }));
+        const result = computeDiscounts({
+          discounts: stackable,
+          basket: cart,
+          codes: everyCode(stackable),
+          usage: new Map(),
+        });
+        const scopeOf = (discount: Discount) =>
+          cart.lines
+            .map((entry, index) => ({ entry, index }))
+            .filter(
+              ({ entry }) => discount.skuIds.length === 0 || discount.skuIds.includes(entry.skuId),
+            )
+            .map(({ index }) => index);
+        // Every subset of the lines (there are at most five): what the discounts limited to
+        // it took is no more than it costs.
+        for (let mask = 1; mask < 1 << cart.lines.length; mask += 1) {
+          const inSet = (index: number) => (mask & (1 << index)) !== 0;
+          const cost = cart.lines.reduce(
+            (total, entry, index) => (inSet(index) ? total + entry.netPoisha : total),
+            0n,
+          );
+          const taken = result.applied
+            .filter((entry) => scopeOf(entry.discount).every(inSet))
+            .reduce((total, entry) => total + entry.discountPoisha, 0n);
+          expect(taken <= cost).toBe(true);
+        }
+      }),
+      { numRuns: 1_000 },
+    );
+  });
+});
+
+describe('buy X get Y counts units without listing them (ledger audit W13)', () => {
+  /** The plain way: every unit, split with `allocate`, sorted, the cheapest taken. */
+  function byExpansion(lines: readonly DiscountLine[], buy: number, get: number): bigint {
+    const units = lines
+      .flatMap((entry) =>
+        allocate(
+          entry.netPoisha,
+          Array.from({ length: entry.qty }, () => 1),
+        ),
+      )
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const sets = Math.floor(units.length / (buy + get));
+    return units.slice(0, sets * get).reduce((total, unit) => total + unit, 0n);
+  }
+
+  it('gives what listing every unit would', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            qty: fc.integer({ min: 1, max: 25 }),
+            net: fc.bigInt({ min: 0n, max: 3_000_000n }),
+          }),
+          { minLength: 1, maxLength: 5 },
+        ),
+        fc.integer({ min: 1, max: 4 }),
+        fc.integer({ min: 1, max: 4 }),
+        (raw, buy, get) => {
+          const lines = raw.map((entry, index) => ({
+            ...line(`s${String(index)}`, 0, entry.qty),
+            netPoisha: poisha(entry.net),
+          }));
+          const verdict = evaluateDiscount(
+            { ...base, kind: 'buy_x_get_y', buyQuantity: buy, getQuantity: get },
+            { ...basket, lines },
+            unused,
+          );
+          const expected = byExpansion(lines, buy, get);
+          if (expected === 0n) expect(verdict.ok).toBe(false);
+          else expect(verdict).toMatchObject({ ok: true, discountPoisha: expected });
+        },
+      ),
+      { numRuns: 1_000 },
+    );
+  });
+
+  it('prices a line of ten thousand units at once', () => {
+    const verdict = evaluateDiscount(
+      { ...base, kind: 'buy_x_get_y', buyQuantity: 1, getQuantity: 1 },
+      { ...basket, lines: [{ ...line('bulk', 0, 10_000), netPoisha: poisha(1_000_000_003) }] },
+      unused,
+    );
+    // 10,000 units of ৳1,000.00, three of them a poisha dearer: the 5,000 cheapest are free.
+    expect(verdict).toMatchObject({ ok: true, discountPoisha: 500_000_000n });
+  });
+});
+
+describe('the old site’s float amounts', () => {
+  it('reads float noise as the amount it meant (ledger audit W9)', () => {
+    expect(oldTakaToPoisha(0.1 + 0.2)).toBe(30n);
+    expect(oldTakaToPoisha(99.99)).toBe(9_999n);
+    expect(oldTakaToPoisha(1e21)).toBe(0n);
+    expect(oldTakaToPoisha(-5)).toBe(0n);
   });
 });

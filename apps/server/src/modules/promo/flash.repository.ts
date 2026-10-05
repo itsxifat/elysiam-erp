@@ -261,11 +261,12 @@ export async function offersForSkus(
 }
 
 /**
- * Take `qty` units of one offer for an order, or refuse.
+ * Take `qty` units of one offer for an order line, or refuse.
  *
  * Every condition the claim depends on is in the UPDATE's `where`, re-checked against the
  * row as it stands once any concurrent claim has committed: the SKU and sale still switched
- * on, the sale live at `now`, the units still there, and the sale price still the one the
+ * on, the sale live by the database's own clock (a caller's stale clock cannot claim after
+ * the end; ledger audit N1), the units still there, and the sale price still the one the
  * caller is charging (a price edited between the quote and the order refuses rather than
  * charging a price the buyer never saw).
  */
@@ -277,10 +278,8 @@ export async function claimUnits(
     readonly skuId: string;
     readonly qty: number;
     readonly salePricePoisha: bigint;
-    readonly now: Date;
   },
 ): Promise<boolean> {
-  const at = claim.now.toISOString();
   const rows = await tx.execute<{ id: string }>(sql`
     update promo.flash_sale_items i
     set units_sold = i.units_sold + ${claim.qty}, updated_at = now()
@@ -289,20 +288,21 @@ export async function claimUnits(
       and i.enabled and i.sale_price_poisha = ${claim.salePricePoisha.toString()}
       and (i.unit_limit is null or i.units_sold + ${claim.qty} <= i.unit_limit)
       and s.org_id = i.org_id and s.id = i.flash_sale_id and s.enabled
-      and (s.starts_at is null or s.starts_at <= ${at}::timestamptz)
-      and (s.ends_at is null or s.ends_at >= ${at}::timestamptz)
+      and (s.starts_at is null or s.starts_at <= statement_timestamp())
+      and (s.ends_at is null or s.ends_at >= statement_timestamp())
     returning i.id
   `);
   return rows.length > 0;
 }
 
-/** The record of a claim. One per (order, offer): the unique index refuses a second. */
+/** The record of a claim. One per order line: the unique index refuses a second. */
 export async function insertClaim(
   tx: Tx,
   input: {
     readonly orgId: string;
     readonly itemId: string;
     readonly orderId: string;
+    readonly orderLineId: string;
     readonly skuId: string;
     readonly qty: number;
     readonly salePricePoisha: bigint;
@@ -310,10 +310,10 @@ export async function insertClaim(
 ): Promise<string | undefined> {
   const rows = await tx.execute<{ id: string }>(sql`
     insert into promo.flash_claims (
-      org_id, flash_sale_item_id, order_id, sku_id, qty, sale_price_poisha)
-    values (${input.orgId}, ${input.itemId}, ${input.orderId}, ${input.skuId}, ${input.qty},
-            ${input.salePricePoisha.toString()})
-    on conflict (org_id, order_id, flash_sale_item_id) do nothing
+      org_id, flash_sale_item_id, order_id, order_line_id, sku_id, qty, sale_price_poisha)
+    values (${input.orgId}, ${input.itemId}, ${input.orderId}, ${input.orderLineId},
+            ${input.skuId}, ${input.qty}, ${input.salePricePoisha.toString()})
+    on conflict (org_id, order_line_id) do nothing
     returning id
   `);
   return rows[0]?.id;
@@ -322,18 +322,22 @@ export async function insertClaim(
 export interface ClaimRow extends Record<string, unknown> {
   readonly id: string;
   readonly flash_sale_item_id: string;
+  readonly order_line_id: string;
   readonly sku_id: string;
   readonly qty: number;
   readonly sale_price_poisha: string;
 }
 
-/** An order's claims still held, oldest first, so a partial release is deterministic. */
+/**
+ * An order's claims still held, in offer order: the order the claims took their row locks
+ * in, so a release racing a checkout on the same offers cannot deadlock (ledger audit W5).
+ */
 export async function heldClaims(tx: Tx, orgId: string, orderId: string): Promise<ClaimRow[]> {
   const rows = await tx.execute<ClaimRow>(sql`
-    select id, flash_sale_item_id, sku_id, qty, sale_price_poisha::text
+    select id, flash_sale_item_id, order_line_id, sku_id, qty, sale_price_poisha::text
     from promo.flash_claims
     where org_id = ${orgId} and order_id = ${orderId} and status = 'claimed'
-    order by created_at, id
+    order by flash_sale_item_id, order_line_id
   `);
   return [...rows];
 }
@@ -345,7 +349,8 @@ export async function claimsOfOrder(
   orderId: string,
 ): Promise<(ClaimRow & { status: string; released_qty: number })[]> {
   const rows = await tx.execute<ClaimRow & { status: string; released_qty: number }>(sql`
-    select id, flash_sale_item_id, sku_id, qty, sale_price_poisha::text, status, released_qty
+    select id, flash_sale_item_id, order_line_id, sku_id, qty, sale_price_poisha::text, status,
+           released_qty
     from promo.flash_claims
     where org_id = ${orgId} and order_id = ${orderId}
     order by created_at, id

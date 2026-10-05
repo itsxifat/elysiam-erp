@@ -195,8 +195,9 @@ export interface PromoApi {
 
   /**
    * Take the flash units an order was priced with, all or nothing, in its transaction and
-   * after its row exists. Refused lines throw `FLASH_SALE_UNAVAILABLE` (409, with
-   * `skuIds`); every unit this call took is undone by its savepoint.
+   * after its rows (the order and its lines) exist. One claim per order line. The sale must
+   * be live by the database's clock. Refused lines throw `FLASH_SALE_UNAVAILABLE` (409,
+   * with `skuIds`); every unit this call took is undone by its savepoint.
    */
   claimFlashUnits(
     tx: Tx,
@@ -204,19 +205,18 @@ export interface PromoApi {
     input: {
       readonly orderId: string;
       readonly lines: readonly FlashClaimLine[];
-      readonly now: Date;
     },
   ): Promise<{ readonly claimIds: readonly string[] }>;
 
   /**
-   * Give an order's flash units back, exactly once: all of them on a cancel, or up to the
-   * units returned per SKU after a partial delivery. Returns the units given back.
+   * Give an order's flash units back, exactly once: all of them on a cancel, or each order
+   * line's returned units after a delivery. Returns the units given back.
    */
   releaseFlashUnits(
     tx: Tx,
     orgId: string,
     orderId: string,
-    returned?: readonly { readonly skuId: string; readonly qty: number }[],
+    returned?: readonly { readonly orderLineId: string; readonly qty: number }[],
   ): Promise<number>;
 }
 
@@ -378,7 +378,7 @@ export class PromoApiService implements PromoApi {
     tx: Tx,
     orgId: string,
     orderId: string,
-    returned?: readonly { readonly skuId: string; readonly qty: number }[],
+    returned?: readonly { readonly orderLineId: string; readonly qty: number }[],
   ): Promise<number> {
     return this.flash.release(tx, orgId, orderId, returned);
   }

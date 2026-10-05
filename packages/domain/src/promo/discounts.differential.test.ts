@@ -5,7 +5,6 @@ import { businessDate } from '../dates/index.js';
 import { poisha } from '../money/index.js';
 import {
   computeDiscounts,
-  evaluateDiscount,
   type DiscountBasket,
   type DiscountReason,
   type DiscountsResult,
@@ -29,10 +28,13 @@ import {
  * 1. **Free delivery on a cart with no delivery charge.** The old engine applied it at no
  *    value; the port refuses it as `nothing_to_discount` (M16's desk rule). The money is the
  *    same; only the report differs.
- * 2. **A stack the old engine valued wrongly.** It summed a stack's members, counting the
- *    delivery charge once per free-shipping member and counting goods discounts beyond the
- *    basket. Where that made it pick a stack, the port values the stack as what it gives
- *    and saves the buyer at least as much.
+ * 2. **A stack the old engine over-gave or valued wrongly.** It summed a stack's members
+ *    and capped the sum only at the whole basket: two discounts on one ৳600 line could take
+ *    ৳1,000 with the rest off lines neither covers, the delivery charge counted once per
+ *    free-shipping member, and goods counted beyond the basket. The port takes each stacked
+ *    discount off its own lines only (ledger audit W1). Where the two differ, the port's
+ *    answer lies between the old engine's best single discount (asked of the oracle itself,
+ *    with stacking off) and what the old stack gave.
  * 3. **An exact half poisha** (fractional percents only). Float taka could round it either
  *    way; the port rounds half away from zero. At most one poisha per discount.
  *
@@ -129,13 +131,39 @@ function portSaving(port: DiscountsResult): bigint {
   return port.discountPoisha + port.deliveryDiscountPoisha;
 }
 
-/** Exception 2: the old engine chose a stack whose sum overstated what it gave. */
-function oldStackMisvalued(old: OracleResult, input: Case): boolean {
+/**
+ * Exception 2's shape: the old engine chose a stack, and the stack had a member limited to
+ * some lines (it could over-give them), went past the basket, or waived delivery twice.
+ */
+function oldStackSuspect(old: OracleResult, input: Case): boolean {
   if (old.applied.length < 2) return false;
   const subtotal = input.items.reduce((total, item) => total + item.price * item.quantity, 0);
   const goods = old.applied.reduce((total, entry) => total + entry.amount, 0);
   const waivers = old.applied.filter((entry) => entry.freeShipping).length;
-  return goods > subtotal || (input.shippingFee > 0 && waivers >= 2);
+  const scoped = old.applied.some(
+    (entry) => input.discounts.find((doc) => doc._id === entry.discountId)?.appliesTo !== 'all',
+  );
+  return scoped || goods > subtotal || (input.shippingFee > 0 && waivers >= 2);
+}
+
+/** What the old engine gives with stacking switched off: its best single discount. */
+function oldSingleSaving(input: Case): bigint {
+  const old = oldComputeDiscounts({
+    discounts: sorted(input.discounts).map((doc) => ({ ...doc, allowStacking: false })),
+    items: input.items,
+    shippingFee: input.shippingFee,
+    codes: input.codes,
+    isFirstOrder: input.isFirstOrder,
+    now: NOW,
+  });
+  return oldSaving(old, input.shippingFee);
+}
+
+/** Exception 2's bound: no worse than the old best single, no more than the old stack gave. */
+function assertBetween(input: Case, before: bigint, after: bigint, slack = 0n): void {
+  const single = oldSingleSaving(input);
+  expect(after).toBeGreaterThanOrEqual(single - slack);
+  expect(after).toBeLessThanOrEqual((before > single ? before : single) + slack);
 }
 
 /** Exception 1: a free-shipping discount was a candidate on a cart with no delivery charge. */
@@ -147,33 +175,6 @@ function freeShippingAtNoCharge(input: Case): boolean {
       doc.type === 'free_shipping' &&
       (doc.method === 'automatic' || (doc.code != null && typed.has(doc.code.toUpperCase()))),
   );
-}
-
-/** The best single candidate's value and the stack's true value, by the port's own rules. */
-function choiceValues(input: Case): { single: bigint; stack: bigint; stackables: number } {
-  const basket = basketOf(input);
-  const typed = new Set(input.codes.map((code) => code.trim().toUpperCase()));
-  let single = 0n;
-  let goods = 0n;
-  let waiver = 0n;
-  let stackables = 0;
-  for (const doc of input.discounts) {
-    const discount = discountFromOldSite(doc);
-    if (discount.method === 'code' && (discount.code === null || !typed.has(discount.code))) {
-      continue;
-    }
-    const verdict = evaluateDiscount(discount, basket, { total: doc.usedCount, byCustomer: 0 });
-    if (!verdict.ok) continue;
-    const value = verdict.discountPoisha + verdict.deliveryDiscountPoisha;
-    if (value > single) single = value;
-    if (discount.allowStacking) {
-      stackables += 1;
-      goods += verdict.discountPoisha;
-      if (verdict.deliveryDiscountPoisha > waiver) waiver = verdict.deliveryDiscountPoisha;
-    }
-  }
-  const subtotal = basket.lines.reduce((total, line) => total + line.netPoisha, 0n);
-  return { single, stack: (goods > subtotal ? subtotal : goods) + waiver, stackables };
 }
 
 function refusedOf(port: DiscountsResult, input: Case): string[] {
@@ -201,15 +202,16 @@ function oldRefusedOf(old: OracleResult): string[] {
 /** The whole comparison, for integer percents (no half poisha can arise). */
 function assertSameAnswer(input: Case): void {
   const { old, port } = runBoth(input);
-  const misvalued = oldStackMisvalued(old, input);
-  if (misvalued) {
-    expect(portSaving(port)).toBeGreaterThanOrEqual(oldSaving(old, input.shippingFee));
-  } else {
-    expect(portSaving(port)).toBe(oldSaving(old, input.shippingFee));
+  const before = oldSaving(old, input.shippingFee);
+  const after = portSaving(port);
+  if (after !== before) {
+    // Only exception 2 may change the money.
+    expect(oldStackSuspect(old, input)).toBe(true);
+    assertBetween(input, before, after);
   }
 
   expect(refusedOf(port, input)).toEqual(oldRefusedOf(old));
-  if (misvalued || freeShippingAtNoCharge(input)) return;
+  if (after !== before || freeShippingAtNoCharge(input)) return;
 
   const oldApplied = old.applied.map((entry) => ({
     id: entry.discountId,
@@ -222,10 +224,9 @@ function assertSameAnswer(input: Case): void {
     waives: entry.deliveryDiscountPoisha > 0n,
   }));
   if (JSON.stringify(oldApplied, bigintText) !== JSON.stringify(portApplied, bigintText)) {
-    // Only a tie may choose differently: the stack worth exactly the best single.
-    const values = choiceValues(input);
-    expect(values.stackables).toBeGreaterThanOrEqual(2);
-    expect(values.stack).toBe(values.single);
+    // The same money from a different choice is a tie, and a tie is between a stack and a
+    // single discount (two singles break their tie by priority and id, identically in both).
+    expect(old.applied.length >= 2 || port.applied.length >= 2).toBe(true);
   }
 }
 
@@ -366,8 +367,10 @@ describe('the ported engine against the old site’s (M35a check 2, D-540)', () 
         const slack = BigInt(input.discounts.length);
         const before = oldSaving(old, input.shippingFee);
         const after = portSaving(port);
-        expect(after).toBeGreaterThanOrEqual(before - slack);
-        if (!oldStackMisvalued(old, input)) {
+        if (oldStackSuspect(old, input)) {
+          assertBetween(input, before, after, slack);
+        } else {
+          expect(after).toBeGreaterThanOrEqual(before - slack);
           expect(after).toBeLessThanOrEqual(before + slack);
         }
       }),

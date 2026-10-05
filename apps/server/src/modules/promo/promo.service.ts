@@ -387,6 +387,32 @@ export class PromoService {
       }
     }
 
+    /*
+     * A first-order discount, checked again under the same lock (ledger audit W3).
+     *
+     * The quote read the buyer's history before the lock, so two first orders from one new
+     * buyer in the same instant could both read "none before". Every redemption of this
+     * discount waits on the row lock `claimUse` holds, so by the time this runs, any other
+     * order that redeemed it first has committed and is counted. The order being redeemed
+     * for exists already and is left out. A buyer resolved only now (a guest quote, a known
+     * phone at checkout) is checked here as well.
+     */
+    if (claimed.firstOrderOnly && input.customerId !== null) {
+      const first = await this.buyers.isFirstOrder(
+        tx,
+        context.orgId,
+        input.customerId,
+        input.orderId,
+      );
+      if (!first) {
+        throw new PromoError(
+          'PROMO_NOT_APPLICABLE',
+          'That discount is for a buyer’s first order.',
+          'first_order_only',
+        );
+      }
+    }
+
     const redemptionId = await repo.insertRedemption(tx, {
       orgId: context.orgId,
       codeId: input.codeId,

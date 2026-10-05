@@ -79,12 +79,21 @@ const KINDS: Readonly<Record<NonNullable<OldSiteDiscount['type']>, DiscountKind>
   tiered: 'tiered',
 };
 
-/** A float amount of taka as poisha, from its decimal text; anything not a plain amount is 0. */
+/**
+ * A float amount of taka as poisha, from its decimal text, rounded once to the poisha by the
+ * system's one rule. Anything that is not a plain positive amount (an exponent, a negative,
+ * NaN) is 0, as the old site's `Number(x) || 0` treated it.
+ *
+ * Float noise (`0.1 + 0.2` prints as `0.30000000000000004`) has more fraction digits than
+ * `decimalToPoisha` takes, so the text is cut to twelve: a difference below 10⁻¹² taka,
+ * which the rounding to the poisha then removes (ledger audit W9).
+ */
 export function oldTakaToPoisha(value: number | undefined): Poisha {
   if (value === undefined || !Number.isFinite(value) || value <= 0) return ZERO;
-  const text = String(value);
-  if (!/^\d+(?:\.\d+)?$/.test(text)) return ZERO;
-  return decimalToPoisha(text);
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(String(value));
+  if (match === null) return ZERO;
+  const [, whole = '0', fraction = ''] = match;
+  return decimalToPoisha(fraction === '' ? whole : `${whole}.${fraction.slice(0, 12)}`);
 }
 
 /** A float percent as basis points (`12.5` → 1250), clamped to 0–10,000. */

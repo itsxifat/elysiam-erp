@@ -1569,10 +1569,12 @@ export async function standingOrderCount(
   tx: Tx,
   orgId: string,
   customerId: string,
+  excludingOrderId: string | null = null,
 ): Promise<number> {
   const rows = await tx.execute<{ n: number }>(sql`
     select count(*)::int as n from sales.orders
     where org_id = ${orgId} and customer_id = ${customerId} and status <> 'cancelled'
+      and ${excludingOrderId === null ? sql`true` : sql`id <> ${excludingOrderId}`}
   `);
   return rows[0]?.n ?? 0;
 }

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
+import { FilesModule } from '../files/files.module.js';
 import { FlashController } from './flash.controller.js';
 import { FlashService } from './flash.service.js';
 import { BuyerHistoryRegistry } from './ports/buyer-history.port.js';
@@ -21,7 +22,7 @@ import { PromoService } from './promo.service.js';
  * first-order discount needs the buyer's order history, which only that module may read.
  */
 @Module({
-  imports: [CatalogModule],
+  imports: [CatalogModule, FilesModule],
   controllers: [PromoController, FlashController],
   // `AuditService` is provided rather than imported, as every other module does it.
   providers: [

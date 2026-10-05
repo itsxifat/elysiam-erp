@@ -7,7 +7,24 @@
 
 -- M16's codes become discounts with the method `code` (0103's defaults). Each is titled
 -- with its own word, which is what the console showed for it until now.
-update "promo"."codes" set "title" = "code" where "title" = '' and "code" is not null;
+--
+-- Brand by brand, with `app.org_id` set, as 0042 does: `promo.codes` has RLS ENABLE and
+-- FORCE (0078), so `erp_owner` running this migration sees no row without an org context,
+-- and a bare UPDATE would quietly change nothing.
+DO $$
+DECLARE
+  org_row record;
+BEGIN
+  FOR org_row IN SELECT id FROM "org"."organizations" ORDER BY id LOOP
+    PERFORM set_config('app.org_id', org_row.id::text, true);
+    UPDATE "promo"."codes" SET "title" = "code"
+    WHERE "org_id" = org_row.id AND "title" = '' AND "code" IS NOT NULL;
+  END LOOP;
+
+  -- Leave no org context behind for whatever statement runs next in this transaction.
+  PERFORM set_config('app.org_id', '', true);
+END;
+$$;
 --> statement-breakpoint
 
 -- A flash claim is the record of units an order took at a sale price. It is released at

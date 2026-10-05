@@ -19,7 +19,12 @@ export class BuyerHistoryBinding implements BuyerHistoryPort, OnModuleInit {
     this.registry.register(this);
   }
 
-  priorOrders(tx: Tx, orgId: string, customerId: string): Promise<number> {
-    return repo.standingOrderCount(tx, orgId, customerId);
+  priorOrders(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    excludingOrderId: string | null = null,
+  ): Promise<number> {
+    return repo.standingOrderCount(tx, orgId, customerId, excludingOrderId);
   }
 }

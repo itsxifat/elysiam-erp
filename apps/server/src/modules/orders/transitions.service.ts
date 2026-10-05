@@ -431,14 +431,15 @@ export class TransitionsService {
 
       case 'release_flash_units': {
         // M35a, D-542: a cancel gives every flash unit back; a received return gives back
-        // the units that were not delivered (all of them after `return_in_transit`, the
-        // undelivered part after a partial delivery). Once, by the claim rows' own
-        // conditional update; nothing to do for an order that claimed none.
+        // each line's units that were not delivered (all of them after `return_in_transit`,
+        // the undelivered part after a partial delivery). Per order line, so two lines of
+        // one SKU priced by two sales each return their own (ledger audit W4). Once, by the
+        // claim rows' own conditional update; nothing to do for an order that claimed none.
         const returned =
           result.to === 'cancelled'
             ? undefined
             : (await repo.orderLines(tx, context.orgId, order.id)).map((line) => ({
-                skuId: line.sku_id,
+                orderLineId: line.id,
                 qty: line.qty - line.delivered_qty,
               }));
         await this.promo.releaseFlashUnits(tx, context.orgId, order.id, returned);

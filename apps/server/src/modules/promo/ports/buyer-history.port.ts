@@ -13,8 +13,16 @@ import type { Tx } from '@elysium/db';
  * one history, and a per-customer limit counts both.
  */
 export interface BuyerHistoryPort {
-  /** Orders of this buyer that were not cancelled, before the one being priced. */
-  priorOrders(tx: Tx, orgId: string, customerId: string): Promise<number>;
+  /**
+   * Orders of this buyer that were not cancelled, other than `excludingOrderId` (the order
+   * being redeemed for, which exists by then).
+   */
+  priorOrders(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    excludingOrderId?: string | null,
+  ): Promise<number>;
 }
 
 @Injectable()
@@ -35,9 +43,14 @@ export class BuyerHistoryRegistry {
    * With nothing registered the answer is false: a first-order discount is refused rather
    * than given to anybody who asks, which is the safe way round for money.
    */
-  async isFirstOrder(tx: Tx, orgId: string, customerId: string | null): Promise<boolean> {
+  async isFirstOrder(
+    tx: Tx,
+    orgId: string,
+    customerId: string | null,
+    excludingOrderId: string | null = null,
+  ): Promise<boolean> {
     if (customerId === null) return true;
     if (this.port === undefined) return false;
-    return (await this.port.priorOrders(tx, orgId, customerId)) === 0;
+    return (await this.port.priorOrders(tx, orgId, customerId, excludingOrderId)) === 0;
   }
 }

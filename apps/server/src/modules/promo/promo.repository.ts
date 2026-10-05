@@ -331,18 +331,33 @@ export async function claimUse(
   tx: Tx,
   orgId: string,
   codeId: string,
-): Promise<{ readonly usedCount: number; readonly perCustomerLimit: number | null } | undefined> {
-  const rows = await tx.execute<{ used_count: number; per_customer_limit: number | null }>(sql`
+): Promise<
+  | {
+      readonly usedCount: number;
+      readonly perCustomerLimit: number | null;
+      readonly firstOrderOnly: boolean;
+    }
+  | undefined
+> {
+  const rows = await tx.execute<{
+    used_count: number;
+    per_customer_limit: number | null;
+    first_order_only: boolean;
+  }>(sql`
     update promo.codes
     set used_count = used_count + 1, updated_at = now()
     where org_id = ${orgId} and id = ${codeId} and status = 'active'
       and (total_limit is null or used_count < total_limit)
-    returning used_count, per_customer_limit
+    returning used_count, per_customer_limit, first_order_only
   `);
   const row = rows[0];
   return row === undefined
     ? undefined
-    : { usedCount: row.used_count, perCustomerLimit: row.per_customer_limit };
+    : {
+        usedCount: row.used_count,
+        perCustomerLimit: row.per_customer_limit,
+        firstOrderOnly: row.first_order_only,
+      };
 }
 
 /**
@@ -422,7 +437,8 @@ export interface RedemptionRow extends Record<string, unknown> {
 
 /**
  * Every applied redemption against an order: one for a desk order with a code, several for
- * a website order whose discounts stacked (M35a).
+ * a website order whose discounts stacked (M35a). In code order, the order `redeemQuote`
+ * locked the codes in, so a cancel racing a checkout cannot deadlock (ledger audit W5).
  */
 export async function appliedForOrder(
   tx: Tx,
@@ -434,7 +450,7 @@ export async function appliedForOrder(
            delivery_discount_poisha::text, status
     from promo.redemptions
     where org_id = ${orgId} and order_id = ${orderId} and status = 'applied'
-    order by created_at, id
+    order by code_id, id
   `);
   return [...rows];
 }

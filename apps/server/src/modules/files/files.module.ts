@@ -4,6 +4,7 @@ import { ALLOWED_MIME_TYPES, MAX_UPLOAD_BYTES } from '@elysium/integrations';
 import type { FastifyInstance } from 'fastify';
 
 import { serverEnv } from '../../platform/config/env.js';
+import { FILES_API, FilesApiService } from './files.api.js';
 import { FilesController } from './files.controller.js';
 import { FilesService } from './files.service.js';
 import { createStorageDriver, filesEnv } from './files.config.js';
@@ -84,7 +85,9 @@ export class FileUploadBodyParser implements OnModuleInit {
       provide: GotenbergClient,
       useFactory: () => new GotenbergClient(filesEnv().GOTENBERG_URL),
     },
+    // M35a: whether a file another module was handed may be published.
+    { provide: FILES_API, useClass: FilesApiService },
   ],
-  exports: [FilesService, GotenbergClient],
+  exports: [FilesService, GotenbergClient, FILES_API],
 })
 export class FilesModule {}

@@ -20,7 +20,7 @@ import { skus } from '../catalog/index.js';
 import { primaryId, timestamps } from '../columns.js';
 import { fileObjects } from '../files/index.js';
 import { campaigns } from '../marketing/index.js';
-import { customers, orders } from '../orders/index.js';
+import { customers, orderLines, orders } from '../orders/index.js';
 import { organizations } from '../org/index.js';
 import { posSales } from '../pos/index.js';
 
@@ -390,6 +390,8 @@ export const flashSaleItems = promo.table(
   },
   (table) => [
     unique('flash_sale_items_org_id_id_key').on(table.orgId, table.id),
+    // A claim names its offer and the offer's SKU together, so the two cannot disagree.
+    unique('flash_sale_items_org_id_id_sku_id_key').on(table.orgId, table.id, table.skuId),
     index('flash_sale_items_org_idx').on(table.orgId),
     uniqueIndex('flash_sale_items_org_sale_sku_idx').on(
       table.orgId,
@@ -421,12 +423,14 @@ export const flashSaleItems = promo.table(
 );
 
 /**
- * Which order claimed which flash units (M35a, D-542).
+ * Which order line claimed which flash units (M35a, D-542).
  *
  * The record that makes a release exact and once: a cancelled or returned order gives back
- * what it claimed, from these rows, and a row is released at most once (the integrity
- * migration's trigger refuses any other change). `sale_price_poisha` is the price the units
- * were claimed at.
+ * what each of its lines claimed, from these rows, and a row is released at most once (the
+ * integrity migration's trigger refuses any other change). One claim per order line, because
+ * a line is priced whole by one offer; a return after a partial delivery gives back each
+ * line's own undelivered units, so two lines of one SKU priced by two sales never borrow
+ * each other's counts (ledger audit W4). `sale_price_poisha` is the price claimed at.
  */
 export const flashClaims = promo.table(
   'flash_claims',
@@ -437,6 +441,8 @@ export const flashClaims = promo.table(
       .references(() => organizations.id, { onDelete: 'restrict' }),
     flashSaleItemId: uuid('flash_sale_item_id').notNull(),
     orderId: uuid('order_id').notNull(),
+    /** The order line the units were claimed for. */
+    orderLineId: uuid('order_line_id').notNull(),
     skuId: uuid('sku_id').notNull(),
     qty: integer('qty').notNull(),
     salePricePoisha: bigint('sale_price_poisha', { mode: 'bigint' }).notNull(),
@@ -449,16 +455,18 @@ export const flashClaims = promo.table(
   (table) => [
     unique('flash_claims_org_id_id_key').on(table.orgId, table.id),
     index('flash_claims_org_idx').on(table.orgId),
-    uniqueIndex('flash_claims_org_order_item_idx').on(
-      table.orgId,
-      table.orderId,
-      table.flashSaleItemId,
-    ),
+    uniqueIndex('flash_claims_org_line_idx').on(table.orgId, table.orderLineId),
+    index('flash_claims_org_order_idx').on(table.orgId, table.orderId),
     index('flash_claims_org_item_idx').on(table.orgId, table.flashSaleItemId),
     foreignKey({
-      name: 'flash_claims_org_id_flash_sale_item_id_fk',
-      columns: [table.orgId, table.flashSaleItemId],
-      foreignColumns: [flashSaleItems.orgId, flashSaleItems.id],
+      name: 'flash_claims_org_id_item_sku_fk',
+      columns: [table.orgId, table.flashSaleItemId, table.skuId],
+      foreignColumns: [flashSaleItems.orgId, flashSaleItems.id, flashSaleItems.skuId],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'flash_claims_org_id_order_line_id_fk',
+      columns: [table.orgId, table.orderLineId],
+      foreignColumns: [orderLines.orgId, orderLines.id],
     }).onDelete('restrict'),
     foreignKey({
       name: 'flash_claims_org_id_order_id_fk',
