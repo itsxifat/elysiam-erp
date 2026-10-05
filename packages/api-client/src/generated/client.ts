@@ -603,13 +603,13 @@ export const OPERATIONS = {
   getV1StorefrontAccounts: {
     method: 'GET',
     path: '/v1/storefront/accounts',
-    ability: 'read:Storefront',
+    ability: 'read:Customer',
   },
   getV1StorefrontEmail: { method: 'GET', path: '/v1/storefront/email', ability: 'read:Storefront' },
   getV1StorefrontEmailLog: {
     method: 'GET',
     path: '/v1/storefront/email/log',
-    ability: 'read:Storefront',
+    ability: 'read:Customer',
   },
   getV1StorefrontHeroSlides: {
     method: 'GET',
@@ -624,7 +624,7 @@ export const OPERATIONS = {
   getV1StorefrontOrdersByOrderId: {
     method: 'GET',
     path: '/v1/storefront/orders/{orderId}',
-    ability: 'read:Storefront',
+    ability: 'read:Order',
   },
   getV1StorefrontPayments: {
     method: 'GET',
@@ -634,7 +634,7 @@ export const OPERATIONS = {
   getV1StorefrontPaymentsSessions: {
     method: 'GET',
     path: '/v1/storefront/payments/sessions',
-    ability: 'read:Storefront',
+    ability: 'read:Order',
   },
   getV1StorefrontSettings: {
     method: 'GET',

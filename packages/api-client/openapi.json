@@ -27741,7 +27741,7 @@
         "operationId": "getV1StorefrontAccounts",
         "summary": "GET /v1/storefront/accounts",
         "tags": ["storefront"],
-        "x-ability": "read:Storefront",
+        "x-ability": "read:Customer",
         "responses": {
           "200": {
             "description": "Success.",
@@ -28059,7 +28059,7 @@
         "operationId": "getV1StorefrontEmailLog",
         "summary": "GET /v1/storefront/email/log",
         "tags": ["storefront"],
-        "x-ability": "read:Storefront",
+        "x-ability": "read:Customer",
         "responses": {
           "200": {
             "description": "Success.",
@@ -29074,7 +29074,7 @@
         "operationId": "getV1StorefrontOrdersByOrderId",
         "summary": "GET /v1/storefront/orders/:orderId",
         "tags": ["storefront"],
-        "x-ability": "read:Storefront",
+        "x-ability": "read:Order",
         "parameters": [
           {
             "name": "orderId",
@@ -29311,7 +29311,7 @@
         "operationId": "getV1StorefrontPaymentsSessions",
         "summary": "GET /v1/storefront/payments/sessions",
         "tags": ["storefront"],
-        "x-ability": "read:Storefront",
+        "x-ability": "read:Order",
         "responses": {
           "200": {
             "description": "Success.",
