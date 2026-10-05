@@ -1003,6 +1003,11 @@ export const OPERATIONS = {
     path: '/v1/inventory/stock-in-hand/{id}/post',
     ability: 'read:Cost',
   },
+  postV1InventoryStockInHandByIdReverse: {
+    method: 'POST',
+    path: '/v1/inventory/stock-in-hand/{id}/reverse',
+    ability: 'read:Cost',
+  },
   postV1InventoryStockInHandDrafts: {
     method: 'POST',
     path: '/v1/inventory/stock-in-hand/drafts',
@@ -2520,6 +2525,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InventoryStockInHandByIdPost, input, options),
+    /** POST /v1/inventory/stock-in-hand/:id/reverse */
+    postV1InventoryStockInHandByIdReverse: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InventoryStockInHandByIdReverse, input, options),
     /** POST /v1/inventory/stock-in-hand/drafts */
     postV1InventoryStockInHandDrafts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InventoryStockInHandDrafts, undefined, options),
