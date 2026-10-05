@@ -2401,3 +2401,44 @@ dry-run|commit --file <users.json>`.
   and upload queue committed; 4 files uncommitted), M32 on `m32-mother` at 84265aa (merged with
   today's integration; deploy scripts in progress; 9 files uncommitted), stickers (45 × 35 mm,
   custom size, extra line) on `stickers-sizes` not started.
+
+### 2026-10-06 · M38a · Stickers: 45 × 35 mm, a custom size and an extra line · done
+
+- Delivered (owner's request, branch `stickers-sizes`): **Print on** offers a 45 × 35 mm thermal
+  roll beside 38 × 25, 40 × 30 and 50 × 25, and **Custom size…** with width and height in mm
+  (25–110 × 15–100, one decimal), one sticker a page at exactly that size. Every size is laid
+  out by one rule, `stickerLayout` in `@elysium/domain/barcode` (D-650): the module a whole
+  number of 203 dpi dots (0.25 mm floor, so under 29.3 mm wide is refused with the least width
+  that prints), bars never under 5 mm, lines given up least important first (the name's second
+  line, the extra line, the SKU code, size and colour, the name; never the brand and price row
+  or the barcode). An optional extra line of up to 40 characters on every sticker of a print,
+  under **More options** (D-651). A live preview drawn from the same layout, saying what was
+  left off; the medium, custom size, price choice and extra line remembered per person on the
+  device (D-652). Same dialog at every entry point. No migration; no API-client change (the
+  labels route's body is untyped in the generated client).
+- The fixed sizes print as before: the regenerated `sticker-thermal-38x25.png` and
+  `sticker-thermal-50x25.png` match the old ones (38 × 25 at 0.25 mm and 7 mm bars, 50 × 25 at
+  0.375 mm); new review images `sticker-thermal-45x35.png` (with "Made in Bangladesh") and
+  `sticker-custom-32x20.png`, and `03b-stickers-custom-size.png` of the dialog. On the A4 3 × 8
+  sheet a name between about 39 and 49 characters now reserves two lines where it fits in one
+  (the cutting estimate is conservative); cosmetic, sheets only.
+- Verification: `pnpm verify` exit 0 at 65eb92d (merged with `integration-wave2` a0f1f97): 234 test
+  files, 3,606 passed, 1 known skip; every gate (bundle 249.1 KB of 250, white label, migrations,
+  schema drift, route matrix, i18n, api-client) PASS.
+  Targeted: domain layout property tests (never outside the sticker, no overlapping rows,
+  module ≥ 0.25 mm and bars ≥ 5 mm, refusal exactly under 29.25 mm, deterministic, drop order;
+  2,000 runs each); server `stickers.test.ts` 16 of 16 against the real Gotenberg (every
+  medium's MediaBox including 45 × 35, a custom 32.5 × 20 at 92.13 × 56.69 pt, out-of-range and
+  two-decimal sizes refused by the schema, 27 mm refused by the service with
+  `CATALOG_LABELS_INVALID` before any read); console `m38a-ui.test.ts` 17 of 17 (the dialog's
+  validation); `barcodes.stack.ts` 8 of 8 on the real stack (a 25 mm width refused in the
+  dialog, a 32.5 × 20 print with an extra line: nine pages of exactly that size; axe clean in
+  both themes). Console initial route 249.1 KB of 250.
+- Auditors: ledger-auditor n/a (no ledger, stock, tenancy or permission change; stickers still
+  select no cost).
+- Decisions/assumptions: D-650 (ASSUMED: the 0.25 mm floor, the 0.5 mm edge, the size limits),
+  D-651, D-652.
+- New dependencies: none.
+- Follow-ups: the owner to print one 45 × 35 and one custom run on the shop's printer and scan
+  them (owner: human); `docs/build-status.md` unchanged (one cell; left to the integration).
+- Next: deploy to the live ERP (coordinator).
