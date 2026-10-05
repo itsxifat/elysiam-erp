@@ -1696,6 +1696,7 @@ A brand's ERP runs on a database of its own …`; on one brand beside the traini
 - M35a's acceptance re-audit at 4e500db: checks 1–3 evidenced; gaps closed or reassigned (the
   renumbered test; a ledger audit of its last fix commit 3e3387c, run now; the flash-sale
   storefront routes and the checkout claim, now M34's per D-548).
+- Ledger audit of M35a's last fix commit (3e3387c): 0 critical, 1 warning (W1: the storefront flash-sale reads filter only switched-on items, not web visibility; handed to M34, which builds the routes, with notes N1 upcoming-sale prices, N4 a test that no line is charged a flash price without a claim, N5 a cross-org claim test). N2: migration 0112 builds a six-column unique index on `sales.order_lines` under an exclusive lock, harmless on a new brand, worth a quiet window on a populated one.
 - From now on every migration up to 0112 is treated as frozen: Elysium's ERP will be deployed
   from this branch.
 - Deploying Elysium's ERP to `erp.elysium-lifestyle.bd` was blocked by Claude Code's permission
