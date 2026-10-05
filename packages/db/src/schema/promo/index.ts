@@ -292,7 +292,7 @@ export const promoDiscountTiers = promo.table(
       name: 'promo_discount_tiers_org_id_code_id_fk',
       columns: [table.orgId, table.codeId],
       foreignColumns: [promoCodes.orgId, promoCodes.id],
-    }).onDelete('restrict'),
+    }).onDelete('cascade'),
     check('promo_discount_tiers_position', sql`${table.position} between 0 and 9`),
     check(
       'promo_discount_tiers_min',
@@ -335,6 +335,12 @@ export const flashSales = promo.table(
     /** Null start: live as soon as it is switched on. Null end: no end. */
     startsAt: timestamp('starts_at', { withTimezone: true, mode: 'date' }),
     endsAt: timestamp('ends_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * Set when an ended or unwanted sale is put away (M39a, D-631): it leaves the list and
+     * the website, and keeps the record of the prices it sold at. Only a switched-off sale is
+     * archived; restoring brings it back switched off.
+     */
+    archivedAt: timestamp('archived_at', { withTimezone: true, mode: 'date' }),
     createdBy: text('created_by').notNull(),
     ...timestamps,
   },
@@ -358,6 +364,7 @@ export const flashSales = promo.table(
         and length(${table.description}) <= 1000`,
     ),
     check('flash_sales_priority', sql`${table.priority} between -100 and 100`),
+    check('flash_sales_archived_off', sql`${table.archivedAt} is null or not ${table.enabled}`),
     check(
       'flash_sales_window',
       sql`${table.startsAt} is null or ${table.endsAt} is null or ${table.startsAt} < ${table.endsAt}`,
@@ -404,7 +411,7 @@ export const flashSaleItems = promo.table(
       name: 'flash_sale_items_org_id_flash_sale_id_fk',
       columns: [table.orgId, table.flashSaleId],
       foreignColumns: [flashSales.orgId, flashSales.id],
-    }).onDelete('restrict'),
+    }).onDelete('cascade'),
     foreignKey({
       name: 'flash_sale_items_org_id_sku_id_fk',
       columns: [table.orgId, table.skuId],

@@ -26,6 +26,7 @@ import { mapOrderErrors } from './orders.errors.js';
 import * as repo from './orders.repository.js';
 import { deliveredNetItems } from './revenue.js';
 import type { CreateOrderInput } from './orders.schemas.js';
+import * as references from './references.repository.js';
 
 /**
  * Orders' service interface for other modules (invariant 12).
@@ -366,7 +367,23 @@ export interface GatewayAdvanceInput {
   readonly owedBack?: boolean;
 }
 
+/** A campaign and its refs by kind, as attribution matches an order's source to it (§11). */
+export interface CampaignMatch {
+  readonly id: string;
+  /** `meta_campaign` refs: an order's `campaignId` may carry one instead of the uuid. */
+  readonly metaCampaignIds: readonly string[];
+  readonly metaAdIds: readonly string[];
+  /** `utm_campaign` refs, lower-cased as `marketing.campaign_refs` stores them. */
+  readonly utmCampaigns: readonly string[];
+}
+
 export interface OrdersApi {
+  /**
+   * Orders whose recorded source names a campaign as §11's attribution reads it (M39a,
+   * D-632): marketing keeps such a campaign rather than orphan their attribution.
+   */
+  ordersAttributedTo(tx: Tx, orgId: string, campaign: CampaignMatch): Promise<number>;
+
   /**
    * Take an order inside the caller's transaction.
    *
@@ -639,6 +656,10 @@ export class OrdersApiService implements OrdersApi {
     private readonly advances: AdvancesService,
     private readonly courier: CourierBookingRegistry,
   ) {}
+
+  ordersAttributedTo(tx: Tx, orgId: string, campaign: CampaignMatch) {
+    return references.ordersAttributedTo(tx, orgId, campaign);
+  }
 
   async createOrder(
     tx: Tx,

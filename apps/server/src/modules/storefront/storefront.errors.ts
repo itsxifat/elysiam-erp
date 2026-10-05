@@ -1,6 +1,8 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { isErrorCode, type ErrorCode } from '@elysium/contracts';
 
+import { isStillReferenced } from '../../platform/references/references.js';
+
 /**
  * The website's refusals, as problems with codes from `errors.ts` (§23).
  *
@@ -74,6 +76,8 @@ const STATUS_BY_CODE: Readonly<Partial<Record<string, number>>> = {
   CATALOG_DUPLICATE: HttpStatus.CONFLICT,
   STOREFRONT_NOT_FOUND: HttpStatus.NOT_FOUND,
   STOREFRONT_IN_USE: HttpStatus.CONFLICT,
+  // M39a: a catalog row the website asked to change is still used (D-621).
+  CATALOG_IN_USE: HttpStatus.CONFLICT,
 };
 
 /**
@@ -98,6 +102,16 @@ export function toStorefrontHttp(error: unknown): unknown {
       if (sqlstate === '23505' && constraint === 'size_charts_org_name_idx') {
         return new HttpException(
           { code: 'STOREFRONT_INVALID', message: 'Another size chart already has that name.' },
+          HttpStatus.CONFLICT,
+        );
+      }
+      if (isStillReferenced(current)) {
+        // The backstop behind a website delete's own count (M39a, D-621, D-628).
+        return new HttpException(
+          {
+            code: 'STOREFRONT_IN_USE',
+            message: 'Something still uses this, so it was not deleted.',
+          },
           HttpStatus.CONFLICT,
         );
       }

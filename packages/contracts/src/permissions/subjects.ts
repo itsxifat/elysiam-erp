@@ -121,6 +121,13 @@ export const SUBJECTS = [
    * `read Storefront`; the secrets are never shown to anyone.
    */
   'WebsiteCredentials',
+  /**
+   * A branch's own record (M39a, D-633): renaming it and switching it off once nothing runs
+   * there any more. §6's "users, roles, settings" cell, so org_admin only. Branches are never
+   * deleted: from the first day ledger lines, wallets and staff name them. Reading the branch
+   * dashboards stays `read LedgerReport`.
+   */
+  'Branch',
 ] as const;
 
 export type Subject = (typeof SUBJECTS)[number];

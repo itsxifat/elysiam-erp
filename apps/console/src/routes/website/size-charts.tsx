@@ -1,4 +1,4 @@
-import { Button, ConfirmDialog } from '@elysium/ui';
+import { Button } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Minus, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useId, useState } from 'react';
@@ -14,6 +14,11 @@ import {
 import { useWebsiteT } from './messages.js';
 import { control, Empty, Field, Loadable, NamedSection, Problem, WebsitePage } from './parts.js';
 import '../../i18n/website.js';
+import { Link } from '@tanstack/react-router';
+import { emptyAndDeleteSizeChart, sizeChartUsage } from '../../api/manage.js';
+import { useT } from '../../i18n/locale.js';
+import '../../i18n/manage.js';
+import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 
 /**
  * Website → Size charts (M33, D-502): a grid editor for the charts a product page shows
@@ -22,6 +27,7 @@ import '../../i18n/website.js';
  */
 export function WebsiteSizeChartsPage() {
   const t = useWebsiteT();
+  const tm = useT();
   const ability = useAbility();
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ['website', 'size-charts'], queryFn: listSizeCharts });
@@ -95,26 +101,35 @@ export function WebsiteSizeChartsPage() {
         }
       </Loadable>
       {deleting === null ? null : (
-        <ConfirmDialog
+        <DeleteOrArchive
+          key={deleting.id}
           open
-          onOpenChange={(next) => {
-            if (!next) setDeleting(null);
+          onClose={() => setDeleting(null)}
+          queryKey={['website', 'size-charts', deleting.id]}
+          loadUsage={() => sizeChartUsage(deleting.id)}
+          onDelete={() => deleteSizeChart(deleting.id)}
+          emptyAndDelete={{
+            help: tm('mg.empty.chartHelp'),
+            noneLabel: tm('mg.empty.noChart'),
+            targets: (query.data?.items ?? [])
+              .filter((chart) => chart.id !== deleting.id)
+              .map((chart) => ({ value: chart.id, label: chart.name })),
+            run: (replacementId) => emptyAndDeleteSizeChart(deleting.id, replacementId),
           }}
-          title={t('web.deleteTitle')}
-          description={t('web.deleteDetail')}
-          confirmLabel={t('web.delete')}
-          cancelLabel={t('web.cancel')}
-          closeLabel={t('web.close')}
-          destructive
-          onConfirm={async () => {
+          renderExample={(reason, example) =>
+            reason === 'products' ? (
+              <Link
+                to="/catalog/$productId"
+                params={{ productId: example.id }}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                {example.label}
+              </Link>
+            ) : undefined
+          }
+          onDone={() => {
             setProblem(null);
-            try {
-              await deleteSizeChart(deleting.id);
-            } catch (error) {
-              setProblem(error);
-            }
-            setDeleting(null);
-            await queryClient.invalidateQueries({ queryKey: ['website', 'size-charts'] });
+            void queryClient.invalidateQueries({ queryKey: ['website', 'size-charts'] });
           }}
         />
       )}

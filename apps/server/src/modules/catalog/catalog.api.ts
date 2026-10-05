@@ -193,6 +193,25 @@ export interface CatalogApi {
 
   /** How many products point at a size chart (a chart in use is not deleted). */
   productsUsingSizeChart(tx: Tx, orgId: string, sizeChartId: string): Promise<number>;
+
+  /**
+   * The products that show a size chart, counted, with a few by name for the website's
+   * "Empty and delete" (M39a, D-628). Any status: an archived product keeps its chart.
+   */
+  sizeChartProducts(
+    tx: Tx,
+    orgId: string,
+    sizeChartId: string,
+  ): Promise<{
+    readonly count: number;
+    readonly examples: readonly { id: string; label: string }[];
+  }>;
+
+  /**
+   * Give every product showing one size chart another (or none), in the caller's
+   * transaction; the ids moved. The website module checks the replacement is its own.
+   */
+  reassignSizeChart(tx: Tx, orgId: string, fromId: string, toId: string | null): Promise<string[]>;
 }
 
 export type {
@@ -201,6 +220,7 @@ export type {
   CategoryWebPatch,
   Change,
 } from './catalog-web.repository.js';
+import * as deletes from './catalog-deletes.repository.js';
 
 export interface ProductWebFields {
   readonly webVisible: boolean;
@@ -631,6 +651,14 @@ export class CatalogApiService implements CatalogApi {
 
   async productsUsingSizeChart(tx: Tx, orgId: string, sizeChartId: string): Promise<number> {
     return web.productsUsingSizeChart(tx, orgId, sizeChartId);
+  }
+
+  sizeChartProducts(tx: Tx, orgId: string, sizeChartId: string) {
+    return deletes.sizeChartProducts(tx, orgId, sizeChartId);
+  }
+
+  reassignSizeChart(tx: Tx, orgId: string, fromId: string, toId: string | null) {
+    return deletes.reassignSizeChart(tx, orgId, fromId, toId);
   }
 }
 

@@ -14,6 +14,10 @@ import { LookupController, StockInHandController } from './stock-in-hand.control
 import { StockInHandService } from './stock-in-hand.service.js';
 import { StockService } from './stock.service.js';
 import { TransfersService } from './transfers.service.js';
+import { InventoryCatalogReferences } from './catalog-references.binding.js';
+import { LocationDeletesController } from './location-deletes.controller.js';
+import { LocationDeletesService } from './location-deletes.service.js';
+import { LocationReferences } from './ports/location-references.port.js';
 
 /**
  * Stock levels, movements, reservations, costing, transfers and counts
@@ -35,8 +39,18 @@ import { TransfersService } from './transfers.service.js';
 @Module({
   imports: [LedgerModule, ApprovalsModule, CatalogModule],
   // M38a: stock in hand and its window (D-602), and what a scanned code is (D-605).
-  controllers: [InventoryController, StockInHandController, LookupController],
+  // M39a: deleting, archiving and restoring a location (D-629).
+  controllers: [
+    InventoryController,
+    StockInHandController,
+    LookupController,
+    LocationDeletesController,
+  ],
   providers: [
+    // M39a: what inventory holds about a SKU (D-621), and who else names a location (D-629).
+    InventoryCatalogReferences,
+    LocationReferences,
+    LocationDeletesService,
     StockInHandService,
     LookupService,
     MovementsService,
@@ -47,6 +61,6 @@ import { TransfersService } from './transfers.service.js';
     ReconcileService,
     { provide: INVENTORY_API, useClass: InventoryApiService },
   ],
-  exports: [INVENTORY_API, ReconcileService],
+  exports: [INVENTORY_API, ReconcileService, LocationReferences],
 })
 export class InventoryModule {}

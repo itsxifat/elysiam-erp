@@ -52,3 +52,5 @@ export * from './channels.js';
 export * from './storefront.js';
 // M34: buying on the website: cart, checkout, accounts, payments, emails.
 export * from './storefront-buying.js';
+// M39a: what uses a row, before it is deleted or archived.
+export * from './usage.js';

@@ -136,6 +136,9 @@ async function create(): Promise<void> {
     // M34: an org admin of its own for Website → Payments and Email (website-buying.stack.ts),
     // the only role that may change the website's credentials (D-528).
     { label: 'webadmin', grants: [{ orgId, role: 'org_admin' }] },
+    // M39a: an org admin for delete-archive.stack.ts (deleting and archiving everywhere), its
+    // own so its two-step enrolment never races another suite's.
+    { label: 'remover', grants: [{ orgId, role: 'org_admin' }] },
   ];
 
   const users: { role: string; email: string; userId: string }[] = [];

@@ -8,7 +8,7 @@ import {
   type DataTableColumn,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { X } from 'lucide-react';
+import { Trash2, X } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
@@ -28,6 +28,10 @@ import {
 import { MarketingHeader, useMarketingTableLabels } from './marketing-nav.js';
 import { useMarketingT, type MarketingMessageKey } from './messages.js';
 import { DatePicker } from '../../ui/date-picker.js';
+import { campaignUsage, deleteCampaign } from '../../api/manage.js';
+import { useT } from '../../i18n/locale.js';
+import '../../i18n/manage.js';
+import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 
 /**
  * Campaigns and the external ids that attribute orders to them (§11; M18).
@@ -54,6 +58,11 @@ function Campaigns() {
   const ability = useAbility();
   const canCreate = ability.can('create', 'Campaign');
   const canEdit = ability.can('update', 'Campaign');
+  // M39a (D-632): a campaign nobody spent on, no lead came from and no discount was made for
+  // can be deleted; archiving stays the row's own button.
+  const canDelete = ability.can('delete', 'Campaign');
+  const [managing, setManaging] = useState<Campaign | null>(null);
+  const tm = useT();
   const queryClient = useQueryClient();
   const id = useId();
 
@@ -171,24 +180,37 @@ function Campaigns() {
           if (!canEdit) return null;
           const next = row.status === 'active' ? 'archived' : 'active';
           return (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => archive.mutate({ id: row.id, status: next })}
-            >
-              {t(
-                row.status === 'active'
-                  ? 'marketing.campaigns.archive'
-                  : 'marketing.campaigns.restore',
-              )}
-            </Button>
+            <span className="inline-flex gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => archive.mutate({ id: row.id, status: next })}
+              >
+                {t(
+                  row.status === 'active'
+                    ? 'marketing.campaigns.archive'
+                    : 'marketing.campaigns.restore',
+                )}
+              </Button>
+              {canDelete ? (
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={tm('mg.setup.manageNamed').replace('{name}', row.name)}
+                  title={tm('mg.setup.manage')}
+                  onClick={() => setManaging(row)}
+                >
+                  <Trash2 aria-hidden="true" />
+                </Button>
+              ) : null}
+            </span>
           );
         },
       }),
     ]);
     // The mutations are stable; `t` and the two grants are what change the columns.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t, canEdit]);
+  }, [t, tm, canEdit, canDelete]);
 
   const items = campaigns.data?.items ?? [];
   const labels = useMarketingTableLabels(
@@ -385,6 +407,19 @@ function Campaigns() {
         caption={t('marketing.nav.campaigns')}
         labels={labels}
       />
+      {managing === null ? null : (
+        <DeleteOrArchive
+          key={managing.id}
+          open
+          onClose={() => setManaging(null)}
+          queryKey={['marketing', 'campaigns', managing.id]}
+          loadUsage={() => campaignUsage(managing.id)}
+          onDelete={() => deleteCampaign(managing.id)}
+          onArchive={() => setCampaignStatus(managing.id, 'archived')}
+          onRestore={() => setCampaignStatus(managing.id, 'active')}
+          onDone={() => void refresh()}
+        />
+      )}
     </div>
   );
 }

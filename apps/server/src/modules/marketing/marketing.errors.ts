@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import type { ErrorCode } from '@elysium/contracts';
 
+import { isStillReferenced } from '../../platform/references/references.js';
+
 /**
  * Marketing failures, as the API reports them (architecture §23, D-087): a stable code
  * from `packages/contracts/src/errors.ts` plus a message. Never a token, never a phone.
@@ -29,6 +31,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   MARKETING_META_NOT_CONNECTED: 409,
   MARKETING_CREDENTIALS_MISSING: 409,
   MARKETING_INVALID: 400,
+  // M39a (D-632): a campaign with spend, leads or discounts.
+  MARKETING_IN_USE: 409,
 };
 
 export function marketingHttpError(error: MarketingError): HttpException {
@@ -56,6 +60,15 @@ export async function mapMarketingErrors<T>(work: () => Promise<T>): Promise<T> 
     return await work();
   } catch (cause) {
     if (cause instanceof MarketingError) throw marketingHttpError(cause);
+    if (isStillReferenced(cause)) {
+      // The backstop behind a campaign delete's own count (D-621, D-632).
+      throw marketingHttpError(
+        new MarketingError(
+          'MARKETING_IN_USE',
+          'Something still uses this campaign, so it was not deleted. Archive it instead.',
+        ),
+      );
+    }
     const code = triggerCode(cause);
     if (code !== null) {
       throw marketingHttpError(new MarketingError(code, 'That change is not allowed.'));

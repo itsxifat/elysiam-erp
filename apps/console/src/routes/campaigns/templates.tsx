@@ -9,7 +9,7 @@ import {
   type DataTableColumn,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 
 import { ApiError } from '../../api.js';
@@ -29,6 +29,10 @@ import {
   useCampaignTableLabels,
 } from './campaigns-nav.js';
 import { useCampaignsT, type CampaignsMessageKey } from './messages.js';
+import { deleteTemplate, templateUsage } from '../../api/manage.js';
+import { useT } from '../../i18n/locale.js';
+import '../../i18n/manage.js';
+import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 
 /**
  * Message templates (M16; D-205): what each SMS says, in Bangla and English.
@@ -56,7 +60,12 @@ function Templates() {
   const t = useCampaignsT();
   const ability = useAbility();
   const canEdit = ability.can('update', 'Campaign');
+  const canDelete = ability.can('delete', 'Campaign');
   const [editing, setEditing] = useState<MessageTemplate | 'new' | null>(null);
+  // M39a (D-632): a template that never went out can be deleted; otherwise switched off.
+  const [managing, setManaging] = useState<MessageTemplate | null>(null);
+  const tm = useT();
+  const queryClient = useQueryClient();
 
   const templates = useQuery({ queryKey: ['campaigns', 'templates'], queryFn: listTemplates });
 
@@ -92,13 +101,24 @@ function Templates() {
         header: '',
         cell: (cell) =>
           canEdit && cell.row.original.category !== 'otp' ? (
-            <Button size="sm" variant="outline" onClick={() => setEditing(cell.row.original)}>
-              {t('campaigns.templates.edit')}
-            </Button>
+            <span className="inline-flex gap-1">
+              <Button size="sm" variant="outline" onClick={() => setEditing(cell.row.original)}>
+                {t('campaigns.templates.edit')}
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={tm('mg.setup.manageNamed').replace('{name}', cell.row.original.key)}
+                title={tm('mg.setup.manage')}
+                onClick={() => setManaging(cell.row.original)}
+              >
+                <Trash2 aria-hidden="true" />
+              </Button>
+            </span>
           ) : null,
       }),
     ]);
-  }, [t, canEdit]);
+  }, [t, tm, canEdit]);
 
   const items = templates.data?.items ?? [];
   const labels = useCampaignTableLabels(
@@ -140,8 +160,34 @@ function Templates() {
           onClose={() => setEditing(null)}
         />
       )}
+      {managing === null ? null : (
+        <DeleteOrArchive
+          key={managing.id}
+          open
+          onClose={() => setManaging(null)}
+          queryKey={['campaigns', 'templates', managing.id]}
+          loadUsage={() => templateUsage(managing.id)}
+          onDelete={canDelete ? () => deleteTemplate(managing.id) : undefined}
+          onArchive={() => switchTemplate(managing, false)}
+          onRestore={() => switchTemplate(managing, true)}
+          onDone={() =>
+            void queryClient.invalidateQueries({ queryKey: ['campaigns', 'templates'] })
+          }
+        />
+      )}
     </div>
   );
+}
+
+/** Switch a template off (its archive) or back on, keeping everything else (D-632). */
+function switchTemplate(template: MessageTemplate, isActive: boolean) {
+  return upsertTemplate({
+    key: template.key,
+    category: template.category === 'otp' ? 'transactional' : template.category,
+    bodyBn: template.bodyBn,
+    bodyEn: template.bodyEn,
+    isActive,
+  });
 }
 
 function TemplateDialog({

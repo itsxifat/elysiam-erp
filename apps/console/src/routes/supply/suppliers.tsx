@@ -11,7 +11,7 @@ import {
 } from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Truck } from 'lucide-react';
+import { Plus, Trash2, Truck } from 'lucide-react';
 import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
@@ -30,6 +30,10 @@ import {
   TH_NUMERIC,
   TR,
 } from './supply-nav.js';
+import { deleteSupplier, supplierUsage } from '../../api/manage.js';
+import { useT } from '../../i18n/locale.js';
+import '../../i18n/manage.js';
+import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 
 /**
  * The supplier list: who the brand buys from, what it owes them, what they hold (M09).
@@ -56,6 +60,11 @@ export function SuppliersPage() {
   const mayRead = ability.can('read', 'Supply');
   const mayCreate = ability.can('create', 'Supply');
   const mayUpdate = ability.can('update', 'Supply');
+  // M39a (D-630): a supplier nothing names can be deleted (org_admin); one that is named is
+  // deactivated, and a deactivated one can be brought back.
+  const mayDelete = ability.can('delete', 'Supply');
+  const [managing, setManaging] = useState<{ id: string; name: string } | null>(null);
+  const tm = useT();
 
   const [term, setTerm] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -86,6 +95,10 @@ export function SuppliersPage() {
 
   const deactivate = useMutation({
     mutationFn: (id: string) => updateSupplier(id, { isActive: false }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['supply'] }),
+  });
+  const reactivate = useMutation({
+    mutationFn: (id: string) => updateSupplier(id, { isActive: true }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['supply'] }),
   });
 
@@ -259,6 +272,29 @@ export function SuppliersPage() {
                                 {st('supply.deactivate')}
                               </Button>
                             ) : null}
+                            {mayUpdate && !row.isActive ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                disabled={reactivate.isPending}
+                                onClick={() => reactivate.mutate(row.id)}
+                              >
+                                {tm('mg.restore')}
+                              </Button>
+                            ) : null}
+                            {mayDelete ? (
+                              <Button
+                                type="button"
+                                size="icon-sm"
+                                variant="ghost"
+                                aria-label={tm('mg.setup.manageNamed').replace('{name}', row.name)}
+                                title={tm('mg.setup.manage')}
+                                onClick={() => setManaging({ id: row.id, name: row.name })}
+                              >
+                                <Trash2 aria-hidden="true" />
+                              </Button>
+                            ) : null}
                           </td>
                         </tr>
                       ))}
@@ -269,6 +305,19 @@ export function SuppliersPage() {
             </section>
           </div>
         </PermissionGate>
+        {managing === null ? null : (
+          <DeleteOrArchive
+            key={managing.id}
+            open
+            onClose={() => setManaging(null)}
+            queryKey={['supply', 'suppliers', managing.id]}
+            loadUsage={() => supplierUsage(managing.id)}
+            onDelete={() => deleteSupplier(managing.id)}
+            onArchive={() => updateSupplier(managing.id, { isActive: false })}
+            onRestore={() => updateSupplier(managing.id, { isActive: true })}
+            onDone={() => void queryClient.invalidateQueries({ queryKey: ['supply'] })}
+          />
+        )}
       </div>
     </PermissionGate>
   );

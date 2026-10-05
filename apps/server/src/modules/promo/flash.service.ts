@@ -80,10 +80,10 @@ export class FlashService {
 
   // --- the console ----------------------------------------------------------------------
 
-  async list(context: ActiveContext, limit: number) {
+  async list(context: ActiveContext, limit: number, archived = false) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const now = new Date();
-      const rows = await repo.listSales(tx, context.orgId, limit);
+      const rows = await repo.listSales(tx, context.orgId, limit, archived);
       return {
         items: rows.map((row) => ({
           ...saleView(row, now),
@@ -206,6 +206,12 @@ export class FlashService {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const before = await repo.saleById(tx, context.orgId, id);
       if (before === undefined) throw new PromoError('FLASH_SALE_NOT_FOUND', 'No such sale.');
+      if (enabled && before.archived_at !== null) {
+        throw new PromoError(
+          'FLASH_SALE_INVALID',
+          'This sale is archived. Restore it before switching it on.',
+        );
+      }
       if (enabled) {
         const items = await repo.itemsOfSale(tx, context.orgId, id);
         if (!items.some((item) => item.enabled)) {
@@ -671,6 +677,7 @@ function saleView(row: repo.FlashSaleRow, now: Date) {
     priority: row.priority,
     startsAt: startsAt?.toISOString() ?? null,
     endsAt: endsAt?.toISOString() ?? null,
+    archivedAt: instant(row.archived_at)?.toISOString() ?? null,
     status: flashSaleStatus({ enabled: row.enabled, startsAt, endsAt }, now),
     createdAt: instant(row.created_at)?.toISOString() ?? null,
     updatedAt: instant(row.updated_at)?.toISOString() ?? null,

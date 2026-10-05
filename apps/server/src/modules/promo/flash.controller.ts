@@ -43,8 +43,8 @@ const FLASH_HAS_NO_ROW_DIMENSION =
  *
  * The same subject as promo codes, `LandingPage` (D-203): §6's row for landing pages and
  * promo codes is the brand's promotions, and a flash sale is one. Marketing and org_admin
- * read, create and update; nobody deletes (a sale that sold units is the record of the price
- * they sold at). Responses carry selling prices only; `SerializeInterceptor` runs
+ * read, create and update; since M39a org_admin deletes a sale that sold nothing, and a sale
+ * that sold is archived instead (it is the record of the price it sold at; D-631). Responses carry selling prices only; `SerializeInterceptor` runs
  * `serializeFor()` against this route's subject as it does for every route.
  *
  * The website reads live sales through the storefront API (M33, M34), never through here.
@@ -57,8 +57,10 @@ export class FlashController {
   @Get()
   async list(@Req() request: FastifyRequest, @Query() query: unknown) {
     scopeHasNoRowDimension(request, FLASH_HAS_NO_ROW_DIMENSION);
-    const { limit } = parse(flashListSchema, query);
-    return mapPromoErrors(() => this.flash.list(requireContext(request), limit));
+    const { limit, archived } = parse(flashListSchema, query);
+    return mapPromoErrors(() =>
+      this.flash.list(requireContext(request), limit, archived === 'true'),
+    );
   }
 
   @RequireAbility('create', 'LandingPage')

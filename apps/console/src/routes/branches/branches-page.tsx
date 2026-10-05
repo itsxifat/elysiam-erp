@@ -1,4 +1,5 @@
 import {
+  Button,
   EmptyState,
   ErrorState,
   Money,
@@ -7,13 +8,17 @@ import {
   Skeleton,
   StatusBadge,
 } from '@elysium/ui';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { Settings2 } from 'lucide-react';
+import { useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
-import { useLocale } from '../../i18n/locale.js';
+import { useLocale, useT } from '../../i18n/locale.js';
 import { listBranches } from './api.js';
 import { useBranchesT } from './messages.js';
+import '../../i18n/manage.js';
+import { BranchManageDialog } from './branch-manage.js';
 
 /**
  * Every branch the caller's role reaches, with today's till at a glance (D-014).
@@ -28,6 +33,11 @@ export function BranchesPage() {
   const { locale } = useLocale();
   const ability = useAbility();
   const allowed = ability.can('read', 'LedgerReport');
+  // M39a (D-633): org_admin renames a branch or switches it off from here.
+  const mayManage = ability.can('update', 'Branch');
+  const [managing, setManaging] = useState<string | null>(null);
+  const tm = useT();
+  const queryClient = useQueryClient();
   const branches = useQuery({
     queryKey: ['pos', 'branches'],
     queryFn: listBranches,
@@ -64,6 +74,11 @@ export function BranchesPage() {
                   <th className="h-row px-3 text-right font-medium">{t('branches.colShifts')}</th>
                   <th className="h-row px-3 text-right font-medium">{t('branches.colReviews')}</th>
                   <th className="h-row px-3 text-left font-medium">{t('branches.colDay')}</th>
+                  {mayManage ? (
+                    <th className="h-row px-3">
+                      <span className="sr-only">{tm('mg.branch.manage')}</span>
+                    </th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -81,6 +96,11 @@ export function BranchesPage() {
                       <span className="ml-2 font-mono text-xs text-muted-foreground">
                         {branch.code}
                       </span>
+                      {branch.isActive === false ? (
+                        <StatusBadge tone="neutral" className="ml-2">
+                          {tm('mg.branch.inactive')}
+                        </StatusBadge>
+                      ) : null}
                     </td>
                     <td className="h-row px-3 text-right tabular-nums">{branch.salesCount}</td>
                     <td className="h-row px-3">
@@ -102,6 +122,19 @@ export function BranchesPage() {
                         {t(branch.closed ? 'branches.dayClosed' : 'branches.dayOpen')}
                       </StatusBadge>
                     </td>
+                    {mayManage ? (
+                      <td className="h-row px-3 text-right">
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label={tm('mg.branch.title').replace('{name}', branch.name)}
+                          title={tm('mg.branch.manage')}
+                          onClick={() => setManaging(branch.id)}
+                        >
+                          <Settings2 aria-hidden />
+                        </Button>
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -109,6 +142,14 @@ export function BranchesPage() {
           </div>
         )}
       </PermissionGate>
+      {managing === null ? null : (
+        <BranchManageDialog
+          key={managing}
+          branchId={managing}
+          onClose={() => setManaging(null)}
+          onDone={() => void queryClient.invalidateQueries({ queryKey: ['pos', 'branches'] })}
+        />
+      )}
     </div>
   );
 }

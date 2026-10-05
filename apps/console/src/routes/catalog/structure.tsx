@@ -10,13 +10,35 @@ import {
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Trash2 } from 'lucide-react';
 import { cloneElement, useId, useState, type ReactElement } from 'react';
 
 import { ApiError } from '../../api.js';
+import {
+  archiveAttribute,
+  archiveCategory,
+  archiveLocation,
+  archiveValue,
+  attributeUsage,
+  categoryUsage,
+  deleteAttribute,
+  deleteCategory,
+  deleteLocation,
+  deleteValue,
+  emptyAndDeleteCategory,
+  locationUsage,
+  reorderValues,
+  restoreAttribute,
+  restoreCategory,
+  restoreLocation,
+  restoreValue,
+  valueUsage,
+} from '../../api/manage.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
+import '../../i18n/manage.js';
 import { DEFAULT_PAGE_SIZE } from '../../lib/table-search.js';
+import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 import {
   createLocation,
   listAllLocations,
@@ -59,6 +81,8 @@ export function CatalogStructurePage() {
   const mayRead = ability.can('read', 'Catalog');
   const mayCreate = ability.can('create', 'Catalog');
   const mayUpdate = ability.can('update', 'Catalog');
+  // M39a (D-621): deleting is its own grant; archiving and restoring are `update`.
+  const mayDelete = ability.can('delete', 'Catalog');
   const mayStock = ability.can('read', 'Stock');
 
   const categories = useQuery({
@@ -106,12 +130,14 @@ export function CatalogStructurePage() {
           items={categories.data?.items ?? []}
           mayCreate={mayCreate}
           mayUpdate={mayUpdate}
+          mayDelete={mayDelete}
           onDone={refresh}
         />
         <Lists
           items={attributes.data?.items ?? []}
           mayCreate={mayCreate}
           mayUpdate={mayUpdate}
+          mayDelete={mayDelete}
           onDone={refresh}
         />
         <PermissionGate allowed={mayStock}>
@@ -119,6 +145,7 @@ export function CatalogStructurePage() {
             items={locations.data?.items ?? []}
             mayCreate={mayCreate}
             mayUpdate={mayUpdate}
+            mayDelete={mayDelete}
             onDone={refresh}
           />
         </PermissionGate>
@@ -129,6 +156,26 @@ export function CatalogStructurePage() {
 
 /** The kit's control; width comes from where it sits (a dialog's column, a form row). */
 const control = controlClassName;
+
+/** `{name}` and `{n}` in a catalogue string, filled. */
+const fill = (text: string, values: Readonly<Record<string, string>>): string =>
+  Object.entries(values).reduce((out, [key, value]) => out.replace(`{${key}}`, value), text);
+
+/** The row action that opens the Delete-or-archive dialog (M39a). */
+function ManageButton({ name, onClick }: { readonly name: string; readonly onClick: () => void }) {
+  const t = useT();
+  return (
+    <Button
+      size="icon-sm"
+      variant="ghost"
+      aria-label={fill(t('mg.setup.manageNamed'), { name })}
+      title={t('mg.setup.manage')}
+      onClick={onClick}
+    >
+      <Trash2 aria-hidden />
+    </Button>
+  );
+}
 
 /** A label joined to its one control by id (see `Field` in parts.tsx for why). */
 function Field({
@@ -165,11 +212,13 @@ function Categories({
   items,
   mayCreate,
   mayUpdate,
+  mayDelete,
   onDone,
 }: {
   readonly items: readonly CatalogCategory[];
   readonly mayCreate: boolean;
   readonly mayUpdate: boolean;
+  readonly mayDelete: boolean;
   readonly onDone: () => void;
 }) {
   const t = useT();
@@ -178,9 +227,11 @@ function Categories({
   const [code, setCode] = useState<string | null>(null);
   const [editing, setEditing] = useState<CatalogCategory | null>(null);
   const [onWebsite, setOnWebsite] = useState<CatalogCategory | null>(null);
+  const [managing, setManaging] = useState<CatalogCategory | null>(null);
   const ability = useAbility();
   const mayWebsite = ability.can('update', 'Storefront');
   const suggested = code ?? codeFrom(name, 4);
+  const archivedPaths = items.filter((item) => !item.isActive).map((item) => item.path);
 
   const create = useMutation({
     mutationFn: () =>
@@ -218,7 +269,7 @@ function Categories({
               <span className="font-medium">{category.name}</span>
               <span className="text-xs text-muted-foreground tabular-nums">{category.code}</span>
               {category.isActive ? null : (
-                <StatusBadge tone="neutral">{t('cs.inactive')}</StatusBadge>
+                <StatusBadge tone="neutral">{t('mg.archivedBadge')}</StatusBadge>
               )}
               {category.web.webVisible ? null : (
                 <StatusBadge tone="neutral">{t('web.off')}</StatusBadge>
@@ -238,6 +289,9 @@ function Categories({
                 <Button size="sm" variant="ghost" onClick={() => setEditing(category)}>
                   {t('cs.edit')}
                 </Button>
+              </PermissionGate>
+              <PermissionGate allowed={mayUpdate || mayDelete}>
+                <ManageButton name={category.name} onClick={() => setManaging(category)} />
               </PermissionGate>
             </li>
           ))}
@@ -309,6 +363,57 @@ function Categories({
           onDone={onDone}
         />
       )}
+
+      {managing === null ? null : (
+        <DeleteOrArchive
+          key={managing.id}
+          open
+          onClose={() => setManaging(null)}
+          queryKey={['catalog', 'categories', managing.id]}
+          loadUsage={() => categoryUsage(managing.id)}
+          onDelete={mayDelete ? () => deleteCategory(managing.id) : undefined}
+          emptyAndDelete={
+            mayDelete
+              ? {
+                  help: t('mg.empty.categoryHelp'),
+                  noneLabel: t('mg.empty.noCategory'),
+                  // Not itself or anything below it (they go with it), and not an archived one or
+                  // one under an archived one (the server refuses both).
+                  targets: items
+                    .filter(
+                      (other) =>
+                        other.id !== managing.id &&
+                        !other.path.startsWith(`${managing.path}/`) &&
+                        !archivedPaths.some(
+                          (archived) =>
+                            other.path === archived || other.path.startsWith(`${archived}/`),
+                        ),
+                    )
+                    .map((other) => ({
+                      value: other.id,
+                      label: `${'\u00a0'.repeat(other.depth * 2)}${other.name}`,
+                    })),
+                  run: (target) => emptyAndDeleteCategory(managing.id, target),
+                }
+              : undefined
+          }
+          onArchive={mayUpdate ? () => archiveCategory(managing.id) : undefined}
+          archiveNote={t('mg.archive.category')}
+          onRestore={mayUpdate ? () => restoreCategory(managing.id) : undefined}
+          renderExample={(reason, example) =>
+            reason === 'products' ? (
+              <Link
+                to="/catalog/$productId"
+                params={{ productId: example.id }}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                {example.label}
+              </Link>
+            ) : undefined
+          }
+          onDone={onDone}
+        />
+      )}
     </section>
   );
 }
@@ -327,7 +432,6 @@ function EditCategory({
   const t = useT();
   const [name, setName] = useState(category.name);
   const [parentId, setParentId] = useState(category.parentId ?? '');
-  const [active, setActive] = useState(category.isActive);
   // Not under itself or anything below it: the database refuses a cycle anyway.
   const choosable = all.filter(
     (other) => other.id !== category.id && !other.path.startsWith(`${category.path}/`),
@@ -338,7 +442,6 @@ function EditCategory({
       updateCategory(category.id, {
         name: name.trim(),
         parentId: parentId === '' ? null : parentId,
-        isActive: active,
       }),
     onSuccess: () => {
       onDone();
@@ -388,10 +491,6 @@ function EditCategory({
             ]}
           />
         </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox checked={active} onCheckedChange={(next) => setActive(next === true)} />
-          {t('cs.setup.inUse')}
-        </label>
         <Problem error={save.error} />
       </div>
     </Dialog>
@@ -405,17 +504,29 @@ function attributeCode(name: string): string {
   return /^[A-Z]/.test(code) ? code : `A${code}`.slice(0, 32);
 }
 
+type Managing =
+  | { readonly kind: 'list'; readonly attribute: CatalogAttribute }
+  | {
+      readonly kind: 'value';
+      readonly attribute: CatalogAttribute;
+      readonly value: CatalogAttribute['values'][number];
+    };
+
 function Lists({
   items,
   mayCreate,
   mayUpdate,
+  mayDelete,
   onDone,
 }: {
   readonly items: readonly CatalogAttribute[];
   readonly mayCreate: boolean;
   readonly mayUpdate: boolean;
+  readonly mayDelete: boolean;
   readonly onDone: () => void;
 }) {
+  const [managing, setManaging] = useState<Managing | null>(null);
+  const [ordering, setOrdering] = useState<CatalogAttribute | null>(null);
   const t = useT();
   const [name, setName] = useState('');
   const [kind, setKind] = useState<'size' | 'colour' | 'custom'>('size');
@@ -461,6 +572,9 @@ function Lists({
               {attribute.isVariant ? null : (
                 <StatusBadge tone="info">{t('cs.setup.describesOnly')}</StatusBadge>
               )}
+              {attribute.isActive === false ? (
+                <StatusBadge tone="neutral">{t('mg.archivedBadge')}</StatusBadge>
+              ) : null}
               <span className="flex-1" />
               <PermissionGate allowed={mayUpdate}>
                 <Button
@@ -471,6 +585,17 @@ function Lists({
                   {t('cs.rename')}
                 </Button>
               </PermissionGate>
+              <PermissionGate allowed={mayUpdate && attribute.values.length > 1}>
+                <Button size="sm" variant="ghost" onClick={() => setOrdering(attribute)}>
+                  {t('mg.setup.order')}
+                </Button>
+              </PermissionGate>
+              <PermissionGate allowed={mayUpdate || mayDelete}>
+                <ManageButton
+                  name={attribute.name}
+                  onClick={() => setManaging({ kind: 'list', attribute })}
+                />
+              </PermissionGate>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {attribute.values.length === 0 ? (
@@ -478,25 +603,33 @@ function Lists({
               ) : null}
               {attribute.values.map((value) =>
                 mayUpdate ? (
-                  <Button
-                    key={value.id}
-                    size="sm"
-                    variant="outline"
-                    aria-label={`${t('cs.rename')} ${value.label}`}
-                    onClick={() =>
-                      setRenaming({
-                        kind: 'value',
-                        attribute,
-                        valueId: value.id,
-                        label: value.label,
-                      })
-                    }
-                  >
-                    {value.label}
-                    <span className="ms-1 font-mono text-xs text-muted-foreground">
-                      {value.code}
-                    </span>
-                  </Button>
+                  <span key={value.id} className="inline-flex items-center">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      aria-label={`${t('cs.rename')} ${value.label}`}
+                      className={
+                        value.isActive === false ? 'text-muted-foreground line-through' : ''
+                      }
+                      onClick={() =>
+                        setRenaming({
+                          kind: 'value',
+                          attribute,
+                          valueId: value.id,
+                          label: value.label,
+                        })
+                      }
+                    >
+                      {value.label}
+                      <span className="ms-1 font-mono text-xs text-muted-foreground">
+                        {value.code}
+                      </span>
+                    </Button>
+                    <ManageButton
+                      name={value.label}
+                      onClick={() => setManaging({ kind: 'value', attribute, value })}
+                    />
+                  </span>
                 ) : (
                   <span
                     key={value.id}
@@ -557,6 +690,53 @@ function Lists({
         </div>
       </PermissionGate>
 
+      {managing === null ? null : managing.kind === 'list' ? (
+        <DeleteOrArchive
+          key={managing.attribute.id}
+          open
+          onClose={() => setManaging(null)}
+          queryKey={['catalog', 'attributes', managing.attribute.id]}
+          loadUsage={() => attributeUsage(managing.attribute.id)}
+          onDelete={mayDelete ? () => deleteAttribute(managing.attribute.id) : undefined}
+          onArchive={mayUpdate ? () => archiveAttribute(managing.attribute.id) : undefined}
+          archiveNote={t('mg.archive.value')}
+          onRestore={mayUpdate ? () => restoreAttribute(managing.attribute.id) : undefined}
+          onDone={onDone}
+        />
+      ) : (
+        <DeleteOrArchive
+          key={managing.value.id}
+          open
+          onClose={() => setManaging(null)}
+          queryKey={['catalog', 'attribute-values', managing.value.id]}
+          loadUsage={() => valueUsage(managing.attribute.id, managing.value.id)}
+          onDelete={
+            mayDelete ? () => deleteValue(managing.attribute.id, managing.value.id) : undefined
+          }
+          onArchive={
+            mayUpdate
+              ? (withVariants) =>
+                  archiveValue(managing.attribute.id, managing.value.id, withVariants)
+              : undefined
+          }
+          archiveNote={t('mg.archive.value')}
+          offerArchiveVariants
+          onRestore={
+            mayUpdate ? () => restoreValue(managing.attribute.id, managing.value.id) : undefined
+          }
+          onDone={onDone}
+        />
+      )}
+
+      {ordering === null ? null : (
+        <ValueOrder
+          key={ordering.id}
+          attribute={ordering}
+          onClose={() => setOrdering(null)}
+          onDone={onDone}
+        />
+      )}
+
       {renaming === null ? null : (
         <Rename
           key={renaming.kind === 'list' ? renaming.attribute.id : renaming.valueId}
@@ -575,6 +755,87 @@ function Lists({
         />
       )}
     </section>
+  );
+}
+
+/** Put a list's values in the order every screen and sticker shows (D-624). */
+function ValueOrder({
+  attribute,
+  onClose,
+  onDone,
+}: {
+  readonly attribute: CatalogAttribute;
+  readonly onClose: () => void;
+  readonly onDone: () => void;
+}) {
+  const t = useT();
+  const [order, setOrder] = useState(() => [...attribute.values]);
+  const save = useMutation({
+    mutationFn: () =>
+      reorderValues(
+        attribute.id,
+        order.map((value) => value.id),
+      ),
+    onSuccess: () => {
+      onDone();
+      onClose();
+    },
+  });
+  const move = (index: number, by: -1 | 1) =>
+    setOrder((current) => {
+      const next = [...current];
+      const [moved] = next.splice(index, 1);
+      if (moved !== undefined) next.splice(index + by, 0, moved);
+      return next;
+    });
+  return (
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      title={fill(t('mg.setup.orderTitle'), { name: attribute.name })}
+      description={t('mg.setup.orderHelp')}
+      closeLabel={t('mg.close')}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            {t('mg.cancel')}
+          </Button>
+          <Button disabled={save.isPending} onClick={() => save.mutate()}>
+            {t('mg.setup.saveOrder')}
+          </Button>
+        </>
+      }
+    >
+      <ol className="divide-y divide-border rounded-lg border border-border">
+        {order.map((value, index) => (
+          <li key={value.id} className="flex min-h-row items-center gap-2 px-3 py-1 text-sm">
+            <span className="w-6 text-xs text-muted-foreground tabular-nums">{index + 1}</span>
+            <span className="flex-1">{value.label}</span>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              disabled={index === 0}
+              aria-label={fill(t('mg.setup.moveUp'), { name: value.label })}
+              onClick={() => move(index, -1)}
+            >
+              <ArrowUp aria-hidden />
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              disabled={index === order.length - 1}
+              aria-label={fill(t('mg.setup.moveDown'), { name: value.label })}
+              onClick={() => move(index, 1)}
+            >
+              <ArrowDown aria-hidden />
+            </Button>
+          </li>
+        ))}
+      </ol>
+      <Problem error={save.error} />
+    </Dialog>
   );
 }
 
@@ -694,20 +955,23 @@ function Locations({
   items,
   mayCreate,
   mayUpdate,
+  mayDelete,
   onDone,
 }: {
   readonly items: readonly StockLocation[];
   readonly mayCreate: boolean;
   readonly mayUpdate: boolean;
+  readonly mayDelete: boolean;
   readonly onDone: () => void;
 }) {
+  const [managing, setManaging] = useState<StockLocation | null>(null);
   const t = useT();
   const [name, setName] = useState('');
   const [kind, setKind] = useState<'warehouse' | 'showroom'>('showroom');
   const [branchId, setBranchId] = useState('');
   const [code, setCode] = useState<string | null>(null);
   const [editing, setEditing] = useState<StockLocation | null>(null);
-  const suggested = code ?? codeFrom(name, 12);
+  const suggested = code ?? codeFrom(name, 16);
 
   const branches = useQuery({
     queryKey: ['hr', 'branch-options'],
@@ -754,13 +1018,16 @@ function Locations({
             <span className="text-xs text-muted-foreground tabular-nums">{location.code}</span>
             <StatusBadge tone="neutral">{t(`cs.locationKind.${location.kind}`)}</StatusBadge>
             {location.isActive ? null : (
-              <StatusBadge tone="neutral">{t('cs.inactive')}</StatusBadge>
+              <StatusBadge tone="neutral">{t('mg.archivedBadge')}</StatusBadge>
             )}
             <span className="flex-1" />
             <PermissionGate allowed={mayUpdate}>
               <Button size="sm" variant="ghost" onClick={() => setEditing(location)}>
                 {t('cs.edit')}
               </Button>
+            </PermissionGate>
+            <PermissionGate allowed={mayUpdate || mayDelete}>
+              <ManageButton name={location.name} onClick={() => setManaging(location)} />
             </PermissionGate>
           </li>
         ))}
@@ -830,6 +1097,21 @@ function Locations({
           onDone={onDone}
         />
       )}
+
+      {managing === null ? null : (
+        <DeleteOrArchive
+          key={managing.id}
+          open
+          onClose={() => setManaging(null)}
+          queryKey={['stock', 'locations', managing.id]}
+          loadUsage={() => locationUsage(managing.id)}
+          onDelete={mayDelete ? () => deleteLocation(managing.id) : undefined}
+          onArchive={mayUpdate ? () => archiveLocation(managing.id) : undefined}
+          archiveNote={t('mg.archive.location')}
+          onRestore={mayUpdate ? () => restoreLocation(managing.id) : undefined}
+          onDone={onDone}
+        />
+      )}
     </section>
   );
 }
@@ -845,9 +1127,8 @@ function EditLocation({
 }) {
   const t = useT();
   const [name, setName] = useState(location.name);
-  const [active, setActive] = useState(location.isActive);
   const save = useMutation({
-    mutationFn: () => updateLocation(location.id, { name: name.trim(), isActive: active }),
+    mutationFn: () => updateLocation(location.id, { name: name.trim() }),
     onSuccess: () => {
       onDone();
       onClose();
@@ -860,7 +1141,7 @@ function EditLocation({
         if (!next) onClose();
       }}
       title={t('cs.setup.editLocation')}
-      description={t('cs.setup.codeFixed')}
+      description={t('mg.setup.locationCodeFixed')}
       closeLabel={t('cs.close')}
       footer={
         <>
@@ -882,10 +1163,6 @@ function EditLocation({
             className={control}
           />
         </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox checked={active} onCheckedChange={(next) => setActive(next === true)} />
-          {t('cs.setup.inUse')}
-        </label>
         <Problem error={save.error} />
       </div>
     </Dialog>

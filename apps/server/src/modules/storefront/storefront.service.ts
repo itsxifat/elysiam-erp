@@ -35,6 +35,7 @@ import {
 } from './storefront.settings.js';
 import { SiteCache } from './site-cache.js';
 import { deriveStorefrontSecret, fingerprint, newKeyId } from './signature.js';
+import * as refs from './references.repository.js';
 
 /**
  * Website → Settings, Hero slides, Menu, Size charts and Connection, and the website fields on
@@ -321,8 +322,25 @@ export class StorefrontService {
     return heroView(row);
   }
 
-  async deleteHeroSlide(context: ActiveContext, id: string) {
-    const deleted = await withOrg(context, (tx) => repo.deleteHeroSlide(tx, context.orgId, id));
+  async deleteHeroSlide(context: ActiveContext, id: string, request?: AuditableRequest) {
+    const deleted = await withOrg(context, async (tx) => {
+      // M39a (D-622): the slide's content goes into the audit log in the same transaction.
+      const before = await refs.heroSlideImage(tx, context.orgId, id);
+      if (!(await repo.deleteHeroSlide(tx, context.orgId, id))) return false;
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'delete',
+        action: 'storefront.hero_slide.deleted',
+        entityType: 'HeroSlide',
+        entityId: id,
+        before: before ?? null,
+        after: null,
+        requestId: context.requestId,
+        ...(request === undefined ? {} : { request }),
+      });
+      return true;
+    });
     if (!deleted) throw storefrontNotFound('slide');
     this.cache.forget(context.orgId);
     return { id };
@@ -386,10 +404,26 @@ export class StorefrontService {
     return navView(row);
   }
 
-  async deleteNavItem(context: ActiveContext, id: string) {
+  async deleteNavItem(context: ActiveContext, id: string, request?: AuditableRequest) {
     const deleted = await withOrg(context, async (tx) => {
       await repo.lockNav(tx, context.orgId);
-      return repo.deleteNavItem(tx, context.orgId, id);
+      // M39a (D-622, D-628): a dropdown takes its items with it (0103's cascade), so the
+      // audit row keeps the item and every item that went with it.
+      const { item, children } = await refs.navItemWithChildren(tx, context.orgId, id);
+      if (!(await repo.deleteNavItem(tx, context.orgId, id))) return false;
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'delete',
+        action: 'storefront.nav_item.deleted',
+        entityType: 'NavItem',
+        entityId: id,
+        before: { ...item, children: children.map((child) => ({ ...child })) },
+        after: null,
+        requestId: context.requestId,
+        ...(request === undefined ? {} : { request }),
+      });
+      return true;
     });
     if (!deleted) throw storefrontNotFound('menu item');
     this.cache.forget(context.orgId);
@@ -448,19 +482,39 @@ export class StorefrontService {
     return chartView(row);
   }
 
-  async deleteSizeChart(context: ActiveContext, id: string) {
+  async deleteSizeChart(context: ActiveContext, id: string, request?: AuditableRequest) {
     await withOrg(context, async (tx) => {
-      const using = await this.catalog.productsUsingSizeChart(tx, context.orgId, id);
-      if (using > 0) {
+      // Locked first, so a product given this chart at the same moment either is counted
+      // or waits and then fails on its foreign key (M39a, D-621).
+      const chart = await refs.lockSizeChart(tx, context.orgId, id);
+      if (chart === undefined) throw storefrontNotFound('size chart');
+      const using = await this.catalog.sizeChartProducts(tx, context.orgId, id);
+      if (using.count > 0) {
+        const named = using.examples.map((example) => example.label).join(', ');
         throw new StorefrontError(
           'STOREFRONT_IN_USE',
           HttpStatus.CONFLICT,
-          `${String(using)} product${using === 1 ? ' uses' : 's use'} this size chart. Choose another chart for them first.`,
+          `${String(using.count)} product${using.count === 1 ? ' uses' : 's use'} this size chart (${named}${using.count > using.examples.length ? ', …' : ''}). Use Empty and delete to give them another chart, or none.`,
         );
       }
+      await refs.forgetLegacyIds(tx, context.orgId, 'size_chart', [id]);
       if (!(await repo.deleteSizeChart(tx, context.orgId, id)))
         throw storefrontNotFound('size chart');
+      // M39a (D-622): the chart's grid goes into the audit log in the same transaction.
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'delete',
+        action: 'storefront.size_chart.deleted',
+        entityType: 'SizeChart',
+        entityId: id,
+        before: { ...chart },
+        after: null,
+        requestId: context.requestId,
+        ...(request === undefined ? {} : { request }),
+      });
     });
+    this.cache.forget(context.orgId);
     return { id };
   }
 

@@ -37,6 +37,9 @@ import {
   trackingRateLimitStore,
   TrackingService,
 } from './tracking.service.js';
+import { CatalogModule } from '../catalog/catalog.module.js';
+import { InventoryModule } from '../inventory/inventory.module.js';
+import { CourierReferencesBinding } from './references.binding.js';
 
 /**
  * Couriers, parcels, returns and settlements (architecture §9, §20, §21; M12).
@@ -81,9 +84,21 @@ import {
  */
 @Module({
   // `FilesModule` for `GotenbergClient`, which renders the courier labels (M15).
-  imports: [LedgerModule, ApprovalsModule, OrdersModule, WalletsModule, FilesModule],
+  // M39a: the catalog's and inventory's references registries (D-621, D-629); both are
+  // below this module, so neither import closes a cycle.
+  imports: [
+    LedgerModule,
+    ApprovalsModule,
+    OrdersModule,
+    WalletsModule,
+    FilesModule,
+    CatalogModule,
+    InventoryModule,
+  ],
   controllers: [CourierController, TrackingController],
   providers: [
+    // M39a: what a received return holds about a SKU or a location (D-621, D-629).
+    CourierReferencesBinding,
     {
       provide: COURIER_ADAPTERS,
       useFactory: (): CourierAdapterRegistry => {

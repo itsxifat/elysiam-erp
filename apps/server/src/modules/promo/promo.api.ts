@@ -8,6 +8,7 @@ import { FlashService, type FlashClaimLine, type StorefrontFlashSale } from './f
 import { PromoError, promoHttpError } from './promo.errors.js';
 import * as repo from './promo.repository.js';
 import { PromoService, type AppliedDiscountView, type DiscountQuote } from './promo.service.js';
+import * as references from './references.repository.js';
 
 export type { AppliedDiscountView, DiscountQuote, QuoteRefusal } from './promo.service.js';
 export type { FlashClaimLine, StorefrontFlashSale } from './flash.service.js';
@@ -140,6 +141,20 @@ export interface PromoApi {
     orgId: string,
     codeIds: readonly string[],
   ): Promise<ReadonlyMap<string, string>>;
+
+  /**
+   * The discounts (any status) made for an ad campaign, counted with a few titles (M39a,
+   * D-632): marketing asks before it deletes a campaign, because the code's foreign key
+   * names it and a discount's terms are never rewritten.
+   */
+  discountsForCampaign(
+    tx: Tx,
+    orgId: string,
+    campaignId: string,
+  ): Promise<{
+    readonly count: number;
+    readonly examples: readonly { id: string; label: string }[];
+  }>;
 
   // --- M35a: the website's discounts and flash sales -----------------------------------
 
@@ -275,6 +290,10 @@ export class PromoApiService implements PromoApi {
     @Inject(PromoService) private readonly promo: PromoService,
     @Inject(FlashService) private readonly flash: FlashService,
   ) {}
+
+  discountsForCampaign(tx: Tx, orgId: string, campaignId: string) {
+    return references.codesForCampaign(tx, orgId, campaignId);
+  }
 
   async priceForOrder(
     tx: Tx,

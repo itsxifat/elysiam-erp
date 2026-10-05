@@ -181,6 +181,22 @@ export interface WebFilter {
 }
 
 /** What the website may see of a product, and the shopper's filters, as one condition. */
+/**
+ * The product `p` is not filed under an archived category, at any depth (M39a, D-623).
+ *
+ * Archiving a category takes its products off the website until they are moved (or the
+ * category is restored), so a shopper never lands on a product of a range the brand put away.
+ * A category only switched off the website (`web_visible`) still hides just itself and its
+ * subtree from the menu and the filter, as D-501 said: the product's own switch decides.
+ */
+const IN_LIVE_CATEGORY = sql`not exists (
+  select 1 from catalog.categories c
+  join catalog.categories a
+    on a.org_id = c.org_id and not a.is_active
+   and (a.id = c.id or starts_with(c.path, a.path || '/'))
+  where c.org_id = p.org_id and c.id = p.category_id
+)`;
+
 function webWhere(orgId: string, filter: WebFilter): SQL {
   const conditions: SQL[] = [
     sql`p.org_id = ${orgId}`,
@@ -188,6 +204,7 @@ function webWhere(orgId: string, filter: WebFilter): SQL {
     sql`p.status = 'active'`,
     sql`exists (select 1 from catalog.skus s
                 where s.org_id = p.org_id and s.product_id = p.id and s.status = 'active')`,
+    IN_LIVE_CATEGORY,
   ];
   if (filter.ids !== undefined) {
     conditions.push(
@@ -517,7 +534,8 @@ export async function webSkuFactsOf(
   const rows = await tx.execute<WebSkuFactRow>(sql`
     select s.id, s.product_id, s.code, s.price_poisha::text as price_poisha,
       p.name as product_name, p.slug as product_slug, p.category_id,
-      (s.status = 'active' and p.status = 'active' and p.web_visible) as sellable,
+      (s.status = 'active' and p.status = 'active' and p.web_visible
+        and ${IN_LIVE_CATEGORY}) as sellable,
       coalesce(
         json_agg(json_build_object('kind', a.kind::text, 'name', a.name, 'label', av.label,
                                    'position', av.position)

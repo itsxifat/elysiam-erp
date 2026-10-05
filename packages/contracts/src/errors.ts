@@ -517,6 +517,29 @@ export const ERROR_CODES = [
    * is disabled, or holds no active role in any brand (D-401).
    */
   'ACCOUNT_INACTIVE',
+
+  /*
+   * Delete and archive everywhere (M39a, D-621 to D-634).
+   *
+   * Each module's "something still uses this row": the delete asked every module that points
+   * at it (the `CatalogReferences` port and its siblings) and one answered, or the database's
+   * foreign key refused it (23503) as the backstop. The detail names the counts in words;
+   * `GET …/usage` names them as data, and the screen offers Archive instead.
+   */
+  /** A category, list, value, product or variant that stock, orders or the website use. */
+  'CATALOG_IN_USE',
+  /** A stock location that holds, held or moved stock, or that a till, order or supply names. */
+  'INVENTORY_IN_USE',
+  /** A supplier with entries, returns, payments or notes. */
+  'SUPPLY_IN_USE',
+  /** A discount that was redeemed or named on an order, or a flash sale that sold. */
+  'PROMO_IN_USE',
+  /** An SMS template that was sent, or one the system sends by itself. */
+  'NOTIFY_IN_USE',
+  /** An ad campaign with spend, leads or discounts. */
+  'MARKETING_IN_USE',
+  /** A branch that still has an open till, money, staff or stock, so it is not switched off. */
+  'BRANCH_IN_USE',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
