@@ -378,8 +378,8 @@ $$;--> statement-breakpoint
 -- Brand by brand, with `app.org_id` set, as 0042 and 0111 do: every table read or written
 -- below has RLS ENABLE and FORCE, so `erp_owner` running this migration sees no row without
 -- an org context, and a bare statement would quietly change nothing. The test of this block
--- (`stock-in-hand-backfill.db.test.ts`) runs it again, through the driver, against brands
--- with history, and reads back the rows it wrote.
+-- ("the migration's backfill" in `stock-in-hand.e2e.test.ts`) runs it again, through the
+-- driver, against brands with history, and reads back the rows it wrote.
 --
 -- 1. The window, closed for a brand that already opened its books (M14a's one opening
 --    journal, D-213) or has moved stock any other way. Stock in hand credits equity; a

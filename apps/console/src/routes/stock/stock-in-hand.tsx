@@ -176,7 +176,14 @@ export function StockInHandPage() {
           </div>
           <PermissionGate allowed={mayClose}>
             {open ? (
-              <Button variant="outline" data-testid="close-window" onClick={() => setClosing(true)}>
+              <Button
+                variant="outline"
+                data-testid="close-window"
+                onClick={() => {
+                  close.reset();
+                  setClosing(true);
+                }}
+              >
                 <Lock aria-hidden="true" />
                 {t('st.window.close')}
               </Button>
@@ -326,7 +333,18 @@ export function StockInHandPage() {
           onConfirm={async () => {
             await close.mutateAsync('');
           }}
-        />
+        >
+          {close.error === null ? null : (
+            <p role="alert" className="text-sm text-destructive">
+              {close.error instanceof ApiError &&
+              close.error.code === 'STOCK_IN_HAND_REVERSAL_BLOCKED'
+                ? t('st.window.closeBlocked')
+                : close.error instanceof ApiError
+                  ? close.error.message
+                  : t('st.saveFailed')}
+            </p>
+          )}
+        </ConfirmDialog>
         <ReopenDialog open={reopening} onOpenChange={setReopening} onDone={refresh} />
         {reversing === null ? null : (
           <ReverseDialog
@@ -911,9 +929,18 @@ function PriceDraftDialog({
 }) {
   const t = useT();
   const [costs, setCosts] = useState<Record<string, string>>({});
+  /** Lines whose pieces changed under the person, after a refused post: priced again. */
+  const [changed, setChanged] = useState<ReadonlySet<string>>(new Set());
   const entry = useQuery({
-    queryKey: ['stock', 'stock-in-hand', id],
+    // Its own key, outside `['stock']`, and never refetched on its own: the dialog posts the
+    // pieces the person read while typing costs, so a draft changed meanwhile (another phone)
+    // is refused by the server rather than quietly swapped in beside the costs (D-602).
+    queryKey: ['stock-in-hand-pricing', id],
     queryFn: () => getStockInHand(id),
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   const lines = entry.data?.lines ?? [];
   const priced = lines.map((line) => ({
@@ -936,10 +963,21 @@ function PriceDraftDialog({
     onSuccess: () => {
       if (entry.data !== undefined) onPosted(entryStickers(entry.data));
     },
-    onError: (error) => {
-      if (error instanceof ApiError && error.code === 'STOCK_IN_HAND_CHANGED') {
-        void entry.refetch();
-      }
+    onError: async (error) => {
+      if (!(error instanceof ApiError) || error.code !== 'STOCK_IN_HAND_CHANGED') return;
+      // Show the draft as it is now, mark the lines that changed and clear their costs, so
+      // nothing is posted at a cost typed for other pieces.
+      const before = new Map(lines.map((line) => [line.skuId, line.qty]));
+      const fresh = await entry.refetch();
+      const moved = new Set(
+        (fresh.data?.lines ?? [])
+          .filter((line) => before.get(line.skuId) !== line.qty)
+          .map((line) => line.skuId),
+      );
+      setChanged(moved);
+      setCosts((current) =>
+        Object.fromEntries(Object.entries(current).filter(([skuId]) => !moved.has(skuId))),
+      );
     },
   });
   const failure =
@@ -972,6 +1010,11 @@ function PriceDraftDialog({
       }
     >
       <div className="space-y-3">
+        {entry.data === undefined ? null : (
+          <p className="text-sm text-muted-foreground">
+            {`${t('st.col.location')}: ${entry.data.locationName}`}
+          </p>
+        )}
         {lines.map((line) => (
           <div key={line.skuId} className="flex items-center gap-3 text-sm">
             <span className="min-w-0 flex-1 truncate">
@@ -979,6 +1022,11 @@ function PriceDraftDialog({
                 ? line.productName
                 : `${line.productName} · ${line.variantLabel}`}
               <span className="ms-2 text-muted-foreground tabular-nums">{`× ${String(line.qty)}`}</span>
+              {changed.has(line.skuId) ? (
+                <span className="ms-2">
+                  <StatusBadge tone="warning">{t('st.inHand.lineChanged')}</StatusBadge>
+                </span>
+              ) : null}
             </span>
             <label className="sr-only" htmlFor={`price-draft-${line.skuId}`}>
               {`${t('st.col.costPerPiece')} ${line.skuCode}`}

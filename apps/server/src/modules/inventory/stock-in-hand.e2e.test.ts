@@ -2,8 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
 import { findCostFields } from '@elysium/contracts';
-import { withOrg, withSystem } from '@elysium/db';
-import { internalEan13, isInternalEan13, poisha } from '@elysium/domain';
+import { SEED_ORGS, seedOrgId, withOrg, withSystem } from '@elysium/db';
+import { businessDate, internalEan13, isInternalEan13, poisha } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 import fc from 'fast-check';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -15,8 +15,9 @@ import {
   type HttpHarness,
   type RoleClient,
 } from '../../testing/http-harness.js';
+import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { INVENTORY_API, type InventoryApi } from './inventory.api.js';
-import { warehouseId } from './inventory.testing.js';
+import { makeLocation, warehouseId } from './inventory.testing.js';
 
 /**
  * M38a over HTTP against real PostgreSQL (D-602 to D-606): every SKU gets a valid, unique
@@ -202,6 +203,30 @@ async function enterStock(
     201,
   );
   return { id: entryId, journalId: posted.journalId };
+}
+
+/**
+ * 1300 Inventory in the trial balance less the stock valuation (Σ on hand × WAC). Not zero in
+ * this file: blending stock at uneven costs rounds the average once per receipt (§8), and the
+ * entries above do. What a reversal must never do is move it.
+ */
+async function booksDifference(): Promise<bigint> {
+  const balance = await call<{ items: { code: string; balancePoisha: string }[] }>(
+    admin,
+    'GET',
+    `/v1/ledger/trial-balance?asOf=${businessDate(new Date())}`,
+    undefined,
+    200,
+  );
+  const valuation = await call<{ stockValuePoisha: string }>(
+    admin,
+    'GET',
+    '/v1/inventory/valuation',
+    undefined,
+    200,
+  );
+  const inventory = balance.items.find((row) => row.code === '1300')?.balancePoisha ?? '0';
+  return BigInt(inventory) - BigInt(valuation.stockValuePoisha);
 }
 
 async function lookup(code: string | null | undefined) {
@@ -758,6 +783,7 @@ describe('reversing a posted entry (D-602)', () => {
     expect(waiting).toMatchObject({ status: 'posted', reversalPending: true });
     // Nothing moved while it waits.
     expect((await lookup(first.barcode)).stock.onHand).toBe(6);
+    const before = await booksDifference();
 
     await call(
       admin,
@@ -796,6 +822,8 @@ describe('reversing a posted entry (D-602)', () => {
       stock: { onHand: 3 },
     });
     expect((await lookup(second.barcode)).stock.onHand).toBe(2);
+    // 1300 and the stock valuation came down by the same 250,000.
+    expect(await booksDifference()).toBe(before);
     const audit = await auditRowsFor(ORG_A, 'inventory.stock_in_hand.reversed');
     expect(audit.some((row) => row.entity_id === duplicate.id)).toBe(true);
 
@@ -858,6 +886,84 @@ describe('reversing a posted entry (D-602)', () => {
     );
     expect(draft.statusCode).toBe(400);
     expect(body<{ code: string }>(draft).code).toBe('STOCK_IN_HAND_INVALID');
+  });
+
+  it('checks again when it is decided: the checker, an average that moved, pieces that left', async () => {
+    const later = await product('Decided later', 'decided-later-sih');
+    const [first, second] = later.skus;
+    if (first === undefined || second === undefined) throw new Error('no SKUs');
+    const before = await booksDifference();
+
+    // Raised by an org admin, who cannot decide it; nor can accounts, which is no checker.
+    const entry = await enterStock([{ skuId: first.id, qty: 2, unitCostPoisha: '50000' }]);
+    const raised = await call<{ approvalId: string }>(
+      admin,
+      'POST',
+      `/v1/inventory/stock-in-hand/${entry.id}/reverse`,
+      { reason: 'Counted twice' },
+      201,
+    );
+    const decide = (who: RoleClient, id: string, decision: 'approved' | 'rejected') =>
+      who.client.request('POST', `/v1/approvals/${id}/decide`, { body: { decision } });
+    expect((await decide(admin, raised.approvalId, 'approved')).statusCode).toBeGreaterThanOrEqual(
+      400,
+    );
+    expect((await decide(accounts, raised.approvalId, 'approved')).statusCode).toBe(403);
+
+    // The average moves while it waits: the approval is refused and nothing moves.
+    await enterStock([{ skuId: first.id, qty: 2, unitCostPoisha: '70000' }]);
+    const moved = await decide(secondAdmin, raised.approvalId, 'approved');
+    expect(moved.statusCode, moved.body).toBe(409);
+    expect(body<{ code: string }>(moved).code).toBe('STOCK_IN_HAND_REVERSAL_BLOCKED');
+    expect((await movementsOf(entry.id)).filter((row) => row.kind === 'adjustment_loss')).toEqual(
+      [],
+    );
+    expect(
+      await call<{ status: string; reversalPending: boolean }>(
+        admin,
+        'GET',
+        `/v1/inventory/stock-in-hand/${entry.id}`,
+        undefined,
+        200,
+      ),
+    ).toMatchObject({ status: 'posted', reversalPending: true });
+    expect((await decide(secondAdmin, raised.approvalId, 'rejected')).statusCode).toBe(201);
+
+    // The pieces leave the location while it waits: refused by the movement, nothing moves.
+    const leaving = await enterStock([{ skuId: second.id, qty: 1, unitCostPoisha: '50000' }]);
+    const asked = await call<{ approvalId: string }>(
+      accounts,
+      'POST',
+      `/v1/inventory/stock-in-hand/${leaving.id}/reverse`,
+      { reason: 'Counted twice' },
+      201,
+    );
+    const elsewhere = await makeLocation(ORG_A, {
+      code: 'WH-SIH-2',
+      name: 'Second warehouse',
+      kind: 'warehouse',
+    });
+    await call(
+      warehouse,
+      'POST',
+      '/v1/inventory/transfers',
+      {
+        fromLocationId: mainWarehouse,
+        toLocationId: elsewhere,
+        lines: [{ skuId: second.id, qty: 1 }],
+      },
+      201,
+    );
+    const gone = await decide(admin, asked.approvalId, 'approved');
+    expect(gone.statusCode, gone.body).toBe(409);
+    expect(body<{ code: string }>(gone).code).toBe('STOCK_INSUFFICIENT');
+    expect((await movementsOf(leaving.id)).filter((row) => row.kind === 'adjustment_loss')).toEqual(
+      [],
+    );
+    expect((await decide(admin, asked.approvalId, 'rejected')).statusCode).toBe(201);
+
+    // Entries at round costs and refused reversals leave the books and the stock as they were.
+    expect(await booksDifference()).toBe(before);
   });
 });
 
@@ -1013,6 +1119,28 @@ describe('the opening stock window (D-602)', () => {
         locationId: mainWarehouse,
         lines: [{ skuId: sku.id, qty: 1 }],
       },
+      201,
+    );
+
+    // A reversal still waiting would be undecidable after the close, so it is decided first.
+    const waiting = await enterStock([{ skuId: made.skus[1]?.id, qty: 1, unitCostPoisha: '1000' }]);
+    const pending = await call<{ approvalId: string }>(
+      accounts,
+      'POST',
+      `/v1/inventory/stock-in-hand/${waiting.id}/reverse`,
+      { reason: 'Counted twice' },
+      201,
+    );
+    const early = await admin.client.request('POST', '/v1/inventory/stock-in-hand/window/close', {
+      body: {},
+    });
+    expect(early.statusCode, early.body).toBe(409);
+    expect(body<{ code: string }>(early).code).toBe('STOCK_IN_HAND_REVERSAL_BLOCKED');
+    await call(
+      secondAdmin,
+      'POST',
+      `/v1/approvals/${pending.approvalId}/decide`,
+      { decision: 'rejected', note: 'Close first' },
       201,
     );
 
@@ -1479,5 +1607,51 @@ describe('the migration’s backfill (0114)', () => {
     // A brand whose window an admin already closed keeps that close.
     const brandA = await brandState(ORG_A);
     expect(brandA.window).toMatchObject({ status: 'closed', closed_by: admin.userId });
+
+    // A brand that opened its books through M14a's one opening journal, and moved no stock:
+    // closed too.
+    const third = SEED_ORGS.map((org) => seedOrgId(org.slug)).find(
+      (id) => id !== ORG_A && id !== ORG_B,
+    );
+    if (third === undefined) throw new Error('the seed has no third brand');
+    expect((await brandState(third)).window).toBeUndefined();
+    const ledger = harness.app.get<LedgerApi>(LEDGER_API, { strict: false });
+    const actor = { orgId: third, userId: 'usr_test' };
+    await withOrg(actor, async (tx) => {
+      const inventoryAccount = await ledger.accountBySubtype(tx, third, 'inventory');
+      const equity = await ledger.accountBySubtype(tx, third, 'opening_equity');
+      if (inventoryAccount === null || equity === null) throw new Error('no chart');
+      const line = { partyType: null, partyId: null, memo: null };
+      await ledger.post(tx, actor, {
+        businessDate: businessDate(new Date()),
+        sourceType: 'opening_balance',
+        sourceId: third,
+        event: 'posted',
+        idempotencyKey: `opening_balance:${third}:posted`,
+        memo: 'An opening posted before M38a',
+        reversesJournalId: null,
+        lines: [
+          {
+            ...line,
+            accountId: inventoryAccount.accountId,
+            branchId: inventoryAccount.branchId,
+            debitPoisha: poisha(100n),
+            creditPoisha: poisha(0n),
+          },
+          {
+            ...line,
+            accountId: equity.accountId,
+            branchId: equity.branchId,
+            debitPoisha: poisha(0n),
+            creditPoisha: poisha(100n),
+          },
+        ],
+      });
+    });
+    await runBackfill();
+    expect((await brandState(third)).window).toMatchObject({
+      status: 'closed',
+      closed_by: 'system',
+    });
   });
 });

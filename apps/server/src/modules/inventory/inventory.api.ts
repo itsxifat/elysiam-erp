@@ -7,6 +7,7 @@ import {
   poisha,
   sum,
   stockInHandDraft,
+  stockInHandValue,
   supplyReceivedDraft,
   supplierReturnDraft,
   type AccountSubtype,
@@ -648,11 +649,11 @@ export class InventoryApiService implements InventoryApi {
         memo: input.memo ?? null,
       }),
     );
-    const total = input.lines.reduce(
-      (sum, line) => sum + line.unitCostPoisha * BigInt(line.qty),
-      0n,
-    );
-    return { movementIds, journalId: posted.journalId, valuePoisha: total.toString() };
+    return {
+      movementIds,
+      journalId: posted.journalId,
+      valuePoisha: stockInHandValue(input.lines).toString(),
+    };
   }
 
   async reverseStockInHand(
@@ -668,6 +669,25 @@ export class InventoryApiService implements InventoryApi {
     },
   ): Promise<PostedStockEvent> {
     await this.assertOpeningWindowOpen(tx, actor.orgId);
+    const value = stockInHandValue(input.lines);
+
+    // The journal named is the one these lines posted: Dr Inventory and Cr Opening balance
+    // equity, each exactly what the lines are worth. Its own caller reads both from the entry;
+    // this keeps another caller from reversing some other journal with these movements.
+    const posted = await this.ledger.journalLines(tx, actor.orgId, input.journalId);
+    const side = (subtype: string, pick: 'debitPoisha' | 'creditPoisha') =>
+      posted
+        .filter((line) => line.subtype === subtype)
+        .reduce((total, line) => total + line[pick], 0n);
+    if (
+      side('inventory', 'debitPoisha') !== value ||
+      side('opening_equity', 'creditPoisha') !== value
+    ) {
+      throw new StockError(
+        'STOCK_IN_HAND_INVALID',
+        'That journal is not the one these stock-in-hand lines posted.',
+      );
+    }
 
     // The averages first, each under its cost row's lock (held to commit), before anything
     // moves: a refusal then leaves nothing half done.
@@ -712,11 +732,7 @@ export class InventoryApiService implements InventoryApi {
       input.reason,
       input.occurredAt,
     );
-    const total = input.lines.reduce(
-      (sum, line) => sum + line.unitCostPoisha * BigInt(line.qty),
-      0n,
-    );
-    return { movementIds, journalId: reversed.journalId, valuePoisha: total.toString() };
+    return { movementIds, journalId: reversed.journalId, valuePoisha: value.toString() };
   }
 
   async returnToSupplier(

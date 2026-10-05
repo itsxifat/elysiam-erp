@@ -64,6 +64,7 @@
   --color-primary-subtle: var(--primary-subtle);
 
   --color-destructive: var(--destructive);
+  --color-destructive-text: var(--destructive-text);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-destructive-subtle: var(--destructive-subtle);
   --color-destructive-subtle-foreground: var(--destructive-subtle-foreground);
@@ -188,6 +189,12 @@
  */
 .dark .text-primary {
   color: var(--primary-text);
+}
+
+/* Error text on a dark surface, for the same reason (M38a): `text-destructive` shares the
+   destructive fill's variable, which a white label needs dark and text needs light. */
+.dark .text-destructive {
+  color: var(--destructive-text);
 }
 
 /* A scroll area with more past its right edge fades that edge, so a cut-off column reads

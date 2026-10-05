@@ -357,6 +357,23 @@ export class ApprovalsService {
     return withOrg({ orgId: context.orgId, userId: context.userId }, work);
   }
 
+  /**
+   * Is any request of this type pending in this org? For an owning module that must not
+   * change state under a request still waiting (M38a: the opening stock window does not
+   * close while a stock-in-hand reversal waits). In the module's transaction.
+   */
+  async hasPendingOfType(context: ActiveContext, type: ApprovalType, tx: Tx): Promise<boolean> {
+    const rows = await tx.execute<{ found: boolean }>(sql`
+      select exists (
+        select 1 from approvals.approval_requests
+        where org_id = ${context.orgId}
+          and type = ${type}::approvals.approval_type
+          and status = 'pending'
+      ) as found
+    `);
+    return rows[0]?.found === true;
+  }
+
   async isRequired(
     context: ActiveContext,
     input: { type: ApprovalType; amountPoisha: bigint | null; amountDerivedByServer?: boolean },

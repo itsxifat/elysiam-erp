@@ -128,6 +128,14 @@ export class StockInHandService implements OnModuleInit {
         // waits for it, and every entry after the close sees the window closed.
         const current = await repo.lockWindow(tx, context.orgId, 'update');
         if (current.status === 'closed') return;
+        // A reversal waiting for its checker could never be carried out after the close (it
+        // needs the window open), so it is decided first.
+        if (await this.approvals.hasPendingOfType(context, 'stock_in_hand_reversal', tx)) {
+          throw new StockError(
+            'STOCK_IN_HAND_REVERSAL_BLOCKED',
+            'A reversal of a stock-in-hand entry is waiting for a second admin; decide it before closing.',
+          );
+        }
         const closed = await repo.closeWindow(tx, context.orgId, context.userId);
         await this.audit.record(tx, {
           orgId: context.orgId,
@@ -794,11 +802,16 @@ export class StockInHandService implements OnModuleInit {
       if (reversed.journalId === null) {
         throw new StockError('STOCK_IN_HAND_INVALID', 'The ledger did not reverse that entry.');
       }
-      await repo.markReversed(tx, context.orgId, entryId, {
+      const marked = await repo.markReversed(tx, context.orgId, entryId, {
         reversalJournalId: reversed.journalId,
         approvalId: approval.id,
         reversedBy: context.userId,
       });
+      // Unreachable while the entry is locked above; refused rather than committing stock and
+      // a reversal journal for an entry still marked posted.
+      if (!marked) {
+        throw new StockError('STOCK_IN_HAND_INVALID', 'That entry changed while it was reversed.');
+      }
 
       await this.audit.record(tx, {
         orgId: context.orgId,

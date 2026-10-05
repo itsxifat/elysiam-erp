@@ -115,8 +115,10 @@ export class CountsService {
 
         // D-606: a figure typed over one already counted (by scanning or typing) says why,
         // in the count's audit entry. The console asks for it; this is where it is required.
+        // The lines locked first: a scan committing between this read and the write below
+        // would otherwise be overwritten without the note this check asks for.
         const counted = new Map(
-          (await repo.countLines(tx, context.orgId, session.id)).map((line) => [
+          (await repo.lockCountLines(tx, context.orgId, session.id)).map((line) => [
             line.sku_id,
             line.counted_qty,
           ]),
@@ -312,7 +314,9 @@ export class CountsService {
   ): Promise<{ session: CountSessionView; adjustments: AdjustmentView[] }> {
     const prepared = await mapStockErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const session = await repo.countSessionById(tx, context.orgId, sessionId);
+        // `for update`: two closes at once would otherwise both read "submitted" and raise
+        // the variance's adjustments twice (M38a's ledger audit, N-5).
+        const session = await repo.countSessionById(tx, context.orgId, sessionId, 'update');
         if (session === undefined) throw new StockError('STOCK_NOT_FOUND', 'No such count.');
         assertInScope(request, { branchId: session.branch_id });
         if (session.status !== 'submitted') {

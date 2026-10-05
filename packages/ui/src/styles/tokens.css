@@ -135,6 +135,8 @@
   --ring: oklch(calc(var(--brand-l) + 0.14) var(--brand-c) var(--brand-h));
 
   --destructive: oklch(0.53 0.17 27);
+  /* An error as text on the page: the fill itself, which clears 4.5:1 on white. */
+  --destructive-text: oklch(0.53 0.17 27);
   --destructive-foreground: oklch(0.985 0.002 264);
   --success: oklch(0.52 0.1 155);
   --success-foreground: oklch(0.985 0.002 264);
@@ -215,6 +217,9 @@
   --ring: oklch(calc(var(--brand-l) + 0.12) var(--brand-c) var(--brand-h));
 
   --destructive: oklch(0.55 0.17 27);
+  /* The fill is solved for a white label; as text on a dark surface it reads 3.2:1, so error
+     text lifts well above it (M38a's dark-theme axe pass), as `--primary-text` does. */
+  --destructive-text: oklch(0.72 0.15 27);
   --destructive-foreground: oklch(0.985 0.002 264);
   --success: oklch(0.66 0.11 155);
   --success-foreground: oklch(0.18 0.006 75);

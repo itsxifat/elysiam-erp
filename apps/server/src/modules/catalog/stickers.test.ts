@@ -142,10 +142,12 @@ describe('sticker PDFs have the exact page size for every medium (check 3)', () 
   }
 
   for (const medium of STICKER_MEDIA_IDS) {
-    it(`renders ${medium} at its page size`, async () => {
+    it(`renders ${medium} at its page size`, async (context) => {
+      // Skipped, and counted as skipped, when Gotenberg is down: this is acceptance check 3,
+      // and a pass that rendered nothing would claim a page size nobody measured.
       if (!ready) {
         console.warn('Gotenberg is not reachable; start the dev stack to check sticker PDFs.');
-        expect(ready).toBe(false);
+        context.skip();
         return;
       }
       const spec = STICKER_MEDIA[medium];
@@ -170,9 +172,9 @@ describe('sticker PDFs have the exact page size for every medium (check 3)', () 
     }, 60_000);
   }
 
-  it('keeps the used positions blank on a half-used sheet', async () => {
+  it('keeps the used positions blank on a half-used sheet', async (context) => {
     if (!ready) {
-      expect(ready).toBe(false);
+      context.skip();
       return;
     }
     // 30 used + 12 new = 42 slots: two A4 pages of 40.
@@ -180,9 +182,9 @@ describe('sticker PDFs have the exact page size for every medium (check 3)', () 
     expect(pageCount(pdf)).toBe(2);
   }, 60_000);
 
-  it('writes review images of a roll sticker and an A4 sheet', async () => {
+  it('writes review images of a roll sticker and an A4 sheet', async (context) => {
     if (!ready) {
-      expect(ready).toBe(false);
+      context.skip();
       return;
     }
     mkdirSync(REVIEW_DIR, { recursive: true });

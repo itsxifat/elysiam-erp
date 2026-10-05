@@ -175,6 +175,7 @@ const en = {
   'st.inHand.deleteDraftHelp': 'The counted quantities are thrown away. Nothing was posted.',
   'st.inHand.priceTitle': 'Enter what each piece cost',
   'st.inHand.priceHelp': 'Every line needs a cost per piece above zero, in taka.',
+  'st.inHand.lineChanged': 'Changed',
   'st.inHand.changed':
     'Someone changed this draft after you opened it. Check the pieces below, then post again.',
   'st.inHand.reversed': 'Reversed',
@@ -204,6 +205,8 @@ const en = {
   'st.window.reopenHelp':
     'A second admin decides. Say what was found, so they can judge whether it is opening stock.',
   'st.window.reason': 'Why it needs reopening',
+  'st.window.closeBlocked':
+    'A reversal of a stock-in-hand entry is waiting for a second admin. Approve or reject it in Approvals, then close.',
   'st.window.reopenPending': 'A request to reopen is waiting for a second admin.',
 } as const;
 

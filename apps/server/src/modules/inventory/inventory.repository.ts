@@ -956,6 +956,21 @@ export async function recordCount(
   return rows.length === 1;
 }
 
+/** A count's figures, locked until the transaction ends (a typed figure's overwrite check). */
+export async function lockCountLines(
+  tx: Tx,
+  orgId: string,
+  sessionId: string,
+): Promise<{ sku_id: string; counted_qty: number | null }[]> {
+  const rows = await tx.execute<{ sku_id: string; counted_qty: number | null }>(sql`
+    select sku_id, counted_qty from inventory.count_lines
+    where org_id = ${orgId} and session_id = ${sessionId}
+    order by sku_id
+    for update
+  `);
+  return [...rows];
+}
+
 export interface CountLineRow extends Record<string, unknown> {
   readonly sku_id: string;
   readonly sku_code: string;

@@ -89,7 +89,7 @@ const bn: Record<StockToolsKey, string> = {
   'st.photos.cropHelp':
     'যে অংশ দেখাবে তা ফ্রেমে না আসা পর্যন্ত ছবিটি টানুন, বা arrow key ব্যবহার করুন। ফ্রেম ভরাতে zoom করুন।',
   'st.photos.cropFrame': 'ছবির যে অংশ দেখাবে',
-  'st.photos.zoom': 'Zoom',
+  'st.photos.zoom': 'বড় করুন',
   'st.photos.cropSave': 'এই crop রাখুন',
   'st.photos.cropFailed':
     'এখানে ছবিটি crop করা যায়নি। যেমন আছে তেমন যোগ করুন, বা অন্যটি চেষ্টা করুন।',
@@ -161,6 +161,7 @@ const bn: Record<StockToolsKey, string> = {
   'st.inHand.deleteDraftHelp': 'গোনা সংখ্যাগুলো বাদ যাবে। কিছুই পোস্ট হয়নি।',
   'st.inHand.priceTitle': 'প্রতি পিসের খরচ লিখুন',
   'st.inHand.priceHelp': 'প্রতিটি লাইনে টাকায় শূন্যের বেশি খরচ দিতে হবে।',
+  'st.inHand.lineChanged': 'বদলেছে',
   'st.inHand.changed':
     'আপনি খোলার পর কেউ এই খসড়াটি বদলেছেন। নিচের পিসগুলো দেখে নিন, তারপর আবার পোস্ট করুন।',
   'st.inHand.reversed': 'বাতিল করা হয়েছে',
@@ -191,6 +192,8 @@ const bn: Record<StockToolsKey, string> = {
   'st.window.reopenHelp':
     'দ্বিতীয় একজন অ্যাডমিন সিদ্ধান্ত নেবেন। কী পাওয়া গেছে লিখুন, যাতে তিনি বুঝতে পারেন এটি শুরুর স্টক কিনা।',
   'st.window.reason': 'কেন আবার খোলা দরকার',
+  'st.window.closeBlocked':
+    'হাতে থাকা স্টকের একটি এন্ট্রি বাতিলের অনুরোধ দ্বিতীয় অ্যাডমিনের অপেক্ষায় আছে। অনুমোদন-এ গিয়ে সেটি অনুমোদন বা বাতিল করুন, তারপর বন্ধ করুন।',
   'st.window.reopenPending': 'আবার খোলার একটি অনুরোধ দ্বিতীয় অ্যাডমিনের অপেক্ষায় আছে।',
 };
 

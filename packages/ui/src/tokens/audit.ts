@@ -95,6 +95,25 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
     minimum: 4.5,
     label: 'a link in the brand colour inside a table or card',
   },
+  // M38a: an error message or a refusal as text, on the page, a card or a dialog.
+  {
+    foreground: '--destructive-text',
+    background: '--background',
+    minimum: 4.5,
+    label: 'error text on the page',
+  },
+  {
+    foreground: '--destructive-text',
+    background: '--card',
+    minimum: 4.5,
+    label: 'error text inside a card',
+  },
+  {
+    foreground: '--destructive-text',
+    background: '--popover',
+    minimum: 4.5,
+    label: 'error text in a dialog',
+  },
   {
     foreground: '--primary-foreground',
     background: '--primary',

@@ -82,7 +82,15 @@ async function noBlockingViolations(label: string): Promise<void> {
     .analyze();
   const blocking = result.violations
     .filter((violation) => violation.impact === 'serious' || violation.impact === 'critical')
-    .map((violation) => ({ page: label, id: violation.id, help: violation.help }));
+    .map((violation) => ({
+      page: label,
+      id: violation.id,
+      help: violation.help,
+      // Which elements, so a failure names what to fix.
+      targets: violation.nodes.map(
+        (node) => `${node.target.join(' ')}: ${node.failureSummary ?? ''}`,
+      ),
+    }));
   expect(blocking).toEqual([]);
 }
 
@@ -295,4 +303,50 @@ test('a shelf counted in by mistake is sent to a second admin to reverse', async
   await expect(page.getByRole('status').filter({ hasText: 'Sent for approval' })).toBeVisible();
   // Nothing moves until the second admin approves: the entry still reads Posted.
   await expect(newest).toContainText('Posted');
+});
+
+test('the same screens and dialogs in the dark theme (WCAG AA in both)', async () => {
+  // The theme is read when the page loads, through the switch the shell's toggle writes, so
+  // each screen is opened again after the switch rather than toggled under an open dialog.
+  await page.evaluate(() => localStorage.setItem('erp-theme', 'dark'));
+  try {
+    await page.goto('/catalog/new');
+    await expect(page.locator('html')).toHaveClass(/\bdark\b/);
+    await expect(page.getByRole('heading', { name: 'New product', level: 1 })).toBeVisible();
+    await page.getByLabel('Name', { exact: true }).fill(`${PRODUCT} dark`);
+    const sizes = page.getByRole('group', { name: FIT });
+    for (const value of VALUES) {
+      await sizes.getByRole('button', { name: value, exact: true }).click();
+    }
+    await page.getByLabel('Pieces S').fill('1');
+    await noBlockingViolations('new product (dark)');
+    await shot('08-dark-new-product');
+
+    await page.goto(productUrl);
+    await expect(page.getByRole('heading', { name: PRODUCT, level: 1 })).toBeVisible();
+    await noBlockingViolations('product page (dark)');
+    await page.getByTestId('product-stickers').click();
+    const stickers = page.getByRole('dialog', { name: 'Print stickers' });
+    await expect(stickers).toBeVisible();
+    await noBlockingViolations('stickers dialog (dark)');
+    await shot('09-dark-stickers-dialog', false);
+    await stickers.getByRole('button', { name: 'Close' }).first().click();
+
+    await page.goto('/stock/in-hand');
+    await expect(page.getByRole('heading', { name: 'Stock in hand', level: 1 })).toBeVisible();
+    await noBlockingViolations('stock in hand (dark)');
+    const posted = page
+      .getByRole('table', { name: 'Entries' })
+      .getByRole('row')
+      .filter({ hasText: 'Posted' })
+      .first();
+    await posted.getByRole('button', { name: 'Reverse this entry' }).click();
+    const reverse = page.getByRole('dialog', { name: 'Reverse this entry?' });
+    await expect(reverse).toBeVisible();
+    await noBlockingViolations('reverse entry (dark)');
+    await shot('10-dark-reverse-entry', false);
+    await reverse.getByRole('button', { name: 'Cancel' }).click();
+  } finally {
+    await page.evaluate(() => localStorage.setItem('erp-theme', 'light'));
+  }
 });
