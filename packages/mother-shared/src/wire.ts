@@ -217,11 +217,11 @@ export interface BrandLiveWire {
     readonly createdAt: string;
     readonly totalPoisha: string;
   }[];
+  /** Units delivered in the last 30 days, by SKU. */
   readonly topProducts: readonly {
     readonly skuCode: string;
     readonly productName: string;
     readonly units: number;
-    readonly revenuePoisha: string;
   }[];
   readonly lowStock: readonly {
     readonly skuCode: string;
