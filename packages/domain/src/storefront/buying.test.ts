@@ -13,7 +13,7 @@ import {
   normaliseEmail,
   passwordProblem,
 } from './accounts.js';
-import { CartError, quoteCart, repricedReasons, type CartSku } from './cart.js';
+import { attributedDiscount, CartError, quoteCart, repricedReasons, type CartSku } from './cart.js';
 import type { ShippingRule } from './shipping.js';
 import { shopperPaymentStatus, shopperStatusOf } from './shopper.js';
 import {
@@ -21,6 +21,7 @@ import {
   gatewayTakesPayments,
   judgeValidation,
   parseGatewayAmount,
+  payableOnline,
   refusedButPaid,
   sessionDeadline,
 } from './sslcommerz.js';
@@ -394,6 +395,77 @@ describe('the COD after an online payment (M34 check 3, D-526)', () => {
         },
       ),
     );
+  });
+});
+
+describe('which discount an order is attributed to (D-539)', () => {
+  const discount = (
+    discountId: string,
+    method: 'code' | 'automatic',
+    goods: bigint,
+    delivery = 0n,
+  ) => ({
+    discountId,
+    method,
+    discountPoisha: poisha(goods),
+    deliveryDiscountPoisha: poisha(delivery),
+  });
+
+  it('names a typed code over a bigger automatic discount, and the code that gave most', () => {
+    expect(attributedDiscount([])).toBeNull();
+    expect(
+      attributedDiscount([
+        discount('auto', 'automatic', 50_000n),
+        discount('typed', 'code', 1_000n),
+      ]),
+    ).toBe('typed');
+    expect(
+      attributedDiscount([
+        discount('small', 'code', 1_000n),
+        discount('free-delivery', 'code', 0n, 6_000n),
+      ]),
+    ).toBe('free-delivery');
+    expect(
+      attributedDiscount([discount('a', 'automatic', 2_000n), discount('b', 'automatic', 3_000n)]),
+    ).toBe('b');
+    // A tie goes to the first the engine listed.
+    expect(attributedDiscount([discount('x', 'code', 1_000n), discount('y', 'code', 1_000n)])).toBe(
+      'x',
+    );
+  });
+
+  it('always names one of the applied discounts, and a code whenever one applied', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            method: fc.constantFrom<'code' | 'automatic'>('code', 'automatic'),
+            goods: fc.bigInt({ min: 0n, max: 1_000_000n }),
+            delivery: fc.bigInt({ min: 0n, max: 20_000n }),
+          }),
+          { maxLength: 6 },
+        ),
+        (rows) => {
+          const applied = rows.map((row, index) =>
+            discount(`d${String(index)}`, row.method, row.goods, row.delivery),
+          );
+          const chosen = attributedDiscount(applied);
+          if (applied.length === 0) return chosen === null;
+          const picked = applied.find((entry) => entry.discountId === chosen);
+          if (picked === undefined) return false;
+          return applied.some((entry) => entry.method === 'code')
+            ? picked.method === 'code'
+            : picked.method === 'automatic';
+        },
+      ),
+    );
+  });
+
+  it('pays online only inside SSLCommerz’s range', () => {
+    expect(payableOnline(poisha(999n))).toBe(false);
+    expect(payableOnline(poisha(1_000n))).toBe(true);
+    expect(payableOnline(poisha(50_000_000n))).toBe(true);
+    expect(payableOnline(poisha(50_000_001n))).toBe(false);
   });
 });
 

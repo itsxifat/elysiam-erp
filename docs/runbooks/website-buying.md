@@ -15,6 +15,12 @@ openssl rand -base64 32          # STOREFRONT_CREDENTIALS_KEY
 ```
 
 Put both in the API's and the worker's environment (the same values in both) and restart them.
+On a brand server that is `BRAND_STOREFRONT_CREDENTIALS_KEY` in the brand's `.env.brand`
+(`infra/brand/new-brand.sh` writes one for a new brand; a brand made before M34 adds the line)
+and a redeploy; on the preview it is `PREVIEW_STOREFRONT_CREDENTIALS_KEY`; with Kamal,
+`<ENV>_STOREFRONT_CREDENTIALS_KEY`. A worker without the key cannot check payments: the checks
+fail and are retried (reported in the failed jobs) until it has it, and no payment is refused
+for it.
 Keep the key with the other secrets (`docs/runbooks/secret-rotation.md`). Changing it makes the
 stored passwords unreadable: re-enter the SSLCommerz and email passwords afterwards. An email
 sealed under the old key and not yet sent is recorded as skipped.

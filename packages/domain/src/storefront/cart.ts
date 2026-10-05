@@ -256,3 +256,30 @@ export function repricedReasons(expected: ExpectedCart, quote: CartQuote): Repri
   }
   return [...reasons];
 }
+
+/** An applied discount, as far as choosing the order's attribution needs it. */
+export interface AttributableDiscount {
+  readonly discountId: string;
+  readonly method: 'code' | 'automatic';
+  readonly discountPoisha: Poisha;
+  readonly deliveryDiscountPoisha: Poisha;
+}
+
+/**
+ * Which discount an order's `promo_code_id` names when several applied (D-539): M18's
+ * attribution reads it, and a code the shopper typed says more about where they came from than
+ * a discount everybody got. So the typed code that gave the most (goods plus delivery), else the
+ * automatic discount that gave the most, else none; a tie goes to the first the engine listed.
+ */
+export function attributedDiscount(applied: readonly AttributableDiscount[]): string | null {
+  const worth = (discount: AttributableDiscount) =>
+    add(discount.discountPoisha, discount.deliveryDiscountPoisha);
+  const pick = (method: 'code' | 'automatic') =>
+    applied
+      .filter((discount) => discount.method === method)
+      .reduce<AttributableDiscount | null>(
+        (best, discount) => (best === null || worth(discount) > worth(best) ? discount : best),
+        null,
+      );
+  return (pick('code') ?? pick('automatic'))?.discountId ?? null;
+}

@@ -6,6 +6,7 @@ import { withOrg, type Tx } from '@elysium/db';
 import { add, normalizeBdPhone, OrderError, poisha, sub, type Poisha } from '@elysium/domain';
 import { planFlashLines, type FlashLinePlan } from '@elysium/domain/promo';
 import {
+  attributedDiscount,
   availableForWeb,
   gatewayTakesPayments,
   normaliseEmail,
@@ -841,25 +842,6 @@ export class BuyingService {
       return null;
     }
   }
-}
-
-/**
- * Which discount an order's `promo_code_id` names when several applied (D-539): M18's
- * attribution reads it, and a code the shopper typed says more about where they came from than
- * a discount everybody got. So the typed code that gave the most, else the automatic discount
- * that gave the most, else none; ties to the first the engine listed.
- */
-export function attributedDiscount(applied: readonly AppliedDiscountView[]): string | null {
-  const worth = (discount: AppliedDiscountView) =>
-    BigInt(discount.discountPoisha) + BigInt(discount.deliveryDiscountPoisha);
-  const pick = (method: 'code' | 'automatic') =>
-    applied
-      .filter((discount) => discount.method === method)
-      .reduce<AppliedDiscountView | null>(
-        (best, discount) => (best === null || worth(discount) > worth(best) ? discount : best),
-        null,
-      );
-  return (pick('code') ?? pick('automatic'))?.discountId ?? null;
 }
 
 function sizeOf(fact: WebSkuFact | undefined, kind: string): string | null {

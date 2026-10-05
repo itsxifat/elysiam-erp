@@ -161,6 +161,7 @@ async function checkout(
     readonly phone?: string;
     readonly accountId?: string;
     readonly expectedLines?: { skuId: string; unitPricePoisha: string }[];
+    readonly codes?: string[];
   } = {},
 ) {
   return signed<CheckoutBody>(
@@ -174,6 +175,7 @@ async function checkout(
         ...(options.email === undefined ? {} : { email: options.email }),
       },
       address: { ...area, addressLine: 'House 7, Road 3' },
+      ...(options.codes === undefined ? {} : { codes: options.codes }),
       paymentMethod: options.method ?? 'cod',
       ...(options.accountId === undefined ? {} : { accountId: options.accountId }),
       expected: {
@@ -1104,6 +1106,8 @@ describe('shopper accounts (check 4, D-522, D-523)', () => {
     `);
     expect(stored?.code_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(stored?.code_hash).not.toContain(code);
+    // Keyed (an HMAC), not a bare hash a million guesses would reverse (D-522).
+    expect(stored?.code_hash).not.toBe(createHash('sha256').update(code).digest('hex'));
     // The sent email's sealed body is gone once it went.
     const cleared = await one<{ body: boolean }>(sql`
       select body_sealed is null as body from notify.emails where org_id = ${ORG_A} and to_email = ${email}
@@ -1615,5 +1619,79 @@ describe('a signed write', () => {
       payload: JSON.stringify({ email: 'a@b.co', password: 'x' }),
     });
     expect(unsigned.statusCode).toBe(401);
+  });
+});
+
+// --- discounts through the checkout (scope item 8, D-539) -----------------------------------------
+
+describe('discounts through the checkout (D-539, M35a)', () => {
+  async function createDiscount(body: Record<string, unknown>): Promise<string> {
+    const response = await marketing.client.request('POST', '/v1/promo/codes', { body });
+    expect(response.statusCode, response.body).toBe(201);
+    return (JSON.parse(response.body) as { id: string }).id;
+  }
+
+  it('charges the quoted discount, redeems it, names the typed code, and a cancel gives it back', async () => {
+    const word = `SAVE${suffix.toUpperCase()}`;
+    const typed = await createDiscount({
+      code: word,
+      kind: 'flat',
+      valuePoisha: '5000',
+      allowStacking: true,
+    });
+    // Bigger, and everybody's: the order is still attributed to the code the shopper typed.
+    const automatic = await createDiscount({
+      method: 'automatic',
+      title: `Everyone ${suffix}`,
+      kind: 'flat',
+      valuePoisha: '20000',
+      allowStacking: true,
+    });
+    try {
+      const priced = await quote([{ skuId: sku(0), qty: 1 }], { codes: [word] });
+      expect(priced.status, priced.raw).toBe(200);
+      expect(priced.body.quote.discount.poisha).toBe('25000');
+      const total = priced.body.quote.total.poisha;
+      expect(BigInt(total)).toBe(150_000n - 25_000n + fee);
+
+      const placed = await checkout([{ skuId: sku(0), qty: 1 }], total, { codes: [word] });
+      expect(placed.status, placed.raw).toBe(201);
+      expect(placed.body.order.total.poisha).toBe(total);
+      const orderId = await orderIdOf(placed.body.order.orderNo);
+      const order = await one<{ discount: string; cod: string; promo: string | null }>(sql`
+        select discount_poisha::text as discount, cod_amount_poisha::text as cod,
+               promo_code_id as promo
+        from sales.orders where org_id = ${ORG_A} and id = ${orderId}
+      `);
+      expect(order).toEqual({ discount: '25000', cod: total, promo: typed });
+      const redemptions = async () =>
+        withSystem(
+          async (tx) =>
+            [
+              ...(await tx.execute<{ code_id: string; status: string; amount: string }>(sql`
+                select code_id, status, discount_poisha::text as amount
+                from promo.redemptions where org_id = ${ORG_A} and order_id = ${orderId}
+                order by discount_poisha
+              `)),
+            ].map((row) => ({ ...row })),
+          { orgId: ORG_A },
+        );
+      expect(await redemptions()).toEqual([
+        { code_id: typed, status: 'applied', amount: '5000' },
+        { code_id: automatic, status: 'applied', amount: '20000' },
+      ]);
+
+      const cancelled = await admin.client.request('POST', `/v1/orders/${orderId}/cancel`, {
+        body: { reason: 'Cancelled by the shopper.' },
+      });
+      expect(cancelled.statusCode, cancelled.body).toBe(201);
+      expect((await redemptions()).map((row) => row.status)).toEqual(['released', 'released']);
+    } finally {
+      for (const id of [automatic, typed]) {
+        await marketing.client.request('PATCH', `/v1/promo/codes/${id}`, {
+          body: { status: 'archived' },
+        });
+      }
+    }
   });
 });
