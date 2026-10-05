@@ -1701,3 +1701,107 @@ A brand's ERP runs on a database of its own …`; on one brand beside the traini
   from this branch.
 - Deploying Elysium's ERP to `erp.elysium-lifestyle.bd` was blocked by Claude Code's permission
   check; the steps are with the owner (option to allow it, or run them).
+
+### 2026-10-05 · M38a · Products, stock in hand, barcode stickers and the scanner · built
+
+- Why: the owner's first priority (D-600): re-upload the products and the stock already in hand
+  at a cost per piece, and print a barcode sticker for every piece; then use a scanner
+  everywhere (plan `docs/plans/M38.md`, part M38a).
+- Delivered (branch `m38a-barcodes`, merged up to `integration-wave2` at a80598e, not merged
+  back):
+  - **The new-product form, complete** (D-601): name, category, price, status, description;
+    several photos at once, reordered, cover chosen, each optionally cropped to 3 : 4 on a
+    canvas; sizes and colours as chips with a price, pieces and a cost per variant; the stock
+    **already in hand** (while the window is open) or **from a supplier**; the website details
+    folded away. One button; a failed step is retried alone; it ends on "Print N stickers".
+  - **Stock in hand** (D-602): `inventory.stock_in_hand_entries` and `…_lines`; drafts by the
+    warehouse (no cost field), priced and posted by `read:cost`; `opening_balance` movements
+    blended into WAC and one journal per entry, Dr Inventory / Cr 3350 Opening balance equity
+    (`stockInHandDraft`, keyed `stock_in_hand:<entry>:posted`). The **opening stock window**: an
+    org admin closes it; reopening is an `opening_stock_reopen` approval for that close (D-608);
+    migration 0114 starts it closed for a brand that had already opened its books or traded. A
+    posted entry made by mistake is reversed exactly, through an approved
+    `stock_in_hand_reversal`, while the window is open (adjustment_loss movements at the entry's
+    cost and the ledger's reversal of its journal), or not at all.
+  - **An internal EAN-13 for every SKU** (D-603): `2`, an eleven-digit per-brand sequence, the
+    check digit, taken in one upsert; typed or imported codes in the range refused; the backfill
+    in 0114, brand by brand.
+  - **Stickers** (D-604): thermal 38 × 25, 40 × 30 and 50 × 25 mm (one sticker per page, the
+    page the sticker's size) and A4 3 × 8 and 4 × 10 with "start at"; the brand's short name
+    from its own org row (white label); printed from the new-product form, every receipt and
+    stock-in-hand entry, the product page and ticked Stock rows.
+  - **The scanner everywhere** (D-605): `createScanDetector` in `@elysium/domain/barcode`; the
+    console's lazy `ScanListener` opens the product at the scanned variant, or hands the scan to
+    the stock screen listening; scan fields on receive, stock in hand, transfer, adjustment,
+    supply entries and counts; "Scan with camera" through `BarcodeDetector`.
+  - **Strict stock** (D-606): a count by scanning (`POST /v1/inventory/counts/:id/scans`,
+    append-only `count_scans`, one piece per scan key); typing over a counted figure needs a
+    note, on the server too; each variant's barcode on the product page.
+  - **Lookup** `GET /v1/catalog/lookup?code=` (D-609); section catalogues for i18n so the
+    strings stay out of the first download (D-607).
+  - **Error text in the dark theme**: `text-destructive` read 3.2:1 on dark surfaces, found by
+    this milestone's dark axe pass; `--destructive-text` lifts it there (`.dark
+.text-destructive`, M30's `--primary-text` pattern), held by three pairs in the token
+    contrast audit. Every error line in the console gains from it.
+- Verification:
+  - `pnpm verify` (under `heavy.mjs`, `VITEST_MAX_WORKERS=4`) exits 0 at 3e72f26: 214 test
+    files, 3,294 passed, 1 skipped (not new); format, lint, typecheck, build; bundle 249.2 KB
+    of 250; white-label (206 files), migrations, schema drift, route matrix (374 routes, 356
+    matrix-tested, 18 public), i18n and api-client PASS. After 428069a (a narrower count lock,
+    a test assertion, docs): the three inventory test files, 48 passed.
+  - Acceptance checks: (1) `stock-in-hand.e2e.test.ts` asserts one balanced journal per entry
+    (Dr Inventory / Cr Opening balance equity) and its `opening_balance` movements, and
+    `barcodes.stack.ts` creates a product with three sizes and 9 pieces in hand at ৳850 and is
+    offered exactly 9 stickers, then prints a 9-page PDF; (2) `barcode.test.ts` (fast-check:
+    every check digit, every single-digit error caught, internal numbers valid and unique), the
+    e2e test's six concurrent product creates (18 unique codes) and SQL equal to the domain, and
+    a scan in the stack spec opening the product at that variant; (3) `stickers.test.ts` reads
+    every PDF page's MediaBox from the real Gotenberg for all five media, and the stack spec
+    checks the downloaded roll PDF; (4) stock in hand refused once closed by the service,
+    `InventoryApi` (stock in hand and M14a's opening) and the triggers; (5) this verify and the
+    ledger audits below.
+  - `barcodes.stack.ts` (8) and `catalog-stock.stack.ts` (7) against the real stack at
+    3e72f26 (ports 3215/5288, one worker): 15 passed, axe clean in light and, for the M38a
+    screens and dialogs, dark (log `D:/Projects/erp-tools/e2e-m38a-final.log`); screenshots in
+    `docs/review/M38a/` (01 to 07 light, 08 to 10 dark).
+- Auditors:
+  - ledger-auditor: 0 critical, 7 warnings. All fixed in 3585ae1: W1 (windows closed for
+    brands with history; maker-checker on each post is an owner question), W2 (the exact
+    reversal), W3 (a post repeats what its poster read), W4 (the note on the server), W5 and N1
+    (a reopen names its close; the trigger stamps the times), W6 (the merge), W7 (tests: a close
+    racing an in-flight entry, the WAC blend, concurrent scans, a stale reopen, the backfill);
+    notes N2 to N7 and N9 to N11 fixed, N8 and N12 left (the POS tables use the same client-id
+    keys; `brandShortName` follows `takeSequence`).
+  - Re-check at bd3248f: 0 critical, 3 warnings (the price dialog could quietly refetch the
+    draft beside the typed costs; no tests of the reversal's checks at the decision; the
+    go-live runbook did not mention the window) and notes, fixed in 2c9d7ea and 3e72f26 (the
+    window will not close while a reversal waits; the reversal checks the journal it reverses;
+    count locks). A last check of those: 0 critical, 1 warning (a fresh brand counting stock in
+    before signing the reconciliation would block the sign-off), fixed with notes 1, 3, 5 and 6
+    in 428069a. Left as notes: a changed location marks no line in the price dialog (the
+    dialog shows the location); N8, N12 and N-9 (display only).
+  - acceptance-auditor at bd3248f: checks 1 to 5 evidenced, NOT READY on one gap: axe ran in
+    the light theme only. Fixed in 2c9d7ea (the dark pass above, which found and fixed the
+    error-text contrast); its nits fixed too (the sticker PDF checks skip, and say so, when
+    Gotenberg is down; a Bangla label; the migration's comment). Not re-run after the fix.
+- Decisions/assumptions: D-601 to D-609 (D-601 and D-604 ASSUMED; D-602's maker-checker on
+  each post ASSUMED, an owner question); D-602, D-603, D-606 and D-608 amended after the audit.
+- Migrations: `0113_m38a_barcodes_stock_in_hand.sql` (generated) and `0114_m38a_policies.sql`
+  (custom), numbered after integration's frozen 0112. Both were regenerated on this unmerged
+  branch after the ledger audit and never applied outside throwaway test databases.
+- New dependencies: none from outside the repo. The console gains the workspace package
+  `@elysium/domain`, through its `./barcode` entry only (scan detection and the bars on the
+  product page, D-609).
+- Preview: a database migrated with history (the shared preview) starts with opening stock
+  closed for every brand that traded there; ask to reopen as org admin and approve as super
+  admin, or try it in a brand without history. A preview built fresh by `preview:local` starts
+  open.
+- Owner questions: a second person on each stock-in-hand post (D-602); the A4 sheet stock's
+  exact geometry (D-604); each brand's short name for stickers; the 3 : 4 crop (D-601); the
+  thermal printers' dots per mm; `BarcodeDetector` is missing on some browsers (iPhones), where
+  the camera button is hidden.
+- Follow-ups: a pending reversal shown on the entries list (the entry's detail has it); the
+  difference between 1300 Inventory and Σ on hand × WAC that §8's once-per-receipt rounding
+  leaves (existing, unrecorded; `preview:seed` passes only with round costs) wants a decision
+  row and a line on the valuation report; M38b's packing station reuses the scan detector and
+  the lookup.
