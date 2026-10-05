@@ -12,6 +12,7 @@ export {
   ACTIONS,
   COST_FIELDS,
   RESELLER_VISIBLE_FIELDS,
+  STOREFRONT_VISIBLE_FIELDS,
   SCOPES,
   SCOPE_RANK,
   SUBJECTS,
@@ -53,5 +54,6 @@ export {
   assertNoCostFields,
   findCostFields,
   serializeFor,
+  serializeForStorefront,
   type SerializeContext,
 } from './serialize.js';

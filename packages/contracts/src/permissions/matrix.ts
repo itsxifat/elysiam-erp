@@ -324,6 +324,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'Leaderboard', scope: 'all' },
     // M24 (D-325): the brand's own dashboard, and recomputing its rollups.
     { action: ['read', 'update'], subject: 'Dashboard', scope: 'org' },
+    // M33 (D-508): the brand's website: settings, hero, menu, size charts, web fields, keys.
+    { action: ['read', 'create', 'update', 'delete'], subject: 'Storefront', scope: 'org' },
     /*
      * §22's files. The grant is coarse and the row check is not (D-115).
      *
@@ -387,6 +389,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     // a sales agent rewrite a brand's storefront; applying a promo code is an
     // Order concern and is covered by the Order rules above.
     { action: 'read', subject: 'LandingPage', scope: 'org' },
+    // M33 (D-508): what the website shows, to answer a shopper about it. Never edits it.
+    { action: 'read', subject: 'Storefront', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'read', subject: 'Target', scope: 'own' },
     // No `request ApprovalRequest`: §6 gives sales no action that goes through
@@ -424,6 +428,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
      */
     { action: ['read', 'create', 'update'], subject: 'CampaignSpend', scope: 'org' },
     { action: ['read', 'create', 'update'], subject: 'LandingPage', scope: 'org' },
+    // M33 (D-508): the website is marketing's work as much as the landing pages are.
+    { action: ['read', 'create', 'update', 'delete'], subject: 'Storefront', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'read', subject: 'Target', scope: 'own' },
     /*
