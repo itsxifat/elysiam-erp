@@ -41,11 +41,11 @@ export interface StickerItem {
 }
 
 const MEDIUM_KEYS = {
-  'thermal-38x25': 'st.stickers.medium.thermal-38x25',
-  'thermal-40x30': 'st.stickers.medium.thermal-40x30',
-  'thermal-50x25': 'st.stickers.medium.thermal-50x25',
-  'a4-3x8': 'st.stickers.medium.a4-3x8',
-  'a4-4x10': 'st.stickers.medium.a4-4x10',
+  'thermal-38x25': 'st.stickers.medium.thermal_38x25',
+  'thermal-40x30': 'st.stickers.medium.thermal_40x30',
+  'thermal-50x25': 'st.stickers.medium.thermal_50x25',
+  'a4-3x8': 'st.stickers.medium.a4_3x8',
+  'a4-4x10': 'st.stickers.medium.a4_4x10',
 } as const;
 
 export function StickerDialog({
