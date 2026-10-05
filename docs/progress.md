@@ -1985,7 +1985,8 @@ dry-run|commit --file <users.json>`.
     after 700 and 800; cost to cost roles only and never through the catalog; the standard price
     prefilling, never moving WAC, its spreadsheet, the audit keeping counts only; duplicate with
     no stock; extend prices and code order; held-stock guard; the storefront's regular and flash
-    prices and "on sale"; product stock totals by branch scope; stale reprices refused).
+    prices and "on sale"; product stock totals, never another brand's; stale reprices refused; the catalog price
+    spreadsheet naming a price that would reach its regular price).
     Domain: `packages/domain/src/pricing/pricing.test.ts` (fast-check). Console:
     `m39b-ui.test.ts`. Route matrix and cost sweep cover every new route.
   - `variant-pricing.stack.ts` against the real stack (ports 3221/5294): 6 passed with axe,
@@ -1997,23 +1998,23 @@ dry-run|commit --file <users.json>`.
     counts only, tested), W2 (the product page's per-variant archive now goes through the
     guarded route), W3 (`for no key update`, so repricing or archiving no longer blocks stock
     movements' key-share locks or risks a deadlock), W4 (a card only strikes through the lowest
-    size's own regular price, tested), W5 (the product stock route tested by branch scope and
-    brand), N1 (no silent zero cost or ৳0.01 fallback), N2 (a negative cost is refused), N3
+    size's own regular price, tested), W5 (the product stock route tested: the stock page's
+    scope, which §6 makes the whole brand for a branch manager, and nothing of another brand), N1 (no silent zero cost or ৳0.01 fallback), N2 (a negative cost is refused), N3
     ("Cost per piece" now speaks for every untyped variant), N4 (a reprice carries the price it
     was made against; a stale one is refused), N5 (Save waits until the preview has no problems),
     N7 (Pathao never below 500 g), N10 (tests: standard price never moves WAC, import refused for
-    non-cost roles). Left as recorded: W3's reserve-path re-check of the variant's status (an
+    non-cost roles), N11 (the catalog price spreadsheet names a price that would reach its
+    regular price, in the dry run). Left as recorded: W3's reserve-path re-check of the variant's status (an
     order confirmed in the same instant as an archive can still reserve it, as D-423 already
     allows for orders taken before an archive), N6 (price sort uses shelf prices, documented),
-    N8 (kept), N9 (requests are chunked at 200), N11 (follow-up below).
+    N8 (kept), N9 (requests are chunked at 200).
   - acceptance-auditor: see the hand-off.
 - Decisions/assumptions: D-635 to D-649 (ASSUMED: D-637, D-639, D-640, D-641, D-645, D-646);
   D-421 amended by D-635, D-511 by D-640.
 - New dependencies: none.
 - Deviations from the milestone spec: none in scope; item 8's "delete unused" waits for M39a's
   route (the seam is in place).
-- Follow-ups: the catalog price CSV dry run does not check regular prices (N11, owner: claude);
-  the archive guard sees reserved stock, not pending orders without a reservation (M39a's
+- Follow-ups: the archive guard sees reserved stock, not pending orders without a reservation (M39a's
   reference port, owner: claude); a check that a "was" price was ever real (D-640, owner:
   human); Pathao's real minimum weight (owner: human, with credentials).
 - Next: integrate with M39a (wire Delete into the product page and list), renumber migrations.

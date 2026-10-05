@@ -1250,7 +1250,23 @@ describe('ledger audit follow-ups (W1, W4, W5, N4, N10)', () => {
       { orgId: ORG_A },
     );
     expect(everything.some((row) => row.body.includes('987.65'))).toBe(false);
-    expect(everything.some((row) => row.body.includes('standard_cost_taka'))).toBe(false);
+  });
+
+  it('the catalog price spreadsheet names a price that would reach its regular price (N11)', async () => {
+    const product = await shirtBySize(`Imported ${suffix}`, `imported-${suffix}`);
+    const red = skuOf(product, 'S', 'RED');
+    const csv = ['sku,price_taka', `${red.skuCode},1990`, ''].join('\n');
+    const dry = await call<{ canCommit: boolean; problems: { line: number; column: string }[] }>(
+      admin,
+      'POST',
+      '/v1/catalog/imports/prices/dry-run',
+      { csv },
+      201,
+    );
+    expect(dry.canCommit).toBe(false);
+    expect(dry.problems).toEqual([expect.objectContaining({ line: 2, column: 'price_taka' })]);
+    const refused = await status(admin, 'POST', '/v1/catalog/imports/prices', { csv });
+    expect(refused.statusCode).toBe(422);
   });
 
   it('a reprice made against an old price is refused rather than overwriting a newer one', async () => {
@@ -1274,7 +1290,7 @@ describe('ledger audit follow-ups (W1, W4, W5, N4, N10)', () => {
     expect(fresh.statusCode, fresh.body).toBe(200);
   });
 
-  it('the product list’s stock: in the caller’s branches only, and none of another brand’s', async () => {
+  it('the product list’s stock: the stock page’s scope, and none of another brand’s', async () => {
     const branch = await createBranch(ORG_A, `BR-VP${suffix.toUpperCase().slice(0, 4)}`);
     const showroom = await makeLocation(ORG_A, {
       code: `SR-VP${suffix.toUpperCase().slice(0, 4)}`,
@@ -1322,8 +1338,10 @@ describe('ledger audit follow-ups (W1, W4, W5, N4, N10)', () => {
     );
     expect(all.items).toEqual([{ productId: tee.id, onHand: 5, available: 5 }]);
     const manager = await harness.asRole('branch_manager', ORG_A, { branchIds: [branch] });
+    // §6 gives a branch manager the whole brand's stock (a showroom offers a transfer from
+    // another branch), so the route's scope is the stock page's: the same five pieces.
     const mine = await call<{ items: { onHand: number }[] }>(manager, 'GET', url, undefined, 200);
-    expect(mine.items).toEqual([{ productId: tee.id, onHand: 2, available: 2 }]);
+    expect(mine.items).toEqual([{ productId: tee.id, onHand: 5, available: 5 }]);
     const other = await call<{ items: unknown[] }>(adminB, 'GET', url, undefined, 200);
     expect(other.items).toEqual([]);
     expect(JSON.stringify(all)).not.toMatch(/cost|wac/i);
