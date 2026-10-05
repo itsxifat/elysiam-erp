@@ -1423,8 +1423,9 @@ _To be written by M32: `apps/mother-server` and `apps/mother-console`, its own d
 
 M33 (D-500 to D-512), after D-469: each brand's ERP is its website's back office, and the
 website keeps no database of its own. This section covers what a shopper **looks at** and, from
-M34, what a shopper **buys**; offers and landing pages (M35) and the website's conversion (M36)
-build on it.
+M34, what a shopper **buys**; offers, campaign links, tracking and the ncom.bd connector (M35)
+and the website's conversion (M36) build on it. Landing pages are ncom.bd's (D-550): the ERP
+builds none, and §17 stays out of scope.
 
 ### The module
 
@@ -1567,3 +1568,48 @@ the account routes answer with an account id and the website keeps its own sessi
   shows its account and payments, a buyer's profile its website account.
 - **The old site's shoppers.** `pnpm migration legacy-customers --org <slug> dry-run|commit
 --file <users.json>` imports accounts with their bcrypt hashes and buyers by phone (D-531).
+
+### Campaign links, tracking, the marketplace and packing (M35b)
+
+D-551 to D-556. Four pieces the old website ran, now the ERP's:
+
+- **Campaign links** (`storefront.custom_links`): a five-digit code per brand (unique, drawn
+  at random, `^[1-9][0-9]{4}$`) on the shop, a category or a path of the site, with up to 24
+  highlighted products, a banner and a pop-up (its picture a public `campaign-asset`), and a
+  visit counter. The website reads one with `GET /storefront/v1/custom-links/{code}` and counts a
+  visit with a signed `POST`. Console: Website → Campaign links (`Storefront`).
+- **Tracking** (`storefront.tracking_settings`, `storefront.tracking_events`): the Meta pixel and
+  Conversions API and GA4 with its Measurement Protocol, per brand. The access token and API
+  secret are sealed (`STOREFRONT_CREDENTIALS_KEY`). The website forwards its browser events
+  (`POST /storefront/v1/events`); the ERP writes the log row with personal data already
+  normalised and hashed (`packages/domain/src/storefront/tracking.ts`), the outgoing payload
+  sealed, and enqueues `storefront.tracking_send` in the same transaction; the worker sends with
+  no transaction open (invariant 6) and clears the payload. `Purchase` is the ERP's own, written
+  in the checkout's and the ncom handover's transaction with event id `purchase_<orderNo>`; an
+  SSLCommerz order's waits (`waiting`) until the payment is booked. `storefront.tracking_purge`
+  drops rows past the brand's retention nightly. `STOREFRONT_TRACKING_PROVIDER=fake` (the
+  default) records sends without making them; `live` needs `STOREFRONT_TRACKING_ENABLED=true`.
+  Console: Website → Tracking, with the event log.
+- **The ncom.bd connector** (module `marketplace`, schema `marketplace`; `docs/ncom-connector.md`):
+  contract 1 under `/ncom/<org id>/…`, HMAC-signed both ways (`verifyNcomSignature`, ±300 s,
+  raw body captured before parsing). Reads go through `CATALOG_API` (`marketplaceProducts`) and
+  the live availability at the web locations; ids are the old website's where `legacy_ids`
+  has them. `ncom_holds` hold stock with the inventory's reserve (`ref_type = 'ncom_hold'`) and
+  give back exactly that once. `ncom_orders` ties an ERP order (`channel = marketplace`, created
+  by `marketplace:ncom`) to ncom's id, revision and idempotency key; edits and cancels go through
+  `OrdersApi.editOrder` and the state machine, with a revision check. The order's money is
+  `ncomOrderMoney`: the brand's goods at ncom's prices, the discount capped at the goods, COD =
+  goods + delivery, other shops' lines kept aside. Status changes reach ncom through
+  `ncom_outbox` (written by the order's status event in its transaction, sealed, delivered by
+  `marketplace.ncom_send` with backoff, `ncomDeliveryOutcome`). Triggers keep each row's
+  identity fixed and its revision moving forward. Console: Website → Marketplace (secrets are
+  `update WebsiteCredentials`).
+- **Packing** (module `packing`, schema `packing`): `scanner_devices` holds the packing scanner
+  app's bearer tokens (`sdt_<org>_<random>`, SHA-256 stored, 30 days, revocable). The app signs
+  in with email, password and, where the role requires it, the authenticator code
+  (`POST /v1/scanner/sign-in`, Better Auth's own checks, no session kept), then reads
+  `GET /v1/scanner/shipment?code=` in the person's own order scope (order number or the
+  courier's parcel codes). Those three routes are exempt from CSRF and allow any origin without
+  credentials (the app is not a browser page). The console's **Orders → Scan** does the same
+  lookup and pairs or signs out phones. `POST /v1/packing/labels` renders the old site's label
+  sheet (eight paper sizes, QR codes drawn in-house from `uqr`) through Gotenberg.
