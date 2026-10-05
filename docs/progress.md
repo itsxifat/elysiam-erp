@@ -2360,3 +2360,18 @@ dry-run|commit --file <users.json>`.
 - Still to do: the website repo shows the new regular prices, colour photos and campaign links,
   and turns tracking on; ncom.bd's credentials go into Website → Marketplace when the owner has
   them.
+
+### 2026-10-06 · website · Regular prices, colour photos, campaign links and tracking on the new site · done
+
+- The website repo's `erp-storefront` gained b433c66 and 8451835: the ERP's regular price
+  struck through everywhere a price shows, "On sale" through the ERP's filter, photos switched
+  by colour, campaign links (`?cu=`) mapped to the real ERP route with a view counted once per
+  visit, and tracking from the ERP (off until switched on in Website → Tracking; browser events
+  batched to the ERP, never Purchase; the confirmation page's pixel uses `purchase_<orderNo>` so
+  the ERP's server Purchase deduplicates). Playwright 20 of 20 against the live code's ERP,
+  37 unit tests, lint clean, no-database check; acceptance-auditor READY. No ERP change.
+- Redeployed to demo.elysium-lifestyle.bd (release 845183525925, the previous image kept as
+  `elysium-web:previous`): healthy, reads the ERP, home and the on-sale shop answer 200.
+- To switch tracking on later: the nginx tracking-proxy include on the demo site, the pixel and
+  GA4 ids in Website → Tracking, and `STOREFRONT_TRACKING_PROVIDER=live` with
+  `STOREFRONT_TRACKING_ENABLED=true` on the brand ERP.
