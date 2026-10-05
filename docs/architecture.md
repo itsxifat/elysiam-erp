@@ -571,6 +571,7 @@ W = the wallet account used.
 | Stock write-off / count loss          | Dr Inventory write-off / Cr Inventory (approval required)                                                                                                                                                                          |
 | Stock gain                            | Dr Inventory / Cr Inventory adjustment gain (approval required)                                                                                                                                                                    |
 | Stock in hand at the start (M38a)     | Dr Inventory / Cr Opening balance equity (Σ qty × cost per piece), one journal per entry keyed `stock_in_hand:<entry>:posted`, only while the brand's opening stock window is open (D-602)                                         |
+| Stock in hand reversed (M38a)         | The ledger's reversal of the entry's journal (Dr Opening balance equity / Cr Inventory), after an approved `stock_in_hand_reversal`, while the window is open, only while each SKU still averages to the entry's cost (D-602)      |
 
 Accounting policies:
 
@@ -633,7 +634,7 @@ A brand that has traded for years opens its books here once, before go-live (D-2
   - `ref_type, ref_id`
   - `status`: `active | consumed | released`
 - `inventory.opening_stock_windows` (M38a): one row per brand, `status open | closed`, who closed it and when, the approval that reopened it last; no row means open (D-602).
-- `inventory.stock_in_hand_entries` and `…_lines` (M38a): a location and its lines (SKU, qty, `unit_cost_poisha`, null on a draft); `draft | posted`, the journal once posted; the id is the client's key (D-602).
+- `inventory.stock_in_hand_entries` and `…_lines` (M38a): a location and its lines (SKU, qty, `unit_cost_poisha`, null on a draft); `draft | posted | reversed`, the journal once posted, the ledger's reversal of it and the approval once reversed; the id is the client's key (D-602).
 - `inventory.count_scans` (M38a, append-only): one row per scan on a count, keyed by the scanning device (D-606).
 
 ### Rules
@@ -659,7 +660,7 @@ where org_id = $org and sku_id = $sku and location_id = $loc and on_hand - reser
   - A count session freezes a snapshot and staff enter counted quantities.
   - The variance becomes adjustment movements, which need approval.
 - **Transfers** are two steps: `transfer_out` to the `in_transit` location, then `transfer_in` at the destination. A brand's first transfer creates its org-level `IN-TRANSIT` location when it has none (D-428).
-- **Stock already in hand** (M38a, D-602): while the brand's **opening stock window** is open (a new brand starts open), stock it already holds is entered per location at a cost per piece (> 0): `opening_balance` movements at that cost, blended into WAC exactly as a receipt, and one journal per entry, Dr Inventory / Cr Opening balance equity. Warehouse saves quantity-only drafts; `read:cost` prices and posts (D-005's split). An org admin closes the window once everything is counted in (audited); from then on it is refused (`OPENING_STOCK_CLOSED`, by the service and by triggers), and reopening is an `opening_stock_reopen` approval a second admin decides (D-608).
+- **Stock already in hand** (M38a, D-602): while the brand's **opening stock window** is open (a new brand starts open), stock it already holds is entered per location at a cost per piece (> 0): `opening_balance` movements at that cost, blended into WAC exactly as a receipt, and one journal per entry, Dr Inventory / Cr Opening balance equity. Warehouse saves quantity-only drafts; `read:cost` prices and posts (D-005's split). An org admin closes the window once everything is counted in (audited); from then on it is refused (`OPENING_STOCK_CLOSED`, by the service, by `InventoryApi` for stock in hand and M14a's opening, and by triggers), and reopening is an `opening_stock_reopen` approval, for that close, a second admin decides (D-608). A brand that had already opened its books or moved stock when M38a arrived starts closed (migration 0114). Posting a draft repeats the pieces and location its poster read (`STOCK_IN_HAND_CHANGED` otherwise). A posted entry made by mistake is reversed while the window is open by an approved `stock_in_hand_reversal`: the same pieces out at the entry's cost (`adjustment_loss`) and the ledger's reversal of its journal, refused once a SKU averages to another cost, when an exact reversal is no longer possible (D-602).
 - **A new product's first stock** is either stock in hand (while the window is open) or a supply receipt (supplier, cost per piece), from the new-product form or the product page (D-421, D-601). After the window closes, stock arrives only from suppliers, transfers, returns and approved adjustments.
 - **Low stock:** each SKU has a reorder level per location. Crossing it emits `stock.low`.
 - **Worked WAC example (use it in tests):**

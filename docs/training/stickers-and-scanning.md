@@ -42,7 +42,19 @@ Use **Stock** → **Stock in hand** for stock the shop held before it started on
    Press the printer button on its row to print a sticker for every piece.
 
 Warehouse staff see **Save for accounts** instead: the pieces wait as a draft until accounts
-presses **Enter costs and post**.
+presses **Enter costs and post**. If the draft is changed (on another phone) while accounts has
+it open, posting stops and shows the new pieces: check them, then post again.
+
+## Undo an entry made by mistake
+
+If a shelf was counted in twice, or an entry has the wrong pieces or cost, press the undo
+button on its row in **Stock in hand** (accounts or an org admin), say why, and press **Ask to
+reverse**. A second admin approves it in **Approvals**; then the entry's pieces come out of
+stock and the books are put back. Enter the stock again correctly as a new entry.
+
+It works only while opening stock is open, and only while the products still carry the cost the
+entry brought them in at. If the same product has since come in at another cost (another entry,
+a delivery), correct it with a stock count instead.
 
 ## Print stickers
 
@@ -97,3 +109,6 @@ and approved adjustments, and **Already in hand** is no longer offered.
 
 If something was missed, press **Ask to reopen** and say what was found. A second admin decides
 it in **Approvals**; once approved, the window is open again until you close it.
+
+A brand that was already trading on the ERP (or had opened its books with the data import) when
+this arrived starts with opening stock closed: ask to reopen it if you need to count stock in.
