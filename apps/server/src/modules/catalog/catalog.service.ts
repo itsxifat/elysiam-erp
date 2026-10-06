@@ -356,9 +356,9 @@ export class CatalogService {
       categoryId: input.categoryId ?? null,
       sequence,
       name: input.name,
-      // An archived product keeps its address; a new one that wants it takes the next free
-      // `-2`, `-3`, … instead of failing (M39a, D-626).
-      slug: await freeProductSlug(tx, context.orgId, input.slug),
+      // Names may repeat; an address already held takes this product's number
+      // (`…-0042`), so it never fails on a shared name (D-626, D-653).
+      slug: await freeProductSlug(tx, context.orgId, input.slug, sequence),
       description: input.description ?? null,
       status: input.status,
       createdBy: context.userId,

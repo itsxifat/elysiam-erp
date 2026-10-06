@@ -1087,7 +1087,7 @@ describe('products and variants (D-625, D-626)', () => {
     });
   });
 
-  it('gives a new product the next free address when an archived one holds it (D-626)', async () => {
+  it('gives a new product its own numbered address when another holds the name (D-626, D-653)', async () => {
     const old = await product('Black Panjabi', { slug: `black-panjabi-${token(4).toLowerCase()}` });
     await ok(admin, 'PATCH', `/v1/catalog/products/${old.id}`, { status: 'archived' });
     const again = await ok<Product>(admin, 'POST', '/v1/catalog/products', {
@@ -1095,15 +1095,16 @@ describe('products and variants (D-625, D-626)', () => {
       slug: old.slug,
       pricePoisha: '150000',
     });
-    expect(again.slug).toBe(`${old.slug}-2`);
-    // A live product's address is still refused: two live products with one name is a question.
-    const duplicate = await call<{ code: string }>(admin, 'POST', '/v1/catalog/products', {
+    expect(again.slug).toMatch(new RegExp(`^${old.slug}-\\d{4}$`));
+    // A live product's address is taken too: the same name is normal (one cut, many designs),
+    // so the new product takes its own number instead of being refused.
+    const sameName = await ok<Product>(admin, 'POST', '/v1/catalog/products', {
       name: 'Black Panjabi',
-      slug: again.slug,
+      slug: old.slug,
       pricePoisha: '150000',
     });
-    expect(duplicate.status).toBe(409);
-    expect(duplicate.body.code).toBe('CATALOG_DUPLICATE');
+    expect(sameName.slug).toMatch(new RegExp(`^${old.slug}-\\d{4}$`));
+    expect(sameName.slug).not.toBe(again.slug);
   });
 
   it('keeps the code prefix a product already has when it gains a variant after moving category (D-623)', async () => {

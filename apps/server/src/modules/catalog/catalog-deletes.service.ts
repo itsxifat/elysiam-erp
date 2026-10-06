@@ -712,15 +712,26 @@ export async function assertValuesLive(
 }
 
 /**
- * The slug a new product takes: the one asked for, or, when an archived product holds it,
- * the next free `-2`, `-3` (D-626). A slug a live product holds is returned unchanged, so
- * the insert refuses it as a duplicate, as before: two live products with one name is a
- * mistake worth a question.
+ * The slug a new product takes: the one asked for when it is free, else the same with the
+ * product's own number appended (`mens-hawaiian-shirt-0042`, the number in its SKU codes),
+ * else the next free `-2`, `-3` (D-626, D-653). Products may share a name: a brand sells the
+ * same cut in many designs, so the name is not an identifier; the slug and the SKU are.
  */
-export async function freeProductSlug(tx: Tx, orgId: string, slug: string): Promise<string> {
+export async function freeProductSlug(
+  tx: Tx,
+  orgId: string,
+  slug: string,
+  sequence: number,
+): Promise<string> {
   const holder = await del.slugHolder(tx, orgId, slug);
-  if (holder?.status !== 'archived') return slug;
-  return nextFreeSlug(slug, await del.slugsLike(tx, orgId, slug));
+  if (holder === undefined) return slug;
+  const taken = await del.slugsLike(tx, orgId, slug);
+  const numbered = withSuffix(slug, `-${String(sequence).padStart(4, '0')}`);
+  return taken.has(numbered) ? nextFreeSlug(numbered, taken) : numbered;
+}
+
+function withSuffix(slug: string, suffix: string): string {
+  return `${slug.slice(0, 120 - suffix.length).replace(/-+$/, '')}${suffix}`;
 }
 
 /** The prefix a product's existing SKU codes carry, read back (D-623). */
