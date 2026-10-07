@@ -2502,3 +2502,45 @@ dry-run|commit --file <users.json>`.
   `catalog.db` with Docker up; ledger-auditor on the diff (the duplicate's lock order changed
   shape, though not order); `pnpm check:bundle` after a console build (strings and code are in
   the catalog route chunks).
+
+## 2026-10-07 · wave 3 · super admins, Beownz online, Elysiam, the sign-in fix, M38b and M32 joined
+
+- **Super admins** (branch `superadmin-power`, D-657 to D-660, migrations 0127 and 0128): a
+  super admin's vote counts for anyone and one is enough; super admins show on the Staff page;
+  super admins make super admins (the second at once, from the third on by every existing
+  super admin's vote). Merged and live on both brands.
+- **Parent SKU** (branch `parent-sku-slug`, D-661 to D-663): see the entry above. Merged and
+  live. On the owner's instruction the 27 existing Elysiam products were renamed
+  "Mens Cotton Hawaiian Shirt" with web addresses `ely-hawa-0002` to `ely-hawa-0028` (the old
+  addresses kept in `previous_slugs` and redirected), by a script the owner ran.
+- **Beownz's own ERP** at `https://erp.beownz.com`: `new-brand.sh beownz erp.beownz.com`
+  (API 127.0.0.1:3502, `BRAND_BEHIND_CLOUDFLARE=true`), first deploy seeded the brand alone,
+  certbot TLS, the first super admin invited (the owner's address). No website.
+- **The brand is spelled Elysiam** (D-664): the seed, the website's text, CLAUDE.md; the
+  white-label check bans `elysiam` too; the live brand's names changed by a script the owner
+  ran. Technical names keep `elysium`.
+- **Sign-in fix** (3dbbd36): the enrolment hatch walled `sign-in/email` and the password links
+  for a browser still holding a half-enrolled session, so after leaving the two-step set-up
+  every sign-in with the right password answered 403. Those paths now pass the hatch (they prove
+  identity afresh); the new session is walled until the factor is real. A case added to
+  `http-surface.test.ts` (not run: no Docker). Live on both brands.
+- **M38b** (scan-to-pack and the packing video): `integration-wave2` merged in, migrations
+  regenerated as 0129 and 0130 (schema SQL identical), API client regenerated, route gate PASS
+  (514 routes), typecheck PASS; architecture §20, §22, §31, `docs/training/packing-station.md`,
+  the runbook's nginx patch for video uploads, CLAUDE.md. Merged into `integration-wave2`; not
+  deployed.
+- **M32** (the mother ERP): `integration-wave2` merged in, the reporting grants regenerated as
+  `0131_reporting_reads` (no schema drift), typecheck PASS (28 tasks);
+  `docs/runbooks/mother-deploy.md`, architecture §30, decisions D-480 to D-499, CLAUDE.md.
+  Merged into `integration-wave2`; not deployed (needs the owner's server and domain).
+- Verification (lean, as the owner asked; full tests on Friday): typechecks, lint and prettier
+  on touched files, domain tests for trust and super admin (26/26), the white-label test (5/5),
+  the route and API client gates. **Not run:** `pnpm verify`, Testcontainers suites (Docker off),
+  stack runs, bundle check, ledger-auditor and acceptance-auditor for M38b, M32 and this week's
+  permission changes.
+- Follow-ups for Friday: `pnpm verify`; `users.e2e`, `trust.e2e`, `http-surface`,
+  `variant-pricing`, `catalog-deletes`, `storefront`, `pack-station` e2e; `packing.stack.ts`;
+  the mother's `e2e:stack`; `check:bundle`; ledger-auditor (trust and super admin votes, the
+  duplicate's locks, M38b's state path, M32's money reads and 0131 grants); acceptance-auditor
+  for M38b and M32. Before the packing station is used live: the nginx hand patch for
+  `/v1/files/content` on Elysiam's site.
