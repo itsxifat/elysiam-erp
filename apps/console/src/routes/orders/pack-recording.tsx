@@ -27,7 +27,7 @@ import { openVideoStore } from './pack-video-store.js';
  * open order and send what was recorded, and the card that shows both.
  */
 
-const CAMERA_KEY = 'elysium.pack.camera';
+const CAMERA_KEY = 'erp.pack.camera';
 /** The select's word for "the browser's own choice" (an empty value is not allowed there). */
 const DEFAULT_CAMERA = 'default';
 

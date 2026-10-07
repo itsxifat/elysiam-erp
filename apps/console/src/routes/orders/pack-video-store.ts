@@ -6,7 +6,7 @@
  * recorded is uploaded on the next visit to the station. A recording leaves only when its
  * upload is attached on the server.
  *
- * IndexedDB where the browser has it (database `elysium-packing`: `recordings` by video id,
+ * IndexedDB where the browser has it (database `erp-packing`: `recordings` by video id,
  * `chunks` by video id and sequence); in a browser without it (a private window that refuses
  * storage) the same interface in memory, which keeps a failed upload only while the page is
  * open.
@@ -96,7 +96,7 @@ export function memoryVideoStore(): VideoStore {
   };
 }
 
-const DATABASE = 'elysium-packing';
+const DATABASE = 'erp-packing';
 const RECORDINGS = 'recordings';
 const CHUNKS = 'chunks';
 
