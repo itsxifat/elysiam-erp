@@ -27,6 +27,12 @@ export interface StoredRecording {
   readonly attempts: number;
   readonly lastAttemptAt: number | null;
   readonly lastError: string | null;
+  /**
+   * The server's file once its upload was finalized, kept until the attach succeeds: a retry
+   * attaches this file rather than uploading a second copy (M38b audit). Absent on a recording
+   * kept by an older page, which reads as none.
+   */
+  readonly uploadedFileId?: string | null;
 }
 
 export interface VideoStore {

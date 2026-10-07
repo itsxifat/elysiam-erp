@@ -386,3 +386,35 @@ export async function deleteIn(
   }
   return { storageKey: row.storageKey, keys };
 }
+
+/**
+ * One page of this brand's files of a purpose created before `before`, oldest first, after
+ * the `after` key (M38b audit): what the packing video's orphan sweep walks, asking its own
+ * table which of them are still referenced. Ids and creation times only; the time is the
+ * database's own text, so the next page starts exactly after it (a `Date` would drop the
+ * microseconds and hand the same row back).
+ */
+export async function purposeFilesBefore(
+  tx: Tx,
+  orgId: string,
+  purpose: FilePurpose,
+  before: Date,
+  page: {
+    readonly after: { readonly createdAt: string; readonly id: string } | null;
+    readonly limit: number;
+  },
+): Promise<{ readonly id: string; readonly createdAt: string }[]> {
+  const rows = await tx.execute<{ id: string; created_at: string }>(sql`
+    select id, created_at::text as created_at from files.objects
+    where org_id = ${orgId} and purpose = ${purpose}
+      and created_at < ${before.toISOString()}::timestamptz
+      ${
+        page.after === null
+          ? sql``
+          : sql`and (created_at, id) > (${page.after.createdAt}::timestamptz, ${page.after.id}::uuid)`
+      }
+    order by created_at, id
+    limit ${page.limit}
+  `);
+  return rows.map((row) => ({ id: row.id, createdAt: row.created_at }));
+}

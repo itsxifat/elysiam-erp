@@ -54,6 +54,23 @@ export interface FilesApi {
    * bytes, which runs only once that transaction commits. False when there was no such file.
    */
   forget(tx: Tx, orgId: string, fileId: string, purpose: FilePurpose): Promise<boolean>;
+
+  /**
+   * One page of this brand's files of a purpose created before `before`, oldest first, after
+   * the `after` key (M38b audit): the owning module walks them and asks its own tables which
+   * are still referenced, so an upload that was finalized and never attached is found and
+   * forgotten. Ids and the database's own creation time (the next page's key) only.
+   */
+  filesOfPurposeBefore(
+    tx: Tx,
+    orgId: string,
+    purpose: FilePurpose,
+    before: Date,
+    page: {
+      readonly after: { readonly createdAt: string; readonly id: string } | null;
+      readonly limit: number;
+    },
+  ): Promise<readonly { readonly id: string; readonly createdAt: string }[]>;
 }
 
 export const FILES_API = Symbol('FilesApi');
@@ -99,5 +116,18 @@ export class FilesApiService implements FilesApi {
       { orgId, ref: fileId },
     );
     return true;
+  }
+
+  filesOfPurposeBefore(
+    tx: Tx,
+    orgId: string,
+    purpose: FilePurpose,
+    before: Date,
+    page: {
+      readonly after: { readonly createdAt: string; readonly id: string } | null;
+      readonly limit: number;
+    },
+  ): Promise<readonly { readonly id: string; readonly createdAt: string }[]> {
+    return repo.purposeFilesBefore(tx, orgId, purpose, before, page);
   }
 }

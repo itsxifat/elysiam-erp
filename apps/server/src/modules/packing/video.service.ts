@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { PackingVideoFileInput, PackingVideoStartInput } from '@elysium/contracts';
 import { withGlobal, withOrg, type Tx } from '@elysium/db';
 import { isPackingVideoExpired, packingVideoExpiry } from '@elysium/domain/packing';
@@ -17,6 +17,24 @@ import * as repo from './station.repository.js';
 const START_SKEW_MS = 10 * 60_000;
 /** How long after a session opened a part may still say it started (a reload days later). */
 const START_WINDOW_MS = 3 * 24 * 60 * 60_000;
+/**
+ * How old a packing-video upload no part refers to must be before the nightly sweep forgets
+ * it (M38b audit): a day covers an upload finalized while its attach was still on the way.
+ */
+export const ORPHAN_AFTER_MS = 24 * 60 * 60_000;
+/** How many files one page of the orphan sweep reads. */
+const SWEEP_PAGE = 500;
+
+/** Why one deletion failed, for the log: the error's own words, never a row's values. */
+function failureReason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** What one retention run did: deleted, and failed (logged, and tried again next run). */
+export interface RetentionResult {
+  readonly deleted: number;
+  readonly failed: number;
+}
 
 /**
  * The packing video (M38b, D-611 to D-614).
@@ -24,10 +42,13 @@ const START_WINDOW_MS = 3 * 24 * 60 * 60_000;
  * The browser records; this service registers each recorded part against its session, attaches
  * the part's upload once the files module has finalized it (a stored, private `packing-video`
  * the caller uploaded), signs a short-lived URL to play it for a caller whose scope reaches
- * the order, and — every night — deletes the videos of orders that ended seven days ago.
+ * the order, and — every night — deletes the videos of orders that ended seven days ago and
+ * the uploads that were never attached to a part.
  */
 @Injectable()
 export class PackingVideoService {
+  private readonly logger = new Logger(PackingVideoService.name);
+
   constructor(
     @Inject(ORDERS_API) private readonly orders: OrdersApi,
     @Inject(FILES_API) private readonly files: FilesApi,
@@ -226,8 +247,14 @@ export class PackingVideoService {
 
   // --- retention (D-612) ------------------------------------------------------------------
 
-  /** Every brand's expired packing videos, deleted. The daily job. */
-  async purgeAll(now: Date = new Date()): Promise<number> {
+  /**
+   * Every brand's expired packing videos, deleted, and every brand's uploads that no part
+   * ever took, forgotten. The daily job. A brand that fails is logged and the next one is
+   * still done (M38b audit); the caller reports the failures once the run is over.
+   */
+  async purgeAll(
+    now: Date = new Date(),
+  ): Promise<{ readonly deleted: number; readonly swept: number; readonly failed: number }> {
     const orgIds = await withGlobal(async (tx) => {
       const rows = await tx.execute<{ id: string }>(
         sql`select id from org.organizations order by slug`,
@@ -235,8 +262,29 @@ export class PackingVideoService {
       return [...rows].map((row) => row.id);
     });
     let deleted = 0;
-    for (const orgId of orgIds) deleted += await this.purgeOrg(orgId, now);
-    return deleted;
+    let swept = 0;
+    let failed = 0;
+    for (const orgId of orgIds) {
+      try {
+        const purged = await this.purgeOrg(orgId, now);
+        deleted += purged.deleted;
+        failed += purged.failed;
+      } catch (error) {
+        failed += 1;
+        this.logger.error(
+          `packing video retention for org ${orgId} failed: ${failureReason(error)}`,
+        );
+      }
+      try {
+        const orphans = await this.sweepOrphans(orgId, now);
+        swept += orphans.deleted;
+        failed += orphans.failed;
+      } catch (error) {
+        failed += 1;
+        this.logger.error(`packing video sweep for org ${orgId} failed: ${failureReason(error)}`);
+      }
+    }
+    return { deleted, swept, failed };
   }
 
   /**
@@ -244,9 +292,10 @@ export class PackingVideoService {
    * deleted (which file, why), the file's row removed, the audit entry written and the bytes'
    * removal enqueued, together or not at all. The expiry is read again inside that
    * transaction, under the part's lock, so an order that changed since the first look is
-   * judged as it is now.
+   * judged as it is now. A video that fails is logged and left for the next run; the others
+   * are still deleted (M38b audit).
    */
-  async purgeOrg(orgId: string, now: Date = new Date()): Promise<number> {
+  async purgeOrg(orgId: string, now: Date = new Date()): Promise<RetentionResult> {
     const candidates = await withOrg({ orgId }, async (tx) => {
       const attached = await repo.attachedVideos(tx, orgId);
       const facts = await this.orders.retentionFacts(
@@ -262,43 +311,121 @@ export class PackingVideoService {
     });
 
     let deleted = 0;
+    let failed = 0;
     for (const candidate of candidates) {
-      const done = await withOrg({ orgId }, async (tx) => {
-        const video = await repo.videoById(tx, orgId, candidate.id, { forUpdate: true });
-        if (video?.file_id !== candidate.file_id) return false;
-        const [fact] = await this.orders.retentionFacts(tx, orgId, [candidate.order_id]);
-        const expiry = fact === undefined ? null : packingVideoExpiry(fact);
-        if (fact === undefined || expiry === null || !isPackingVideoExpired(fact, now)) {
-          return false;
-        }
-        await repo.markVideoDeleted(tx, { orgId, id: candidate.id, reason: expiry.reason });
-        if (!(await this.files.forget(tx, orgId, candidate.file_id, 'packing-video'))) {
-          throw new Error('a packing video’s file row was not there to delete');
-        }
-        await this.audit.record(tx, {
-          orgId,
-          actorUserId: null,
-          operation: 'delete',
-          action: 'packing.video_deleted',
-          entityType: 'packing_video',
-          entityId: candidate.id,
-          before: {
-            fileId: candidate.file_id,
-            orderId: candidate.order_id,
-            sessionId: candidate.session_id,
-          },
-          after: {
-            reason: expiry.reason,
-            orderStatusSince: fact.statusSince?.toISOString() ?? null,
-            keepThrough: expiry.keepThrough,
-            deleteFrom: expiry.deleteFrom,
-          },
+      try {
+        const done = await withOrg({ orgId }, async (tx) => {
+          const video = await repo.videoById(tx, orgId, candidate.id, { forUpdate: true });
+          if (video?.file_id !== candidate.file_id) return false;
+          const [fact] = await this.orders.retentionFacts(tx, orgId, [candidate.order_id]);
+          const expiry = fact === undefined ? null : packingVideoExpiry(fact);
+          if (fact === undefined || expiry === null || !isPackingVideoExpired(fact, now)) {
+            return false;
+          }
+          await repo.markVideoDeleted(tx, { orgId, id: candidate.id, reason: expiry.reason });
+          if (!(await this.files.forget(tx, orgId, candidate.file_id, 'packing-video'))) {
+            throw new Error('a packing video’s file row was not there to delete');
+          }
+          await this.audit.record(tx, {
+            orgId,
+            actorUserId: null,
+            operation: 'delete',
+            action: 'packing.video_deleted',
+            entityType: 'packing_video',
+            entityId: candidate.id,
+            before: {
+              fileId: candidate.file_id,
+              orderId: candidate.order_id,
+              sessionId: candidate.session_id,
+            },
+            after: {
+              reason: expiry.reason,
+              orderStatusSince: fact.statusSince?.toISOString() ?? null,
+              keepThrough: expiry.keepThrough,
+              deleteFrom: expiry.deleteFrom,
+            },
+          });
+          return true;
         });
-        return true;
-      });
-      if (done) deleted += 1;
+        if (done) deleted += 1;
+      } catch (error) {
+        failed += 1;
+        this.logger.error(
+          `packing video ${candidate.id} (org ${orgId}) was not deleted: ${failureReason(error)}`,
+        );
+      }
     }
-    return deleted;
+    return { deleted, failed };
+  }
+
+  /**
+   * One brand's packing-video uploads that no part refers to, a day after they were made
+   * (M38b audit): a file finalized whose attach never arrived, or a second copy uploaded by a
+   * retry. Each is forgotten in its own transaction under the file row's lock, after asking
+   * this module's table again (an attach that won the lock has committed by then and is
+   * seen): the row deleted, an audit entry written and the bytes' removal enqueued for after
+   * the commit (invariant 6). A file that fails is logged and left for the next run.
+   */
+  async sweepOrphans(orgId: string, now: Date = new Date()): Promise<RetentionResult> {
+    const before = new Date(now.getTime() - ORPHAN_AFTER_MS);
+    const orphans: string[] = [];
+    let after: { readonly createdAt: string; readonly id: string } | null = null;
+    for (;;) {
+      const cursor = after;
+      const page = await withOrg({ orgId }, async (tx) => {
+        const files = await this.files.filesOfPurposeBefore(tx, orgId, 'packing-video', before, {
+          after: cursor,
+          limit: SWEEP_PAGE,
+        });
+        const referenced = await repo.referencedFileIds(
+          tx,
+          orgId,
+          files.map((file) => file.id),
+        );
+        return { files, unreferenced: files.filter((file) => !referenced.has(file.id)) };
+      });
+      orphans.push(...page.unreferenced.map((file) => file.id));
+      const last = page.files.at(-1);
+      if (page.files.length < SWEEP_PAGE || last === undefined) break;
+      after = { createdAt: last.createdAt, id: last.id };
+    }
+
+    let deleted = 0;
+    let failed = 0;
+    for (const fileId of orphans) {
+      try {
+        const done = await withOrg({ orgId }, async (tx) => {
+          // Locks the file's row: an attach that held it first has committed when this returns.
+          const file = await this.files.fileFacts(tx, orgId, fileId);
+          if (file?.purpose !== 'packing-video') return false;
+          if ((await repo.referencedFileIds(tx, orgId, [fileId])).size > 0) return false;
+          if (!(await this.files.forget(tx, orgId, fileId, 'packing-video'))) return false;
+          await this.audit.record(tx, {
+            orgId,
+            actorUserId: null,
+            operation: 'delete',
+            action: 'packing.video_upload_swept',
+            entityType: 'file_object',
+            entityId: fileId,
+            before: {
+              fileId,
+              status: file.status,
+              ownerUserId: file.ownerUserId,
+              sizeBytes: file.sizeBytes,
+            },
+            after: { reason: 'never_attached', createdBefore: before.toISOString() },
+          });
+          return true;
+        });
+        if (done) deleted += 1;
+      } catch (error) {
+        failed += 1;
+        this.logger.error(
+          `packing video upload ${fileId} (org ${orgId}) was not swept: ${failureReason(error)}`,
+        );
+      }
+    }
+    return { deleted, failed };
   }
 
   private async sessionInScope(

@@ -291,6 +291,27 @@ export async function attachedVideos(
   return [...rows];
 }
 
+/**
+ * Of these files, the ones a part still names: attached, or deleted by retention (M38b audit,
+ * the orphan sweep). Whatever is not returned belongs to no recording.
+ */
+export async function referencedFileIds(
+  tx: Tx,
+  orgId: string,
+  fileIds: readonly string[],
+): Promise<Set<string>> {
+  if (fileIds.length === 0) return new Set();
+  const ids = sql`(${sql.param([...fileIds])}::uuid[])`;
+  const rows = await tx.execute<{ id: string }>(sql`
+    select file_id as id from packing.videos
+    where org_id = ${orgId} and file_id = any ${ids}
+    union
+    select deleted_file_id as id from packing.videos
+    where org_id = ${orgId} and deleted_file_id = any ${ids}
+  `);
+  return new Set(rows.map((row) => row.id));
+}
+
 export interface SessionSummaryRow extends SessionRow {
   readonly scans: number;
   readonly accepted: number;

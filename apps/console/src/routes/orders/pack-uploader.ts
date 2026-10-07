@@ -8,6 +8,11 @@ import type { StoredRecording, VideoStore } from './pack-video-store.js';
  * recording stays in this browser until the attach succeeds; a failure is tried again later
  * (30 s, 1, 2, 5, then every 10 minutes), on the next visit to the station, or when the
  * connection comes back. Nothing here is discarded on an error: a video is evidence.
+ *
+ * Once an upload is finalized its file id is kept with the recording, so a retry after a
+ * failed attach attaches that same file instead of uploading a second copy (M38b audit). If
+ * the server no longer takes it (a day-old upload no part took is swept), the bytes still
+ * here are uploaded again.
  */
 
 export interface UploadApi {
@@ -37,6 +42,15 @@ export function recordedMs(recording: StoredRecording): number {
 
 export type UploadResult = 'uploaded' | 'already' | 'empty';
 
+/** The server refused the file itself for this part (gone, or not a fit): upload it again. */
+function fileRefused(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'PACKING_VIDEO_INVALID'
+  );
+}
+
 /** Upload one finished recording and attach it; the store keeps it until this resolves. */
 export async function uploadRecording(
   recording: StoredRecording,
@@ -56,6 +70,21 @@ export async function uploadRecording(
     await store.remove(recording.videoId);
     return 'already';
   }
+  const kept = recording.uploadedFileId ?? null;
+  if (kept !== null) {
+    // An earlier attempt finalized this file and its attach failed: attach the same file.
+    try {
+      await api.attach(recording.sessionId, recording.videoId, {
+        fileId: kept,
+        durationMs: recordedMs(recording),
+      });
+      await store.remove(recording.videoId);
+      return 'uploaded';
+    } catch (error) {
+      if (!fileRefused(error)) throw error;
+      await store.update(recording.videoId, { uploadedFileId: null });
+    }
+  }
   const blob = await store.blob(recording.videoId);
   if (blob === null || blob.size === 0) {
     await store.remove(recording.videoId);
@@ -70,6 +99,8 @@ export async function uploadRecording(
   // The recorder's own format names its codec; the stored type is the container's.
   await api.put(ticket, new Blob([blob], { type: mime }), onProgress);
   await api.finalize(ticket.fileId);
+  // Kept before the attach, so a failed attach is retried with this file, not a new upload.
+  await store.update(recording.videoId, { uploadedFileId: ticket.fileId });
   await api.attach(recording.sessionId, recording.videoId, {
     fileId: ticket.fileId,
     durationMs: recordedMs(recording),
