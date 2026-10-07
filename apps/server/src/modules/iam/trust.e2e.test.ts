@@ -234,4 +234,17 @@ describe('trust votes (D-654 to D-656)', () => {
     expect(owned.statusCode, owned.body).toBe(201);
     expect(json<{ trust: Trust }>(owned).trust).toMatchObject({ trusted: true, votedByMe: true });
   });
+
+  it('never by the requester’s own vote: maker ≠ checker stays two people', async () => {
+    // The owner vouched for Riya, whom the owner invited. That vote must not let Riya decide
+    // the owner's own request (the ledger audit of 2026-10-07).
+    const ownersRequest = await raise(owner.client);
+    const refused = await decide(riya.client, ownersRequest);
+    expect(refused.statusCode, refused.body).toBe(403);
+
+    // Another super admin's vote does: Sam vouches for Riya, and she may decide it.
+    expect((await vote(sam.client, riya.userId)).statusCode).toBe(201);
+    const approved = await decide(riya.client, ownersRequest);
+    expect(approved.statusCode, approved.body).toBe(201);
+  });
 });

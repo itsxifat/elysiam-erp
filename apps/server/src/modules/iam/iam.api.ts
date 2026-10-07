@@ -4,7 +4,7 @@ import type { Tx } from '@elysium/db';
 import { maskEmail } from '@elysium/domain';
 import type { TrustTally } from '@elysium/domain/iam';
 
-import { lockTrust, loadTrust } from './trust.repository.js';
+import { isActiveOrgAdmin, lockTrust, loadTrust } from './trust.repository.js';
 import { activeMembers, ownersAmong } from './users.repository.js';
 
 /**
@@ -65,8 +65,18 @@ export interface IamApi {
    * approval decision about to set aside the grant lineage. Counted live, in the caller's
    * transaction, holding the candidate's trust lock and the active admin memberships for
    * share until it commits, so a withdrawn vote or a deactivated voter cannot cross it.
+   *
+   * `requesterId`'s own vote never counts here (the ledger audit of 2026-10-07): a super
+   * admin's single vote trusts anyone (D-657), but it must not let the person they vouched
+   * for approve that super admin's own request, or maker ≠ checker is one person again. And
+   * trust is an org admin's (D-654): a checker whose admin role is gone keeps none.
    */
-  checkerTrust(tx: Tx, orgId: string, userId: string): Promise<TrustTally>;
+  checkerTrust(
+    tx: Tx,
+    orgId: string,
+    userId: string,
+    options?: { readonly requesterId?: string },
+  ): Promise<TrustTally>;
 }
 
 export const IAM_API = Symbol('IAM_API');
@@ -99,10 +109,18 @@ export class IamApiService implements IamApi {
     }));
   }
 
-  async checkerTrust(tx: Tx, orgId: string, userId: string): Promise<TrustTally> {
+  async checkerTrust(
+    tx: Tx,
+    orgId: string,
+    userId: string,
+    options: { readonly requesterId?: string } = {},
+  ): Promise<TrustTally> {
     await lockTrust(tx, orgId, userId, 'shared');
     const facts = await loadTrust(tx, orgId, { lock: true });
-    return facts.graph.tally(userId, facts.votes.get(userId) ?? []);
+    const voters = (facts.votes.get(userId) ?? []).filter((id) => id !== options.requesterId);
+    const tally = facts.graph.tally(userId, voters);
+    if (!(await isActiveOrgAdmin(tx, orgId, userId))) return { ...tally, trusted: false };
+    return tally;
   }
 }
 

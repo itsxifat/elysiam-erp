@@ -998,7 +998,9 @@ export class ApprovalsService {
      * and the table's CHECK still refuse a person's own request.
      */
     if (row.type !== 'credential_reset') {
-      const trust = await this.iam.checkerTrust(tx, context.orgId, context.userId);
+      const trust = await this.iam.checkerTrust(tx, context.orgId, context.userId, {
+        requesterId: row.requested_by,
+      });
       if (trust.trusted) return;
     }
 

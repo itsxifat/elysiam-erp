@@ -152,3 +152,14 @@ export async function withdrawVote(
   `);
   return rows.length > 0;
 }
+
+/** Whether the person holds an active org admin role in this brand now (D-654). */
+export async function isActiveOrgAdmin(tx: Tx, orgId: string, userId: string): Promise<boolean> {
+  const [row] = await tx.execute<{ found: boolean }>(sql`
+    select exists (
+      select 1 from iam.memberships
+      where org_id = ${orgId} and user_id = ${userId} and role = 'org_admin' and is_active
+    ) as found
+  `);
+  return row?.found === true;
+}
