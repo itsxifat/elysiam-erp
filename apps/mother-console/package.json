@@ -1,0 +1,42 @@
+{
+  "name": "@elysium/mother-console",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "dev": "vite --port 5190 --strictPort",
+    "lint": "eslint .",
+    "preview": "vite preview --port 5190 --strictPort",
+    "typecheck": "tsc --noEmit",
+    "e2e:stack": "playwright test -c e2e/stack.config.ts"
+  },
+  "dependencies": {
+    "@elysium/domain": "workspace:*",
+    "@elysium/i18n": "workspace:*",
+    "@elysium/mother-shared": "workspace:*",
+    "@elysium/ui": "workspace:*",
+    "@tanstack/react-query": "catalog:",
+    "@tanstack/react-router": "catalog:",
+    "lucide-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "catalog:",
+    "@elysium/config": "workspace:*",
+    "@playwright/test": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "eslint": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

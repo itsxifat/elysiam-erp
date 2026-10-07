@@ -1,0 +1,132 @@
+# The owner console's server (M32, D-480, D-497): its own Postgres, the mother API and
+# worker, and the SSH tunnel to the brands' server. One Linux host of its own, behind that
+# host's nginx (nginx-mother.conf), on the owner's own domain. deploy.sh and
+# server-deploy.sh deploy it; docs/runbooks/mother-deploy.md is the step by step.
+#
+# Nothing listens on a public address: the API is published on 127.0.0.1 only; Postgres
+# and the tunnel publish nothing. Every secret comes from .env.mother (gitignored, written
+# by new-env.sh); the tunnel's key and the brands' host key are files in MOTHER_TUNNEL_DIR,
+# beside it on the server.
+
+name: elysium-mother
+
+x-mother-env: &mother-env
+  NODE_ENV: production
+  LOG_LEVEL: info
+  MOTHER_DATABASE_URL: postgres://mother_app:${MOTHER_DB_APP_PASSWORD:?run infra/mother/new-env.sh}@postgres:5432/elysium_mother
+  MOTHER_PUBLIC_URL: ${MOTHER_PUBLIC_URL:?set MOTHER_PUBLIC_URL in .env.mother}
+  MOTHER_AUTH_SECRET: ${MOTHER_AUTH_SECRET:?}
+  MOTHER_SECRETS_KEY: ${MOTHER_SECRETS_KEY:?}
+  MOTHER_SECRETS_KEY_ID: ${MOTHER_SECRETS_KEY_ID:-k1}
+  # The host's nginx reaches the API through Docker's bridge, so its address is the
+  # bridge gateway's. Addresses, never a count (D-487).
+  MOTHER_TRUSTED_PROXIES: ${MOTHER_TRUSTED_PROXIES:-172.16.0.0/12}
+  MOTHER_PULL_EVERY_MINUTES: ${MOTHER_PULL_EVERY_MINUTES:-10}
+  MOTHER_PULL_WINDOW_DAYS: ${MOTHER_PULL_WINDOW_DAYS:-100}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 20m
+    max-file: '5'
+
+x-mother-image: &mother-image # Built once per deploy by server-deploy.sh (`elysium-mother:<sha>`).
+  image: elysium-mother:${MOTHER_RELEASE:-current}
+  restart: unless-stopped
+  logging: *logging
+
+services:
+  postgres:
+    image: postgres:17.11-alpine@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      # The container's superuser: the release step creates the two roles with it, and
+      # nothing else uses it.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${MOTHER_DB_ROOT_PASSWORD:?}
+      POSTGRES_DB: elysium_mother
+      POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=en-US --encoding=UTF8'
+    volumes:
+      - mother-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d elysium_mother']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # One-shot, on every `up`: the two roles, then the mother's migrations as mother_owner.
+  # Both idempotent.
+  release:
+    <<: *mother-image
+    build:
+      context: ../..
+      dockerfile: infra/mother/mother.Dockerfile
+      target: runtime
+    restart: 'no'
+    command: ['sh', '-c', 'node dist/main.cli.js db-bootstrap && node dist/main.cli.js migrate']
+    environment:
+      <<: *mother-env
+      MOTHER_DATABASE_OWNER_URL: postgres://mother_owner:${MOTHER_DB_OWNER_PASSWORD:?}@postgres:5432/elysium_mother
+      MOTHER_DATABASE_ADMIN_URL: postgres://postgres:${MOTHER_DB_ROOT_PASSWORD:?}@postgres:5432/elysium_mother
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Local forwards to every brand's Postgres on the brands' server (D-482). A brand's read
+  # connection in the registry names `tunnel:<listen port>`.
+  tunnel:
+    build:
+      context: .
+      dockerfile: tunnel.Dockerfile
+    image: elysium-mother-tunnel:${MOTHER_RELEASE:-current}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      MOTHER_TUNNEL_HOST: ${MOTHER_TUNNEL_HOST:?the brands server}
+      MOTHER_TUNNEL_USER: ${MOTHER_TUNNEL_USER:-mother-tunnel}
+      MOTHER_TUNNEL_FORWARDS: ${MOTHER_TUNNEL_FORWARDS:?listen:brand-port pairs}
+    volumes:
+      - ./tunnel-run.sh:/etc/tunnel/run.sh:ro
+      # Outside the release: kept between deploys, written once by new-env.sh and ssh-keyscan.
+      - ${MOTHER_TUNNEL_DIR:-./tunnel}/id_ed25519:/etc/tunnel/id_ed25519:ro
+      - ${MOTHER_TUNNEL_DIR:-./tunnel}/known_hosts:/etc/tunnel/known_hosts:ro
+
+  worker:
+    <<: *mother-image
+    pull_policy: never
+    command: ['node', 'dist/main.worker.js']
+    environment:
+      <<: *mother-env
+      # The worker, and only the worker, holds the owner role: its job queue migrates itself.
+      MOTHER_DATABASE_OWNER_URL: postgres://mother_owner:${MOTHER_DB_OWNER_PASSWORD:?}@postgres:5432/elysium_mother
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      tunnel:
+        condition: service_started
+
+  api:
+    <<: *mother-image
+    pull_policy: never
+    environment: *mother-env
+    ports:
+      - '127.0.0.1:${MOTHER_API_PORT:-3330}:3300'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3300/v1/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      worker:
+        condition: service_started
+
+volumes:
+  mother-postgres:

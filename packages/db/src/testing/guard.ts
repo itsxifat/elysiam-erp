@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { withSystem } from '../client.js';
 import {
   ANALYTICS_READABLE,
+  ANALYTICS_READABLE_COLUMNS,
   ANALYTICS_READABLE_SCHEMAS,
   APPEND_ONLY_TABLES,
   DECLARED_POLICIES,
@@ -101,7 +102,11 @@ function policyProblems(qualified: string, table: string, policy: PolicyRow): st
   }
 
   if (policy.policyname === `${table}_analytics_all_orgs`) {
-    if (!ANALYTICS_READABLE.includes(qualified)) {
+    // A whole-table read, or a column read (D-483): either list opts the table in.
+    if (
+      !ANALYTICS_READABLE.includes(qualified) &&
+      ANALYTICS_READABLE_COLUMNS[qualified] === undefined
+    ) {
       return [
         `analytics policy ${policy.policyname} on a table that is not in ANALYTICS_READABLE (D-049)`,
       ];
@@ -362,7 +367,52 @@ export async function findAnalyticsReadProblems(): Promise<string[]> {
     `),
   );
 
-  return [...rows].map((row) => row.table_name);
+  /*
+   * Column grants (D-483). `has_table_privilege` is false for a table the role may read only
+   * some columns of, so a column grant was invisible to the check above: one on a buyer's
+   * phone would have passed. Every readable column of a table without a table grant must be
+   * declared in `ANALYTICS_READABLE_COLUMNS`, and every declared column must be readable.
+   */
+  const columns = await withSystem(async (tx) =>
+    tx.execute<{ table_name: string; column_name: string }>(sql`
+      select n.nspname || '.' || c.relname as table_name, a.attname as column_name
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+      where c.relkind in ('r', 'p')
+        and n.nspname not in ${SYSTEM_SCHEMAS}
+        and n.nspname not like 'pg\\_temp%'
+        and n.nspname <> all (${sql.param(ANALYTICS_READABLE_SCHEMAS as string[])}::text[])
+        and not has_table_privilege('erp_analytics', c.oid, 'SELECT')
+        and has_column_privilege('erp_analytics', c.oid, a.attnum, 'SELECT')
+      order by 1, 2
+    `),
+  );
+  const granted = new Map<string, Set<string>>();
+  for (const row of columns) {
+    const set = granted.get(row.table_name) ?? new Set<string>();
+    set.add(row.column_name);
+    granted.set(row.table_name, set);
+  }
+  const columnProblems: string[] = [];
+  for (const [table, set] of granted) {
+    const declared = ANALYTICS_READABLE_COLUMNS[table] ?? [];
+    for (const column of set) {
+      if (!declared.includes(column)) columnProblems.push(`${table}.${column}`);
+    }
+  }
+  for (const [table, declared] of Object.entries(ANALYTICS_READABLE_COLUMNS)) {
+    const set = granted.get(table) ?? new Set<string>();
+    for (const column of declared) {
+      if (!set.has(column)) {
+        columnProblems.push(
+          `${table}.${column}: declared in ANALYTICS_READABLE_COLUMNS, not granted`,
+        );
+      }
+    }
+  }
+
+  return [...[...rows].map((row) => row.table_name), ...columnProblems];
 }
 
 /**

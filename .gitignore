@@ -63,3 +63,7 @@ packages/db/.dev-users.local.json
 # logs `pnpm preview:local` keeps for its processes.
 preview-credentials.local.md
 .preview/
+
+# The owner console server's settings and tunnel key (infra/mother/new-env.sh).
+!.env.mother.example
+infra/mother/tunnel/

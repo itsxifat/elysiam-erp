@@ -39,7 +39,11 @@ function findRepoRoot() {
 }
 
 const REPO_ROOT = findRepoRoot();
-const MIGRATIONS_DIR = 'packages/db/migrations';
+/**
+ * Every migrations folder: the brand database's, and the owner console's own database's
+ * (D-480), which is held to the same rule.
+ */
+const MIGRATIONS_DIRS = ['packages/db/migrations', 'apps/mother-server/migrations'];
 
 function git(args, { allowFailure = false } = {}) {
   try {
@@ -77,7 +81,7 @@ function resolveBase(explicit) {
 }
 
 /** Files under the migrations directory that the base ref already contains. */
-function migrationsOnBase(base) {
+function migrationsOnBase(base, MIGRATIONS_DIR) {
   const listing = git(['ls-tree', '-r', '--name-only', base, '--', MIGRATIONS_DIR], {
     allowFailure: true,
   });
@@ -89,7 +93,7 @@ function migrationsOnBase(base) {
  * `{ status, file }`. Working-tree state is included deliberately: the point is
  * to catch the edit before it becomes a commit.
  */
-function changesSince(base) {
+function changesSince(base, MIGRATIONS_DIR) {
   const changes = new Map();
 
   const add = (raw) => {
@@ -114,7 +118,7 @@ function changesSince(base) {
  * a migration that has already run — the same corruption as editing the file
  * itself, one level of indirection away.
  */
-function journalViolations(base) {
+function journalViolations(base, MIGRATIONS_DIR) {
   const file = `${MIGRATIONS_DIR}/meta/_journal.json`;
   const committed = git(['show', `${base}:${file}`], { allowFailure: true });
   if (committed === null) return [];
@@ -157,28 +161,34 @@ function main() {
     return 0;
   }
 
-  const protectedFiles = migrationsOnBase(base);
-  if (protectedFiles.size === 0) {
+  const violations = [];
+  let protectedCount = 0;
+  for (const dir of MIGRATIONS_DIRS) {
+    const protectedFiles = migrationsOnBase(base, dir);
+    protectedCount += protectedFiles.size;
+    if (protectedFiles.size === 0) continue;
+
+    for (const [file, status] of changesSince(base, dir)) {
+      if (!protectedFiles.has(file)) continue;
+
+      // `meta/_journal.json` necessarily changes when a migration is added: it
+      // is the index, not a migration. Its existing entries are checked for
+      // tampering separately below, because rewriting one would silently
+      // re-point a tag at different SQL.
+      if (file.endsWith('meta/_journal.json')) continue;
+
+      if (status === 'M') violations.push({ file, what: 'modified' });
+      else if (status === 'D') violations.push({ file, what: 'deleted' });
+      else if (status === 'R') violations.push({ file, what: 'renamed' });
+    }
+
+    violations.push(...journalViolations(base, dir));
+  }
+
+  if (protectedCount === 0) {
     console.log(`check-migrations: ${base} has no migrations to protect yet. PASS`);
     return 0;
   }
-
-  const violations = [];
-  for (const [file, status] of changesSince(base)) {
-    if (!protectedFiles.has(file)) continue;
-
-    // `meta/_journal.json` necessarily changes when a migration is added: it
-    // is the index, not a migration. Its existing entries are checked for
-    // tampering separately below, because rewriting one would silently
-    // re-point a tag at different SQL.
-    if (file.endsWith('meta/_journal.json')) continue;
-
-    if (status === 'M') violations.push({ file, what: 'modified' });
-    else if (status === 'D') violations.push({ file, what: 'deleted' });
-    else if (status === 'R') violations.push({ file, what: 'renamed' });
-  }
-
-  violations.push(...journalViolations(base));
 
   if (violations.length > 0) {
     console.error(`check-migrations: FAIL — ${violations.length} committed migration(s) changed\n`);
@@ -191,9 +201,7 @@ function main() {
     return 1;
   }
 
-  console.log(
-    `check-migrations: ${protectedFiles.size} migration(s) on ${base} are unchanged. PASS`,
-  );
+  console.log(`check-migrations: ${protectedCount} migration(s) on ${base} are unchanged. PASS`);
   return 0;
 }
 

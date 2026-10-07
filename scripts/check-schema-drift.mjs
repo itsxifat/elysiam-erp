@@ -25,18 +25,33 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DB_PACKAGE = path.join(REPO_ROOT, 'packages/db');
-const MIGRATIONS = path.join(DB_PACKAGE, 'migrations');
 
-function migrationFiles() {
-  return readdirSync(MIGRATIONS)
-    .filter((name) => name.endsWith('.sql'))
-    .sort();
-}
+/**
+ * Each Drizzle project: the brand database, and the owner console's own database (D-480),
+ * which has its own schema, config and migrations.
+ */
+const PROJECTS = [
+  { name: 'packages/db', dir: path.join(REPO_ROOT, 'packages/db') },
+  { name: 'apps/mother-server', dir: path.join(REPO_ROOT, 'apps/mother-server') },
+];
 
 function main() {
+  let status = 0;
+  for (const project of PROJECTS) {
+    status = Math.max(status, checkProject(project.dir, project.name));
+  }
+  return status;
+}
+
+function checkProject(DB_PACKAGE, label) {
+  const MIGRATIONS = path.join(DB_PACKAGE, 'migrations');
+  const migrationFiles = () =>
+    readdirSync(MIGRATIONS)
+      .filter((name) => name.endsWith('.sql'))
+      .sort();
+
   if (!existsSync(MIGRATIONS)) {
-    console.log('check-schema-drift: no migrations folder yet. SKIP');
+    console.log(`check-schema-drift: ${label} has no migrations folder yet. SKIP`);
     return 0;
   }
 
@@ -103,7 +118,9 @@ function main() {
     return 1;
   }
 
-  console.log(`check-schema-drift: schema, snapshot and ${before.length} migration(s) agree. PASS`);
+  console.log(
+    `check-schema-drift: ${label}: schema, snapshot and ${before.length} migration(s) agree. PASS`,
+  );
   return 0;
 }
 
