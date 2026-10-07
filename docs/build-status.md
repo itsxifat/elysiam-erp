@@ -1,22 +1,22 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-07** (Beownz's own ERP online at erp.beownz.com; the brand spelled Elysiam; super admins, trust votes, parent SKU web addresses and bulk duplicate live; M38b scan-to-pack and M32 the mother ERP built and joined, their tests on Friday). This is the short, plain-language view. The
+Last updated: **2026-10-08** (Friday's tests done: the packing station and video (M38b) and the mother ERP (M32) tested, audited and fixed; M38 live on both brands; two security holes in super admin votes found and closed the same day). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Everything     [###################-]  96%   (about 34.6 of 36 milestones)
+Everything     [###################-]  97%   (about 34.8 of 36 milestones)
 First plan     [###################-]  98%   (M00 to M30)
-Wave 3         [##################--]  91%   (M31 to M39)
+Wave 3         [##################--]  93%   (M31 to M39)
 ```
 
 - The first plan had 33 milestones; six are out on the owner's instruction (M13, M21, M22, M27,
   M28, M29), so **27 count** from it. **Wave 3 adds 9** (D-469, D-600, D-620), so **36 count** in all.
 - A milestone counts 100% when it is built, tested and passed its audits; a part-built one counts
   for the share that is done.
-- Today: **31 done**, **5 part-built**: M14b and M30 (wait for a staging server), M32 and M38
-  (built and joined, their full tests on Friday), M37 (Elysiam's and Beownz's ERPs online).
+- Today: **33 done** (M32 and M38 on 2026-10-08), **3 part-built**: M14b and M30 (wait for a
+  staging server) and M37 (Elysiam's and Beownz's ERPs online; the mother's server to come).
 
 "Built" does not mean "live". Before real use, the owner still has to supply the items under
 [What the owner needs to do](#what-the-owner-needs-to-do).
@@ -42,9 +42,9 @@ Wave 3         [##################--]  91%   (M31 to M39)
 | Company loans                                                               |  100% | Loans the company takes: flat or reducing-balance schedules, a reminder once per instalment, repayments split into principal and interest, approval above the threshold, statements. A mistaken loan is voided by a second person.                                                                                                              |
 | Going live and hardening                                                    |   85% | The test site runs on the owner's server with demo data and one login per role. Security review done and every serious finding fixed; load test passed every target; screens pass an accessibility check in both themes; staff guides and a go-live checklist written. Backup drill, alerts and data-retention rules wait for a staging server. |
 | One ERP per brand (wave 3)                                                  |  100% | Each brand has its own ERP, database and web address, and nothing in it names another brand or a head office. Elysiam's runs at erp.elysium-lifestyle.bd and Beownz's at erp.beownz.com (M31).                                                                                                                                                  |
-| The mother ERP (wave 3)                                                     |   90% | A separate site for the owner: every brand's numbers side by side and added up, and one button to open any brand's ERP. Built and joined; full tests on Friday; needs its own server and domain from the owner (M32).                                                                                                                           |
+| The mother ERP (wave 3)                                                     |  100% | A separate site for the owner: every brand's numbers side by side and added up, and one button to open any brand's ERP. Built and tested; it goes online when the owner names its server and domain (M37).                                                                                                                                      |
 | The website run from the ERP (wave 3)                                       |  100% | The new website at `demo.elysium-lifestyle.bd` gets everything from Elysiam's ERP; the ERP is its admin panel: products, banners, menu, size charts, checkout, accounts, payment, emails, discounts, flash sales, campaign links, tracking and ncom (M33 to M36).                                                                               |
-| Barcode stickers and packing (wave 3)                                       |   90% | Products with stock in hand and cost, one barcode sticker per piece (rolls, A4, 45 × 35 mm, custom), scanning anywhere (M38a, live). The packing station checks every piece against the order and records a video kept until 7 days after delivery (M38b, built; tests on Friday).                                                              |
+| Barcode stickers and packing (wave 3)                                       |  100% | Products with stock in hand and cost, one barcode sticker per piece, scanning anywhere, and the packing station: every piece checked against the order, a video kept until 7 days after delivery. Live on both brands (M38).                                                                                                                    |
 | Fraud check, Chatwoot inbox, staff activity extension, landing page builder |     - | Removed by the owner on 2026-10-02. Not counted. The fraud check code was deleted.                                                                                                                                                                                                                                                              |
 | Reseller platform (Beownz)                                                  |     - | Set aside by the owner. Not counted.                                                                                                                                                                                                                                                                                                            |
 
@@ -86,33 +86,30 @@ Wave 3         [##################--]  91%   (M31 to M39)
 | M29  | Landing pages                                |     - | Removed by the owner                                                                                                                                                                   |
 | M30  | Final hardening before launch                |   75% | Part 1 and its follow-ups done; part 2 (backup drill, alerts, retention, sign-off) needs staging                                                                                       |
 | M31  | One ERP per brand                            |  100% | Done; Elysium's runs at erp.elysium-lifestyle.bd                                                                                                                                       |
-| M32  | The mother ERP                               |   90% | Built and joined; stack run, verify and audits on Friday; needs a server and domain                                                                                                    |
+| M32  | The mother ERP                               |  100% | Done 2026-10-08; online once the owner names a server and domain                                                                                                                       |
 | M33  | Website products and content                 |  100% | Done; live in Elysium's ERP                                                                                                                                                            |
 | M34  | Website checkout, accounts, payment          |  100% | Done; live in Elysium's ERP (SSLCommerz needs the store's keys)                                                                                                                        |
 | M35  | Website offers, tracking, ncom               |  100% | Done: discounts and flash sales live; campaign links, tracking, ncom, scanner app and labels joined, live with the next deploy                                                         |
 | M36  | The new Elysium website on the ERP           |  100% | Done; live at demo.elysium-lifestyle.bd (campaign links and tracking arrive with M35b)                                                                                                 |
 | M37  | Servers, addresses, go-live                  |   35% | Elysiam's and Beownz's ERPs live on the brands server; the mother's server and the final domains to come                                                                               |
-| M38  | Barcode stickers, strict stock, scan-to-pack |   90% | Stickers, stock in hand and the scanner live (M38a); packing station and video built and joined (M38b), tests on Friday                                                                |
+| M38  | Barcode stickers, strict stock, scan-to-pack |  100% | Done 2026-10-08; stickers, stock in hand, scanner and the packing station with video, live                                                                                             |
 | M39  | Catalog management: delete, variant prices   |  100% | Done and live: delete or archive everywhere; prices by size or colour, bulk price changes, buying price per variant, margins, standard buying prices, duplicate product, regular price |
 
 ## Being built now
 
 1. **Online now:** Elysiam's ERP at `https://erp.elysium-lifestyle.bd` and Beownz's at
-   `https://erp.beownz.com`; the website at `https://demo.elysium-lifestyle.bd`.
-2. **Built and joined, tested on Friday:** M38b (the packing station and video) and M32 (the
-   mother ERP); with them, the full test run of everything built lean this week: super admins
-   and trust votes, parent SKU addresses and bulk duplicate, the sign-in fix.
-3. **Then:** the packing station goes live on Elysiam (one server setting for video uploads),
-   the mother ERP goes on its own server, and the final addresses (M37).
+   `https://erp.beownz.com`, with the packing station and video; the website at
+   `https://demo.elysium-lifestyle.bd`.
+2. **Ready, waiting for the owner:** the mother ERP needs its own server and domain.
+3. **Then:** the final addresses (M37), and later a way to remove a super admin.
 
 ## Time left (estimate)
 
-| Work                                                   | Time left          |
-| ------------------------------------------------------ | ------------------ |
-| Friday's tests and fixes (M38b, M32, this week's work) | about 4 to 6 hours |
-| The mother ERP on its server (once the owner names it) | about 1 to 2 hours |
-| Final addresses and go-live (M37)                      | about 2 to 3 hours |
-| **All building**                                       | **about 1 day**    |
+| Work                                                   | Time left            |
+| ------------------------------------------------------ | -------------------- |
+| The mother ERP on its server (once the owner names it) | about 1 to 2 hours   |
+| Final addresses and go-live (M37)                      | about 2 to 3 hours   |
+| **All building**                                       | **about half a day** |
 
 ## What the owner needs to do
 

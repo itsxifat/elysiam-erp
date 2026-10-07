@@ -2544,3 +2544,47 @@ dry-run|commit --file <users.json>`.
   duplicate's locks, M38b's state path, M32's money reads and 0131 grants); acceptance-auditor
   for M38b and M32. Before the packing station is used live: the nginx hand patch for
   `/v1/files/content` on Elysiam's site.
+
+## 2026-10-08 · wave 3 · Friday's tests: M38b and M32 tested, audited and fixed; everything live on both brands
+
+- **Made live first** (the owner: "start the Friday work now and first make everything live"):
+  both brands deployed at 4ab78ba (M38b, M32's brand side 0131), then d74ba47 (the trust fix,
+  0132), 33e6c25 (D-666) and 13b9b59 (M38b's audit fixes, 0133, the white-label fix); the
+  live nginx sites of both brands hand-patched for packing video uploads (96 MB on
+  `/v1/files/content`, backups beside them, `nginx -t` passed).
+- **Three ledger audits** (2026-10-07):
+  - This week's permission changes: 2 critical. (C1) a super admin's own trust vote let their
+    invitee approve that super admin's request — `checkerTrust` now drops the requester's vote,
+    and trust needs an active org admin role (D-667, `trust.e2e`); (C2) whoever invites a super
+    admin holds their password link — the owner chose: only the first super admin (or an owner)
+    starts a super admin nomination or invite (D-666, `super-admin.e2e`, the Staff screen's
+    button). Both fixed and deployed the same day.
+  - M38b: 0 critical, 3 warnings (orphan video files, the guard registry and an append-only
+    trigger on scans in 0133, the public upload buffering 90 MiB before its token was checked)
+    and the notes (late video parts, retention carrying on, sales' recent sessions scoped in SQL,
+    resellers refused, 409 on a duplicate file, D-665): all fixed on `m38b-audit-fixes`.
+  - M32: 1 critical (the separation test's host list), 4 warnings (the nightly full pull
+    swallowed by a tick, column write grants invisible to the guard, `?user=` in a read
+    connection, trusted devices) and notes (unused reporting columns revoked in 0132, the acting
+    owner re-read, the figures dated by their read, the mother's sign-in never walled): fixed.
+- **M32 acceptance audit**: 5 gaps (the trusted-device test blocked by the sign-in limiter,
+  tests for the full pull's key and concurrent pulls, the unreachable brand's badge, docs,
+  unverified infra in decisions): fixed in 410f89d and a64c9b5.
+- **Evidence:** `pnpm verify` at a64c9b5: format, lint, typecheck, 252 test files, 3829
+  passed, 1 skipped, build, bundle PASS; then the white-label check found two brand-named
+  storage keys in the packing station (fixed in 13b9b59), after which white-label, bundle,
+  migrations, schema, routes (514), i18n and api-client all PASS. Stack runs: the mother's
+  `e2e:stack` 4/4 (checks 1 and 2 against real brand APIs); `users.stack.ts` and
+  `variant-pricing.stack.ts` 11/11; `packing.stack.ts` and `barcodes.stack.ts` 13/13. The
+  mother's database and HTTP suites 44/44; trust, super admin and users 104/104.
+- **Acceptance audits:** M38b, checks 1 to 3 evidenced (`pack-station.e2e` 27/27 with
+  `packing.e2e`, the domain's fast-check 18/18, `pack-station-ui` 14/14, `packing.stack.ts`,
+  retention with a clock: nothing at 23:59 Dhaka on day 7, deleted at 00:01 on day 8), docs gaps
+  only, fixed here. M32, re-audited: every code and test gap closed (the mother's suites 114/114
+  on 13b9b59), docs gaps fixed here. Both milestones done; M32 not deployed (needs a server).
+- Decisions: D-665 (resellers refused on packing records), D-666 (only the first super admin
+  adds super admins, RESOLVED by the owner), D-667. New dependencies: none.
+- Open: a way to remove a super admin, and a super admin invited who never finishes signing up
+  stays a required voter (D-667); the mother's server and domain from the owner, then its first
+  deploy (unverified infra, decisions.md); a `pg_hba` rule limiting a brand's reporting port to
+  `erp_analytics`; comparing the mother's P&L with the brand's own reports service.

@@ -1273,7 +1273,7 @@ Jobs run on pg-boss, with queues named `module.action`.
 | `loans.schedule_reminders`        | Daily 10:00, one `loans.remind_instalments` per brand    | Once per instalment, in-app and SMS (D-300)     |
 | `notify.send`                     | On demand                                                | Respects quiet hours                            |
 | `files.process_image`             | On upload                                                | sharp variants, EXIF stripped                   |
-| `packing.purge_videos`            | Daily 04:15                                              | Packing videos past their expiry (D-612)        |
+| `packing.purge_videos`            | Daily 04:15                                              | Videos past expiry; uploads unattached for 24 h |
 | `files.remove_object`             | After the deleting commit                                | The stored bytes of a deleted file              |
 | `ops.backup_verify`               | Weekly (staging)                                         | Restore to a scratch database and verify        |
 
@@ -1845,4 +1845,6 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
 - **Retention** (D-612): `packingVideoExpiry` keeps a video until seven days after the order is
   delivered, partly delivered, returned or cancelled; `packing.purge_videos` (§20) deletes the
   expired ones with an audit row, and the stored bytes go after commit (`files.remove_object`).
-  Storage is the brand server's disk until R2 is on (D-619).
+  The same run sweeps uploads no video names after 24 hours (a retried upload's first copy),
+  each audited; one failure is logged and the run carries on. Storage is the brand server's
+  disk until R2 is on (D-619). Resellers see no packing records (D-665).
