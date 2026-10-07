@@ -105,11 +105,21 @@ const KNOWN_HOSTS = new Set([
   'https://bulksmsbd.net',
   'https://graph.facebook.com',
   'https://challenges.cloudflare.com',
-  // XML namespaces in the XLSX writer, never fetched.
+  // The website's payment gateway (SSLCommerz, D-523), Google Analytics' Measurement Protocol
+  // (M35b, D-545) and ncom.bd's connector (D-553).
+  'https://sandbox.sslcommerz.com',
+  'https://securepay.sslcommerz.com',
+  'https://www.google-analytics.com',
+  'https://ncom.bd',
+  // XML namespaces in the XLSX writer and the label sheet's SVG, never fetched.
   'http://schemas.openxmlformats.org',
+  'http://www.w3.org',
   // Local, example and template prefixes.
   'http://0.0.0.0',
   'http://localhost',
+  'https://localhost',
+  'https://sandbox.gateway.example',
+  'https://shop.example.com.',
   'http://oura-lifestyle.localhost',
   'http://preview-seed.localhost',
   'http://request.invalid',
@@ -127,7 +137,7 @@ describe('check 5: a brand calls no host but its own and its known third parties
       if (!existsSync(absolute)) continue;
       for (const file of files(absolute)) {
         const relative = path.relative(ROOT, file).split(path.sep).join('/');
-        if (/\.test\.|\/testing\/|\/e2e\//.test(relative)) continue;
+        if (/\.test\.|\.route-fixtures\.|\/testing\/|\/e2e\//.test(relative)) continue;
         if (!/\.(ts|tsx)$/.test(relative)) continue;
         for (const match of readFileSync(file, 'utf8').matchAll(/https?:\/\/[a-zA-Z0-9.-]+/g)) {
           if (!hosts.has(match[0])) hosts.set(match[0], relative);
