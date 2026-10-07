@@ -61,7 +61,18 @@ function toPackingHttpError(error: unknown): unknown {
   if (error instanceof HttpException) return error;
   if (error instanceof PackingError) return packingHttpError(error.code, error.message);
   for (let current: unknown = error; current instanceof Error; current = current.cause) {
-    // The tables' triggers (migration 0126) raise `CONFLICT: <sentence>`.
+    // One file is one part's video: the same upload attached to a second part (two attaches
+    // racing, or a file id reused for another recording) is the caller's mistake, not ours.
+    if (
+      (current as { code?: unknown }).code === '23505' &&
+      (current as { constraint_name?: unknown }).constraint_name === 'packing_videos_file_idx'
+    ) {
+      return packingHttpError(
+        'PACKING_VIDEO_INVALID',
+        'That video is already attached to another recording.',
+      );
+    }
+    // The tables' triggers (migrations 0130 and 0133) raise `CONFLICT: <sentence>`.
     const prefixed = /^CONFLICT: (.*)$/s.exec(current.message);
     if (prefixed !== null) return packingHttpError('CONFLICT', prefixed[1] ?? current.message);
     const code = (current as { code?: unknown }).code;

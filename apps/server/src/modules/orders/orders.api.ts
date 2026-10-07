@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import {
   computePartialDelivery,
   parcelWeightGrams,
@@ -718,6 +718,15 @@ export interface OrdersApi {
     request: object,
   ): Promise<ReadonlySet<string>>;
 
+  /**
+   * The condition "the order `orderId` names is one the caller may see", under the route's
+   * own declared scope, for another module to put in the WHERE of a query over its own rows
+   * (M38b audit: the packing station's recent list pages by the order's scope instead of
+   * filtering the newest N afterwards). The SQL about `sales.orders` is written here, by its
+   * owner; the caller only embeds it (invariant 12). Marks the scope applied.
+   */
+  orderInScopeSql(orgId: string, orderId: SQL, request: object): SQL;
+
   /** The SKUs with the most units delivered in the range, most first (M24). */
   topSkus(
     tx: Tx,
@@ -1356,6 +1365,17 @@ export class OrdersApiService implements OrdersApi {
       branchId: sql`o.branch_id`,
     });
     return new Set(await repo.orderIdsInScope(tx, orgId, [...new Set(orderIds)], scope));
+  }
+
+  orderInScopeSql(orgId: string, orderId: SQL, request: object): SQL {
+    const scope = scopeWhere(request, {
+      createdBy: sql`o.created_by`,
+      assignedTo: sql`o.assigned_to`,
+      branchId: sql`o.branch_id`,
+    });
+    return sql`exists (
+      select 1 from sales.orders o where o.org_id = ${orgId} and o.id = ${orderId} and ${scope}
+    )`;
   }
 
   async orderIdsForShipmentCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]> {

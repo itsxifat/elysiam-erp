@@ -64,6 +64,18 @@ export class PackingVideoService {
             'That recording’s start does not match this packing session. Check the clock.',
           );
         }
+        // A finished packing takes a late upload of a part filmed while it was open, never a
+        // recording that began after the box was closed (M38b audit).
+        if (
+          session.status === 'completed' &&
+          (session.completed_at === null ||
+            startedAt.getTime() > new Date(session.completed_at).getTime())
+        ) {
+          throw new PackingError(
+            'PACKING_VIDEO_INVALID',
+            'This order’s packing finished before that recording started.',
+          );
+        }
         const row = await repo.insertVideo(tx, {
           orgId: context.orgId,
           id: input.videoId,
@@ -101,6 +113,17 @@ export class PackingVideoService {
         const video = await repo.videoById(tx, context.orgId, videoId, { forUpdate: true });
         if (video?.session_id !== sessionId) {
           throw new PackingError('NOT_FOUND', 'No such recording.');
+        }
+        // The person who filmed it brings its file; an org admin may finish it for them.
+        if (
+          video.recorded_by !== context.userId &&
+          !context.isSuperAdmin &&
+          !context.roles.includes('org_admin')
+        ) {
+          throw new PackingError(
+            'FORBIDDEN',
+            'Only the person who recorded this video, or an org admin, attaches its file.',
+          );
         }
         if (video.file_id === input.fileId) return this.part(video);
         if (video.file_id !== null || video.deleted_at !== null) {

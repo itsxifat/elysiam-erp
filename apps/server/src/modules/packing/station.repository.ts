@@ -1,5 +1,5 @@
 import type { Tx } from '@elysium/db';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 
 /**
  * The SQL behind the packing station and the packing video (M38b, D-610 to D-615). Its own
@@ -298,11 +298,19 @@ export interface SessionSummaryRow extends SessionRow {
   readonly mismatches: number;
 }
 
-/** The newest sessions with their scan counts, for the recent list. */
+/**
+ * The newest sessions with their scan counts, for the recent list, of orders `orderInScope`
+ * admits: the orders module's condition on `s.order_id` (the caller's scope), applied before
+ * the limit so a sales agent sees their own newest, not their share of everyone's.
+ */
 export async function recentSessions(
   tx: Tx,
   orgId: string,
-  options: { readonly limit: number; readonly status: 'open' | 'completed' | undefined },
+  options: {
+    readonly limit: number;
+    readonly status: 'open' | 'completed' | undefined;
+    readonly orderInScope: SQL;
+  },
 ): Promise<SessionSummaryRow[]> {
   const rows = await tx.execute<SessionSummaryRow>(sql`
     select s.id, s.order_id, s.order_no, s.status, s.video_required, s.started_by, s.started_at,
@@ -316,6 +324,7 @@ export async function recentSessions(
     from packing.sessions s
     left join packing.scans c on c.org_id = s.org_id and c.session_id = s.id
     where s.org_id = ${orgId}
+      and ${options.orderInScope}
       ${options.status === undefined ? sql`` : sql`and s.status = ${options.status}`}
     group by s.id
     order by s.started_at desc, s.id
