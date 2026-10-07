@@ -311,6 +311,11 @@ Route matrix import ${token()},1500
     url: `/v1/catalog/products/${state().productId}/duplicate`,
     body: { name: `Route matrix copy ${token()}` },
   }),
+  // One copy of the seeded product, from the list (D-663): a new product per admitted role.
+  'POST /v1/catalog/products/duplicate': () => ({
+    url: '/v1/catalog/products/duplicate',
+    body: { productIds: [state().productId], copies: 1 },
+  }),
   // `active` again is still a real, audited write.
   'PATCH /v1/catalog/products': () => ({
     url: '/v1/catalog/products',

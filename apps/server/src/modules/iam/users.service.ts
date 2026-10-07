@@ -16,10 +16,13 @@ import {
 } from '@elysium/db';
 import {
   isCollectable,
+  isSuperAdminCandidate,
+  nominationTally,
   planCredentialReset,
   planRoleChange,
   resetAllowedByLimits,
   type ResetKind,
+  type TrustRefusalCode,
   type ResetPlan,
   type ResetTarget,
 } from '@elysium/domain/iam';
@@ -35,6 +38,21 @@ import {
   type RejectionHandler,
 } from '../approvals/approvals.service.js';
 import * as repo from './users.repository.js';
+import {
+  castVote,
+  lockTrust,
+  loadTrust,
+  withdrawVote,
+  type TrustFacts,
+} from './trust.repository.js';
+import { requireSuperAdmin, voteSuperAdmin, type NominationOutcome } from './super-admin.js';
+import {
+  loadNominations,
+  lockSuperAdmins,
+  superAdminIds,
+  withdrawNomination,
+  type NominationFacts,
+} from './super-admin.repository.js';
 import { pgCode, usersHttpError } from './users.errors.js';
 
 /**
@@ -82,11 +100,120 @@ export interface StaffRow {
   /** When the newest unused password link stops working. */
   readonly linkExpiresAt: string | null;
   readonly isSuperAdmin: boolean;
+  /**
+   * An owner (D-473), listed as a super admin (D-658). Their name and email are empty for
+   * everyone but another owner: the console shows "Owner".
+   */
+  readonly isOwner: boolean;
+  /**
+   * Holds or held a role here, so the Staff screen's actions reach them. A super admin with
+   * no role here, or an owner, is listed but managed nowhere on this screen.
+   */
+  readonly hasRoleHere: boolean;
   /** Also works in another brand: only a super admin resets their sign-in (D-405). */
   readonly inOtherBrand: boolean;
   readonly isSelf: boolean;
   /** A password or second-factor reset of this person needs a second admin (D-404). */
   readonly resetNeedsApproval: boolean;
+  /** For an active admin who is not a super admin: the admins' trust in them (D-654). */
+  readonly trust: TrustView | null;
+  /**
+   * For an active admin who could be made a super admin (D-659): shown to a super admin, and
+   * to everyone while a nomination is pending. Null otherwise.
+   */
+  readonly superAdminNomination: NominationView | null;
+}
+
+/** Making one admin a super admin, as the caller sees it (D-659). */
+export interface NominationView {
+  /** Some super admin has said yes, and the promotion waits for the rest. */
+  readonly pending: boolean;
+  /** Yes votes from the super admins whose vote is required. */
+  readonly votes: number;
+  /** Every active super admin, owners aside; 0 while there is at most one. */
+  readonly needed: number;
+  /** At most one super admin: the next yes promotes at once. */
+  readonly immediate: boolean;
+  /** The caller has said yes already. */
+  readonly votedByMe: boolean;
+  /** The caller may say yes now (a super admin, not the candidate). */
+  readonly canVote: boolean;
+  /** The caller may withdraw the nomination (any super admin, while one is pending). */
+  readonly canWithdraw: boolean;
+}
+
+/** The admins' trust in one admin, as the caller sees it (D-654 to D-656). */
+export interface TrustView {
+  /** Votes from independent admins who may vote now. */
+  readonly votes: number;
+  /** Two thirds of those who may vote, rounded up, never fewer than two. */
+  readonly needed: number;
+  readonly trusted: boolean;
+  /** The caller has a vote recorded for this person, counted or not: theirs to withdraw. */
+  readonly votedByMe: boolean;
+  /** The caller's vote would count. */
+  readonly canVote: boolean;
+  /** Why it would not, when it would not: the words, and a code the console translates. */
+  readonly reason: string | null;
+  readonly reasonCode: TrustRefusalCode | null;
+}
+
+/** Whether a person can be vouched for: an active admin here, not a super admin. */
+function isTrustCandidate(person: repo.PersonRow, held: readonly repo.MembershipRow[]): boolean {
+  return (
+    person.is_active &&
+    !person.is_super_admin &&
+    !person.is_owner &&
+    held.some((row) => row.is_active && row.role === 'org_admin')
+  );
+}
+
+function nominationView(
+  context: ActiveContext,
+  facts: NominationFacts,
+  candidateId: string,
+): NominationView | null {
+  const voters = facts.votes.get(candidateId) ?? [];
+  const pending = voters.length > 0;
+  if (!context.isSuperAdmin && !pending) return null;
+  const tally = nominationTally(facts.superAdmins, voters);
+  const votedByMe = voters.includes(context.userId);
+  const mayAct = context.isSuperAdmin && candidateId !== context.userId;
+  return {
+    pending,
+    votes: tally.votes,
+    needed: tally.needed,
+    immediate: tally.immediate,
+    votedByMe,
+    // A yes already given counts; pressing again only matters once every vote is in.
+    canVote: mayAct && (!votedByMe || tally.complete),
+    canWithdraw: mayAct && pending,
+  };
+}
+
+/** Owners first, then super admins, then everyone else; by name within each. */
+function rank(row: StaffRow): number {
+  if (row.isOwner) return 0;
+  return row.isSuperAdmin ? 1 : 2;
+}
+
+function trustView(
+  context: ActiveContext,
+  facts: TrustFacts,
+  candidateId: string,
+  voters: readonly string[] = facts.votes.get(candidateId) ?? [],
+): TrustView {
+  const tally = facts.graph.tally(candidateId, voters);
+  const standing = facts.graph.standing(context.userId, candidateId);
+  return {
+    votes: tally.votes,
+    needed: tally.needed,
+    trusted: tally.trusted,
+    votedByMe: voters.includes(context.userId),
+    canVote: standing.ok,
+    reason: standing.ok ? null : standing.reason,
+    reasonCode: standing.ok ? null : standing.code,
+  };
 }
 
 /** Who asked for a reset, as this caller may see them: an owner is "Owner" (D-473). */
@@ -180,6 +307,21 @@ function resetTarget(target: Target): ResetTarget {
   };
 }
 
+/**
+ * The database refused a vote or a promotion the service had just checked (migration 0128):
+ * a race lost to another super admin's change, answered with a 409 to read again.
+ */
+function promotionRaceLost(error: unknown): unknown {
+  const code = pgCode(error);
+  if (code === '42501' || code === '23514') {
+    return usersHttpError(
+      'CONFLICT',
+      'The super admins changed a moment ago. Read the Staff screen again and retry.',
+    );
+  }
+  return error;
+}
+
 const NOT_FOUND = (): never => {
   throw usersHttpError('USER_NOT_FOUND', 'No such person in this organization.');
 };
@@ -202,27 +344,38 @@ export class UsersService {
 
   // --- reading --------------------------------------------------------------------------
 
-  /** Everyone who holds or held a role in this brand, and the resets still open. */
+  /**
+   * Everyone who holds or held a role in this brand, every super admin — owners among them,
+   * as "Owner" (D-658) — and the resets still open.
+   */
   async list(context: ActiveContext): Promise<{ items: StaffRow[]; resets: OpenResetView[] }> {
     return this.inOrg(context, async (tx) => {
       const memberships = await repo.membershipsInOrg(tx, context.orgId);
       const resets = await repo.openResets(tx, context.orgId);
-      const userIds = [...new Set(memberships.map((row) => row.user_id))];
+      const userIds = [
+        ...new Set([...memberships.map((row) => row.user_id), ...(await superAdminIds(tx))]),
+      ];
       const found = await repo.people(tx, [
         ...new Set([...userIds, ...resets.map((row) => row.requested_by)]),
       ]);
       const byId = new Map(found.map((person) => [person.id, person]));
       const elsewhere = await repo.activeElsewhere(tx, userIds, context.orgId);
+      const trust = await loadTrust(tx, context.orgId);
+      const nominations = await loadNominations(tx, context.orgId);
 
       const items: StaffRow[] = [];
       for (const userId of userIds) {
         const person = byId.get(userId);
-        // An owner holds no role here (D-473); never listed as staff even if one did.
-        if (person === undefined || person.is_owner) continue;
-        const held = memberships.filter((row) => row.user_id === userId);
-        items.push(this.view(context, person, held, elsewhere.has(userId)));
+        if (person === undefined) continue;
+        // An owner holds no role here (D-473), and is listed only as a super admin.
+        if (person.is_owner && !person.is_super_admin) continue;
+        const held = person.is_owner ? [] : memberships.filter((row) => row.user_id === userId);
+        items.push(this.view(context, person, held, elsewhere.has(userId), trust, nominations));
       }
-      items.sort((a, b) => a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
+      items.sort(
+        (a, b) =>
+          rank(a) - rank(b) || a.name.localeCompare(b.name) || a.email.localeCompare(b.email),
+      );
 
       return {
         items,
@@ -251,7 +404,9 @@ export class UsersService {
       const [person] = await repo.people(tx, [userId]);
       if (held.length === 0 || person === undefined || person.is_owner) return NOT_FOUND();
       const elsewhere = await repo.activeElsewhere(tx, [userId], context.orgId);
-      return this.view(context, person, held, elsewhere.has(userId));
+      const trust = await loadTrust(tx, context.orgId);
+      const nominations = await loadNominations(tx, context.orgId);
+      return this.view(context, person, held, elsewhere.has(userId), trust, nominations);
     });
   }
 
@@ -260,23 +415,37 @@ export class UsersService {
     person: repo.PersonRow,
     held: readonly repo.MembershipRow[],
     inOtherBrand: boolean,
+    trust: TrustFacts,
+    nominations: NominationFacts,
   ): StaffRow {
     const active = held.filter((row) => row.is_active);
+    // A super admin reaches every brand with or without a role here (section 6).
+    const reachesHere = active.length > 0 || person.is_super_admin;
     const status: StaffStatus = !person.is_active
       ? 'disabled'
-      : active.length === 0
+      : !reachesHere
         ? 'deactivated'
-        : person.has_password
+        : person.has_password || person.is_owner
           ? 'active'
           : 'invited';
+    // An owner is "Owner" to everyone but another owner (D-473, D-476).
+    const masked = person.is_owner && context.isOwner !== true;
+    const candidate = {
+      userId: person.id,
+      isActive: person.is_active,
+      isSuperAdmin: person.is_super_admin,
+      isOwner: person.is_owner,
+      activeAdminHere: active.some((row) => row.role === 'org_admin'),
+    };
     return {
       userId: person.id,
-      name: person.name,
-      email: person.email,
+      name: masked ? '' : person.name,
+      email: masked ? '' : person.email,
       status,
       roles: active.map((row) => ({ role: row.role, branchIds: [...row.branch_ids] })),
       formerRoles: held.filter((row) => !row.is_active).map((row) => row.role),
-      twoFactorEnabled: person.two_factor_enabled,
+      // An owner's link is minted behind the mother's second factor (D-473).
+      twoFactorEnabled: person.two_factor_enabled || person.is_owner,
       twoFactorRequired: requiresTwoFactor(
         active.map((row) => row.role),
         person.is_super_admin,
@@ -285,6 +454,8 @@ export class UsersService {
       hasPassword: person.has_password,
       linkExpiresAt: iso(person.link_expires_at),
       isSuperAdmin: person.is_super_admin,
+      isOwner: person.is_owner,
+      hasRoleHere: held.length > 0,
       inOtherBrand,
       isSelf: person.id === context.userId,
       resetNeedsApproval:
@@ -293,7 +464,154 @@ export class UsersService {
           held.map((row) => row.role),
           person.is_super_admin,
         ),
+      trust: isTrustCandidate(person, held) ? trustView(context, trust, person.id) : null,
+      superAdminNomination: isSuperAdminCandidate(candidate)
+        ? nominationView(context, nominations, person.id)
+        : null,
     };
+  }
+
+  // --- super admins making super admins (D-659) -------------------------------------------
+
+  /**
+   * A super admin's yes for making an active admin here a super admin. While the brand has at
+   * most one super admin it promotes at once; with two or more, the last of their votes does.
+   */
+  async voteSuperAdmin(
+    context: ActiveContext,
+    request: AuditableRequest,
+    userId: string,
+  ): Promise<NominationOutcome> {
+    requireSuperAdmin(context);
+    try {
+      return await this.inOrg(context, async (tx) =>
+        voteSuperAdmin(tx, this.audit, context, userId, request),
+      );
+    } catch (error) {
+      throw promotionRaceLost(error);
+    }
+  }
+
+  /** Withdraw a pending nomination: every vote for the person goes. Any super admin may. */
+  async withdrawSuperAdminNomination(
+    context: ActiveContext,
+    request: AuditableRequest,
+    userId: string,
+  ): Promise<{ userId: string; withdrawnVotes: number }> {
+    requireSuperAdmin(context);
+    return this.inOrg(context, async (tx) => {
+      await lockSuperAdmins(tx);
+      const voters = await withdrawNomination(tx, context.orgId, userId);
+      if (voters.length === 0) {
+        throw usersHttpError(
+          'SUPER_ADMIN_NOT_CANDIDATE',
+          'There is no nomination for this person to withdraw.',
+        );
+      }
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'delete',
+        action: 'iam.super_admin_nomination_withdrawn',
+        entityType: 'User',
+        entityId: userId,
+        before: { voters },
+        after: null,
+        requestId: context.requestId,
+        request,
+      });
+      return { userId, withdrawnVotes: voters.length };
+    });
+  }
+
+  // --- trust votes ------------------------------------------------------------------------
+
+  /**
+   * Vouch for an admin (D-654 to D-656). Only a vote that would count is recorded: the voter
+   * is an active admin or super admin with two-step sign-in, and neither invited the other
+   * nor shares an inviter with them, however far up. Under the candidate's trust lock, which
+   * an approval decision counting them also takes; audited in the same transaction.
+   */
+  async vote(
+    context: ActiveContext,
+    request: AuditableRequest,
+    userId: string,
+  ): Promise<{ userId: string; trust: TrustView }> {
+    return this.inOrg(context, async (tx) => {
+      await lockTrust(tx, context.orgId, userId, 'exclusive');
+      const held = await repo.membershipsOfUser(tx, context.orgId, userId);
+      const [person] = await repo.people(tx, [userId]);
+      if (held.length === 0 || person === undefined || person.is_owner) return NOT_FOUND();
+      if (!isTrustCandidate(person, held)) {
+        throw usersHttpError(
+          'TRUST_NOT_CANDIDATE',
+          'Only an active admin of this brand is vouched for. A super admin needs no votes.',
+        );
+      }
+
+      const facts = await loadTrust(tx, context.orgId);
+      const standing = facts.graph.standing(context.userId, userId);
+      if (!standing.ok) {
+        throw usersHttpError(
+          standing.code === 'self' ? 'USER_SELF_MANAGEMENT' : 'TRUST_VOTE_REFUSED',
+          standing.reason,
+        );
+      }
+
+      const before = facts.votes.get(userId) ?? [];
+      const cast = await castVote(tx, context.orgId, context.userId, userId);
+      const view = trustView(context, facts, userId, cast ? [...before, context.userId] : before);
+      if (cast) {
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'create',
+          action: 'iam.trust_voted',
+          entityType: 'User',
+          entityId: userId,
+          before: null,
+          after: {
+            voter: context.userId,
+            votes: view.votes,
+            needed: view.needed,
+            trusted: view.trusted,
+          },
+          requestId: context.requestId,
+          request,
+        });
+      }
+      return { userId, trust: view };
+    });
+  }
+
+  /** Withdraw the caller's vote; it stops counting at once. Audited in the same transaction. */
+  async withdrawVote(
+    context: ActiveContext,
+    request: AuditableRequest,
+    userId: string,
+  ): Promise<{ userId: string; trust: TrustView }> {
+    return this.inOrg(context, async (tx) => {
+      await lockTrust(tx, context.orgId, userId, 'exclusive');
+      const removed = await withdrawVote(tx, context.orgId, context.userId, userId);
+      if (!removed) {
+        throw usersHttpError('CONFLICT', 'There is no vote of yours for this person to withdraw.');
+      }
+      const facts = await loadTrust(tx, context.orgId);
+      const view = trustView(context, facts, userId);
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'delete',
+        action: 'iam.trust_withdrawn',
+        entityType: 'User',
+        entityId: userId,
+        before: { voter: context.userId },
+        after: { votes: view.votes, needed: view.needed, trusted: view.trusted },
+        requestId: context.requestId,
+        request,
+      });
+      return { userId, trust: view };
+    });
   }
 
   /**

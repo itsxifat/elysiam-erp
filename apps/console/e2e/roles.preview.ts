@@ -17,7 +17,7 @@ test('super admin: enrols two-step login, chooses a brand, reads its dashboard',
   // A super admin enters no brand by default: the switcher asks.
   await expect(page.getByText('Choose an organisation to continue.')).toBeVisible();
   await page.getByRole('button', { name: 'Switch organisation' }).click();
-  await page.getByRole('option', { name: /Elysium Lifestyle BD/ }).click();
+  await page.getByRole('option', { name: /Elysiam Lifestyle BD/ }).click();
   await inConsole(page);
 
   // The all-brands views left the brand's ERP with M31 (D-471).

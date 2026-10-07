@@ -11,9 +11,13 @@ import {
 import {
   DEFAULT_STICKER_PREFS,
   STICKERS_PER_PRINT,
+  STICKER_MEDIUM_IDS,
+  customSizeProblems,
   parseCopies,
+  parseMm,
   positionsOn,
   readStickerPrefs,
+  splitItemLabel,
   stickerPrints,
   writeStickerPrefs,
 } from './stickers-plan.js';
@@ -73,6 +77,18 @@ describe('a print split into PDFs', () => {
     expect(positionsOn('a4-3x8')).toBe(24);
     expect(positionsOn('a4-4x10')).toBe(40);
     expect(positionsOn('thermal-38x25')).toBe(0);
+    expect(positionsOn('thermal-45x35')).toBe(0);
+    expect(positionsOn('custom')).toBe(0);
+    // D-650: the 45 × 35 roll beside the others, and the custom size last.
+    expect(STICKER_MEDIUM_IDS).toEqual([
+      'thermal-38x25',
+      'thermal-40x30',
+      'thermal-45x35',
+      'thermal-50x25',
+      'a4-3x8',
+      'a4-4x10',
+      'custom',
+    ]);
   });
 
   it('reads a sticker count from a box', () => {
@@ -89,9 +105,41 @@ describe('the remembered sticker choice', () => {
     const storage = new MemoryStorage() as unknown as Storage;
     expect(readStickerPrefs('usr_a', storage)).toEqual(DEFAULT_STICKER_PREFS);
     expect(DEFAULT_STICKER_PREFS.showPrice).toBe(true);
-    writeStickerPrefs('usr_a', { medium: 'a4-4x10', showPrice: false }, storage);
-    expect(readStickerPrefs('usr_a', storage)).toEqual({ medium: 'a4-4x10', showPrice: false });
+    writeStickerPrefs(
+      'usr_a',
+      { ...DEFAULT_STICKER_PREFS, medium: 'a4-4x10', showPrice: false },
+      storage,
+    );
+    expect(readStickerPrefs('usr_a', storage)).toEqual({
+      ...DEFAULT_STICKER_PREFS,
+      medium: 'a4-4x10',
+      showPrice: false,
+    });
     expect(readStickerPrefs('usr_b', storage)).toEqual(DEFAULT_STICKER_PREFS);
+  });
+
+  it('remembers the custom size and the extra line (D-652)', () => {
+    const storage = new MemoryStorage() as unknown as Storage;
+    const chosen = {
+      medium: 'custom',
+      showPrice: false,
+      widthMm: 32.5,
+      heightMm: 20,
+      extraLine: 'Made in Bangladesh',
+    } as const;
+    writeStickerPrefs('usr_a', chosen, storage);
+    expect(readStickerPrefs('usr_a', storage)).toEqual(chosen);
+    // A size or a line the server would refuse is not brought back.
+    storage.setItem(
+      'erp-stickers:usr_a',
+      JSON.stringify({ ...chosen, widthMm: 300, heightMm: 'tall', extraLine: 'x'.repeat(41) }),
+    );
+    expect(readStickerPrefs('usr_a', storage)).toEqual({
+      ...chosen,
+      widthMm: DEFAULT_STICKER_PREFS.widthMm,
+      heightMm: DEFAULT_STICKER_PREFS.heightMm,
+      extraLine: '',
+    });
   });
 
   it('falls back to the defaults on anything it cannot read', () => {
@@ -106,6 +154,75 @@ describe('the remembered sticker choice', () => {
       },
     } as unknown as Storage;
     expect(readStickerPrefs('usr_a', broken)).toEqual(DEFAULT_STICKER_PREFS);
+  });
+});
+
+describe('the custom sticker size in the dialog (D-650)', () => {
+  const content = { price: true, variant: false, extra: false };
+
+  it('reads millimetres with one decimal at most, in either digits', () => {
+    expect(parseMm('32.5')).toBe(32.5);
+    expect(parseMm(' 45 ')).toBe(45);
+    expect(parseMm('32,5')).toBe(32.5);
+    expect(parseMm('৩২.৫')).toBe(32.5);
+    expect(parseMm('32.55')).toBeNull();
+    expect(parseMm('-30')).toBeNull();
+    expect(parseMm('')).toBeNull();
+    expect(parseMm('3e1')).toBeNull();
+    expect(parseMm('1000')).toBeNull();
+  });
+
+  it('accepts a size the server prints', () => {
+    expect(customSizeProblems('45', '35', content)).toEqual([]);
+    expect(customSizeProblems('32.5', '20', content)).toEqual([]);
+    expect(customSizeProblems('110', '100', content)).toEqual([]);
+    expect(customSizeProblems('29.3', '15', content)).toEqual([]);
+  });
+
+  it('says which box is wrong: not a number, or out of range', () => {
+    expect(customSizeProblems('abc', '20', content)).toEqual([{ kind: 'number', field: 'width' }]);
+    expect(customSizeProblems('40', '20.25', content)).toEqual([
+      { kind: 'number', field: 'height' },
+    ]);
+    expect(customSizeProblems('24.9', '100.1', content)).toEqual([
+      { kind: 'range', field: 'width' },
+      { kind: 'range', field: 'height' },
+    ]);
+    expect(customSizeProblems('111', '14', content)).toEqual([
+      { kind: 'range', field: 'width' },
+      { kind: 'range', field: 'height' },
+    ]);
+  });
+
+  it('refuses a size in range that cannot hold a scannable barcode, with the least that can', () => {
+    expect(customSizeProblems('25', '20', content)).toEqual([
+      { kind: 'too-narrow', field: 'width', minMm: 29.3 },
+    ]);
+    expect(customSizeProblems('29.2', '40', content)).toEqual([
+      { kind: 'too-narrow', field: 'width', minMm: 29.3 },
+    ]);
+  });
+
+  it('agrees with the range on every size a person can type', () => {
+    const next = generator(650);
+    for (let run = 0; run < 500; run += 1) {
+      const width = next(200, 1200) / 10;
+      const height = next(100, 1100) / 10;
+      const problems = customSizeProblems(String(width), String(height), content);
+      const inRange = width >= 25 && width <= 110 && height >= 15 && height <= 100;
+      if (!inRange) expect(problems.some((problem) => problem.kind === 'range')).toBe(true);
+      else if (width < 29.25)
+        expect(problems).toEqual([{ kind: 'too-narrow', field: 'width', minMm: 29.3 }]);
+      else expect(problems).toEqual([]);
+    }
+  });
+
+  it('splits an item into the name and the variant for the preview', () => {
+    expect(splitItemLabel('Linen Panjabi · M / White')).toEqual({
+      name: 'Linen Panjabi',
+      variant: 'M / White',
+    });
+    expect(splitItemLabel('Tote bag')).toEqual({ name: 'Tote bag', variant: '' });
   });
 });
 

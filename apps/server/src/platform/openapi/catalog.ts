@@ -143,6 +143,23 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     summary: "Remove a person's second factor, so they enrol again at next sign-in.",
     body: named('CredentialReset', credentialResetSchema, 'CredentialResetInput'),
   },
+  'POST /v1/users/:id/trust': {
+    operationId: 'voteUserTrust',
+    summary: 'Vouch for an admin: two thirds of the independent admins make them trusted.',
+  },
+  'DELETE /v1/users/:id/trust': {
+    operationId: 'withdrawUserTrust',
+    summary: 'Withdraw your trust vote for an admin.',
+  },
+  'POST /v1/users/:id/super-admin': {
+    operationId: 'voteSuperAdmin',
+    summary:
+      'Say yes to making an admin a super admin: at once while there is one super admin, else when all have.',
+  },
+  'DELETE /v1/users/:id/super-admin': {
+    operationId: 'withdrawSuperAdminNomination',
+    summary: 'Withdraw a pending super admin nomination.',
+  },
 
   'GET /v1/approvals': {
     operationId: 'listApprovals',

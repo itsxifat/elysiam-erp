@@ -362,6 +362,7 @@ Once enrolled, the second factor is enforced by the plugin itself: sign-in retur
 - **Password links come only from an admin** (D-402). There is no email adapter (D-212), so `POST /v1/users/:id/password-link` hands the admin a one-time link, minted in the action's own transaction, to pass on: an invite sent again for someone who never set a password (72 hours), or a reset (1 hour) that voids the old password and ends every session at once. A new link voids earlier ones, redeeming one ends sessions again, and the token rides in the URL fragment (`/accept-invite#token=…`, `/reset-password#token=…`), which no browser sends to a server. Better Auth's public `/request-password-reset` path and the phone-number plugin's reset pair are disabled. An admin may ask for 20 resets an hour and a person may be reset 5 times a day, per brand, counted from `iam.credential_resets`.
 - **A lost phone** (D-403): `POST /v1/users/:id/two-factor/reset` removes the enrolled factor, ends sessions and forgets remembered devices; the next sign-in meets the enrolment wall again if the role needs one.
 - **A reset of anyone whose account can move money needs a second admin** (D-404): anyone who holds or ever held a role that can raise or decide an approval, or the investor role (`SECOND_ADMIN_RESET_ROLES`). It is raised as a `credential_reset` approval in the same transaction as the reset, decided by another org admin who is neither the requester, the person being reset, nor in the requester's grant lineage; an approved password reset is collected by the admin who asked, within 24 hours. A super admin acts alone. **Only a super admin resets someone who also works in another brand** (D-405), because a password opens every brand they belong to. Whoever is handed a link joins the person's grant lineage here (D-406), which keeps every granter (`iam.membership_granters`, D-410), so the person can never approve that admin's requests. Every action takes a per-person lock and decides on facts read in its own transaction.
+- **Trust votes set the lineage aside for approvals, never for resets** (D-654 to D-656). Admins vouch for an admin on the Staff screen (`iam.trust_votes`, insert and delete only). A person trusted by two thirds of the independent admins, and by at least two, may decide a request from someone in their grant lineage; nobody ever decides their own. Independent means neither invited the other and they share no inviter but a super admin, over every granter ever recorded, with two-step sign-in on. Counted live by `trustGraph` (`@elysium/domain/iam`) inside the decision, under the candidate's trust lock; a `credential_reset` approval keeps the lineage rule whatever the votes.
 
 **Rate limits are per identifier as well as per IP (D-056).** Both buckets are counted on the credential endpoints and either can reject. Per-IP alone is close to useless against a botnet — credential stuffing gets the full allowance per address — and actively harmful in Bangladesh, where most mobile traffic shares a handful of carrier NAT addresses, so one attacker would lock out a whole network. The per-identifier bucket makes attacking one account expensive however many addresses the attacker has; the per-IP bucket stops one address walking a list of accounts. The store is in memory per process until M04 moves it to Valkey.
 
@@ -726,12 +727,20 @@ D-635 to D-646. The selling side lives in the catalog, purchase cost in supply a
   `COST_FIELDS`. The catalog's own price importer still refuses any cost column.
 - **Margin** is worked out in the browser from the WAC (or the last buying price) the supply
   route sends a cost role and the selling price everyone sees; no route sends a margin.
-- **Duplicate** (D-641): `POST /v1/catalog/products/:id/duplicate { name, slug? }` copies the
+- **Parent SKU** (D-661): a product's SKU codes without the variant segments (`ELY-HAWA-0020`,
+  `parentSkuCode`), on product responses and list rows as `parentSku` (read back from its codes,
+  `productParentSku`). Every new product's slug is it in lower case (`ely-hawa-0020`), whatever
+  the request sends; names may repeat.
+- **Duplicate** (D-641, D-662): `POST /v1/catalog/products/:id/duplicate { name?, copies? }`
+  makes 1 to 50 copies in one transaction, on consecutive sequences;
+  `POST /v1/catalog/products/duplicate { productIds, copies }` (D-663) does it for up to 100
+  products in the order given, all or nothing, at most 200 new products. Each copy has the
   category, description, weight, website fields (off the website), size chart, photos with
   their colours, and every active variant with its price and regular price, coded under the
   copy's own sequence in the source's segment order with new barcodes. No stock, cost, orders,
   history or old addresses. The copy is a draft. A variant with an archived size, colour or list
-  is left out (M39a's D-624), and a product in an archived category is not copied (D-623).
+  is left out (M39a's D-624), and a product in an archived category is not copied (D-623); the
+  bulk route also refuses an archived product.
 - **Weights** (D-645): `products.weight_grams` and an optional `skus.weight_grams`; a courier
   booking declares Σ qty × weight (`parcelWeightGrams`, through `CatalogApi.skuWeights`) or the
   courier's default when any line has none.
@@ -751,7 +760,7 @@ D-635 to D-646. The selling side lives in the catalog, purchase cost in supply a
 
 - **Barcodes** (D-603): every SKU is created with an internal EAN-13 — `2` (GS1's in-store prefix), an eleven-digit per-brand sequence from `catalog.sku_settings.last_barcode_sequence` (one upsert, never read then written), the check digit — unless a supplier's barcode is given. Pure arithmetic in `@elysium/domain/barcode` (`internalEan13`, `isValidEan13`, `ean13Svg`); `catalog.internal_ean13()` repeats it in SQL for the backfill. A typed barcode in the internal range is refused.
 - **Lookup** (D-609): `GET /v1/catalog/lookup?code=` resolves a barcode or a SKU code to the product, the variant, the selling price and (with `read Stock`) where its pieces are; no cost without `read:cost`.
-- **Stickers** (D-604): `POST /v1/catalog/labels` with a `medium` — thermal rolls `38x25`, `40x30`, `50x25` mm (one sticker per PDF page, the page the sticker's size, no margin) or A4 sheets `3x8` and `4x10` with a start position — at most 1,000 a PDF. Each carries the brand's short name (from its org row), the product name, the variant, the price on request, the EAN-13 with its digits and the SKU code; bars are whole modules sized in thermal dots. Offered with one sticker per piece wherever pieces arrive.
+- **Stickers** (D-604, D-650 to D-652): `POST /v1/catalog/labels` with a `medium` — thermal rolls `38x25`, `40x30`, `45x35`, `50x25` mm or `custom` with `widthMm` × `heightMm` (25–110 × 15–100 mm, one decimal; one sticker per PDF page, the page the sticker's size, no margin) or A4 sheets `3x8` and `4x10` with a start position — at most 1,000 a PDF, and an optional `extraLine` (40 characters) on every sticker. Each carries the brand's short name (from its org row), the product name, the variant, the price on request, the EAN-13 with its digits and the SKU code. Where each goes is `stickerLayout` in `@elysium/domain/barcode`, one rule for every size that the PDF and the console's preview both draw from: bars are whole modules sized in 203 dpi dots (never under 0.25 mm or 5 mm tall), lines give way least important first, and a size that cannot hold a scannable barcode is refused. Offered with one sticker per piece wherever pieces arrive.
 - **Scanning** (D-605, D-606): the console tells a scanner from typing (≥ 8 characters, ≤ 35 ms apart, ended by Enter, not inside a text box); a scan opens the product at its variant, or, on a stock screen, adds the line or one more piece. A count is counted by scanning (`POST /v1/inventory/counts/:id/scans`, one piece per scan, idempotent per scan); a typed correction over a counted figure carries a note. "Scan with camera" uses the browser's `BarcodeDetector` where there is one.
 
 ### Deleting and archiving (M39a)
@@ -798,8 +807,9 @@ used it), and the answer says what uses it. Branches and ledger accounts are nev
 - **Products and SKUs** (D-625): deleted only when no stock movement, level holding stock,
   stock document, order line, till line, supply line, courier return line, flash sale item,
   live discount, live campaign or lead names any of its SKUs; its values, images, price
-  history, empty stock rows and old ids go with it. Otherwise archive (D-423). A new product
-  whose address an archived one holds takes the next free `-2`, `-3` (D-626).
+  history, empty stock rows and old ids go with it. Otherwise archive (D-423). A new product's
+  address is its parent SKU in lower case (D-661); one another product holds takes the
+  product's number after it (`freeProductSlug`, D-626, D-653).
 - **Locations** (D-629), **suppliers** (D-630), **discounts and flash sales** (D-631), **SMS
   templates and ad campaigns** (D-632): deleted when never used; otherwise switched off or
   archived (a discount comes back paused; a flash sale gains `archived_at`). **Size charts and

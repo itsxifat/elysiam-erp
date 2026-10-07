@@ -242,7 +242,7 @@ test('a receipt prints through the print stylesheet: 80 mm, Bangla, and nothing 
 
   // Customer-facing, so Bangla by default (D-036), digits included.
   await expect(receipt).toContainText('ক্যাশ মেমো');
-  await expect(receipt).toContainText('Elysium Lifestyle BD');
+  await expect(receipt).toContainText('Elysiam Lifestyle BD');
   await expect(receipt.getByTestId('receipt-total')).toHaveText('৳১,৫০০.০০');
   await expect(receipt.getByTestId('receipt-no')).toHaveText('GUL1-1-0001');
 

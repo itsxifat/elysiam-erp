@@ -19,7 +19,7 @@ import {
  * M25 acceptance check 1 in a browser: **an investor sees only their own data.**
  *
  * Against the real stack (D-313): a database whose money was posted through the real API,
- * the built API, and the portal. Two investors hold a stake in Elysium Lifestyle BD; one of
+ * the built API, and the portal. Two investors hold a stake in Elysiam Lifestyle BD; one of
  * them, alpha, also holds one in Oura Lifestyle. Each signs in, is walled until they enrol a
  * second factor (§6, §15), and then sees their own position, withdrawals, statement and
  * documents — and, asserted on the page and against the API from inside the same session,
@@ -174,8 +174,8 @@ test('an investor sees nothing until a second factor is enrolled', async ({ brow
   await expect(alpha.getByRole('heading', { name: 'Rahima Akhtar' })).toBeVisible();
 });
 
-test('alpha sees their own Elysium position and none of beta’s', async () => {
-  await openBrand(alpha, 'Elysium Lifestyle BD');
+test('alpha sees their own Elysiam position and none of beta’s', async () => {
+  await openBrand(alpha, 'Elysiam Lifestyle BD');
   const { elysium } = stack().brands;
 
   await expect(alpha.getByText('INV-A', { exact: true })).toBeVisible();
@@ -282,7 +282,7 @@ test('alpha’s other brand shows only that brand’s stake', async () => {
   await expect(tile(alpha, 'Capital held')).toContainText('৳3,00,000.00');
   await expect(section(alpha, 'Documents')).toContainText('Investment agreement INV-O1');
   await expect(section(alpha, 'Withdrawals')).toContainText('No withdrawal requests');
-  // Elysium's figures belong to Elysium (D-311).
+  // Elysiam's figures belong to Elysiam (D-311).
   await expectNoneOf(alpha, ['INV-A', '৳12,00,000.00', '৳25,000.00', ...BETA_ONLY]);
   await shot(alpha, 'dashboard-oura-light');
 
@@ -293,7 +293,7 @@ test('alpha’s other brand shows only that brand’s stake', async () => {
   await noBlockingViolations(alpha, 'dashboard (bn)');
   await shot(alpha, 'dashboard-oura-bn');
   await inEnglish(alpha);
-  await openBrand(alpha, 'Elysium Lifestyle BD');
+  await openBrand(alpha, 'Elysiam Lifestyle BD');
 });
 
 test('a returning investor signs in with the code from their authenticator app', async () => {

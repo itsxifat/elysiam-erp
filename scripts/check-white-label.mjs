@@ -10,7 +10,7 @@
  * (`apps/{console,pos,portal}/dist`: scripts, styles, pages, manifests) — and the shared
  * locale files, and fails on any of the brand names or the product's old name:
  *
- *   elysium (anywhere, any case, and its Bangla spellings), oura, orvo, wear x / wearx,
+ *   elysium and elysiam (anywhere, any case, and the Bangla spellings), oura, orvo, wear x / wearx,
  *   beownz (as words)
  *
  * It also fails on a source map in a dist: a map carries the original source, package
@@ -71,6 +71,8 @@ const SCANNED = new Set([
  */
 export const BANNED = [
   { name: 'elysium', pattern: /elysium/gi },
+  // The brand's own spelling (the owner, 2026-10-07): Elysiam.
+  { name: 'elysiam', pattern: /elysiam/gi },
   // The Bangla catalogue once spelled it out; both spellings it used.
   { name: 'elysium (bn)', pattern: /এলি[সজ]িয়াম/g },
   { name: 'oura', pattern: /\boura\b/gi },

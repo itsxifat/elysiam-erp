@@ -581,8 +581,8 @@ describe('§22’s invoice and packing slip', () => {
    * owns; the bytes are Chromium's business and are asserted separately when it is up.
    */
   const brand = {
-    displayName: 'Elysium Lifestyle BD',
-    legalName: 'Elysium Lifestyle BD Limited',
+    displayName: 'Elysiam Lifestyle BD',
+    legalName: 'Elysiam Lifestyle BD Limited',
     address: 'বাড়ি ১২, সড়ক ৫, ধানমন্ডি, ঢাকা ১২০৫',
     vatNo: '004512345678',
     invoiceFooter: 'পণ্য বদলাতে চাইলে ডেলিভারির ৭ দিনের মধ্যে যোগাযোগ করুন।',

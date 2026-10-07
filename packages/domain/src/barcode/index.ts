@@ -37,12 +37,15 @@ export {
 } from './scan.js';
 
 export {
+  CUSTOM_STICKER_MEDIUM,
   MAX_STICKERS_PER_PDF,
   STICKER_MEDIA,
   STICKER_MEDIA_IDS,
   StickerLayoutError,
+  customStickerMedium,
   fitStickerText,
   isStickerMedium,
+  stickerLayoutFor,
   stickerPageSize,
   stickerPages,
   stickerParts,
@@ -50,5 +53,28 @@ export {
   type RollMedium,
   type SheetMedium,
   type StickerMedium,
+  type StickerMediumChoice,
   type StickerMediumSpec,
 } from './stickers.js';
+
+export {
+  EAN13_DIGIT_BAND_MODULES,
+  MIN_STICKER_BAR_MM,
+  MIN_STICKER_MODULE_MM,
+  MIN_STICKER_WIDTH_MM,
+  PT_TO_MM,
+  ROLL_MODULES_MM,
+  STICKER_DROP_ORDER,
+  STICKER_EDGE_MM,
+  THERMAL_DOT_MM,
+  stickerLayout,
+  stickerTypeScale,
+  type StickerContent,
+  type StickerDroppableLine,
+  type StickerLayout,
+  type StickerLayoutOptions,
+  type StickerLayoutRefusal,
+  type StickerRow,
+  type StickerRowKind,
+  type StickerTypeScale,
+} from './sticker-layout.js';

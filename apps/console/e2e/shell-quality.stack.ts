@@ -19,7 +19,7 @@ import { enrolSecondFactor, signIn, stack, user } from './stack/helpers.js';
  *   passing the two-factor enrolment wall, which this test clears exactly as a person
  *   would: read the setup key off the screen, compute the code, confirm. Switching
  *   organisation changes the navigation, the Overview's brand and role tiles, and the
- *   data: Elysium's product is in its catalog and absent from Oura's.
+ *   data: Elysiam's product is in its catalog and absent from Oura's.
  * - **Check 2**: table filters live in the URL and survive a reload.
  * - **Check 6**: axe finds no serious or critical violation on the login, the shell, a
  *   data table and a form, in both themes.
@@ -133,15 +133,15 @@ test('check 1: the navigation follows the matrix, per role and per organisation'
     await expect(orgButton).toContainText(name);
   }
 
-  await switchTo('Elysium Lifestyle BD');
+  await switchTo('Elysiam Lifestyle BD');
   await switcher.goto('/');
-  expect(await tile(switcher, 'Active brand')).toBe('Elysium Lifestyle BD');
+  expect(await tile(switcher, 'Active brand')).toBe('Elysiam Lifestyle BD');
   expect(await tile(switcher, 'Your roles')).toContain('sales');
   const elysiumNav = await navLabels(switcher);
   expect(elysiumNav).toContain('Customers');
 
   // The data follows the brand too, not only the menu: the product provisioned in
-  // Elysium is in Elysium's catalog and nowhere in Oura's, read by the same person
+  // Elysiam is in Elysiam's catalog and nowhere in Oura's, read by the same person
   // with the same `read Catalog` grant in both (RLS, not the client, decides).
   const slug = (stack().skuCodes[0] ?? '').split('-')[1]?.toLowerCase() ?? '';
   const product = `Product ${slug}`;

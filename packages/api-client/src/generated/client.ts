@@ -1214,6 +1214,11 @@ export const OPERATIONS = {
     path: '/v1/catalog/products/{id}/variants',
     ability: 'update:Catalog',
   },
+  postV1CatalogProductsDuplicate: {
+    method: 'POST',
+    path: '/v1/catalog/products/duplicate',
+    ability: 'create:Catalog',
+  },
   postV1CourierAccounts: {
     method: 'POST',
     path: '/v1/courier/accounts',
@@ -1893,6 +1898,14 @@ export const OPERATIONS = {
     path: '/v1/users/{id}/password-link',
     ability: 'update:User',
   },
+  voteSuperAdmin: { method: 'POST', path: '/v1/users/{id}/super-admin', ability: 'update:User' },
+  voteUserTrust: { method: 'POST', path: '/v1/users/{id}/trust', ability: 'update:User' },
+  withdrawSuperAdminNomination: {
+    method: 'DELETE',
+    path: '/v1/users/{id}/super-admin',
+    ability: 'update:User',
+  },
+  withdrawUserTrust: { method: 'DELETE', path: '/v1/users/{id}/trust', ability: 'update:User' },
 } as const;
 
 export type OperationName = keyof typeof OPERATIONS;
@@ -3287,6 +3300,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogProductsByIdVariants, input, options),
+    /** POST /v1/catalog/products/duplicate */
+    postV1CatalogProductsDuplicate: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogProductsDuplicate, undefined, options),
     /** POST /v1/courier/accounts */
     postV1CourierAccounts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CourierAccounts, undefined, options),
@@ -4027,6 +4043,27 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.userPasswordLink, input, options),
+    /** Say yes to making an admin a super admin: at once while there is one super admin, else when all have. */
+    voteSuperAdmin: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.voteSuperAdmin, input, options),
+    /** Vouch for an admin: two thirds of the independent admins make them trusted. */
+    voteUserTrust: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.voteUserTrust, input, options),
+    /** Withdraw a pending super admin nomination. */
+    withdrawSuperAdminNomination: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.withdrawSuperAdminNomination, input, options),
+    /** Withdraw your trust vote for an admin. */
+    withdrawUserTrust: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.withdrawUserTrust, input, options),
   };
 }
 

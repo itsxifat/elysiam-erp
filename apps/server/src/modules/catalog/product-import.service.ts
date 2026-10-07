@@ -3,9 +3,7 @@ import { withOrg, type Tx } from '@elysium/db';
 import {
   CsvError,
   parseCsv,
-  productSlug,
   reviewProductImport,
-  uniqueSlug,
   type ImportProblem,
   type KnownAxis,
   type ProductImportReport,
@@ -58,7 +56,6 @@ interface Known {
   readonly sizes: KnownAxis | null;
   readonly colours: KnownAxis | null;
   readonly names: readonly string[];
-  readonly slugs: readonly string[];
 }
 
 @Injectable()
@@ -91,15 +88,11 @@ export class ProductImportService {
         throw new CatalogError('CATALOG_IMPORT_REJECTED', verdict.reason);
       }
 
-      const taken = new Set(known.slugs);
       const created: { id: string; name: string; skuCount: number }[] = [];
       for (const row of report.rows) {
+        // Its web address is its parent SKU in lower case (D-661), as every new product's.
         const product = await this.catalog.createProductIn(tx, context, {
           name: row.name,
-          slug: uniqueSlug(
-            productSlug(row.name, `${String(row.line)}-${Date.now().toString(36)}`),
-            taken,
-          ),
           categoryId: row.categoryId,
           description: row.description ?? undefined,
           status: row.status,
@@ -152,7 +145,6 @@ export class ProductImportService {
       sizes: axisOf('size'),
       colours: axisOf('colour'),
       names: existing.map((row) => row.name),
-      slugs: existing.map((row) => row.slug),
     };
   }
 }

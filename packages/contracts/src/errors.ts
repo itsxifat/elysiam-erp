@@ -63,7 +63,10 @@ export const ERROR_CODES = [
    * its own SKUs from (`2` and twelve digits), typed by hand.
    */
   'CATALOG_BARCODE_INVALID',
-  /** A sticker request the layout cannot print: too many, or a position off the sheet. */
+  /**
+   * A sticker request the layout cannot print: too many, a position off the sheet, or a
+   * custom size too small to hold a barcode a scanner reads (D-650).
+   */
   'CATALOG_LABELS_INVALID',
   /**
    * Variants that cannot be archived together because stock is held for orders (M39b,
@@ -519,6 +522,18 @@ export const ERROR_CODES = [
   'CREDENTIAL_RESET_PENDING',
   /** There is nothing to reset: no second factor is enrolled. */
   'CREDENTIAL_NOTHING_TO_RESET',
+  /**
+   * A trust vote that would not count (D-656): the voter is not an admin with two-step
+   * sign-in, or is in the person's invitation chain, or shares an inviter with them.
+   */
+  'TRUST_VOTE_REFUSED',
+  /** Only an active admin of the brand, not a super admin, is vouched for (D-654). */
+  'TRUST_NOT_CANDIDATE',
+  /**
+   * Only an active admin of the brand who is not a super admin or an owner can be made a
+   * super admin (D-659); or there is no nomination for them to withdraw.
+   */
+  'SUPER_ADMIN_NOT_CANDIDATE',
   /**
    * Sent by sign-in itself (Better Auth's error body), not by a route here: the account
    * is disabled, or holds no active role in any brand (D-401).

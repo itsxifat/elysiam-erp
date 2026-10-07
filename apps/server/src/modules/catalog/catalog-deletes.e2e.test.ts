@@ -122,6 +122,8 @@ async function list(
 interface Product {
   readonly id: string;
   readonly slug: string;
+  /** The parent SKU (D-661); a new product's slug is it in lower case. */
+  readonly parentSku: string | null;
   readonly skus: readonly { readonly id: string; readonly skuCode: string }[];
 }
 
@@ -1087,23 +1089,36 @@ describe('products and variants (D-625, D-626)', () => {
     });
   });
 
-  it('gives a new product the next free address when an archived one holds it (D-626)', async () => {
-    const old = await product('Black Panjabi', { slug: `black-panjabi-${token(4).toLowerCase()}` });
+  it('gives every new product its parent SKU as its address, so names may repeat (D-653, D-661)', async () => {
+    const old = await product('Black Panjabi');
+    expect(old.slug).toBe(old.parentSku?.toLowerCase());
     await ok(admin, 'PATCH', `/v1/catalog/products/${old.id}`, { status: 'archived' });
+    // The address the request names is not used: a new product's is its own parent SKU.
     const again = await ok<Product>(admin, 'POST', '/v1/catalog/products', {
       name: 'Black Panjabi',
       slug: old.slug,
       pricePoisha: '150000',
     });
-    expect(again.slug).toBe(`${old.slug}-2`);
-    // A live product's address is still refused: two live products with one name is a question.
-    const duplicate = await call<{ code: string }>(admin, 'POST', '/v1/catalog/products', {
+    expect(again.slug).toBe(again.parentSku?.toLowerCase());
+    expect(again.slug).not.toBe(old.slug);
+    // The same name beside a live one is normal (one cut, many designs): its own number.
+    const sameName = await ok<Product>(admin, 'POST', '/v1/catalog/products', {
       name: 'Black Panjabi',
-      slug: again.slug,
       pricePoisha: '150000',
     });
-    expect(duplicate.status).toBe(409);
-    expect(duplicate.body.code).toBe('CATALOG_DUPLICATE');
+    expect(sameName.slug).toBe(sameName.parentSku?.toLowerCase());
+    expect(sameName.slug).not.toBe(again.slug);
+
+    // An address another product was given by hand that equals the next parent SKU still gives
+    // way: the new product takes its own number after it (`freeProductSlug`, the guard).
+    const squatter = await product('Squatter');
+    const parts = (squatter.parentSku ?? '').split('-');
+    const taken = String(Number(parts.at(-1)) + 1).padStart(4, '0');
+    const squatted = [...parts.slice(0, -1), taken].join('-').toLowerCase();
+    await ok(admin, 'PATCH', `/v1/catalog/products/${squatter.id}`, { slug: squatted });
+    const guarded = await product('Black Panjabi');
+    expect(guarded.parentSku?.toLowerCase()).toBe(squatted);
+    expect(guarded.slug).toBe(`${squatted}-${taken}`);
   });
 
   it('keeps the code prefix a product already has when it gains a variant after moving category (D-623)', async () => {

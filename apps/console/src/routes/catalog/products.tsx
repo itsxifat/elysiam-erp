@@ -57,12 +57,15 @@ import {
   listProducts,
   type CatalogProductListItem,
 } from './api.js';
+import { copiesProblem, parseCopies, type CopiesProblem } from './duplicate-copies.js';
 import { useCatalogT } from './messages.js';
 import {
   bulkProducts,
   bulkProductsWeb,
   duplicateProduct,
+  duplicateProducts,
   productStockTotals,
+  type ProductCopy,
 } from './pricing-api.js';
 import { StickerDialog, type StickerItem } from './stickers.js';
 import { variantLabel } from './variant-table.js';
@@ -89,7 +92,9 @@ import { variantLabel } from './variant-table.js';
  * M39b (D-642): a photo, the stock on hand (for a role that may read stock), whether the
  * website shows it and the price range on every row; a menu per row (open, duplicate, show or
  * hide on the website, archive or restore); and, for rows ticked on this page, the same
- * changes in bulk plus "move to category", "set size chart" and "print stickers". The
+ * changes in bulk plus "move to category", "set size chart", "print stickers" and, since D-663,
+ * "duplicate" (copies of each, numbered in the order of the list). Each row shows its parent
+ * SKU (D-661). The
  * selection is the page's own and is never taken from the address, so a shared link cannot
  * arrive with forty products chosen. Delete (M39a's routes, D-623) opens the shared
  * Delete-or-archive dialog: a product nothing uses is deleted, anything else archived.
@@ -117,6 +122,7 @@ export function CatalogProductsPage() {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [duplicating, setDuplicating] = useState<CatalogProductListItem | null>(null);
+  const [duplicatingMany, setDuplicatingMany] = useState(false);
   const [managing, setManaging] = useState<CatalogProductListItem | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [stickers, setStickers] = useState<readonly StickerItem[] | null>(null);
@@ -292,6 +298,14 @@ export function CatalogProductsPage() {
           >
             {cell.getValue()}
           </Link>
+        ),
+      }),
+      column.accessor('parentSku', {
+        header: t('cp.parentSku'),
+        cell: (cell) => (
+          <span className="font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+            {cell.getValue() ?? '—'}
+          </span>
         ),
       }),
       column.accessor('categoryName', {
@@ -606,6 +620,12 @@ export function CatalogProductsPage() {
                 </Button>
               </>
             ) : null}
+            {mayWrite ? (
+              <Button size="sm" variant="outline" onClick={() => setDuplicatingMany(true)}>
+                <Copy aria-hidden="true" />
+                {t('cp.dup.action')}
+              </Button>
+            ) : null}
             {mayDelete ? (
               <Button size="sm" variant="outline" onClick={() => setConfirmingDelete(true)}>
                 <Trash2 aria-hidden="true" />
@@ -750,6 +770,16 @@ export function CatalogProductsPage() {
             onDone={() => done(t('cp.list.done'))}
           />
         )}
+        {duplicatingMany && chosen.length > 0 ? (
+          <BulkDuplicate
+            productIds={chosen}
+            onClose={() => setDuplicatingMany(false)}
+            onMade={(products) => {
+              setDuplicatingMany(false);
+              done(madeMessage(t('cp.dup.made'), products));
+            }}
+          />
+        ) : null}
         {duplicating === null ? null : (
           <DuplicateFromList
             product={duplicating}
@@ -792,7 +822,119 @@ function ListThumb({ fileId, alt }: { readonly fileId: string | null; readonly a
   );
 }
 
-/** Duplicate from the list (D-641): the name, then the copy opens. */
+/** "{n} new products: ELY-HAWA-0021 to ELY-HAWA-0024." */
+function madeMessage(template: string, products: readonly ProductCopy[]): string {
+  return template
+    .replace('{n}', String(products.length))
+    .replace('{first}', products[0]?.parentSku ?? '')
+    .replace('{last}', products.at(-1)?.parentSku ?? '');
+}
+
+/** The copies field and what is wrong with it, shared by both duplicate dialogs (D-662). */
+function CopiesField({
+  id,
+  label,
+  value,
+  problem,
+  onChange,
+}: {
+  readonly id: string;
+  readonly label: string;
+  readonly value: string;
+  readonly problem: CopiesProblem | null;
+  readonly onChange: (value: string) => void;
+}) {
+  const t = useT();
+  return (
+    <div className="space-y-2">
+      <label htmlFor={id} className="text-sm font-medium">
+        {label}
+      </label>
+      <input
+        id={id}
+        value={value}
+        inputMode="numeric"
+        maxLength={3}
+        aria-invalid={problem !== null}
+        aria-describedby={`${id}-hint`}
+        onChange={(event) => onChange(event.target.value)}
+        className={cn(controlClassName, 'w-24 tabular-nums')}
+      />
+      <p id={`${id}-hint`} className="text-xs text-muted-foreground">
+        {t('cp.dup.copiesHint')}
+      </p>
+      {problem === null ? null : (
+        <p role="alert" className="text-sm text-destructive">
+          {problem === 'tooMany' ? t('cp.dup.tooMany') : t('cp.dup.copiesRange')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Duplicate the ticked products (D-663): copies of each under its own name, numbered in the
+ * order of the list. All or nothing on the server: an archived product refuses the lot.
+ */
+function BulkDuplicate({
+  productIds,
+  onClose,
+  onMade,
+}: {
+  readonly productIds: readonly string[];
+  readonly onClose: () => void;
+  readonly onMade: (products: readonly ProductCopy[]) => void;
+}) {
+  const t = useT();
+  const [copies, setCopies] = useState('1');
+  const problem = copiesProblem(copies, productIds.length);
+  const make = useMutation({
+    mutationFn: () => duplicateProducts({ productIds, copies: parseCopies(copies) ?? 1 }),
+    onSuccess: (result) => onMade(result.products),
+  });
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={t('cp.dup.bulkTitle').replace('{n}', String(productIds.length))}
+      description={t('cp.dup.bulkHelp')}
+      closeLabel={t('cp.close')}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            {t('cp.cancel')}
+          </Button>
+          <Button
+            data-testid="bulk-duplicate-submit"
+            disabled={problem !== null || make.isPending}
+            onClick={() => make.mutate()}
+          >
+            {t('cp.dup.submit')}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-2">
+        <CopiesField
+          id="bulk-duplicate-copies"
+          label={t('cp.dup.copiesOfEach')}
+          value={copies}
+          problem={problem}
+          onChange={setCopies}
+        />
+        {make.error !== null ? (
+          <p role="alert" className="text-sm text-destructive">
+            {make.error instanceof ApiError ? make.error.message : t('cp.saveFailed')}
+          </p>
+        ) : null}
+      </div>
+    </Dialog>
+  );
+}
+
+/** Duplicate from the list (D-641): the name and how many copies, then the first copy opens. */
 function DuplicateFromList({
   product,
   onClose,
@@ -804,8 +946,11 @@ function DuplicateFromList({
 }) {
   const t = useT();
   const [name, setName] = useState(`${product.name} ${t('cp.dup.copySuffix')}`.slice(0, 200));
+  const [copies, setCopies] = useState('1');
+  const problem = copiesProblem(copies, 1);
   const make = useMutation({
-    mutationFn: () => duplicateProduct(product.id, { name: name.trim() }),
+    mutationFn: () =>
+      duplicateProduct(product.id, { name: name.trim(), copies: parseCopies(copies) ?? 1 }),
     onSuccess: (copy) => onMade(copy.id),
   });
   return (
@@ -822,7 +967,10 @@ function DuplicateFromList({
           <Button variant="outline" onClick={onClose}>
             {t('cp.cancel')}
           </Button>
-          <Button disabled={name.trim() === '' || make.isPending} onClick={() => make.mutate()}>
+          <Button
+            disabled={name.trim() === '' || problem !== null || make.isPending}
+            onClick={() => make.mutate()}
+          >
             {t('cp.dup.submit')}
           </Button>
         </>
@@ -838,6 +986,13 @@ function DuplicateFromList({
           maxLength={200}
           onChange={(event) => setName(event.target.value)}
           className={cn(controlClassName, 'w-full')}
+        />
+        <CopiesField
+          id="duplicate-copies"
+          label={t('cp.dup.copies')}
+          value={copies}
+          problem={problem}
+          onChange={setCopies}
         />
         {make.error !== null ? (
           <p role="alert" className="text-sm text-destructive">

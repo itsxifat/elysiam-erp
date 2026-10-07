@@ -52,6 +52,12 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/users/:id/deactivate',
   'POST /v1/users/:id/password-link',
   'POST /v1/users/:id/two-factor/reset',
+  // D-654 to D-656: the admins' trust votes.
+  'POST /v1/users/:id/trust',
+  'DELETE /v1/users/:id/trust',
+  // D-659: super admins making super admins.
+  'POST /v1/users/:id/super-admin',
+  'DELETE /v1/users/:id/super-admin',
   'GET /v1/catalog/categories',
   'POST /v1/catalog/categories',
   'PATCH /v1/catalog/categories/:id',
@@ -81,6 +87,8 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   // M39b (D-636 to D-645).
   'GET /v1/catalog/products/:id/price-history',
   'POST /v1/catalog/products/:id/duplicate',
+  // Many products, several copies each (D-663).
+  'POST /v1/catalog/products/duplicate',
   'PATCH /v1/catalog/products',
   'PUT /v1/catalog/products/:id/images/:imageId/colour',
   'PUT /v1/catalog/skus/:id/weight',

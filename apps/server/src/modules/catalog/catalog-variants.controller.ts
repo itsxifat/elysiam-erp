@@ -16,6 +16,7 @@ import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { mapCatalogErrors } from './catalog.errors.js';
 import {
+  bulkDuplicateSchema,
   bulkProductsSchema,
   catalogIdSchema,
   duplicateProductSchema,
@@ -51,7 +52,10 @@ export class CatalogVariantsController {
     );
   }
 
-  /** A copy of a product with its variants and prices, no stock (D-641). */
+  /**
+   * Copies of a product with its variants and prices, no stock (D-641): `copies` of them, 1 to
+   * 50, numbered one after another (D-662).
+   */
   @RequireAbility('create', 'Catalog')
   @Post('products/:id/duplicate')
   async duplicate(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
@@ -60,6 +64,17 @@ export class CatalogVariantsController {
     return mapCatalogErrors(() =>
       this.variants.duplicateProduct(requireContext(request), productId, input),
     );
+  }
+
+  /**
+   * Copies of many products from the product list (D-663), in the order given. A duplicate is
+   * new products, so `create Catalog`, as one product's duplicate.
+   */
+  @RequireAbility('create', 'Catalog')
+  @Post('products/duplicate')
+  async duplicateMany(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(bulkDuplicateSchema, body);
+    return mapCatalogErrors(() => this.variants.duplicateProducts(requireContext(request), input));
   }
 
   /** Archive, restore or re-file many products from the product list (D-642). */

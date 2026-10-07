@@ -5,19 +5,32 @@ import { fileURLToPath } from 'node:url';
 import {
   STICKER_MEDIA,
   STICKER_MEDIA_IDS,
+  StickerLayoutError,
+  customStickerMedium,
   internalEan13,
   stickerPageSize,
-  type StickerMedium,
+  type StickerMediumSpec,
 } from '@elysium/domain';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import type { ActiveContext } from '../../platform/http/context.js';
 import { GotenbergClient } from '../files/pdf/gotenberg.client.js';
 import { fontFaceCss, loadFonts } from '../files/pdf/fonts.js';
-import { formatTakaLabel, renderStickersHtml, type StickerData } from './labels.service.js';
+import type { CatalogApi } from './catalog.api.js';
+import { CatalogError } from './catalog.errors.js';
+import { labelSheetSchema } from './catalog.schemas.js';
+import {
+  LabelsService,
+  formatTakaLabel,
+  mediumOf,
+  renderStickersHtml,
+  type StickerData,
+} from './labels.service.js';
 
 /**
- * Stickers (M38a, D-604; acceptance check 3): the layout, and the PDF's exact page size for
- * every medium, rendered by the real Gotenberg.
+ * Stickers (M38a, D-604; acceptance check 3; 45 × 35, the custom size and the extra line,
+ * D-650 and D-651): the layout, and the PDF's exact page size for every medium and a custom
+ * size, rendered by the real Gotenberg.
  *
  * The page size is read back from the PDF itself: every `/MediaBox` is the page in points
  * (1/72 inch). A roll's page must be the sticker's size, because the printer driver feeds one
@@ -108,6 +121,120 @@ describe('sticker layout', () => {
   });
 });
 
+describe('the custom size and the extra line (D-650, D-651)', () => {
+  const custom = (widthMm: number, heightMm: number) => ({
+    items: [{ skuId: '00000000-0000-4000-8000-000000000001', copies: 1 }],
+    medium: 'custom',
+    widthMm,
+    heightMm,
+  });
+
+  it('takes a custom size in range, to one decimal, and only with the custom medium', () => {
+    const parsed = labelSheetSchema.safeParse(custom(32.5, 20));
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      const medium = mediumOf(parsed.data);
+      expect(medium).toMatchObject({ kind: 'roll', labelWidthMm: 32.5, labelHeightMm: 20 });
+      expect(stickerPageSize(medium)).toEqual({ widthMm: 32.5, heightMm: 20 });
+    }
+    expect(labelSheetSchema.safeParse(custom(110, 100)).success).toBe(true);
+    expect(labelSheetSchema.safeParse({ ...custom(25, 15), medium: 'thermal-45x35' }).success).toBe(
+      false,
+    );
+    expect(
+      labelSheetSchema.safeParse({ items: custom(1, 1).items, medium: 'thermal-45x35' }).success,
+    ).toBe(true);
+  });
+
+  it('refuses a size out of range, with two decimals, or missing, and a long extra line', () => {
+    for (const [width, height] of [
+      [24.9, 20],
+      [110.1, 20],
+      [40, 14.9],
+      [40, 100.5],
+      [32.55, 20],
+      [Number.NaN, 20],
+    ] as const) {
+      const parsed = labelSheetSchema.safeParse(custom(width, height));
+      expect(parsed.success, `${String(width)} x ${String(height)}`).toBe(false);
+    }
+    const { heightMm: _height, ...noHeight } = custom(40, 30);
+    expect(labelSheetSchema.safeParse(noHeight).success).toBe(false);
+    expect(
+      labelSheetSchema.safeParse({ ...custom(40, 30), extraLine: 'x'.repeat(41) }).success,
+    ).toBe(false);
+    expect(
+      labelSheetSchema.safeParse({ ...custom(40, 30), extraLine: 'Made in\nBangladesh' }).success,
+    ).toBe(false);
+    expect(
+      labelSheetSchema.safeParse({ ...custom(40, 30), extraLine: 'Made in Bangladesh' }).success,
+    ).toBe(true);
+  });
+
+  it('refuses a size in range that cannot hold a scannable barcode, with a typed error', async () => {
+    // 27 mm is in range but under the 29.25 mm a 0.25 mm EAN-13 needs with its quiet zones.
+    expect(() =>
+      renderStickersHtml({
+        stickers: [sticker(0)],
+        medium: customStickerMedium(27, 20),
+        startAt: 1,
+        fontCss: '',
+      }),
+    ).toThrow(StickerLayoutError);
+
+    // The service refuses before it reads anything: no database, no renderer needed.
+    const untouched = new Proxy(
+      {},
+      {
+        get: () => {
+          throw new Error('nothing should be read for a size that cannot print');
+        },
+      },
+    );
+    const service = new LabelsService(untouched as GotenbergClient, untouched as CatalogApi);
+    const input = labelSheetSchema.parse({ ...custom(27, 20), showPrice: true });
+    const refused = await service
+      .sheetPdf({ orgId: 'org', userId: 'user' } as unknown as ActiveContext, input)
+      .catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(CatalogError);
+    expect((refused as CatalogError).code).toBe('CATALOG_LABELS_INVALID');
+    expect((refused as CatalogError).message).toMatch(/at least 29\.3 mm wide/);
+  });
+
+  it('prints the extra line on every sticker, escaped, and gives it up first when short of room', () => {
+    const roomy = renderStickersHtml({
+      stickers: [sticker(0), sticker(1)],
+      medium: STICKER_MEDIA['thermal-45x35'],
+      startAt: 1,
+      fontCss: '',
+      extraLine: '  Made in <Bangladesh>  ',
+    });
+    expect([...roomy.matchAll(/class="row extra"/g)]).toHaveLength(2);
+    expect(roomy).toContain('Made in &lt;Bangladesh&gt;');
+    expect(roomy).toContain('@page { size: 45mm 35mm; margin: 0; }');
+
+    const tight = renderStickersHtml({
+      stickers: [sticker(0)],
+      medium: customStickerMedium(32.5, 20),
+      startAt: 1,
+      fontCss: '',
+      extraLine: 'SS26',
+    });
+    expect(tight).not.toContain('class="row extra"');
+    expect(tight).toContain(`aria-label="${internalEan13(1)}"`);
+    expect(tight).toContain('৳2,450');
+
+    const blank = renderStickersHtml({
+      stickers: [sticker(0)],
+      medium: STICKER_MEDIA['thermal-38x25'],
+      startAt: 1,
+      fontCss: '',
+      extraLine: '   ',
+    });
+    expect(blank).not.toContain('class="row extra"');
+  });
+});
+
 describe('sticker PDFs have the exact page size for every medium (check 3)', () => {
   const client = new GotenbergClient(process.env.GOTENBERG_URL ?? 'http://localhost:3030');
   let ready = false;
@@ -116,15 +243,20 @@ describe('sticker PDFs have the exact page size for every medium (check 3)', () 
     ready = await client.isReady();
   });
 
-  async function render(medium: StickerMedium, count: number, startAt = 1) {
+  async function render(
+    spec: StickerMediumSpec,
+    count: number,
+    startAt = 1,
+    extraLine: string | null = null,
+  ) {
     const fonts = await loadFonts(process.env.PDF_FONT_DIR);
-    const spec = STICKER_MEDIA[medium];
     const page = stickerPageSize(spec);
     const html = renderStickersHtml({
       stickers: Array.from({ length: count }, (_, index) => sticker(index)),
       medium: spec,
       startAt,
       fontCss: fontFaceCss(fonts),
+      extraLine,
     });
     const assets = fonts.map((font) => ({
       filename: font.filename,
@@ -152,7 +284,7 @@ describe('sticker PDFs have the exact page size for every medium (check 3)', () 
       }
       const spec = STICKER_MEDIA[medium];
       const count = spec.kind === 'roll' ? 5 : 45;
-      const { pdf, page } = await render(medium, count);
+      const { pdf, page } = await render(spec, count);
       expect(Buffer.from(pdf.subarray(0, 5)).toString('latin1')).toBe('%PDF-');
 
       const expectedPages =
@@ -178,8 +310,25 @@ describe('sticker PDFs have the exact page size for every medium (check 3)', () 
       return;
     }
     // 30 used + 12 new = 42 slots: two A4 pages of 40.
-    const { pdf } = await render('a4-4x10', 12, 31);
+    const { pdf } = await render(STICKER_MEDIA['a4-4x10'], 12, 31);
     expect(pageCount(pdf)).toBe(2);
+  }, 60_000);
+
+  it('renders a custom 32.5 × 20 mm sticker at exactly that size, one a page (D-650)', async (context) => {
+    if (!ready) {
+      context.skip();
+      return;
+    }
+    const { pdf } = await render(customStickerMedium(32.5, 20), 4, 1, 'Made in Bangladesh');
+    expect(Buffer.from(pdf.subarray(0, 5)).toString('latin1')).toBe('%PDF-');
+    expect(pageCount(pdf)).toBe(4);
+    const boxes = mediaBoxes(pdf);
+    expect(boxes.length).toBeGreaterThanOrEqual(1);
+    for (const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] of boxes) {
+      // 32.5 × 20 mm is 92.13 × 56.69 pt; within a point, as for the fixed rolls (D-604).
+      expect(Math.abs(x1 - x0 - 32.5 * MM_TO_PT)).toBeLessThan(1);
+      expect(Math.abs(y1 - y0 - 20 * MM_TO_PT)).toBeLessThan(1);
+    }
   }, 60_000);
 
   it('writes review images of a roll sticker and an A4 sheet', async (context) => {
@@ -188,14 +337,26 @@ describe('sticker PDFs have the exact page size for every medium (check 3)', () 
       return;
     }
     mkdirSync(REVIEW_DIR, { recursive: true });
-    for (const [medium, count, width, height, name] of [
-      ['thermal-38x25', 1, 144, 95, 'sticker-thermal-38x25.png'],
-      ['thermal-50x25', 1, 189, 95, 'sticker-thermal-50x25.png'],
-      ['a4-3x8', 8, 794, 1123, 'sticker-sheet-a4-3x8.png'],
-    ] as const) {
-      const { html, assets } = await render(medium, count);
+    const shots: [StickerMediumSpec, number, number, number, string, string | null][] = [
+      [STICKER_MEDIA['thermal-38x25'], 1, 144, 95, 'sticker-thermal-38x25.png', null],
+      [STICKER_MEDIA['thermal-50x25'], 1, 189, 95, 'sticker-thermal-50x25.png', null],
+      // 45 × 35 mm (D-650) with an extra line (D-651): 170 × 132 CSS pixels.
+      [
+        STICKER_MEDIA['thermal-45x35'],
+        1,
+        170,
+        132,
+        'sticker-thermal-45x35.png',
+        'Made in Bangladesh',
+      ],
+      // A custom 32.5 × 20 mm sticker: 123 × 76 CSS pixels.
+      [customStickerMedium(32.5, 20), 1, 123, 76, 'sticker-custom-32x20.png', null],
+      [STICKER_MEDIA['a4-3x8'], 8, 794, 1123, 'sticker-sheet-a4-3x8.png', null],
+    ];
+    for (const [spec, count, width, height, name, extraLine] of shots) {
+      const { html, assets } = await render(spec, count, 1, extraLine);
       // 3× the CSS pixels for a roll, so the bars are legible in the review image.
-      const scale = medium.startsWith('thermal') ? 3 : 1;
+      const scale = spec.kind === 'roll' ? 3 : 1;
       const png = await client.screenshotPng({
         html: html.replace('<body>', `<body style="zoom:${String(scale)}">`),
         assets,

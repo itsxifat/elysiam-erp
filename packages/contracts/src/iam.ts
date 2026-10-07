@@ -68,6 +68,12 @@ export const createUserSchema = z
     name: z.string().trim().min(1).max(200),
     role: membershipRoleSchema,
     branchIds: z.array(z.string().uuid()).default([]),
+    /**
+     * Invite them as a super admin too (D-659): a super admin's to ask, for an admin. With at
+     * most one super admin in the brand they are one at once; otherwise the invite is the
+     * first yes, and the rest of the super admins vote on the Staff screen.
+     */
+    superAdmin: z.boolean().default(false),
   })
   /*
    * A branch manager must be given branches.
@@ -94,6 +100,13 @@ export const createUserSchema = z
         code: 'custom',
         path: ['branchIds'],
         message: 'A branch manager needs at least one branch. Empty means the whole organization.',
+      });
+    }
+    if (value.superAdmin && value.role !== 'org_admin') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['role'],
+        message: 'A super admin is invited as an admin.',
       });
     }
   });

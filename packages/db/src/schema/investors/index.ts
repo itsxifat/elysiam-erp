@@ -126,7 +126,7 @@ export const investorDocumentKind = investorsSchema.enum('investor_document_kind
  * Per-org by construction, not by a flag: each brand is an isolated org (§5), so
  * the same person backing two brands is two rows, and neither org can see the
  * other's. That is the intent — an investor in Oura has no business knowing what
- * Elysium raised.
+ * Elysiam raised.
  *
  * `user_id` is the login that may read this investor's own rows. It is plain text
  * with no foreign key, like `created_by` everywhere else: `iam.users` is global

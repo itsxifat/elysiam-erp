@@ -29,6 +29,7 @@ describe('findHits', () => {
   it('finds the product name anywhere, in any case, and in Bangla', () => {
     expect(findHits('var a=`ELYSIUM-theme`', 'x').map((hit) => hit.name)).toEqual(['elysium']);
     expect(findHits('"x-elysium-csrf"', 'x')).toHaveLength(1);
+    expect(findHits('Elysiam Lifestyle', 'x').map((hit) => hit.name)).toEqual(['elysiam']);
     expect(findHits("'এলিসিয়াম কনসোল'", 'x').map((hit) => hit.name)).toEqual(['elysium (bn)']);
   });
 

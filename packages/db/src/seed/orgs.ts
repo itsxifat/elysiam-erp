@@ -55,8 +55,8 @@ export interface SeedOrg {
 export const SEED_ORGS: readonly SeedOrg[] = [
   {
     slug: 'elysium-lifestyle-bd',
-    legalName: 'Elysium Lifestyle BD',
-    displayName: 'Elysium Lifestyle BD',
+    legalName: 'Elysiam Lifestyle BD',
+    displayName: 'Elysiam Lifestyle BD',
     brandHue: 259,
     brandChroma: 0.17,
   },
