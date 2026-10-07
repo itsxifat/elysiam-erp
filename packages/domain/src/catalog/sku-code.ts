@@ -127,6 +127,69 @@ export function isSkuCode(value: string): boolean {
 }
 
 /**
+ * A product's parent SKU (D-661): its SKU codes without the variant segments, the org code,
+ * the category code (none for an uncategorised product) and the zero-padded sequence:
+ * `ELY-HAWA-0020`, whose variants are `ELY-HAWA-0020-M`, `ELY-HAWA-0020-L`. It names the
+ * product, so two products may share a name; the sequence is unique per brand, so the parent
+ * SKU is too.
+ */
+export function parentSkuCode(parts: {
+  readonly orgCode: string;
+  readonly categoryCode?: string | undefined;
+  readonly sequence: number;
+}): string {
+  return buildSkuCode({ ...parts, variantCodes: [] });
+}
+
+/**
+ * A new product's web address (D-661): its parent SKU in lower case (`ely-hawa-0020`). The
+ * catalog's slug shape by construction: a SKU code is A-Z, 0-9 and single dashes.
+ */
+export function parentSkuSlug(parentSku: string): string {
+  return parentSku.toLowerCase();
+}
+
+/**
+ * An existing product's parent SKU (D-661), as the product page and the list show it.
+ *
+ * Read back from one of its SKU codes when one was built by this system (`skuCodePrefix`): a
+ * product keeps the prefix its labels carry when it moves category (D-623). A product with no
+ * SKU yet (a draft) takes the prefix it would get now. A product whose codes were imported as
+ * they were (M14a's opening data) has none: `null`, never a made-up one its labels disagree with.
+ */
+export function productParentSku(input: {
+  readonly sequence: number;
+  /** The product's SKU codes, in any order; empty for a product with none. */
+  readonly skuCodes: readonly string[];
+  /** The brand's org code now, for a product with no SKU yet. */
+  readonly orgCode: string | undefined;
+  /** The product's category code now, for a product with no SKU yet. */
+  readonly categoryCode: string | undefined;
+}): string | null {
+  try {
+    for (const code of input.skuCodes) {
+      const prefix = skuCodePrefix(code, input.sequence);
+      if (prefix !== undefined) {
+        return parentSkuCode({
+          orgCode: prefix.orgCode,
+          categoryCode: prefix.categoryCode,
+          sequence: input.sequence,
+        });
+      }
+    }
+    if (input.skuCodes.length > 0 || input.orgCode === undefined) return null;
+    return parentSkuCode({
+      orgCode: input.orgCode,
+      categoryCode: input.categoryCode,
+      sequence: input.sequence,
+    });
+  } catch (error) {
+    if (error instanceof SkuCodeError) return null;
+    throw error;
+  }
+}
+
+/**
  * The organization and category segments a product's SKU codes already carry (M39a, D-623).
  *
  * A product keeps its codes when it moves to another category (they are printed), so a

@@ -92,6 +92,15 @@ In **Sizes and colours** on the product page:
 
 ## Copy a product, and the product list
 
+- Every product has a **parent SKU**, shown at the top of its page and in the list: the SKU
+  without the size, like `ELY-HAWA-0020` (its sizes are `ELY-HAWA-0020-M`, `ELY-HAWA-0020-L`).
+  Its web address is the same in small letters (`ely-hawa-0020`), made for you, so two products
+  may share a name.
+- **Duplicate** asks how many **copies** (1 to 50). Each copy gets the next number by itself:
+  copies of `ELY-HAWA-0020` become `ELY-HAWA-0021`, `-0022`, `-0023`, with their sizes'
+  SKUs following. To copy many products, tick them in the list and press **Duplicate**: each is
+  copied under its own name, in the list's order (at most 200 new products at once; an archived
+  product cannot be copied this way).
 - **Duplicate** (product page, or the row menu on the list) makes a copy under a new name with the
   same category, description, sizes, colours, prices, photos and website details. It has no
   stock and starts as a draft, off the website. Variants with an archived size or colour are left

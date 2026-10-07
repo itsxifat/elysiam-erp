@@ -9,7 +9,10 @@ import {
   compareAtProblem,
   matrixPlan,
   newVariantPrice,
+  parentSkuCode,
+  parentSkuSlug,
   poisha,
+  productParentSku,
   variantCombinations,
   variantOverrides,
   variantPriceEntries,
@@ -80,6 +83,11 @@ export interface ProductView {
   readonly name: string;
   readonly slug: string;
   readonly sequence: number;
+  /**
+   * The parent SKU (D-661): its SKU codes without the size and colour, `ELY-HAWA-0020`. Null
+   * only for a product whose codes were imported as they were (`productParentSku`).
+   */
+  readonly parentSku: string | null;
   readonly categoryId: string | null;
   readonly description: string | null;
   readonly status: string;
@@ -142,6 +150,8 @@ export interface ProductListItem {
   readonly name: string;
   readonly slug: string;
   readonly sequence: number;
+  /** The parent SKU (D-661), as on the product page; a list column. */
+  readonly parentSku: string | null;
   readonly status: string;
   readonly categoryId: string | null;
   readonly categoryName: string | null;
@@ -334,6 +344,10 @@ export class CatalogService {
    * The new-product form and the spreadsheet importer (D-425) both come through here,
    * so an imported product gets its sequence, its SKU codes and its variant prices
    * exactly as a typed one does — and a file of forty products is one transaction.
+   *
+   * Its web address is its parent SKU in lower case (D-661), whatever the request sends:
+   * `ely-hawa-0020` for `ELY-HAWA-0020`. Unique by construction, since the sequence is;
+   * `freeProductSlug` stays as the guard for an address an older product was given by hand.
    */
   async createProductIn(
     tx: Tx,
@@ -351,14 +365,14 @@ export class CatalogService {
     if (input.categoryId != null && category === undefined) throw notFound('category');
     await assertCategoryLive(tx, context.orgId, category);
     const categoryCode = category?.code;
+    const parentSku = parentSkuCode({ orgCode, categoryCode, sequence });
 
     const product = await repo.insertProduct(tx, context.orgId, {
       categoryId: input.categoryId ?? null,
       sequence,
+      // Names may repeat (D-653): the parent SKU and the address are what tell products apart.
       name: input.name,
-      // Names may repeat; an address already held takes this product's number
-      // (`…-0042`), so it never fails on a shared name (D-626, D-653).
-      slug: await freeProductSlug(tx, context.orgId, input.slug, sequence),
+      slug: await freeProductSlug(tx, context.orgId, parentSkuSlug(parentSku), sequence),
       description: input.description ?? null,
       status: input.status,
       createdBy: context.userId,
@@ -651,11 +665,18 @@ export class CatalogService {
       });
 
       const page = rows.slice(0, query.limit);
+      const orgCode = (await repo.skuSettings(tx, context.orgId))?.orgCode;
       const items: ProductListItem[] = page.map((row) => ({
         id: row.id,
         name: row.name,
         slug: row.slug,
         sequence: row.sequence,
+        parentSku: productParentSku({
+          sequence: row.sequence,
+          skuCodes: row.first_sku_code === null ? [] : [row.first_sku_code],
+          orgCode,
+          categoryCode: row.category_code ?? undefined,
+        }),
         status: row.status,
         categoryId: row.category_id,
         categoryName: row.category_name,
@@ -1053,6 +1074,12 @@ export class CatalogService {
       name: product.name,
       slug: product.slug,
       sequence: product.sequence,
+      parentSku: await this.parentSkuOf(
+        tx,
+        orgId,
+        product,
+        skus.map((sku) => sku.code),
+      ),
       categoryId: product.category_id,
       description: product.description,
       status: product.status,
@@ -1099,6 +1126,38 @@ export class CatalogService {
         previousSlugs: webRow?.previous_slugs ?? [],
       },
     };
+  }
+
+  /**
+   * A product's parent SKU (D-661): read from its codes, or, for a product with no SKU yet,
+   * from the brand's org code and the product's category now.
+   */
+  async parentSkuOf(
+    tx: Tx,
+    orgId: string,
+    product: Pick<repo.ProductRow, 'sequence' | 'category_id'>,
+    skuCodes: readonly string[],
+  ): Promise<string | null> {
+    if (skuCodes.length > 0) {
+      return productParentSku({
+        sequence: product.sequence,
+        skuCodes,
+        orgCode: undefined,
+        categoryCode: undefined,
+      });
+    }
+    const [settings, category] = await Promise.all([
+      repo.skuSettings(tx, orgId),
+      product.category_id === null
+        ? Promise.resolve(undefined)
+        : repo.categoryById(tx, orgId, product.category_id),
+    ]);
+    return productParentSku({
+      sequence: product.sequence,
+      skuCodes: [],
+      orgCode: settings?.orgCode,
+      categoryCode: category?.code,
+    });
   }
 }
 

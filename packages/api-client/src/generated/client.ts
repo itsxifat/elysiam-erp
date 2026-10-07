@@ -1214,6 +1214,11 @@ export const OPERATIONS = {
     path: '/v1/catalog/products/{id}/variants',
     ability: 'update:Catalog',
   },
+  postV1CatalogProductsDuplicate: {
+    method: 'POST',
+    path: '/v1/catalog/products/duplicate',
+    ability: 'create:Catalog',
+  },
   postV1CourierAccounts: {
     method: 'POST',
     path: '/v1/courier/accounts',
@@ -3289,6 +3294,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CatalogProductsByIdVariants, input, options),
+    /** POST /v1/catalog/products/duplicate */
+    postV1CatalogProductsDuplicate: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CatalogProductsDuplicate, undefined, options),
     /** POST /v1/courier/accounts */
     postV1CourierAccounts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CourierAccounts, undefined, options),

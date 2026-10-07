@@ -14,6 +14,9 @@
 export {
   buildSkuCode,
   isSkuCode,
+  parentSkuCode,
+  parentSkuSlug,
+  productParentSku,
   skuCodePrefix,
   skuSegment,
   SkuCodeError,

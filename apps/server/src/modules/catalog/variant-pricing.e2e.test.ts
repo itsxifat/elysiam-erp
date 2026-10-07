@@ -62,6 +62,8 @@ interface Product {
   readonly name: string;
   readonly slug: string;
   readonly sequence: number;
+  /** The parent SKU (D-661): the SKU codes without size and colour. */
+  readonly parentSku: string | null;
   readonly status: string;
   readonly categoryId: string | null;
   readonly weightGrams: number | null;
@@ -99,6 +101,25 @@ async function status(
   const parsed =
     response.body === '' ? undefined : (JSON.parse(response.body) as { code?: string });
   return { statusCode: response.statusCode, code: parsed?.code, body: response.body };
+}
+
+/** One product a duplicate made (D-662, D-663). */
+interface Copy {
+  readonly id: string;
+  readonly sourceId: string;
+  readonly name: string;
+  readonly parentSku: string;
+  readonly slug: string;
+}
+
+/** `ELY-SHT-0021` without its number: `ELY-SHT`. */
+function withoutNumber(parentSku: string | null): string {
+  return (parentSku ?? '').split('-').slice(0, -1).join('-');
+}
+
+/** The number at the end of a parent SKU: 21 for `ELY-SHT-0021`. */
+function numberOf(parentSku: string | undefined): number {
+  return Number((parentSku ?? '').split('-').at(-1));
 }
 
 function skuOf(product: Product, ...labels: string[]): Sku {
@@ -643,7 +664,12 @@ describe('duplicate a product (M39 check 6, D-641)', () => {
     );
     expect(copy.id).not.toBe(source.id);
     expect(copy.status).toBe('draft');
-    expect(copy.slug).toBe(`linen-${suffix}-sand`);
+    // Its own parent SKU, the source's with the copy's number, and its address is that in lower
+    // case (D-661).
+    expect(copy.parentSku).toBe(
+      `${withoutNumber(source.parentSku)}-${String(copy.sequence).padStart(4, '0')}`,
+    );
+    expect(copy.slug).toBe(copy.parentSku?.toLowerCase());
     expect(copy.categoryId).toBe(source.categoryId);
     expect(copy.weightGrams).toBe(350);
     expect(copy.web.webVisible).toBe(false);
@@ -658,6 +684,7 @@ describe('duplicate a product (M39 check 6, D-641)', () => {
       // Same segment order, the copy's own sequence.
       expect(sku.skuCode.split('-').slice(-2)).toEqual(original.skuCode.split('-').slice(-2));
       expect(sku.skuCode).toContain(String(copy.sequence).padStart(4, '0'));
+      expect(sku.skuCode.startsWith(`${copy.parentSku ?? '?'}-`)).toBe(true);
     }
     const stock = await call<{ items: { onHand: number }[] }>(
       admin,
@@ -668,7 +695,8 @@ describe('duplicate a product (M39 check 6, D-641)', () => {
     );
     expect(stock.items.reduce((sum, row) => sum + row.onHand, 0)).toBe(0);
 
-    // A second copy with the same name takes the next free address.
+    // A second copy with the same name is a product of its own: the next number, its own
+    // address (names may repeat, D-653, D-661).
     const again = await call<Product>(
       admin,
       'POST',
@@ -676,7 +704,10 @@ describe('duplicate a product (M39 check 6, D-641)', () => {
       { name: `Linen ${suffix} (sand)` },
       201,
     );
-    expect(again.slug).toBe(`linen-${suffix}-sand-2`);
+    expect(again.name).toBe(copy.name);
+    expect(again.sequence).toBe(copy.sequence + 1);
+    expect(again.slug).toBe(again.parentSku?.toLowerCase());
+    expect(again.slug).not.toBe(copy.slug);
 
     // Only a role that may create products; another brand's product is not found.
     expect(
@@ -687,6 +718,130 @@ describe('duplicate a product (M39 check 6, D-641)', () => {
       (await status(adminB, 'POST', `/v1/catalog/products/${source.id}/duplicate`, { name: 'X' }))
         .statusCode,
     ).toBe(404);
+  });
+
+  it('makes three copies numbered one after another, and copies many from the list in order (D-662, D-663)', async () => {
+    const source = await shirtBySize(`Hawaii ${suffix}`, `hawaii-${suffix}`);
+    // A new product's address is its parent SKU in lower case, whatever was sent (D-661).
+    expect(source.slug).toBe(source.parentSku?.toLowerCase());
+    expect(source.slug).not.toBe(`hawaii-${suffix}`);
+    const prefix = withoutNumber(source.parentSku);
+
+    const made = await call<Product & { copies: readonly Copy[] }>(
+      admin,
+      'POST',
+      `/v1/catalog/products/${source.id}/duplicate`,
+      { copies: 3 },
+      201,
+    );
+    expect(made.copies).toHaveLength(3);
+    // The first copy answers as the product page reads it.
+    expect(made.id).toBe(made.copies[0]?.id);
+    const first = numberOf(made.copies[0]?.parentSku);
+    expect(first).toBeGreaterThan(source.sequence);
+    for (const [index, copy] of made.copies.entries()) {
+      // ELY-SHT-0021, ELY-SHT-0022, ELY-SHT-0023: only the number changes.
+      expect(copy.parentSku).toBe(`${prefix}-${String(first + index).padStart(4, '0')}`);
+      expect(copy.slug).toBe(copy.parentSku.toLowerCase());
+      expect(copy.sourceId).toBe(source.id);
+      // The same name unless one is given.
+      expect(copy.name).toBe(source.name);
+      const product = await call<Product>(
+        admin,
+        'GET',
+        `/v1/catalog/products/${copy.id}`,
+        undefined,
+        200,
+      );
+      expect(product.parentSku).toBe(copy.parentSku);
+      expect(product.status).toBe('draft');
+      expect(product.skus).toHaveLength(source.skus.length);
+      for (const sku of product.skus) {
+        const original = skuOf(source, ...sku.attributes.map((pair) => pair.valueLabel));
+        // The variants follow: the source's code with the copy's parent SKU in front.
+        expect(sku.skuCode).toBe(
+          `${copy.parentSku}${original.skuCode.slice((source.parentSku ?? '').length)}`,
+        );
+        expect(sku.pricePoisha).toBe(original.pricePoisha);
+      }
+    }
+
+    // From the list: two copies of each, in the order the products were given.
+    const other = await shirtBySize(`Kurta ${suffix}`, `kurta-${suffix}`);
+    const bulk = await call<{ products: readonly Copy[] }>(
+      admin,
+      'POST',
+      '/v1/catalog/products/duplicate',
+      { productIds: [other.id, source.id], copies: 2 },
+      201,
+    );
+    expect(bulk.products.map((copy) => copy.sourceId)).toEqual([
+      other.id,
+      other.id,
+      source.id,
+      source.id,
+    ]);
+    expect(bulk.products.map((copy) => numberOf(copy.parentSku))).toEqual([
+      other.sequence + 1,
+      other.sequence + 2,
+      other.sequence + 3,
+      other.sequence + 4,
+    ]);
+    expect(bulk.products.map((copy) => copy.name)).toEqual([
+      other.name,
+      other.name,
+      source.name,
+      source.name,
+    ]);
+
+    // All or nothing: one archived product among them and no copy is made.
+    const count = async () =>
+      (
+        await call<{ items: unknown[] }>(
+          admin,
+          'GET',
+          `/v1/catalog/products?q=${encodeURIComponent(`hawaii ${suffix}`)}&limit=100`,
+          undefined,
+          200,
+        )
+      ).items.length;
+    const before = await count();
+    await call(
+      admin,
+      'PATCH',
+      '/v1/catalog/products',
+      { productIds: [other.id], status: 'archived' },
+      200,
+    );
+    const refused = await status(admin, 'POST', '/v1/catalog/products/duplicate', {
+      productIds: [source.id, other.id],
+      copies: 1,
+    });
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect(refused.code).toBe('CATALOG_VARIANT_INVALID');
+    expect(await count()).toBe(before);
+
+    // Only a role that may create products; another brand's product is not found; the limits.
+    expect(
+      (await status(sales, 'POST', '/v1/catalog/products/duplicate', { productIds: [source.id] }))
+        .statusCode,
+    ).toBe(403);
+    expect(
+      (await status(adminB, 'POST', '/v1/catalog/products/duplicate', { productIds: [source.id] }))
+        .statusCode,
+    ).toBe(404);
+    expect(
+      (await status(admin, 'POST', `/v1/catalog/products/${source.id}/duplicate`, { copies: 51 }))
+        .statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await status(admin, 'POST', '/v1/catalog/products/duplicate', {
+          productIds: [source.id],
+          copies: 0,
+        })
+      ).statusCode,
+    ).toBe(400);
   });
 
   it('leaves out a variant with an archived colour, and refuses an archived category (M39a)', async () => {
