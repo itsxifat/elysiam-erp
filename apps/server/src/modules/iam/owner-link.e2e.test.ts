@@ -294,10 +294,17 @@ describe('the session it opens', () => {
 });
 
 describe('an owner on the brand’s records', () => {
-  it('is not staff: absent from the list, and not to be acted on as staff', async () => {
+  it('is listed as an owner, nameless to staff, and not to be acted on as staff', async () => {
+    // Super admins show on the Staff list (D-658); an owner shows as "Owner", with no name
+    // or email to anyone who is not an owner.
     const list = await admin.client.request('GET', '/v1/users');
     expect(list.statusCode).toBe(200);
-    expect(list.body).not.toContain(ownerId);
+    const row = (
+      JSON.parse(list.body) as {
+        items: { userId: string; name: string; email: string; isOwner?: boolean }[];
+      }
+    ).items.find((item) => item.userId === ownerId);
+    expect(row).toMatchObject({ isOwner: true, name: '', email: '' });
     expect(list.body).not.toContain('owner.one@example.invalid');
     const link = await admin.client.request('POST', `/v1/users/${ownerId}/password-link`, {
       body: { reason: 'Trying to give the owner a password' },

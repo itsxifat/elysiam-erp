@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
-import { CLOSED_ORDER_STATUSES, SNAPSHOT_SUBTYPES } from '@elysium/mother-shared';
+import { CLOSED_ORDER_STATUSES, READ_ROLE, SNAPSHOT_SUBTYPES } from '@elysium/mother-shared';
 import postgres, { type Sql, type TransactionSql } from 'postgres';
 
 /**
@@ -90,9 +90,30 @@ export function connectBrand(url: string, options: BrandConnectionOptions): Sql 
   });
 }
 
-/** One read-only, consistent transaction. */
+/** Signed in as anything but the plain reporting role: refused as a sign-in failure. */
+export class WrongRoleError extends Error {
+  readonly code = 'WRONG_ROLE';
+  constructor() {
+    super('the brand connection is not the reporting role');
+  }
+}
+
+/**
+ * One read-only, consistent transaction, as `erp_analytics` and nothing stronger.
+ *
+ * The registry checks the connection string's user, but the server decides who the session
+ * is; a role that bypasses row security or is a superuser would read zero tenant rows (no
+ * org set) or everything, either way a misread, so it is refused before any read.
+ */
 export async function readOnly<T>(sql: Sql, work: (tx: TransactionSql) => Promise<T>): Promise<T> {
-  return (await sql.begin('isolation level repeatable read read only', work)) as T;
+  return (await sql.begin('isolation level repeatable read read only', async (tx) => {
+    const [role] = await tx<{ name: string; is_super: boolean; bypasses: boolean }[]>`
+      select r.rolname as name, r.rolsuper as is_super, r.rolbypassrls as bypasses
+      from pg_roles r where r.rolname = current_user
+    `;
+    if (role?.name !== READ_ROLE || role.is_super || role.bypasses) throw new WrongRoleError();
+    return work(tx);
+  })) as T;
 }
 
 // --- what the brand is ----------------------------------------------------------------
@@ -463,6 +484,7 @@ export function classifyBrandError(error: unknown): BrandErrorCode {
   const code = typeof record.code === 'string' ? record.code : '';
   const message = typeof record.message === 'string' ? record.message : '';
   if (code === 'SECRETS_KEY_INVALID') return 'secrets_key';
+  if (code === 'WRONG_ROLE') return 'auth_failed';
   if (code === '28P01' || code === '28000') return 'auth_failed';
   if (code === '3D000') return 'database_missing';
   if (code === '42501' || code === '42P01' || code === '3F000') return 'permission_denied';

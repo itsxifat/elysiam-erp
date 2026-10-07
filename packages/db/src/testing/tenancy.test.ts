@@ -768,6 +768,25 @@ describe('check 5: the guard — every tenant table is isolated', () => {
     expect(await findDefaultPrivileges()).toBe(0);
   });
 
+  it('would notice a column write grant to erp_analytics (D-483)', async () => {
+    // has_table_privilege ignores column grants, and the reporting role holds column grants.
+    await withSystem(async (tx) => {
+      await tx.execute(sql`grant update (status) on "sales"."orders" to "erp_analytics"`);
+    });
+    try {
+      const problems = await findPrivilegeProblems();
+      expect(problems).toContainEqual({
+        role: 'erp_analytics',
+        table: 'sales.orders',
+        privilege: 'UPDATE',
+      });
+    } finally {
+      await withSystem(async (tx) => {
+        await tx.execute(sql`revoke update (status) on "sales"."orders" from "erp_analytics"`);
+      });
+    }
+  });
+
   it('grants erp_analytics no read that nobody opted in to (D-049)', async () => {
     // The write check above was not enough, and the gap was real:
     // `globalTableSql` granted analytics SELECT unconditionally, so every

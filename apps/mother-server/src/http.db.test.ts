@@ -168,6 +168,28 @@ describe('the first owner and the second-factor wall (D-487)', () => {
     expect(signed.status).toBe(200);
   });
 
+  it('never trusts a device: the code is asked again in the same browser (D-487)', async () => {
+    const browser = new Browser(app);
+    const first = await browser.post('/api/auth/sign-in/email', {
+      email: owners.a.email,
+      password: PASSWORD,
+    });
+    expect((first.body as { twoFactorRedirect?: boolean }).twoFactorRedirect).toBe(true);
+    const { code } = await auth.api.generateTOTP({ body: { secret: owners.a.secret } });
+    const verified = await browser.post('/api/auth/two-factor/verify-totp', {
+      code,
+      trustDevice: true,
+    });
+    expect(verified.status).toBe(200);
+    expect((await browser.post('/api/auth/sign-out', {})).status).toBe(200);
+
+    const again = await browser.post('/api/auth/sign-in/email', {
+      email: owners.a.email,
+      password: PASSWORD,
+    });
+    expect((again.body as { twoFactorRedirect?: boolean }).twoFactorRedirect).toBe(true);
+  });
+
   it('refuses anyone signed out, and lets the health checks through', async () => {
     const stranger = new Browser(app);
     const answer = await stranger.get('/v1/overview?from=2026-10-01&to=2026-10-05');

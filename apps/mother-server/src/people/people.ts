@@ -25,6 +25,19 @@ async function lockPerson(tx: TransactionSql, userId: string): Promise<void> {
   await tx`select pg_advisory_xact_lock(hashtextextended(${`mother.person:${userId}`}, 0))`;
 }
 
+/**
+ * The acting owner, read again inside the change's transaction: one removed a moment ago
+ * must not finish a removal or a reset decision already on its way.
+ */
+async function assertActorActive(tx: TransactionSql, actor: Actor): Promise<void> {
+  const [row] = await tx<{ is_active: boolean }[]>`
+    select is_active from auth.users where id = ${actor.userId}
+  `;
+  if (row?.is_active !== true) {
+    throw new MotherError('UNAUTHENTICATED', 'This account is no longer active.');
+  }
+}
+
 /** One lock for "how many owners are left", taken by every removal. */
 async function lockOwners(tx: TransactionSql): Promise<void> {
   await tx`select pg_advisory_xact_lock(hashtextextended('mother.owners', 0))`;
@@ -178,6 +191,7 @@ export async function removePerson(userId: string, actor: Actor): Promise<void> 
   await inMother(async (tx) => {
     await lockOwners(tx);
     await lockPerson(tx, userId);
+    await assertActorActive(tx, actor);
     const [person] = await tx<{ is_active: boolean; email: string }[]>`
       select is_active, email from auth.users where id = ${userId}
     `;
@@ -320,6 +334,7 @@ export async function decideTwoFactorReset(
     `;
     if (found === undefined) throw new MotherError('NOT_FOUND', 'No such request.');
     await lockPerson(tx, found.target_user_id);
+    await assertActorActive(tx, actor);
     const [reset] = await tx<{ target_user_id: string; requested_by: string; status: string }[]>`
       select target_user_id, requested_by, status from mother.two_factor_resets
       where id = ${resetId} for update

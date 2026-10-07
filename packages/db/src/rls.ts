@@ -177,7 +177,7 @@ export const ANALYTICS_READABLE: readonly string[] = [
    */
   'analytics.daily_org',
   /*
-   * The owner's reporting reads (migration 0131, D-483). With one brand per database
+   * The owner's reporting reads (migrations 0131 and 0132, D-483). With one brand per database
    * (D-469) the owner's figures across brands are read from each brand's database through
    * this role, so the channel and campaign rollups open too. Counts and sums per day; no
    * buyer, no cost.
@@ -189,12 +189,13 @@ export const ANALYTICS_READABLE: readonly string[] = [
 ];
 
 /**
- * Tables `erp_analytics` may read some columns of, and exactly which (migration 0131, D-483).
+ * Tables `erp_analytics` may read some columns of, and exactly which (migrations 0131 and 0132, D-483).
  *
  * A column grant rather than the table, because each of these also holds a person's details
  * or a cost: the buyer's name, phone and address on an order, a line's dispatch cost, a staff
  * member's phone, national id and payout details. Only counts, statuses, codes, names the
- * brand gave things, selling prices and dates are here. The guard compares the database's
+ * brand gave things, staff members' names and designations, selling prices and dates are
+ * here. The guard compares the database's
  * column privileges with this list in both directions, so a column granted by accident, or
  * one listed and never granted, fails the build.
  */
@@ -209,10 +210,7 @@ export const ANALYTICS_READABLE_COLUMNS: Readonly<Record<string, readonly string
     'discount_poisha',
     'delivery_charge_poisha',
     'created_at',
-    'confirmed_at',
     'delivered_at',
-    'returned_at',
-    'cancelled_at',
   ],
   'sales.order_lines': [
     'org_id',
@@ -220,11 +218,7 @@ export const ANALYTICS_READABLE_COLUMNS: Readonly<Record<string, readonly string
     'sku_id',
     'sku_code',
     'product_name',
-    'qty',
-    'unit_price_poisha',
-    'discount_poisha',
     'delivered_qty',
-    'returned_qty',
   ],
   'sales.couriers': ['id', 'org_id', 'code', 'name'],
   'catalog.skus': ['id', 'org_id', 'product_id', 'code', 'status'],
@@ -239,17 +233,7 @@ export const ANALYTICS_READABLE_COLUMNS: Readonly<Record<string, readonly string
   ],
   'org.branches': ['id', 'org_id', 'code', 'name'],
   'org.locations': ['id', 'org_id', 'code', 'name'],
-  'hr.employees': [
-    'id',
-    'org_id',
-    'branch_id',
-    'code',
-    'full_name',
-    'designation',
-    'status',
-    'join_date',
-    'leave_date',
-  ],
+  'hr.employees': ['id', 'org_id', 'branch_id', 'code', 'full_name', 'designation', 'status'],
   'marketing.campaigns': ['id', 'org_id', 'name'],
 };
 

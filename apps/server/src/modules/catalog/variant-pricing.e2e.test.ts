@@ -1369,7 +1369,7 @@ describe('the website: regular prices and live flash prices (M39 check 7, D-640)
         }[];
         galleries: unknown[];
       };
-    }>(`/storefront/v1/catalog/products/regular-${suffix}`);
+    }>(`/storefront/v1/catalog/products/${regular.slug}`);
     expect(page.status, page.raw).toBe(200);
     expect(page.body.product.variants.every((v) => v.price.poisha === '149000')).toBe(true);
     expect(page.body.product.variants.every((v) => v.compareAt?.poisha === '189000')).toBe(true);
@@ -1386,7 +1386,7 @@ describe('the website: regular prices and live flash prices (M39 check 7, D-640)
         onSale: boolean;
         price: { min: { poisha: string } };
       };
-    }>(`/storefront/v1/catalog/products/flash-${suffix}`);
+    }>(`/storefront/v1/catalog/products/${flash.slug}`);
     expect(sale.status, sale.raw).toBe(200);
     const m = sale.body.product.variants.find((v) => v.skuId === skuOf(flash, 'M').id);
     const l = sale.body.product.variants.find((v) => v.skuId === skuOf(flash, 'L').id);

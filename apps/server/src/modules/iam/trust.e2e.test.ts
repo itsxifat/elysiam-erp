@@ -19,9 +19,10 @@ import {
  * The admins' trust votes against real Postgres (D-654 to D-656).
  *
  * The owner invited Riya; Riya invited Faisal and two puppets. Faisal can never approve
- * Riya's requests (the grant lineage, D-077, D-410). Nobody in that chain can vouch for him
- * — not the owner, not Riya, not the puppets who share Riya as inviter — so only Sam (a
- * second super admin) and Nadia (Sam's admin) are independent, and both are needed.
+ * Riya's requests (the grant lineage, D-077, D-410). No admin in that chain can vouch for him
+ * — not Riya, not the puppets who share Riya as inviter — so Nadia (Sam's admin) is the one
+ * independent admin, and one admin's vote is never enough. A super admin's vote counts for
+ * anyone and is enough on its own (D-657, the owner's decision of 2026-10-07).
  */
 
 let harness: HttpHarness;
@@ -157,7 +158,6 @@ describe('trust votes (D-654 to D-656)', () => {
       [puppet1.client, faisal.userId, 'You were both invited by the same person.'],
       [puppet2.client, faisal.userId, 'You were both invited by the same person.'],
       [riya.client, faisal.userId, 'You invited this person.'],
-      [owner.client, faisal.userId, 'You invited this person.'],
       [faisal.client, riya.userId, 'This person invited you.'],
     ];
     for (const [voter, candidate, reason] of cases) {
@@ -190,20 +190,19 @@ describe('trust votes (D-654 to D-656)', () => {
     });
   });
 
-  it('two independent votes trust Faisal; a withdrawal undoes it; he never approves his own', async () => {
+  it('one admin is not enough; a super admin vote is; a withdrawal undoes it; never his own', async () => {
     const first = await raise(riya.client);
-
-    const samVote = await vote(sam.client, faisal.userId);
-    expect(samVote.statusCode, samVote.body).toBe(201);
-    expect(json<{ trust: Trust }>(samVote).trust).toMatchObject({ votes: 1, trusted: false });
-    // One vote is never enough, whatever the count of voters (the quorum).
-    expect((await decide(faisal.client, first)).statusCode).toBe(403);
 
     const nadiaVote = await vote(nadia.client, faisal.userId);
     expect(nadiaVote.statusCode, nadiaVote.body).toBe(201);
-    expect(json<{ trust: Trust }>(nadiaVote).trust).toMatchObject({
+    expect(json<{ trust: Trust }>(nadiaVote).trust).toMatchObject({ votes: 1, trusted: false });
+    // One admin's vote is never enough, whatever the count of voters (the quorum).
+    expect((await decide(faisal.client, first)).statusCode).toBe(403);
+
+    const samVote = await vote(sam.client, faisal.userId);
+    expect(samVote.statusCode, samVote.body).toBe(201);
+    expect(json<{ trust: Trust }>(samVote).trust).toMatchObject({
       votes: 2,
-      needed: 2,
       trusted: true,
       votedByMe: true,
     });
@@ -213,20 +212,26 @@ describe('trust votes (D-654 to D-656)', () => {
     const audited = await auditRowsFor(ORG_A, faisal.userId);
     expect(audited.filter((row) => row.action === 'iam.trust_voted')).toHaveLength(2);
 
-    // Withdrawn: refused again at once.
+    // The super admin withdraws: refused again at once.
     const second = await raise(riya.client);
-    const withdrawn = await nadia.client.request('DELETE', `/v1/users/${faisal.userId}/trust`);
+    const withdrawn = await sam.client.request('DELETE', `/v1/users/${faisal.userId}/trust`);
     expect(withdrawn.statusCode, withdrawn.body).toBe(200);
     expect(json<{ trust: Trust }>(withdrawn).trust).toMatchObject({ votes: 1, trusted: false });
     expect((await decide(faisal.client, second)).statusCode).toBe(403);
-    const again = await nadia.client.request('DELETE', `/v1/users/${faisal.userId}/trust`);
+    const again = await sam.client.request('DELETE', `/v1/users/${faisal.userId}/trust`);
     expect(again.statusCode).toBe(409);
 
     // Trusted again, and still never the checker of his own request.
-    expect((await vote(nadia.client, faisal.userId)).statusCode).toBe(201);
+    expect((await vote(sam.client, faisal.userId)).statusCode).toBe(201);
     const own = await raise(faisal.client);
     const ownDecided = await decide(faisal.client, own);
     expect(ownDecided.statusCode).toBe(403);
     expect((await decide(faisal.client, second)).statusCode).toBe(201);
+  });
+
+  it('a super admin vouches for anyone, even someone they invited (D-657)', async () => {
+    const owned = await vote(owner.client, riya.userId);
+    expect(owned.statusCode, owned.body).toBe(201);
+    expect(json<{ trust: Trust }>(owned).trust).toMatchObject({ trusted: true, votedByMe: true });
   });
 });

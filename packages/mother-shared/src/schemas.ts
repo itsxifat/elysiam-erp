@@ -41,6 +41,9 @@ export type MonthQuery = z.infer<typeof monthQuerySchema>;
  */
 export const READ_ROLE = 'erp_analytics';
 
+/** The only query parameters a brand's read connection may carry. */
+const CONNECTION_PARAMETERS: ReadonlySet<string> = new Set(['sslmode', 'sslrootcert']);
+
 export const readConnectionSchema = z
   .string()
   .trim()
@@ -69,6 +72,20 @@ export const readConnectionSchema = z
       }
     },
     { message: `The connection must sign in as ${READ_ROLE}, the brand's read-only role.` },
+  )
+  // The driver sends unknown query parameters at sign-in, after the user it was given:
+  // `?user=erp_owner` would sign in as that role. Only the TLS settings may follow.
+  .refine(
+    (value) => {
+      try {
+        return [...new URL(value).searchParams.keys()].every((key) =>
+          CONNECTION_PARAMETERS.has(key),
+        );
+      } catch {
+        return false;
+      }
+    },
+    { message: 'Only sslmode and sslrootcert may follow the connection string.' },
   );
 
 /** Where the brand's staff console answers: https, or http on a local machine. */

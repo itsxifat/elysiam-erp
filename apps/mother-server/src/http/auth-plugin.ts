@@ -49,6 +49,28 @@ const ENROLMENT_PATHS = new Set([
   '/api/auth/sign-out',
 ]);
 
+/**
+ * Signing in again and the password links prove who the caller is afresh, so a half-enrolled
+ * session left in the browser never walls them (the brand's lockout of 2026-10-07): the new
+ * session is walled again until the factor is real.
+ */
+const CREDENTIAL_PATHS = new Set([
+  '/api/auth/sign-in/email',
+  '/api/auth/reset-password',
+  '/api/auth/request-password-reset',
+  '/api/auth/forget-password',
+]);
+
+/**
+ * The second factor is asked at every sign-in (D-487): Better Auth's `trustDevice` would set
+ * a 30-day cookie that skips it, renewed on each use, on a console holding every brand's keys.
+ */
+function withoutTrustDevice(body: unknown): unknown {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return body;
+  const { trustDevice: _ignored, ...rest } = body as Record<string, unknown>;
+  return rest;
+}
+
 function enrolmentRequired(reply: FastifyReply, url: string): FastifyReply {
   return reply
     .status(403)
@@ -225,6 +247,7 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     const path = requestPath(request.url);
     if (!path.startsWith('/api/auth/') || ENROLMENT_PATHS.has(path)) return;
+    if (CREDENTIAL_PATHS.has(path)) return;
     const session = await options.auth.api.getSession({ headers: headersOf(request) });
     if (session === null) return;
     if (await mustEnrolTwoFactor(session.user.id)) return enrolmentRequired(reply, request.url);
@@ -260,7 +283,7 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       new Request(url, {
         method: request.method,
         headers,
-        ...(hasBody ? { body: JSON.stringify(request.body ?? {}) } : {}),
+        ...(hasBody ? { body: JSON.stringify(withoutTrustDevice(request.body ?? {})) } : {}),
       }),
     );
     const text = await response.text();

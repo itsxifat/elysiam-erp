@@ -318,7 +318,7 @@ export async function findPrivilegeProblems(): Promise<PrivilegeOffender[]> {
           and n.nspname not like 'pg\\_temp%'
       ),
       checks as (
-        select 'erp_analytics' as role, table_name, unnest(array['INSERT','UPDATE','DELETE','TRUNCATE']) as privilege
+        select 'erp_analytics' as role, table_name, unnest(array['INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES']) as privilege
         from candidates
         union all
         select 'erp_app' as role, table_name, 'TRUNCATE' as privilege
@@ -326,7 +326,11 @@ export async function findPrivilegeProblems(): Promise<PrivilegeOffender[]> {
       )
       select role, table_name, privilege
       from checks
+      -- A column grant (\`grant update (status) on …\`) is invisible to has_table_privilege;
+      -- the reporting role holds column grants since D-483, so its writes are checked both ways.
       where has_table_privilege(role, table_name, privilege)
+         or (privilege in ('INSERT', 'UPDATE', 'REFERENCES')
+             and has_any_column_privilege(role, table_name, privilege))
       order by role, table_name, privilege
     `),
   );

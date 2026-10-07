@@ -274,6 +274,14 @@ describe('the brand registry input (D-481)', () => {
     expect(readConnectionSchema.safeParse('mysql://erp_analytics:x@h/db').success).toBe(false);
   });
 
+  it('refuses query parameters that would sign in as another role or database', () => {
+    const base = 'postgres://erp_analytics:secret@127.0.0.1:6543/erp';
+    for (const query of ['?user=erp_owner', '?database=postgres', '?options=-c%20role%3Dx']) {
+      expect(readConnectionSchema.safeParse(base + query).success, query).toBe(false);
+    }
+    expect(readConnectionSchema.safeParse(`${base}?sslmode=require`).success).toBe(true);
+  });
+
   it('wants an https admin address and a slug', () => {
     const base = {
       slug: 'oura-lifestyle',
