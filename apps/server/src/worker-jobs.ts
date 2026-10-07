@@ -37,6 +37,12 @@ import { TrackingService } from './modules/storefront/tracking.service.js';
 import { MarketplaceModule } from './modules/marketplace/marketplace.module.js';
 import { registerMarketplaceJobs } from './modules/marketplace/marketplace.worker.js';
 import { NcomOrdersService } from './modules/marketplace/ncom-orders.service.js';
+import { FilesModule } from './modules/files/files.module.js';
+import { FilesService } from './modules/files/files.service.js';
+import { registerFilesJobs } from './modules/files/files.worker.js';
+import { PackingModule } from './modules/packing/packing.module.js';
+import { registerPackingJobs } from './modules/packing/packing.worker.js';
+import { PackingVideoService } from './modules/packing/video.service.js';
 import type { OutboxDispatcher } from './platform/events/dispatcher.js';
 import { reportJobFailedThroughOutbox } from './platform/jobs/job-failed.js';
 import type { JobsRuntime } from './platform/jobs/jobs.runtime.js';
@@ -73,6 +79,9 @@ export const WORKER_MODULES = [
   StorefrontModule,
   // M35b: changes of ncom.bd's orders sent back to ncom.
   MarketplaceModule,
+  // M38b: the packing video's retention and the removal of a deleted file's bytes.
+  FilesModule,
+  PackingModule,
 ] as const;
 
 export interface WorkerJobDependencies {
@@ -142,6 +151,9 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     orders: context.get(NcomOrdersService),
     report,
   });
+  // M38b: packing videos seven days after the order ended, and the bytes of deleted files.
+  await registerPackingJobs({ jobs, videos: context.get(PackingVideoService), report });
+  await registerFilesJobs({ jobs, files: context.get(FilesService), report });
 
   // Every registered queue gets its dead-letter watcher, whether or not this
   // release also registered a handler for the queue itself. A queue with a

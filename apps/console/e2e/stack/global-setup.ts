@@ -60,6 +60,11 @@ export interface StackInfo {
   readonly lifecycleOrder: { readonly id: string; readonly orderNo: string };
   /** A confirmed order, its units held, for bulk pack (D-393). */
   readonly bulkOrder: { readonly id: string; readonly orderNo: string };
+  /** M38b: a confirmed order of two pieces for the packing station, and the stickers to scan. */
+  readonly packOrder: { readonly id: string; readonly orderNo: string };
+  readonly packSkus: Readonly<
+    Record<'right' | 'wrongSize' | 'wrongItem', { readonly code: string; readonly barcode: string }>
+  >;
 }
 
 function logTo(name: string): number {
@@ -162,6 +167,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       advanceOrder: StackInfo['advanceOrder'];
       lifecycleOrder: StackInfo['lifecycleOrder'];
       bulkOrder: StackInfo['bulkOrder'];
+      packOrder: StackInfo['packOrder'];
+      packSkus: StackInfo['packSkus'];
     };
 
     const serverEnv: NodeJS.ProcessEnv = {
@@ -237,6 +244,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       advanceOrder: provisioned.advanceOrder,
       lifecycleOrder: provisioned.lifecycleOrder,
       bulkOrder: provisioned.bulkOrder,
+      packOrder: provisioned.packOrder,
+      packSkus: provisioned.packSkus,
     };
     // Inherited by the test workers. Throwaway values only, and never printed.
     process.env.E2E_STACK = JSON.stringify(info);

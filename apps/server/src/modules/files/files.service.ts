@@ -242,6 +242,15 @@ export class FilesService {
           );
         }
       }
+      // M38b (D-613): a purpose that names its types takes only those, and a video goes only
+      // to a purpose that names it — the 90 MiB ceiling is for packing videos, not receipts.
+      if (
+        purposeRule.allowedMimes !== undefined
+          ? !purposeRule.allowedMimes.includes(rule.mime)
+          : rule.isVideo === true
+      ) {
+        throw new BadRequestException(`A ${input.purpose} file cannot be ${rule.mime}.`);
+      }
       if (input.visibility === 'public' && !purposeRule.mayBePublic) {
         throw new BadRequestException(`A ${input.purpose} file cannot be public.`);
       }
@@ -476,9 +485,17 @@ export class FilesService {
     context: ActiveContext,
     fileId: string,
     scope: SqlLike,
-    options: { readonly rowCheckedByOwner?: boolean } = {},
+    options: {
+      readonly rowCheckedByOwner?: boolean;
+      /** The purpose the owning module expects (M38b): any other is "not found". */
+      readonly purpose?: FilePurpose;
+    } = {},
   ): Promise<SignedDownload> {
     const row = await this.load(context, fileId, scope);
+
+    if (options.purpose !== undefined && row.purpose !== options.purpose) {
+      throw new NotFoundException('Not found.');
+    }
 
     if (row.status !== 'stored') {
       // A pending row is a ticket somebody never used. It is not a file yet,
@@ -623,6 +640,28 @@ export class FilesService {
   }
 
   private readonly variantCache = new VariantCache();
+
+  /**
+   * Remove stored bytes whose row is already gone (M38b, D-612): the `files.remove_object` job,
+   * run after the transaction that deleted the row committed, never inside one (invariant 6's
+   * rule for anything that leaves the database). Only keys under this brand's own prefix are
+   * touched, and a key already gone is success, so a retried job is harmless.
+   */
+  async removeStored(orgId: string, keys: readonly string[]): Promise<number> {
+    let removed = 0;
+    for (const key of keys) {
+      const segments = key.split('/');
+      if (segments.length < 3 || segments[1] !== orgId) {
+        throw new Error('A stored object outside this brand cannot be removed for it.');
+      }
+      if (segments[0] !== 'private' && segments[0] !== 'public') {
+        throw new Error('Not a stored object key.');
+      }
+      await this.driver.remove(key);
+      removed += 1;
+    }
+    return removed;
+  }
 
   /**
    * Accept the bytes a local signed PUT ticket points at.

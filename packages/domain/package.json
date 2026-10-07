@@ -76,6 +76,10 @@
       "types": "./dist/barcode/index.d.ts",
       "default": "./dist/barcode/index.js"
     },
+    "./packing": {
+      "types": "./dist/packing/index.d.ts",
+      "default": "./dist/packing/index.js"
+    },
     "./pricing": {
       "types": "./dist/pricing/index.d.ts",
       "default": "./dist/pricing/index.js"

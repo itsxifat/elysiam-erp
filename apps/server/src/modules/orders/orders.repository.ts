@@ -1734,3 +1734,53 @@ export async function orderIdByNo(
   `);
   return rows[0]?.id;
 }
+
+export interface RetentionFactRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly status: string;
+  readonly status_since: Date | string | null;
+}
+
+/**
+ * When each order reached its current status (M38b, D-612): the latest history row into that
+ * status, else the status's own column. For the packing video's retention.
+ */
+export async function retentionFacts(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+): Promise<RetentionFactRow[]> {
+  if (ids.length === 0) return [];
+  const rows = await tx.execute<RetentionFactRow>(sql`
+    select o.id, o.status::text as status,
+           coalesce(
+             (select max(e.occurred_at) from sales.order_events e
+               where e.org_id = o.org_id and e.order_id = o.id and e.to_status = o.status),
+             case o.status
+               when 'delivered' then o.delivered_at
+               when 'partially_delivered' then o.delivered_at
+               when 'returned' then o.returned_at
+               when 'cancelled' then o.cancelled_at
+               else null
+             end
+           ) as status_since
+    from sales.orders o
+    where o.org_id = ${orgId} and o.id = any (${sql.param([...ids])}::uuid[])
+  `);
+  return [...rows];
+}
+
+/** Of these orders, the ones inside a scope fragment over `o` (M38b). */
+export async function orderIdsInScope(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+  scope: SQL,
+): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const rows = await tx.execute<{ id: string }>(sql`
+    select o.id from sales.orders o
+    where o.org_id = ${orgId} and o.id = any (${sql.param([...ids])}::uuid[]) and ${scope}
+  `);
+  return rows.map((row) => row.id);
+}

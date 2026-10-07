@@ -24,6 +24,12 @@ export interface MimeRule {
   readonly extension: string;
   /** Whether the image job re-encodes it into variants and strips EXIF. */
   readonly isImage: boolean;
+  /**
+   * A recorded video (M38b, D-613). Accepted only for a purpose that names its type (the
+   * packing video): the ceiling is far above any document's, and a video uploaded as a
+   * "receipt" would carry it past every other limit.
+   */
+  readonly isVideo?: true;
 }
 
 export const ALLOWED_MIME_TYPES: readonly MimeRule[] = [
@@ -49,6 +55,13 @@ export const ALLOWED_MIME_TYPES: readonly MimeRule[] = [
     extension: 'xlsx',
     isImage: false,
   },
+  /*
+   * The packing video (M38b, D-611, D-613): what a browser's MediaRecorder writes. 90 MiB
+   * holds fifteen minutes at the station's 800 kbit/s with room to spare, and stays under the
+   * 100 MB a request may carry through Cloudflare in front of a brand's server.
+   */
+  { mime: 'video/webm', maxBytes: 90 * MiB, extension: 'webm', isImage: false, isVideo: true },
+  { mime: 'video/mp4', maxBytes: 90 * MiB, extension: 'mp4', isImage: false, isVideo: true },
 ];
 
 const BY_MIME = new Map(ALLOWED_MIME_TYPES.map((rule) => [rule.mime, rule]));
@@ -101,6 +114,9 @@ export function assertWithinLimit(sizeBytes: number, rule: MimeRule): void {
  * Returns `null` when the bytes match no signature we know, which for the
  * non-image types is normal: CSV has no magic number. The caller decides.
  */
+/** ISO-BMFF brands of still images (HEIC, HEIF), which are not videos. */
+const HEIF_BRANDS = new Set(['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'mif1', 'msf1']);
+
 export function sniffMime(bytes: Uint8Array): string | null {
   const starts = (...signature: number[]): boolean =>
     signature.length <= bytes.length && signature.every((byte, index) => bytes[index] === byte);
@@ -113,10 +129,18 @@ export function sniffMime(bytes: Uint8Array): string | null {
     const tag = String.fromCharCode(...bytes.subarray(8, 12));
     if (tag === 'WEBP') return 'image/webp';
   }
-  // ISO-BMFF: `....ftypavif` / `....ftypavis`
-  if (bytes.length >= 12) {
-    const brand = String.fromCharCode(...bytes.subarray(4, 12));
-    if (brand === 'ftypavif' || brand === 'ftypavis') return 'image/avif';
+  // ISO-BMFF: `....ftyp` and a brand. AVIF is an image; the HEIF family is an image this
+  // list does not take; any other brand is an MP4 a recorder wrote (`isom`, `iso5`, `mp42`…).
+  if (bytes.length >= 12 && String.fromCharCode(...bytes.subarray(4, 8)) === 'ftyp') {
+    const brand = String.fromCharCode(...bytes.subarray(8, 12));
+    if (brand === 'avif' || brand === 'avis') return 'image/avif';
+    if (HEIF_BRANDS.has(brand)) return null;
+    return 'video/mp4';
+  }
+  // EBML (Matroska and WebM): a recorder's WebM names its doctype in the first bytes.
+  if (starts(0x1a, 0x45, 0xdf, 0xa3)) {
+    const head = String.fromCharCode(...bytes.subarray(0, Math.min(bytes.length, 64)));
+    return head.includes('webm') ? 'video/webm' : null;
   }
   // A .xlsx is a zip. That is as far as a magic number gets, and it is enough
   // to tell it is not HTML.

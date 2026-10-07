@@ -33,6 +33,8 @@ import {
 } from './locales/sections/catalog-pricing.en.js';
 import { bn as packingBn } from './locales/sections/packing.bn.js';
 import { en as packingEn, type PackingKey } from './locales/sections/packing.en.js';
+import { bn as packStationBn } from './locales/sections/pack-station.bn.js';
+import { en as packStationEn, type PackStationKey } from './locales/sections/pack-station.en.js';
 import { bn as stockToolsBn } from './locales/sections/stock-tools.bn.js';
 import { en as stockToolsEn, type StockToolsKey } from './locales/sections/stock-tools.en.js';
 import { bn as websiteBn } from './locales/sections/website.bn.js';
@@ -84,12 +86,14 @@ export type MessageKey =
   | ManageKey
   | WebMarketingKey
   | PackingKey
+  | PackStationKey
   | TrustKey;
 export type {
   CatalogPricingKey,
   CoreMessageKey,
   ManageKey,
   PackingKey,
+  PackStationKey,
   StockToolsKey,
   TrustKey,
   WebMarketingKey,
@@ -114,6 +118,7 @@ export const messages: Record<Locale, Record<MessageKey, string>> = {
     ...manageEn,
     ...webMarketingEn,
     ...packingEn,
+    ...packStationEn,
     ...trustEn,
   },
   bn: {
@@ -124,6 +129,7 @@ export const messages: Record<Locale, Record<MessageKey, string>> = {
     ...manageBn,
     ...webMarketingBn,
     ...packingBn,
+    ...packStationBn,
     ...trustBn,
   },
 };

@@ -15,23 +15,28 @@ import {
   ScannerDeviceGuard,
 } from './scanner.controller.js';
 import { ScannerService } from './scanner.service.js';
+import { PackStationController } from './station.controller.js';
+import { PackStationService } from './station.service.js';
+import { PackingVideoService } from './video.service.js';
 
 /**
  * Packing (M35b, D-554, D-555): the scanner phones and the console's Scan page, and the order
  * label sheet. Owns the `packing` schema; reads orders, the catalog, the website's settings
- * and the brand's people only through their interfaces (invariant 12). M38b's scan-to-pack
- * builds here.
+ * and the brand's people only through their interfaces (invariant 12). M38b adds the packing
+ * station (scan each piece against the order, D-610) and the packing video (D-611 to D-615).
  */
 @Module({
   imports: [OrdersModule, CatalogModule, StorefrontModule, FilesModule, IamDirectoryModule],
-  controllers: [ScannerController, ScannerAppController, PackingController],
+  controllers: [ScannerController, ScannerAppController, PackingController, PackStationController],
   providers: [
     AuditService,
     ScannerService,
     ScannerDeviceGuard,
     OrderLabelsService,
+    PackStationService,
+    PackingVideoService,
     { provide: PACKING_API, useClass: PackingApiService },
   ],
-  exports: [PACKING_API],
+  exports: [PACKING_API, PackingVideoService],
 })
 export class PackingModule {}

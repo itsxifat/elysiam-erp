@@ -4,6 +4,8 @@
  */
 const en = {
   'pk.nav.scan': 'Scan',
+  // M38b: the packing station's tab, here so the orders tabs need no other section.
+  'pk.nav.pack': 'Pack',
   'pk.actions': 'Actions',
   'pk.cancel': 'Cancel',
   'pk.close': 'Close',

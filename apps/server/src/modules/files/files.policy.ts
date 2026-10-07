@@ -68,6 +68,14 @@ export const FILE_PURPOSES = [
    * through `Storefront`, the subject of the screens that upload it.
    */
   'storefront-image',
+  /**
+   * The camera's record of a parcel being packed (M38b, D-611, D-613): who packed what, for a
+   * complaint about the parcel. Private without exception, read through `PackingVideo`
+   * (org_admin, warehouse, and sales for their own orders through the packing route), and
+   * deleted seven days after the order is delivered (D-612). The only purpose that takes a
+   * video, and a video is all it takes.
+   */
+  'packing-video',
 ] as const;
 
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
@@ -93,6 +101,11 @@ export interface PurposeRule {
    * manage the website may put one there.
    */
   readonly createRequires?: { readonly action: Action; readonly subject: Subject };
+  /**
+   * The only types this purpose takes, when it is narrower than the allow-list (M38b, D-613).
+   * A video type is accepted only by a purpose that names it here.
+   */
+  readonly allowedMimes?: readonly string[];
 }
 
 export const PURPOSE_RULES: Readonly<Record<FilePurpose, PurposeRule>> = {
@@ -141,6 +154,17 @@ export const PURPOSE_RULES: Readonly<Record<FilePurpose, PurposeRule>> = {
     readRequires: { action: 'read', subject: 'Storefront' },
     mayBePublic: true,
     createRequires: { action: 'update', subject: 'Storefront' },
+  },
+  /*
+   * Uploaded by whoever packs (`update Order`: the warehouse, an org admin, a sales agent on
+   * their own orders); read across the brand only by a holder of `read PackingVideo` at org
+   * scope, and by sales through the packing route, which checks the order first (D-413, D-614).
+   */
+  'packing-video': {
+    readRequires: { action: 'read', subject: 'PackingVideo' },
+    mayBePublic: false,
+    createRequires: { action: 'update', subject: 'Order' },
+    allowedMimes: ['video/webm', 'video/mp4'],
   },
 };
 
