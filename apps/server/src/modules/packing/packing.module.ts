@@ -6,6 +6,7 @@ import { FilesModule } from '../files/files.module.js';
 import { IamDirectoryModule } from '../iam/iam.api.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { StorefrontModule } from '../storefront/storefront.module.js';
+import { PackingCatalogReferences } from './catalog-references.binding.js';
 import { OrderLabelsService } from './order-labels.service.js';
 import { PACKING_API, PackingApiService } from './packing.api.js';
 import { PackingController } from './packing.controller.js';
@@ -35,6 +36,8 @@ import { PackingVideoService } from './video.service.js';
     OrderLabelsService,
     PackStationService,
     PackingVideoService,
+    // A packing scan keeps the SKU it names (D-621).
+    PackingCatalogReferences,
     { provide: PACKING_API, useClass: PackingApiService },
   ],
   exports: [PACKING_API, PackingVideoService],

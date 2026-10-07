@@ -144,6 +144,23 @@ export async function insertScan(
   return row;
 }
 
+/**
+ * How many packing scans name any of these SKUs (M38b audit, D-621): a scan is the record of
+ * what went into a box, so a SKU that was scanned keeps its row.
+ */
+export async function scansForSkus(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+): Promise<number> {
+  if (skuIds.length === 0) return 0;
+  const rows = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from packing.scans
+    where org_id = ${orgId} and sku_id = any (${sql.param([...skuIds])}::uuid[])
+  `);
+  return rows[0]?.n ?? 0;
+}
+
 export interface VideoRow extends Record<string, unknown> {
   readonly id: string;
   readonly session_id: string;

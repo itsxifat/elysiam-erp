@@ -50,6 +50,8 @@ export const USAGE_REASONS = [
   // M35b, joined at integration: campaign links and the ncom.bd marketplace's stock holds.
   'campaign_links',
   'marketplace_holds',
+  // M38b: a packing scan names the SKU it put in (or refused at) the box.
+  'packing_scans',
   // Marketing and messages.
   'leads',
   'campaigns',
