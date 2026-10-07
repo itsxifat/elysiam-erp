@@ -328,10 +328,27 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
     '/api/auth/sign-out',
   ]);
 
+  /*
+   * Signing in again, and the password links, are never walled (2026-10-07).
+   *
+   * Each proves who the caller is afresh (a password, or a one-time reset token) and acts
+   * on that, not on the session cookie. Walled, a person who left the two-step set-up half
+   * done kept that half session in the browser, and every later sign-in with the right
+   * password answered 403: locked out until the cookie expired. A new sign-in replaces
+   * the session, which is walled again until the factor is real.
+   */
+  const CREDENTIAL_PATHS = new Set([
+    '/api/auth/sign-in/email',
+    '/api/auth/sign-in/phone-number',
+    '/api/auth/reset-password',
+    '/api/auth/request-password-reset',
+    '/api/auth/forget-password',
+  ]);
+
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     const path = requestPath(request.url);
     if (!path.startsWith('/api/auth/')) return;
-    if (ENROLMENT_PATHS.has(path)) return;
+    if (ENROLMENT_PATHS.has(path) || CREDENTIAL_PATHS.has(path)) return;
 
     // Sign-in and sign-up have no session yet, so there is nothing to wall.
     const headers = new Headers();
