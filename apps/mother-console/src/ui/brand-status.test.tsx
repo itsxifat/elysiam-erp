@@ -24,7 +24,7 @@ const base: BrandStatusWire = {
   hasOwnerLinkKey: true,
   ownerLinkKeyFingerprint: null,
   connectionFingerprint: 'fp',
-} as BrandStatusWire;
+};
 
 function show(brand: BrandStatusWire): void {
   render(
