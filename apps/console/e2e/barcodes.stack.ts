@@ -210,6 +210,52 @@ test('exactly one sticker per piece, printed as a thermal roll PDF at the sticke
     expect(Math.abs(x1 - x0 - (38 * 72) / 25.4)).toBeLessThan(1);
     expect(Math.abs(y1 - y0 - (25 * 72) / 25.4)).toBeLessThan(1);
   }
+
+  // A custom size (D-650) with an extra line (D-651): a size too narrow for a scannable
+  // barcode is refused in the dialog with the least that will do; 32.5 × 20 mm prints at
+  // exactly that size, one sticker a page, the preview saying what was left off to fit.
+  await choose(dialog.getByLabel('Print on'), 'Custom size…');
+  await dialog.getByTestId('sticker-width').fill('25');
+  await dialog.getByTestId('sticker-height').fill('20');
+  await expect(dialog.getByRole('alert')).toContainText('Make it at least 29.3 mm');
+  await expect(dialog.getByTestId('stickers-print')).toBeDisabled();
+  await dialog.getByTestId('sticker-width').fill('32.5');
+  await expect(dialog.getByTestId('stickers-print')).toBeEnabled();
+  await dialog.getByText('More options').click();
+  await dialog.getByLabel('Extra line on every sticker').fill('Made in Bangladesh');
+  await expect(dialog.getByTestId('sticker-preview')).toBeVisible();
+  await expect(dialog.getByTestId('sticker-dropped')).toContainText('the extra line');
+  await noBlockingViolations('stickers dialog, custom size');
+  await shot('03b-stickers-custom-size', false);
+
+  const customResponse = page.waitForResponse(
+    (candidate) =>
+      candidate.url().endsWith('/v1/catalog/labels') && candidate.request().method() === 'POST',
+  );
+  const customPopup = page.waitForEvent('popup', { timeout: 15_000 }).catch(() => null);
+  await dialog.getByTestId('stickers-print').click();
+  const customAnswer = await customResponse;
+  await (await customPopup)?.close();
+  expect(customAnswer.ok()).toBe(true);
+  expect(customAnswer.request().postDataJSON()).toMatchObject({
+    medium: 'custom',
+    widthMm: 32.5,
+    heightMm: 20,
+    extraLine: 'Made in Bangladesh',
+  });
+  const customDownload = page.waitForEvent('download');
+  await dialog.getByRole('link', { name: 'Download' }).click();
+  const customPdf = readFileSync(await (await customDownload).path());
+  const customBoxes = mediaBoxes(customPdf);
+  expect(customBoxes).toHaveLength(9);
+  for (const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] of customBoxes) {
+    expect(Math.abs(x1 - x0 - (32.5 * 72) / 25.4)).toBeLessThan(1);
+    expect(Math.abs(y1 - y0 - (20 * 72) / 25.4)).toBeLessThan(1);
+  }
+  // Back to the roll the rest of the suite expects; the choice is remembered (D-652).
+  await choose(dialog.getByLabel('Print on'), 'Thermal roll, 38 × 25 mm');
+  await dialog.getByLabel('Extra line on every sticker').fill('');
+  await dialog.getByLabel('Extra line on every sticker').blur();
   await dialog.getByRole('button', { name: 'Close' }).first().click();
 
   await page.getByRole('link', { name: 'Open the product' }).click();

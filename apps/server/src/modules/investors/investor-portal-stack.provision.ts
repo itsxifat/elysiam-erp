@@ -31,9 +31,9 @@ import { accountIdBySubtype, seedFileObject } from './investors.testing.js';
  * investor role, so the spec has to pass the enrolment screen before it sees anything, which
  * is part of what it checks.
  *
- * * `alpha` holds a stake in two brands (Elysium Lifestyle BD and Oura Lifestyle), so the
+ * * `alpha` holds a stake in two brands (Elysiam Lifestyle BD and Oura Lifestyle), so the
  *   brand switcher and capital per brand are real.
- * * `beta` holds a stake in Elysium only, with figures chosen to be unmistakable on a page
+ * * `beta` holds a stake in Elysiam only, with figures chosen to be unmistakable on a page
  *   (৳5,00,000 of capital, a ৳7,777 withdrawal, a document titled for them) so the spec can
  *   say they never appear in alpha's session.
  *
@@ -190,11 +190,11 @@ async function create(): Promise<void> {
         ...(lockInUntil === undefined ? {} : { lockInUntil }),
       });
 
-    // Alpha: ৳10,00,000 free and ৳2,00,000 locked until 2030 in Elysium; ৳3,00,000 in Oura.
+    // Alpha: ৳10,00,000 free and ৳2,00,000 locked until 2030 in Elysiam; ৳3,00,000 in Oura.
     await contribute(accounts, alphaA, bankA, '100000000');
     await contribute(accounts, alphaA, bankA, '20000000', '2030-12-31');
     await contribute(accountsB, alphaB, bankB, '30000000');
-    // Beta: ৳5,00,000 in Elysium.
+    // Beta: ৳5,00,000 in Elysiam.
     await contribute(accounts, betaA, bankA, '50000000');
 
     // Last month's profit, ৳50,000 by agreed share: alpha ৳30,000, beta ৳20,000.

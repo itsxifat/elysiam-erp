@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   Param,
@@ -118,6 +119,50 @@ export class UsersController {
       auditable(request),
       userId,
       input.reason,
+    );
+  }
+
+  /**
+   * Vouch for an admin (D-654 to D-656). Refused, not stored, when the vote would not count:
+   * the reason names the invitation chain, the shared inviter or the missing second factor.
+   */
+  @RequireAbility('update', 'User')
+  @Post(':id/trust')
+  async vote(@Req() request: FastifyRequest, @Param('id') id: string) {
+    const userId = parse(userIdParamSchema, id);
+    return this.users.vote(requireContext(request), auditable(request), userId);
+  }
+
+  /** Withdraw the caller's own vote for an admin. */
+  @RequireAbility('update', 'User')
+  @Delete(':id/trust')
+  async withdrawVote(@Req() request: FastifyRequest, @Param('id') id: string) {
+    const userId = parse(userIdParamSchema, id);
+    return this.users.withdrawVote(requireContext(request), auditable(request), userId);
+  }
+
+  /**
+   * A super admin's yes for making an active admin here a super admin (D-659). With at most
+   * one super admin in the brand it promotes at once; with two or more, the promotion waits
+   * until every one of them has said yes, and the last vote makes it. Anyone else is refused
+   * by the handler: only a super admin changes who is one.
+   */
+  @RequireAbility('update', 'User')
+  @Post(':id/super-admin')
+  async voteSuperAdmin(@Req() request: FastifyRequest, @Param('id') id: string) {
+    const userId = parse(userIdParamSchema, id);
+    return this.users.voteSuperAdmin(requireContext(request), auditable(request), userId);
+  }
+
+  /** Withdraw a pending super admin nomination: every vote for the person goes. */
+  @RequireAbility('update', 'User')
+  @Delete(':id/super-admin')
+  async withdrawSuperAdmin(@Req() request: FastifyRequest, @Param('id') id: string) {
+    const userId = parse(userIdParamSchema, id);
+    return this.users.withdrawSuperAdminNomination(
+      requireContext(request),
+      auditable(request),
+      userId,
     );
   }
 }

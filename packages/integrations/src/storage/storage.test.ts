@@ -105,6 +105,45 @@ describe('upload limits', () => {
     expect(sniffMime(new TextEncoder().encode('%PDF-1.7\n'))).toBe('application/pdf');
     expect(sniffMime(new TextEncoder().encode('<!doctype html>'))).toBeNull();
   });
+
+  /** M38b (D-613): what a browser's recorder writes, and the stills that share the boxes. */
+  it('tells a recorded WebM or MP4 from an image in the same container', () => {
+    const box = (brand: string) =>
+      new Uint8Array([0, 0, 0, 0x20, ...new TextEncoder().encode(`ftyp${brand}`), 0, 0, 0, 0]);
+    expect(sniffMime(box('isom'))).toBe('video/mp4');
+    expect(sniffMime(box('iso5'))).toBe('video/mp4');
+    expect(sniffMime(box('mp42'))).toBe('video/mp4');
+    expect(sniffMime(box('avif'))).toBe('image/avif');
+    expect(sniffMime(box('heic'))).toBeNull();
+    const ebml = (docType: string) =>
+      new Uint8Array([
+        0x1a,
+        0x45,
+        0xdf,
+        0xa3,
+        0x9f,
+        0x42,
+        0x86,
+        0x81,
+        0x01,
+        0x42,
+        0x82,
+        0x84,
+        ...new TextEncoder().encode(docType),
+      ]);
+    expect(sniffMime(ebml('webm'))).toBe('video/webm');
+    expect(sniffMime(ebml('matroska'))).toBeNull();
+  });
+
+  it('keeps videos to their own ceiling, above a document’s and under one request through Cloudflare', () => {
+    const webm = mimeRuleFor('video/webm;codecs=vp8');
+    expect(webm.isVideo).toBe(true);
+    expect(webm.maxBytes).toBe(90 * 1024 * 1024);
+    expect(webm.maxBytes).toBeLessThan(100_000_000);
+    expect(mimeRuleFor('video/mp4').isVideo).toBe(true);
+    expect(mimeRuleFor('application/pdf').isVideo).toBeUndefined();
+    expect(() => mimeRuleFor('video/quicktime')).toThrow();
+  });
 });
 
 describe('the local driver', () => {

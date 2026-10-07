@@ -1,4 +1,5 @@
 import type { MembershipRole } from '@elysium/contracts';
+import { formatCount, type Locale } from '@elysium/i18n';
 import {
   Button,
   ConfirmDialog,
@@ -14,13 +15,24 @@ import {
   type DataTableColumn,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, KeyRound, ShieldOff, UserMinus, UserPlus } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  Crown,
+  KeyRound,
+  ShieldCheck,
+  ShieldOff,
+  ShieldX,
+  UserMinus,
+  UserPlus,
+  X,
+} from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
 import { decideApproval } from '../../api/approvals.js';
 import { useAbility, useSession } from '../../auth/session.js';
-import { useT } from '../../i18n/locale.js';
+import { useLocale, useT } from '../../i18n/locale.js';
 import { useRealtime } from '../../realtime/use-realtime.js';
 import { Field } from '../../ui/primitives.js';
 import { listBranches, type BranchRow } from '../branches/api.js';
@@ -31,9 +43,16 @@ import {
   passwordLink,
   resetTwoFactor,
   setRoles,
+  voteSuperAdmin,
+  voteTrust,
+  withdrawSuperAdmin,
+  withdrawTrust,
+  type NominationOutcome,
+  type NominationView,
   type OpenReset,
   type StaffRow,
   type StaffStatus,
+  type TrustView,
 } from './api.js';
 import { orderedRoles, passwordLinkUrl, rolesToSubmit } from './link.js';
 import { useUsersT, type UsersMessageKey } from './messages.js';
@@ -66,6 +85,42 @@ function roleKey(role: MembershipRole): UsersMessageKey {
   return `users.role.${role}` as UsersMessageKey;
 }
 
+/** "Trusted", or how far from it: "1 of 2 votes" (D-654). */
+function trustLabel(trust: TrustView, u: (key: UsersMessageKey) => string, locale: Locale): string {
+  return trust.trusted
+    ? u('users.trusted')
+    : u('users.trustVotes')
+        .replace('{n}', formatCount(trust.votes, locale))
+        .replace('{m}', formatCount(trust.needed, locale));
+}
+
+/** A pending super admin nomination: "Super admin: 1 of 2 votes" (D-659). */
+function nominationLabel(
+  nomination: NominationView,
+  u: (key: UsersMessageKey) => string,
+  locale: Locale,
+): string {
+  return u('users.superAdminPending')
+    .replace('{n}', formatCount(nomination.votes, locale))
+    .replace('{m}', formatCount(nomination.needed, locale));
+}
+
+/** An owner is "Owner" to everyone but another owner (D-473, D-658). */
+function displayName(row: StaffRow, u: (key: UsersMessageKey) => string): string {
+  return row.isOwner && row.name === '' ? u('users.owner') : row.name;
+}
+
+/** What the page says once a super admin's yes has landed (D-659). */
+function nominationNotice(
+  outcome: NominationOutcome,
+  name: string,
+  u: (key: UsersMessageKey) => string,
+): string {
+  return (
+    outcome.outcome === 'promoted' ? u('users.superAdminPromoted') : u('users.superAdminWaiting')
+  ).replace('{name}', name);
+}
+
 /** The server's problem+json detail is written to be shown; anything else never reached it. */
 function messageOf(error: unknown, fallback: string): string {
   if (error instanceof ApiError) return error.message;
@@ -89,6 +144,7 @@ export function UsersPage() {
   const session = useSession();
   const t = useT();
   const u = useUsersT();
+  const { locale } = useLocale();
   const queryClient = useQueryClient();
 
   const mayRead = ability.can('read', 'User');
@@ -97,7 +153,7 @@ export function UsersPage() {
   const isSuperAdmin = session.context?.isSuperAdmin ?? false;
 
   const [manageId, setManageId] = useState<string | null>(null);
-  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState<'staff' | 'superAdmin' | null>(null);
   const [pending, setPending] = useState<Pending>(null);
   const [link, setLink] = useState<IssuedLink | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -134,18 +190,34 @@ export function UsersPage() {
         header: u('users.colName'),
         cell: (cell) => {
           const row = cell.row.original;
+          const name = displayName(row, u);
           return (
             <div className="flex min-w-0 items-center gap-3 py-1.5">
-              <Monogram name={row.name} size="md" className="rounded-full" />
+              <Monogram name={name} size="md" className="rounded-full" />
               <div className="min-w-0">
                 <p className="flex flex-wrap items-center gap-1.5 font-medium">
-                  {row.name}
+                  {name}
                   {row.isSelf ? <StatusBadge tone="neutral">{u('users.you')}</StatusBadge> : null}
+                  {row.isOwner && row.name !== '' ? (
+                    <StatusBadge tone="info">{u('users.owner')}</StatusBadge>
+                  ) : null}
                   {row.isSuperAdmin ? (
                     <StatusBadge tone="info">{u('users.superAdmin')}</StatusBadge>
                   ) : null}
+                  {row.superAdminNomination?.pending === true ? (
+                    <StatusBadge tone="warning">
+                      {nominationLabel(row.superAdminNomination, u, locale)}
+                    </StatusBadge>
+                  ) : null}
+                  {row.trust === null ? null : (
+                    <StatusBadge tone={row.trust.trusted ? 'success' : 'neutral'}>
+                      {trustLabel(row.trust, u, locale)}
+                    </StatusBadge>
+                  )}
                 </p>
-                <p className="truncate text-xs text-muted-foreground">{row.email}</p>
+                {row.email === '' ? null : (
+                  <p className="truncate text-xs text-muted-foreground">{row.email}</p>
+                )}
               </div>
             </div>
           );
@@ -217,7 +289,8 @@ export function UsersPage() {
         id: 'actions',
         header: u('users.colActions'),
         cell: (cell) => (
-          <PermissionGate allowed={mayChange}>
+          // A super admin with no role here, or an owner, is listed but managed elsewhere.
+          <PermissionGate allowed={mayChange && cell.row.original.hasRoleHere}>
             <Button
               variant="outline"
               size="sm"
@@ -233,7 +306,7 @@ export function UsersPage() {
         ),
       }),
     ]) as readonly DataTableColumn<StaffRow>[];
-  }, [u, branches, mayChange]);
+  }, [u, branches, mayChange, locale]);
 
   if (!mayRead) {
     return (
@@ -252,12 +325,21 @@ export function UsersPage() {
         title={u('users.title')}
         description={u('users.subtitle')}
         actions={
-          <PermissionGate allowed={mayInvite}>
-            <Button onClick={() => setInviteOpen(true)}>
-              <UserPlus aria-hidden="true" />
-              {u('users.invite')}
-            </Button>
-          </PermissionGate>
+          <div className="flex flex-wrap gap-2">
+            {/* Only a super admin makes a super admin (D-659). */}
+            <PermissionGate allowed={mayInvite && isSuperAdmin}>
+              <Button variant="outline" onClick={() => setInviteOpen('superAdmin')}>
+                <Crown aria-hidden="true" />
+                {u('users.inviteSuperAdmin')}
+              </Button>
+            </PermissionGate>
+            <PermissionGate allowed={mayInvite}>
+              <Button onClick={() => setInviteOpen('staff')}>
+                <UserPlus aria-hidden="true" />
+                {u('users.invite')}
+              </Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -321,6 +403,10 @@ export function UsersPage() {
             setNotice(u('users.rolesSaved'));
             await refresh();
           }}
+          onNotice={async (message) => {
+            setNotice(message);
+            await refresh();
+          }}
         />
       )}
 
@@ -341,18 +427,23 @@ export function UsersPage() {
         />
       )}
 
-      {inviteOpen ? (
+      {inviteOpen === null ? null : (
         <InviteDialog
           branches={branches}
-          onClose={() => setInviteOpen(false)}
+          superAdmin={inviteOpen === 'superAdmin'}
+          onClose={() => setInviteOpen(null)}
           onInvited={async (result) => {
-            setInviteOpen(false);
-            if (result.link === null) setNotice(u('users.alreadyHasAccount'));
-            else setLink(result.link);
+            setInviteOpen(null);
+            if (result.nomination !== undefined) {
+              setNotice(nominationNotice(result.nomination, result.name, u));
+            } else if (result.link === null) {
+              setNotice(u('users.alreadyHasAccount'));
+            }
+            if (result.link !== null) setLink(result.link);
             await refresh();
           }}
         />
-      ) : null}
+      )}
 
       {link === null ? null : (
         <LinkDialog key={link.token} link={link} onClose={() => setLink(null)} />
@@ -536,6 +627,7 @@ function ManageDialog({
   onClose,
   onAction,
   onSaved,
+  onNotice,
 }: {
   readonly row: StaffRow;
   readonly branches: readonly BranchRow[];
@@ -543,6 +635,7 @@ function ManageDialog({
   readonly onClose: () => void;
   readonly onAction: (action: 'deactivate' | 'password' | 'invite' | 'twoFactor') => void;
   readonly onSaved: () => Promise<void>;
+  readonly onNotice: (message: string) => Promise<void>;
 }) {
   const u = useUsersT();
   const t = useT();
@@ -729,6 +822,12 @@ function ManageDialog({
           </div>
         </section>
 
+        {row.trust === null ? null : <TrustSection row={row} trust={row.trust} onSaved={onSaved} />}
+
+        {row.superAdminNomination === null ? null : (
+          <SuperAdminSection row={row} nomination={row.superAdminNomination} onNotice={onNotice} />
+        )}
+
         {row.status === 'active' || row.status === 'invited' ? (
           <section className="border-t border-border pt-4">
             <Button
@@ -744,6 +843,187 @@ function ManageDialog({
         ) : null}
       </div>
     </Dialog>
+  );
+}
+
+// --- trust votes (D-654 to D-656) ---------------------------------------------------------
+
+function TrustSection({
+  row,
+  trust,
+  onSaved,
+}: {
+  readonly row: StaffRow;
+  readonly trust: TrustView;
+  readonly onSaved: () => Promise<void>;
+}) {
+  const u = useUsersT();
+  const t = useT();
+  const { locale } = useLocale();
+  const [problem, setProblem] = useState<string | null>(null);
+  const change = useMutation({
+    mutationFn: () => (trust.votedByMe ? withdrawTrust(row.userId) : voteTrust(row.userId)),
+    onSuccess: async () => {
+      setProblem(null);
+      await onSaved();
+    },
+    onError: (cause) => setProblem(messageOf(cause, t('error.unreachable'))),
+  });
+
+  return (
+    <section aria-labelledby="trust-heading" className="space-y-3">
+      <div>
+        <h3 id="trust-heading" className="flex items-center gap-2 text-sm font-medium">
+          {u('users.trustHeading')}
+          <StatusBadge tone={trust.trusted ? 'success' : 'neutral'}>
+            {trustLabel(trust, u, locale)}
+          </StatusBadge>
+        </h3>
+        <p className="text-xs text-muted-foreground">{u('users.trustExplain')}</p>
+        <p className="text-xs text-muted-foreground">{u('users.trustRule')}</p>
+      </div>
+      {row.isSelf ? null : (
+        <div className="space-y-2">
+          {trust.votedByMe ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={change.isPending}
+              onClick={() => change.mutate()}
+            >
+              <ShieldX aria-hidden="true" />
+              {u('users.trustWithdraw')}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!trust.canVote || change.isPending}
+              aria-describedby={trust.canVote ? undefined : 'trust-reason'}
+              onClick={() => change.mutate()}
+            >
+              <ShieldCheck aria-hidden="true" />
+              {u('users.trustVote')}
+            </Button>
+          )}
+          {!trust.canVote && trust.reasonCode !== null && !trust.votedByMe ? (
+            <p id="trust-reason" className="text-xs text-muted-foreground">
+              {u(`users.trustReason.${trust.reasonCode}`)}
+            </p>
+          ) : null}
+          {problem === null ? null : (
+            <p role="alert" className="text-sm text-destructive">
+              {problem}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// --- super admins making super admins (D-659) -------------------------------------------
+
+function SuperAdminSection({
+  row,
+  nomination,
+  onNotice,
+}: {
+  readonly row: StaffRow;
+  readonly nomination: NominationView;
+  readonly onNotice: (message: string) => Promise<void>;
+}) {
+  const u = useUsersT();
+  const t = useT();
+  const { locale } = useLocale();
+  const [problem, setProblem] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const vote = useMutation({
+    mutationFn: () => voteSuperAdmin(row.userId),
+    onSuccess: async (result) => {
+      setProblem(null);
+      setConfirming(false);
+      await onNotice(nominationNotice(result, row.name, u));
+    },
+    onError: (cause) => {
+      setConfirming(false);
+      setProblem(messageOf(cause, t('error.unreachable')));
+    },
+  });
+  const withdraw = useMutation({
+    mutationFn: () => withdrawSuperAdmin(row.userId),
+    onSuccess: async () => {
+      setProblem(null);
+      await onNotice(u('users.superAdminWithdrawn'));
+    },
+    onError: (cause) => setProblem(messageOf(cause, t('error.unreachable'))),
+  });
+  const busy = vote.isPending || withdraw.isPending;
+  const rule = nomination.immediate
+    ? u('users.superAdminImmediate')
+    : u('users.superAdminRule').replace('{m}', formatCount(nomination.needed, locale));
+  const actionLabel = nomination.pending ? u('users.superAdminVote') : u('users.superAdminMake');
+
+  return (
+    <section aria-labelledby="super-admin-heading" className="space-y-3">
+      <div>
+        <h3 id="super-admin-heading" className="flex items-center gap-2 text-sm font-medium">
+          {u('users.superAdminHeading')}
+          {nomination.pending ? (
+            <StatusBadge tone="warning">{nominationLabel(nomination, u, locale)}</StatusBadge>
+          ) : null}
+        </h3>
+        <p className="text-xs text-muted-foreground">{u('users.superAdminExplain')}</p>
+        <p className="text-xs text-muted-foreground">{rule}</p>
+      </div>
+      {confirming ? (
+        <div className="space-y-2 rounded-md border border-border p-3">
+          <p className="text-sm font-medium">
+            {u('users.superAdminConfirm').replace('{name}', row.name)}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" disabled={busy} onClick={() => vote.mutate()}>
+              <Crown aria-hidden="true" />
+              {actionLabel}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+            >
+              {t('common.cancel')}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {nomination.canVote ? (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => setConfirming(true)}>
+              <Crown aria-hidden="true" />
+              {actionLabel}
+            </Button>
+          ) : null}
+          {nomination.canWithdraw ? (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => withdraw.mutate()}>
+              <X aria-hidden="true" />
+              {u('users.superAdminWithdraw')}
+            </Button>
+          ) : null}
+        </div>
+      )}
+      {nomination.votedByMe && !nomination.canVote ? (
+        <Muted>{u('users.superAdminVoted')}</Muted>
+      ) : null}
+      {!nomination.canVote && !nomination.canWithdraw && !nomination.votedByMe ? (
+        <Muted>{u('users.superAdminOnlyNote')}</Muted>
+      ) : null}
+      {problem === null ? null : (
+        <p role="alert" className="text-sm text-destructive">
+          {problem}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -942,18 +1222,25 @@ function LinkDialog({
 
 function InviteDialog({
   branches,
+  superAdmin,
   onClose,
   onInvited,
 }: {
   readonly branches: readonly BranchRow[];
+  /** Invite a super admin (D-659): an admin of the whole brand, nominated in the same step. */
+  readonly superAdmin: boolean;
   readonly onClose: () => void;
-  readonly onInvited: (result: { link: IssuedLink | null }) => Promise<void>;
+  readonly onInvited: (result: {
+    link: IssuedLink | null;
+    name: string;
+    nomination?: NominationOutcome;
+  }) => Promise<void>;
 }) {
   const u = useUsersT();
   const t = useT();
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<MembershipRole | ''>('');
+  const [role, setRole] = useState<MembershipRole | ''>(superAdmin ? 'org_admin' : '');
   const [chosen, setChosen] = useState<string[]>([]);
   const [errors, setErrors] = useState<{ email?: string; name?: string; role?: string }>({});
   const [failure, setFailure] = useState<string | null>(null);
@@ -975,9 +1262,12 @@ function InviteDialog({
         email: email.trim().toLowerCase(),
         name: name.trim(),
         role,
-        branchIds: chosen,
+        branchIds: superAdmin ? [] : chosen,
+        ...(superAdmin ? { superAdmin: true } : {}),
       });
       await onInvited({
+        name: name.trim(),
+        ...(result.superAdmin === undefined ? {} : { nomination: result.superAdmin }),
         link:
           result.inviteToken === undefined
             ? null
@@ -1001,8 +1291,8 @@ function InviteDialog({
       onOpenChange={(next) => {
         if (!next && !busy) onClose();
       }}
-      title={u('users.inviteTitle')}
-      description={u('users.inviteDetail')}
+      title={superAdmin ? u('users.inviteSuperAdmin') : u('users.inviteTitle')}
+      description={superAdmin ? u('users.inviteSuperAdminDetail') : u('users.inviteDetail')}
       closeLabel={t('common.close')}
       footer={
         <>
@@ -1040,26 +1330,31 @@ function InviteDialog({
           onChange={(event) => setName(event.target.value)}
           error={errors.name}
         />
-        <div className="space-y-1.5">
-          <label htmlFor="invite-role" className="block text-sm font-medium">
-            {u('users.fieldRole')}
-          </label>
-          <Select
-            id="invite-role"
-            value={role}
-            placeholder={u('users.pickRole')}
-            aria-invalid={errors.role === undefined ? undefined : true}
-            aria-describedby={errors.role === undefined ? undefined : 'invite-role-error'}
-            onValueChange={(value) => setRole(value as MembershipRole | '')}
-            options={orderedRoles().map((option) => ({ value: option, label: u(roleKey(option)) }))}
-          />
-          {errors.role === undefined ? null : (
-            <p id="invite-role-error" className="text-xs text-destructive">
-              {errors.role}
-            </p>
-          )}
-        </div>
-        {role !== '' && branches.length > 0 ? (
+        {superAdmin ? null : (
+          <div className="space-y-1.5">
+            <label htmlFor="invite-role" className="block text-sm font-medium">
+              {u('users.fieldRole')}
+            </label>
+            <Select
+              id="invite-role"
+              value={role}
+              placeholder={u('users.pickRole')}
+              aria-invalid={errors.role === undefined ? undefined : true}
+              aria-describedby={errors.role === undefined ? undefined : 'invite-role-error'}
+              onValueChange={(value) => setRole(value as MembershipRole | '')}
+              options={orderedRoles().map((option) => ({
+                value: option,
+                label: u(roleKey(option)),
+              }))}
+            />
+            {errors.role === undefined ? null : (
+              <p id="invite-role-error" className="text-xs text-destructive">
+                {errors.role}
+              </p>
+            )}
+          </div>
+        )}
+        {!superAdmin && role !== '' && branches.length > 0 ? (
           <fieldset className="space-y-1.5">
             <legend className="text-sm font-medium">{u('users.branches')}</legend>
             <p className="text-xs text-muted-foreground">

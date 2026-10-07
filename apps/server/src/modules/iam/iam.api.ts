@@ -2,7 +2,9 @@ import { Injectable, Module } from '@nestjs/common';
 import type { MembershipRole } from '@elysium/contracts';
 import type { Tx } from '@elysium/db';
 import { maskEmail } from '@elysium/domain';
+import type { TrustTally } from '@elysium/domain/iam';
 
+import { lockTrust, loadTrust } from './trust.repository.js';
 import { activeMembers, ownersAmong } from './users.repository.js';
 
 /**
@@ -57,6 +59,14 @@ export interface IamApi {
     orgId: string,
     options?: { readonly roles?: readonly MembershipRole[] },
   ): Promise<readonly BrandMember[]>;
+
+  /**
+   * Whether the brand's independent admins trust this person now (D-654 to D-656), for an
+   * approval decision about to set aside the grant lineage. Counted live, in the caller's
+   * transaction, holding the candidate's trust lock and the active admin memberships for
+   * share until it commits, so a withdrawn vote or a deactivated voter cannot cross it.
+   */
+  checkerTrust(tx: Tx, orgId: string, userId: string): Promise<TrustTally>;
 }
 
 export const IAM_API = Symbol('IAM_API');
@@ -87,6 +97,12 @@ export class IamApiService implements IamApi {
       emailMasked: maskEmail(row.email),
       roles: row.roles,
     }));
+  }
+
+  async checkerTrust(tx: Tx, orgId: string, userId: string): Promise<TrustTally> {
+    await lockTrust(tx, orgId, userId, 'shared');
+    const facts = await loadTrust(tx, orgId, { lock: true });
+    return facts.graph.tally(userId, facts.votes.get(userId) ?? []);
   }
 }
 

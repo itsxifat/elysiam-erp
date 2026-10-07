@@ -1,24 +1,34 @@
 /**
- * Sticker media and where each sticker goes (M38a, D-604).
+ * Sticker media and where each sticker goes (M38a, D-604; 45 × 35 and the custom size, D-650).
  *
  * Two kinds of stock, both in daily use in Bangladeshi warehouses:
  *
- * - **Thermal rolls** (38 × 25, 40 × 30, 50 × 25 mm): one sticker per PDF page, the page
- *   exactly the sticker's size with no margin. A roll printer's driver feeds one label per
- *   page; a page of any other size is scaled or split across two labels.
+ * - **Thermal rolls** (38 × 25, 40 × 30, 45 × 35, 50 × 25 mm, or any size typed in, D-650):
+ *   one sticker per PDF page, the page exactly the sticker's size with no margin. A roll
+ *   printer's driver feeds one label per page; a page of any other size is scaled or split
+ *   across two labels.
  * - **A4 sheets** (3 × 8 and 4 × 10): a grid on an A4 page, with "start at position" so a
  *   sheet with its first eleven stickers already used is not wasted.
  *
- * The module size is chosen per medium for the printer that uses it: a 203 dpi thermal head
- * has 0.125 mm dots, so its bars are a whole number of dots (0.25 mm = 2 dots, 0.375 mm = 3);
- * a laser printer on A4 has room for the nominal-ish 0.33 to 0.375 mm. The geometry of the
- * two sheets is the common retail stock (24-up 63.5 × 33.9 mm, 40-up 48.5 × 25.4 mm);
- * ASSUMED in D-604 until the owner's own sheets are measured.
+ * What goes where on one sticker, and how wide the bars' module is, comes from one rule for
+ * every size: `stickerLayout` (`sticker-layout.ts`). A roll's module is a whole number of
+ * 203 dpi dots chosen by that rule; a sheet goes through a laser printer and keeps the module
+ * D-604 chose for it (0.375 mm on 3 × 8, 0.33 mm on 4 × 10). The geometry of the two sheets is
+ * the common retail stock (24-up 63.5 × 33.9 mm, 40-up 48.5 × 25.4 mm); ASSUMED in D-604 until
+ * the owner's own sheets are measured.
  */
+
+import {
+  stickerLayout,
+  type StickerContent,
+  type StickerLayout,
+  type StickerLayoutRefusal,
+} from './sticker-layout.js';
 
 export const STICKER_MEDIA_IDS = [
   'thermal-38x25',
   'thermal-40x30',
+  'thermal-45x35',
   'thermal-50x25',
   'a4-3x8',
   'a4-4x10',
@@ -26,23 +36,29 @@ export const STICKER_MEDIA_IDS = [
 
 export type StickerMedium = (typeof STICKER_MEDIA_IDS)[number];
 
+/** A roll sticker of a size the person types (D-650): `widthMm` and `heightMm` with it. */
+export const CUSTOM_STICKER_MEDIUM = 'custom' as const;
+
+/** Every choice of stock: a fixed medium, or the custom size. */
+export type StickerMediumChoice = StickerMedium | typeof CUSTOM_STICKER_MEDIUM;
+
 interface MediumBase {
-  readonly id: StickerMedium;
+  readonly id: StickerMediumChoice;
   /** One sticker's size. */
   readonly labelWidthMm: number;
   readonly labelHeightMm: number;
-  /** The EAN-13 module width: the narrowest bar, in millimetres. */
-  readonly moduleMm: number;
-  /** The data bars' height, in millimetres. */
-  readonly barHeightMm: number;
 }
 
+/** A thermal roll: its module and bar height come from `stickerLayout`. */
 export interface RollMedium extends MediumBase {
   readonly kind: 'roll';
 }
 
 export interface SheetMedium extends MediumBase {
   readonly kind: 'sheet';
+  readonly id: StickerMedium;
+  /** The EAN-13 module width for the laser printer: the narrowest bar, in millimetres. */
+  readonly moduleMm: number;
   readonly pageWidthMm: number;
   readonly pageHeightMm: number;
   readonly columns: number;
@@ -62,24 +78,24 @@ export const STICKER_MEDIA: Readonly<Record<StickerMedium, StickerMediumSpec>> =
     id: 'thermal-38x25',
     labelWidthMm: 38,
     labelHeightMm: 25,
-    moduleMm: 0.25,
-    barHeightMm: 7,
   },
   'thermal-40x30': {
     kind: 'roll',
     id: 'thermal-40x30',
     labelWidthMm: 40,
     labelHeightMm: 30,
-    moduleMm: 0.25,
-    barHeightMm: 10,
+  },
+  'thermal-45x35': {
+    kind: 'roll',
+    id: 'thermal-45x35',
+    labelWidthMm: 45,
+    labelHeightMm: 35,
   },
   'thermal-50x25': {
     kind: 'roll',
     id: 'thermal-50x25',
     labelWidthMm: 50,
     labelHeightMm: 25,
-    moduleMm: 0.375,
-    barHeightMm: 7,
   },
   'a4-3x8': {
     kind: 'sheet',
@@ -95,7 +111,6 @@ export const STICKER_MEDIA: Readonly<Record<StickerMedium, StickerMediumSpec>> =
     gapXMm: 2.5,
     gapYMm: 0,
     moduleMm: 0.375,
-    barHeightMm: 12,
   },
   'a4-4x10': {
     kind: 'sheet',
@@ -111,7 +126,6 @@ export const STICKER_MEDIA: Readonly<Record<StickerMedium, StickerMediumSpec>> =
     gapXMm: 0,
     gapYMm: 0,
     moduleMm: 0.33,
-    barHeightMm: 8,
   },
 };
 
@@ -120,6 +134,29 @@ export const MAX_STICKERS_PER_PDF = 1000;
 
 export function isStickerMedium(value: string): value is StickerMedium {
   return (STICKER_MEDIA_IDS as readonly string[]).includes(value);
+}
+
+/** A roll sticker of the size typed in (D-650). Its size is checked by `stickerLayout`. */
+export function customStickerMedium(widthMm: number, heightMm: number): RollMedium {
+  return {
+    kind: 'roll',
+    id: CUSTOM_STICKER_MEDIUM,
+    labelWidthMm: widthMm,
+    labelHeightMm: heightMm,
+  };
+}
+
+/** The layout of one sticker on this medium: the same rule for every size (D-650). */
+export function stickerLayoutFor(
+  medium: StickerMediumSpec,
+  content: StickerContent,
+): StickerLayout | StickerLayoutRefusal {
+  return stickerLayout(
+    medium.labelWidthMm,
+    medium.labelHeightMm,
+    content,
+    medium.kind === 'sheet' ? { moduleMm: medium.moduleMm } : {},
+  );
 }
 
 /** Stickers per page: one on a roll, the grid on a sheet. */

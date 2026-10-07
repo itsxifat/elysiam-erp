@@ -746,6 +746,23 @@ describe('the 2FA enrolment wall (§6)', () => {
     expect(response.body).toContain('TWO_FACTOR_ENROLMENT_REQUIRED');
   });
 
+  it('lets a walled role sign in again with its password (set-up left half done)', async () => {
+    // The half session stays in the browser; the next sign-in must replace it, not 403.
+    const { client, email } = await signedIn('org_admin', ORG_A);
+    await client.request('POST', '/api/auth/two-factor/enable', {
+      body: { password: PASSWORD, method: 'totp' },
+    });
+
+    const again = await client.request('POST', '/api/auth/sign-in/email', {
+      body: { email, password: PASSWORD },
+    });
+    expect(again.statusCode, again.body).toBeLessThan(400);
+
+    const walled = await client.request('GET', '/v1/me/orgs');
+    expect(walled.statusCode).toBe(403);
+    expect(walled.body).toContain('TWO_FACTOR_ENROLMENT_REQUIRED');
+  });
+
   it('still lets that role reach the enrolment endpoint it needs', async () => {
     const { client } = await signedIn('accounts', ORG_A);
     const response = await client.request('POST', '/api/auth/two-factor/enable', {

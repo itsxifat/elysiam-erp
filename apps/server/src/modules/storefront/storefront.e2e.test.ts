@@ -414,7 +414,8 @@ describe('the signature (check 3)', () => {
     );
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body) as { items: Card[] };
-    expect(body.items.some((item) => item.slug.endsWith(suffix))).toBe(false);
+    // By name: a product's address is its parent SKU (D-661), which says nothing of this run.
+    expect(body.items.some((item) => item.name.endsWith(suffix))).toBe(false);
   });
 });
 
@@ -528,8 +529,9 @@ describe('what the shop shows (check 1)', () => {
       (
         await signed<{ items: Card[] }>(`/storefront/v1/catalog/products?${query}&limit=60`)
       ).body.items
+        // This run's products, by name: their addresses are parent SKUs (D-661).
+        .filter((item) => item.name.endsWith(suffix))
         .map((item) => item.slug)
-        .filter((slug) => slug.endsWith(suffix))
         .sort();
     expect(await slugsFor(`category=shirts-${suffix}`)).toEqual([seeded.shirt.slug]);
     expect(await slugsFor(`category=menswear-${suffix}&gender=men`)).toHaveLength(2);
@@ -1139,28 +1141,36 @@ describe('audit, isolation and load (the M33 ledger audit)', () => {
   });
 
   it('lets another brand take an old address without touching this brand’s redirect', async () => {
-    const first = `linen-kurta-${suffix}`;
     const second = `linen-kurta-classic-${suffix}`;
-    const kurta = await json<{ id: string }>(admin.client, 'POST', '/v1/catalog/products', {
-      name: `Linen kurta ${suffix}`,
-      slug: first,
-      status: 'active',
-      pricePoisha: '180000',
-    });
+    const kurta = await json<{ id: string; slug: string }>(
+      admin.client,
+      'POST',
+      '/v1/catalog/products',
+      { name: `Linen kurta ${suffix}`, status: 'active', pricePoisha: '180000' },
+    );
     expect(kurta.status, kurta.raw).toBe(201);
+    // Its first address is its parent SKU in lower case (D-661).
+    const first = kurta.body.slug;
     await setWeb(kurta.body.id, { webVisible: true });
     const renamed = await json(admin.client, 'PATCH', `/v1/catalog/products/${kurta.body.id}`, {
       slug: second,
     });
     expect(renamed.status, renamed.raw).toBe(200);
 
-    const theirs = await json(adminB.client, 'POST', '/v1/catalog/products', {
+    // The other brand gives one of its products that address by hand.
+    const theirs = await json<{ id: string }>(adminB.client, 'POST', '/v1/catalog/products', {
       name: `Their kurta ${suffix}`,
-      slug: first,
       status: 'active',
       pricePoisha: '90000',
     });
     expect(theirs.status, theirs.raw).toBe(201);
+    const takenByThem = await json(
+      adminB.client,
+      'PATCH',
+      `/v1/catalog/products/${theirs.body.id}`,
+      { slug: first },
+    );
+    expect(takenByThem.status, takenByThem.raw).toBe(200);
 
     const mine = await json<{ web: { previousSlugs: string[] } }>(
       admin.client,

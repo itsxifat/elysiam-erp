@@ -117,6 +117,20 @@ const en = {
   'cp.dup.name': 'Name of the copy',
   'cp.dup.copySuffix': 'copy',
   'cp.dup.submit': 'Duplicate',
+  // Copies, many products at once, and the parent SKU (D-661 to D-663).
+  'cp.dup.copies': 'Copies',
+  'cp.dup.copiesOfEach': 'Copies of each',
+  'cp.dup.copiesHint':
+    "Each copy takes the next number, so its parent SKU and its variants' SKUs follow on their own.",
+  'cp.dup.copiesRange': 'Make 1 to 50 copies.',
+  'cp.dup.tooMany': 'At most 200 new products at a time: fewer copies, or fewer products.',
+  'cp.dup.bulkTitle': 'Duplicate {n} products',
+  'cp.dup.bulkHelp':
+    "Each copy keeps its product's name and takes the next number, in the order of the list. Variants, prices, photos and website details are copied; no stock, no buying prices, no history. Copies start as drafts. An archived product cannot be copied.",
+  'cp.dup.made': '{n} new products: {first} to {last}.',
+  'cp.parentSku': 'Parent SKU',
+  'cp.new.addressHint':
+    'The web address will be the parent SKU. Products may share a name; the parent SKU tells them apart.',
 
   // Sizes and colours later (D-639).
   'cp.extend.title': 'Sizes and colours',

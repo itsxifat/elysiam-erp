@@ -20,6 +20,7 @@ import {
   isInternalEan13,
   isValidEan13,
   normaliseScannedCode,
+  stickerLayoutFor,
   stickerPageSize,
   stickerPages,
   stickerParts,
@@ -223,8 +224,10 @@ describe('sticker layout', () => {
   it('fits every sheet inside A4 and every barcode inside its sticker', () => {
     for (const id of STICKER_MEDIA_IDS) {
       const medium = STICKER_MEDIA[id];
-      // 113 modules: the symbol and both quiet zones.
-      expect(113 * medium.moduleMm).toBeLessThan(medium.labelWidthMm);
+      // 113 modules: the symbol and both quiet zones, at the module the layout chose.
+      const layout = stickerLayoutFor(medium, { price: true, variant: true, extra: false });
+      expect(layout.ok).toBe(true);
+      if (layout.ok) expect(113 * layout.moduleMm).toBeLessThan(medium.labelWidthMm);
       if (medium.kind === 'sheet') {
         const width =
           medium.marginLeftMm +

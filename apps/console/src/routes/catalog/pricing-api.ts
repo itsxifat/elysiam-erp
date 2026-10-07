@@ -107,11 +107,33 @@ export function setSkuWeight(
 
 // --- products (D-641, D-642, D-643) ---------------------------------------------------
 
+/** One product a duplicate made (D-662, D-663). */
+export interface ProductCopy {
+  readonly id: string;
+  readonly sourceId: string;
+  readonly name: string;
+  /** `ELY-HAWA-0021`: the source's parent SKU with the next number (D-661). */
+  readonly parentSku: string;
+  readonly slug: string;
+}
+
+/**
+ * `copies` copies of a product (1 to 50), numbered one after another (D-662), each named
+ * `name` or the source's name. The first copy comes back whole, all of them in `copies`.
+ */
 export function duplicateProduct(
   productId: string,
-  input: { readonly name: string },
-): Promise<CatalogProduct> {
+  input: { readonly name?: string | undefined; readonly copies: number },
+): Promise<CatalogProduct & { readonly copies: readonly ProductCopy[] }> {
   return api.post(`/v1/catalog/products/${productId}/duplicate`, input);
+}
+
+/** `copies` copies of each of many products, made in the order given (D-663). */
+export function duplicateProducts(input: {
+  readonly productIds: readonly string[];
+  readonly copies: number;
+}): Promise<{ readonly products: readonly ProductCopy[] }> {
+  return api.post('/v1/catalog/products/duplicate', input);
 }
 
 export function bulkProducts(input: {

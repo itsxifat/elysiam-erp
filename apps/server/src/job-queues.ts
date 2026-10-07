@@ -9,6 +9,8 @@ import { MARKETING_QUEUE_DEFINITIONS } from './modules/marketing/marketing.queue
 import { LOANS_QUEUE_DEFINITIONS } from './modules/loans/loans.queues.js';
 import { STOREFRONT_QUEUE_DEFINITIONS } from './modules/storefront/storefront.queues.js';
 import { MARKETPLACE_QUEUE_DEFINITIONS } from './modules/marketplace/marketplace.queues.js';
+import { FILES_QUEUE_DEFINITIONS } from './modules/files/files.queues.js';
+import { PACKING_QUEUE_DEFINITIONS } from './modules/packing/packing.queues.js';
 
 /**
  * Every pg-boss queue the application defines, for both entrypoints.
@@ -34,4 +36,7 @@ export const ALL_QUEUES: readonly QueueDefinition[] = [
   ...LOANS_QUEUE_DEFINITIONS,
   ...STOREFRONT_QUEUE_DEFINITIONS,
   ...MARKETPLACE_QUEUE_DEFINITIONS,
+  // M38b: the packing video's retention, and removing a deleted file's bytes.
+  ...FILES_QUEUE_DEFINITIONS,
+  ...PACKING_QUEUE_DEFINITIONS,
 ];

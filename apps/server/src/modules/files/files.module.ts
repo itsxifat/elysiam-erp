@@ -1,6 +1,6 @@
 import { Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
-import { ALLOWED_MIME_TYPES, MAX_UPLOAD_BYTES } from '@elysium/integrations';
+import { ALLOWED_MIME_TYPES } from '@elysium/integrations';
 import type { FastifyInstance } from 'fastify';
 
 import { serverEnv } from '../../platform/config/env.js';
@@ -22,7 +22,8 @@ import { GotenbergClient } from './pdf/gotenberg.client.js';
  *
  * Deliberately *only* the types on the allow-list: registering `*` would make
  * this process willing to buffer any body anybody sends, which is a memory
- * budget set by strangers. `bodyLimit` bounds each one, and the per-type
+ * budget set by strangers. `bodyLimit` bounds each one at its own type's ceiling
+ * (M38b: a 90 MiB packing video must not make a CSV parser take 90 MiB), and the
  * ceiling is checked again in the service against the ticket that was issued.
  *
  * An `OnModuleInit` rather than a line in `main.api.ts`, so the HTTP tests —
@@ -41,7 +42,7 @@ export class FileUploadBodyParser implements OnModuleInit {
       if (instance.hasContentTypeParser(rule.mime)) continue;
       instance.addContentTypeParser(
         rule.mime,
-        { parseAs: 'buffer', bodyLimit: MAX_UPLOAD_BYTES },
+        { parseAs: 'buffer', bodyLimit: rule.maxBytes },
         (_request, body, done) => {
           done(null, body);
         },

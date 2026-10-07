@@ -20,8 +20,13 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       // `dist/_headers` for Cloudflare Pages, and the same headers under `vite preview`
-      // (M14b, D-347). `VITE_CSP_CONNECT_SRC` adds the R2 upload endpoint in production.
-      pagesHeaders({ apiUrl: env.VITE_API_URL, extraConnectSrc: raw.VITE_CSP_CONNECT_SRC }),
+      // (M14b, D-347). `VITE_CSP_CONNECT_SRC` adds the R2 upload endpoint in production. The
+      // camera for this origin (M38b, D-616): the packing video and scanning with a phone.
+      pagesHeaders({
+        apiUrl: env.VITE_API_URL,
+        extraConnectSrc: raw.VITE_CSP_CONNECT_SRC,
+        allowCamera: true,
+      }),
     ],
     // Matches the tsconfig path alias; shadcn/ui components generated in
     // M05 import through it.

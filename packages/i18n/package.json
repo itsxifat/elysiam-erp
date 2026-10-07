@@ -64,6 +64,22 @@
     "./locales/sections/packing.bn": {
       "types": "./dist/locales/sections/packing.bn.d.ts",
       "default": "./dist/locales/sections/packing.bn.js"
+    },
+    "./locales/sections/pack-station.en": {
+      "types": "./dist/locales/sections/pack-station.en.d.ts",
+      "default": "./dist/locales/sections/pack-station.en.js"
+    },
+    "./locales/sections/pack-station.bn": {
+      "types": "./dist/locales/sections/pack-station.bn.d.ts",
+      "default": "./dist/locales/sections/pack-station.bn.js"
+    },
+    "./locales/sections/trust.en": {
+      "types": "./dist/locales/sections/trust.en.d.ts",
+      "default": "./dist/locales/sections/trust.en.js"
+    },
+    "./locales/sections/trust.bn": {
+      "types": "./dist/locales/sections/trust.bn.d.ts",
+      "default": "./dist/locales/sections/trust.bn.js"
     }
   },
   "files": [

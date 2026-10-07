@@ -52,6 +52,12 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/users/:id/deactivate',
   'POST /v1/users/:id/password-link',
   'POST /v1/users/:id/two-factor/reset',
+  // D-654 to D-656: the admins' trust votes.
+  'POST /v1/users/:id/trust',
+  'DELETE /v1/users/:id/trust',
+  // D-659: super admins making super admins.
+  'POST /v1/users/:id/super-admin',
+  'DELETE /v1/users/:id/super-admin',
   'GET /v1/catalog/categories',
   'POST /v1/catalog/categories',
   'PATCH /v1/catalog/categories/:id',
@@ -81,6 +87,8 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   // M39b (D-636 to D-645).
   'GET /v1/catalog/products/:id/price-history',
   'POST /v1/catalog/products/:id/duplicate',
+  // Many products, several copies each (D-663).
+  'POST /v1/catalog/products/duplicate',
   'PATCH /v1/catalog/products',
   'PUT /v1/catalog/products/:id/images/:imageId/colour',
   'PUT /v1/catalog/skus/:id/weight',
@@ -491,6 +499,19 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/scanner/devices',
   'POST /v1/scanner/devices/:id/revoke',
   'POST /v1/packing/labels',
+  // M38b: the packing station (`update Order`) and the packing video (`read PackingVideo`).
+  'POST /v1/packing/sessions',
+  'GET /v1/packing/sessions',
+  'GET /v1/packing/sessions/:id',
+  'POST /v1/packing/sessions/:id/scans',
+  'POST /v1/packing/sessions/:id/removals',
+  'POST /v1/packing/sessions/:id/complete',
+  'POST /v1/packing/sessions/:id/videos',
+  'POST /v1/packing/sessions/:id/videos/:videoId/file',
+  'GET /v1/packing/videos/:id/url',
+  'GET /v1/packing/orders/:orderId',
+  'GET /v1/packing/settings',
+  'PUT /v1/packing/settings',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

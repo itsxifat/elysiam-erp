@@ -6,6 +6,7 @@ import type { PackingKey } from './packing.en.js';
  */
 const bn: Record<PackingKey, string> = {
   'pk.nav.scan': 'স্ক্যান',
+  'pk.nav.pack': 'প্যাক',
   'pk.actions': 'কাজ',
   'pk.cancel': 'বাতিল',
   'pk.close': 'বন্ধ করুন',

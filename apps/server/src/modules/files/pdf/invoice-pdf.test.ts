@@ -41,8 +41,8 @@ const REVIEW_DIR = path.join(REPO_ROOT, 'docs', 'review');
 const PNG_PATH = path.join(REVIEW_DIR, 'M04-bangla-invoice.png');
 
 const BRAND = {
-  legalName: 'Elysium Lifestyle BD Limited',
-  displayName: 'Elysium Lifestyle BD',
+  legalName: 'Elysiam Lifestyle BD Limited',
+  displayName: 'Elysiam Lifestyle BD',
   address: 'বাড়ি ১২, সড়ক ৫, ধানমন্ডি, ঢাকা ১২০৫',
   vatNo: '004512345678',
   invoiceFooter: 'পণ্য বদলাতে চাইলে ডেলিভারির ৭ দিনের মধ্যে যোগাযোগ করুন।',
@@ -125,7 +125,7 @@ describe('invoice money formatting', () => {
 
   it('carries the org brand block, including the Bangla address and VAT number', () => {
     const html = renderInvoiceHtml({ brand: BRAND, data: DATA, fonts: [] });
-    expect(html).toContain('Elysium Lifestyle BD Limited');
+    expect(html).toContain('Elysiam Lifestyle BD Limited');
     expect(html).toContain('ধানমন্ডি');
     expect(html).toContain('004512345678');
     expect(html).toContain('oklch(0.55 0.12 268)');

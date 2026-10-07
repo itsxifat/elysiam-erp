@@ -32,6 +32,8 @@ export interface CatalogProductListItem {
   readonly name: string;
   readonly slug: string;
   readonly sequence: number;
+  /** The parent SKU (D-661), `ELY-HAWA-0020`; null for a product with imported codes. */
+  readonly parentSku: string | null;
   readonly status: 'draft' | 'active' | 'archived';
   readonly categoryId: string | null;
   readonly categoryName: string | null;
@@ -67,8 +69,11 @@ export interface CatalogSku {
 export interface CatalogProduct {
   readonly id: string;
   readonly name: string;
+  /** Its web address: for a new product, the parent SKU in lower case (D-661). */
   readonly slug: string;
   readonly sequence: number;
+  /** The parent SKU (D-661), `ELY-HAWA-0020`; null for a product with imported codes. */
+  readonly parentSku: string | null;
   readonly categoryId: string | null;
   readonly description: string | null;
   readonly status: 'draft' | 'active' | 'archived';
@@ -204,9 +209,9 @@ export function listAttributes(): Promise<{ items: CatalogAttribute[] }> {
   return api.get('/v1/catalog/attributes');
 }
 
+/** A new product; its web address is made by the server from its parent SKU (D-661). */
 export function createProduct(input: {
   readonly name: string;
-  readonly slug: string;
   readonly categoryId?: string | undefined;
   readonly description?: string | undefined;
   readonly pricePoisha: string;
@@ -437,9 +442,18 @@ export function commitPriceImport(
   });
 }
 
-/** Where stickers are printed (M38a, D-604): a thermal roll, or an A4 sheet. */
+/**
+ * Where stickers are printed (M38a, D-604, D-650): a thermal roll, an A4 sheet, or a roll of
+ * a custom size (`widthMm` × `heightMm`).
+ */
 export type StickerMediumId =
-  'thermal-38x25' | 'thermal-40x30' | 'thermal-50x25' | 'a4-3x8' | 'a4-4x10';
+  | 'thermal-38x25'
+  | 'thermal-40x30'
+  | 'thermal-45x35'
+  | 'thermal-50x25'
+  | 'a4-3x8'
+  | 'a4-4x10'
+  | 'custom';
 
 /**
  * Barcode stickers, as a PDF blob (M06's label sheet, M38a's media).
@@ -452,6 +466,11 @@ export async function stickersPdf(input: {
   readonly showPrice: boolean;
   readonly medium: StickerMediumId;
   readonly startAt: number;
+  /** The custom size in millimetres, one decimal at most (D-650); custom only. */
+  readonly widthMm?: number;
+  readonly heightMm?: number;
+  /** One short line on every sticker of this print (D-651). */
+  readonly extraLine?: string;
 }): Promise<Blob> {
   const response = await fetch(new URL('/v1/catalog/labels', env.VITE_API_URL), {
     method: 'POST',

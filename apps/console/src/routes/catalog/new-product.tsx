@@ -40,7 +40,6 @@ import {
 } from './api.js';
 import { ChipGroup, Field } from './parts.js';
 import { PhotoPicker, PhotoTooLargeError, uploadPhoto, type PendingPhoto } from './photo-picker.js';
-import { slugify } from './slug.js';
 import { StickerDialog, type StickerItem } from './stickers.js';
 import {
   copyDown,
@@ -349,8 +348,8 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
       const product =
         created ??
         (await createProduct({
+          // No web address: the server makes it from the parent SKU (D-661).
           name: name.trim(),
-          slug: slugify(name),
           categoryId: categoryId === '' ? undefined : categoryId,
           description: description.trim() === '' ? undefined : description.trim(),
           // The main price, or (every row priced by size or colour) the first row's.
@@ -558,7 +557,11 @@ function NewProductForm({ onAnother }: { readonly onAnother: () => void }) {
             {t('cs.new.basics')}
           </h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={t('catalog.productName')} className="sm:col-span-2">
+            <Field
+              label={t('catalog.productName')}
+              hint={t('cp.new.addressHint')}
+              className="sm:col-span-2"
+            >
               <input
                 value={name}
                 maxLength={200}

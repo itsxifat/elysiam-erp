@@ -1,5 +1,5 @@
 -- The owner's reporting reads (§5 exception 3; D-469, D-483). Written as 0103 on the
--- m32 branch and renumbered 0125 at the merge: 0124 and before are live and frozen.
+-- m32 branch, renumbered 0125, then 0131 on 2026-10-07, after the live and M38b migrations.
 --
 -- With one brand per database (D-469), the owner's cross-brand figures are read from each
 -- brand's database through `erp_analytics`, the role that already reads every org's ledger

@@ -22,6 +22,11 @@ import path from 'node:path';
  * - `style-src 'self' 'unsafe-inline'`: component libraries set inline styles; a style is
  *   not a script.
  * - `img-src` allows https: product images come from R2's public host.
+ * - `media-src` (M38b, D-616): this origin, the API's (a local driver's signed video URL) and
+ *   the extra origins (R2's signed URLs), plus `blob:` for a recording played back in place.
+ * - `Permissions-Policy`: the camera only for an app that asks for it (`allowCamera`, the
+ *   console: the packing video and scanning stickers with a phone's camera, D-605, D-611), and
+ *   then only for this origin. Microphone, location, payment and USB stay off everywhere.
  * - `frame-ancestors 'none'` and `X-Frame-Options: DENY`: no page is meant to be framed.
  */
 
@@ -30,6 +35,8 @@ export interface PagesHeadersOptions {
   readonly apiUrl: string;
   /** Extra `connect-src` sources, space-separated (`VITE_CSP_CONNECT_SRC`). */
   readonly extraConnectSrc?: string | undefined;
+  /** Let this origin use the camera (M38b): the console's packing station and camera scans. */
+  readonly allowCamera?: boolean;
 }
 
 const INLINE_SCRIPT = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
@@ -60,11 +67,14 @@ export function contentSecurityPolicy(html: string, options: PagesHeadersOptions
       throw new Error(`VITE_CSP_CONNECT_SRC: "${source}" is not an https or wss origin`);
     }
   }
+  const apiOrigin = new URL(options.apiUrl).origin;
+  const extraHttps = extra.filter((source) => source.toLowerCase().startsWith('https:'));
   const directives: [string, string[]][] = [
     ['default-src', ["'self'"]],
     ['script-src', ["'self'", ...inlineScriptHashes(html)]],
     ['style-src', ["'self'", "'unsafe-inline'"]],
     ['img-src', ["'self'", 'data:', 'blob:', 'https:']],
+    ['media-src', ["'self'", 'blob:', apiOrigin, ...extraHttps]],
     ['font-src', ["'self'"]],
     ['connect-src', ["'self'", ...apiSources(options.apiUrl), ...extra]],
     ['worker-src', ["'self'"]],
@@ -84,7 +94,10 @@ export function documentHeaders(html: string, options: PagesHeadersOptions): [st
     ['X-Frame-Options', 'DENY'],
     ['X-Content-Type-Options', 'nosniff'],
     ['Referrer-Policy', 'strict-origin-when-cross-origin'],
-    ['Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()'],
+    [
+      'Permissions-Policy',
+      `camera=${options.allowCamera === true ? '(self)' : '()'}, microphone=(), geolocation=(), payment=(), usb=()`,
+    ],
     ['Cross-Origin-Opener-Policy', 'same-origin'],
   ];
 }

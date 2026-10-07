@@ -237,13 +237,15 @@ export async function ensureCatalog(ctx: Context): Promise<void> {
   const sizes = (await attributes()).find((row) => row.code === 'SIZE') ?? size;
   const valueId = (code: string) => sizes.values.find((value) => value.code === code)?.id ?? '';
 
-  const listed = itemsOf<{ id: string; slug: string }>(
+  const listed = itemsOf<{ id: string; name: string }>(
     await admin.get('/v1/catalog/products?limit=100'),
   );
   const skus: Sku[] = [];
   const barcodes: { skuId: string; barcode: string }[] = [];
   for (const [productIndex, product] of PRODUCTS.entries()) {
-    const known = listed.find((row) => row.slug === product.slug);
+    // Found again by name: a product's web address is its parent SKU (D-661), so `slug` here
+    // is only the preview's own key for the product.
+    const known = listed.find((row) => row.name === product.name);
     const view =
       known === undefined
         ? await admin.post<ProductView>('/v1/catalog/products', {

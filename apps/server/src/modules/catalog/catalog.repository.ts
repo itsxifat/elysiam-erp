@@ -467,6 +467,10 @@ export interface ProductListRow extends ProductRow {
   readonly image_file_id: string | null;
   /** Whether the product is shown on the website (M33's flag; a list column since M39b). */
   readonly web_visible: boolean;
+  /** The category's code now, for the parent SKU of a product with no SKU yet (D-661). */
+  readonly category_code: string | null;
+  /** The product's first SKU code, any status, which the parent SKU is read from (D-661). */
+  readonly first_sku_code: string | null;
 }
 
 /**
@@ -503,7 +507,11 @@ export async function searchProducts(
       (select i.file_id from catalog.product_images i
         where i.org_id = p.org_id and i.product_id = p.id
         order by i.position, i.created_at limit 1) as image_file_id,
-      p.web_visible
+      p.web_visible,
+      c.code as category_code,
+      (select s.code from catalog.skus s
+        where s.org_id = p.org_id and s.product_id = p.id
+        order by s.position, s.code limit 1) as first_sku_code
     from catalog.products p
     left join catalog.categories c on c.org_id = p.org_id and c.id = p.category_id
     where p.org_id = ${orgId}

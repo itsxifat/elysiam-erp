@@ -2375,3 +2375,130 @@ dry-run|commit --file <users.json>`.
 - To switch tracking on later: the nginx tracking-proxy include on the demo site, the pixel and
   GA4 ids in Website → Tracking, and `STOREFRONT_TRACKING_PROVIDER=live` with
   `STOREFRONT_TRACKING_ENABLED=true` on the brand ERP.
+
+### 2026-10-06 · hotfix · Sticker and every other PDF failed on the live ERP · fixed
+
+- The owner's "Print stickers" failed with "the failure is logged". The live API's log:
+  `Cannot find the Bangla fonts. Set PDF_FONT_DIR …` from `loadFonts` (catalog labels).
+- Cause: `apps/server/src/modules/files/pdf/fonts.ts` never read `PDF_FONT_DIR`. The server
+  image sets it to `/app/fonts` (where the fonts are) and also keeps a `pnpm-workspace.yaml` at
+  `/app`, so the workspace walk stopped there, looked for a `packages/ui` the image does not have,
+  and threw. All seven production callers (SKU stickers, courier labels, packing order labels,
+  invoices and their documents, payslips) were affected on any deployed server, including the
+  test site; every local and CI test passed because a checkout has the folder the walk finds.
+- Fix 8f68372: the variable wins whenever it is set; `fonts.test.ts` reproduces the image's
+  layout (marker at the root, no packages/ui, fonts in their own folder). PDF tests 19 of 19,
+  typecheck and lint green; deployed to Elysium's ERP at once; on the live server the four faces
+  load and Gotenberg returns a PDF with Bangla text. Full verify run afterwards (below).
+- Lesson: deployed images need a smoke test that renders one PDF; added as a follow-up for
+  M14b/M30 part 2 (a post-deploy check in `infra/brand/server-deploy.sh`).
+
+### 2026-10-06 · pause · Weekly usage limit reached
+
+- The hotfix's full verify passed at 613efaf: 233 test files, 3,585 passed, 1 skipped.
+- Builders stopped by the account's weekly limit (resets 2026-10-09, 07:00 Asia/Dhaka), work
+  safe on disk (no zeroed files): M38b on `m38b-pack-video` at 8982c9c (station screen, recorder
+  and upload queue committed; 4 files uncommitted), M32 on `m32-mother` at 84265aa (merged with
+  today's integration; deploy scripts in progress; 9 files uncommitted), stickers (45 × 35 mm,
+  custom size, extra line) on `stickers-sizes` not started.
+
+### 2026-10-06 · M38a · Stickers: 45 × 35 mm, a custom size and an extra line · done
+
+- Delivered (owner's request, branch `stickers-sizes`): **Print on** offers a 45 × 35 mm thermal
+  roll beside 38 × 25, 40 × 30 and 50 × 25, and **Custom size…** with width and height in mm
+  (25–110 × 15–100, one decimal), one sticker a page at exactly that size. Every size is laid
+  out by one rule, `stickerLayout` in `@elysium/domain/barcode` (D-650): the module a whole
+  number of 203 dpi dots (0.25 mm floor, so under 29.3 mm wide is refused with the least width
+  that prints), bars never under 5 mm, lines given up least important first (the name's second
+  line, the extra line, the SKU code, size and colour, the name; never the brand and price row
+  or the barcode). An optional extra line of up to 40 characters on every sticker of a print,
+  under **More options** (D-651). A live preview drawn from the same layout, saying what was
+  left off; the medium, custom size, price choice and extra line remembered per person on the
+  device (D-652). Same dialog at every entry point. No migration; no API-client change (the
+  labels route's body is untyped in the generated client).
+- The fixed sizes print as before: the regenerated `sticker-thermal-38x25.png` and
+  `sticker-thermal-50x25.png` match the old ones (38 × 25 at 0.25 mm and 7 mm bars, 50 × 25 at
+  0.375 mm); new review images `sticker-thermal-45x35.png` (with "Made in Bangladesh") and
+  `sticker-custom-32x20.png`, and `03b-stickers-custom-size.png` of the dialog. On the A4 3 × 8
+  sheet a name between about 39 and 49 characters now reserves two lines where it fits in one
+  (the cutting estimate is conservative); cosmetic, sheets only.
+- Verification: `pnpm verify` exit 0 at 65eb92d (merged with `integration-wave2` a0f1f97): 234 test
+  files, 3,606 passed, 1 known skip; every gate (bundle 249.1 KB of 250, white label, migrations,
+  schema drift, route matrix, i18n, api-client) PASS.
+  Targeted: domain layout property tests (never outside the sticker, no overlapping rows,
+  module ≥ 0.25 mm and bars ≥ 5 mm, refusal exactly under 29.25 mm, deterministic, drop order;
+  2,000 runs each); server `stickers.test.ts` 16 of 16 against the real Gotenberg (every
+  medium's MediaBox including 45 × 35, a custom 32.5 × 20 at 92.13 × 56.69 pt, out-of-range and
+  two-decimal sizes refused by the schema, 27 mm refused by the service with
+  `CATALOG_LABELS_INVALID` before any read); console `m38a-ui.test.ts` 17 of 17 (the dialog's
+  validation); `barcodes.stack.ts` 8 of 8 on the real stack (a 25 mm width refused in the
+  dialog, a 32.5 × 20 print with an extra line: nine pages of exactly that size; axe clean in
+  both themes). Console initial route 249.1 KB of 250.
+- Auditors: ledger-auditor n/a (no ledger, stock, tenancy or permission change; stickers still
+  select no cost).
+- Decisions/assumptions: D-650 (ASSUMED: the 0.25 mm floor, the 0.5 mm edge, the size limits),
+  D-651, D-652.
+- New dependencies: none.
+- Follow-ups: the owner to print one 45 × 35 and one custom run on the shop's printer and scan
+  them (owner: human); `docs/build-status.md` unchanged (one cell; left to the integration).
+- Next: deploy to the live ERP (coordinator).
+
+### 2026-10-07 · trust-votes · Admins vouch for an admin; a trusted checker may approve their inviter · built, lean-tested
+
+- Delivered (owner's request, branch `trust-votes`): **Staff** shows each active admin's
+  **Trusted** badge or "n of m votes"; **Manage** has a Trust section with **Trust** /
+  **Withdraw trust** and the reason a vote would not count. Routes
+  `POST /v1/users/:id/trust` and `DELETE /v1/users/:id/trust` (`update User`, route matrix
+  and fixtures added); `GET /v1/users` rows gain `trust`. `iam.trust_votes` (migrations `0125_trust_votes_schema`,
+  `0126_trust_votes_policies`). The rule is `trustGraph` in `@elysium/domain/iam` (D-656): only
+  independent admins count (no one in the candidate's invitation chain either way, no shared
+  inviter but a super admin, two-step sign-in on), two thirds of them and at least two.
+  `ApprovalsService.decide` sets the grant-lineage refusal aside for a trusted checker, counted
+  live in the decision's transaction, never for a `credential_reset` (D-655). Strings in a new
+  `trust` section catalogue (lazy, not in the first download).
+- Verification (lean, as asked; full testing scheduled for Friday): typecheck (server,
+  console), eslint on every touched file, prettier, `check:routes`, `check:api-client`,
+  `check:migrations`, `check:schema`, `check:i18n` all PASS; domain `iam` tests 44 of 44
+  (13 new trust properties over random invitation forests with cycles: independence symmetric
+  and exactly the stated rule, no related voter ever counts, quorum of two, withdrawal never
+  helps, an owner never vouches down their chain); i18n 64 of 64; module-boundaries 30 of 30.
+  **Not run:** `trust.e2e.test.ts` (the Riya → Faisal + puppets scenario against real
+  Postgres) and the route-matrix suite: Docker was not running, so Testcontainers could not
+  start. No `pnpm verify`, no stack runs, no bundle check, no auditors.
+- Decisions: D-654, D-655, D-656. New dependencies: none.
+- Follow-ups: run `trust.e2e.test.ts`, the route matrix and `users.e2e.test.ts` with Docker up;
+  ledger-auditor on the diff (permissions); `pnpm check:bundle` after a console build. In
+  Elysium as it stands (the owner invited Riya, Riya invited everyone else) nobody is
+  independent of Faisal, so he cannot become trusted until a second super admin or an admin the
+  owner invited directly joins (D-656's note).
+
+### 2026-10-07 · parent-sku · Parent SKU names a product and is its web address; duplicate N copies, one or many · built, lean-tested
+
+- Delivered (owner's request, branch `parent-sku-slug`): a product's **parent SKU** is its SKU
+  code without the size and colour (`ELY-HAWA-0020`, `parentSkuCode`); every new product's web
+  address is it in lower case (`ely-hawa-0020`) on every create path (form, new-products
+  spreadsheet, duplicate), whatever the request sends, so names may repeat (D-661).
+  `parentSku` on product responses and list rows; shown in the product page header and as a list
+  column; the new-product form no longer makes an address from the name. Duplicate takes
+  `copies` 1 to 50, one transaction, consecutive numbers, variant codes following (D-662);
+  `POST /v1/catalog/products/duplicate` and the list's bulk **Duplicate** copy many products in
+  the list's order, all or nothing, at most 200 new products (D-663). Limits shared through
+  `DUPLICATE_LIMITS` in `@elysium/contracts`. Preview seed finds its products by name now. No
+  migration.
+- Verification (lean, as asked): typecheck (server, console), eslint and prettier on every
+  touched file, `check:routes` (the new route declared and matrix-tested), `check:api-client`
+  (regenerated), `check:i18n` all PASS; domain catalog tests (new `parent-sku.test.ts`: slug =
+  lower-cased parent SKU over random orgs, categories and sequences, consecutive copies, no two
+  sequences share an address, read-back from codes), console `duplicate-copies.test.ts` (the
+  copies field accepts exactly what the server schema accepts; the 200 cap), console catalog,
+  i18n and preview setup tests: 171 of 171. **Not run:** Docker was off, so no Testcontainers:
+  the new `variant-pricing.e2e.test.ts` case (3 copies on consecutive numbers with their variant
+  codes, bulk 2 × 2 in order, all-or-nothing on an archived product, roles, limits) and the
+  updated `catalog-deletes`, `storefront` e2e expectations are written, not run. No
+  `pnpm verify`, no stack runs, no bundle check, no auditors.
+- Decisions: D-661, D-662, D-663 (ASSUMED in D-663: archived products refused by the bulk route
+  only; the 200 cap). New dependencies: none.
+- Follow-ups: run `variant-pricing`, `catalog-deletes`, `storefront`, the route matrix and
+  `catalog.db` with Docker up; ledger-auditor on the diff (the duplicate's lock order changed
+  shape, though not order); `pnpm check:bundle` after a console build (strings and code are in
+  the catalog route chunks).
