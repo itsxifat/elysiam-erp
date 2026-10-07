@@ -20,6 +20,8 @@ import type { FastifyRequest } from 'fastify';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
+import { lockSuperAdmins } from './super-admin.repository.js';
+import { requireSuperAdmin, voteSuperAdmin, type NominationOutcome } from './super-admin.js';
 import { usersHttpError } from './users.errors.js';
 import {
   addGranter,
@@ -191,17 +193,22 @@ export class IamService {
     name: string;
     role: MembershipRole;
     branchIds: readonly string[];
+    /** Invite them as a super admin too (D-659): promoted at once, or a nomination. */
+    superAdmin?: boolean;
   }): Promise<{
     userId: string;
     membershipId: string;
     created: boolean;
     inviteToken?: string;
     inviteExpiresAt?: string;
+    superAdmin?: NominationOutcome;
   }> {
     const isAdmin = input.caller.isSuperAdmin || input.caller.roles.includes('org_admin');
     if (!isAdmin) {
       throw new ForbiddenException('Only an organisation admin can create users.');
     }
+    // Before any row is written: only a super admin makes a super admin (D-659).
+    if (input.superAdmin === true) requireSuperAdmin(input.caller);
 
     const email = input.email;
 
@@ -258,9 +265,12 @@ export class IamService {
 
     const resolvedUserId = userId;
 
-    const { membershipId, invite } = await withOrg(
+    const { membershipId, invite, nomination } = await withOrg(
       { orgId: input.orgId, userId: input.caller.userId },
       async (tx) => {
+        // The super admins' lock before the person's and before any row lock, the order a
+        // vote on the Staff screen also follows, so the two never wait on each other.
+        if (input.superAdmin === true) await lockSuperAdmins(tx);
         await lockPerson(tx, resolvedUserId);
         /*
          * Someone who has ever held a role in another brand is a super admin's to add here
@@ -346,7 +356,25 @@ export class IamService {
             })()
           : undefined;
 
-        return { membershipId: id, invite: minted };
+        // The invite is this super admin's yes (D-659), audited here; the request's own row,
+        // the user created, is still the interceptor's.
+        const nominated =
+          input.superAdmin === true
+            ? await voteSuperAdmin(
+                tx,
+                this.audit,
+                {
+                  orgId: input.orgId,
+                  userId: input.caller.userId,
+                  isSuperAdmin: input.caller.isSuperAdmin,
+                  requestId: input.caller.requestId,
+                },
+                resolvedUserId,
+                undefined,
+              )
+            : undefined;
+
+        return { membershipId: id, invite: minted, nomination: nominated };
       },
     );
 
@@ -357,6 +385,7 @@ export class IamService {
       ...(invite === undefined
         ? {}
         : { inviteToken: invite.token, inviteExpiresAt: invite.expiresAt.toISOString() }),
+      ...(nomination === undefined ? {} : { superAdmin: nomination }),
     };
   }
 

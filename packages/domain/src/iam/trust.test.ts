@@ -10,7 +10,7 @@ import {
 } from './index.js';
 
 /**
- * The trust rule (D-654 to D-656), as properties over small random invitation forests.
+ * The trust rule (D-654 to D-657), as properties over small random invitation forests.
  * The server tests it again against real Postgres, inside an approval decision.
  */
 
@@ -136,35 +136,61 @@ describe('trustGraph', () => {
     );
   });
 
-  it('never counts a vote from anyone related to the candidate, not an admin, or without two-step sign-in', () => {
+  it('counts a super admin with two-step sign-in always, an admin only when unrelated', () => {
     fc.assert(
       fc.property(graphs, person, voters, (input, candidate, cast) => {
         const graph = trustGraph(input);
         const pool = new Map(input.pool.map((member) => [member.userId, member]));
-        const counting = new Set(
-          cast.filter(
-            (voter) => pool.get(voter)?.twoFactor === true && !related(input, voter, candidate),
-          ),
-        );
-        expect(graph.tally(candidate, cast).votes).toBe(counting.size);
-        for (const voter of cast) {
-          if (related(input, voter, candidate)) {
-            expect(graph.standing(voter, candidate).ok).toBe(false);
-          }
+        const counts = (voter: string): boolean => {
+          const member = pool.get(voter);
+          if (voter === candidate || member?.twoFactor !== true) return false;
+          return member.isSuperAdmin || !related(input, voter, candidate);
+        };
+        expect(graph.tally(candidate, cast).votes).toBe(new Set(cast.filter(counts)).size);
+        for (const voter of cast) expect(graph.standing(voter, candidate).ok).toBe(counts(voter));
+      }),
+    );
+  });
+
+  it('never counts an admin who is not a super admin and is related to the candidate', () => {
+    fc.assert(
+      fc.property(graphs, person, person, (input, voter, candidate) => {
+        const member = input.pool.find((entry) => entry.userId === voter);
+        if (member?.isSuperAdmin === true) return;
+        if (related(input, voter, candidate)) {
+          expect(trustGraph(input).standing(voter, candidate).ok).toBe(false);
         }
       }),
     );
   });
 
-  it('trusts exactly at two thirds of the independent voters, and never on fewer than two votes', () => {
+  it('trusts on one vote from a super admin, else exactly at two thirds and never on fewer than two', () => {
     fc.assert(
       fc.property(graphs, person, voters, (input, candidate, cast) => {
-        const tally = trustGraph(input).tally(candidate, cast);
-        expect(tally.trusted).toBe(
-          tally.votes >= TRUST_QUORUM && 3 * tally.votes >= 2 * tally.eligible,
+        const graph = trustGraph(input);
+        const tally = graph.tally(candidate, cast);
+        const bySuperAdmin = cast.some(
+          (voter) =>
+            graph.standing(voter, candidate).ok &&
+            input.pool.some((member) => member.userId === voter && member.isSuperAdmin),
         );
-        if (tally.trusted) expect(tally.votes).toBeGreaterThanOrEqual(2);
+        expect(tally.trusted).toBe(
+          bySuperAdmin || (tally.votes >= TRUST_QUORUM && 3 * tally.votes >= 2 * tally.eligible),
+        );
+        if (tally.trusted && !bySuperAdmin) expect(tally.votes).toBeGreaterThanOrEqual(2);
         expect(tally.votes).toBeLessThanOrEqual(tally.eligible);
+      }),
+    );
+  });
+
+  it('admins alone, without a super admin, never make anyone trusted on one vote', () => {
+    fc.assert(
+      fc.property(graphs, person, voters, (input, candidate, cast) => {
+        const admins = cast.filter(
+          (voter) => !input.pool.some((member) => member.userId === voter && member.isSuperAdmin),
+        );
+        const tally = trustGraph(input).tally(candidate, admins);
+        if (tally.votes < TRUST_QUORUM) expect(tally.trusted).toBe(false);
       }),
     );
   });
@@ -186,13 +212,32 @@ describe('trustGraph', () => {
     );
   });
 
-  it('a super admin never vouches for anyone they invited, however far down', () => {
+  it('an admin who is not a super admin never vouches for anyone they invited, however far down', () => {
     fc.assert(
       fc.property(graphs, person, (input, candidate) => {
         const graph = trustGraph(input);
+        const superAdmins = new Set(
+          input.pool.filter((member) => member.isSuperAdmin).map((member) => member.userId),
+        );
         for (const ancestor of graph.ancestors(candidate)) {
-          expect(graph.standing(ancestor, candidate).ok).toBe(false);
+          if (!superAdmins.has(ancestor)) {
+            expect(graph.standing(ancestor, candidate).ok).toBe(false);
+          }
         }
+      }),
+    );
+  });
+
+  it('a super admin with two-step sign-in may vouch for anyone else, and alone makes them trusted', () => {
+    fc.assert(
+      fc.property(graphs, person, (input, candidate) => {
+        const graph = trustGraph(input);
+        for (const member of input.pool) {
+          if (!member.isSuperAdmin || member.userId === candidate) continue;
+          expect(graph.standing(member.userId, candidate).ok).toBe(member.twoFactor);
+          expect(graph.tally(candidate, [member.userId]).trusted).toBe(member.twoFactor);
+        }
+        expect(graph.standing(candidate, candidate)).toMatchObject({ ok: false, code: 'self' });
       }),
     );
   });
@@ -222,12 +267,8 @@ describe('the Riya scenario', () => {
   };
   const graph = trustGraph(input);
 
-  it('refuses the inviters and the puppets, each with its reason', () => {
+  it('refuses the inviter and the puppets, each with its reason', () => {
     expect(graph.standing('riya', 'faisal')).toMatchObject({
-      ok: false,
-      code: 'invited_candidate',
-    });
-    expect(graph.standing('owner', 'faisal')).toMatchObject({
       ok: false,
       code: 'invited_candidate',
     });
@@ -239,18 +280,34 @@ describe('the Riya scenario', () => {
     expect(graph.standing('faisal', 'faisal')).toMatchObject({ ok: false, code: 'self' });
   });
 
-  it('the puppets cannot make Faisal trusted', () => {
-    expect(graph.tally('faisal', ['riya', 'owner', 'puppet1', 'puppet2']).trusted).toBe(false);
+  it('lets the owner vouch for someone down their own chain (D-657)', () => {
+    expect(graph.standing('owner', 'faisal')).toEqual({ ok: true });
+    expect(graph.standing('owner', 'riya')).toEqual({ ok: true });
   });
 
-  it('two independent admins can, sharing only a super admin as inviter', () => {
-    // Sam and Nadia are the only independent voters: both are needed.
+  it('the puppets cannot make Faisal trusted', () => {
+    expect(graph.tally('faisal', ['riya', 'puppet1', 'puppet2']).trusted).toBe(false);
+  });
+
+  it('one vote from a super admin does, on its own', () => {
+    expect(graph.tally('faisal', ['owner']).trusted).toBe(true);
+    expect(graph.tally('faisal', ['sam']).trusted).toBe(true);
+    expect(graph.tally('riya', ['owner']).trusted).toBe(true);
+  });
+
+  it('an independent admin alone does not; with a second voter they do', () => {
+    // The owner, Sam and Nadia may vote for Faisal: two of the three are needed.
+    expect(graph.tally('faisal', ['nadia'])).toEqual({
+      votes: 1,
+      needed: 2,
+      eligible: 3,
+      trusted: false,
+    });
     expect(graph.tally('faisal', ['sam', 'nadia'])).toEqual({
       votes: 2,
       needed: 2,
-      eligible: 2,
+      eligible: 3,
       trusted: true,
     });
-    expect(graph.tally('faisal', ['sam']).trusted).toBe(false);
   });
 });

@@ -151,6 +151,15 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     operationId: 'withdrawUserTrust',
     summary: 'Withdraw your trust vote for an admin.',
   },
+  'POST /v1/users/:id/super-admin': {
+    operationId: 'voteSuperAdmin',
+    summary:
+      'Say yes to making an admin a super admin: at once while there is one super admin, else when all have.',
+  },
+  'DELETE /v1/users/:id/super-admin': {
+    operationId: 'withdrawSuperAdminNomination',
+    summary: 'Withdraw a pending super admin nomination.',
+  },
 
   'GET /v1/approvals': {
     operationId: 'listApprovals',
