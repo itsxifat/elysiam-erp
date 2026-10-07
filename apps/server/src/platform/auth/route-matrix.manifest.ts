@@ -55,6 +55,9 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   // D-654 to D-656: the admins' trust votes.
   'POST /v1/users/:id/trust',
   'DELETE /v1/users/:id/trust',
+  // D-659: super admins making super admins.
+  'POST /v1/users/:id/super-admin',
+  'DELETE /v1/users/:id/super-admin',
   'GET /v1/catalog/categories',
   'POST /v1/catalog/categories',
   'PATCH /v1/catalog/categories/:id',

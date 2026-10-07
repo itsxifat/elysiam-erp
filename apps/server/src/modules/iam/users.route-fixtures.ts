@@ -77,4 +77,13 @@ export const USERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> |
     );
     return { url: `/v1/users/${candidate}/trust` };
   },
+  // D-659: only a super admin makes a super admin, and the matrix has none, so the admitted
+  // role (org_admin) reaches the handler and is refused there (403, "Only a super admin…"),
+  // which is still an admission; the e2e suite drives the super admin's side.
+  'POST /v1/users/:id/super-admin': async () => ({
+    url: `/v1/users/${await freshAdmin()}/super-admin`,
+  }),
+  'DELETE /v1/users/:id/super-admin': async () => ({
+    url: `/v1/users/${await freshAdmin()}/super-admin`,
+  }),
 };

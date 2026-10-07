@@ -530,6 +530,11 @@ export const ERROR_CODES = [
   /** Only an active admin of the brand, not a super admin, is vouched for (D-654). */
   'TRUST_NOT_CANDIDATE',
   /**
+   * Only an active admin of the brand who is not a super admin or an owner can be made a
+   * super admin (D-659); or there is no nomination for them to withdraw.
+   */
+  'SUPER_ADMIN_NOT_CANDIDATE',
+  /**
    * Sent by sign-in itself (Better Auth's error body), not by a route here: the account
    * is disabled, or holds no active role in any brand (D-401).
    */

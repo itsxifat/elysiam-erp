@@ -416,6 +416,44 @@ export const trustVotes = iam.table(
 );
 
 /**
+ * Super admins' yes votes for making an admin a super admin (D-659): one row per super admin
+ * per candidate. The first row is the nomination; the rows are the votes.
+ *
+ * While the brand has at most one active super admin a nomination promotes at once and no
+ * row outlives the request. With two or more, the candidate waits until every one of them
+ * has a row here; the last vote promotes through `iam.promote_super_admin` (migration 0128),
+ * the only way the application sets the flag, which checks these rows again and clears them.
+ * A withdrawn nomination deletes them all. Insert and delete only: a vote is cast, never
+ * edited, and the audit log keeps every one.
+ */
+export const superAdminVotes = iam.table(
+  'super_admin_votes',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    voterUserId: text('voter_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    candidateUserId: text('candidate_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('super_admin_votes_org_voter_candidate_idx').on(
+      table.orgId,
+      table.voterUserId,
+      table.candidateUserId,
+    ),
+    index('super_admin_votes_org_idx').on(table.orgId),
+    index('super_admin_votes_org_candidate_idx').on(table.orgId, table.candidateUserId),
+    check('super_admin_votes_not_self', sql`${table.voterUserId} <> ${table.candidateUserId}`),
+  ],
+);
+
+/**
  * Every owner sign-in link this brand has accepted, by its `jti` (M31, D-473).
  *
  * Global (identity, like `users`): a link names a brand by its audience, not an org row.
