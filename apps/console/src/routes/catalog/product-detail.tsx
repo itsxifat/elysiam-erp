@@ -47,6 +47,7 @@ import {
 } from './api.js';
 import { BuyingPrices } from './buying-prices.js';
 import { Field, Thumb } from './parts.js';
+import { copiesProblem, parseCopies } from './duplicate-copies.js';
 import { duplicateProduct, productPriceHistory, setImageColour, skuCosts } from './pricing-api.js';
 import { SizesAndColours } from './sizes-colours.js';
 import { PhotoTooLargeError, uploadPhoto } from './photo-picker.js';
@@ -276,12 +277,28 @@ export function CatalogProductPage() {
               )}
             </div>
             <p className="text-sm text-muted-foreground">
-              {data === undefined
-                ? ''
-                : [
-                    `${t('catalog.code')} ${String(data.sequence).padStart(4, '0')}`,
-                    category?.name ?? t('cs.noCategory'),
-                  ].join(' · ')}
+              {data === undefined ? (
+                ''
+              ) : (
+                <>
+                  {/* The parent SKU names the product (D-661): its variants' codes are it with
+                      the size and colour, and its web address is it in lower case. */}
+                  {(data.parentSku ?? null) === null ? (
+                    `${t('catalog.code')} ${String(data.sequence).padStart(4, '0')}`
+                  ) : (
+                    <>
+                      {`${t('cp.parentSku')} `}
+                      <span
+                        data-testid="parent-sku"
+                        className="font-mono font-medium text-foreground tabular-nums"
+                      >
+                        {data.parentSku}
+                      </span>
+                    </>
+                  )}
+                  {` · ${category?.name ?? t('cs.noCategory')}`}
+                </>
+              )}
             </p>
           </div>
 
@@ -606,7 +623,10 @@ function colourValuesOf(
   return [...seen.entries()].map(([id, label]) => ({ id, label }));
 }
 
-/** A copy of the product under a new name (D-641); opens the copy when it is made. */
+/**
+ * Copies of the product under a name (D-641), one or several (D-662): each takes the next
+ * number, so its parent SKU and its variants' codes follow. Opens the first copy.
+ */
 function DuplicateDialog({
   open,
   onOpenChange,
@@ -620,8 +640,11 @@ function DuplicateDialog({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [name, setName] = useState(`${product.name} ${t('cp.dup.copySuffix')}`.slice(0, 200));
+  const [copies, setCopies] = useState('1');
+  const problem = copiesProblem(copies, 1);
   const make = useMutation({
-    mutationFn: () => duplicateProduct(product.id, { name: name.trim() }),
+    mutationFn: () =>
+      duplicateProduct(product.id, { name: name.trim(), copies: parseCopies(copies) ?? 1 }),
     onSuccess: (copy) => {
       void queryClient.invalidateQueries({ queryKey: ['catalog'] });
       onOpenChange(false);
@@ -642,7 +665,7 @@ function DuplicateDialog({
           </Button>
           <Button
             data-testid="duplicate-submit"
-            disabled={name.trim() === '' || make.isPending}
+            disabled={name.trim() === '' || problem !== null || make.isPending}
             onClick={() => make.mutate()}
           >
             {t('cp.dup.submit')}
@@ -659,6 +682,22 @@ function DuplicateDialog({
             className={cn(controlClassName, 'w-full')}
           />
         </Field>
+        <Field label={t('cp.dup.copies')} hint={t('cp.dup.copiesHint')}>
+          <input
+            data-testid="duplicate-copies"
+            value={copies}
+            inputMode="numeric"
+            maxLength={3}
+            aria-invalid={problem !== null}
+            onChange={(event) => setCopies(event.target.value)}
+            className={cn(controlClassName, 'w-24 tabular-nums')}
+          />
+        </Field>
+        {problem === null ? null : (
+          <p role="alert" className="text-sm text-destructive">
+            {problem === 'tooMany' ? t('cp.dup.tooMany') : t('cp.dup.copiesRange')}
+          </p>
+        )}
         {make.error !== null ? (
           <p role="alert" className="text-sm text-destructive">
             {make.error instanceof ApiError ? make.error.message : t('cp.saveFailed')}

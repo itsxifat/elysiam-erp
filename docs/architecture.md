@@ -727,12 +727,20 @@ D-635 to D-646. The selling side lives in the catalog, purchase cost in supply a
   `COST_FIELDS`. The catalog's own price importer still refuses any cost column.
 - **Margin** is worked out in the browser from the WAC (or the last buying price) the supply
   route sends a cost role and the selling price everyone sees; no route sends a margin.
-- **Duplicate** (D-641): `POST /v1/catalog/products/:id/duplicate { name, slug? }` copies the
+- **Parent SKU** (D-661): a product's SKU codes without the variant segments (`ELY-HAWA-0020`,
+  `parentSkuCode`), on product responses and list rows as `parentSku` (read back from its codes,
+  `productParentSku`). Every new product's slug is it in lower case (`ely-hawa-0020`), whatever
+  the request sends; names may repeat.
+- **Duplicate** (D-641, D-662): `POST /v1/catalog/products/:id/duplicate { name?, copies? }`
+  makes 1 to 50 copies in one transaction, on consecutive sequences;
+  `POST /v1/catalog/products/duplicate { productIds, copies }` (D-663) does it for up to 100
+  products in the order given, all or nothing, at most 200 new products. Each copy has the
   category, description, weight, website fields (off the website), size chart, photos with
   their colours, and every active variant with its price and regular price, coded under the
   copy's own sequence in the source's segment order with new barcodes. No stock, cost, orders,
   history or old addresses. The copy is a draft. A variant with an archived size, colour or list
-  is left out (M39a's D-624), and a product in an archived category is not copied (D-623).
+  is left out (M39a's D-624), and a product in an archived category is not copied (D-623); the
+  bulk route also refuses an archived product.
 - **Weights** (D-645): `products.weight_grams` and an optional `skus.weight_grams`; a courier
   booking declares Σ qty × weight (`parcelWeightGrams`, through `CatalogApi.skuWeights`) or the
   courier's default when any line has none.
@@ -799,8 +807,9 @@ used it), and the answer says what uses it. Branches and ledger accounts are nev
 - **Products and SKUs** (D-625): deleted only when no stock movement, level holding stock,
   stock document, order line, till line, supply line, courier return line, flash sale item,
   live discount, live campaign or lead names any of its SKUs; its values, images, price
-  history, empty stock rows and old ids go with it. Otherwise archive (D-423). A new product
-  whose address an archived one holds takes the next free `-2`, `-3` (D-626).
+  history, empty stock rows and old ids go with it. Otherwise archive (D-423). A new product's
+  address is its parent SKU in lower case (D-661); one another product holds takes the
+  product's number after it (`freeProductSlug`, D-626, D-653).
 - **Locations** (D-629), **suppliers** (D-630), **discounts and flash sales** (D-631), **SMS
   templates and ad campaigns** (D-632): deleted when never used; otherwise switched off or
   archived (a discount comes back paused; a flash sale gains `archived_at`). **Size charts and

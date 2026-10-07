@@ -1,4 +1,7 @@
 import {
+  DUPLICATE_LIMITS,
+  DUPLICATE_TOO_MANY,
+  duplicateCopiesSchema,
   stickerExtraLineSchema,
   stickerHeightMmSchema,
   stickerWidthMmSchema,
@@ -173,7 +176,11 @@ export const productStatusSchema = z.enum(['draft', 'active', 'archived']);
 
 export const createProductSchema = z.object({
   name: nameSchema,
-  slug: slugSchema,
+  /**
+   * Ignored (D-661): a new product's web address is always its parent SKU in lower case
+   * (`ely-hawa-0020`). Still accepted, so a caller that sends one is not refused.
+   */
+  slug: slugSchema.optional(),
   categoryId: catalogIdSchema.nullish(),
   description: z.string().trim().max(20000).optional(),
   status: productStatusSchema.default('draft'),
@@ -414,16 +421,41 @@ export const skuWeightSchema = z.object({ weightGrams: weightGramsSchema }).stri
 export type SkuWeightInput = z.infer<typeof skuWeightSchema>;
 
 /**
- * Duplicate a product (D-641): its name, and optionally its web address (made from the name
- * and kept unique otherwise).
+ * Duplicate a product (D-641, D-662): `copies` new products (1 to 50), each named `name`, or
+ * the source's name when none is given. Each copy's web address is its own parent SKU in lower
+ * case (D-661); `slug` is accepted and ignored, as on create.
  */
 export const duplicateProductSchema = z
   .object({
-    name: nameSchema,
+    name: nameSchema.optional(),
     slug: slugSchema.optional(),
+    copies: duplicateCopiesSchema.default(1),
   })
   .strict();
 export type DuplicateProductInput = z.infer<typeof duplicateProductSchema>;
+
+/**
+ * Duplicate many products from the product list (D-663): `copies` of each, under the source's
+ * name, made in the order the ids are given so their numbers run in that order. At most 100
+ * products and 200 new products in all (`DUPLICATE_LIMITS`).
+ */
+export const bulkDuplicateSchema = z
+  .object({
+    productIds: z
+      .array(catalogIdSchema)
+      .min(1, 'Choose at least one product.')
+      .max(
+        DUPLICATE_LIMITS.products,
+        `Duplicate at most ${String(DUPLICATE_LIMITS.products)} products at a time.`,
+      ),
+    copies: duplicateCopiesSchema.default(1),
+  })
+  .strict()
+  .refine(
+    (value) => new Set(value.productIds).size * value.copies <= DUPLICATE_LIMITS.total,
+    DUPLICATE_TOO_MANY,
+  );
+export type BulkDuplicateInput = z.infer<typeof bulkDuplicateSchema>;
 
 /**
  * Many products at once from the product list (D-642): archive or restore them, or file them

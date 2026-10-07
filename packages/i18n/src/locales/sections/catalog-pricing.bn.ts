@@ -108,6 +108,19 @@ const bn: Record<CatalogPricingKey, string> = {
   'cp.dup.name': 'কপির নাম',
   'cp.dup.copySuffix': 'কপি',
   'cp.dup.submit': 'কপি করুন',
+  'cp.dup.copies': 'কয়টি কপি',
+  'cp.dup.copiesOfEach': 'প্রতিটির কয়টি কপি',
+  'cp.dup.copiesHint':
+    'প্রতিটি কপি পরের নম্বর পায়, তাই এর প্যারেন্ট SKU আর variant-গুলোর SKU নিজে থেকেই মিলে যায়।',
+  'cp.dup.copiesRange': '১ থেকে ৫০টি কপি করা যায়।',
+  'cp.dup.tooMany': 'একবারে সর্বোচ্চ ২০০টি নতুন পণ্য: কপি বা পণ্য কম বাছুন।',
+  'cp.dup.bulkTitle': '{n}টি পণ্যের কপি বানান',
+  'cp.dup.bulkHelp':
+    'প্রতিটি কপি তার পণ্যের নাম রাখে আর তালিকার ক্রমে পরের নম্বর পায়। variant, দাম, ছবি আর ওয়েবসাইটের তথ্য কপি হয়; স্টক, কেনা দাম বা ইতিহাস হয় না। কপিগুলো খসড়া হিসেবে শুরু হয়। আর্কাইভ করা পণ্যের কপি হয় না।',
+  'cp.dup.made': '{n}টি নতুন পণ্য: {first} থেকে {last}।',
+  'cp.parentSku': 'প্যারেন্ট SKU',
+  'cp.new.addressHint':
+    'ওয়েব ঠিকানা হবে প্যারেন্ট SKU। একাধিক পণ্যের একই নাম হতে পারে; প্যারেন্ট SKU দিয়ে আলাদা চেনা যায়।',
 
   'cp.extend.title': 'সাইজ ও রঙ',
   'cp.extend.help':

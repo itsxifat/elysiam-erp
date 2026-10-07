@@ -32,6 +32,8 @@ export interface CatalogProductListItem {
   readonly name: string;
   readonly slug: string;
   readonly sequence: number;
+  /** The parent SKU (D-661), `ELY-HAWA-0020`; null for a product with imported codes. */
+  readonly parentSku: string | null;
   readonly status: 'draft' | 'active' | 'archived';
   readonly categoryId: string | null;
   readonly categoryName: string | null;
@@ -67,8 +69,11 @@ export interface CatalogSku {
 export interface CatalogProduct {
   readonly id: string;
   readonly name: string;
+  /** Its web address: for a new product, the parent SKU in lower case (D-661). */
   readonly slug: string;
   readonly sequence: number;
+  /** The parent SKU (D-661), `ELY-HAWA-0020`; null for a product with imported codes. */
+  readonly parentSku: string | null;
   readonly categoryId: string | null;
   readonly description: string | null;
   readonly status: 'draft' | 'active' | 'archived';
@@ -204,9 +209,9 @@ export function listAttributes(): Promise<{ items: CatalogAttribute[] }> {
   return api.get('/v1/catalog/attributes');
 }
 
+/** A new product; its web address is made by the server from its parent SKU (D-661). */
 export function createProduct(input: {
   readonly name: string;
-  readonly slug: string;
   readonly categoryId?: string | undefined;
   readonly description?: string | undefined;
   readonly pricePoisha: string;

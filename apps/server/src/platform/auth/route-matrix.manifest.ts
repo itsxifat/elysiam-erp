@@ -87,6 +87,8 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   // M39b (D-636 to D-645).
   'GET /v1/catalog/products/:id/price-history',
   'POST /v1/catalog/products/:id/duplicate',
+  // Many products, several copies each (D-663).
+  'POST /v1/catalog/products/duplicate',
   'PATCH /v1/catalog/products',
   'PUT /v1/catalog/products/:id/images/:imageId/colour',
   'PUT /v1/catalog/skus/:id/weight',

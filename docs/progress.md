@@ -2471,3 +2471,34 @@ dry-run|commit --file <users.json>`.
   Elysium as it stands (the owner invited Riya, Riya invited everyone else) nobody is
   independent of Faisal, so he cannot become trusted until a second super admin or an admin the
   owner invited directly joins (D-656's note).
+
+### 2026-10-07 · parent-sku · Parent SKU names a product and is its web address; duplicate N copies, one or many · built, lean-tested
+
+- Delivered (owner's request, branch `parent-sku-slug`): a product's **parent SKU** is its SKU
+  code without the size and colour (`ELY-HAWA-0020`, `parentSkuCode`); every new product's web
+  address is it in lower case (`ely-hawa-0020`) on every create path (form, new-products
+  spreadsheet, duplicate), whatever the request sends, so names may repeat (D-661).
+  `parentSku` on product responses and list rows; shown in the product page header and as a list
+  column; the new-product form no longer makes an address from the name. Duplicate takes
+  `copies` 1 to 50, one transaction, consecutive numbers, variant codes following (D-662);
+  `POST /v1/catalog/products/duplicate` and the list's bulk **Duplicate** copy many products in
+  the list's order, all or nothing, at most 200 new products (D-663). Limits shared through
+  `DUPLICATE_LIMITS` in `@elysium/contracts`. Preview seed finds its products by name now. No
+  migration.
+- Verification (lean, as asked): typecheck (server, console), eslint and prettier on every
+  touched file, `check:routes` (the new route declared and matrix-tested), `check:api-client`
+  (regenerated), `check:i18n` all PASS; domain catalog tests (new `parent-sku.test.ts`: slug =
+  lower-cased parent SKU over random orgs, categories and sequences, consecutive copies, no two
+  sequences share an address, read-back from codes), console `duplicate-copies.test.ts` (the
+  copies field accepts exactly what the server schema accepts; the 200 cap), console catalog,
+  i18n and preview setup tests: 171 of 171. **Not run:** Docker was off, so no Testcontainers:
+  the new `variant-pricing.e2e.test.ts` case (3 copies on consecutive numbers with their variant
+  codes, bulk 2 × 2 in order, all-or-nothing on an archived product, roles, limits) and the
+  updated `catalog-deletes`, `storefront` e2e expectations are written, not run. No
+  `pnpm verify`, no stack runs, no bundle check, no auditors.
+- Decisions: D-661, D-662, D-663 (ASSUMED in D-663: archived products refused by the bulk route
+  only; the 200 cap). New dependencies: none.
+- Follow-ups: run `variant-pricing`, `catalog-deletes`, `storefront`, the route matrix and
+  `catalog.db` with Docker up; ledger-auditor on the diff (the duplicate's lock order changed
+  shape, though not order); `pnpm check:bundle` after a console build (strings and code are in
+  the catalog route chunks).
