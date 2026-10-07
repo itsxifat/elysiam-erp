@@ -61,6 +61,14 @@ async function dark(page: Page, on: boolean): Promise<void> {
   await page.evaluate((value) => {
     document.documentElement.classList.toggle('dark', value);
   }, on);
+  // axe reads colours as painted: wait until no transition or animation is still running,
+  // or a cell caught mid-change measures against the old theme.
+  await page.waitForFunction(() =>
+    document.getAnimations().every((animation) => animation.playState !== 'running'),
+  );
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
 }
 
 let secret = '';
