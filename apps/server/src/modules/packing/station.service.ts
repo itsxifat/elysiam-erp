@@ -247,7 +247,10 @@ export class PackStationService {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const session = await this.sessionInScope(tx, context.orgId, request, sessionId, true);
         if (session.status === 'completed') {
-          return { ...(await this.view(tx, context.orgId, session, context.userId)), alreadyCompleted: true };
+          return {
+            ...(await this.view(tx, context.orgId, session, context.userId)),
+            alreadyCompleted: true,
+          };
         }
         const facts = await this.lockedFacts(tx, context.orgId, session.order_id);
         this.assertPackable(facts);
