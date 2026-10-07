@@ -724,6 +724,23 @@ export const OPERATIONS = {
     path: '/v1/orders/return-reasons',
     ability: 'read:Order',
   },
+  getV1PackingOrdersByOrderId: {
+    method: 'GET',
+    path: '/v1/packing/orders/{orderId}',
+    ability: 'read:Order',
+  },
+  getV1PackingSessions: { method: 'GET', path: '/v1/packing/sessions', ability: 'read:Order' },
+  getV1PackingSessionsById: {
+    method: 'GET',
+    path: '/v1/packing/sessions/{id}',
+    ability: 'read:Order',
+  },
+  getV1PackingSettings: { method: 'GET', path: '/v1/packing/settings', ability: 'update:Order' },
+  getV1PackingVideosByIdUrl: {
+    method: 'GET',
+    path: '/v1/packing/videos/{id}/url',
+    ability: 'read:PackingVideo',
+  },
   getV1PosBranches: { method: 'GET', path: '/v1/pos/branches', ability: 'read:LedgerReport' },
   getV1PosBranchesByIdClosings: {
     method: 'GET',
@@ -1610,6 +1627,32 @@ export const OPERATIONS = {
     ability: 'update:Order',
   },
   postV1PackingLabels: { method: 'POST', path: '/v1/packing/labels', ability: 'read:Order' },
+  postV1PackingSessions: { method: 'POST', path: '/v1/packing/sessions', ability: 'update:Order' },
+  postV1PackingSessionsByIdComplete: {
+    method: 'POST',
+    path: '/v1/packing/sessions/{id}/complete',
+    ability: 'update:Order',
+  },
+  postV1PackingSessionsByIdRemovals: {
+    method: 'POST',
+    path: '/v1/packing/sessions/{id}/removals',
+    ability: 'update:Order',
+  },
+  postV1PackingSessionsByIdScans: {
+    method: 'POST',
+    path: '/v1/packing/sessions/{id}/scans',
+    ability: 'update:Order',
+  },
+  postV1PackingSessionsByIdVideos: {
+    method: 'POST',
+    path: '/v1/packing/sessions/{id}/videos',
+    ability: 'update:Order',
+  },
+  postV1PackingSessionsByIdVideosByVideoIdFile: {
+    method: 'POST',
+    path: '/v1/packing/sessions/{id}/videos/{videoId}/file',
+    ability: 'update:Order',
+  },
   postV1PosBranchesByIdClosings: {
     method: 'POST',
     path: '/v1/pos/branches/{id}/closings',
@@ -1809,6 +1852,11 @@ export const OPERATIONS = {
     ability: 'update:WebsiteCredentials',
   },
   putV1NotifyTemplates: { method: 'PUT', path: '/v1/notify/templates', ability: 'update:Campaign' },
+  putV1PackingSettings: {
+    method: 'PUT',
+    path: '/v1/packing/settings',
+    ability: 'update:PackingVideo',
+  },
   putV1PromoFlashSalesById: {
     method: 'PUT',
     path: '/v1/promo/flash-sales/{id}',
@@ -2717,6 +2765,27 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/orders/return-reasons */
     getV1OrdersReturnReasons: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1OrdersReturnReasons, undefined, options),
+    /** GET /v1/packing/orders/:orderId */
+    getV1PackingOrdersByOrderId: (
+      input: { readonly path: { readonly orderId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PackingOrdersByOrderId, input, options),
+    /** GET /v1/packing/sessions */
+    getV1PackingSessions: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PackingSessions, undefined, options),
+    /** GET /v1/packing/sessions/:id */
+    getV1PackingSessionsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PackingSessionsById, input, options),
+    /** GET /v1/packing/settings */
+    getV1PackingSettings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PackingSettings, undefined, options),
+    /** GET /v1/packing/videos/:id/url */
+    getV1PackingVideosByIdUrl: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PackingVideosByIdUrl, input, options),
     /** GET /v1/pos/branches */
     getV1PosBranches: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1PosBranches, undefined, options),
@@ -3730,6 +3799,39 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/packing/labels */
     postV1PackingLabels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PackingLabels, undefined, options),
+    /** POST /v1/packing/sessions */
+    postV1PackingSessions: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingSessions, undefined, options),
+    /** POST /v1/packing/sessions/:id/complete */
+    postV1PackingSessionsByIdComplete: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingSessionsByIdComplete, input, options),
+    /** POST /v1/packing/sessions/:id/removals */
+    postV1PackingSessionsByIdRemovals: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingSessionsByIdRemovals, input, options),
+    /** POST /v1/packing/sessions/:id/scans */
+    postV1PackingSessionsByIdScans: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingSessionsByIdScans, input, options),
+    /** POST /v1/packing/sessions/:id/videos */
+    postV1PackingSessionsByIdVideos: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingSessionsByIdVideos, input, options),
+    /** POST /v1/packing/sessions/:id/videos/:videoId/file */
+    postV1PackingSessionsByIdVideosByVideoIdFile: (
+      input: { readonly path: { readonly id: string; readonly videoId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingSessionsByIdVideosByVideoIdFile, input, options),
     /** POST /v1/pos/branches/:id/closings */
     postV1PosBranchesByIdClosings: (
       input: { readonly path: { readonly id: string } },
@@ -3950,6 +4052,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/notify/templates */
     putV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1NotifyTemplates, undefined, options),
+    /** PUT /v1/packing/settings */
+    putV1PackingSettings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1PackingSettings, undefined, options),
     /** PUT /v1/promo/flash-sales/:id */
     putV1PromoFlashSalesById: (
       input: { readonly path: { readonly id: string } },
