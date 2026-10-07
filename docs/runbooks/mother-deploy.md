@@ -13,6 +13,8 @@ Two machines:
 - **the brands server**: where every brand's ERP runs (`docs/runbooks/brand-deploy.md`). It
   gets one tunnel-only account and, per brand, a database port on 127.0.0.1.
 
+**Not yet run on a server** (decisions.md, Unverified integrations): the first deploy is also the scripts' and the tunnel's first real run, so go step by step and check each.
+
 Brands and the mother always deploy from **the same commit, brands first**: the mother reads a
 brand only when the brand's migrations are exactly the ones its commit ships (D-481), and
 shows `version_mismatch` otherwise.

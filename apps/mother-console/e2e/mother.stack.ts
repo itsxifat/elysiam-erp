@@ -119,7 +119,7 @@ async function signIn(page: Page): Promise<void> {
 test('the overview adds both brands together, in light and dark', async ({ page }) => {
   await signIn(page);
   const table = page.getByRole('table', { name: 'Orders and revenue' });
-  await expect(table.getByRole('link', { name: 'Elysium Lifestyle BD' })).toBeVisible();
+  await expect(table.getByRole('link', { name: 'Elysiam Lifestyle BD' })).toBeVisible();
   await expect(table.getByRole('link', { name: 'Oura Lifestyle' })).toBeVisible();
   await expect(table.getByRole('rowheader', { name: 'All brands' })).toBeVisible();
   await expect(page.getByRole('img', { name: /Trend by brand/ })).toBeVisible();
@@ -215,9 +215,9 @@ test('a brand page reads live lists, and Open ERP hands over a link the brand ac
   await signIn(page);
   await page
     .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('link', { name: 'Elysium Lifestyle BD' })
+    .getByRole('link', { name: 'Elysiam Lifestyle BD' })
     .click();
-  await expect(page.getByRole('heading', { name: 'Elysium Lifestyle BD', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Elysiam Lifestyle BD', level: 1 })).toBeVisible();
   await expect(page.getByRole('table', { name: 'Latest orders' })).toBeVisible();
   await expect(page.getByRole('table', { name: 'Wallets' })).toBeVisible();
   await page.screenshot({ path: path.join(SHOTS, 'brand-page.png'), fullPage: true });
@@ -231,7 +231,7 @@ test('a brand page reads live lists, and Open ERP hands over a link the brand ac
     landed = { url: route.request().url(), referer: route.request().headers().referer };
     await route.fulfill({ status: 200, contentType: 'text/html', body: '<title>brand</title>' });
   });
-  await page.getByRole('button', { name: 'Open Elysium Lifestyle BD ERP' }).click();
+  await page.getByRole('button', { name: 'Open Elysiam Lifestyle BD ERP' }).click();
   await expect.poll(() => landed).not.toBeNull();
   const arrived = landed as unknown as { url: string; referer: string | undefined };
   // The fragment never reaches a server; the browser keeps it on the page. No Referer.

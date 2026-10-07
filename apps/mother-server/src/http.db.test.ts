@@ -46,6 +46,8 @@ let app: NestFastifyApplication;
 let auth: MotherAuth;
 let pools: BrandPools;
 const queued: PullBrandJob[] = [];
+/** Moves the sign-in limiter's clock: a test that signs in again starts a fresh window. */
+let limiterSkewMs = 0;
 
 const owners: Record<'a' | 'b' | 'c', { email: string; secret: string; browser: Browser }> =
   {} as never;
@@ -77,7 +79,7 @@ beforeAll(async () => {
     trustedOrigins: [PUBLIC_URL],
     secure: true,
     trustedProxies: '127.0.0.1',
-    limiter: new MemoryRateLimiter(),
+    limiter: new MemoryRateLimiter(() => Date.now() + limiterSkewMs),
   });
 }, 300_000);
 
@@ -169,6 +171,8 @@ describe('the first owner and the second-factor wall (D-487)', () => {
   });
 
   it('never trusts a device: the code is asked again in the same browser (D-487)', async () => {
+    // This owner has signed in five times already; the limiter's next window, not a refusal.
+    limiterSkewMs += 61_000;
     const browser = new Browser(app);
     const first = await browser.post('/api/auth/sign-in/email', {
       email: owners.a.email,
@@ -181,12 +185,14 @@ describe('the first owner and the second-factor wall (D-487)', () => {
       trustDevice: true,
     });
     expect(verified.status).toBe(200);
+    expect(browser.cookieNames().some((name) => /trust/i.test(name))).toBe(false);
     expect((await browser.post('/api/auth/sign-out', {})).status).toBe(200);
 
     const again = await browser.post('/api/auth/sign-in/email', {
       email: owners.a.email,
       password: PASSWORD,
     });
+    expect(again.status).toBe(200);
     expect((again.body as { twoFactorRedirect?: boolean }).twoFactorRedirect).toBe(true);
   });
 

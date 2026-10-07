@@ -28,7 +28,7 @@ export interface PreviewBrand {
 }
 
 const NAMES: Readonly<Record<string, string>> = {
-  'elysium-lifestyle-bd': 'Elysium Lifestyle BD',
+  'elysium-lifestyle-bd': 'Elysiam Lifestyle BD',
   'oura-lifestyle': 'Oura Lifestyle',
   orvo: 'Orvo',
   'wear-x-clothing': 'Wear X Clothing',

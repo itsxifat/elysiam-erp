@@ -497,6 +497,24 @@ describe('pulling (D-484)', () => {
     }
   });
 
+  it('a tick and a full pull of one brand at once both land, one after the other', async () => {
+    const count = async () => {
+      const [row] = await motherSql()<{ days: number; total: string }[]>`
+        select count(*)::int as days, coalesce(sum(delivered_revenue_poisha), 0)::text as total
+        from mother.brand_daily where brand_id = ${rowA.id}
+      `;
+      return row;
+    };
+    const before = await count();
+    const outcomes = await Promise.all([
+      puller.pull(rowA.id, { trigger: 'schedule', full: false }),
+      puller.pull(rowA.id, { trigger: 'nightly', full: true }),
+    ]);
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(['ok', 'ok']);
+    // The same figures, each day once: the writes did not interleave.
+    expect(await count()).toEqual(before);
+  });
+
   it('keeps a history of attempts', async () => {
     const [counts] = await motherSql()<{ ok: number; failed: number; mismatch: number }[]>`
       select count(*) filter (where status = 'ok')::int as ok,
