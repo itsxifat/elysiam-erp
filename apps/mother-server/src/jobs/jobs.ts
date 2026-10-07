@@ -106,8 +106,14 @@ export async function startJobsClient(input: {
   return boss;
 }
 
+/**
+ * One waiting pull per brand and kind. A full pull has its own key: under the `exclusive`
+ * policy a tick's pull queued or running for the brand would otherwise swallow the nightly
+ * full one, and a period reopened long ago would never reach the mother (D-484).
+ */
 export async function sendPull(boss: PgBoss, job: PullBrandJob): Promise<string | null> {
-  return boss.send(PULL_BRAND, { ...job }, { singletonKey: job.brandId });
+  const singletonKey = job.full ? `${job.brandId}:full` : job.brandId;
+  return boss.send(PULL_BRAND, { ...job }, { singletonKey });
 }
 
 export function appRoleOf(appUrl: string): string {

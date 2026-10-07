@@ -102,6 +102,8 @@ export class PullService {
     const runId = run?.id ?? '';
     await motherSql()`update mother.brands set last_attempt_at = now() where id = ${brand.id}`;
 
+    // The figures are as of when the read began, not when the mother finished writing them.
+    const readAt = this.clock();
     let result: ReadResult;
     try {
       result = await this.read(brand, full);
@@ -123,7 +125,7 @@ export class PullService {
       return { status: 'failed', code: result.code };
     }
 
-    const days = await this.write(brand, runId, result);
+    const days = await this.write(brand, runId, result, readAt);
     this.logger.info(
       { brand: brand.slug, from: result.from, to: result.to, days, trigger: options.trigger },
       'brand pulled',
@@ -164,8 +166,8 @@ export class PullService {
     brand: BrandRow,
     runId: string,
     read: Extract<ReadResult, { kind: 'ok' }>,
+    pulledAt: Date,
   ): Promise<number> {
-    const pulledAt = this.clock();
     const money = snapshotMoneyFrom(
       read.snapshot.balances.map((row) => ({
         subtype: row.subtype,
@@ -179,6 +181,9 @@ export class PullService {
     );
 
     return inMother(async (tx) => {
+      // A tick's pull and the nightly full one may finish together: one brand's writes go one
+      // at a time, so two replace-window writes never interleave.
+      await tx`select pg_advisory_xact_lock(hashtext(${`mother.pull:${brand.id}`}))`;
       await this.replaceWindow(tx, brand.id, read, pulledAt);
       await tx`
         insert into mother.brand_snapshots
