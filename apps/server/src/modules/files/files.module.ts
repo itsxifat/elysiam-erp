@@ -10,6 +10,7 @@ import { PublicMediaController } from './media.controller.js';
 import { FilesService } from './files.service.js';
 import { createStorageDriver, filesEnv } from './files.config.js';
 import { GotenbergClient } from './pdf/gotenberg.client.js';
+import { FileUploadGate } from './upload-gate.js';
 
 /**
  * Teach Fastify to accept the bytes of an upload.
@@ -67,6 +68,8 @@ export class FileUploadBodyParser implements OnModuleInit {
   controllers: [FilesController, PublicMediaController],
   providers: [
     FileUploadBodyParser,
+    // M38b audit (W3): a signed PUT's token is checked before its body is read.
+    FileUploadGate,
     {
       provide: FilesService,
       useFactory: () => {

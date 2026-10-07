@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 
 import { withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
@@ -15,6 +16,7 @@ import {
   type HttpHarness,
 } from '../../testing/http-harness.js';
 import { resetFilesEnv } from './files.config.js';
+import { FilesService } from './files.service.js';
 
 /**
  * Files over HTTP, against a real database (M04 acceptance check 4).
@@ -437,6 +439,85 @@ describe('M30: finalize checks the stored size before reading a byte', () => {
     expect(finalize.statusCode, finalize.body).toBe(400);
     expect(finalize.body).toMatch(/at most 12 MiB/);
     await expect(stat(file)).rejects.toThrow();
+  });
+});
+
+/*
+ * M38b ledger audit, W3. `PUT /v1/files/content` is public and a packing video may be 90 MiB,
+ * so a token checked only in the handler let a stranger make the API buffer 90 MiB before it
+ * said no. The token, the declared type and the declared length are now checked in an
+ * `onRequest` hook, before a byte of the body is read.
+ */
+describe('M38b audit (W3): a signed PUT is refused before its body is read', () => {
+  /** A body that counts how much of it was pulled: 2 MiB, under a 90 MiB declared length. */
+  function countedBody(): { readonly stream: Readable; pulled: () => number } {
+    let pulled = 0;
+    const stream = new Readable({
+      read() {
+        if (pulled >= 32) {
+          this.push(null);
+          return;
+        }
+        pulled += 1;
+        this.push(Buffer.alloc(64 * 1024, 1));
+      },
+    });
+    return { stream, pulled: () => pulled };
+  }
+
+  it('refuses a junk token with a 90 MiB declared body without reading it, as problem+json', async () => {
+    const files = harness.app.get(FilesService, { strict: false });
+    const handler = vi.spyOn(files, 'writeSignedContent');
+    const body = countedBody();
+    try {
+      const response = await harness.server.inject({
+        method: 'PUT',
+        url: '/v1/files/content?t=eyJrZXkiOiJwcml2YXRlL3gveC53ZWJtIn0.not-a-signature',
+        headers: { 'content-type': 'video/webm', 'content-length': String(90 * 1024 * 1024) },
+        payload: body.stream,
+      });
+      expect(response.statusCode, response.body).toBe(403);
+      expect(String(response.headers['content-type'])).toMatch(/application\/problem\+json/);
+      expect(handler).not.toHaveBeenCalled();
+      // Nothing past what the transport may have handed over unasked.
+      expect(body.pulled()).toBeLessThanOrEqual(1);
+    } finally {
+      handler.mockRestore();
+    }
+  });
+
+  it('refuses a real ticket declaring the wrong type, or more than its type allows, before reading', async () => {
+    const sales = await harness.asRole('sales', ORG_A);
+    const ticketResponse = await sales.client.request('POST', '/v1/files', {
+      body: { purpose: 'order-payment-proof', contentType: 'image/png', sizeBytes: 1024 },
+    });
+    expect(ticketResponse.statusCode, ticketResponse.body).toBe(201);
+    const ticket = JSON.parse(ticketResponse.body) as { url: string };
+    const target = new URL(ticket.url);
+    const files = harness.app.get(FilesService, { strict: false });
+    const handler = vi.spyOn(files, 'writeSignedContent');
+    try {
+      for (const headers of [
+        // A PNG ticket carrying a 90 MiB "video".
+        { 'content-type': 'video/webm', 'content-length': String(90 * 1024 * 1024) },
+        // The right type, one byte over the 12 MiB a PNG may be.
+        { 'content-type': 'image/png', 'content-length': String(12 * 1024 * 1024 + 1) },
+      ]) {
+        const body = countedBody();
+        const response = await harness.server.inject({
+          method: 'PUT',
+          url: `${target.pathname}${target.search}`,
+          headers: { ...headers, host: target.host },
+          payload: body.stream,
+        });
+        expect(response.statusCode, response.body).toBe(400);
+        expect(String(response.headers['content-type'])).toMatch(/application\/problem\+json/);
+        expect(body.pulled()).toBeLessThanOrEqual(1);
+      }
+      expect(handler).not.toHaveBeenCalled();
+    } finally {
+      handler.mockRestore();
+    }
   });
 });
 
