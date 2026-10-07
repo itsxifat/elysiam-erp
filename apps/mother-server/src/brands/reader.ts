@@ -9,7 +9,7 @@ import postgres, { type Sql, type TransactionSql } from 'postgres';
 /**
  * Reading one brand's database (D-481, D-483, D-485).
  *
- * Through the brand's `erp_analytics` role only: SELECT on what migration 0125 opened, and
+ * Through the brand's `erp_analytics` role only: SELECT on what migration 0131 opened, and
  * no write anywhere. Every read here runs inside one `read only` transaction, so a mistake
  * that tries to write fails twice over (the grant and the transaction), and inside
  * `repeatable read`, so the figures of one pull describe one moment.

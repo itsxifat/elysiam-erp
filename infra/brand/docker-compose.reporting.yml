@@ -6,7 +6,7 @@
 # The port is bound to 127.0.0.1: nothing off the host reaches it, and on the host only the
 # tunnel account's `permitopen` forwards do (docs/runbooks/mother-deploy.md).
 #
-# The role the owner console signs in with can read the reporting grants of migration 0125
+# The role the owner console signs in with can read the reporting grants of migration 0131
 # and nothing else (D-483); the other roles' passwords never leave the brand's .env.brand.
 
 services:

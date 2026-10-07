@@ -177,7 +177,7 @@ export const ANALYTICS_READABLE: readonly string[] = [
    */
   'analytics.daily_org',
   /*
-   * The owner's reporting reads (migration 0125, D-483). With one brand per database
+   * The owner's reporting reads (migration 0131, D-483). With one brand per database
    * (D-469) the owner's figures across brands are read from each brand's database through
    * this role, so the channel and campaign rollups open too. Counts and sums per day; no
    * buyer, no cost.
@@ -189,7 +189,7 @@ export const ANALYTICS_READABLE: readonly string[] = [
 ];
 
 /**
- * Tables `erp_analytics` may read some columns of, and exactly which (migration 0125, D-483).
+ * Tables `erp_analytics` may read some columns of, and exactly which (migration 0131, D-483).
  *
  * A column grant rather than the table, because each of these also holds a person's details
  * or a cost: the buyer's name, phone and address on an order, a line's dispatch cost, a staff
