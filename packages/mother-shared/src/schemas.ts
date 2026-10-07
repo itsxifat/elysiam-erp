@@ -1,4 +1,4 @@
-import { daysBetween, isIsoDate, isMonth, type IsoDate } from '@elysium/domain';
+import { daysBetween, isIsoDate, isMonth } from '@elysium/domain';
 import { z } from 'zod';
 
 /**
@@ -14,8 +14,7 @@ export const MAX_RANGE_DAYS = 400;
 
 const isoDate = z
   .string()
-  .refine((value) => isIsoDate(value), { message: 'Expected a YYYY-MM-DD date.' })
-  .transform((value) => value as IsoDate);
+  .refine((value) => isIsoDate(value), { message: 'Expected a YYYY-MM-DD date.' });
 
 export const rangeQuerySchema = z
   .object({ from: isoDate, to: isoDate })
