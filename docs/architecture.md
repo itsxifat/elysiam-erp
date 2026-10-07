@@ -1273,6 +1273,8 @@ Jobs run on pg-boss, with queues named `module.action`.
 | `loans.schedule_reminders`        | Daily 10:00, one `loans.remind_instalments` per brand    | Once per instalment, in-app and SMS (D-300)     |
 | `notify.send`                     | On demand                                                | Respects quiet hours                            |
 | `files.process_image`             | On upload                                                | sharp variants, EXIF stripped                   |
+| `packing.purge_videos`            | Daily 04:15                                              | Packing videos past their expiry (D-612)        |
+| `files.remove_object`             | After the deleting commit                                | The stored bytes of a deleted file              |
 | `ops.backup_verify`               | Weekly (staging)                                         | Restore to a scratch database and verify        |
 
 ---
@@ -1306,6 +1308,7 @@ Rules for every integration:
 - **Storage driver:** an interface with a `local` driver (development and tests) and an `r2` driver (staging and production).
   - Private bucket (receipts, invoices, legal documents, KYC, payslips): served only through short-lived signed URLs after an authorization check. The generic `GET /v1/files/:id/download` serves a file someone else uploaded only to a holder of the purpose's ability across the brand; a narrower holder reaches such a document through the owning module's route, which checks the row first (D-413).
   - Public bucket (product images, landing page assets): served through the CDN.
+  - Packing videos (M38b, D-613): purpose `packing-video`, never public, `video/webm` or `video/mp4` up to 90 MiB, read only through the order's packing record under `read PackingVideo`, deleted seven days after the order ends (D-612).
   - The brand website's images (M33, D-507): `GET /media/<org id>/<file id>/<thumb|card|full>` serves the re-encoded sizes of a stored, public file whose purpose is `product-image`, `category-image` or `storefront-image`, with a year's immutable caching; every other file is the same 404. Never an original.
 - **Uploads:**
   - presigned PUT, with size and MIME limits; the finalize reads at most the type's ceiling (D-417)
@@ -1813,3 +1816,25 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   `{ error, code }`. The console's **Orders → Scan** does the same
   lookup and pairs or signs out phones. `POST /v1/packing/labels` renders the old site's label
   sheet (eight paper sizes, QR codes drawn in-house from `uqr`) through Gotenberg.
+
+### Scan-to-pack and the packing video (M38b, D-610 to D-619)
+
+- **The packing station** (console Orders → Pack, `/v1/packing/sessions`): a session opens for a
+  confirmed order; each scan (a sticker's EAN-13 or the SKU code) is judged by `judgePackScan`
+  (`packages/domain/src/packing`): a SKU not on the order, or one piece too many, is refused and
+  recorded; `packing.scans` is append-only. When `packProgress` says every line is complete the
+  session completes and the order moves to `packed` through `OrdersApi.transition(…, 'pack')`,
+  exactly once under concurrent finishes. The order's Pack button and bulk pack still work
+  (D-618, ASSUMED).
+- **The packing video** (D-611, D-613): while a session is open the browser records the camera
+  (MediaRecorder, about 720p and 1 Mbit/s, at most 15 minutes) with the order number, time and
+  packer drawn on; parts queue in IndexedDB and upload as private `packing-video` files
+  (`video/webm` or `video/mp4`, at most 90 MiB, sniffed); the order page plays it through a
+  signed URL. Watching is the `PackingVideo` subject (§6): org_admin reads and sets the
+  station's settings, warehouse reads across the brand, and a sales agent reads only the
+  videos of their own orders (D-614). Recording is on by default
+  (`packing.settings.video_enabled`, D-615).
+- **Retention** (D-612): `packingVideoExpiry` keeps a video until seven days after the order is
+  delivered, partly delivered, returned or cancelled; `packing.purge_videos` (§20) deletes the
+  expired ones with an audit row, and the stored bytes go after commit (`files.remove_object`).
+  Storage is the brand server's disk until R2 is on (D-619).

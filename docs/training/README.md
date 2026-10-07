@@ -17,6 +17,7 @@ role guides link to its sections rather than repeat them.
 | [Org admin](org-admin.md)                               | Each brand's administrator: staff accounts, settings and approvals      | Console          |
 | [Stickers and scanning](stickers-and-scanning.md)       | Adding products and stock in hand, barcode stickers, the scanner        | Console          |
 | [Prices and buying prices](prices-and-buying-prices.md) | Prices by size and colour, bulk price changes, buying prices and margin | Console          |
+| [The packing station](packing-station.md)               | Scanning each piece against the order, the packing video                | Console          |
 
 - A **super admin** works like an org admin in every brand and also sees the group views.
   Read the org admin guide.

@@ -189,6 +189,15 @@ Its old `/admin` path should land on the ERP (D-475): paste the two locations fr
 replacing `__ADMIN_HOST__`, then `sudo nginx -t && sudo systemctl reload nginx`. Do this once
 the brand's staff work in the ERP (the website's own panel retires with M36).
 
+### Packing video uploads (M38b)
+
+A brand whose nginx site was installed before M38b needs one hand patch, because the template
+is installed once and certbot edits it: copy the `location = /v1/files/content { … }` block from
+`infra/brand/nginx-brand.conf` into `/etc/nginx/sites-available/erp-<slug>.conf` (both the
+`listen 443` server and any plain one), replacing `__ID__` with the brand's id as the other
+blocks there have it, then `sudo nginx -t && sudo systemctl reload nginx`. Without it a packing
+video over 25 MB is refused with 413 and stays queued in the browser.
+
 ## 6. Operating a brand
 
 ```sh
