@@ -248,8 +248,8 @@ const server = createServer(async (request, response) => {
         openShift: state.shift,
         discountCeilingBps: 2000,
         receiptHeader: {
-          displayName: 'Elysium',
-          legalName: 'Elysium Lifestyle BD',
+          displayName: 'Elysiam',
+          legalName: 'Elysiam Lifestyle BD',
           branchName: 'Gulshan showroom',
           address: 'Road 11, Gulshan 1, Dhaka',
           phone: null,

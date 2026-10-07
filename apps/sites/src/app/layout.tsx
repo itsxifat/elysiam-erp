@@ -6,8 +6,8 @@ import './globals.css';
 import '@/env';
 
 export const metadata: Metadata = {
-  title: 'Elysium',
-  description: 'Landing pages for the Elysium brands.',
+  title: 'Elysiam',
+  description: 'Landing pages for the Elysiam brands.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -5,7 +5,7 @@
 export default function Home() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-3xl flex-col justify-center px-6">
-      <h1 className="text-lg font-semibold tracking-tight">Elysium landing pages</h1>
+      <h1 className="text-lg font-semibold tracking-tight">Elysiam landing pages</h1>
       <p className="mt-1 text-sm text-muted-foreground">Multi-domain rendering arrives in M29.</p>
     </main>
   );

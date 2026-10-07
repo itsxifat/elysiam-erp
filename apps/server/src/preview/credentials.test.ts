@@ -92,7 +92,7 @@ describe('credentialsMarkdown', () => {
   const at = new Date('2026-10-02T15:00:00Z');
 
   it('lists each login with the app it opens, its password and its two-step line', () => {
-    const text = credentialsMarkdown(logins, urls, { brand: 'Elysium Lifestyle BD' }, at);
+    const text = credentialsMarkdown(logins, urls, { brand: 'Elysiam Lifestyle BD' }, at);
     expect(text).toContain(
       '| Org admin | https://elyerp.example.test/ | `admin@preview.elysium.test` | `Abcde-Fghjk-Mnpqr-Stuvw` | Yes, on first sign-in |',
     );
@@ -108,7 +108,7 @@ describe('credentialsMarkdown', () => {
       logins,
       urls,
       {
-        brand: 'Elysium Lifestyle BD',
+        brand: 'Elysiam Lifestyle BD',
         tracking: { orderNo: 'ELY-2610-00005', phoneLast4: '0105', slug: 'elysium-lifestyle-bd' },
       },
       at,
@@ -119,11 +119,11 @@ describe('credentialsMarkdown', () => {
   });
 
   it('mentions the training brand only when it was imported', () => {
-    const without = credentialsMarkdown(logins, urls, { brand: 'Elysium Lifestyle BD' }, at);
+    const without = credentialsMarkdown(logins, urls, { brand: 'Elysiam Lifestyle BD' }, at);
     const withTraining = credentialsMarkdown(
       logins,
       urls,
-      { brand: 'Elysium Lifestyle BD', training: true },
+      { brand: 'Elysiam Lifestyle BD', training: true },
       at,
     );
     expect(without).toContain('the other four brands.');

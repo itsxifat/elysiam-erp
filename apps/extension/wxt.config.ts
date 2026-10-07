@@ -12,7 +12,7 @@ export default defineConfig({
   // won the race — so every VITE_API_URL would point at the extension.
   dev: { server: { port: 3010 } },
   manifest: {
-    name: 'Elysium Agent Activity',
+    name: 'Elysiam Agent Activity',
     description: 'Records which work platform an agent is active on, by domain only.',
     permissions: ['storage', 'alarms', 'idle'],
   },

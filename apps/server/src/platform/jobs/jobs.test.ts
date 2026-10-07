@@ -351,14 +351,14 @@ describe('the failed-jobs admin read', () => {
     expect(mine.jobs.map((job) => job.queue)).toContain(FAILING.name);
     expect(mine.jobs[0]).toMatchObject({ ref: 'ord_99', code: 'CourierRefused', attempts: 3 });
 
-    // Oura has failed nothing. Elysium's dead parcel booking is not its business,
+    // Oura has failed nothing. Elysiam's dead parcel booking is not its business,
     // and `pgboss.job` has no policy that would have said so on its own.
     const theirs = await service.list(contextFor(ORG_B), { limit: 50 });
     expect(theirs.jobs).toEqual([]);
   }, 60_000);
 
   it('shows a super admin every org, per §5 exception 3', async () => {
-    // The org id in the context is Oura, and the job belongs to Elysium: a super
+    // The org id in the context is Oura, and the job belongs to Elysiam: a super
     // admin's cross-org read must not depend on which org they last entered.
     const all = await service.list(contextFor(ORG_B, true), { limit: 50 });
     expect(all.jobs.map((job) => job.queue)).toContain(FAILING.name);
