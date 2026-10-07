@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -38,6 +39,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { IAM_API, type IamApi } from '../iam/iam.api.js';
 
 /**
  * Maker-checker (architecture §6, §25).
@@ -233,7 +235,10 @@ export class ApprovalsService {
   private readonly executors = new Map<ApprovalType, ApprovalExecutor>();
   private readonly rejectionHandlers = new Map<ApprovalType, RejectionHandler>();
 
-  constructor(private readonly audit: AuditService) {}
+  constructor(
+    private readonly audit: AuditService,
+    @Inject(IAM_API) private readonly iam: IamApi,
+  ) {}
 
   /**
    * Register what approving a type does. One executor per type, registered
@@ -953,7 +958,7 @@ export class ApprovalsService {
   private async assertNotGrantedByRequester(
     tx: Tx,
     context: ActiveContext,
-    row: { readonly requested_by: string },
+    row: { readonly requested_by: string; readonly type: ApprovalType },
   ): Promise<void> {
     /*
      * Every granter counts, not only the latest (gaps-users-auth, D-410): a re-grant or a
@@ -982,11 +987,24 @@ export class ApprovalsService {
       select 1 as hit from lineage where user_id = ${row.requested_by} limit 1
     `);
 
-    if (found.length > 0) {
-      throw new ForbiddenException(
-        'You cannot decide a request raised by the person who granted you your role, directly or through someone they granted.',
-      );
+    if (found.length === 0) return;
+
+    /*
+     * Unless the brand's independent admins trust this checker (D-655): two thirds of them,
+     * and at least two, none in the checker's invitation chain. Counted now, under the
+     * candidate's trust lock and the admin memberships held for share. Never for a sign-in
+     * reset: whoever holds a person's password link stays out of deciding resets, trusted
+     * or not (D-404 to D-406 unchanged). Maker ≠ checker is untouched: `canDecide` below
+     * and the table's CHECK still refuse a person's own request.
+     */
+    if (row.type !== 'credential_reset') {
+      const trust = await this.iam.checkerTrust(tx, context.orgId, context.userId);
+      if (trust.trusted) return;
     }
+
+    throw new ForbiddenException(
+      'You cannot decide a request raised by the person who granted you your role, directly or through someone they granted, unless the other admins trust you on the Staff screen.',
+    );
   }
 
   /**

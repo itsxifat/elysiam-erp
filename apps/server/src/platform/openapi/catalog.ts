@@ -143,6 +143,14 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     summary: "Remove a person's second factor, so they enrol again at next sign-in.",
     body: named('CredentialReset', credentialResetSchema, 'CredentialResetInput'),
   },
+  'POST /v1/users/:id/trust': {
+    operationId: 'voteUserTrust',
+    summary: 'Vouch for an admin: two thirds of the independent admins make them trusted.',
+  },
+  'DELETE /v1/users/:id/trust': {
+    operationId: 'withdrawUserTrust',
+    summary: 'Withdraw your trust vote for an admin.',
+  },
 
   'GET /v1/approvals': {
     operationId: 'listApprovals',

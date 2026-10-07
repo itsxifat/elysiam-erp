@@ -20,6 +20,7 @@ import {
   planRoleChange,
   resetAllowedByLimits,
   type ResetKind,
+  type TrustRefusalCode,
   type ResetPlan,
   type ResetTarget,
 } from '@elysium/domain/iam';
@@ -35,6 +36,13 @@ import {
   type RejectionHandler,
 } from '../approvals/approvals.service.js';
 import * as repo from './users.repository.js';
+import {
+  castVote,
+  lockTrust,
+  loadTrust,
+  withdrawVote,
+  type TrustFacts,
+} from './trust.repository.js';
 import { pgCode, usersHttpError } from './users.errors.js';
 
 /**
@@ -87,6 +95,53 @@ export interface StaffRow {
   readonly isSelf: boolean;
   /** A password or second-factor reset of this person needs a second admin (D-404). */
   readonly resetNeedsApproval: boolean;
+  /** For an active admin who is not a super admin: the admins' trust in them (D-654). */
+  readonly trust: TrustView | null;
+}
+
+/** The admins' trust in one admin, as the caller sees it (D-654 to D-656). */
+export interface TrustView {
+  /** Votes from independent admins who may vote now. */
+  readonly votes: number;
+  /** Two thirds of those who may vote, rounded up, never fewer than two. */
+  readonly needed: number;
+  readonly trusted: boolean;
+  /** The caller has a vote recorded for this person, counted or not: theirs to withdraw. */
+  readonly votedByMe: boolean;
+  /** The caller's vote would count. */
+  readonly canVote: boolean;
+  /** Why it would not, when it would not: the words, and a code the console translates. */
+  readonly reason: string | null;
+  readonly reasonCode: TrustRefusalCode | null;
+}
+
+/** Whether a person can be vouched for: an active admin here, not a super admin. */
+function isTrustCandidate(person: repo.PersonRow, held: readonly repo.MembershipRow[]): boolean {
+  return (
+    person.is_active &&
+    !person.is_super_admin &&
+    !person.is_owner &&
+    held.some((row) => row.is_active && row.role === 'org_admin')
+  );
+}
+
+function trustView(
+  context: ActiveContext,
+  facts: TrustFacts,
+  candidateId: string,
+  voters: readonly string[] = facts.votes.get(candidateId) ?? [],
+): TrustView {
+  const tally = facts.graph.tally(candidateId, voters);
+  const standing = facts.graph.standing(context.userId, candidateId);
+  return {
+    votes: tally.votes,
+    needed: tally.needed,
+    trusted: tally.trusted,
+    votedByMe: voters.includes(context.userId),
+    canVote: standing.ok,
+    reason: standing.ok ? null : standing.reason,
+    reasonCode: standing.ok ? null : standing.code,
+  };
 }
 
 /** Who asked for a reset, as this caller may see them: an owner is "Owner" (D-473). */
@@ -213,6 +268,7 @@ export class UsersService {
       ]);
       const byId = new Map(found.map((person) => [person.id, person]));
       const elsewhere = await repo.activeElsewhere(tx, userIds, context.orgId);
+      const trust = await loadTrust(tx, context.orgId);
 
       const items: StaffRow[] = [];
       for (const userId of userIds) {
@@ -220,7 +276,7 @@ export class UsersService {
         // An owner holds no role here (D-473); never listed as staff even if one did.
         if (person === undefined || person.is_owner) continue;
         const held = memberships.filter((row) => row.user_id === userId);
-        items.push(this.view(context, person, held, elsewhere.has(userId)));
+        items.push(this.view(context, person, held, elsewhere.has(userId), trust));
       }
       items.sort((a, b) => a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
 
@@ -251,7 +307,8 @@ export class UsersService {
       const [person] = await repo.people(tx, [userId]);
       if (held.length === 0 || person === undefined || person.is_owner) return NOT_FOUND();
       const elsewhere = await repo.activeElsewhere(tx, [userId], context.orgId);
-      return this.view(context, person, held, elsewhere.has(userId));
+      const trust = await loadTrust(tx, context.orgId);
+      return this.view(context, person, held, elsewhere.has(userId), trust);
     });
   }
 
@@ -260,6 +317,7 @@ export class UsersService {
     person: repo.PersonRow,
     held: readonly repo.MembershipRow[],
     inOtherBrand: boolean,
+    trust: TrustFacts,
   ): StaffRow {
     const active = held.filter((row) => row.is_active);
     const status: StaffStatus = !person.is_active
@@ -293,7 +351,98 @@ export class UsersService {
           held.map((row) => row.role),
           person.is_super_admin,
         ),
+      trust: isTrustCandidate(person, held) ? trustView(context, trust, person.id) : null,
     };
+  }
+
+  // --- trust votes ------------------------------------------------------------------------
+
+  /**
+   * Vouch for an admin (D-654 to D-656). Only a vote that would count is recorded: the voter
+   * is an active admin or super admin with two-step sign-in, and neither invited the other
+   * nor shares an inviter with them, however far up. Under the candidate's trust lock, which
+   * an approval decision counting them also takes; audited in the same transaction.
+   */
+  async vote(
+    context: ActiveContext,
+    request: AuditableRequest,
+    userId: string,
+  ): Promise<{ userId: string; trust: TrustView }> {
+    return this.inOrg(context, async (tx) => {
+      await lockTrust(tx, context.orgId, userId, 'exclusive');
+      const held = await repo.membershipsOfUser(tx, context.orgId, userId);
+      const [person] = await repo.people(tx, [userId]);
+      if (held.length === 0 || person === undefined || person.is_owner) return NOT_FOUND();
+      if (!isTrustCandidate(person, held)) {
+        throw usersHttpError(
+          'TRUST_NOT_CANDIDATE',
+          'Only an active admin of this brand is vouched for. A super admin needs no votes.',
+        );
+      }
+
+      const facts = await loadTrust(tx, context.orgId);
+      const standing = facts.graph.standing(context.userId, userId);
+      if (!standing.ok) {
+        throw usersHttpError(
+          standing.code === 'self' ? 'USER_SELF_MANAGEMENT' : 'TRUST_VOTE_REFUSED',
+          standing.reason,
+        );
+      }
+
+      const before = facts.votes.get(userId) ?? [];
+      const cast = await castVote(tx, context.orgId, context.userId, userId);
+      const view = trustView(context, facts, userId, cast ? [...before, context.userId] : before);
+      if (cast) {
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'create',
+          action: 'iam.trust_voted',
+          entityType: 'User',
+          entityId: userId,
+          before: null,
+          after: {
+            voter: context.userId,
+            votes: view.votes,
+            needed: view.needed,
+            trusted: view.trusted,
+          },
+          requestId: context.requestId,
+          request,
+        });
+      }
+      return { userId, trust: view };
+    });
+  }
+
+  /** Withdraw the caller's vote; it stops counting at once. Audited in the same transaction. */
+  async withdrawVote(
+    context: ActiveContext,
+    request: AuditableRequest,
+    userId: string,
+  ): Promise<{ userId: string; trust: TrustView }> {
+    return this.inOrg(context, async (tx) => {
+      await lockTrust(tx, context.orgId, userId, 'exclusive');
+      const removed = await withdrawVote(tx, context.orgId, context.userId, userId);
+      if (!removed) {
+        throw usersHttpError('CONFLICT', 'There is no vote of yours for this person to withdraw.');
+      }
+      const facts = await loadTrust(tx, context.orgId);
+      const view = trustView(context, facts, userId);
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'delete',
+        action: 'iam.trust_withdrawn',
+        entityType: 'User',
+        entityId: userId,
+        before: { voter: context.userId },
+        after: { votes: view.votes, needed: view.needed, trusted: view.trusted },
+        requestId: context.requestId,
+        request,
+      });
+      return { userId, trust: view };
+    });
   }
 
   /**

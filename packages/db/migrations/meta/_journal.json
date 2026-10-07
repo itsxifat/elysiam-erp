@@ -862,6 +862,20 @@
       "when": 1791233061961,
       "tag": "0124_m35b_holds_final_events_purge",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1791360923192,
+      "tag": "0125_trust_votes_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1791360926085,
+      "tag": "0126_trust_votes_policies",
+      "breakpoints": true
     }
   ]
 }

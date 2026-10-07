@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   Param,
@@ -119,5 +120,24 @@ export class UsersController {
       userId,
       input.reason,
     );
+  }
+
+  /**
+   * Vouch for an admin (D-654 to D-656). Refused, not stored, when the vote would not count:
+   * the reason names the invitation chain, the shared inviter or the missing second factor.
+   */
+  @RequireAbility('update', 'User')
+  @Post(':id/trust')
+  async vote(@Req() request: FastifyRequest, @Param('id') id: string) {
+    const userId = parse(userIdParamSchema, id);
+    return this.users.vote(requireContext(request), auditable(request), userId);
+  }
+
+  /** Withdraw the caller's own vote for an admin. */
+  @RequireAbility('update', 'User')
+  @Delete(':id/trust')
+  async withdrawVote(@Req() request: FastifyRequest, @Param('id') id: string) {
+    const userId = parse(userIdParamSchema, id);
+    return this.users.withdrawVote(requireContext(request), auditable(request), userId);
   }
 }

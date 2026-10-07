@@ -2,6 +2,8 @@ import type { MessageKey } from '@elysium/i18n';
 
 import { useLocale } from '../../i18n/locale.js';
 import { sectionCatalogue } from '../../i18n/messages.js';
+// Before the catalogue below is first read: the trust votes' section (D-654).
+import '../../i18n/trust.js';
 
 /**
  * The keys the staff screen renders (gaps-users-auth). The strings live in
@@ -111,6 +113,19 @@ const USERS_KEYS = [
   'users.alreadyHasAccount',
   'users.invalidEmail',
   'users.nameRequired',
+  'users.trusted',
+  'users.trustVotes',
+  'users.trustHeading',
+  'users.trustExplain',
+  'users.trustRule',
+  'users.trustVote',
+  'users.trustWithdraw',
+  'users.trustReason.self',
+  'users.trustReason.not_admin',
+  'users.trustReason.no_two_factor',
+  'users.trustReason.invited_candidate',
+  'users.trustReason.invited_by_candidate',
+  'users.trustReason.same_inviter',
 ] as const satisfies readonly MessageKey[];
 
 export type UsersMessageKey = (typeof USERS_KEYS)[number];

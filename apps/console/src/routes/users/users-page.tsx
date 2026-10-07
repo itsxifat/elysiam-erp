@@ -1,4 +1,5 @@
 import type { MembershipRole } from '@elysium/contracts';
+import { formatCount, type Locale } from '@elysium/i18n';
 import {
   Button,
   ConfirmDialog,
@@ -14,13 +15,22 @@ import {
   type DataTableColumn,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, KeyRound, ShieldOff, UserMinus, UserPlus } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  KeyRound,
+  ShieldCheck,
+  ShieldOff,
+  ShieldX,
+  UserMinus,
+  UserPlus,
+} from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
 import { decideApproval } from '../../api/approvals.js';
 import { useAbility, useSession } from '../../auth/session.js';
-import { useT } from '../../i18n/locale.js';
+import { useLocale, useT } from '../../i18n/locale.js';
 import { useRealtime } from '../../realtime/use-realtime.js';
 import { Field } from '../../ui/primitives.js';
 import { listBranches, type BranchRow } from '../branches/api.js';
@@ -31,9 +41,12 @@ import {
   passwordLink,
   resetTwoFactor,
   setRoles,
+  voteTrust,
+  withdrawTrust,
   type OpenReset,
   type StaffRow,
   type StaffStatus,
+  type TrustView,
 } from './api.js';
 import { orderedRoles, passwordLinkUrl, rolesToSubmit } from './link.js';
 import { useUsersT, type UsersMessageKey } from './messages.js';
@@ -66,6 +79,15 @@ function roleKey(role: MembershipRole): UsersMessageKey {
   return `users.role.${role}` as UsersMessageKey;
 }
 
+/** "Trusted", or how far from it: "1 of 2 votes" (D-654). */
+function trustLabel(trust: TrustView, u: (key: UsersMessageKey) => string, locale: Locale): string {
+  return trust.trusted
+    ? u('users.trusted')
+    : u('users.trustVotes')
+        .replace('{n}', formatCount(trust.votes, locale))
+        .replace('{m}', formatCount(trust.needed, locale));
+}
+
 /** The server's problem+json detail is written to be shown; anything else never reached it. */
 function messageOf(error: unknown, fallback: string): string {
   if (error instanceof ApiError) return error.message;
@@ -89,6 +111,7 @@ export function UsersPage() {
   const session = useSession();
   const t = useT();
   const u = useUsersT();
+  const { locale } = useLocale();
   const queryClient = useQueryClient();
 
   const mayRead = ability.can('read', 'User');
@@ -144,6 +167,11 @@ export function UsersPage() {
                   {row.isSuperAdmin ? (
                     <StatusBadge tone="info">{u('users.superAdmin')}</StatusBadge>
                   ) : null}
+                  {row.trust === null ? null : (
+                    <StatusBadge tone={row.trust.trusted ? 'success' : 'neutral'}>
+                      {trustLabel(row.trust, u, locale)}
+                    </StatusBadge>
+                  )}
                 </p>
                 <p className="truncate text-xs text-muted-foreground">{row.email}</p>
               </div>
@@ -233,7 +261,7 @@ export function UsersPage() {
         ),
       }),
     ]) as readonly DataTableColumn<StaffRow>[];
-  }, [u, branches, mayChange]);
+  }, [u, branches, mayChange, locale]);
 
   if (!mayRead) {
     return (
@@ -729,6 +757,8 @@ function ManageDialog({
           </div>
         </section>
 
+        {row.trust === null ? null : <TrustSection row={row} trust={row.trust} onSaved={onSaved} />}
+
         {row.status === 'active' || row.status === 'invited' ? (
           <section className="border-t border-border pt-4">
             <Button
@@ -744,6 +774,82 @@ function ManageDialog({
         ) : null}
       </div>
     </Dialog>
+  );
+}
+
+// --- trust votes (D-654 to D-656) ---------------------------------------------------------
+
+function TrustSection({
+  row,
+  trust,
+  onSaved,
+}: {
+  readonly row: StaffRow;
+  readonly trust: TrustView;
+  readonly onSaved: () => Promise<void>;
+}) {
+  const u = useUsersT();
+  const t = useT();
+  const { locale } = useLocale();
+  const [problem, setProblem] = useState<string | null>(null);
+  const change = useMutation({
+    mutationFn: () => (trust.votedByMe ? withdrawTrust(row.userId) : voteTrust(row.userId)),
+    onSuccess: async () => {
+      setProblem(null);
+      await onSaved();
+    },
+    onError: (cause) => setProblem(messageOf(cause, t('error.unreachable'))),
+  });
+
+  return (
+    <section aria-labelledby="trust-heading" className="space-y-3">
+      <div>
+        <h3 id="trust-heading" className="flex items-center gap-2 text-sm font-medium">
+          {u('users.trustHeading')}
+          <StatusBadge tone={trust.trusted ? 'success' : 'neutral'}>
+            {trustLabel(trust, u, locale)}
+          </StatusBadge>
+        </h3>
+        <p className="text-xs text-muted-foreground">{u('users.trustExplain')}</p>
+        <p className="text-xs text-muted-foreground">{u('users.trustRule')}</p>
+      </div>
+      {row.isSelf ? null : (
+        <div className="space-y-2">
+          {trust.votedByMe ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={change.isPending}
+              onClick={() => change.mutate()}
+            >
+              <ShieldX aria-hidden="true" />
+              {u('users.trustWithdraw')}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!trust.canVote || change.isPending}
+              aria-describedby={trust.canVote ? undefined : 'trust-reason'}
+              onClick={() => change.mutate()}
+            >
+              <ShieldCheck aria-hidden="true" />
+              {u('users.trustVote')}
+            </Button>
+          )}
+          {!trust.canVote && trust.reasonCode !== null && !trust.votedByMe ? (
+            <p id="trust-reason" className="text-xs text-muted-foreground">
+              {u(`users.trustReason.${trust.reasonCode}`)}
+            </p>
+          ) : null}
+          {problem === null ? null : (
+            <p role="alert" className="text-sm text-destructive">
+              {problem}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

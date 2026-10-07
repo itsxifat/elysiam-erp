@@ -33,6 +33,29 @@ export interface StaffRow {
   readonly inOtherBrand: boolean;
   readonly isSelf: boolean;
   readonly resetNeedsApproval: boolean;
+  /** For an active admin who is not a super admin: the admins' trust in them (D-654). */
+  readonly trust: TrustView | null;
+}
+
+export type TrustRefusalCode =
+  | 'self'
+  | 'not_admin'
+  | 'no_two_factor'
+  | 'invited_candidate'
+  | 'invited_by_candidate'
+  | 'same_inviter';
+
+/** The admins' trust in one admin, as this viewer sees it (D-654 to D-656). */
+export interface TrustView {
+  readonly votes: number;
+  readonly needed: number;
+  readonly trusted: boolean;
+  /** This viewer has a vote recorded: theirs to withdraw. */
+  readonly votedByMe: boolean;
+  /** This viewer's vote would count. */
+  readonly canVote: boolean;
+  readonly reason: string | null;
+  readonly reasonCode: TrustRefusalCode | null;
 }
 
 export interface OpenReset {
@@ -102,6 +125,14 @@ export function resetTwoFactor(userId: string, reason: string): Promise<TwoFacto
   return api.post<TwoFactorOutcome>(`/v1/users/${encodeURIComponent(userId)}/two-factor/reset`, {
     reason,
   });
+}
+
+export function voteTrust(userId: string): Promise<{ userId: string; trust: TrustView }> {
+  return api.post(`/v1/users/${encodeURIComponent(userId)}/trust`);
+}
+
+export function withdrawTrust(userId: string): Promise<{ userId: string; trust: TrustView }> {
+  return api.delete(`/v1/users/${encodeURIComponent(userId)}/trust`);
 }
 
 export function invite(input: {

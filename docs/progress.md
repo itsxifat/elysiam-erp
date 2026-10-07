@@ -2442,3 +2442,32 @@ dry-run|commit --file <users.json>`.
 - Follow-ups: the owner to print one 45 × 35 and one custom run on the shop's printer and scan
   them (owner: human); `docs/build-status.md` unchanged (one cell; left to the integration).
 - Next: deploy to the live ERP (coordinator).
+
+### 2026-10-07 · trust-votes · Admins vouch for an admin; a trusted checker may approve their inviter · built, lean-tested
+
+- Delivered (owner's request, branch `trust-votes`): **Staff** shows each active admin's
+  **Trusted** badge or "n of m votes"; **Manage** has a Trust section with **Trust** /
+  **Withdraw trust** and the reason a vote would not count. Routes
+  `POST /v1/users/:id/trust` and `DELETE /v1/users/:id/trust` (`update User`, route matrix
+  and fixtures added); `GET /v1/users` rows gain `trust`. `iam.trust_votes` (migrations `0125_trust_votes_schema`,
+  `0126_trust_votes_policies`). The rule is `trustGraph` in `@elysium/domain/iam` (D-656): only
+  independent admins count (no one in the candidate's invitation chain either way, no shared
+  inviter but a super admin, two-step sign-in on), two thirds of them and at least two.
+  `ApprovalsService.decide` sets the grant-lineage refusal aside for a trusted checker, counted
+  live in the decision's transaction, never for a `credential_reset` (D-655). Strings in a new
+  `trust` section catalogue (lazy, not in the first download).
+- Verification (lean, as asked; full testing scheduled for Friday): typecheck (server,
+  console), eslint on every touched file, prettier, `check:routes`, `check:api-client`,
+  `check:migrations`, `check:schema`, `check:i18n` all PASS; domain `iam` tests 44 of 44
+  (13 new trust properties over random invitation forests with cycles: independence symmetric
+  and exactly the stated rule, no related voter ever counts, quorum of two, withdrawal never
+  helps, an owner never vouches down their chain); i18n 64 of 64; module-boundaries 30 of 30.
+  **Not run:** `trust.e2e.test.ts` (the Riya → Faisal + puppets scenario against real
+  Postgres) and the route-matrix suite: Docker was not running, so Testcontainers could not
+  start. No `pnpm verify`, no stack runs, no bundle check, no auditors.
+- Decisions: D-654, D-655, D-656. New dependencies: none.
+- Follow-ups: run `trust.e2e.test.ts`, the route matrix and `users.e2e.test.ts` with Docker up;
+  ledger-auditor on the diff (permissions); `pnpm check:bundle` after a console build. In
+  Elysium as it stands (the owner invited Riya, Riya invited everyone else) nobody is
+  independent of Faisal, so he cannot become trusted until a second super admin or an admin the
+  owner invited directly joins (D-656's note).

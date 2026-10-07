@@ -41,6 +41,8 @@ import { en as webMarketingEn, type WebMarketingKey } from './locales/sections/w
 import { en as websiteEn, type WebsiteKey } from './locales/sections/website.en.js';
 import { bn as manageBn } from './locales/sections/manage.bn.js';
 import { en as manageEn, type ManageKey } from './locales/sections/manage.en.js';
+import { bn as trustBn } from './locales/sections/trust.bn.js';
+import { en as trustEn, type TrustKey } from './locales/sections/trust.en.js';
 
 export {
   CUSTOMER_LOCALE,
@@ -81,13 +83,15 @@ export type MessageKey =
   | CatalogPricingKey
   | ManageKey
   | WebMarketingKey
-  | PackingKey;
+  | PackingKey
+  | TrustKey;
 export type {
   CatalogPricingKey,
   CoreMessageKey,
   ManageKey,
   PackingKey,
   StockToolsKey,
+  TrustKey,
   WebMarketingKey,
   WebsiteKey,
 };
@@ -110,6 +114,7 @@ export const messages: Record<Locale, Record<MessageKey, string>> = {
     ...manageEn,
     ...webMarketingEn,
     ...packingEn,
+    ...trustEn,
   },
   bn: {
     ...bn,
@@ -119,6 +124,7 @@ export const messages: Record<Locale, Record<MessageKey, string>> = {
     ...manageBn,
     ...webMarketingBn,
     ...packingBn,
+    ...trustBn,
   },
 };
 

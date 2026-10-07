@@ -523,6 +523,13 @@ export const ERROR_CODES = [
   /** There is nothing to reset: no second factor is enrolled. */
   'CREDENTIAL_NOTHING_TO_RESET',
   /**
+   * A trust vote that would not count (D-656): the voter is not an admin with two-step
+   * sign-in, or is in the person's invitation chain, or shares an inviter with them.
+   */
+  'TRUST_VOTE_REFUSED',
+  /** Only an active admin of the brand, not a super admin, is vouched for (D-654). */
+  'TRUST_NOT_CANDIDATE',
+  /**
    * Sent by sign-in itself (Better Auth's error body), not by a route here: the account
    * is disabled, or holds no active role in any brand (D-401).
    */

@@ -77,8 +77,22 @@ another brand can only be reset by a super admin.
 
 - You decide every type except reopening a closed month, which only a super admin decides.
 - You never decide your own request, or one raised by whoever gave you your role, directly
-  or further up.
+  or further up, unless the other admins trust you (below).
 - A branch manager's cash out shows as **Petty cash**. Check the receipt photo.
+
+### Trust votes
+
+Trusted admins can approve requests from the admin who invited them; nobody approves their
+own, and a sign-in reset still needs someone outside the chain.
+
+- **Staff** shows each admin's **Trusted** badge, or how far they are: "1 of 2 votes".
+- To vouch, open **Manage** on that admin and press **Trust**; **Withdraw trust** takes it
+  back, and it stops counting at once.
+- Only admins outside the person's invitation chain count: not whoever invited them (however
+  far up, the owner included), not anyone they invited, not anyone invited by the same person
+  as them. You need two-step sign-in turned on. The screen says why when your vote would not
+  count.
+- Trusted means two thirds of those who may vote, and never fewer than two votes.
 
 ## Discounts
 

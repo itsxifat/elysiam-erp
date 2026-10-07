@@ -1893,6 +1893,8 @@ export const OPERATIONS = {
     path: '/v1/users/{id}/password-link',
     ability: 'update:User',
   },
+  voteUserTrust: { method: 'POST', path: '/v1/users/{id}/trust', ability: 'update:User' },
+  withdrawUserTrust: { method: 'DELETE', path: '/v1/users/{id}/trust', ability: 'update:User' },
 } as const;
 
 export type OperationName = keyof typeof OPERATIONS;
@@ -4027,6 +4029,16 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.userPasswordLink, input, options),
+    /** Vouch for an admin: two thirds of the independent admins make them trusted. */
+    voteUserTrust: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.voteUserTrust, input, options),
+    /** Withdraw your trust vote for an admin. */
+    withdrawUserTrust: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.withdrawUserTrust, input, options),
   };
 }
 

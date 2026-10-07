@@ -52,6 +52,9 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/users/:id/deactivate',
   'POST /v1/users/:id/password-link',
   'POST /v1/users/:id/two-factor/reset',
+  // D-654 to D-656: the admins' trust votes.
+  'POST /v1/users/:id/trust',
+  'DELETE /v1/users/:id/trust',
   'GET /v1/catalog/categories',
   'POST /v1/catalog/categories',
   'PATCH /v1/catalog/categories/:id',
