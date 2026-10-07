@@ -3,6 +3,7 @@ import {
   NOMINATION_REFUSAL_REASONS,
   nominationRefusal,
   nominationTally,
+  startRefusal,
   type NominationRefusalCode,
 } from '@elysium/domain/iam';
 
@@ -50,6 +51,7 @@ const REFUSAL_CODE: Readonly<
   >
 > = {
   not_super_admin: 'USER_PROTECTED',
+  not_first_super_admin: 'USER_PROTECTED',
   self: 'USER_SELF_MANAGEMENT',
   already_super_admin: 'SUPER_ADMIN_NOT_CANDIDATE',
   not_admin_here: 'SUPER_ADMIN_NOT_CANDIDATE',
@@ -90,6 +92,12 @@ export async function voteSuperAdmin(
 
   const facts = await loadNominations(tx, actor.orgId);
   const before = facts.votes.get(candidateId) ?? [];
+  if (before.length === 0) {
+    const notFirst = startRefusal(actor.userId, facts.starters);
+    if (notFirst !== null) {
+      throw usersHttpError(REFUSAL_CODE[notFirst], NOMINATION_REFUSAL_REASONS[notFirst]);
+    }
+  }
   const cast = await castSuperAdminVote(tx, actor.orgId, actor.userId, candidateId);
   const voters = cast ? [...before, actor.userId] : before;
   const tally = nominationTally(facts.superAdmins, voters);

@@ -326,8 +326,10 @@ export function UsersPage() {
         description={u('users.subtitle')}
         actions={
           <div className="flex flex-wrap gap-2">
-            {/* Only a super admin makes a super admin (D-659). */}
-            <PermissionGate allowed={mayInvite && isSuperAdmin}>
+            {/* Only the first super admin (or an owner) adds a super admin (D-659, D-666). */}
+            <PermissionGate
+              allowed={mayInvite && isSuperAdmin && staffQuery.data?.canStartSuperAdmin === true}
+            >
               <Button variant="outline" onClick={() => setInviteOpen('superAdmin')}>
                 <Crown aria-hidden="true" />
                 {u('users.inviteSuperAdmin')}

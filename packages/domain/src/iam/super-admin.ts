@@ -20,13 +20,21 @@
  *
  * The database holds the same rule in `iam.promote_super_admin` (migration 0128): the only
  * way the application sets the flag, so a mistake here cannot mint a super admin there.
+ *
+ * Only the first super admin starts a nomination (the owner's decision of 2026-10-07, D-666):
+ * whoever invites a person receives their set-password link, so a second super admin invited
+ * by anyone else could be a second account of the same person. The first is the earliest
+ * active super admin of the brand (owners aside); an owner may start one too. Any super admin
+ * still votes on a nomination already started.
  */
 
 export type NominationRefusalCode =
-  'not_super_admin' | 'self' | 'already_super_admin' | 'not_admin_here';
+  'not_super_admin' | 'not_first_super_admin' | 'self' | 'already_super_admin' | 'not_admin_here';
 
 export const NOMINATION_REFUSAL_REASONS: Readonly<Record<NominationRefusalCode, string>> = {
   not_super_admin: 'Only a super admin can make a super admin.',
+  not_first_super_admin:
+    'Only the first super admin can add a super admin. You can vote on one they have started.',
   self: 'Nobody makes themselves a super admin.',
   already_super_admin: 'This person holds super admin authority already.',
   not_admin_here: 'Only an active admin of this brand can be made a super admin.',
@@ -58,6 +66,17 @@ export function nominationRefusal(
   if (candidate.isSuperAdmin || candidate.isOwner) return 'already_super_admin';
   if (!candidate.isActive || !candidate.activeAdminHere) return 'not_admin_here';
   return null;
+}
+
+/**
+ * Whether `actorId` may start a nomination nobody has voted for yet (D-666): the first super
+ * admin, or an owner. `starters` are those people now.
+ */
+export function startRefusal(
+  actorId: string,
+  starters: ReadonlySet<string>,
+): NominationRefusalCode | null {
+  return starters.has(actorId) ? null : 'not_first_super_admin';
 }
 
 /** Whether a candidate can be nominated at all, whoever asks: for showing the action. */

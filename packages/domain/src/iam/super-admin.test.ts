@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
+  startRefusal,
   isSuperAdminCandidate,
   nominationRefusal,
   nominationTally,
@@ -123,5 +124,15 @@ describe('nominationRefusal', () => {
           expect(refusal).toBe('already_super_admin');
       }),
     );
+  });
+});
+
+describe('who starts a nomination (D-666)', () => {
+  it('the first super admin or an owner, and nobody else', () => {
+    const starters = new Set(['first', 'owner']);
+    expect(startRefusal('first', starters)).toBeNull();
+    expect(startRefusal('owner', starters)).toBeNull();
+    expect(startRefusal('second', starters)).toBe('not_first_super_admin');
+    expect(startRefusal('first', new Set())).toBe('not_first_super_admin');
   });
 });

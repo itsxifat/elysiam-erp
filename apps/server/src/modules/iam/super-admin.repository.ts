@@ -20,6 +20,8 @@ export async function lockSuperAdmins(tx: Tx): Promise<void> {
 export interface NominationFacts {
   /** Active super admins now, owners left out: the ones whose yes is required. */
   readonly superAdmins: readonly string[];
+  /** Who may start a nomination now (D-666): the first super admin and any active owner. */
+  readonly starters: ReadonlySet<string>;
   /** Who has a yes recorded for each candidate, in this brand. */
   readonly votes: ReadonlyMap<string, readonly string[]>;
 }
@@ -27,6 +29,19 @@ export interface NominationFacts {
 export async function loadNominations(tx: Tx, orgId: string): Promise<NominationFacts> {
   const admins = await tx.execute<{ id: string }>(sql`
     select id from iam.users where is_super_admin and is_active and not is_owner
+  `);
+  const starters = await tx.execute<{ id: string }>(sql`
+    select id from iam.users
+    where is_active and is_super_admin
+      and (
+        is_owner
+        or id = (
+          select first.id from iam.users first
+          where first.is_super_admin and first.is_active and not first.is_owner
+          order by first.created_at, first.id
+          limit 1
+        )
+      )
   `);
   const votes = await tx.execute<{ voter_user_id: string; candidate_user_id: string }>(sql`
     select voter_user_id, candidate_user_id from iam.super_admin_votes
@@ -39,7 +54,11 @@ export async function loadNominations(tx: Tx, orgId: string): Promise<Nomination
     list.push(vote.voter_user_id);
     byCandidate.set(vote.candidate_user_id, list);
   }
-  return { superAdmins: [...admins].map((row) => row.id), votes: byCandidate };
+  return {
+    superAdmins: [...admins].map((row) => row.id),
+    starters: new Set([...starters].map((row) => row.id)),
+    votes: byCandidate,
+  };
 }
 
 /** Record a yes. False when it was already there. */

@@ -54,6 +54,8 @@ export interface NominationView {
   readonly votedByMe: boolean;
   readonly canVote: boolean;
   readonly canWithdraw: boolean;
+  /** The caller may start a nomination: the first super admin or an owner (D-666). */
+  readonly canStart: boolean;
 }
 
 export interface NominationOutcome {
@@ -124,6 +126,8 @@ export type TwoFactorOutcome =
 export function listStaff(): Promise<{
   items: readonly StaffRow[];
   resets: readonly OpenReset[];
+  /** Only the first super admin (or an owner) invites or starts a super admin (D-666). */
+  canStartSuperAdmin?: boolean;
 }> {
   return api.get('/v1/users');
 }

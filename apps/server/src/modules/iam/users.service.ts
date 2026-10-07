@@ -140,6 +140,8 @@ export interface NominationView {
   readonly canVote: boolean;
   /** The caller may withdraw the nomination (any super admin, while one is pending). */
   readonly canWithdraw: boolean;
+  /** The caller may start a nomination: the first super admin or an owner (D-666). */
+  readonly canStart: boolean;
 }
 
 /** The admins' trust in one admin, as the caller sees it (D-654 to D-656). */
@@ -179,6 +181,7 @@ function nominationView(
   const tally = nominationTally(facts.superAdmins, voters);
   const votedByMe = voters.includes(context.userId);
   const mayAct = context.isSuperAdmin && candidateId !== context.userId;
+  const canStart = mayAct && facts.starters.has(context.userId);
   return {
     pending,
     votes: tally.votes,
@@ -186,8 +189,9 @@ function nominationView(
     immediate: tally.immediate,
     votedByMe,
     // A yes already given counts; pressing again only matters once every vote is in.
-    canVote: mayAct && (!votedByMe || tally.complete),
+    canVote: mayAct && (pending || canStart) && (!votedByMe || tally.complete),
     canWithdraw: mayAct && pending,
+    canStart,
   };
 }
 
@@ -348,7 +352,12 @@ export class UsersService {
    * Everyone who holds or held a role in this brand, every super admin — owners among them,
    * as "Owner" (D-658) — and the resets still open.
    */
-  async list(context: ActiveContext): Promise<{ items: StaffRow[]; resets: OpenResetView[] }> {
+  async list(context: ActiveContext): Promise<{
+    items: StaffRow[];
+    resets: OpenResetView[];
+    /** The caller may invite or start a super admin (D-666). */
+    canStartSuperAdmin: boolean;
+  }> {
     return this.inOrg(context, async (tx) => {
       const memberships = await repo.membershipsInOrg(tx, context.orgId);
       const resets = await repo.openResets(tx, context.orgId);
@@ -379,6 +388,7 @@ export class UsersService {
 
       return {
         items,
+        canStartSuperAdmin: context.isSuperAdmin && nominations.starters.has(context.userId),
         resets: resets
           .filter((row) => row.kind !== 'invite')
           .map((row) => ({
