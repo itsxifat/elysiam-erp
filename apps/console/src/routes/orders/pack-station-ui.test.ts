@@ -120,9 +120,18 @@ describe('the upload queue', () => {
     };
   }
 
-  function fakeApi(options: { failPut?: boolean; state?: VideoPartAnswer['state'] } = {}) {
+  function fakeApi(
+    options: {
+      failPut?: boolean;
+      state?: VideoPartAnswer['state'];
+      /** Attaches that fail before one succeeds, each with this error. */
+      attachFailures?: Error[];
+    } = {},
+  ) {
     const calls: string[] = [];
     const attached: { fileId: string; durationMs: number }[] = [];
+    const attachFailures = [...(options.attachFailures ?? [])];
+    let tickets = 0;
     const api: UploadApi = {
       register: (_session, input) => {
         calls.push(`register ${input.mime}`);
@@ -130,8 +139,9 @@ describe('the upload queue', () => {
       },
       ticket: (input) => {
         calls.push(`ticket ${input.contentType} ${String(input.sizeBytes)} ${input.originalName}`);
+        tickets += 1;
         const ticket: VideoUploadTicket = {
-          fileId: 'file-1',
+          fileId: `file-${String(tickets)}`,
           url: 'https://storage.example/put',
           method: 'PUT',
           headers: { 'content-type': input.contentType },
@@ -148,7 +158,9 @@ describe('the upload queue', () => {
         return Promise.resolve({});
       },
       attach: (_session, videoId, input) => {
-        calls.push(`attach ${videoId}`);
+        calls.push(`attach ${videoId} ${input.fileId}`);
+        const failure = attachFailures.shift();
+        if (failure !== undefined) return Promise.reject(failure);
         attached.push(input);
         return Promise.resolve({ id: videoId, part: 1, state: 'uploaded' });
       },
@@ -169,7 +181,52 @@ describe('the upload queue', () => {
       'ticket video/webm 8 ELY-1-part-1.webm',
       'put video/webm 8',
       'finalize file-1',
-      'attach video-1',
+      'attach video-1 file-1',
+    ]);
+    expect(attached).toEqual([{ fileId: 'file-1', durationMs: 60_000 }]);
+  });
+
+  it('attaches the file it already finalized when a retry follows a failed attach, never a second copy', async () => {
+    const store = memoryVideoStore();
+    await store.begin(recording());
+    await store.append('video-1', 1, new Blob(['a'.repeat(4)]), 10_000);
+    const { api, calls, attached } = fakeApi({ attachFailures: [new Error('offline')] });
+    expect(await runUploadQueue({ store, api, activeVideoId: null, now: () => 0 })).toEqual({
+      uploaded: 0,
+      failed: 1,
+      waiting: 1,
+    });
+    const [kept] = await store.list();
+    expect(kept).toMatchObject({ uploadedFileId: 'file-1', attempts: 1 });
+
+    calls.length = 0;
+    expect(
+      await runUploadQueue({ store, api, activeVideoId: null, now: () => 60_000, force: true }),
+    ).toEqual({ uploaded: 1, failed: 0, waiting: 0 });
+    expect(calls).toEqual(['register video/webm', 'attach video-1 file-1']);
+    expect(attached).toEqual([{ fileId: 'file-1', durationMs: 60_000 }]);
+  });
+
+  it('uploads the kept bytes again when the server no longer takes the finalized file', async () => {
+    const store = memoryVideoStore();
+    await store.begin(recording({ uploadedFileId: 'file-gone' }));
+    await store.append('video-1', 1, new Blob(['a'.repeat(4)]), 10_000);
+    const refused = Object.assign(new Error('That file is not a packing video you uploaded.'), {
+      code: 'PACKING_VIDEO_INVALID',
+    });
+    const { api, calls, attached } = fakeApi({ attachFailures: [refused] });
+    expect(await runUploadQueue({ store, api, activeVideoId: null, now: () => 0 })).toEqual({
+      uploaded: 1,
+      failed: 0,
+      waiting: 0,
+    });
+    expect(calls).toEqual([
+      'register video/webm',
+      'attach video-1 file-gone',
+      'ticket video/webm 4 ELY-1-part-1.webm',
+      'put video/webm 4',
+      'finalize file-1',
+      'attach video-1 file-1',
     ]);
     expect(attached).toEqual([{ fileId: 'file-1', durationMs: 60_000 }]);
   });

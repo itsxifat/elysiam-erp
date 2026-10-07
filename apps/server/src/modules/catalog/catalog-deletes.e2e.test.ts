@@ -218,6 +218,8 @@ describe('every module that points at catalog rows answers (D-621)', () => {
       // M35b, joined at integration: an ncom.bd hold keeps the SKUs it held.
       'marketplace',
       'orders',
+      // M38b: a packing scan keeps the SKU it named.
+      'packing',
       'pos',
       'promo',
       'storefront',
@@ -260,6 +262,8 @@ describe('every module that points at catalog rows answers (D-621)', () => {
       'inventory.stock_movements->catalog.skus': 'inventory',
       'inventory.stock_transfer_lines->catalog.skus': 'inventory',
       'marketing.leads->catalog.skus': 'marketing',
+      // M38b: a packing scan keeps the SKU it named.
+      'packing.scans->catalog.skus': 'packing',
       'pos.return_lines->catalog.skus': 'pos',
       'pos.sale_lines->catalog.skus': 'pos',
       'promo.flash_sale_items->catalog.skus': 'promo',

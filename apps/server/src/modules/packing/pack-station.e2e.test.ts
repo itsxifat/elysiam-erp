@@ -4,11 +4,11 @@ import { mkdtemp, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { withSystem } from '@elysium/db';
+import { withOrg, withSystem } from '@elysium/db';
 import { internalEan13 } from '@elysium/domain/barcode';
 import { sql } from 'drizzle-orm';
 import pino from 'pino';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
 import {
@@ -18,6 +18,7 @@ import {
   type HttpHarness,
   type RoleClient,
 } from '../../testing/http-harness.js';
+import { FILES_API, type FilesApi } from '../files/files.api.js';
 import { resetFilesEnv } from '../files/files.config.js';
 import { FILES_QUEUE_DEFINITIONS } from '../files/files.queues.js';
 import { FilesService } from '../files/files.service.js';
@@ -25,7 +26,7 @@ import { registerFilesJobs } from '../files/files.worker.js';
 import { seedProductWithSkus } from '../inventory/inventory.testing.js';
 import { applyOrderMigrations, seedCustomer, seedOrder } from '../orders/orders.testing.js';
 import { PACKING_QUEUE_DEFINITIONS } from './packing.queues.js';
-import { PackingVideoService } from './video.service.js';
+import { ORPHAN_AFTER_MS, PackingVideoService } from './video.service.js';
 
 /**
  * The packing station and the packing video on real Postgres (M38b, D-610 to D-614; M38
@@ -227,6 +228,34 @@ async function packedWithVideo(): Promise<{
   expect((await scan(packer, sessionId, cap.barcode)).body.outcome).toBe('accepted');
   expect((await complete(packer, sessionId)).status).toBe(200);
   return { orderId: order.id, sessionId, ...video };
+}
+
+/** The words a refused statement failed with, from the driver's error under Drizzle's. */
+async function refusal(work: Promise<unknown>): Promise<string> {
+  try {
+    await work;
+  } catch (error) {
+    const words: string[] = [];
+    for (let current: unknown = error; current instanceof Error; current = current.cause) {
+      words.push(current.message);
+    }
+    return words.join(' | ');
+  }
+  return 'not refused';
+}
+
+/** Every stored object of a file under the local driver's root (the bytes and their note). */
+async function bytesOf(fileId: string): Promise<string[]> {
+  const found: string[] = [];
+  const walk = async (dir: string) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.name.startsWith(fileId)) found.push(full);
+    }
+  };
+  await walk(storageRoot);
+  return found;
 }
 
 /** Walk an order on through §9's own pairs as the system, its arrival at the last at `at`. */
@@ -512,6 +541,77 @@ describe('the packing station (M38b check 1, M38 check 5)', () => {
   });
 });
 
+describe('the packing station after the ledger audit (M38b)', () => {
+  it('shows a sales agent their own newest sessions, however many colleagues packed since', async () => {
+    const theirs = await confirmedOrder([{ sku: cap, qty: 1 }], sales.userId);
+    expect((await open(sales, { orderId: theirs.id })).status).toBe(200);
+    for (let n = 0; n < 3; n += 1) {
+      const others = await confirmedOrder([{ sku: cap, qty: 1 }]);
+      expect((await open(packer, { orderId: others.id })).status).toBe(200);
+    }
+    // The newest sessions are the packer's; the agent's own still fills their list.
+    const listed = await call(sales, 'GET', '/v1/packing/sessions?limit=1');
+    expect(listed.status).toBe(200);
+    const items = listed.body.items as { orderId: string }[];
+    expect(items.map((item) => item.orderId)).toEqual([theirs.id]);
+    const everyone = await call(admin, 'GET', '/v1/packing/sessions?limit=2');
+    expect(
+      (everyone.body.items as { orderId: string }[]).map((item) => item.orderId),
+    ).not.toContain(theirs.id);
+  });
+
+  it('refuses a reseller the packing record, even of an order of their own (D-665)', async () => {
+    const reseller = await harness.asRole('reseller', ORG_A);
+    const order = await confirmedOrder([{ sku: cap, qty: 1 }], reseller.userId);
+    const sessionId = sessionIdOf((await open(packer, { orderId: order.id })).body);
+    for (const url of [
+      '/v1/packing/sessions',
+      `/v1/packing/sessions/${sessionId}`,
+      `/v1/packing/orders/${order.id}`,
+    ]) {
+      const refused = await call(reseller, 'GET', url);
+      expect(refused.status, url).toBe(403);
+      expect(refused.body.code).toBe('FORBIDDEN');
+    }
+    // Staff still read it.
+    expect((await call(accounts, 'GET', `/v1/packing/orders/${order.id}`)).status).toBe(200);
+  });
+
+  it('keeps every scan as it was written, for every role', async () => {
+    const order = await confirmedOrder([{ sku: cap, qty: 1 }]);
+    const sessionId = sessionIdOf((await open(packer, { orderId: order.id })).body);
+    expect((await scan(packer, sessionId, cap.barcode)).body.outcome).toBe('accepted');
+    // The table's owner is held by the trigger, not only by the grants.
+    expect(
+      await refusal(
+        withSystem(
+          (tx) =>
+            tx.execute(sql`update packing.scans set code = 'X' where session_id = ${sessionId}`),
+          { orgId: ORG_A },
+        ),
+      ),
+    ).toMatch(/a packing scan is never changed or removed/);
+    expect(
+      await refusal(
+        withSystem(
+          (tx) => tx.execute(sql`delete from packing.scans where session_id = ${sessionId}`),
+          { orgId: ORG_A },
+        ),
+      ),
+    ).toMatch(/a packing scan is never changed or removed/);
+    // And the application's role has neither grant.
+    expect(
+      await refusal(
+        withOrg({ orgId: ORG_A }, (tx) =>
+          tx.execute(sql`delete from packing.scans where session_id = ${sessionId}`),
+        ),
+      ),
+    ).toMatch(/permission denied/);
+    const view = (await call(packer, 'GET', `/v1/packing/sessions/${sessionId}`)).body;
+    expect((view.scans as unknown[]).length).toBe(1);
+  });
+});
+
 describe('the packing video (M38b check 2)', () => {
   it('uploads as a private packing video, attaches once, plays for the right roles only', async () => {
     const order = await confirmedOrder([{ sku: cap, qty: 1 }]);
@@ -620,6 +720,83 @@ describe('the packing video (M38b check 2)', () => {
   });
 });
 
+describe('the packing video after the ledger audit (M38b)', () => {
+  async function register(actor: RoleClient, sessionId: string, startedAt: Date) {
+    return call(actor, 'POST', `/v1/packing/sessions/${sessionId}/videos`, {
+      videoId: randomUUID(),
+      startedAt: startedAt.toISOString(),
+      mime: 'video/webm',
+    });
+  }
+
+  it('refuses the same file for a second part with a 409, not a server error', async () => {
+    const order = await confirmedOrder([{ sku: cap, qty: 1 }]);
+    const sessionId = sessionIdOf((await open(packer, { orderId: order.id })).body);
+    const first = await recordVideo(packer, sessionId);
+    const second = await register(packer, sessionId, new Date());
+    expect(second.status).toBe(200);
+    const reused = await call(
+      packer,
+      'POST',
+      `/v1/packing/sessions/${sessionId}/videos/${String(second.body.id)}/file`,
+      { fileId: first.fileId, durationMs: 1_000 },
+    );
+    expect(reused.status, JSON.stringify(reused.body)).toBe(409);
+    expect(reused.body.code).toBe('PACKING_VIDEO_INVALID');
+  });
+
+  it('attaches a part’s file only for the person who recorded it, or an org admin', async () => {
+    const order = await confirmedOrder([{ sku: cap, qty: 1 }]);
+    const sessionId = sessionIdOf((await open(packer, { orderId: order.id })).body);
+    const part = await register(packer, sessionId, new Date());
+    const videoId = String(part.body.id);
+    const colleague = await harness.asRole('warehouse', ORG_A);
+    const theirs = await upload(
+      colleague,
+      { purpose: 'packing-video', contentType: 'video/webm' },
+      webmBytes(300),
+    );
+    const refused = await call(
+      colleague,
+      'POST',
+      `/v1/packing/sessions/${sessionId}/videos/${videoId}/file`,
+      { fileId: theirs.fileId, durationMs: 5 },
+    );
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+
+    const adminsFile = await upload(
+      admin,
+      { purpose: 'packing-video', contentType: 'video/webm' },
+      webmBytes(300),
+    );
+    const byAdmin = await call(
+      admin,
+      'POST',
+      `/v1/packing/sessions/${sessionId}/videos/${videoId}/file`,
+      { fileId: adminsFile.fileId, durationMs: 5 },
+    );
+    expect(byAdmin.status, JSON.stringify(byAdmin.body)).toBe(200);
+    expect(byAdmin.body).toMatchObject({ state: 'uploaded' });
+  });
+
+  it('takes a part on a finished packing only if it started before the box was closed', async () => {
+    const packed = await packedWithVideo();
+    const view = (await call(packer, 'GET', `/v1/packing/sessions/${packed.sessionId}`)).body;
+    const session = view.session as { startedAt: string; completedAt: string };
+    const completedAt = new Date(session.completedAt);
+
+    const late = await register(packer, packed.sessionId, new Date(completedAt.getTime() + 60_000));
+    expect(late.status).toBe(409);
+    expect(late.body.code).toBe('PACKING_VIDEO_INVALID');
+    expect(String(late.body.detail)).toMatch(/finished before that recording started/);
+
+    const filmedWhileOpen = await register(packer, packed.sessionId, new Date(session.startedAt));
+    expect(filmedWhileOpen.status, JSON.stringify(filmedWhileOpen.body)).toBe(200);
+    expect(filmedWhileOpen.body).toMatchObject({ part: 2, state: 'waiting' });
+  });
+});
+
 describe('the packing video’s retention (M38b check 2, M38 check 6)', () => {
   it('deletes exactly the videos seven Dhaka days past delivery, return or cancel, audits each, and removes the bytes after', async () => {
     const service = harness.app.get(PackingVideoService, { strict: false });
@@ -634,26 +811,20 @@ describe('the packing video’s retention (M38b check 2, M38 check 6)', () => {
     const inFlight = await packedWithVideo();
     await moveOrder(inFlight.orderId, ['shipped'], new Date('2026-09-01T09:00:00Z'));
 
-    const bytesOf = async (fileId: string) => {
-      const found: string[] = [];
-      const walk = async (dir: string) => {
-        for (const entry of await readdir(dir, { withFileTypes: true })) {
-          const full = path.join(dir, entry.name);
-          if (entry.isDirectory()) await walk(full);
-          else if (entry.name.startsWith(fileId)) found.push(full);
-        }
-      };
-      await walk(storageRoot);
-      return found;
-    };
     // The object and the local driver's note of its type beside it.
     expect((await bytesOf(delivered.fileId)).length).toBeGreaterThan(0);
 
     // 23:59 on 8 October in Dhaka: the seventh day after delivery. Nothing goes.
-    expect(await service.purgeOrg(ORG_A, new Date('2026-10-08T17:59:00Z'))).toBe(0);
+    expect(await service.purgeOrg(ORG_A, new Date('2026-10-08T17:59:00Z'))).toEqual({
+      deleted: 0,
+      failed: 0,
+    });
     // 00:01 on 9 October in Dhaka: the delivered and returned videos go; the order cancelled
     // on the 5th and the one still on the road keep theirs.
-    expect(await service.purgeOrg(ORG_A, new Date('2026-10-08T18:01:00Z'))).toBe(2);
+    expect(await service.purgeOrg(ORG_A, new Date('2026-10-08T18:01:00Z'))).toEqual({
+      deleted: 2,
+      failed: 0,
+    });
 
     const state = await withSystem(
       async (tx) =>
@@ -719,13 +890,144 @@ describe('the packing video’s retention (M38b check 2, M38 check 6)', () => {
     const gone = await call(admin, 'GET', `/v1/packing/videos/${delivered.videoId}/url`);
     expect(gone.status).toBe(410);
     expect(gone.body.code).toBe('PACKING_VIDEO_GONE');
-    expect(await service.purgeOrg(ORG_A, new Date('2026-10-08T18:02:00Z'))).toBe(0);
+    expect(await service.purgeOrg(ORG_A, new Date('2026-10-08T18:02:00Z'))).toEqual({
+      deleted: 0,
+      failed: 0,
+    });
     const page = await call(admin, 'GET', `/v1/packing/orders/${delivered.orderId}`);
     expect(page.body).toMatchObject({ video: 'deleted', videos: [{ state: 'deleted' }] });
 
     // Seven days after the cancel, that one goes too; the order on the road never does.
-    expect(await service.purgeOrg(ORG_A, new Date('2026-10-13T18:01:00Z'))).toBe(1);
-    expect(await service.purgeOrg(ORG_A, new Date('2027-10-13T18:01:00Z'))).toBe(0);
+    expect(await service.purgeOrg(ORG_A, new Date('2026-10-13T18:01:00Z'))).toEqual({
+      deleted: 1,
+      failed: 0,
+    });
+    expect(await service.purgeOrg(ORG_A, new Date('2027-10-13T18:01:00Z'))).toEqual({
+      deleted: 0,
+      failed: 0,
+    });
     expect(existsSync(storageRoot)).toBe(true);
+  });
+
+  it('deletes every other video when one fails, and says how many failed (ledger audit)', async () => {
+    const service = harness.app.get(PackingVideoService, { strict: false });
+    const files = harness.app.get<FilesApi>(FILES_API, { strict: false });
+    const deliveredAt = new Date('2026-10-01T09:00:00Z');
+    const first = await packedWithVideo();
+    await moveOrder(first.orderId, ['shipped', 'delivered'], deliveredAt);
+    const second = await packedWithVideo();
+    await moveOrder(second.orderId, ['shipped', 'delivered'], deliveredAt);
+
+    const forget = vi
+      .spyOn(files, 'forget')
+      .mockRejectedValueOnce(new Error('the object store is down'));
+    try {
+      const after = new Date('2026-10-08T18:01:00Z');
+      expect(await service.purgeOrg(ORG_A, after)).toEqual({ deleted: 1, failed: 1 });
+      // The failed one is still attached, and the next run takes it.
+      expect(await service.purgeOrg(ORG_A, after)).toEqual({ deleted: 1, failed: 0 });
+    } finally {
+      forget.mockRestore();
+    }
+    const rows = await withSystem(
+      async (tx) =>
+        tx.execute<{ file_id: string | null }>(sql`
+          select file_id from packing.videos where id in (${first.videoId}, ${second.videoId})
+        `),
+      { orgId: ORG_A },
+    );
+    expect(rows.map((row) => row.file_id)).toEqual([null, null]);
+
+    // A brand that fails does not stop the others, and the run reports it.
+    const orgs = await withSystem(async (tx) =>
+      tx.execute<{ n: number }>(sql`select count(*)::int as n from org.organizations`),
+    );
+    const purgeOrg = vi
+      .spyOn(service, 'purgeOrg')
+      .mockRejectedValueOnce(new Error('this brand could not be read'));
+    try {
+      expect(await service.purgeAll(new Date('2020-01-01T00:00:00Z'))).toEqual({
+        deleted: 0,
+        swept: 0,
+        failed: 1,
+      });
+      expect(purgeOrg).toHaveBeenCalledTimes(orgs[0]?.n ?? 0);
+    } finally {
+      purgeOrg.mockRestore();
+    }
+  });
+
+  it('forgets a day-old upload no part took, audited, its bytes removed after, and keeps attached ones', async () => {
+    const service = harness.app.get(PackingVideoService, { strict: false });
+    const attached = await packedWithVideo();
+    // Finalized, and its attach never came.
+    const orphan = await upload(
+      packer,
+      { purpose: 'packing-video', contentType: 'video/webm' },
+      webmBytes(700),
+    );
+    expect(orphan.status).toBe(201);
+    // A ticket whose bytes never arrived.
+    const ticket = await packer.client.request('POST', '/v1/files', {
+      body: { purpose: 'packing-video', contentType: 'video/webm', sizeBytes: 900 },
+    });
+    expect(ticket.statusCode).toBe(201);
+    const pendingId = (JSON.parse(ticket.body) as { fileId: string }).fileId;
+    expect((await bytesOf(orphan.fileId)).length).toBeGreaterThan(0);
+
+    const stillThere = async () =>
+      (
+        await withSystem(
+          async (tx) =>
+            tx.execute<{ id: string }>(sql`
+              select id from files.objects
+              where id in (${orphan.fileId}, ${pendingId}, ${attached.fileId})
+            `),
+          { orgId: ORG_A },
+        )
+      )
+        .map((row) => row.id)
+        .sort();
+
+    // Younger than a day: none of these goes.
+    const early = await service.sweepOrphans(
+      ORG_A,
+      new Date(Date.now() + ORPHAN_AFTER_MS - 60_000),
+    );
+    expect(early.failed).toBe(0);
+    expect(await stillThere()).toEqual([orphan.fileId, pendingId, attached.fileId].sort());
+
+    const swept = await service.sweepOrphans(
+      ORG_A,
+      new Date(Date.now() + ORPHAN_AFTER_MS + 60_000),
+    );
+    expect(swept.failed).toBe(0);
+    expect(swept.deleted).toBeGreaterThanOrEqual(2);
+    expect(await stillThere()).toEqual([attached.fileId]);
+
+    const audits = await withSystem(
+      async (tx) =>
+        tx.execute<{ entity_id: string; before: { ownerUserId: string; status: string } }>(sql`
+          select entity_id, before from audit.audit_log
+          where org_id = ${ORG_A} and action = 'packing.video_upload_swept'
+            and entity_id in (${orphan.fileId}, ${pendingId})
+        `),
+      { orgId: ORG_A },
+    );
+    expect(audits.map((row) => row.entity_id).sort()).toEqual([orphan.fileId, pendingId].sort());
+    expect(audits.find((row) => row.entity_id === orphan.fileId)?.before).toMatchObject({
+      ownerUserId: packer.userId,
+      status: 'stored',
+    });
+
+    // The bytes go after the commit, through `files.remove_object`; the attached video stays.
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if ((await bytesOf(orphan.fileId)).length === 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    expect(await bytesOf(orphan.fileId)).toEqual([]);
+    expect((await bytesOf(attached.fileId)).length).toBeGreaterThan(0);
+    const played = await call(admin, 'GET', `/v1/packing/videos/${attached.videoId}/url`);
+    expect(played.status).toBe(200);
   });
 });

@@ -118,6 +118,7 @@ export class PackStationService {
   async get(context: ActiveContext, request: object, sessionId: string) {
     return mapPackingErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        this.assertStaff(context);
         const session = await this.sessionInScope(tx, context.orgId, request, sessionId, false);
         return this.view(tx, context.orgId, session, context.userId);
       }),
@@ -302,21 +303,20 @@ export class PackStationService {
     );
   }
 
-  /** The newest sessions of orders the caller may see (D-617). */
+  /**
+   * The newest sessions of orders the caller may see (D-617). The order's scope is part of
+   * the query, before its limit (M38b audit): a sales agent sees their own newest sessions,
+   * however many colleagues packed since.
+   */
   async list(context: ActiveContext, request: object, query: PackingSessionsQuery) {
     return mapPackingErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const rows = await repo.recentSessions(tx, context.orgId, {
+        this.assertStaff(context);
+        const shown = await repo.recentSessions(tx, context.orgId, {
           limit: query.limit,
           status: query.status,
+          orderInScope: this.orders.orderInScopeSql(context.orgId, sql`s.order_id`, request),
         });
-        const visible = await this.orders.visibleOrderIds(
-          tx,
-          context.orgId,
-          rows.map((row) => row.order_id),
-          request,
-        );
-        const shown = rows.filter((row) => visible.has(row.order_id));
         const [videos, names, statuses] = await Promise.all([
           repo.videosOf(
             tx,
@@ -375,6 +375,7 @@ export class PackStationService {
   async forOrder(context: ActiveContext, request: object, orderId: string, canPlay: boolean) {
     return mapPackingErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        this.assertStaff(context);
         if (!(await this.orders.orderVisibleTo(tx, context.orgId, orderId, request))) {
           throw new PackingError('NOT_FOUND', 'No such order.');
         }
@@ -485,6 +486,16 @@ export class PackStationService {
         `Order ${facts.orderNo} is ${STATUS_WORDS[facts.status] ?? facts.status}, so it is not packed now.`,
       );
     }
+  }
+
+  /**
+   * The packing record (who packed, every scan, the staff's names, the video's parts) is the
+   * brand's own working record: a reseller holds `read Order` for their own orders and still
+   * does not read it (D-665).
+   */
+  private assertStaff(context: ActiveContext): void {
+    if (context.isSuperAdmin || context.roles.some((role) => role !== 'reseller')) return;
+    throw new PackingError('FORBIDDEN', 'The packing record is for the brand’s staff.');
   }
 
   private assertOpen(session: repo.SessionRow): void {

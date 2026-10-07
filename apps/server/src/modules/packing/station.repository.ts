@@ -1,5 +1,5 @@
 import type { Tx } from '@elysium/db';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 
 /**
  * The SQL behind the packing station and the packing video (M38b, D-610 to D-615). Its own
@@ -144,6 +144,23 @@ export async function insertScan(
   return row;
 }
 
+/**
+ * How many packing scans name any of these SKUs (M38b audit, D-621): a scan is the record of
+ * what went into a box, so a SKU that was scanned keeps its row.
+ */
+export async function scansForSkus(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+): Promise<number> {
+  if (skuIds.length === 0) return 0;
+  const rows = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from packing.scans
+    where org_id = ${orgId} and sku_id = any (${sql.param([...skuIds])}::uuid[])
+  `);
+  return rows[0]?.n ?? 0;
+}
+
 export interface VideoRow extends Record<string, unknown> {
   readonly id: string;
   readonly session_id: string;
@@ -274,6 +291,27 @@ export async function attachedVideos(
   return [...rows];
 }
 
+/**
+ * Of these files, the ones a part still names: attached, or deleted by retention (M38b audit,
+ * the orphan sweep). Whatever is not returned belongs to no recording.
+ */
+export async function referencedFileIds(
+  tx: Tx,
+  orgId: string,
+  fileIds: readonly string[],
+): Promise<Set<string>> {
+  if (fileIds.length === 0) return new Set();
+  const ids = sql`(${sql.param([...fileIds])}::uuid[])`;
+  const rows = await tx.execute<{ id: string }>(sql`
+    select file_id as id from packing.videos
+    where org_id = ${orgId} and file_id = any ${ids}
+    union
+    select deleted_file_id as id from packing.videos
+    where org_id = ${orgId} and deleted_file_id = any ${ids}
+  `);
+  return new Set(rows.map((row) => row.id));
+}
+
 export interface SessionSummaryRow extends SessionRow {
   readonly scans: number;
   readonly accepted: number;
@@ -281,11 +319,19 @@ export interface SessionSummaryRow extends SessionRow {
   readonly mismatches: number;
 }
 
-/** The newest sessions with their scan counts, for the recent list. */
+/**
+ * The newest sessions with their scan counts, for the recent list, of orders `orderInScope`
+ * admits: the orders module's condition on `s.order_id` (the caller's scope), applied before
+ * the limit so a sales agent sees their own newest, not their share of everyone's.
+ */
 export async function recentSessions(
   tx: Tx,
   orgId: string,
-  options: { readonly limit: number; readonly status: 'open' | 'completed' | undefined },
+  options: {
+    readonly limit: number;
+    readonly status: 'open' | 'completed' | undefined;
+    readonly orderInScope: SQL;
+  },
 ): Promise<SessionSummaryRow[]> {
   const rows = await tx.execute<SessionSummaryRow>(sql`
     select s.id, s.order_id, s.order_no, s.status, s.video_required, s.started_by, s.started_at,
@@ -299,6 +345,7 @@ export async function recentSessions(
     from packing.sessions s
     left join packing.scans c on c.org_id = s.org_id and c.session_id = s.id
     where s.org_id = ${orgId}
+      and ${options.orderInScope}
       ${options.status === undefined ? sql`` : sql`and s.status = ${options.status}`}
     group by s.id
     order by s.started_at desc, s.id

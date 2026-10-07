@@ -317,6 +317,13 @@ export const APPEND_ONLY_TABLES: readonly string[] = [
   'loans.reminders',
   // M38a: every scan on a stock count, the record a disputed count is settled from (D-606).
   'inventory.count_scans',
+  /*
+   * M38b: every scan at the packing station, refusals included: what went into the box and
+   * who put it there, the record a "wrong item" complaint is settled from (D-610). The
+   * M38b append-only migration refuses UPDATE and DELETE with a trigger as well, so
+   * `erp_owner` is held to the same rule as `erp_app`.
+   */
+  'packing.scans',
 ];
 
 /**
@@ -445,6 +452,16 @@ export const NO_DELETE_TABLES: readonly string[] = [
    * the M38a policies migration's trigger confines it to.
    */
   'inventory.opening_stock_windows',
+  /*
+   * M38b. A packing session is opened, then completed once (0130's trigger); a deleted one
+   * would make a packed order look unpacked by anyone. A video part is registered, attached
+   * once and marked deleted by the retention job, never removed, so "was this order filmed,
+   * and why is the film gone" stays answerable (D-612). The settings are one row per brand:
+   * a missing row reads as the default (D-615).
+   */
+  'packing.sessions',
+  'packing.videos',
+  'packing.settings',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */

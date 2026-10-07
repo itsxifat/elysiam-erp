@@ -664,6 +664,49 @@ export class FilesService {
   }
 
   /**
+   * Refuse a signed PUT before its body is read (M38b audit, W3).
+   *
+   * `PUT /v1/files/content` is public, and a packing video's type may be 90 MiB: checking
+   * the token only in the handler meant a stranger with a junk token could make this process
+   * buffer 90 MiB first. An `onRequest` hook (`FileUploadGate`) calls this with the headers
+   * alone: the token's signature, expiry and method, the declared content type against the
+   * signed one, and the declared `Content-Length` against that type's ceiling. A body without
+   * a length is still bounded by the parser's `bodyLimit` for the signed type, which the
+   * content-type check has just made the right one. The handler checks all of it again with
+   * the bytes in hand. Throws the same refusals the handler would.
+   */
+  assertUploadRequest(token: string, contentType: string, contentLength: number | undefined): void {
+    try {
+      const { rule } = this.uploadClaims(token, contentType);
+      if (contentLength !== undefined) assertWithinLimit(contentLength, rule);
+    } catch (error) {
+      mapStorageError(error);
+    }
+  }
+
+  /** What a signed PUT token allows, checked against the request's declared type. */
+  private uploadClaims(
+    token: string,
+    contentType: string,
+  ): { readonly claims: { readonly key: string }; readonly rule: ReturnType<typeof mimeRuleFor> } {
+    const local = this.driver as StorageDriver & {
+      verify?: (token: string) => { key: string; method: string; contentType?: string };
+    };
+    if (typeof local.verify !== 'function') throw new NotFoundException('Not found.');
+
+    const claims = local.verify(token);
+    if (claims.method !== 'PUT') throw new ForbiddenException('This link is not an upload.');
+
+    const declared = (contentType.split(';')[0] ?? '').trim().toLowerCase();
+    if (claims.contentType !== undefined && claims.contentType !== declared) {
+      throw new BadRequestException(
+        `This ticket was issued for ${claims.contentType}, not ${declared}.`,
+      );
+    }
+    return { claims, rule: mimeRuleFor(claims.contentType ?? declared) };
+  }
+
+  /**
    * Accept the bytes a local signed PUT ticket points at.
    *
    * The local driver's equivalent of uploading straight to R2, and it exists so
@@ -680,23 +723,8 @@ export class FilesService {
    * has to be.
    */
   async writeSignedContent(token: string, bytes: Uint8Array, contentType: string): Promise<void> {
-    const local = this.driver as StorageDriver & {
-      verify?: (token: string) => { key: string; method: string; contentType?: string };
-    };
-    if (typeof local.verify !== 'function') throw new NotFoundException('Not found.');
-
     try {
-      const claims = local.verify(token);
-      if (claims.method !== 'PUT') throw new ForbiddenException('This link is not an upload.');
-
-      const declared = (contentType.split(';')[0] ?? '').trim().toLowerCase();
-      if (claims.contentType !== undefined && claims.contentType !== declared) {
-        throw new BadRequestException(
-          `This ticket was issued for ${claims.contentType}, not ${declared}.`,
-        );
-      }
-
-      const rule = mimeRuleFor(claims.contentType ?? declared);
+      const { claims, rule } = this.uploadClaims(token, contentType);
       assertWithinLimit(bytes.byteLength, rule);
 
       // Only a pending upload takes bytes. A ticket lives for minutes after the finalize,
