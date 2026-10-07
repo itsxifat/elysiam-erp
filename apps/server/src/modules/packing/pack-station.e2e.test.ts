@@ -795,6 +795,17 @@ describe('the packing video after the ledger audit (M38b)', () => {
     expect(filmedWhileOpen.status, JSON.stringify(filmedWhileOpen.body)).toBe(200);
     expect(filmedWhileOpen.body).toMatchObject({ part: 2, state: 'waiting' });
   });
+
+  it('takes a late part on a finished packing only from someone who packed it (the re-check)', async () => {
+    const packed = await packedWithVideo();
+    const view = (await call(packer, 'GET', `/v1/packing/sessions/${packed.sessionId}`)).body;
+    const session = view.session as { startedAt: string };
+    // A colleague who can see the order, back-dating a recording into the closed box.
+    const colleague = await harness.asRole('warehouse', ORG_A);
+    const staged = await register(colleague, packed.sessionId, new Date(session.startedAt));
+    expect(staged.status, JSON.stringify(staged.body)).toBe(403);
+    expect(staged.body.code).toBe('FORBIDDEN');
+  });
 });
 
 describe('the packing video’s retention (M38b check 2, M38 check 6)', () => {

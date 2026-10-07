@@ -1,9 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  PackingOpenInput,
-  PackingRemovalInput,
-  PackingScanInput,
-  PackingSessionsQuery,
+import {
+  MATRIX,
+  type MembershipRole,
+  type PackingOpenInput,
+  type PackingRemovalInput,
+  type PackingScanInput,
+  type PackingSessionsQuery,
 } from '@elysium/contracts';
 import { withOrg, type Tx } from '@elysium/db';
 import { normaliseScannedCode } from '@elysium/domain/barcode';
@@ -494,7 +496,10 @@ export class PackStationService {
    * does not read it (D-665).
    */
   private assertStaff(context: ActiveContext): void {
-    if (context.isSuperAdmin || context.roles.some((role) => role !== 'reseller')) return;
+    // A staff role that reads orders itself (the M38b re-check): not "any role but reseller",
+    // or a reseller who is also an investor, whose role reads no order, would pass on the
+    // reseller's own-orders grant.
+    if (context.isSuperAdmin || context.roles.some(staffReadsOrders)) return;
     throw new PackingError('FORBIDDEN', 'The packing record is for the brand’s staff.');
   }
 
@@ -674,4 +679,14 @@ export class PackStationService {
       }),
     };
   }
+}
+
+/** A role other than reseller whose own grants read orders (D-665). */
+function staffReadsOrders(role: MembershipRole): boolean {
+  if (role === 'reseller') return false;
+  return (MATRIX[role] ?? []).some(
+    (rule) =>
+      rule.subject === 'Order' &&
+      (rule.action === 'read' || (Array.isArray(rule.action) && rule.action.includes('read'))),
+  );
 }

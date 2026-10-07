@@ -486,6 +486,21 @@ describe('M38b audit (W3): a signed PUT is refused before its body is read', () 
     }
   });
 
+  it('refuses an upload type on every other route before reading a byte (the M38b re-check)', async () => {
+    // The CSRF-exempt routes: every other one is refused by the CSRF check before this.
+    for (const url of ['/v1/scanner/sign-in', '/v1/courier/webhooks/steadfast']) {
+      const body = countedBody();
+      const response = await harness.server.inject({
+        method: 'POST',
+        url,
+        headers: { 'content-type': 'video/webm', 'content-length': String(90 * 1024 * 1024) },
+        payload: body.stream,
+      });
+      expect(response.statusCode, `${url}: ${response.body}`).toBe(415);
+      expect(body.pulled(), url).toBeLessThanOrEqual(1);
+    }
+  });
+
   it('refuses a real ticket declaring the wrong type, or more than its type allows, before reading', async () => {
     const sales = await harness.asRole('sales', ORG_A);
     const ticketResponse = await sales.client.request('POST', '/v1/files', {

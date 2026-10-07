@@ -70,7 +70,7 @@ export class PackingVideoService {
           if (existing.session_id !== sessionId) {
             throw new PackingError('PACKING_VIDEO_INVALID', 'That recording is another order’s.');
           }
-          return this.part(existing);
+          return this.part(existing, context);
         }
         const startedAt = new Date(input.startedAt);
         const now = Date.now();
@@ -97,6 +97,22 @@ export class PackingVideoService {
             'This order’s packing finished before that recording started.',
           );
         }
+        // The start time is the browser's word, so a finished packing takes a late part only
+        // from someone who packed it, or an org admin (the M38b re-check): nobody else adds
+        // footage to a closed box.
+        if (
+          session.status === 'completed' &&
+          session.started_by !== context.userId &&
+          session.completed_by !== context.userId &&
+          !context.isSuperAdmin &&
+          !context.roles.includes('org_admin') &&
+          !(await repo.scannedInSession(tx, context.orgId, sessionId, context.userId))
+        ) {
+          throw new PackingError(
+            'FORBIDDEN',
+            'Only someone who packed this order, or an org admin, adds a recording to it now.',
+          );
+        }
         const row = await repo.insertVideo(tx, {
           orgId: context.orgId,
           id: input.videoId,
@@ -115,7 +131,7 @@ export class PackingVideoService {
           after: { sessionId, orderId: session.order_id, part: row.part, mime: row.mime },
           request,
         });
-        return this.part(row);
+        return this.part(row, context);
       }),
     );
   }
@@ -146,7 +162,7 @@ export class PackingVideoService {
             'Only the person who recorded this video, or an org admin, attaches its file.',
           );
         }
-        if (video.file_id === input.fileId) return this.part(video);
+        if (video.file_id === input.fileId) return this.part(video, context);
         if (video.file_id !== null || video.deleted_at !== null) {
           throw new PackingError('PACKING_VIDEO_INVALID', 'This recording already has its video.');
         }
@@ -192,7 +208,7 @@ export class PackingVideoService {
           request,
         });
         const after = await repo.videoById(tx, context.orgId, videoId);
-        return this.part(after ?? video);
+        return this.part(after ?? video, context);
       }),
     );
   }
@@ -446,8 +462,14 @@ export class PackingVideoService {
     return session;
   }
 
-  private part(row: repo.VideoRow) {
+  private part(row: repo.VideoRow, context: ActiveContext) {
     return {
+      // Whether this caller may bring the part's file: its recorder, or an org admin. A shared
+      // packing PC's queue skips someone else's recording instead of uploading it to a 403.
+      mayAttach:
+        row.recorded_by === context.userId ||
+        context.isSuperAdmin ||
+        context.roles.includes('org_admin'),
       id: row.id,
       sessionId: row.session_id,
       part: row.part,

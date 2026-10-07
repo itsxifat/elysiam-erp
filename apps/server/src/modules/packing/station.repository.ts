@@ -383,3 +383,19 @@ export async function saveSettings(
   if (row === undefined) throw new Error('the packing settings were not saved');
   return row;
 }
+
+/** Whether `userId` scanned any piece in this session (a participant of its packing). */
+export async function scannedInSession(
+  tx: Tx,
+  orgId: string,
+  sessionId: string,
+  userId: string,
+): Promise<boolean> {
+  const [row] = await tx.execute<{ found: boolean }>(sql`
+    select exists (
+      select 1 from packing.scans
+      where org_id = ${orgId} and session_id = ${sessionId} and scanned_by = ${userId}
+    ) as found
+  `);
+  return row?.found === true;
+}

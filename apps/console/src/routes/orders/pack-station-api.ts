@@ -187,6 +187,8 @@ export interface VideoPartAnswer {
   readonly id: string;
   readonly part: number;
   readonly state: 'waiting' | 'uploaded' | 'deleted';
+  /** This person may bring the part's file: its recorder or an org admin. */
+  readonly mayAttach?: boolean;
 }
 
 export function registerVideoPart(

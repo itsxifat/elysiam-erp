@@ -1,4 +1,5 @@
-import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { ALLOWED_MIME_TYPES } from '@elysium/integrations';
+import { Injectable, UnsupportedMediaTypeException, type OnModuleInit } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
@@ -6,6 +7,19 @@ import { FilesService } from './files.service.js';
 
 /** The local driver's signed PUT target, as Fastify's router names the route. */
 export const SIGNED_PUT_ROUTE = '/v1/files/content';
+
+/** The upload types, whose parsers take up to a type's ceiling (a video's 90 MiB). */
+const UPLOAD_TYPES: ReadonlySet<string> = new Set(ALLOWED_MIME_TYPES.map((rule) => rule.mime));
+
+/** The request's media type, without parameters, in lower case. */
+function mediaType(request: FastifyRequest): string {
+  return (
+    String(request.headers['content-type'] ?? '')
+      .split(';')[0]
+      ?.trim()
+      .toLowerCase() ?? ''
+  );
+}
 
 /** The declared `Content-Length`, when the request declares a usable one. */
 function declaredLength(request: FastifyRequest): number | undefined {
@@ -44,6 +58,18 @@ export class FileUploadGate implements OnModuleInit {
 
     instance.addHook('onRequest', (request, _reply, done) => {
       if (request.method !== 'PUT' || request.routeOptions.url !== SIGNED_PUT_ROUTE) {
+        // The upload parsers are the application's, so they would read a video-typed body of
+        // up to 90 MiB on any route before its guard ran (the M38b re-check): only the signed
+        // PUT takes an upload type; every other route refuses one before reading a byte.
+        if (UPLOAD_TYPES.has(mediaType(request))) {
+          done(
+            new UnsupportedMediaTypeException({
+              code: 'UNSUPPORTED_MEDIA_TYPE',
+              message: 'Send JSON.',
+            }),
+          );
+          return;
+        }
         done();
         return;
       }

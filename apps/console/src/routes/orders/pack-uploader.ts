@@ -40,7 +40,7 @@ export function recordedMs(recording: StoredRecording): number {
   return Math.max(0, Math.round(end - recording.startedAt));
 }
 
-export type UploadResult = 'uploaded' | 'already' | 'empty';
+export type UploadResult = 'uploaded' | 'already' | 'empty' | 'notMine';
 
 /** The server refused the file itself for this part (gone, or not a fit): upload it again. */
 function fileRefused(error: unknown): boolean {
@@ -70,6 +70,8 @@ export async function uploadRecording(
     await store.remove(recording.videoId);
     return 'already';
   }
+  // Someone else filmed it on this shared PC: it waits for their sign-in here, kept, not sent.
+  if (part.mayAttach === false) return 'notMine';
   const kept = recording.uploadedFileId ?? null;
   if (kept !== null) {
     // An earlier attempt finalized this file and its attach failed: attach the same file.
@@ -145,9 +147,16 @@ export async function runUploadQueue(options: {
         (entry) => entry.videoId === recording.videoId,
       );
       if (current === undefined) continue;
-      await uploadRecording(current, options.store, api, (fraction) =>
+      const result = await uploadRecording(current, options.store, api, (fraction) =>
         options.onProgress?.(recording.videoId, fraction),
       );
+      if (result === 'notMine') {
+        await options.store.update(recording.videoId, {
+          lastAttemptAt: now(),
+          lastError: 'recorded by someone else; it uploads when they sign in on this browser',
+        });
+        continue;
+      }
       uploaded += 1;
     } catch (error) {
       failed += 1;

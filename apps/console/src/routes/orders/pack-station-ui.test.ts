@@ -126,6 +126,8 @@ describe('the upload queue', () => {
       state?: VideoPartAnswer['state'];
       /** Attaches that fail before one succeeds, each with this error. */
       attachFailures?: Error[];
+      /** The server's word on whether this person brings the part's file. */
+      mayAttach?: boolean;
     } = {},
   ) {
     const calls: string[] = [];
@@ -135,7 +137,12 @@ describe('the upload queue', () => {
     const api: UploadApi = {
       register: (_session, input) => {
         calls.push(`register ${input.mime}`);
-        return Promise.resolve({ id: input.videoId, part: 1, state: options.state ?? 'waiting' });
+        return Promise.resolve({
+          id: input.videoId,
+          part: 1,
+          state: options.state ?? 'waiting',
+          ...(options.mayAttach === undefined ? {} : { mayAttach: options.mayAttach }),
+        });
       },
       ticket: (input) => {
         calls.push(`ticket ${input.contentType} ${String(input.sizeBytes)} ${input.originalName}`);
@@ -184,6 +191,19 @@ describe('the upload queue', () => {
       'attach video-1 file-1',
     ]);
     expect(attached).toEqual([{ fileId: 'file-1', durationMs: 60_000 }]);
+  });
+
+  it('keeps someone else’s recording on a shared PC, uploading nothing (the M38b re-check)', async () => {
+    const store = memoryVideoStore();
+    await store.begin(recording());
+    await store.append('video-1', 1, new Blob(['a'.repeat(4)]), 10_000);
+    const { api, calls } = fakeApi({ mayAttach: false });
+    expect(await runUploadQueue({ store, api, activeVideoId: null, now: () => 0 })).toEqual({
+      uploaded: 0,
+      failed: 0,
+      waiting: 1,
+    });
+    expect(calls).toEqual(['register video/webm']);
   });
 
   it('attaches the file it already finalized when a retry follows a failed attach, never a second copy', async () => {
