@@ -1,5 +1,6 @@
 # One brand's ERP on the brands server (M31, D-474): its own Postgres 17, Valkey, Gotenberg,
-# API, worker and files volume, as one Compose project named `erp-<slug>`. Every brand runs
+# API, worker, camera process (M38c) and files volume, as one Compose project named
+# `erp-<slug>`. Every brand runs
 # the same image from the same commit; nothing in one brand's project reaches another's.
 #
 #   docker compose -f infra/brand/docker-compose.brand.yml --env-file <brands>/<slug>/.env.brand ...
@@ -150,6 +151,29 @@ services:
       valkey:
         condition: service_healthy
 
+  # M38c (D-672 to D-676): records the packing tables' IP cameras (Orders → Pack → Settings →
+  # IP cameras) into a rolling buffer and cuts each packing's video from it. The same image;
+  # the application role only (no owner URL); nothing published. It reaches the cameras on the
+  # shop's LAN through Docker's default bridge, as the worker can; the camera's password is
+  # entered in the ERP's settings (sealed with the brand's credentials key), never here.
+  camera:
+    <<: *server-image
+    command: ['node', '--import', './dist/instrument.js', 'dist/main.camera.js']
+    environment:
+      <<: *server-env
+      CAMERA_BUFFER_DIR: /data/camera
+    volumes:
+      # The cut is kept as a private packing video in the same files volume the API serves.
+      - files:/data/files
+      # At most half an hour of each camera's stream.
+      - camera-buffer:/data/camera
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      # The worker installs the job queues the camera process works.
+      worker:
+        condition: service_started
+
   api:
     <<: *server-image
     environment: *server-env
@@ -179,3 +203,4 @@ services:
 volumes:
   postgres-data:
   files:
+  camera-buffer:

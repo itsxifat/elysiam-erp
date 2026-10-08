@@ -1,0 +1,55 @@
+{
+ "mode": "rtsp",
+ "good": {
+  "segments": 8,
+  "status": {
+   "running": true,
+   "lastSegmentAt": "2026-10-08T04:00:02.596Z",
+   "errorCode": null,
+   "failures": 0
+  },
+  "cut": {
+   "window": {
+    "fromMs": 1791431997995,
+    "toMs": 1791432000995
+   },
+   "chosen": 5,
+   "coverage": {
+    "startCovered": true,
+    "endCovered": true,
+    "gapMs": 0
+   },
+   "startsNoLater": true,
+   "durationMsFromSpans": 5001,
+   "ftyp": "ftyp",
+   "sizeBytes": 155250,
+   "probe": {
+    "programs": [],
+    "streams": [
+     {
+      "codec_name": "h264",
+      "width": 640,
+      "height": 360
+     }
+    ],
+    "format": {
+     "duration": "5.000000"
+    }
+   }
+  }
+ },
+ "wrong": {
+  "segments": 0,
+  "status": {
+   "running": true,
+   "lastSegmentAt": null,
+   "errorCode": "auth_failed",
+   "failures": 1
+  }
+ },
+ "passwordInLog": false,
+ "wrongPasswordInLog": false,
+ "logSample": [
+  "camera recording stopped {\"cameraId\":\"smoke\",\"host\":\"mediamtx:8554\",\"reason\":\"auth_failed\",\"exitCode\":1,\"retryInMs\":1000,\"ffmpeg\":\"[rtsp @ 0x5b2a1a97ce00] method DESCRIBE failed: 401 Unauthorized | rtsp://***@mediamtx:8554/stream1: Server returned 401 Unauthorized (authorization failed)\"}"
+ ]
+}

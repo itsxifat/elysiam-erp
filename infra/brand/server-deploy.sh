@@ -98,10 +98,10 @@ deploy_brand() {
     echo "seed skipped: the database already holds its brand"
   fi
 
-  say "$SLUG: API and worker"
+  say "$SLUG: API, worker and camera"
   # The API and worker refuse to start if this database holds another real brand (D-470).
   $COMPOSE up -d --wait --remove-orphans || {
-    $COMPOSE logs --tail 80 release worker api
+    $COMPOSE logs --tail 80 release worker api camera
     fail "$SLUG's stack did not come up healthy"
   }
   curl -fsS "http://127.0.0.1:$PORT/health/ready" >/dev/null ||

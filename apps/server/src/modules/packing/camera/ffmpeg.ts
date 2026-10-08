@@ -164,7 +164,11 @@ export function classifyFfmpegError(stderr: string, exitCode: number | null): Ca
   const text = stderr.toLowerCase();
   if (/401|unauthori[sz]ed|authorization failed|403|forbidden/.test(text)) return 'auth_failed';
   if (/404|not found|method describe failed/.test(text)) return 'not_found';
-  if (/connection refused|no route to host|network is unreachable|host is down/.test(text)) {
+  if (
+    /connection refused|no route to host|network is unreachable|host is down|failed to resolve hostname|name or service not known/.test(
+      text,
+    )
+  ) {
     return 'unreachable';
   }
   if (/timed out|timeout/.test(text)) return 'timeout';

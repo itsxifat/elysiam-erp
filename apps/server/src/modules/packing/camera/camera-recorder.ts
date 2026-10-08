@@ -213,7 +213,7 @@ export class CameraRecorder {
     });
     this.options.log.info(
       { cameraId: this.cameraId, host: streamHost(this.options.stream.rtspUrl) },
-      'camera recording started',
+      'camera recording starting',
     );
   }
 

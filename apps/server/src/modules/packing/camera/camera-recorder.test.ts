@@ -128,6 +128,9 @@ describe('ffmpeg’s arguments and words', () => {
     expect(classifyFfmpegError('404 Not Found', 1)).toBe('not_found');
     expect(classifyFfmpegError('Connection refused', 1)).toBe('unreachable');
     expect(classifyFfmpegError('No route to host', 1)).toBe('unreachable');
+    expect(
+      classifyFfmpegError('Failed to resolve hostname camera: Name or service not known', 1),
+    ).toBe('unreachable');
     expect(classifyFfmpegError('Connection timed out', 1)).toBe('timeout');
     expect(classifyFfmpegError('', 0)).toBe('stream_ended');
     expect(classifyFfmpegError('Invalid data found', 1)).toBe('stream_error');
