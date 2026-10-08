@@ -15,7 +15,8 @@ import type { FfmpegCommand } from '../modules/packing/camera/camera-recorder.js
  * - `segments`: writes numbered segments into the output pattern every 200 ms;
  * - `auth`: says `401 Unauthorized` about its input and exits 1;
  * - `silent`: runs and writes nothing (a stalled stream);
- * - `concat`: joins the files of a concat list into the output, behind an MP4 `ftyp` box.
+ * - `concat`: joins the files of a concat list into the output, behind an MP4 `ftyp` box;
+ * - `frames`: writes a tiny JPEG to its output every 200 ms (the live preview).
  */
 const SCRIPT = String.raw`
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
@@ -51,6 +52,13 @@ if (mode === 'segments') {
   const timer = setInterval(write, 200);
   process.on('SIGTERM', () => { clearInterval(timer); process.exit(0); });
 }
+if (mode === 'frames') {
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9]);
+  const write = () => writeFileSync(output, jpeg);
+  write();
+  const timer = setInterval(write, 200);
+  process.on('SIGTERM', () => { clearInterval(timer); process.exit(0); });
+}
 if (mode === 'concat') {
   const list = readFileSync(input, 'utf8').trim().split('\n')
     .map((line) => line.replace(/^file '/, '').replace(/'$/, '').replace(/'\\''/g, "'"));
@@ -60,7 +68,7 @@ if (mode === 'concat') {
 }
 `;
 
-export type FakeFfmpegMode = 'segments' | 'auth' | 'silent' | 'concat';
+export type FakeFfmpegMode = 'segments' | 'auth' | 'silent' | 'concat' | 'frames';
 
 /**
  * Write the fake ffmpeg into a fresh directory and say how to run it in a mode, recording what

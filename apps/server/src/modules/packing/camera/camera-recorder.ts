@@ -143,6 +143,11 @@ export class CameraRecorder {
     return this.options.buffer;
   }
 
+  /** The stream this recorder opens: the live preview opens the same one (D-683). */
+  get stream(): CameraStream {
+    return this.options.stream;
+  }
+
   status(): RecorderStatus {
     return {
       running: this.child !== null,

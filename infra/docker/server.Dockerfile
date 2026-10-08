@@ -71,7 +71,8 @@ COPY --from=build /repo/packages/ui/src/assets/fonts /app/fonts
 # The writable paths: the local storage driver's root when R2 is not configured (the
 # single-server preview, D-352), and the camera process's rolling buffer (M38c, D-672). A named
 # volume mounted on either starts with this ownership.
-RUN mkdir -p /data/files /data/camera && chown node:node /data/files /data/camera
+RUN mkdir -p /data/files /data/camera /data/camera-preview \
+ && chown node:node /data/files /data/camera /data/camera-preview
 
 # The `node` user (uid 1000) of the official image. Never root.
 USER node

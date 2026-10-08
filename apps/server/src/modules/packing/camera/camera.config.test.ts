@@ -86,11 +86,16 @@ describe('the camera service', () => {
       STORAGE_DRIVER: 'local',
       STORAGE_LOCAL_ROOT: '/data/files',
       CAMERA_BUFFER_DIR: '/data/camera',
+      CAMERA_PREVIEW_DIR: '/data/camera-preview',
     };
     expect(cameraProcessEnv(env)).toMatchObject({
       DATABASE_URL: env.DATABASE_URL,
       ERP_BRAND_SLUG: 'elysium-lifestyle-bd',
     });
-    expect(cameraEnv(env)).toEqual({ bufferDir: '/data/camera', ffmpegPath: 'ffmpeg' });
+    expect(cameraEnv(env)).toEqual({
+      bufferDir: '/data/camera',
+      ffmpegPath: 'ffmpeg',
+      previewDir: '/data/camera-preview',
+    });
   });
 });

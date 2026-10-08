@@ -154,6 +154,14 @@ const en = {
   'ps.ip.error.address_refused':
     'That address is one of the server’s own, not a camera. Use the camera’s IP address.',
   'ps.ip.error.disk_low': 'The server’s disk is nearly full, so the cameras stopped recording.',
+  'ps.live.badge': 'Live',
+  'ps.live.alt': 'Live picture from the camera',
+  'ps.live.waiting': 'Waiting for the camera’s picture…',
+  'ps.live.offline': 'The camera’s live picture is not coming in.',
+  'ps.cams.delete': 'Delete',
+  'ps.cams.deleteTitle': 'Delete the camera',
+  'ps.cams.deleteBody':
+    'It stops recording and leaves the list and the stations for good; its password is wiped. Videos it already recorded stay and keep playing.',
   'ps.cams.urlMoveHint': 'Moving it to another address or port asks for the password again.',
   'ps.cams.title': 'IP cameras',
   'ps.cams.help':

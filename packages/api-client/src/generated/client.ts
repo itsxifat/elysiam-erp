@@ -50,6 +50,11 @@ export const OPERATIONS = {
     path: '/v1/approvals/{id}/decide',
     ability: 'approve:ApprovalRequest',
   },
+  deletePackingCamera: {
+    method: 'DELETE',
+    path: '/v1/packing/cameras/{id}',
+    ability: 'update:PackingVideo',
+  },
   deleteV1CatalogAttributesById: {
     method: 'DELETE',
     path: '/v1/catalog/attributes/{id}',
@@ -937,6 +942,11 @@ export const OPERATIONS = {
   listWallets: { method: 'GET', path: '/v1/ledger/wallets', ability: 'read:Wallet' },
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
   me: { method: 'GET', path: '/v1/me', ability: 'authenticated' },
+  packingCameraPreview: {
+    method: 'GET',
+    path: '/v1/packing/cameras/{id}/preview',
+    ability: 'update:Order',
+  },
   partyBalances: { method: 'GET', path: '/v1/ledger/party-balances', ability: 'read:LedgerReport' },
   patchStorefrontV1AccountsById: {
     method: 'PATCH',
@@ -2034,6 +2044,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: ApprovalDecisionInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.decideApproval, input, options),
+    /** Delete a packing camera from use; past videos keep playing. */
+    deletePackingCamera: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deletePackingCamera, input, options),
     /** DELETE /v1/catalog/attributes/:id */
     deleteV1CatalogAttributesById: (
       input: { readonly path: { readonly id: string } },
@@ -3043,6 +3058,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** The signed-in user, their roles and active org. */
     me: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.me, undefined, options),
+    /** One JPEG frame of a packing camera's live preview. */
+    packingCameraPreview: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.packingCameraPreview, input, options),
     /** Outstanding balances per customer, supplier or reseller. */
     partyBalances: (
       input: {

@@ -134,6 +134,18 @@ export const packingCameras = packing.table(
     lastErrorAt: timestamp('last_error_at', { withTimezone: true, mode: 'date' }),
     /** When the recorder last reported on this camera at all. */
     statusAt: timestamp('status_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * Until when someone is looking at the camera's live preview (D-683): written by the API
+     * at most every five seconds while a station shows it; the camera process runs the preview
+     * while it is in the future.
+     */
+    previewWantedUntil: timestamp('preview_wanted_until', { withTimezone: true, mode: 'date' }),
+    /**
+     * A camera deleted from use (D-684): switched off for good, its password wiped, gone from
+     * every list; the row stays because past sessions and videos name it.
+     */
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+    deletedBy: text('deleted_by').references(() => users.id, { onDelete: 'restrict' }),
     createdBy: text('created_by')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
@@ -144,7 +156,10 @@ export const packingCameras = packing.table(
   },
   (table) => [
     unique('packing_cameras_org_id_id_key').on(table.orgId, table.id),
-    unique('packing_cameras_org_name_key').on(table.orgId, table.name),
+    // One name per camera in use: a deleted camera's name is free again (D-684).
+    uniqueIndex('packing_cameras_org_name_live_idx')
+      .on(table.orgId, table.name)
+      .where(sql`deleted_at is null`),
     index('packing_cameras_org_idx').on(table.orgId),
     check('packing_cameras_name_length', sql`length(${table.name}) between 1 and 60`),
     check(
@@ -159,6 +174,11 @@ export const packingCameras = packing.table(
       'packing_cameras_password_complete',
       sql`(${table.passwordSealed} is null) = (${table.passwordFingerprint} is null)
           and (${table.passwordSealed} is null or ${table.keyId} is not null)`,
+    ),
+    check(
+      'packing_cameras_deleted',
+      sql`(${table.deletedAt} is null) = (${table.deletedBy} is null)
+          and (${table.deletedAt} is null or (not ${table.enabled} and ${table.passwordSealed} is null))`,
     ),
     check(
       'packing_cameras_error_code',

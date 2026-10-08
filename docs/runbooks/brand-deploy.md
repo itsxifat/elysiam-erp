@@ -240,6 +240,11 @@ D-676). It starts with the rest of the brand on every deploy and publishes nothi
   `address_refused`, `disk_low`, …) the settings screen shows.
 - The image carries ffmpeg (Debian's, about 470 MB of the image, D-675); `dc <slug> exec camera
 ffmpeg -version` shows it.
+- **The live view** (D-683): while a packing computer shows an IP camera, the camera service
+  runs a second, light ffmpeg for it and writes one small JPEG to the `camera-preview` volume,
+  which the API reads (read-only) for the Pack screen; it stops 20 s after nobody looks. The
+  input lists with the passwords stay in `camera-buffer`. `dc <slug> logs camera` says "camera
+  preview stopped" with the reason when one fails; the recording is not affected.
 
 ## 6. Operating a brand
 

@@ -5,6 +5,7 @@ import {
   GoneException,
   HttpException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { isErrorCode, type ErrorCode } from '@elysium/contracts';
 
@@ -24,6 +25,8 @@ const STATUS: Partial<Record<ErrorCode, number>> = {
   PACKING_CAMERA_INVALID: 409,
   PACKING_CAMERA_PASSWORD_REQUIRED: 400,
   PACKING_CAMERA_LIMIT: 409,
+  PACKING_CAMERA_IN_USE: 409,
+  PACKING_PREVIEW_UNAVAILABLE: 503,
   WEBSITE_CREDENTIALS_MISSING: 409,
   CONFLICT: 409,
   FORBIDDEN: 403,
@@ -50,6 +53,8 @@ export function packingHttpError(code: ErrorCode, message: string): HttpExceptio
       return new GoneException(body);
     case 403:
       return new ForbiddenException(body);
+    case 503:
+      return new ServiceUnavailableException(body);
     default:
       return new BadRequestException(body);
   }

@@ -1885,3 +1885,11 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   buffer is capped at 2 GiB with a 5 GiB free-disk floor (`disk_low`), eight cameras per brand;
   migration 0136 holds the start to the session's first accepted scan on a camera that is on,
   and the camera fixed once a piece is in the box.
+- **Live view and deleting** (D-683, D-684): while a desk's source is an IP camera the Pack
+  screen shows it near-live: `GET /v1/packing/cameras/:id/preview` (`update Order`) records the
+  demand (`preview_wanted_until`, at most every 5 s) and serves the newest JPEG under 5 s old
+  from the `camera-preview` volume, which a second, demand-driven ffmpeg per camera in the camera
+  process writes (3 frames a second, 640 wide, opened as safely as the recording, stopped 20 s
+  after the last look; the recording never depends on it). `DELETE /v1/packing/cameras/:id`
+  (org_admin) marks a camera deleted (migration 0137), off and without its password, gone from
+  every list; refused while it records; past videos keep playing.

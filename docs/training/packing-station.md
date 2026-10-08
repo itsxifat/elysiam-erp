@@ -67,6 +67,22 @@ table. The ERP's server records it; the browser does not.
 picture, about a tenth of that) can be entered instead. If the server's disk runs low, the
 cameras stop and the station says so; tell whoever looks after the server.
 
+### The live view
+
+While the packing computer's **Recording source** is an IP camera, the Pack screen shows that
+camera's picture live (a few frames a second), with a red **Live** mark, from the moment the
+screen is open. It is only a view: nothing is kept until a correct piece is scanned. If it says
+the picture is not coming in, check the camera's state on the card (and the settings' reason).
+With the computer's own camera chosen, the live view is not shown.
+
+### Deleting a camera
+
+Orders → Pack → Settings → IP cameras → **Delete** on the camera's line, then confirm. The camera
+stops recording and leaves the list and every packing computer for good; its password is wiped.
+Videos it already recorded stay on their orders and keep playing until their usual deletion. A
+camera recording a packing right now cannot be deleted: finish that order first. To stop a
+camera for a while instead, edit it and untick **Record with this camera**.
+
 ### Packing with it
 
 1. On the station, choose the camera under **Recording source** (once; the browser remembers).

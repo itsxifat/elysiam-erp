@@ -21,6 +21,12 @@ import {
   cutSpan,
   segmentsForWindow,
   segmentsOverByteCap,
+  previewDemandUntil,
+  previewFrameFresh,
+  previewShouldRun,
+  PACKING_PREVIEW_DEMAND_MS,
+  PACKING_PREVIEW_FRESH_MS,
+  PACKING_PREVIEW_LINGER_MS,
   segmentsToForget,
   windowCoverage,
   type CameraSegment,
@@ -385,6 +391,59 @@ describe('the camera buffer’s byte cap (ledger audit W6)', () => {
           if (last !== undefined) expect(keptBytes + last.sizeBytes).toBeGreaterThan(capBytes);
         },
       ),
+    );
+  });
+});
+
+describe('the live preview (D-683)', () => {
+  it('writes the demand at most once in five seconds, however often the station asks', () => {
+    fc.assert(
+      fc.property(fc.array(fc.integer({ min: 1, max: 2_000 }), { maxLength: 200 }), (gaps) => {
+        let stored: Date | null = null;
+        let at = T0;
+        let lastWrite = -Infinity;
+        for (const gap of gaps) {
+          at += gap;
+          const next = previewDemandUntil({ wantedUntil: stored, now: new Date(at) });
+          if (next !== null) {
+            expect(at - lastWrite).toBeGreaterThanOrEqual(5_000);
+            expect(next.getTime()).toBe(at + PACKING_PREVIEW_DEMAND_MS);
+            stored = next;
+            lastWrite = at;
+          }
+          // Whatever was skipped, the demand still covers this moment by ten seconds or more.
+          expect((stored?.getTime() ?? 0) - at).toBeGreaterThanOrEqual(5_000);
+        }
+      }),
+    );
+  });
+
+  it('runs while wanted, lingers twenty seconds once running, and stops after', () => {
+    const wantedUntil = new Date(T0);
+    expect(previewShouldRun({ wantedUntil: null, now: new Date(T0), running: true })).toBe(false);
+    expect(previewShouldRun({ wantedUntil, now: new Date(T0 - 1), running: false })).toBe(true);
+    expect(previewShouldRun({ wantedUntil, now: new Date(T0 + 1), running: false })).toBe(false);
+    expect(
+      previewShouldRun({
+        wantedUntil,
+        now: new Date(T0 + PACKING_PREVIEW_LINGER_MS - 1),
+        running: true,
+      }),
+    ).toBe(true);
+    expect(
+      previewShouldRun({
+        wantedUntil,
+        now: new Date(T0 + PACKING_PREVIEW_LINGER_MS),
+        running: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('calls a frame live for five seconds', () => {
+    const frameAt = new Date(T0);
+    expect(previewFrameFresh({ frameAt, now: new Date(T0 + PACKING_PREVIEW_FRESH_MS) })).toBe(true);
+    expect(previewFrameFresh({ frameAt, now: new Date(T0 + PACKING_PREVIEW_FRESH_MS + 1) })).toBe(
+      false,
     );
   });
 });

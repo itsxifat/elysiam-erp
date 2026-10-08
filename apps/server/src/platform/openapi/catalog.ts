@@ -251,6 +251,14 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     summary: 'Add an IP camera over a packing table. Its password is sealed and never returned.',
     body: named('PackingCameraCreate', packingCameraCreateSchema, 'PackingCameraCreateInput'),
   },
+  'DELETE /v1/packing/cameras/:id': {
+    operationId: 'deletePackingCamera',
+    summary: 'Delete a packing camera from use; past videos keep playing.',
+  },
+  'GET /v1/packing/cameras/:id/preview': {
+    operationId: 'packingCameraPreview',
+    summary: "One JPEG frame of a packing camera's live preview.",
+  },
   'PUT /v1/packing/cameras/:id': {
     operationId: 'updatePackingCamera',
     summary: 'Change a packing camera, switch it off, or replace or remove its password.',

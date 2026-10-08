@@ -20,15 +20,101 @@ export interface CameraRow extends Record<string, unknown> {
   readonly last_error_at: Date | string | null;
   readonly status_at: Date | string | null;
   readonly updated_at: Date | string;
+  /** M38c (D-683, D-684): the live preview's demand, and a camera deleted from use. */
+  readonly preview_wanted_until: Date | string | null;
+  readonly deleted_at: Date | string | null;
 }
 
 const CAMERA_COLUMNS = sql`id, name, rtsp_url, username, password_fingerprint, enabled,
-  last_segment_at, last_error_code, last_error_at, status_at, updated_at`;
+  last_segment_at, last_error_code, last_error_at, status_at, updated_at, preview_wanted_until,
+  deleted_at`;
 
-/** The brand's cameras, by name. Never the sealed password. */
+/** The brand's cameras in use, by name (a deleted one is gone from every list). Never the password. */
 export async function camerasOf(tx: Tx, orgId: string): Promise<CameraRow[]> {
   const rows = await tx.execute<CameraRow>(sql`
-    select ${CAMERA_COLUMNS} from packing.cameras where org_id = ${orgId} order by name, id
+    select ${CAMERA_COLUMNS} from packing.cameras
+    where org_id = ${orgId} and deleted_at is null
+    order by name, id
+  `);
+  return [...rows];
+}
+
+/**
+ * Delete a camera from use (D-684): switched off for good, its password wiped, its preview's
+ * demand cleared. The row stays: past sessions and videos name it.
+ */
+export async function deleteCamera(
+  tx: Tx,
+  input: { readonly orgId: string; readonly id: string; readonly userId: string },
+): Promise<boolean> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    update packing.cameras
+       set deleted_at = now(), deleted_by = ${input.userId}, enabled = false,
+           password_sealed = null, password_fingerprint = null, key_id = null,
+           preview_wanted_until = null, updated_by = ${input.userId}, updated_at = now()
+     where org_id = ${input.orgId} and id = ${input.id} and deleted_at is null
+    returning id
+  `);
+  return rows.length === 1;
+}
+
+/** Whether a packing this camera films has its recording still open (started, not ended). */
+export async function cameraRecordingOpen(
+  tx: Tx,
+  orgId: string,
+  cameraId: string,
+): Promise<boolean> {
+  const [row] = await tx.execute<{ found: boolean }>(sql`
+    select exists (
+      select 1 from packing.sessions
+      where org_id = ${orgId} and camera_id = ${cameraId}
+        and recording_from is not null and recording_to is null
+    ) as found
+  `);
+  return row?.found === true;
+}
+
+/**
+ * Open packings that chose this camera but have no piece in the box yet: they fall back to
+ * the desk's own camera when it is deleted (one with a piece in keeps it, D-681).
+ */
+export async function releaseCameraFromIdleSessions(
+  tx: Tx,
+  orgId: string,
+  cameraId: string,
+): Promise<number> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    update packing.sessions s set camera_id = null, updated_at = now()
+     where s.org_id = ${orgId} and s.camera_id = ${cameraId} and s.status = 'open'
+       and s.recording_from is null
+       and not exists (
+         select 1 from packing.scans c
+          where c.org_id = s.org_id and c.session_id = s.id and c.outcome = 'accepted'
+       )
+    returning s.id
+  `);
+  return rows.length;
+}
+
+/** Someone is looking at the camera's live preview until `until` (D-683). */
+export async function wantPreview(
+  tx: Tx,
+  input: { readonly orgId: string; readonly id: string; readonly until: Date },
+): Promise<void> {
+  await tx.execute(sql`
+    update packing.cameras set preview_wanted_until = ${input.until.toISOString()}::timestamptz
+     where org_id = ${input.orgId} and id = ${input.id} and enabled and deleted_at is null
+  `);
+}
+
+/** The enabled cameras' preview demand, for the camera process's preview loop. */
+export async function previewDemand(
+  tx: Tx,
+  orgId: string,
+): Promise<{ readonly id: string; readonly preview_wanted_until: Date | string | null }[]> {
+  const rows = await tx.execute<{ id: string; preview_wanted_until: Date | string | null }>(sql`
+    select id, preview_wanted_until from packing.cameras
+    where org_id = ${orgId} and enabled and deleted_at is null
   `);
   return [...rows];
 }
@@ -157,7 +243,7 @@ export async function enabledCamerasForRecorder(
   const rows = await tx.execute<RecorderCameraRow>(sql`
     select id, name, rtsp_url, username, password_sealed, password_fingerprint, updated_at
     from packing.cameras
-    where org_id = ${orgId} and enabled
+    where org_id = ${orgId} and enabled and deleted_at is null
     order by id
   `);
   return [...rows];

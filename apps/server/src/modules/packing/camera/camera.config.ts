@@ -31,6 +31,8 @@ const schema = z.object({
   CAMERA_BUFFER_DIR: optional(z.string().min(1)),
   /** The ffmpeg the camera process runs: the one the server image installs (D-675). */
   FFMPEG_PATH: optional(z.string().min(1)),
+  /** Where the live previews' frames go (D-683): the `camera-preview` volume the API reads. */
+  CAMERA_PREVIEW_DIR: optional(z.string().min(1)),
   /** Each camera's buffer at most, in bytes (W6): 2 GiB unless set. */
   CAMERA_BUFFER_MAX_BYTES: optional(
     z.coerce
@@ -51,6 +53,7 @@ export function cameraProcessEnv(env: NodeJS.ProcessEnv = process.env): CameraPr
 export interface CameraEnv {
   readonly bufferDir: string;
   readonly ffmpegPath: string;
+  readonly previewDir: string;
 }
 
 export function cameraEnv(env: NodeJS.ProcessEnv = process.env): CameraEnv {
@@ -58,6 +61,7 @@ export function cameraEnv(env: NodeJS.ProcessEnv = process.env): CameraEnv {
   return {
     bufferDir: parsed.CAMERA_BUFFER_DIR ?? path.join(os.tmpdir(), 'erp-camera'),
     ffmpegPath: parsed.FFMPEG_PATH ?? 'ffmpeg',
+    previewDir: parsed.CAMERA_PREVIEW_DIR ?? path.join(os.tmpdir(), 'erp-camera-preview'),
   };
 }
 
@@ -81,4 +85,5 @@ export const CAMERA_SERVICE_ENV = [
   'SENTRY_DSN',
   'SENTRY_ENVIRONMENT',
   'CAMERA_BUFFER_DIR',
+  'CAMERA_PREVIEW_DIR',
 ] as const;

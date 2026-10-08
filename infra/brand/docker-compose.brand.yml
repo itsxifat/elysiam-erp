@@ -44,6 +44,9 @@ x-server-env: &server-env
   # The owner sign-in link's public key (D-473). Empty keeps the feature off.
   OWNER_LINK_PUBLIC_KEY: ${OWNER_LINK_PUBLIC_KEY:-}
   GOTENBERG_URL: http://gotenberg:3000
+  # M38c (D-683): where the camera process writes each IP camera's live preview frame; the
+  # API reads it (read-only) to serve the packing station's live view.
+  CAMERA_PREVIEW_DIR: /data/camera-preview
   # Files (§22): the local driver on this brand's own `files` volume unless r2.
   STORAGE_DRIVER: ${BRAND_STORAGE_DRIVER:-local}
   STORAGE_LOCAL_ROOT: /data/files
@@ -180,12 +183,16 @@ services:
       SENTRY_DSN: ${BRAND_SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: production
       CAMERA_BUFFER_DIR: /data/camera
+      CAMERA_PREVIEW_DIR: /data/camera-preview
     networks: [camera]
     volumes:
       # The cut is kept as a private packing video in the same files volume the API serves.
       - files:/data/files
       # At most half an hour of each camera's stream.
       - camera-buffer:/data/camera
+      # The live previews' frames (D-683): one small JPEG per camera someone is looking at.
+      # The input lists with the cameras' passwords stay in camera-buffer, never here.
+      - camera-preview:/data/camera-preview
     depends_on:
       release:
         condition: service_completed_successfully
@@ -201,6 +208,8 @@ services:
       - '127.0.0.1:${BRAND_API_PORT:?}:3000'
     volumes:
       - files:/data/files
+      # The cameras' live preview frames, read-only (D-683).
+      - camera-preview:/data/camera-preview:ro
     healthcheck:
       test:
         - CMD
@@ -228,3 +237,4 @@ volumes:
   postgres-data:
   files:
   camera-buffer:
+  camera-preview:
