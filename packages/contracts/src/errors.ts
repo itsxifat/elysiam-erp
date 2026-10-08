@@ -593,6 +593,10 @@ export const ERROR_CODES = [
   // M38c: the packing table's IP cameras
   /** No enabled IP camera of this brand has that id, or the recording already started on another source. */
   'PACKING_CAMERA_INVALID',
+  /** The camera's address moved to another host or port: enter its password again, or remove it. */
+  'PACKING_CAMERA_PASSWORD_REQUIRED',
+  /** The brand already records with as many IP cameras as one server takes. */
+  'PACKING_CAMERA_LIMIT',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

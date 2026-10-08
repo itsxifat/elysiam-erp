@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  PACKING_CAMERAS_MAX_ENABLED,
+  cameraHostRefusal,
   packingCameraCreateSchema,
   packingCameraUpdateSchema,
   packingOpenSchema,
+  refusedCameraIp,
   rtspUrlSchema,
 } from './packing.js';
 
@@ -83,5 +86,59 @@ describe('a camera’s settings', () => {
     });
     expect(packingOpenSchema.parse({ code: 'ELY-1001' })).toEqual({ code: 'ELY-1001' });
     expect(packingOpenSchema.safeParse({ code: 'ELY-1001', cameraId: 'x' }).success).toBe(false);
+  });
+});
+
+describe('an IP camera’s host (ledger audit W4)', () => {
+  it('refuses the server’s own addresses, link-local, unspecified and one-word names', () => {
+    for (const address of [
+      'rtsp://127.0.0.1:554/stream1',
+      'rtsp://127.10.0.5/stream1',
+      'rtsp://localhost:554/stream1',
+      'rtsp://camera.localhost/stream1',
+      'rtsp://0.0.0.0/stream1',
+      'rtsp://169.254.169.254/latest',
+      'rtsp://[::1]:554/stream1',
+      'rtsp://[::]/stream1',
+      'rtsp://[fe80::1]/stream1',
+      'rtsp://[::ffff:127.0.0.1]/stream1',
+      'rtsp://valkey:6379/',
+      'rtsp://postgres:5432/',
+      'rtsp://api/',
+      'rtsp://2130706433/stream1',
+      'rtsp://0x7f.1/stream1',
+      'rtsp://127.000.000.001/stream1',
+      'rtsp://224.0.0.1/stream1',
+    ]) {
+      expect(refusal(address), address).not.toBeNull();
+    }
+    expect(refusal('rtsp://valkey:6379/')).toMatch(/one-word name/);
+    expect(refusal('rtsp://169.254.169.254/latest')).toMatch(/link-local/);
+  });
+
+  it('allows the LAN ranges cameras live in, public addresses and full host names', () => {
+    for (const address of [
+      'rtsp://192.168.20.111:554/stream1',
+      'rtsp://10.0.0.5/stream2',
+      'rtsp://172.16.4.2/live',
+      'rtsp://8.8.8.8/stream1',
+      'rtsp://cam1.shop.example/stream1',
+      'rtsp://[fd00::12]/stream1',
+    ]) {
+      expect(refusal(address), address).toBeNull();
+    }
+  });
+
+  it('judges resolved addresses the same way (the camera process checks before it connects)', () => {
+    expect(refusedCameraIp('127.0.0.1')).toBe('loopback');
+    expect(refusedCameraIp('::1')).toBe('loopback');
+    expect(refusedCameraIp('0:0:0:0:0:0:0:1')).toBe('loopback');
+    expect(refusedCameraIp('169.254.1.1')).toBe('link-local');
+    expect(refusedCameraIp('fe80::abcd')).toBe('link-local');
+    expect(refusedCameraIp('::ffff:7f00:1')).toBe('an IPv4 address in IPv6 form');
+    expect(refusedCameraIp('192.168.20.111')).toBeNull();
+    expect(refusedCameraIp('2001:db8::1')).toBeNull();
+    expect(cameraHostRefusal('cam1.shop.example.')).toBeNull();
+    expect(PACKING_CAMERAS_MAX_ENABLED).toBe(8);
   });
 });
