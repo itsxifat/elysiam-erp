@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { readFile, stat } from 'node:fs/promises';
+import path from 'node:path';
 
 import { Injectable } from '@nestjs/common';
 import {
@@ -7,11 +9,12 @@ import {
   type PackingCameraUpdateInput,
 } from '@elysium/contracts';
 import { withOrg, type Tx } from '@elysium/db';
-import { cameraState } from '@elysium/domain/packing';
+import { cameraState, previewDemandUntil, previewFrameFresh } from '@elysium/domain/packing';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { seal, sealedBoxConfigured } from '../../platform/crypto/sealed-box.js';
+import { serverEnv } from '../../platform/config/env.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import * as cameras from './camera.repository.js';
 import { mapPackingErrors, PackingError } from './station.errors.js';
@@ -112,7 +115,9 @@ export class CameraSettingsService {
       return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         await cameras.lockCameraSettings(tx, context.orgId);
         const before = await cameras.cameraById(tx, context.orgId, id, { forUpdate: true });
-        if (before === undefined) throw new PackingError('NOT_FOUND', 'No such camera.');
+        if (before === undefined || before.deleted_at !== null) {
+          throw new PackingError('NOT_FOUND', 'No such camera.');
+        }
         // A stored password goes only where it went before (ledger audit W2): an address on
         // another host or port asks for it again, so nobody points it at a machine of theirs.
         if (
@@ -153,6 +158,86 @@ export class CameraSettingsService {
         });
         return this.present(after, true);
       }).catch(nameTaken);
+    });
+  }
+
+  /**
+   * Delete a camera from use (D-684): refused while a packing it films is still recording;
+   * otherwise switched off for good, its password wiped, gone from every list and from the
+   * station's choice. Open packings with no piece in the box fall back to the desk's own
+   * camera. Past sessions and their videos keep naming it, and keep playing.
+   */
+  async remove(context: ActiveContext, request: AuditableRequest, id: string) {
+    return mapPackingErrors(() =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        await cameras.lockCameraSettings(tx, context.orgId);
+        const before = await cameras.cameraById(tx, context.orgId, id, { forUpdate: true });
+        if (before === undefined || before.deleted_at !== null) {
+          throw new PackingError('NOT_FOUND', 'No such camera.');
+        }
+        if (await cameras.cameraRecordingOpen(tx, context.orgId, id)) {
+          throw new PackingError(
+            'PACKING_CAMERA_IN_USE',
+            'This camera is recording a packing now. Finish that order (or wait up to fifteen minutes), then delete it.',
+          );
+        }
+        const released = await cameras.releaseCameraFromIdleSessions(tx, context.orgId, id);
+        if (
+          !(await cameras.deleteCamera(tx, { orgId: context.orgId, id, userId: context.userId }))
+        ) {
+          throw new PackingError('CONFLICT', 'This camera changed; try again.');
+        }
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'delete',
+          action: 'packing.camera_deleted',
+          entityType: 'packing_camera',
+          entityId: id,
+          before: auditFacts(before),
+          after: {
+            deleted: true,
+            enabled: false,
+            sealedFingerprint: null,
+            sessionsReleased: released,
+          },
+          request,
+        });
+        return { id, deleted: true as const };
+      }),
+    );
+  }
+
+  /**
+   * One frame of a camera's live preview (D-683), for whoever packs: the camera in use, its
+   * demand written at most every five seconds (the camera process runs the preview while
+   * someone looks), and the newest frame the camera process wrote, if it is under five
+   * seconds old. A JPEG caught half-written is read again once.
+   */
+  async livePreview(context: ActiveContext, id: string): Promise<Buffer> {
+    return mapPackingErrors(async () => {
+      await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const camera = await cameras.cameraById(tx, context.orgId, id);
+        if (camera === undefined || camera.deleted_at !== null || !camera.enabled) {
+          throw new PackingError('NOT_FOUND', 'No such camera in use.');
+        }
+        const until = previewDemandUntil({
+          wantedUntil:
+            camera.preview_wanted_until === null ? null : new Date(camera.preview_wanted_until),
+          now: new Date(),
+        });
+        if (until !== null) await cameras.wantPreview(tx, { orgId: context.orgId, id, until });
+      });
+      const file = previewFile(serverEnv().CAMERA_PREVIEW_DIR, context.orgId, id);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const frame = await freshFrame(file);
+        if (frame !== null) return frame;
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      }
+      throw new PackingError(
+        'PACKING_PREVIEW_UNAVAILABLE',
+        'The camera’s live picture is not coming in yet.',
+      );
     });
   }
 
@@ -210,12 +295,40 @@ export class CameraSettingsService {
   }
 }
 
+/** Where the camera process writes a camera's preview frame (D-683): one file per camera. */
+export function previewFile(root: string, orgId: string, cameraId: string): string {
+  return path.join(root, orgId, `${cameraId}.jpg`);
+}
+
+/** The largest preview frame served: a 640-wide JPEG is a few tens of kilobytes. */
+const PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
+
+/** The frame, if it is fresh and whole (a JPEG from its start marker to its end marker). */
+async function freshFrame(file: string): Promise<Buffer | null> {
+  try {
+    const info = await stat(file);
+    if (info.size > PREVIEW_MAX_BYTES) return null;
+    if (!previewFrameFresh({ frameAt: info.mtime, now: new Date() })) return null;
+    const bytes = await readFile(file);
+    const whole =
+      bytes.length > 4 &&
+      bytes[0] === 0xff &&
+      bytes[1] === 0xd8 &&
+      bytes[bytes.length - 2] === 0xff &&
+      bytes[bytes.length - 1] === 0xd9;
+    return whole ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Two cameras of a brand never share a name: the station's list tells them apart by it. */
 function nameTaken(error: unknown): never {
   for (let current: unknown = error; current instanceof Error; current = current.cause) {
     if (
       (current as { code?: unknown }).code === '23505' &&
-      (current as { constraint_name?: unknown }).constraint_name === 'packing_cameras_org_name_key'
+      (current as { constraint_name?: unknown }).constraint_name ===
+        'packing_cameras_org_name_live_idx'
     ) {
       throw new PackingError('CONFLICT', 'Another camera already has that name.');
     }

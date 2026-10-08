@@ -106,6 +106,10 @@ export const PACKING_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call>
       enabled: false,
     },
   }),
+  'DELETE /v1/packing/cameras/:id': () => ({ url: `/v1/packing/cameras/${randomUUID()}` }),
+  'GET /v1/packing/cameras/:id/preview': () => ({
+    url: `/v1/packing/cameras/${randomUUID()}/preview`,
+  }),
   'PUT /v1/packing/cameras/:id': () => ({
     url: `/v1/packing/cameras/${randomUUID()}`,
     body: { name: 'Matrix', rtspUrl: 'rtsp://192.0.2.10:554/stream1', enabled: false },

@@ -1,3 +1,6 @@
+import os from 'node:os';
+import path from 'node:path';
+
 import { baseEnvShape, createEnv } from '@elysium/config/env';
 import { BRAND_SLUG_PATTERN } from '@elysium/domain/iam';
 import { z } from 'zod';
@@ -110,6 +113,12 @@ const schema = z.object({
    * receives its rooms' traffic. The integration suites override it per run.
    */
   REALTIME_ADAPTER_KEY: z.string().min(1).default('elysium:rt'),
+
+  /**
+   * Where the camera process writes each IP camera's live preview frame (M38c, D-683), read
+   * here to serve it: the brand compose file's `camera-preview` volume, read-only in the API.
+   */
+  CAMERA_PREVIEW_DIR: z.string().min(1).default(path.join(os.tmpdir(), 'erp-camera-preview')),
 
   /** Comma-separated. Anything not listed is refused by CSRF and by Better Auth. */
   TRUSTED_ORIGINS: z

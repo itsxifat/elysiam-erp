@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -9,6 +10,7 @@ import {
   Put,
   Query,
   Req,
+  Res,
 } from '@nestjs/common';
 import {
   defineAbilityFor,
@@ -22,7 +24,7 @@ import {
   packingVideoFileSchema,
   packingVideoStartSchema,
 } from '@elysium/contracts';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -222,6 +224,36 @@ export class PackStationController {
     const input = parse(packingCameraCreateSchema, body);
     scopeHasNoRowDimension(request, 'the packing cameras are the brand’s, not an order’s');
     return this.cameras.create(requireContext(request), auditable(request), input);
+  }
+
+  /**
+   * Delete a camera from use (D-684): org_admin. Refused while it is recording a packing; past
+   * videos keep playing.
+   */
+  @RequireAbility('update', 'PackingVideo')
+  @Delete('cameras/:id')
+  async deleteCamera(@Req() request: FastifyRequest, @Param('id') id: string) {
+    scopeHasNoRowDimension(request, 'the packing cameras are the brand’s, not an order’s');
+    return this.cameras.remove(requireContext(request), auditable(request), parse(idSchema, id));
+  }
+
+  /**
+   * One frame of a camera's live preview (D-683), a JPEG, for whoever packs (`update Order`;
+   * resellers hold none). Asking keeps the preview running; 503 when no fresh frame is in.
+   */
+  @RequireAbility('update', 'Order')
+  @Get('cameras/:id/preview')
+  async cameraPreview(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    scopeHasNoRowDimension(request, 'the packing cameras are the brand’s, not an order’s');
+    const frame = await this.cameras.livePreview(requireContext(request), parse(idSchema, id));
+    await reply
+      .header('content-type', 'image/jpeg')
+      .header('cache-control', 'no-store')
+      .send(frame);
   }
 
   /** Change a camera, switch it off, or replace or remove its password: org_admin. */

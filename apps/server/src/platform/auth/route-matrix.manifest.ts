@@ -516,6 +516,8 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/packing/cameras',
   'POST /v1/packing/cameras',
   'PUT /v1/packing/cameras/:id',
+  'DELETE /v1/packing/cameras/:id',
+  'GET /v1/packing/cameras/:id/preview',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */
