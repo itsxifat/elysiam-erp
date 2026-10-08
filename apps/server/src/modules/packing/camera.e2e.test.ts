@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -30,6 +31,7 @@ import {
   type CameraProcessOptions,
 } from './camera/camera-process.service.js';
 import type { RecorderLog } from './camera/camera-recorder.js';
+import { previewFile } from './camera/camera-preview.js';
 import { segmentName } from './camera/segment-buffer.js';
 import { PACKING_QUEUE_DEFINITIONS } from './packing.queues.js';
 
@@ -198,7 +200,13 @@ function cameraProcess(
   } & Partial<
     Pick<
       CameraProcessOptions,
-      'brandSlug' | 'freeBytes' | 'minFreeBytes' | 'maxBufferBytes' | 'partMaxBytes'
+      | 'brandSlug'
+      | 'freeBytes'
+      | 'minFreeBytes'
+      | 'maxBufferBytes'
+      | 'partMaxBytes'
+      | 'previewRoot'
+      | 'previewFfmpeg'
     >
   >,
   log: RecorderLog = { info: () => undefined, warn: () => undefined, error: () => undefined },
@@ -240,7 +248,12 @@ afterEach(async () => {
   for (const service of processes.splice(0)) await service.stopAll();
 });
 
+let previewRoot = '';
+
 beforeAll(async () => {
+  // Before the harness parses the server's environment: where the API reads preview frames.
+  previewRoot = await mkdtemp(path.join(tmpdir(), 'elysium-camera-preview-'));
+  process.env.CAMERA_PREVIEW_DIR = previewRoot;
   process.env.STORAGE_DRIVER = 'local';
   process.env.STORAGE_LOCAL_ROOT = await mkdtemp(path.join(tmpdir(), 'elysium-camera-files-'));
   resetFilesEnv();
@@ -1069,3 +1082,201 @@ async function packingVideoFiles(): Promise<string[]> {
     { orgId: ORG_A },
   );
 }
+
+describe('deleting a camera and its live preview (D-683, D-684)', () => {
+  const settingsOf = (name: string) => ({
+    name,
+    rtspUrl: 'rtsp://192.168.20.111:554/stream1',
+    username: 'packing',
+    enabled: true,
+  });
+
+  it('deletes a camera for good and keeps its past videos playing; refused while it records', async () => {
+    const cameraId = await addCamera(`Gone ${suffix}`);
+    const order = await confirmedOrder([{ sku: cap, qty: 1 }]);
+    const sessionId = String(
+      (
+        (await call(packer, 'POST', '/v1/packing/sessions', { orderId: order.id, cameraId })).body
+          .session as Json
+      ).id,
+    );
+    await scan(packer, sessionId, cap.barcode);
+    // Recording now: refused.
+    const busy = await call(admin, 'DELETE', `/v1/packing/cameras/${cameraId}`);
+    expect(busy.status).toBe(409);
+    expect(busy.body.code).toBe('PACKING_CAMERA_IN_USE');
+    expect((await call(packer, 'DELETE', `/v1/packing/cameras/${cameraId}`)).status).toBe(403);
+
+    // Finished and cut: its video is there.
+    await call(packer, 'POST', `/v1/packing/sessions/${sessionId}/complete`);
+    const window = await windowOf(sessionId);
+    const from = new Date(window.recording_from ?? 0).getTime();
+    const to = new Date(window.recording_to ?? 0).getTime();
+    const service = cameraProcess({ bufferRoot: await mkdtemp(path.join(tmpdir(), 'erp-cam-')) });
+    processes.push(service);
+    await footage(service, cameraId, from - 3_000, to + 5_000);
+    expect(await service.cut(ORG_A, sessionId)).toBe('cut');
+
+    // An idle packing that chose it falls back to the desk's own camera.
+    const idleOrder = await confirmedOrder([{ sku: cap, qty: 1 }]);
+    const idle = String(
+      (
+        (await call(packer, 'POST', '/v1/packing/sessions', { orderId: idleOrder.id, cameraId }))
+          .body.session as Json
+      ).id,
+    );
+
+    const deleted = await call(admin, 'DELETE', `/v1/packing/cameras/${cameraId}`);
+    expect(deleted.status, JSON.stringify(deleted.body)).toBe(200);
+    expect(deleted.body).toEqual({ id: cameraId, deleted: true });
+    const listed = (await call(admin, 'GET', '/v1/packing/cameras')).body.cameras as Json[];
+    expect(listed.some((entry) => entry.id === cameraId)).toBe(false);
+    const row = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{
+            enabled: boolean;
+            sealed: Buffer | null;
+            deleted_at: Date | null;
+            deleted_by: string | null;
+          }>(sql`
+            select enabled, password_sealed as sealed, deleted_at, deleted_by
+            from packing.cameras where id = ${cameraId}
+          `)
+        )[0],
+      { orgId: ORG_A },
+    );
+    expect(row).toMatchObject({ enabled: false, sealed: null, deleted_by: admin.userId });
+    expect(row?.deleted_at).not.toBeNull();
+    expect((await windowOf(idle)).camera_id).toBeNull();
+    // Gone from every use: not chosen, not changed, not deleted twice, not undeleted.
+    const chosen = await call(packer, 'POST', '/v1/packing/sessions', {
+      orderId: idleOrder.id,
+      cameraId,
+    });
+    expect(chosen.body.code).toBe('PACKING_CAMERA_INVALID');
+    expect(
+      (await call(admin, 'PUT', `/v1/packing/cameras/${cameraId}`, settingsOf(`Gone ${suffix}`)))
+        .status,
+    ).toBe(404);
+    expect((await call(admin, 'DELETE', `/v1/packing/cameras/${cameraId}`)).status).toBe(404);
+    await expect(
+      withSystem(
+        (tx) =>
+          tx.execute(
+            sql`update packing.cameras set deleted_at = null, deleted_by = null where id = ${cameraId}`,
+          ),
+        { orgId: ORG_A },
+      ),
+    ).rejects.toThrow();
+    // Its name is free again, and the deletion is audited.
+    expect(
+      (await call(admin, 'POST', '/v1/packing/cameras', settingsOf(`Gone ${suffix}`))).status,
+    ).toBe(201);
+    const audits = await withSystem(
+      async (tx) =>
+        tx.execute<{ action: string }>(sql`
+          select action from audit.audit_log
+          where entity_id = ${cameraId} and action = 'packing.camera_deleted'
+        `),
+      { orgId: ORG_A },
+    );
+    expect(audits).toHaveLength(1);
+    // Its past video still plays.
+    const record = await call(admin, 'GET', `/v1/packing/orders/${order.id}`);
+    const part = (record.body.videos as Json[])[0];
+    expect(part).toMatchObject({ source: 'camera', state: 'uploaded' });
+    expect((await call(admin, 'GET', `/v1/packing/videos/${String(part?.id)}/url`)).status).toBe(
+      200,
+    );
+    await switchOffCameras();
+  });
+
+  it('serves the newest live frame to whoever packs, keeps the preview wanted, and refuses a stale one', async () => {
+    const cameraId = await addCamera(`Live view ${suffix}`);
+    const url = `/v1/packing/cameras/${cameraId}/preview`;
+    const accounts = await harness.asRole('accounts', ORG_A);
+    expect((await call(accounts, 'GET', url)).status).toBe(403);
+
+    // No frame yet: 503 with its code, and the demand is written.
+    const none = await call(packer, 'GET', url);
+    expect(none.status).toBe(503);
+    expect(none.body.code).toBe('PACKING_PREVIEW_UNAVAILABLE');
+    const wanted = async () =>
+      withSystem(
+        async (tx) =>
+          (
+            await tx.execute<{ until: Date | null }>(sql`
+              select preview_wanted_until as until from packing.cameras where id = ${cameraId}
+            `)
+          )[0]?.until ?? null,
+        { orgId: ORG_A },
+      );
+    const first = await wanted();
+    expect(first).not.toBeNull();
+    expect(new Date(first ?? 0).getTime()).toBeGreaterThan(Date.now() + 10_000);
+    await call(packer, 'GET', url);
+    expect(await wanted()).toEqual(first);
+
+    // A whole, fresh JPEG: served as it is, never cached.
+    const file = previewFile(previewRoot, ORG_A, cameraId);
+    await mkdir(path.dirname(file), { recursive: true });
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0xff, 0xd9]);
+    await writeFile(file, jpeg);
+    const response = await packer.client.request('GET', url);
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toBe('image/jpeg');
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(Number(response.headers['content-length'])).toBe(jpeg.length);
+    expect((await sales.client.request('GET', url)).statusCode).toBe(200);
+    // Half-written, or older than five seconds: not live.
+    await writeFile(file, jpeg.subarray(0, 6));
+    expect((await call(packer, 'GET', url)).status).toBe(503);
+    await writeFile(file, jpeg);
+    const old = new Date(Date.now() - 10_000);
+    await utimes(file, old, old);
+    expect((await call(packer, 'GET', url)).status).toBe(503);
+    // Another brand cannot see it.
+    expect((await call(adminB, 'GET', url)).status).toBe(404);
+    await switchOffCameras();
+  });
+
+  it('runs a camera’s preview while it is wanted and stops it twenty seconds after', async () => {
+    const cameraId = await addCamera(`Preview run ${suffix}`);
+    let clock = Date.now();
+    const root = await mkdtemp(path.join(tmpdir(), 'erp-cam-preview-'));
+    const service = cameraProcess({
+      bufferRoot: await mkdtemp(path.join(tmpdir(), 'erp-cam-')),
+      mode: 'segments',
+      previewRoot: root,
+      previewFfmpeg: fake.command('frames'),
+      now: () => clock,
+    });
+    processes.push(service);
+    await service.reload();
+    // Nobody looking: no preview.
+    await service.syncPreviews();
+    expect(service.previewing()).not.toContain(cameraId);
+    // A station looks: it starts, and its frame appears.
+    await call(packer, 'GET', `/v1/packing/cameras/${cameraId}/preview`);
+    await service.syncPreviews();
+    expect(service.previewing()).toContain(cameraId);
+    const file = previewFile(root, ORG_A, cameraId);
+    const deadline = Date.now() + 8_000;
+    while (!existsSync(file)) {
+      if (Date.now() > deadline) throw new Error('no preview frame');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    // Twenty seconds after the demand lapsed it stops, and its frame goes.
+    clock = Date.now() + 15_000 + 19_000;
+    await service.syncPreviews();
+    expect(service.previewing()).toContain(cameraId);
+    clock = Date.now() + 15_000 + 21_000;
+    await service.syncPreviews();
+    expect(service.previewing()).not.toContain(cameraId);
+    expect(existsSync(file)).toBe(false);
+    // The recording never stopped.
+    expect(service.recording()).toContain(cameraId);
+    await switchOffCameras();
+  });
+});

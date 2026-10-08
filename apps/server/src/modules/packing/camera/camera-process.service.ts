@@ -78,6 +78,8 @@ export interface CameraProcessOptions {
    * reads. Unset: no previews.
    */
   readonly previewRoot?: string;
+  /** The previews' ffmpeg when it is not the recording's (a test's stand-in). */
+  readonly previewFfmpeg?: FfmpegCommand;
   /** A test's input for the previews instead of the camera's RTSP. */
   readonly previewInputArgs?: readonly string[];
   /** The camera host check the recorders run before each connection (W4). */
@@ -226,7 +228,7 @@ export class CameraProcessService {
           stream: running.recorder.stream,
           workDir: this.bufferFor(orgId, row.id).dir,
           output: previewFile(root, orgId, row.id),
-          ffmpeg: this.config.ffmpeg,
+          ffmpeg: this.config.previewFfmpeg ?? this.config.ffmpeg,
           log: this.config.log,
           ...(this.config.spawn === undefined ? {} : { spawn: this.config.spawn }),
           ...(this.config.checkHost === undefined ? {} : { checkHost: this.config.checkHost }),
