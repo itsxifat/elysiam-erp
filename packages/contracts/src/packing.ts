@@ -10,10 +10,17 @@ const uuid = z.string().uuid('No such record.');
 /** A code as a scanner typed it: an order number, a courier code, a barcode or a SKU code. */
 export const packingCodeSchema = z.string().trim().min(1).max(120);
 
+/**
+ * The recording source a packing desk chose (M38c, D-670): one of the brand's IP cameras, or
+ * `null` for the desk's own camera recorded by the browser (as M38b). Absent leaves the
+ * session's choice as it is.
+ */
+const cameraChoice = uuid.nullable().optional();
+
 /** Open the station on an order (or resume it): by a scanned or typed code, or by its id. */
 export const packingOpenSchema = z.union([
-  z.object({ code: packingCodeSchema }).strict(),
-  z.object({ orderId: uuid }).strict(),
+  z.object({ code: packingCodeSchema, cameraId: cameraChoice }).strict(),
+  z.object({ orderId: uuid, cameraId: cameraChoice }).strict(),
 ]);
 export type PackingOpenInput = z.infer<typeof packingOpenSchema>;
 
@@ -71,3 +78,103 @@ export const packingSessionsQuerySchema = z
   })
   .strict();
 export type PackingSessionsQuery = z.infer<typeof packingSessionsQuerySchema>;
+
+// --- M38c: the packing table's IP cameras (D-668, D-669) ------------------------------------
+
+/** Control characters and whitespace, which no address, user name or password here carries. */
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
+/** Query keys that carry a password: the password goes in its own field, sealed (D-669). */
+const SECRET_QUERY_KEY = /^(pass|passwd|password|pwd|pw|secret|token|auth)$/i;
+
+/**
+ * A camera's RTSP address, without its credentials (D-668): `rtsp://host[:port]/path`. A user
+ * name or password inside the address is refused, because the address is shown and logged
+ * where the password must never be; they go in their own fields, the password sealed.
+ */
+export const rtspUrlSchema = z
+  .string()
+  .trim()
+  .min(1, 'Enter the camera’s RTSP address.')
+  .max(500)
+  .superRefine((value, context) => {
+    const fail = (message: string) => context.addIssue({ code: 'custom', message });
+    if (CONTROL.test(value) || /\s/.test(value)) {
+      fail('An RTSP address has no spaces.');
+      return;
+    }
+    if (!/^rtsp:\/\//i.test(value)) {
+      fail('An RTSP address starts with rtsp://');
+      return;
+    }
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      fail('That is not an address.');
+      return;
+    }
+    if (url.username !== '' || url.password !== '' || url.host.includes('@')) {
+      fail('Put the user name and password in their own fields, not in the address.');
+      return;
+    }
+    if (url.hostname === '') {
+      fail('The address names no camera: rtsp://<camera’s address>:554/<stream>');
+      return;
+    }
+    if (url.hash !== '') {
+      fail('An RTSP address has no #.');
+      return;
+    }
+    for (const key of url.searchParams.keys()) {
+      if (SECRET_QUERY_KEY.test(key)) {
+        fail('Put the password in its own field, not in the address.');
+        return;
+      }
+    }
+  });
+
+/** The camera's user name for its stream: not secret, but never inside the address. */
+export const cameraUsernameSchema = z
+  .string()
+  .trim()
+  .max(64)
+  .refine((value) => !CONTROL.test(value), 'A user name has no control characters.')
+  .refine((value) => !value.includes(':'), 'A user name has no colon.');
+
+/** The camera's password: write-only, sealed at rest, never returned (D-669). */
+export const cameraPasswordSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .refine((value) => !CONTROL.test(value), 'A password has no control characters.');
+
+const cameraNameSchema = z.string().trim().min(1, 'Name the camera.').max(60);
+
+/** A new IP camera for the packing table (`update PackingVideo`, org_admin). */
+export const packingCameraCreateSchema = z
+  .object({
+    name: cameraNameSchema,
+    rtspUrl: rtspUrlSchema,
+    username: cameraUsernameSchema.default(''),
+    password: cameraPasswordSchema.nullable().optional(),
+    enabled: z.boolean().default(true),
+  })
+  .strict();
+export type PackingCameraCreateInput = z.infer<typeof packingCameraCreateSchema>;
+
+/**
+ * A camera changed. `password` absent keeps the one stored, a string replaces it, `null`
+ * removes it (a camera whose stream needs none).
+ */
+export const packingCameraUpdateSchema = z
+  .object({
+    name: cameraNameSchema,
+    rtspUrl: rtspUrlSchema,
+    username: cameraUsernameSchema.default(''),
+    password: cameraPasswordSchema.nullable().optional(),
+    enabled: z.boolean(),
+  })
+  .strict();
+export type PackingCameraUpdateInput = z.infer<typeof packingCameraUpdateSchema>;

@@ -512,6 +512,10 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/packing/orders/:orderId',
   'GET /v1/packing/settings',
   'PUT /v1/packing/settings',
+  // M38c: the packing tables' IP cameras (`update Order` to read, `update PackingVideo`).
+  'GET /v1/packing/cameras',
+  'POST /v1/packing/cameras',
+  'PUT /v1/packing/cameras/:id',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

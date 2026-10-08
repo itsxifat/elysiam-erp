@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   foreignKey,
   index,
   integer,
@@ -23,7 +24,8 @@ import { organizations } from '../org/index.js';
 
 /**
  * Packing (M35b, D-554): the scanner phones staff pack parcels with; M38b's packing station,
- * its scans, the packing videos and the brand's packing settings (D-610 to D-615).
+ * its scans, the packing videos and the brand's packing settings (D-610 to D-615); M38c's IP
+ * cameras over the packing tables (D-668 to D-676).
  *
  * Tenant tables with the full treatment (invariant 4).
  */
@@ -92,6 +94,79 @@ export const packingSettings = packing.table(
   (table) => [index('packing_settings_org_idx').on(table.orgId)],
 );
 
+/** AES-256-GCM ciphertext under `STOREFRONT_CREDENTIALS_KEY` (D-528's box), bound to its row. */
+const sealedBytes = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+  fromDriver: (value) => Buffer.from(value as unknown as Uint8Array),
+  toDriver: (value) => value,
+});
+
+/**
+ * An IP camera over a packing table (M38c, D-668, D-669): the camera process records its RTSP
+ * stream into a rolling buffer on the brand server and cuts each packing's video from it.
+ *
+ * The address carries no credentials (a check holds it): the user name is its own column and
+ * the password is sealed with the brand's credentials key, bound to this row, write-only and
+ * shown as a fingerprint. Never deleted (a session and a video name the camera that filmed
+ * them); switched off instead. The recorder's last word is kept on the row (`last_segment_at`,
+ * `last_error_code`, `status_at`), written by the camera process only, never by the settings.
+ */
+export const packingCameras = packing.table(
+  'cameras',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    name: text('name').notNull(),
+    /** `rtsp://host[:port]/path`, never with a user name or password in it. */
+    rtspUrl: text('rtsp_url').notNull(),
+    username: text('username').notNull().default(''),
+    passwordSealed: sealedBytes('password_sealed'),
+    passwordFingerprint: text('password_fingerprint'),
+    /** The installation key the password was sealed under. */
+    keyId: text('key_id'),
+    enabled: boolean('enabled').notNull().default(true),
+    /** When the recorder last stored a piece of this camera's stream. */
+    lastSegmentAt: timestamp('last_segment_at', { withTimezone: true, mode: 'date' }),
+    /** Why the stream last stopped (`auth_failed`, `unreachable`, …), cleared once it flows. */
+    lastErrorCode: text('last_error_code'),
+    lastErrorAt: timestamp('last_error_at', { withTimezone: true, mode: 'date' }),
+    /** When the recorder last reported on this camera at all. */
+    statusAt: timestamp('status_at', { withTimezone: true, mode: 'date' }),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    updatedBy: text('updated_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    ...timestamps,
+  },
+  (table) => [
+    unique('packing_cameras_org_id_id_key').on(table.orgId, table.id),
+    unique('packing_cameras_org_name_key').on(table.orgId, table.name),
+    index('packing_cameras_org_idx').on(table.orgId),
+    check('packing_cameras_name_length', sql`length(${table.name}) between 1 and 60`),
+    check(
+      'packing_cameras_rtsp_url',
+      sql`${table.rtspUrl} ~* '^rtsp://[^/@[:space:]]+(/[^[:space:]]*)?$' and length(${table.rtspUrl}) <= 500`,
+    ),
+    check(
+      'packing_cameras_username',
+      sql`length(${table.username}) <= 64 and position(':' in ${table.username}) = 0`,
+    ),
+    check(
+      'packing_cameras_password_complete',
+      sql`(${table.passwordSealed} is null) = (${table.passwordFingerprint} is null)
+          and (${table.passwordSealed} is null or ${table.keyId} is not null)`,
+    ),
+    check(
+      'packing_cameras_error_code',
+      sql`${table.lastErrorCode} is null or ${table.lastErrorCode} ~ '^[a-z_]{1,40}$'`,
+    ),
+  ],
+);
+
 /**
  * One order at the packing station (M38b, D-610): opened by the first person to bring the
  * order up, resumed by anyone after a reload, completed once, in the transaction that moves
@@ -120,6 +195,19 @@ export const packingSessions = packing.table(
     startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     completedBy: text('completed_by').references(() => users.id, { onDelete: 'restrict' }),
     completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * The IP camera filming this packing (M38c, D-670), or null for the desk's own camera
+     * recorded by the browser. Chosen when the order is opened; fixed once recording starts.
+     */
+    cameraId: uuid('camera_id'),
+    /**
+     * The camera recording's window (D-671): from two seconds before the first scan the
+     * station accepted, to the finish (at most fifteen minutes), each set once. `recording_by`
+     * is who made that first accepted scan: the packer the video is filed under.
+     */
+    recordingFrom: timestamp('recording_from', { withTimezone: true, mode: 'date' }),
+    recordingTo: timestamp('recording_to', { withTimezone: true, mode: 'date' }),
+    recordingBy: text('recording_by').references(() => users.id, { onDelete: 'restrict' }),
     ...timestamps,
   },
   (table) => [
@@ -138,6 +226,31 @@ export const packingSessions = packing.table(
       sql`(${table.status} = 'completed') = (${table.completedAt} is not null and ${table.completedBy} is not null)`,
     ),
     check('packing_sessions_order_no_shape', sql`length(${table.orderNo}) between 1 and 64`),
+    index('packing_sessions_camera_window_idx').on(
+      table.orgId,
+      table.cameraId,
+      table.recordingFrom,
+    ),
+    foreignKey({
+      name: 'packing_sessions_org_id_camera_id_fk',
+      columns: [table.orgId, table.cameraId],
+      foreignColumns: [packingCameras.orgId, packingCameras.id],
+    }).onDelete('restrict'),
+    check(
+      'packing_sessions_recording_camera',
+      sql`${table.recordingFrom} is null or ${table.cameraId} is not null`,
+    ),
+    check(
+      'packing_sessions_recording_by',
+      sql`(${table.recordingFrom} is null) = (${table.recordingBy} is null)`,
+    ),
+    check(
+      'packing_sessions_recording_window',
+      sql`${table.recordingTo} is null
+          or (${table.recordingFrom} is not null
+              and ${table.recordingTo} >= ${table.recordingFrom}
+              and ${table.recordingTo} <= ${table.recordingFrom} + interval '15 minutes')`,
+    ),
   ],
 );
 
@@ -226,6 +339,12 @@ export const packingVideos = packing.table(
     /** The order's state that started the seven days (`packingVideoExpiry`). */
     deletedReason: text('deleted_reason'),
     deletedFileId: uuid('deleted_file_id'),
+    /**
+     * Who filmed it (M38c, D-674): `browser` (the desk's camera, uploaded by the station) or
+     * `camera` (an IP camera, cut on the server from its buffer), with that camera.
+     */
+    source: text('source').notNull().default('browser'),
+    cameraId: uuid('camera_id'),
     ...timestamps,
   },
   (table) => [
@@ -244,6 +363,16 @@ export const packingVideos = packing.table(
       columns: [table.orgId, table.fileId],
       foreignColumns: [fileObjects.orgId, fileObjects.id],
     }).onDelete('restrict'),
+    foreignKey({
+      name: 'packing_videos_org_id_camera_id_fk',
+      columns: [table.orgId, table.cameraId],
+      foreignColumns: [packingCameras.orgId, packingCameras.id],
+    }).onDelete('restrict'),
+    check('packing_videos_source', sql`${table.source} in ('browser', 'camera')`),
+    check(
+      'packing_videos_source_camera',
+      sql`(${table.source} = 'camera') = (${table.cameraId} is not null)`,
+    ),
     check('packing_videos_part', sql`${table.part} between 1 and 99`),
     check('packing_videos_mime', sql`${table.mime} in ('video/webm', 'video/mp4')`),
     check(

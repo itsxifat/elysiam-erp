@@ -462,6 +462,11 @@ export const NO_DELETE_TABLES: readonly string[] = [
   'packing.sessions',
   'packing.videos',
   'packing.settings',
+  /*
+   * M38c. An IP camera over a packing table is switched off, never removed: the sessions it
+   * filmed and the videos cut from its stream name it (D-668).
+   */
+  'packing.cameras',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */

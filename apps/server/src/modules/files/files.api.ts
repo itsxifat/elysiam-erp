@@ -30,7 +30,8 @@ export interface FileFacts {
  *
  * M38b adds the packing video's three questions: what a handed file is (before attaching it),
  * a signed download for a row the owning module has checked (D-413), and deleting a file in
- * the caller's transaction with its bytes removed after the commit (D-612).
+ * the caller's transaction with its bytes removed after the commit (D-612). M38c adds keeping
+ * a file the server produced (an IP camera's cut, D-672).
  */
 export interface FilesApi {
   isPublicAsset(tx: Tx, orgId: string, fileId: string, purpose: FilePurpose): Promise<boolean>;
@@ -71,6 +72,21 @@ export interface FilesApi {
       readonly limit: number;
     },
   ): Promise<readonly { readonly id: string; readonly createdAt: string }[]>;
+
+  /**
+   * Keep bytes the server produced as a stored, private file of a purpose (M38c: a packing
+   * video cut from an IP camera's buffer), owned by `ownerUserId`. Opens its own short
+   * transactions around the write, never one across it (invariant 6); the caller attaches the
+   * file in a transaction of its own.
+   */
+  storeProduced(input: {
+    readonly orgId: string;
+    readonly ownerUserId: string;
+    readonly purpose: FilePurpose;
+    readonly mime: string;
+    readonly originalName: string;
+    readonly bytes: Uint8Array;
+  }): Promise<{ readonly fileId: string; readonly sizeBytes: number; readonly sha256: string }>;
 }
 
 export const FILES_API = Symbol('FilesApi');
@@ -129,5 +145,16 @@ export class FilesApiService implements FilesApi {
     },
   ): Promise<readonly { readonly id: string; readonly createdAt: string }[]> {
     return repo.purposeFilesBefore(tx, orgId, purpose, before, page);
+  }
+
+  storeProduced(input: {
+    readonly orgId: string;
+    readonly ownerUserId: string;
+    readonly purpose: FilePurpose;
+    readonly mime: string;
+    readonly originalName: string;
+    readonly bytes: Uint8Array;
+  }): Promise<{ readonly fileId: string; readonly sizeBytes: number; readonly sha256: string }> {
+    return this.files.storeProduced(input);
   }
 }

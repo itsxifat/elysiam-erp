@@ -10,6 +10,8 @@ import {
 import { withOrg, type Tx } from '@elysium/db';
 import { normaliseScannedCode } from '@elysium/domain/barcode';
 import {
+  cameraRecordingFrom,
+  cameraRecordingTo,
   isPackScanRefusal,
   judgePackRemoval,
   judgePackScan,
@@ -25,9 +27,12 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { enqueue } from '../../platform/jobs/enqueue.js';
 import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { ORDERS_API, type OrdersApi, type PackingFacts } from '../orders/orders.api.js';
+import * as cameras from './camera.repository.js';
+import { PACKING_QUEUES, type CameraCutPayload } from './packing.queues.js';
 import { ScannerService } from './scanner.service.js';
 import { mapPackingErrors, PackingError } from './station.errors.js';
 import * as repo from './station.repository.js';
@@ -69,6 +74,12 @@ const REFUSAL_WORDS: Readonly<Record<string, string>> = {
  * `packed` through `OrdersApi.transition` — the state machine's `pack`, exactly the
  * transition the Pack button and bulk pack run — in the same transaction that marks the
  * session completed, so the order is packed once and the session says by whom.
+ *
+ * M38c (D-670, D-671): a session may be filmed by one of the brand's IP cameras, chosen when
+ * the order is opened. The camera is then ready; the first scan the station **accepts** (the
+ * piece belongs to the order) starts its recording two seconds before that scan, in the
+ * scan's own transaction, and no refused scan ever does. Finishing ends the recording in the
+ * finishing transaction and enqueues the cut of the camera's footage (invariant 6).
  */
 @Injectable()
 export class PackStationService {
@@ -85,33 +96,37 @@ export class PackStationService {
     return mapPackingErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const orderId = await this.findOrder(tx, context.orgId, request, input);
-        const existing = await repo.sessionByOrder(tx, context.orgId, orderId);
-        if (existing !== undefined) return this.view(tx, context.orgId, existing, context.userId);
-
-        const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
-        if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
-        this.assertPackable(facts);
-        const settings = await repo.settingsOf(tx, context.orgId);
-        const { row, created } = await repo.openSession(tx, {
-          orgId: context.orgId,
-          orderId,
-          orderNo: facts.orderNo,
-          videoRequired: settings?.video_enabled ?? true,
-          startedBy: context.userId,
-        });
-        if (created) {
-          await this.audit.record(tx, {
+        let session = await repo.sessionByOrder(tx, context.orgId, orderId);
+        if (session === undefined) {
+          const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
+          if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
+          this.assertPackable(facts);
+          const settings = await repo.settingsOf(tx, context.orgId);
+          const { row, created } = await repo.openSession(tx, {
             orgId: context.orgId,
-            actorUserId: context.userId,
-            operation: 'create',
-            action: 'packing.session_opened',
-            entityType: 'packing_session',
-            entityId: row.id,
-            after: { orderId, orderNo: facts.orderNo, videoRequired: row.video_required },
-            request,
+            orderId,
+            orderNo: facts.orderNo,
+            videoRequired: settings?.video_enabled ?? true,
+            startedBy: context.userId,
           });
+          if (created) {
+            await this.audit.record(tx, {
+              orgId: context.orgId,
+              actorUserId: context.userId,
+              operation: 'create',
+              action: 'packing.session_opened',
+              entityType: 'packing_session',
+              entityId: row.id,
+              after: { orderId, orderNo: facts.orderNo, videoRequired: row.video_required },
+              request,
+            });
+          }
+          session = row;
         }
-        return this.view(tx, context.orgId, row, context.userId);
+        if (input.cameraId !== undefined) {
+          session = await this.chooseCamera(tx, context, request, session, input.cameraId);
+        }
+        return this.view(tx, context.orgId, session, context.userId);
       }),
     );
   }
@@ -163,7 +178,7 @@ export class PackStationService {
           packed,
           scanned: found === undefined ? null : { skuId: found.skuId, productId: found.productId },
         });
-        await repo.insertScan(tx, {
+        const written = await repo.insertScan(tx, {
           orgId: context.orgId,
           sessionId,
           scanId: input.scanId,
@@ -172,6 +187,24 @@ export class PackStationService {
           outcome,
           scannedBy: context.userId,
         });
+        // The owner's catch (D-671): only a piece the order needs starts the camera, two
+        // seconds before the scan, by the scan's own clock, once. Under the session's lock.
+        const recordingFrom = session.video_required
+          ? cameraRecordingFrom({
+              cameraId: session.camera_id,
+              recordingFrom: at(session.recording_from),
+              outcome,
+              scannedAt: new Date(written.scanned_at),
+            })
+          : null;
+        const started =
+          recordingFrom !== null &&
+          (await cameras.startRecording(tx, {
+            orgId: context.orgId,
+            sessionId,
+            from: recordingFrom,
+            by: context.userId,
+          }));
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,
@@ -179,11 +212,21 @@ export class PackStationService {
           action: outcome === 'accepted' ? 'packing.scanned' : 'packing.scan_refused',
           entityType: 'packing_session',
           entityId: sessionId,
-          after: { orderId: session.order_id, skuId: found?.skuId ?? null, outcome },
+          after: {
+            orderId: session.order_id,
+            skuId: found?.skuId ?? null,
+            outcome,
+            ...(started
+              ? { cameraId: session.camera_id, recordingFrom: recordingFrom.toISOString() }
+              : {}),
+          },
           request,
         });
+        const current = started
+          ? ((await repo.sessionById(tx, context.orgId, sessionId)) ?? session)
+          : session;
         return this.scanAnswer(outcome, found?.skuId ?? null, {
-          view: await this.view(tx, context.orgId, session, context.userId),
+          view: await this.view(tx, context.orgId, current, context.userId),
           repeated: false,
         });
       }),
@@ -275,6 +318,28 @@ export class PackStationService {
               : 'The box holds a piece this order does not need. Take it out first.',
           );
         }
+        // M38c (D-671, D-672): the camera's recording ends with the finish (at most fifteen
+        // minutes after it began), set before the session completes (a completed session never
+        // changes), and its cut is enqueued in this same transaction (invariant 6).
+        const recordingTo = cameraRecordingTo({
+          recordingFrom: at(session.recording_from),
+          recordingTo: at(session.recording_to),
+          endedAt: await cameras.transactionNow(tx),
+        });
+        const cutQueued =
+          recordingTo !== null &&
+          (await cameras.endRecording(tx, {
+            orgId: context.orgId,
+            sessionId,
+            to: recordingTo,
+          }));
+        if (cutQueued) {
+          const payload: CameraCutPayload = { sessionId };
+          await enqueue(tx, PACKING_QUEUES.cameraCut.name, payload, {
+            orgId: context.orgId,
+            ref: sessionId,
+          });
+        }
         // §9's `pack`, through the machine: the order's own lock, effects and history.
         const moved = await this.orders.transition(
           tx,
@@ -293,7 +358,14 @@ export class PackStationService {
           entityType: 'packing_session',
           entityId: sessionId,
           before: { status: 'open', orderStatus: moved.from },
-          after: { status: 'completed', orderStatus: moved.to, units: progress.unitsPacked },
+          after: {
+            status: 'completed',
+            orderStatus: moved.to,
+            units: progress.unitsPacked,
+            ...(cutQueued
+              ? { cameraId: session.camera_id, recordingTo: recordingTo.toISOString() }
+              : {}),
+          },
           request,
         });
         const done = await repo.sessionById(tx, context.orgId, sessionId);
@@ -429,6 +501,55 @@ export class PackStationService {
   }
 
   // --- the parts --------------------------------------------------------------------------
+
+  /**
+   * The recording source this packing desk chose (D-670): one of the brand's enabled IP
+   * cameras, or none (the desk's own camera, recorded by the browser). Changed only while the
+   * session is open, records, and has not started recording; after that the camera that began
+   * filming the box keeps it, whatever a desk asks.
+   */
+  private async chooseCamera(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    session: repo.SessionRow,
+    cameraId: string | null,
+  ): Promise<repo.SessionRow> {
+    if (session.camera_id === cameraId) return session;
+    if (cameraId !== null) {
+      const camera = await cameras.cameraById(tx, context.orgId, cameraId);
+      if (camera?.enabled !== true) {
+        throw new PackingError(
+          'PACKING_CAMERA_INVALID',
+          'That camera is not one of this brand’s cameras in use. Choose another recording source.',
+        );
+      }
+    }
+    const locked = await repo.sessionById(tx, context.orgId, session.id, { forUpdate: true });
+    if (locked === undefined) return session;
+    if (
+      locked.status !== 'open' ||
+      !locked.video_required ||
+      locked.recording_from !== null ||
+      locked.camera_id === cameraId
+    ) {
+      return locked;
+    }
+    if (await cameras.chooseSessionCamera(tx, context.orgId, session.id, cameraId)) {
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'update',
+        action: 'packing.session_camera_chosen',
+        entityType: 'packing_session',
+        entityId: session.id,
+        before: { cameraId: locked.camera_id },
+        after: { cameraId },
+        request,
+      });
+    }
+    return (await repo.sessionById(tx, context.orgId, session.id)) ?? locked;
+  }
 
   /** The order a code or id names, inside the caller's scope; one answer for none and hidden. */
   private async findOrder(
@@ -596,6 +717,14 @@ export class PackStationService {
           session.completed_by === null
             ? null
             : { id: session.completed_by, name: names.get(session.completed_by) ?? null },
+        // M38c (D-670, D-671): the IP camera filming it, and its recording's window.
+        cameraId: session.camera_id,
+        recordingFrom: iso(session.recording_from),
+        recordingTo: iso(session.recording_to),
+        recordingBy:
+          session.recording_by === null
+            ? null
+            : { id: session.recording_by, name: names.get(session.recording_by) ?? null },
       },
       order: {
         id: list.id,
@@ -666,6 +795,8 @@ export class PackStationService {
         deletedAt: iso(video.deleted_at),
         deletedReason: video.deleted_reason,
         recordedBy: { id: video.recorded_by, name: names.get(video.recorded_by) ?? null },
+        source: video.source,
+        cameraId: video.camera_id,
       })),
       video: packingVideoState({
         videoRequired: session.video_required,

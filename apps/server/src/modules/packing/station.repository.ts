@@ -17,10 +17,15 @@ export interface SessionRow extends Record<string, unknown> {
   readonly started_at: Date | string;
   readonly completed_by: string | null;
   readonly completed_at: Date | string | null;
+  /** M38c (D-670, D-671): the IP camera filming it, and the recording's window. */
+  readonly camera_id: string | null;
+  readonly recording_from: Date | string | null;
+  readonly recording_to: Date | string | null;
+  readonly recording_by: string | null;
 }
 
 const SESSION_COLUMNS = sql`id, order_id, order_no, status, video_required, started_by, started_at,
-  completed_by, completed_at`;
+  completed_by, completed_at, camera_id, recording_from, recording_to, recording_by`;
 
 export async function sessionById(
   tx: Tx,
@@ -175,10 +180,14 @@ export interface VideoRow extends Record<string, unknown> {
   readonly deleted_at: Date | string | null;
   readonly deleted_reason: string | null;
   readonly deleted_file_id: string | null;
+  /** M38c (D-674): `browser` or `camera`, and which camera. */
+  readonly source: 'browser' | 'camera';
+  readonly camera_id: string | null;
 }
 
 const VIDEO_COLUMNS = sql`id, session_id, part, recorded_by, started_at, mime, file_id, duration_ms,
-  size_bytes::text as size_bytes, uploaded_at, deleted_at, deleted_reason, deleted_file_id`;
+  size_bytes::text as size_bytes, uploaded_at, deleted_at, deleted_reason, deleted_file_id, source,
+  camera_id`;
 
 export async function videosOf(
   tx: Tx,
@@ -335,7 +344,8 @@ export async function recentSessions(
 ): Promise<SessionSummaryRow[]> {
   const rows = await tx.execute<SessionSummaryRow>(sql`
     select s.id, s.order_id, s.order_no, s.status, s.video_required, s.started_by, s.started_at,
-           s.completed_by, s.completed_at,
+           s.completed_by, s.completed_at, s.camera_id, s.recording_from, s.recording_to,
+           s.recording_by,
            count(c.id)::int as scans,
            count(c.id) filter (where c.outcome = 'accepted')::int as accepted,
            count(c.id) filter (where c.outcome = 'removed')::int as removed,

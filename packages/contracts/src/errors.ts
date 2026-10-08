@@ -590,6 +590,9 @@ export const ERROR_CODES = [
   'PACKING_VIDEO_INVALID',
   /** The packing video was deleted (kept until seven days after delivery), or never arrived. */
   'PACKING_VIDEO_GONE',
+  // M38c: the packing table's IP cameras
+  /** No enabled IP camera of this brand has that id, or the recording already started on another source. */
+  'PACKING_CAMERA_INVALID',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
