@@ -2683,3 +2683,23 @@ dry-run|commit --file <users.json>`.
   variables. Gates: typecheck and build (18 tasks), lint, format, routes (517), i18n, migrations,
   schema (135), api-client (regenerated for the two error codes): PASS.
 - New dependencies: none.
+
+## 2026-10-08 · M38c · live view of the IP camera, and deleting a camera (not deployed)
+
+- **Owner's request:** "add always live preview option for stream in use in the pack section.
+  and add option to delete them also". Branch `m38c-live-preview` from `integration-wave2`
+  (b672730). Decisions D-683 (ASSUMED), D-684; migration `0137_m38c_camera_preview_delete`
+  (`preview_wanted_until`, `deleted_at`, `deleted_by`, the name unique among cameras in use, a
+  check and a trigger keeping a deletion final).
+- **Built:** the live view (a demand-driven second ffmpeg per camera in the camera process,
+  frames on the new `camera-preview` volume, `GET /v1/packing/cameras/:id/preview`, the Pack
+  screen's view with a Live badge before and during packing, the source chosen before an order
+  is opened); deleting a camera (`DELETE /v1/packing/cameras/:id`, the settings' Delete with a
+  confirmation, refused while it records, past videos playing); route matrix and fixtures,
+  OpenAPI, API client; bn and en; training guide, architecture §31, runbook, plan status.
+- **Evidence:** domain 37/37; preview, recorder and config units 20/20; `camera.e2e.test.ts`
+  22/22 on real Postgres; console `pack-live-preview` 3/3, `pack-station-ui` 20/20; touched
+  suites together 359 passed, 1 skipped; build, lint, format, routes (519), i18n, migrations,
+  schema, api-client, white-label, bundle (249.9 KB): PASS. Not run: a stack spec (as asked),
+  the preview against the image's real ffmpeg (to check on the server after deploy).
+- New dependencies: none.
