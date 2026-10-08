@@ -2588,3 +2588,64 @@ dry-run|commit --file <users.json>`.
   stays a required voter (D-667); the mother's server and domain from the owner, then its first
   deploy (unverified infra, decisions.md); a `pg_hba` rule limiting a brand's reporting port to
   `erp_analytics`; comparing the mother's P&L with the brand's own reports service.
+
+## 2026-10-08 · M38c · IP camera recording for the packing station (built, not deployed)
+
+- **The owner's request** (2026-10-08): the packing table's IP camera
+  (`rtsp://192.168.20.111:554/stream1`, a user name and password) ready when the order slip is
+  scanned, recording from two seconds before the first scanned item, and only an item verified
+  as correct for the order starts it. Branch `m38c-ip-camera` from `integration-wave2` at
+  3d8de8e; not merged, not deployed. Decisions **D-668 to D-676** (D-669, D-670, D-675, D-676
+  ASSUMED), plus an "Unverified integrations" entry: never run against the owner's camera.
+- **Built:**
+  - `packing.cameras` (migration `0134_m38c_ip_camera_schema`, generated; `0135_m38c_ip_camera_policies`:
+    RLS ENABLE and FORCE, grants without DELETE, triggers): RTSP address without credentials
+    (`rtspUrlSchema` in `packages/contracts` and a database check), user name, a write-only
+    password sealed with the brand's `STOREFRONT_CREDENTIALS_KEY` box (D-528), on/off, the
+    recorder's status. `GET/POST /v1/packing/cameras`, `PUT /v1/packing/cameras/:id`
+    (`update PackingVideo` to change, `update Order` to read names and states), audited with
+    the fingerprint only; route matrix, fixtures, OpenAPI catalog, API client regenerated.
+  - The window (`packages/domain/src/packing/camera.ts`, fast-check): `recording_from` = the
+    first **accepted** scan's own time − 2 s, in the scan's transaction; `recording_to` at the
+    finish (at most 15 minutes) with `packing.camera_cut` enqueued in the finishing transaction;
+    an open recording closed at 15 minutes by the camera process. Triggers hold it.
+  - The camera process `dist/main.camera.js` (`start:camera`): ffmpeg `-rtsp_transport tcp …
+-map 0:v:0 -an -c copy -f segment -segment_time 1` into wall-clock-named segments (renamed
+    by their span from the file times, not `-strftime`, which overwrites two segments opened in
+    one second), the rolling buffer (last minute plus every uncut window, never over 30
+    minutes), backoff reconnects, status per camera, masked logs; the cut (concat demuxer,
+    `-c copy`, `+faststart`, parts under 86 MiB) kept through the new
+    `FilesApi.storeProduced` and filed as `packing.videos` rows with `source = 'camera'`;
+    retention and playback unchanged.
+  - Console: Recording source per desk (`erp.pack.source`), the IP camera card (ready,
+    offline with the reason, recording since, being cut, saved), Orders → Pack → Settings →
+    IP cameras (React Hook Form with the contract schemas), the order page marking a camera's
+    part; strings in bn and en.
+  - Infra: Debian's ffmpeg 5.1 in the server image (about 470 MB uncompressed, measured);
+    `camera` service in `infra/brand/docker-compose.brand.yml` (application role, `files` and
+    `camera-buffer` volumes, no ports); the deploy script's logs name it. Docs: architecture
+    §20, §22, §31; `docs/training/packing-station.md` (setting up an IP camera); the brand
+    deploy runbook (the camera service, reachability, the password only in the ERP);
+    `docs/plans/M38.md`; CLAUDE.md; build status.
+- **Evidence:** domain 32/32 (14 new); contracts 7/7; the recorder, buffer and cut with a
+  stand-in ffmpeg 10/10 (the password reaches ffmpeg and never the log); `camera.e2e.test.ts`
+  11/11 and `pack-station.e2e.test.ts` 19/19 on real Postgres; console `pack-station-ui` 20/20;
+  all touched suites together 116 files, 1862 passed, 1 skipped (`camera.ffmpeg.test.ts`: no
+  ffmpeg on this PC). A real ffmpeg 5.1 in the server's pinned node base image
+  (`docs/review/M38c/`): a synthetic H.264 stream and a **password-protected RTSP stream**
+  (mediamtx 1.15.3, password with `!@#&`) recorded into one-second segments, a 5.000 s window
+  cut to MP4 without re-encoding, starting no later than the window, and a wrong password
+  reported as `auth_failed` with ffmpeg's line masked (`rtsp://***@…`). The camera process
+  booted against a fresh database beside the worker and wrote `ffmpeg_missing` on the camera
+  (no ffmpeg on Windows). Gates: format, lint (28 tasks), typecheck and build (18 tasks),
+  routes (517), i18n, migrations, schema, api-client, white-label and bundle (249.9 of 250 KB,
+  the camera code in the lazy pack-station chunk) all PASS.
+- New dependencies: none (ffmpeg is an OS package in the image, D-675).
+- **Not done:** `pnpm verify` as one run (its parts ran separately above); a Playwright stack
+  spec for the camera screens and screenshots; the ledger-auditor (tenancy, permissions,
+  files) and acceptance-auditor; a test against the owner's real camera (needs the deploy).
+- **For the owner after the deploy:** Orders → Pack → Settings → IP cameras → Add camera: name,
+  `rtsp://192.168.20.111:554/stream1`, the camera account's user name and password (typed
+  there, never in chat); check it reads Ready; choose it under Recording source on the packing
+  computer; pack one order and play its video. `stream2` is the smaller picture if
+  `stream1`'s ~15 MB a minute is too much.

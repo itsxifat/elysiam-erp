@@ -35,6 +35,46 @@ Who packed, when, and every scan are kept with the order.
   station if the computer has more than one.
 - An admin can turn recording off for the brand on the station's settings.
 
+## An IP camera over the table (M38c)
+
+Instead of a webcam on the packing computer, an IP camera on the shop's network can film the
+table. The ERP's server records it; the browser does not.
+
+### Setting it up (an admin, once per camera)
+
+1. Find the camera's stream address and its user name and password (the camera's own app shows
+   them; Tapo cameras call it a "camera account"). For example
+   `rtsp://192.168.20.111:554/stream1`.
+2. Console → **Orders → Pack → Settings → IP cameras → Add camera**.
+3. Give it a name the packers will recognise ("Packing table 1"), paste the address **without**
+   the user name and password in it, then type the user name and the password in their own
+   boxes. Leave **Record with this camera** ticked and save.
+4. Within a few seconds the list shows **Ready**. **Offline** with a reason means the server
+   cannot get pictures:
+   - _The camera refused the user name or password_: check the camera account.
+   - _The server cannot reach the camera on the network_: check the address, and that the camera
+     is on the same network as the server.
+   - _The camera has no stream at that address_: check the path (`/stream1`, `/stream2`, …).
+5. The password is never shown again: the list says it is set and shows a short fingerprint.
+   To change it, edit the camera and type the new one; leave the box empty to keep it. Never
+   send the camera's password in a chat or an email: type it into the settings only.
+
+`/stream1` is the camera's full picture (about 15 MB a minute). If videos are too large,
+`/stream2` (the smaller picture, about a tenth of that) can be entered instead.
+
+### Packing with it
+
+1. On the station, choose the camera under **Recording source** (once; the browser remembers).
+2. Scan the order slip: the camera card says **Camera ready**.
+3. Scan the pieces. Recording starts with the **first piece that belongs to the order**, from
+   two seconds before that scan. A wrong piece never starts it.
+4. Finish the order as usual. The card says the video is being cut, then **Video saved**; it
+   appears on the order page like any packing video (marked "IP camera") and is kept and
+   deleted the same way.
+
+A recording stops by itself after fifteen minutes. If the camera was offline, the order is still
+packed and its video reads "Missing".
+
 ## When something goes wrong
 
 - **"Not in this order"**: the sticker belongs to another product. Check the order.

@@ -1,86 +1,50 @@
 {
- "mode": "lavfi",
- "segments": 9,
- "spans": [
-  [
-   75,
-   1391,
-   28388
+  "mode": "lavfi",
+  "segments": 9,
+  "spans": [
+    [75, 1391, 28388],
+    [1391, 2391, 27448],
+    [2391, 3395, 28764],
+    [3395, 4391, 28764],
+    [4391, 5395, 27260],
+    [5395, 6390, 28764],
+    [6390, 7386, 28952],
+    [7386, 8394, 28012],
+    [8394, 9002, 27636]
   ],
-  [
-   1391,
-   2391,
-   27448
-  ],
-  [
-   2391,
-   3395,
-   28764
-  ],
-  [
-   3395,
-   4391,
-   28764
-  ],
-  [
-   4391,
-   5395,
-   27260
-  ],
-  [
-   5395,
-   6390,
-   28764
-  ],
-  [
-   6390,
-   7386,
-   28952
-  ],
-  [
-   7386,
-   8394,
-   28012
-  ],
-  [
-   8394,
-   9002,
-   27636
-  ]
- ],
- "status": {
-  "running": true,
-  "lastSegmentAt": "2026-10-08T04:00:17.051Z",
-  "errorCode": null,
-  "failures": 0
- },
- "cut": {
-  "window": {
-   "fromMs": 1791432011448,
-   "toMs": 1791432014448
+  "status": {
+    "running": true,
+    "lastSegmentAt": "2026-10-08T04:00:17.051Z",
+    "errorCode": null,
+    "failures": 0
   },
-  "chosen": 5,
-  "coverage": {
-   "startCovered": true,
-   "endCovered": true,
-   "gapMs": 0
-  },
-  "startsNoLater": true,
-  "durationMsFromSpans": 4995,
-  "ftyp": "ftyp",
-  "sizeBytes": 106804,
-  "probe": {
-   "programs": [],
-   "streams": [
-    {
-     "codec_name": "h264",
-     "width": 320,
-     "height": 240
+  "cut": {
+    "window": {
+      "fromMs": 1791432011448,
+      "toMs": 1791432014448
+    },
+    "chosen": 5,
+    "coverage": {
+      "startCovered": true,
+      "endCovered": true,
+      "gapMs": 0
+    },
+    "startsNoLater": true,
+    "durationMsFromSpans": 4995,
+    "ftyp": "ftyp",
+    "sizeBytes": 106804,
+    "probe": {
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "width": 320,
+          "height": 240
+        }
+      ],
+      "format": {
+        "duration": "5.000000"
+      }
     }
-   ],
-   "format": {
-    "duration": "5.000000"
-   }
   }
- }
 }

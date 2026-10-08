@@ -1275,6 +1275,7 @@ Jobs run on pg-boss, with queues named `module.action`.
 | `files.process_image`             | On upload                                                | sharp variants, EXIF stripped                   |
 | `packing.purge_videos`            | Daily 04:15                                              | Videos past expiry; uploads unattached for 24 h |
 | `files.remove_object`             | After the deleting commit                                | The stored bytes of a deleted file              |
+| `packing.camera_cut`              | When an IP camera's packing window closes (D-672)        | Worked by the camera process, not the worker    |
 | `ops.backup_verify`               | Weekly (staging)                                         | Restore to a scratch database and verify        |
 
 ---
@@ -1309,6 +1310,7 @@ Rules for every integration:
   - Private bucket (receipts, invoices, legal documents, KYC, payslips): served only through short-lived signed URLs after an authorization check. The generic `GET /v1/files/:id/download` serves a file someone else uploaded only to a holder of the purpose's ability across the brand; a narrower holder reaches such a document through the owning module's route, which checks the row first (D-413).
   - Public bucket (product images, landing page assets): served through the CDN.
   - Packing videos (M38b, D-613): purpose `packing-video`, never public, `video/webm` or `video/mp4` up to 90 MiB, read only through the order's packing record under `read PackingVideo`, deleted seven days after the order ends (D-612).
+  - An IP camera's packing video (M38c, D-672) is produced on the server, not uploaded: the camera process joins the buffered segments into MP4 parts of at most 86 MiB and keeps each through `FilesApi.storeProduced` (the same type, ceiling, purpose and sniffing checks as an upload; the row, the bytes and the stored mark each on their own, no transaction across the write), owned by the packer who made the first accepted scan. Retention, the orphan sweep and playback treat it like any other packing video.
   - The brand website's images (M33, D-507): `GET /media/<org id>/<file id>/<thumb|card|full>` serves the re-encoded sizes of a stored, public file whose purpose is `product-image`, `category-image` or `storefront-image`, with a year's immutable caching; every other file is the same 404. Never an original.
 - **Uploads:**
   - presigned PUT, with size and MIME limits; the finalize reads at most the type's ceiling (D-417)
@@ -1848,3 +1850,29 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   The same run sweeps uploads no video names after 24 hours (a retried upload's first copy),
   each audited; one failure is logged and the run carries on. Storage is the brand server's
   disk until R2 is on (D-619). Resellers see no packing records (D-665).
+
+### The packing table's IP camera (M38c, D-668 to D-676)
+
+- **The cameras** (`packing.cameras`, Orders → Pack → Settings → IP cameras, org_admin under
+  `update PackingVideo`): a name, an `rtsp://` address that never carries credentials
+  (`rtspUrlSchema` and a database check), a user name and a password sealed with the brand's
+  credentials key, write-only and shown as a fingerprint (D-669); switched off, never deleted.
+  Whoever packs reads names and states (`GET /v1/packing/cameras`).
+- **The station** (D-670): each desk chooses its recording source (this computer's camera or an
+  IP camera, `erp.pack.source`) and opens the order with it; the camera is then ready and the
+  browser records nothing. The first scan `judgePackScan` **accepts** sets
+  `recording_from` = that scan's time − 2 s, in its transaction; no refusal ever does. Finishing
+  sets `recording_to` (at most 15 minutes after the start) and enqueues `packing.camera_cut` in
+  the finishing transaction; a recording left open is closed at 15 minutes by the camera process
+  (D-671). Triggers hold the window: set once, the camera fixed once recording, at most 15
+  minutes.
+- **The camera process** (`node dist/main.camera.js`, the brand compose file's `camera` service,
+  D-672, D-676): ffmpeg copies each enabled camera's RTSP stream (TCP, video only, no
+  re-encoding) into one-second MPEG-TS segments named by their wall-clock span, in a buffer
+  that keeps the last minute and every uncut window back to its start (never more than half an
+  hour). It writes each camera's state (ready, offline with a reason, off; D-673), reconnects
+  with a backoff, reloads the settings every 10 s, and works `packing.camera_cut`: the
+  segments overlapping the window (starting at or before it) joined into MP4 parts, kept as
+  private packing videos and filed as the session's `camera` parts (`packing.videos.source`,
+  D-674). Its log never carries a camera's password (masked, tested). Its ffmpeg is Debian's, in
+  the server image (D-675).
