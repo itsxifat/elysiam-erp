@@ -597,6 +597,10 @@ export const ERROR_CODES = [
   'PACKING_CAMERA_PASSWORD_REQUIRED',
   /** The brand already records with as many IP cameras as one server takes. */
   'PACKING_CAMERA_LIMIT',
+  /** The camera is filming a packing whose recording is still open: finish or wait for it first. */
+  'PACKING_CAMERA_IN_USE',
+  /** The camera's live picture is not coming in (no fresh frame in the last few seconds). */
+  'PACKING_PREVIEW_UNAVAILABLE',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

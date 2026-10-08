@@ -261,3 +261,47 @@ export function cameraReconnectDelayMs(failures: number): number {
   const steps = [1_000, 2_000, 5_000, 10_000, 30_000];
   return steps[Math.max(0, failures - 1)] ?? 60_000;
 }
+
+// --- the live preview (D-683) ----------------------------------------------------------------
+
+/** How long one look at the live preview keeps it wanted. */
+export const PACKING_PREVIEW_DEMAND_MS = 15_000;
+/** A look writes the demand again only when less than this is left of it (at most every 5 s). */
+export const PACKING_PREVIEW_RENEW_BELOW_MS = 10_000;
+/** How long a running preview outlives its last look before it stops. */
+export const PACKING_PREVIEW_LINGER_MS = 20_000;
+/** A preview frame older than this is not live: the camera reads offline at the station. */
+export const PACKING_PREVIEW_FRESH_MS = 5_000;
+
+/**
+ * The demand a look at the preview writes, or null when what is stored still has more than
+ * ten seconds left: a station asking every 400 ms writes at most once in five seconds.
+ */
+export function previewDemandUntil(input: {
+  readonly wantedUntil: Date | null;
+  readonly now: Date;
+}): Date | null {
+  const left = input.wantedUntil === null ? -1 : input.wantedUntil.getTime() - input.now.getTime();
+  if (left >= PACKING_PREVIEW_RENEW_BELOW_MS) return null;
+  return new Date(input.now.getTime() + PACKING_PREVIEW_DEMAND_MS);
+}
+
+/**
+ * Whether a camera's preview runs: while someone looked within the demand, and a running one
+ * for twenty seconds more (a station that blinks does not restart it).
+ */
+export function previewShouldRun(input: {
+  readonly wantedUntil: Date | null;
+  readonly now: Date;
+  readonly running: boolean;
+}): boolean {
+  if (input.wantedUntil === null) return false;
+  const until = input.wantedUntil.getTime() + (input.running ? PACKING_PREVIEW_LINGER_MS : 0);
+  return input.now.getTime() < until;
+}
+
+/** Whether a preview frame written at `frameAt` is still live. */
+export function previewFrameFresh(input: { readonly frameAt: Date; readonly now: Date }): boolean {
+  const age = input.now.getTime() - input.frameAt.getTime();
+  return age <= PACKING_PREVIEW_FRESH_MS && age >= -PACKING_PREVIEW_FRESH_MS;
+}
