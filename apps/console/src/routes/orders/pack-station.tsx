@@ -405,7 +405,9 @@ function Station({
       <aside className="space-y-4">
         <SourceChoice
           choice={source}
-          locked={open && (view.session.recordingFrom ?? null) !== null}
+          locked={
+            open && (view.session.cameraLocked ?? (view.session.recordingFrom ?? null) !== null)
+          }
         />
         {ipCamera === null ? (
           <CameraCard recorder={recorder} />

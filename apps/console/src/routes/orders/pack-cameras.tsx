@@ -370,7 +370,11 @@ function CameraEditor({
       <TextField<CameraForm>
         name="rtspUrl"
         label={t('ps.cams.url')}
-        hint={t('ps.cams.urlHint')}
+        hint={
+          camera?.passwordSet === true
+            ? `${t('ps.cams.urlHint')} ${t('ps.cams.urlMoveHint')}`
+            : t('ps.cams.urlHint')
+        }
         required
         autoComplete="off"
         placeholder="rtsp://192.168.20.111:554/stream1"

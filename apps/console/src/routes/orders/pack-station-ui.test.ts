@@ -404,6 +404,9 @@ describe('the IP camera’s recording at the station', () => {
     expect(cameraErrorCode('auth_failed')).toBe('auth_failed');
     expect(cameraErrorCode('unreachable')).toBe('unreachable');
     expect(cameraErrorCode('something_new')).toBe('stream_error');
+    // The audit's two new reasons have words of their own.
+    expect(cameraErrorCode('disk_low')).toBe('disk_low');
+    expect(cameraErrorCode('address_refused')).toBe('address_refused');
   });
 });
 

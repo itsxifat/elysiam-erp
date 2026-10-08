@@ -72,6 +72,8 @@ export interface PackView {
     readonly completedBy: PersonRef | null;
     /** M38c (D-670, D-671): the IP camera filming it, and its recording's window. */
     readonly cameraId?: string | null;
+    /** The source is fixed: recording started, or a piece is in the box (ledger audit N1). */
+    readonly cameraLocked?: boolean;
     readonly recordingFrom?: string | null;
     readonly recordingTo?: string | null;
     readonly recordingBy?: PersonRef | null;

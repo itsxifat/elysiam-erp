@@ -151,6 +151,10 @@ const en = {
   'ps.ip.error.credentials_unreadable':
     'This server cannot read the camera’s password. Enter it again.',
   'ps.ip.error.stream_error': 'The camera’s stream could not be recorded.',
+  'ps.ip.error.address_refused':
+    'That address is one of the server’s own, not a camera. Use the camera’s IP address.',
+  'ps.ip.error.disk_low': 'The server’s disk is nearly full, so the cameras stopped recording.',
+  'ps.cams.urlMoveHint': 'Moving it to another address or port asks for the password again.',
   'ps.cams.title': 'IP cameras',
   'ps.cams.help':
     'Cameras over the packing tables, recorded by the server on the shop’s network. Recording starts 2 seconds before the first correct piece is scanned and ends when the order is packed.',

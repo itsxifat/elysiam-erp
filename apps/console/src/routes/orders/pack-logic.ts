@@ -234,6 +234,8 @@ export const CAMERA_ERROR_CODES = [
   'stalled',
   'ffmpeg_missing',
   'credentials_unreadable',
+  'address_refused',
+  'disk_low',
   'stream_error',
 ] as const;
 export type CameraErrorCode = (typeof CAMERA_ERROR_CODES)[number];
