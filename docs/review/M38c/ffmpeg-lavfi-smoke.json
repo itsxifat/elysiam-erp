@@ -1,0 +1,50 @@
+{
+  "mode": "lavfi",
+  "segments": 9,
+  "spans": [
+    [62, 1386, 28388],
+    [1386, 2382, 27448],
+    [2382, 3382, 28764],
+    [3382, 4382, 28764],
+    [4382, 5386, 27260],
+    [5386, 6382, 28764],
+    [6382, 7382, 28952],
+    [7382, 8386, 28012],
+    [8386, 9014, 27636]
+  ],
+  "status": {
+    "running": true,
+    "lastSegmentAt": "2026-10-08T08:34:21.681Z",
+    "errorCode": null,
+    "failures": 0
+  },
+  "cut": {
+    "window": {
+      "fromMs": 1791448456077,
+      "toMs": 1791448459077
+    },
+    "chosen": 5,
+    "coverage": {
+      "startCovered": true,
+      "endCovered": true,
+      "gapMs": 0
+    },
+    "startsNoLater": true,
+    "durationMsFromSpans": 5000,
+    "ftyp": "ftyp",
+    "sizeBytes": 106804,
+    "probe": {
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "width": 320,
+          "height": 240
+        }
+      ],
+      "format": {
+        "duration": "5.000000"
+      }
+    }
+  }
+}

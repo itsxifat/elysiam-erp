@@ -22,7 +22,7 @@ staff browser ── https://admin.<brand domain> ──> host nginx (80/443, on
        /media/ /socket.io/ /health/  ──────────────┘
                                                    ▼
                      Docker project erp-<slug> (one private network per brand)
-                     api ─ worker ─ postgres 17 ─ valkey ─ gotenberg
+                     api ─ worker ─ camera ─ postgres 17 ─ valkey ─ gotenberg
                      + release (one-shot: roles, migrations, job queues; the seed once)
 
 website ── https://<brand domain> ── its own server; `/admin` redirects to the admin host
@@ -35,6 +35,7 @@ website ── https://<brand domain> ── its own server; `/admin` redirects 
 | `/var/www/erp-<slug>/releases/<commit>`             | The brand's last three SPA builds; `current` is the live one   |
 | `/etc/nginx/sites-available/erp-<slug>.conf`        | The brand's nginx site (from `infra/brand/nginx-brand.conf`)   |
 | Docker volumes `erp-<slug>_postgres-data`, `_files` | The brand's database and uploaded files                        |
+| Docker volume `erp-<slug>_camera-buffer`            | The IP cameras' rolling buffer (half an hour at most, M38c)    |
 | Docker image `erp-server:<commit>`                  | The server image every brand runs, built once per deploy       |
 
 Ground rules:
@@ -197,6 +198,48 @@ is installed once and certbot edits it: copy the `location = /v1/files/content {
 `listen 443` server and any plain one), replacing `__ID__` with the brand's id as the other
 blocks there have it, then `sudo nginx -t && sudo systemctl reload nginx`. Without it a packing
 video over 25 MB is refused with 413 and stays queued in the browser.
+
+### IP cameras at the packing tables (M38c)
+
+The `camera` service (`node dist/main.camera.js`, the same image) records each IP camera
+entered in the brand's Orders → Pack → Settings → IP cameras with ffmpeg, keeps at most half an
+hour of each in the `camera-buffer` volume, and cuts every packing's video from it (D-672,
+D-676). It starts with the rest of the brand on every deploy and publishes nothing.
+
+- **The camera must be reachable from the brand server**: the server and the camera on the same
+  LAN (Elysiam: server 192.168.20.237, camera 192.168.20.111, RTSP on TCP 554). Check from the
+  server with `dc <slug> exec camera node -e "require('net').connect(554,'192.168.20.111').on('connect',()=>{console.log('open');process.exit(0)}).on('error',e=>{console.log(e.code);process.exit(1)})"`.
+  Enter the camera by its IP address (or a full host name): a one-word name, `localhost`,
+  127.x, 169.254.x and the like are refused (D-679).
+- **Its own network and environment** (D-678, D-679): the service sits on the compose network
+  `camera` with Postgres only (it cannot reach Valkey, Gotenberg, the API or the worker) and is
+  given only `DATABASE_URL` (as `erp_app`), the brand, the storefront sealing key, the files
+  storage settings, Sentry and `CAMERA_BUFFER_DIR`; none of the brand's other secrets.
+- **The password goes in the ERP, never in a file or a chat**: an org admin types the camera's
+  user name and password into the settings, where it is sealed with the brand's
+  `STOREFRONT_CREDENTIALS_KEY` (which `new-brand.sh` writes). Nothing about a camera goes into
+  `.env.brand`. Moving a camera to another host or port asks for the password again (D-677).
+- **Where the password is on the server** (D-669): never on a command line. ffmpeg reads the
+  address from a private list (mode 0600) in the camera's buffer directory, removed five seconds
+  after ffmpeg started; after that it lives only in the camera process's and ffmpeg's memory.
+  Root on the brand server can read that, as it can read `.env.brand`. Optional hardening, so
+  that no other user of the host can see any process's details: mount `/proc` with
+  `hidepid=2` (`sudo mount -o remount,hidepid=2 /proc`, and in `/etc/fstab`
+  `proc /proc proc defaults,hidepid=2 0 0` to keep it after a reboot). Caveat: tools run by
+  other users (and some monitoring agents) then see only their own processes; Docker and root
+  are unaffected. Try it on a quiet hour and check `docker compose ps` and the monitoring still
+  work.
+- **Disk** (D-680): each camera's buffer is capped at 2 GiB (`CAMERA_BUFFER_MAX_BYTES`), and below
+  5 GiB free under `/data/camera` (`CAMERA_MIN_FREE_BYTES`) the cameras stop and show "The
+  server's disk is nearly full". Sizes: `stream1` (the full picture) is about 15 MB a minute, so
+  about 450 MB of buffer a camera, and about 30 MB per two-minute packing kept in the files
+  volume until seven days after delivery; `stream2` (the smaller picture) is about a tenth. At
+  most eight cameras per brand.
+- Its log names a camera by id and host, never its password: `dc <slug> logs --tail 100 camera`.
+  "camera recording stopped" carries the reason (`auth_failed`, `unreachable`,
+  `address_refused`, `disk_low`, …) the settings screen shows.
+- The image carries ffmpeg (Debian's, about 470 MB of the image, D-675); `dc <slug> exec camera
+ffmpeg -version` shows it.
 
 ## 6. Operating a brand
 

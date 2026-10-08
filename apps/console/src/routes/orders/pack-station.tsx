@@ -20,7 +20,7 @@ import {
   Tag,
   XOctagon,
 } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { z } from 'zod';
 
 import { ApiError } from '../../api.js';
@@ -29,6 +29,12 @@ import { useLocale, useT, type ConsoleT } from '../../i18n/locale.js';
 import '../../i18n/pack-station.js';
 import { ScanField } from '../catalog/scan-field.js';
 import { documentUrl } from './api.js';
+import {
+  IpCameraCard,
+  SourceChoice,
+  usePackSource,
+  type PackSourceChoice,
+} from './pack-cameras.js';
 import { isOrderSlip, outcomeTone } from './pack-logic.js';
 import {
   CameraCard,
@@ -62,6 +68,11 @@ import { ordersPath, useSchemaSearch } from './paths.js';
  * invoice are a click away. Meanwhile the camera records the table with the order number, the
  * time and the packer drawn onto the picture (D-611).
  *
+ * M38c (D-670, D-671): a desk may record with one of the brand's IP cameras instead (its choice
+ * remembered by the browser). The order is opened with that camera, which is then ready; the
+ * server records from two seconds before the first correct piece is scanned until the order is
+ * packed, and the browser records nothing.
+ *
  * The open order lives in the address (`?order=`), and its progress on the server, so a reload
  * comes back to the same box.
  */
@@ -85,6 +96,7 @@ export function PackStationPage() {
   const ability = useAbility();
   const [search, setSearch] = useSchemaSearch(stationSearchSchema);
   const queue = useUploadQueue();
+  const source = usePackSource();
   const settings = useQuery({ queryKey: ['packing', 'settings'], queryFn: packingSettings });
   const [editing, setEditing] = useState(false);
 
@@ -114,12 +126,16 @@ export function PackStationPage() {
       />
       <UploadQueueBar queue={queue} />
       {search.order === undefined ? (
-        <FindOrder onOpened={(view) => setSearch({ order: view.session.orderId })} />
+        <FindOrder
+          cameraId={source.cameraId}
+          onOpened={(view) => setSearch({ order: view.session.orderId })}
+        />
       ) : (
         <Station
           key={search.order}
           orderId={search.order}
           queue={queue}
+          source={source}
           onClose={() => setSearch({})}
           onOpened={(view) => setSearch({ order: view.session.orderId })}
         />
@@ -135,16 +151,19 @@ export function PackStationPage() {
 /** "Order slip or number": the first scan of every parcel. */
 function FindOrder({
   onOpened,
+  cameraId,
   compact = false,
 }: {
   readonly onOpened: (view: PackView) => void;
+  /** This desk's IP camera, or null for its own camera (M38c, D-670). */
+  readonly cameraId: string | null;
   readonly compact?: boolean;
 }) {
   const t = useT();
   const queryClient = useQueryClient();
   const [failure, setFailure] = useState<string | null>(null);
   const open = useMutation({
-    mutationFn: (code: string) => openPacking({ code }),
+    mutationFn: (code: string) => openPacking({ code, cameraId }),
     onSuccess: (view) => {
       setFailure(null);
       queryClient.setQueryData(['packing', 'order', view.session.orderId], view);
@@ -181,29 +200,49 @@ function FindOrder({
 function Station({
   orderId,
   queue,
+  source,
   onClose,
   onOpened,
 }: {
   readonly orderId: string;
   readonly queue: UploadQueue;
+  readonly source: PackSourceChoice;
   readonly onClose: () => void;
   readonly onOpened: (view: PackView) => void;
 }) {
   const t = useT();
   const queryClient = useQueryClient();
   const key = ['packing', 'order', orderId];
+  const deskCamera = source.cameraId;
   const session = useQuery({
     queryKey: key,
-    queryFn: () => openPacking({ orderId }),
+    queryFn: () => openPacking({ orderId, cameraId: deskCamera }),
     staleTime: Infinity,
     retry: false,
   });
   const view = session.data;
-  const recorder = useStationRecorder(view, queue);
+  // The IP camera filming this packing, as the server says (M38c): the desk's choice until the
+  // recording starts, the camera that started it after.
+  const ipCamera = view?.session.cameraId ?? null;
+  const recorder = useStationRecorder(view, queue, ipCamera === null && deskCamera === null);
   const [answer, setAnswer] = useState<Answer>(null);
   const [justFinished, setJustFinished] = useState(false);
 
   const keep = (next: PackView) => queryClient.setQueryData(key, next);
+
+  // The desk changed its source while this order is open: ask the server to film it with the
+  // new one (it keeps the camera that already started recording).
+  const reopen = useMutation({
+    mutationFn: (cameraId: string | null) => openPacking({ orderId, cameraId }),
+    onSuccess: keep,
+  });
+  const askedCamera = useRef(deskCamera);
+  const { mutate: reopenWith } = reopen;
+  useEffect(() => {
+    if (view === undefined || askedCamera.current === deskCamera) return;
+    askedCamera.current = deskCamera;
+    if (view.session.status === 'open') reopenWith(deskCamera);
+  }, [deskCamera, view, reopenWith]);
 
   const finish = useMutation({
     mutationFn: (sessionId: string) => finishPacking(sessionId),
@@ -288,7 +327,7 @@ function Station({
         <p role="alert" className="text-sm text-destructive-text">
           {message}
         </p>
-        <FindOrder onOpened={onOpened} />
+        <FindOrder onOpened={onOpened} cameraId={deskCamera} />
       </div>
     );
   }
@@ -348,7 +387,13 @@ function Station({
             </div>
           </section>
         ) : (
-          <Finished view={view} fresh={justFinished} onNext={onClose} onOpened={onOpened} />
+          <Finished
+            view={view}
+            fresh={justFinished}
+            cameraId={deskCamera}
+            onNext={onClose}
+            onOpened={onOpened}
+          />
         )}
         <Lines
           view={view}
@@ -358,7 +403,17 @@ function Station({
         />
       </div>
       <aside className="space-y-4">
-        <CameraCard recorder={recorder} />
+        <SourceChoice
+          choice={source}
+          locked={
+            open && (view.session.cameraLocked ?? (view.session.recordingFrom ?? null) !== null)
+          }
+        />
+        {ipCamera === null ? (
+          <CameraCard recorder={recorder} />
+        ) : (
+          <IpCameraCard view={view} camera={source.lookup(ipCamera)} />
+        )}
         <ScanLog view={view} />
       </aside>
     </div>
@@ -558,11 +613,13 @@ function Lines({
 function Finished({
   view,
   fresh,
+  cameraId,
   onNext,
   onOpened,
 }: {
   readonly view: PackView;
   readonly fresh: boolean;
+  readonly cameraId: string | null;
   readonly onNext: () => void;
   readonly onOpened: (view: PackView) => void;
 }) {
@@ -605,7 +662,7 @@ function Finished({
           </Button>
         </div>
       </div>
-      <FindOrder onOpened={onOpened} compact />
+      <FindOrder onOpened={onOpened} cameraId={cameraId} compact />
     </section>
   );
 }

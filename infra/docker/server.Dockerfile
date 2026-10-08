@@ -7,6 +7,7 @@
 #
 #   api      node --import ./dist/instrument.js dist/main.api.js      (the default below)
 #   worker   node --import ./dist/instrument.js dist/main.worker.js
+#   camera   node --import ./dist/instrument.js dist/main.camera.js   (M38c: IP cameras)
 #   migrate  node node_modules/@elysium/db/dist/cli/migrate.js         (the release step)
 #
 # Build from the repository root:
@@ -54,14 +55,23 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
+# ffmpeg for the camera process (M38c, D-675): it copies each packing table's IP camera stream
+# into one-second segments and joins a packing's segments into an MP4, never re-encoding.
+# Debian's own package (signed, patched with the base image): about 470 MB uncompressed on top
+# of the node image, measured 2026-10-08 (ffmpeg 5.1.x). The API and the worker never run it.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
+
 # Owned by root and only readable by the process: the application cannot rewrite its own
 # code or dependencies.
 COPY --from=build /out /app
 COPY --from=build /repo/packages/ui/src/assets/fonts /app/fonts
 
-# The one writable path: the local storage driver's root when R2 is not configured (the
-# single-server preview, D-352). A named volume mounted here starts with this ownership.
-RUN mkdir -p /data/files && chown node:node /data/files
+# The writable paths: the local storage driver's root when R2 is not configured (the
+# single-server preview, D-352), and the camera process's rolling buffer (M38c, D-672). A named
+# volume mounted on either starts with this ownership.
+RUN mkdir -p /data/files /data/camera && chown node:node /data/files /data/camera
 
 # The `node` user (uid 1000) of the official image. Never root.
 USER node

@@ -304,6 +304,68 @@ export class FilesService {
   }
 
   /**
+   * Keep bytes the server itself produced as a private file of a purpose (M38c, D-672): a
+   * packing video cut from an IP camera's buffer. The same checks an upload meets (the type on
+   * the allow-list and under its ceiling, the purpose taking that type, the bytes sniffed as
+   * that type), then the row first, the bytes next and the row stored last, each step on its
+   * own: no transaction is held across the write (invariant 6). The caller attaches the file
+   * in its own transaction; one it never attaches is swept like an abandoned upload (D-619).
+   */
+  async storeProduced(input: {
+    readonly orgId: string;
+    /** Whose file it is: the person the recording is filed under. */
+    readonly ownerUserId: string;
+    readonly purpose: FilePurpose;
+    readonly mime: string;
+    readonly originalName: string;
+    readonly bytes: Uint8Array;
+  }): Promise<{ readonly fileId: string; readonly sizeBytes: number; readonly sha256: string }> {
+    const rule = mimeRuleFor(input.mime);
+    assertWithinLimit(input.bytes.byteLength, rule);
+    const purposeRule = PURPOSE_RULES[input.purpose];
+    if (
+      purposeRule.allowedMimes !== undefined
+        ? !purposeRule.allowedMimes.includes(rule.mime)
+        : rule.isVideo === true
+    ) {
+      throw new BadRequestException(`A ${input.purpose} file cannot be ${rule.mime}.`);
+    }
+    const sniffed = sniffMime(input.bytes);
+    if (sniffed !== rule.mime) {
+      throw new BadRequestException(`The produced bytes are not ${rule.mime}.`);
+    }
+
+    const fileId = randomUUID();
+    const storageKey = buildStorageKey({
+      visibility: 'private',
+      orgId: input.orgId,
+      fileId,
+      extension: rule.extension,
+    });
+    const actor = { orgId: input.orgId, userId: input.ownerUserId };
+    await insertPending(actor, {
+      id: fileId,
+      storageKey,
+      driver: this.driver.kind,
+      visibility: 'private',
+      purpose: input.purpose,
+      ownerUserId: input.ownerUserId,
+      mime: rule.mime,
+      originalName: input.originalName,
+    });
+    await this.driver.put(storageKey, input.bytes, rule.mime);
+    const sha256 = createHash('sha256').update(input.bytes).digest('hex');
+    const stored = await markStored(actor, {
+      id: fileId,
+      sizeBytes: input.bytes.byteLength,
+      sha256,
+      mime: rule.mime,
+    });
+    if (!stored) throw new ConflictException('A produced file was not recorded as stored.');
+    return { fileId, sizeBytes: input.bytes.byteLength, sha256 };
+  }
+
+  /**
    * Confirm the bytes landed, and record what they actually are.
    *
    * This is where the client's claims stop mattering. The object is read back

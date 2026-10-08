@@ -15,6 +15,8 @@ import type {
   CreateUser,
   CredentialResetInput,
   DeactivateUser,
+  PackingCameraCreateInput,
+  PackingCameraUpdateInput,
   ReopenPeriodInput,
   SetRoles,
   SwitchOrg,
@@ -30,6 +32,7 @@ export const OPERATIONS = {
     path: '/v1/ledger/accounts/{id}/ledger',
     ability: 'read:LedgerReport',
   },
+  addPackingCamera: { method: 'POST', path: '/v1/packing/cameras', ability: 'update:PackingVideo' },
   cashBook: { method: 'GET', path: '/v1/ledger/wallets/{id}/cash-book', ability: 'read:Wallet' },
   cashIn: { method: 'POST', path: '/v1/ledger/cash-in', ability: 'update:Wallet' },
   closePeriod: { method: 'POST', path: '/v1/ledger/periods/close', ability: 'update:LedgerPeriod' },
@@ -928,6 +931,7 @@ export const OPERATIONS = {
   listDemoCostedItems: { method: 'GET', path: '/v1/demo/costed-items', ability: 'read:CostedItem' },
   listLedgerAccounts: { method: 'GET', path: '/v1/ledger/accounts', ability: 'read:LedgerReport' },
   listMyOrgs: { method: 'GET', path: '/v1/me/orgs', ability: 'authenticated' },
+  listPackingCameras: { method: 'GET', path: '/v1/packing/cameras', ability: 'update:Order' },
   listPeriods: { method: 'GET', path: '/v1/ledger/periods', ability: 'read:LedgerPeriod' },
   listUsers: { method: 'GET', path: '/v1/users', ability: 'read:User' },
   listWallets: { method: 'GET', path: '/v1/ledger/wallets', ability: 'read:Wallet' },
@@ -1941,6 +1945,11 @@ export const OPERATIONS = {
   setUserRoles: { method: 'PUT', path: '/v1/users/{id}/roles', ability: 'update:User' },
   switchOrg: { method: 'POST', path: '/v1/me/active-org', ability: 'authenticated' },
   trialBalance: { method: 'GET', path: '/v1/ledger/trial-balance', ability: 'read:LedgerReport' },
+  updatePackingCamera: {
+    method: 'PUT',
+    path: '/v1/packing/cameras/{id}',
+    ability: 'update:PackingVideo',
+  },
   userPasswordLink: {
     method: 'POST',
     path: '/v1/users/{id}/password-link',
@@ -1976,6 +1985,11 @@ export function createApiClient(runtime: ApiRuntime) {
       },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.accountLedger, input, options),
+    /** Add an IP camera over a packing table. Its password is sealed and never returned. */
+    addPackingCamera: (
+      input: { readonly body: PackingCameraCreateInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.addPackingCamera, input, options),
     /** Movements through one wallet over a date range. */
     cashBook: (
       input: {
@@ -3011,6 +3025,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** The organizations this user may enter. */
     listMyOrgs: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listMyOrgs, undefined, options),
+    /** The packing tables' IP cameras and whether each is filming now. */
+    listPackingCameras: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.listPackingCameras, undefined, options),
     /** Accounting periods and whether each is closed. */
     listPeriods: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listPeriods, undefined, options),
@@ -4143,6 +4160,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly query: { readonly asOf: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.trialBalance, input, options),
+    /** Change a packing camera, switch it off, or replace or remove its password. */
+    updatePackingCamera: (
+      input: { readonly path: { readonly id: string }; readonly body: PackingCameraUpdateInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.updatePackingCamera, input, options),
     /** Issue, ask for, or collect a one-time link that sets a password. */
     userPasswordLink: (
       input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },

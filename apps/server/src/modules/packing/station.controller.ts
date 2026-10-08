@@ -12,6 +12,8 @@ import {
 } from '@nestjs/common';
 import {
   defineAbilityFor,
+  packingCameraCreateSchema,
+  packingCameraUpdateSchema,
   packingOpenSchema,
   packingRemovalSchema,
   packingScanSchema,
@@ -27,6 +29,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { scopeHasNoRowDimension } from '../../platform/auth/scope.js';
 import { requireContext } from '../../platform/http/context.js';
+import { CameraSettingsService } from './camera-settings.service.js';
 import { PackStationService } from './station.service.js';
 import { PackingVideoService } from './video.service.js';
 
@@ -65,6 +68,7 @@ export class PackStationController {
   constructor(
     private readonly station: PackStationService,
     private readonly videos: PackingVideoService,
+    private readonly cameras: CameraSettingsService,
   ) {}
 
   /** Open the station on an order by a scanned code or its id, or resume its session. */
@@ -196,5 +200,45 @@ export class PackStationController {
     const input = parse(packingSettingsSchema, body);
     scopeHasNoRowDimension(request, 'the packing settings are the brand’s, not an order’s');
     return this.station.saveSettings(requireContext(request), auditable(request), input);
+  }
+
+  /**
+   * The packing tables' IP cameras and whether each is filming (M38c, D-668, D-670), for
+   * whoever packs, to choose one at the station. Their addresses and user names only for an
+   * org admin; the password never.
+   */
+  @RequireAbility('update', 'Order')
+  @Get('cameras')
+  async listCameras(@Req() request: FastifyRequest) {
+    const context = requireContext(request);
+    scopeHasNoRowDimension(request, 'the packing cameras are the brand’s, not an order’s');
+    return this.cameras.list(context, defineAbilityFor(context).can('update', 'PackingVideo'));
+  }
+
+  /** Add an IP camera: org_admin (D-668, D-669). The password is sealed, never returned. */
+  @RequireAbility('update', 'PackingVideo')
+  @Post('cameras')
+  async addCamera(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(packingCameraCreateSchema, body);
+    scopeHasNoRowDimension(request, 'the packing cameras are the brand’s, not an order’s');
+    return this.cameras.create(requireContext(request), auditable(request), input);
+  }
+
+  /** Change a camera, switch it off, or replace or remove its password: org_admin. */
+  @RequireAbility('update', 'PackingVideo')
+  @Put('cameras/:id')
+  async updateCamera(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = parse(packingCameraUpdateSchema, body);
+    scopeHasNoRowDimension(request, 'the packing cameras are the brand’s, not an order’s');
+    return this.cameras.update(
+      requireContext(request),
+      auditable(request),
+      parse(idSchema, id),
+      input,
+    );
   }
 }

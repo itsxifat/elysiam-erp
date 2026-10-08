@@ -16,6 +16,7 @@
     "dev": "tsc -b && concurrently -n tsc,api,worker -c blue,green,magenta \"tsc -b --watch --preserveWatchOutput\" \"node --watch --env-file-if-exists=.env --enable-source-maps --import ./dist/instrument.js dist/main.api.js\" \"node --watch --env-file-if-exists=.env --enable-source-maps --import ./dist/instrument.js dist/main.worker.js\"",
     "start:api": "node --env-file-if-exists=.env --import ./dist/instrument.js dist/main.api.js",
     "start:worker": "node --env-file-if-exists=.env --import ./dist/instrument.js dist/main.worker.js",
+    "start:camera": "node --env-file-if-exists=.env --import ./dist/instrument.js dist/main.camera.js",
     "bench:catalog": "node ../../scripts/bench.mjs catalog",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "admin:bootstrap": "node --env-file-if-exists=.env --enable-source-maps dist/main.admin.js bootstrap",

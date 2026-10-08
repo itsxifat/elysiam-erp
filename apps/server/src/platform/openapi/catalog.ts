@@ -10,6 +10,8 @@ import {
   deactivateUserSchema,
   dayBookQuerySchema,
   ERROR_CODES,
+  packingCameraCreateSchema,
+  packingCameraUpdateSchema,
   partyBalanceQuerySchema,
   reopenPeriodSchema,
   setRolesSchema,
@@ -237,6 +239,22 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     operationId: 'reopenPeriod',
     summary: 'Ask to reopen a closed month. Needs an approval.',
     body: named('ReopenPeriod', reopenPeriodSchema, 'ReopenPeriodInput'),
+  },
+
+  // M38c: the packing tables' IP cameras (D-668, D-669).
+  'GET /v1/packing/cameras': {
+    operationId: 'listPackingCameras',
+    summary: "The packing tables' IP cameras and whether each is filming now.",
+  },
+  'POST /v1/packing/cameras': {
+    operationId: 'addPackingCamera',
+    summary: 'Add an IP camera over a packing table. Its password is sealed and never returned.',
+    body: named('PackingCameraCreate', packingCameraCreateSchema, 'PackingCameraCreateInput'),
+  },
+  'PUT /v1/packing/cameras/:id': {
+    operationId: 'updatePackingCamera',
+    summary: 'Change a packing camera, switch it off, or replace or remove its password.',
+    body: named('PackingCameraUpdate', packingCameraUpdateSchema, 'PackingCameraUpdateInput'),
   },
 
   'GET /v1/demo/costed-items': {

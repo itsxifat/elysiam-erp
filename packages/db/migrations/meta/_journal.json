@@ -925,6 +925,27 @@
       "when": 1791396184342,
       "tag": "0133_m38b_scans_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1791429691885,
+      "tag": "0134_m38c_ip_camera_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1791429707582,
+      "tag": "0135_m38c_ip_camera_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1791447482722,
+      "tag": "0136_m38c_camera_audit_fixes",
+      "breakpoints": true
     }
   ]
 }

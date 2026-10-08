@@ -95,4 +95,19 @@ export const PACKING_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call>
     url: '/v1/packing/settings',
     body: { videoEnabled: true },
   }),
+  // M38c: the IP cameras. Added for real (no password, so no key is needed), each under a
+  // name of its own; a change is asked about a camera that does not exist (404).
+  'GET /v1/packing/cameras': () => ({ url: '/v1/packing/cameras' }),
+  'POST /v1/packing/cameras': () => ({
+    url: '/v1/packing/cameras',
+    body: {
+      name: `Matrix ${randomUUID().slice(0, 8)}`,
+      rtspUrl: 'rtsp://192.0.2.10:554/stream1',
+      enabled: false,
+    },
+  }),
+  'PUT /v1/packing/cameras/:id': () => ({
+    url: `/v1/packing/cameras/${randomUUID()}`,
+    body: { name: 'Matrix', rtspUrl: 'rtsp://192.0.2.10:554/stream1', enabled: false },
+  }),
 };
