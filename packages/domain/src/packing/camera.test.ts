@@ -20,6 +20,7 @@ import {
   cutDecision,
   cutSpan,
   segmentsForWindow,
+  segmentsOverByteCap,
   segmentsToForget,
   windowCoverage,
   type CameraSegment,
@@ -331,6 +332,38 @@ describe('the camera’s state and reconnection', () => {
         expect(delay).toBeLessThanOrEqual(60_000);
         expect(cameraReconnectDelayMs(failures + 1)).toBeGreaterThanOrEqual(delay);
       }),
+    );
+  });
+});
+
+describe('the camera buffer’s byte cap (ledger audit W6)', () => {
+  it('drops the oldest segments until under the cap, never one a waiting window needs', () => {
+    fc.assert(
+      fc.property(
+        bufferArb,
+        fc.integer({ min: 0, max: 50_000_000 }),
+        fc.option(fc.integer({ min: 0, max: 800_000 }), { nil: undefined }),
+        (buffer, capBytes, protectOffset) => {
+          const protectFromMs =
+            protectOffset === undefined ? Number.POSITIVE_INFINITY : T0 + protectOffset;
+          const dropped = segmentsOverByteCap(buffer, { capBytes, protectFromMs });
+          // The oldest ones, in order.
+          expect(dropped.map((segment) => segment.name)).toEqual(
+            buffer.slice(0, dropped.length).map((segment) => segment.name),
+          );
+          for (const segment of dropped) expect(segment.endMs).toBeLessThanOrEqual(protectFromMs);
+          const kept = buffer.slice(dropped.length);
+          const keptBytes = kept.reduce((sum, segment) => sum + segment.sizeBytes, 0);
+          const next = kept[0];
+          // Under the cap, or stopped at a segment a waiting window needs.
+          expect(keptBytes <= capBytes || (next !== undefined && next.endMs > protectFromMs)).toBe(
+            true,
+          );
+          // Never more than needed: without the last one dropped, it would be over the cap.
+          const last = dropped.at(-1);
+          if (last !== undefined) expect(keptBytes + last.sizeBytes).toBeGreaterThan(capBytes);
+        },
+      ),
     );
   });
 });

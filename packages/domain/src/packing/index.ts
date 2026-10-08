@@ -61,6 +61,7 @@ export {
   cutDecision,
   cutSpan,
   segmentsForWindow,
+  segmentsOverByteCap,
   segmentsToForget,
   windowCoverage,
   type CameraSegment,

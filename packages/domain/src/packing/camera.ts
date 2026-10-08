@@ -211,6 +211,28 @@ export function segmentsToForget(
   return segments.filter((segment) => segment.endMs < keepFromMs);
 }
 
+/**
+ * The oldest segments to drop so a camera's buffer stays under `capBytes` (M38c ledger audit,
+ * W6): oldest first, and never a segment a window still waiting to be cut needs (one that ends
+ * after `protectFromMs`, the earliest such window's start). When the waiting windows alone
+ * hold more than the cap, they are kept and the buffer stays over it.
+ */
+export function segmentsOverByteCap(
+  segments: readonly CameraSegment[],
+  options: { readonly capBytes: number; readonly protectFromMs: number },
+): CameraSegment[] {
+  const ordered = [...segments].sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
+  let total = ordered.reduce((sum, segment) => sum + segment.sizeBytes, 0);
+  const dropped: CameraSegment[] = [];
+  for (const segment of ordered) {
+    if (total <= options.capBytes) break;
+    if (segment.endMs > options.protectFromMs) break;
+    dropped.push(segment);
+    total -= segment.sizeBytes;
+  }
+  return dropped;
+}
+
 export type CameraState = 'off' | 'ready' | 'offline';
 
 /** How a camera reads at the station and in the settings: off, ready, or offline. */
