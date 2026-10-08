@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile, readdir, rm } from 'node:fs/promises';
+import { readFile, readdir, rm, stat, statfs } from 'node:fs/promises';
 import path from 'node:path';
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -13,6 +13,7 @@ import {
   cutDecision,
   cutSpan,
   segmentsForWindow,
+  segmentsOverByteCap,
   segmentsToForget,
   windowCoverage,
   type CameraSegment,
@@ -46,10 +47,32 @@ export const CAMERA_PART_MAX_BYTES = mimeRuleFor('video/mp4').maxBytes - 4 * 102
 /** What one cut did. */
 export type CutOutcome = 'cut' | 'already' | 'nothing_to_cut' | 'no_footage';
 
+/** A camera's buffer at most (ledger audit W6): half an hour of a 4 Mbit/s stream, doubled. */
+export const CAMERA_BUFFER_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+/** Below this much free disk the cameras stop buffering and say `disk_low` (W6). */
+export const CAMERA_MIN_FREE_BYTES = 5 * 1024 * 1024 * 1024;
+/** A cut's temporary file older than this was left by a cut that died (W6). */
+const CUT_LEFTOVER_MS = 15 * 60_000;
+
 export interface CameraProcessOptions {
   readonly bufferRoot: string;
   readonly ffmpeg: FfmpegCommand;
   readonly log: RecorderLog;
+  /**
+   * The deployment's brand (`ERP_BRAND_SLUG`): only its cameras are recorded (ledger audit N3).
+   * Unset (tests, local development): every active brand in the database.
+   */
+  readonly brandSlug?: string | undefined;
+  /** Each camera's buffer at most, in bytes (W6). */
+  readonly maxBufferBytes?: number;
+  /** The free disk under the buffer below which no camera buffers (W6). */
+  readonly minFreeBytes?: number;
+  /** How much disk is free under the buffer: the file system's own answer unless a test says. */
+  readonly freeBytes?: (dir: string) => Promise<number>;
+  /** The largest part a cut files (the files ceiling less room for the index; a test lowers it). */
+  readonly partMaxBytes?: number;
+  /** The camera host check the recorders run before each connection (W4). */
+  readonly checkHost?: (hostname: string) => Promise<string | null>;
   /** A test's stand-ins: another input than the camera's RTSP, an encoder, a spawn, a clock. */
   readonly inputArgs?: (cameraId: string) => readonly string[] | undefined;
   readonly codecArgs?: readonly string[];
@@ -64,6 +87,22 @@ interface Running {
   readonly recorder: CameraRecorder;
   readonly signature: string;
   reported: { segmentAt: number | null; errorCode: string | null; at: number };
+}
+
+/** One part of a cut on its way to being filed: its file, or why it has none (N5). */
+interface StoredPart {
+  readonly index: number;
+  readonly fileId: string | null;
+  readonly sizeBytes: number;
+  readonly durationMs: number;
+  readonly startedAt: Date;
+  readonly skipped: 'segment_too_large' | 'video_too_large' | null;
+}
+
+/** Free bytes for an unprivileged writer under `dir`. */
+async function freeBytesUnder(dir: string): Promise<number> {
+  const info = await statfs(dir);
+  return Number(info.bavail) * Number(info.bsize);
 }
 
 const sleep = (ms: number) =>
@@ -102,6 +141,8 @@ export class CameraProcessService {
   private options: CameraProcessOptions | null = null;
   private readonly running = new Map<string, Running>();
   private readonly buffers = new Map<string, SegmentBuffer>();
+  /** Whether the disk under the buffer is below its floor: no camera buffers then (W6). */
+  private diskLow = false;
 
   constructor(
     @Inject(FILES_API) private readonly files: FilesApi,
@@ -137,6 +178,46 @@ export class CameraProcessService {
     return [...this.running.keys()];
   }
 
+  /**
+   * The brands whose cameras this process records (ledger audit N3): active ones only, and
+   * only the deployment's own brand when `ERP_BRAND_SLUG` names it.
+   */
+  private async orgIds(): Promise<string[]> {
+    const slug = this.config.brandSlug;
+    return withGlobal(async (tx) =>
+      (
+        await tx.execute<{ id: string }>(sql`
+          select id from org.organizations
+          where is_active ${slug === undefined ? sql`` : sql`and slug = ${slug}`}
+          order by slug
+        `)
+      ).map((row) => row.id),
+    );
+  }
+
+  /**
+   * Whether the disk under the buffer has room (W6): below the floor the cameras stop and
+   * read `disk_low`; they start again once there is a tenth more than the floor free.
+   */
+  async checkDisk(): Promise<boolean> {
+    const floor = this.config.minFreeBytes ?? CAMERA_MIN_FREE_BYTES;
+    let free: number;
+    try {
+      free = await (this.config.freeBytes ?? freeBytesUnder)(this.config.bufferRoot);
+    } catch {
+      return !this.diskLow;
+    }
+    const low = this.diskLow ? free < floor * 1.1 : free < floor;
+    if (low !== this.diskLow) {
+      this.diskLow = low;
+      this.config.log.warn(
+        { freeBytes: free, floorBytes: floor },
+        low ? 'camera buffer disk is low; cameras stop' : 'camera buffer disk has room again',
+      );
+    }
+    return !low;
+  }
+
   // --- the cameras ---------------------------------------------------------------------------
 
   /**
@@ -145,11 +226,8 @@ export class CameraProcessService {
    * switched-off or removed one stopped. Run every ten seconds (D-673).
    */
   async reload(): Promise<void> {
-    const orgIds = await withGlobal(async (tx) =>
-      (await tx.execute<{ id: string }>(sql`select id from org.organizations order by slug`)).map(
-        (row) => row.id,
-      ),
-    );
+    const orgIds = await this.orgIds();
+    const room = await this.checkDisk();
     const wanted = new Map<
       string,
       { orgId: string; row: cameras.RecorderCameraRow; password: string | null; signature: string }
@@ -169,6 +247,11 @@ export class CameraProcessService {
             await this.report(orgId, row.id, null, 'credentials_unreadable');
             continue;
           }
+        }
+        if (!room) {
+          // No disk to buffer on: nothing records, and the camera says why.
+          await this.report(orgId, row.id, null, 'disk_low');
+          continue;
         }
         const signature = [
           row.rtsp_url,
@@ -205,6 +288,7 @@ export class CameraProcessService {
         ...(this.config.codecArgs === undefined ? {} : { codecArgs: this.config.codecArgs }),
         ...(this.config.spawn === undefined ? {} : { spawn: this.config.spawn }),
         ...(this.config.now === undefined ? {} : { now: this.config.now }),
+        ...(this.config.checkHost === undefined ? {} : { checkHost: this.config.checkHost }),
       });
       this.running.set(cameraId, {
         orgId: next.orgId,
@@ -252,21 +336,48 @@ export class CameraProcessService {
     let removed = 0;
     for (const [key, buffer] of this.buffers) {
       const [orgId = '', cameraId = ''] = key.split('/');
-      const pending = await withOrg({ orgId }, (tx) =>
-        cameras.pendingWindowStarts(tx, orgId, cameraId, since),
-      );
-      const keepFrom = cameraBufferKeepFromMs({
-        nowMs,
-        pendingFromMs: pending.map((from) => from.getTime()),
-      });
+      const pending = (
+        await withOrg({ orgId }, (tx) => cameras.pendingWindowStarts(tx, orgId, cameraId, since))
+      ).map((from) => from.getTime());
+      const keepFrom = cameraBufferKeepFromMs({ nowMs, pendingFromMs: pending });
       removed += await buffer.forget(segmentsToForget(await buffer.segments(), keepFrom));
+      // And under the byte cap (W6): the oldest go first, never what a waiting window needs.
+      const protectFromMs = pending.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...pending);
+      removed += await buffer.forget(
+        segmentsOverByteCap(await buffer.segments(), {
+          capBytes: this.config.maxBufferBytes ?? CAMERA_BUFFER_MAX_BYTES,
+          protectFromMs,
+        }),
+      );
       await buffer.forgetStale(nowMs - PACKING_CAMERA_HORIZON_MS, null);
     }
+    await this.forgetCutLeftovers(nowMs - CUT_LEFTOVER_MS);
     return removed;
+  }
+
+  /** A cut's temporary files older than `beforeMs` (every one, at start): a cut that died. */
+  private async forgetCutLeftovers(beforeMs: number): Promise<void> {
+    const dir = path.join(this.config.bufferRoot, '.cuts');
+    let names: string[];
+    try {
+      names = await readdir(dir);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      const full = path.join(dir, name);
+      try {
+        if ((await stat(full)).mtimeMs < beforeMs) await rm(full, { force: true });
+      } catch {
+        // Gone already.
+      }
+    }
   }
 
   /** A buffer directory left from a camera this process never opened: tidied like the others. */
   async adoptBuffers(): Promise<void> {
+    // No cut runs before this process starts working jobs: every leftover goes (W6).
+    await this.forgetCutLeftovers(Number.POSITIVE_INFINITY);
     let orgs: string[];
     try {
       orgs = await readdir(this.config.bufferRoot);
@@ -294,11 +405,7 @@ export class CameraProcessService {
    */
   async closeTimedOut(): Promise<number> {
     const now = new Date(this.now());
-    const orgIds = await withGlobal(async (tx) =>
-      (await tx.execute<{ id: string }>(sql`select id from org.organizations`)).map(
-        (row) => row.id,
-      ),
-    );
+    const orgIds = await this.orgIds();
     let closed = 0;
     for (const orgId of orgIds) {
       const due = await withOrg({ orgId }, (tx) =>
@@ -408,42 +515,71 @@ export class CameraProcessService {
     const coverage = windowCoverage(chosen, span);
 
     // Join and store each part, no transaction open (invariant 6).
-    const stored: {
-      index: number;
-      fileId: string;
-      sizeBytes: number;
-      durationMs: number;
-      startedAt: Date;
-    }[] = [];
+    const stored: StoredPart[] = [];
     const workDir = path.join(this.config.bufferRoot, '.cuts');
-    for (const [index, part] of cameraParts(chosen, CAMERA_PART_MAX_BYTES).entries()) {
-      const result = await cutSegments({
-        ffmpeg: this.config.ffmpeg,
-        segments: part,
-        pathOf: (segment) => buffer.pathOf(segment),
-        workDir,
-        ...(this.config.spawn === undefined ? {} : { spawn: this.config.spawn }),
-      });
-      try {
-        const bytes = await readFile(result.file);
-        const file = await this.files.storeProduced({
-          orgId,
-          ownerUserId: recordedBy,
-          purpose: 'packing-video',
-          mime: 'video/mp4',
-          originalName: `${session.order_no}-camera-${String(index + 1)}.mp4`,
-          bytes,
+    const partMax = this.config.partMaxBytes ?? CAMERA_PART_MAX_BYTES;
+    try {
+      for (const [index, part] of cameraParts(chosen, partMax).entries()) {
+        const first = part[0];
+        const size = part.reduce((sum, segment) => sum + segment.sizeBytes, 0);
+        const durationMs = part.reduce((sum, segment) => sum + segment.endMs - segment.startMs, 0);
+        // One segment over the ceiling cannot be filed (ledger audit N5): the part is
+        // recorded as never arriving, and the cut is not retried for it.
+        if (size > partMax) {
+          stored.push({
+            index,
+            fileId: null,
+            sizeBytes: size,
+            durationMs,
+            startedAt: new Date(first?.startMs ?? window.fromMs),
+            skipped: 'segment_too_large',
+          });
+          continue;
+        }
+        const result = await cutSegments({
+          ffmpeg: this.config.ffmpeg,
+          segments: part,
+          pathOf: (segment) => buffer.pathOf(segment),
+          workDir,
+          ...(this.config.spawn === undefined ? {} : { spawn: this.config.spawn }),
         });
-        stored.push({
-          index,
-          fileId: file.fileId,
-          sizeBytes: file.sizeBytes,
-          durationMs: result.durationMs,
-          startedAt: result.startedAt,
-        });
-      } finally {
-        await rm(result.file, { force: true });
+        try {
+          const bytes = await readFile(result.file);
+          if (bytes.byteLength > mimeRuleFor('video/mp4').maxBytes) {
+            stored.push({
+              index,
+              fileId: null,
+              sizeBytes: bytes.byteLength,
+              durationMs: result.durationMs,
+              startedAt: result.startedAt,
+              skipped: 'video_too_large',
+            });
+            continue;
+          }
+          const file = await this.files.storeProduced({
+            orgId,
+            ownerUserId: recordedBy,
+            purpose: 'packing-video',
+            mime: 'video/mp4',
+            originalName: `${session.order_no}-camera-${String(index + 1)}.mp4`,
+            bytes,
+          });
+          stored.push({
+            index,
+            fileId: file.fileId,
+            sizeBytes: file.sizeBytes,
+            durationMs: result.durationMs,
+            startedAt: result.startedAt,
+            skipped: null,
+          });
+        } finally {
+          await rm(result.file, { force: true });
+        }
       }
+    } catch (error) {
+      // A cut that fails part-way leaves nothing behind for the retry to duplicate (N5).
+      await this.forgetStored(orgId, stored);
+      throw error;
     }
 
     // File the parts in one short transaction, under the session's lock.
@@ -452,7 +588,9 @@ export class CameraProcessService {
       if ((await cameras.cameraPartsOf(tx, orgId, sessionId)).length > 0) {
         // Another cut filed it first: these copies go, their bytes after the commit.
         for (const part of stored) {
-          await this.files.forget(tx, orgId, part.fileId, 'packing-video');
+          if (part.fileId !== null) {
+            await this.files.forget(tx, orgId, part.fileId, 'packing-video');
+          }
         }
         return 'already' as const;
       }
@@ -466,9 +604,14 @@ export class CameraProcessService {
             cameraId,
             recordedBy,
             startedAt: part.startedAt,
-            fileId: part.fileId,
-            durationMs: Math.min(part.durationMs, 3_600_000),
-            sizeBytes: part.sizeBytes,
+            file:
+              part.fileId === null
+                ? null
+                : {
+                    fileId: part.fileId,
+                    durationMs: Math.min(part.durationMs, 3_600_000),
+                    sizeBytes: part.sizeBytes,
+                  },
           }),
         );
       }
@@ -491,6 +634,7 @@ export class CameraProcessService {
             fileId: stored[index]?.fileId ?? null,
             durationMs: stored[index]?.durationMs ?? null,
             sizeBytes: stored[index]?.sizeBytes ?? null,
+            skipped: stored[index]?.skipped ?? null,
           })),
           startCovered: coverage.startCovered,
           endCovered: coverage.endCovered,
@@ -506,6 +650,23 @@ export class CameraProcessService {
       );
     }
     return outcome;
+  }
+
+  /** Files a failed cut stored before it failed: forgotten, their bytes removed after. */
+  private async forgetStored(orgId: string, stored: readonly StoredPart[]): Promise<void> {
+    const fileIds = stored.flatMap((part) => (part.fileId === null ? [] : [part.fileId]));
+    if (fileIds.length === 0) return;
+    try {
+      await withOrg({ orgId }, async (tx) => {
+        for (const fileId of fileIds) await this.files.forget(tx, orgId, fileId, 'packing-video');
+      });
+    } catch (error) {
+      // The nightly sweep forgets them a day later (D-619); the cut's own failure is what to say.
+      this.config.log.warn(
+        { orgId, files: fileIds.length, reason: (error as Error).message },
+        'a failed camera cut could not forget its files',
+      );
+    }
   }
 
   /** Stop every recorder (the process is going down). */

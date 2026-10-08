@@ -6,7 +6,7 @@ import { spawn as nodeSpawn } from 'node:child_process';
 import type { CameraSegment } from '@elysium/domain/packing';
 
 import type { FfmpegCommand, SpawnFn } from './camera-recorder.js';
-import { concatArgs, concatList } from './ffmpeg.js';
+import { concatArgs, concatList, ffmpegEnv } from './ffmpeg.js';
 
 /** The longest one cut may take before it is abandoned (and the job retried). */
 const CUT_TIMEOUT_MS = 180_000;
@@ -48,7 +48,8 @@ export async function cutSegments(input: {
       const child = spawnFn(
         input.ffmpeg.command,
         [...(input.ffmpeg.prefix ?? []), ...concatArgs({ listFile, output })],
-        { stdio: ['ignore', 'ignore', 'pipe'] },
+        // Nothing of the server's environment but the path (ledger audit W5).
+        { stdio: ['ignore', 'ignore', 'pipe'], env: ffmpegEnv() },
       );
       let stderr = '';
       child.stderr?.setEncoding('utf8');

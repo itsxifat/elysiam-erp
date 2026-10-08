@@ -5,17 +5,16 @@ import { spawn } from 'node:child_process';
 import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { currentDatabaseConfig } from '@elysium/db';
-import type { Logger } from 'pino';
+import { pino, destination as pinoDestination, type Logger } from 'pino';
 
 import { ALL_QUEUES } from './job-queues.js';
-import { cameraEnv } from './modules/packing/camera/camera.config.js';
+import { cameraEnv, cameraProcessEnv } from './modules/packing/camera/camera.config.js';
 import { CameraProcessService } from './modules/packing/camera/camera-process.service.js';
 import { CameraModule, registerCameraJobs } from './modules/packing/camera/camera.worker.js';
 import { loadDeploymentBrand } from './platform/brand/deployment.js';
-import { serverEnv } from './platform/config/env.js';
 import { reportJobFailedThroughOutbox } from './platform/jobs/job-failed.js';
 import { JobsRuntime } from './platform/jobs/jobs.runtime.js';
-import { createLogger } from './platform/logging/logger.js';
+import { loggerOptions } from './platform/logging/logger.js';
 import { reportError, shutdownObservability } from './platform/observability/errors.js';
 
 /**
@@ -28,7 +27,9 @@ import { reportError, shutdownObservability } from './platform/observability/err
  * because a browser cannot play RTSP and the recording must be on the server.
  *
  * It holds no owner role: it connects as the application role, enqueues and works jobs as a
- * pg-boss client (the worker installs the schema and the queues), and serves nothing.
+ * pg-boss client (the worker installs the schema and the queues), and serves nothing. Its
+ * configuration is its own (`cameraProcessEnv`, ledger audit W5): no auth secret, no other
+ * module's keys; it never reads the whole server configuration.
  */
 
 /** How often each loop runs. */
@@ -108,8 +109,13 @@ function every(
 }
 
 async function bootstrap(): Promise<void> {
-  const env = serverEnv();
-  const logger = createLogger('camera');
+  const env = cameraProcessEnv();
+  const options = loggerOptions('camera', {
+    level: env.LOG_LEVEL,
+    pretty: env.NODE_ENV === 'development' && env.LOG_DESTINATION === 'stdout',
+  });
+  const logger =
+    env.LOG_DESTINATION === 'stderr' ? pino(options, pinoDestination(2)) : pino(options);
   const config = cameraEnv();
 
   // One brand per deployment (D-470): refuse a database holding another real brand.
@@ -137,6 +143,11 @@ async function bootstrap(): Promise<void> {
     bufferRoot: config.bufferDir,
     ffmpeg: { command: config.ffmpegPath },
     log: logger,
+    brandSlug: env.ERP_BRAND_SLUG,
+    ...(env.CAMERA_BUFFER_MAX_BYTES === undefined
+      ? {}
+      : { maxBufferBytes: env.CAMERA_BUFFER_MAX_BYTES }),
+    ...(env.CAMERA_MIN_FREE_BYTES === undefined ? {} : { minFreeBytes: env.CAMERA_MIN_FREE_BYTES }),
   });
   await camera.adoptBuffers();
   await registerCameraJobs({ jobs, camera, report: reportJobFailedThroughOutbox(logger) });

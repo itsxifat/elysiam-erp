@@ -46,6 +46,30 @@ export async function cameraById(
   return rows[0];
 }
 
+/**
+ * One change to a brand's cameras at a time (M38c ledger audit, W6): the count of enabled
+ * cameras is read and acted on under this lock, so two admins cannot pass the cap together.
+ */
+export async function lockCameraSettings(tx: Tx, orgId: string): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`packing.cameras:${orgId}`}, 0))`,
+  );
+}
+
+/** How many of the brand's cameras are switched on, leaving one out (the one being changed). */
+export async function countEnabledCameras(
+  tx: Tx,
+  orgId: string,
+  exceptId: string | null,
+): Promise<number> {
+  const [row] = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from packing.cameras
+    where org_id = ${orgId} and enabled
+      ${exceptId === null ? sql`` : sql`and id <> ${exceptId}`}
+  `);
+  return row?.n ?? 0;
+}
+
 /** A sealed password as the settings write it: the ciphertext, its fingerprint and key. */
 export interface SealedPassword {
   readonly sealed: Buffer;
@@ -237,12 +261,17 @@ export async function startRecording(
   },
 ): Promise<boolean> {
   const rows = await tx.execute<{ id: string }>(sql`
-    update packing.sessions
+    update packing.sessions s
        set recording_from = ${input.from.toISOString()}::timestamptz,
            recording_by = ${input.by}, updated_at = now()
-     where org_id = ${input.orgId} and id = ${input.sessionId} and status = 'open'
-       and camera_id is not null and recording_from is null
-    returning id
+     where s.org_id = ${input.orgId} and s.id = ${input.sessionId} and s.status = 'open'
+       and s.camera_id is not null and s.recording_from is null
+       -- Only a camera that is switched on records (ledger audit N4).
+       and exists (
+         select 1 from packing.cameras c
+          where c.org_id = s.org_id and c.id = s.camera_id and c.enabled
+       )
+    returning s.id
   `);
   return rows.length === 1;
 }
@@ -300,6 +329,17 @@ export async function pendingWindowStarts(
   return rows.map((row) => new Date(row.recording_from));
 }
 
+/** Whether a piece is in the box: once one is, the packing's camera stays (ledger audit N1). */
+export async function hasAcceptedScan(tx: Tx, orgId: string, sessionId: string): Promise<boolean> {
+  const [row] = await tx.execute<{ found: boolean }>(sql`
+    select exists (
+      select 1 from packing.scans
+      where org_id = ${orgId} and session_id = ${sessionId} and outcome = 'accepted'
+    ) as found
+  `);
+  return row?.found === true;
+}
+
 /** Whether the camera's parts of this session are already filed (the cut is done). */
 export async function cameraPartsOf(
   tx: Tx,
@@ -328,9 +368,12 @@ export async function insertCameraPart(
     readonly cameraId: string;
     readonly recordedBy: string;
     readonly startedAt: Date;
-    readonly fileId: string;
-    readonly durationMs: number;
-    readonly sizeBytes: number;
+    /** The part's video, or null for a part that could not be filed (it reads as missing). */
+    readonly file: {
+      readonly fileId: string;
+      readonly durationMs: number;
+      readonly sizeBytes: number;
+    } | null;
   },
 ): Promise<{ readonly id: string; readonly part: number }> {
   const inserted = await tx.execute<{ id: string; part: number }>(sql`
@@ -347,10 +390,11 @@ export async function insertCameraPart(
   `);
   const row = inserted[0];
   if (row === undefined) throw new Error('a camera part was not registered');
+  if (input.file === null) return row;
   const attached = await tx.execute<{ id: string }>(sql`
     update packing.videos
-       set file_id = ${input.fileId}, duration_ms = ${input.durationMs},
-           size_bytes = ${input.sizeBytes}, uploaded_at = now(), updated_at = now()
+       set file_id = ${input.file.fileId}, duration_ms = ${input.file.durationMs},
+           size_bytes = ${input.file.sizeBytes}, uploaded_at = now(), updated_at = now()
      where org_id = ${input.orgId} and id = ${input.id} and file_id is null
     returning id
   `);

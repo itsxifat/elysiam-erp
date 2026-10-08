@@ -18,9 +18,10 @@ export interface CameraStream {
 }
 
 /**
- * The address ffmpeg is given: the user name and password percent-encoded into it (ffmpeg's
- * RTSP client decodes them for Basic and Digest authentication). Only ever passed to ffmpeg
- * as one argument; never logged, never stored.
+ * The address with the user name and password percent-encoded into it (ffmpeg's RTSP client
+ * decodes them for Basic and Digest authentication). Never on ffmpeg's command line (ledger
+ * audit W1): it goes into the private ffconcat list `ffconcatInput` writes, never logged,
+ * never stored beyond that list's first seconds.
  */
 export function streamAddress(stream: CameraStream): string {
   const url = new URL(stream.rtspUrl);
@@ -63,18 +64,47 @@ export function streamHost(rtspUrl: string): string {
 /** How long ffmpeg waits on a silent camera before it gives up (microseconds, ffmpeg ≥ 5). */
 export const RTSP_SOCKET_TIMEOUT_US = 10_000_000;
 
-/** The input side of recording an RTSP stream: over TCP, with a socket timeout. */
-export function rtspInputArgs(address: string): string[] {
+/**
+ * The private list ffmpeg reads the camera's address from (ledger audit W1): an ffconcat file
+ * with the one stream and its RTSP options (TCP, the socket timeout). A command line is
+ * readable by anyone on the host (`ps`, `/proc/<pid>/cmdline`, `docker top`); this file is
+ * written 0600 in the camera's own buffer directory and removed seconds after ffmpeg read it,
+ * so the password is on no command line. ffmpeg 5.1 (the image's) records an authenticated
+ * RTSP stream this way (verified, `docs/review/M38c/`).
+ */
+export function ffconcatInput(address: string): string {
   return [
-    '-rtsp_transport',
-    'tcp',
-    '-timeout',
-    String(RTSP_SOCKET_TIMEOUT_US),
-    '-fflags',
-    '+genpts',
-    '-i',
-    address,
-  ];
+    'ffconcat version 1.0',
+    `file '${address.replace(/'/g, "'\\''")}'`,
+    'option rtsp_transport tcp',
+    `option timeout ${String(RTSP_SOCKET_TIMEOUT_US)}`,
+    '',
+  ].join('\n');
+}
+
+/**
+ * The input side of recording a camera: its private list (`ffconcatInput`) read by the concat
+ * demuxer, and only the protocols that needs (ledger audit W3): `file` for the list, `rtsp`
+ * and `tcp` for the stream, so no address can make ffmpeg read a local file, speak HTTP or
+ * open UDP.
+ */
+export function rtspInputArgs(listFile: string): string[] {
+  return ['-protocol_whitelist', 'file,rtsp,tcp', '-f', 'concat', '-safe', '0', '-i', listFile];
+}
+
+/**
+ * The environment ffmpeg runs with (ledger audit W5): the path to find its libraries and the
+ * clock's zone, nothing else, so none of the server's secrets reach it. Windows needs its
+ * system root for a process to start at all (the tests' stand-in ffmpeg runs there).
+ */
+export function ffmpegEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return {
+    PATH: env.PATH ?? '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    ...(env.TZ === undefined ? {} : { TZ: env.TZ }),
+    ...(process.platform === 'win32' && env.SystemRoot !== undefined
+      ? { SystemRoot: env.SystemRoot }
+      : {}),
+  };
 }
 
 /**
@@ -123,6 +153,9 @@ export function concatArgs(input: {
     '-nostdin',
     '-loglevel',
     'error',
+    // Only local files: the list and the buffered segments (ledger audit W3).
+    '-protocol_whitelist',
+    'file',
     '-f',
     'concat',
     '-safe',
@@ -157,6 +190,8 @@ export type CameraErrorCode =
   | 'stalled'
   | 'ffmpeg_missing'
   | 'credentials_unreadable'
+  | 'address_refused'
+  | 'disk_low'
   | 'stream_error';
 
 /** What ffmpeg's last words mean. */

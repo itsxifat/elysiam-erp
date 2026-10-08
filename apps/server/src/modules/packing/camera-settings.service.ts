@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
-import type { PackingCameraCreateInput, PackingCameraUpdateInput } from '@elysium/contracts';
-import { withOrg } from '@elysium/db';
+import {
+  PACKING_CAMERAS_MAX_ENABLED,
+  type PackingCameraCreateInput,
+  type PackingCameraUpdateInput,
+} from '@elysium/contracts';
+import { withOrg, type Tx } from '@elysium/db';
 import { cameraState } from '@elysium/domain/packing';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
@@ -18,6 +22,15 @@ const iso = (value: Date | string | null): string | null =>
 /** What the sealed password is bound to: this brand, this camera's row, this field. */
 export function cameraPasswordBinding(orgId: string, cameraId: string) {
   return { orgId, row: `packing_camera:${cameraId}`, field: 'password' } as const;
+}
+
+/**
+ * Where a camera address sends its password: the host and the port (RTSP's 554 when none is
+ * written). A sealed password follows an address only while this stays the same (W2).
+ */
+export function cameraEndpoint(rtspUrl: string): string {
+  const url = new URL(rtspUrl);
+  return `${url.hostname.toLowerCase()}:${url.port === '' ? '554' : url.port}`;
 }
 
 /** A camera's settings as the audit records them: never the password, its fingerprint only. */
@@ -60,6 +73,8 @@ export class CameraSettingsService {
     return mapPackingErrors(async () => {
       this.assertKeyFor(input.password);
       return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        await cameras.lockCameraSettings(tx, context.orgId);
+        if (input.enabled) await this.assertRoomFor(tx, context.orgId, null);
         const id = randomUUID();
         const row = await cameras.insertCamera(tx, {
           orgId: context.orgId,
@@ -95,8 +110,22 @@ export class CameraSettingsService {
     return mapPackingErrors(async () => {
       this.assertKeyFor(input.password);
       return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        await cameras.lockCameraSettings(tx, context.orgId);
         const before = await cameras.cameraById(tx, context.orgId, id, { forUpdate: true });
         if (before === undefined) throw new PackingError('NOT_FOUND', 'No such camera.');
+        // A stored password goes only where it went before (ledger audit W2): an address on
+        // another host or port asks for it again, so nobody points it at a machine of theirs.
+        if (
+          input.password === undefined &&
+          before.password_fingerprint !== null &&
+          cameraEndpoint(before.rtsp_url) !== cameraEndpoint(input.rtspUrl)
+        ) {
+          throw new PackingError(
+            'PACKING_CAMERA_PASSWORD_REQUIRED',
+            'The camera’s address moved to another host or port: enter its password again, or remove it.',
+          );
+        }
+        if (input.enabled && !before.enabled) await this.assertRoomFor(tx, context.orgId, id);
         const after = await cameras.updateCamera(tx, {
           orgId: context.orgId,
           id,
@@ -125,6 +154,16 @@ export class CameraSettingsService {
         return this.present(after, true);
       }).catch(nameTaken);
     });
+  }
+
+  /** At most `PACKING_CAMERAS_MAX_ENABLED` cameras record for a brand (ledger audit W6). */
+  private async assertRoomFor(tx: Tx, orgId: string, exceptId: string | null): Promise<void> {
+    if ((await cameras.countEnabledCameras(tx, orgId, exceptId)) >= PACKING_CAMERAS_MAX_ENABLED) {
+      throw new PackingError(
+        'PACKING_CAMERA_LIMIT',
+        `This brand already records with ${String(PACKING_CAMERAS_MAX_ENABLED)} cameras. Switch one off first.`,
+      );
+    }
   }
 
   /** A password to keep needs the brand's credentials key; refused, never stored in the clear. */

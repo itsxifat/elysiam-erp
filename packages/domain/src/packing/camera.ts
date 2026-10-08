@@ -48,19 +48,27 @@ export const PACKING_CAMERA_READY_WITHIN_MS = 15_000;
 export const PACKING_CAMERA_CUT_WAIT_MS = 12_000;
 
 /**
- * Where the recording of a session starts, if this scan starts it: the first scan the station
- * accepts (the piece belongs to the order) on a session whose camera is chosen, two seconds
- * before it. Null when nothing changes: a refused scan, a removal, no camera, or a recording
- * that already started.
+ * Where the recording of a session starts, if this scan starts it: the session's **first**
+ * scan the station accepts (the piece belongs to the order), on a session whose camera is
+ * chosen and switched on, two seconds before it. Null when nothing changes: a refused scan, a
+ * removal, no camera (or one switched off), a recording that already started, or an earlier
+ * accepted scan (the first correct piece went in unfilmed, so this packing has no camera
+ * recording; the database refuses any other start, M38c ledger audit N2).
  */
 export function cameraRecordingFrom(input: {
   readonly cameraId: string | null;
+  /** Whether the camera is switched on now (ledger audit N4). */
+  readonly cameraEnabled: boolean;
   readonly recordingFrom: Date | null;
+  /** Whether the session already holds an accepted scan before this one. */
+  readonly earlierAccepted: boolean;
   readonly outcome: PackScanOutcome;
   readonly scannedAt: Date;
 }): Date | null {
-  if (input.cameraId === null || input.recordingFrom !== null) return null;
-  if (input.outcome !== 'accepted') return null;
+  if (input.cameraId === null || !input.cameraEnabled || input.recordingFrom !== null) {
+    return null;
+  }
+  if (input.outcome !== 'accepted' || input.earlierAccepted) return null;
   return new Date(input.scannedAt.getTime() - PACKING_CAMERA_PREROLL_MS);
 }
 

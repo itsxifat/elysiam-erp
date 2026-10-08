@@ -5,13 +5,24 @@ import path from 'node:path';
 import { segmentsForWindow } from '@elysium/domain/packing';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { fakeFfmpeg } from '../../../testing/fake-ffmpeg.js';
-import { CameraRecorder, type FfmpegCommand, type RecorderLog } from './camera-recorder.js';
+import { spawn, type SpawnOptions } from 'node:child_process';
+import { existsSync } from 'node:fs';
+
+import { fakeFfmpeg, type FakeFfmpegRun } from '../../../testing/fake-ffmpeg.js';
+import {
+  CameraRecorder,
+  hostRefusal,
+  type CameraRecorderOptions,
+  type FfmpegCommand,
+  type RecorderLog,
+} from './camera-recorder.js';
 import { cutSegments } from './cutter.js';
 import {
   classifyFfmpegError,
   concatArgs,
   concatList,
+  ffconcatInput,
+  ffmpegEnv,
   maskSecrets,
   recordArgs,
   rtspInputArgs,
@@ -60,12 +71,26 @@ async function until(check: () => boolean | Promise<boolean>, timeoutMs = 8_000)
 const recorders: CameraRecorder[] = [];
 afterEach(async () => {
   for (const recorder of recorders.splice(0)) await recorder.stop();
-  delete process.env.FAKE_FFMPEG_ARGS;
 });
+
+/** What each fake ffmpeg run was given, from its record file. */
+async function runs(record: string): Promise<FakeFfmpegRun[]> {
+  if (!existsSync(record)) return [];
+  return (await readFile(record, 'utf8'))
+    .trim()
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line) => JSON.parse(line) as FakeFfmpegRun);
+}
+
+/** Environment names that would carry a secret into ffmpeg. */
+const SECRET_NAME = /SECRET|KEY|PASSWORD|TOKEN|DATABASE|AUTH|DSN|R2_|VALKEY/i;
 
 async function recorder(
   ffmpeg: FfmpegCommand,
-  options: { stallAfterMs?: number } = {},
+  options: Partial<
+    Pick<CameraRecorderOptions, 'stallAfterMs' | 'stream' | 'inputListKeepMs' | 'spawn'>
+  > = {},
 ): Promise<{ recorder: CameraRecorder; log: ReturnType<typeof capture>; dir: string }> {
   const dir = await mkdtemp(path.join(tmpdir(), 'erp-camera-buffer-'));
   const log = capture();
@@ -110,10 +135,9 @@ describe('ffmpeg’s arguments and words', () => {
 
   it('copies the first video stream into one-second MPEG-TS segments, without sound or re-encoding', () => {
     const args = recordArgs({
-      inputArgs: rtspInputArgs('rtsp://x/y'),
+      inputArgs: rtspInputArgs('/buffer/input-1.ffconcat'),
       outputPattern: '/b/%09d.ts',
     });
-    expect(args.join(' ')).toContain('-rtsp_transport tcp');
     expect(args.join(' ')).toContain('-map 0:v:0 -an -c copy -f segment -segment_time 1');
     expect(args.join(' ')).toContain('-reset_timestamps 1');
     expect(args.at(-1)).toBe('/b/%09d.ts');
@@ -121,6 +145,50 @@ describe('ffmpeg’s arguments and words', () => {
     expect(concat).toContain('-f concat -safe 0 -i /l.txt');
     expect(concat).toContain('-c copy -movflags +faststart -f mp4 -y /o.mp4');
     expect(concatList(["/a/it's.ts", '/b.ts'])).toBe("file '/a/it'\\''s.ts'\nfile '/b.ts'\n");
+  });
+
+  it('allows ffmpeg only the protocols it needs, before its input (ledger audit W3)', () => {
+    const record = recordArgs({
+      inputArgs: rtspInputArgs('/buffer/input-1.ffconcat'),
+      outputPattern: '/b/%09d.ts',
+    });
+    const whitelist = record.indexOf('-protocol_whitelist');
+    expect(record[whitelist + 1]).toBe('file,rtsp,tcp');
+    expect(whitelist).toBeLessThan(record.indexOf('-i'));
+    const concat = concatArgs({ listFile: '/l.txt', output: '/o.mp4' });
+    expect(concat[concat.indexOf('-protocol_whitelist') + 1]).toBe('file');
+    expect(concat.indexOf('-protocol_whitelist')).toBeLessThan(concat.indexOf('-i'));
+  });
+
+  it('keeps the credentials off the command line, in a private list ffmpeg reads (W1)', () => {
+    const args = recordArgs({
+      inputArgs: rtspInputArgs('/buffer/input-1.ffconcat'),
+      outputPattern: '/b/%09d.ts',
+    }).join(' ');
+    expect(args).not.toContain('rtsp://');
+    expect(args).not.toContain(PASSWORD);
+    const list = ffconcatInput(streamAddress(STREAM));
+    expect(list.split('\n')).toEqual([
+      'ffconcat version 1.0',
+      `file '${streamAddress(STREAM)}'`,
+      'option rtsp_transport tcp',
+      'option timeout 10000000',
+      '',
+    ]);
+    // A quote in the address cannot end the line early.
+    expect(ffconcatInput("rtsp://h.example/a'b")).toContain("file 'rtsp://h.example/a'\\''b'");
+  });
+
+  it('gives ffmpeg none of the server’s environment, only its path and clock (W5)', () => {
+    const env = ffmpegEnv({
+      PATH: '/usr/bin',
+      TZ: 'Asia/Dhaka',
+      AUTH_SECRET: 'x',
+      DATABASE_URL: 'postgres://erp_app:pw@postgres/erp',
+      STOREFRONT_CREDENTIALS_KEY: 'k',
+      HR_FIELD_KEY: 'h',
+    });
+    expect(Object.keys(env).filter((name) => name !== 'SystemRoot')).toEqual(['PATH', 'TZ']);
   });
 
   it('says why a stream stopped', () => {
@@ -172,12 +240,21 @@ describe('the camera’s buffer', () => {
 
 describe('the recorder', () => {
   it('records the stream into settled segments and gives the password to ffmpeg only', async () => {
-    const argsFile = path.join(fake.dir, `args-${String(Date.now())}.jsonl`);
-    process.env.FAKE_FFMPEG_ARGS = argsFile;
-    const { recorder: made, log, dir } = await recorder(fake.command('segments'));
+    const record = path.join(fake.dir, `run-${String(Date.now())}.jsonl`);
+    process.env.AUTH_SECRET_FOR_THIS_TEST = 'must-not-reach-ffmpeg';
+    const {
+      recorder: made,
+      log,
+      dir,
+    } = await recorder(fake.command('segments', record), {
+      inputListKeepMs: 300,
+    });
     await made.start();
     await until(async () => (await new SegmentBuffer(dir).segments()).length >= 3);
+    // The private list is gone once ffmpeg read it.
+    await until(async () => !(await readdir(dir)).some((name) => name.endsWith('.ffconcat')));
     await made.stop();
+    delete process.env.AUTH_SECRET_FOR_THIS_TEST;
 
     const segments = await new SegmentBuffer(dir).segments();
     for (let index = 1; index < segments.length; index += 1) {
@@ -188,9 +265,15 @@ describe('the recorder', () => {
     // Nothing left half-named.
     expect((await readdir(dir)).every((name) => name.startsWith('seg-'))).toBe(true);
 
-    // ffmpeg got the credentials; the log never did.
-    const given = (await readFile(argsFile, 'utf8')).trim().split('\n')[0] ?? '';
-    expect(given).toContain(streamAddress(STREAM));
+    // ffmpeg got the credentials through its list, not its command line or its environment;
+    // the log never did.
+    const [given] = await runs(record);
+    expect(given?.address).toBe(streamAddress(STREAM));
+    expect(given?.args.join(' ')).not.toContain(PASSWORD);
+    expect(given?.args.join(' ')).not.toContain(encodeURIComponent(PASSWORD));
+    expect(given?.args.join(' ')).not.toContain('packing');
+    expect(given?.env.filter((name) => SECRET_NAME.test(name))).toEqual([]);
+    expect(given?.env).toContain('PATH');
     const logged = log.lines.join('\n');
     expect(logged).not.toContain(PASSWORD);
     expect(logged).not.toContain(encodeURIComponent(PASSWORD));
@@ -222,6 +305,25 @@ describe('the recorder', () => {
     await made.start();
     await until(() => made.status().errorCode === 'ffmpeg_missing');
   });
+
+  it('never connects to the server’s own services, whatever a name resolves to (W4)', async () => {
+    let spawned = 0;
+    const counting = (command: string, args: readonly string[], options: SpawnOptions) => {
+      spawned += 1;
+      return spawn(command, [...args], options);
+    };
+    const { recorder: made } = await recorder(fake.command('segments'), {
+      stream: { rtspUrl: 'rtsp://valkey:6379/', username: '', password: null },
+      spawn: counting,
+    });
+    await made.start();
+    await until(() => made.status().errorCode === 'address_refused');
+    expect(spawned).toBe(0);
+    expect(await hostRefusal('valkey')).toMatch(/one-word name/);
+    expect(await hostRefusal('localhost')).not.toBeNull();
+    expect(await hostRefusal('127.0.0.1')).toMatch(/loopback/);
+    expect(await hostRefusal('192.168.20.111')).toBeNull();
+  });
 });
 
 describe('the cut', () => {
@@ -240,12 +342,16 @@ describe('the cut', () => {
       toMs: t0 + 3_200,
     });
     expect(chosen.map((segment) => segment.startMs - t0)).toEqual([1000, 2000, 3000]);
+    const record = path.join(fake.dir, `cut-${String(Date.now())}.jsonl`);
     const result = await cutSegments({
-      ffmpeg: fake.command('concat'),
+      ffmpeg: fake.command('concat', record),
       segments: chosen,
       pathOf: (segment) => buffer.pathOf(segment),
       workDir: path.join(dir, '.cuts'),
     });
+    // The cut, too, runs with nothing of the server's environment (W5).
+    const [cut] = await runs(record);
+    expect(cut?.env.filter((name) => SECRET_NAME.test(name))).toEqual([]);
     expect(result.startedAt.getTime()).toBe(t0 + 1000);
     expect(result.durationMs).toBe(3000);
     const bytes = await readFile(result.file);

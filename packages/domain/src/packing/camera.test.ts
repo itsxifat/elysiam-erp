@@ -42,23 +42,31 @@ const scansArb = fc.array(
   { maxLength: 30 },
 );
 
-/** Replay scans through the rule as the station does: the window's start, once. */
+/**
+ * Replay scans through the rule as the station does: the window's start, once. `onFrom` is
+ * the scan from which the camera is chosen and on (0: from the start).
+ */
 function replay(
   cameraId: string | null,
   scans: readonly { outcome: PackScanOutcome; gapMs: number }[],
+  onFrom = 0,
 ): { from: Date | null; times: number[] } {
   let from: Date | null = null;
   let at = T0;
+  let accepted = false;
   const times: number[] = [];
-  for (const scan of scans) {
+  for (const [index, scan] of scans.entries()) {
     at += scan.gapMs;
     times.push(at);
     const next = cameraRecordingFrom({
-      cameraId,
+      cameraId: index >= onFrom ? cameraId : null,
+      cameraEnabled: index >= onFrom,
       recordingFrom: from,
+      earlierAccepted: accepted,
       outcome: scan.outcome,
       scannedAt: new Date(at),
     });
+    if (scan.outcome === 'accepted') accepted = true;
     if (next !== null) {
       expect(from, 'the start is set once').toBeNull();
       from = next;
@@ -90,12 +98,25 @@ describe('the recording window (the owner’s catch: only a correct piece starts
     );
   });
 
+  it('never starts once the first correct piece went in unfilmed (ledger audit N2, N4)', () => {
+    fc.assert(
+      fc.property(scansArb, fc.integer({ min: 0, max: 30 }), (scans, onFrom) => {
+        const first = scans.findIndex((scan) => scan.outcome === 'accepted');
+        const { from, times } = replay('camera-1', scans, onFrom);
+        if (first === -1 || first < onFrom) expect(from).toBeNull();
+        else expect(from?.getTime()).toBe((times[first] ?? 0) - PACKING_CAMERA_PREROLL_MS);
+      }),
+    );
+  });
+
   it('refuses every refusal and removal outright, whatever came before', () => {
     for (const outcome of PACK_SCAN_OUTCOMES.filter((value) => value !== 'accepted')) {
       expect(
         cameraRecordingFrom({
           cameraId: 'camera-1',
+          cameraEnabled: true,
           recordingFrom: null,
+          earlierAccepted: false,
           outcome,
           scannedAt: new Date(T0),
         }),

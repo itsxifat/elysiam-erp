@@ -167,8 +167,9 @@ export class PackStationService {
         const found =
           code === '' ? undefined : await this.catalog.lookupCode(tx, context.orgId, code);
         const needs = await this.needsOf(tx, context.orgId, facts);
+        const earlier = await repo.scansOf(tx, context.orgId, sessionId);
         const packed = packedCounts(
-          (await repo.scansOf(tx, context.orgId, sessionId)).map((row) => ({
+          earlier.map((row) => ({
             skuId: row.sku_id,
             outcome: row.outcome as PackScanOutcome,
           })),
@@ -189,10 +190,16 @@ export class PackStationService {
         });
         // The owner's catch (D-671): only a piece the order needs starts the camera, two
         // seconds before the scan, by the scan's own clock, once. Under the session's lock.
+        const camera =
+          session.camera_id === null
+            ? undefined
+            : await cameras.cameraById(tx, context.orgId, session.camera_id);
         const recordingFrom = session.video_required
           ? cameraRecordingFrom({
               cameraId: session.camera_id,
+              cameraEnabled: camera?.enabled === true,
               recordingFrom: at(session.recording_from),
+              earlierAccepted: earlier.some((row) => row.outcome === 'accepted'),
               outcome,
               scannedAt: new Date(written.scanned_at),
             })
@@ -527,11 +534,14 @@ export class PackStationService {
     }
     const locked = await repo.sessionById(tx, context.orgId, session.id, { forUpdate: true });
     if (locked === undefined) return session;
+    // Fixed once a piece is in the box (ledger audit N1): a camera chosen after the first
+    // correct piece would start at the second.
     if (
       locked.status !== 'open' ||
       !locked.video_required ||
       locked.recording_from !== null ||
-      locked.camera_id === cameraId
+      locked.camera_id === cameraId ||
+      (await cameras.hasAcceptedScan(tx, context.orgId, session.id))
     ) {
       return locked;
     }
@@ -717,8 +727,11 @@ export class PackStationService {
           session.completed_by === null
             ? null
             : { id: session.completed_by, name: names.get(session.completed_by) ?? null },
-        // M38c (D-670, D-671): the IP camera filming it, and its recording's window.
+        // M38c (D-670, D-671): the IP camera filming it, and its recording's window. The
+        // source is fixed once recording started or a piece is in the box (ledger audit N1).
         cameraId: session.camera_id,
+        cameraLocked:
+          session.recording_from !== null || scans.some((row) => row.outcome === 'accepted'),
         recordingFrom: iso(session.recording_from),
         recordingTo: iso(session.recording_to),
         recordingBy:

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -25,7 +25,10 @@ import { resetFilesEnv } from '../files/files.config.js';
 import { FILES_QUEUE_DEFINITIONS } from '../files/files.queues.js';
 import { seedProductWithSkus } from '../inventory/inventory.testing.js';
 import { applyOrderMigrations, seedCustomer, seedOrder } from '../orders/orders.testing.js';
-import { CameraProcessService } from './camera/camera-process.service.js';
+import {
+  CameraProcessService,
+  type CameraProcessOptions,
+} from './camera/camera-process.service.js';
 import type { RecorderLog } from './camera/camera-recorder.js';
 import { segmentName } from './camera/segment-buffer.js';
 import { PACKING_QUEUE_DEFINITIONS } from './packing.queues.js';
@@ -114,7 +117,20 @@ async function confirmedOrder(lines: readonly { sku: Sku; qty: number }[]) {
 const scan = (actor: RoleClient, sessionId: string, code: string) =>
   call(actor, 'POST', `/v1/packing/sessions/${sessionId}/scans`, { scanId: randomUUID(), code });
 
+/** Switch off every camera of the brand (the brand records with at most eight at once). */
+async function switchOffCameras(): Promise<void> {
+  await withSystem(
+    (tx) =>
+      tx.execute(
+        sql`update packing.cameras set enabled = false where org_id = ${ORG_A} and enabled`,
+      ),
+    { orgId: ORG_A },
+  );
+}
+
 async function addCamera(name: string, password: string | null = PASSWORD): Promise<string> {
+  // Each test's camera is the brand's one camera in use: the cap of eight is its own test.
+  await switchOffCameras();
   const added = await call(admin, 'POST', '/v1/packing/cameras', {
     name,
     rtspUrl: 'rtsp://192.168.20.111:554/stream1',
@@ -173,19 +189,34 @@ async function firstAcceptedAt(sessionId: string): Promise<Date> {
 
 /** A camera process of the test's own, its ffmpeg the stand-in. */
 function cameraProcess(
-  options: { bufferRoot: string; mode?: 'segments' | 'auth' | 'concat'; now?: () => number },
+  options: {
+    bufferRoot: string;
+    mode?: 'segments' | 'auth' | 'concat';
+    record?: string;
+    now?: () => number;
+    files?: FilesApi;
+  } & Partial<
+    Pick<
+      CameraProcessOptions,
+      'brandSlug' | 'freeBytes' | 'minFreeBytes' | 'maxBufferBytes' | 'partMaxBytes'
+    >
+  >,
   log: RecorderLog = { info: () => undefined, warn: () => undefined, error: () => undefined },
 ): CameraProcessService {
   const service = new CameraProcessService(
-    harness.app.get<FilesApi>(FILES_API, { strict: false }),
+    options.files ?? harness.app.get<FilesApi>(FILES_API, { strict: false }),
     new AuditService(),
   );
+  const { bufferRoot, mode, record, now, files: _files, ...rest } = options;
   service.configure({
-    bufferRoot: options.bufferRoot,
-    ffmpeg: fake.command(options.mode ?? 'concat'),
+    bufferRoot,
+    ffmpeg: fake.command(mode ?? 'concat', record),
     log,
     cutPollMs: 100,
-    ...(options.now === undefined ? {} : { now: options.now }),
+    // Plenty of disk unless a test says otherwise.
+    freeBytes: () => Promise.resolve(Number.MAX_SAFE_INTEGER),
+    ...(now === undefined ? {} : { now }),
+    ...rest,
   });
   return service;
 }
@@ -207,7 +238,6 @@ async function footage(
 const processes: CameraProcessService[] = [];
 afterEach(async () => {
   for (const service of processes.splice(0)) await service.stopAll();
-  delete process.env.FAKE_FFMPEG_ARGS;
 });
 
 beforeAll(async () => {
@@ -659,13 +689,16 @@ describe('the camera process (D-672, D-673)', () => {
   it('records each enabled camera with its opened password, reports it ready, and never logs the password', async () => {
     const cameraId = await addCamera(`Live ${suffix}`);
     const argsFile = path.join(fake.dir, `args-live-${suffix}.jsonl`);
-    process.env.FAKE_FFMPEG_ARGS = argsFile;
     const lines: string[] = [];
     const keep = (fields: Record<string, unknown>, message: string) => {
       lines.push(`${message} ${JSON.stringify(fields)}`);
     };
     const service = cameraProcess(
-      { bufferRoot: await mkdtemp(path.join(tmpdir(), 'erp-cam-')), mode: 'segments' },
+      {
+        bufferRoot: await mkdtemp(path.join(tmpdir(), 'erp-cam-')),
+        mode: 'segments',
+        record: argsFile,
+      },
       { info: keep, warn: keep, error: keep },
     );
     processes.push(service);
@@ -680,10 +713,15 @@ describe('the camera process (D-672, D-673)', () => {
       if (Date.now() > deadline) throw new Error(`camera never became ready (${String(state)})`);
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
+    // The opened password reached ffmpeg through its private list, never its command line.
     const given = (await readFile(argsFile, 'utf8'))
+      .trim()
       .split('\n')
-      .filter((line) => line.includes('192.168.20.111'));
-    expect(given.join('\n')).toContain(`packing:${encodeURIComponent(PASSWORD)}@192.168.20.111`);
+      .map((line) => JSON.parse(line) as { args: string[]; address: string });
+    expect(given.map((run) => run.address)).toContain(
+      `rtsp://packing:${encodeURIComponent(PASSWORD)}@192.168.20.111:554/stream1`,
+    );
+    for (const run of given) expect(run.args.join(' ')).not.toContain(encodeURIComponent(PASSWORD));
     expect(lines.join('\n')).not.toContain(PASSWORD);
     expect(lines.join('\n')).not.toContain(encodeURIComponent(PASSWORD));
 
@@ -698,3 +736,336 @@ describe('the camera process (D-672, D-673)', () => {
     expect(service.recording()).not.toContain(cameraId);
   });
 });
+
+describe('the IP camera after the ledger audit (M38c)', () => {
+  const moved = (id: string, body: Json) => call(admin, 'PUT', `/v1/packing/cameras/${id}`, body);
+
+  it('asks for the password again when the address moves to another host or port (W2)', async () => {
+    const id = await addCamera(`Move ${suffix}`);
+    const base = { name: `Move ${suffix}`, username: 'packing', enabled: true };
+    // Another stream on the same camera keeps the password; so does the default port written out.
+    for (const rtspUrl of [
+      'rtsp://192.168.20.111:554/stream2',
+      'rtsp://192.168.20.111/stream2',
+      'rtsp://192.168.20.111:554/stream1',
+    ]) {
+      const kept = await moved(id, { ...base, rtspUrl });
+      expect(kept.status, JSON.stringify(kept.body)).toBe(200);
+      expect(kept.body.passwordSet).toBe(true);
+    }
+    // Another host or another port: refused unless the password comes with it.
+    for (const rtspUrl of [
+      'rtsp://192.168.20.99:554/stream1',
+      'rtsp://192.168.20.111:8554/stream1',
+      'rtsp://cam.elsewhere.example/stream1',
+    ]) {
+      const refused = await moved(id, { ...base, rtspUrl });
+      expect(refused.status).toBe(400);
+      expect(refused.body.code).toBe('PACKING_CAMERA_PASSWORD_REQUIRED');
+    }
+    const still = ((await call(admin, 'GET', '/v1/packing/cameras')).body.cameras as Json[]).find(
+      (entry) => entry.id === id,
+    );
+    expect(still?.rtspUrl).toBe('rtsp://192.168.20.111:554/stream1');
+    // Typed again, or removed: the move is made.
+    const retyped = await moved(id, {
+      ...base,
+      rtspUrl: 'rtsp://192.168.20.99:554/stream1',
+      password: 'typed again',
+    });
+    expect(retyped.status).toBe(200);
+    expect(retyped.body.passwordSet).toBe(true);
+    const removed = await moved(id, {
+      ...base,
+      rtspUrl: 'rtsp://192.168.20.98:554/stream1',
+      password: null,
+    });
+    expect(removed.body).toMatchObject({ passwordSet: false });
+    // With no password stored there is nothing to carry: a move needs nothing.
+    expect((await moved(id, { ...base, rtspUrl: 'rtsp://192.168.20.97/stream1' })).status).toBe(
+      200,
+    );
+  });
+
+  it('records with at most eight cameras per brand (W6)', async () => {
+    await switchOffCameras();
+    const add = (name: string, enabled: boolean) =>
+      call(admin, 'POST', '/v1/packing/cameras', {
+        name,
+        rtspUrl: 'rtsp://192.168.20.111:554/stream1',
+        enabled,
+      });
+    const ids: string[] = [];
+    for (let index = 0; index < 8; index += 1) {
+      const added = await add(`Cap ${String(index)} ${suffix}`, true);
+      expect(added.status, JSON.stringify(added.body)).toBe(201);
+      ids.push(String(added.body.id));
+    }
+    const ninth = await add(`Cap 8 ${suffix}`, true);
+    expect(ninth.status).toBe(409);
+    expect(ninth.body.code).toBe('PACKING_CAMERA_LIMIT');
+    const spare = await add(`Cap 8 ${suffix}`, false);
+    expect(spare.status).toBe(201);
+    const on = {
+      name: `Cap 8 ${suffix}`,
+      rtspUrl: 'rtsp://192.168.20.111:554/stream1',
+      enabled: true,
+    };
+    expect((await moved(String(spare.body.id), on)).body.code).toBe('PACKING_CAMERA_LIMIT');
+    await moved(ids[0] ?? '', {
+      name: `Cap 0 ${suffix}`,
+      rtspUrl: 'rtsp://192.168.20.111:554/stream1',
+      enabled: false,
+    });
+    expect((await moved(String(spare.body.id), on)).status).toBe(200);
+    await switchOffCameras();
+  });
+
+  it('keeps a packing’s camera once a piece is in the box, and the database holds it (N1)', async () => {
+    const cameraId = await addCamera(`Late ${suffix}`);
+    const order = await confirmedOrder([{ sku: shirtM, qty: 2 }]);
+    const own = await call(packer, 'POST', '/v1/packing/sessions', {
+      orderId: order.id,
+      cameraId: null,
+    });
+    const sessionId = String((own.body.session as Json).id);
+    expect((own.body.session as Json).cameraLocked).toBe(false);
+    expect((await scan(packer, sessionId, shirtM.barcode)).body.outcome).toBe('accepted');
+    const late = await call(packer, 'POST', '/v1/packing/sessions', {
+      orderId: order.id,
+      cameraId,
+    });
+    expect(late.body.session).toMatchObject({ cameraId: null, cameraLocked: true });
+    await expect(
+      withSystem(
+        (tx) =>
+          tx.execute(
+            sql`update packing.sessions set camera_id = ${cameraId} where id = ${sessionId}`,
+          ),
+        { orgId: ORG_A },
+      ),
+    ).rejects.toThrow();
+    expect((await windowOf(sessionId)).camera_id).toBeNull();
+  });
+
+  it('records only from the first accepted scan, on a camera that is on (N2, N4)', async () => {
+    const cameraId = await addCamera(`Off then on ${suffix}`);
+    const order = await confirmedOrder([{ sku: shirtM, qty: 2 }]);
+    const sessionId = String(
+      (
+        (await call(packer, 'POST', '/v1/packing/sessions', { orderId: order.id, cameraId })).body
+          .session as Json
+      ).id,
+    );
+    const settings = (enabled: boolean) => ({
+      name: `Off then on ${suffix}`,
+      rtspUrl: 'rtsp://192.168.20.111:554/stream1',
+      username: 'packing',
+      enabled,
+    });
+    // Switched off before the first piece: that piece goes in unfilmed.
+    await moved(cameraId, settings(false));
+    expect((await scan(packer, sessionId, shirtM.barcode)).body.outcome).toBe('accepted');
+    expect((await windowOf(sessionId)).recording_from).toBeNull();
+    // On again: the second piece is not the first, so nothing starts, and the scan is taken.
+    await moved(cameraId, settings(true));
+    const second = await scan(packer, sessionId, shirtM.barcode);
+    expect(second.status, JSON.stringify(second.body)).toBe(200);
+    expect(second.body.outcome).toBe('accepted');
+    expect((await windowOf(sessionId)).recording_from).toBeNull();
+    // Nor can the database be told otherwise: a start not 2 s before the first accepted scan,
+    // or by someone else than who scanned it.
+    await expect(
+      withSystem(
+        (tx) =>
+          tx.execute(sql`
+            update packing.sessions
+               set recording_from = now() - interval '1 minute', recording_by = ${packer.userId}
+             where id = ${sessionId}
+          `),
+        { orgId: ORG_A },
+      ),
+    ).rejects.toThrow();
+    const first = await firstAcceptedAt(sessionId);
+    const twoBefore = new Date(first.getTime() - PACKING_CAMERA_PREROLL_MS).toISOString();
+    await expect(
+      withSystem(
+        (tx) =>
+          tx.execute(sql`
+            update packing.sessions
+               set recording_from = ${twoBefore}::timestamptz, recording_by = ${admin.userId}
+             where id = ${sessionId}
+          `),
+        { orgId: ORG_A },
+      ),
+    ).rejects.toThrow();
+    await switchOffCameras();
+  });
+
+  it('records only the deployment’s own brand, and only active brands (N3)', async () => {
+    const cameraId = await addCamera(`Brand ${suffix}`);
+    const slugOf = async (orgId: string) =>
+      withSystem(
+        async (tx) =>
+          (
+            await tx.execute<{ slug: string }>(
+              sql`select slug from org.organizations where id = ${orgId}`,
+            )
+          )[0]?.slug ?? '',
+      );
+    const other = cameraProcess({
+      bufferRoot: await mkdtemp(path.join(tmpdir(), 'erp-cam-')),
+      mode: 'segments',
+      brandSlug: await slugOf(ORG_B),
+    });
+    processes.push(other);
+    await other.reload();
+    expect(other.recording()).not.toContain(cameraId);
+    const own = cameraProcess({
+      bufferRoot: await mkdtemp(path.join(tmpdir(), 'erp-cam-')),
+      mode: 'segments',
+      brandSlug: await slugOf(ORG_A),
+    });
+    processes.push(own);
+    await own.reload();
+    expect(own.recording()).toContain(cameraId);
+    await switchOffCameras();
+  });
+
+  it('stops buffering when the disk is low and says so on the camera (W6)', async () => {
+    const cameraId = await addCamera(`Disk ${suffix}`);
+    let free = 1024 * 1024 * 1024;
+    const service = cameraProcess({
+      bufferRoot: await mkdtemp(path.join(tmpdir(), 'erp-cam-')),
+      mode: 'segments',
+      freeBytes: () => Promise.resolve(free),
+      minFreeBytes: 5 * 1024 * 1024 * 1024,
+    });
+    processes.push(service);
+    await service.reload();
+    expect(service.recording()).not.toContain(cameraId);
+    const listed = (await call(admin, 'GET', '/v1/packing/cameras')).body.cameras as Json[];
+    expect(listed.find((entry) => entry.id === cameraId)).toMatchObject({
+      state: 'offline',
+      lastErrorCode: 'disk_low',
+    });
+    free = 50 * 1024 * 1024 * 1024;
+    await service.reload();
+    expect(service.recording()).toContain(cameraId);
+    await switchOffCameras();
+  });
+
+  it('keeps a buffer under its byte cap without dropping a waiting window, and clears a dead cut’s files (W6)', async () => {
+    const cameraId = await addCamera(`Cap bytes ${suffix}`);
+    const order = await confirmedOrder([{ sku: cap, qty: 1 }]);
+    const sessionId = String(
+      (
+        (await call(packer, 'POST', '/v1/packing/sessions', { orderId: order.id, cameraId })).body
+          .session as Json
+      ).id,
+    );
+    await scan(packer, sessionId, cap.barcode);
+    const from = new Date((await windowOf(sessionId)).recording_from ?? 0).getTime();
+    const bufferRoot = await mkdtemp(path.join(tmpdir(), 'erp-cam-'));
+    const service = cameraProcess({
+      bufferRoot,
+      now: () => from + 20_000,
+      maxBufferBytes: 10 * 2048,
+    });
+    processes.push(service);
+    // Footage from five minutes before the window to now: far over ten segments' worth.
+    await footage(service, cameraId, from - 300_000, from + 20_000);
+    // A dead cut's leftover.
+    const cuts = path.join(bufferRoot, '.cuts');
+    await mkdir(cuts, { recursive: true });
+    await writeFile(path.join(cuts, 'cut-dead.mp4'), 'x');
+    await utimes(path.join(cuts, 'cut-dead.mp4'), new Date(0), new Date(0));
+    await service.prune();
+    const kept = await service.bufferFor(ORG_A, cameraId).segments();
+    // The waiting window from its start is all kept, even over the cap; older footage went.
+    expect(kept.some((segment) => segment.startMs <= from && segment.endMs > from)).toBe(true);
+    expect(kept.every((segment) => segment.endMs >= from)).toBe(true);
+    expect(await readdir(cuts)).toEqual([]);
+    await switchOffCameras();
+  });
+
+  it('files a part it cannot store as never arrived, once, and leaves no copies when a cut fails (N5)', async () => {
+    const cameraId = await addCamera(`Big ${suffix}`);
+    const order = await confirmedOrder([{ sku: cap, qty: 1 }]);
+    const sessionId = String(
+      (
+        (await call(packer, 'POST', '/v1/packing/sessions', { orderId: order.id, cameraId })).body
+          .session as Json
+      ).id,
+    );
+    await scan(packer, sessionId, cap.barcode);
+    await call(packer, 'POST', `/v1/packing/sessions/${sessionId}/complete`);
+    const window = await windowOf(sessionId);
+    const from = new Date(window.recording_from ?? 0).getTime();
+    const to = new Date(window.recording_to ?? 0).getTime();
+
+    // A cut that fails after storing its first part leaves no file behind for the retry.
+    const real = harness.app.get<FilesApi>(FILES_API, { strict: false });
+    let stores = 0;
+    const failing: FilesApi = {
+      isPublicAsset: real.isPublicAsset.bind(real),
+      fileFacts: real.fileFacts.bind(real),
+      signCheckedDownload: real.signCheckedDownload.bind(real),
+      forget: real.forget.bind(real),
+      filesOfPurposeBefore: real.filesOfPurposeBefore.bind(real),
+      storeProduced: async (input) => {
+        stores += 1;
+        if (stores === 2) throw new Error('storage went away');
+        return real.storeProduced(input);
+      },
+    };
+    const bufferRoot = await mkdtemp(path.join(tmpdir(), 'erp-cam-'));
+    const flaky = cameraProcess({ bufferRoot, files: failing, partMaxBytes: 3 * 2048 });
+    processes.push(flaky);
+    await footage(flaky, cameraId, from - 3_000, to + 5_000);
+    const filesBefore = await packingVideoFiles();
+    await expect(flaky.cut(ORG_A, sessionId)).rejects.toThrow(/storage went away/);
+    expect(await packingVideoFiles()).toEqual(filesBefore);
+
+    // One segment over the ceiling: that part is filed as never arrived, the rest as video.
+    const big = cameraProcess({ bufferRoot, partMaxBytes: 3 * 2048 });
+    processes.push(big);
+    const buffer = big.bufferFor(ORG_A, cameraId);
+    const segments = await buffer.segments();
+    const middle = segments.find((segment) => segment.startMs > from);
+    expect(middle).toBeDefined();
+    if (middle !== undefined) await writeFile(buffer.pathOf(middle), Buffer.alloc(4 * 2048, 9));
+    expect(await big.cut(ORG_A, sessionId)).toBe('cut');
+    expect(await big.cut(ORG_A, sessionId)).toBe('already');
+    const record = (await call(admin, 'GET', `/v1/packing/orders/${order.id}`)).body;
+    const parts = record.videos as Json[];
+    expect(parts.some((part) => part.state === 'waiting')).toBe(true);
+    expect(parts.some((part) => part.state === 'uploaded')).toBe(true);
+    const audit = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ after: { parts: { skipped: string | null }[] } }>(sql`
+            select after from audit.audit_log
+            where entity_id = ${sessionId} and action = 'packing.camera_video_cut'
+          `)
+        )[0],
+      { orgId: ORG_A },
+    );
+    expect(audit?.after.parts.map((part) => part.skipped)).toContain('segment_too_large');
+    await switchOffCameras();
+  });
+});
+
+/** Every packing video file of the brand, by id. */
+async function packingVideoFiles(): Promise<string[]> {
+  return withSystem(
+    async (tx) =>
+      (
+        await tx.execute<{ id: string }>(sql`
+          select id from files.objects where org_id = ${ORG_A} and purpose = 'packing-video'
+          order by id
+        `)
+      ).map((row) => row.id),
+    { orgId: ORG_A },
+  );
+}

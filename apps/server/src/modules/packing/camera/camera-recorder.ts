@@ -1,9 +1,15 @@
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { lookup } from 'node:dns/promises';
+import { readdir, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
+import { cameraHostRefusal, refusedCameraIp } from '@elysium/contracts';
 import { cameraReconnectDelayMs } from '@elysium/domain/packing';
 
 import {
   classifyFfmpegError,
+  ffconcatInput,
+  ffmpegEnv,
   maskSecrets,
   recordArgs,
   rtspInputArgs,
@@ -49,6 +55,36 @@ export interface CameraRecorderOptions {
   readonly stallAfterMs?: number;
   /** How often the buffer is settled while recording. */
   readonly tickMs?: number;
+  /**
+   * Why the camera's host may not be connected to, or null (ledger audit W4): the address the
+   * settings accepted, resolved again before every connection, so a name that now points at
+   * the server's own loopback or a link-local address is refused. A test may stand in.
+   */
+  readonly checkHost?: (hostname: string) => Promise<string | null>;
+  /** How long the private input list stays after ffmpeg started (a test shortens it). */
+  readonly inputListKeepMs?: number;
+}
+
+/** How long the private input list stays on disk after ffmpeg started (it reads it at once). */
+const INPUT_LIST_KEEP_MS = 5_000;
+
+/**
+ * The default host check: the settings' own rule on the name, then every address it resolves
+ * to. A name that does not resolve is left to ffmpeg, which reports it as unreachable.
+ */
+export async function hostRefusal(hostname: string): Promise<string | null> {
+  const named = cameraHostRefusal(hostname);
+  if (named !== null) return named;
+  try {
+    const addresses = await lookup(hostname.replace(/^\[|\]$/g, ''), { all: true });
+    for (const { address } of addresses) {
+      const why = refusedCameraIp(address);
+      if (why !== null) return `The camera's name resolves to a ${why} address.`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 /** What the recorder knows about its camera, for the status the station and settings read. */
@@ -84,6 +120,7 @@ export class CameraRecorder {
   private restartTimer: NodeJS.Timeout | null = null;
   private tickTimer: NodeJS.Timeout | null = null;
   private ticking: Promise<void> = Promise.resolve();
+  private launching: Promise<void> = Promise.resolve();
   private readonly spawnFn: SpawnFn;
   private readonly now: () => number;
   private readonly stallAfterMs: number;
@@ -118,8 +155,10 @@ export class CameraRecorder {
   async start(): Promise<void> {
     this.stopped = false;
     await this.options.buffer.ensure();
-    // What an earlier process left: settle it before this run starts writing beside it.
+    // What an earlier process left: settle it before this run starts writing beside it, and
+    // remove any input list it left (it holds the camera's address with its password).
     await this.options.buffer.settle(null);
+    await this.removeInputLists();
     this.launch();
     this.tickTimer = setInterval(() => {
       this.ticking = this.ticking.then(() => this.tick()).catch(() => undefined);
@@ -132,6 +171,9 @@ export class CameraRecorder {
     this.stopped = true;
     if (this.restartTimer !== null) clearTimeout(this.restartTimer);
     if (this.tickTimer !== null) clearInterval(this.tickTimer);
+    // A start in progress (resolving the host, writing the list) finishes first, then sees
+    // the stop and starts nothing.
+    await this.launching;
     const child = this.child;
     if (child !== null) {
       await new Promise<void>((resolve) => {
@@ -146,6 +188,7 @@ export class CameraRecorder {
     }
     await this.ticking;
     await this.options.buffer.settle(null);
+    await this.removeInputLists();
   }
 
   /** Settle the buffer now (the cut asks before it chooses segments). */
@@ -176,29 +219,66 @@ export class CameraRecorder {
   }
 
   private launch(): void {
+    this.launching = this.launchNow().catch((error: unknown) => {
+      this.exited(null, error);
+    });
+  }
+
+  /**
+   * Start ffmpeg: the camera's host checked again (W4), its address written into a private
+   * input list (W1, never the command line), and ffmpeg run with no environment but its path
+   * (W5). The list goes a few seconds after ffmpeg read it, or when it stops.
+   */
+  private async launchNow(): Promise<void> {
     if (this.stopped) return;
     const run = this.now();
     this.run = run;
     this.stderr = '';
     this.lastProgressAt = run;
+    let inputArgs = this.options.inputArgs;
+    let listFile: string | null = null;
+    if (inputArgs === undefined) {
+      const hostname = new URL(this.options.stream.rtspUrl).hostname;
+      const refused = await (this.options.checkHost ?? hostRefusal)(hostname);
+      if (this.stopped) return;
+      if (refused !== null) {
+        this.exited(null, null, 'address_refused');
+        return;
+      }
+      listFile = path.join(this.options.buffer.dir, `input-${String(run)}.ffconcat`);
+      await writeFile(listFile, ffconcatInput(streamAddress(this.options.stream)), {
+        mode: 0o600,
+      });
+      if (this.stopped) {
+        await rm(listFile, { force: true });
+        return;
+      }
+      inputArgs = rtspInputArgs(listFile);
+    }
     const args = recordArgs({
-      inputArgs: this.options.inputArgs ?? rtspInputArgs(streamAddress(this.options.stream)),
+      inputArgs,
       outputPattern: livePattern(this.options.buffer.dir, run),
       ...(this.options.codecArgs === undefined ? {} : { codecArgs: this.options.codecArgs }),
     });
+    const removeList = () => {
+      if (listFile !== null) void rm(listFile, { force: true }).catch(() => undefined);
+    };
     let child: ChildProcess;
     try {
       child = this.spawnFn(
         this.options.ffmpeg.command,
         [...(this.options.ffmpeg.prefix ?? []), ...args],
-        {
-          stdio: ['ignore', 'ignore', 'pipe'],
-        },
+        { stdio: ['ignore', 'ignore', 'pipe'], env: ffmpegEnv() },
       );
     } catch (error) {
+      removeList();
       this.exited(null, error);
       return;
     }
+    if (listFile !== null) {
+      setTimeout(removeList, this.options.inputListKeepMs ?? INPUT_LIST_KEEP_MS).unref();
+    }
+    child.once('exit', removeList);
     this.child = child;
     child.stderr?.setEncoding('utf8');
     child.stderr?.on('data', (chunk: string) => {
@@ -217,7 +297,22 @@ export class CameraRecorder {
     );
   }
 
-  private exited(code: number | null, error: unknown): void {
+  /** Input lists of earlier runs (a crash between writing one and removing it). */
+  private async removeInputLists(): Promise<void> {
+    let names: string[];
+    try {
+      names = await readdir(this.options.buffer.dir);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (/^input-\d+\.ffconcat$/.test(name)) {
+        await rm(path.join(this.options.buffer.dir, name), { force: true });
+      }
+    }
+  }
+
+  private exited(code: number | null, error: unknown, forced?: CameraErrorCode): void {
     this.child = null;
     const run = this.run;
     // Its last segment is complete now; settled in turn with the ticks, never beside one.
@@ -230,11 +325,13 @@ export class CameraRecorder {
     if (run !== null) this.run = null;
     if (this.stopped) return;
     const missing = (error as { code?: unknown } | null)?.code === 'ENOENT';
-    const reason: CameraErrorCode = missing
-      ? 'ffmpeg_missing'
-      : this.errorCode === 'stalled'
-        ? 'stalled'
-        : classifyFfmpegError(this.stderr, code);
+    const reason: CameraErrorCode =
+      forced ??
+      (missing
+        ? 'ffmpeg_missing'
+        : this.errorCode === 'stalled'
+          ? 'stalled'
+          : classifyFfmpegError(this.stderr, code));
     this.errorCode = reason;
     this.failures += 1;
     const delay = cameraReconnectDelayMs(this.failures);
