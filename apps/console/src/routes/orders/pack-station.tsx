@@ -126,10 +126,27 @@ export function PackStationPage() {
       />
       <UploadQueueBar queue={queue} />
       {search.order === undefined ? (
-        <FindOrder
-          cameraId={source.cameraId}
-          onOpened={(view) => setSearch({ order: view.session.orderId })}
-        />
+        source.cameras.length === 0 && source.source.kind === 'browser' ? (
+          <FindOrder
+            cameraId={source.cameraId}
+            onOpened={(view) => setSearch({ order: view.session.orderId })}
+          />
+        ) : (
+          // The source is chosen here, and an IP camera's live view shows from the moment the
+          // station is open (D-683).
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <FindOrder
+              cameraId={source.cameraId}
+              onOpened={(view) => setSearch({ order: view.session.orderId })}
+            />
+            <aside className="space-y-4">
+              <SourceChoice choice={source} locked={false} />
+              {source.camera === null ? null : (
+                <IpCameraCard view={undefined} camera={source.camera} />
+              )}
+            </aside>
+          </div>
+        )
       ) : (
         <Station
           key={search.order}

@@ -1,4 +1,5 @@
 import { api } from '../../api.js';
+import { env } from '../../env.js';
 
 /**
  * The packing station's and the packing video's endpoints (M38b, D-610 to D-615), and the
@@ -314,4 +315,14 @@ export function addPackingCamera(input: PackCameraInput): Promise<PackCamera> {
 
 export function updatePackingCamera(id: string, input: PackCameraInput): Promise<PackCamera> {
   return api.put(`/v1/packing/cameras/${id}`, input);
+}
+
+/** Delete a camera from use (D-684): past videos keep playing. */
+export function deletePackingCamera(id: string): Promise<{ id: string; deleted: true }> {
+  return api.delete(`/v1/packing/cameras/${id}`);
+}
+
+/** Where a camera's newest live preview frame is served (D-683), a JPEG. */
+export function cameraPreviewUrl(id: string): string {
+  return new URL(`/v1/packing/cameras/${id}/preview`, env.VITE_API_URL).toString();
 }

@@ -7,6 +7,7 @@ import {
 } from '@elysium/contracts';
 import {
   Button,
+  ConfirmDialog,
   DateTime,
   Form,
   FormField,
@@ -18,7 +19,7 @@ import {
   cn,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Cctv, Pencil, Plus, VideoOff } from 'lucide-react';
+import { Cctv, Pencil, Plus, Trash2, VideoOff } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { useForm, type UseFormRegisterReturn } from 'react-hook-form';
 import { z } from 'zod';
@@ -38,8 +39,10 @@ import {
   serializePackSource,
   type PackSource,
 } from './pack-logic.js';
+import { CameraLivePreview } from './pack-live-preview.js';
 import {
   addPackingCamera,
+  deletePackingCamera,
   packingCameras,
   updatePackingCamera,
   type PackCamera,
@@ -212,6 +215,10 @@ export function IpCameraCard({
           {t(state === 'ready' ? 'ps.ip.ready' : state === 'off' ? 'ps.ip.off' : 'ps.ip.offline')}
         </StatusBadge>
       </div>
+      {/* The table, live, whenever this camera is the source (D-683). */}
+      {camera?.enabled === true ? (
+        <CameraLivePreview cameraId={camera.id} label={camera.name} />
+      ) : null}
       {error === null ? null : (
         <p role="status" className="flex items-start gap-2 text-sm text-destructive-text">
           <VideoOff aria-hidden className="mt-0.5 size-4 shrink-0" />
@@ -258,9 +265,39 @@ export function IpCamerasSettings() {
   const id = useId();
   const cameras = useQuery({ queryKey: CAMERAS_KEY, queryFn: packingCameras });
   const [editing, setEditing] = useState<PackCamera | 'new' | null>(null);
+  const [deleting, setDeleting] = useState<PackCamera | null>(null);
+  const queryClient = useQueryClient();
+  const remove = useMutation({
+    mutationFn: (id: string) => deletePackingCamera(id),
+    onSuccess: () => {
+      setDeleting(null);
+      void queryClient.invalidateQueries({ queryKey: CAMERAS_KEY });
+    },
+  });
   const list = cameras.data?.cameras ?? [];
   return (
     <section aria-labelledby={`${id}-title`} className="space-y-3 border-t border-border pt-4">
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null);
+        }}
+        title={`${t('ps.cams.deleteTitle')} ${deleting?.name ?? ''}`}
+        description={t('ps.cams.deleteBody')}
+        confirmLabel={t('ps.cams.delete')}
+        cancelLabel={t('ps.cancel')}
+        closeLabel={t('ps.close')}
+        destructive
+        onConfirm={async () => {
+          if (deleting !== null) await remove.mutateAsync(deleting.id).catch(() => undefined);
+        }}
+      >
+        {remove.error === null ? null : (
+          <p role="alert" className="text-sm text-destructive-text">
+            {remove.error instanceof ApiError ? remove.error.message : t('ps.failed')}
+          </p>
+        )}
+      </ConfirmDialog>
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-0.5">
           <h3 id={`${id}-title`} className="text-sm font-semibold tracking-tight">
@@ -312,6 +349,18 @@ export function IpCamerasSettings() {
               >
                 <Pencil aria-hidden />
                 {t('ps.cams.edit')}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={`${t('ps.cams.delete')}: ${camera.name}`}
+                onClick={() => {
+                  remove.reset();
+                  setDeleting(camera);
+                }}
+              >
+                <Trash2 aria-hidden />
+                {t('ps.cams.delete')}
               </Button>
             </li>
           ))}
