@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { LocaleProvider } from '../../i18n/locale.js';
 
@@ -18,7 +18,7 @@ const CAMERA = '6b0f3a0e-8f0e-4c55-9d0b-2b4a1f2b7c11';
 
 let root: Root | null = null;
 let host: HTMLElement;
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: Mock<(input: unknown) => Promise<Response>>;
 let created: string[];
 let revoked: string[];
 let visibility: DocumentVisibilityState;
